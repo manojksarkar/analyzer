@@ -219,12 +219,14 @@ Three rules (`REQ-API-08`):
 ```json
 { "flowchartId": "Gpio|GpioDrv|Gpio_Init|void",
   "applied": ["n7", "n9"], "firstEdits": ["n9"],
-  "slotShape": "9f2c…", "renderPending": true,
+  "slotShape": "9f2c…", "renderPending": true, "renderJobs": [412],
   "viewsDerived": ["flowcharts", "testSpecs"] }
 ```
 
-`renderPending` — the picture was redrawn as part of this call when the server has an output tree;
-when it does not, the text is stored and the next run redraws. `slotShape` identifies the graph the
+`renderPending` — the picture is **owed**. It is redrawn inside the call when the server has an
+output tree, and `renderPending` is then `false`; where it does not, the job stays pending and a
+host that has the tree finishes it. Either way the export consults the same rows, so a document
+cannot go out carrying new text and an old image (`REQ-IM-02`). `slotShape` identifies the graph the
 correction was written against, so it is not reused later against a renumbered one.
 
 Each label is stored as **its own record** with its own original and history, even though the API
@@ -256,12 +258,21 @@ the override itself, which is what makes "the original is never evicted by the c
   "reason": "a correction is newer than the derived output",
   "explanation": "a correction is newer than the derived output (3 correction(s) in this version)",
   "overrideCount": 3,
+  "pendingRenders": 1, "failedRenders": 0,
   "newestOverrideAt": "2026-09-18T09:14:22Z",
   "oldestDerivationAt": "2026-09-18T08:02:10Z" }
 ```
 
 `stale: true` means the views need re-deriving — `reexport --from-phase 3`. The CLI refuses a stale
 `--from-phase 4` export for the same reason.
+
+**`pendingRenders` also makes a version stale** (`REQ-IM-02`), even when the text is current: an
+export now would carry the new wording and the old picture.
+
+**`failedRenders` does not block.** A render that gave up cannot be waited for, and blocking would
+make one unrenderable flowchart permanently unexportable. It is reported instead, and appears in
+`explanation`, so a document goes out with somebody knowing the image is out of date rather than
+nobody.
 
 ---
 
@@ -317,8 +328,9 @@ invalidated, because a transitive cascade is unbounded in a deep call graph.
 
 Honest gaps, so the UI does not plan around something that is not there.
 
-- **`renderPending` is not a job handle.** Renders happen inside the request today. The background
-  queue, and `REQ-IM-02`'s "export waits for pending renders", are build-order step 7.
+- **Nothing drives the render queue automatically.** `renderPending` is a real job and the export
+  blocks on it, but a pending job is finished by `render_queue.run_pending` being called on a host
+  with the output tree — no daemon runs it on a schedule yet.
 - **Corrections do not carry into the next version yet** (`REQ-VR-01`, step 8). `slotShape` is
   written and its guard is tested, but nothing reads it across versions.
 - **Nothing consumes the regeneration queue yet.** R10 reports what needs regenerating and the

@@ -467,17 +467,34 @@ for it would be wasted work (`REQ-IM-01`).
 
 ### 7.2 Execution
 
-A daemon thread, matching
-[api/services/pipeline_runner.py](../../api/services/pipeline_runner.py)'s existing pattern
-(`threading.Thread(..., daemon=True)`), with a `render_jobs` row for state. Not a new job framework.
+`engine/review/render_queue.py` and a `render_jobs` row per picture owed. **No daemon thread was
+added.** The row, not a thread, is what the design actually needed: a durable answer to "is this
+version's picture current" that an export on *another host* can read. A thread would have given a
+faster redraw on one host and no answer anywhere else.
 
-Flowcharts use `utils.render_dot_cached(project_root, dot, png_path)`, which is content-addressed —
-re-rendering an unchanged graph is a file copy, not a render.
+So the render runs inline when the saving host has an output tree — the job is `done` before the
+response is sent — and otherwise stays `pending` until `run_pending` is called where the tree
+lives. Both paths write the same rows.
+
+`run_pending` re-reads the **current** CFG rather than anything carried on the job: by the time it
+runs the flowchart may have been corrected again, and the picture must match what the document will
+show, not what was true when the job was made.
+
+Two corrections to one flowchart make **two** jobs. Collapsing them would let a render that began
+before the second edit satisfy it, leaving the picture one edit behind with nothing pending to say
+so. Rendering twice is cheap by comparison: `render_dot_cached` is content-addressed, so the second
+is a file copy when the graph has not changed again.
 
 ### 7.3 Pending renders and export
 
 Export waits (`REQ-IM-02`). A render job is `pending` until its PNG is written; export blocks while
-any `pending` job exists for the version.
+any `pending` job exists for the version — reported by `export_guard.staleness` alongside the text
+check, so the CLI and the API ask one question and get one answer.
+
+**A `failed` render does not block.** It cannot be waited for, and blocking on it would make one
+unrenderable flowchart permanently unexportable — a cure worse than the disease. It is surfaced
+instead, through `failed_renders` and `explain()`, so the document goes out with somebody knowing
+the picture is stale rather than nobody.
 
 Without this, an export a second after an edit ships the new text everywhere and the old picture —
 the same split-origin failure that produced a stored graph and a document picture from different
@@ -677,7 +694,7 @@ Each step leaves the tree working and is independently useful.
 | 5 | ~~API + undo, incl. the flowchart endpoint ([§11.1](#111-the-flowchart-endpoint))~~ **DONE** | the UI can be built against it |
 | 6 | ~~Cascade~~ **DONE (recording half)** | correctness improvement on a working feature |
 | 6b | Consume the queue during a run | needs a checkout and an LLM, so it belongs to the pipeline |
-| 7 | Images | the slowest and most isolated part |
+| 7 | ~~Images~~ **DONE** | the slowest and most isolated part |
 | 8 | Carry-forward into the next version | needs a second version to test against |
 | 9 | `REQ-PRE-02` — read output from the database | large, independent; removes the last disk dependency |
 

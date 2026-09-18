@@ -254,7 +254,11 @@ def update_flowchart_labels(
             raise _as_http(exc)
     return {"flowchartId": out.flowchart_id, "applied": list(out.applied),
             "firstEdits": list(out.first_edits), "slotShape": out.slot_shape,
-            "renderPending": bool(out.redrawn), "viewsDerived": list(out.views_derived)}
+            # True while the picture is owed. It is a real job now, not a hint: the export
+            # consults the same rows (REQ-IM-02).
+            "renderPending": bool(out.render_jobs) and not bool(out.redrawn),
+            "renderJobs": list(out.render_jobs),
+            "viewsDerived": list(out.views_derived)}
 
 
 @router.put("/projects/{project_id}/versions/{version_id}/overrides/behaviour")
@@ -369,6 +373,9 @@ def export_readiness(
         st = staleness(cx, version_id)
     return {"stale": st.is_stale, "reason": st.reason, "explanation": st.explain(),
             "overrideCount": st.override_count,
+            # REQ-IM-02/03: a picture still being drawn blocks the export; one that failed does
+            # not, but the UI must be able to say the image is out of date.
+            "pendingRenders": st.pending_renders, "failedRenders": st.failed_renders,
             "newestOverrideAt": st.newest_override_at.isoformat()
             if st.newest_override_at else None,
             "oldestDerivationAt": st.oldest_derivation_at.isoformat()

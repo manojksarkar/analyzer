@@ -61,12 +61,22 @@ class Staleness(NamedTuple):
     newest_override_at: Optional[datetime.datetime]
     oldest_derivation_at: Optional[datetime.datetime]
     override_count: int
+    #: Pictures still being produced. Any of these blocks an export (REQ-IM-02).
+    pending_renders: int = 0
+    #: Renders that gave up. These do NOT block -- see `staleness`.
+    failed_renders: int = 0
 
     def explain(self) -> str:
         """One line a CLI or an API error can print as-is."""
-        if not self.is_stale:
+        bits = []
+        if self.is_stale:
+            bits.append(self.reason)
+        if self.failed_renders:
+            bits.append("%d flowchart image(s) could not be drawn and are out of date"
+                        % self.failed_renders)
+        if not bits:
             return "up to date"
-        return "%s (%d correction(s) in this version)" % (self.reason, self.override_count)
+        return "%s (%d correction(s) in this version)" % ("; ".join(bits), self.override_count)
 
 
 def staleness(conn, version_id: str) -> Staleness:
@@ -81,22 +91,38 @@ def staleness(conn, version_id: str) -> Staleness:
         # against, and the guard costs one indexed lookup.
         return Staleness(False, "no corrections", None, None, 0)
 
+    # REQ-IM-02. A picture still being drawn makes the version unexportable however fresh the
+    # TEXT is: an export now ships the new wording and the old image.
+    #
+    # A FAILED render does not block. It cannot be waited for, and blocking on it would make one
+    # unrenderable flowchart permanently unexportable -- the cure worse than the disease. It is
+    # reported instead, through `failed_renders` and `explain()`, so the document goes out with
+    # somebody knowing the picture is stale rather than nobody.
+    from review.render_queue import counts as _render_counts
+    renders = _render_counts(conn, version_id)
+
     oldest = conn.execute(
         select(func.min(s.view_derivations.c.derived_at))
         .where(s.view_derivations.c.version_id == version_id)).scalar()
+
+    if renders.pending:
+        return Staleness(True, "%d flowchart image(s) are still being drawn" % renders.pending,
+                         newest, _aware(oldest) if oldest else None, count,
+                         renders.pending, renders.failed)
 
     if oldest is None:
         # Corrections exist and NOTHING recorded a derivation. That is not evidence of freshness,
         # it is the absence of evidence -- so it counts as stale. A guard that reads "no data" as
         # "fine" is the guard that does not guard.
         return Staleness(True, "corrections exist but no view derivation was ever recorded",
-                         newest, None, count)
+                         newest, None, count, renders.pending, renders.failed)
 
     newest, oldest = _aware(newest), _aware(oldest)
     if newest > oldest:
         return Staleness(True, "a correction is newer than the derived output", newest, oldest,
-                         count)
-    return Staleness(False, "up to date", newest, oldest, count)
+                         count, renders.pending, renders.failed)
+    return Staleness(False, "up to date", newest, oldest, count,
+                     renders.pending, renders.failed)
 
 
 def _aware(dt: datetime.datetime) -> datetime.datetime:

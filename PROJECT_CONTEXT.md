@@ -218,6 +218,44 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-18f (**review_update_v1 step 7 - images**. `engine/review/render_queue.py`,
+> `render_jobs` (+ alembic `0013`), and the export guard now blocks on pending pictures.
+>
+> **No daemon thread was added, and the design said one.** The row, not a thread, is what was
+> actually needed: a DURABLE answer to "is this version's picture current" that an export on
+> ANOTHER host can read. A thread would have given a faster redraw on one host and no answer
+> anywhere else. The render runs inline where the saving host has an output tree (job `done`
+> before the response); otherwise it stays `pending` until `run_pending` is called where the tree
+> lives. Both paths write the same rows.
+>
+> **`REQ-IM-02` in force:** a pending render makes the version stale even when the TEXT is
+> current - exporting now would ship the new wording and the old picture.
+>
+> **A FAILED render deliberately does NOT block.** It cannot be waited for, and blocking would
+> make one unrenderable flowchart permanently unexportable - the cure worse than the disease. It
+> is reported through `failed_renders` and `explain()`, so a document goes out with somebody
+> knowing the image is stale rather than nobody. Reverting this (making failures block) fails a
+> test written for exactly that over-correction.
+>
+> **Two corrections to one flowchart make TWO jobs**, not one. Collapsing them would let a render
+> that began before the second edit satisfy it, leaving the picture one edit behind with nothing
+> pending to say so. `render_dot_cached` is content-addressed, so a redundant redraw is a file
+> copy.
+>
+> `run_pending` re-reads the CURRENT CFG rather than anything carried on the job: by then the
+> flowchart may have been corrected again, and the picture must match what the document will show.
+> Each job completes individually, so one flowchart that cannot be drawn strands neither the
+> others nor the export.
+>
+> API: `pendingRenders` / `failedRenders` on R9, `renderJobs` on R8. The CLI needed no change - it
+> already prints `Staleness.explain()`, which now covers renders.
+>
+> 20 tests; three reverts checked (pending not blocking, failed blocking, worker using the
+> queue-time graph). Unit + API suites 1967 passed / 10 skipped.
+>
+> **Remaining: 6b (consume the regeneration queue), 8 (carry-forward - `slot_shape`'s first
+> reader), 9 (`REQ-PRE-02`).**)
+
 > Updated: 2026-09-18e (**review_update_v1 step 6 - the cascade, recorded rather than run**.
 > `engine/review/cascade.py`, `regeneration_queue` (+ alembic `0012`), R10 on the API.
 >

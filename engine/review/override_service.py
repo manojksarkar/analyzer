@@ -302,6 +302,8 @@ class FlowchartApplied(NamedTuple):
     first_edits: Sequence[str]
     redrawn: Sequence[Any]              #: rerender.Redrawn, one per picture rebuilt
     views_derived: Sequence[str]
+    #: render_jobs ids raised for this save (REQ-IM-02). Already `done` when drawn inline.
+    render_jobs: Sequence[int] = ()
 
 
 def apply_flowchart_overrides(conn,
@@ -377,9 +379,24 @@ def apply_flowchart_overrides(conn,
         if first:
             first_edits.append(node_id)
 
+    from review import render_queue
+
     redrawn = rerender.redraw_flowchart(conn, version_id, flowchart_id,
                                         {n: (labels[n] or "").strip() for n in applied},
                                         output_dir=output_dir, project_root=project_root)
+
+    # A job per redrawn picture, so the EXPORT can ask whether one is still being produced
+    # (REQ-IM-02). Recorded even when the render just happened here: the row is what an export
+    # on another host consults, and "it was done inline" is not something it can see.
+    render_jobs = []
+    for item in redrawn:
+        job = render_queue.enqueue(conn, version_id, item.flowchart_id, item.png_name,
+                                   user_id=user_id, now=stamp)
+        render_jobs.append(job)
+        if output_dir and project_root:
+            # Drawn inside this call, so it is already finished. Marking it done here rather than
+            # not recording it keeps one answer to "is this version's picture current".
+            render_queue.complete(conn, job, now=stamp)
 
     # One derivation for the whole call, however many labels it carried, and it must cover the
     # component's SWE.4 specs as well as the flowchart (REQ-CS-04).
@@ -389,7 +406,7 @@ def apply_flowchart_overrides(conn,
 
     return FlowchartApplied(version_id=version_id, flowchart_id=flowchart_id, slot_shape=shape,
                             applied=applied, first_edits=first_edits, redrawn=redrawn,
-                            views_derived=views)
+                            views_derived=views, render_jobs=render_jobs)
 
 
 # ---------------------------------------------------------------------------

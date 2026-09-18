@@ -663,6 +663,34 @@ text_override_history = Table(
     Index("ix_override_history_slot", "version_id", "slot_kind", "slot_key", "seq"),
 )
 
+render_jobs = Table(
+    "render_jobs", metadata,
+    # A picture that must be redrawn because a reviewer corrected a label in it (REQ-IM-01).
+    #
+    # A row rather than "just render it in the request" for one reason above all: the EXPORT has
+    # to be able to ask whether a picture is still being produced (REQ-IM-02). Without a durable
+    # answer, an export a second after an edit ships the new text everywhere and the old picture --
+    # the same split-origin failure that once left a stored graph and a document image coming from
+    # different versions.
+    #
+    # It also lets the render happen where the resources are. Rendering needs an output tree and
+    # Graphviz, and the host that saves a correction is not guaranteed to have either.
+    Column("job_id", _BIGID, primary_key=True, autoincrement=True),
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("flowchart_id", String, nullable=False),
+    Column("png_name", String),
+    # pending -> done | failed. `pending` is what blocks an export.
+    Column("status", String, nullable=False),
+    Column("error", Text),
+    Column("requested_by", String),
+    _ts("requested_at", nullable=False),
+    _ts("finished_at"),
+    # Not unique on (version, flowchart): a second correction while the first render is still
+    # pending is a second job. Collapsing them would let a render that started before the second
+    # edit satisfy it, and the picture would be one edit behind with nothing pending to say so.
+    Index("ix_render_jobs_pending", "version_id", "status"),
+)
+
 regeneration_queue = Table(
     "regeneration_queue", metadata,
     # Slots whose LLM text was built FROM text a human has since corrected, and which therefore
@@ -711,5 +739,5 @@ PER_VERSION_TABLES = frozenset({
     "entity_versions", "model_units", "model_components", "model_summaries",
     "model_edges", "tu_includes", "view_interface_tables", "view_behaviour_rows",
     "model_unit_diagrams", "model_flowcharts", "documents", "parse_snapshots", "knowledge_base", "incremental_plans",
-    "text_overrides", "text_override_history", "view_derivations", "regeneration_queue",
+    "text_overrides", "text_override_history", "view_derivations", "regeneration_queue", "render_jobs",
 })

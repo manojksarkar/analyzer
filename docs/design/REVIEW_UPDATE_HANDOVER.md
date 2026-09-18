@@ -9,8 +9,8 @@ broken, and how to check** — it does not restate the feature. For that:
 - **Chronology and the reasoning behind each decision** → root `PROJECT_CONTEXT.md`, the
   `> Updated: 2026-09-16 …` through `2026-09-18` entries
 
-Branch: `review_update_v1` · base: `origin/develop` · state at writing: build-order steps 1–6 done
-(6 is the recording half; consuming the queue is 6b), step 7 (images) next.
+Branch: `review_update_v1` · base: `origin/develop` · state at writing: build-order steps 1–7 done
+(6 is the recording half; consuming the queue is 6b), step 8 (carry-forward) next.
 
 ---
 
@@ -27,7 +27,7 @@ regeneration, and carries into the next version. Seven kinds of text are editabl
 
 ### 2.1 Alembic — check the head is still linear
 
-This branch adds **four** migrations on top of `0008`:
+This branch adds **five** migrations on top of `0008`:
 
 ```
 0008_class_name_and_llm_timing   (already on develop)
@@ -35,6 +35,7 @@ This branch adds **four** migrations on top of `0008`:
       └─ 0010_text_overrides        text_overrides, text_override_history, view_derivations
           └─ 0011_slot_shape        text_overrides.slot_shape
               └─ 0012_regeneration_queue   regeneration_queue
+                  └─ 0013_render_jobs          render_jobs
 ```
 
 `develop` was at `0008` when this was written. **If `develop` has since added its own `0009`,
@@ -222,9 +223,9 @@ Two consequences worth knowing:
 
 - **`slot_shape` is written but never read yet.** The `REQ-ID-02` guard is complete and tested;
   its consumer is step 8 (carry-forward). Until then a correction does not carry between versions.
-- **Renders are synchronous.** A flowchart correction rebuilds its picture inside the request
-  when an output tree is present, and does nothing when it is not (the text is still stored and the
-  next run redraws). The background `render_jobs` queue is step 7.
+- **Nothing drives the render queue on a schedule.** A correction raises a `render_jobs` row and
+  the export blocks on it, but a pending job is finished by `render_queue.run_pending` being called
+  on a host that has the output tree.
 
 Open items, both pre-existing, are listed in
 [REVIEW_UPDATE_DESIGN Open items](REVIEW_UPDATE_DESIGN.md#open-items) — notably `test_steps`
