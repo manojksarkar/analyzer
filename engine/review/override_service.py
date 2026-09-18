@@ -110,16 +110,29 @@ class ModelAccess:
     #: Loaded on demand. `description` may land in either of the first two.
     ARTIFACTS = ("functions", "globalVariables", "units", "dataDictionary")
 
-    def __init__(self, artifacts: Optional[Dict[str, Any]] = None, repo: Any = None):
+    def __init__(self, artifacts: Optional[Dict[str, Any]] = None, repo: Any = None,
+                 version_id: Optional[str] = None, project_id: Optional[str] = None):
         self._repo = repo
         self._loaded: Dict[str, Any] = dict(artifacts or {})
         self._explicit = artifacts is not None
         self._dirty: set = set()
+        self._version_id = version_id
+        self._project_id = project_id
 
     def _repository(self):
+        """The repository for this version.
+
+        Built from `(version_id, project_id)` when given, because an API process has no
+        "current run" and therefore no repository installed — `model_repo.repository()` would
+        raise, and deliberately: there is no default any more, since a default was once what
+        made a misconfigured run look successful.
+        """
         if self._repo is None:
             from core import model_repo
-            self._repo = model_repo.repository()
+            if self._version_id:
+                self._repo = model_repo.DbRepository(self._version_id, self._project_id or "")
+            else:
+                self._repo = model_repo.repository()
         return self._repo
 
     def artifact(self, name: str) -> Dict[str, Any]:
@@ -139,13 +152,23 @@ class ModelAccess:
     def mark_dirty(self, name: str) -> None:
         self._dirty.add(name)
 
-    def save(self) -> Sequence[str]:
-        """Write back only what changed. Returns the artifact names written."""
+    def save(self, conn=None) -> Sequence[str]:
+        """Write back only what changed, and **flush**. Returns the artifact names written.
+
+        The flush is not optional. `DbRepository.write` only buffers — the row does not move
+        until `flush`, so a save without one reports success and stores nothing, which is the
+        exact shape of failure this whole feature exists to remove.
+
+        `conn` is passed through so the model write joins the caller's transaction and lands
+        with the override row or not at all (`REQ-AP-02`).
+        """
         written = sorted(self._dirty)
         if not self._explicit:
             repo = self._repository()
             for name in written:
                 repo.write(name, self._loaded[name])
+            if written:
+                repo.flush(conn)
         self._dirty.clear()
         return written
 
@@ -217,7 +240,7 @@ def apply_override(conn,
     # --- the model ---------------------------------------------------------
     resolver.write_text(model, slot_kind, slot_key, text)
     models.mark_dirty(location.artifact)
-    artifacts_written = models.save()
+    artifacts_written = models.save(conn)
 
     # --- the override row --------------------------------------------------
     row = {"llm_text": llm_text, "human_text": text, "is_orphaned": False,

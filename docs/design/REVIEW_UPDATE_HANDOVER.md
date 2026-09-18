@@ -88,6 +88,7 @@ Everything else is new files. These are the ones a merge can actually collide on
 | `engine/docx_exporter.py` | both LLM description calls **removed**; reads stored values | **medium** |
 | `engine/incremental/store.py` | `capture_output` also stamps `view_derivations` (the export guard's baseline) | low |
 | `analyzer.py` | `reexport` refuses a stale `--from-phase 4`; new `--force` | low |
+| `engine/core/model_repo.py` | `flush(conn=None)` — joins a caller's transaction | low — additive, default unchanged |
 | `api/routes/__init__.py`, `api/main.py` | register `text_overrides_router` | low |
 | `docs/spec/REVIEW_UPDATE_API_SPEC.md` | **new** — the HTTP contract the UI is built against | none |
 
@@ -151,7 +152,16 @@ baseline, so the first correction to any version makes it permanently unexportab
 
 → `tests/unit/test_review_export_guard.py::TestTheStamp`.
 
-### 4.7 The API spec and the router must agree
+### 4.7 A model write from the API must flush
+
+`ModelAccess.save()` calls `DbRepository.flush()`. `write()` only **buffers** — without the flush a
+correction returns 200 and stores nothing. The flush is handed the request's connection so the
+model write and the override row land in one transaction (`REQ-AP-02`).
+
+→ `tests/api/test_review_overrides_api.py::TestUpdatingASlot::test_the_model_really_moved` is the
+only test that catches this; reverting the flush leaves every other HTTP test green.
+
+### 4.8 The API spec and the router must agree
 
 `docs/spec/REVIEW_UPDATE_API_SPEC.md` §3 is what the UI is built against. A documented route
 that is not served becomes a bug report from someone else's sprint.
@@ -159,7 +169,7 @@ that is not served becomes a bug report from someone else's sprint.
 → `tests/unit/test_review_api_contract.py::TestTheDocumentedContractExists` parses the spec
 table and compares it with the registered routes.
 
-### 4.8 A behaviour row is addressed by two entity keys
+### 4.9 A behaviour row is addressed by two entity keys
 
 `(currentFunctionId, externalCallerId)` — **never** `externalUnitFunction`, which is a display
 label two different callers can share (`AddOperation::apply` and `MultiplyOperation::apply` both

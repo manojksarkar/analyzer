@@ -218,6 +218,32 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-18d (**review_update_v1 - HTTP tests for the review API, and the two defects
+> they found**. `tests/api/test_review_overrides_api.py`, 31 tests across both API backends.
+>
+> **Defect 1: every slot update was a 500.** The handler built `ModelAccess()` with no repository,
+> and an API process has no "current run" - `model_repo.repository()` raises by design, since a
+> default was once what made a misconfigured run look successful. `ModelAccess` now takes
+> `(version_id, project_id)` and builds a `DbRepository` itself.
+>
+> **Defect 2: a save returned 200 and stored nothing.** `DbRepository.write` only BUFFERS; the row
+> does not move until `flush`, and `ModelAccess.save()` never called one. Exactly the
+> looks-successful-stores-nothing shape this feature exists to remove, and invisible to every unit
+> test because those pass an in-memory artifacts dict.
+>
+> `flush` now takes an optional `conn` (`model_repo.py`, additive, default unchanged) so the model
+> write joins the caller's transaction. Without it the model and the override row would commit
+> separately and `REQ-AP-02`'s "cannot be half-applied" would have been a claim rather than a fact.
+>
+> Reverting defect 1 fails 18 HTTP tests; reverting defect 2 fails exactly ONE -
+> `test_the_model_really_moved` - so without that single test the bug ships with 60 other HTTP
+> tests green. Worth remembering when judging what a passing suite proves.
+>
+> Also fixed while writing them: the first version of the non-member test used alice, who is an
+> admin on BOTH p1 and p2, so it asserted 403 and got 200. bob (u2) is on p1 only.
+>
+> **Unit + API suites 1923 passed / 10 skipped.** Next: step 6, the cascade.)
+
 > Updated: 2026-09-18c (**review_update_v1 step 5 - the HTTP API and undo**.
 > `api/routes/text_overrides.py` (9 endpoints, registered in `api/main.py`), undo + the overlay
 > list in `override_service`, and **a new section 10 in

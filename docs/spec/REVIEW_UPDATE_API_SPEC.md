@@ -277,10 +277,6 @@ flowchart is saved at once.
 
 Honest gaps, so the UI does not plan around something that is not there.
 
-- **No HTTP-level tests.** `tests/unit/test_review_api_contract.py` checks that every endpoint in
-  §3 is registered and that keys stay out of paths, and the service layer beneath is covered — but
-  nothing yet drives these routes through a client with auth to pin status codes and payload
-  shapes.
 - **`renderPending` is not a job handle.** Renders happen inside the request today. The background
   queue, and `REQ-IM-02`'s "export waits for pending renders", are build-order step 7.
 - **Corrections do not carry into the next version yet** (`REQ-VR-01`, step 8). `slotShape` is

@@ -107,8 +107,11 @@ class ModelRepository(ABC):
     def missing(self, *names: str) -> List[str]:
         """The subset of `names` that is NOT available. Drives 'can this phase be skipped?'."""
 
-    def flush(self) -> None:
-        """Persist anything buffered. No-op where a write already landed."""
+    def flush(self, conn=None) -> None:
+        """Persist anything buffered. No-op where a write already landed.
+
+        `conn` joins a transaction the caller already opened, for a write that must land with
+        something else or not at all."""
 
     def describe(self, name: str) -> str:
         """Where a write of `name` actually lands, for a log line.
@@ -387,12 +390,18 @@ class DbRepository(ModelRepository):
         return out
 
     # -- flush -------------------------------------------------------------
-    def flush(self) -> None:
+    def flush(self, conn=None) -> None:
         """Persist every buffered piece in ONE transaction.
 
         `persist_model` needs functions/globals/datadict/edges together, so a partial phase
         (Phase 2 rewrites functions but not units) is completed from what is already stored —
         otherwise persisting would delete the rows it did not mention.
+
+        `conn` joins a transaction the CALLER already opened instead of starting one. A phase
+        has no such caller and passes nothing. A reviewer's correction does: it writes the model
+        AND the override row, and `REQ-AP-02` says a half-applied override — the model moved,
+        the override record did not — must not be reachable. Two transactions cannot promise
+        that; one can.
         """
         with self._lock:
             # Only the COUPLED set: standalone artifacts already landed on write.
@@ -416,7 +425,10 @@ class DbRepository(ModelRepository):
         stored = self._load_stored() if any(n not in pending for n in _PERSIST_KW) else {}
         def _pick(name):
             return pending.get(name, stored.get(_PERSIST_KW[name]) or {})
-        with get_engine().begin() as cx:          # one transaction: all-or-nothing (H2)
+        import contextlib
+        # Join the caller's transaction when given one, else own it (H2: all-or-nothing).
+        opened = get_engine().begin() if conn is None else contextlib.nullcontext(conn)
+        with opened as cx:
             # persist_model is NOT idempotent on its own — re-persisting a version collides on
             # entity_versions' (version_id, entity_id). `persist_model_from_dir` clears first;
             # doing the same here is what makes a re-run, or a second phase writing the same
@@ -472,6 +484,6 @@ def repository() -> ModelRepository:
     return _ACTIVE
 
 
-def flush() -> None:
+def flush(conn=None) -> None:
     """Flush the active repository. Safe to call when nothing is buffered."""
-    repository().flush()
+    repository().flush(conn)

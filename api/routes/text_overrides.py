@@ -1,6 +1,6 @@
 """Review & Update routes — correcting the LLM's wording in a generated document.
 
-Contract: `docs/production-redesign/05-incremental-api-spec.md` §10 · requirements:
+Contract: `docs/spec/REVIEW_UPDATE_API_SPEC.md` · requirements:
 `docs/spec/REVIEW_UPDATE_SPEC.md` (`REQ-API-*`).
 
 Thin on purpose. Every rule — what may be empty, what the LLM original is, how history is
@@ -207,8 +207,12 @@ def update_slot(
     svc = _service()
     with _connection().begin() as cx:          # one transaction, REQ-AP-02
         try:
+            # The repository is built from (version, project): an API process has no
+            # "current run", so there is none installed, and `model_repo.repository()` would
+            # raise. The model write then joins THIS transaction (REQ-AP-02).
+            models = svc.ModelAccess(version_id=version_id, project_id=project_id)
             out = svc.apply_override(cx, version_id, body.slot_kind, body.slot_key, body.text,
-                                     user_id=current_user.id)
+                                     models=models, user_id=current_user.id)
         except Exception as exc:
             raise _as_http(exc)
     return {"slotKind": out.slot_kind, "slotKey": out.slot_key, "humanText": out.human_text,
@@ -286,7 +290,10 @@ def undo_slot(
     svc = _service()
     with _connection().begin() as cx:
         try:
-            svc.undo_override(cx, version_id, slot_kind, slot_key, user_id=current_user.id)
+            svc.undo_override(cx, version_id, slot_kind, slot_key,
+                              models=svc.ModelAccess(version_id=version_id,
+                                                     project_id=project_id),
+                              user_id=current_user.id)
             row = svc.get_override(cx, version_id, slot_kind, slot_key)
             payload = _row(row) if row else None
         except Exception as exc:
