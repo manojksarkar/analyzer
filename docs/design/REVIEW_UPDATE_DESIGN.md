@@ -147,7 +147,7 @@ apply ahead of the code. `0010_text_overrides` creates the three tables; `0011_s
 | `behaviourOutputName` | `entity_key` | same |
 | `structDescription` | `entity_key` (kind=`type`) | same |
 | `unitDescription` | `unit_key` | `model_units.unit_key` = `Component\|Unit` |
-| `behaviourDescription` | `<functionId>` ␁ `<externalUnitFunction>` | the `_docxRows` entry |
+| `behaviourDescription` | `<functionId>` ␁ `<externalCallerId>` | the `_docxRows` entry — **both entity keys**, see `REQ-ID-01` |
 | `nodeLabel` | `<entity_key>` ␁ `<node_id>` | `cfg.nodes[].id` |
 
 ␁ is **SOH (0x01)**, not `#` or `|`. `entity_key` is itself `component|unit|name|paramTypes`, so a

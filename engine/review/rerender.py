@@ -105,6 +105,59 @@ def find_flowchart_row(conn, version_id: str, flowchart_id: str):
 
 
 # ---------------------------------------------------------------------------
+# behaviour rows
+# ---------------------------------------------------------------------------
+def find_behaviour_row(conn, version_id: str, function_id: str, external_caller_id: str):
+    """`(rel_path, content, row)` for one behaviour row, or None.
+
+    Matched on the two entity keys, never on the `externalUnitFunction` display label: that label
+    drops the component, the class and the parameter types, so two callers can share one and a
+    correction would land on whichever row was found first.
+
+    A row written before `externalCallerId` existed simply does not match, which is the right
+    outcome — it cannot be addressed unambiguously, so it is not addressed at all.
+    """
+    from review import phase3_overrides as p3
+
+    rows = conn.execute(
+        select(s.version_output_files.c.rel_path, s.version_output_files.c.content)
+        .where(s.version_output_files.c.version_id == version_id)).fetchall()
+    for r in rows:
+        if not r.rel_path.endswith("_behaviour_pngs.json"):
+            continue
+        try:
+            payload = json.loads(r.content or "{}")
+        except ValueError:
+            continue
+        for _c, _u, row in p3.behaviour_rows((payload or {}).get("_docxRows")):
+            if (row.get("currentFunctionId") == function_id
+                    and row.get("externalCallerId") == external_caller_id):
+                return r.rel_path, r.content, row
+    return None
+
+
+def write_behaviour_row(conn, version_id: str, rel_path: str, content: str,
+                        slot_key: str, text: str) -> bool:
+    """Put one corrected description into `_behaviour_pngs.json` and store the row.
+
+    Goes through the same `apply_to_docx_rows` the `behaviourDiagram` view uses during a run, so a
+    save and a regeneration cannot produce different output for one correction.
+    """
+    from review import phase3_overrides as p3
+
+    try:
+        payload = json.loads(content or "{}")
+    except ValueError:
+        raise RedrawError("behaviour output for version %s is not readable" % version_id)
+
+    if not p3.apply_to_docx_rows((payload or {}).get("_docxRows"), {slot_key: text}):
+        return False
+    write_output_row(conn, version_id, rel_path,
+                     json.dumps(payload, indent=2, ensure_ascii=False))
+    return True
+
+
+# ---------------------------------------------------------------------------
 # the whole save-time redraw
 # ---------------------------------------------------------------------------
 def redraw_flowchart(conn, version_id: str, flowchart_id: str,

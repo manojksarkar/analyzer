@@ -30,6 +30,13 @@ FID = "Comp|UnitA|doThing|"
 OTHER = "Comp|UnitB|other|"
 
 
+def _cfg_overrides(by_flowchart):
+    """A run config carrying node-label corrections, in the shape `phase3_overrides.from_config`
+    defines -- keyed by kind, so both Phase-3 views read one shape."""
+    from review.phase3_overrides import CONFIG_KEY, NODE_LABEL_KIND
+    return {CONFIG_KEY: {NODE_LABEL_KIND: by_flowchart}}
+
+
 def _cfg(*ids):
     return {"entry": ids[0], "exits": [ids[-1]],
             "nodes": [{"id": i, "type": "ACTION", "label": "llm " + i, "rawCode": "c",
@@ -99,7 +106,7 @@ class TestTheViewHook:
     def test_corrections_arrive_through_config(self, tmp_path):
         _unit_file(tmp_path, "UnitA", FID, "n0", "n1")
         n = flowcharts._apply_text_overrides(
-            str(tmp_path), {"_analyzerTextOverrides": {FID: {"n1": "Corrected"}}})
+            str(tmp_path), _cfg_overrides({FID: {"n1": "Corrected"}}))
         assert n == 1
         assert "Corrected" in (tmp_path / "UnitA.json").read_text(encoding="utf-8")
 
@@ -120,7 +127,7 @@ class TestTheViewHook:
 
         monkeypatch.setattr(redraw, "apply_to_output_dir", _boom)
         assert flowcharts._apply_text_overrides(
-            str(tmp_path), {"_analyzerTextOverrides": {FID: {"n1": "x"}}}) == 0
+            str(tmp_path), _cfg_overrides({FID: {"n1": "x"}})) == 0
 
 
 class TestItIsActuallyWiredIn:

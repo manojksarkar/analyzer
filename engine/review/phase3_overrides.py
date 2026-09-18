@@ -74,6 +74,36 @@ def renders_image(slot_kind: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# how corrections reach a view
+# ---------------------------------------------------------------------------
+#: The config key Phase-3 views read their corrections from, keyed BY KIND:
+#:
+#:     {"nodeLabel":            {flowchart_id: {node_id: text}},
+#:      "behaviourDescription": {slot_key: text}}
+#:
+#: Same convention as `_analyzerAllowedComponents`, so a view stays a pure function of the model
+#: plus config and never reaches into a database.
+CONFIG_KEY = "_analyzerTextOverrides"
+
+#: Re-exported so a view names the kind through this module rather than spelling the
+#: string itself -- one place to rename, one place to get it wrong.
+NODE_LABEL_KIND = slot.NODE_LABEL
+BEHAVIOUR_KIND = slot.BEHAVIOUR_DESCRIPTION
+
+
+def from_config(config, slot_kind: str):
+    """This run's corrections for one kind, or `{}`.
+
+    One definition of the shape, read by both views. Two views each destructuring the config
+    their own way is how they end up disagreeing about it.
+    """
+    target_for(slot_kind)                       # refuse a kind that is not applied at derive time
+    section = (config or {}).get(CONFIG_KEY) or {}
+    value = section.get(slot_kind) if isinstance(section, dict) else None
+    return value if isinstance(value, dict) else {}
+
+
+# ---------------------------------------------------------------------------
 # labels for one flowchart
 # ---------------------------------------------------------------------------
 def labels_by_flowchart(rows: Iterable[Any]) -> Dict[str, Dict[str, str]]:
@@ -144,3 +174,89 @@ def apply_to_flowchart_json(entries: Iterable[Any], by_flowchart: Mapping[str, M
         if apply_to_cfg(entry.get("cfg") or {}, labels):
             changed.append(fid)
     return changed
+
+
+# ---------------------------------------------------------------------------
+# behaviour rows
+# ---------------------------------------------------------------------------
+#: The bullets of one behaviour row are stored as ONE text, joined by this.
+#:
+#: Not JSON. `human_text` stays genuinely text for all seven kinds, so REQ-ST-06's emptiness
+#: check is one rule, the REQ-TD-01 training pair stays sentence-against-sentence, and the
+#: history is readable -- the same reasons a flowchart is stored per label and not as a blob.
+#: Safe because `llm_call_description._one_line` collapses each bullet onto one line at the
+#: point it is generated, so a bullet cannot contain the separator.
+BULLET_SEP = chr(10)      # newline, written this way so no editor can eat it
+
+
+def join_bullets(bullets) -> str:
+    """A behaviour row's list of bullets -> the single text stored in `human_text`."""
+    return BULLET_SEP.join(" ".join(str(b).split()) for b in (bullets or []) if str(b).strip())
+
+
+def split_bullets(text: str):
+    """The inverse. Blank lines are dropped: they carry no bullet and would render as an empty
+    row in the DOCX table."""
+    return [line.strip() for line in (text or "").split(BULLET_SEP) if line.strip()]
+
+
+def behaviour_rows(docx_rows):
+    """Walk `_docxRows` yielding `(component, unit, row)`.
+
+    `_docxRows` is `{component: {unit: [row, ...]}}`. Written once here so nothing else has to
+    know that shape.
+    """
+    for component, units in (docx_rows or {}).items():
+        if not isinstance(units, dict):
+            continue
+        for unit, rows in units.items():
+            for row in rows or []:
+                if isinstance(row, dict):
+                    yield component, unit, row
+
+
+def behaviour_text_by_slot(rows) -> Dict[str, str]:
+    """`text_overrides` rows -> `{slot_key: human_text}` for behaviour descriptions.
+
+    Orphaned and malformed rows are skipped for the same reasons as `labels_by_flowchart`.
+    """
+    out: Dict[str, str] = {}
+    for r in rows or ():
+        if getattr(r, "slot_kind", None) != slot.BEHAVIOUR_DESCRIPTION:
+            continue
+        if getattr(r, "is_orphaned", False):
+            continue
+        text = (getattr(r, "human_text", "") or "").strip()
+        key = getattr(r, "slot_key", "")
+        if text and slot.is_valid(slot.BEHAVIOUR_DESCRIPTION, key):
+            out[key] = text
+    return out
+
+
+def apply_to_docx_rows(docx_rows, by_slot: Mapping[str, str]) -> List[str]:
+    """Put corrected behaviour descriptions into `_docxRows`, in place. Returns the slot keys
+    applied.
+
+    A row is addressed by `(currentFunctionId, externalCallerId)` -- both entity keys. A row
+    with no `externalCallerId` is skipped rather than matched on its display label: the label is
+    lossy and two rows can share one, so falling back to it would apply a correction to the wrong
+    caller, silently. Better a correction that does not appear than one that appears in the wrong
+    place.
+    """
+    done: List[str] = []
+    if not by_slot:
+        return done
+    for _component, _unit, row in behaviour_rows(docx_rows):
+        fid, caller = row.get("currentFunctionId"), row.get("externalCallerId")
+        if not (fid and caller):
+            continue
+        try:
+            key = slot.for_behaviour_row(fid, caller)
+        except slot.SlotKeyError:
+            continue
+        text = by_slot.get(key)
+        if not text:
+            continue
+        row["behaviorDescription"] = split_bullets(text)
+        done.append(key)
+    return done

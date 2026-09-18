@@ -67,7 +67,23 @@ Almost all are never edited, so the design must be cheap when a version has **ze
 It is a **list** of strings, one bullet per call arrow (`docx_exporter._add_behavior_description_table`
 takes `behavior_description_list`). The whole list is edited together, not per bullet.
 
-**Verification:** the API accepts and returns the list as a unit.
+Stored as one text with the bullets **joined by newline**, not as JSON. `human_text` then stays
+genuinely text for all seven kinds, so [REQ-ST-06](#req-st-06--no-editable-text-may-be-set-to-empty)
+is one rule, the [REQ-TD-01](#req-td-01--corrections-are-stored-as-pairs) pair stays
+sentence-against-sentence, and the history is readable — the same reasons a flowchart is stored per
+label rather than as a blob.
+
+That separator is safe because a bullet is **collapsed onto one line where it is generated**
+(`llm_call_description`). The prompt already asks for one line of at most twenty words and a model
+may ignore it, and a stray newline inside a bullet is a DOCX formatting fault in its own right.
+Normalising at the source makes the separator safe by construction rather than by a rule someone
+must remember.
+
+There is no batch endpoint for this kind. A function has a handful of behaviour rows, not the
+~42,000 node labels that made [REQ-API-08](#req-api-08--a-flowchart-is-saved-in-one-call) necessary.
+
+**Verification:** the API accepts and returns the list as a unit; a bullet containing a newline
+comes back as one bullet, not two.
 
 ### REQ-ED-03 — SWE.4 Test Steps are read-only
 
@@ -102,10 +118,26 @@ No new identifier scheme where one exists.
 |---|---|
 | function / struct description, behaviour in/out name | `entities.entity_key` — unique per project (`uq_entity_project_key`) |
 | unit description | `model_units.unit_key` (`Component\|Unit`) |
-| behaviour description | the row's `(currentFunctionId, externalUnitFunction)` |
+| behaviour description | the row's `(currentFunctionId, externalCallerId)` — **both entity keys** |
 | flowchart node label | `(version_id, entity_key, node_id)` |
 
-**Verification:** a slot id resolves to the same slot across two generations of unchanged code.
+**Not** the row's `externalUnitFunction`. That is a display label, `"<unit> - <shortName>"`, built
+by dropping the component, the class/namespace and the parameter types, so two different callers
+collide on it:
+
+```
+CompX|UnitB|AddOperation::apply|        ->  "UnitB - apply"
+CompX|UnitB|MultiplyOperation::apply|   ->  "UnitB - apply"
+```
+
+As half a slot key that lets a correction to one row silently overwrite the other, since
+`(version_id, slot_kind, slot_key)` is unique. The view already learned this on the other half of
+the pair — `currentFunctionId` exists precisely because the exporter used to re-find the function
+by short name and picked the wrong one for those two methods. The label stays in the row, for
+display; the id is what addresses it.
+
+**Verification:** a slot id resolves to the same slot across two generations of unchanged code,
+and two callers sharing a display label yield two different slot keys.
 
 ### REQ-ID-02 — A node override carries forward only if the node list is unchanged
 

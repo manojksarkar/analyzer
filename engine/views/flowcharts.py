@@ -449,16 +449,21 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
 def _apply_text_overrides(out_dir, config) -> int:
     """Put reviewers' corrected node labels into this run's flowchart JSON (REQ-AP-05).
 
-    The corrections arrive as `config["_analyzerTextOverrides"]`, a
-    `{flowchart_id: {node_id: text}}` map the caller loaded from `text_overrides` — the same
-    convention as `_analyzerAllowedComponents`, so this view stays a pure function of the model
-    plus config and does not reach into a database.
+    The corrections arrive in `config[phase3_overrides.CONFIG_KEY]["nodeLabel"]`, a
+    `{flowchart_id: {node_id: text}}` map the caller loaded from `text_overrides`. The shape is
+    defined once, in `phase3_overrides.from_config`, so this view and the behaviour view cannot
+    disagree about it — and reading it from config is what keeps the view a pure function of the
+    model plus config, with no database of its own.
 
     Absent or empty means an ordinary run with nothing corrected, which is every project today.
     Never fatal: a generation that has already paid for the parse and the LLM must not be lost
     because a correction could not be applied.
     """
-    by_flowchart = (config or {}).get("_analyzerTextOverrides") or {}
+    try:
+        from review.phase3_overrides import NODE_LABEL_KIND, from_config
+        by_flowchart = from_config(config, NODE_LABEL_KIND)
+    except Exception:                              # noqa: BLE001 - see docstring
+        return 0
     if not by_flowchart:
         return 0
     try:

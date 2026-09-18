@@ -354,6 +354,85 @@ def apply_flowchart_overrides(conn,
                             views_derived=views)
 
 
+# ---------------------------------------------------------------------------
+# one behaviour row (REQ-ED-02)
+# ---------------------------------------------------------------------------
+class BehaviourApplied(NamedTuple):
+    version_id: str
+    slot_key: str
+    bullets: Sequence[str]
+    llm_text: str
+    first_edit: bool
+    views_derived: Sequence[str]
+
+
+def apply_behaviour_override(conn,
+                             version_id: str,
+                             function_id: str,
+                             external_caller_id: str,
+                             bullets,
+                             *,
+                             user_id: Optional[str] = None,
+                             now: Optional[datetime.datetime] = None,
+                             history_depth: Optional[int] = None,
+                             derive: Optional[Callable[..., Sequence[str]]] = None
+                             ) -> BehaviourApplied:
+    """Save the corrected description of one behaviour row (`REQ-ED-02`).
+
+    `bullets` is the whole list, one per call arrow, edited together — the API accepts and returns
+    it as a unit. There is no batching endpoint for this kind: a function has a handful of
+    behaviour rows, not the ~42,000 node labels that made `REQ-API-08` necessary.
+
+    Addressed by **two entity keys**, the current function and its external caller, never by the
+    `externalUnitFunction` display label — see `slot.for_behaviour_row` for what that label loses
+    and which two rows collide on it.
+
+    No `slot_shape` (there is no graph to be wrong about) and no render: the description appears in
+    no picture, because `MermaidBuilder` labels each arrow with the callee's name (`REQ-IM-01`).
+    """
+    from review import phase3_overrides as p3, rerender
+
+    text = p3.join_bullets(bullets if not isinstance(bullets, str)
+                           else p3.split_bullets(bullets))
+    if not text:
+        raise EmptyText("a behaviour description may not be empty")
+
+    stamp = now or datetime.datetime.now(datetime.timezone.utc)
+    depth = DEFAULT_HISTORY_DEPTH if history_depth is None else int(history_depth)
+    if depth < 1:
+        raise OverrideError("history depth must be at least 1; got %r" % history_depth)
+
+    try:
+        key = slot.for_behaviour_row(function_id, external_caller_id)
+    except slot.SlotKeyError as exc:
+        raise SlotUnknown(str(exc)) from None
+
+    found = rerender.find_behaviour_row(conn, version_id, function_id, external_caller_id)
+    if not found:
+        raise SlotUnknown("no behaviour row for %s called by %s in version %s"
+                          % (function_id, external_caller_id, version_id))
+    rel_path, content, row = found
+
+    first = _upsert_override(conn, version_id, slot.BEHAVIOUR_DESCRIPTION, key,
+                             human_text=text,
+                             llm_fallback=p3.join_bullets(row.get("behaviorDescription")),
+                             user_id=user_id, stamp=stamp)
+    _append_history(conn, version_id, slot.BEHAVIOUR_DESCRIPTION, key, text,
+                    user_id, stamp, depth)
+
+    rerender.write_behaviour_row(conn, version_id, rel_path, content, key, text)
+
+    views = list(derive(version_id=version_id, slot_kind=slot.BEHAVIOUR_DESCRIPTION,
+                        slot_key=key) or ()) if derive else []
+    _stamp_derivations(conn, version_id, views, stamp)
+
+    stored = get_override(conn, version_id, slot.BEHAVIOUR_DESCRIPTION, key)
+    return BehaviourApplied(version_id=version_id, slot_key=key,
+                            bullets=p3.split_bullets(text),
+                            llm_text=(stored.llm_text or "") if stored else "",
+                            first_edit=first, views_derived=views)
+
+
 def _flowchart_entry(content: str, flowchart_id: str) -> Dict[str, Any]:
     import json
     try:

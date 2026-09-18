@@ -66,7 +66,7 @@ _PARTS: Dict[str, Tuple[str, ...]] = {
     BEHAVIOUR_OUTPUT_NAME: ("entity_key",),
     STRUCT_DESCRIPTION:    ("entity_key",),
     UNIT_DESCRIPTION:      ("unit_key",),
-    BEHAVIOUR_DESCRIPTION: ("function_id", "external_unit_function"),
+    BEHAVIOUR_DESCRIPTION: ("function_id", "external_caller_id"),
     NODE_LABEL:            ("entity_key", "node_id"),
 }
 
@@ -163,9 +163,24 @@ def for_node(entity_key: str, node_id: str) -> str:
     return make(NODE_LABEL, entity_key=entity_key, node_id=node_id)
 
 
-def for_behaviour_row(function_id: str, external_unit_function: str) -> str:
+def for_behaviour_row(function_id: str, external_caller_id: str) -> str:
+    """A behaviour row, addressed by BOTH entity keys: the current function and its external
+    caller.
+
+    Not the `externalUnitFunction` display label the row also carries. That is
+    `"<unit> - <shortName>"`, built by dropping the component, the class/namespace and the
+    parameter types, so two different callers collide on it:
+
+        CompX|UnitB|AddOperation::apply|       -> "UnitB - apply"
+        CompX|UnitB|MultiplyOperation::apply|  -> "UnitB - apply"
+
+    Used as half a slot key that would let a correction to one row silently overwrite the other,
+    because (version_id, slot_kind, slot_key) is unique. The view already learned this on the
+    other half of the pair -- `currentFunctionId` exists because the exporter used to re-find the
+    function by short name and picked the wrong one for exactly those two methods.
+    """
     return make(BEHAVIOUR_DESCRIPTION, function_id=function_id,
-                external_unit_function=external_unit_function)
+                external_caller_id=external_caller_id)
 
 
 # ---------------------------------------------------------------------------

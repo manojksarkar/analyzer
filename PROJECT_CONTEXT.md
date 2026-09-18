@@ -208,6 +208,54 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-18 (**review_update_v1 steps 3b + REQ-API-08 built; behaviourDescription now
+> has a save path, and its slot key had a collision**. `engine/review/` gains `redraw.py`,
+> `rerender.py`, `phase3_overrides.py`, `resolver.py`, `override_service.py`, `derive.py`.
+>
+> **A slot-key collision found and fixed.** `REQ-ID-01` addressed a behaviour row by
+> `(currentFunctionId, externalUnitFunction)`. The second is a DISPLAY label,
+> `f"{parts[1]} - {external_func}"`, built by dropping the component, the class/namespace and the
+> parameter types - so `AddOperation::apply` and `MultiplyOperation::apply` in one unit both
+> render `"UnitB - apply"`. As half a slot key, with `(version_id, slot_kind, slot_key)` unique,
+> a correction to one row silently overwrites the other. The view already learned this on the
+> OTHER half of the pair: `currentFunctionId` exists because the exporter used to re-find the
+> function by short name and picked the wrong one for exactly those two methods. Rows now carry
+> `externalCallerId` (the caller entity key) beside the label, and that is what addresses them.
+>
+> **Storage decisions.** A behaviour description is a list of bullets stored as ONE text joined by
+> newline, not JSON - `human_text` stays genuinely text for all seven kinds, so `REQ-ST-06` is one
+> rule and the `REQ-TD-01` pair stays sentence-against-sentence. Safe because
+> `llm_call_description._one_line` now collapses each bullet where it is generated; the LLM result
+> was only `.strip()`ed before, so internal newlines survived despite the prompt asking for one
+> line. A flowchart stays one row PER LABEL while its API is per flowchart (`REQ-API-08`).
+>
+> **`REQ-AP-05` in code.** Corrections reach Phase 3 as an INPUT via
+> `config["_analyzerTextOverrides"]`, keyed by kind, shape defined once in
+> `phase3_overrides.from_config` so the two views cannot disagree. `flowcharts` applies them after
+> the engine writes its JSON and BEFORE any PNG is drawn; `behaviourDiagram` before the manifest is
+> written. Regeneration is therefore idempotent.
+>
+> **`REQ-AP-06`**: a save re-parses nothing. `cfg_for_rendering` (flowchart/models.py) rebuilds the
+> graph `build_dot` needs from the stored dict - NOT named `deserialize_cfg`, because
+> `serialize_cfg` is lossy (`label or raw_code`; drops function_key/qualified_name/source_file), so
+> the test is DOT-equality, not a round trip.
+>
+> **`REQ-CS-04`**: a node label re-derives `testSpecs` as well as `flowcharts`, because
+> `test_steps._splice_callee` transcribes a cross-unit callee's steps in place and chains onward.
+>
+> **New invariant with a test**: only `model_store.persist_output_files` and
+> `review.rerender.write_output_row` write a `version_output_files` row;
+> `tests/unit/test_output_row_writers.py` greps engine/, api/ and tools/ for a third.
+>
+> **Two testing notes.** Dropping `raw_code` from `cfg_for_rendering` cannot fail the DOT test and
+> no test pretends it can - `serialize_cfg` writes `label or raw_code`, so the fallback never fires
+> on a reloaded graph. And the first wiring test COULD NOT FAIL: it matched
+> `"_apply_text_overrides(out_dir, config)"`, which also matches the function's own `def` line, so
+> removing the call site kept it green. It now matches the indented CALL and carries a test that
+> the matcher rejects the def line.
+>
+> Unit suite 1655 passed / 10 skipped. **Next: step 4, the export guard.**)
+
 > Updated: 2026-09-17d (**review_update_v1 - how the two non-model kinds are corrected**. Spec
 > `REQ-AP-05`, `REQ-AP-06`, `REQ-CS-04`, rewritten `REQ-AP-01` + `REQ-IM-01`; design 5.1-5.3, 7,
 > 15. **Docs only.** Resolves both open questions raised at step 3.

@@ -24,6 +24,9 @@ from review import slot
 
 # A real entity key: four parts, three pipes, and a parameter list with a comma and a star.
 ENTITY = "Garbage-Collection-Manager|MGCM_Completion|GCM_SetGcStartTime|PUINT32,UINT32 *"
+# A caller's entity key. Behaviour rows are addressed by this, not by the "<unit> - <name>"
+# display label, which two different callers can share.
+CALLER = "UHP-Backbone|UHP_BackboneCom|ns::ClearDtcm|void"
 
 
 class TestRoundTrip:
@@ -33,7 +36,7 @@ class TestRoundTrip:
                      "unit_key": "Comp|UnitA",
                      "node_id": "n3",
                      "function_id": ENTITY,
-                     "external_unit_function": "UnitB - doThing"}[n]
+                     "external_caller_id": CALLER}[n]
                  for n in slot.parts_for(kind)}
         key = slot.make(kind, **parts)
         assert slot.parse(kind, key) == parts
@@ -45,11 +48,21 @@ class TestRoundTrip:
         assert got["entity_key"] == ENTITY, "the entity key's own pipes were mis-split"
         assert got["node_id"] == "n12"
 
-    def test_a_behaviour_row_survives_a_spaced_display_name(self):
-        key = slot.for_behaviour_row(ENTITY, "UHP_BackboneCom - ClearDtcm")
+    def test_a_behaviour_row_is_addressed_by_two_entity_keys(self):
+        """Not by the `externalUnitFunction` display label. That label is
+        `"<unit> - <shortName>"`, so AddOperation::apply and MultiplyOperation::apply in one unit
+        produce the SAME string -- and a correction to one row would silently overwrite the
+        other, because (version_id, slot_kind, slot_key) is unique."""
+        key = slot.for_behaviour_row(ENTITY, CALLER)
         got = slot.parse(slot.BEHAVIOUR_DESCRIPTION, key)
         assert got["function_id"] == ENTITY
-        assert got["external_unit_function"] == "UHP_BackboneCom - ClearDtcm"
+        assert got["external_caller_id"] == CALLER
+
+    def test_two_callers_that_share_a_display_label_get_different_keys(self):
+        """The collision the key change exists to prevent, stated as a property."""
+        add = "CompX|UnitB|AddOperation::apply|"
+        mul = "CompX|UnitB|MultiplyOperation::apply|"
+        assert slot.for_behaviour_row(ENTITY, add) != slot.for_behaviour_row(ENTITY, mul)
 
     def test_two_slots_that_would_collide_under_naive_joining_do_not(self):
         """Joined with "|" these two produce the SAME string; split back, the wrong one wins."""
@@ -211,7 +224,7 @@ class TestUrlToken:
         assert "/" not in token and "|" not in token and "=" not in token
 
     def test_a_token_round_trips(self):
-        key = slot.for_behaviour_row(ENTITY, "UnitB - doThing")
+        key = slot.for_behaviour_row(ENTITY, CALLER)
         assert slot.decode(slot.encode(key)) == key
 
     def test_rubbish_is_refused(self):
