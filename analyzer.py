@@ -203,6 +203,35 @@ def cmd_generate(a) -> int:
     return 0
 
 
+
+def _refuse_stale_export(version_id: str) -> int:
+    """0 if this version is safe to export only (REQ-AP-04), 2 if it would ship stale text.
+
+    Never blocks a run it cannot judge. With no database configured there is no override table
+    to be stale against, and a guard that turns a missing optional feature into a failed export
+    would be worse than the problem it prevents.
+    """
+    try:
+        from core.db import get_engine, is_database_configured
+        if not is_database_configured():
+            return 0
+        from review.export_guard import StaleExport, assert_exportable
+        with get_engine().connect() as cx:
+            assert_exportable(cx, version_id)
+    except ImportError:
+        return 0
+    except Exception as exc:
+        if type(exc).__name__ != "StaleExport":
+            # Could not check -- say so and continue. Silence here would look like a pass.
+            print(f"note: could not check whether the views are up to date ({exc}).",
+                  file=sys.stderr)
+            return 0
+        print(str(exc), file=sys.stderr)
+        print("\n  Or re-run with --force to export anyway.", file=sys.stderr)
+        return 2
+    return 0
+
+
 def cmd_reexport(a) -> int:
     """Rebuild a version's documents from its STORED model, without parsing.
 
@@ -260,6 +289,16 @@ def cmd_reexport(a) -> int:
     checkout = _checkout_for(a.project_id, a.version_id)
     if checkout is None:
         return 2
+
+    # REQ-AP-04. `--from-phase 4` is "export only" and SKIPS Phase 3, the step that rebuilds the
+    # view rows the document is built from. A correction saved a second ago has updated the model
+    # and the override table; exporting now ships the previous wording with nothing to notice.
+    # Phases 2 and 3 re-derive on their way through, so only phase 4 needs asking.
+    if a.from_phase >= 4 and not getattr(a, "force", False):
+        rc = _refuse_stale_export(a.version_id)
+        if rc:
+            return rc
+
     argv = ["--config", cfg, "--version-id", a.version_id, "--project-id", a.project_id,
             "--model-root", os.path.join(adir, "model"),
             "--output-root", os.path.join(adir, "output"),
@@ -592,6 +631,9 @@ def build_parser() -> argparse.ArgumentParser:
                        description=cmd_reexport.__doc__)
     s.add_argument("--project-id", required=True)
     s.add_argument("--version-id", required=True)
+    s.add_argument("--force", action="store_true",
+                   help="export even when a correction is newer than the derived views "
+                        "(REQ-AP-04); the document will carry the previous text")
     s.add_argument("--from-phase", type=int, default=3, choices=(2, 3, 4),
                    help="2 = re-derive (units, components, summaries) then views + export; "
                         "3 = views + export (default); 4 = export only")

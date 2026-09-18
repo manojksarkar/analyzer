@@ -208,6 +208,45 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-18b (**review_update_v1 step 4 - the export guard; plus a merge handover doc**.
+> `engine/review/export_guard.py`, a stamp in `incremental/store.py::capture_output`, a check in
+> `analyzer.py reexport`.
+>
+> **`REQ-AP-04`.** `reexport --from-phase 4` is "export only" and SKIPS Phase 3 - the step that
+> rebuilds the view rows the document is built from. A correction saved a second earlier has moved
+> the model and the override table; the export then ships the previous wording with nothing to
+> notice. The guard is a QUERY over stored facts, not a flag:
+> `max(text_overrides.updated_at) > min(view_derivations.derived_at)` => stale. So a future write
+> path that forgets to re-derive still cannot slip past it.
+>
+> **The baseline had to be created.** Nothing wrote `view_derivations` except the override path, so
+> the first correction to any version would have reported it stale for ever.
+> `capture_output` now stamps it - the one point Phase-3 output reaches the database, so every
+> ordinary run has a baseline. It writes `view_name = "*"` (`export_guard.PIPELINE_ALL`) for the
+> whole group: Phase 3 is a subprocess and the capture point does not know which individual views
+> ran, so naming them would invent precision this code does not have. `min(derived_at)` is correct
+> either way.
+>
+> **Absence of evidence counts as stale**: corrections with no derivation row at all is not proof
+> of freshness. A guard that reads "no data" as "fine" is the guard that does not guard.
+>
+> Only phase 4 is gated - phases 2 and 3 re-derive on the way through, so refusing them would block
+> the command that fixes the problem. `--force` exports anyway. With no database configured the
+> guard returns 0 rather than failing: turning a missing optional feature into a failed export
+> would be worse than the problem.
+>
+> Timestamps are normalised to UTC before comparing - SQLite returns naive datetimes where Postgres
+> returns aware ones, and comparing the two raises TypeError, which inside an export path reads as
+> a crash rather than as the stale-or-not answer.
+>
+> **New: `docs/design/REVIEW_UPDATE_HANDOVER.md`** - written for whoever merges this branch into
+> Manoj's. Migration chain (0009-0011 on top of 0008, and what to do if develop grows its own
+> 0009), the merge conflict surface file by file, the seven invariants that break silently with
+> the test that catches each, the two pre-existing defects fixed along the way, and how to verify
+> after the merge. Linked from README.
+>
+> Unit suite 1673 passed / 10 skipped. **Next: step 5, API + undo.**)
+
 > Updated: 2026-09-18 (**review_update_v1 steps 3b + REQ-API-08 built; behaviourDescription now
 > has a save path, and its slot key had a collision**. `engine/review/` gains `redraw.py`,
 > `rerender.py`, `phase3_overrides.py`, `resolver.py`, `override_service.py`, `derive.py`.

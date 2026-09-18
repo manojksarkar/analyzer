@@ -68,6 +68,17 @@ def _same_dir(a: str, b: str) -> bool:
     return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 
 
+def _stamp_derivation(cx, version_id: str) -> None:
+    """Record a Phase-3 derivation for the export guard (REQ-AP-04).
+
+    Kept out of `persist_output_files` on purpose: that function's job is the rows, and the guard
+    is a separate fact about when they were produced. Imported inside the call so `engine/review/`
+    is not a load-time dependency of the store.
+    """
+    from review.export_guard import stamp_pipeline_derivation
+    stamp_pipeline_derivation(cx, version_id)
+
+
 class ArtifactStore(ABC):
     """Version-keyed artifact storage. `proj_root` (workspaces/<pid>) is set by subclasses and
     backs the shared file-area methods (config / manifest / output) below."""
@@ -336,6 +347,12 @@ class PgStore(ArtifactStore):
             from incremental.model_store import persist_output_files
             with self.engine.begin() as cx:
                 persist_output_files(cx, version_id, output_dir)
+                # REQ-AP-04's baseline: when this version's output was last derived. Recorded
+                # here because this is the one point Phase-3 output reaches the database, so
+                # every ordinary run has a baseline -- not only versions somebody corrected.
+                # Without it the first correction to any version would report it stale for
+                # ever, since there would be nothing to compare against.
+                _stamp_derivation(cx, version_id)
         except Exception:                                    # best-effort: disk output is intact
             pass
         return captured

@@ -502,7 +502,22 @@ if stale:
 ```
 
 `reexport --from-phase 4` is documented as *"export only"* and **skips Phase 3** — the step that
-rebuilds the view rows from the model. Without this guard it ships the previous text, silently.
+rebuilds the view rows from the model. Only phase 4 is gated: phases 2 and 3 re-derive on the way
+through, so refusing them would block the very command that fixes the problem. `--force` exports
+anyway, because a guard with no override is one people route around by other means.
+
+**The baseline.** `view_derivations` has to be written by ordinary runs, not only by the override
+path, or the first correction to any version would report it stale for ever — there would be
+nothing to compare against. `incremental/store.py::capture_output` stamps it, that being the one
+point Phase-3 output reaches the database. It writes `view_name = "*"` (`export_guard.PIPELINE_ALL`)
+for the whole group: Phase 3 runs as a subprocess and the capture point does not know which
+individual views ran, so naming them there would invent precision this code does not have. The
+guard needs `min(derived_at)`, which is correct either way.
+
+**Absence of evidence counts as stale.** Corrections with no derivation row at all is not proof of
+freshness. A guard that reads "no data" as "fine" is the guard that does not guard.
+
+**Pending renders are not part of the check yet** — `render_jobs` arrives with step 7. Without this guard it ships the previous text, silently.
 Moving output into the database does not fix it: it is still the row Phase 3 wrote last time.
 
 The guard is a **check, not an assumption**. Even if a future change adds a write path that forgets
@@ -630,7 +645,7 @@ Each step leaves the tree working and is independently useful.
 | 2 | ~~Schema + migration + `slot.py`~~ **DONE** | nothing else compiles without addressing |
 | 3 | ~~`override_service` — write + re-derive, no cascade~~ **DONE, 5 of 7 kinds** | the smallest end-to-end slice: edit → HTML → DOCX |
 | 3b | **A model home for `nodeLabel` and `behaviourDescription`** | now blocking: it gates 2 of 7 kinds, the `REQ-ID-02` shape write, and the whole of `REQ-API-08` |
-| 4 | The export guard | closes the `--from-phase 4` hole; independently valuable |
+| 4 | ~~The export guard~~ **DONE** | closes the `--from-phase 4` hole; independently valuable |
 | 5 | API + undo, incl. the flowchart endpoint ([§11.1](#111-the-flowchart-endpoint)) | the UI can be built against it |
 | 6 | Cascade | correctness improvement on a working feature |
 | 7 | Images | the slowest and most isolated part |
