@@ -208,6 +208,50 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-18 (**a static member written through a FIELD is now covered** — branch
+> `fix/swe3-review-v1`, **UNCOMMITTED**). `StatCounters::s_counts.inserts++` — a void function whose only
+> effect is bumping a counter inside a struct-typed static member — had no fixture: every static-member case
+> in `SampleCppProject/Layer1/Diag/ClassStatics.*` named the member directly (`s_publicCount++`). Added the
+> aggregate type `StatCounts`, the member `StatCounters::s_counts`, and four void functions covering
+> postfix bump / plain assign / compound assign / read-only (`statInsertCache`, `statPrimeCache`,
+> `statAddCacheHits`, `statReadCacheHits`), plus `tests/unit/test_class_static_field_writes.py` (12 tests,
+> parsing the real fixture file so it cannot drift). **Result: the path already worked** — the
+> `MEMBER_REF_EXPR` branch (`parser.py:1958`) recurses into its base with `is_write` preserved, so the write
+> reaches the static member through `.inserts`. Verified end-to-end, not just in the parser: project
+> `cstatic-field` version `f1` stores `direction=In`, `direction_reason="In: writes global(s) s_counts
+> directly."` and a `global_access`/`write` edge. Both 3.17-era parser commits are load-bearing for it —
+> without `17ae2dc` the postfix `++` is not a write, without `a532cf6` the static member is not a global;
+> either missing yields `Out`. **Pre-existing defect found while wiring the test, now FIXED:**
+> `statBumpPrivate()` is a free function writing the `private` `StatCounters::s_privateSecret` — an access
+> violation, so the translation unit did not compile, and those files are in
+> `compile_commands.core1.example.json`. Clang error-recovers and still hands the walker the write, which is
+> why every test passed against an invalid fixture. Added `friend void statBumpPrivate(void);` to the class:
+> it grants exactly that one function access and leaves the member **private**, so `_global_visibility` still
+> excludes it from the interface table, which is the case the fixture exists to test (making the member
+> public would compile and silently delete the test's purpose). The test now asserts **no** clang error of
+> any kind — the fixture must compile, not merely parse. Gate: `pytest --skip-pipeline` **1929 passed,
+> 33 skipped**. Note for direction work: `direction` is
+> derived deterministically in `model_deriver.main()`, so set `llm.descriptions`/`llm.behaviourNames` false
+> — the LLM was 258s of a 384s run and changed nothing.)
+
+> Updated: 2026-09-18 (**DB debugging reference added — [docs/design/DB_SCHEMA.md](docs/design/DB_SCHEMA.md)**,
+> docs-only, no code change). ER diagrams (Mermaid `erDiagram`) for the three table clusters — model core
+> (`entities`/`entity_versions`/`content_blobs`/`model_edges`), runs+versions+documents, access+inputs —
+> plus a **query cookbook every entry of which was executed against the live local Postgres** before being
+> written down: find an entity, read its blob payload, why a direction is In/Out, callers/callees +
+> recursive impact, global read/write census, two-version `source_hash` diff, reuse-index misses, LLM
+> outcome/latency breakdown, `version_output_files` reads, integrity spot-checks, sizes. Also records the
+> `entity_key` shapes (**note the trailing pipe on a no-arg function**) and repeats the empty-by-design
+> table list (`view_interface_tables`, `view_behaviour_rows`, `model_unit_diagrams`, `model_flowcharts`,
+> `macro_definitions` — see the 2026-09-0x SWE.4 entry below). One gotcha found while validating: the
+> recursive-CTE seed needs an explicit `::varchar` cast or Postgres rejects the query. README index updated.
+>
+> **Viewer (same day):** [docs/design/schema-atlas.html](docs/design/schema-atlas.html) — the same
+> content as one self-contained page: pan/zoom on each ER diagram, copy button on every query.
+> Mermaid 10.9.5 is **inlined from `node_modules`** so it renders with no network (the office box
+> may not reach a CDN or claude.ai), which costs **3.23 MB** in git. The `.md` stays the source of
+> truth; the HTML is a view of it and has to be refreshed by hand when the schema changes.
+
 > Updated: 2026-09-10 (**the project-directory walk is no longer an include-path source by default**
 > — branch `fix/swe4-review-v1`, **UNCOMMITTED**.
 >

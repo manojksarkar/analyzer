@@ -7,6 +7,7 @@ int StatCounters::s_publicCount = 0;
 int StatCounters::s_protectedMark = 0;
 int StatCounters::s_privateSecret = 0;
 int StatRegistry::s_entries = 0;
+StatCounts StatCounters::s_counts = {0, 0};
 
 // Writes a static member -> direction In.
 PUBLIC void statBumpPublic(void) {
@@ -32,6 +33,41 @@ PUBLIC void statBumpIndirect(void) {
 // Writes the member whose class is declared in a differently named header.
 PUBLIC void statBumpRegistry(void) {
     StatRegistry::s_entries++;
+}
+
+// ---------------------------------------------------------------------------------------
+// Writes that reach the static member through a FIELD. `statInsertCache` is the shape a
+// cache insert has in real firmware: void, named for what it does rather than Set/Get, and
+// its only effect is a bump of one counter inside a shared struct. Nothing else in the
+// sample covers it -- every other static-member test here names the member directly.
+// ---------------------------------------------------------------------------------------
+
+// Postfix bump of a field of a static member -> In.
+// Two things have to hold at once for this: `x++` must register as a WRITE (the operator is
+// the LAST token, not the first), and that write must be carried through `.inserts` down to
+// `s_counts`. Either one missing records a read, and the direction comes out Out.
+PUBLIC void statInsertCache(void) {
+    StatCounters::s_counts.inserts++;
+}
+
+// Plain assignment to a field -> In, and a pure write: the field is set, never consulted.
+PUBLIC void statPrimeCache(void) {
+    StatCounters::s_counts.hits = 0;
+}
+
+// Compound assignment to a field -> In, and the member is in BOTH sets: `+=` reads the old
+// value before storing the new one. Writing wins the direction; the read still has to be
+// recorded, because the SWE.4 precondition has to set the member up first.
+PUBLIC void statAddCacheHits(void) {
+    StatCounters::s_counts.hits += 2;
+}
+
+// Reads a field and writes none -> Out. The mirror of statInsertCache: same member, same
+// field access, opposite direction, so a walker that simply logged every member access as a
+// write would pass the three above and fail here.
+PUBLIC void statReadCacheHits(void) {
+    int seen = StatCounters::s_counts.hits;
+    (void)seen;
 }
 
 // Non-void return: direction is settled by the return value before globals are reached.
