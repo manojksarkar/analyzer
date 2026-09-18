@@ -254,6 +254,147 @@ def apply_override(conn,
 
 
 # ---------------------------------------------------------------------------
+# a whole flowchart in one call (REQ-API-08)
+# ---------------------------------------------------------------------------
+class FlowchartApplied(NamedTuple):
+    version_id: str
+    flowchart_id: str
+    slot_shape: str
+    applied: Sequence[str]              #: node ids written, in request order
+    first_edits: Sequence[str]
+    redrawn: Sequence[Any]              #: rerender.Redrawn, one per picture rebuilt
+    views_derived: Sequence[str]
+
+
+def apply_flowchart_overrides(conn,
+                              version_id: str,
+                              flowchart_id: str,
+                              labels: Dict[str, str],
+                              *,
+                              user_id: Optional[str] = None,
+                              now: Optional[datetime.datetime] = None,
+                              history_depth: Optional[int] = None,
+                              output_dir: Optional[str] = None,
+                              project_root: Optional[str] = None,
+                              derive: Optional[Callable[..., Sequence[str]]] = None
+                              ) -> FlowchartApplied:
+    """Save the corrected labels of one flowchart (`REQ-API-08`).
+
+    `labels` is `{node_id: text}` and carries **only what the reviewer changed**. Sending a stale
+    copy of an untouched label would overwrite a correction someone else made to that label
+    seconds earlier, and nothing here could tell that from a deliberate revert — `REQ-API-07`'s
+    "last write wins" was agreed per slot, and this is what keeps it meaning that.
+
+    **All or nothing.** Every label is validated before any is written, so one bad node fails the
+    call and the picture is never rebuilt from a half-applied edit.
+
+    A node label is not a model field (`REQ-AP-05`), so this does not go through `apply_override`:
+    there is nothing in the model to write. The override table is the source, and Phase 3 is handed
+    it as an input.
+    """
+    from review import rerender
+
+    if not labels:
+        raise OverrideError("no labels to apply")
+
+    stamp = now or datetime.datetime.now(datetime.timezone.utc)
+    depth = DEFAULT_HISTORY_DEPTH if history_depth is None else int(history_depth)
+    if depth < 1:
+        raise OverrideError("history depth must be at least 1; got %r" % history_depth)
+
+    # --- validate the text, before anything is read -------------------------
+    blank = sorted(n for n, t in labels.items() if not (t or "").strip())
+    if blank:
+        raise EmptyText("%s: empty text for node(s) %s" % (flowchart_id, ", ".join(blank)))
+
+    found = rerender.find_flowchart_row(conn, version_id, flowchart_id)
+    if not found:
+        raise SlotUnknown("no flowchart %s in version %s" % (flowchart_id, version_id))
+    _rel_path, _unit, content = found
+
+    entry = _flowchart_entry(content, flowchart_id)
+    cfg = entry.get("cfg") or {}
+    current = {str(n.get("id")): str(n.get("label") or "")
+               for n in (cfg.get("nodes") or []) if isinstance(n, dict) and n.get("id")}
+
+    # --- validate the nodes, still before anything is written ---------------
+    missing = sorted(n for n in labels if n not in current)
+    if missing:
+        raise SlotUnknown("%s has no node(s) %s" % (flowchart_id, ", ".join(missing)))
+
+    # Read once, stamped onto every row of this flowchart, so they cannot disagree about which
+    # graph they were written against (REQ-ID-02).
+    shape = slot.cfg_shape(current.keys())
+
+    applied, first_edits = [], []
+    for node_id, text in labels.items():
+        key = slot.for_node(flowchart_id, node_id)
+        first = _upsert_override(conn, version_id, slot.NODE_LABEL, key,
+                                 human_text=(text or "").strip(),
+                                 llm_fallback=current.get(node_id, ""),
+                                 user_id=user_id, stamp=stamp, slot_shape=shape)
+        _append_history(conn, version_id, slot.NODE_LABEL, key, (text or "").strip(),
+                        user_id, stamp, depth)
+        applied.append(node_id)
+        if first:
+            first_edits.append(node_id)
+
+    redrawn = rerender.redraw_flowchart(conn, version_id, flowchart_id,
+                                        {n: (labels[n] or "").strip() for n in applied},
+                                        output_dir=output_dir, project_root=project_root)
+
+    # One derivation for the whole call, however many labels it carried, and it must cover the
+    # component's SWE.4 specs as well as the flowchart (REQ-CS-04).
+    views = list(derive(version_id=version_id, slot_kind=slot.NODE_LABEL,
+                        flowchart_id=flowchart_id) or ()) if derive else []
+    _stamp_derivations(conn, version_id, views, stamp)
+
+    return FlowchartApplied(version_id=version_id, flowchart_id=flowchart_id, slot_shape=shape,
+                            applied=applied, first_edits=first_edits, redrawn=redrawn,
+                            views_derived=views)
+
+
+def _flowchart_entry(content: str, flowchart_id: str) -> Dict[str, Any]:
+    import json
+    try:
+        entries = json.loads(content or "[]")
+    except ValueError:
+        raise SlotUnknown("stored flowchart JSON is unreadable") from None
+    for e in entries if isinstance(entries, list) else ():
+        if isinstance(e, dict) and e.get("functionKey") == flowchart_id:
+            return e
+    raise SlotUnknown("no flowchart %s in the stored output" % flowchart_id)
+
+
+def _upsert_override(conn, version_id, slot_kind, slot_key, *, human_text, llm_fallback,
+                     user_id, stamp, slot_shape=None) -> bool:
+    """Write one override row. Returns whether this was the slot's first edit.
+
+    `llm_fallback` is used as `llm_text` only on that first edit. On a later one the row already
+    holds the original and it is left alone — re-reading the current text would replace the LLM's
+    words with the human's previous words (`REQ-ST-03`).
+    """
+    existing = conn.execute(
+        select(s.text_overrides.c.llm_text)
+        .where(s.text_overrides.c.version_id == version_id,
+               s.text_overrides.c.slot_kind == slot_kind,
+               s.text_overrides.c.slot_key == slot_key)).first()
+    values = {"human_text": human_text, "is_orphaned": False, "updated_by": user_id,
+              "updated_at": stamp, "slot_shape": slot_shape}
+    if existing is None:
+        conn.execute(insert(s.text_overrides).values(
+            version_id=version_id, slot_kind=slot_kind, slot_key=slot_key,
+            llm_text=llm_fallback, **values))
+        return True
+    conn.execute(update(s.text_overrides)
+                 .where(s.text_overrides.c.version_id == version_id,
+                        s.text_overrides.c.slot_kind == slot_kind,
+                        s.text_overrides.c.slot_key == slot_key)
+                 .values(**values))
+    return False
+
+
+# ---------------------------------------------------------------------------
 # history
 # ---------------------------------------------------------------------------
 def _append_history(conn, version_id, slot_kind, slot_key, text, user_id, stamp, depth) -> int:

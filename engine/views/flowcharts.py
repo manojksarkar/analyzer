@@ -446,6 +446,33 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
         "impacted_units": impacted_units
     }
 
+def _apply_text_overrides(out_dir, config) -> int:
+    """Put reviewers' corrected node labels into this run's flowchart JSON (REQ-AP-05).
+
+    The corrections arrive as `config["_analyzerTextOverrides"]`, a
+    `{flowchart_id: {node_id: text}}` map the caller loaded from `text_overrides` — the same
+    convention as `_analyzerAllowedComponents`, so this view stays a pure function of the model
+    plus config and does not reach into a database.
+
+    Absent or empty means an ordinary run with nothing corrected, which is every project today.
+    Never fatal: a generation that has already paid for the parse and the LLM must not be lost
+    because a correction could not be applied.
+    """
+    by_flowchart = (config or {}).get("_analyzerTextOverrides") or {}
+    if not by_flowchart:
+        return 0
+    try:
+        from review.redraw import apply_to_output_dir
+        done = apply_to_output_dir(out_dir, by_flowchart)
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        log("could not apply text overrides: %s" % exc, component="flowcharts", err=True)
+        return 0
+    if done:
+        log("applied %d corrected flowchart(s) before rendering" % len(done),
+            component="flowcharts")
+    return len(done)
+
+
 def _merge_incremental_flowcharts(inc, out_dir):
     """FUNCTION-LEVEL splice (M3.6 + M3.7b): rebuild each changed file's JSON from THREE
     sources, per current function (join key = entry 'name' == functions.json qualifiedName):
@@ -1328,6 +1355,16 @@ def run(model, output_dir, model_dir, config):
     # rendering.
     if inc and inc.get("mode") == "function":
         _merge_incremental_flowcharts(inc, out_dir)
+
+    # REQ-AP-05. A node label has no model field -- it is made here, in Phase 3 -- so the
+    # override table is its source and the corrections are an INPUT to this run. Applied AFTER
+    # the engine has written its JSON and BEFORE any PNG is drawn, so the picture is right the
+    # first time and there is no second write and no re-render.
+    #
+    # Writing a correction into this output instead would be undone by the next run of Phase 3,
+    # which rebuilds the JSON from the CFG and asks the LLM for labels again -- the correction
+    # gone, with no error. That is the two-copies arrangement REQ-AP-01 exists to remove.
+    _apply_text_overrides(out_dir, config)
 
     # Always render flowcharts to PNG
 

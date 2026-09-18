@@ -15,16 +15,22 @@ changes nothing in the document.
 | `description`, `behaviourInputName`, `behaviourOutputName` | `interfaceTables` |
 | `unitDescription`, `structDescription` | `interfaceTables` |
 | `behaviourDescription` | `behaviourDiagram` |
-| `nodeLabel` | `flowcharts` |
+| `nodeLabel` | `flowcharts` **and** `testSpecs` (`REQ-CS-04`) |
 
 Scoped to one component through `config["_analyzerAllowedComponents"]`, which every view already
 honours. A view is `run(model, output_dir, model_dir, config)` and is a pure function of the
 model plus config — no LLM, no parse, no subprocess — so re-deriving one component is cheap.
 
+`nodeLabel` carries two views because a Dynamic Behaviour spec does not merely name a cross-unit
+callee — it transcribes that callee's flowchart steps in place, and chains onward. A label
+corrected in one unit therefore changes **another** unit's document (`REQ-CS-04`).
+
 ## Nothing else may write a view's output
 
-That rule is what keeps `REQ-AP-01` true. If a second writer appears, the model and the rows can
-disagree again, and the two-copies bug class is back.
+`REQ-AP-01` holds because the rows are derived. There are exactly two writers —
+`model_store.persist_output_files` and `review.rerender.write_output_row` — and
+`tests/unit/test_output_row_writers.py` fails if a third appears. If one does, the rows can say
+something their source does not and the two-copies bug class is back.
 """
 from __future__ import annotations
 
@@ -41,7 +47,12 @@ VIEWS_BY_KIND: Dict[str, Tuple[str, ...]] = {
     slot.UNIT_DESCRIPTION:      ("interfaceTables",),
     slot.STRUCT_DESCRIPTION:    ("interfaceTables",),
     slot.BEHAVIOUR_DESCRIPTION: ("behaviourDiagram",),
-    slot.NODE_LABEL:            ("flowcharts",),
+    # flowcharts AND testSpecs (REQ-CS-04). A Dynamic Behaviour spec transcribes a
+    # cross-unit callee's steps in place -- and chains onward -- so a label corrected in one
+    # unit changes ANOTHER unit's document. Re-deriving the component's specs rather than
+    # computing who transcribes whom: that view calls no LLM, so it is cheap, and correct by
+    # construction instead of correct-if-the-traversal-is-right.
+    slot.NODE_LABEL:            ("flowcharts", "testSpecs"),
 }
 
 
@@ -85,7 +96,7 @@ def make_deriver(output_dir: str,
     regenerate the view from the text the reviewer replaced, which looks exactly like the edit
     not saving.
     """
-    def _derive(*, version_id: str, slot_kind: str, location: resolver.Location) -> Sequence[str]:
+    def _derive(*, version_id: str, slot_kind: str, **_kw) -> Sequence[str]:
         from views.registry import VIEW_REGISTRY
 
         names = views_for(slot_kind)
