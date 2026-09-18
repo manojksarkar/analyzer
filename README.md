@@ -24,6 +24,7 @@ removed when the web app landed.)
 Deep engineering context (agent-facing, start here): **[PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)**.
 
 - **Architecture** — [DESIGN.md](docs/design/DESIGN.md) (model format, config, logic flow, DOCX export)
+- **Database** — [DB_SCHEMA.md](docs/design/DB_SCHEMA.md) (ER diagrams + debugging query cookbook) · [zoomable viewer](docs/design/schema-atlas.html) (offline HTML, pan/zoom diagrams)
 - **Planning** (leadership) — [ROADMAP](docs/planning/ROADMAP.md) · [doc-gen method](docs/planning/DOC_GENERATION_PLAYBOOK.md) · plans: [SWE.4](docs/planning/SWE4_PLAN.md) / [SWE.2](docs/planning/SWE2_PLAN.md) / [SYS.2](docs/planning/SYS2_PLAN.md) · [backlog](docs/BACKLOG.md)
 - **Specs** (engineering, per doc-type) — [SWE3_SPEC](docs/spec/SWE3_SPEC.md) · [SWE4_SPEC](docs/spec/SWE4_SPEC.md) · [UT export](docs/spec/UT_EXPORT_SPEC.md) · [test inventory](docs/spec/TEST_INVENTORY.md)
 - **Wikis** (client-facing, "how each section is generated") — [SWE3_WIKI](docs/spec/SWE3_WIKI.md) · [SWE4_WIKI](docs/spec/SWE4_WIKI.md)
