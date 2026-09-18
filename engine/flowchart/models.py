@@ -89,6 +89,77 @@ class FlowchartResult:
     cfg: Optional[Dict] = None
 
 
+def cfg_for_rendering(data: Dict) -> "ControlFlowGraph":
+    """A stored CFG dict -> the graph the DOT builder needs. **Not** the inverse of
+    `serialize_cfg`.
+
+    Deliberately NOT called `deserialize_cfg`, because `serialize_cfg` is lossy and a function
+    claiming to invert it would be lying to the next caller: `label` is written as
+    `n.label or n.raw_code`, so the two collapse into one field, and `function_key`,
+    `qualified_name`, `source_file` and the CFG's own line numbers are not written at all (they
+    live one level up, on the surrounding flowchart-JSON entry).
+
+    What this DOES restore is everything `dot_builder.build_dot` reads, which was checked rather
+    than assumed: `nodes`, `edges`, `entry_node_id`, and per node `node_id`, `node_type`, `label`
+    and `raw_code`. All of those are stored, so a picture drawn from the reloaded graph is
+    identical to one drawn from the live graph — pinned by a test that compares the two DOT
+    strings.
+
+    Used when a reviewer corrects a node label: the correction patches the stored CFG and the DOT
+    is regenerated from it. The DOT is never edited directly — labels are line-wrapped and escaped
+    on the way in, so patching the text would put those rules in a second place to drift from the
+    first, and the SWE.4 Test Steps read the CFG rather than the DOT.
+
+    Fields this cannot know are left at their defaults. Anything needing them must read the
+    flowchart-JSON entry that carries them.
+    """
+    data = data or {}
+    nodes: Dict[str, CfgNode] = {}
+    for n in data.get("nodes") or []:
+        if not isinstance(n, dict) or not n.get("id"):
+            continue
+        # Carried because it is there, not because the picture needs it: `serialize_cfg` writes
+        # `label or raw_code`, so the stored `label` is already non-empty whenever raw_code was,
+        # and `build_dot`'s `label or raw_code` fallback never fires on a reloaded graph. No test
+        # can observe this field through the DOT -- that is a property of the format, not a gap.
+        raw = n.get("rawCode") or ""
+        nodes[str(n["id"])] = CfgNode(
+            node_id=str(n["id"]),
+            node_type=_node_type(n.get("type")),
+            raw_code=raw,
+            start_line=int(n.get("line") or 0),
+            end_line=int(n.get("endLine") or 0),
+            # `label or raw_code` on the way out means a node the LLM never labelled is stored
+            # with its source line as the label. Reading it straight back keeps the picture the
+            # same, which is what matters here; it is the training data that must tell them
+            # apart, not the renderer.
+            label=n.get("label") or "",
+        )
+    edges = [CfgEdge(source=str(e.get("source") or ""), target=str(e.get("target") or ""),
+                     label=e.get("label"))
+             for e in (data.get("edges") or [])
+             if isinstance(e, dict) and e.get("source") and e.get("target")]
+    return ControlFlowGraph(
+        function_key="", qualified_name="", source_file="", start_line=0, end_line=0,
+        nodes=nodes, edges=edges,
+        entry_node_id=str(data.get("entry") or ""),
+        exit_node_ids=[str(x) for x in (data.get("exits") or [])],
+    )
+
+
+def _node_type(value) -> NodeType:
+    """A stored `type` string -> NodeType, falling back to ACTION.
+
+    An unknown type means the stored graph predates a node kind this build knows, or the reverse.
+    ACTION is the neutral shape: the node still appears, still connects, and the picture stays
+    readable. Raising would make one unrecognised node lose a whole flowchart.
+    """
+    try:
+        return NodeType(value)
+    except ValueError:
+        return NodeType.ACTION
+
+
 def serialize_cfg(cfg: "ControlFlowGraph") -> Dict:
     """ControlFlowGraph -> JSON-serializable dict.
 
