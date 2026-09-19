@@ -218,6 +218,40 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-19d (**review_update_v1 step 9 - `REQ-PRE-02`, the export path**. Two holes,
+> both quiet, both closed; a third named and left.
+>
+> **An export-only run read whatever was on disk.** `--from-phase 4` SKIPS Phase 3, so it exported
+> this machine's text files - while the DATABASE is what a correction updates
+> (`rerender.write_output_row` writes the row, not the file). Correct a flowchart label, re-export,
+> and the document came from the previous text on a machine that was simply never told.
+> `run.py::_restore_output_from_db` now restores the version's stored text before Phase 4, so the
+> exporter, the flowchart engine and the SWE.4 views all read database content. Only for phase 4: a
+> run that includes Phase 3 rewrites `output/` from the model anyway.
+>
+> **The output capture swallowed its own failures.** `except Exception: pass` under the note
+> "best-effort: disk output is intact" - and the disk being intact is exactly what made it
+> dangerous. The document served from the database, or from another node, kept the previous render
+> while that machine looked correct. Now reported at ERROR level, and still not fatal: the
+> documents are already produced.
+>
+> **What landed is verified.** A returned count is not proof - it counts rows offered, not rows
+> that survived. `_verify_output_capture` compares text files on disk against rows written and
+> warns on a divergence. Binaries are excluded (PNG/DOCX stay as files, D-14) or every run would
+> report one; the walk is recursive, because views write into `output/<group>/`.
+>
+> **Named and left:** the three readers still take a PATH rather than a database handle -
+> `export_docx(json_path=...)`, the flowchart engine's `--interface-json`, `test_steps._load_cfgs`.
+> Restoring first makes them read the right CONTENT; rewiring them to read rows directly is what
+> would let `output/` hold only `.png` and `.docx`, which is REQ-PRE-02's first line. That touches
+> the DOCX exporter and the flowchart subprocess, so it is its own piece of work.
+>
+> Four reverts checked. 14 tests. Unit + API suites 2042 passed / 10 skipped.
+>
+> **THE FEATURE IS FUNCTIONALLY COMPLETE.** All seven kinds can be corrected; corrections reach the
+> document, survive a regeneration, carry into the next version, invalidate what they should, and
+> block a stale export.)
+
 > Updated: 2026-09-19c (**review_update_v1 - both queues are now DRAINED by a run**. The
 > obligations recorded in steps 6 and 7 were being collected by nobody, which is a slow lie: the
 > document stays stale while a table says somebody will deal with it.

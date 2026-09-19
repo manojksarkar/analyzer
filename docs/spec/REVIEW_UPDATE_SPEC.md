@@ -678,11 +678,25 @@ Largely done for **storage** — `persist_output_files` already stores `.json .m
 .svg .html`. Not done for **reading**: the DOCX exporter takes a `json_path`, the flowchart engine
 takes `--interface-json`, and the SWE.4 views read the flowcharts directory.
 
-Note the storage path swallows its own failures (`except Exception: pass` — *"best-effort, disk
-output is intact"*), so disk and database can disagree today with nothing reporting it.
+**Done for the export path.** `--from-phase 4` skips Phase 3, so it exported whatever text
+happened to be in `output/` on that machine — while the database is what a correction updates
+(`rerender.write_output_row` writes the row, not the file). An export-only run now restores the
+version's stored text first, so the exporter, the flowchart engine and the SWE.4 views all read
+database content. The files are a materialisation of the database rather than an independent copy.
 
-**Verification:** `tests/live/test_output_in_db.py` passes, and an export succeeds with no `.json`
-or `.mmd` under `output/`.
+**Done for the silent divergence.** The storage path used to swallow its own failures
+(`except Exception: pass` — *"best-effort, disk output is intact"*), and the disk being intact was
+exactly what made it dangerous: the document served from the database, or from another node, kept
+the previous render while that machine looked correct. The failure is now reported at error level,
+and what landed is verified — text files on disk against rows written.
+
+**Still open:** the three readers still take a path rather than a database handle
+(`export_docx(json_path=…)`, the flowchart engine's `--interface-json`, `test_steps._load_cfgs`).
+Restoring first makes them read the right *content*; rewiring them to read rows directly would let
+`output/` hold only `.png` and `.docx`, which is what this requirement's first line asks for.
+
+**Verification:** `tests/live/test_output_in_db.py` passes; a capture failure is reported rather
+than swallowed; an export-only run restores its text from the database before Phase 4.
 
 ---
 

@@ -741,7 +741,7 @@ Each step leaves the tree working and is independently useful.
 | 8b | ~~Wire carry-forward + the Phase-3 payload into a run~~ **DONE** | the pieces were built and tested but nothing called them |
 | 7 | ~~Images~~ **DONE** | the slowest and most isolated part |
 | 8 | ~~Carry-forward into the next version~~ **DONE** | needs a second version to test against |
-| 9 | `REQ-PRE-02` — read output from the database | large, independent; removes the last disk dependency |
+| 9 | `REQ-PRE-02` — read output from the database | **export path DONE**; the three readers still take a path — see §12.2 |
 
 Steps 1 and 9 can be done by someone else in parallel — they touch different files from 2–8.
 

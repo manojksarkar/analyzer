@@ -9,8 +9,9 @@ broken, and how to check** — it does not restate the feature. For that:
 - **Chronology and the reasoning behind each decision** → root `PROJECT_CONTEXT.md`, the
   `> Updated: 2026-09-16 …` through `2026-09-18` entries
 
-Branch: `review_update_v1` · base: `origin/develop` · state at writing: build-order steps 1–8 done and WIRED INTO THE PIPELINE
-(6 is the recording half; consuming the queue is 6b), step 9 (`REQ-PRE-02`) next.
+Branch: `review_update_v1` · base: `origin/develop` · state at writing: **the feature is functionally complete**. Build-order steps 1–8 done
+and wired into the pipeline; step 9 done for the export path, with the three path-taking readers
+left (see §7).
 
 ---
 
@@ -93,6 +94,7 @@ Everything else is new files. These are the ones a merge can actually collide on
 | `engine/run_views.py` | `_with_text_overrides` before `run_views(...)`, `_retire_behaviour_regenerations` after | **medium** — two lines at named points |
 | `engine/model_deriver.py` | `_take_regeneration_queue` before the enrichment, `_retire_regeneration_queue` after | **medium** |
 | `analyzer.py` | `reexport` refuses a stale `--from-phase 4`; new `--force` | low |
+| `engine/run.py` | `_restore_output_from_db` before the phases, for `--from-phase 4` | low |
 | `engine/core/model_repo.py` | `flush(conn=None)` — joins a caller's transaction | low — additive, default unchanged |
 | `api/routes/__init__.py`, `api/main.py` | register `text_overrides_router` | low |
 | `docs/spec/REVIEW_UPDATE_API_SPEC.md` | **new** — the HTTP contract the UI is built against | none |
@@ -108,7 +110,15 @@ matters** — see §4.2.
 Each has a test. They are listed here because a merge is exactly when a guard gets dropped and
 nothing complains.
 
-### 4.1 Only two things write a `version_output_files` row
+### 4.1 The output capture must not go quiet again
+
+It used to be `except Exception: pass`, noted "best-effort: disk output is intact" — and the disk
+being intact is what made it dangerous. The document served from the database, or from another
+node, kept the previous render while that machine looked correct.
+
+→ `tests/unit/test_review_output_from_db.py::TestTheCaptureNoLongerSwallowsFailures`.
+
+### 4.2 Only two things write a `version_output_files` row
 
 `model_store.persist_output_files` and `review.rerender.write_output_row`. A third writer means the
 rows can say something the model does not — the bug class that already cost this project once
@@ -117,7 +127,7 @@ rows can say something the model does not — the bug class that already cost th
 → `tests/unit/test_output_row_writers.py` greps `engine/`, `api/` and `tools/` and fails naming any
 third writer. If you add one deliberately, add it to `ALLOWED` **with the reason**.
 
-### 4.2 The pipeline must keep calling the feature
+### 4.3 The pipeline must keep calling the feature
 
 Two one-line call sites carry the whole integration: `_carry_review_overrides` in
 `incremental/engine.py` and `_with_text_overrides` in `run_views.py`. Drop either in a merge and
@@ -127,7 +137,7 @@ versions, or stop reaching Phase 3.
 → `tests/unit/test_review_pipeline_wiring.py`, which also maps every piece of the feature to its
 caller so an unwired one is a decision rather than an oversight.
 
-### 4.3 Corrections are applied before anything is drawn
+### 4.4 Corrections are applied before anything is drawn
 
 `flowcharts.py` must call `_apply_text_overrides(out_dir, config)` **after** the incremental merge
 and **before** `render_dot_cached`. Applied later, the JSON carries the human's words and the
@@ -136,7 +146,7 @@ picture carries the LLM's.
 → `tests/unit/test_review_phase3_input.py::TestItIsActuallyWiredIn` checks both the call and its
 position.
 
-### 4.4 Every editable kind is accounted for
+### 4.5 Every editable kind is accounted for
 
 Each of `slot.ALL_KINDS` is either model-backed (`resolver._HOMES`) or applied at derive time
 (`phase3_overrides.APPLIED_AT_DERIVE`) — never both, never neither. A kind in neither saves
@@ -145,7 +155,7 @@ successfully and never appears in the document.
 → `tests/unit/test_review_phase3_overrides.py::TestEveryKindIsAccountedFor`. Adding an eighth kind
 fails three tests across two modules.
 
-### 4.5 The slot-key separator is `0x01`, not `0x1f`
+### 4.6 The slot-key separator is `0x01`, not `0x1f`
 
 Python counts `0x1c`–`0x1f` as whitespace, so `.strip()` deletes them — and a slot key travels
 through request bodies and form fields that trim. `hashing.py` uses `0x1f` legitimately (a hash
@@ -153,21 +163,21 @@ input is never trimmed); do not copy it here.
 
 → `tests/unit/test_review_slot.py::TestTheSeparatorIsNotWhitespace`.
 
-### 4.6 `llm_text` is captured once and never re-read
+### 4.7 `llm_text` is captured once and never re-read
 
 By the second edit the model holds the *human's* previous text. Re-reading it would replace the LLM
 original with human prose, leaving nothing to undo to and a training pair that is human-vs-human.
 
 → `test_review_override_service.py::test_the_llm_original_survives_a_second_edit`.
 
-### 4.7 Ordinary runs must keep stamping `view_derivations`
+### 4.8 Ordinary runs must keep stamping `view_derivations`
 
 `capture_output` records when Phase-3 output was produced. Remove that and the export guard has no
 baseline, so the first correction to any version makes it permanently unexportable.
 
 → `tests/unit/test_review_export_guard.py::TestTheStamp`.
 
-### 4.8 A model write from the API must flush
+### 4.9 A model write from the API must flush
 
 `ModelAccess.save()` calls `DbRepository.flush()`. `write()` only **buffers** — without the flush a
 correction returns 200 and stores nothing. The flush is handed the request's connection so the
@@ -176,7 +186,7 @@ model write and the override row land in one transaction (`REQ-AP-02`).
 → `tests/api/test_review_overrides_api.py::TestUpdatingASlot::test_the_model_really_moved` is the
 only test that catches this; reverting the flush leaves every other HTTP test green.
 
-### 4.9 The API spec and the router must agree
+### 4.10 The API spec and the router must agree
 
 `docs/spec/REVIEW_UPDATE_API_SPEC.md` §3 is what the UI is built against. A documented route
 that is not served becomes a bug report from someone else's sprint.
@@ -184,7 +194,7 @@ that is not served becomes a bug report from someone else's sprint.
 → `tests/unit/test_review_api_contract.py::TestTheDocumentedContractExists` parses the spec
 table and compares it with the registered routes.
 
-### 4.10 A behaviour row is addressed by two entity keys
+### 4.11 A behaviour row is addressed by two entity keys
 
 `(currentFunctionId, externalCallerId)` — **never** `externalUnitFunction`, which is a display
 label two different callers can share (`AddOperation::apply` and `MultiplyOperation::apply` both
@@ -234,6 +244,10 @@ cascade, image rendering as a background job, carry-forward into the next versio
 
 Two consequences worth knowing:
 
+- **`REQ-PRE-02` is half done.** An export-only run restores its text from the database first, so
+  every reader gets database content — but `export_docx(json_path=…)`, the flowchart engine's
+  `--interface-json` and `test_steps._load_cfgs` still take a path. Rewiring them to read rows
+  directly is what would let `output/` hold only `.png` and `.docx`.
 - **Both queues are drained by a run, not a timer.** A pending picture is drawn when a host with
   the output tree captures a version's output; a queued regeneration is rebuilt by Phase 2 or
   Phase 3. Between a correction and the next run the work is *owed and reported* — which is why

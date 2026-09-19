@@ -68,6 +68,32 @@ def _same_dir(a: str, b: str) -> bool:
     return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 
 
+def _verify_output_capture(version_id: str, output_dir: str, stored: int) -> None:
+    """Check that what is on disk actually reached the database (`REQ-PRE-02`).
+
+    `persist_output_files` returning a count is not proof: it counts rows it *offered*, and a
+    partial write, a filtered file or an encoding it could not read would each leave the two
+    stores disagreeing. The cheap check is the one that matters -- how many text files exist,
+    against how many rows were written.
+
+    Reported, never raised. The run has its documents; the point is that a divergence is
+    something somebody is TOLD about rather than something they discover from a stale document
+    weeks later.
+    """
+    from core.model_store import _OUTPUT_TEXT_EXTS
+
+    if not os.path.isdir(output_dir):
+        return
+    on_disk = sum(1 for root, _d, files in os.walk(output_dir) for f in files
+                  if f.lower().endswith(_OUTPUT_TEXT_EXTS))
+    if on_disk != stored:
+        from core.logging_setup import get_logger
+        get_logger("incremental").warning(
+            "output capture stored %d row(s) for version %s but %d text file(s) are on disk. "
+            "The database and the disk disagree; readers that use the database will serve the "
+            "difference.", stored, version_id, on_disk)
+
+
 def _draw_pending_pictures(engine, version_id: str, output_dir: str) -> None:
     """Render the flowchart pictures this version is still waiting on (`REQ-IM-02`).
 
@@ -368,15 +394,29 @@ class PgStore(ArtifactStore):
         try:
             from incremental.model_store import persist_output_files
             with self.engine.begin() as cx:
-                persist_output_files(cx, version_id, output_dir)
+                stored = persist_output_files(cx, version_id, output_dir)
                 # REQ-AP-04's baseline: when this version's output was last derived. Recorded
                 # here because this is the one point Phase-3 output reaches the database, so
                 # every ordinary run has a baseline -- not only versions somebody corrected.
                 # Without it the first correction to any version would report it stale for
                 # ever, since there would be nothing to compare against.
                 _stamp_derivation(cx, version_id)
-        except Exception:                                    # best-effort: disk output is intact
-            pass
+            _verify_output_capture(version_id, output_dir, stored)
+        except Exception as exc:
+            # NOT swallowed. This used to be `except Exception: pass` under the note
+            # "best-effort: disk output is intact" -- and the disk IS intact, which is exactly
+            # what made it dangerous. The document served from the database, or from any other
+            # node, silently kept the PREVIOUS render while this machine looked correct.
+            #
+            # Still not fatal: the run has produced its documents and they are on disk. But a
+            # divergence between the two stores is now something somebody is told about rather
+            # than something they discover (REQ-PRE-02).
+            from core.logging_setup import get_logger
+            get_logger("incremental").error(
+                "output capture FAILED for version %s: %s. The documents are on disk, but the "
+                "database still holds the previous render -- readers that use it (the API, the "
+                "HTML view, another node) will serve stale output until this is re-run.",
+                version_id, exc)
         # REQ-IM-02. A correction saved where no output tree existed left its picture owed. This
         # host has one, and has just written this version's output into it, so it is the right
         # place to pay that debt -- and the export blocks until it is paid.

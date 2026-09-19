@@ -836,6 +836,40 @@ except ValueError as e:
     log(str(e), component="run", err=True)
     sys.exit(2)
 
+def _restore_output_from_db(from_phase: int) -> None:
+    """Write this version's stored view output back to `output/` before an export-only run.
+
+    The database is the source; the files are a materialisation of it that the exporter, the
+    flowchart engine and the SWE.4 views all read. Rather than rewiring three readers -- one of
+    them the DOCX exporter -- the materialisation is refreshed, which is what
+    `model_store.restore_output_files` already exists to do.
+
+    Silent no-op when there is no version or no database: a standalone run has neither, and its
+    `output/` is the only copy there is.
+
+    Never fatal. If the restore fails the export still runs from what is on disk, which is what it
+    did before this existed -- but it is reported, because a document built from an unknown
+    vintage is worth knowing about (REQ-PRE-02).
+    """
+    if from_phase < 4:
+        return
+    try:
+        from core.run_context import version_id as _vid
+        from core.db import get_engine, is_database_configured
+        vid = _vid()
+        if not (vid and is_database_configured()):
+            return
+        from core.model_store import restore_output_files
+        with get_engine().connect() as cx:
+            n = restore_output_files(cx, vid, _paths().output_dir)
+        if n:
+            log(f"restored {n} view output file(s) from the database before exporting",
+                component="run")
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        log(f"WARNING: could not restore view output from the database ({exc}); exporting from "
+            f"whatever is in output/ on this machine", component="run", err=True)
+
+
 # --to-phase N: stop after global phase N. Drop phases mapped above N from every
 # plan (and any plan left empty). Lets the incremental engine Phase-split (run
 # parse+derive, compute impact, then resume views+export). Additive: when
@@ -853,6 +887,17 @@ if to_phase is not None:
                                       runner_from_phase=_plan.runner_from_phase))
     plans = _filtered
     log(f"--to-phase {to_phase}: running {len(plans)} plan(s) up to phase {to_phase}.", component="run")
+
+# REQ-PRE-02. An export-only run (`--from-phase 4`) SKIPS Phase 3, so it exports whatever text
+# happens to be in `output/` on this machine. That is the wrong source: the database is where the
+# view rows live, and it is what a reviewer's correction updates -- `rerender.write_output_row`
+# writes the row, not the file. Without this, correcting a flowchart label and re-exporting would
+# produce a document built from the previous text, on a machine whose disk simply had not been
+# told.
+#
+# Only for phase 4. A run that includes Phase 3 rewrites `output/` from the model anyway, and
+# restoring first would be work whose result is immediately overwritten.
+_restore_output_from_db(from_phase)
 
 runner = PhaseRunner(project_root=SCRIPT_DIR)
 total_time = 0.0
