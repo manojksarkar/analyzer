@@ -743,7 +743,7 @@ Each step leaves the tree working and is independently useful.
 | 1 | ~~`REQ-PRE-01` — descriptions into Phase 2~~ **DONE** | two of the seven slot kinds cannot exist until this lands |
 | 2 | ~~Schema + migration + `slot.py`~~ **DONE** | nothing else compiles without addressing |
 | 3 | ~~`override_service` — write + re-derive, no cascade~~ **DONE, 5 of 7 kinds** | the smallest end-to-end slice: edit → HTML → DOCX |
-| 3b | **A model home for `nodeLabel` and `behaviourDescription`** | now blocking: it gates 2 of 7 kinds, the `REQ-ID-02` shape write, and the whole of `REQ-API-08` |
+| 3b | ~~A model home for `nodeLabel` and `behaviourDescription`~~ **RESOLVED, the other way** | they keep no model field; corrections reach them as a Phase-3 input (`REQ-AP-05`, [§5.1](#51-text-that-phase-3-produces)) |
 | 4 | ~~The export guard~~ **DONE** | closes the `--from-phase 4` hole; independently valuable |
 | 5 | ~~API + undo, incl. the flowchart endpoint ([§11.1](#111-the-flowchart-endpoint))~~ **DONE** | the UI can be built against it |
 | 6 | ~~Cascade~~ **DONE (recording half)** | correctness improvement on a working feature |
@@ -907,7 +907,6 @@ drops.
 - [x] ~~**`test_steps` is re-derived too narrowly**~~ — **resolved**: a node label edit re-derives
       every SWE.4 spec in the component (`REQ-CS-04`). The spec view calls no LLM, so this is cheap
       and correct by construction rather than dependent on a transitive traversal being right.
-- [ ] Default for `llm.overrideHistoryDepth`.
 - [ ] Whether orphaned overrides need a cleanup command.
 - [ ] Approval workflow — out of scope (`REQ-API-06`'s note); the schema leaves room for a state
       column without a migration of existing rows.

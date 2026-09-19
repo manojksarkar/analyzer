@@ -747,7 +747,6 @@ than swallowed; an export-only run restores its text from the database before Ph
 
 - [ ] Approval workflow — an edit currently takes effect immediately. The intended flow (request →
       project manager approves) is **out of scope** for this version.
-- [ ] Default for **N** in [REQ-ST-04](#req-st-04--history-is-bounded-and-configurable).
 - [ ] Whether orphaned overrides ([REQ-ID-03](#req-id-03--rename-and-delete-orphan-an-override-and-it-is-kept))
       need a cleanup command, or accumulate harmlessly.
 - [x] Design document — [REVIEW_UPDATE_DESIGN](../design/REVIEW_UPDATE_DESIGN.md).
