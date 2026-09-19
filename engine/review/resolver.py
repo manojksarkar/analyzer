@@ -130,6 +130,15 @@ def write_text(model: Dict[str, Any], kind: str, key: str, text: str) -> Locatio
     return loc
 
 
+def entity_of(kind: str, key: str) -> str:
+    """The entity (or unit) id a slot key names, without caring which artifact holds it.
+
+    `_entry_key` is the private version of this; a caller outside the module needs the same answer
+    to address the entity in DERIVED output, where the model's artifact split does not exist.
+    """
+    return _entry_key(kind, key)
+
+
 def artifact_for(kind: str) -> Optional[str]:
     """The artifact a kind writes to, when there is exactly one. `None` for `description`,
     which depends on whether the key names a function or a global."""

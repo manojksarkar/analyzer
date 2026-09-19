@@ -58,9 +58,43 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 from api.db.postgres import schema as s   # noqa: E402
 
-#: `llm.overrideHistoryDepth`. Newest N human edits per slot survive; the LLM original is not
-#: counted against it because it does not live in the history table at all (REQ-ST-04).
+#: Fallback for `llm.overrideHistoryDepth`. Newest N human edits per slot survive; the LLM
+#: original is not counted against it because it does not live in the history table at all
+#: (REQ-ST-04). Used only when the version's own config does not say -- see `version_settings`.
 DEFAULT_HISTORY_DEPTH = 10
+
+
+class VersionSettings(NamedTuple):
+    """What the run that generated a version was configured with.
+
+    Read from `versions.resolved_config`, which is THAT config -- not today's. A correction made
+    now is a correction to text generated then, so its provenance is then's model and prompt
+    version (`REQ-TD-02`), and the history cap it obeys is the one that version was created under.
+    """
+    history_depth: int
+    llm_model: object
+    llm_cache_version: object
+
+
+def version_settings(conn, version_id: str) -> VersionSettings:
+    """A version's own LLM settings, falling back to the defaults.
+
+    Never raises. A version with no stored config is ordinary -- every version generated before
+    `resolved_config` existed has none -- and a missing setting must not stop somebody saving a
+    sentence.
+    """
+    try:
+        cfg = conn.execute(select(s.versions.c.resolved_config)
+                           .where(s.versions.c.id == version_id)).scalar() or {}
+        llm = (cfg.get("llm") or {}) if isinstance(cfg, dict) else {}
+        depth = llm.get("overrideHistoryDepth")
+        cache_version = str(llm.get("cacheVersion") or "").strip()
+        return VersionSettings(
+            history_depth=int(depth) if depth else DEFAULT_HISTORY_DEPTH,
+            llm_model=llm.get("model") or None,
+            llm_cache_version=int(cache_version) if cache_version.isdigit() else None)
+    except Exception:                                  # noqa: BLE001 - see docstring
+        return VersionSettings(DEFAULT_HISTORY_DEPTH, None, None)
 
 
 class OverrideError(Exception):
@@ -97,6 +131,8 @@ class Applied(NamedTuple):
     views_derived: Sequence[str]
     #: Slots whose text was built from this one and now need regenerating (REQ-CS-01).
     queued_for_regeneration: Sequence[Any] = ()
+    #: Interface-table entries whose copy of the description was brought into step.
+    tables_patched: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -223,7 +259,8 @@ def apply_override(conn,
 
     current = resolver.read_text(model, slot_kind, slot_key)
     stamp = now or datetime.datetime.now(datetime.timezone.utc)
-    depth = DEFAULT_HISTORY_DEPTH if history_depth is None else int(history_depth)
+    settings = version_settings(conn, version_id)
+    depth = settings.history_depth if history_depth is None else int(history_depth)
     if depth < 1:
         raise OverrideError("history depth must be at least 1; got %r" % history_depth)
 
@@ -245,12 +282,15 @@ def apply_override(conn,
     artifacts_written = models.save(conn)
 
     # --- the override row --------------------------------------------------
+    # REQ-TD-02. Which model and prompt version produced the text being corrected -- without
+    # them a correction cannot be interpreted after a prompt change, which is the whole reason
+    # the pair is stored at all. Taken from the VERSION's config rather than today's: the text
+    # was generated under that one.
     row = {"llm_text": llm_text, "human_text": text, "is_orphaned": False,
-           "updated_by": user_id, "updated_at": stamp}
-    if llm_model is not None:
-        row["llm_model"] = llm_model
-    if llm_cache_version is not None:
-        row["llm_cache_version"] = llm_cache_version
+           "updated_by": user_id, "updated_at": stamp,
+           "llm_model": llm_model if llm_model is not None else settings.llm_model,
+           "llm_cache_version": (llm_cache_version if llm_cache_version is not None
+                                 else settings.llm_cache_version)}
 
     if first_edit:
         conn.execute(insert(s.text_overrides).values(
@@ -266,6 +306,20 @@ def apply_override(conn,
                      .values(**row))
 
     seq = _append_history(conn, version_id, slot_kind, slot_key, text, user_id, stamp, depth)
+
+    # --- the derived copy --------------------------------------------------
+    # The document does not read a description from the model: the interface-tables view writes a
+    # COPY into its own output, and both the DOCX exporter and the HTML view read that copy. The
+    # model write above is therefore not enough on its own -- without this the page keeps showing
+    # the LLM's words while the model holds the human's.
+    #
+    # Only `description` needs it. A unit or struct description and the behaviour names are read
+    # from the model directly (`docx_exporter._load_model_json`), so they are already current.
+    tables_patched = 0
+    if slot_kind == slot.DESCRIPTION:
+        from review import rerender as _rr
+        tables_patched = _rr.patch_interface_tables(
+            conn, version_id, resolver.entity_of(slot_kind, slot_key), text)
 
     # --- the cascade -------------------------------------------------------
     # Text generated FROM this text is now describing wording the human has rejected. The
@@ -288,7 +342,8 @@ def apply_override(conn,
                    llm_text=llm_text or "", human_text=text, previous_text=previous_text,
                    location=location, seq=seq, first_edit=first_edit,
                    artifacts_written=artifacts_written, views_derived=views,
-                   queued_for_regeneration=[(d.slot_kind, d.slot_key) for d in queued])
+                   queued_for_regeneration=[(d.slot_kind, d.slot_key) for d in queued],
+                   tables_patched=tables_patched)
 
 
 # ---------------------------------------------------------------------------
@@ -338,7 +393,8 @@ def apply_flowchart_overrides(conn,
         raise OverrideError("no labels to apply")
 
     stamp = now or datetime.datetime.now(datetime.timezone.utc)
-    depth = DEFAULT_HISTORY_DEPTH if history_depth is None else int(history_depth)
+    settings = version_settings(conn, version_id)
+    depth = settings.history_depth if history_depth is None else int(history_depth)
     if depth < 1:
         raise OverrideError("history depth must be at least 1; got %r" % history_depth)
 
@@ -372,7 +428,8 @@ def apply_flowchart_overrides(conn,
         first = _upsert_override(conn, version_id, slot.NODE_LABEL, key,
                                  human_text=(text or "").strip(),
                                  llm_fallback=current.get(node_id, ""),
-                                 user_id=user_id, stamp=stamp, slot_shape=shape)
+                                 user_id=user_id, stamp=stamp, slot_shape=shape,
+                                 settings=settings)
         _append_history(conn, version_id, slot.NODE_LABEL, key, (text or "").strip(),
                         user_id, stamp, depth)
         applied.append(node_id)
@@ -453,7 +510,8 @@ def apply_behaviour_override(conn,
         raise EmptyText("a behaviour description may not be empty")
 
     stamp = now or datetime.datetime.now(datetime.timezone.utc)
-    depth = DEFAULT_HISTORY_DEPTH if history_depth is None else int(history_depth)
+    settings = version_settings(conn, version_id)
+    depth = settings.history_depth if history_depth is None else int(history_depth)
     if depth < 1:
         raise OverrideError("history depth must be at least 1; got %r" % history_depth)
 
@@ -471,7 +529,7 @@ def apply_behaviour_override(conn,
     first = _upsert_override(conn, version_id, slot.BEHAVIOUR_DESCRIPTION, key,
                              human_text=text,
                              llm_fallback=p3.join_bullets(row.get("behaviorDescription")),
-                             user_id=user_id, stamp=stamp)
+                             user_id=user_id, stamp=stamp, settings=settings)
     _append_history(conn, version_id, slot.BEHAVIOUR_DESCRIPTION, key, text,
                     user_id, stamp, depth)
 
@@ -501,7 +559,7 @@ def _flowchart_entry(content: str, flowchart_id: str) -> Dict[str, Any]:
 
 
 def _upsert_override(conn, version_id, slot_kind, slot_key, *, human_text, llm_fallback,
-                     user_id, stamp, slot_shape=None) -> bool:
+                     user_id, stamp, slot_shape=None, settings=None) -> bool:
     """Write one override row. Returns whether this was the slot's first edit.
 
     `llm_fallback` is used as `llm_text` only on that first edit. On a later one the row already
@@ -514,7 +572,10 @@ def _upsert_override(conn, version_id, slot_kind, slot_key, *, human_text, llm_f
                s.text_overrides.c.slot_kind == slot_kind,
                s.text_overrides.c.slot_key == slot_key)).first()
     values = {"human_text": human_text, "is_orphaned": False, "updated_by": user_id,
-              "updated_at": stamp, "slot_shape": slot_shape}
+              "updated_at": stamp, "slot_shape": slot_shape,
+              # REQ-TD-02, the same provenance the model-backed path records.
+              "llm_model": settings.llm_model if settings else None,
+              "llm_cache_version": settings.llm_cache_version if settings else None}
     if existing is None:
         conn.execute(insert(s.text_overrides).values(
             version_id=version_id, slot_kind=slot_kind, slot_key=slot_key,

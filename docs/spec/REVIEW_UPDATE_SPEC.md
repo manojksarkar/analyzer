@@ -206,8 +206,13 @@ the MODEL           holds the text the document uses      (an override updates i
 the OVERRIDE record holds the LLM original + the human text + who + when
 ```
 
-**Verification:** after an override, the model carries the human text and the override record
-carries both texts.
+The document does **not** read a function's description from the model: the interface-tables view
+writes a copy into its own output and both readers use that copy. So a `description` correction
+updates the model **and** brings that copy into step, in the same transaction. Unit and struct
+descriptions and the behaviour names are read from the model directly, so they need no copy kept.
+
+**Verification:** after an override, the model carries the human text, the override record carries
+both texts, and the interface-tables entry for that function shows the human text.
 
 ### REQ-ST-02 — An override belongs to one version
 
@@ -228,6 +233,10 @@ The LLM's original and the human's replacement. Without the original there is no
 Every edit is recorded. Beyond a configurable **N** human edits per slot, the oldest human edits are
 dropped. A **slot**, so for a flowchart that is per label, not per save — a call that changes one
 label of twelve appends one history row, not twelve.
+
+**N is `llm.overrideHistoryDepth` from the config the version was generated with**
+(`versions.resolved_config`), not today's — a correction obeys the settings its version was created
+under. Default 10 where the version has none.
 
 **The LLM original is never evicted** — it is not counted against N. Training needs the two *ends* of
 the pair (what the model wrote, what the human settled on); the intermediate wording tweaks are the
@@ -528,10 +537,23 @@ Without this, an export a second after an edit ships the new text everywhere and
 
 **Verification:** edit a label, export immediately; the exported image carries the new label.
 
-### REQ-IM-03 — The document never shows a stale image
+### REQ-IM-03 — The document never shows a stale image without saying so
+
+A picture still being drawn **blocks the export** ([REQ-IM-02](#req-im-02--export-waits-for-pending-renders)).
+
+A picture that **failed** to draw does not. It cannot be waited for, and blocking on it would make
+one unrenderable flowchart permanently un-exportable — a cure worse than the disease. It is
+reported instead: the export-readiness answer carries `failedRenders`, and the refusal message
+names them, so a document goes out with somebody knowing the image is out of date rather than
+nobody.
+
+This is a **deliberate narrowing** of the original "never". The word was written before it was
+clear that a render can fail permanently, and an absolute that the code cannot honour is worse
+than a promise it can.
 
 **Verification:** no rendered document contains an image older than the override that changed its
-source.
+source **while that render is still pending**; a failed render is reported by
+`export-readiness` and in the CLI's refusal message.
 
 ---
 
@@ -640,7 +662,16 @@ The context the LLM was given, and which model and prompt version produced the o
 (`llm.cacheVersion` already exists). Without them a correction cannot be interpreted after a prompt
 change.
 
-**Verification:** an override record identifies the model and prompt version of its original.
+`llm_model` and `llm_cache_version` are taken from the version's own `resolved_config`, because
+the text being corrected was generated under that config and not today's.
+
+**`llm_context` is NOT captured at save time, and deliberately.** The text was written in a past
+run and the prompt context was not kept; filling the column with today's context would put a
+plausible-looking falsehood in the training data. Capturing it belongs where the text is generated
+— an open item, not something the save can honestly do.
+
+**Verification:** an override record identifies the model and prompt version of its original, taken
+from that version's config; `llm_context` is null until generation records it.
 
 ---
 

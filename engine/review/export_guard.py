@@ -136,8 +136,18 @@ def _aware(dt: datetime.datetime) -> datetime.datetime:
 
 
 def assert_exportable(conn, version_id: str) -> Staleness:
-    """Raise `StaleExport` if exporting now would ship superseded text."""
+    """Raise `StaleExport` if exporting now would ship superseded text.
+
+    A FAILED render does not raise -- see `staleness` -- but it is still said out loud, because
+    `REQ-IM-03` promises the document never goes out stale *without somebody being told*. Silence
+    here would make that promise false while the code looked fine.
+    """
     st = staleness(conn, version_id)
+    if st.failed_renders and not st.is_stale:
+        from core.logging_setup import get_logger
+        get_logger("review").warning(
+            "version %s is exportable, but %d flowchart image(s) could not be drawn and are out "
+            "of date", version_id, st.failed_renders)
     if st.is_stale:
         raise StaleExport(
             "version %s is not safe to export: %s.\n"

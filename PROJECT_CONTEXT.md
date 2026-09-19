@@ -218,6 +218,41 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-19e (**review_update_v1 - a spec-vs-code audit, and its four fixes**. Checked
+> all 43 requirements against the implementation rather than from memory; four genuine
+> misalignments, all now closed.
+>
+> **1. A corrected description never reached the document.** The document does NOT read a
+> function's description from the model - `interface_tables.json` holds a COPY, and both the DOCX
+> exporter and the HTML view read the copy. So the model write left the page showing the LLM's
+> words. `rerender.patch_interface_tables` now brings every group's copy into step in the same
+> transaction. Root cause: `derive.make_deriver` has NO CALLER - nothing ever passed `derive=`, so
+> the "re-derive the affected views" step of the design never ran in production. Scope turned out
+> small once measured: unit/struct descriptions and behaviour names are read from the MODEL
+> (`_load_model_json`) and were never stale, so it is one artifact and one field. It also removed
+> an inconsistency nobody could have guessed - a corrected node label reached the document
+> instantly while a corrected description did not.
+>
+> **2. `llm.overrideHistoryDepth` was documented and ignored.** Named in the spec, in the schema
+> comment and in the API docs, read by nothing; the cap was always 10. Now read from
+> `versions.resolved_config` - the config the version was generated with, not today's.
+>
+> **3. The provenance columns were always NULL** (`REQ-TD-02`). `llm_model` and
+> `llm_cache_version` now come from the same version config. **`llm_context` is deliberately left
+> null**: the text was generated in a past run and the prompt context was not kept, so filling it
+> with today's context would put a plausible-looking falsehood in the training data. The spec now
+> says capturing it belongs where the text is GENERATED.
+>
+> **4. `REQ-IM-03` said "never shows a stale image"; the code allows it.** A failed render does not
+> block, or one unrenderable flowchart would make a version permanently unexportable. Narrowed the
+> requirement to "never without saying so" AND made that true: `assert_exportable` now warns about
+> failed renders even when it lets the export through - previously the promise was false in silence.
+>
+> Four reverts checked, one per fix. 26 tests. Unit + API suites 2069 passed / 10 skipped.
+>
+> **Still open from the audit, all documented:** `llm_context` capture at generation time, and the
+> three path-taking output readers (`REQ-PRE-02`'s first line).)
+
 > Updated: 2026-09-19d (**review_update_v1 step 9 - `REQ-PRE-02`, the export path**. Two holes,
 > both quiet, both closed; a third named and left.
 >

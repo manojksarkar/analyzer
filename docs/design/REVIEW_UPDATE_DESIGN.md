@@ -257,6 +257,16 @@ from a single read, so they cannot disagree about which graph they were written 
 Renders are enqueued **after** commit: a render is slow, must not hold a transaction, and is
 idempotent if retried.
 
+**The derived copy is brought into step in the same transaction.** `interface_tables.json` holds a
+copy of `description` and both the DOCX exporter and the HTML view read that copy, so the model
+write alone leaves the page showing the LLM's words. `rerender.patch_interface_tables` updates every
+group's copy. Re-deriving the view instead was rejected for the reason the render and the cascade
+were — it needs an output tree, a model and a config that the saving host may not have. It adds no
+writer: it goes through `write_output_row`, already named as the one non-view writer.
+
+Only `description` needs it. Unit and struct descriptions and the behaviour names are read from the
+model directly (`docx_exporter._load_model_json`), so they were never stale.
+
 **Writing to the model** goes through the existing repository gateway
 ([core/model_repo.py](../../engine/core/model_repo.py)) so the write lands wherever the run's model
 lives. Nothing here opens `entity_versions` directly.

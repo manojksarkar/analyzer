@@ -131,6 +131,18 @@ class TestTheExportGuard:
         assert st.failed_renders == 1
         assert "could not be drawn" in st.explain()
 
+    def test_a_failed_render_is_said_out_loud_on_export(self, conn, caplog):
+        """REQ-IM-03 promises the document never goes out stale WITHOUT somebody being told.
+        Letting the export through in silence would make that promise false while the code
+        looked fine."""
+        import logging
+        self._correct(conn)
+        job = rq.enqueue(conn, "v1", FID)
+        rq.complete(conn, job, error="graphviz not found")
+        with caplog.at_level(logging.WARNING):
+            guard.assert_exportable(conn, "v1")          # does not raise
+        assert "out of date" in caplog.text
+
     def test_a_version_nobody_corrected_is_unaffected(self, conn):
         rq.enqueue(conn, "v1", FID)
         assert guard.staleness(conn, "v1").is_stale is False

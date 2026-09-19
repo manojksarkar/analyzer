@@ -138,7 +138,7 @@ slot has no correction.
   "humanText": "Initialises the GPIO driver and clears pending interrupts.",
   "llmText": "Initializes the module.",
   "previousText": "Initializes the module.",
-  "firstEdit": true, "viewsDerived": ["interfaceTables"],
+  "firstEdit": true, "viewsDerived": ["interfaceTables"], "tablesPatched": 1,
   "queuedForRegeneration": [
     { "slotKind": "unitDescription", "slotKey": "Gpio|GpioDrv" },
     { "slotKind": "description", "slotKey": "App|AppMain|App_Start|void" }

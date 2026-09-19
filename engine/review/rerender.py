@@ -105,6 +105,57 @@ def find_flowchart_row(conn, version_id: str, flowchart_id: str):
 
 
 # ---------------------------------------------------------------------------
+# interface tables
+# ---------------------------------------------------------------------------
+def patch_interface_tables(conn, version_id: str, entity_key: str, description: str) -> int:
+    """Update the copy of one entity's description in every stored `interface_tables.json`.
+
+    The document does not read a function's description from the model -- the interface-tables
+    view writes a **copy** into its own output, and both the DOCX exporter and the HTML view read
+    that copy. So updating the model alone leaves the page showing the LLM's old words, which is
+    the two-copies failure this feature exists to remove, arriving from the other direction.
+
+    Re-deriving the view instead was rejected for the reason the render and the cascade were: it
+    needs an output tree, a model and a config, and the host saving a correction may have none of
+    them. Patching the row reaches the same place from anywhere.
+
+    This is not a new writer. It goes through `write_output_row`, which the design already names as
+    the one non-view writer of a `version_output_files` row.
+
+    A function appears in exactly one unit but can appear in SEVERAL groups' files when scopes
+    overlap, so every match is patched, not the first. Returns how many entries changed.
+    """
+    patched = 0
+    rows = conn.execute(
+        select(s.version_output_files.c.rel_path, s.version_output_files.c.content)
+        .where(s.version_output_files.c.version_id == version_id)).fetchall()
+    for r in rows:
+        if not r.rel_path.endswith("interface_tables.json"):
+            continue
+        try:
+            tables = json.loads(r.content or "{}")
+        except ValueError:
+            continue           # one unreadable group must not stop the others
+        if not isinstance(tables, dict):
+            continue
+        changed = 0
+        for unit_key, unit in tables.items():
+            if unit_key == "unitNames" or not isinstance(unit, dict):
+                continue
+            for entry in unit.get("entries") or []:
+                if not isinstance(entry, dict):
+                    continue
+                if entity_key in (entry.get("functionId"), entry.get("globalId")):
+                    entry["description"] = description
+                    changed += 1
+        if changed:
+            write_output_row(conn, version_id, r.rel_path,
+                             json.dumps(tables, indent=2, ensure_ascii=False))
+            patched += changed
+    return patched
+
+
+# ---------------------------------------------------------------------------
 # behaviour rows
 # ---------------------------------------------------------------------------
 def find_behaviour_row(conn, version_id: str, function_id: str, external_caller_id: str):
