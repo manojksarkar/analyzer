@@ -503,6 +503,68 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
         g["interfaceId"] = f"{prefix}_{layer_code}_{group_code}_{unit_name_code}_{idx_code}" if group_code else f"{prefix}_{layer_code}_{unit_name_code}_{idx_code}"
 
 
+
+def _review_conn_and_version():
+    """`(engine, version_id)` when this run has both, else `(None, None)`.
+
+    A standalone run has no version and a DB-less one has no engine. Neither is unusual and
+    neither is a reason to fail a phase.
+    """
+    try:
+        from core.db import get_engine, is_database_configured
+        from core.run_context import version_id
+        vid = version_id()
+        if vid and is_database_configured():
+            return get_engine(), vid
+    except Exception:                              # noqa: BLE001
+        pass
+    return None, None
+
+
+def _take_regeneration_queue(functions_data: dict, global_variables_data: dict):
+    """Blank the text of queued slots so the enrichment below rewrites them (`REQ-CS-01`).
+
+    Never fatal: a phase that has already paid for the parse must not be lost because the queue
+    could not be read. The entries simply stay queued for the next run.
+    """
+    eng, vid = _review_conn_and_version()
+    if not eng:
+        return []
+    try:
+        from review.cascade import blank_queued_text
+        model = {"functions": functions_data, "globalVariables": global_variables_data,
+                 "units": {}, "dataDictionary": {}}
+        with eng.connect() as cx:
+            queued = blank_queued_text(cx, vid, model)
+        if queued:
+            from core.logging_setup import get_logger
+            get_logger("model_deriver").info(
+                "review: regenerating %d description(s) invalidated by a correction", len(queued))
+        return queued
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        from core.logging_setup import get_logger
+        get_logger("model_deriver").warning("review: could not read the regeneration queue: %s", exc)
+        return []
+
+
+def _retire_regeneration_queue(queued, functions_data: dict, global_variables_data: dict) -> None:
+    """Clear the entries whose text actually came back."""
+    if not queued:
+        return
+    eng, vid = _review_conn_and_version()
+    if not eng:
+        return
+    try:
+        from review.cascade import clear_rewritten
+        model = {"functions": functions_data, "globalVariables": global_variables_data,
+                 "units": {}, "dataDictionary": {}}
+        with eng.begin() as cx:
+            clear_rewritten(cx, vid, queued, model)
+    except Exception as exc:                       # noqa: BLE001
+        from core.logging_setup import get_logger
+        get_logger("model_deriver").warning("review: could not retire queue entries: %s", exc)
+
+
 def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data: dict, config: dict, only_globals=None):
     """LLM enrichment for descriptions only. Direction comes from parser (global read/write analysis).
 
@@ -542,6 +604,13 @@ def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data
         _gl("model_deriver").info("no knowledge base available — descriptions will be generated without repo-map "
                   "and sibling context (expected on the FIRST run of a project only)")
 
+    # REQ-CS-01. A correction to one description leaves the text generated FROM it describing
+    # wording the human has already rejected. Those dependents were recorded when the correction
+    # was saved; this is where the debt is paid. Blanking their text is the whole instruction --
+    # the enrichment below skips a function whose description is already present, so removing it
+    # IS "generate this again".
+    _queued = _take_regeneration_queue(functions_data, global_variables_data)
+
     # Rich enrichment path — budget-aware with degradation ladder
     desc = enrich_functions_rich(functions_data, base_path, config, knowledge=knowledge)
     for key, f in functions_data.items():
@@ -565,6 +634,11 @@ def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data
         key = f"{g.get('location', {}).get('file', '')}:{g.get('location', {}).get('line', '')}"
         if g_desc.get(key, {}).get("description"):
             g["description"] = g_desc[key]["description"]
+
+    # Retire only what actually came back with text. An entry whose slot is still empty means the
+    # regeneration did not happen -- the LLM was unreachable, or descriptions are off -- and
+    # dropping it would turn "still owed" into "done".
+    _retire_regeneration_queue(_queued, functions_data, global_variables_data)
 
 
 def _readable_label(name: str) -> str:

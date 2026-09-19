@@ -129,6 +129,9 @@ class TestEveryPieceHasACaller:
                                                    "stamp_pipeline_derivation"),
         "cascade.enqueue": ("engine/review/override_service.py", "_cascade.enqueue"),
         "render_queue.enqueue": ("engine/review/override_service.py", "render_queue.enqueue"),
+        "render_queue.run_pending": ("engine/incremental/store.py", "run_pending"),
+        "cascade.blank_queued_text": ("engine/model_deriver.py", "blank_queued_text"),
+        "cascade.clear_behaviour_entries": ("engine/run_views.py", "clear_behaviour_entries"),
     }
 
     @pytest.mark.parametrize("what", sorted(WIRED))
@@ -136,14 +139,27 @@ class TestEveryPieceHasACaller:
         path, needle = self.WIRED[what]
         assert needle in _src(path), "%s has no caller in %s" % (what, path)
 
-    def test_the_unwired_pieces_are_named(self):
-        """`render_queue.run_pending` and the regeneration-queue consumer have no scheduled
-        caller yet. That is recorded in the docs rather than left for someone to discover, and
-        this test fails if one quietly acquires one -- at which point the docs need updating."""
-        callers = _src("engine/incremental/engine.py") + _src("engine/run_views.py") + \
-            _src("analyzer.py")
-        assert "run_pending(" not in callers, (
-            "run_pending now has a pipeline caller -- update the 'not yet implemented' lists in "
-            "REVIEW_UPDATE_API_SPEC and the handover")
-        assert "cascade.pending(" not in callers, (
-            "the regeneration queue now has a consumer -- update the docs the same way")
+    def test_nothing_in_the_feature_is_left_without_a_caller(self):
+        """Every module under `engine/review/` must be reachable from a run, the API or the CLI.
+
+        A module nobody calls is the failure this whole class guards: all its tests pass and it
+        does nothing. When a new one is added it belongs in WIRED above, beside the place that
+        calls it -- or it does not belong in the tree yet.
+        """
+        review_dir = os.path.join(PROJECT_ROOT, "engine", "review")
+        modules = {f[:-3] for f in os.listdir(review_dir)
+                   if f.endswith(".py") and not f.startswith("__")}
+        callers = "".join(_src(p) for p in (
+            "engine/incremental/engine.py", "engine/incremental/store.py",
+            "engine/run_views.py", "engine/model_deriver.py", "analyzer.py",
+            "api/routes/text_overrides.py", "engine/views/flowcharts.py",
+            "engine/views/behaviour_diagram.py"))
+        # Reached THROUGH the others rather than directly. Naming them says that is deliberate
+        # rather than an omission nobody noticed.
+        indirect = {"slot", "resolver", "redraw", "rerender", "derive", "export_guard",
+                    "phase3_overrides"}
+        missing = sorted(m for m in modules - indirect if m not in callers)
+        assert not missing, (
+            "these review modules have no caller in the pipeline, the API or the CLI: %s. "
+            "Either wire them in, or add them to `indirect` with the reason."
+            % ", ".join(missing))

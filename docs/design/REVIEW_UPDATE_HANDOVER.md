@@ -90,7 +90,8 @@ Everything else is new files. These are the ones a merge can actually collide on
 | `engine/docx_exporter.py` | both LLM description calls **removed**; reads stored values | **medium** |
 | `engine/incremental/store.py` | `capture_output` also stamps `view_derivations` (the export guard's baseline) | low |
 | `engine/incremental/engine.py` | `_carry_review_overrides`, called beside `carry_forward_globals` | low |
-| `engine/run_views.py` | `_with_text_overrides`, called immediately before `run_views(...)` | **medium** — one line at a named point |
+| `engine/run_views.py` | `_with_text_overrides` before `run_views(...)`, `_retire_behaviour_regenerations` after | **medium** — two lines at named points |
+| `engine/model_deriver.py` | `_take_regeneration_queue` before the enrichment, `_retire_regeneration_queue` after | **medium** |
 | `analyzer.py` | `reexport` refuses a stale `--from-phase 4`; new `--force` | low |
 | `engine/core/model_repo.py` | `flush(conn=None)` — joins a caller's transaction | low — additive, default unchanged |
 | `api/routes/__init__.py`, `api/main.py` | register `text_overrides_router` | low |
@@ -233,10 +234,11 @@ cascade, image rendering as a background job, carry-forward into the next versio
 
 Two consequences worth knowing:
 
-- **`render_queue.run_pending` and the regeneration queue have no scheduled caller.** Both are
-  built, tested and reachable; nothing runs them on a timer. A pending picture is drawn when a host
-  with the output tree calls `run_pending`, and a queued regeneration waits for a run that rebuilds
-  it.
+- **Both queues are drained by a run, not a timer.** A pending picture is drawn when a host with
+  the output tree captures a version's output; a queued regeneration is rebuilt by Phase 2 or
+  Phase 3. Between a correction and the next run the work is *owed and reported* — which is why
+  the export blocks on a pending picture. That is the design, not a gap, but it does mean a
+  correction's cascade is not applied until something runs.
 - **Nothing drives the render queue on a schedule.** A correction raises a `render_jobs` row and
   the export blocks on it, but a pending job is finished by `render_queue.run_pending` being called
   on a host that has the output tree.

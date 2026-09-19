@@ -179,6 +179,27 @@ def _with_text_overrides(config):
         print("[run_views] could not load text overrides: %s" % exc)
         return config
 
+
+def _retire_behaviour_regenerations() -> None:
+    """Clear queued behaviour-row regenerations, now that the views have rebuilt them.
+
+    Never fatal: the views have already run and their output is written; failing the phase here
+    would throw that away over bookkeeping.
+    """
+    try:
+        from core.run_context import version_id as _vid
+        from core.db import get_engine, is_database_configured
+        vid = _vid()
+        if not (vid and is_database_configured()):
+            return
+        from review.cascade import clear_behaviour_entries
+        with get_engine().begin() as cx:
+            n = clear_behaviour_entries(cx, vid)
+        if n:
+            print("[run_views] retired %d regenerated behaviour description(s)" % n)
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        print("[run_views] could not retire behaviour regenerations: %s" % exc)
+
 def main():
     args = sys.argv[1:]        # path flags already applied at import
 
@@ -292,6 +313,11 @@ def main():
     config = _with_text_overrides(config)
 
     run_views(model, output_dir, model_dir, config, doc_type=doc_type)
+
+    # REQ-CS-01's other half. A queued behaviour description has no model field to blank, so
+    # Phase 2 cannot pay that debt -- but the behaviour view rebuilds every row it writes, so
+    # running it IS the regeneration. Retired here, where it actually happened.
+    _retire_behaviour_regenerations()
 
 
 if __name__ == "__main__":

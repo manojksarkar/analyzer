@@ -218,6 +218,45 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-19c (**review_update_v1 - both queues are now DRAINED by a run**. The
+> obligations recorded in steps 6 and 7 were being collected by nobody, which is a slow lie: the
+> document stays stale while a table says somebody will deal with it.
+>
+> **The regeneration queue is paid in TWO places**, because its kinds live in different phases.
+> `description`/`unitDescription` in Phase 2 (`model_deriver._take_regeneration_queue`), and
+> `behaviourDescription` in Phase 3 (`run_views._retire_behaviour_regenerations`), because the
+> behaviour view rebuilds every row it writes - running it IS the regeneration.
+>
+> **No force-regenerate switch was added, and none is needed.** `_enrich_from_llm` already
+> documents that descriptions "skip when already present (the engine carries them forward)", so
+> BLANKING the stale text is exactly the instruction to generate it again. A second way to say
+> that would be two expressions for one fact.
+>
+> **Only what came back is retired.** An entry whose slot is still empty after the enrichment means
+> the regeneration did not happen - LLM unreachable, or `llm.descriptions` off - and clearing it
+> would turn "still owed" into "done". An entry whose slot has LEFT the version is retired, or it
+> would be retried for ever against something that is not there.
+>
+> **The render queue is drained at `store.capture_output`** - the first moment both the job and an
+> output tree are in the same place. Nothing runs on a timer, deliberately: a schedule would be a
+> second way for a picture to appear, and the export already blocks until the job is done.
+>
+> **A testing note.** The wiring class matched `_take_regeneration_queue(functions_data`, which is
+> ALSO how the definition begins - so two of its tests were reading the def's position and would
+> have passed with no call site at all. This is the third time that trap has bitten in this
+> feature. Every matcher now requires the call to be INDENTED, and
+> `test_no_matcher_can_match_a_definition` runs each matcher against the def text to prove it
+> rejects it.
+>
+> `TestEveryPieceHasACaller` now walks `engine/review/` and fails if any module has no caller in
+> the pipeline, the API or the CLI - so a new unwired module is caught when it is added rather than
+> when someone notices the feature doing nothing.
+>
+> Three reverts checked. 24 tests. Unit + API suites 2028 passed / 10 skipped.
+>
+> **Remaining: step 9 (`REQ-PRE-02` - read output from the database). The feature itself is
+> functionally complete.**)
+
 > Updated: 2026-09-19b (**review_update_v1 - the pipeline now CALLS the feature**. Two one-line
 > call sites; everything beneath them was already built and tested but nothing reached them.
 >

@@ -443,6 +443,25 @@ wording stays consistent with a normal run.
 **A dependent that already has its own override is skipped** (`REQ-CS-03`). The human's text is never
 replaced by a regeneration.
 
+### 6.1 Paying the debt
+
+The queue is drained in **two places**, because its kinds live in different phases:
+
+| kind | where | how |
+|---|---|---|
+| `description`, `unitDescription` | Phase 2, `model_deriver._take_regeneration_queue` | blank the stale text; the enrichment rewrites it |
+| `behaviourDescription` | Phase 3, `run_views._retire_behaviour_regenerations` | the behaviour view rebuilds every row it writes, so running it IS the regeneration |
+
+**No force-regenerate switch exists, and none is needed.** `_enrich_from_llm` already documents
+that function descriptions "skip when already present (the engine carries them forward)", so
+removing the stale text *is* the instruction to generate it again. Adding a second way to say that
+would be two expressions for one fact.
+
+**Only what came back is retired.** An entry whose slot is still empty after the enrichment means
+the regeneration did not happen — the LLM was unreachable, or `llm.descriptions` is off — and
+clearing it would convert "still owed" into "done". An entry whose slot has left the version
+entirely *is* retired, or it would be retried for ever against something that is not there.
+
 **Flowchart node labels are not dependents of anything.** The summary chain (`function summary → file
 → component → project`) feeds *into* labels and is built from source, never from `description` — see
 `REQ-CS-01`'s table. This is what bounds the cascade; without it one edit would invalidate ~42,000
@@ -479,6 +498,11 @@ lives. Both paths write the same rows.
 `run_pending` re-reads the **current** CFG rather than anything carried on the job: by the time it
 runs the flowchart may have been corrected again, and the picture must match what the document will
 show, not what was true when the job was made.
+
+It is called from `incremental/store.py::capture_output`, right after that host has written the
+version's output into a tree it owns — the first moment both the job and the resources to satisfy
+it are in the same place. Nothing runs it on a timer, deliberately: a schedule would be a second
+way for a picture to appear, and the export already blocks until the job is done.
 
 Two corrections to one flowchart make **two** jobs. Collapsing them would let a render that began
 before the second edit satisfy it, leaving the picture one edit behind with nothing pending to say
@@ -713,7 +737,7 @@ Each step leaves the tree working and is independently useful.
 | 4 | ~~The export guard~~ **DONE** | closes the `--from-phase 4` hole; independently valuable |
 | 5 | ~~API + undo, incl. the flowchart endpoint ([§11.1](#111-the-flowchart-endpoint))~~ **DONE** | the UI can be built against it |
 | 6 | ~~Cascade~~ **DONE (recording half)** | correctness improvement on a working feature |
-| 6b | Consume the queue during a run | needs a checkout and an LLM, so it belongs to the pipeline |
+| 6b | ~~Consume the queue during a run~~ **DONE** | needs a checkout and an LLM, so it belongs to the pipeline |
 | 8b | ~~Wire carry-forward + the Phase-3 payload into a run~~ **DONE** | the pieces were built and tested but nothing called them |
 | 7 | ~~Images~~ **DONE** | the slowest and most isolated part |
 | 8 | ~~Carry-forward into the next version~~ **DONE** | needs a second version to test against |

@@ -68,6 +68,28 @@ def _same_dir(a: str, b: str) -> bool:
     return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 
 
+def _draw_pending_pictures(engine, version_id: str, output_dir: str) -> None:
+    """Render the flowchart pictures this version is still waiting on (`REQ-IM-02`).
+
+    Never fatal. The documents are already rendered and captured by the time this runs; failing
+    here would throw away a completed generation over an image that can be drawn later, and the
+    export guard reports the outstanding jobs either way.
+    """
+    try:
+        from review.render_queue import run_pending
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        with engine.begin() as cx:
+            done = run_pending(cx, version_id, output_dir=output_dir,
+                               project_root=project_root)
+        if done:
+            from core.logging_setup import get_logger
+            get_logger("incremental").info("review: drew %d corrected flowchart picture(s)",
+                                           len(done))
+    except Exception as exc:                                 # noqa: BLE001 - see docstring
+        from core.logging_setup import get_logger
+        get_logger("incremental").warning("review: could not draw pending pictures: %s", exc)
+
+
 def _stamp_derivation(cx, version_id: str) -> None:
     """Record a Phase-3 derivation for the export guard (REQ-AP-04).
 
@@ -355,6 +377,11 @@ class PgStore(ArtifactStore):
                 _stamp_derivation(cx, version_id)
         except Exception:                                    # best-effort: disk output is intact
             pass
+        # REQ-IM-02. A correction saved where no output tree existed left its picture owed. This
+        # host has one, and has just written this version's output into it, so it is the right
+        # place to pay that debt -- and the export blocks until it is paid.
+        _draw_pending_pictures(self.engine, version_id, os.path.join(
+            self.artifact_dir(version_id), "output"))
         return captured
 
     def write_run_metadata(self, version_id: str, meta: Dict[str, Any]) -> None:

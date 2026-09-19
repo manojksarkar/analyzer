@@ -328,12 +328,11 @@ invalidated, because a transitive cascade is unbounded in a deep call graph.
 
 Honest gaps, so the UI does not plan around something that is not there.
 
-- **Nothing drives the render queue automatically.** `renderPending` is a real job and the export
-  blocks on it, but a pending job is finished by `render_queue.run_pending` being called on a host
-  with the output tree — no daemon runs it on a schedule yet.
-- **Nothing consumes the regeneration queue yet.** R10 reports what needs regenerating and the
-  entries are recorded correctly; the run that rebuilds them, and clears each entry as it does, is
-  still to come. Until then a queued dependent keeps its old wording.
+- **Both queues are drained by a RUN, not by a timer.** A pending picture is drawn when a host
+  with the output tree captures a version's output, and a queued regeneration is rebuilt by
+  Phase 2 (descriptions) or Phase 3 (behaviour rows). Between a correction and the next run,
+  `pendingRenders` and R10 report what is still owed — which is why the export blocks on the
+  first. Nothing runs on a schedule.
 - **No cleanup endpoint** for orphaned corrections — deliberately, pending a decision; see
   [REVIEW_UPDATE_DESIGN Open items](../design/REVIEW_UPDATE_DESIGN.md#open-items).
 
