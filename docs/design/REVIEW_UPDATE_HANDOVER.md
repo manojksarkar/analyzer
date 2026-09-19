@@ -9,8 +9,8 @@ broken, and how to check** — it does not restate the feature. For that:
 - **Chronology and the reasoning behind each decision** → root `PROJECT_CONTEXT.md`, the
   `> Updated: 2026-09-16 …` through `2026-09-18` entries
 
-Branch: `review_update_v1` · base: `origin/develop` · state at writing: build-order steps 1–7 done
-(6 is the recording half; consuming the queue is 6b), step 8 (carry-forward) next.
+Branch: `review_update_v1` · base: `origin/develop` · state at writing: build-order steps 1–8 done
+(6 is the recording half; consuming the queue is 6b), step 9 (`REQ-PRE-02`) next.
 
 ---
 
@@ -221,8 +221,10 @@ cascade, image rendering as a background job, carry-forward into the next versio
 
 Two consequences worth knowing:
 
-- **`slot_shape` is written but never read yet.** The `REQ-ID-02` guard is complete and tested;
-  its consumer is step 8 (carry-forward). Until then a correction does not carry between versions.
+- **Nothing calls `carry_forward.carry_overrides` from the pipeline yet.** The function, its
+  `slot_shape` gate and `overrides_for_config` are built and tested; wiring them into the
+  incremental run — carry the rows when a version is generated from a baseline, and hand the
+  Phase-3 payload to the views — is the remaining integration.
 - **Nothing drives the render queue on a schedule.** A correction raises a `render_jobs` row and
   the export blocks on it, but a pending job is finished by `render_queue.run_pending` being called
   on a host that has the output tree.

@@ -218,6 +218,44 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-19 (**review_update_v1 step 8 - carry-forward; `slot_shape` finally has a
+> reader**. `engine/review/carry_forward.py`.
+>
+> **This is the first consumer of `slot_shape`.** It has been written and guarded since the schema
+> landed and nothing read it, so until now the REQ-ID-02 guard existed but could not be shown to
+> work. It can now: seed v4 from v3 on byte-identical source with one node added, and the
+> correction is orphaned rather than carried. Reverting the shape check (gating on `source_hash`
+> alone, as the design originally said) fails that test.
+>
+> **What already worked, and what was missing.** The TEXT of the five model-backed kinds carries
+> itself - `engine.carry_forward_globals` copies `description` from the baseline's model, and the
+> baseline's model already holds the human's text. What was missing is the override ROWS: without
+> them the new version does not know which text is human-authored, so undo has nothing to restore
+> to, the cascade would regenerate over a human's wording, and the two Phase-3 kinds (whose text
+> lives ONLY in the override table) would simply vanish.
+>
+> **Three decisions the design's pseudocode did not cover.** The shape is NOT carried onto the new
+> row - it describes the baseline's graph, and copying it would let the NEXT version check a
+> correction against a shape nothing verified for it. Every orphan carries a REASON ("that
+> function's code changed", "the flowchart was renumbered even though the code did not"), because
+> a reviewer whose correction stopped applying is owed an explanation rather than a silent
+> disappearance. And a correction already made against the target wins - it is newer than anything
+> the baseline can offer.
+>
+> `overrides_for_config` builds the Phase-3 payload in the shape `phase3_overrides.from_config`
+> reads. Only the two Phase-3 kinds appear: the other five are in the model already, and putting
+> them in both places would be the second copy this design exists to remove.
+>
+> Four reverts checked; three fail tests. The fourth - removing the orphan filter from the SQL -
+> changes nothing observable, because `labels_by_flowchart` filters again downstream. That is
+> deliberate defence in depth and the code and the test now say so rather than implying coverage
+> that does not exist.
+>
+> 19 tests. Unit + API suites 1986 passed / 10 skipped.
+>
+> **Remaining: wiring carry-forward into a run, 6b (consume the regeneration queue), 9
+> (`REQ-PRE-02`), and a scheduler for `render_queue.run_pending`.**)
+
 > Updated: 2026-09-18f (**review_update_v1 step 7 - images**. `engine/review/render_queue.py`,
 > `render_jobs` (+ alembic `0013`), and the export guard now blocks on pending pictures.
 >

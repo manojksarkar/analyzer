@@ -586,6 +586,26 @@ The `slot_shape` half of the `nodeLabel` condition is what stops a correction la
 node when the source is byte-identical but the builder or `cfgSimplification` renumbered the graph
 (`REQ-ID-02`). Since every override on a flowchart stores the same shape, they pass or fail together.
 
+Built as `engine/review/carry_forward.py`. Three things it does that the pseudocode above does not
+say:
+
+**The shape is not carried onto the new row.** It describes the graph the text was written against,
+and that graph belongs to the baseline. Copying it would let the *next* version's carry-forward
+check a correction against a shape nothing ever verified for it.
+
+**An orphan carries a reason.** A reviewer whose correction stopped applying is owed an
+explanation — "that function's code changed", "the flowchart was renumbered even though the code did
+not" — rather than a silent disappearance.
+
+**A correction already made against the target wins.** It is newer than anything the baseline can
+offer, so carry-forward leaves it alone.
+
+`overrides_for_config` then builds what a Phase-3 run feeds to
+[§5.1](#51-text-that-phase-3-produces)'s `from_config`. Only the two Phase-3 kinds appear in it: the
+other five are in the model already, carried there by the engine's own `carry_forward_globals`, and
+Phase 3 derives from the model — putting them in both places would be the second copy this design
+exists to avoid.
+
 `--full` has no baseline, so nothing is carried and the overrides simply are not applied
 (`REQ-VR-03`) — **they are not deleted**. `--full` is the standing remedy for several problems and
 must never destroy a reviewer's work.
@@ -695,7 +715,7 @@ Each step leaves the tree working and is independently useful.
 | 6 | ~~Cascade~~ **DONE (recording half)** | correctness improvement on a working feature |
 | 6b | Consume the queue during a run | needs a checkout and an LLM, so it belongs to the pipeline |
 | 7 | ~~Images~~ **DONE** | the slowest and most isolated part |
-| 8 | Carry-forward into the next version | needs a second version to test against |
+| 8 | ~~Carry-forward into the next version~~ **DONE** | needs a second version to test against |
 | 9 | `REQ-PRE-02` — read output from the database | large, independent; removes the last disk dependency |
 
 Steps 1 and 9 can be done by someone else in parallel — they touch different files from 2–8.
