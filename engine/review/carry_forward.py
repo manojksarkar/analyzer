@@ -142,7 +142,8 @@ class _Target:
         return self._behaviour
 
 
-def _still_applies(row, target: _Target, baseline_hashes: Dict[str, str]) -> Optional[str]:
+def _still_applies(row, target: _Target, baseline_hashes: Dict[str, str],
+                   baseline_shapes: Dict[str, str]) -> Optional[str]:
     """`None` if the correction still applies, else why it does not."""
     kind, key = row.slot_kind, row.slot_key
 
@@ -165,10 +166,20 @@ def _still_applies(row, target: _Target, baseline_hashes: Dict[str, str]) -> Opt
             # The code changed, so the labels describe statements that may no longer exist.
             # Fresh LLM text is the right answer here (REQ-VR-01).
             return "that function's code changed"
-        current = target.shapes.get(fid)
+        # The target's flowchart normally does NOT exist yet: this runs in Phase 2 and Phase 3
+        # is what produces it. Comparing against nothing and orphaning would mean a node override
+        # could never survive a generation -- which is exactly what a two-version run showed.
+        #
+        # So compare against whichever graph is available, and say which:
+        #   target present  -> the real answer (a re-run over an already-generated version)
+        #   target absent   -> the BASELINE's graph, which is what is being carried FROM
+        #
+        # The baseline check is weaker on its own: a builder change between the two versions
+        # renumbers the target while the baseline still matches. `phase3_overrides` closes that
+        # by re-checking the shape against the CFG it is actually writing into, which is the last
+        # moment before the text lands and the only place the target's real graph exists.
+        current = target.shapes.get(fid) or baseline_shapes.get(fid)
         if not slot.shape_matches(row.slot_shape, current):
-            # Same source, different graph -- a builder change or cfgSimplification renumbering.
-            # THIS is what source_hash alone would have missed, and it is why slot_shape exists.
             return ("the flowchart was renumbered even though the code did not change, so the "
                     "correction can no longer be placed")
         return None
@@ -208,6 +219,7 @@ def carry_overrides(conn, baseline_version_id: str, target_version_id: str, *,
     from core import model_store
     baseline_hashes = model_store.load_hashes(conn, baseline_version_id)
     target = _Target(conn, target_version_id)
+    baseline = _Target(conn, baseline_version_id)      # lazy; only its shapes are read
     stamp = now or datetime.datetime.now(datetime.timezone.utc)
 
     carried = orphaned = 0
@@ -215,7 +227,7 @@ def carry_overrides(conn, baseline_version_id: str, target_version_id: str, *,
     for row in src:
         if (row.slot_kind, row.slot_key) in existing:
             continue
-        why = _still_applies(row, target, baseline_hashes)
+        why = _still_applies(row, target, baseline_hashes, baseline.shapes)
         # An already-orphaned correction stays orphaned: whatever stopped resolving in the
         # baseline has not come back just because a new version was generated.
         is_orphan = bool(why) or bool(row.is_orphaned)
@@ -225,10 +237,19 @@ def carry_overrides(conn, baseline_version_id: str, target_version_id: str, *,
             updated_by=row.updated_by, updated_at=row.updated_at or stamp,
             llm_model=row.llm_model, llm_cache_version=row.llm_cache_version,
             llm_context=row.llm_context,
-            # The shape is NOT carried. It describes the graph the text was written against, and
-            # that graph belongs to the baseline. Carrying it would let the next version's
-            # carry-forward check a correction against a shape it never verified.
-            slot_shape=None))
+            # The shape IS carried, for node labels that still apply.
+            #
+            # An earlier version of this nulled it, reasoning that it describes the baseline's
+            # graph and carrying it would let the next carry-forward check against a shape nobody
+            # verified. That was wrong in a way a two-version run made obvious: nulling it means
+            # the NEXT generation sees "no claim", and `shape_matches` refuses a missing claim --
+            # so a node correction could survive exactly one version and then orphan itself.
+            #
+            # The shape is a claim about the graph the TEXT was written for, and that claim stays
+            # true as the text travels. What validates it is `phase3_overrides`, against the CFG
+            # actually being written.
+            slot_shape=(row.slot_shape if row.slot_kind == slot.NODE_LABEL and not is_orphan
+                        else None)))
         if is_orphan:
             orphaned += 1
             reasons.append((row.slot_kind, row.slot_key, why or "orphaned in the baseline"))
@@ -266,6 +287,7 @@ def overrides_for_config(conn, version_id: str) -> Dict[str, Dict]:
                         .where(s.text_overrides.c.version_id == version_id,
                                s.text_overrides.c.is_orphaned.is_(False))).fetchall()
     return {p3.NODE_LABEL_KIND: p3.labels_by_flowchart(rows),
+            p3.NODE_LABEL_SHAPES: p3.shapes_by_flowchart(rows),
             p3.BEHAVIOUR_KIND: p3.behaviour_text_by_slot(rows)}
 
 

@@ -607,11 +607,17 @@ human-authored — needed for undo, for the UI's "overridden" flag, and for `REQ
 for each override on the baseline:
     if the slot still resolves in the new version
        and (slot is not nodeLabel or (the function's source_hash is unchanged        REQ-VR-03
-                                      and slot_shape matches the new CFG)):          REQ-ID-02
-        copy the row to the new version
+                                      and slot_shape matches the graph in hand)):    REQ-ID-02
+        copy the row to the new version, shape and all
     else:
         copy it marked orphaned — never drop it                                      REQ-ID-03
 ```
+
+"**the graph in hand**" is doing real work in that condition. Carry-forward runs in **Phase 2**, and
+Phase 3 is what produces the new version's flowcharts — so at carry time the new version usually has
+no graph at all. It therefore compares against the **baseline's** graph, which is what is being
+carried *from*, and the decisive check moves to where the graph actually exists: see
+[§10.1](#101-where-req-id-02-is-really-enforced).
 
 A changed function does not carry its override: the human text describes code that no longer exists.
 Fresh LLM text is correct there (`REQ-VR-01`).
@@ -623,9 +629,16 @@ node when the source is byte-identical but the builder or `cfgSimplification` re
 Built as `engine/review/carry_forward.py`. Three things it does that the pseudocode above does not
 say:
 
-**The shape is not carried onto the new row.** It describes the graph the text was written against,
-and that graph belongs to the baseline. Copying it would let the *next* version's carry-forward
-check a correction against a shape nothing ever verified for it.
+**The shape travels with the correction.** It is a claim about the graph the *text* was written
+for, and that claim stays true as the text moves from version to version. An orphan carries no
+shape: it makes no claim worth re-checking.
+
+> **This reverses an earlier decision in this document,** which said the shape is dropped because it
+> describes the baseline's graph. A two-version run on real source showed why that was wrong:
+> dropping it means the *next* generation sees "no claim", `shape_matches` refuses a missing claim,
+> and a node correction survives exactly one version before orphaning itself for no reason a
+> reviewer could see. The symptom was a correction orphaned while the source hash and every shape —
+> baseline, target and recorded — were identical.
 
 **An orphan carries a reason.** A reviewer whose correction stopped applying is owed an
 explanation — "that function's code changed", "the flowchart was renumbered even though the code did
@@ -643,6 +656,28 @@ exists to avoid.
 `--full` has no baseline, so nothing is carried and the overrides simply are not applied
 (`REQ-VR-03`) — **they are not deleted**. `--full` is the standing remedy for several problems and
 must never destroy a reviewer's work.
+
+### 10.1 Where REQ-ID-02 is really enforced
+
+`slot_shape` exists to stop a node correction landing on a different box when the source is
+byte-identical but the builder or `cfgSimplification` renumbered the graph. Node ids are
+**positions**, not identities, so `source_hash` alone cannot see this.
+
+The check has to happen against the graph the text is about to be written into, and there is exactly
+one moment where that graph exists: `phase3_overrides.apply_to_flowchart_json`, immediately before
+the label is replaced. A correction whose shape disagrees with the CFG in hand is **dropped** — the
+LLM's label stays, and nothing is written to the wrong node.
+
+Carry-forward makes the weaker version of the same check, against the baseline's graph, for one
+reason only: to mark a genuinely stale correction as orphaned *in the record*, so a reviewer is told
+their correction stopped applying rather than finding it silently absent. It cannot make the strong
+check, and it does not pretend to.
+
+| | carry-forward (Phase 2) | `apply_to_flowchart_json` (Phase 3) |
+|---|---|---|
+| graph available | the baseline's | the one being written |
+| a mismatch means | mark the row orphaned, with a reason | drop the correction, keep the LLM text |
+| catches a builder change between the two versions | no | **yes** |
 
 ---
 

@@ -47,7 +47,8 @@ class Patched(NamedTuple):
 
 
 def patch_unit_flowcharts(content: str, unit_name: str,
-                          by_flowchart: Mapping[str, Mapping[str, str]]) -> Patched:
+                          by_flowchart: Mapping[str, Mapping[str, str]],
+                          shapes: Mapping[str, str] = None) -> Patched:
     """Apply corrections to one unit's flowchart JSON and rebuild the DOT for what changed.
 
     Pure: text in, text out, no files and no database. That is what makes the rules below
@@ -66,7 +67,7 @@ def patch_unit_flowcharts(content: str, unit_name: str,
     if not isinstance(entries, list):
         raise RedrawError("flowchart JSON for %s is not a list of entries" % unit_name)
 
-    changed_ids = p3.apply_to_flowchart_json(entries, by_flowchart)
+    changed_ids = p3.apply_to_flowchart_json(entries, by_flowchart, shapes)
     if not changed_ids:
         return Patched(content, ())
 
@@ -85,7 +86,8 @@ def patch_unit_flowcharts(content: str, unit_name: str,
     return Patched(json.dumps(entries, indent=2, ensure_ascii=False), redrawn)
 
 
-def apply_to_output_dir(fc_dir: str, by_flowchart: Mapping[str, Mapping[str, str]]) -> List[str]:
+def apply_to_output_dir(fc_dir: str, by_flowchart: Mapping[str, Mapping[str, str]],
+                        shapes: Mapping[str, str] = None) -> List[str]:
     """Apply corrections across every unit JSON in a flowcharts output directory.
 
     Called from inside the `flowcharts` view, **after** the engine has written its JSON and
@@ -105,7 +107,8 @@ def apply_to_output_dir(fc_dir: str, by_flowchart: Mapping[str, Mapping[str, str
         try:
             with open(path, encoding="utf-8") as fh:
                 content = fh.read()
-            patched = patch_unit_flowcharts(content, fn[:-len(".json")], by_flowchart)
+            patched = patch_unit_flowcharts(content, fn[:-len(".json")], by_flowchart,
+                                            shapes)
         except (OSError, RedrawError):
             continue
         if not patched.redrawn:

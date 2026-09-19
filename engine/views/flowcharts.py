@@ -460,15 +460,17 @@ def _apply_text_overrides(out_dir, config) -> int:
     because a correction could not be applied.
     """
     try:
-        from review.phase3_overrides import NODE_LABEL_KIND, from_config
+        from review.phase3_overrides import (NODE_LABEL_KIND, from_config,
+                                             shapes_from_config)
         by_flowchart = from_config(config, NODE_LABEL_KIND)
+        shapes = shapes_from_config(config)
     except Exception:                              # noqa: BLE001 - see docstring
         return 0
     if not by_flowchart:
         return 0
     try:
         from review.redraw import apply_to_output_dir
-        done = apply_to_output_dir(out_dir, by_flowchart)
+        done = apply_to_output_dir(out_dir, by_flowchart, shapes)
     except Exception as exc:                       # noqa: BLE001 - see docstring
         log("could not apply text overrides: %s" % exc, component="flowcharts", err=True)
         return 0

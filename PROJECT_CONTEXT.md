@@ -12,7 +12,7 @@
 >   how: [docs/design/REVIEW_UPDATE_DESIGN.md](docs/design/REVIEW_UPDATE_DESIGN.md) ·
 >   HTTP: [docs/spec/REVIEW_UPDATE_API_SPEC.md](docs/spec/REVIEW_UPDATE_API_SPEC.md).
 > - Code lives in `engine/review/`. Build order + progress: DESIGN §13. Reasoning for every decision
->   is in the dated entries below, 2026-09-16 → 2026-09-18.
+>   is in the dated entries below, 2026-09-16 → 2026-09-20.
 
 > **⭐ WORK STATUS — 2026-08-14 · branch `db-with-increment-changes` (READ THIS FIRST in a new chat).**
 > - **The PostgreSQL migration is COMPLETE and validated on the office box.** Postgres holds the model,
@@ -217,6 +217,52 @@
 >   `edgeRouting:ORTHOGONAL`) are not yet applied → **pending**.
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
+
+> Updated: 2026-09-20 (**review_update_v1 - the feature run END TO END on SQLite, and the ordering
+> bug that only a real run could find**. No PostgreSQL on this machine, so the whole feature was
+> exercised against a SQLite database with a real 205-file C++ source tree: a full v1 (140
+> functions, 26 DOCX), a correction of each kind, an export, then an incremental v2. The unit and
+> API suites passed throughout and did not see the bug below.
+>
+> **What the run proved works.** A `description` correction reaches the model, is copied into
+> `interface_tables.json` by `rerender.patch_interface_tables`, and the string appears in the
+> exported `software_detailed_design_Sample-Core.docx`. The export guard refused a stale
+> `--from-phase 4` and accepted it after `--from-phase 3` re-derived. A `nodeLabel` correction
+> reached the stored CFG, rebuilt the DOT, recorded a `slot_shape` and redrew the PNG.
+>
+> **The bug: carry-forward runs in Phase 2; the flowchart it needs does not exist until Phase 3.**
+> On v2 the node-label correction was ORPHANED even though `source_hash` was identical and the
+> shape was identical in the baseline, the target and the recorded override. `_still_applies` read
+> `target.shapes`, which is built from the target's flowchart OUTPUT - and at carry time Phase 3
+> has not run, so it was empty. `shape_matches` correctly refuses a missing claim, so every node
+> correction orphaned itself on the first regeneration. Nothing in 1600+ unit tests could see it:
+> each half was right, and only their ORDER was wrong.
+>
+> **Three-part fix.** (a) `_still_applies` falls back to the BASELINE's graph, which is what is
+> being carried from. (b) The `slot_shape` IS now copied onto the carried row (orphans excepted) -
+> **this reverses the decision recorded in the 2026-09-19 entry and DESIGN 10**, which nulled it.
+> Nulling means the next generation sees "no claim", and a refused missing claim orphans the row a
+> version later. The shape is a claim about the graph the TEXT was written for; that claim travels
+> with the text. (c) The decisive `REQ-ID-02` check moved to
+> `phase3_overrides.apply_to_flowchart_json(entries, by_flowchart, shapes)` - the last moment
+> before the label is replaced, and the only point at which the graph being written exists. A
+> mismatch there DROPS the correction and leaves the LLM label.
+>
+> Carry-forward's baseline check is deliberately the weaker one now: its job is to mark a stale
+> correction orphaned so the reviewer is TOLD, not to be the barrier. `nodeLabelShapes` travels
+> beside `nodeLabel` through `overrides_for_config` -> `_analyzerTextOverrides` -> `shapes_from_config`
+> -> `redraw.py` -> `views/flowcharts.py`.
+>
+> **Re-run after the fix**: `[run_views] applying 2 reviewer correction(s) to this run`; the v2
+> `nodeLabel` row carries `orphan=False` and its shape; the corrected label is in v2's stored CFG
+> and its regenerated DOT. New tests: `TestTheShapeIsCheckedWhereTheTextLands` (6) and five in
+> `test_review_carry_forward.py`, including `test_a_target_with_no_flowchart_yet_still_carries`
+> which pins exactly this. DESIGN gains 10.1; HANDOVER gains invariant 4.13, and its 7 no longer
+> claims steps 6-9 are unbuilt.
+>
+> **The lesson, again: measuring beats recalling.** Every part of this feature was reasoned about
+> carefully and tested; the defect was in the seam between two correct parts, and only running it
+> showed it.)
 
 > Updated: 2026-09-19e (**review_update_v1 - a spec-vs-code audit, and its four fixes**. Checked
 > all 43 requirements against the implementation rather than from memory; four genuine

@@ -143,16 +143,62 @@ class TestTheNodeListGuard:
         _seed_version(conn, "v4")
         assert cf.carry_overrides(conn, "v3", "v4").orphaned == 1
 
-    def test_the_shape_is_not_carried_onto_the_new_row(self, conn):
-        """It describes the BASELINE's graph. Carrying it would let the next version's
-        carry-forward check a correction against a shape it never verified."""
-        _override(conn, "v3", slot.NODE_LABEL, slot.for_node(FID, "n1"),
-                  shape=slot.cfg_shape(["n0", "n1", "n2"]))
+    def test_the_shape_travels_with_the_correction(self, conn):
+        """An earlier version of this asserted the OPPOSITE -- that the shape is dropped,
+        because it describes the baseline's graph.
+
+        A real two-version run showed that was wrong. Dropping it means the NEXT generation sees
+        "no claim", and `shape_matches` refuses a missing claim, so a node correction could
+        survive exactly one version and then orphan itself for no reason anybody could see.
+
+        The shape is a claim about the graph the TEXT was written for, and that claim stays true
+        as the text travels. What validates it is `phase3_overrides`, against the CFG actually
+        being written.
+        """
+        shape = slot.cfg_shape(["n0", "n1", "n2"])
+        _override(conn, "v3", slot.NODE_LABEL, slot.for_node(FID, "n1"), shape=shape)
         _seed_version(conn, "v4")
         cf.carry_overrides(conn, "v3", "v4")
         row = conn.execute(sa.select(s.text_overrides)
                            .where(s.text_overrides.c.version_id == "v4")).first()
-        assert row.slot_shape is None
+        assert row.slot_shape == shape
+
+    def test_an_orphaned_correction_carries_no_shape(self, conn):
+        """It makes no claim worth re-checking, and leaving one would invite a later run to
+        treat it as verified."""
+        _override(conn, "v3", slot.NODE_LABEL, slot.for_node(FID, "n1"),
+                  shape=slot.cfg_shape(["n0", "n1", "n2"]))
+        _seed_version(conn, "v4", source_hash="h2")          # code changed -> orphan
+        cf.carry_overrides(conn, "v3", "v4")
+        row = conn.execute(sa.select(s.text_overrides)
+                           .where(s.text_overrides.c.version_id == "v4")).first()
+        assert bool(row.is_orphaned) and row.slot_shape is None
+
+    def test_a_target_with_no_flowchart_yet_still_carries(self, conn):
+        """THE BUG A REAL RUN FOUND, and the reason this class exists in its current form.
+
+        The carry-forward runs in Phase 2. Phase 3 is what produces the target's flowchart, so
+        at carry time there is normally NOTHING to compare the shape against. Comparing against
+        nothing and orphaning meant a node correction could never survive a generation -- proven
+        on a two-version run where the source hash, the baseline shape and the recorded shape all
+        matched and the correction orphaned anyway.
+
+        So the check falls back to the BASELINE's graph, which is what is being carried from.
+        """
+        shape = slot.cfg_shape(["n0", "n1", "n2"])
+        _override(conn, "v3", slot.NODE_LABEL, slot.for_node(FID, "n1"), shape=shape)
+        _seed_version(conn, "v4", node_ids=())               # no flowchart output yet
+        out = cf.carry_overrides(conn, "v3", "v4")
+        assert (out.carried, out.orphaned) == (1, 0), out.reasons
+
+    def test_a_baseline_whose_graph_disagrees_still_orphans(self, conn):
+        """The fallback is a fallback, not a free pass: if even the baseline's graph does not
+        match the recorded shape, the correction was never validly placed."""
+        _override(conn, "v3", slot.NODE_LABEL, slot.for_node(FID, "n1"),
+                  shape=slot.cfg_shape(["completely", "different"]))
+        _seed_version(conn, "v4", node_ids=())
+        out = cf.carry_overrides(conn, "v3", "v4")
+        assert (out.carried, out.orphaned) == (0, 1)
 
 
 class TestNothingIsEverDropped:
@@ -236,7 +282,7 @@ class TestWhatPhase3Receives:
         copy of the same fact."""
         _override(conn, "v3", slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, FID))
         payload = cf.overrides_for_config(conn, "v3")
-        assert set(payload) == {"nodeLabel", "behaviourDescription"}
+        assert set(payload) == {"nodeLabel", "nodeLabelShapes", "behaviourDescription"}
         assert payload["nodeLabel"] == {} and payload["behaviourDescription"] == {}
 
     def test_config_is_copied_not_mutated(self, conn):
@@ -250,3 +296,13 @@ class TestWhatPhase3Receives:
     def test_a_version_with_no_corrections_is_cheap_and_empty(self, conn):
         payload = cf.overrides_for_config(conn, "v3")
         assert payload["nodeLabel"] == {} and payload["behaviourDescription"] == {}
+
+    def test_the_shapes_travel_beside_the_labels(self, conn):
+        """Phase 3 needs both: the text to write, and the claim about which graph it was written
+        for. Without the second it would apply a correction to a renumbered flowchart."""
+        shape = slot.cfg_shape(["n0", "n1", "n2"])
+        _override(conn, "v3", slot.NODE_LABEL, slot.for_node(FID, "n1"), human="Node text.",
+                  shape=shape)
+        payload = cf.overrides_for_config(conn, "v3")
+        assert payload["nodeLabel"] == {FID: {"n1": "Node text."}}
+        assert payload["nodeLabelShapes"] == {FID: shape}

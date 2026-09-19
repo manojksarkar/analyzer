@@ -210,6 +210,30 @@ render `"UnitB - apply"`).
 
 → `test_review_behaviour_save.py::TestTheCollisionIsGone`.
 
+### 4.13 `REQ-ID-02` is enforced where the graph exists, not where it is convenient
+
+A node id is a **position**, not an identity: the same source can renumber if the CFG builder
+changes or if `cfgSimplification` crosses its 15-node threshold. `slot_shape` — a hash of the
+flowchart's node-id list — is what catches that, and it has to be checked against the graph the text
+is about to be written into.
+
+That graph exists in exactly one place: `phase3_overrides.apply_to_flowchart_json`, immediately
+before the label is replaced. A mismatch there **drops** the correction and leaves the LLM's label.
+
+Carry-forward runs in Phase 2, *before* Phase 3 has produced the new version's flowcharts, so it
+cannot make that check — it compares against the baseline's graph, and a mismatch marks the row
+orphaned so the reviewer is told. If you ever move the shape check out of Phase 3 "because
+carry-forward already does it", a builder change between two versions will write reviewer text onto
+the wrong box, silently.
+
+The shape **is** copied onto the carried row (orphans excepted). Nulling it makes the next
+generation see "no claim"; `shape_matches` refuses a missing claim, so the correction would orphan
+itself one version later.
+
+→ `test_review_phase3_overrides.py::TestTheShapeIsCheckedWhereTheTextLands` and
+`test_review_carry_forward.py::test_a_target_with_no_flowchart_yet_still_carries`, which pins the
+bug a real two-version run found.
+
 ---
 
 ## 5. Two defects this branch found in existing code
@@ -230,8 +254,14 @@ the same pair (`currentFunctionId` exists for exactly this reason); this half wa
 
 ```
 python -m alembic heads                 # exactly one
-python -m pytest tests/unit -q          # 1655 passed, 10 skipped at 90ea69e
+python -m pytest tests/unit tests/api -q
 ```
+
+The feature has also been run end to end against a **SQLite** database on a machine with no
+PostgreSQL — a full v1, a correction of each kind, an export, then an incremental v2 — and the
+corrected text was found in the `.docx`, in `interface_tables.json`, in the stored CFG and in the
+regenerated DOT. That run is what found the carry-forward ordering bug behind §4.13. If you change
+anything in `engine/review/`, repeat it: the unit suite passed throughout, and did not see it.
 
 The review tests specifically:
 
@@ -246,11 +276,11 @@ python -m pytest tests/unit/test_review_*.py tests/unit/test_cfg_for_rendering.p
 
 ## 7. What is deliberately not done yet
 
-Build-order steps 6–9 in [REVIEW_UPDATE_DESIGN §13](REVIEW_UPDATE_DESIGN.md#13-build-order): the
-cascade, image rendering as a background job, carry-forward into the next version, and
-`REQ-PRE-02`.
+Build-order steps 1–9 in [REVIEW_UPDATE_DESIGN §13](REVIEW_UPDATE_DESIGN.md#13-build-order) are
+all built, including the cascade, the render queue and carry-forward into the next version.
+`REQ-PRE-02` is the one that is only half done.
 
-Two consequences worth knowing:
+Consequences worth knowing:
 
 - **`REQ-PRE-02` is half done.** An export-only run restores its text from the database first, so
   every reader gets database content — but `export_docx(json_path=…)`, the flowchart engine's

@@ -90,6 +90,10 @@ CONFIG_KEY = "_analyzerTextOverrides"
 NODE_LABEL_KIND = slot.NODE_LABEL
 BEHAVIOUR_KIND = slot.BEHAVIOUR_DESCRIPTION
 
+#: The shapes travel beside the labels, under their own key, because they are a different
+#: fact about the same slots -- what graph the text was written for, not what the text is.
+NODE_LABEL_SHAPES = "nodeLabelShapes"
+
 
 def from_config(config, slot_kind: str):
     """This run's corrections for one kind, or `{}`.
@@ -103,9 +107,37 @@ def from_config(config, slot_kind: str):
     return value if isinstance(value, dict) else {}
 
 
+def shapes_from_config(config) -> Dict[str, str]:
+    """The `{flowchart_id: slot_shape}` claims this run must check before applying a label."""
+    section = (config or {}).get(CONFIG_KEY) or {}
+    value = section.get(NODE_LABEL_SHAPES) if isinstance(section, dict) else None
+    return value if isinstance(value, dict) else {}
+
+
 # ---------------------------------------------------------------------------
 # labels for one flowchart
 # ---------------------------------------------------------------------------
+def shapes_by_flowchart(rows: Iterable[Any]) -> Dict[str, str]:
+    """`{flowchart_id: slot_shape}` from `text_overrides` rows that carry one.
+
+    Read alongside `labels_by_flowchart` so the application can check REQ-ID-02 against the graph
+    it is writing into. Every override on one flowchart carries the same shape, so the last one
+    read wins and they agree by construction.
+    """
+    out: Dict[str, str] = {}
+    for r in rows or ():
+        if getattr(r, "slot_kind", None) != slot.NODE_LABEL:
+            continue
+        if getattr(r, "is_orphaned", False) or not getattr(r, "slot_shape", None):
+            continue
+        try:
+            parts = slot.parse(slot.NODE_LABEL, getattr(r, "slot_key", ""))
+        except slot.SlotKeyError:
+            continue
+        out[parts["entity_key"]] = r.slot_shape
+    return out
+
+
 def labels_by_flowchart(rows: Iterable[Any]) -> Dict[str, Dict[str, str]]:
     """`text_overrides` rows -> `{flowchart_id: {node_id: human_text}}`.
 
@@ -155,13 +187,22 @@ def apply_to_cfg(cfg: Mapping[str, Any], labels: Mapping[str, str]) -> int:
     return applied
 
 
-def apply_to_flowchart_json(entries: Iterable[Any], by_flowchart: Mapping[str, Mapping[str, str]]
-                            ) -> List[str]:
+def apply_to_flowchart_json(entries: Iterable[Any], by_flowchart: Mapping[str, Mapping[str, str]],
+                            shapes: Optional[Mapping[str, str]] = None) -> List[str]:
     """Apply corrections across one unit's flowchart JSON. Returns the flowchart ids changed.
 
     A unit's file is a list of per-function entries; `functionKey` is the flowchart id
     (`REQ-ID-04`). Entries with no corrections are left exactly as they are, so a unit where
     nobody edited anything is rewritten byte-identically.
+
+    `shapes` is `{flowchart_id: slot_shape}` from the override rows. **This is where REQ-ID-02 is
+    really enforced**: it is the last moment before the text lands and the only point at which the
+    graph being written actually exists. The carry-forward cannot do it -- it runs in Phase 2,
+    before Phase 3 has produced the graph -- so it checks what it can and leaves the decisive
+    check here.
+
+    A correction whose shape disagrees with the CFG in hand is DROPPED, not applied to whatever
+    now occupies that node id.
     """
     changed = []
     for entry in entries or ():
@@ -171,7 +212,15 @@ def apply_to_flowchart_json(entries: Iterable[Any], by_flowchart: Mapping[str, M
         labels = by_flowchart.get(fid) if fid else None
         if not labels:
             continue
-        if apply_to_cfg(entry.get("cfg") or {}, labels):
+        cfg = entry.get("cfg") or {}
+        claimed = (shapes or {}).get(fid)
+        if claimed:
+            try:
+                if not slot.shape_matches(claimed, slot.shape_of_cfg(cfg)):
+                    continue      # renumbered since the correction was written -- REQ-ID-02
+            except slot.SlotKeyError:
+                continue          # a flowchart with no nodes has no shape to agree with
+        if apply_to_cfg(cfg, labels):
             changed.append(fid)
     return changed
 

@@ -26,6 +26,7 @@ class _Row:
     def __init__(self, kind, key, text, orphaned=False):
         self.slot_kind, self.slot_key, self.human_text = kind, key, text
         self.is_orphaned = orphaned
+        self.slot_shape = None
 
 
 def _cfg(*ids):
@@ -158,3 +159,47 @@ class TestApplyingAcrossAUnitFile:
 
     def test_an_entry_without_a_function_key_is_skipped(self):
         assert p3.apply_to_flowchart_json([{"cfg": _cfg("n0")}], {FID: {"n0": "x"}}) == []
+
+
+class TestTheShapeIsCheckedWhereTheTextLands:
+    """REQ-ID-02's decisive check.
+
+    The carry-forward cannot make it: it runs in Phase 2, before Phase 3 has produced the graph.
+    So it checks what it can and leaves the real one here -- the last moment before the text
+    lands, and the only point at which the CFG being written actually exists.
+    """
+
+    def _entries(self, *ids):
+        return [{"name": "ns::doThing", "functionKey": FID,
+                 "cfg": {"nodes": [{"id": i, "label": "llm " + i, "type": "ACTION"}
+                                   for i in ids], "edges": []}}]
+
+    def test_a_matching_shape_applies(self):
+        entries = self._entries("n0", "n1")
+        shapes = {FID: slot.cfg_shape(["n0", "n1"])}
+        assert p3.apply_to_flowchart_json(entries, {FID: {"n1": "Corrected"}}, shapes) == [FID]
+
+    def test_a_renumbered_graph_is_refused(self):
+        """Same node id, different graph -- a builder change between the two versions. Applying
+        would put the right sentence on whatever now occupies n1."""
+        entries = self._entries("n0", "n1", "n2")
+        shapes = {FID: slot.cfg_shape(["n0", "n1"])}          # written against a 2-node graph
+        assert p3.apply_to_flowchart_json(entries, {FID: {"n1": "Corrected"}}, shapes) == []
+        labels = {n["id"]: n["label"] for n in entries[0]["cfg"]["nodes"]}
+        assert labels["n1"] == "llm n1", "the LLM's label must survive untouched"
+
+    def test_no_shape_claim_still_applies(self):
+        """A correction made before shapes were recorded, or one saved directly against this
+        version. There is nothing to check, and refusing would drop it for no reason."""
+        entries = self._entries("n0", "n1")
+        assert p3.apply_to_flowchart_json(entries, {FID: {"n1": "Corrected"}}, {}) == [FID]
+
+    def test_reading_the_shapes_off_the_rows(self):
+        rows = [_Row(slot.NODE_LABEL, slot.for_node(FID, "n1"), "text")]
+        rows[0].slot_shape = "abc123"
+        assert p3.shapes_by_flowchart(rows) == {FID: "abc123"}
+
+    def test_an_orphaned_row_contributes_no_shape(self):
+        rows = [_Row(slot.NODE_LABEL, slot.for_node(FID, "n1"), "text", orphaned=True)]
+        rows[0].slot_shape = "abc123"
+        assert p3.shapes_by_flowchart(rows) == {}
