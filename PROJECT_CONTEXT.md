@@ -218,6 +218,39 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-19b (**review_update_v1 - the pipeline now CALLS the feature**. Two one-line
+> call sites; everything beneath them was already built and tested but nothing reached them.
+>
+> `incremental/engine.py::_carry_review_overrides` sits beside `carry_forward_globals`, because the
+> two belong together: one moves the reviewer's WORDS (the baseline's model already holds them),
+> the other the RECORD of who wrote them. Without the second the new version does not know which of
+> its text is human-authored - undo has nothing to restore to, the cascade regenerates over a
+> human's wording, and the two Phase-3 kinds vanish.
+>
+> `run_views.py::_with_text_overrides` attaches this version's corrections to the config
+> immediately before the views run (REQ-AP-05). Attached in the RUNNER, not in a view: a view stays
+> a pure function of `(model, config)` and never opens a database of its own. The phases are
+> separate subprocesses, so the runner is also the first place with both the version id and the
+> config in hand.
+>
+> **Both call sites are non-fatal.** A generation that has already paid for the parse and the LLM
+> must not be lost because corrections could not be copied or loaded; they are logged and stay
+> where they are for a later run.
+>
+> `tests/unit/test_review_pipeline_wiring.py` checks each call site exists and runs at the right
+> point, with a matcher proven unable to match a `def` line - the mistake made earlier in this
+> feature, where a wiring test could not fail. `TestEveryPieceHasACaller` maps every piece to its
+> caller, and asserts that `run_pending` and the regeneration-queue consumer still have NONE, so
+> the day one acquires a caller the docs listing them as missing fail alongside it.
+>
+> Three reverts checked: Phase 3 not handed the corrections, the generation not carrying them, and
+> the corrections attached after the views ran. Each fails.
+>
+> 18 tests. Unit + API suites 2004 passed / 10 skipped.
+>
+> **Remaining: 6b (consume the regeneration queue), a scheduler for `render_queue.run_pending`,
+> and 9 (`REQ-PRE-02` - read output from the database).**)
+
 > Updated: 2026-09-19 (**review_update_v1 step 8 - carry-forward; `slot_shape` finally has a
 > reader**. `engine/review/carry_forward.py`.
 >

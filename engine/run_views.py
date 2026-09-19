@@ -152,6 +152,33 @@ def _load_model():
         raise SystemExit(1)
 
 
+
+def _with_text_overrides(config):
+    """`config` plus this version's reviewer corrections (`REQ-AP-05`).
+
+    Returns `config` unchanged when there is no version id (a standalone run) or no database --
+    both are ordinary, and neither is a reason to fail a phase that has already paid for the
+    parse and the enrichment. A correction that cannot be loaded is logged, not raised: losing a
+    whole generation over it would cost far more than the correction is worth.
+    """
+    try:
+        from core.run_context import version_id as _vid
+        from core.db import get_engine, is_database_configured
+        vid = _vid()
+        if not (vid and is_database_configured()):
+            return config
+        from review.carry_forward import config_with_overrides
+        with get_engine().connect() as cx:
+            out = config_with_overrides(cx, vid, config)
+        from review.phase3_overrides import CONFIG_KEY
+        n = sum(len(v) for v in (out.get(CONFIG_KEY) or {}).values())
+        if n:
+            print("[run_views] applying %d reviewer correction(s) to this run" % n)
+        return out
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        print("[run_views] could not load text overrides: %s" % exc)
+        return config
+
 def main():
     args = sys.argv[1:]        # path flags already applied at import
 
@@ -258,6 +285,12 @@ def main():
         # would print `narrowed to unit(s): __none__`, which reads like a bug.
         if selected_units != ["__none__"]:
             print(f"[run_views] narrowed to unit(s): {', '.join(selected_units)}")
+    # REQ-AP-05. The two Phase-3 kinds -- node labels and behaviour descriptions -- have no
+    # model field, so their corrections are an INPUT to this phase. Attached HERE, in the
+    # runner, rather than inside a view: a view stays a pure function of (model, config) and
+    # never opens a database of its own.
+    config = _with_text_overrides(config)
+
     run_views(model, output_dir, model_dir, config, doc_type=doc_type)
 
 

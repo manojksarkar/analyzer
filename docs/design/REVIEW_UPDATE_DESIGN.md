@@ -714,6 +714,7 @@ Each step leaves the tree working and is independently useful.
 | 5 | ~~API + undo, incl. the flowchart endpoint ([§11.1](#111-the-flowchart-endpoint))~~ **DONE** | the UI can be built against it |
 | 6 | ~~Cascade~~ **DONE (recording half)** | correctness improvement on a working feature |
 | 6b | Consume the queue during a run | needs a checkout and an LLM, so it belongs to the pipeline |
+| 8b | ~~Wire carry-forward + the Phase-3 payload into a run~~ **DONE** | the pieces were built and tested but nothing called them |
 | 7 | ~~Images~~ **DONE** | the slowest and most isolated part |
 | 8 | ~~Carry-forward into the next version~~ **DONE** | needs a second version to test against |
 | 9 | `REQ-PRE-02` — read output from the database | large, independent; removes the last disk dependency |
@@ -724,6 +725,28 @@ Steps 1 and 9 can be done by someone else in parallel — they touch different f
 `behaviourDescription` have no model field, so there is nothing for an override to write to. It
 was a gap before `REQ-API-08`; it is a blocker now, because the flowchart endpoint is the one
 `REQ-API-08` describes and `nodeLabel` is the kind it carries.
+
+---
+
+### 13.1 Where the pipeline calls this feature
+
+Two call sites, both deliberately thin — everything beneath them is tested on its own:
+
+| what | where | why there |
+|---|---|---|
+| `carry_overrides` | `incremental/engine.py::_carry_review_overrides`, beside `carry_forward_globals` | the two belong together: one moves the words, the other the record of who wrote them |
+| `config_with_overrides` | `run_views.py::_with_text_overrides`, immediately before `run_views(...)` | the RUNNER attaches them, so a view stays a pure function of `(model, config)` and never opens a database |
+| `stamp_pipeline_derivation` | `incremental/store.py::capture_output` | the one point Phase-3 output reaches the database |
+| `assert_exportable` | `analyzer.py::cmd_reexport` | before the subprocess, so a stale export is refused rather than produced |
+
+Both new call sites are **non-fatal**. A generation that has already paid for the parse and the LLM
+must not be lost because corrections could not be copied or loaded — they are logged, and the
+corrections stay where they are for a later run.
+
+`tests/unit/test_review_pipeline_wiring.py` checks each call site exists, that it runs at the right
+point, and — in `TestEveryPieceHasACaller` — that no piece of the feature is left with no caller by
+accident. It also asserts that `run_pending` and the regeneration-queue consumer still have **none**,
+so when one acquires a caller the docs listing them as missing fail with it.
 
 ---
 

@@ -331,10 +331,6 @@ Honest gaps, so the UI does not plan around something that is not there.
 - **Nothing drives the render queue automatically.** `renderPending` is a real job and the export
   blocks on it, but a pending job is finished by `render_queue.run_pending` being called on a host
   with the output tree — no daemon runs it on a schedule yet.
-- **The carry-forward is built but not wired into a run.** `carry_forward.carry_overrides` copies
-  corrections onto a new version and orphans the ones that no longer apply, with the `REQ-ID-02`
-  node-list gate now genuinely exercised; calling it as part of generating a version is the
-  remaining integration.
 - **Nothing consumes the regeneration queue yet.** R10 reports what needs regenerating and the
   entries are recorded correctly; the run that rebuilds them, and clears each entry as it does, is
   still to come. Until then a queued dependent keeps its old wording.
