@@ -7,3 +7,16 @@
 PUBLIC void statBumpFromOtherUnit(void) {
     StatCounters::s_publicCount += 2;
 }
+
+// Gives the two NsCounters methods a caller in ANOTHER FILE, so they reach the interface
+// table and their In/Out is visible in the document. The protected member they touch stays
+// out of it -- which is the whole point of the pair: the direction is published, the
+// storage that decides it is not.
+PUBLIC void statDriveNsCounter(void) {
+    NsCounters c;
+    c.bumpNs();
+    c.peekNs();
+    c.bumpNsPlain();
+    NS::Wrapped w;
+    w.bumpWrapped();
+}
