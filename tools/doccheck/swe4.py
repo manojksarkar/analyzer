@@ -56,6 +56,13 @@ _TABLE_B_FIELDS = (
 # TC_IF_LAYER1_DIAG_CLASSSTATICS_01
 _TC_ID_RE = re.compile(r"^TC_(?P<iface>P?IF_.+_(?P<nn>\d+))$")
 
+# A component's second kind of spec: one per interaction, under its own level-3
+# heading after that component's units. The heading reads the same as the SWE.3
+# behaviour diagram it pairs with, one to one.
+_DYNAMIC_HEADING = "dynamic behaviour"
+_INTERACTION_RE = re.compile(
+    r"^(?P<unit>.+?)\s+-\s+(?P<func>.+?)\s*\(\s*(?P<cunit>.+?)\s+-\s+(?P<cfunc>.+?)\s*\)\s*$")
+
 # The four values the wiki fixes, so a drift in them is a finding and not a guess.
 FIXED = {
     "generationMethod": "Analysis of Requirements",
@@ -94,11 +101,23 @@ POLICIES = {
     "document": {},
 }
 
+# An interaction spec keeps every Table A / Table B field a function spec has,
+# and adds the four names its heading carries. The Test Case ID is left alone
+# here too -- the wiki records that scheme as still open.
+POLICIES["interaction"] = dict(POLICIES["testcase"])
+POLICIES["interaction"].update({
+    "unit":           Policy("name", HIGH, "target unit"),
+    "function":       Policy("name", HIGH, "target function"),
+    "callerUnit":     Policy("name", HIGH, "entry-point unit"),
+    "callerFunction": Policy("name", HIGH, "entry-point function"),
+})
+
 LEVELS = {
     "section": "L0",
     "component": "L1",
     "unit": "L1",
     "testcase": "L2",
+    "interaction": "L4",
 }
 
 
@@ -152,6 +171,7 @@ def extract(blocks) -> Entity:
     """A SWE.4 block stream as an entity tree."""
     doc = Entity(kind="document", name=DOC_TYPE, key=DOC_TYPE)
     in_body = False
+    in_dynamic = False
     component = None
     unit = None
     case = None
@@ -165,6 +185,7 @@ def extract(blocks) -> Entity:
         if b.kind == "heading":
             if b.level == 1:
                 component = unit = case = None
+                in_dynamic = False
                 title = (b.text or "").casefold()
                 in_body = title.startswith(_BODY_HEADING)
                 if not in_body and _is_fixed_section(b.text):
@@ -173,6 +194,7 @@ def extract(blocks) -> Entity:
 
             elif b.level == 2:
                 unit = case = None
+                in_dynamic = False
                 if in_body:
                     component = Entity(kind="component", name=b.text, number=b.number,
                                        index=_count("component"))
@@ -180,8 +202,29 @@ def extract(blocks) -> Entity:
 
             elif b.level == 3 and component is not None:
                 case = None
-                unit = Entity(kind="unit", name=b.text, number=b.number, index=_count("unit"))
-                component.children.append(unit)
+                if (b.text or "").casefold().startswith(_DYNAMIC_HEADING):
+                    # Not a unit: the component's interaction specs live here.
+                    unit = None
+                    in_dynamic = True
+                else:
+                    in_dynamic = False
+                    unit = Entity(kind="unit", name=b.text, number=b.number,
+                                  index=_count("unit"))
+                    component.children.append(unit)
+
+            elif b.level == 4 and in_dynamic and component is not None:
+                case = Entity(kind="interaction", name=b.text, number=b.number,
+                              index=_count("interaction"))
+                m = _INTERACTION_RE.match(b.text)
+                if m:
+                    case.fields["unit"] = m.group("unit").strip()
+                    case.fields["function"] = m.group("func").strip()
+                    case.fields["callerUnit"] = m.group("cunit").strip()
+                    case.fields["callerFunction"] = m.group("cfunc").strip()
+                case.fields["qualifiedName"] = b.text
+                case.fields["hasTableA"] = False
+                case.fields["hasTableB"] = False
+                component.children.append(case)
 
             elif b.level == 4 and unit is not None:
                 name = cells.function_of(b.text, unit.name)
@@ -256,13 +299,68 @@ def id_integrity(doc):
                         out.append(("fixed-value-drift", where,
                                     "%s reads %r; the wiki fixes it at %r"
                                     % (name, got, wanted)))
+
+        # An interaction spec's id scheme is recorded as still open, so its shape
+        # is not checked. What the wiki does require is that it stay distinct from
+        # the id of the same function's own spec -- and that is checkable.
+        function_ids = {(c.fields.get("testCaseId") or "").strip().strip("`")
+                        for u in component.of_kind("unit") for c in u.of_kind("testcase")}
+        function_ids.discard("")
+        for ia in component.of_kind("interaction"):
+            where = "%s / Dynamic Behaviour / %s" % (component.name, ia.name)
+            raw = (ia.fields.get("testCaseId") or "").strip().strip("`")
+            if not raw:
+                out.append(("tc-id-missing", where, "no Test Case ID"))
+            elif raw in function_ids:
+                out.append(("tc-id-collision", where,
+                            "the interaction spec reuses %s, the id of the function's own "
+                            "spec; the wiki requires the two to stay distinct" % raw))
+            for name, wanted in FIXED.items():
+                got = (ia.fields.get(name) or "").strip().strip("`")
+                if got and got.casefold() != wanted.casefold():
+                    out.append(("fixed-value-drift", where,
+                                "%s reads %r; the wiki fixes it at %r" % (name, got, wanted)))
     return out
+
+
+def _table_checks(out, where, ent, expect_prefix=None):
+    """The checks that read the same for a function spec and an interaction spec."""
+    if not ent.fields.get("hasTableA"):
+        out.append(("missing-table-a", where, "no Table A (the test content)"))
+    if not ent.fields.get("hasTableB"):
+        out.append(("missing-table-b", where, "no Table B (the metadata)"))
+    qualified = ent.fields.get("qualifiedName", "")
+    if expect_prefix and qualified and not qualified.startswith(expect_prefix + "-"):
+        out.append(("heading-unit-mismatch", where,
+                    "the heading %r does not start with its unit %r"
+                    % (qualified, expect_prefix)))
+    steps = ent.fields.get("testSteps") or []
+    if steps and not (ent.fields.get("expected") or []):
+        out.append(("no-expected-results", where,
+                    "there are test steps but no expected results"))
+    shape = ent.fields.get("testStepShape") or []
+    if shape and shape[0] != 1:
+        out.append(("steps-start-nested", where,
+                    "the first test step is nested at depth %d" % shape[0]))
+    for i in range(1, len(shape)):
+        if shape[i] - shape[i - 1] > 1:
+            out.append(("steps-skip-level", where,
+                        "test step nesting jumps from depth %d to %d"
+                        % (shape[i - 1], shape[i])))
+            break
 
 
 def self_consistency(doc):
     """What one document can contradict about itself."""
     out = []
     for component in doc.of_kind("component"):
+        for ia in component.of_kind("interaction"):
+            where = "%s / Dynamic Behaviour / %s" % (component.name, ia.name)
+            if not ia.fields.get("unit"):
+                out.append(("interaction-heading-unreadable", where,
+                            "the heading does not read "
+                            "'<Unit> - <Function> (<CallerUnit> - <CallerFunction>)'"))
+            _table_checks(out, where, ia)
         for unit in component.of_kind("unit"):
             cases = unit.of_kind("testcase")
             if not cases:
@@ -270,28 +368,5 @@ def self_consistency(doc):
                             "the unit has a section but no test case"))
             for case in cases:
                 where = "%s / %s / %s" % (component.name, unit.name, case.name)
-                if not case.fields.get("hasTableA"):
-                    out.append(("missing-table-a", where, "no Table A (the test content)"))
-                if not case.fields.get("hasTableB"):
-                    out.append(("missing-table-b", where, "no Table B (the metadata)"))
-                qualified = case.fields.get("qualifiedName", "")
-                if qualified and not qualified.startswith(unit.name + "-"):
-                    out.append(("heading-unit-mismatch", where,
-                                "the heading %r does not start with its unit %r"
-                                % (qualified, unit.name)))
-                steps = case.fields.get("testSteps") or []
-                expected = case.fields.get("expected") or []
-                if steps and not expected:
-                    out.append(("no-expected-results", where,
-                                "there are test steps but no expected results"))
-                shape = case.fields.get("testStepShape") or []
-                if shape and shape[0] != 1:
-                    out.append(("steps-start-nested", where,
-                                "the first test step is nested at depth %d" % shape[0]))
-                for i in range(1, len(shape)):
-                    if shape[i] - shape[i - 1] > 1:
-                        out.append(("steps-skip-level", where,
-                                    "test step nesting jumps from depth %d to %d"
-                                    % (shape[i - 1], shape[i])))
-                        break
+                _table_checks(out, where, case, expect_prefix=unit.name)
     return out

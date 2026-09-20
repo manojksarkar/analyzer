@@ -82,7 +82,7 @@ def _values_differ(policy, left, right, aliases):
         return a != b, sorted(left or []), sorted(right or [])
 
     if how == "name":
-        return aliases.key(str(left or "")) != aliases.key(str(right or "")), left, right
+        return aliases.key(normalise_text(left)) != aliases.key(normalise_text(right)), left, right
 
     if how == "set":
         a = {normalise_text(x) for x in (left or [])}
@@ -102,10 +102,10 @@ def _values_differ(policy, left, right, aliases):
         # different sentences are only worth a line at INFO.
         if is_placeholder(left) and is_placeholder(right):
             return False, left, right
-        return normalise_text(str(left or "")) != normalise_text(str(right or "")), left, right
+        return normalise_text(left) != normalise_text(right), left, right
 
     # exact
-    return normalise_text(str(left or "")) != normalise_text(str(right or "")), left, right
+    return normalise_text(left) != normalise_text(right), left, right
 
 
 def _compare_fields(result, level, path, left, right, policies, aliases):
@@ -116,7 +116,7 @@ def _compare_fields(result, level, path, left, right, policies, aliases):
         a, b = left.fields.get(name), right.fields.get(name)
 
         if policy.how == "enum":
-            ca, cb = canonical_enum(name, str(a or "")), canonical_enum(name, str(b or ""))
+            ca, cb = canonical_enum(name, a), canonical_enum(name, b)
             differs = normalise_text(ca) != normalise_text(cb)
             shown_a, shown_b = ca, cb
         else:

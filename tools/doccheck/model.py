@@ -102,9 +102,16 @@ def normalise_key(name: str) -> str:
     return s.casefold()
 
 
-def normalise_text(value: str) -> str:
-    """Whitespace-collapsed, case-folded -- for `exact`."""
-    return re.sub(r"\s+", " ", (value or "").strip()).casefold()
+def normalise_text(value) -> str:
+    """Whitespace-collapsed, case-folded -- for `exact`.
+
+    Anything is accepted, not just a string: a field may legitimately hold a
+    count or a list of nesting depths, and `0` must stay `0` rather than becoming
+    the empty string that `value or ""` would make of it.
+    """
+    if value is None:
+        return ""
+    return re.sub(r"\s+", " ", str(value).strip()).casefold()
 
 
 def is_placeholder(value) -> bool:
@@ -134,15 +141,16 @@ _IFACE_TYPE = {
 ENUMS = {"direction": _DIRECTION, "interfaceType": _IFACE_TYPE}
 
 
-def canonical_enum(field_name: str, value: str) -> str:
+def canonical_enum(field_name: str, value) -> str:
     """Canonical spelling of an enum cell, or the value unchanged when unknown.
 
     Unknown is left alone rather than forced: a value the client uses and we do
     not is exactly the finding worth printing, and silently folding it into the
     nearest known one would hide it.
     """
+    text = "" if value is None else str(value)
     table = ENUMS.get(field_name)
     if not table:
-        return (value or "").strip()
-    probe = re.sub(r"[\s_\-]+", "", (value or "")).casefold()
-    return table.get(probe, (value or "").strip())
+        return text.strip()
+    probe = re.sub(r"[\s_\-]+", "", text).casefold()
+    return table.get(probe, text.strip())
