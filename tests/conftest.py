@@ -171,7 +171,15 @@ def pytest_collection_finish(session):
            "--commit", sha, "--scope", "group:" + group, "--no-llm",
            # --doc-type all: SWE.3 *and* SWE.4. Without it the run defaults to swe3 and
            # test_specs.json is never written, so the SWE.4 view has no e2e coverage.
-           "--doc-type", "all"]
+           "--doc-type", "all",
+           # --full: go straight to generate_full and skip baseline selection. _scratch_repo
+           # rebuilds the sample's git repo from nothing every run, so its commit is new
+           # every time and no earlier version's commit still exists to be an ancestor of
+           # it. Without this the run dies in select_baseline -- `merge-base --is-ancestor`
+           # against a commit from a repo that was deleted -- and every e2e test errors on
+           # setup. There is no incremental path to exercise here anyway: a brand-new repo
+           # has no history to reuse.
+           "--full"]
 
     out.write(f"  Command: {' '.join(cmd)}\n")
     out.flush()
