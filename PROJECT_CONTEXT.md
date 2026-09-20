@@ -208,6 +208,92 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-20 (**visibility reworked: protected is private, methods read their C++ access, and a
+> `PUBLIC` marking no longer guarantees a row** — branch `fix/swe3-review-v1`, **UNCOMMITTED**).
+>
+> **The rule now.** A marking may RESTRICT, never promote. **Phase 1 records `public` or `private` and
+> nothing else** — two values, one bit. `_fn_is_private` then: `private` → private ·
+> `addressTakenByUnits` → public · else private unless a `calledByIds` entry lives in a **different
+> file**. `"default"` survives only as the LOOKUP's internal sentinel for "nothing written here, keep
+> looking" (it is what lets the macro scan hand over to the C++ access specifier); `_as_recorded` maps it
+> to `public` before it is stored. Nothing downstream ever told the two apart — every filter tests
+> `== "private"` — so as a stored value it described the source, not the behaviour.
+>
+> **Part A — protected (office review).** Methods under a `protected:` label were shipping as interface
+> rows. Two causes: every consumer tested `visibility == "private"` literally, so a `PROTECTED` marking
+> fell through to the call-graph rule; and the parser never read C++ access for methods at all (only for
+> static data members), so a `protected:` method recorded as unmarked and was published whenever a derived
+> class in another file called it — legal C++, a real cross-file caller. **Fixed in phase 1 only**, ~30
+> lines in `parser.py`: `_MACRO_TO_VISIBILITY` and `_ACCESS_TO_VISIBILITY` both send `PROTECTED` to
+> `"private"`, and new `_function_visibility(cursor)` (annotation first, else `cursor.access_specifier`
+> for a method) is wired into the function record. Clang reports access on out-of-line definitions, so no
+> `canonical` resolution. Clang's *effective* access is taken at face value, including the implicit
+> `private` of an unlabelled `class` member — private-by-default binds another unit as a written label
+> does. A macro still wins over a label. **The word `protected` no longer exists downstream**, so
+> `_fn_is_private`, the five view filters and the two exporter filters are UNCHANGED. An earlier attempt
+> threaded an `is_restricted()` predicate through 14 sites; byte-identical output, reverted.
+> **Lossy by choice** — a stored model cannot tell protected from private, so reversing means re-parsing.
+>
+> **Part B — the `PUBLIC` escape hatch, removed.** `_fn_is_private` lost its
+> `visibility == "public" -> return False` short-circuit. `addressTakenByUnits` was KEPT: an address in a
+> dispatch table is evidence of reachability, not an author's claim. **Revert = restore those two lines.**
+>
+> **Measured (A/B, phases 1-3, all views, LLM off).** Interface rows **122 → 110** (Part A) **→ 69**
+> (Part B). Part A: 12 removed, 20 renumbered, SWE.4 specs 98 → 91. Part B: 41 more removed, 39
+> renumbered — `main`, `opsDispatch`, `divide`, `SignalProcessor::reset`, seven `core*`, all eleven
+> `stat*` in `Diag|ClassStatics`. `App|Main` is left with one row, the global `g_globalResult`.
+> Ids are per-unit sequential, so a removal **reuses** an id: `IF_LAYER1_FULL_READWRITE_02` meant
+> `readWriteGlobal`, now `setHdrGlobal` — an external citation of an old id silently resolves to the wrong
+> function. Behaviour diagrams unchanged throughout.
+>
+> ⚠ **Standing risk, unmeasured.** The call graph knows only what was PARSED, so "no cross-file caller"
+> and "no cross-file caller *in this run's scope*" are one fact meaning opposite things. A
+> `--selected-layer` run cannot see the layer above calling in, so that layer's front door reads as
+> uncalled. An ISR or driver-registered callback has no named caller at all. **The sample cannot settle
+> this — 0 functions there have their only callers in another layer.** Check on a real office version:
+> count `visibility='public' AND left(interface_id,3)='IF_'`, then how many have a cross-file caller.
+>
+> **Fixtures.** `class DbSession` in `SampleCppProject/Layer1/Access/AccessVisibility.{h,cpp}` +
+> `AccessSession.cpp` (derived class supplying the cross-file caller) + `runAccessTests()` in `Main.cpp`:
+> `public:`/`protected:`/`private:` labels, an out-of-line definition, a label two declarations above its
+> member, a header-inline member. Nothing in the sample had a bare access label before.
+> Then `Access/AccessMatrix.{h,cpp}` + `AccessMatrixUser.cpp` + `runMatrixTests()` — **one cell per case**:
+> unmarked called / unmarked uncalled / `PUBLIC` uncalled; a `class` with no label at all (implicit
+> private); a `struct`'s four cases (implicit public, `public:`, `protected:`, `private:`); and the macro
+> beating the label in both directions. `AccessMatrixUser.cpp` holds the derived class and the two
+> `friend`s, so the restricted members are genuinely CALLED from another file — without that, "protected
+> is still PIF_" would pass for the wrong reason, an uncalled member being buried anyway.
+>
+> **A latent `_detect_visibility` bug that the matrix exposed, fixed here.** The 5-line backward scan ran
+> past the end of the preceding declaration and adopted its marking: `MtxNoLabel::hidden`, a C++-private
+> method, recorded `public` purely because `PUBLIC int mtxPublicUncalled() {…}` sat four lines above it in
+> the .cpp. Publishable the moment anything called it across files — the very bug Part A set out to fix.
+> The scan now stops at a line ending `;`, `}` or `{` (the declaration's own line exempt, since it usually
+> ends that way itself). The multi-line form the scan exists for — `PRIVATE UNIT __OVLYINIT` on one line,
+> the name on the next — has no terminator between the two and is unaffected. **Zero rows changed in the
+> sample** (the affected function was buried anyway), and zero recordings changed post-derive, because
+> phase 2 stamps `private` over everything it buries and hid the difference. Only a phase-1 probe shows it.
+>
+> **Docs.** `docs/spec/SWE3_SPEC.md` REQ-IT-02 (**reversed** — it required protected items listed),
+> `docs/spec/SWE3_WIKI.md` §Public vs. private (client-facing), `docs/design/DESIGN.md` (phase-1 step 4,
+> both schema tables, the filter paragraph + per-view list, which was also stale on `unitDiagrams`).
+>
+> **Tests: 1987 passed, 0 failed, 33 skipped.** New `tests/unit/test_visibility_matrix.py` (27) asserts
+> phase 1 and phase 2 apart: `_function_visibility` over the real AccessMatrix fixture for the recording,
+> and `_fn_is_private` over synthetic caller sets for the bucket, including that `public` and unmarked are
+> now indistinguishable. Phase 1 CANNOT be read back out of the model — phase 2 overwrites `visibility`
+> with `"private"` on everything it buries, which hides exactly these mistakes. The Access component is
+> outside the e2e scope (group "Layer1.My Sample"), so this unit test is the only coverage those cells get.
+> Previously: `test_protected_functions_included` → `..._excluded`;
+> `coreGetCount` dropped from the public sets in three e2e files; new
+> `test_protected_name_absent_from_interface_rows` asserts against interface ROWS, not all cell text,
+> since a private function still appears under its caller's flowchart. Snapshot
+> `tests/snapshots/Sample/unit_diagrams.json` regenerated (Core/Lib/Util edges).
+> ⚠ `pytest --skip-pipeline` is **blind to a parser change** — it reuses
+> `workspaces/e2e-sample/versions/e2ev1/output/`, eleven days stale here. A plain `pytest` then fails at
+> e2e setup for an unrelated reason (**BACKLOG SH-6**). Real signal came from regenerating by hand:
+> `analyzer.py onboard` + `generate … --full`, then `pytest --skip-pipeline`.)
+
 > Updated: 2026-09-18 (**a static member written through a FIELD is now covered** — branch
 > `fix/swe3-review-v1`, **UNCOMMITTED**). `StatCounters::s_counts.inserts++` — a void function whose only
 > effect is bumping a counter inside a struct-typed static member — had no fixture: every static-member case
@@ -3580,12 +3666,31 @@ Tests: `tests/unit/test_utils.py::TestGetRangeBakedNA`,
     baked into the global `CLANG_ARGS`. Sample: `engine/config/macros.csv`
     (`VOID,void`).
 
-### Visibility detection (`_detect_visibility`)
+### Visibility detection (`_detect_visibility`, `_function_visibility`, `_global_visibility`)
 
-Scans **backwards up to 5 source lines** from a declaration line looking for
-the first token `PRIVATE`, `PUBLIC`, or `PROTECTED`. Returns the matching
-lowercase string or `default`. Required because the visibility macros are
-expanded to nothing by `-DPRIVATE=` and Clang doesn't surface them.
+Two sources, annotation first. **Phase 1 is the only place visibility is recorded**, and so the
+only place this policy lives.
+
+1. `_detect_visibility` scans **backwards up to 5 source lines** from a declaration line for a
+   first token of `PRIVATE`, `PUBLIC`, or `PROTECTED`, and maps it through
+   `_MACRO_TO_VISIBILITY`. Required because the macros are expanded to nothing by `-DPRIVATE=`
+   and Clang doesn't surface them.
+2. With no macro, `_function_visibility` gives a **method** its C++ access specifier and
+   `_global_visibility` gives a **static data member** its own, both through
+   `_ACCESS_TO_VISIBILITY`. Read off the visited cursor — Clang reports access on an out-of-line
+   definition (`int Foo::bar()` in the .cpp), so no `canonical` resolution is needed. A free
+   function has no access specifier and falls through to unmarked.
+
+**Recorded values are `public` and `private`, and nothing else.** An unmarked declaration records as
+`public` via `_as_recorded`; `"default"` is only the lookup's internal sentinel. Both maps send
+`PROTECTED` / `protected:` to `"private"`: a protected item is reachable from another unit only
+through inheritance, and no later phase distinguishes it from private. Collapsing here is what
+lets `_fn_is_private`, the five view filters and the two exporter filters all test one string.
+Lossy by design — see the 2026-09-20 entry.
+
+Clang reports the **effective** access, so an unlabelled `class` member is `private` and an
+unlabelled `struct` member `public`. Both are taken at face value: private-by-default binds
+another unit exactly as a written label does.
 
 ### File filtering (`is_project_file`)
 
@@ -3951,12 +4056,20 @@ Assigns a per-file sequential index and sets `interfaceId` on each function and 
 
 `<LAYER>` is resolved per entry via `get_component_layer_name(config, component)` and processed by `_id_seg_layer` (keeps uppercase letters **and digits**, so "Layer1" → "LAYER1"). Falls back to `_id_seg(project_name)` for old-style configs without a `layers` key. `<GROUP>`, `<UNIT>` use the existing `_id_seg` (uppercase letters only). Example: `IF_LAYER1_FULL_READWRITE_01`.
 
-**Function privacy rule (call-graph based, `_fn_is_private`):**
-A function is private if either condition holds:
-1. Its source-level `visibility` is `"private"` (detected by `_detect_visibility` in parser.py), OR
-2. None of its `calledByIds` entries belong to a different file — i.e. it has no cross-unit callers (including the case of zero callers).
+**Function privacy rule (`_fn_is_private`)** — first match wins:
+1. `visibility == "private"` → private. Covers `PRIVATE` and `PROTECTED` markings and `private:` /
+   `protected:` methods alike, since phase 1 records all of them as `"private"`.
+2. `addressTakenByUnits` non-empty → public. Reachable through a file-scope pointer table even
+   though no call names it. This is *evidence*, not an annotation, which is why it survives.
+3. Otherwise: private unless some `calledByIds` entry lives in a **different file**.
 
-Explicit `PUBLIC` source annotation does **not** protect a function from being classified private — the call graph is authoritative. Two helpers implement this:
+`visibility == "public"` used to short-circuit at rule 2 and guarantee a row. **Removed 2026-09-20** —
+a marking may restrict, never promote, so an unmarked declaration and a `PUBLIC`-marked one are the same
+thing here and only `private` decides anything. Consequences and the revert in the 2026-09-20 entry.
+
+Rule 4 compares FILES, while a unit collapses `Foo.h` + `Foo.cpp` — so a helper defined inline in
+the header and called from its own .cpp counts as externally called. Known, untouched.
+Two helpers implement this:
 - `_has_external_caller(f, functions_data, base_path)` — returns `True` if any caller lives in a different file.
 - `_fn_is_private(f, functions_data, base_path)` — combines the two conditions above.
 

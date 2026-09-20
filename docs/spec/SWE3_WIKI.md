@@ -96,27 +96,44 @@ These rules decide what appears anywhere in the document, so they are worth agre
 
 ### Public vs. private
 
-Everything the document publishes is *public*. A function counts as **private**, and is left out of the
-interface table, the unit diagram and the headings, based on the first rule below that applies:
+Everything the document publishes is *public*. A function is **private** — left out of the interface
+table, the unit diagram and the headings — by the first rule that applies:
 
-1. The source marks it `PRIVATE` → private. The marking always wins.
-2. The source marks it `PUBLIC` → public. This marking is trusted too. It is what keeps an interrupt
-   handler or a registered callback in the document even though nothing calls it by name.
-3. Its address is put in a table at file level (`static const fp_t table[] = { fn, … };`) → public. It can
-   be reached through that table, even though no call names it.
-4. Otherwise: **public if a function in another file calls it**, private if not.
+1. Marked `PRIVATE` or `PROTECTED` → private.
+2. Its address sits in a file-level table (`static const fp_t table[] = { fn, … };`) → public. It is
+   reachable through that table even though no call names it.
+3. Otherwise: **public if a function in another file calls it**, private if not.
 
-The `PRIVATE` and `PUBLIC` markings are macros that expand to nothing, so the compiler never sees them.
-They are found by reading back up to 5 lines above the declaration in the source file.
+**A marking can only restrict, never promote.** `PUBLIC` used to guarantee a row; it no longer does, so
+`PUBLIC` and unmarked now mean the same thing. Being an interface is earned by rule 2 or rule 3.
 
-A global variable is private only if it is marked `PRIVATE`.
+**Protected is private** — it can be reached only by inheriting from its class, which makes it part of
+that class's inheritance contract, not the unit's interface.
+
+**A method's C++ access counts as a marking.** `private:` and `protected:` make it private. `public:`
+counts as public — which, like any other public marking, still has to be earned by rule 2 or 3. A member
+with no label takes the language's own default: private in a `class`, public in a `struct`. A macro on
+the declaration wins over the label.
+
+The markings are macros that expand to nothing, so the compiler never sees them; they are found by
+reading back up to 5 lines above the declaration, stopping at whatever precedes it so a neighbour's
+marking cannot be picked up by mistake. C++ access comes from the compiler's own parse.
+
+A global is private if marked `PRIVATE` or `PROTECTED`, or — for a static data member — if its C++ access
+is private or protected. Globals have no call graph, so the marking alone decides.
+
+**⚠ To confirm.** Rule 3 now decides almost every function, and its answer depends on what was parsed:
+
+- An entry point nothing calls by name — an ISR, a driver-registered callback — is private unless a
+  dispatch table holds its address.
+- A run narrowed to one layer cannot see the layer above calling in, so that layer's own front door
+  reads as uncalled.
+
+On the sample, 42 of 91 `PUBLIC`-marked functions lose their row, `main` among them.
 
 Private functions are not lost. When a public function calls a private one, the private function's
 flowchart is added under that public function (see [flowcharts](#n16--per-function-flowchart-entry)). It is
 labelled with its **signature**, never with an id.
-
-**⚠ To confirm:** rule 4 — "called from another file, so it is public" — is a guess for code with no
-markings. In code that uses the markings, rules 1 and 2 answer everything and rule 4 never runs.
 
 ### Names
 
