@@ -50,6 +50,57 @@ private:
     friend void statBumpPrivate(void);
 };
 
+// ---------------------------------------------------------------------------------------
+// Test: a PUBLIC METHOD bumping a PROTECTED static OF ITS OWN CLASS, through a field, with
+// the member's type coming from another namespace. Every other static-member case here is
+// written by a FREE function needing a `friend`; a member needs none -- it may reach its
+// own class's protected statics. Nothing covered this shape, and it is the one real
+// firmware uses.
+//
+// What it pins down: `protected` costs the member its interface row and NOTHING else. The
+// member stays in the write set, so a void method with no Get/Set in its name still comes
+// out In. Lose the write -- through the field hop, or through the namespace-qualified type
+// -- and it reads out as Out, the exact inverse.
+// ---------------------------------------------------------------------------------------
+namespace XY {
+struct AB {
+    int member;
+    int spare;
+};
+}
+
+class NsCounters {
+public:
+    // void, no Get/Set, no return value -> rule 3, and the write set alone answers -> In.
+    // CLASS-QUALIFIED reference: `NsCounters::var.member++`.
+    void bumpNs(void);
+
+    // The same write written UNQUALIFIED -- `var.member++` -- which is how a member
+    // normally reaches its own class's static. A different cursor shape from the line
+    // above, so it is asserted separately: if only the qualified form resolves, a void
+    // bumper silently reads out as Out.
+    void bumpNsPlain(void);
+
+    // The mirror: same member, same field, reads and writes nothing -> Out. A walker that
+    // logged every member access as a write would pass bumpNs and still be wrong here.
+    void peekNs(void);
+
+protected:
+    static XY::AB var;
+};
+
+// The third form: the CLASS ITSELF inside a namespace, so the member is reached as
+// `NS::Wrapped::var`. Nothing else here nests a class in a namespace.
+namespace NS {
+class Wrapped {
+public:
+    void bumpWrapped(void);
+
+protected:
+    static XY::AB var;
+};
+}
+
 // All void-returning and free of Get/Set, so direction falls through to the global-access
 // rule -- the rule a static member was invisible to. Annotated PUBLIC because nothing in the
 // sample calls them across units, and an un-annotated function with no external caller is

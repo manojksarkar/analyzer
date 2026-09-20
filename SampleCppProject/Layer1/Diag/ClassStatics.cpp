@@ -8,6 +8,8 @@ int StatCounters::s_protectedMark = 0;
 int StatCounters::s_privateSecret = 0;
 int StatRegistry::s_entries = 0;
 StatCounts StatCounters::s_counts = {0, 0};
+XY::AB NsCounters::var = {0, 0};
+XY::AB NS::Wrapped::var = {0, 0};
 
 // Writes a static member -> direction In.
 PUBLIC void statBumpPublic(void) {
@@ -73,4 +75,24 @@ PUBLIC void statReadCacheHits(void) {
 // Non-void return: direction is settled by the return value before globals are reached.
 PUBLIC int statReadLimit(void) {
     return StatCounters::s_limit;
+}
+
+// A member reaching its own class's PROTECTED static, class-qualified, through a field.
+void NsCounters::bumpNs(void) {
+    NsCounters::var.member++;
+}
+
+void NsCounters::peekNs(void) {
+    int seen = NsCounters::var.member;
+    (void)seen;
+}
+
+// Unqualified -- the form a member normally uses.
+void NsCounters::bumpNsPlain(void) {
+    var.member++;
+}
+
+// Namespace-qualified, because the class itself is nested in a namespace.
+void NS::Wrapped::bumpWrapped(void) {
+    NS::Wrapped::var.member++;
 }
