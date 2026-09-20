@@ -15,17 +15,17 @@ from difflib import SequenceMatcher
 
 from .model import normalise_key
 
-# Below this, two names are different names. Chosen so `FtlSetEntry` matches
-# `FtlSetEntries` (0.93) but not `FtlGetEntry` (0.81) -- a rename is worth
-# reporting as a rename, a different unit is not.
-SIMILARITY = 0.86
-
-# A ratio alone is unfair to short names: one character added to `Lib` scores
-# 0.857 and fails, while the same edit on `FtlSetEntry` scores 0.917 and passes.
-# So a suffix change is accepted outright -- `Lib`/`Libs`, `Map`/`Map2` -- while
-# a changed letter *inside* a short name stays a different name, which is what
-# keeps `Hub`/`Hug` and `Map`/`Max` apart.
-SUFFIX_SLACK = 2
+# A rename changes the *end* of a name. A similarity ratio does not know that,
+# and gets both interesting cases wrong: `FtlSetEntry`/`FtlGetEntry` scores 0.91
+# and would be paired -- two different functions, whose fields would then be
+# reported as differing -- while `FtlSetEntry`/`FtlSetEntries` scores 0.83 and
+# would not be. Pairing two different things is the more expensive mistake, so
+# the rule is about where the difference sits, not how much of it there is:
+#
+#   most of the shorter name must be a shared prefix ...
+PREFIX_SHARE = 0.7
+#   ... and what follows it must be short.
+TAIL_SLACK = 3
 
 
 class Aliases:
@@ -61,25 +61,50 @@ class Aliases:
         k = normalise_key(name)
         return self.map.get(k, k)
 
+    def of(self, entity) -> str:
+        """The matching key of an entity.
+
+        An entity may carry a key of its own -- a fixed section keys to its
+        canonical name, so `Introduction and Purpose` matches `Introduction`.
+        Going back to the name here would throw that away.
+        """
+        k = entity.match_key()
+        return self.map.get(k, k)
+
     def __len__(self):
         return len(self.map)
 
 
+def _common_prefix(a: str, b: str) -> int:
+    n = 0
+    for x, y in zip(a, b):
+        if x != y:
+            break
+        n += 1
+    return n
+
+
 def _similar(a: str, b: str) -> float:
+    """How alike two names are, used only to pick the best of several candidates."""
     return SequenceMatcher(None, a, b).ratio()
 
 
-def _suffix_change(a: str, b: str) -> bool:
-    """True when one name is the other with a short suffix added or removed."""
-    if not a or not b or a == b:
-        return False
-    shorter, longer = (a, b) if len(a) < len(b) else (b, a)
-    return longer.startswith(shorter) and (len(longer) - len(shorter)) <= SUFFIX_SLACK
-
-
 def looks_renamed(a: str, b: str) -> bool:
-    """Whether two keys are the same thing under two names."""
-    return _suffix_change(a, b) or _similar(a, b) >= SIMILARITY
+    """Whether two keys are the same thing under two names.
+
+    `Lib`/`Libs` and `FtlSetEntry`/`FtlSetEntries` are renames; `Hub`/`Hug`,
+    `Map`/`Max` and `FtlSetEntry`/`FtlGetEntry` are different names, and
+    `Main`/`MainLoop` adds too much to call it a rename.
+    """
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+    prefix = _common_prefix(shorter, longer)
+    if prefix < max(3, PREFIX_SHARE * len(shorter)):
+        return False
+    return (len(longer) - prefix) <= TAIL_SLACK
 
 
 def match(left, right, aliases=None):
@@ -93,11 +118,11 @@ def match(left, right, aliases=None):
 
     by_key = {}
     for entity in right:
-        by_key.setdefault(aliases.key(entity.name), []).append(entity)
+        by_key.setdefault(aliases.of(entity), []).append(entity)
 
     unmatched_left = []
     for entity in left:
-        bucket = by_key.get(aliases.key(entity.name))
+        bucket = by_key.get(aliases.of(entity))
         if bucket:
             pairs.append((entity, bucket.pop(0), "key"))
         else:
@@ -108,16 +133,16 @@ def match(left, right, aliases=None):
     # Second pass: a near-miss is a rename worth naming, not a delete plus an add.
     still_left, used = [], set()
     for entity in unmatched_left:
-        key = aliases.key(entity.name)
+        key = aliases.of(entity)
         best, score = None, 0.0
         for candidate in leftovers:
             if id(candidate) in used:
                 continue
-            other = aliases.key(candidate.name)
+            other = aliases.of(candidate)
             if not looks_renamed(key, other):
                 continue
             # Among the candidates that could be a rename, take the closest.
-            s = 1.0 if _suffix_change(key, other) else _similar(key, other)
+            s = _similar(key, other)
             if s > score:
                 best, score = candidate, s
         if best is not None:
