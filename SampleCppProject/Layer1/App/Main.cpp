@@ -9,6 +9,8 @@
 #include "Sample/Core/Core.h"
 #include "Sample/Lib/Lib.h"
 #include "Sample/Util/Util.h"
+#include "Access/AccessVisibility.h"
+#include "Access/AccessMatrix.h"
 
 PUBLIC int g_globalResult = 0;
 
@@ -105,6 +107,30 @@ PRIVATE int runSampleTests() {
     return coreGetCount();
 }
 
+PRIVATE int runAccessTests() {
+    DbSession s;
+    int o = s.open(3);
+    int st = s.status();
+    int b = accessSessionBudget();
+    return o + st + b;
+}
+
+PRIVATE int runMatrixTests() {
+    // Every call here is a CROSS-FILE caller, which is what separates the published
+    // cells of the matrix from the buried ones. The members deliberately left out --
+    // mtxUnmarkedUncalled, mtxPublicUncalled, MtxStruct::exposedUncalled -- are the
+    // cells that must stay buried for want of one.
+    MtxStruct s;
+    MtxConflict c;
+    int a = mtxUnmarkedCalled(1);
+    int b = s.plain(2) + s.exposed(3);
+    int d = mtxCallSealed(s);
+    int e = mtxCallMarkedPublic(c);
+    int f = mtxUseDerived(4);
+    int g = c.markedPrivateUnderPublic(5);
+    return a + b + d + e + f + g;
+}
+
 PUBLIC int main() {
     int result1 = calculate();
     int result2 = calculateWithCallback();
@@ -116,6 +142,8 @@ PUBLIC int main() {
     int result8 = runFlowTests();
     int result9 = runSampleTests();
     int result10 = fnVeryLongLinearPipeline(7);
-    g_globalResult = result1 + result2 + result3 + result4 + result5 + result6 + result7 + result8 + result9 + result10;
+    int result11 = runAccessTests();
+    int result12 = runMatrixTests();
+    g_globalResult = result1 + result2 + result3 + result4 + result5 + result6 + result7 + result8 + result9 + result10 + result11 + result12;
     return g_globalResult;
 }
