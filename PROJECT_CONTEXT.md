@@ -218,6 +218,50 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-20c (**review_update_v1 - the API spec now carries a full request/response
+> contract per endpoint, and it was documenting a wire format the server does not accept.**
+>
+> **The defect.** REVIEW_UPDATE_API_SPEC showed camelCase REQUEST bodies -
+> `{"slotKind": ..., "slotKey": ..., "text": ...}` and `{"functionId": ..., "externalCallerId": ...}` -
+> and camelCase query parameters (`?slotKind=&slotKey=`). The routes use plain pydantic models
+> (`UpdateSlotRequest`, `UpdateBehaviourRequest`, `UpdateFlowchartRequest`) with no alias generator,
+> so the wire names are the PYTHON field names: `slot_kind`, `slot_key`, `function_id`,
+> `external_caller_id`. Every write a UI built from that document would have returned 422. Checked
+> the rest of the API before changing anything: `commits_versions`, `documents`, `auth`, `functions`
+> all use snake_case request bodies, so the routes were consistent with the platform and only the
+> DOC was wrong. Responses are hand-built camelCase and are correct.
+>
+> Rule now stated in its own section 4: **requests snake_case, responses camelCase**, with the
+> headers, the 401 body shape and the null-vs-absent rule beside it.
+>
+> **A second one: the contract test never compared R10.** `_documented()` matched
+> `^\| \*\*R\d\*\*` - "R10" matches "R1" and then fails on the literal `**` - so the newest
+> endpoint was the one nobody checked, and `test_the_spec_documents_nine_endpoints` asserted the
+> shrunken count. Now `R\d+`, `== 10`, plus `test_every_r_number_in_the_index_is_matched` which
+> fails if the matcher ever reads fewer rows than the table has. Its section boundary is the next
+> heading, not `---`, because a markdown table separator row IS `|---|`.
+>
+> **New tests** (`TestTheSpecDocumentsTheRealWireFormat`): every JSON block following a
+> `**Request body**` heading is parsed and its key set must equal one of the pydantic models',
+> and each model must be shown exactly once. Restricted to request examples on purpose - searching
+> the whole document for camelCase would fail on the response examples, which are right. Three
+> revert-checks: restoring the old camelCase body for R3, for R6, and dropping R10 from the index
+> each fail a named test.
+>
+> **Spec rewritten for a UI engineer**: per endpoint, path/query/body parameter tables with type,
+> required, default; a response field table with type and nullability; a worked JSON example for
+> each direction; and a per-endpoint error table. Shared `Override` and `QueuedSlot` objects are
+> defined once in section 5 rather than re-shown. Also corrected while verifying against the
+> router: R3's response never contained `tablesPatched` (it was in the spec), `slotShape` is a full
+> 64-char sha256 and not the `"9f2c..."` stub, R5 returns `{"history": []}` for an unknown slot
+> rather than 404, and R2's 404 is the ordinary "not corrected yet" case rather than an error.
+> Section 14 now tells the UI that `stale: true` needs no special handling since the API re-derives
+> (2026-09-20b) instead of refusing.
+>
+> Every `viewsDerived` value in the doc was checked against `review/derive.py::_VIEWS` rather than
+> copied: interfaceTables for the five model-backed kinds, behaviourDiagram for R6,
+> flowcharts + testSpecs for R8.)
+
 > Updated: 2026-09-20b (**review_update_v1 - a second audit, this time against the PIPELINE rather
 > than against the feature's own tests. All 43 requirements are met; three real problems were in
 > the seams, and none of them could fail a test that existed.**

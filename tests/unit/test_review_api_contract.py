@@ -206,7 +206,7 @@ class TestTheDocumentedContractExists:
     def _documented(self):
         text = open(self.SPEC, encoding="utf-8").read()
         section = text.split("## 3. Endpoint index", 1)[1]
-        rows = re.findall(r"^\| \*\*R\d\*\* \| (GET|PUT|DELETE) \| `([^`]+)` \|", section, re.M)
+        rows = re.findall(r"^\| \*\*R\d+\*\* \| (GET|PUT|DELETE) \| `([^`]+)` \|", section, re.M)
         assert rows, "no R-numbered endpoints found in the spec's endpoint index"
         return {(m, self._shape("/api/v1" + p)) for m, p in rows}
 
@@ -216,8 +216,21 @@ class TestTheDocumentedContractExists:
         assert not missing, (
             "documented in the API spec but not served: %s" % ", ".join("%s %s" % x for x in missing))
 
-    def test_the_spec_documents_nine_endpoints(self):
-        assert len(self._documented()) == 9
+    def test_the_spec_documents_ten_endpoints(self):
+        """Was `== 9`, with an `R\\d` matcher that silently stopped at R9 -- "R10" matched "R1"
+        and then failed on the literal `**`. So the newest endpoint was the one nobody compared."""
+        assert len(self._documented()) == 10
+
+    def test_every_r_number_in_the_index_is_matched(self):
+        """Guards the class of bug above: if a row is in the table but the matcher cannot read
+        it, the comparison quietly shrinks instead of failing.
+
+        The section boundary is the next heading, not `---` -- a markdown table's separator row
+        is `|---|---|`, so splitting on `---` stops inside the table being counted.
+        """
+        text = open(self.SPEC, encoding="utf-8").read()
+        section = text.split("## 3. Endpoint index", 1)[1].split("\n## ", 1)[0]
+        assert len(re.findall(r"^\| \*\*R\d+\*\*", section, re.M)) == len(self._documented())
 
     def test_the_comparison_is_not_vacuous(self):
         """If the heading or the table format changed, `_documented()` would silently return
@@ -237,3 +250,93 @@ class TestKeysStayOutOfPaths:
             for param in re.findall(r"\{(\w+)\}", path):
                 assert param in ("project_id", "version_id", "flowchart_token"), (
                     "%s puts %r in a path segment" % (path, param))
+
+
+class TestTheSpecDocumentsTheRealWireFormat:
+    """The spec is what a UI engineer builds against, so a field name in it is a promise.
+
+    It documented camelCase request bodies (`{"slotKind": …}`) and camelCase query parameters
+    (`?slotKind=`). The server takes neither: the request models are plain pydantic, so the wire
+    names are the Python field names, and every one of those calls would have returned 422. The
+    whole platform API is snake_case in and camelCase out; the review routes were never the
+    exception, only the documentation was.
+
+    Nothing could catch that -- the route comparison beside this checks methods and paths, and the
+    HTTP tests send the correct snake_case because they were written from the code.
+    """
+
+    SPEC = TestTheDocumentedContractExists.SPEC
+
+    @staticmethod
+    def _request_models():
+        from api.routes import text_overrides as t
+        return {"UpdateSlotRequest": t.UpdateSlotRequest,
+                "UpdateFlowchartRequest": t.UpdateFlowchartRequest,
+                "UpdateBehaviourRequest": t.UpdateBehaviourRequest}
+
+    def _spec(self):
+        return open(self.SPEC, encoding="utf-8").read()
+
+    def test_every_request_field_is_documented_by_its_wire_name(self):
+        text = self._spec()
+        missing = []
+        for name, model in self._request_models().items():
+            for field in model.model_fields:
+                if ("`%s`" % field) not in text:
+                    missing.append("%s.%s" % (name, field))
+        assert not missing, (
+            "these request-body fields are not in the API spec under the name the server "
+            "actually accepts: %s" % ", ".join(missing))
+
+    def _request_examples(self):
+        """Every JSON block that follows a `**Request body**` heading, parsed.
+
+        Searching the whole document for camelCase would be wrong: RESPONSE examples are
+        camelCase and correct. Only the request examples make a promise the server can break.
+        """
+        text = self._spec()
+        out = []
+        for chunk in text.split("**Request body**")[1:]:
+            block = re.search(r"```json\n(.*?)```", chunk, re.S)
+            if block:
+                out.append(json.loads(block.group(1)))
+        return out
+
+    def test_every_request_example_parses_and_matches_a_real_model(self):
+        """THE MISTAKE THIS CLASS EXISTS FOR. The spec showed `{"slotKind": …, "slotKey": …}`
+        and `{"functionId": …, "externalCallerId": …}`. The server accepts neither, so every
+        write a UI built from this document would have returned 422."""
+        examples = self._request_examples()
+        assert len(examples) == 3, (
+            "expected one request example each for R3, R6 and R8; found %d" % len(examples))
+
+        shapes = {name: set(m.model_fields) for name, m in self._request_models().items()}
+        for body in examples:
+            keys = set(body)
+            assert keys in shapes.values(), (
+                "this request example matches no request model: %s.\n"
+                "The server accepts one of: %s"
+                % (sorted(keys), " | ".join(sorted(str(sorted(v)) for v in shapes.values()))))
+
+    def test_each_model_is_shown_exactly_once(self):
+        """So a model cannot go undocumented while another is shown twice and the count passes."""
+        shapes = {name: frozenset(m.model_fields) for name, m in self._request_models().items()}
+        shown = [frozenset(b) for b in self._request_examples()]
+        assert sorted(shown, key=sorted) == sorted(shapes.values(), key=sorted)
+
+    def test_the_query_parameters_are_documented_in_snake_case(self):
+        text = self._spec()
+        assert "?slot_kind=" in text or "`slot_kind`" in text
+        assert "?slotKind=" not in text and "?slotKey=" not in text
+
+    def test_the_response_fields_stay_camel_case(self):
+        """The other half of the same promise -- responses are hand-built camelCase, and a spec
+        that 'corrected' them to snake_case would break every reader instead."""
+        text = self._spec()
+        for expected in ("`slotKind`", "`slotKey`", "`humanText`", "`llmText`", "`isOrphaned`"):
+            assert expected in text
+
+    def test_the_check_would_notice_a_new_field(self):
+        """Not vacuous: a field nobody documented must fail, so add a fake one and confirm."""
+        text = self._spec()
+        assert "`definitely_not_a_real_field`" not in text

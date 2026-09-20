@@ -289,7 +289,7 @@ the same pair (`currentFunctionId` exists for exactly this reason); this half wa
 
 ```
 python -m alembic heads                 # exactly one
-python -m pytest tests/unit tests/api -q   # 2103 passed, 10 skipped at the tip of this branch
+python -m pytest tests/unit tests/api -q   # 2110 passed, 10 skipped at the tip of this branch
 ```
 
 The feature has also been run end to end against a **SQLite** database on a machine with no
