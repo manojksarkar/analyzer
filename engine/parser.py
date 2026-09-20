@@ -400,10 +400,32 @@ if _data_dict_path:
 _dd_sources += _data_dict_layer_args
 
 
-def _detect_visibility(file_path: str, line_no: int, scan_lines: int = 5) -> str:
-    """Scan raw source lines at/before line_no to detect PRIVATE/PUBLIC/PROTECTED prefix.
+# What a source marking is RECORDED as. PROTECTED collapses to "private" here, at the
+# point of recording, because nothing downstream distinguishes them: a protected item is
+# left out of the interface table exactly as a private one is. Keeping the word alive
+# through derive, views and export would mean four values and a filter test at every
+# consumer, to express two outcomes. The cost is that the distinction is gone for good --
+# flipping the policy later means re-parsing, not reinterpreting a stored model.
+_MACRO_TO_VISIBILITY = {"PRIVATE": "private", "PROTECTED": "private", "PUBLIC": "public"}
 
-    Returns 'private', 'public', 'protected', or 'default' if none found.
+# "default" is the LOOKUP's way of saying "nothing was written here, keep looking" -- the
+# macro scan returns it so the C++ access specifier gets its turn. It is not a value worth
+# STORING: no consumer has ever told it apart from "public" (every filter tests
+# `== "private"`), so as a record it described the source rather than the behaviour, and
+# phase 2 overwrote it anyway on everything it buried. Recorded as "public" instead, which
+# leaves exactly two values in the model and one bit in the rule: private, or not.
+_UNMARKED = "default"
+
+
+def _as_recorded(vis: str) -> str:
+    """The lookup's answer as it is stored. Unmarked records as public."""
+    return "public" if vis == _UNMARKED else vis
+
+
+def _detect_visibility(file_path: str, line_no: int, scan_lines: int = 5) -> str:
+    """Scan raw source lines at/before line_no to detect a PRIVATE/PUBLIC/PROTECTED prefix.
+
+    Returns 'private' (for PRIVATE or PROTECTED), 'public', or 'default' if none found.
     Scans backwards from the declaration line to handle multi-line declarations like:
         PRIVATE UNIT __OVLYINIT
         _SomeFunction(GG *gg) {}
@@ -421,7 +443,16 @@ def _detect_visibility(file_path: str, line_no: int, scan_lines: int = 5) -> str
             continue
         first_token = re.split(r"\s+", line)[0]
         if first_token in _VISIBILITY_KEYWORDS:
-            return first_token.lower()
+            return _MACRO_TO_VISIBILITY.get(first_token, "default")
+        # Stop at the end of whatever came BEFORE this declaration. Without this the scan
+        # walks on and adopts a neighbour's marking: `PUBLIC int mtxPublicUncalled() {…}`
+        # four lines above made the next declaration public, whatever it actually was --
+        # in the fixture, a C++-private method. The multi-line form this scan exists for
+        # (`PRIVATE UNIT __OVLYINIT` on one line, the function name on the next) has no
+        # terminator between the two and is unaffected. The declaration's OWN line is
+        # exempt, since it usually ends in `;` or `{` itself.
+        if i < line_no - 1 and line.endswith((";", "}", "{")):
+            break
     return "default"
 
 
@@ -1563,7 +1594,38 @@ def _keep_class_static_cursor(cursor) -> bool:
         return True
 
 
-_ACCESS_TO_VISIBILITY = {"PUBLIC": "public", "PROTECTED": "protected", "PRIVATE": "private"}
+_ACCESS_TO_VISIBILITY = {"PUBLIC": "public", "PROTECTED": "private", "PRIVATE": "private"}
+
+
+def _function_visibility(cursor) -> str:
+    """Visibility of a function: the source annotation, else -- for a METHOD -- the C++ access.
+
+    Same precedence as _global_visibility: the annotation wins wherever it exists, so a
+    marked declaration keeps saying what it says and no free function changes meaning. A
+    free function has no access specifier, so it falls through to "default" and the
+    call-graph rule decides, exactly as before.
+
+    A method's access is a real reachability fact the text scan cannot see -- it matches the
+    project's macros, not the `private:` label. Without this a `protected:` method with a
+    caller in another file (a derived class, legally) was published as an interface row,
+    which is what the office review reported. C++ access is taken as clang reports it,
+    including the implicit access of an unlabelled member, because private-by-default is
+    just as binding on another unit as a written label.
+
+    Read off the cursor being visited rather than its canonical declaration: clang reports
+    the access on an out-of-line definition too (`int Foo::bar()` in the .cpp), so no
+    resolution back to the in-class declaration is needed.
+    """
+    vis = _detect_visibility(cursor.location.file.name, cursor.location.line)
+    if vis != _UNMARKED:
+        return vis
+    try:
+        parent = cursor.semantic_parent
+        if not parent or parent.kind not in _CLASS_PARENT_KINDS:
+            return _as_recorded(_UNMARKED)
+        return _as_recorded(_ACCESS_TO_VISIBILITY.get(cursor.access_specifier.name, _UNMARKED))
+    except Exception:
+        return _as_recorded(_UNMARKED)
 
 
 def _global_visibility(cursor) -> str:
@@ -1577,12 +1639,12 @@ def _global_visibility(cursor) -> str:
     published as an interface.
     """
     vis = _detect_visibility(cursor.location.file.name, cursor.location.line)
-    if vis != "default" or not _is_class_static_var(cursor):
-        return vis
+    if vis != _UNMARKED or not _is_class_static_var(cursor):
+        return _as_recorded(vis)
     try:
-        return _ACCESS_TO_VISIBILITY.get(cursor.access_specifier.name, "default")
+        return _as_recorded(_ACCESS_TO_VISIBILITY.get(cursor.access_specifier.name, _UNMARKED))
     except Exception:
-        return "default"
+        return _as_recorded(_UNMARKED)
 
 
 def visit_definitions(cursor):
@@ -1672,7 +1734,7 @@ def visit_definitions(cursor):
             "parameters": params,
             "returnType": cursor.result_type.spelling if cursor.result_type else "",
             "endLine": end_line,
-            "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
+            "visibility": _function_visibility(cursor),
             "description": _preceding_comment(cursor),
         }
         # Incremental (M1.2): token hash of the body + doc comment, for output reuse.
@@ -1741,7 +1803,7 @@ def visit_definitions(cursor):
                 "returnType": cursor.type.spelling if cursor.type else "",
                 "endLine": end_line,
                 "syntheticFromVarDecl": True,
-                "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
+                "visibility": _as_recorded(_detect_visibility(cursor.location.file.name, cursor.location.line)),
                 "_sourceHash": hash_cursor(cursor),
             }
             component_functions[component_name].append(fk)

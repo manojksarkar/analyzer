@@ -172,9 +172,20 @@ def test_private_names_absent_from_docx(all_cell_text):
         assert name not in all_cell_text, f"Private name '{name}' found in DOCX interface table"
 
 
+def test_protected_name_absent_from_interface_rows(all_interface_rows):
+    """coreGetCount is PROTECTED, so it gets no interface row.
+
+    Asserted against the interface ROWS rather than all cell text: a private function can
+    still appear elsewhere in the document, labelled with its signature under the
+    flowchart of the public function that calls it.
+    """
+    names = {r.cells[COL_IF_NAME].text.strip() for r in all_interface_rows}
+    assert "coreGetCount" not in names, "PROTECTED 'coreGetCount' leaked into the DOCX interface table"
+
+
 @pytest.mark.parametrize("name,unit", [
     ("coreAdd",        "Core"), ("coreSetResult",  "Core"), ("coreProcess",    "Core"),
-    ("coreOrchestrate","Core"), ("coreGetCount",   "Core"),
+    ("coreOrchestrate","Core"),
     ("libAdd",         "Lib"),  ("libNormalize",   "Lib"),
     ("utilCompute",    "Util"), ("utilScale",      "Util"),
     ("g_result",       "Core"), ("g_utilBase",     "Util"),
@@ -188,7 +199,6 @@ def test_public_name_in_docx(all_cell_text, name, unit):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("name,expected_direction", [
-    ("coreGetCount",  "Out"),
     ("coreSetResult", "In"),
     ("g_result",      "In/Out"),
 ])
