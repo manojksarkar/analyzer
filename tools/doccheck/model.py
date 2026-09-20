@@ -53,8 +53,19 @@ class Entity:
     index: int = 0                       # position among its siblings of the same kind
 
     def __post_init__(self):
+        # A key given at construction is a deliberate override -- a fixed section
+        # keys to its canonical name whatever it is titled. Anything else is
+        # derived from the name on demand, so that changing the name cannot leave
+        # a stale key behind to match on.
+        self._explicit_key = bool(self.key)
         if not self.key:
             self.key = normalise_key(self.name)
+
+    def match_key(self) -> str:
+        """The key to match this entity on, honouring an override."""
+        if getattr(self, "_explicit_key", False):
+            return self.key
+        return normalise_key(self.name)
 
     def of_kind(self, kind: str) -> list:
         return [c for c in self.children if c.kind == kind]

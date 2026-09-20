@@ -130,8 +130,32 @@ LEVELS = {
 
 
 def _is_fixed_section(title: str) -> bool:
+    return fixed_section_key(title) is not None
+
+
+def fixed_section_key(title: str):
+    """The canonical name of a fixed section, or None when it is not one.
+
+    `Introduction` and `Introduction and Purpose` are the same section under two
+    titles. Keying them both to `Introduction` means a retitled section is
+    recognised rather than reported as one missing and one added.
+    """
     t = (title or "").casefold()
-    return any(t.startswith(p) for p in _FIXED_SECTIONS)
+    for prefix in _FIXED_SECTIONS:
+        if t.startswith(prefix):
+            return prefix
+    return None
+
+
+# The columns that make a table *the* interface table, whatever it heads them.
+_IFACE_REQUIRED = ("interfaceName", "direction", "interfaceType")
+
+
+def _is_interface_table(cols) -> bool:
+    """Whether a resolved column map identifies an eight-column interface table."""
+    if not all(name in cols for name in _IFACE_REQUIRED):
+        return "interfaceId" in cols and "interfaceName" in cols and len(cols) >= 5
+    return True
 
 
 def _iface_row(row, cols, index):
@@ -225,9 +249,10 @@ def extract(blocks) -> Entity:
             if b.level == 1:
                 unit = func = section = None
                 subsection = None
-                if _is_fixed_section(b.text):
+                fixed = fixed_section_key(b.text)
+                if fixed:
                     component = None
-                    doc.children.append(Entity(kind="section", name=b.text,
+                    doc.children.append(Entity(kind="section", name=b.text, key=fixed,
                                                number=b.number, index=_count("section")))
                 else:
                     component = Entity(kind="component", name=b.text, number=b.number,
@@ -296,9 +321,13 @@ def extract(blocks) -> Entity:
         elif b.kind == "table":
             header = b.header
             probe = " ".join(header).casefold()
+            cols = cells.resolve_columns(header, _IFACE_COLUMNS)
 
-            if "interface id" in probe and unit is not None:
-                cols = cells.resolve_columns(header, _IFACE_COLUMNS)
+            # Recognised by what the columns *are*, not by our own header text.
+            # A client's table heads the same eight columns differently and puts
+            # them in another order; matching on the literal "Interface ID" would
+            # not recognise it at all, and the whole table would go unread.
+            if unit is not None and _is_interface_table(cols):
                 unit.fields["hasInterfaceTable"] = True
                 unit.fields["interfaceColumns"] = list(header)
                 for i, row in enumerate(b.rows[1:]):
@@ -315,7 +344,7 @@ def extract(blocks) -> Entity:
                     ent.fields["information"] = row[1].text if len(row) > 1 else ""
                     unit.children.append(ent)
 
-            elif "component" in probe and "unit" in probe and component is not None:
+            elif component is not None and "component" in probe and "unit" in probe:
                 cols = cells.resolve_columns(header, _UNIT_TABLE_COLUMNS)
                 ui = cols.get("unit")
                 names = []
