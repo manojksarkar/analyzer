@@ -22,7 +22,8 @@ if __package__ in (None, ""):            # run as a file rather than a module
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     __package__ = "doccheck"
 
-from . import blocks, compare as comparing, match, report, rules, swe3, swe4
+from . import (blocks, compare as comparing, match, pairing, report, rules, swe3,
+               swe4)
 from .model import HIGH, INFO, LOW, MEDIUM
 
 PROFILES = {"swe3": swe3, "swe4": swe4}
@@ -54,6 +55,8 @@ def main(argv=None):
     ap.add_argument("compared", nargs="?", help="the document under review")
     ap.add_argument("--self", action="store_true",
                     help="check one document against its own rules, no second document")
+    ap.add_argument("--pair", action="store_true",
+                    help="hold a SWE.3 design against its SWE.4 specification (V-model)")
     ap.add_argument("--profile", choices=sorted(PROFILES),
                     help="force the document type instead of detecting it")
     ap.add_argument("--aliases", help="a file of `ours = theirs` name pairs")
@@ -85,6 +88,32 @@ def main(argv=None):
         return 1 if (findings and a.gate) else 0
 
     right_profile, right = _load(a.compared, a.profile)
+
+    if a.pair:
+        design, spec = (left, right) if profile is swe3 else (right, left)
+        if profile is right_profile:
+            print("--pair wants one SWE.3 document and one SWE.4 document; both are %s"
+                  % profile.DOC_TYPE, file=sys.stderr)
+            return 2
+        findings = pairing.check(design, spec)
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        print(pairing.summary(design, spec, findings))
+        print()
+        for f in findings:
+            print("  %-6s %-4s %s" % (f.severity, f.level, f.path))
+            print("         %s" % f.summary)
+            if f.rule:
+                print("         rule: %s" % f.rule)
+        if a.json_out:
+            import json as _json
+            with open(a.json_out, "w", encoding="utf-8") as fh:
+                fh.write(_json.dumps([f.__dict__ for f in findings], indent=2, default=str) + "\n")
+            print("wrote %s" % a.json_out)
+        if a.gate:
+            limit = _GATE_ORDER[a.gate]
+            return 1 if any(_GATE_ORDER.get(f.severity, 9) <= limit for f in findings) else 0
+        return 0
+
     if right_profile is not profile:
         print("the two documents are different types (%s and %s)"
               % (profile.DOC_TYPE, right_profile.DOC_TYPE), file=sys.stderr)
