@@ -218,6 +218,74 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-20b (**review_update_v1 - a second audit, this time against the PIPELINE rather
+> than against the feature's own tests. All 43 requirements are met; three real problems were in
+> the seams, and none of them could fail a test that existed.**
+>
+> Method worth repeating: trace every REQ id to code AND tests, then walk every point where the
+> feature touches the existing pipeline and ask what a failure there does to an ordinary run. Seven
+> requirements turned out to carry no `REQ-` comment anywhere (AP-03, API-06, ED-03, ED-04, ST-01,
+> ST-07, VR-02) - all verified met, just uncited. The integration surface is NINE call sites, not
+> the "two" DESIGN 13.1 claimed.
+>
+> **1. A blank description is a REQUEST, not an outcome - and could be published as one.**
+> `cascade.blank_queued_text` empties a description only because the enrichment skips anything
+> already filled in; emptying the slot IS "write this again". If the rewrite then did not happen -
+> LLM unreachable, `--no-llm`, descriptions off - nothing put the text back. The entry correctly
+> stayed queued, but the model was persisted with `""` and the document showed an empty cell where
+> a reader had a sentence. Strictly worse than the wording the correction superseded, and a
+> regression this feature introduced: before it, an LLM outage left carried-forward text intact.
+> Fixed: `Blanked(row, previous_text)` carries what was removed, and `clear_rewritten` returns
+> `Retired(cleared, restored)`, putting the old wording back and leaving the debt queued.
+>
+> **2. The export guard protected the CLI and not the UI.** `analyzer.py` held
+> `assert_exportable`; the API's re-export spawns `engine/run.py --from-phase 4` DIRECTLY and never
+> went near it. The reviewer-facing path was the unguarded one. And what went out was not merely
+> stale text: a node-label correction patches the database immediately (`redraw_flowchart` needs no
+> files) and leaves the PICTURE owed, so the document's sentence and the diagram beside it
+> disagreed, with no warning. `_restore_output_from_db` was already in `run.py` for exactly this
+> reason - the same lesson, learnt once and not applied to the other half. Fixed:
+> `run.py::_refuse_stale_export` is the backstop every front door spawns, `--force` travels as
+> `--force-export` (allowlist + parse branch + help, or run.py rejects it outright), and
+> `analyzer.py` keeps its own check because it fails before the checkout and the subprocess.
+>
+> Only phase 4 is gated, and that is NOT just an optimisation: `stamp_pipeline_derivation` records
+> the derivation when output is CAPTURED, after phase 4. A run including phase 3 is applying the
+> corrections on its way through, but at phase 4 the stamps are still the previous run's - gating
+> there would refuse exactly the run that fixes the problem. Verified nothing else spawns
+> `--from-phase 4`: ordinary generations use `--from-phase 2` or run the phases together.
+>
+> **3. On the API the remedy is applied, not recommended.**
+> `pipeline_runner._reexport_from_phase` asks the guard and runs from PHASE 3 when the version is
+> stale - which is the remedy the guard's own message already names. A reviewer who pressed
+> "re-export" seconds after fixing a sentence should not have to learn what a phase is. Falls back
+> to 4 whenever the question cannot be asked (no version, no database, feature absent, guard
+> raising): an unavailable guard must not quietly change what the pipeline does.
+>
+> **Proven on the real SQLite project, not only in tests.** Spawning `run.py --from-phase 4` the
+> way the API does: nothing corrected -> exit 0, document written; corrected just now -> exit 2,
+> NO document, with the re-derive instruction; same export `--force-export` -> exit 0, document
+> written. `_reexport_from_phase` returns 3 for that version.
+>
+> **Checked and NOT broken** (measured, not assumed): every hook is a clean no-op on a project
+> with no corrections; all nine sites are guarded by `is_database_configured()` + try/except, so a
+> missing database or un-migrated tables degrade rather than fail a generation;
+> `_analyzerTextOverrides` is local to `run_views.main()` and never persisted; the API re-export
+> does reach `capture_output`, so pictures are drawn and derivations stamped on both paths;
+> migration chain linear at `0013_render_jobs`.
+>
+> One accepted nit: `_stamp_derivation` shares a transaction with `persist_output_files`, so a
+> failure there discards the output capture. Measured - it rolls back atomically, leaves the
+> previous rows intact, and the existing error message says exactly that. Loud and safe; left
+> alone.
+>
+> Seven revert-checks: each part of each fix was broken on purpose and a test failed for it.
+> DESIGN gains 13.1 (rewritten, nine sites), 13.2 and 13.3; HANDOVER gains invariants 4.14 and
+> 4.15 and two rows on the merge-conflict table.
+>
+> **The lesson: a feature's own tests cannot see the seams it sits in.** Every one of these passed
+> 600 review tests while the bug was live.)
+
 > Updated: 2026-09-20 (**review_update_v1 - the feature run END TO END on SQLite, and the ordering
 > bug that only a real run could find**. No PostgreSQL on this machine, so the whole feature was
 > exercised against a SQLite database with a real 205-file C++ source tree: a full v1 (140

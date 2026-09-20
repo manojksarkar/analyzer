@@ -548,7 +548,12 @@ def _take_regeneration_queue(functions_data: dict, global_variables_data: dict):
 
 
 def _retire_regeneration_queue(queued, functions_data: dict, global_variables_data: dict) -> None:
-    """Clear the entries whose text actually came back."""
+    """Clear the entries whose text actually came back, and restore the text of those that did not.
+
+    The restore matters more than the bookkeeping. `blank_queued_text` emptied those descriptions
+    only to ask for a rewrite; if the rewrite did not happen the model must go back to what it
+    was, or this phase publishes an empty description where there was a readable one.
+    """
     if not queued:
         return
     eng, vid = _review_conn_and_version()
@@ -559,7 +564,12 @@ def _retire_regeneration_queue(queued, functions_data: dict, global_variables_da
         model = {"functions": functions_data, "globalVariables": global_variables_data,
                  "units": {}, "dataDictionary": {}}
         with eng.begin() as cx:
-            clear_rewritten(cx, vid, queued, model)
+            out = clear_rewritten(cx, vid, queued, model)
+        if out.restored:
+            from core.logging_setup import get_logger
+            get_logger("model_deriver").warning(
+                "review: %d description(s) were not rewritten (no LLM answer) — the previous "
+                "wording was restored and they stay queued for the next run", out.restored)
     except Exception as exc:                       # noqa: BLE001
         from core.logging_setup import get_logger
         get_logger("model_deriver").warning("review: could not retire queue entries: %s", exc)

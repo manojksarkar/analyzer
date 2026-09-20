@@ -124,7 +124,10 @@ class TestEveryPieceHasACaller:
         "carry_forward.config_with_overrides": ("engine/run_views.py",
                                                 "config_with_overrides"),
         "phase3_overrides.from_config": ("engine/views/flowcharts.py", "from_config"),
-        "export_guard.assert_exportable": ("analyzer.py", "assert_exportable"),
+        "export_guard.assert_exportable": ("engine/run.py", "assert_exportable"),
+        "export_guard.assert_exportable (cli, fails fast)": ("analyzer.py", "assert_exportable"),
+        "export_guard.staleness (api re-export)": ("api/services/pipeline_runner.py",
+                                                   "staleness"),
         "export_guard.stamp_pipeline_derivation": ("engine/incremental/store.py",
                                                    "stamp_pipeline_derivation"),
         "cascade.enqueue": ("engine/review/override_service.py", "_cascade.enqueue"),
@@ -152,7 +155,8 @@ class TestEveryPieceHasACaller:
         callers = "".join(_src(p) for p in (
             "engine/incremental/engine.py", "engine/incremental/store.py",
             "engine/run_views.py", "engine/model_deriver.py", "analyzer.py",
-            "api/routes/text_overrides.py", "engine/views/flowcharts.py",
+            "engine/run.py", "api/routes/text_overrides.py",
+            "api/services/pipeline_runner.py", "engine/views/flowcharts.py",
             "engine/views/behaviour_diagram.py"))
         # Reached THROUGH the others rather than directly. Naming them says that is deliberate
         # rather than an omission nobody noticed.
@@ -163,3 +167,95 @@ class TestEveryPieceHasACaller:
             "these review modules have no caller in the pipeline, the API or the CLI: %s. "
             "Either wire them in, or add them to `indirect` with the reason."
             % ", ".join(missing))
+
+
+class TestTheExportGuardCoversBothFrontDoors:
+    """`analyzer.py` is not the only way a Phase-4-only export starts.
+
+    The guard used to live in `analyzer.py` alone. The API's re-export service spawns
+    `engine/run.py --from-phase 4` directly and never went near it, so the terminal refused a
+    stale export and the UI -- where reviewers actually work -- produced one silently.
+
+    The failure that reaches a reader is not "slightly old text". Correcting a node label on a
+    host with no output tree patches the text in the database immediately and leaves the PNG
+    owed; exporting then yields a document whose sentence says one thing and whose picture beside
+    it says another.
+
+    `_restore_output_from_db` was already placed in `run.py` for exactly this reason. This is the
+    same lesson applied to its other half.
+    """
+
+    RUN = "engine/run.py"
+    CALL = re.compile(r"^[ \t]*_refuse_stale_export\(from_phase, force_export\)", re.M)
+
+    def test_run_py_asks_before_exporting(self):
+        assert self.CALL.search(_src(self.RUN)), (
+            "engine/run.py no longer checks, so any caller that spawns it directly -- the API's "
+            "re-export among them -- can ship a stale document with no warning")
+
+    def test_the_check_can_fail(self):
+        """The matcher must not also match the definition. That mistake has been made twice in
+        this feature; it makes the test pass however the code behaves."""
+        assert not self.CALL.search(
+            "def _refuse_stale_export(from_phase, force_export) -> None:")
+        assert self.CALL.search("    _refuse_stale_export(from_phase, force_export)")
+
+    def test_it_runs_beside_the_restore_it_belongs_with(self):
+        """Both answer "is what we are about to export actually current?" -- the restore for the
+        text, the guard for everything the restore cannot reach."""
+        src = _src(self.RUN)
+        assert src.index("_restore_output_from_db(from_phase)") < self.CALL.search(src).start()
+
+    def test_it_runs_before_any_phase(self):
+        """Refusing after Phase 4 has produced the document would be theatre."""
+        src = _src(self.RUN)
+        assert self.CALL.search(src).start() < src.index("runner = PhaseRunner(")
+
+    def test_only_phase_4_is_gated(self):
+        """A run that includes Phase 3 is applying the corrections on its way through -- and the
+        derivation is stamped when output is CAPTURED, after Phase 4, so at Phase 4 the stamps
+        are still the previous run's. Checking there would refuse the very run that fixes it."""
+        src = _src(self.RUN)
+        body = src[src.index("def _refuse_stale_export("):]
+        assert "if from_phase < 4 or force:" in body
+
+    def test_force_travels_from_the_cli_to_the_backstop(self):
+        """Otherwise `--force` would be honoured by the front door and then refused by run.py --
+        the user insists, and the tool says no anyway."""
+        assert '--force-export' in _src("analyzer.py")
+
+    def test_the_flag_is_on_run_pys_allowlist(self):
+        """run.py rejects anything not on it, so an unlisted flag fails the export outright."""
+        src = _src(self.RUN)
+        assert '"--force-export"' in src[:src.index("clean_all")], (
+            "--force-export must be in the KNOWN-flags allowlist near the top of run.py")
+
+
+class TestTheApiRederivesInsteadOfRefusing:
+    """A reviewer pressing "re-export" should not have to know what a phase is.
+
+    The guard's own message names re-deriving as the remedy (`--from-phase 3`). On the API path
+    that remedy is applied rather than recommended: the job runs Phase 3 first, which rebuilds
+    the view rows with the corrections applied and draws the pictures that were owed.
+    """
+
+    SRC = "api/services/pipeline_runner.py"
+
+    def test_the_re_export_asks_first(self):
+        src = _src(self.SRC)
+        assert "_reexport_from_phase(" in src
+
+    def test_the_answer_is_what_is_actually_run(self):
+        """A decision nobody acts on is worse than no decision -- it reads as covered."""
+        src = _src(self.SRC)
+        assert re.search(r"^[ \t]*from_phase = _reexport_from_phase\(", src, re.M)
+        assert "_build_cmd(job, cdir, config_path, from_phase=from_phase" in src
+        assert "from_phase=4" not in src, (
+            "the re-export still hard-codes phase 4 somewhere, so the check is decoration")
+
+    def test_it_falls_back_to_4_when_it_cannot_ask(self):
+        """No version, no database, or the guard itself failing. An unavailable guard must not
+        silently change what the pipeline does."""
+        src = _src(self.SRC)
+        body = src[src.index("def _reexport_from_phase("):src.index("def _do_reexport(")]
+        assert body.count("return 4") >= 3 and "except Exception" in body

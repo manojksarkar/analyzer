@@ -229,16 +229,29 @@ def clear(conn, version_id: str, slot_kind: str, slot_key: str) -> bool:
 # ---------------------------------------------------------------------------
 # consuming it
 # ---------------------------------------------------------------------------
-def blank_queued_text(conn, version_id: str, model) -> List:
+class Blanked(NamedTuple):
+    """A queued slot whose model text was emptied, and the text that was there before.
+
+    The previous text is carried so it can be PUT BACK. Blanking is not a decision that the text
+    should go -- it is how this code says "write this again" to an enrichment step that skips
+    anything already filled in. If the rewrite then does not happen, the blank is an outcome
+    nobody chose, and publishing it would be worse than publishing the superseded wording.
+    """
+    row: Any
+    previous_text: str
+
+
+def blank_queued_text(conn, version_id: str, model) -> List["Blanked"]:
     """Empty the model text of every queued MODEL-BACKED slot, so Phase 2 rewrites it.
 
     No force-regenerate switch is needed, and adding one would be a second way to say the same
     thing: `_enrich_from_llm` already skips a function "when already present (the engine carries
     them forward)", so removing the stale text is exactly the instruction "generate this again".
 
-    `model` is the artifact dict Phase 2 is holding. Mutated in place. Returns the entries it
-    blanked, for the caller to clear once they have actually been rewritten -- clearing them
-    here would lose the obligation if the phase then failed.
+    `model` is the artifact dict Phase 2 is holding. Mutated in place. Returns a `Blanked` per
+    entry -- the queue row and the text that was removed -- for the caller to hand back to
+    `clear_rewritten`. Nothing is cleared here: that would lose the obligation if the phase then
+    failed.
 
     `behaviourDescription` entries are not touched: their text is not in the model at all. Phase 3
     rewrites every behaviour row it emits, so `clear_behaviour_entries` retires those separately,
@@ -255,35 +268,57 @@ def blank_queued_text(conn, version_id: str, model) -> List:
         except (resolver.SlotError, slot.SlotKeyError):
             # The slot no longer exists in this version. Retire the entry rather than leaving it
             # to be retried for ever against something that is not there.
-            blanked.append(row)
+            blanked.append(Blanked(row, ""))
             continue
+        previous = model[loc.artifact][loc.entry_key].get(loc.field) or ""
         model[loc.artifact][loc.entry_key][loc.field] = ""
-        blanked.append(row)
+        blanked.append(Blanked(row, previous))
     return blanked
 
 
-def clear_rewritten(conn, version_id: str, entries, model) -> int:
-    """Retire the entries whose slot now carries text again. Returns how many.
+class Retired(NamedTuple):
+    """What `clear_rewritten` did: entries retired, and slots whose old text was put back."""
+    cleared: int
+    restored: int
 
-    An entry whose slot came back **empty** is kept: the regeneration did not happen -- the LLM
-    was unreachable, or descriptions are switched off -- and dropping it would quietly convert
-    "still owed" into "done".
+
+def clear_rewritten(conn, version_id: str, entries, model) -> "Retired":
+    """Retire the entries whose slot now carries text again; put the others back as they were.
+
+    An entry whose slot came back **empty** is kept queued: the regeneration did not happen --
+    the LLM was unreachable, or descriptions are switched off -- and dropping it would quietly
+    convert "still owed" into "done".
+
+    **And its previous text is restored.** Keeping the obligation is not enough on its own. The
+    text was removed by `blank_queued_text` purely as a way of asking for a rewrite, so a rewrite
+    that never came must leave the model exactly as it was found. Without this, one unreachable
+    LLM turns a stale-but-readable description into an empty cell in the document -- worse than
+    the wording the correction superseded, and worse than what the reader had before anybody
+    corrected anything.
+
+    What comes back is the superseded wording, which is precisely why the entry stays queued: the
+    debt is still owed, and the next run with a working LLM pays it.
     """
     from review import resolver
 
-    n = 0
-    for row in entries or ():
+    cleared = restored = 0
+    for item in entries or ():
+        row, previous = item if isinstance(item, Blanked) else Blanked(item, "")
         try:
             text = resolver.read_text(model, row.slot_kind, row.slot_key).strip()
         except (resolver.SlotError, slot.SlotKeyError):
-            text = ""            # gone from this version: retire it, see blank_queued_text
+            # Gone from this version: retire it, see blank_queued_text. There is nowhere to put
+            # the old text back into, and nothing that would read it if there were.
             clear(conn, version_id, row.slot_kind, row.slot_key)
-            n += 1
+            cleared += 1
             continue
         if text:
             clear(conn, version_id, row.slot_kind, row.slot_key)
-            n += 1
-    return n
+            cleared += 1
+        elif previous:
+            resolver.write_text(model, row.slot_kind, row.slot_key, previous)
+            restored += 1
+    return Retired(cleared, restored)
 
 
 def clear_behaviour_entries(conn, version_id: str) -> int:

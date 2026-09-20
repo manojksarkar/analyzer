@@ -799,23 +799,76 @@ was a gap before `REQ-API-08`; it is a blocker now, because the flowchart endpoi
 
 ### 13.1 Where the pipeline calls this feature
 
-Two call sites, both deliberately thin — everything beneath them is tested on its own:
+**Nine call sites.** An earlier version of this section said "two" and listed four, which was
+wrong in a way that matters for a merge: anyone reading it would not know which files this feature
+can change the behaviour of. Every one is deliberately thin — everything beneath them is tested on
+its own — and every one is **non-fatal**.
 
-| what | where | why there |
-|---|---|---|
-| `carry_overrides` | `incremental/engine.py::_carry_review_overrides`, beside `carry_forward_globals` | the two belong together: one moves the words, the other the record of who wrote them |
-| `config_with_overrides` | `run_views.py::_with_text_overrides`, immediately before `run_views(...)` | the RUNNER attaches them, so a view stays a pure function of `(model, config)` and never opens a database |
-| `stamp_pipeline_derivation` | `incremental/store.py::capture_output` | the one point Phase-3 output reaches the database |
-| `assert_exportable` | `analyzer.py::cmd_reexport` | before the subprocess, so a stale export is refused rather than produced |
+| phase | what | where | why there |
+|---|---|---|---|
+| 2 | `carry_overrides` | `incremental/engine.py::_carry_review_overrides`, beside `carry_forward_globals` | the two belong together: one moves the words, the other the record of who wrote them |
+| 2 | `blank_queued_text` | `model_deriver.py::_take_regeneration_queue`, before the enrichment | the enrichment skips anything already filled in, so emptying a slot IS "write this again" |
+| 2 | `clear_rewritten` | `model_deriver.py::_retire_regeneration_queue`, after the enrichment | only text that actually came back retires the debt — and text that did not is **put back** (§13.2) |
+| 3 | `config_with_overrides` | `run_views.py::_with_text_overrides`, immediately before `run_views(...)` | the RUNNER attaches them, so a view stays a pure function of `(model, config)` and never opens a database |
+| 3 | `from_config` + `redraw` | `views/flowcharts.py::_apply_text_overrides`, after the incremental merge and before `render_dot_cached` | applied later, the JSON would carry the human's words and the picture the LLM's |
+| 3 | `from_config` + `apply_to_docx_rows` | `views/behaviour_diagram.py::_apply_text_overrides` | the behaviour view rebuilds every row it writes, so this is where that text exists |
+| 3 | `clear_behaviour_entries` | `run_views.py::_retire_behaviour_regenerations` | running the view IS the regeneration, so retire where it happened |
+| 4 | `assert_exportable` | `run.py::_refuse_stale_export` **and** `analyzer.py::cmd_reexport` | see §13.3 — one is the guarantee, the other is a fast failure |
+| capture | `stamp_pipeline_derivation` + `run_pending` | `incremental/store.py::capture_output` | the one point Phase-3 output reaches the database, and a host that has the output tree |
 
-Both new call sites are **non-fatal**. A generation that has already paid for the parse and the LLM
-must not be lost because corrections could not be copied or loaded — they are logged, and the
-corrections stay where they are for a later run.
+Being non-fatal is the rule, not a courtesy: a generation that has already paid for the parse and
+the LLM must never be lost because a correction could not be carried, read or applied. Each site
+catches broadly, logs, and continues; the obligation stays in the database for the next run.
 
-`tests/unit/test_review_pipeline_wiring.py` checks each call site exists, that it runs at the right
-point, and — in `TestEveryPieceHasACaller` — that no piece of the feature is left with no caller by
-accident. It also asserts that `run_pending` and the regeneration-queue consumer still have **none**,
-so when one acquires a caller the docs listing them as missing fail with it.
+### 13.2 A blank is a request, not a decision
+
+`blank_queued_text` empties a description **only** to ask for a rewrite — there is no
+force-regenerate flag, and the enrichment skips anything already filled in. So an empty slot at the
+end of Phase 2 does not mean anybody decided the text should go. It means the request went
+unanswered: the LLM was unreachable, or descriptions are switched off.
+
+`clear_rewritten` therefore does two things, not one. It retires the entries whose text came back,
+**and restores the previous wording of those that did not**, leaving them queued. Without the
+restore, one unreachable LLM turns a stale-but-readable description into an empty cell in the
+document — worse than the wording the correction superseded, and worse than what the reader had
+before anybody corrected anything.
+
+What comes back is precisely the superseded wording, which is why the entry stays queued: the debt
+is still owed, and the next run with a working LLM pays it.
+
+### 13.3 The export guard lives in `run.py`, not only in `analyzer.py`
+
+`analyzer.py` is not the only front door. The API's re-export service spawns
+`engine/run.py --from-phase 4` directly, so a guard that lived only in `analyzer.py` refused a
+stale export from the terminal and produced one from the UI — where reviewers actually work.
+
+The failure that reached a reader was not "slightly old text". Correcting a node label on a host
+with no output tree patches the text in the database immediately (`rerender.redraw_flowchart` needs
+no files) and leaves the **picture** owed. Exporting then produced a document whose sentence said
+one thing and whose diagram beside it said another.
+
+So `run.py::_refuse_stale_export` is the guarantee — every front door spawns it — and
+`analyzer.py` keeps its own check because it fails before the checkout and the subprocess. `--force`
+travels to it as `--force-export`, or the CLI would honour an override the backstop then refused.
+
+Only phase 4 is gated, and that is not merely an optimisation: `stamp_pipeline_derivation` records
+the derivation when output is **captured**, which happens after phase 4. A run that includes phase 3
+is applying the corrections on its way through, but at the moment it reaches phase 4 the stamps are
+still the previous run's — so checking there would refuse exactly the run that fixes the problem.
+
+**On the API the remedy is applied, not recommended.** `pipeline_runner._reexport_from_phase` asks
+the guard and runs from **phase 3** when the version is stale, which is the remedy the guard's own
+message names. A reviewer who pressed "re-export" seconds after fixing a sentence should not have to
+learn what a phase is. It falls back to phase 4 whenever the question cannot be asked — no version,
+no database, the feature absent, or the guard itself failing — because an unavailable guard must not
+quietly change what the pipeline does.
+
+`tests/unit/test_review_pipeline_wiring.py` checks each call site exists and runs at the right
+point, and — in `TestEveryPieceHasACaller` — that no module under `engine/review/` is left with no
+caller by accident. A module reached only through another is listed there by name with the reason,
+so "nobody calls this" and "this is called indirectly" cannot be confused. `TestTheExportGuardCoversBothFrontDoors` and `TestTheApiRederivesInsteadOfRefusing` cover §13.3, and each of their matchers
+is asserted not to match a `def` line — a mistake made twice in this feature, which makes a wiring
+test pass however the code behaves.
 
 ---
 

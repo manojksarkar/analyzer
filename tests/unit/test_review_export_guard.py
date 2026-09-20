@@ -188,8 +188,90 @@ class TestItIsWiredIntoReexport:
     def test_only_phase_4_is_gated(self):
         """Phases 2 and 3 re-derive on their way through, so gating them would refuse a command
         that is itself the fix."""
-        assert "if a.from_phase >= 4 and not getattr(a, \"force\", False):" in self._source()
+        assert "if a.from_phase >= 4 and not forced:" in self._source()
 
     def test_there_is_an_escape_hatch(self):
         """A guard with no override becomes something people work around by other means."""
         assert '"--force"' in self._source()
+
+
+class TestTheApiRederivesRatherThanRefusing:
+    """The same question, answered differently because the asker is different.
+
+    The CLI refuses and prints `--from-phase 3`. A reviewer who pressed "re-export" in the UI
+    seconds after fixing a sentence should not have to learn what a phase is, so the API applies
+    that remedy instead of recommending it.
+
+    These drive the real function with a real database, because the wiring tests beside them only
+    read the source -- and a decision that is computed correctly and then ignored looks identical
+    to source.
+    """
+
+    @staticmethod
+    def _decide(conn, monkeypatch, version_id="v1"):
+        """Run `_reexport_from_phase` against this test's SQLite connection."""
+        import api.services.pipeline_runner as pr
+        from core import db as core_db
+
+        class _Eng:
+            def connect(self):
+                class _Cx:
+                    def __enter__(_s):
+                        return conn
+
+                    def __exit__(_s, *a):
+                        return False
+                return _Cx()
+
+        monkeypatch.setattr(core_db, "is_database_configured", lambda: True)
+        monkeypatch.setattr(core_db, "get_engine", lambda *a, **k: _Eng())
+        return pr._reexport_from_phase(version_id)
+
+    def test_a_clean_version_exports_only(self, conn, monkeypatch):
+        """Nothing has been corrected since the views were built, so Phase 3 would be waste."""
+        g.stamp_pipeline_derivation(conn, "v1", now=T1)
+        assert self._decide(conn, monkeypatch) == 4
+
+    def test_a_correction_newer_than_the_views_re_derives(self, conn, monkeypatch):
+        """THE CASE THIS EXISTS FOR. Phase 4 alone would ship what Phase 3 wrote last time."""
+        g.stamp_pipeline_derivation(conn, "v1", now=T1)
+        _override(conn, T2)
+        assert self._decide(conn, monkeypatch) == 3
+
+    def test_a_version_never_derived_re_derives(self, conn, monkeypatch):
+        """Absence of evidence is not evidence of freshness -- the same rule the guard uses."""
+        _override(conn, T2)
+        assert self._decide(conn, monkeypatch) == 3
+
+    def test_a_pending_picture_re_derives(self, conn, monkeypatch):
+        """A correction saved where no output tree existed leaves the text right and the PNG
+        owed. Exporting now yields a document whose words and picture disagree, which is worse
+        than one that is uniformly out of date."""
+        g.stamp_pipeline_derivation(conn, "v1", now=T2)
+        _override(conn, T1)
+        from review import render_queue
+        render_queue.enqueue(conn, "v1", "Comp|UnitA|f|", "f.png", user_id="u1", now=T1)
+        assert self._decide(conn, monkeypatch) == 3
+
+    def test_no_version_id_exports_only(self, conn, monkeypatch):
+        """A legacy commit-keyed job. There is nothing to be stale against."""
+        assert self._decide(conn, monkeypatch, version_id=None) == 4
+
+    def test_no_database_exports_only(self, monkeypatch):
+        """An unavailable guard must not quietly change what the pipeline does."""
+        import api.services.pipeline_runner as pr
+        from core import db as core_db
+        monkeypatch.setattr(core_db, "is_database_configured", lambda: False)
+        assert pr._reexport_from_phase("v1") == 4
+
+    def test_a_failing_guard_exports_only(self, monkeypatch):
+        """Same rule, arrived at the hard way: if asking raises, the answer is the old
+        behaviour, not a new one."""
+        import api.services.pipeline_runner as pr
+        from core import db as core_db
+
+        def _boom():
+            raise RuntimeError("database is down")
+
+        monkeypatch.setattr(core_db, "is_database_configured", _boom)
+        assert pr._reexport_from_phase("v1") == 4

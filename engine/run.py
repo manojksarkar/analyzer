@@ -42,6 +42,10 @@ Options:
                        Doc type is a dimension, not a phase: Phases 1-3 are
                        shared; Phase 4 dispatches one exporter per doc type
                        (EXPORTER_REGISTRY). Default swe3 reproduces prior output.
+  --force-export       Export even when a reviewer's correction is newer than the
+                       last time the views were derived. Only matters for
+                       --from-phase 4, which skips the step that would apply it.
+                       Without this the run refuses and says how to re-derive.
   --from-phase N       Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export)
   --to-phase N         Stop after phase N (1-4). Lets the incremental engine run
                        parse+derive only (--to-phase 2), compute impact, then
@@ -183,7 +187,7 @@ from core.model_io import FUNCTIONS, GLOBALS, UNITS, COMPONENTS
 _KNOWN_FLAGS = (
     "--help", "-h",
     "--clean", "--config",
-    "--use-model", "--skip-model",
+    "--use-model", "--skip-model", "--force-export",
     "--no-llm-summarize", "--llm-summarize",
     "--selected-group", "--selected-layer", "--selected-component", "--selected-unit",
     "--component-per-docx", "--filter-mode",
@@ -204,6 +208,7 @@ _KNOWN_FLAGS = (
 
 clean_all               = False
 use_model               = False
+force_export            = False  # export even when a correction is newer than the last derivation
 no_llm_summarize        = False
 from_phase              = 1
 to_phase                = None   # stop after this phase (1-4); None = run through phase 4
@@ -249,6 +254,8 @@ while i < len(sys.argv):
             sys.exit(1)
     elif a in ("--use-model", "--skip-model"):
         use_model = True
+    elif a == "--force-export":
+        force_export = True
     elif a == "--no-llm-summarize":
         no_llm_summarize = True
     elif a == "--llm-summarize":
@@ -870,6 +877,52 @@ def _restore_output_from_db(from_phase: int) -> None:
             f"whatever is in output/ on this machine", component="run", err=True)
 
 
+def _refuse_stale_export(from_phase: int, force: bool) -> None:
+    """Stop an export-only run that would ship superseded text or an out-of-date picture.
+
+    `REQ-AP-04`. This lives HERE, next to `_restore_output_from_db`, because this file is what
+    BOTH front doors spawn -- `analyzer.py reexport` and the API's re-export service. The check
+    used to sit in `analyzer.py` alone, which meant the CLI refused and the UI did not: a
+    reviewer correcting a node label on a host with no output tree got a document whose text was
+    corrected and whose flowchart picture still showed the LLM's label, with no warning. An
+    internally contradictory document is worse than a uniformly stale one.
+
+    `analyzer.py` still checks first, before spawning anything, so the CLI fails fast with a
+    better message. This is the backstop that no caller can forget.
+
+    Only for phase 4, and that is not merely an optimisation: `stamp_pipeline_derivation` records
+    the derivation when output is CAPTURED, which happens after phase 4. A run that includes
+    phase 3 is applying the corrections on its way through, but at the moment it reached phase 4
+    the stamps would still be the previous run's -- so checking would refuse exactly the run that
+    fixes the problem. Verified that nothing else spawns `--from-phase 4`: ordinary generations
+    use `--from-phase 2` or run the phases together.
+    """
+    if from_phase < 4 or force:
+        return
+    try:
+        from core.run_context import version_id as _vid
+        from core.db import get_engine, is_database_configured
+        vid = _vid()
+        if not (vid and is_database_configured()):
+            return
+        from review.export_guard import StaleExport, assert_exportable
+        with get_engine().connect() as cx:
+            assert_exportable(cx, vid)
+    except ImportError:
+        return                 # the feature is not present in this tree
+    except Exception as exc:   # noqa: BLE001
+        if type(exc).__name__ != "StaleExport":
+            # Could not check. Say so and continue -- turning "the guard is unavailable" into a
+            # failed export would be worse than the problem it prevents. Silence would be worse
+            # still: it reads exactly like a pass.
+            log(f"WARNING: could not check whether the views are up to date ({exc}); "
+                f"exporting anyway", component="run", err=True)
+            return
+        log(str(exc), component="run", err=True)
+        log("Or re-run with --force-export to export anyway.", component="run", err=True)
+        sys.exit(2)
+
+
 # --to-phase N: stop after global phase N. Drop phases mapped above N from every
 # plan (and any plan left empty). Lets the incremental engine Phase-split (run
 # parse+derive, compute impact, then resume views+export). Additive: when
@@ -898,6 +951,12 @@ if to_phase is not None:
 # Only for phase 4. A run that includes Phase 3 rewrites `output/` from the model anyway, and
 # restoring first would be work whose result is immediately overwritten.
 _restore_output_from_db(from_phase)
+
+# REQ-AP-04, and the other half of the same thought. The restore above brings the TEXT up to
+# date from the database; it cannot redraw a picture, and it cannot apply a correction that is
+# an INPUT to Phase 3 rather than a row Phase 3 wrote. So ask before exporting, and refuse
+# rather than ship a document whose words and diagrams disagree. Exits 2 when it refuses.
+_refuse_stale_export(from_phase, force_export)
 
 runner = PhaseRunner(project_root=SCRIPT_DIR)
 total_time = 0.0

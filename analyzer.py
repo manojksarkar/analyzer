@@ -294,7 +294,12 @@ def cmd_reexport(a) -> int:
     # view rows the document is built from. A correction saved a second ago has updated the model
     # and the override table; exporting now ships the previous wording with nothing to notice.
     # Phases 2 and 3 re-derive on their way through, so only phase 4 needs asking.
-    if a.from_phase >= 4 and not getattr(a, "force", False):
+    #
+    # `run.py` asks the same question again, and IT is the real guarantee — it is what both this
+    # command and the API's re-export service spawn. Asking here as well is not redundant: it
+    # fails before the checkout and the subprocess, so the CLI says so immediately.
+    forced = bool(getattr(a, "force", False))
+    if a.from_phase >= 4 and not forced:
         rc = _refuse_stale_export(a.version_id)
         if rc:
             return rc
@@ -303,6 +308,10 @@ def cmd_reexport(a) -> int:
             "--model-root", os.path.join(adir, "model"),
             "--output-root", os.path.join(adir, "output"),
             "--from-phase", str(a.from_phase)]
+    # `--force` was already honoured above; it has to travel, or run.py's backstop would refuse
+    # the very export the user just insisted on.
+    if forced:
+        argv.append("--force-export")
     # --use-model means 'skip phases 1 AND 2 and reuse the stored model'. For a
     # re-derive we WANT phase 2 to run, so it must not be passed — with it, phase 2
     # would be skipped and --from-phase 2 would quietly do nothing but re-render.

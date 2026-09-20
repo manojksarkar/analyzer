@@ -1582,6 +1582,48 @@ def _capture_reexport_output(db: Any, job: Any, adir) -> None:
         _log.warning("re-export: could not persist rendered output for %s: %s", version_id, exc)
 
 
+def _reexport_from_phase(version_id: Optional[str]) -> int:
+    """4 normally; 3 when a reviewer's correction is newer than the last derivation.
+
+    `REQ-AP-04` says an export must verify rather than assume. The CLI answers by refusing and
+    printing how to re-derive. A refusal is the wrong answer HERE: the person at the other end is
+    a reviewer who pressed "re-export" seconds after correcting a sentence, and "phase 3" is not
+    a thing they should have to know. So the remedy is applied instead of being recommended.
+
+    Phase 3 is not an approximation of the fix — it IS the fix the guard's message names. It
+    re-derives the view rows from the model with the corrections applied, and `capture_output`
+    draws the flowchart pictures that were owed on the way through. It costs seconds on a small
+    project and minutes on a large one; shipping a document whose text and diagrams disagree
+    costs more than that.
+
+    Falls back to 4 whenever the question cannot be asked — no version, no database, the feature
+    absent, or the guard itself failing. An unavailable guard must not turn into a changed
+    pipeline: that would be a second, silent behaviour nobody asked for.
+    """
+    if not version_id:
+        return 4
+    try:
+        engine_dir = str(get_settings().repo_root / "engine")
+        if engine_dir not in sys.path:
+            sys.path.insert(0, engine_dir)
+        from core.db import get_engine, is_database_configured     # type: ignore[import]
+        if not is_database_configured():
+            return 4
+        from review.export_guard import staleness                  # type: ignore[import]
+        with get_engine().connect() as cx:
+            st = staleness(cx, version_id)
+    except Exception as exc:                                       # noqa: BLE001 - see docstring
+        _log.warning("re-export: could not check whether %s is up to date (%s); "
+                     "exporting without re-deriving", version_id, exc)
+        return 4
+    if not st.is_stale:
+        return 4
+    _log.info("re-export: %s has corrections newer than its last derivation (%s), so this run "
+              "re-derives the views first (phase 3) instead of exporting the previous text",
+              version_id, st.explain())
+    return 3
+
+
 def _do_reexport(db: Any, job_id: str) -> None:
     job = db.jobs.get(job_id)
     if not job:
@@ -1619,16 +1661,25 @@ def _do_reexport(db: Any, job_id: str) -> None:
     # here: two jobs re-exporting at once would wipe each other's staged trees mid-run, and a
     # re-export would wipe a *generation* that was using the shared dirs. Running in place
     # also drops two full copies of the model and output per re-export.
+    # REQ-AP-04. Phase 4 alone would ship whatever Phase 3 produced last time. When a reviewer
+    # has corrected something since, the honest choices are to refuse or to re-derive — and the
+    # guard's own message already names re-deriving as the remedy, so do that instead of handing
+    # a reviewer a failed job and an explanation of pipeline phases.
+    #
+    # Phase 3 is exactly that remedy: it rebuilds the view rows from the model with the
+    # corrections applied, and draws the flowchart pictures that were owed on the way through.
+    from_phase = _reexport_from_phase(getattr(job, "version_id", None))
+
     arch_layers = project.architecture_layers or []
     # The model is rows, so Phase 4 needs the version id to find it. This used to ASK whether
     # the model was persisted and pass the id only if so, because a version generated before
     # the DB-native work had files instead. There is no file model any more: a version whose
     # rows are missing cannot be re-exported at all, and saying so beats re-exporting nothing.
-    cmd = _build_cmd(job, cdir, config_path, from_phase=4, use_model=True,
+    cmd = _build_cmd(job, cdir, config_path, from_phase=from_phase, use_model=True,
                      arch_layers=arch_layers,
                      model_root=adir / "model", output_root=adir / "output",
                      version_id=getattr(job, "version_id", None))
-    if _execute_subprocess(db, job_id, cmd, phase_start=4):
+    if _execute_subprocess(db, job_id, cmd, phase_start=from_phase):
         # Re-persist the re-rendered views (C0). The document render now reads interface
         # tables / flowcharts / behaviour rows from Postgres when they are there, so a
         # re-export that only rewrote FILES would leave the stored copies stale and appear to

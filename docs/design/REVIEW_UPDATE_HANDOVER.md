@@ -83,6 +83,8 @@ Everything else is new files. These are the ones a merge can actually collide on
 | file | change | risk |
 |---|---|---|
 | `api/db/postgres/schema.py` | +3 tables, +`slot_shape`, +`model_units.description`, all three in `PER_VERSION_TABLES` | low — additive |
+| `engine/run.py` | +`_refuse_stale_export`, +`--force-export` (allowlist, parse branch, help) | low — one call beside `_restore_output_from_db` |
+| `api/services/pipeline_runner.py` | +`_reexport_from_phase`; the re-export's `from_phase` is now computed, not 4 | **medium** — same function as any re-export change |
 | `engine/views/flowcharts.py` | `_apply_text_overrides()` + one call between the incremental merge and the PNG render | **medium** — that function is large and often edited |
 | `engine/views/behaviour_diagram.py` | `_apply_text_overrides()` + one call before the manifest write; `externalCallerId` added to each row | **medium** |
 | `engine/behaviour_diagram/llm_call_description.py` | `_one_line()` on the LLM result | low |
@@ -234,6 +236,39 @@ itself one version later.
 `test_review_carry_forward.py::test_a_target_with_no_flowchart_yet_still_carries`, which pins the
 bug a real two-version run found.
 
+### 4.14 A blank description is a request, never an outcome
+
+`cascade.blank_queued_text` empties a description **only** to ask for a rewrite — the enrichment
+skips anything already filled in, so emptying the slot IS the instruction. If the rewrite then does
+not happen (LLM unreachable, `--no-llm`, descriptions off), `clear_rewritten` must put the previous
+wording **back** and leave the entry queued.
+
+Delete that restore and one unreachable LLM turns a readable description into an empty cell in the
+document — worse than the wording the correction superseded. The obligation alone is not enough:
+keeping the debt does not un-publish the blank.
+
+→ `test_review_queue_consumers.py::TestAFailedRewriteLeavesTheModelAsItFoundIt`. Removing either
+half — the restore, or `Blanked.previous_text` that feeds it — fails three or four tests.
+
+### 4.15 The export guard belongs to `run.py`, not to `analyzer.py`
+
+`analyzer.py` is not the only front door. The API's re-export spawns `engine/run.py --from-phase 4`
+directly. While the guard lived only in `analyzer.py`, the terminal refused a stale export and the
+UI produced one — and the UI is where reviewers work.
+
+What went out was not merely old text. A node-label correction patches the database immediately
+(`redraw_flowchart` needs no files) and leaves the **picture** owed, so the document's sentence and
+the diagram beside it disagreed. If you ever consolidate these, keep the one in `run.py`:
+`_restore_output_from_db` is already there for exactly this reason.
+
+`--force` must keep travelling to it as `--force-export`, and `--force-export` must stay on run.py's
+KNOWN-flag allowlist — an unlisted flag is rejected outright, which fails the export it was meant
+to permit.
+
+→ `test_review_pipeline_wiring.py::TestTheExportGuardCoversBothFrontDoors` and
+`::TestTheApiRederivesInsteadOfRefusing`; behaviour in
+`test_review_export_guard.py::TestTheApiRederivesRatherThanRefusing`.
+
 ---
 
 ## 5. Two defects this branch found in existing code
@@ -254,7 +289,7 @@ the same pair (`currentFunctionId` exists for exactly this reason); this half wa
 
 ```
 python -m alembic heads                 # exactly one
-python -m pytest tests/unit tests/api -q
+python -m pytest tests/unit tests/api -q   # 2103 passed, 10 skipped at the tip of this branch
 ```
 
 The feature has also been run end to end against a **SQLite** database on a machine with no

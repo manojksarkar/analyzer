@@ -110,7 +110,7 @@ class TestRetiringOnlyWhatCameBack:
         model = _model()
         queued = cascade.blank_queued_text(conn, "v1", model)
         model["functions"][FN]["description"] = "Freshly written."
-        assert cascade.clear_rewritten(conn, "v1", queued, model) == 1
+        assert cascade.clear_rewritten(conn, "v1", queued, model) == (1, 0)
         assert cascade.pending(conn, "v1") == []
 
     def test_a_slot_still_empty_stays_queued(self, conn):
@@ -120,7 +120,7 @@ class TestRetiringOnlyWhatCameBack:
         _queue(conn, slot.DESCRIPTION, key)
         model = _model()
         queued = cascade.blank_queued_text(conn, "v1", model)
-        assert cascade.clear_rewritten(conn, "v1", queued, model) == 0
+        assert cascade.clear_rewritten(conn, "v1", queued, model) == (0, 1)
         assert len(cascade.pending(conn, "v1")) == 1
 
     def test_a_slot_that_left_the_version_is_retired(self, conn):
@@ -212,3 +212,77 @@ class TestTheConsumersAreWiredIn:
         call = self._matcher(self.CASES["Phase 3 retires behaviour rows"][1]).search(src)
         assert call and call.start() > src.index(
             "run_views(model, output_dir, model_dir, config, doc_type=doc_type)")
+
+
+class TestAFailedRewriteLeavesTheModelAsItFoundIt:
+    """The blank is a REQUEST, not a decision.
+
+    `blank_queued_text` empties a description only because the enrichment skips anything already
+    filled in -- emptying it is how this code says "write this again". So an empty slot at the end
+    of the phase does not mean anybody decided the text should go; it means the request went
+    unanswered. Publishing that blank is worse than publishing the superseded wording, and worse
+    than what the reader had before anybody corrected anything.
+
+    Found by auditing the feature against the pipeline rather than against its own tests: every
+    test here passed while one unreachable LLM could empty a cell in the document.
+    """
+
+    def test_the_previous_wording_comes_back(self, conn):
+        key = slot.for_entity(slot.DESCRIPTION, FN)
+        _queue(conn, slot.DESCRIPTION, key)
+        model = _model()
+        before = model["functions"][FN]["description"]
+        assert before, "the fixture must start with something to lose"
+
+        queued = cascade.blank_queued_text(conn, "v1", model)
+        assert model["functions"][FN]["description"] == "", "blanking still asks for the rewrite"
+
+        # ... the LLM is unreachable, so nothing is written back ...
+        out = cascade.clear_rewritten(conn, "v1", queued, model)
+
+        assert model["functions"][FN]["description"] == before
+        assert out.restored == 1 and out.cleared == 0
+
+    def test_it_stays_queued_even_though_the_text_is_back(self, conn):
+        """What came back is the wording the correction superseded. The debt is still owed."""
+        _queue(conn, slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, FN))
+        model = _model()
+        queued = cascade.blank_queued_text(conn, "v1", model)
+        cascade.clear_rewritten(conn, "v1", queued, model)
+        assert len(cascade.pending(conn, "v1")) == 1
+
+    def test_a_rewrite_that_DID_happen_is_not_overwritten(self, conn):
+        """The restore must never beat fresh text -- that would undo the regeneration it exists
+        to protect."""
+        _queue(conn, slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, FN))
+        model = _model()
+        queued = cascade.blank_queued_text(conn, "v1", model)
+        model["functions"][FN]["description"] = "Freshly written."
+        out = cascade.clear_rewritten(conn, "v1", queued, model)
+        assert model["functions"][FN]["description"] == "Freshly written."
+        assert (out.cleared, out.restored) == (1, 0)
+
+    def test_a_unit_description_is_restored_too(self, conn):
+        """Not just functions: every model-backed kind goes through the same door."""
+        _queue(conn, slot.UNIT_DESCRIPTION, slot.for_unit(UNIT))
+        model = _model()
+        before = model["units"][UNIT]["description"]
+        queued = cascade.blank_queued_text(conn, "v1", model)
+        cascade.clear_rewritten(conn, "v1", queued, model)
+        assert model["units"][UNIT]["description"] == before
+
+    def test_a_slot_that_left_the_version_restores_nothing(self, conn):
+        """There is nowhere to put it back into, and nothing would read it if there were."""
+        _queue(conn, slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, "Gone|Gone|x|"))
+        model = _model()
+        queued = cascade.blank_queued_text(conn, "v1", model)
+        out = cascade.clear_rewritten(conn, "v1", queued, model)
+        assert (out.cleared, out.restored) == (1, 0)
+
+    def test_the_blanked_entry_carries_the_text_it_removed(self, conn):
+        """Without this the restore has nothing to restore FROM -- the whole fix lives here."""
+        _queue(conn, slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, FN))
+        model = _model()
+        before = model["functions"][FN]["description"]
+        blanked = cascade.blank_queued_text(conn, "v1", model)
+        assert blanked[0].previous_text == before
