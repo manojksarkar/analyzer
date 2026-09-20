@@ -219,6 +219,128 @@ def test_non_ascii_content_survives_the_round_trip(tmp_path):
     assert first.fields["information"] == "Übergröße — naïve façade ✓"
 
 
+# --- the tables no generated document on disk happens to contain -------------
+
+def _five_row_table(doc, description, bullets, input_name, output_name,
+                    capacity_label="Capacity"):
+    """The Requirements / Risk / Capacity / Input Name / Output Name block."""
+    table = doc.add_table(rows=5, cols=2)
+    cell = table.rows[0].cells[1]
+    cell.paragraphs[0].add_run("Behavior Description")
+    for line in bullets:
+        cell.add_paragraph(line)
+    table.rows[0].cells[0].text = "Requirements"
+    for i, (label, value) in enumerate(
+            [("Risk", "Medium"), (capacity_label, "Common"),
+             ("Input Name", input_name), ("Output Name", output_name)], start=1):
+        table.rows[i].cells[0].text = label
+        table.rows[i].cells[1].text = value
+    return table
+
+
+def build_with_behaviour(path, bullets, input_name="Lba", output_name="Status",
+                         capacity_label="Capacity", heading="2.2.1 Map - lookup (Hub - flush)"):
+    """A SWE.3 document carrying a flowchart entry and a Dynamic Behaviour entry.
+
+    Neither table appears in any generated document currently on disk -- the runs
+    that produced them had flowcharts off -- so without this the two richest
+    extraction paths would only ever be exercised on trees built by hand.
+    """
+    doc = docx.Document()
+    doc.add_heading("1 Introduction", level=1)
+    doc.add_heading("2 Diag", level=1)
+    doc.add_heading("2.1 Static Design", level=2)
+    table = doc.add_table(rows=1, cols=4)
+    for i, name in enumerate(["Component", "Unit", "Description", "Note"]):
+        table.rows[0].cells[i].text = name
+    row = table.add_row()
+    for i, value in enumerate(["Diag", "Map", "N/A", "N/A"]):
+        row.cells[i].text = value
+
+    doc.add_heading("2.1.1 Map", level=3)
+    doc.add_heading("2.1.1.1 unit header", level=4)
+    doc.add_heading("2.1.1.2 unit interface", level=4)
+    itable = doc.add_table(rows=1, cols=len(OUR_COLUMNS))
+    for i, name in enumerate(OUR_COLUMNS):
+        itable.rows[0].cells[i].text = name
+    r = itable.add_row()
+    for i, fieldname in enumerate(OUR_ORDER):
+        _fill(r.cells[i], dict(ROWS[0], interfaceName="lookup",
+                               interfaceId="IF_LAYER1_G_MAP_01")[fieldname])
+
+    doc.add_heading("2.1.1.3 Map-lookup", level=4)
+    _five_row_table(doc, "Looks an entry up.", ["Map calls Hub", "Hub returns to Map"],
+                    input_name, output_name, capacity_label)
+
+    doc.add_heading("2.2 Dynamic Behaviour", level=2)
+    doc.add_heading(heading, level=3)
+    _five_row_table(doc, "The interaction.", bullets, input_name, output_name, capacity_label)
+    doc.save(path)
+    return path
+
+
+def test_a_dynamic_behaviour_entry_is_read_as_four_names_and_its_arrows(tmp_path):
+    path = build_with_behaviour(str(tmp_path / "a.docx"),
+                                ["Hub calls Map to look the entry up", "Map returns to Hub"])
+    component = _extract(path).of_kind("component")[0]
+    interactions = component.of_kind("interaction")
+    assert len(interactions) == 1
+    fields = interactions[0].fields
+    assert (fields["unit"], fields["function"]) == ("Map", "lookup")
+    assert (fields["callerUnit"], fields["callerFunction"]) == ("Hub", "flush")
+    assert fields["arrows"] == ["Hub calls Map to look the entry up", "Map returns to Hub"]
+    assert fields["risk"] == "Medium" and fields["capacity"] == "Common"
+    assert fields["inputName"] == "Lba" and fields["outputName"] == "Status"
+
+
+def test_the_behavior_description_header_is_not_read_as_an_arrow(tmp_path):
+    path = build_with_behaviour(str(tmp_path / "a.docx"), ["A calls B", "B returns to A"])
+    arrows = _extract(path).of_kind("component")[0].of_kind("interaction")[0].fields["arrows"]
+    assert "Behavior Description" not in arrows
+
+
+def test_capacity_and_capacity_density_are_the_same_row(tmp_path):
+    """The flowchart table writes `Capacity(Density)`, the behaviour table `Capacity`."""
+    plain = build_with_behaviour(str(tmp_path / "a.docx"), ["A calls B"])
+    dense = build_with_behaviour(str(tmp_path / "b.docx"), ["A calls B"],
+                                 capacity_label="Capacity(Density)")
+    assert _compare(plain, dense).findings == []
+
+
+def test_a_flowchart_entry_carries_its_input_and_output_names(tmp_path):
+    path = build_with_behaviour(str(tmp_path / "a.docx"), ["A calls B"])
+    unit = _extract(path).of_kind("component")[0].of_kind("unit")[0]
+    functions = unit.of_kind("function")
+    assert [f.name for f in functions] == ["lookup"]
+    assert functions[0].fields["inputName"] == "Lba"
+    assert functions[0].fields["outputName"] == "Status"
+
+
+def test_a_changed_arrow_is_a_finding_and_a_reworded_one_is_not_silent(tmp_path):
+    a = build_with_behaviour(str(tmp_path / "a.docx"), ["A calls B", "B returns to A"])
+    b = build_with_behaviour(str(tmp_path / "b.docx"), ["A calls B"])
+    differs = [f for f in _compare(a, b).findings if f.field == "arrows"]
+    assert len(differs) == 1 and differs[0].level == "L4"
+
+
+def test_a_dropped_interaction_is_found_in_a_real_document(tmp_path):
+    a = build_with_behaviour(str(tmp_path / "a.docx"), ["A calls B"])
+    b = build_design(str(tmp_path / "b.docx"), unit_heading="2.1.1 Map",
+                     rows=[dict(ROWS[0], interfaceName="lookup",
+                                interfaceId="IF_LAYER1_G_MAP_01")])
+    missing = [f for f in _compare(a, b).findings
+               if f.kind == "missing" and f.level == "L4"]
+    assert len(missing) == 1
+
+
+def test_an_interaction_heading_that_does_not_parse_leaves_the_names_empty(tmp_path):
+    path = build_with_behaviour(str(tmp_path / "a.docx"), ["A calls B"],
+                                heading="2.2.1 something else entirely")
+    interactions = _extract(path).of_kind("component")[0].of_kind("interaction")
+    assert len(interactions) == 1
+    assert "unit" not in interactions[0].fields
+
+
 # --- the alias file ---------------------------------------------------------
 
 def test_an_alias_file_is_read_from_disk(tmp_path):
