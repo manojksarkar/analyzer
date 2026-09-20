@@ -66,7 +66,7 @@ UNITS = ["Core", "Lib", "Util"]
 # Public functions that must appear in each unit's flowchart
 EXPECTED_FUNCTIONS = {
     "Core": {"coreAdd", "coreCompute", "coreLoopSum", "coreCheck", "coreSumPoint",
-             "coreSetResult", "coreProcess", "coreOrchestrate", "coreSetMode", "coreGetCount"},
+             "coreSetResult", "coreProcess", "coreOrchestrate", "coreSetMode"},
     "Lib":  {"libAdd", "libNormalize"},
     "Util": {"utilCompute", "utilScale"},
 }

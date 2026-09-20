@@ -403,15 +403,23 @@ def _fn_is_private(f: dict, functions_data: dict, base_path: str) -> bool:
     # A function published by a file-scope initializer table (`static const fp_t table[] =
     # { fn1, … };`) is reachable through that table even though no CALL_EXPR names it, so
     # the cross-file-caller rule below would wrongly bury it. Ranked BELOW the explicit
-    # PRIVATE annotation: a source-level marking stays authoritative.
-    # An explicit PUBLIC annotation is authoritative, exactly as PRIVATE is above. Without
-    # this, a marked entry point with no by-name caller -- an ISR, a registered callback, an
-    # API called only from outside the parsed tree -- falls through to the cross-file-caller
-    # rule and is buried as private, dropping it from the interface table and the document.
-    if (f.get("visibility") or "").lower() == "public":
-        return False
+    # PRIVATE annotation: a source-level marking stays authoritative. This is EVIDENCE of
+    # reachability, not an annotation, which is why it survived the change below.
     if f.get("addressTakenByUnits"):
         return False
+    # A PUBLIC marking used to short-circuit here, guaranteeing a row. It no longer does:
+    # a marking may RESTRICT, never promote, so publication has to be earned by a caller in
+    # another file. PUBLIC and unmarked are now indistinguishable to this function.
+    #
+    # The cost is real and was measured before the change -- 42 of the sample's 91
+    # PUBLIC-marked functions lose their row, `main` among them, and the App|Main unit's
+    # interface table empties completely. The exposure this opens up is that the call graph
+    # only knows what was PARSED: "no cross-file caller" and "no cross-file caller in this
+    # run's scope" are the same thing here and mean opposite things. A layer-scoped run
+    # (--selected-layer) cannot see the layer above calling in, so that layer's front door
+    # reads as uncalled. An ISR or a callback registered by a driver has no named caller at
+    # all. Reverting is two lines -- restore the `visibility == "public" -> return False`
+    # short-circuit above the address-taken check.
     return not _has_external_caller(f, functions_data, base_path)
 
 

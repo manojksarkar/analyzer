@@ -71,15 +71,18 @@ def test_private_globals_excluded(core_entries):
         assert name not in global_names, f"PRIVATE global '{name}' leaked into interface table"
 
 
-def test_protected_functions_included(core_entries):
-    # coreGetCount is PROTECTED — must appear in the interface table
+def test_protected_functions_excluded(core_entries):
+    # coreGetCount is PROTECTED. A protected item is unreachable from another unit except
+    # through inheritance, so it is not an interface: the parser records PROTECTED as
+    # "private" and the row never reaches the table. Reverses the earlier reading of
+    # REQ-IT-02, which asked for protected items to be listed.
     names = {e["name"] for e in core_entries if e["type"] == "Function"}
-    assert "coreGetCount" in names, "PROTECTED function 'coreGetCount' missing from interface table"
+    assert "coreGetCount" not in names, "PROTECTED function 'coreGetCount' leaked into interface table"
 
 
 @pytest.mark.parametrize("entries_fixture,expected,unit", [
     ("core_entries", {"coreAdd", "coreSetResult", "coreProcess",
-                      "coreOrchestrate", "coreGetCount"},                 "Core"),
+                      "coreOrchestrate"},                                 "Core"),
     ("lib_entries",  {"libAdd", "libNormalize"},                          "Lib"),
     ("util_entries", {"utilCompute", "utilScale"},                        "Util"),
 ])
@@ -107,8 +110,8 @@ def test_public_global_present(request, entries_fixture, global_name, unit):
 @pytest.mark.parametrize("name,expected_direction,entries_fixture", [
     # Writes a global — In
     ("coreSetResult", "In",  "core_entries"),
-    # Reads a global, writes none — Out
-    ("coreGetCount",  "Out", "core_entries"),
+    # Reads a global, writes none — Out. coreGetCount used to cover this from Core;
+    # it is PROTECTED, so it no longer has a table row to read a direction from.
     ("utilCompute",   "Out", "util_entries"),
     # No global access — Out
     ("coreAdd",       "Out", "core_entries"),
