@@ -14,3 +14,11 @@ PRIVATE int _MTM_SB_GETDbVersion() {
 PUBLIC void _MTM_SB_SETDbType(DB_TYPE t) {
     g_selectedDbType = t;
 }
+
+int DbSession::open(int slot) {
+    return slot + backoffMs() + secretKey();
+}
+
+int DbSession::retryBudget() {
+    return g_dbVersion;
+}
