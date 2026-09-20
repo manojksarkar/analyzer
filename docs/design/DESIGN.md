@@ -58,7 +58,7 @@ run.py
 
 **Views (read-only projections):** Each view reads the model and writes output. Configurable via `config.views`. Implemented: interfaceTables → interface_tables.json; behaviourDiagram → output/behaviour_diagrams/; flowcharts → output/flowcharts/.
 
-**Visibility filtering:** Functions and global variables tagged `PRIVATE` are excluded from the interface table, unit header table, and behaviour diagrams. The DOCX flowchart section renders a non-private function's own flowchart followed by flowcharts of any private functions it calls — each private function flowchart is rendered at most once per unit (deduplication via `rendered_private_fids` set). `PUBLIC` and `PROTECTED` entries are included everywhere.
+**Visibility filtering:** Private entries are excluded from the interface table, unit header table, unit diagrams, behaviour diagrams and the SWE.4 specs. `PROTECTED` counts as private. A `PUBLIC` marking does not by itself publish a function — since 2026-09-20 a marking may restrict but never promote, so publication is earned by a cross-file caller or a file-scope dispatch table. Globals have no call graph, so their marking alone decides. The DOCX flowchart section renders a non-private function's own flowchart followed by those of any private functions it calls, each at most once per unit (`rendered_private_fids`).
 
 **Output:** software_detailed_design.docx — structure spec in [software_detailed_design.json](../spec/software_detailed_design.json): 1 Introduction, 2..N Modules (Static Design with unit interface tables, Dynamic Behaviour), Code Metrics, Appendix A.
 
@@ -152,7 +152,7 @@ All model files live in `model/`. Keys use `|` (KEY_SEP) as separator. Paths use
 | `parameters` | array | `{name, type}` per parameter |
 | `returnType` | string | C++ return type |
 | `direction` | string | `In` or `Out` |
-| `visibility` | string | `private`, `public`, `protected`, or `default` (no macro prefix found) |
+| `visibility` | string | `private` or `public` — two values, nothing else. `PROTECTED` and unmarked both collapse at record time — see Phase 1 step 4 |
 | `description` | string | LLM-generated description (if no source comment) |
 | `phases` | array | LLM phase breakdown — `{start_line, end_line, description}` per phase |
 
@@ -170,7 +170,7 @@ the right phase description into each node's LLM prompt.
 | `type` | string | C++ type |
 | `interfaceId` | string | `IF_project_unit_index` |
 | `direction` | string | `In`, `Out`, `In/Out`, `-` |
-| `visibility` | string | `private`, `public`, `protected`, or `default` (no macro prefix found) |
+| `visibility` | string | `private` or `public` — two values, nothing else. `PROTECTED` and unmarked both collapse at record time — see Phase 1 step 4 |
 
 **Example:**
 ```json
@@ -272,7 +272,16 @@ is richer when `--llm-summarize` is active (default).
 3. **Comment extraction**: `_preceding_comment(cursor)` reads `//` or `/* */` lines
    immediately above a function/type definition. `_inline_comment(cursor)` reads trailing
    `//` comment on the same line as a struct field or enum constant.
-4. **Visibility detection**: `_detect_visibility(file, line)` scans raw source up to 5 lines backwards from the declaration line to detect `PRIVATE`, `PUBLIC`, or `PROTECTED` macro prefix — stored as lowercase in the `visibility` field (`"default"` if none found). Handles multi-line declarations.
+4. **Visibility detection**: the `PRIVATE`/`PUBLIC`/`PROTECTED` macro if present
+   (`_detect_visibility` — scans back up to 5 lines, stopping at the end of the previous
+   declaration so a neighbour's macro cannot leak downwards; the macros expand to nothing,
+   so Clang never sees them), otherwise a member's C++ access specifier
+   (`_function_visibility` for methods, `_global_visibility` for static data members).
+   **Recorded as `public` or `private` — two values, nothing else.** `PROTECTED` and
+   `protected:` record as `private`; an unmarked declaration records as `public`. No later
+   phase ever distinguished more than that — every filter tests `== "private"` — so the
+   rule is one bit. Lossy: changing the policy means re-parsing, not reinterpreting a
+   stored model.
 5. Write `metadata.json`, `functions.json` (with `comment`, `visibility`), `globalVariables.json`,
    `dataDictionary.json` (with `comment` on types and members).
 
@@ -303,11 +312,13 @@ is richer when `--llm-summarize` is active (default).
 
 Loads model from `model/` then calls each enabled view in `config.views`:
 
-**Visibility filtering applied per view:**
-- `interfaceTables`: skips functions and globals where `visibility == "private"`
-- `behaviourDiagram`: skips functions where `visibility == "private"`
-- `flowcharts`: generates for all functions (no filtering)
-- `unitDiagrams`, `moduleStaticDiagram`: no function-level filtering
+**Visibility filtering applied per view** — every one tests `visibility == "private"`:
+- `interfaceTables`: skips functions and globals
+- `unitDiagrams`: skips functions, so no edge carries a `PIF_` id the table never prints
+- `behaviourDiagram`, `functionTestSpecs`, `dynamicBehaviourSpecs`: skip functions
+- `flowcharts`: generates for all functions (no filtering) — a private function's flowchart
+  is published under the public function that calls it
+- `componentStaticDiagram`: no function-level filtering
 
 **Case-insensitive module matching:** `_analyzerAllowedModules` is normalised to lowercase when the `allowed_modules` set is built; extracted module names are compared with `.lower()` throughout all views.
 

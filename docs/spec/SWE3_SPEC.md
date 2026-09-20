@@ -72,9 +72,15 @@ Every unit that has a source implementation file produces one interface table in
 
 ### REQ-IT-02 — Entry inclusion
 
-The table lists all public and protected functions and global variables of the unit. Private items do not appear.
+The table lists the unit's public functions and global variables. Private items do not appear.
 
-**Verification:** Known private items absent. Known public and protected items present.
+A marking can only restrict, never promote. `PROTECTED`, and a C++ `protected:` or `private:` label,
+count as private. `PUBLIC` does not by itself publish a function: it is listed only if a function in
+another file calls it, or its address appears in a file-scope dispatch table. This reverses the earlier
+reading, which listed protected items and trusted `PUBLIC` unconditionally.
+
+**Verification:** Known private and protected items absent. A `PUBLIC` function with no cross-file caller
+absent. Known cross-unit interfaces present.
 
 ---
 

@@ -13,6 +13,8 @@
 | SH-4 | Array data range: an `int[6]` global reports `NA` (an array's range is not one interval — needs a rule, e.g. element range + length) | enhance | open | engine/utils.py |
 | SH-5 | `entity_hashes` / `_type_keys` stay bare-qn while the dictionary is layer-keyed: two layers defining one type share a hash (last definition wins), so a narrowed parse can miss a change in the loser. Needs `typeUsers` keyed by layer too — `impact_set` joins hash keys to it directly. | issue | open | engine/parser.py, incremental/impact.py |
 
+| SH-6 | A full `pytest` run (without `--skip-pipeline`) fails at e2e setup: `merge-base --is-ancestor` cannot resolve `9e7a861…`, the commit on the orphan `e2ev2` version row. `tests/conftest._scratch_repo()` rebuilds the sample's git repo from scratch every run, so every recorded e2e sha is dead by the next run and baseline resolution throws. Workaround: run `generate` with `--full` by hand, then `pytest --skip-pipeline`. Fix: drop the orphan row, or have conftest pass `--full` | issue | open | tests/conftest.py, e2e_paths.py |
+
 ## Incremental reuse
 | ID | Item | Type | Status | Ref |
 |---|---|---|---|---|
