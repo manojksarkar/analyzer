@@ -290,9 +290,12 @@
 > since a private function still appears under its caller's flowchart. Snapshot
 > `tests/snapshots/Sample/unit_diagrams.json` regenerated (Core/Lib/Util edges).
 > ⚠ `pytest --skip-pipeline` is **blind to a parser change** — it reuses
-> `workspaces/e2e-sample/versions/e2ev1/output/`, eleven days stale here. A plain `pytest` then fails at
-> e2e setup for an unrelated reason (**BACKLOG SH-6**). Real signal came from regenerating by hand:
-> `analyzer.py onboard` + `generate … --full`, then `pytest --skip-pipeline`.)
+> `workspaces/e2e-sample/versions/e2ev1/output/`, which was eleven days stale here, so the protected e2e
+> tests passed against data the change had never touched. **Use a plain `pytest` after a parser change.**
+> That was itself broken until 2026-09-21 (SH-6): conftest's `generate` now passes `--full`, so the run
+> goes straight to `generate_full` and never selects a baseline — `_scratch_repo` builds a new repo with a
+> new commit every run, so no earlier version's commit survives to be an ancestor of it. Verified end to
+> end: pipeline OK in 68s, then 1987 passed.)
 
 > Updated: 2026-09-18 (**a static member written through a FIELD is now covered** — branch
 > `fix/swe3-review-v1`, **UNCOMMITTED**). `StatCounters::s_counts.inserts++` — a void function whose only
