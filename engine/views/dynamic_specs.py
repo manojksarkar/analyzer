@@ -156,35 +156,36 @@ def select_targets(units_data, functions_data, components_data,
                 fid, unit_to_component.get(unit_key, "Unknown"), True):
             continue
 
-        # (2) views/behaviour_diagram.py re-reads "external caller" as *outside the
-        #     selected group*, not merely outside the component, and drops the row
-        #     when nothing qualifies. The caller it names is that list's first
-        #     entry -- NOT the one the selector happened to choose -- so take it
-        #     from the same place or the two documents would disagree on the entry
-        #     point even where they agree on the count.
-        caller_fid = _external_caller(func, _component_of(unit_key), allowed_components)
+        # (2) views/behaviour_diagram.py drops the row when the function has no
+        #     caller outside its own component. The caller it names is that list's
+        #     first entry -- NOT the one the selector happened to choose -- so take
+        #     it from the same place, or the two documents would disagree on the
+        #     entry point even where they agree on the count.
+        caller_fid = _external_caller(func, _component_of(unit_key))
         if caller_fid is None:
             continue
         targets.append((fid, caller_fid))
     return targets
 
 
-def _external_caller(func, home_component, allowed_components):
+def _external_caller(func, home_component):
     """The caller SWE.3 names as the entry point, or None if it names none.
 
-    Mirrors `views/behaviour_diagram.py` exactly: when a group is selected,
-    "external" means outside that GROUP; otherwise outside the component. A
-    component whose only callers are sibling components of its own group gets no
-    behaviour diagram row there, so it gets no spec here either.
+    "External" means a DIFFERENT COMPONENT -- the same test `views/behaviour_diagram.py`
+    applies, and the same one the selector used to choose the diagram in the first
+    place.
+
+    This used to read "outside the selected GROUP" when a group was set. That was
+    `views/behaviour_diagram.py`'s rule when this was written, but `f303132` had
+    already removed it there, because a document spanning several components made
+    the generator and the view disagree about the same caller. Keeping it here
+    recreated that disagreement across the two DOCUMENTS instead: a function whose
+    only external caller sits in a sibling component of its own group was external
+    to SWE.3 (diagram drawn) and internal to SWE.4 (no spec), and the wiki says the
+    two pair one to one.
     """
-    called_by = func.get("calledByIds") or []
-    if allowed_components:
-        outside = [c for c in called_by
-                   if c and KEY_SEP in c
-                   and c.split(KEY_SEP)[0].lower() not in allowed_components]
-    else:
-        outside = [c for c in called_by
-                   if c and KEY_SEP in c and c.split(KEY_SEP)[0] != home_component]
+    outside = [c for c in (func.get("calledByIds") or [])
+               if c and KEY_SEP in c and c.split(KEY_SEP)[0] != home_component]
     return outside[0] if outside else None
 
 

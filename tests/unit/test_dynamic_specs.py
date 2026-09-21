@@ -253,15 +253,20 @@ class TestMatchesSwe3:
     behaviours a component has, which is exactly what these guard against.
     """
 
-    def test_caller_inside_the_group_is_not_external(self):
-        """`views/behaviour_diagram.py` re-reads external as *outside the group*.
+    def test_a_caller_in_a_sibling_component_is_external(self):
+        """One group, two components: `Ext` calls into `Sig`, and both are in scope.
 
-        `Ext` and `Sig` in one group means SWE.3 emits no row, so SWE.4 emits no
-        spec -- even though `Ext` is a different COMPONENT and the selector picks it.
+        This test used to assert the opposite, on the grounds that
+        `views/behaviour_diagram.py` read "external" as *outside the group*. It had
+        already stopped doing that: `f303132` removed the group branch there, and
+        `test_behaviour_diagram_external_callers.py` pins its absence. So SWE.3
+        draws this interaction, and SWE.4 must specify it -- SWE4_WIKI has the two
+        pairing one to one.
         """
         both = {"ext", "sig"}
-        assert build(UNITS, FUNCTIONS, {}, COMPONENTS, {},
-                     allowed_components=both) == {}
+        specs = build(UNITS, FUNCTIONS, {}, COMPONENTS, {}, allowed_components=both)
+        assert [s["name"] for s in specs["Sig"]] == ["drive"]
+        assert specs["Sig"][0]["entryPoint"] == "Caller - entry"
 
     def test_caller_outside_the_group_is_external(self):
         specs = build(UNITS, FUNCTIONS, {}, COMPONENTS, {}, allowed_components={"sig"})
