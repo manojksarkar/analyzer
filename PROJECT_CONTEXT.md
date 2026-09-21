@@ -262,8 +262,14 @@
 >    was; across all 30 groups of that run there are zero behaviour-diagram dirs and exactly one dynamic spec,
 >    which is the config, not the filters. What is real: `SWE4_WIKI` 'Dynamic Behaviour test specs' states the
 >    two pair **exactly** one-to-one, and nothing warns when the flags disagree, so a delivered pair can
->    violate its own contract silently. **Fix wanted:** one flag, or a config validation error when they
->    differ. 34 of 36 generated groups pair clean.
+>    violate its own contract silently.
+>    **NOT a defect — `behaviourDiagram: false` is DELIBERATE** (confirmed by Manoj 2026-09-21): the diagram
+>    and flowchart views are the expensive renders (mermaid / `mmdc` / PNG), and the default is a
+>    development-speed profile. A config validation error would therefore be the WRONG fix — it would fail
+>    the config developers use every day. The exposure is only a DELIVERY run left on a dev profile, which is
+>    a process question, not a code one, and `doccheck --pair` already catches it at the point it matters.
+>    **Decision: leave the flags alone.** The lightest possible addition, if ever wanted, is a non-blocking
+>    run warning when `dynamicBehaviourSpecs` is on and `behaviourDiagram` is off. 34 of 36 generated groups pair clean.
 >
 >    **Settled 2026-09-21c — the selector drift WAS live in code; FIXED 2026-09-21d (working tree, see below).**
 >    `f303132` (2026-08-26) DELETED the group-scope branch from `views/behaviour_diagram.py`, leaving
