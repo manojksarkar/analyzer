@@ -41,7 +41,7 @@ This branch adds **five** migrations on top of `0008`:
 
 `develop` was at `0008` when this was written. **If `develop` has since added its own `0009`,
 there will be two heads after the merge** and `alembic upgrade head` will refuse. The fix is to
-re-point this branch's `0009` at the new head and renumber — the three migrations are additive
+re-point this branch's `0009` at the new head and renumber — all five migrations are additive
 (new tables, one new nullable column) and touch nothing existing, so they can sit anywhere after
 `0008`.
 
@@ -50,6 +50,24 @@ Check with:
 ```
 python -m alembic heads     # must print exactly one
 ```
+
+**And on a database that already exists, `analyzer.py setup` is not enough on its own** — or it
+was not, until this branch. `setup` calls `metadata.create_all()`, which creates missing TABLES
+and never alters an existing one, so `0009`'s `model_units.description` was silently skipped on
+every database that had been used before. The tables from `0010`/`0012`/`0013` appeared, the
+setup looked like it had worked, and the run then died mid-Phase-1 with
+
+```
+UndefinedColumn: column model_units.description does not exist
+```
+
+A fresh database hides this completely, which is how it survived a full end-to-end run and
+reached an office machine. `setup` now adds missing columns after `create_all` and prints each
+one; a NOT NULL column with no default is refused and sent here instead, because guessing a
+backfill value is how a schema repair becomes data corruption.
+
+`0011`'s `text_overrides.slot_shape` escaped only by luck: its table is new, so `create_all`
+built it complete. Do not read that as "column migrations are fine".
 
 ### 2.2 This branch carries work that is not this feature
 
@@ -289,7 +307,7 @@ the same pair (`currentFunctionId` exists for exactly this reason); this half wa
 
 ```
 python -m alembic heads                 # exactly one
-python -m pytest tests/unit tests/api -q   # 2110 passed, 10 skipped at the tip of this branch
+python -m pytest tests/unit tests/api -q   # 2121 passed, 10 skipped at the tip of this branch
 ```
 
 The feature has also been run end to end against a **SQLite** database on a machine with no

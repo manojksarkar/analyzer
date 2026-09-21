@@ -218,6 +218,57 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-21 (**`analyzer.py setup` could not upgrade a database that already existed.
+> Found on the first real Postgres install, by a run dying mid-Phase-1.**
+>
+> ```
+> psycopg.errors.UndefinedColumn: column model_units.description does not exist
+> ```
+>
+> **Root cause.** `tools/db_setup.py` calls `metadata.create_all()` and nothing else - it does
+> NOT run Alembic. `create_all` creates MISSING TABLES and never alters a table that is already
+> there. So on a database that had been used before, `0009_model_units_description`
+> (`op.add_column("model_units", "description")`) was silently skipped, while `0010`/`0012`/`0013`
+> - which create NEW tables - applied fine. The setup therefore looked like it had worked.
+> `0011`'s `text_overrides.slot_shape` escaped only because its table is new in `0010`, so
+> `create_all` built it complete; that is luck, not a property of column migrations.
+>
+> **Why no test saw it.** A fresh database hides it completely: `create_all` on an empty database
+> builds every table from the CURRENT schema, columns and all. The whole SQLite end-to-end run
+> passed for exactly that reason. The gap exists only on a pre-existing database, and the office
+> box was the first one.
+>
+> **Fix.** `db_setup._add_missing_columns(eng, metadata)` runs after `create_all`: compares the
+> live columns of every existing table against the schema and ALTERs in what is missing, printing
+> each one. Strictly additive. A column that is NOT NULL with no server default is NOT attempted -
+> it is named and the operator is sent to `alembic upgrade head`, because inventing a backfill
+> value is how a schema repair becomes data corruption. A column that is live but absent from the
+> schema is left alone: it belongs to another branch, and dropping it to tidy a tool's output
+> would delete data. Idempotent.
+>
+> This is NOT a replacement for Alembic. It is what makes `setup`'s own help text ("create or
+> upgrade the database schema") true on a database whose tables were made by `create_all` and
+> which may therefore have no usable `alembic_version` row to upgrade FROM - running
+> `alembic upgrade head` there would try to re-create tables that already exist.
+>
+> **Immediate remedy for any database built before this branch** (there may be several):
+> re-run `python analyzer.py setup`, or apply the one statement by hand -
+> `ALTER TABLE model_units ADD COLUMN description TEXT;`
+>
+> `tests/unit/test_db_setup_upgrade.py` (11 tests) reproduces the pre-branch database, asserts
+> `create_all` alone does NOT add the column - so a future SQLAlchemy change is noticed - then
+> that the repair adds it, that the exact failing SELECT works afterwards, that existing rows
+> survive, that it is idempotent, that a NOT NULL column is refused and does not stop the others,
+> and that a future-branch column is not dropped. Revert-checked: removing the ALTER fails 6,
+> removing the NOT NULL guard fails 2.
+>
+> HANDOVER 2.1 carries the warning, since every developer merging this hits the same thing.
+> 2121 passed, 10 skipped.
+>
+> **The lesson: `create_all` is not a migration runner, and a green fresh-database test says
+> nothing about an existing one.** Any future migration that adds a column to an existing table
+> would have failed the same way.)
+
 > Updated: 2026-09-20c (**review_update_v1 - the API spec now carries a full request/response
 > contract per endpoint, and it was documenting a wire format the server does not accept.**
 >

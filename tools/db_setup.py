@@ -45,6 +45,45 @@ def _maint_dsn(raw: str) -> tuple[str, str]:
     return maint, target_db
 
 
+def _add_missing_columns(eng, metadata):
+    """Add columns the schema declares but the live tables lack. Returns (added, blocked).
+
+    Only **additive** and only where it is safe: a column is added when it is nullable or has a
+    server default, because those are the only kinds a table with existing rows can accept. A
+    NOT NULL column with no default is reported rather than attempted -- guessing a backfill
+    value is how a schema repair turns into a data corruption.
+
+    Nothing is ever dropped or retyped. A column that is live but not in the schema is left
+    alone: it belongs to a newer branch, or to a migration somebody is mid-way through, and
+    dropping it here would delete data to make a tool's output tidy.
+    """
+    from sqlalchemy import inspect
+    from sqlalchemy.schema import CreateColumn
+
+    insp = inspect(eng)
+    live_tables = set(insp.get_table_names())
+    prep = eng.dialect.identifier_preparer
+    added, blocked = [], []
+
+    for table in metadata.sorted_tables:
+        if table.name not in live_tables:
+            continue                       # create_all just made it, whole
+        live_cols = {c["name"] for c in insp.get_columns(table.name)}
+        for col in table.columns:
+            if col.name in live_cols:
+                continue
+            where = f"{table.name}.{col.name}"
+            if not col.nullable and col.server_default is None:
+                blocked.append(f"{where} ({col.type})")
+                continue
+            ddl = CreateColumn(col).compile(dialect=eng.dialect)
+            with eng.begin() as cx:
+                cx.exec_driver_sql(
+                    f"ALTER TABLE {prep.format_table(table)} ADD COLUMN {ddl}")
+            added.append(f"{where} ({col.type})")
+    return added, blocked
+
+
 def main() -> int:
     try:  # keep a homoglyph/non-ASCII DSN from crashing prints on a cp1252 console
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -127,6 +166,38 @@ def main() -> int:
     from api.db.postgres.schema import metadata
     metadata.create_all(eng)
     print(f"\nschema created: {len(metadata.tables)} tables")
+
+    # 2b. add columns that exist in the schema but not in the live table.
+    #
+    # `create_all()` creates MISSING TABLES and nothing else -- it never alters one that is
+    # already there. So on a database that has been used before, every migration that adds a
+    # column to an existing table is silently skipped, and the mismatch surfaces much later as
+    # `UndefinedColumn: column model_units.description does not exist` in the middle of a run,
+    # from a SELECT that names every column the schema declares.
+    #
+    # That is exactly what happened with `0009_model_units_description`: the three new TABLES on
+    # that branch appeared, so the setup looked like it had worked, and the one new COLUMN did
+    # not. A fresh database hides it completely, which is why it reached an office machine.
+    #
+    # This is not a replacement for Alembic -- `alembic upgrade head` remains the migration
+    # path. It is what makes `analyzer.py setup` honest about the word "upgrade" on a database
+    # whose tables were made by `create_all` and which therefore may have no usable
+    # `alembic_version` to upgrade FROM.
+    print()
+    added, blocked = _add_missing_columns(eng, metadata)
+    if added:
+        for line in added:
+            print(f"  added missing column: {line}")
+        print(f"schema upgraded: {len(added)} column(s) added")
+    else:
+        print("schema up to date: no missing columns")
+    if blocked:
+        print("\n!! These columns are declared NOT NULL with no default, so they cannot be")
+        print("   added to a table that already has rows. Run the migration instead:")
+        print("       python -m alembic upgrade head")
+        for line in blocked:
+            print(f"     - {line}")
+        return 1
 
     # 3. repair rows stranded mid-phase (idempotent).
     #
