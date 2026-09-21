@@ -209,8 +209,9 @@
 >   its branch — see above.)
 
 > Updated: 2026-09-22 (**`tools/doccheck/` — compare two generated documents by what they say**. Written on
-> `feat/doc-compare` off `develop`; **the 5 code commits are cherry-picked onto `fix/swe3-review-v1`** so the
-> tool is available where the SWE.3 review work is. 615 tests. Docs: [tools/doccheck/README.md](tools/doccheck/README.md).
+> `feat/doc-compare` off `develop`, 7 commits, 622 tests; **the whole of that branch is now on
+> `fix/swe3-review-v1`** — the tool and the SWE.4 fixes it found. Docs:
+> [tools/doccheck/README.md](tools/doccheck/README.md).
 >
 > **Why.** The only document comparison we had was `tools/dump_docx.py` piped into `diff` — a LINE diff, so a
 > reordered table or a reworded description floods the output and a wrong `Direction` hides inside it.
@@ -264,7 +265,7 @@
 >    violate its own contract silently. **Fix wanted:** one flag, or a config validation error when they
 >    differ. 34 of 36 generated groups pair clean.
 >
->    **Settled 2026-09-21c — the selector drift is LIVE IN CODE but has ZERO net effect on SampleCppProject.**
+>    **Settled 2026-09-21c — the selector drift WAS live in code; FIXED 2026-09-21d (working tree, see below).**
 >    `f303132` (2026-08-26) DELETED the group-scope branch from `views/behaviour_diagram.py`, leaving
 >    `external = caller component != home component`, unconditionally. `views/dynamic_specs.py::_external_caller`
 >    still carries the deleted branch verbatim (`if allowed_components: ... not in allowed_components`) while
@@ -279,7 +280,7 @@
 >    cross-unit-arrow filter drop all four anyway, and only `Layer1.Signal` yields an interaction at all
 >    (1 on both sides, so with both flags on the two documents WOULD pair correctly). So: a latent bug that
 >    produces correct output on this fixture and wrong output the moment such a function survives the other
->    two filters — plausible on the client's layered multi-component groups.
+>    two filters — plausible on the client's layered multi-component groups. **Fixed 2026-09-21d.**
 >    **Note:** `python engine/run.py <project>` no longer runs standalone — a phase needs `--version-id` /
 >    `--project-id` since the model moved to Postgres, so it fails in Phase 1 with "no model repository is
 >    installed for this run". It writes `model/clang_include_paths.json` before failing.)
@@ -555,6 +556,44 @@
 > at HEAD, identical list. A scope-guard test asserts the dep/unit/behaviour/flowchart insertions still
 > carry their original widths.)
 >
+
+> Updated: 2026-09-21d (**SWE.3 and SWE.4 now ask the same question about an external caller**, branch
+> `feat/doc-compare`. 3 files: `engine/views/dynamic_specs.py`, `tests/unit/test_dynamic_specs.py`,
+> `tests/unit/test_behaviour_diagram_external_callers.py`.
+>
+> **The change.** `dynamic_specs._external_caller` had two rules — "outside the selected GROUP" when a group
+> was set, "outside the component" otherwise. It now has one: **a different component**, the same test
+> `views/behaviour_diagram.py` and the selector apply. The `allowed_components` parameter is gone with the
+> branch (it still scopes which units get considered, further up `select_targets` — that use is unchanged).
+>
+> **Why the old rule was wrong.** `f303132` (2026-08-26) removed the group branch from
+> `views/behaviour_diagram.py` because a document spanning several components made the generator and the view
+> disagree about the same caller. The SWE.4 port (`3355930`, 2026-09-01) was written *after* that and mirrored
+> the pre-fix rule anyway, recreating the disagreement one level up — across the two DOCUMENTS rather than
+> within one. `SWE4_WIKI` has the two pairing one to one.
+>
+> **An existing test asserted the old rule and had to be rewritten.**
+> `test_dynamic_specs.py::TestMatchesSwe3::test_caller_inside_the_group_is_not_external` claimed
+> "`views/behaviour_diagram.py` re-reads external as *outside the group*" — untrue since `f303132`, and
+> `test_behaviour_diagram_external_callers.py::test_external_is_not_defined_as_outside_the_selected_scope`
+> asserts the opposite outright. **The two test files contradicted each other about what SWE.3 does**, which
+> is independent confirmation that the SWE.4 side was the stale one. Renamed to
+> `test_a_caller_in_a_sibling_component_is_external` and inverted.
+>
+> **Two tests added** to `test_behaviour_diagram_external_callers.py`, which already owns this invariant for
+> the view/generator pair: `test_the_swe4_spec_view_uses_the_same_rule` (source-level, mirrors the existing
+> `allowed_components`-absent guard) and `test_the_two_documents_agree_on_a_sibling_component_caller`
+> (runs the case through both rules).
+>
+> **Behaviour-neutral on SampleCppProject** — re-measured after the change, still `Layer1.Signal` 1 vs 1,
+> 0 recovered, because the shared selector and the cross-unit-arrow filter drop all four differing functions
+> anyway. **That is exactly why the added tests are direct rather than fixture-driven: the fixture cannot
+> tell the two rules apart, so nothing else would catch a regression.**
+>
+> **Gates:** `tests/unit` green, `tests/api` green. `tests/e2e` has **6 failures that are PRE-EXISTING** —
+> verified by stashing these 3 files and re-running at HEAD, identical 6 (`test_docx` coreGetCount name +
+> direction, `test_interface_tables` protected/public/direction, `test_unit_diagrams` snapshot). They are
+> SWE.3 static-design paths this change does not touch.)
 
 > Updated: 2026-09-10 (**the project-directory walk is no longer an include-path source by default**
 > — branch `fix/swe4-review-v1`, **UNCOMMITTED**.
