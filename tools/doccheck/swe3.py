@@ -379,6 +379,15 @@ def _finalise(doc):
 
 # --- checks a document can fail on its own ----------------------------------
 
+def _id_numbers(ifaces):
+    """The trailing numbers of a unit's ids, in document order, for the report."""
+    out = []
+    for iface in ifaces:
+        m = _IF_ID_RE.match((iface.fields.get("interfaceId") or "").strip())
+        out.append(m.group("nn") if m else "?")
+    return out
+
+
 def id_integrity(doc):
     """Findings that need only one document: the Interface ID against its place.
 
@@ -393,6 +402,7 @@ def id_integrity(doc):
             ifaces = unit.of_kind("interface")
             seen_global = False
             expected = 0
+            reported_gap = False
             for iface in ifaces:
                 raw = iface.fields.get("interfaceId", "")
                 where = "%s / %s / %s" % (component.name, unit.name, iface.name or "?")
@@ -406,10 +416,16 @@ def id_integrity(doc):
                                 "%s is a private id; the wiki says PIF_ never appears in the document" % raw))
                 expected += 1
                 nn = int(m.group("nn"))
-                if nn != expected:
+                if nn != expected and not reported_gap:
+                    # Only the FIRST break per unit. Once the numbering is wrong,
+                    # every row after it is suspect for the same reason, and
+                    # reporting each one buries the one edit that caused them.
                     out.append(("id-gap", where,
-                                "interface id numbering jumped to %02d, expected %02d" % (nn, expected)))
-                    expected = nn
+                                "interface id numbering reads %02d where %02d was due; the "
+                                "unit's ids are %s" % (nn, expected,
+                                                       ", ".join(_id_numbers(ifaces)))))
+                    reported_gap = True
+                expected = nn
                 # unit part of the id should end with the unit's own letters
                 unit_probe = re.sub(r"[^A-Za-z0-9]", "", unit.name).upper()
                 rest = m.group("rest").upper()
