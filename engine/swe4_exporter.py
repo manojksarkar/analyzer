@@ -41,6 +41,20 @@ _INDENT = "    "
 # Cell renderers
 # ---------------------------------------------------------------------------
 
+def _spec_name(spec: dict) -> str:
+    """The name a heading prints for one spec: the class in front, when there is one.
+
+    `name` is the bare method name, so two methods of different classes in one
+    unit -- `AddOperation::apply` and `MultiplyOperation::apply` -- both print as
+    `apply` and take the same heading. SWE.3 prints the qualified name for exactly
+    that reason (docs/spec/SWE3_WIKI.md, 'Names'), and the two documents have to
+    agree on what a function is called or they cannot be read side by side.
+
+    Falls back to `name`: for a plain function the two are the same string.
+    """
+    return spec.get("qualifiedName") or spec.get("name", "")
+
+
 def _numbered(items):
     """Flat `1) ... 2) ...` list -- Precondition, Input, Expected Results."""
     return "\n".join(f"{i}) {t}" for i, t in enumerate(items, start=1))
@@ -297,7 +311,7 @@ def export_test_specs(json_path: str = None, docx_path: str = None,
             for fn_idx, spec in enumerate(
                     sorted(functions, key=lambda s: s.get("location", {}).get("line", 0)),
                     start=1):
-                fn_name = spec.get("name", "")
+                fn_name = _spec_name(spec)
                 doc.add_heading(f"{sec}.{unit_idx}.{fn_idx} {unit_name}-{fn_name}", level=4)
                 if spec.get("description"):
                     add_para(doc, spec["description"])
@@ -315,7 +329,7 @@ def export_test_specs(json_path: str = None, docx_path: str = None,
             doc.add_heading(f"{dyn_sec} Dynamic Behaviour", level=3)
             for dyn_idx, spec in enumerate(interactions, start=1):
                 heading = "%s.%d %s - %s (%s)" % (
-                    dyn_sec, dyn_idx, spec.get("unitName", ""), spec.get("name", ""),
+                    dyn_sec, dyn_idx, spec.get("unitName", ""), _spec_name(spec),
                     spec.get("entryPoint", ""))
                 doc.add_heading(heading, level=4)
                 _add_table_a(doc, spec, cfg_swe4, font_small)
