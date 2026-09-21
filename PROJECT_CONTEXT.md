@@ -262,8 +262,27 @@
 >    which is the config, not the filters. What is real: `SWE4_WIKI` 'Dynamic Behaviour test specs' states the
 >    two pair **exactly** one-to-one, and nothing warns when the flags disagree, so a delivered pair can
 >    violate its own contract silently. **Fix wanted:** one flag, or a config validation error when they
->    differ. The filter drift may still be live — this corpus cannot say; settling it needs a run with both
->    flags on. 34 of 36 generated groups pair clean.)
+>    differ. 34 of 36 generated groups pair clean.
+>
+>    **Settled 2026-09-21c — the selector drift is LIVE IN CODE but has ZERO net effect on SampleCppProject.**
+>    `f303132` (2026-08-26) DELETED the group-scope branch from `views/behaviour_diagram.py`, leaving
+>    `external = caller component != home component`, unconditionally. `views/dynamic_specs.py::_external_caller`
+>    still carries the deleted branch verbatim (`if allowed_components: ... not in allowed_components`) while
+>    its docstring says it "Mirrors `views/behaviour_diagram.py` exactly". It does not. The SWE.4 port
+>    (`3355930`, 2026-09-01) was written *after* the SWE.3 fix and mirrored the pre-fix rule.
+>    **Effect:** a function whose only external caller sits in a SIBLING COMPONENT OF ITS OWN GROUP is external
+>    to SWE.3 (diagram drawn) and internal to SWE.4 (no spec) — SWE.4 under-emits, the opposite direction to
+>    what `tools/swe4_dynamic_diff.py` documents.
+>    **Measured** against the real parsed model (both rules run directly; no pipeline run needed):
+>    gross = 4 functions in 2 groups (`Layer1.Full`: `Iface|Types|checkStatus` called by `Cross|Hub|hubCompute`;
+>    `Layer1.Support`: 3 × `Math|Utils|*` called by `App|Main|*`). **Net = 0** — the shared selector and the
+>    cross-unit-arrow filter drop all four anyway, and only `Layer1.Signal` yields an interaction at all
+>    (1 on both sides, so with both flags on the two documents WOULD pair correctly). So: a latent bug that
+>    produces correct output on this fixture and wrong output the moment such a function survives the other
+>    two filters — plausible on the client's layered multi-component groups.
+>    **Note:** `python engine/run.py <project>` no longer runs standalone — a phase needs `--version-id` /
+>    `--project-id` since the model moved to Postgres, so it fails in Phase 1 with "no model repository is
+>    installed for this run". It writes `model/clang_include_paths.json` before failing.)
 
 > Updated: 2026-09-21b (**SWE.4 prints the class-qualified method name**, branch `feat/doc-compare`.
 > Found by `tools/doccheck --pair`; see the 2026-09-21 entry.
