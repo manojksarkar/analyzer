@@ -164,8 +164,15 @@ def _strip_prefix(label, *prefixes):
 
 
 def _entry_text(spec):
-    """Step 1: issue the function under test with its inputs."""
-    name = spec.get("name", "the function")
+    """Step 1: issue the function under test with its inputs.
+
+    The qualified name, so a unit holding two same-named methods says which one
+    to issue -- `AddOperation::apply`, not `apply`. Without it both specs read
+    "Issue function apply with inputs a, b." and only the mock further down tells
+    a tester which method they are exercising. Same string as `name` for a plain
+    function.
+    """
+    name = spec.get("qualifiedName") or spec.get("name") or "the function"
     params = [p.get("name", "") for p in (spec.get("precondition") or {}).get("parameters", [])]
     params = [p for p in params if p]
     if not params:
