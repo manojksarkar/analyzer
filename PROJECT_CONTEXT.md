@@ -446,6 +446,69 @@
 > may not reach a CDN or claude.ai), which costs **3.23 MB** in git. The `.md` stays the source of
 > truth; the HTML is a view of it and has to be refreshed by hand when the schema changes.
 
+> Updated: 2026-09-21e (**the Static Design component container diagram is page-fitted, and its box
+> styling is uniform**, branch `feat/doc-compare`. 2 files:
+> `engine/docx_exporter.py`, `tests/unit/test_container_diagram.py` (new, 20 cases).
+>
+> **The bug (office review: "static diagram is overscaled").** Every image in Static Design was inserted
+> at a hardcoded `width=Inches(6)`, ignoring the PNG's natural size; the aspect ratio then set the height.
+> The **container diagram** (the edgeless "component box holding its unit boxes", `N.1`) is the pathological
+> case: it has **no edges at all**, so dagre stacks the disconnected unit nodes one per row and height grows
+> linearly at ~170px/unit. Measured on `Layer2.Uart` (16 units): **6.00 x 44.9 in — five pages of overflow**.
+> Small components went the other way: `Layer1.Lib` header-dep was upscaled to ~28 effective dpi.
+> Slicing the tall image was considered and **rejected** — with no edges the cut points carry no meaning,
+> it cuts through node boxes, and it multiplies page count without fixing the 4:1 aspect ratio.
+>
+> **What changed** (container diagram ONLY — this was the explicit scope):
+> - **`_fit_picture_width(png, max_w_in, max_h_in, natural_dpi=96)`** — scales to fit the box preserving
+>   aspect and **never upscales past natural size**; falls back to `max_w_in` if the size is unreadable.
+>   **`_usable_page_inches(doc)`** reads the real section text area (Letter 1in margins -> 6.5 x 9.0 in)
+>   rather than assuming it. Applied at the container insertion only.
+> - **Uniform box widths** — each label is centre-padded with `&nbsp;` to the longest name and the labels
+>   render monospace via `themeCSS`. Character-count padding alone is NOT enough: in the proportional
+>   default font 16 equal-length labels still spanned 232-272px (**14.7% spread**); with monospace the
+>   spread is **0px**.
+> - Black borders (`stroke:#000000` on both `classDef unitNode` and `style MOD`), bold black component
+>   title, and `subGraphTitleMargin` so the title stops colliding with the first node.
+> - `_parse_component_static_diagram_cfg` **honours the dict form**. It used to `return bool(raw), True, 5.5`
+>   — the `5.5` was bound to `msd_width_in` and **never read**, so `views.componentStaticDiagram.widthInches`
+>   did nothing, and `bool({"enabled": false})` is `True` so the dict form could not disable anything.
+>   `widthInches` is now the fit box width (default `_CONTAINER_MAX_WIDTH_IN = 6.5`).
+>
+> **TRAP — the pipeline renders with mermaid-cli 10.9.1, where `rankSpacing`/`nodeSpacing` are a NO-OP.**
+> `utils.mmdc_path` prefers `node_modules/.bin/mmdc` (**10.9.1**) over the npm-global one (**11.12.0**).
+> The old code passed dagre's `ranksep`/`nodesep` as **strings**, which mermaid ignores at any version — the
+> docstring's "tight ranksep/nodesep" claim was always false. Switching to mermaid's own `rankSpacing`/
+> `nodeSpacing` keys **does** work on 11.12.0 (Uart 3400 -> 2120px, -38%) but **changes nothing on 10.9.1**,
+> which is what actually builds the documents. `subGraphTitleMargin` and `themeCSS` **do** apply on 10.9.1
+> (verified: +84px = the 42 CSS px title margin at `--scale 2`; box-width spread 0px). So the corrected keys
+> are kept for a future upgrade but **buy nothing today** — the entire win here is `_fit_picture_width`.
+> Upgrading mermaid-cli was NOT done: it would re-render flowcharts, unit and behaviour diagrams too, which
+> the scope excluded.
+>
+> **Measured through the real pipeline renderer** (mmdc 10.9.1), was `6.00 x ~52 in` for Uart:
+> `Uart` 16u -> 1.07 x 9.00 in | `Gpio` 11u -> 1.68 x 9.00 in | `Diag` 6u -> 4.11 x 9.00 in |
+> `Iface` 4u -> 3.52 x 8.62 in | `Signal` 3u -> 3.90 x 6.88 in | `Access` 1u -> 4.62 x 3.38 in.
+> Nothing overflows. Large components are now tall narrow ribbons filling one page — accepted by the user
+> over grid-wrapping (4-per-row would give Uart 6.50 x 5.39 in) because it preserves the reviewed look.
+>
+> **Render nondeterminism (worth its own fix).** The same mermaid text gives different pixel sizes across
+> machines and over time — the stored `Layer2.Uart.png` is 314x2760 but re-rendering the identical source
+> through the same mmdc + puppeteer config now gives 324x2760, and 454x3400 under mmdc 11. Chrome at
+> `engine/config/puppeteer-config.json -> executablePath` drives font metrics, which drive box sizes.
+> **Never key layout logic to measured pixel dimensions.**
+>
+> **Also found, not fixed:** `_add_requirement_image_table` (its own `add_picture` at `Inches(4.0)`) has
+> **zero callers** — dead near-duplicate of `_add_flowchart_table`. And the header-dependency, unit and
+> behaviour diagram insertions still use the hardcoded `Inches(6)`; they are out of scope here but have the
+> same defect (their worst aspect ratio is only 1.57, so they distort rather than overflow).
+>
+> **Gates:** `pytest --skip-pipeline` -> **2562 passed, 32 skipped, 6 failed**. The 6 are the SAME
+> PRE-EXISTING failures documented in 2026-09-21d — verified by stashing `docx_exporter.py` and re-running
+> at HEAD, identical list. A scope-guard test asserts the dep/unit/behaviour/flowchart insertions still
+> carry their original widths.)
+>
+
 > Updated: 2026-09-10 (**the project-directory walk is no longer an include-path source by default**
 > — branch `fix/swe4-review-v1`, **UNCOMMITTED**.
 >

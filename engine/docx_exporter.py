@@ -444,32 +444,93 @@ def _escape_mermaid_label_for_structure(text: str) -> str:
     return t
 
 
+# Max width (inches) the container diagram is fitted into when config gives none.
+_CONTAINER_MAX_WIDTH_IN = 6.5
+
+_CONTAINER_THEME_CSS = (
+    ".nodeLabel, .nodeLabel p { font-family: Consolas, \\\"Courier New\\\", monospace !important; } "
+    ".cluster-label, .cluster-label p, .cluster span "
+    "{ font-weight: 700 !important; color: #000000 !important; }"
+)
+
+_CONTAINER_INIT = (
+    "%%{init: {'flowchart': {'rankSpacing': 10, 'nodeSpacing': 10, "
+    "'subGraphTitleMargin': {'top': 14, 'bottom': 28}}, "
+    "'themeCSS': '" + _CONTAINER_THEME_CSS + "'}}%%"
+)
+
+
+def _pad_label_to_width(label, width):
+    """Centre-pad a unit label with non-breaking spaces. The labels render in a
+    monospace font, so equal character count means equal box width."""
+    pad = max(width - len(label), 0)
+    left = pad // 2
+    return "&nbsp;" * left + label + "&nbsp;" * (pad - left)
+
+
+def _usable_page_inches(doc):
+    """(width, height) of the first section's text area, in inches."""
+    from docx.shared import Inches
+    try:
+        sec = doc.sections[0]
+        one = float(Inches(1))
+        return (float(sec.page_width - sec.left_margin - sec.right_margin) / one,
+                float(sec.page_height - sec.top_margin - sec.bottom_margin) / one)
+    except Exception:
+        return 6.5, 9.0
+
+
+def _fit_picture_width(png_path, max_w_in, max_h_in, natural_dpi=96.0):
+    """Width in inches for add_picture so the image fits inside max_w_in x
+    max_h_in with its aspect ratio kept, and is never upscaled past its natural
+    size at natural_dpi. Falls back to max_w_in if the size cannot be read."""
+    try:
+        from PIL import Image
+        with Image.open(png_path) as im:
+            w_px, h_px = im.size
+    except Exception:
+        return max_w_in
+    if not w_px or not h_px:
+        return max_w_in
+    nat_w, nat_h = w_px / natural_dpi, h_px / natural_dpi
+    scale = min(max_w_in / nat_w, max_h_in / nat_h, 1.0)
+    return nat_w * scale
+
+
 def _build_component_container_mermaid(
     component_name: str,
     unit_rows: List[Tuple[Any, str, Any]],
 ) -> str:
     """Mermaid subgraph: blue component box containing all unit nodes.
 
-    Uses the default (dagre) renderer with tight ranksep/nodesep — dagre stacks
-    the disconnected unit nodes vertically, whereas elk lays them out side by side.
+    Uses the default (dagre) renderer, which stacks the disconnected unit nodes
+    vertically (elk lays them out side by side).
+
+    Spacing uses mermaid's own rankSpacing/nodeSpacing keys. dagre's
+    ranksep/nodesep names — passed here before, as strings — are ignored by
+    mermaid, so the previous "tight spacing" was a silent no-op.
     """
     mod_label = _escape_mermaid_label_for_structure(component_name)
+    labels = [
+        _escape_mermaid_label_for_structure(row[1] if len(row) > 1 else str(row[0]))
+        for row in unit_rows
+    ]
+    pad_to = max((len(x) for x in labels), default=0)
     lines = [
-        "%%{init: {'flowchart': {'ranksep': '0.4', 'nodesep': '0.3'}}}%%",
+        _CONTAINER_INIT,
         "flowchart TB",
         f'  subgraph MOD["{mod_label}"]',
     ]
     unit_ids = []
-    for i, row in enumerate(unit_rows):
-        disp = row[1] if len(row) > 1 else str(row[0])
+    for i, label in enumerate(labels):
         uid = f"U{i}"
         unit_ids.append(uid)
-        lines.append(f'    {uid}["{_escape_mermaid_label_for_structure(disp)}"]')
+        lines.append(f'    {uid}["{_pad_label_to_width(label, pad_to)}"]')
     lines.append("  end")
-    lines.append("  classDef unitNode fill:#2563eb,stroke:#1d4ed8,color:#ffffff")
+    lines.append("  classDef unitNode fill:#2563eb,stroke:#000000,color:#ffffff")
     if unit_ids:
         lines.append(f"  class {','.join(unit_ids)} unitNode")
-    lines.append("  style MOD fill:#fef9c3,stroke:#fbbf24,color:#1e293b")
+    lines.append("  style MOD fill:#fef9c3,stroke:#000000,color:#000000")
     return "\n".join(lines)
 
 
@@ -575,11 +636,21 @@ def _build_component_static_structure_mermaid(
 
 
 def _parse_component_static_diagram_cfg(views_cfg: dict) -> Tuple[bool, bool, float]:
-    """enabled, renderPng, widthInches for Static Design component→units diagram (config.views.componentStaticDiagram)."""
+    """enabled, renderPng, widthInches for Static Design component→units diagram
+    (config.views.componentStaticDiagram). Accepts a bare bool or a dict;
+    widthInches is the max width the container diagram is fitted into."""
     raw = (views_cfg or {}).get("componentStaticDiagram")
     if raw is None:
         raw = True
-    return bool(raw), True, 5.5
+    if isinstance(raw, dict):
+        try:
+            width_in = float(raw.get("widthInches") or _CONTAINER_MAX_WIDTH_IN)
+        except (TypeError, ValueError):
+            width_in = _CONTAINER_MAX_WIDTH_IN
+        return (bool(raw.get("enabled", True)),
+                bool(raw.get("renderPng", True)),
+                width_in)
+    return bool(raw), True, _CONTAINER_MAX_WIDTH_IN
 
 
 def _render_mermaid_to_png(project_root: str, mermaid: str, png_path: str) -> bool:
@@ -1258,6 +1329,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
         _cover_group = "All Components"
 
     doc = Document()
+    page_w_in, page_h_in = _usable_page_inches(doc)
     _build_cover_page(doc, _project_name, _cover_group,
                       copyright_text=config.get("docx", {}).get("copyrightText", ""))
     _add_toc(doc)
@@ -1347,7 +1419,11 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 _render_mermaid_to_png(PROJECT_ROOT, container_mmd, container_png)
             if os.path.isfile(container_png):
                 try:
-                    doc.add_picture(container_png, width=Inches(6))
+                    doc.add_picture(
+                        container_png,
+                        width=Inches(_fit_picture_width(
+                            container_png, min(msd_width_in, page_w_in), page_h_in)),
+                    )
                 except Exception:
                     _add_mermaid_as_text(doc, container_mmd, font_small)
             else:
