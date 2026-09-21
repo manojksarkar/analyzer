@@ -257,7 +257,7 @@ def cmd_reexport(a) -> int:
               f"never generated. Run:\n"
               f"    python analyzer.py generate --project-id {a.project_id} --version-id {a.version_id}", file=sys.stderr)
         return 2
-    checkout = _checkout_for(a.project_id, a.version_id)
+    checkout = _checkout_for(a.project_id, a.version_id, a.commit or "")
     if checkout is None:
         return 2
     argv = ["--config", cfg, "--version-id", a.version_id, "--project-id", a.project_id,
@@ -328,8 +328,22 @@ def _known_versions(project_id: str):
         return []
 
 
-def _checkout_for(project_id: str, version_id: str):
-    """The commit directory a version was produced from — where its C++ source is."""
+def _checkout_for(project_id: str, version_id: str, commit: str = ""):
+    """The commit directory a version was produced from - where its C++ source is.
+
+    THREE places claim to know the commit and they disagree, so trust the one that is on
+    disk rather than a fixed order of preference:
+
+      --commit          what the caller typed; always wins.
+      the manifest      what the run actually built from (`generate` writes "commit" into it).
+      versions.commit_sha  the column - filled in only by `--create-version`, so it is NULL
+                        for most versions and stale for some. It cannot be the first choice:
+                        preferring it sent re-export hunting for a commit that was never
+                        generated, while the real checkout sat there unused.
+
+    The first candidate whose directory EXISTS wins. A commit with no checkout is useless
+    here whichever source named it.
+    """
     from core.db import get_engine, is_database_configured
     if not is_database_configured():
         print("no database is configured.", file=sys.stderr)
@@ -337,19 +351,65 @@ def _checkout_for(project_id: str, version_id: str):
     import sqlalchemy as sa
     from api.db.postgres import schema as s
     from incremental.stores import Workspace
-    with get_engine().connect() as cx:
-        row = cx.execute(sa.select(s.versions.c.commit_sha)
-                         .where(s.versions.c.id == version_id)).first()
-    if not row or not row[0]:
-        print(f"version {version_id!r} has no commit recorded.", file=sys.stderr)
-        return None
-    d = Workspace(project_id).commit_dir(row[0])
-    if not os.path.isdir(d):
-        print(f"the checkout for {version_id!r} is gone ({d}).\n"
-              f"  Re-export reads the SOURCE for line numbers and flowcharts, so it needs the "
-              f"commit on disk. Generate again to restore it.", file=sys.stderr)
-        return None
-    return d
+    ws = Workspace(project_id)
+
+    cands = []                                    # (sha, where it came from)
+    if commit:
+        cands.append((commit, "--commit"))
+    try:
+        from incremental.store import make_store
+        m = (make_store(project_id).read_manifest(version_id) or {}).get("commit")
+        if m:
+            cands.append((m, "the version's manifest"))
+    except Exception:
+        pass
+    try:
+        with get_engine().connect() as cx:
+            row = cx.execute(sa.select(s.versions.c.commit_sha)
+                             .where(s.versions.c.id == version_id)).first()
+        if row and row[0]:
+            cands.append((row[0], "versions.commit_sha"))
+    except Exception:
+        pass
+
+    seen = set()
+    for sha, src in cands:
+        if sha in seen:
+            continue
+        seen.add(sha)
+        d = ws.commit_dir(sha)
+        if os.path.isdir(d):
+            return d
+
+    # Nothing resolved. Say what was tried and what is actually on disk - the answer is
+    # almost always one of the directories listed, passed back as --commit.
+    if not cands:
+        print(f"no commit is recorded for version {version_id!r} anywhere.", file=sys.stderr)
+    else:
+        print(f"none of the commits recorded for version {version_id!r} is checked out:",
+              file=sys.stderr)
+        for sha, src in cands:
+            print(f"    {sha[:16]:<18} ({src})", file=sys.stderr)
+    try:
+        have = sorted(n for n in os.listdir(ws.root)
+                      if os.path.isdir(os.path.join(ws.root, n, ".git")))
+    except OSError:
+        have = []
+    if have:
+        print("", file=sys.stderr)
+        print("  checkouts this project HAS:", file=sys.stderr)
+        for n in have[:10]:
+            print(f"    {n}", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("  Re-export reads the SOURCE for line numbers and flowcharts. "
+              "Pass the one you want:", file=sys.stderr)
+        print(f"    python analyzer.py reexport --project-id {project_id} "
+              f"--version-id {version_id} --commit <one-of-the-above>", file=sys.stderr)
+    else:
+        print("", file=sys.stderr)
+        print(f"  this project has no checkout on disk at all ({ws.root}).", file=sys.stderr)
+        print("  Generate again to restore one.", file=sys.stderr)
+    return None
 
 
 def cmd_status(a) -> int:
@@ -601,6 +661,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "Default: the scope the version was generated with.")
     s.add_argument("--unit", action="append",
                    help="narrow the per-function flowchart work to this unit. Repeatable.")
+    s.add_argument("--commit",
+                   help="the commit this version was built from. Only needed when it was "
+                        "never recorded on the version row (re-export finds the source "
+                        "checkout by it).")
     s.add_argument("--doc-type", choices=("swe3", "swe4", "all"),
                    help="which document(s) to rebuild. Default: whatever this version "
                         "was generated with (from its manifest).")
