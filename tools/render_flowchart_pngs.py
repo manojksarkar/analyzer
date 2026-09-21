@@ -99,8 +99,33 @@ def _iter_flowcharts(out_dir):
                 yield unit_name, name, dot
 
 
-def _render(out_dir, scale, timeout):
-    items = list(_iter_flowcharts(out_dir))
+def _matches(unit_name, func_name, pattern):
+    """Does "<unit>/<func>" match PATTERN - as a glob, or as a plain substring?
+
+    Both, because both are what people type: `MyUnit/MyFunc` is a substring and
+    `*Handler*` is a glob, and guessing wrong just prints "no flowcharts matched".
+    """
+    if not pattern:
+        return True
+    key = f"{unit_name}/{func_name}"
+    import fnmatch
+    return (pattern.lower() in key.lower()
+            or fnmatch.fnmatch(key.lower(), pattern.lower())
+            or fnmatch.fnmatch(func_name.lower(), pattern.lower()))
+
+
+def _render(out_dir, scale, timeout, only=None):
+    items = [it for it in _iter_flowcharts(out_dir) if _matches(it[0], it[1], only)]
+    if only and not items:
+        # Name what IS there: the commonest cause is the unit prefix, which is the
+        # file stem in out_dir and not always what the function is called.
+        have = sorted({f"{u}/{f}" for u, f, _ in _iter_flowcharts(out_dir)})
+        print(f"no flowchart matched {only!r} in {out_dir}", file=sys.stderr)
+        if have:
+            print(f"  {len(have)} available, e.g.:", file=sys.stderr)
+            for k in have[:15]:
+                print(f"    {k}", file=sys.stderr)
+        return 1
     if not items:
         print("No flowcharts found in", out_dir,
               "(engine produced no DOT — check the flowchart_engine log above for parse errors)")
@@ -134,7 +159,8 @@ def _render(out_dir, scale, timeout):
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("functions_json", help="Path to functions.json")
+    p.add_argument("functions_json", nargs="?", default=None,
+                   help="Path to functions.json (not needed with --skip-engine)")
     p.add_argument("--metadata", default=None,
                    help="metadata.json (default: sibling of functions.json)")
     p.add_argument("--out-dir", default=None,
@@ -144,7 +170,25 @@ def main():
     p.add_argument("--scale", type=int, default=2, help="Render scale (default: 2)")
     p.add_argument("--timeout", type=int, default=180,
                    help="Per-render timeout seconds (default: 180)")
+    p.add_argument("--skip-engine", action="store_true",
+                   help="Render from the per-unit JSON already in --out-dir")
+    p.add_argument("--only", default=None,
+                   help='Render only "<unit>/<function>" matching this (substring or glob)')
     args = p.parse_args()
+
+    # --skip-engine renders what is already there, so it needs only --out-dir. This is
+    # the one-function path: re-rendering a single PNG of a finished run must not cost
+    # a rebuild of every flowchart in the project.
+    if args.skip_engine:
+        if not args.out_dir:
+            p.error("--skip-engine needs --out-dir (the flowcharts dir of the run)")
+        out_dir = os.path.abspath(args.out_dir)
+        if not os.path.isdir(out_dir):
+            p.error(f"no such directory: {out_dir}")
+        return _render(out_dir, scale=args.scale, timeout=args.timeout, only=args.only)
+
+    if not args.functions_json:
+        p.error("FUNCTIONS_JSON is required (or pass --skip-engine --out-dir DIR)")
 
     functions_json = os.path.abspath(args.functions_json)
     if not os.path.isfile(functions_json):
@@ -161,7 +205,7 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
 
     _run_engine(functions_json, metadata_json, out_dir, use_llm=args.llm)
-    return _render(out_dir, scale=args.scale, timeout=args.timeout)
+    return _render(out_dir, scale=args.scale, timeout=args.timeout, only=args.only)
 
 
 if __name__ == "__main__":
