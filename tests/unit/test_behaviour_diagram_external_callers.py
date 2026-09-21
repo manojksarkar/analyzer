@@ -90,6 +90,43 @@ def test_the_generator_still_uses_the_component_rule():
     assert "caller_component != current_component" in src
 
 
+def test_the_swe4_spec_view_uses_the_same_rule():
+    """The third place the same question is asked, and the one that drifted.
+
+    `views/dynamic_specs.py::_external_caller` picks the entry point for a SWE.4
+    interaction spec. It carried the old "outside the selected GROUP" branch long
+    after `behaviour_diagram.py` dropped it, so a function called only from a
+    sibling component of its own group was external to SWE.3 (diagram drawn) and
+    internal to SWE.4 (no spec) -- and SWE4_WIKI says the two pair one to one.
+    """
+    path = os.path.join(_ROOT, "engine", "views", "dynamic_specs.py")
+    with open(path, encoding="utf-8") as fh:
+        src = fh.read()
+    start = src.index("def _external_caller(")
+    end = src.index("\ndef ", start + 1)
+    body = src[start:end]
+    assert "!= home_component" in body
+    assert "allowed_components" not in body, (
+        "the SWE.4 entry-point rule must not redefine external as outside the group")
+
+
+def test_the_two_documents_agree_on_a_sibling_component_caller():
+    """The case the two rules used to answer differently, run through both."""
+    from views.dynamic_specs import _external_caller
+
+    # Alpha and Beta are two components of ONE group. Beta's function is called
+    # only from Alpha -- inside the group, outside the component.
+    functions = {"Beta|Target|betaCompute|int": {"calledByIds": ["Alpha|Caller|alphaRun|int"]}}
+    target = functions["Beta|Target|betaCompute|int"]
+
+    swe3 = [c for c in target["calledByIds"] if c.split("|")[0] != "Beta"]
+    swe4 = _external_caller(target, "Beta")
+
+    assert swe3, "SWE.3 treats a sibling-component caller as external"
+    assert swe4 == swe3[0], (
+        "SWE.4 must name the same entry point SWE.3 draws, not drop the interaction")
+
+
 def test_rows_are_recorded_for_every_diagram_the_generator_wrote():
     """The pairing is positional, so the view's list must not be shorter than the
     generator's. Same model, same rule -> same length."""
