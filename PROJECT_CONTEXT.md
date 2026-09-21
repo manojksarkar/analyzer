@@ -252,16 +252,44 @@
 > would test the corpus, not the extractor). Plus real-`.docx` mutation tests, synthetic client-shaped
 > documents (renamed + reordered columns), and the ladder one deliberate change at a time.
 >
-> **Two product findings it surfaced — NOT fixed, they change generated output:**
-> 1. **SWE.4 drops the class qualifier from its heading.** `engine/swe4_exporter.py:300` uses `spec["name"]`
->    where SWE.3 uses the qualified name: SWE.3 writes `Signal-SignalProcessor::normalize`, SWE.4 writes
->    `Signal-normalize`. In `fresh/v1/Cross` this already collides — `AddOperation::apply` and
->    `MultiplyOperation::apply` both become heading `Dispatch-apply`, i.e. **two specs share one heading** and
->    cannot be told apart. `SWE3_WIKI` 'Names' keeps the class precisely to prevent this. One-line fix
->    (`spec.get("qualifiedName") or spec.get("name")`) but it changes every SWE.4 heading + snapshots.
-> 2. **SWE.3/SWE.4 dynamic drift is real.** `fresh/v1/Signal`: SWE.3 draws **0** behaviour diagrams, SWE.4
->    emits **1** interaction spec — the divergence `tools/swe4_dynamic_diff.py` documents, now detectable from
->    the delivered documents. 34 of 36 generated groups pair clean.)
+> **Two product findings it surfaced.** #1 is FIXED (below); #2 stands as a config gap.
+> 1. **SWE.4 printed the bare method name — FIXED, see the 2026-09-21b entry.**
+> 2. **`dynamicBehaviourSpecs` and `behaviourDiagram` are independent config flags with nothing tying them
+>    together.** `fresh/v1/Signal` ships a SWE.4 interaction spec whose SWE.3 diagram does not exist, because
+>    that run set `"behaviourDiagram": false` + `"dynamicBehaviourSpecs": true` (`workspaces/fresh/config.json`).
+>    **This is NOT the selector drift `tools/swe4_dynamic_diff.py` documents** — an earlier note here said it
+>    was; across all 30 groups of that run there are zero behaviour-diagram dirs and exactly one dynamic spec,
+>    which is the config, not the filters. What is real: `SWE4_WIKI` 'Dynamic Behaviour test specs' states the
+>    two pair **exactly** one-to-one, and nothing warns when the flags disagree, so a delivered pair can
+>    violate its own contract silently. **Fix wanted:** one flag, or a config validation error when they
+>    differ. The filter drift may still be live — this corpus cannot say; settling it needs a run with both
+>    flags on. 34 of 36 generated groups pair clean.)
+
+> Updated: 2026-09-21b (**SWE.4 prints the class-qualified method name**, branch `feat/doc-compare`.
+> Found by `tools/doccheck --pair`; see the 2026-09-21 entry.
+>
+> **The defect.** `AddOperation::apply` and `MultiplyOperation::apply` live in one unit (`Layer1.Cross|Dispatch`).
+> The model carries both `name` (`apply`) and `qualifiedName` (`AddOperation::apply`). SWE.3 headings use
+> `qualifiedName`; SWE.4 used `name`, so **both specs took the heading `Dispatch-apply`** and both opened with
+> `Issue function apply with inputs a, b.` Two specifications a tester cannot tell apart — only the mock name
+> (`add` vs `multiply`) further down distinguished them — and a design/spec pair that cannot be read side by
+> side. `SWE3_WIKI` 'Names' keeps the class precisely to prevent this.
+>
+> **Three sites, all now `qualifiedName or name`** (identical strings for a plain function):
+> `swe4_exporter.py::_spec_name` (new helper) used by the function-spec heading and the dynamic-spec heading,
+> and `views/test_steps.py::_entry_text` for the "Issue function ..." step. The third was the one the original
+> report missed: fixing only the headings would have left both specs' step 1 still saying `apply`.
+>
+> **Blast radius, measured, not estimated:** 4 of 188 specs across the whole generated corpus (2 groups,
+> `Cross` + `Signal`) — only class-qualified methods move. **`tests/snapshots/Sample/test_specs.json` does not
+> change**: all 35 Sample specs have `name == qualifiedName` (verified by running old and new `_entry_text`
+> over every spec on disk), so no snapshot regeneration. That also means the Sample fixture cannot pin this —
+> hence `tests/unit/test_swe4_qualified_names.py` (7 tests), which builds the spec JSON directly, exports, and
+> reads the headings back with `doccheck.blocks`.
+>
+> **Verified end to end:** re-exporting `fresh/v1/Cross` from its existing `test_specs.json` turns
+> `Dispatch-apply` / `Dispatch-apply` into `Dispatch-AddOperation::apply` / `Dispatch-MultiplyOperation::apply`,
+> duplicate headings 1 -> 0, and `doccheck --pair` on that group goes from 2 high findings to 0.)
 
 > Updated: 2026-09-21 (**oversize flowchart PNGs were half-painted, silently** — branch
 > `fix/swe3-review-v1`).
