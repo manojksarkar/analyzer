@@ -187,9 +187,16 @@ def safe_filename(s: str) -> str:
 _DOT_CACHE_DIR = ".dot_cache"
 
 
+# Bumped whenever render_dot.mjs starts producing a DIFFERENT PNG for the same DOT.
+# The cache is keyed by the DOT text, so without this a PNG rendered by the old script
+# is served forever and a renderer fix reaches nobody. v2: the renderer holds the raster
+# under a pixel budget, so oversize flowcharts are no longer half-painted.
+_DOT_RENDERER_VERSION = 2
+
+
 def dot_cache_key(dot: str, *, scale=None) -> str:
     import hashlib
-    src = f"{dot or ''}|scale={scale}"
+    src = f"{dot or ''}|scale={scale}|r={_DOT_RENDERER_VERSION}"
     return hashlib.sha256(src.encode("utf-8")).hexdigest()
 
 
