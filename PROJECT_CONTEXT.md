@@ -208,6 +208,56 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-21 (**oversize flowchart PNGs were half-painted, silently** — branch
+> `fix/swe3-review-v1`).
+>
+> **Symptom.** A flowchart PNG in a shipped SWE.3 document showed only the top of the diagram. The file
+> had the right dimensions (11966x13810); the bottom 60% was blank. Exit code 0, no warning, and the same
+> half image every run.
+>
+> **Cause.** `render_dot.mjs` rasterises by taking a **puppeteer screenshot of an SVG element**, not with
+> a Graphviz binary. Past roughly 120M pixels Chromium stops painting the lower part of a large element
+> and screenshots it anyway. Nothing in the chain notices: the file exists, so `_run_dot_render` returns
+> True.
+>
+> **Measured** on a 13768x12598 (173M px) reproduction, ink-row scan of the output:
+> 173M -> 50% painted · 110M -> whole · 85M -> whole · 64M -> whole. Adding frame waits alone took the
+> 173M case 50% -> 75%: real, but not the fix. `waitUntil: "networkidle0"` waits for network an inline
+> SVG never does, so it was never waiting for anything.
+>
+> **Fix** (`engine/config/render_dot.mjs`): measure the SVG box, then lower `deviceScaleFactor` so the
+> raster stays under `MAX_PIXELS = 100e6` and `MAX_SIDE = 16384`; set the viewport to the element box and
+> wait two frames before capturing. Resolution lost is invisible (flowcharts embed 4in wide). A small
+> graph renders **byte-identical** to before — only oversize ones change.
+>
+> **Cache.** `.dot_cache` is keyed on the DOT text, so a PNG rendered by the old script would be served
+> forever. `engine/utils.py` now carries `_DOT_RENDERER_VERSION` in `dot_cache_key`, **bumped to 2** -
+> bump it whenever the renderer starts producing a different PNG for the same DOT.
+>
+> **Also skipped by design, not broken:** the slicer (`views/flowcharts.py:629`) only splits at
+> `H/W > 2.16`. The failing graph was 1.15, so a single PNG is correct behaviour there.
+>
+> **Related, unfixed:** PIL *raises* above 179M px and `_maybe_slice_tall_png` catches that as "cannot
+> open" and skips slicing silently. The 165M case was close to it.
+
+> Updated: 2026-09-21 (**re-export could not find a version's checkout** - branch `fix/swe3-review-v1`,
+> commits `19f5f94` + `52c77c1`).
+>
+> `versions.commit_sha` is written **only** by `--create-version`; nothing else fills it, including a
+> completed `generate` (`persist_run_outcome` writes status/decision/reuse/run_report, never the commit).
+> So it is NULL for most versions and stale for some. Two consequences: `generate` demanded `--commit`
+> every run (`_project_defaults` found nothing), and `reexport` **could not run at all** - `_checkout_for`
+> read that column and nothing else.
+>
+> `analyzer.py:_checkout_for` now takes candidates from `--commit`, then the version's stored manifest
+> (`run_report["commit"]` - what the run actually built from), then the column, and uses **the first whose
+> commit dir exists**; on failure it prints each candidate with its source plus the checkouts on disk.
+> `reexport` gained `--commit`. An explicit `--commit` is obeyed or refused, **never** silently swapped
+> for another candidate - re-exporting from a different source than asked is the bug this started as.
+>
+> **Root cause still open:** nothing writes `versions.commit_sha` after a successful generate. Filling it
+> in `persist_run_outcome` would remove the need for all of the above.
+
 > Updated: 2026-09-20 (**visibility reworked: protected is private, methods read their C++ access, and a
 > `PUBLIC` marking no longer guarantees a row** — branch `fix/swe3-review-v1`, **UNCOMMITTED**).
 >

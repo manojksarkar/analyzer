@@ -14,6 +14,8 @@
 | SH-5 | `entity_hashes` / `_type_keys` stay bare-qn while the dictionary is layer-keyed: two layers defining one type share a hash (last definition wins), so a narrowed parse can miss a change in the loser. Needs `typeUsers` keyed by layer too — `impact_set` joins hash keys to it directly. | issue | open | engine/parser.py, incremental/impact.py |
 
 | SH-6 | ~~A full `pytest` run died at e2e setup~~ — **fixed 2026-09-21.** `_scratch_repo()` rebuilds the sample's git repo from nothing every run, so its commit is new every time and no earlier version's commit still exists to be an ancestor; `select_baseline` threw on `merge-base --is-ancestor` and every e2e test errored on setup. conftest's `generate` now passes `--full`, which dispatches to `generate_full` and never selects a baseline. There is no incremental path to exercise on a brand-new repo anyway. The orphan `e2ev2` row (DB only, no directory) is now harmless and was left alone | issue | **done 2026-09-21** | tests/conftest.py |
+| SH-7 | Nothing writes `versions.commit_sha` after a successful generate (`--create-version` is the only writer), so it is NULL for most versions and stale for some. `generate` therefore demands `--commit` every run and `reexport` had to learn to resolve the checkout without it. Filling it in `persist_run_outcome` from the manifest would remove the workaround | issue | open | engine/core/model_store.py |
+| SH-8 | PIL **raises** above 179M px, and `_maybe_slice_tall_png` catches that as "cannot open" and skips slicing silently — a flowchart too big to slice is exactly the one that needs it. The real 165M case sat just under the threshold | issue | open | engine/views/flowcharts.py:661 |
 
 ## Incremental reuse
 | ID | Item | Type | Status | Ref |
