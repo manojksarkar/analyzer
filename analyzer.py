@@ -355,6 +355,14 @@ def _checkout_for(project_id: str, version_id: str, commit: str = ""):
 
     cands = []                                    # (sha, where it came from)
     if commit:
+        # An explicit --commit is obeyed or refused, never quietly swapped: falling through
+        # to another candidate would re-export from a DIFFERENT source than the one asked
+        # for, and say nothing about it.
+        if not os.path.isdir(ws.commit_dir(commit)):
+            print(f"--commit {commit[:16]} has no checkout at {ws.commit_dir(commit)}.",
+                  file=sys.stderr)
+            _print_available_checkouts(ws, project_id, version_id)
+            return None
         cands.append((commit, "--commit"))
     try:
         from incremental.store import make_store
@@ -390,6 +398,12 @@ def _checkout_for(project_id: str, version_id: str, commit: str = ""):
               file=sys.stderr)
         for sha, src in cands:
             print(f"    {sha[:16]:<18} ({src})", file=sys.stderr)
+    _print_available_checkouts(ws, project_id, version_id)
+    return None
+
+
+def _print_available_checkouts(ws, project_id: str, version_id: str) -> None:
+    """The checkouts this project actually has, and the command that uses one."""
     try:
         have = sorted(n for n in os.listdir(ws.root)
                       if os.path.isdir(os.path.join(ws.root, n, ".git")))
@@ -409,7 +423,6 @@ def _checkout_for(project_id: str, version_id: str, commit: str = ""):
         print("", file=sys.stderr)
         print(f"  this project has no checkout on disk at all ({ws.root}).", file=sys.stderr)
         print("  Generate again to restore one.", file=sys.stderr)
-    return None
 
 
 def cmd_status(a) -> int:
