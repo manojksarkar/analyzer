@@ -340,3 +340,52 @@ class TestTheSpecDocumentsTheRealWireFormat:
         """Not vacuous: a field nobody documented must fail, so add a fake one and confirm."""
         text = self._spec()
         assert "`definitely_not_a_real_field`" not in text
+
+
+class TestSwaggerNamesTheEndpointsTheWayTheSpecDoes:
+    """A tester works from the spec (or a checklist) that says "R3", and then looks at Swagger.
+
+    FastAPI's default summary is the function name prettified -- "Update Slot", "Get Slot" --
+    which gives no way to tell which row of the list is which R-number. Three of the ten sit on
+    the same path and differ only by method, so the path does not disambiguate them either.
+    """
+
+    SPEC = TestTheDocumentedContractExists.SPEC
+
+    def _operations(self):
+        from api.main import app
+        spec = app.openapi()
+        out = {}
+        for path, ops in spec["paths"].items():
+            for method, op in ops.items():
+                if "review" in (op.get("tags") or []):
+                    out[(method.upper(), path)] = op
+        return out
+
+    def test_all_ten_are_published(self):
+        assert len(self._operations()) == 10
+
+    def test_every_one_is_named_by_its_r_number(self):
+        bad = {k: op.get("summary") for k, op in self._operations().items()
+               if not re.match(r"^R\d+ - ", op.get("summary") or "")}
+        assert not bad, "these operations do not name their R-number in Swagger: %s" % bad
+
+    def test_the_r_numbers_match_the_spec_exactly(self):
+        """Not just well-formed -- the same set the spec's endpoint index lists, so a new
+        endpoint cannot be published under a number the spec does not have, or vice versa."""
+        from_swagger = {re.match(r"^(R\d+) - ", op["summary"]).group(1)
+                        for op in self._operations().values()}
+        index = open(self.SPEC, encoding="utf-8").read().split("## 3. Endpoint index", 1)[1]
+        from_spec = set(re.findall(r"^\| \*\*(R\d+)\*\* \|", index, re.M))
+        assert from_swagger == from_spec, (
+            "Swagger and the spec disagree: only in Swagger %s, only in the spec %s"
+            % (sorted(from_swagger - from_spec), sorted(from_spec - from_swagger)))
+
+    def test_each_number_is_used_once(self):
+        summaries = [op["summary"].split(" - ")[0] for op in self._operations().values()]
+        assert len(set(summaries)) == len(summaries), "an R-number is reused: %s" % summaries
+
+    def test_they_carry_the_bearer_scheme(self):
+        """Without it Swagger shows no Authorize button, and every Try-it-out returns 401."""
+        for key, op in self._operations().items():
+            assert op.get("security"), "%s %s has no security scheme, so Swagger cannot send a token" % key

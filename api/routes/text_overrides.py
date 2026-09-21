@@ -102,7 +102,9 @@ def _row(r) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # reads
 # ---------------------------------------------------------------------------
-@router.get("/projects/{project_id}/versions/{version_id}/overrides")
+@router.get(
+    "/projects/{project_id}/versions/{version_id}/overrides",
+    summary="R1 - the corrections in a version")
 def list_overrides(
     project_id: str,
     version_id: str,
@@ -130,7 +132,9 @@ def list_overrides(
             "limit": limit, "offset": offset}
 
 
-@router.get("/projects/{project_id}/versions/{version_id}/overrides/slot")
+@router.get(
+    "/projects/{project_id}/versions/{version_id}/overrides/slot",
+    summary="R2 - read one slot")
 def get_slot(
     project_id: str,
     version_id: str,
@@ -149,7 +153,9 @@ def get_slot(
     return _row(row)
 
 
-@router.get("/projects/{project_id}/versions/{version_id}/flowcharts/{flowchart_token}/labels")
+@router.get(
+    "/projects/{project_id}/versions/{version_id}/flowcharts/{flowchart_token}/labels",
+    summary="R7 - read a flowchart's labels")
 def get_flowchart_labels(
     project_id: str,
     version_id: str,
@@ -194,7 +200,9 @@ def get_flowchart_labels(
 # ---------------------------------------------------------------------------
 # writes
 # ---------------------------------------------------------------------------
-@router.put("/projects/{project_id}/versions/{version_id}/overrides/slot")
+@router.put(
+    "/projects/{project_id}/versions/{version_id}/overrides/slot",
+    summary="R3 - correct one slot")
 def update_slot(
     project_id: str,
     version_id: str,
@@ -224,7 +232,9 @@ def update_slot(
                                       for k, v in out.queued_for_regeneration]}
 
 
-@router.put("/projects/{project_id}/versions/{version_id}/flowcharts/{flowchart_token}/labels")
+@router.put(
+    "/projects/{project_id}/versions/{version_id}/flowcharts/{flowchart_token}/labels",
+    summary="R8 - correct a flowchart, in one call")
 def update_flowchart_labels(
     project_id: str,
     version_id: str,
@@ -261,7 +271,9 @@ def update_flowchart_labels(
             "viewsDerived": list(out.views_derived)}
 
 
-@router.put("/projects/{project_id}/versions/{version_id}/overrides/behaviour")
+@router.put(
+    "/projects/{project_id}/versions/{version_id}/overrides/behaviour",
+    summary="R6 - correct one Dynamic Behaviour row")
 def update_behaviour(
     project_id: str,
     version_id: str,
@@ -283,7 +295,9 @@ def update_behaviour(
             "firstEdit": out.first_edit, "viewsDerived": list(out.views_derived)}
 
 
-@router.delete("/projects/{project_id}/versions/{version_id}/overrides/slot")
+@router.delete(
+    "/projects/{project_id}/versions/{version_id}/overrides/slot",
+    summary="R4 - undo one slot")
 def undo_slot(
     project_id: str,
     version_id: str,
@@ -309,7 +323,9 @@ def undo_slot(
     return {"undone": True, "override": payload}
 
 
-@router.get("/projects/{project_id}/versions/{version_id}/overrides/history")
+@router.get(
+    "/projects/{project_id}/versions/{version_id}/overrides/history",
+    summary="R5 - one slot's history")
 def slot_history(
     project_id: str,
     version_id: str,
@@ -329,7 +345,9 @@ def slot_history(
                         for r in rows]}
 
 
-@router.get("/projects/{project_id}/versions/{version_id}/regeneration-queue")
+@router.get(
+    "/projects/{project_id}/versions/{version_id}/regeneration-queue",
+    summary="R10 - the regeneration queue")
 def regeneration_queue(
     project_id: str,
     version_id: str,
@@ -358,7 +376,9 @@ def regeneration_queue(
 # ---------------------------------------------------------------------------
 # export readiness
 # ---------------------------------------------------------------------------
-@router.get("/projects/{project_id}/versions/{version_id}/export-readiness")
+@router.get(
+    "/projects/{project_id}/versions/{version_id}/export-readiness",
+    summary="R9 - export readiness")
 def export_readiness(
     project_id: str,
     version_id: str,

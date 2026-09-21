@@ -120,6 +120,12 @@ Authorization: Bearer <access token>
 Content-Type: application/json
 ```
 
+**Trying it by hand** — Swagger UI is at `/docs` (self-hosted, so it works behind a firewall that
+blocks CDNs). The ten endpoints are grouped under **review** and each is named by its R-number, so
+the list reads in the order of this document. Sign in with `POST /api/v1/auth/signin`, paste the
+`access_token` into **Authorize**, then use Try-it-out. Take a `slot_key` from an R1 response
+rather than typing one — Swagger URL-encodes it for you.
+
 A missing or non-access token is **401**
 (`{"detail": {"code": "UNAUTHENTICATED", "message": "…", "status": 401}}`).
 
