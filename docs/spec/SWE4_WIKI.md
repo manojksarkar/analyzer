@@ -27,10 +27,15 @@ Appendix A  Reference
 ## Who gets a spec
 
 - Every function that appears in the SWE.3 detailed design gets a spec.
-- **Except inline public functions** — those defined in a header. They get no spec of their own; they are
-  covered through the functions **of their own unit** that call them. A caller in another unit mocks them
-  instead (see Precondition), so an inline function with no caller in its own unit is covered nowhere. Known
-  gap — closing it means giving inline functions a spec, which this section rules out.
+- **Except public functions defined in a header.** The criterion is where the definition sits, not the
+  `inline` keyword — which is never read. A function marked `inline` but defined in a `.cpp` is an ordinary
+  unit function and does get a spec. Header-defined functions get no spec of their own; they are covered
+  through the functions **of their own unit** that call them. A caller in another unit mocks them instead
+  (see Precondition), so one with no caller in its own unit is covered nowhere. Known gap — closing it
+  means giving them a spec, which this section rules out.
+- **To confirm with the client:** whether the rule is meant to read as written above (header-defined) or as
+  the `inline` keyword. The two differ only for a function marked `inline` inside a `.cpp`, which is
+  specced today.
 
 ---
 

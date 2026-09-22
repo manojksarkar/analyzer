@@ -258,6 +258,26 @@
 > phase-2 cases, and the phase-1 MATRIX + its compile gate now cover the new fixture (33 passed). Comments
 > stating the old rule fixed in `AccessMatrix.h` and `AccessVisibility.h`. Docs: `docs/spec/SWE3_SPEC.md`
 > REQ-IT-02, `docs/design/DESIGN.md`.
+>
+> **SWE.4 follows automatically — via a write-back, not a shared predicate.** `_assign_interface_ids`
+> (`model_deriver.py:499`) does `f["visibility"] = "private"` on every `PIF_` function, so the derived model's
+> `visibility` is the PUBLICATION verdict, not the C++ access specifier. That is why the SWE.3 table
+> (`interface_tables.py:92`), the SWE.4 unit specs (`test_specs.py:115`) and the dynamic specs
+> (`dynamic_specs.py:142`) can all filter on a bare `visibility == "private"` and still agree. Do not read
+> those three as independent rules -- they are one rule, applied once, upstream. Phase 1 still records the
+> real access, which is why `test_visibility_matrix`'s MATRIX asserts `public` for a function the document
+> shows as private. A flipped function therefore loses its SWE.3 row AND its SWE.4 spec together; no
+> `TC_PIF_` id appears for it.
+>
+> **Scope invariant:** SWE.4 function set = SWE.3 function set minus header-defined functions
+> (`test_specs._is_header`). Nothing more.
+>
+> **Open, to discuss with the client (`docs/spec/SWE4_WIKI.md`, "Who gets a spec").** That wiki bullet was
+> named "inline public functions" but defined as "those defined in a header", and the code implements the
+> latter -- the `inline` keyword is never read and the parser records no `isInline` flag. The wording is now
+> explicit and carries a *To confirm with the client* line. The two readings differ only for a function
+> marked `inline` inside a `.cpp`, which is specced today; making the rule keyword-based would need new parse
+> data, and would leave such a function verified nowhere, so the current behaviour is the recommended one.
 
 > Updated: 2026-09-22 (**`tools/doccheck/` — compare two generated documents by what they say**. Written on
 > `feat/doc-compare` off `develop`, 7 commits, 622 tests; **the whole of that branch is now on
@@ -5557,6 +5577,35 @@ block at top). Remaining open items below.
 **Behaviour:**
 - **3.10 — dynamic-behaviour issue.** Under-specified; needs a concrete repro /
   definition before it can be scoped (flagged in the roadmap open questions).
+
+### Risk 7 — a visibility macro leaks across an access label in `_detect_visibility`
+
+`_detect_visibility` (parser.py) runs BEFORE the C++ access specifier and wins
+wherever it finds a marking. It scans up to 5 lines back and stops at a line
+ending in `;`, `}` or `{` — but an access label ends in `:`, so it is not a
+terminator. Inside a class, a macro-marked declaration therefore marks the
+declarations that follow it under a LATER label:
+
+```cpp
+public:
+    PUBLIC void macroPub();
+private:
+    void afterMacro();   // text-scan returns "public"; clang access never consulted
+```
+
+`afterMacro` is C++-private but ships as an interface row. Same neighbour-
+adoption bug the existing comment in `_detect_visibility` fixed for statement
+terminators; access labels were missed. **Latent, not live** — it needs a
+macro-marked declaration within 5 lines inside the same class, and the client
+project does not use `PRIVATE`/`PUBLIC`/`PROTECTED` macros inside classes.
+Repeated or interleaved access labels on their own are handled correctly:
+access is read from `cursor.access_specifier` (clang's effective access) and
+no code text-parses the labels.
+
+Fix when it becomes live: break the scan on an access label too, with an
+explicit `^(public|private|protected)\s*:` match rather than adding `":"` to
+the `endswith` tuple, so `case X:` and goto labels do not break the multi-line
+`PRIVATE UNIT __OVLYINIT` form the scan exists for.
 
 ---
 
