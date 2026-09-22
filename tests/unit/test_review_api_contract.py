@@ -216,10 +216,10 @@ class TestTheDocumentedContractExists:
         assert not missing, (
             "documented in the API spec but not served: %s" % ", ".join("%s %s" % x for x in missing))
 
-    def test_the_spec_documents_ten_endpoints(self):
+    def test_the_spec_documents_eleven_endpoints(self):
         """Was `== 9`, with an `R\\d` matcher that silently stopped at R9 -- "R10" matched "R1"
         and then failed on the literal `**`. So the newest endpoint was the one nobody compared."""
-        assert len(self._documented()) == 10
+        assert len(self._documented()) == 11
 
     def test_every_r_number_in_the_index_is_matched(self):
         """Guards the class of bug above: if a row is in the table but the matcher cannot read
@@ -362,8 +362,8 @@ class TestSwaggerNamesTheEndpointsTheWayTheSpecDoes:
                     out[(method.upper(), path)] = op
         return out
 
-    def test_all_ten_are_published(self):
-        assert len(self._operations()) == 10
+    def test_all_eleven_are_published(self):
+        assert len(self._operations()) == 11
 
     def test_every_one_is_named_by_its_r_number(self):
         bad = {k: op.get("summary") for k, op in self._operations().items()

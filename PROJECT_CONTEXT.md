@@ -218,6 +218,43 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-22c (**R11 `GET .../slots` — what CAN be edited. `REQ-API-01`'s other half,
+> which I had under-delivered.** Asked for after a testing session where the only way to obtain a
+> `slot_key` was a hand-written script over stored view output.
+>
+> R1 is an OVERLAY of corrections and is empty until somebody corrects something — correct, and
+> deliberately not a slot enumeration. But it left "what is there to correct, and what is its key?"
+> unanswered, and `REQ-ID-01` forbids a caller inventing a key. So the listing was missing, not the
+> overlay.
+>
+> **`engine/review/catalog.py`**, router stays thin. Three decisions were put to the user first:
+> nodeLabel listed PER FLOWCHART (~42,000 nodes in a version; each row carries the token R7 takes),
+> rows include the CURRENT text, and optional `unit`/`component` filters plus paging.
+>
+> **The rule that makes it trustworthy: the text is read through `resolver`, the same way
+> `apply_override` writes it.** A listing that read `comment` while a save wrote `description`
+> would show one sentence and replace another, each looking right alone. Pinned by a test that the
+> SAME key reads a DIFFERENT field for `description` vs `behaviourInputName`.
+>
+> Sources per kind, established by inspection rather than assumption: functions/globals/units/
+> dataDictionary via `ModelAccess` (only built for the five model-backed kinds — a flowchart
+> listing must not pay for a model read); flowchart JSON in `version_output_files` for nodeLabel;
+> `_behaviour_pngs.json` `_docxRows` via `p3.behaviour_rows` for behaviourDescription, addressed by
+> the two entity keys and skipping rows with no `externalCallerId`, which cannot be addressed
+> unambiguously.
+>
+> Two judgements: a `unit`/`component` filter on `structDescription` is REFUSED with 400, not
+> ignored — an ignored filter makes an unfiltered result read as a filtered one; and
+> `overriddenCount` excludes orphans, which are kept but not applied.
+>
+> Incidental finding: function/global model entries carry NO `unit`/`component` fields. The scope
+> is in the entity key (`Component|Unit|name|params`), which is where `_scope_of` reads it.
+>
+> 28 tests incl. one asserting every one of `slot.ALL_KINDS` is listable, so an eighth kind cannot
+> arrive with no way in. Verified over HTTP against the real e2e data: description 158,
+> description+unit=Core 24, nodeLabel 22 flowcharts, structDescription+unit 400, bad kind 422.
+> 2191 passed, 34 skipped.)
+
 > Updated: 2026-09-22b (**`users.is_superuser` — an operator account that reaches every project.
 > Migration 0014.** Asked for after the 2026-09-22 entry below: `admin@aspice.dev` should have all
 > access to all projects, and must be a member of anything onboarded.

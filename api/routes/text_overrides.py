@@ -154,6 +154,46 @@ def list_overrides(
 
 
 @router.get(
+    "/projects/{project_id}/versions/{version_id}/slots",
+    summary="R11 - what can be edited")
+def list_slots(
+    project_id: str,
+    version_id: str,
+    slot_kind: SlotKind = Query(..., description="which kind of slot to list"),
+    unit: Optional[str] = Query(None, description="narrow to one unit"),
+    component: Optional[str] = Query(None, description="narrow to one component"),
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """`REQ-API-01`'s other half: the slots that CAN be edited, with their text and key.
+
+    R1 lists what has been corrected, which is empty until somebody corrects something. This
+    lists what is there to correct — so a `slot_key`, which a caller may never invent
+    (`REQ-ID-01`), can be read from a response instead of dug out of stored view output.
+
+    `nodeLabel` is listed per FLOWCHART, not per node: a version has ~42,000 node labels, and a
+    flowchart is one function's graph. Each row carries the token R7 takes.
+    """
+    require_project_member(project_id, current_user, db)
+    kind = slot_kind.value
+    from review import catalog, resolver as _resolver
+    # Only the model-backed kinds read the model. Building a repository for a flowchart listing
+    # would pay for a model read nobody asked for.
+    models = (_service().ModelAccess(version_id=version_id, project_id=project_id)
+              if kind in _resolver.MODEL_BACKED_KINDS else None)
+    with _connection().connect() as cx:
+        try:
+            page = catalog.list_slots(cx, version_id, kind, models=models, unit=unit,
+                                      component=component, limit=limit, offset=offset)
+        except Exception as exc:
+            raise _as_http(exc)
+    return {"slotKind": kind, "slots": page.items, "total": page.total,
+            "limit": limit, "offset": offset}
+
+
+@router.get(
     "/projects/{project_id}/versions/{version_id}/overrides/slot",
     summary="R2 - read one slot")
 def get_slot(

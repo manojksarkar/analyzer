@@ -32,6 +32,7 @@ separate feature with its own surface.
 - [13. R8 — correct a flowchart, in one call](#13-r8--correct-a-flowchart-in-one-call)
 - [14. R9 — export readiness](#14-r9--export-readiness)
 - [15. R10 — the regeneration queue](#15-r10--the-regeneration-queue)
+- [15a. R11 — what can be edited](#15a-r11--what-can-be-edited)
 - [16. Errors and concurrency](#16-errors-and-concurrency)
 - [17. Not yet implemented](#17-not-yet-implemented)
 
@@ -95,6 +96,7 @@ alphabet is `[A-Za-z0-9_-]`, so nothing needs escaping. R7 returns both the id a
 | **R8** | PUT | `/projects/{projectId}/versions/{versionId}/flowcharts/{flowchartToken}/labels` | Correct a flowchart, one call |
 | **R9** | GET | `/projects/{projectId}/versions/{versionId}/export-readiness` | Would exporting now ship stale text? |
 | **R10** | GET | `/projects/{projectId}/versions/{versionId}/regeneration-queue` | Slots needing regeneration because a correction invalidated them |
+| **R11** | GET | `/projects/{projectId}/versions/{versionId}/slots` | What **can** be edited — the slots themselves, with their text and key |
 
 Every path is under the `/api/v1` prefix. All require project **membership** (`REQ-API-05`).
 
@@ -689,6 +691,82 @@ caller would keep its stale wording for ever.
 A slot a human has already corrected never appears here (`REQ-CS-03`) — their text is not
 regenerated over. The cascade is **one level** (`REQ-CS-02`): a caller's own callers are not
 invalidated, because a transitive cascade is unbounded in a deep call graph.
+
+---
+
+## 15a. R11 — what can be edited
+
+`GET /projects/{projectId}/versions/{versionId}/slots`
+
+R1 lists what **has been** corrected, and is empty until somebody corrects something. This lists
+what is **there to correct** — so a `slotKey`, which you may never invent (§2), can be read from a
+response instead of dug out of stored view output.
+
+**Query parameters**
+
+| name | type | required | default | notes |
+|---|---|---|---|---|
+| `slot_kind` | string | **yes** | — | one of §1 |
+| `unit` | string | no | — | narrow to one unit. Refused with **400** for `structDescription` |
+| `component` | string | no | — | narrow to one component. Same exception |
+| `limit` | integer | no | `200` | 1–1000 |
+| `offset` | integer | no | `0` | ≥ 0 |
+
+**Response 200** — `{"slotKind", "slots", "total", "limit", "offset"}`. `total` is the count
+**before** paging.
+
+A row, for the six per-slot kinds:
+
+| field | type | notes |
+|---|---|---|
+| `slotKind` | string | |
+| `slotKey` | string | **send this to R2–R6 verbatim** |
+| `label` | string | a display name — the function, unit or type |
+| `component` / `unit` | string \| null | `null` for `structDescription`, which has neither |
+| `text` | string | what a reader sees now: the correction if there is one, else the LLM's. May be `""` — a slot can be legitimately empty and is still editable |
+| `llmText` | string \| null | the captured original; `null` until the first edit |
+| `isOverridden` / `isOrphaned` | boolean | |
+| `bullets` | string[] | `behaviourDescription` only, in place of `text` |
+
+```json
+{
+  "slotKind": "description",
+  "slots": [
+    { "slotKind": "description", "slotKey": "Sample-Core|Core|coreAdd|int,int",
+      "label": "coreAdd", "component": "Sample-Core", "unit": "Core",
+      "text": "Adds two integers.", "llmText": null,
+      "isOverridden": false, "isOrphaned": false }
+  ],
+  "total": 158, "limit": 200, "offset": 0
+}
+```
+
+**`nodeLabel` is listed per FLOWCHART, not per node.** A version holds ~42,000 node labels; one row
+each would be hundreds of pages of something nobody reads linearly. A flowchart is one function's
+graph, so each row carries the token **R7** takes:
+
+```json
+{ "slotKind": "nodeLabel",
+  "flowchartId": "Sample-Core|Core|coreAdd|int,int",
+  "flowchartToken": "U2FtcGxlLUNvcmV8Q29yZXxjb3JlQWRkfGludCxpbnQ",
+  "functionName": "coreAdd", "component": "Sample-Core", "unit": "Core",
+  "nodeCount": 7, "overriddenCount": 1 }
+```
+
+`overriddenCount` excludes orphans: they are kept but not applied, so counting them would promise
+an edit the document does not carry.
+
+**The text here is the text a save replaces.** It is read through the same resolver
+`PUT …/overrides/slot` writes through, so the listing and the write cannot disagree about which
+field a kind lives in.
+
+**Errors**
+
+| code | when |
+|---|---|
+| 400 | `unit` or `component` given for `structDescription`, which has neither — refused rather than ignored, so an unfiltered result is never read as a filtered one |
+| 422 | `slot_kind` missing or not one of the seven |
+| 401 / 403 / 503 | see §16 |
 
 ---
 
