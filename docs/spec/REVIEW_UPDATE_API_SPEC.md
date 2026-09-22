@@ -94,11 +94,12 @@ alphabet is `[A-Za-z0-9_-]`, so nothing needs escaping. R7 returns both the id a
 
 Every path is under the `/api/v1` prefix. All require project **membership** (`REQ-API-05`).
 
-> **Membership is a row, not a role.** There is no global admin: `User` has no role field, so
-> signing in as any account gives you nothing on a project you were not added to — every endpoint
-> here answers `403 "Project membership required."`. A project created through
-> `POST /api/v1/projects` adds its creator automatically; one onboarded from the CLI needs
-> `python analyzer.py grant --project-id <p> --email <you>` (or `onboard --owner <you>`).
+> **Membership is a row, with one exception.** Access is per project: signing in gives you
+> nothing on a project you were not added to, and every endpoint here answers
+> `403 "Project membership required."`. `POST /api/v1/projects` adds its creator; CLI onboarding
+> adds every **superuser** (`users.is_superuser`), and a superuser reaches every project whether
+> or not a row exists. To add someone else:
+> `python analyzer.py grant --project-id <p> --email <them>`.
 
 ---
 

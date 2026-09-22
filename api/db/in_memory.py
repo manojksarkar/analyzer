@@ -381,6 +381,9 @@ class _InMemProjectRepo(IProjectRepository):
         }
         return [copy.deepcopy(p) for p in self._store.values() if p.id in project_ids]
 
+    def list_all(self):
+        return [copy.deepcopy(p) for p in self._store.values()]
+
     def get(self, project_id):
         return copy.deepcopy(self._store.get(project_id))
 

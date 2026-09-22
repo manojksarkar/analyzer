@@ -71,11 +71,14 @@ def main(argv=None) -> int:
     ap.add_argument("--all", action="store_true",
                     help="add EVERY user in the database. For a single-team internal instance "
                          "where the membership table is bookkeeping rather than a boundary.")
+    ap.add_argument("--superusers", action="store_true",
+                    help="add every superuser. What onboarding does by default, so the operator "
+                         "account is on the team list of the project it just created.")
     ap.add_argument("--role", default="admin", choices=ROLES)
     args = ap.parse_args(argv)
 
-    if not args.email and not args.all:
-        ap.error("pass --email <address>, or --all to add every user")
+    if not (args.email or args.all or args.superusers):
+        ap.error("pass --email <address>, --superusers, or --all")
 
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -106,6 +109,14 @@ def main(argv=None) -> int:
 
         if args.all:
             users = cx.execute(sa.select(s.users.c.id, s.users.c.email)).fetchall()
+        elif args.superusers:
+            users = cx.execute(sa.select(s.users.c.id, s.users.c.email)
+                               .where(s.users.c.is_superuser)).fetchall()
+            if not users:
+                # Not an error. A superuser reaches every project without a row, so there is
+                # nothing to repair -- saying "none" beats a mystery exit code.
+                print("\n  no superusers in this database; nothing to add")
+                return 0
         else:
             users = cx.execute(sa.select(s.users.c.id, s.users.c.email)
                                .where(s.users.c.email == args.email)).fetchall()

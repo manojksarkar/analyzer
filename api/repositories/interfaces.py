@@ -43,6 +43,10 @@ class IProjectRepository(ABC):
     def list_for_user(self, user_id: str) -> list[Project]: ...
 
     @abstractmethod
+    def list_all(self) -> list[Project]:
+        """Every project, membership ignored. For a superuser listing, and nothing else."""
+
+    @abstractmethod
     def get(self, project_id: str) -> Optional[Project]: ...
 
     @abstractmethod

@@ -146,7 +146,16 @@ def require_project_member(
     current_user: User,
     db: InMemoryDatabase,
 ) -> None:
-    """Raises 403 if the user is not an active member of the project."""
+    """Raises 403 if the user is not an active member of the project.
+
+    A **superuser** passes without one. That is the guarantee: a `project_members` row can be
+    missed by any code path that forgets to write it -- which is exactly how a CLI-onboarded
+    project became unreachable -- so the operator's access cannot depend on one existing.
+    Onboarding writes the row as well, for the team list and `my_role`, but this is what makes
+    it reliable rather than merely usual.
+    """
+    if getattr(current_user, "is_superuser", False):
+        return
     member = db.members.get_member(project_id, current_user.id)
     if member is None or member.status != "active":
         raise HTTPException(

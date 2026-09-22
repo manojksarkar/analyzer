@@ -96,6 +96,9 @@ class _ProjectRepo(_Base, IProjectRepository):
             select(m.c.project_id).where((m.c.user_id == user_id) & (m.c.status == "active"))))
         return self._all(stmt, Project)
 
+    def list_all(self):
+        return self._all(select(s.projects), Project)
+
     def get(self, project_id):
         return self._first(select(s.projects).where(s.projects.c.id == project_id), Project)
 

@@ -59,7 +59,10 @@ def _ensure_default_admin(db) -> None:
         db.users.create(User(
             id="admin", email="admin@aspice.dev", name="Administrator", initials="AD",
             avatar_url=None, hashed_password=hash_password("admin"),
-            created_at=datetime.datetime.now(datetime.timezone.utc)))
+            created_at=datetime.datetime.now(datetime.timezone.utc),
+            # The operator account. Without this a brand-new database has a login that can
+            # sign in and see nothing, because every project route is membership-gated.
+            is_superuser=True))
         print("[api] created default admin — sign in: admin@aspice.dev / admin", file=sys.stderr)
     except Exception as exc:                                  # noqa: BLE001
         print(f"[api] could not ensure default admin: {type(exc).__name__}: {exc}", file=sys.stderr)

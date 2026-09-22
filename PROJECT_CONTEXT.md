@@ -218,6 +218,49 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-22b (**`users.is_superuser` — an operator account that reaches every project.
+> Migration 0014.** Asked for after the 2026-09-22 entry below: `admin@aspice.dev` should have all
+> access to all projects, and must be a member of anything onboarded.
+>
+> **Why a flag and not just a membership row on onboard.** They look equivalent; they are not. A
+> `project_members` row can be missed by any path that forgets to write it — which is exactly how
+> a CLI-onboarded project became unreachable — and by anything that creates a project in future.
+> A flag cannot be forgotten because nothing has to remember it. So the flag is the GUARANTEE
+> (`require_project_member` returns early for a superuser) and the row is still written, for the
+> team list and `my_role`, which are READ from `project_members`. Proven: a project created after
+> the fact, with zero membership rows, answers 200.
+>
+> **Why a column and not a hard-coded email.** It is data — greppable, visible in the database,
+> changeable without a deploy, and testable. The tests promote ALICE, not `admin@aspice.dev`,
+> precisely so that a hard-coded address would fail them.
+>
+> **`server_default=text("false")` is load-bearing, not decoration.** The column is NOT NULL and
+> is added to databases that already have user rows; without a default that ALTER is impossible
+> and `setup`'s column repair would correctly refuse it. Directly exercised by
+> `TestTheColumnCanReachAnExistingDatabase`.
+>
+> Changed: `schema.users.is_superuser` · `domain.User.is_superuser = False` (defaulted, so a row
+> from a database predating the column reads as ordinary) · `require_project_member` early-return ·
+> `list_projects` uses the new `projects.list_all()` when superuser, or every project would OPEN
+> but none would be LISTED · `_project_view.my_role` falls back to "admin" for a superuser with no
+> row, since None greys out controls the API honours — a REAL membership still wins ·
+> `_ensure_default_admin` creates the seeded account with the flag · `onboard` adds every
+> superuser by DEFAULT (`--owner EMAIL` / `--owner-all` override) · `grant --superusers`.
+>
+> **`db_setup` repairs an existing database**, since a forward-only fix leaves the office box with
+> the column present and meaningless: promotes `admin@aspice.dev` ONLY when no superuser exists
+> yet (re-running must not quietly add one after somebody has chosen the operators), then
+> backfills a membership row per superuser per project with a NOT EXISTS guard.
+>
+> `tests/api/test_superuser_access.py` (17). Revert-checked: the bypass fails 5, the listing 1,
+> the `my_role` fallback 1, the server default 2. Chain linear at `0014_users_is_superuser`.
+> 2159 passed, 34 skipped.
+>
+> **SECURITY, said once and recorded:** `admin@aspice.dev` ships with the password `admin` and now
+> reaches every project on the instance. Acceptable on an internal box; before this is shared,
+> promote a real account and demote the seeded one — it is one UPDATE, which is the point of it
+> being data.)
+
 > Updated: 2026-09-22 (**a CLI-onboarded project was unreachable over HTTP. Two defects in the
 > seam between the two front doors, found by the first Swagger session on the office box.**
 >

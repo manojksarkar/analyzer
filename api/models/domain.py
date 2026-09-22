@@ -35,6 +35,9 @@ class User:
     avatar_url: Optional[str]
     hashed_password: str
     created_at: datetime
+    #: May act on EVERY project, with no `project_members` row. The operator account.
+    #: Defaults False so a row read from a database that predates the column is ordinary.
+    is_superuser: bool = False
 
 
 @dataclass

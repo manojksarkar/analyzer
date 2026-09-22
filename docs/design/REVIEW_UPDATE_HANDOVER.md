@@ -28,7 +28,7 @@ regeneration, and carries into the next version. Seven kinds of text are editabl
 
 ### 2.1 Alembic — check the head is still linear
 
-This branch adds **five** migrations on top of `0008`:
+This branch adds **six** migrations on top of `0008`:
 
 ```
 0008_class_name_and_llm_timing   (already on develop)
@@ -37,11 +37,12 @@ This branch adds **five** migrations on top of `0008`:
           └─ 0011_slot_shape        text_overrides.slot_shape
               └─ 0012_regeneration_queue   regeneration_queue
                   └─ 0013_render_jobs          render_jobs
+                      └─ 0014_users_is_superuser   users.is_superuser
 ```
 
 `develop` was at `0008` when this was written. **If `develop` has since added its own `0009`,
 there will be two heads after the merge** and `alembic upgrade head` will refuse. The fix is to
-re-point this branch's `0009` at the new head and renumber — all five migrations are additive
+re-point this branch's `0009` at the new head and renumber — all six migrations are additive
 (new tables, one new nullable column) and touch nothing existing, so they can sit anywhere after
 `0008`.
 
@@ -307,7 +308,7 @@ the same pair (`currentFunctionId` exists for exactly this reason); this half wa
 
 ```
 python -m alembic heads                 # exactly one
-python -m pytest tests/unit tests/api -q   # 2126 passed, 10 skipped at the tip of this branch
+python -m pytest tests/unit tests/api -q   # 2159 passed, 34 skipped at the tip of this branch
 ```
 
 The feature has also been run end to end against a **SQLite** database on a machine with no

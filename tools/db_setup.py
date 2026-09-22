@@ -222,6 +222,34 @@ def main() -> int:
         if m:
             print(f"repaired {m} project row(s) with no updated_at -> created_at")
 
+        # The operator account. `is_superuser` arrives as `false` for every existing row, so a
+        # database that has been in use would come back from this upgrade with NOBODY able to
+        # reach a project -- the column would be there and mean nothing.
+        #
+        # Only when there is no superuser at all: once somebody has chosen who the operators
+        # are, re-running setup must not quietly add another.
+        if not cx.execute(text("SELECT 1 FROM users WHERE is_superuser")).first():
+            k = cx.execute(text("UPDATE users SET is_superuser = %s WHERE email = 'admin@aspice.dev'"
+                                % ("true" if is_pg else "1"))).rowcount
+            if k:
+                print("promoted admin@aspice.dev to superuser (access to every project)")
+
+        # And give every superuser a membership row on every project. Access does not DEPEND on
+        # these -- `require_project_member` lets a superuser through without one, which is what
+        # makes it reliable -- but the team list and `my_role` are read from them, so without
+        # this the operator appears on no team and the UI greys out controls the API honours.
+        j = cx.execute(text(
+            "INSERT INTO project_members (id, project_id, user_id, role, status, "
+            "                             invited_by, invited_at, joined_at) "
+            "SELECT 'm-su-' || u.id || '-' || p.id, p.id, u.id, 'admin', 'active', "
+            "       u.id, p.created_at, p.created_at "
+            "  FROM users u CROSS JOIN projects p "
+            " WHERE u.is_superuser "
+            "   AND NOT EXISTS (SELECT 1 FROM project_members m "
+            "                    WHERE m.project_id = p.id AND m.user_id = u.id)")).rowcount
+        if j:
+            print(f"added {j} superuser membership row(s) across existing projects")
+
         n = cx.execute(text(
             "UPDATE versions SET pipeline_status = 'complete' "
             "WHERE pipeline_status IN ('parsing','deriving','viewing','exporting') "

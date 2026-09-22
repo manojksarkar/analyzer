@@ -107,22 +107,26 @@ def cmd_onboard(a) -> int:
 def _grant_after_onboard(a) -> int:
     """Give somebody API access to what we just onboarded.
 
-    Without a `project_members` row the project is invisible over HTTP: `GET /projects` lists
-    only what you are a member of, and every `/projects/{id}/...` route answers 403. The API's
-    own create-project endpoint adds the caller as an admin for exactly this reason; the CLI has
-    no caller, so it has to be told who — or asked to add everyone.
+    Without a `project_members` row the project is invisible over HTTP to an ORDINARY user:
+    `GET /projects` lists only what you are a member of, and every `/projects/{id}/...` route
+    answers 403. The API's own create-project endpoint adds the caller for exactly this reason;
+    the CLI has no caller, so it adds the superusers instead.
+
+    A superuser reaches the project either way — `require_project_member` lets them through
+    without a row, which is what makes their access reliable. The row is still written, because
+    the team list and `my_role` are READ from `project_members`: without it the operator appears
+    on no team and the UI greys out controls the API will honour.
 
     Never fatal. The project IS onboarded and generates fine from the CLI at this point; failing
     the command over an access row would be the tail wagging the dog. It says so instead.
     """
-    if not (a.owner or a.owner_all):
-        print("\nNo API access was granted (--owner / --owner-all not given). This project will")
-        print("  generate from the CLI, but `GET /projects` will not list it and its endpoints")
-        print("  will answer 403. Fix that whenever you like:")
-        print(f"      python analyzer.py grant --project-id {a.project_id} --email <you>")
-        return 0
     argv = ["--project-id", a.project_id, "--role", a.owner_role]
-    argv += ["--all"] if a.owner_all else ["--email", a.owner]
+    if a.owner_all:
+        argv.append("--all")
+    elif a.owner:
+        argv += ["--email", a.owner]
+    else:
+        argv.append("--superusers")
     try:
         return _tool("grant_access", argv)
     except Exception as exc:                       # noqa: BLE001 - see docstring
@@ -631,9 +635,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="use this repo's SAMPLE tree as the config. Alternative to --config, "
                         "never both.")
     s.add_argument("--owner", metavar="EMAIL",
-                   help="give this user API access to the project. Without it (or --owner-all) "
-                        "the project generates from the CLI but its HTTP endpoints answer 403, "
-                        "because authorisation is per project via `project_members`.")
+                   help="give this user API access to the project. The default is every "
+                        "superuser, so the operator account is on the team list of what you "
+                        "just created; naming someone here adds them instead.")
     s.add_argument("--owner-all", action="store_true",
                    help="give EVERY user API access. For a single-team internal instance.")
     s.add_argument("--owner-role", default="admin", choices=("admin", "developer", "reviewer"))

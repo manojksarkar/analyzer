@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from sqlalchemy import (
     JSON, BigInteger, Boolean, Column, Date, DateTime, Float, ForeignKey, Index,
-    Integer, MetaData, String, Table, Text, UniqueConstraint,
+    Integer, MetaData, String, Table, Text, UniqueConstraint, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -57,6 +57,15 @@ users = Table(
     Column("avatar_url", String),
     Column("hashed_password", String, nullable=False),
     _ts("created_at", nullable=False),
+    # A user who may act on EVERY project without a `project_members` row.
+    #
+    # Access is otherwise per project, and that is still the model -- this is a deliberate
+    # exception for the operator account, not a second one. It lives on the user rather than
+    # being a hard-coded email so it is data: testable, greppable, and changeable without a
+    # deploy. `server_default` matters as much as the default: the column is added to databases
+    # that already have rows, and a NOT NULL column with no default cannot be.
+    Column("is_superuser", Boolean, nullable=False,
+           default=False, server_default=text("false")),
 )
 
 projects = Table(
