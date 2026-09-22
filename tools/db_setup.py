@@ -213,6 +213,15 @@ def main() -> int:
     # generated) did finish, so it is safe to close out here.
     from sqlalchemy import text
     with eng.begin() as cx:
+        # projects.updated_at was never written by CLI onboarding, and the API's project view
+        # calls .isoformat() on it -- so one such row made `GET /projects` answer 500 for the
+        # WHOLE list. The reader is null-safe now; this repairs the rows already written, since
+        # a fix that only helps projects onboarded from today is not a fix for this database.
+        m = cx.execute(text("UPDATE projects SET updated_at = created_at "
+                            "WHERE updated_at IS NULL")).rowcount
+        if m:
+            print(f"repaired {m} project row(s) with no updated_at -> created_at")
+
         n = cx.execute(text(
             "UPDATE versions SET pipeline_status = 'complete' "
             "WHERE pipeline_status IN ('parsing','deriving','viewing','exporting') "

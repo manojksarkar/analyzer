@@ -79,8 +79,11 @@ def _project_view(project: Project, db: InMemoryDatabase, user_id: str) -> dict:
         "build_config": {k: v for k, v in (project.build_config or {}).items()
                          if k != "repo_access_token"},
         "architecture_layers": project.architecture_layers,
-        "created_at": project.created_at.isoformat(),
-        "updated_at": project.updated_at.isoformat(),
+        # Null-safe. A row written by `analyzer.py onboard` has no `updated_at` -- the CLI
+        # has no notion of "modified" -- and an unconditional .isoformat() turned the whole
+        # project LIST into a 500 for every project, not just that one.
+        "created_at": project.created_at.isoformat() if project.created_at else None,
+        "updated_at": project.updated_at.isoformat() if project.updated_at else None,
     }
 
 

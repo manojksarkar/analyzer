@@ -94,6 +94,12 @@ alphabet is `[A-Za-z0-9_-]`, so nothing needs escaping. R7 returns both the id a
 
 Every path is under the `/api/v1` prefix. All require project **membership** (`REQ-API-05`).
 
+> **Membership is a row, not a role.** There is no global admin: `User` has no role field, so
+> signing in as any account gives you nothing on a project you were not added to — every endpoint
+> here answers `403 "Project membership required."`. A project created through
+> `POST /api/v1/projects` adds its creator automatically; one onboarded from the CLI needs
+> `python analyzer.py grant --project-id <p> --email <you>` (or `onboard --owner <you>`).
+
 ---
 
 ## 4. Wire format — read this before writing a client

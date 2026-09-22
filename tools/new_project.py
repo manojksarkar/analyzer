@@ -197,7 +197,8 @@ def main(argv=None) -> int:
                 changes["default_branch"] = args.branch
             if changes:
                 cx.execute(sa.update(s.projects)
-                           .where(s.projects.c.id == pid).values(**changes))
+                           .where(s.projects.c.id == pid)
+                           .values(updated_at=now, **changes))
                 print(f"project  : {pid} (already exists)")
                 for k, v in changes.items():
                     was = cur.repo_url if k == "repo_url" else cur.default_branch
@@ -207,7 +208,10 @@ def main(argv=None) -> int:
         else:
             cx.execute(sa.insert(s.projects), {
                 "id": pid, "name": args.name or pid, "repo_url": args.repo_url,
-                "default_branch": args.branch, "status": "active", "created_at": now})
+                "default_branch": args.branch, "status": "active", "created_at": now,
+                # The API reads this on every project view. Without it `GET /projects` raised
+                # AttributeError on None and answered 500 for the whole list.
+                "updated_at": now})
             print(f"project  : {pid} CREATED")
 
     # 2. the workspace directory ----------------------------------------------------------

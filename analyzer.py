@@ -98,7 +98,49 @@ def cmd_onboard(a) -> int:
         argv += ["--version-id", a.version_id]
     if a.commit:
         argv += ["--commit", a.commit]
-    return _tool("new_project", argv)
+    rc = _tool("new_project", argv)
+    if rc == 0:
+        rc = _grant_after_onboard(a)
+    return rc
+
+
+def _grant_after_onboard(a) -> int:
+    """Give somebody API access to what we just onboarded.
+
+    Without a `project_members` row the project is invisible over HTTP: `GET /projects` lists
+    only what you are a member of, and every `/projects/{id}/...` route answers 403. The API's
+    own create-project endpoint adds the caller as an admin for exactly this reason; the CLI has
+    no caller, so it has to be told who — or asked to add everyone.
+
+    Never fatal. The project IS onboarded and generates fine from the CLI at this point; failing
+    the command over an access row would be the tail wagging the dog. It says so instead.
+    """
+    if not (a.owner or a.owner_all):
+        print("\nNo API access was granted (--owner / --owner-all not given). This project will")
+        print("  generate from the CLI, but `GET /projects` will not list it and its endpoints")
+        print("  will answer 403. Fix that whenever you like:")
+        print(f"      python analyzer.py grant --project-id {a.project_id} --email <you>")
+        return 0
+    argv = ["--project-id", a.project_id, "--role", a.owner_role]
+    argv += ["--all"] if a.owner_all else ["--email", a.owner]
+    try:
+        return _tool("grant_access", argv)
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        print(f"\nonboarded, but could not grant API access ({exc}).")
+        print(f"      python analyzer.py grant --project-id {a.project_id} --email <you>")
+        return 0
+
+
+def cmd_grant(a) -> int:
+    """Give a user access to a project, so the API will serve it.
+
+    Authorisation here is per project, via `project_members`. There is no global admin role —
+    `User` has no role field at all — so a project nobody was added to has nobody who can read
+    it over HTTP, whichever account you sign in with.
+    """
+    argv = ["--project-id", a.project_id, "--role", a.role]
+    argv += ["--all"] if a.all else ["--email", a.email]
+    return _tool("grant_access", argv)
 
 
 def _project_defaults(project_id: str, version_id: str):
@@ -588,10 +630,26 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--use-defaults", action="store_true",
                    help="use this repo's SAMPLE tree as the config. Alternative to --config, "
                         "never both.")
+    s.add_argument("--owner", metavar="EMAIL",
+                   help="give this user API access to the project. Without it (or --owner-all) "
+                        "the project generates from the CLI but its HTTP endpoints answer 403, "
+                        "because authorisation is per project via `project_members`.")
+    s.add_argument("--owner-all", action="store_true",
+                   help="give EVERY user API access. For a single-team internal instance.")
+    s.add_argument("--owner-role", default="admin", choices=("admin", "developer", "reviewer"))
     s.add_argument("--force-config", action="store_true", help="replace an existing config")
     s.add_argument("--version-id", help="also reserve this version")
     s.add_argument("--commit", help="the full 40-character sha that version is for")
     s.set_defaults(fn=cmd_onboard)
+
+    # -- grant ---------------------------------------------------------------
+    s = sub.add_parser("grant", help="give a user API access to a project",
+                       description=cmd_grant.__doc__)
+    s.add_argument("--project-id", required=True)
+    s.add_argument("--email", help="the user to add")
+    s.add_argument("--all", action="store_true", help="add EVERY user in the database")
+    s.add_argument("--role", default="admin", choices=("admin", "developer", "reviewer"))
+    s.set_defaults(fn=cmd_grant)
 
     # -- generate ------------------------------------------------------------
     s = sub.add_parser("generate", help="produce a version from a commit",

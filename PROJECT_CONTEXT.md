@@ -218,6 +218,53 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-22 (**a CLI-onboarded project was unreachable over HTTP. Two defects in the
+> seam between the two front doors, found by the first Swagger session on the office box.**
+>
+> Symptoms: `GET /projects` returned `[]` while `GET /projects/search` listed everything, and
+> every `/projects/{id}/...` route answered 403 "Project membership required." - signed in as
+> `admin@aspice.dev`.
+>
+> **There is no global admin in this system.** `User` has NO role field; `admin@aspice.dev` is a
+> seeded LOGIN, not a superuser. Authorisation is per project via `project_members`, and
+> `require_project_member` is correct as written.
+>
+> **Defect 1 - the CLI never created a membership.** `POST /api/v1/projects` adds the caller as
+> an admin member because it knows who is calling; `analyzer.py onboard` has no caller, so it
+> wrote the `projects` row and stopped. A project that generates perfectly from the CLI was
+> therefore invisible over HTTP, INCLUDING all ten review endpoints. `list_projects` uses
+> `list_for_user`, hence the empty list; `search_projects` uses `search()` with no membership
+> filter at all, which is why search still found them (pre-existing inconsistency, left alone,
+> flagged to the user).
+>
+> **Defect 2 - `projects.updated_at` was never written either**, and `_project_view` called
+> `.isoformat()` on it unconditionally. Only visible AFTER defect 1 is fixed, and then it is
+> worse: one such row makes `GET /projects` answer 500 for the WHOLE list, not just that project.
+>
+> **Fixes.** `tools/grant_access.py` + `analyzer.py grant --project-id X --email Y` (or `--all`),
+> idempotent and reactivating a non-active row - a membership that exists but is not `active`
+> fails the check exactly like a missing one. `onboard` gains `--owner` / `--owner-all` /
+> `--owner-role`, and when given NEITHER it prints what will happen and how to fix it, because
+> silence is what turned this into a diagnosis. `_project_view` is null-safe on both timestamps;
+> `new_project.py` writes `updated_at` on insert and on update; `db_setup` backfills
+> `UPDATE projects SET updated_at = created_at WHERE updated_at IS NULL`, since a forward-only
+> fix does nothing for the database that already has the rows.
+>
+> `tests/api/test_cli_project_is_reachable.py` (16 tests, skipped on the in-memory backend since
+> they are about rows) reproduces both symptoms against the real app and proves the fix, including
+> that R1 goes 403 -> 200. Revert-checked: the null-safe guard fails 5, onboarding's `updated_at`
+> fails 1, `grant`'s already-exists branch fails 1.
+>
+> One test trap worth remembering: the SQL test backend uses StaticPool, so `connect()` hands back
+> the SAME DBAPI connection. Calling a repository helper inside an open `eng.begin()` block runs a
+> second Connection over the same physical one and discards the pending write - which looked
+> exactly like `grant` not being idempotent. Resolve ids BEFORE opening the transaction.
+>
+> 2142 passed, 23 skipped.
+>
+> **The lesson: two front doors that write the same table must write the same ROWS.** Everything
+> the API needs and only the API writes is invisible until someone tries the other door.)
+
 > Updated: 2026-09-21 (**`analyzer.py setup` could not upgrade a database that already existed.
 > Found on the first real Postgres install, by a run dying mid-Phase-1.**
 >
