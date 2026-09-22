@@ -10,7 +10,8 @@
 //   PHASE 2 buckets it
 //     - `private`                -> PIF_, whatever calls it
 //     - address in a file-scope table -> IF_  (covered by Poly/OpsTable, not here)
-//     - otherwise                -> IF_ only if a function in ANOTHER FILE calls it
+//     - otherwise                -> IF_ only if a function in ANOTHER UNIT calls it
+//                                  (Foo.h + Foo.cpp are one unit -- see AccessCompanion.*)
 //
 // So a marking can only RESTRICT. `public` and `default` behave identically, and the
 // cases below are laid out to prove exactly that.
