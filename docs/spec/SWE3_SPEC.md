@@ -76,11 +76,16 @@ The table lists the unit's public functions and global variables. Private items 
 
 A marking can only restrict, never promote. `PROTECTED`, and a C++ `protected:` or `private:` label,
 count as private. `PUBLIC` does not by itself publish a function: it is listed only if a function in
-another file calls it, or its address appears in a file-scope dispatch table. This reverses the earlier
-reading, which listed protected items and trusted `PUBLIC` unconditionally.
+**another unit** calls it, or its address appears in a file-scope dispatch table. This reverses the
+earlier reading, which listed protected items and trusted `PUBLIC` unconditionally.
 
-**Verification:** Known private and protected items absent. A `PUBLIC` function with no cross-file caller
-absent. Known cross-unit interfaces present.
+A unit is `Foo.h` + `Foo.cpp` together, so a caller in the companion header does not publish anything —
+the same granularity the Source/Destination cell uses (REQ-IT-12), which lists caller units other than
+the function's own.
+
+**Verification:** Known private and protected items absent. A `PUBLIC` function whose only callers are in
+its own unit absent, whether they sit in the same file or in its companion header. Known cross-unit
+interfaces present.
 
 ---
 

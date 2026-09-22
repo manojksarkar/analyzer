@@ -36,7 +36,9 @@ protected:
 
     // Still under `protected:`, two declarations below the label, so the label is not
     // adjacent to it. Defined inline in this HEADER and called from AccessVisibility.cpp:
-    // a different FILE but the same UNIT, which the caller rule counts as external.
+    // a different FILE but the same UNIT. The caller rule used to count that as external;
+    // it is keyed by unit now, so it does not. Either way the label buries this one first
+    // -- AccessCompanion.* carries the unmarked version of the same shape.
     int backoffMs() { return 50; }
 
 private:

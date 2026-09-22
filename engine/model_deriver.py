@@ -389,10 +389,21 @@ def _build_units_components(base_path: str, functions_data: dict, global_variabl
 
 
 def _has_external_caller(f: dict, functions_data: dict, base_path: str) -> bool:
-    own_file = _file_path(f, base_path)
+    """True when something OUTSIDE this function's unit calls it.
+
+    Keyed by unit, not by file, so it matches the granularity everything downstream
+    already uses: `make_unit_key` strips the extension, so Foo.h and Foo.cpp are one
+    unit, the interface ID encodes that unit (`_unit_of`), and the interface table's
+    Source/Destination cell drops a caller in the function's own unit. Comparing FILES
+    here disagreed with all three -- a public method defined in Foo.cpp and called only
+    from inline code in its own Foo.h counted as externally called, so it earned a row
+    whose Source/Destination then read "-": published because of a caller the row itself
+    would not name. A companion header is the same unit; reaching it is not publication.
+    """
+    own_unit = _unit_of(f, base_path)
     for caller_id in f.get("calledByIds", []):
         caller = functions_data.get(caller_id)
-        if caller and _file_path(caller, base_path) != own_file:
+        if caller and _unit_of(caller, base_path) != own_unit:
             return True
     return False
 
@@ -402,19 +413,19 @@ def _fn_is_private(f: dict, functions_data: dict, base_path: str) -> bool:
         return True
     # A function published by a file-scope initializer table (`static const fp_t table[] =
     # { fn1, … };`) is reachable through that table even though no CALL_EXPR names it, so
-    # the cross-file-caller rule below would wrongly bury it. Ranked BELOW the explicit
+    # the outside-the-unit-caller rule below would wrongly bury it. Ranked BELOW the explicit
     # PRIVATE annotation: a source-level marking stays authoritative. This is EVIDENCE of
     # reachability, not an annotation, which is why it survived the change below.
     if f.get("addressTakenByUnits"):
         return False
     # A PUBLIC marking used to short-circuit here, guaranteeing a row. It no longer does:
     # a marking may RESTRICT, never promote, so publication has to be earned by a caller in
-    # another file. PUBLIC and unmarked are now indistinguishable to this function.
+    # another UNIT. PUBLIC and unmarked are now indistinguishable to this function.
     #
     # The cost is real and was measured before the change -- 42 of the sample's 91
     # PUBLIC-marked functions lose their row, `main` among them, and the App|Main unit's
     # interface table empties completely. The exposure this opens up is that the call graph
-    # only knows what was PARSED: "no cross-file caller" and "no cross-file caller in this
+    # only knows what was PARSED: "no caller outside the unit" and "no such caller in this
     # run's scope" are the same thing here and mean opposite things. A layer-scoped run
     # (--selected-layer) cannot see the layer above calling in, so that layer's front door
     # reads as uncalled. An ISR or a callback registered by a driver has no named caller at

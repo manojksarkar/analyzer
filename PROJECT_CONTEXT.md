@@ -208,6 +208,57 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-22b (**publication is now judged per UNIT, not per file** — branch
+> `fix/swe3-review-v1`, **UNCOMMITTED, not verified on a real project**).
+>
+> `_has_external_caller` (`model_deriver.py:391`) compared `_file_path`; it now compares `_unit_of`,
+> the same key the interface ID encodes and the same one the Source/Destination cell filters on
+> (`interface_tables._keep_unit`). Two lines plus comments; `_fn_is_private`'s other two clauses
+> (explicit `private`, `addressTakenByUnits`) are untouched.
+>
+> **The case it fixes.** A public method declared in a class in one header, defined in `Foo.cpp`, called
+> only from inline code in `Foo.h`. `make_unit_key` strips the extension, so `Foo.h` + `Foo.cpp` are ONE
+> unit — but the file comparison called that header an external caller. The function earned an `IF_` row
+> whose Source/Destination then rendered `-`: published because of a caller the row itself would not name.
+> Now it buckets `PIF_` and no row is emitted. Promotion and attribution finally ask the same question.
+>
+> **The sample had no such case, so one was built.** Before the fixture: 0 of 302 functions in the stored
+> model flip, and the same query over Postgres `v11` returns 0 rows — the sample had exactly ONE
+> header-defined function (`signalGain`, `Signal/SignalInline.h`) and it calls nothing, so there was not a
+> single header→.cpp call edge to test. The shape was already DOCUMENTED though: `DbSession::backoffMs`
+> (`Access/AccessVisibility.h`) is header-inline, called from `AccessVisibility.cpp`, and its comment said
+> "a different FILE but the same UNIT, which the caller rule counts as external" — it never flipped only
+> because `protected:` buries it at clause 1, before the caller rule runs.
+>
+> **New fixture — `SampleCppProject/Layer1/Access/AccessCompanion*` (4 files, nothing existing edited).**
+> `AccessCompanionDecl.h` declares `class CompanionOwner` with two `public:` methods and no macro, so the
+> C++ label is the only marking; `AccessCompanion.cpp` defines them out-of-line; `AccessCompanion.h` holds
+> the inline caller; `AccessCompanionUser.cpp` is a different UNIT supplying the control callers. Four
+> cells, each differing only in where its caller sits:
+>
+> | symbol | defined in | only caller | old | new |
+> |---|---|---|---|---|
+> | `CompanionOwner::companionFromHeader` | AccessCompanion.cpp | inline in AccessCompanion.h (same unit) | `IF_` | **`PIF_`** |
+> | `companionInlineUsedByCpp` | AccessCompanion.h | AccessCompanion.cpp (same unit) | `IF_` | **`PIF_`** |
+> | `CompanionOwner::companionFromOtherUnit` | AccessCompanion.cpp | AccessCompanionUser.cpp | `IF_` | `IF_` |
+> | `companionHeaderInline` | AccessCompanion.h | AccessCompanionUser.cpp | `IF_` | `IF_` |
+>
+> **Measured through a real parse** (Phase 1 into a scratch version, rule applied to the parsed model):
+> **2 flips of 187 Layer1 functions**, exactly the two intended cells; both controls hold. Phase 2 was not
+> run to completion (it spends ~10 min on LLM descriptions and the rule needs only Phase-1 data), so the
+> DOCX has not been regenerated and the scratch version was deleted afterwards. **Snapshot impact of the
+> new files is therefore unmeasured** — 4 fixture files were added to the sample, which the e2e snapshots
+> will notice.
+>
+> **Still unverified on the office project**, where the rule actually bites — count
+> `visibility='public' AND left(interface_id,3)='IF_'` before/after, alongside the standing scope risk
+> logged under 2026-09-20.
+>
+> Tests: `tests/unit/test_visibility_matrix.py` gains `COMPANION` (same unit, `AccessMatrix.h`) + two
+> phase-2 cases, and the phase-1 MATRIX + its compile gate now cover the new fixture (33 passed). Comments
+> stating the old rule fixed in `AccessMatrix.h` and `AccessVisibility.h`. Docs: `docs/spec/SWE3_SPEC.md`
+> REQ-IT-02, `docs/design/DESIGN.md`.
+
 > Updated: 2026-09-22 (**`tools/doccheck/` — compare two generated documents by what they say**. Written on
 > `feat/doc-compare` off `develop`, 7 commits, 622 tests; **the whole of that branch is now on
 > `fix/swe3-review-v1`** — the tool and the SWE.4 fixes it found. Docs:
@@ -373,7 +424,7 @@
 > **The rule now.** A marking may RESTRICT, never promote. **Phase 1 records `public` or `private` and
 > nothing else** — two values, one bit. `_fn_is_private` then: `private` → private ·
 > `addressTakenByUnits` → public · else private unless a `calledByIds` entry lives in a **different
-> file**. `"default"` survives only as the LOOKUP's internal sentinel for "nothing written here, keep
+> file** (superseded 2026-09-22b: a different **unit** — see the entry above). `"default"` survives only as the LOOKUP's internal sentinel for "nothing written here, keep
 > looking" (it is what lets the macro scan hand over to the C++ access specifier); `_as_recorded` maps it
 > to `public` before it is stored. Nothing downstream ever told the two apart — every filter tests
 > `== "private"` — so as a stored value it described the source, not the behaviour.
