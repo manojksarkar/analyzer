@@ -296,7 +296,7 @@ For the five model-backed kinds. `nodeLabel` → R8, `behaviourDescription` → 
 | `llmText` | string \| null | the original, unchanged by this call |
 | `previousText` | string \| null | what this call replaced. `null` on the first edit |
 | `firstEdit` | boolean | true when this slot had no correction before |
-| `viewsDerived` | string[] | views re-derived inside this request, e.g. `["interfaceTables"]` |
+| `viewsDerived` | string[] | **always `[]` over HTTP** — see the note below |
 | `queuedForRegeneration` | `QueuedSlot[]` | see below |
 
 ```json
@@ -307,13 +307,19 @@ For the five model-backed kinds. `nodeLabel` → R8, `behaviourDescription` → 
   "llmText": "Initializes the module.",
   "previousText": "Initializes the module.",
   "firstEdit": true,
-  "viewsDerived": ["interfaceTables"],
+  "viewsDerived": [],
   "queuedForRegeneration": [
     { "slotKind": "unitDescription", "slotKey": "Gpio|GpioDrv" },
     { "slotKind": "description", "slotKey": "App|AppMain|App_Start|void" }
   ]
 }
 ```
+
+**`viewsDerived` is empty over HTTP, and that is correct.** The service can re-derive a view and
+stamp it as freshly derived, but only with an output tree, a model and a config — which an API host
+is not guaranteed to have. More importantly, stamping a derivation at *save* time would mark the
+version **fresh** when its document has not been rebuilt, and R9 would stop reporting the staleness
+the export depends on. The field is reserved for a caller that really does re-derive.
 
 **Show `queuedForRegeneration`.** The reviewer is about to see wording change in places they did not
 touch, on the next run. An unannounced change reads as a bug.
@@ -495,6 +501,7 @@ key in base64url without padding (`REQ-ID-04`). One request opens the editor; on
 | `functionName` | string \| null | display name, e.g. `Gpio_Init` |
 | `labels` | object[] | **every** node, in graph order — corrected or not |
 | `labels[].nodeId` | string | e.g. `n7`. Use as the key in R8 |
+| `labels[].slotKey` | string | **this node's slot key** — send it to R4 (undo) or R5 (history). Never assemble one yourself (§2) |
 | `labels[].text` | string | what the document shows now: the correction if there is one, else the LLM's |
 | `labels[].llmText` | string \| null | the original. `null` when this node was never corrected |
 | `labels[].isOverridden` | boolean | true when a correction exists for this node |
@@ -505,8 +512,10 @@ key in base64url without padding (`REQ-ID-04`). One request opens the editor; on
   "flowchartToken": "R3Bpb3xHcGlvRHJ2fEdwaW9fSW5pdHx2b2lk",
   "functionName": "Gpio_Init",
   "labels": [
-    { "nodeId": "n0", "text": "Start", "llmText": null, "isOverridden": false },
-    { "nodeId": "n7", "text": "Check the write-protect flag",
+    { "nodeId": "n0", "slotKey": "Gpio|GpioDrv|Gpio_Init|voidn0",
+      "text": "Start", "llmText": null, "isOverridden": false },
+    { "nodeId": "n7", "slotKey": "Gpio|GpioDrv|Gpio_Init|voidn7",
+      "text": "Check the write-protect flag",
       "llmText": "Check flag", "isOverridden": true }
   ]
 }
@@ -555,7 +564,7 @@ Three rules (`REQ-API-08`):
 | `slotShape` | string \| null | sha256 hex (64 chars) of the graph these labels were written against — see below |
 | `renderPending` | boolean | `true` while the picture is **owed** |
 | `renderJobs` | integer[] | job ids raised by this call |
-| `viewsDerived` | string[] | e.g. `["flowcharts", "testSpecs"]` — editing a node label changes the SWE.4 Test Step too |
+| `viewsDerived` | string[] | **always `[]` over HTTP** — see §8. Editing a node label does change the SWE.4 Test Step, but the next Phase-3 run is what rebuilds it |
 
 ```json
 {
@@ -565,13 +574,15 @@ Three rules (`REQ-API-08`):
   "slotShape": "8d08d2a38307c1a44778f12cdb76fd1cb4af0d23dcfa1b25fd7698374f005819",
   "renderPending": true,
   "renderJobs": [412],
-  "viewsDerived": ["flowcharts", "testSpecs"]
+  "viewsDerived": []
 }
 ```
 
 **`renderPending`** — the text is corrected everywhere it is read from the database immediately, but
-the **picture** may not be. The image is redrawn inside the call when the server has an output tree,
-and `renderPending` is then `false`. Where it does not, the job stays pending and a host that has
+the **picture** may not be. It is `true` whenever a render job was raised and **not finished inside
+this call**, which on a host with no output tree is always. Note that the stored JSON and DOT *are*
+rebuilt either way: "the graph was rebuilt" and "the image was drawn" are different facts, and this
+flag reports the second. It always agrees with R9's `pendingRenders`. Where it does not, the job stays pending and a host that has
 the tree finishes it. Either way the export consults the same rows, so a document cannot go out
 carrying new text and an old image (`REQ-IM-02`) — R9 reports it as `pendingRenders`.
 

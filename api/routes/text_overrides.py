@@ -250,8 +250,16 @@ def get_flowchart_labels(
         nid = str(node.get("id") or "")
         if not nid:
             continue
-        row = overrides.get(slot_mod.for_node(flowchart_id, nid))
-        labels.append({"nodeId": nid, "text": node.get("label") or "",
+        key = slot_mod.for_node(flowchart_id, nid)
+        row = overrides.get(key)
+        labels.append({"nodeId": nid,
+                       # The key for THIS node, so undo (R4) and history (R5) work on a single
+                       # label without the caller assembling one. A node key is
+                       # `flowchartId + U+0001 + nodeId`, and `REQ-ID-01` says a key is built by
+                       # the server and never by hand -- so not returning it here left the UI
+                       # with a rule it could not follow.
+                       "slotKey": key,
+                       "text": node.get("label") or "",
                        "llmText": row.llm_text if row else None,
                        "isOverridden": row is not None})
     return {"flowchartId": flowchart_id, "flowchartToken": flowchart_token,
@@ -326,9 +334,10 @@ def update_flowchart_labels(
             raise _as_http(exc)
     return {"flowchartId": out.flowchart_id, "applied": list(out.applied),
             "firstEdits": list(out.first_edits), "slotShape": out.slot_shape,
-            # True while the picture is owed. It is a real job now, not a hint: the export
-            # consults the same rows (REQ-IM-02).
-            "renderPending": bool(out.render_jobs) and not bool(out.redrawn),
+            # True while the picture is owed. The service decides it from the JOBS, not from
+            # whether the stored DOT was rebuilt -- those are different facts, and conflating
+            # them told the caller "no render pending" while the export blocked on one.
+            "renderPending": out.render_pending,
             "renderJobs": list(out.render_jobs),
             "viewsDerived": list(out.views_derived)}
 

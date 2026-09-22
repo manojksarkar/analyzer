@@ -288,6 +288,29 @@ to permit.
 `::TestTheApiRederivesInsteadOfRefusing`; behaviour in
 `test_review_export_guard.py::TestTheApiRederivesRatherThanRefusing`.
 
+### 4.16 `renderPending` is about the PICTURE, not the stored graph
+
+`redraw_flowchart` rebuilds a flowchart's JSON and DOT **in the database** whether or not it has
+an output tree — the text is corrected everywhere it is read from. Drawing the PNG needs somewhere
+to put it, which an API host usually does not have.
+
+So `redrawn` and "the image exists" are different facts. `render_pending` is derived from whether
+the render JOB was completed in the call, never from `redrawn`. It must always agree with R9's
+`pendingRenders`; if the two can disagree, one of them is lying to a reviewer about whether the
+document's diagrams match its words.
+
+→ `test_review_flowchart_save.py::TestRenderPendingMeansThePictureIsOwed` and
+`test_review_overrides_api.py::TestRenderPendingTellsTheTruth::test_it_agrees_with_export_readiness`.
+
+### 4.17 Anything the caller must send back has to come from a read
+
+A node's slot key is `flowchartId + U+0001 + nodeId`, and `REQ-ID-01` says a key is built by the
+server and **never** by hand. R7 is what a flowchart editor opens with, so if R7 does not return
+each node's `slotKey`, undo and history on a single label are impossible without breaking that
+rule. The same test applies to any field added later: if the UI must send it, a read must supply it.
+
+→ `test_review_overrides_api.py::TestTheFlowchartEditorHasWhatItNeeds`.
+
 ---
 
 ## 5. Two defects this branch found in existing code
@@ -308,7 +331,7 @@ the same pair (`currentFunctionId` exists for exactly this reason); this half wa
 
 ```
 python -m alembic heads                 # exactly one
-python -m pytest tests/unit tests/api -q   # 2191 passed, 34 skipped at the tip of this branch
+python -m pytest tests/unit tests/api -q   # 2205 passed, 34 skipped at the tip of this branch
 ```
 
 The feature has also been run end to end against a **SQLite** database on a machine with no

@@ -218,6 +218,35 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-22d (**walking the flowchart-label UI flow end to end found two defects and a
+> wrong spec. None of 2191 tests caught any of them.**
+>
+> **1. R7 did not return each node's `slotKey`.** A node key is `flowchartId + U+0001 + nodeId`
+> and `REQ-ID-01` forbids a caller building one — so undo (R4) and history (R5) on a single label
+> were impossible for a UI that obeyed the rule. R7 is what a flowchart editor OPENS with;
+> anything the editor must send back has to come from it. Now returned per node.
+>
+> **2. `renderPending` was computed from `redrawn` and was therefore always False over HTTP.**
+> `redraw_flowchart` rebuilds the stored JSON + DOT whether or not there is an output tree; the
+> PNG needs somewhere to put it. So on every API save `redrawn` was non-empty, the picture was
+> owed, and the caller was told `renderPending: false` while R9 said `pendingRenders: 1` at the
+> same moment. A UI would show "image up to date" while the export blocked on that job. Now
+> `FlowchartApplied.render_pending`, derived from whether the JOB was completed in the call
+> (`drew_inline`), with a test asserting R8 and R9 agree. Revert-checked: 7 and 6 tests.
+>
+> **3. `viewsDerived` is always `[]` over HTTP, and the spec claimed otherwise.** No production
+> caller passes `derive=` — only tests do. That is CORRECT, not a missing wire: stamping a
+> derivation at save time would mark the version fresh when its document has not been rebuilt, and
+> R9 would stop reporting the staleness the export depends on. The spec's examples showed
+> `["interfaceTables"]` and `["flowcharts", "testSpecs"]`, which the API never returns. Corrected,
+> with the reason, rather than wiring something that would break the guard.
+>
+> HANDOVER gains 4.16 (renderPending is about the picture, not the stored graph) and 4.17 (anything
+> the caller must send back has to come from a read). 2205 passed, 34 skipped.
+>
+> **The lesson, third time this session: walking a real user flow finds what unit tests cannot.**
+> Each of these sat behind a correct-looking assertion.)
+
 > Updated: 2026-09-22c (**R11 `GET .../slots` — what CAN be edited. `REQ-API-01`'s other half,
 > which I had under-delivered.** Asked for after a testing session where the only way to obtain a
 > `slot_key` was a hand-written script over stored view output.

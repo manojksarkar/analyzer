@@ -333,3 +333,59 @@ class TestNoDatabase:
         r = client.put(BASE + "/overrides/slot", headers=auth_header,
                        json={"slot_kind": "description", "slot_key": FID, "text": "Words."})
         assert r.status_code == 503
+
+
+class TestTheFlowchartEditorHasWhatItNeeds:
+    """R7 is what a flowchart editor opens with, so anything the editor must send back has to
+    come FROM it. A node's `slotKey` is `flowchartId + U+0001 + nodeId`, and `REQ-ID-01` says a
+    key is built by the server and never by hand -- so omitting it left the UI with a rule it
+    could not follow, and undo (R4) or history (R5) on a single label impossible.
+    """
+
+    def test_every_node_carries_its_own_slot_key(self, client, review_db, auth_header):
+        r = client.get(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header)
+        assert r.status_code == 200, r.text
+        labels = r.json()["labels"]
+        assert labels, "the fixture must have nodes"
+        for n in labels:
+            assert n.get("slotKey"), "node %s has no slotKey" % n["nodeId"]
+
+    def test_the_key_is_the_one_the_server_would_build(self, client, review_db, auth_header):
+        from review import slot as slot_mod
+        body = client.get(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header).json()
+        for n in body["labels"]:
+            assert n["slotKey"] == slot_mod.for_node(body["flowchartId"], n["nodeId"])
+
+    def test_that_key_works_for_undo_and_history(self, client, review_db, auth_header):
+        """The point of returning it. Round-trip it through R8 -> R5 -> R4 untouched."""
+        body = client.get(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header).json()
+        node = body["labels"][0]
+        assert client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
+                          json={"labels": {node["nodeId"]: "Corrected here."}}).status_code == 200
+
+        h = client.get(BASE + "/overrides/history", headers=auth_header,
+                       params={"slot_kind": "nodeLabel", "slot_key": node["slotKey"]})
+        assert h.status_code == 200 and len(h.json()["history"]) == 1
+
+        u = client.delete(BASE + "/overrides/slot", headers=auth_header,
+                          params={"slot_kind": "nodeLabel", "slot_key": node["slotKey"]})
+        assert u.status_code == 200 and u.json()["undone"] is True
+
+
+class TestRenderPendingTellsTheTruth:
+    def test_a_save_with_no_output_tree_reports_the_picture_as_owed(self, client, review_db,
+                                                                    auth_header):
+        """The API host has no output tree, so the text is corrected and the PNG is not. Saying
+        otherwise made the UI show "image up to date" while the export blocked on that job."""
+        r = client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
+                       json={"labels": {"n1": "Check the write-protect flag"}})
+        assert r.status_code == 200, r.text
+        assert r.json()["renderPending"] is True
+        assert r.json()["renderJobs"]
+
+    def test_it_agrees_with_export_readiness(self, client, review_db, auth_header):
+        """Two answers to "is the picture current" that disagree is worse than either alone."""
+        put = client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
+                         json={"labels": {"n1": "Corrected."}}).json()
+        ready = client.get(BASE + "/export-readiness", headers=auth_header).json()
+        assert put["renderPending"] is (ready["pendingRenders"] > 0)

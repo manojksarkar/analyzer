@@ -183,3 +183,43 @@ class TestDerivation:
         _save(conn, {"n1": "A"}, derive=lambda **kw: ["flowcharts", "testSpecs"])
         names = {r.view_name for r in conn.execute(sa.select(s.view_derivations)).fetchall()}
         assert names == {"flowcharts", "testSpecs"}
+
+
+class TestRenderPendingMeansThePictureIsOwed:
+    """`redrawn` and "the image exists" are different facts, and conflating them misinforms
+    the caller about the one thing this flag is for.
+
+    `redraw_flowchart` rebuilds the stored JSON and DOT whether or not it has an output tree --
+    the text is corrected everywhere it is READ from the database. Drawing the PNG needs
+    somewhere to put it. An API host usually has no output tree, so it patches the text, leaves
+    the picture owed, and the export blocks on that job (`REQ-IM-02`).
+
+    The flag used to be `render_jobs and not redrawn`, which was therefore False on every save
+    the API made: the caller was told no render was pending while the export blocked on one, and
+    R9 said `pendingRenders: 1` at the same moment. Found by walking the UI flow end to end, not
+    by a test -- every test here passed throughout.
+    """
+
+    def test_no_output_tree_leaves_the_picture_owed(self, conn):
+        out = _save(conn, {"n1": "Corrected"})
+        assert out.redrawn, "the stored DOT must still be rebuilt"
+        assert out.render_jobs, "a job must be raised for the picture"
+        assert out.render_pending is True
+
+    def test_the_job_really_is_pending(self, conn):
+        """The flag must agree with the row the EXPORT consults, or one of them is lying."""
+        from review import render_queue
+        out = _save(conn, {"n1": "Corrected"})
+        assert render_queue.counts(conn, "v1").pending == len(out.render_jobs)
+        assert out.render_pending is True
+
+    def test_it_is_not_derived_from_redrawn(self, conn):
+        """The specific mistake: `redrawn` is non-empty here, and the picture is still owed."""
+        out = _save(conn, {"n1": "Corrected"})
+        assert bool(out.redrawn) and out.render_pending is True
+
+    def test_an_empty_save_is_refused_rather_than_owing_a_picture(self, conn):
+        """Not "nothing happened" -- a save with no labels is a caller mistake, and answering it
+        with a successful no-op would raise a render job for a picture nobody changed."""
+        with pytest.raises(svc.OverrideError):
+            _save(conn, {})

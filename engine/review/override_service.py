@@ -355,10 +355,20 @@ class FlowchartApplied(NamedTuple):
     slot_shape: str
     applied: Sequence[str]              #: node ids written, in request order
     first_edits: Sequence[str]
-    redrawn: Sequence[Any]              #: rerender.Redrawn, one per picture rebuilt
+    #: `rerender.Redrawn`, one per flowchart whose JSON + DOT were rebuilt. This is a DATABASE
+    #: fact and says nothing about the picture: `redraw_flowchart` rebuilds the DOT whether or
+    #: not it has an output tree to draw a PNG in.
+    redrawn: Sequence[Any]
     views_derived: Sequence[str]
     #: render_jobs ids raised for this save (REQ-IM-02). Already `done` when drawn inline.
     render_jobs: Sequence[int] = ()
+    #: The picture is still owed -- a job was raised and NOT completed here.
+    #:
+    #: Derived from the jobs, not from `redrawn`. An earlier version asked
+    #: `render_jobs and not redrawn`, which read "the DOT was rebuilt" as "the image was drawn"
+    #: and so reported False on every API save: the API has no output tree, the PNG was never
+    #: produced, and the export blocked on a job the caller had just been told was not pending.
+    render_pending: bool = False
 
 
 def apply_flowchart_overrides(conn,
@@ -445,12 +455,16 @@ def apply_flowchart_overrides(conn,
     # A job per redrawn picture, so the EXPORT can ask whether one is still being produced
     # (REQ-IM-02). Recorded even when the render just happened here: the row is what an export
     # on another host consults, and "it was done inline" is not something it can see.
+    # Whether the PICTURE was produced here, which is only possible with somewhere to put it.
+    # `redrawn` cannot answer this: it is true as soon as the stored DOT is rebuilt.
+    drew_inline = bool(output_dir and project_root)
+
     render_jobs = []
     for item in redrawn:
         job = render_queue.enqueue(conn, version_id, item.flowchart_id, item.png_name,
                                    user_id=user_id, now=stamp)
         render_jobs.append(job)
-        if output_dir and project_root:
+        if drew_inline:
             # Drawn inside this call, so it is already finished. Marking it done here rather than
             # not recording it keeps one answer to "is this version's picture current".
             render_queue.complete(conn, job, now=stamp)
@@ -463,6 +477,7 @@ def apply_flowchart_overrides(conn,
 
     return FlowchartApplied(version_id=version_id, flowchart_id=flowchart_id, slot_shape=shape,
                             applied=applied, first_edits=first_edits, redrawn=redrawn,
+                            render_pending=bool(render_jobs) and not drew_inline,
                             views_derived=views, render_jobs=render_jobs)
 
 
