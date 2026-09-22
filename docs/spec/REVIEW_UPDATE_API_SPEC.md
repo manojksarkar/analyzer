@@ -54,6 +54,10 @@ Seven **slot kinds** (`REQ-ED-01`). Every request names one:
 The last two are rejected by R3 with **501**. They are produced by Phase 3 rather than stored in the
 model, so they have their own save paths.
 
+`slot_kind` is an **enum** everywhere it appears, so Swagger offers these seven as a dropdown and
+anything else is refused by validation with **422** naming the allowed values. On R1 it is an
+optional filter — omit it for every correction in the version.
+
 ---
 
 ## 2. Slot keys, and why they are not in the path

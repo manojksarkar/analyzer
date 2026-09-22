@@ -38,11 +38,30 @@ if _ENGINE_DIR not in sys.path:
 router = APIRouter(tags=["review"])
 
 
+def _slot_kind_enum():
+    """`slot.ALL_KINDS` as an Enum, so Swagger offers a dropdown instead of a blank box.
+
+    Built FROM the canonical tuple rather than retyped: a hand-written copy here would be a
+    second list of the editable kinds, and the first one to gain an eighth would be wrong.
+
+    It also moves "that is not a slot kind" from a 404 out of the service to a 422 from
+    validation, naming every value that IS allowed — which is the answer to the question
+    somebody staring at an empty query field is actually asking.
+    """
+    import enum
+    from review import slot as _slot
+    return enum.Enum("SlotKind", {k: k for k in _slot.ALL_KINDS}, type=str)
+
+
+SlotKind = _slot_kind_enum()
+
+
 # ---------------------------------------------------------------------------
 # bodies
 # ---------------------------------------------------------------------------
 class UpdateSlotRequest(BaseModel):
-    slot_kind: str = Field(..., description="one of review.slot.ALL_KINDS")
+    slot_kind: SlotKind = Field(
+        ..., description="which kind of text this is. nodeLabel -> R8, behaviourDescription -> R6")
     slot_key: str = Field(..., description="from review.slot; never built by hand")
     text: str
 
@@ -108,7 +127,8 @@ def _row(r) -> Dict[str, Any]:
 def list_overrides(
     project_id: str,
     version_id: str,
-    slot_kind: Optional[str] = Query(None),
+    slot_kind: Optional[SlotKind] = Query(
+        None, description="filter to one kind; omit for every correction in the version"),
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
@@ -123,9 +143,10 @@ def list_overrides(
     svc = _service()
     with _connection().connect() as cx:
         try:
-            rows = svc.list_overrides(cx, version_id, slot_kind=slot_kind,
+            kind = slot_kind.value if slot_kind else None
+            rows = svc.list_overrides(cx, version_id, slot_kind=kind,
                                       limit=limit, offset=offset)
-            total = svc.count_overrides(cx, version_id, slot_kind=slot_kind)
+            total = svc.count_overrides(cx, version_id, slot_kind=kind)
         except Exception as exc:
             raise _as_http(exc)
     return {"overrides": [_row(r) for r in rows], "total": total,
@@ -138,8 +159,8 @@ def list_overrides(
 def get_slot(
     project_id: str,
     version_id: str,
-    slot_kind: str = Query(...),
-    slot_key: str = Query(...),
+    slot_kind: SlotKind = Query(...),
+    slot_key: str = Query(..., description="from an R1/R2/R7 response; never built by hand"),
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
@@ -147,7 +168,7 @@ def get_slot(
     `*`, spaces and a control character."""
     require_project_member(project_id, current_user, db)
     with _connection().connect() as cx:
-        row = _service().get_override(cx, version_id, slot_kind, slot_key)
+        row = _service().get_override(cx, version_id, slot_kind.value, slot_key)
     if row is None:
         raise HTTPException(status_code=404, detail="no override on that slot")
     return _row(row)
@@ -219,7 +240,8 @@ def update_slot(
             # "current run", so there is none installed, and `model_repo.repository()` would
             # raise. The model write then joins THIS transaction (REQ-AP-02).
             models = svc.ModelAccess(version_id=version_id, project_id=project_id)
-            out = svc.apply_override(cx, version_id, body.slot_kind, body.slot_key, body.text,
+            out = svc.apply_override(cx, version_id, body.slot_kind.value, body.slot_key,
+                                     body.text,
                                      models=models, user_id=current_user.id)
         except Exception as exc:
             raise _as_http(exc)
@@ -301,8 +323,8 @@ def update_behaviour(
 def undo_slot(
     project_id: str,
     version_id: str,
-    slot_kind: str = Query(...),
-    slot_key: str = Query(...),
+    slot_kind: SlotKind = Query(...),
+    slot_key: str = Query(..., description="from an R1/R2/R7 response; never built by hand"),
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
@@ -312,11 +334,11 @@ def undo_slot(
     svc = _service()
     with _connection().begin() as cx:
         try:
-            svc.undo_override(cx, version_id, slot_kind, slot_key,
+            svc.undo_override(cx, version_id, slot_kind.value, slot_key,
                               models=svc.ModelAccess(version_id=version_id,
                                                      project_id=project_id),
                               user_id=current_user.id)
-            row = svc.get_override(cx, version_id, slot_kind, slot_key)
+            row = svc.get_override(cx, version_id, slot_kind.value, slot_key)
             payload = _row(row) if row else None
         except Exception as exc:
             raise _as_http(exc)
@@ -329,8 +351,8 @@ def undo_slot(
 def slot_history(
     project_id: str,
     version_id: str,
-    slot_kind: str = Query(...),
-    slot_key: str = Query(...),
+    slot_kind: SlotKind = Query(...),
+    slot_key: str = Query(..., description="from an R1/R2/R7 response; never built by hand"),
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
@@ -339,7 +361,7 @@ def slot_history(
     makes "the original is never evicted" structural."""
     require_project_member(project_id, current_user, db)
     with _connection().connect() as cx:
-        rows = _service().history_for(cx, version_id, slot_kind, slot_key)
+        rows = _service().history_for(cx, version_id, slot_kind.value, slot_key)
     return {"history": [{"seq": r.seq, "humanText": r.human_text, "updatedBy": r.updated_by,
                          "updatedAt": r.updated_at.isoformat() if r.updated_at else None}
                         for r in rows]}

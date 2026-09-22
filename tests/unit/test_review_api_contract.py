@@ -389,3 +389,49 @@ class TestSwaggerNamesTheEndpointsTheWayTheSpecDoes:
         """Without it Swagger shows no Authorize button, and every Try-it-out returns 401."""
         for key, op in self._operations().items():
             assert op.get("security"), "%s %s has no security scheme, so Swagger cannot send a token" % key
+
+
+class TestSwaggerOffersTheValidSlotKinds:
+    """`slot_kind` was a free-text box, and "what do I put here?" is not a question a reference
+    document should have to answer.
+
+    It is an Enum built FROM `slot.ALL_KINDS`, so Swagger renders a dropdown and an eighth kind
+    appears there the moment it is added -- a hand-written copy in the router would be a second
+    list of the editable kinds, and the first one to fall behind would be this one.
+    """
+
+    def _spec(self):
+        from api.main import app
+        return app.openapi()
+
+    def test_the_dropdown_is_exactly_the_canonical_list(self):
+        published = self._spec()["components"]["schemas"]["SlotKind"]["enum"]
+        assert published == list(slot.ALL_KINDS), (
+            "Swagger offers %s but the editable kinds are %s" % (published, list(slot.ALL_KINDS)))
+
+    def test_every_endpoint_that_takes_a_kind_uses_it(self):
+        """A single endpoint left as a free string is the one somebody will mistype into."""
+        spec = self._spec()
+        loose = []
+        for path, ops in spec["paths"].items():
+            for method, op in ops.items():
+                if "review" not in (op.get("tags") or []):
+                    continue
+                for prm in op.get("parameters", []):
+                    if prm["name"] != "slot_kind":
+                        continue
+                    if "SlotKind" not in json.dumps(prm.get("schema", {})):
+                        loose.append("%s %s" % (method.upper(), path))
+        assert not loose, "slot_kind is still a free string on: %s" % loose
+
+    def test_the_request_body_uses_it_too(self):
+        body = self._spec()["components"]["schemas"]["UpdateSlotRequest"]["properties"]["slot_kind"]
+        assert "SlotKind" in json.dumps(body)
+
+    def test_an_invalid_kind_is_refused_by_validation(self, client=None):
+        """422 naming the allowed values, rather than a 404 from deep in the service."""
+        from fastapi.testclient import TestClient
+        from api.main import app
+        with TestClient(app) as c:
+            r = c.get("/api/v1/projects/p1/versions/v1/overrides?slot_kind=notAKind")
+        assert r.status_code in (401, 422), r.status_code
