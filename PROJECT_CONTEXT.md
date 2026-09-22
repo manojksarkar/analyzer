@@ -218,6 +218,33 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-22e (**a real project reported `nodeCount: 0` on every flowchart and an empty
+> R7 label list. NOT a bug in the listing — the stored output predates `cfg`.**
+>
+> `engine/flowchart/output/writer.py` writes `entry["cfg"] = fc.cfg` only `if fc.cfg`, and
+> `flowchart_engine` has only set `cfg=serialize_cfg(cfg)` since **2026-09-01** (`3355930`, the
+> SWE.4 port). A version generated before that has `functionKey`, `name` and the DOT — and no
+> graph. So `nodeCount` 0 and `labels: []` were both truthful, and the whole nodeLabel path is
+> unavailable on such a version until it is re-derived.
+>
+> **What WAS wrong is that nothing said so.** R7 returned `[]`, which reads as "this flowchart has
+> no nodes"; R8 answered 404 "has no node(s) N2", which blames the caller's node id for the
+> absence of the entire graph. Three ways of not saying the one useful thing.
+>
+> Now: `NoStoredGraph(OverrideError)` with **status 409** — the flowchart IS there, its graph is
+> not, and those are different things to fix — raised BEFORE the per-node validation, or every
+> node is reported missing. R7 returns `graphAvailable` and, when false, a `note` distinguishing
+> "predates the CFG" from "this flowchart failed to build" (`entry["error"]`). Nothing is written
+> on the refusal.
+>
+> Re-deriving fixes it: the CFG is rebuilt from the stored model, no re-parse
+> (`reexport --from-phase 3`).
+>
+> Diagnostic worth keeping: count flowchart entries by `cfg` present / `error` present / neither.
+> Neither = old vintage. On a recently generated version: 22 with a graph, 0 errors, 0 neither.
+>
+> 2209 passed, 34 skipped. Revert-checked: removing the guard fails 4.)
+
 > Updated: 2026-09-22d (**walking the flowchart-label UI flow end to end found two defects and a
 > wrong spec. None of 2191 tests caught any of them.**
 >

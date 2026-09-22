@@ -223,3 +223,54 @@ class TestRenderPendingMeansThePictureIsOwed:
         with a successful no-op would raise a render job for a picture nobody changed."""
         with pytest.raises(svc.OverrideError):
             _save(conn, {})
+
+
+class TestAFlowchartWithNoStoredGraph:
+    """`cfg` has only been written since 2026-09-01 (`3355930`). A version generated before that
+    has the picture and the DOT but not the graph they were built from.
+
+    Found on a real project: every flowchart reported `nodeCount: 0`, R7 returned an empty label
+    list, and R8 answered "has no node(s) N2" — which blames the caller's node id for the absence
+    of the whole graph. Three different ways of not saying the one useful thing.
+
+    This is not a failure to repair automatically: the CFG comes back by re-deriving the version,
+    which the message says.
+    """
+
+    def _no_graph(self, conn):
+        """A stored flowchart exactly as an older build wrote it: key, name, DOT — no cfg."""
+        conn.execute(sa.update(s.version_output_files)
+                     .where(s.version_output_files.c.version_id == "v1")
+                     .values(content=json.dumps([{ "functionKey": FID, "name": "doThing",
+                                                   "flowchart": "digraph {}"}])))
+
+    def test_a_save_says_what_is_actually_wrong(self, conn):
+        self._no_graph(conn)
+        with pytest.raises(svc.NoStoredGraph) as exc:
+            _save(conn, {"n1": "Corrected"})
+        msg = str(exc.value)
+        assert "no stored graph" in msg and "reexport" in msg
+
+    def test_it_is_409_not_404(self, conn):
+        """404 would say the flowchart is not there. It is there; its graph is not, and that is
+        a different thing to fix."""
+        self._no_graph(conn)
+        with pytest.raises(svc.OverrideError) as exc:
+            _save(conn, {"n1": "Corrected"})
+        assert getattr(exc.value, "status", None) == 409
+
+    def test_it_does_not_blame_the_node(self, conn):
+        self._no_graph(conn)
+        with pytest.raises(svc.NoStoredGraph) as exc:
+            _save(conn, {"n1": "Corrected"})
+        assert "no node" not in str(exc.value).lower()
+
+    def test_nothing_is_written(self, conn):
+        """It must refuse before touching the override table, or a correction would be stored
+        against a graph that cannot carry it."""
+        self._no_graph(conn)
+        with pytest.raises(svc.NoStoredGraph):
+            _save(conn, {"n1": "Corrected"})
+        n = conn.execute(sa.select(sa.func.count())
+                         .select_from(s.text_overrides)).scalar()
+        assert n == 0

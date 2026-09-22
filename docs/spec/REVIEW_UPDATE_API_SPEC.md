@@ -500,6 +500,8 @@ key in base64url without padding (`REQ-ID-04`). One request opens the editor; on
 | `flowchartToken` | string | echoed |
 | `functionName` | string \| null | display name, e.g. `Gpio_Init` |
 | `labels` | object[] | **every** node, in graph order — corrected or not |
+| `graphAvailable` | boolean | `false` when the stored output carries no graph; `labels` is then `[]` |
+| `note` | string | present only when `graphAvailable` is `false`, saying why |
 | `labels[].nodeId` | string | e.g. `n7`. Use as the key in R8 |
 | `labels[].slotKey` | string | **this node's slot key** — send it to R4 (undo) or R5 (history). Never assemble one yourself (§2) |
 | `labels[].text` | string | what the document shows now: the correction if there is one, else the LLM's |
@@ -528,6 +530,13 @@ key in base64url without padding (`REQ-ID-04`). One request opens the editor; on
 | 400 | `flowchartToken` is not valid base64url |
 | 404 | no flowchart stored for that function in this version |
 | 401 / 403 / 503 | see §16 |
+
+**An empty `labels` list is not always an empty flowchart.** `cfg` has only been stored since
+2026-09-01, so a version generated before that carries the picture and the DOT but not the graph
+they were built from. Its labels cannot be listed or corrected until the version is re-derived
+(`reexport --from-phase 3`, which rebuilds the CFG from the model — no re-parse). `graphAvailable`
+tells the two apart, and R8 on such a flowchart answers **409**, not 404: the flowchart is there,
+its graph is not, and those are different things to fix.
 
 ---
 
@@ -599,6 +608,7 @@ and R5 still work on a single `nodeLabel` slot key.
 |---|---|
 | 400 | `flowchartToken` is not valid base64url |
 | 404 | the flowchart, or a node id named in `labels`, does not exist — `detail` names it |
+| 409 | the flowchart has no stored graph (see R7). Re-derive the version first |
 | 422 | a label is empty or whitespace-only |
 | 401 / 403 / 503 | see §16 |
 

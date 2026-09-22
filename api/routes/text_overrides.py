@@ -262,8 +262,21 @@ def get_flowchart_labels(
                        "text": node.get("label") or "",
                        "llmText": row.llm_text if row else None,
                        "isOverridden": row is not None})
-    return {"flowchartId": flowchart_id, "flowchartToken": flowchart_token,
-            "functionName": entry.get("name"), "labels": labels}
+    # An empty list here is ambiguous on its own: it reads as "this flowchart has no nodes".
+    # `cfg` has only been stored since 2026-09-01, so a version generated before that has the
+    # picture and the DOT but not the graph -- and its labels cannot be corrected until it is
+    # re-derived. Say which it is rather than leaving the caller to guess.
+    body = {"flowchartId": flowchart_id, "flowchartToken": flowchart_token,
+            "functionName": entry.get("name"), "labels": labels,
+            "graphAvailable": bool(labels)}
+    if not labels:
+        body["note"] = (
+            "This flowchart has no stored graph, so its labels cannot be listed or corrected. "
+            "Its output predates the CFG being stored; re-derive the version "
+            "(reexport --from-phase 3) and this will fill in."
+            if not entry.get("error") else
+            "This flowchart failed to build: %s" % entry.get("error"))
+    return body
 
 
 # ---------------------------------------------------------------------------

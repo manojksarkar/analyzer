@@ -112,6 +112,20 @@ class SlotUnknown(OverrideError):
     status = 404
 
 
+class NoStoredGraph(OverrideError):
+    """The flowchart exists but its stored output carries no graph, so its labels cannot be
+    addressed.
+
+    `cfg` has only been written since 2026-09-01 (`3355930`); a version generated before that has
+    the picture and the DOT but not the graph they were built from. Reported as its own condition
+    because the alternatives both mislead: an empty label list reads as "this flowchart has no
+    nodes", and "no node n3" blames a node when the problem is the whole graph.
+
+    Re-deriving the version restores it — the CFG is rebuilt from the model, not re-parsed.
+    """
+    status = 409
+
+
 class NotEditableHere(OverrideError):
     """The kind has no model home yet — see `resolver.SlotHasNoModelHome`."""
     status = 501
@@ -422,6 +436,14 @@ def apply_flowchart_overrides(conn,
     cfg = entry.get("cfg") or {}
     current = {str(n.get("id")): str(n.get("label") or "")
                for n in (cfg.get("nodes") or []) if isinstance(n, dict) and n.get("id")}
+    if not current:
+        # Checked BEFORE the per-node validation below, or every node would be reported missing
+        # and the message would blame the caller's node ids for the absence of the whole graph.
+        raise NoStoredGraph(
+            "%s has no stored graph in version %s, so its labels cannot be corrected. Its output "
+            "predates the CFG being stored; re-derive the version first: "
+            "python analyzer.py reexport --project-id <pid> --version-id %s --from-phase 3"
+            % (flowchart_id, version_id, version_id))
 
     # --- validate the nodes, still before anything is written ---------------
     missing = sorted(n for n in labels if n not in current)
