@@ -208,6 +208,61 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-22 (**`tools/doccheck/` — compare two generated documents by what they say**. Written on
+> `feat/doc-compare` off `develop`; **the 5 code commits are cherry-picked onto `fix/swe3-review-v1`** so the
+> tool is available where the SWE.3 review work is. 615 tests. Docs: [tools/doccheck/README.md](tools/doccheck/README.md).
+>
+> **Why.** The only document comparison we had was `tools/dump_docx.py` piped into `diff` — a LINE diff, so a
+> reordered table or a reworded description floods the output and a wrong `Direction` hides inside it.
+> `api/services/compare_engine.py` is structured but answers a different question (our snapshot vs our snapshot
+> across versions, reading `interface_tables.json`); it cannot read a document at all.
+>
+> **Shape.** `extract → match → compare → report`. `blocks.py` walks a `.docx` the way `dump_docx` does but
+> keeps what the text form throws away — a cell is a LIST of paragraphs plus its images, a heading keeps its
+> number apart from its title. A profile (`swe3.py`, `swe4.py`) turns that into an `Entity` tree and declares a
+> `POLICIES` table; everything below is generic, so a document type is a profile + a policy table, not a new
+> comparator. **Both sides go through the same extractor** — taking our side from `model/*.json` would be more
+> faithful and would also make every extractor weakness look like a real difference, on one side only.
+>
+> **The ladder** (`compare.py`): L0 sections · L1 components+units · L2 rows/functions/test cases · L3 the
+> fields of a matched row · L4 dynamic behaviour. **Each rung runs only on what the rung above matched**, so a
+> missing unit does not report its forty interfaces as forty missing rows. Two wholly different documents give
+> 6 findings, not 600. Order is worked out from the matched pairs (longest-increasing-subsequence) and reported
+> separately at LOW — one moved unit reports as one finding, not "everything below it moved".
+>
+> **Field policies** (`model.py`), because `==` is wrong for most of these columns: `exact` · `enum`
+> (Direction: `OUT`≡`Out`≡`output`) · `name`/`names` (key rules + the alias file — a column of unit NAMES must
+> be read the way names are read everywhere else) · `set` · `seq` · `text` (advisory, never a defect — our bar
+> is logical correctness, not a word-for-word client match) · `ident` · `ignore`.
+>
+> **The ID is ours.** `IF_<LAYER>_<GROUP>_<UNIT>_<NN>` / `TC_<interfaceId>` are derived here, so another
+> author's document will not share them: rows match on NAME, and the id is checked for internal consistency
+> instead (well-formed, gapless, functions before globals, no `PIF_` published). `rules.py` attributes a
+> difference to the documented rule that would explain it (header-only unit, private item, callers-only,
+> unresolved data-dictionary range, fixed `Risk`/`Capacity`) so the output is a worklist, not a diff.
+>
+> **`--self`** needs no second document: a unit appears in the Component/Unit table AND as a heading, a
+> function as a flowchart heading AND as an interface row; when those disagree the document is wrong about
+> itself. **`--pair`** (`pairing.py`) holds a SWE.3 against its SWE.4 — every design function has a spec bar
+> the inline ones, a dynamic spec exists exactly where SWE.3 draws a diagram, `TC_` = `TC_<interfaceId>`.
+>
+> **Tests** (615, `pytest tests/unit -k doccheck --skip-pipeline`): the extractor is validated against the
+> pipeline's OWN data — `interface_tables.json` and `test_specs.json` sit next to every generated document, so
+> each `.docx` is checked against its own sibling JSON (vintages differ across the corpus; a fixed expectation
+> would test the corpus, not the extractor). Plus real-`.docx` mutation tests, synthetic client-shaped
+> documents (renamed + reordered columns), and the ladder one deliberate change at a time.
+>
+> **Two product findings it surfaced — NOT fixed, they change generated output:**
+> 1. **SWE.4 drops the class qualifier from its heading.** `engine/swe4_exporter.py:300` uses `spec["name"]`
+>    where SWE.3 uses the qualified name: SWE.3 writes `Signal-SignalProcessor::normalize`, SWE.4 writes
+>    `Signal-normalize`. In `fresh/v1/Cross` this already collides — `AddOperation::apply` and
+>    `MultiplyOperation::apply` both become heading `Dispatch-apply`, i.e. **two specs share one heading** and
+>    cannot be told apart. `SWE3_WIKI` 'Names' keeps the class precisely to prevent this. One-line fix
+>    (`spec.get("qualifiedName") or spec.get("name")`) but it changes every SWE.4 heading + snapshots.
+> 2. **SWE.3/SWE.4 dynamic drift is real.** `fresh/v1/Signal`: SWE.3 draws **0** behaviour diagrams, SWE.4
+>    emits **1** interaction spec — the divergence `tools/swe4_dynamic_diff.py` documents, now detectable from
+>    the delivered documents. 34 of 36 generated groups pair clean.)
+
 > Updated: 2026-09-21 (**oversize flowchart PNGs were half-painted, silently** — branch
 > `fix/swe3-review-v1`).
 >
@@ -2466,7 +2521,9 @@ analyzer/                     (repo root — cwd of the pipeline; model/ output/
   web-app/                    React web client (Vite + TS + Tailwind; see §24)
   SampleCppProject/           Fixture C++ tree — Layer1 + Layer2/Platform (see §15)
   tools/                      Dev-only tooling — mock-api (mock backend), create-sample-project, import-output-project,
-                              dump_docx.py (flatten a generated .docx to diffable text: headings/tables/`[image … sha=…]`)
+                              dump_docx.py (flatten a generated .docx to diffable text: headings/tables/`[image … sha=…]`),
+                              doccheck/ (compare two .docx by CONTENT — extract→match→compare→report, SWE.3+SWE.4,
+                              `--self` one document, `--pair` SWE.3-vs-SWE.4; see tools/doccheck/README.md)
   tests/  docs/
   model/                      Phase 1+2 output (JSON) — at repo root (cwd)
     clang_include_paths.json  Written by run.py before Phase 1; {LayerName:[abs_dirs]}
