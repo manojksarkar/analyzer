@@ -404,6 +404,14 @@ libclang has no answer, every branch is kept, so the macro is never lost.
 
 **Known gap:** a macro value is shown as written (`(1<<6)`), not worked out (`64`).
 
+**⚠ To confirm:** the declaration is shown exactly as written, so a `PUBLIC` / `PRIVATE` / `PROTECTED`
+marking appears in the cell — `PUBLIC int g_result = 0;`. Those are project macros that expand to nothing,
+so the compiler never sees them and dropping them would lose nothing about the declaration; keeping them
+matches the source a reviewer holds next to the document. Real C++ keywords stay either way: `extern` says
+this unit uses a global it does not own, and `static`, `const` and `volatile` change what the declaration
+means. They appear in this table only — the interface table shows a short name and a type, so no marking
+and no storage class ever reaches it.
+
 ### N.1.5 — Unit interface table
 
 Eight columns. Here they are at a glance; each one is then explained in full below.
