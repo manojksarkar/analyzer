@@ -208,6 +208,18 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-23e (**doccheck caught up with `147c4cd`'s unit header table** — branch
+> `fix/swe3-review-v1`, `tools/doccheck/`.)
+>
+> `147c4cd` started recording `union` and `using` and gave struct/class/union rows a one-line
+> description. doccheck lagged in three places, now fixed: (1) `rules.py` explained a missing
+> union/`using` row as "the parser does not record these" — rule removed, the row is a plain MEDIUM
+> difference; (2) a union's second cell ("Union for …") was compared as `value` (MEDIUM) — it is a
+> `description` (INFO), like struct/class; (3) `using T = int;` read as kind `global` — it now reads as
+> `typedef`, as the parser records it, so `typedef int T;` vs `using T = int;` differ only in their
+> declaration. Header rows are built in ONE place, `swe3.header_row`; the tests call it instead of a
+> copy of its logic. Risk 8's union/`using` paragraph marked fixed. doccheck suite 668 green.
+
 > Updated: 2026-09-23c (**doccheck's terminal report redrawn for reading** — branch `fix/swe3-review-v1`,
 > `tools/doccheck/report.py` + `__main__.py`. Markdown and JSON output are UNCHANGED.)
 >
@@ -5798,9 +5810,9 @@ explicit `^(public|private|protected)\s*:` match rather than adding `":"` to
 the `endswith` tuple, so `case X:` and goto labels do not break the multi-line
 `PRIVATE UNIT __OVLYINIT` form the scan exists for.
 
-### Risk 8 — storage class, and two unhandled cursor kinds
+### Risk 8 — storage class
 
-Two gaps left after the 2026-09-23 unit-header work.
+One gap left after the 2026-09-23 unit-header work.
 
 **A file-scope `static` publishes as an interface.** `_global_visibility` consults
 `cursor.access_specifier` only when `_is_class_static_var` is true, so a file-scope
@@ -5815,14 +5827,13 @@ header included by several `.cpp`s, which is the hole in the accident. Fix is on
 file-scope static has one cursor. Left open deliberately — it is a policy call, raised with
 the client in SWE3_WIKI N.1.5.
 
-**`UNION_DECL` and `TYPE_ALIAS_DECL` are not handled.** `visit_type_definitions` dispatches
-on STRUCT_DECL / CLASS_DECL / ENUM_DECL / TYPEDEF_DECL only, so a `union U {…};` and a
-C++11 `using T = int;` reach the data dictionary NEVER — no entry, no range, no row in any
-table, at any access level. A `typedef union {…} U;` does appear, through its typedef. The
-comment above the unit-header kind filter claims unions are included; it is wrong.
+**FIXED — `UNION_DECL` and `TYPE_ALIAS_DECL`** (`147c4cd`, client answer Q16). They used to
+reach the data dictionary never: `visit_type_definitions` dispatched on STRUCT_DECL /
+CLASS_DECL / ENUM_DECL / TYPEDEF_DECL only. A union now joins the struct/class branch, a
+`using` alias records as a typedef, and both have fixtures in `Access/NestedTypes.h`.
 
-Neither has a fixture, and both are code-read — unlike the rest of the 2026-09-23 matrix,
-which a pipeline run confirmed.
+The storage-class gap has no fixture and is code-read — unlike the rest of the 2026-09-23
+matrix, which a pipeline run confirmed.
 
 ---
 
