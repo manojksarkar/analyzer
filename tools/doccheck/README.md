@@ -26,6 +26,10 @@ python tools/doccheck/__main__.py a.docx b.docx --markdown r.md --json r.json --
 
 SWE.3 and SWE.4 are detected from the document; `--profile` forces it.
 
+`--full` lists info findings too, and every line of a long difference.
+`--color auto|always|never`: colour and box-drawing appear only on a terminal. A pipe or a
+file gets plain ASCII, one finding line per line, so it still greps. `NO_COLOR` is honoured.
+
 `--aliases names.txt` settles what no algorithm can — one `ours = theirs` per line,
 `#` comments. Use it when two documents name the same unit differently on purpose.
 
@@ -44,6 +48,33 @@ report its forty rows as forty missing rows:
 
 Severity is `high` / `medium` / `low` / `info`, and a finding carries the
 documented rule that would explain it where one does.
+
+## Reading the terminal report
+
+```
+ − reference  v10/…/software_detailed_design_Layer1.Access.docx
+ + compared   v12/…/software_detailed_design_Layer1.Access.docx
+
+ L0 ok   L1 ok   L2 9   L3 ok   L4 ok     9 findings: 9 medium
+
+ Access
+ ├─ AccessCompanion › CompanionOwner                             MEDIUM
+ │    declaration: 2 members removed
+ │      − public: int companionFromHeader(int v);
+ │      − public: int companionFromOtherUnit(int v);
+ │    ≡ same change in AccessCompanionUser › CompanionOwner
+```
+
+- `−` marks the reference's side and `+` the compared document's.
+- The ladder line shows a count for each level that disagrees, and `ok` for each
+  one that doesn't. Info findings are never counted there.
+- Only what changed is printed: the members of a declaration, the items of a list,
+  the changed words of a line (highlighted when colour is on). `… 4 unchanged`
+  shows where a change sits.
+- Findings sit under their component, worst first. A change repeated in several
+  places prints once. A rule behind several findings prints once as `rule [1]`,
+  and later findings refer to it as `[1]`.
+- Info findings are counted but not listed; `--full` lists them.
 
 ## Three things worth knowing
 
