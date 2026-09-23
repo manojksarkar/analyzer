@@ -680,9 +680,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="narrow the per-function FLOWCHART work to this unit. Repeatable. A "
                         "speed aid while iterating — the model and every other view stay "
                         "whole, and the documents are still the ones --scope asks for.")
-    s.add_argument("--doc-type", default="swe3", choices=("swe3", "swe4", "all"),
+    s.add_argument("--doc-type", default="swe3", choices=("swe3", "swe4", "all", "swe2", "both"),
                    help="which document(s) to emit: swe3 (detailed design, default), "
-                        "swe4 (unit test specification), or all")
+                        "swe4 (unit test specification), all (swe3 + swe4), "
+                        "swe2 (software architecture design; always the whole model), "
+                        "or both (swe3 + swe2)")
     s.add_argument("--force", action="store_true", help="accepted; the commit dir is reused")
     s.set_defaults(fn=cmd_generate)
 
@@ -704,7 +706,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="the commit this version was built from. Only needed when it was "
                         "never recorded on the version row (re-export finds the source "
                         "checkout by it).")
-    s.add_argument("--doc-type", choices=("swe3", "swe4", "all"),
+    s.add_argument("--doc-type", choices=("swe3", "swe4", "all", "swe2", "both"),
                    help="which document(s) to rebuild. Default: whatever this version "
                         "was generated with (from its manifest).")
     s.set_defaults(fn=cmd_reexport)
