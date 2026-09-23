@@ -71,6 +71,32 @@ def _overridden(conn, version_id: str, slot_kind: str) -> Dict[str, Any]:
     return {r.slot_key: r for r in rows}
 
 
+def _state(row, in_force: str) -> Dict[str, Any]:
+    """The four facts about a slot's correction, and the text a reader actually sees.
+
+    `text` is **what is in force** -- read from where the document reads it, never from the
+    override row. For a live correction the two agree, because the save wrote the human text into
+    the model (or the stored view row). For an ORPHAN they do not: it is kept (`REQ-ID-03`) but
+    never applied, so the document carries the model's text and the row carries words written
+    for code that has since changed.
+
+    An earlier version took `text` from the row whenever one existed, and so showed a reviewer
+    their stale correction as the current wording of a function whose document said something
+    else entirely. `humanText` is returned separately so an orphan's work stays visible -- as
+    what it is, not as what is printed.
+
+    `isOverridden` means a correction is IN FORCE. An orphan is not one.
+    """
+    orphaned = bool(row is not None and row.is_orphaned)
+    return {
+        "text": in_force,
+        "llmText": row.llm_text if row is not None else None,
+        "humanText": row.human_text if row is not None else None,
+        "isOverridden": row is not None and not orphaned,
+        "isOrphaned": orphaned,
+    }
+
+
 def _page(items: List[Dict[str, Any]], limit: int, offset: int) -> Page:
     total = len(items)
     lo = max(0, int(offset))
@@ -109,11 +135,7 @@ def _model_backed(conn, version_id, kind, models, unit, component, limit, offset
                 "component": comp,
                 "unit": un,
                 "artifact": artifact,
-                # What a reader sees NOW: the correction if there is one, else the LLM's.
-                "text": (row.human_text if row else text),
-                "llmText": (row.llm_text if row else None),
-                "isOverridden": row is not None,
-                "isOrphaned": bool(row.is_orphaned) if row else False,
+                **_state(row, text),
             })
     return _page(items, limit, offset)
 
@@ -136,10 +158,7 @@ def _structs(conn, version_id, models, limit, offset) -> Page:
             "slotKind": kind, "slotKey": key, "label": type_name,
             "component": None, "unit": None, "artifact": "dataDictionary",
             "kindOfType": entry.get("kind"),
-            "text": (row.human_text if row else text),
-            "llmText": (row.llm_text if row else None),
-            "isOverridden": row is not None,
-            "isOrphaned": bool(row.is_orphaned) if row else False,
+            **_state(row, text),
         })
     return _page(items, limit, offset)
 
@@ -237,7 +256,12 @@ def _behaviour_rows(conn, version_id, unit, component, limit, offset) -> Page:
                 continue
             key = slot.for_behaviour_row(fid, caller)
             ov = done.get(key)
-            bullets = row.get("behaviorDescriptionList") or row.get("behaviourDescriptionList") or []
+            # `behaviorDescription` -- the field the behaviour view writes, the DOCX exporter
+            # reads (docx_exporter: row.get("behaviorDescription")) and R6 patches. An earlier
+            # version read `behaviorDescriptionList`, which is only the exporter's PARAMETER name;
+            # no row has ever carried it, so every behaviour row listed with no bullets at all.
+            bullets = row.get("behaviorDescription") or []
+            state = _state(ov, p3.join_bullets(bullets))
             items.append({
                 "slotKind": kind,
                 "slotKey": key,
@@ -246,10 +270,13 @@ def _behaviour_rows(conn, version_id, unit, component, limit, offset) -> Page:
                 "label": row.get("externalUnitFunction"),
                 "component": comp,
                 "unit": un,
-                "bullets": (p3.split_bullets(ov.human_text) if ov else list(bullets)),
-                "llmText": (ov.llm_text if ov else None),
-                "isOverridden": ov is not None,
-                "isOrphaned": bool(ov.is_orphaned) if ov else False,
+                # What is in force -- the stored row, which R6 patches for a live correction and
+                # which an orphan never reached.
+                "bullets": list(bullets),
+                "llmText": state["llmText"],
+                "humanText": state["humanText"],
+                "isOverridden": state["isOverridden"],
+                "isOrphaned": state["isOrphaned"],
             })
     items.sort(key=lambda i: (i["component"] or "", i["unit"] or "", i["slotKey"]))
     return _page(items, limit, offset)

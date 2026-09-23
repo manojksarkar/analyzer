@@ -757,6 +757,29 @@ def list_overrides(conn, version_id: str, *, slot_kind: Optional[str] = None,
     return conn.execute(q).fetchall()
 
 
+def overrides_by_key(conn, version_id: str, slot_kind: str, keys) -> Dict[str, Any]:
+    """`{slot_key: row}` for exactly these keys -- one flowchart's nodes, say.
+
+    Not `list_overrides(...)`, which pages the WHOLE version newest-first: the flowchart editor
+    used it with `limit=1000`, so on a version with more than a thousand node corrections an
+    older correction on the flowchart being opened fell off the page and its node was reported
+    as never corrected. Asking for the keys actually needed has no such ceiling.
+
+    Chunked because SQLite caps bound parameters; a flowchart large enough to hit it is unlikely,
+    and a silent truncation is exactly the failure this function exists to remove.
+    """
+    keys = [k for k in dict.fromkeys(keys or ()) if k]
+    out: Dict[str, Any] = {}
+    for i in range(0, len(keys), 500):
+        chunk = keys[i:i + 500]
+        for r in conn.execute(select(s.text_overrides).where(
+                s.text_overrides.c.version_id == version_id,
+                s.text_overrides.c.slot_kind == slot_kind,
+                s.text_overrides.c.slot_key.in_(chunk))):
+            out[r.slot_key] = r
+    return out
+
+
 def count_overrides(conn, version_id: str, *, slot_kind: Optional[str] = None) -> int:
     """How many corrections a version has, for the list's `total`."""
     q = select(func.count()).select_from(s.text_overrides).where(

@@ -218,6 +218,42 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-23 (**three defects in the listings, found by answering "when do I get text,
+> llmText and humanText?" -- the question made me check rather than recall.**
+>
+> **1. R11 showed an ORPHAN's stale words as `text`.** `catalog` took `text` from the override
+> row whenever one existed. For a live correction that is harmless (the save wrote the same words
+> into the model), but an orphan is never applied: its function's code changed, the document
+> prints fresh LLM text, and the listing said the reviewer's old sentence was current -- with
+> `isOverridden: true`. Probed: document 'Fresh LLM text for the NEW code.', R11 'Stale human
+> text for the OLD code.'. Now `text` is always read from where the document reads it; the rule
+> lives once in `catalog._state`, which R7 imports; `humanText` is returned separately so an
+> orphan's work stays visible AS what it is; `isOverridden` means IN FORCE and is false for one.
+>
+> **2. R7 read the newest 1,000 node corrections for the WHOLE version** (`list_overrides(...,
+> limit=1000)`) and looked this flowchart's nodes up in that page. Past a thousand corrections an
+> older one on the flowchart being opened fell off, reported as never corrected while the picture
+> carried it. Now `override_service.overrides_by_key` asks for exactly this flowchart's node keys
+> (chunked at 500, SQLite caps bound parameters). Regression test inserts 1,001 newer corrections
+> elsewhere.
+>
+> **3. R11 listed every real behaviour row with NO bullets.** It read `behaviorDescriptionList`
+> -- which is only the exporter's PARAMETER name. The view writes, the exporter reads and R6
+> patches `behaviorDescription`. The test fixture stored the same wrong name, so fixture and
+> reader agreed and the test passed. Found only by rewriting the test to go through the REAL save
+> (`apply_behaviour_override`), which wrote the real field the reader never looked at.
+>
+> Both (1) and (3) hid behind fixtures that inserted a row `apply_override` can never produce. The
+> tests now save through the real paths, and the behaviour field is checked against the writer and
+> the reader rather than against another test. HANDOVER 4.18.
+>
+> Verified while answering, not changed: behaviour names ARE read from the model by the exporter
+> (`functions_data.get(...).get("behaviourInputName")`), so only `description` has a derived copy
+> needing a patch. Flowcharts write `.json` + `.png` and NO `.mmd` -- the DOT lives inside the
+> JSON; the only `.mmd` is a unit diagram, which no correction touches.
+>
+> Revert-checked: row-text 3, orphan-as-overridden 3, wrong field 3, R7 paging 2. 2222 passed.)
+
 > Updated: 2026-09-22e (**a real project reported `nodeCount: 0` on every flowchart and an empty
 > R7 label list. NOT a bug in the listing — the stored output predates `cfg`.**
 >

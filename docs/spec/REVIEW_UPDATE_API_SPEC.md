@@ -159,7 +159,7 @@ Returned by R1 (in a list), R2 (bare) and R4 (nested). One slot's current state.
 | `slotKind` | string | one of §1 |
 | `slotKey` | string | send this back verbatim; never build it |
 | `llmText` | string \| null | the LLM's original, captured on the **first** edit and never rewritten (`REQ-ST-03`). `null` when the slot was empty before the first correction — which is why undo can fail with 409 |
-| `humanText` | string | the text in force now |
+| `humanText` | string | the reviewer's words. In force unless `isOrphaned` — see R11 for the three states |
 | `isOrphaned` | boolean | the slot stopped resolving (entity renamed or deleted). The record is **kept** (`REQ-ID-03`) and is **not** applied to the document. Show it greyed rather than hiding it |
 | `updatedBy` | string \| null | user id |
 | `updatedAt` | string \| null | ISO-8601 UTC |
@@ -504,9 +504,11 @@ key in base64url without padding (`REQ-ID-04`). One request opens the editor; on
 | `note` | string | present only when `graphAvailable` is `false`, saying why |
 | `labels[].nodeId` | string | e.g. `n7`. Use as the key in R8 |
 | `labels[].slotKey` | string | **this node's slot key** — send it to R4 (undo) or R5 (history). Never assemble one yourself (§2) |
-| `labels[].text` | string | what the document shows now: the correction if there is one, else the LLM's |
-| `labels[].llmText` | string \| null | the original. `null` when this node was never corrected |
-| `labels[].isOverridden` | boolean | true when a correction exists for this node |
+| `labels[].text` | string | **what the picture carries now** — the stored label |
+| `labels[].humanText` | string \| null | the reviewer's words, whenever a correction exists — even an orphaned one |
+| `labels[].llmText` | string \| null | the captured original. `null` until the node is first corrected |
+| `labels[].isOverridden` | boolean | a correction is **in force** on this node. `false` for an orphan |
+| `labels[].isOrphaned` | boolean | a correction exists but no longer applies (§5) |
 
 ```json
 {
@@ -744,9 +746,11 @@ A row, for the six per-slot kinds:
 | `slotKey` | string | **send this to R2–R6 verbatim** |
 | `label` | string | a display name — the function, unit or type |
 | `component` / `unit` | string \| null | `null` for `structDescription`, which has neither |
-| `text` | string | what a reader sees now: the correction if there is one, else the LLM's. May be `""` — a slot can be legitimately empty and is still editable |
+| `text` | string | **what the document prints now**, read from where the document reads it. May be `""` — a slot can be legitimately empty and is still editable |
+| `humanText` | string \| null | the reviewer's words whenever a correction exists, orphaned or not |
 | `llmText` | string \| null | the captured original; `null` until the first edit |
-| `isOverridden` / `isOrphaned` | boolean | |
+| `isOverridden` | boolean | a correction is **in force**. `false` for an orphan |
+| `isOrphaned` | boolean | a correction exists but no longer applies |
 | `bullets` | string[] | `behaviourDescription` only, in place of `text` |
 
 ```json
@@ -776,6 +780,19 @@ graph, so each row carries the token **R7** takes:
 
 `overriddenCount` excludes orphans: they are kept but not applied, so counting them would promise
 an edit the document does not carry.
+
+**`text`, `humanText` and the two flags, together.** For a live correction `text` and
+`humanText` are the same sentence — the save wrote it into the model. They differ in exactly one
+case: an **orphan**, which is kept (`REQ-ID-03`) but never applied. Its function's code changed, so
+the document prints fresh LLM text while the row still holds words written for the old code:
+
+| state | `text` | `humanText` | `isOverridden` | `isOrphaned` |
+|---|---|---|---|---|
+| never corrected | the LLM's | `null` | `false` | `false` |
+| corrected | the human's | the human's | `true` | `false` |
+| orphaned | the LLM's (fresh) | the human's (stale) | `false` | `true` |
+
+Show an orphan's `humanText` as "your correction no longer applies", never as current wording.
 
 **The text here is the text a save replaces.** It is read through the same resolver
 `PUT …/overrides/slot` writes through, so the listing and the write cannot disagree about which

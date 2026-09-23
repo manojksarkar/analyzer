@@ -311,6 +311,26 @@ rule. The same test applies to any field added later: if the UI must send it, a 
 
 → `test_review_overrides_api.py::TestTheFlowchartEditorHasWhatItNeeds`.
 
+### 4.18 `text` is what the document prints — never the override row
+
+For every listing (R7, R11), `text` is read from where the document reads it: the model for the
+five model-backed kinds, the stored view row for the two Phase-3 kinds. A live correction was
+written into those by the save, so for it `text` and `humanText` agree. An **orphan** was never
+applied, so they differ — and taking `text` from the row showed a reviewer their stale words as the
+current wording of a function whose document printed something else.
+
+`isOverridden` means a correction is IN FORCE; an orphan is not one. The rule lives once, in
+`catalog._state`, and R7 imports it.
+
+**Test fixtures must go through the real save.** Both bugs behind this invariant hid behind
+fixtures that inserted an override row without writing the model — a state `apply_override`
+cannot produce. One of them also stored `behaviorDescriptionList`, the same wrong field the reader
+used, so the test passed while every real behaviour row listed no bullets. The field is now
+checked against the WRITER (`behaviour_diagram.py`) and the READER (`docx_exporter.py`).
+
+→ `test_review_catalog.py::TestAnOrphanIsNotInForce`, `::TestTheFixtureMatchesWhatTheViewWrites`,
+`test_review_overrides_api.py::TestR7ReportsWhatIsInForce`.
+
 ---
 
 ## 5. Two defects this branch found in existing code
@@ -331,7 +351,7 @@ the same pair (`currentFunctionId` exists for exactly this reason); this half wa
 
 ```
 python -m alembic heads                 # exactly one
-python -m pytest tests/unit tests/api -q   # 2209 passed, 34 skipped at the tip of this branch
+python -m pytest tests/unit tests/api -q   # 2222 passed, 34 skipped at the tip of this branch
 ```
 
 The feature has also been run end to end against a **SQLite** database on a machine with no

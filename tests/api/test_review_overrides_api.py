@@ -389,3 +389,62 @@ class TestRenderPendingTellsTheTruth:
                          json={"labels": {"n1": "Corrected."}}).json()
         ready = client.get(BASE + "/export-readiness", headers=auth_header).json()
         assert put["renderPending"] is (ready["pendingRenders"] > 0)
+
+
+
+class TestR7ReportsWhatIsInForce:
+    """R7 follows the same rule as R11: `text` is what the picture carries, and `isOverridden`
+    means a correction is IN FORCE. An orphan is kept but not applied, so it is not one."""
+
+    def _get(self, client, auth_header, node="n1"):
+        body = client.get(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header).json()
+        return next(n for n in body["labels"] if n["nodeId"] == node)
+
+    def test_a_live_correction_carries_its_human_text(self, client, review_db, auth_header):
+        client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
+                   json={"labels": {"n1": "Check the write-protect flag"}})
+        n = self._get(client, auth_header)
+        assert n["isOverridden"] is True and n["isOrphaned"] is False
+        assert n["text"] == n["humanText"] == "Check the write-protect flag"
+
+    def test_an_orphan_is_not_in_force(self, client, review_db, auth_header):
+        from review import slot
+        with review_db.begin() as cx:
+            cx.execute(insert(s.text_overrides).values(
+                version_id=VERSION, slot_kind="nodeLabel", slot_key=slot.for_node(FID, "n1"),
+                llm_text="old", human_text="Words for a graph that changed.", is_orphaned=True,
+                updated_by="u1", updated_at=datetime.datetime.now(datetime.timezone.utc)))
+        n = self._get(client, auth_header)
+        assert n["isOverridden"] is False and n["isOrphaned"] is True
+        assert n["humanText"] == "Words for a graph that changed.", "kept means visible"
+        assert n["text"] != n["humanText"], "text is what the picture carries, not the orphan"
+
+
+class TestR7SeesEveryCorrectionOnItsOwnFlowchart:
+    """R7 used to page the WHOLE version's node corrections, newest 1,000 first, and then look
+    this flowchart's nodes up in that page. On a version with more than a thousand node
+    corrections, an older one on the flowchart being opened fell off the page, and its node was
+    reported as never corrected -- `isOverridden: false`, `llmText: null` -- while the picture
+    carried the correction.
+    """
+
+    def test_an_older_correction_survives_a_thousand_newer_ones(self, client, review_db,
+                                                              auth_header):
+        from review import slot
+        assert client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
+                          json={"labels": {"n1": "The oldest correction."}}).status_code == 200
+
+        later = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
+        with review_db.begin() as cx:
+            cx.execute(insert(s.text_overrides), [
+                {"version_id": VERSION, "slot_kind": "nodeLabel",
+                 "slot_key": slot.for_node("Other|Unit|f%d|" % i, "n0"),
+                 "llm_text": "x", "human_text": "y", "is_orphaned": False,
+                 "updated_by": "u1", "updated_at": later}
+                for i in range(1001)])
+
+        body = client.get(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header).json()
+        n1 = next(n for n in body["labels"] if n["nodeId"] == "n1")
+        assert n1["isOverridden"] is True, (
+            "a correction on THIS flowchart was lost behind 1,001 newer ones elsewhere")
+        assert n1["humanText"] == "The oldest correction."

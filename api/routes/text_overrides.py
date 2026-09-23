@@ -233,25 +233,28 @@ def get_flowchart_labels(
     except Exception as exc:
         raise _as_http(exc)
 
+    import json
+    from review.catalog import _state
     with _connection().connect() as cx:
         found = rerender.find_flowchart_row(cx, version_id, flowchart_id)
         if not found:
             raise HTTPException(status_code=404, detail="no flowchart %s" % flowchart_id)
-        overrides = {r.slot_key: r for r in _service().list_overrides(
-            cx, version_id, slot_kind=slot_mod.NODE_LABEL, limit=1000)}
-
-    import json
-    entry = next((e for e in json.loads(found[2]) if e.get("functionKey") == flowchart_id), None)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="no flowchart %s" % flowchart_id)
+        entry = next((e for e in json.loads(found[2])
+                      if e.get("functionKey") == flowchart_id), None)
+        if entry is None:
+            raise HTTPException(status_code=404, detail="no flowchart %s" % flowchart_id)
+        nodes = [n for n in (entry.get("cfg") or {}).get("nodes") or []
+                 if isinstance(n, dict) and n.get("id")]
+        # Only THIS flowchart's keys. Paging the whole version (newest 1,000) dropped older
+        # corrections on the flowchart being opened, and reported their nodes as uncorrected.
+        overrides = _service().overrides_by_key(
+            cx, version_id, slot_mod.NODE_LABEL,
+            [slot_mod.for_node(flowchart_id, str(n["id"])) for n in nodes])
 
     labels = []
-    for node in (entry.get("cfg") or {}).get("nodes") or []:
-        nid = str(node.get("id") or "")
-        if not nid:
-            continue
+    for node in nodes:
+        nid = str(node.get("id"))
         key = slot_mod.for_node(flowchart_id, nid)
-        row = overrides.get(key)
         labels.append({"nodeId": nid,
                        # The key for THIS node, so undo (R4) and history (R5) work on a single
                        # label without the caller assembling one. A node key is
@@ -259,9 +262,9 @@ def get_flowchart_labels(
                        # the server and never by hand -- so not returning it here left the UI
                        # with a rule it could not follow.
                        "slotKey": key,
-                       "text": node.get("label") or "",
-                       "llmText": row.llm_text if row else None,
-                       "isOverridden": row is not None})
+                       # `text` is the stored label: what the picture and the SWE.4 step carry.
+                       # The same rule as R11 decides the rest -- an orphan is not in force.
+                       **_state(overrides.get(key), node.get("label") or "")})
     # An empty list here is ambiguous on its own: it reads as "this flowchart has no nodes".
     # `cfg` has only been stored since 2026-09-01, so a version generated before that has the
     # picture and the DOT but not the graph -- and its labels cannot be corrected until it is

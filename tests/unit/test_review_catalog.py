@@ -121,12 +121,22 @@ class TestTheModelBackedKinds:
 
 class TestOverrideState:
     def test_a_corrected_slot_shows_the_human_text(self, conn, models):
-        _override(conn, slot.DESCRIPTION, FN)
+        """Through the REAL save, not a hand-inserted row.
+
+        An earlier version of this inserted an override row without touching the model -- a
+        state `apply_override` can never produce, since it writes both. The test then asserted
+        the row's text, which is how the listing came to read `text` from the row at all, and
+        so showed an ORPHAN's stale words as the current wording. Going through the real save
+        means the fixture cannot drift from what production does.
+        """
+        svc.apply_override(conn, "v1", slot.DESCRIPTION, FN, "Corrected.", models=models)
         row = next(i for i in catalog.list_slots(conn, "v1", slot.DESCRIPTION,
                                                  models=models).items
                    if i["slotKey"] == FN)
-        assert row["isOverridden"] is True
-        assert row["text"] == "Corrected." and row["llmText"] == "Original."
+        assert row["isOverridden"] is True and row["isOrphaned"] is False
+        assert row["text"] == "Corrected."
+        assert row["humanText"] == "Corrected."
+        assert row["llmText"] == "Does the thing."
 
     def test_an_uncorrected_slot_has_no_llm_text(self, conn, models):
         """`llmText` is the captured ORIGINAL, which only exists once someone has edited."""
@@ -237,7 +247,9 @@ class TestBehaviourRows:
         payload = {"_docxRows": {"Comp": {"UnitA": [
             {"currentFunctionId": FN, "externalCallerId": caller,
              "externalUnitFunction": "UnitB - apply",
-             "behaviorDescriptionList": ["calls it", "returns"]}]}}}
+             # The REAL field. This fixture once used `behaviorDescriptionList` -- the same wrong
+             # name the reader used -- so the test passed while real data listed no bullets.
+             "behaviorDescription": ["calls it", "returns"]}]}}}
         conn.execute(sa.insert(s.version_output_files).values(
             version_id="v1", rel_path="G/behaviour_diagrams/_behaviour_pngs.json",
             content=json.dumps(payload), group_name="G"))
@@ -260,12 +272,13 @@ class TestBehaviourRows:
         assert catalog.list_slots(conn, "v1", slot.BEHAVIOUR_DESCRIPTION).total == 0
 
     def test_a_corrected_row_shows_the_human_bullets(self, conn):
+        """Through the real save, for the same reason as the description test above: R6
+        patches the stored row as well as writing the override, and only a real save does both."""
         self._store(conn)
-        _override(conn, slot.BEHAVIOUR_DESCRIPTION,
-                  slot.for_behaviour_row(FN, "CompX|UnitB|apply|int"),
-                  human="one\ntwo")
+        svc.apply_behaviour_override(conn, "v1", FN, "CompX|UnitB|apply|int", ["one", "two"])
         row = catalog.list_slots(conn, "v1", slot.BEHAVIOUR_DESCRIPTION).items[0]
         assert row["bullets"] == ["one", "two"] and row["isOverridden"] is True
+        assert row["humanText"] == "one\ntwo"
 
 
 class TestEveryKindIsListable:
@@ -274,3 +287,75 @@ class TestEveryKindIsListable:
         feature would look complete and one kind would have no way in."""
         for kind in slot.ALL_KINDS:
             catalog.list_slots(conn, "v1", kind, models=models)
+
+
+
+class TestAnOrphanIsNotInForce:
+    """An orphan is KEPT (`REQ-ID-03`) and NOT applied. The listing has to say both.
+
+    The case that exposed it: a function's code changed, so the carry-forward orphaned the
+    reviewer's description. The document now carries fresh LLM text for the new code -- and the
+    listing reported the reviewer's stale words as `text`, with `isOverridden: true`. A UI built on
+    that shows a correction as current wording when the document prints something else.
+    """
+
+    def _orphan(self, conn):
+        _override(conn, slot.DESCRIPTION, FN, human="Stale words for the OLD code.",
+                  llm="Old LLM text.", orphaned=True)
+
+    def _row(self, conn, models):
+        return next(i for i in catalog.list_slots(conn, "v1", slot.DESCRIPTION,
+                                                  models=models).items
+                    if i["slotKey"] == FN)
+
+    def test_text_is_what_the_document_prints(self, conn, models):
+        self._orphan(conn)
+        assert self._row(conn, models)["text"] == "Does the thing."
+
+    def test_it_is_not_reported_as_overridden(self, conn, models):
+        """`isOverridden` means a correction is IN FORCE. An orphan is not one."""
+        self._orphan(conn)
+        row = self._row(conn, models)
+        assert row["isOverridden"] is False and row["isOrphaned"] is True
+
+    def test_the_reviewers_words_stay_visible(self, conn, models):
+        """Kept means visible -- as what it is, not as what is printed. Without `humanText` the
+        fix above would have made an orphan's work disappear from the listing entirely."""
+        self._orphan(conn)
+        row = self._row(conn, models)
+        assert row["humanText"] == "Stale words for the OLD code."
+        assert row["llmText"] == "Old LLM text."
+
+    def test_an_uncorrected_slot_has_no_human_text(self, conn, models):
+        row = self._row(conn, models)
+        assert row["humanText"] is None and row["llmText"] is None
+
+
+
+class TestTheFixtureMatchesWhatTheViewWrites:
+    """A test whose fixture shares the reader's mistake passes whatever the reader does.
+
+    That is how R11 listed every real behaviour row with no bullets: the reader looked for
+    `behaviorDescriptionList`, the fixture stored `behaviorDescriptionList`, and neither matched
+    the `behaviorDescription` the behaviour view actually writes. So the field name is checked
+    against the WRITER, not against another test.
+    """
+
+    def test_the_view_writes_the_field_the_listing_reads(self):
+        view = open(os.path.join(PROJECT_ROOT, "engine", "views", "behaviour_diagram.py"),
+                    encoding="utf-8").read()
+        listing = open(os.path.join(PROJECT_ROOT, "engine", "review", "catalog.py"),
+                       encoding="utf-8").read()
+        assert '"behaviorDescription":' in view, "the behaviour view no longer writes this field"
+        assert 'row.get("behaviorDescription")' in listing
+
+    def test_the_exporter_reads_the_same_field(self):
+        exporter = open(os.path.join(PROJECT_ROOT, "engine", "docx_exporter.py"),
+                        encoding="utf-8").read()
+        assert 'row.get("behaviorDescription"' in exporter
+
+    def test_nothing_reads_the_parameter_name_as_a_field(self):
+        listing = open(os.path.join(PROJECT_ROOT, "engine", "review", "catalog.py"),
+                       encoding="utf-8").read()
+        code = " ".join(l for l in listing.splitlines() if not l.strip().startswith("#"))
+        assert 'get("behaviorDescriptionList")' not in code
