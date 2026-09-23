@@ -85,83 +85,6 @@
           "outParameters": [],
           "returns": [
             {
-              "expression": "a - b",
-              "source": "a - b",
-              "step": "2",
-              "text": "Successfully returned a - b"
-            }
-          ]
-        },
-        "functionId": "Layer1.Lib|Lib|libSubtract|int,int",
-        "generationMethod": "Analysis of Requirements",
-        "input": {
-          "entries": [
-            {
-              "kind": "parameter",
-              "name": "a",
-              "text": "int a[-0x80000000-0x7FFFFFFF]",
-              "type": "int"
-            },
-            {
-              "kind": "parameter",
-              "name": "b",
-              "text": "int b[-0x80000000-0x7FFFFFFF]",
-              "type": "int"
-            }
-          ],
-          "isVoid": false
-        },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_02",
-        "location": {
-          "endLine": 33,
-          "file": "Layer1/Sample/Lib/Lib.cpp",
-          "line": 31
-        },
-        "name": "libSubtract",
-        "precondition": {
-          "globals": [],
-          "mockFunctions": [],
-          "mocks": [],
-          "parameters": [
-            {
-              "name": "a",
-              "text": "int a",
-              "type": "int"
-            },
-            {
-              "name": "b",
-              "text": "int b",
-              "type": "int"
-            }
-          ]
-        },
-        "qualifiedName": "libSubtract",
-        "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_LIB_02",
-        "testSteps": [
-          {
-            "nodeId": "N1",
-            "number": "1",
-            "text": "Issue function libSubtract with inputs a, b.",
-            "type": "START"
-          },
-          {
-            "nodeId": "N3",
-            "number": "2",
-            "text": "Return a - b.",
-            "type": "RETURN"
-          }
-        ],
-        "unitKey": "Layer1.Lib|Lib",
-        "unitName": "Lib"
-      },
-      {
-        "expected": {
-          "globals": [],
-          "mockFunctions": [],
-          "outParameters": [],
-          "returns": [
-            {
               "expression": "libBound()",
               "source": "libBound(result, 100000)",
               "step": "3",
@@ -188,7 +111,7 @@
           ],
           "isVoid": false
         },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_03",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_02",
         "location": {
           "endLine": 39,
           "file": "Layer1/Sample/Lib/Lib.cpp",
@@ -214,7 +137,7 @@
         },
         "qualifiedName": "libMultiply",
         "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_LIB_03",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_LIB_02",
         "testSteps": [
           {
             "nodeId": "N1",
@@ -225,7 +148,7 @@
           {
             "nodeId": "N3",
             "number": "2",
-            "text": "int result = a * b.",
+            "text": "Set result to a * b.",
             "type": "ACTION"
           },
           {
@@ -247,13 +170,13 @@
             {
               "expression": "-v",
               "source": "-v",
-              "step": "2.1",
+              "step": "2.a",
               "text": "Successfully returned -v"
             },
             {
               "expression": "v",
               "source": "v",
-              "step": "2.2",
+              "step": "2.b",
               "text": "Successfully returned v"
             }
           ]
@@ -271,7 +194,7 @@
           ],
           "isVoid": false
         },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_04",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_03",
         "location": {
           "endLine": 46,
           "file": "Layer1/Sample/Lib/Lib.cpp",
@@ -292,7 +215,7 @@
         },
         "qualifiedName": "libAbs",
         "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_LIB_04",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_LIB_03",
         "testSteps": [
           {
             "nodeId": "N1",
@@ -308,13 +231,13 @@
           },
           {
             "nodeId": "N4",
-            "number": "2.1",
+            "number": "2.a",
             "text": "True: Return -v.",
             "type": "RETURN"
           },
           {
             "nodeId": "N5",
-            "number": "2.2",
+            "number": "2.b",
             "text": "False: Return v.",
             "type": "RETURN"
           }
@@ -331,13 +254,13 @@
             {
               "expression": "a",
               "source": "a",
-              "step": "2.1",
+              "step": "2.a",
               "text": "Successfully returned a"
             },
             {
               "expression": "b",
               "source": "b",
-              "step": "2.2",
+              "step": "2.b",
               "text": "Successfully returned b"
             }
           ]
@@ -361,7 +284,7 @@
           ],
           "isVoid": false
         },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_05",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_04",
         "location": {
           "endLine": 53,
           "file": "Layer1/Sample/Lib/Lib.cpp",
@@ -387,7 +310,7 @@
         },
         "qualifiedName": "libMax",
         "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_LIB_05",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_LIB_04",
         "testSteps": [
           {
             "nodeId": "N1",
@@ -403,108 +326,13 @@
           },
           {
             "nodeId": "N4",
-            "number": "2.1",
+            "number": "2.a",
             "text": "True: Return a.",
             "type": "RETURN"
           },
           {
             "nodeId": "N5",
-            "number": "2.2",
-            "text": "False: Return b.",
-            "type": "RETURN"
-          }
-        ],
-        "unitKey": "Layer1.Lib|Lib",
-        "unitName": "Lib"
-      },
-      {
-        "expected": {
-          "globals": [],
-          "mockFunctions": [],
-          "outParameters": [],
-          "returns": [
-            {
-              "expression": "a",
-              "source": "a",
-              "step": "2.1",
-              "text": "Successfully returned a"
-            },
-            {
-              "expression": "b",
-              "source": "b",
-              "step": "2.2",
-              "text": "Successfully returned b"
-            }
-          ]
-        },
-        "functionId": "Layer1.Lib|Lib|libMin|int,int",
-        "generationMethod": "Analysis of Requirements",
-        "input": {
-          "entries": [
-            {
-              "kind": "parameter",
-              "name": "a",
-              "text": "int a[-0x80000000-0x7FFFFFFF]",
-              "type": "int"
-            },
-            {
-              "kind": "parameter",
-              "name": "b",
-              "text": "int b[-0x80000000-0x7FFFFFFF]",
-              "type": "int"
-            }
-          ],
-          "isVoid": false
-        },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_06",
-        "location": {
-          "endLine": 60,
-          "file": "Layer1/Sample/Lib/Lib.cpp",
-          "line": 55
-        },
-        "name": "libMin",
-        "precondition": {
-          "globals": [],
-          "mockFunctions": [],
-          "mocks": [],
-          "parameters": [
-            {
-              "name": "a",
-              "text": "int a",
-              "type": "int"
-            },
-            {
-              "name": "b",
-              "text": "int b",
-              "type": "int"
-            }
-          ]
-        },
-        "qualifiedName": "libMin",
-        "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_LIB_06",
-        "testSteps": [
-          {
-            "nodeId": "N1",
-            "number": "1",
-            "text": "Issue function libMin with inputs a, b.",
-            "type": "START"
-          },
-          {
-            "nodeId": "N3",
-            "number": "2",
-            "text": "Check whether a < b.",
-            "type": "DECISION"
-          },
-          {
-            "nodeId": "N4",
-            "number": "2.1",
-            "text": "True: Return a.",
-            "type": "RETURN"
-          },
-          {
-            "nodeId": "N5",
-            "number": "2.2",
+            "number": "2.b",
             "text": "False: Return b.",
             "type": "RETURN"
           }
@@ -553,7 +381,7 @@
           ],
           "isVoid": false
         },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_07",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_05",
         "location": {
           "endLine": 65,
           "file": "Layer1/Sample/Lib/Lib.cpp",
@@ -599,7 +427,7 @@
         },
         "qualifiedName": "libNormalize",
         "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_LIB_07",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_LIB_05",
         "testSteps": [
           {
             "nodeId": "N1",
@@ -610,79 +438,13 @@
           {
             "nodeId": "N3",
             "number": "2",
-            "text": "int clamped = libClamp().",
+            "text": "Call function libClamp() with v, -max, max, storing the result in clamped.",
             "type": "ACTION"
           },
           {
             "nodeId": "N4",
             "number": "3",
-            "text": "Expect mock function utilCompute; return utilCompute().",
-            "type": "RETURN"
-          }
-        ],
-        "unitKey": "Layer1.Lib|Lib",
-        "unitName": "Lib"
-      },
-      {
-        "expected": {
-          "globals": [],
-          "mockFunctions": [],
-          "outParameters": [],
-          "returns": [
-            {
-              "expression": "v * SHARED_SCALE_FACTOR",
-              "source": "v * SHARED_SCALE_FACTOR",
-              "step": "2",
-              "text": "Successfully returned v * SHARED_SCALE_FACTOR"
-            }
-          ]
-        },
-        "functionId": "Layer1.Lib|Lib|libScaleShared|int",
-        "generationMethod": "Analysis of Requirements",
-        "input": {
-          "entries": [
-            {
-              "kind": "parameter",
-              "name": "v",
-              "text": "int v[-0x80000000-0x7FFFFFFF]",
-              "type": "int"
-            }
-          ],
-          "isVoid": false
-        },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_08",
-        "location": {
-          "endLine": 70,
-          "file": "Layer1/Sample/Lib/Lib.cpp",
-          "line": 67
-        },
-        "name": "libScaleShared",
-        "precondition": {
-          "globals": [],
-          "mockFunctions": [],
-          "mocks": [],
-          "parameters": [
-            {
-              "name": "v",
-              "text": "int v",
-              "type": "int"
-            }
-          ]
-        },
-        "qualifiedName": "libScaleShared",
-        "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_LIB_08",
-        "testSteps": [
-          {
-            "nodeId": "N1",
-            "number": "1",
-            "text": "Issue function libScaleShared with inputs v.",
-            "type": "START"
-          },
-          {
-            "nodeId": "N3",
-            "number": "2",
-            "text": "Return v * SHARED_SCALE_FACTOR.",
+            "text": "Expect return value from the return of mock function utilCompute() with clamped, 0 inputs.",
             "type": "RETURN"
           }
         ],
@@ -750,11 +512,11 @@
           ],
           "isVoid": false
         },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_09",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_06",
         "location": {
-          "endLine": 79,
+          "endLine": 86,
           "file": "Layer1/Sample/Lib/Lib.cpp",
-          "line": 72
+          "line": 79
         },
         "name": "libLinearScale",
         "precondition": {
@@ -833,7 +595,7 @@
         },
         "qualifiedName": "libLinearScale",
         "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_LIB_09",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_LIB_06",
         "testSteps": [
           {
             "nodeId": "N1",
@@ -844,19 +606,19 @@
           {
             "nodeId": "N3",
             "number": "2",
-            "text": "Expect mock function libAbs, libNormalize; int sign = libSign().",
+            "text": "Call function libSign() with v, storing the result in sign; update abs_v, normed by mocking function libAbs(), libNormalize().",
             "type": "ACTION"
           },
           {
             "nodeId": "N4",
             "number": "3",
-            "text": "Expect mock function libMultiply; int scaled = libMultiply().",
+            "text": "Update scaled by mocking function libMultiply().",
             "type": "ACTION"
           },
           {
             "nodeId": "N5",
             "number": "4",
-            "text": "Expect mock function libMultiply; return libMultiply().",
+            "text": "Expect return value from the return of mock function libMultiply() with scaled, sign inputs.",
             "type": "RETURN"
           }
         ],
@@ -966,313 +728,7 @@
           {
             "nodeId": "N3",
             "number": "2",
-            "text": "Expect mock function libAdd; return libAdd().",
-            "type": "RETURN"
-          }
-        ],
-        "unitKey": "Layer1.Sample-Core|Core",
-        "unitName": "Core"
-      },
-      {
-        "expected": {
-          "globals": [],
-          "mockFunctions": [],
-          "outParameters": [],
-          "returns": [
-            {
-              "expression": "h * 2",
-              "source": "h * 2",
-              "step": "3.1",
-              "text": "Successfully returned h * 2"
-            },
-            {
-              "expression": "coreSwitch()",
-              "source": "coreSwitch(x % 4)",
-              "step": "3.2",
-              "text": "Successfully returned coreSwitch() [coreSwitch(x % 4)]"
-            }
-          ]
-        },
-        "functionId": "Layer1.Sample-Core|Core|coreCompute|int",
-        "generationMethod": "Analysis of Requirements",
-        "input": {
-          "entries": [
-            {
-              "kind": "parameter",
-              "name": "x",
-              "text": "int x[-0x80000000-0x7FFFFFFF]",
-              "type": "int"
-            }
-          ],
-          "isVoid": false
-        },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_02",
-        "location": {
-          "endLine": 62,
-          "file": "Layer1/Sample/Core/Core.cpp",
-          "line": 55
-        },
-        "name": "coreCompute",
-        "precondition": {
-          "globals": [],
-          "mockFunctions": [],
-          "mocks": [],
-          "parameters": [
-            {
-              "name": "x",
-              "text": "int x",
-              "type": "int"
-            }
-          ]
-        },
-        "qualifiedName": "coreCompute",
-        "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_02",
-        "testSteps": [
-          {
-            "nodeId": "N1",
-            "number": "1",
-            "text": "Issue function coreCompute with inputs x.",
-            "type": "START"
-          },
-          {
-            "nodeId": "N3",
-            "number": "2",
-            "text": "int h = coreHelper().",
-            "type": "ACTION"
-          },
-          {
-            "nodeId": "N4",
-            "number": "3",
-            "text": "Check whether h > 0.",
-            "type": "DECISION"
-          },
-          {
-            "nodeId": "N5",
-            "number": "3.1",
-            "text": "True: Return h * 2.",
-            "type": "RETURN"
-          },
-          {
-            "nodeId": "N6",
-            "number": "3.2",
-            "text": "False: Return coreSwitch().",
-            "type": "RETURN"
-          }
-        ],
-        "unitKey": "Layer1.Sample-Core|Core",
-        "unitName": "Core"
-      },
-      {
-        "expected": {
-          "globals": [],
-          "mockFunctions": [],
-          "outParameters": [],
-          "returns": [
-            {
-              "expression": "sum",
-              "source": "sum",
-              "step": "4",
-              "text": "Successfully returned sum"
-            }
-          ]
-        },
-        "functionId": "Layer1.Sample-Core|Core|coreLoopSum|int",
-        "generationMethod": "Analysis of Requirements",
-        "input": {
-          "entries": [
-            {
-              "kind": "parameter",
-              "name": "n",
-              "text": "int n[-0x80000000-0x7FFFFFFF]",
-              "type": "int"
-            }
-          ],
-          "isVoid": false
-        },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_03",
-        "location": {
-          "endLine": 70,
-          "file": "Layer1/Sample/Core/Core.cpp",
-          "line": 64
-        },
-        "name": "coreLoopSum",
-        "precondition": {
-          "globals": [],
-          "mockFunctions": [],
-          "mocks": [],
-          "parameters": [
-            {
-              "name": "n",
-              "text": "int n",
-              "type": "int"
-            }
-          ]
-        },
-        "qualifiedName": "coreLoopSum",
-        "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_03",
-        "testSteps": [
-          {
-            "nodeId": "N1",
-            "number": "1",
-            "text": "Issue function coreLoopSum with inputs n.",
-            "type": "START"
-          },
-          {
-            "nodeId": "N3",
-            "number": "2",
-            "text": "int sum = 0.",
-            "type": "ACTION"
-          },
-          {
-            "nodeId": "N4",
-            "number": "3",
-            "text": "Repeat for (int i = 0; i < n; ++i).",
-            "type": "LOOP_HEAD"
-          },
-          {
-            "nodeId": "N5",
-            "number": "3.1",
-            "text": "True: sum += i.",
-            "type": "ACTION"
-          },
-          {
-            "nodeId": "N6",
-            "number": "4",
-            "text": "Return sum.",
-            "type": "RETURN"
-          }
-        ],
-        "unitKey": "Layer1.Sample-Core|Core",
-        "unitName": "Core"
-      },
-      {
-        "expected": {
-          "globals": [],
-          "mockFunctions": [],
-          "outParameters": [],
-          "returns": [
-            {
-              "expression": "s == STATUS_OK ? STATUS_OK : STATUS_ERR",
-              "source": "s == STATUS_OK ? STATUS_OK : STATUS_ERR",
-              "step": "2",
-              "text": "Successfully returned s == STATUS_OK ? STATUS_OK : STATUS_ERR"
-            }
-          ]
-        },
-        "functionId": "Layer1.Sample-Core|Core|coreCheck|Status",
-        "generationMethod": "Analysis of Requirements",
-        "input": {
-          "entries": [
-            {
-              "kind": "parameter",
-              "name": "s",
-              "text": "Status s[-1-1]",
-              "type": "Status"
-            }
-          ],
-          "isVoid": false
-        },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_04",
-        "location": {
-          "endLine": 74,
-          "file": "Layer1/Sample/Core/Core.cpp",
-          "line": 72
-        },
-        "name": "coreCheck",
-        "precondition": {
-          "globals": [],
-          "mockFunctions": [],
-          "mocks": [],
-          "parameters": [
-            {
-              "name": "s",
-              "text": "Status s",
-              "type": "Status"
-            }
-          ]
-        },
-        "qualifiedName": "coreCheck",
-        "returnType": "Status",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_04",
-        "testSteps": [
-          {
-            "nodeId": "N1",
-            "number": "1",
-            "text": "Issue function coreCheck with inputs s.",
-            "type": "START"
-          },
-          {
-            "nodeId": "N3",
-            "number": "2",
-            "text": "Return s == STATUS_OK ? STATUS_OK : STATUS_ERR.",
-            "type": "RETURN"
-          }
-        ],
-        "unitKey": "Layer1.Sample-Core|Core",
-        "unitName": "Core"
-      },
-      {
-        "expected": {
-          "globals": [],
-          "mockFunctions": [],
-          "outParameters": [],
-          "returns": [
-            {
-              "expression": "p.x + p.y",
-              "source": "p.x + p.y",
-              "step": "2",
-              "text": "Successfully returned p.x + p.y"
-            }
-          ]
-        },
-        "functionId": "Layer1.Sample-Core|Core|coreSumPoint|Point",
-        "generationMethod": "Analysis of Requirements",
-        "input": {
-          "entries": [
-            {
-              "kind": "parameter",
-              "name": "p",
-              "text": "Point p",
-              "type": "Point"
-            }
-          ],
-          "isVoid": false
-        },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_05",
-        "location": {
-          "endLine": 78,
-          "file": "Layer1/Sample/Core/Core.cpp",
-          "line": 76
-        },
-        "name": "coreSumPoint",
-        "precondition": {
-          "globals": [],
-          "mockFunctions": [],
-          "mocks": [],
-          "parameters": [
-            {
-              "name": "p",
-              "text": "Point p",
-              "type": "Point"
-            }
-          ]
-        },
-        "qualifiedName": "coreSumPoint",
-        "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_05",
-        "testSteps": [
-          {
-            "nodeId": "N1",
-            "number": "1",
-            "text": "Issue function coreSumPoint with inputs p.",
-            "type": "START"
-          },
-          {
-            "nodeId": "N3",
-            "number": "2",
-            "text": "Return p.x + p.y.",
+            "text": "Expect return value from the return of mock function libAdd() with a, b inputs.",
             "type": "RETURN"
           }
         ],
@@ -1310,7 +766,7 @@
           ],
           "isVoid": false
         },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_06",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_02",
         "location": {
           "endLine": 82,
           "file": "Layer1/Sample/Core/Core.cpp",
@@ -1338,7 +794,7 @@
         },
         "qualifiedName": "coreSetResult",
         "returnType": "void",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_06",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_02",
         "testSteps": [
           {
             "nodeId": "N1",
@@ -1349,7 +805,7 @@
           {
             "nodeId": "N3",
             "number": "2",
-            "text": "g_result = v.",
+            "text": "Set g_result to v.",
             "type": "ACTION"
           }
         ],
@@ -1397,7 +853,7 @@
           ],
           "isVoid": false
         },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_07",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_03",
         "location": {
           "endLine": 86,
           "file": "Layer1/Sample/Core/Core.cpp",
@@ -1443,7 +899,7 @@
         },
         "qualifiedName": "coreProcess",
         "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_07",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_03",
         "testSteps": [
           {
             "nodeId": "N1",
@@ -1454,7 +910,7 @@
           {
             "nodeId": "N3",
             "number": "2",
-            "text": "Expect mock function libNormalize; return libNormalize().",
+            "text": "Expect return value from the return of mock function libNormalize() with a, b inputs.",
             "type": "RETURN"
           }
         ],
@@ -1523,7 +979,7 @@
           ],
           "isVoid": false
         },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_08",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_04",
         "location": {
           "endLine": 94,
           "file": "Layer1/Sample/Core/Core.cpp",
@@ -1623,7 +1079,7 @@
         },
         "qualifiedName": "coreOrchestrate",
         "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_08",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_04",
         "testSteps": [
           {
             "nodeId": "N1",
@@ -1634,85 +1090,19 @@
           {
             "nodeId": "N3",
             "number": "2",
-            "text": "Expect mock function libAdd, libNormalize, utilCompute; int sum = libAdd().",
+            "text": "Update sum, norm, comp by mocking function libAdd(), libNormalize(), utilCompute().",
             "type": "ACTION"
           },
           {
             "nodeId": "N4",
             "number": "3",
-            "text": "Expect mock function utilScale; int scale = utilScale().",
+            "text": "Update scale by mocking function utilScale().",
             "type": "ACTION"
           },
           {
             "nodeId": "N5",
             "number": "4",
             "text": "Return sum + norm + comp + scale.",
-            "type": "RETURN"
-          }
-        ],
-        "unitKey": "Layer1.Sample-Core|Core",
-        "unitName": "Core"
-      },
-      {
-        "expected": {
-          "globals": [],
-          "mockFunctions": [],
-          "outParameters": [],
-          "returns": [
-            {
-              "expression": "m",
-              "source": "m",
-              "step": "2",
-              "text": "Successfully returned m"
-            }
-          ]
-        },
-        "functionId": "Layer1.Sample-Core|Core|coreSetMode|Mode",
-        "generationMethod": "Analysis of Requirements",
-        "input": {
-          "entries": [
-            {
-              "kind": "parameter",
-              "name": "m",
-              "text": "Mode m[0-1]",
-              "type": "Mode"
-            }
-          ],
-          "isVoid": false
-        },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_09",
-        "location": {
-          "endLine": 98,
-          "file": "Layer1/Sample/Core/Core.cpp",
-          "line": 96
-        },
-        "name": "coreSetMode",
-        "precondition": {
-          "globals": [],
-          "mockFunctions": [],
-          "mocks": [],
-          "parameters": [
-            {
-              "name": "m",
-              "text": "Mode m",
-              "type": "Mode"
-            }
-          ]
-        },
-        "qualifiedName": "coreSetMode",
-        "returnType": "Mode",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_09",
-        "testSteps": [
-          {
-            "nodeId": "N1",
-            "number": "1",
-            "text": "Issue function coreSetMode with inputs m.",
-            "type": "START"
-          },
-          {
-            "nodeId": "N3",
-            "number": "2",
-            "text": "Return m.",
             "type": "RETURN"
           }
         ],
@@ -1746,7 +1136,7 @@
           ],
           "isVoid": false
         },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_10",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_05",
         "location": {
           "endLine": 110,
           "file": "Layer1/Sample/Core/Core.cpp",
@@ -1767,7 +1157,7 @@
         },
         "qualifiedName": "coreWhileCount",
         "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_10",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_05",
         "testSteps": [
           {
             "nodeId": "N1",
@@ -1778,7 +1168,7 @@
           {
             "nodeId": "N3",
             "number": "2",
-            "text": "int count = 0.",
+            "text": "Set count to 0.",
             "type": "ACTION"
           },
           {
@@ -1789,32 +1179,32 @@
           },
           {
             "nodeId": "",
-            "number": "3.1",
+            "number": "3.a",
             "text": "True:",
             "type": "LEG"
           },
           {
             "nodeId": "N5",
-            "number": "3.1.1",
-            "text": "count++.",
+            "number": "3.a.1",
+            "text": "Increment count by one.",
             "type": "ACTION"
           },
           {
             "nodeId": "N6",
-            "number": "3.1.2",
+            "number": "3.a.2",
             "text": "Check whether count > 1000.",
             "type": "DECISION"
           },
           {
             "nodeId": "N7",
-            "number": "3.1.2.1",
+            "number": "3.a.2.a",
             "text": "True: Exit the loop.",
             "type": "BREAK"
           },
           {
             "nodeId": "",
-            "number": "3.1.2.2",
-            "text": "False: continue.",
+            "number": "3.a.2.b",
+            "text": "False: continue to step 4.",
             "type": ""
           },
           {
@@ -1840,25 +1230,25 @@
             {
               "expression": "libAdd()",
               "source": "libAdd(a, b)",
-              "step": "2.1.1.1",
+              "step": "2.a.1.a",
               "text": "Successfully returned libAdd() [libAdd(a, b)]"
             },
             {
               "expression": "utilCompute()",
               "source": "utilCompute(a, -b)",
-              "step": "2.1.1.2",
+              "step": "2.a.1.b",
               "text": "Successfully returned utilCompute() [utilCompute(a, -b)]"
             },
             {
               "expression": "libNormalize()",
               "source": "libNormalize(b, a < -100 ? 100 : -a)",
-              "step": "2.2.1.1",
+              "step": "2.b.1.a",
               "text": "Successfully returned libNormalize() [libNormalize(b, a < -100 ? 100 : -a)]"
             },
             {
               "expression": "0",
               "source": "0",
-              "step": "2.2.1.2",
+              "step": "2.b.1.b",
               "text": "Successfully returned 0"
             }
           ]
@@ -1900,7 +1290,7 @@
           ],
           "isVoid": false
         },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_11",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_06",
         "location": {
           "endLine": 127,
           "file": "Layer1/Sample/Core/Core.cpp",
@@ -1982,7 +1372,7 @@
         },
         "qualifiedName": "coreNestedBranch",
         "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_11",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_06",
         "testSteps": [
           {
             "nodeId": "N1",
@@ -1998,49 +1388,49 @@
           },
           {
             "nodeId": "",
-            "number": "2.1",
+            "number": "2.a",
             "text": "True:",
             "type": "LEG"
           },
           {
             "nodeId": "N4",
-            "number": "2.1.1",
+            "number": "2.a.1",
             "text": "Check whether b > 0.",
             "type": "DECISION"
           },
           {
             "nodeId": "N5",
-            "number": "2.1.1.1",
-            "text": "True: Expect mock function libAdd; return libAdd().",
+            "number": "2.a.1.a",
+            "text": "True: Expect return value from the return of mock function libAdd() with a, b inputs.",
             "type": "RETURN"
           },
           {
             "nodeId": "N6",
-            "number": "2.1.1.2",
-            "text": "False: Expect mock function utilCompute; return utilCompute().",
+            "number": "2.a.1.b",
+            "text": "False: Expect return value from the return of mock function utilCompute() with a, -b inputs.",
             "type": "RETURN"
           },
           {
             "nodeId": "",
-            "number": "2.2",
+            "number": "2.b",
             "text": "False:",
             "type": "LEG"
           },
           {
             "nodeId": "N7",
-            "number": "2.2.1",
+            "number": "2.b.1",
             "text": "Check whether b > 0.",
             "type": "DECISION"
           },
           {
             "nodeId": "N8",
-            "number": "2.2.1.1",
-            "text": "True: Expect mock function libNormalize; return libNormalize().",
+            "number": "2.b.1.a",
+            "text": "True: Expect return value from the return of mock function libNormalize() with b, a < -100 ? 100 : -a inputs.",
             "type": "RETURN"
           },
           {
             "nodeId": "N9",
-            "number": "2.2.1.2",
+            "number": "2.b.1.b",
             "text": "False: Return 0.",
             "type": "RETURN"
           }
@@ -2057,25 +1447,25 @@
             {
               "expression": "-1",
               "source": "-1",
-              "step": "2.1",
+              "step": "2.a",
               "text": "Successfully returned -1"
             },
             {
               "expression": "0",
               "source": "0",
-              "step": "2.2.1.1",
+              "step": "2.b.1.a",
               "text": "Successfully returned 0"
             },
             {
               "expression": "coreValidate()",
               "source": "coreValidate(10000)",
-              "step": "2.2.1.2.1.1",
+              "step": "2.b.1.b.1.a",
               "text": "Successfully returned coreValidate() [coreValidate(10000)]"
             },
             {
               "expression": "coreValidate()",
               "source": "coreValidate(x)",
-              "step": "2.2.1.2.1.2",
+              "step": "2.b.1.b.1.b",
               "text": "Successfully returned coreValidate() [coreValidate(x)]"
             }
           ]
@@ -2093,7 +1483,7 @@
           ],
           "isVoid": false
         },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_12",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_07",
         "location": {
           "endLine": 141,
           "file": "Layer1/Sample/Core/Core.cpp",
@@ -2114,7 +1504,7 @@
         },
         "qualifiedName": "coreEarlyReturn",
         "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_12",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_07",
         "testSteps": [
           {
             "nodeId": "N1",
@@ -2130,49 +1520,49 @@
           },
           {
             "nodeId": "N4",
-            "number": "2.1",
+            "number": "2.a",
             "text": "True: Return -1.",
             "type": "RETURN"
           },
           {
             "nodeId": "",
-            "number": "2.2",
+            "number": "2.b",
             "text": "False:",
             "type": "LEG"
           },
           {
             "nodeId": "N5",
-            "number": "2.2.1",
+            "number": "2.b.1",
             "text": "Check whether x == 0.",
             "type": "DECISION"
           },
           {
             "nodeId": "N6",
-            "number": "2.2.1.1",
+            "number": "2.b.1.a",
             "text": "True: Return 0.",
             "type": "RETURN"
           },
           {
             "nodeId": "",
-            "number": "2.2.1.2",
+            "number": "2.b.1.b",
             "text": "False:",
             "type": "LEG"
           },
           {
             "nodeId": "N7",
-            "number": "2.2.1.2.1",
+            "number": "2.b.1.b.1",
             "text": "Check whether x > 10000.",
             "type": "DECISION"
           },
           {
             "nodeId": "N8",
-            "number": "2.2.1.2.1.1",
+            "number": "2.b.1.b.1.a",
             "text": "True: Return coreValidate().",
             "type": "RETURN"
           },
           {
             "nodeId": "N9",
-            "number": "2.2.1.2.1.2",
+            "number": "2.b.1.b.1.b",
             "text": "False: Return coreValidate().",
             "type": "RETURN"
           }
@@ -2222,7 +1612,7 @@
           ],
           "isVoid": false
         },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_13",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_08",
         "location": {
           "endLine": 149,
           "file": "Layer1/Sample/Core/Core.cpp",
@@ -2281,7 +1671,7 @@
         },
         "qualifiedName": "corePipeline",
         "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_13",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_08",
         "testSteps": [
           {
             "nodeId": "N1",
@@ -2292,7 +1682,7 @@
           {
             "nodeId": "N3",
             "number": "2",
-            "text": "Expect mock function libNormalize, utilScale; int validated = coreValidate().",
+            "text": "Call function coreValidate() with v, storing the result in validated; update normalized, scaled by mocking function libNormalize(), utilScale().",
             "type": "ACTION"
           },
           {
@@ -2346,7 +1736,7 @@
           ],
           "isVoid": false
         },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_14",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_09",
         "location": {
           "endLine": 159,
           "file": "Layer1/Sample/Core/Core.cpp",
@@ -2392,7 +1782,7 @@
         },
         "qualifiedName": "coreDoWhileClamp",
         "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_14",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_09",
         "testSteps": [
           {
             "nodeId": "N1",
@@ -2403,13 +1793,13 @@
           {
             "nodeId": "N3",
             "number": "2",
-            "text": "int result = v.",
+            "text": "Set result to v.",
             "type": "ACTION"
           },
           {
             "nodeId": "N4",
             "number": "3",
-            "text": "Expect mock function libNormalize; result = libNormalize().",
+            "text": "Update result by mocking function libNormalize().",
             "type": "ACTION"
           },
           {
@@ -2420,8 +1810,8 @@
           },
           {
             "nodeId": "",
-            "number": "4.1",
-            "text": "True: continue.",
+            "number": "4.a",
+            "text": "True: continue to step 5.",
             "type": ""
           },
           {
@@ -2509,7 +1899,7 @@
           ],
           "isVoid": false
         },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_15",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_10",
         "location": {
           "endLine": 169,
           "file": "Layer1/Sample/Core/Core.cpp",
@@ -2628,7 +2018,7 @@
         },
         "qualifiedName": "coreMultiCallChain",
         "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_15",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_10",
         "testSteps": [
           {
             "nodeId": "N1",
@@ -2639,13 +2029,13 @@
           {
             "nodeId": "N3",
             "number": "2",
-            "text": "Expect mock function libAdd, libMultiply, utilCompute; int sum = libAdd().",
+            "text": "Update sum, product, computed by mocking function libAdd(), libMultiply(), utilCompute().",
             "type": "ACTION"
           },
           {
             "nodeId": "N4",
             "number": "3",
-            "text": "Expect mock function utilScale, utilChain; int scaled = utilScale().",
+            "text": "Update scaled, chained by mocking function utilScale(), utilChain().",
             "type": "ACTION"
           },
           {
@@ -2653,238 +2043,6 @@
             "number": "4",
             "text": "Return chained.",
             "type": "RETURN"
-          }
-        ],
-        "unitKey": "Layer1.Sample-Core|Core",
-        "unitName": "Core"
-      },
-      {
-        "expected": {
-          "globals": [],
-          "mockFunctions": [],
-          "outParameters": [],
-          "returns": [
-            {
-              "expression": "budget & SHARED_MASK",
-              "source": "budget & SHARED_MASK",
-              "step": "4",
-              "text": "Successfully returned budget & SHARED_MASK"
-            }
-          ]
-        },
-        "functionId": "Layer1.Sample-Core|Core|coreLevelBudget|SharedLevel",
-        "generationMethod": "Analysis of Requirements",
-        "input": {
-          "entries": [
-            {
-              "kind": "parameter",
-              "name": "lvl",
-              "text": "SharedLevel lvl[0-2]",
-              "type": "SharedLevel"
-            }
-          ],
-          "isVoid": false
-        },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_16",
-        "location": {
-          "endLine": 179,
-          "file": "Layer1/Sample/Core/Core.cpp",
-          "line": 171
-        },
-        "name": "coreLevelBudget",
-        "precondition": {
-          "globals": [],
-          "mockFunctions": [],
-          "mocks": [],
-          "parameters": [
-            {
-              "name": "lvl",
-              "text": "SharedLevel lvl",
-              "type": "SharedLevel"
-            }
-          ]
-        },
-        "qualifiedName": "coreLevelBudget",
-        "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_16",
-        "testSteps": [
-          {
-            "nodeId": "N1",
-            "number": "1",
-            "text": "Issue function coreLevelBudget with inputs lvl.",
-            "type": "START"
-          },
-          {
-            "nodeId": "N3",
-            "number": "2",
-            "text": "int budget = SHARED_MAX_ITEMS.",
-            "type": "ACTION"
-          },
-          {
-            "nodeId": "N4",
-            "number": "3",
-            "text": "Check whether lvl == LEVEL_HIGH.",
-            "type": "DECISION"
-          },
-          {
-            "nodeId": "N5",
-            "number": "3.1",
-            "text": "True: budget = SHARED_MIN_ITEMS.",
-            "type": "ACTION"
-          },
-          {
-            "nodeId": "N6",
-            "number": "4",
-            "text": "Return budget & SHARED_MASK.",
-            "type": "RETURN"
-          }
-        ],
-        "unitKey": "Layer1.Sample-Core|Core",
-        "unitName": "Core"
-      },
-      {
-        "expected": {
-          "globals": [],
-          "mockFunctions": [],
-          "outParameters": [],
-          "returns": [
-            {
-              "expression": "g_count",
-              "source": "g_count",
-              "step": "2",
-              "text": "Successfully returned g_count"
-            }
-          ]
-        },
-        "functionId": "Layer1.Sample-Core|Core|coreGetCount|",
-        "generationMethod": "Analysis of Requirements",
-        "input": {
-          "entries": [
-            {
-              "globalId": "Layer1.Sample-Core|Core|g_count",
-              "kind": "global",
-              "name": "g_count",
-              "text": "int g_count[-0x80000000-0x7FFFFFFF]",
-              "type": "int"
-            }
-          ],
-          "isVoid": false
-        },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_17",
-        "location": {
-          "endLine": 183,
-          "file": "Layer1/Sample/Core/Core.cpp",
-          "line": 181
-        },
-        "name": "coreGetCount",
-        "precondition": {
-          "globals": [
-            {
-              "globalId": "Layer1.Sample-Core|Core|g_count",
-              "name": "g_count",
-              "text": "int g_count",
-              "type": "int"
-            }
-          ],
-          "mockFunctions": [],
-          "mocks": [],
-          "parameters": []
-        },
-        "qualifiedName": "coreGetCount",
-        "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_17",
-        "testSteps": [
-          {
-            "nodeId": "N1",
-            "number": "1",
-            "text": "Issue function coreGetCount with input VOID.",
-            "type": "START"
-          },
-          {
-            "nodeId": "N3",
-            "number": "2",
-            "text": "Return g_count.",
-            "type": "RETURN"
-          }
-        ],
-        "unitKey": "Layer1.Sample-Core|Core",
-        "unitName": "Core"
-      },
-      {
-        "expected": {
-          "globals": [
-            {
-              "globalId": "Layer1.Sample-Core|Core|g_count",
-              "kind": "global",
-              "name": "g_count",
-              "steps": [
-                "2"
-              ],
-              "text": "int g_count[-0x80000000-0x7FFFFFFF]",
-              "type": "int"
-            },
-            {
-              "globalId": "Layer1.Sample-Core|Core|g_result",
-              "kind": "global",
-              "name": "g_result",
-              "steps": [
-                "2"
-              ],
-              "text": "int g_result[-0x80000000-0x7FFFFFFF]",
-              "type": "int"
-            }
-          ],
-          "mockFunctions": [],
-          "outParameters": [],
-          "returns": []
-        },
-        "functionId": "Layer1.Sample-Core|Core|coreReset|",
-        "generationMethod": "Analysis of Requirements",
-        "input": {
-          "entries": [],
-          "isVoid": true
-        },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_18",
-        "location": {
-          "endLine": 188,
-          "file": "Layer1/Sample/Core/Core.cpp",
-          "line": 185
-        },
-        "name": "coreReset",
-        "precondition": {
-          "globals": [
-            {
-              "globalId": "Layer1.Sample-Core|Core|g_count",
-              "name": "g_count",
-              "text": "int g_count",
-              "type": "int"
-            },
-            {
-              "globalId": "Layer1.Sample-Core|Core|g_result",
-              "name": "g_result",
-              "text": "int g_result",
-              "type": "int"
-            }
-          ],
-          "mockFunctions": [],
-          "mocks": [],
-          "parameters": []
-        },
-        "qualifiedName": "coreReset",
-        "returnType": "void",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORE_18",
-        "testSteps": [
-          {
-            "nodeId": "N1",
-            "number": "1",
-            "text": "Issue function coreReset with input VOID.",
-            "type": "START"
-          },
-          {
-            "nodeId": "N3",
-            "number": "2",
-            "text": "g_result = 0.",
-            "type": "ACTION"
           }
         ],
         "unitKey": "Layer1.Sample-Core|Core",
@@ -2995,13 +2153,13 @@
             {
               "expression": "0",
               "source": "0",
-              "step": "2.1",
+              "step": "2.a",
               "text": "Successfully returned 0"
             },
             {
               "expression": "utilClip()",
               "source": "utilClip(v * factor, -10000, 10000)",
-              "step": "2.2",
+              "step": "2.b",
               "text": "Successfully returned utilClip() [utilClip(v * factor, -10000, 10000)]"
             }
           ]
@@ -3067,13 +2225,13 @@
           },
           {
             "nodeId": "N4",
-            "number": "2.1",
+            "number": "2.a",
             "text": "True: Return 0.",
             "type": "RETURN"
           },
           {
             "nodeId": "N5",
-            "number": "2.2",
+            "number": "2.b",
             "text": "False: Return utilClip().",
             "type": "RETURN"
           }
@@ -3090,13 +2248,13 @@
             {
               "expression": "-v",
               "source": "-v",
-              "step": "2.1",
+              "step": "2.a",
               "text": "Successfully returned -v"
             },
             {
               "expression": "v",
               "source": "v",
-              "step": "2.2",
+              "step": "2.b",
               "text": "Successfully returned v"
             }
           ]
@@ -3151,13 +2309,13 @@
           },
           {
             "nodeId": "N4",
-            "number": "2.1",
+            "number": "2.a",
             "text": "True: Return -v.",
             "type": "RETURN"
           },
           {
             "nodeId": "N5",
-            "number": "2.2",
+            "number": "2.b",
             "text": "False: Return v.",
             "type": "RETURN"
           }
@@ -3169,207 +2327,6 @@
         "expected": {
           "globals": [],
           "mockFunctions": [],
-          "outParameters": [],
-          "returns": [
-            {
-              "expression": "utilClip()",
-              "source": "utilClip(v, lo, hi)",
-              "step": "2",
-              "text": "Successfully returned utilClip() [utilClip(v, lo, hi)]"
-            }
-          ]
-        },
-        "functionId": "Layer1.Util|Util|utilClamp|int,int,int",
-        "generationMethod": "Analysis of Requirements",
-        "input": {
-          "entries": [
-            {
-              "kind": "parameter",
-              "name": "v",
-              "text": "int v[-0x80000000-0x7FFFFFFF]",
-              "type": "int"
-            },
-            {
-              "kind": "parameter",
-              "name": "lo",
-              "text": "int lo[-0x80000000-0x7FFFFFFF]",
-              "type": "int"
-            },
-            {
-              "kind": "parameter",
-              "name": "hi",
-              "text": "int hi[-0x80000000-0x7FFFFFFF]",
-              "type": "int"
-            }
-          ],
-          "isVoid": false
-        },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_04",
-        "location": {
-          "endLine": 49,
-          "file": "Layer1/Sample/Util/Util.cpp",
-          "line": 46
-        },
-        "name": "utilClamp",
-        "precondition": {
-          "globals": [],
-          "mockFunctions": [],
-          "mocks": [],
-          "parameters": [
-            {
-              "name": "v",
-              "text": "int v",
-              "type": "int"
-            },
-            {
-              "name": "lo",
-              "text": "int lo",
-              "type": "int"
-            },
-            {
-              "name": "hi",
-              "text": "int hi",
-              "type": "int"
-            }
-          ]
-        },
-        "qualifiedName": "utilClamp",
-        "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_UTIL_04",
-        "testSteps": [
-          {
-            "nodeId": "N1",
-            "number": "1",
-            "text": "Issue function utilClamp with inputs v, lo, hi.",
-            "type": "START"
-          },
-          {
-            "nodeId": "N3",
-            "number": "2",
-            "text": "Return utilClip().",
-            "type": "RETURN"
-          }
-        ],
-        "unitKey": "Layer1.Util|Util",
-        "unitName": "Util"
-      },
-      {
-        "expected": {
-          "globals": [],
-          "mockFunctions": [
-            "utilCompute()"
-          ],
-          "outParameters": [],
-          "returns": [
-            {
-              "expression": "utilCompute()",
-              "source": "utilCompute(clipped, 0)",
-              "step": "3",
-              "text": "Successfully returned utilCompute() [utilCompute(clipped, 0)]"
-            }
-          ]
-        },
-        "functionId": "Layer1.Util|Util|utilNorm|int,int",
-        "generationMethod": "Analysis of Requirements",
-        "input": {
-          "entries": [
-            {
-              "kind": "parameter",
-              "name": "v",
-              "text": "int v[-0x80000000-0x7FFFFFFF]",
-              "type": "int"
-            },
-            {
-              "kind": "parameter",
-              "name": "max",
-              "text": "int max[-0x80000000-0x7FFFFFFF]",
-              "type": "int"
-            },
-            {
-              "kind": "mockReturn",
-              "name": "utilCompute()",
-              "text": "int utilCompute()[-0x80000000-0x7FFFFFFF]",
-              "type": "int"
-            }
-          ],
-          "isVoid": false
-        },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_05",
-        "location": {
-          "endLine": 55,
-          "file": "Layer1/Sample/Util/Util.cpp",
-          "line": 51
-        },
-        "name": "utilNorm",
-        "precondition": {
-          "globals": [],
-          "mockFunctions": [
-            "utilCompute()"
-          ],
-          "mocks": [
-            {
-              "declaredIn": "Layer1/Sample/Util/Util.h",
-              "functionId": "Layer1.Util|Util|utilCompute|int,int",
-              "name": "utilCompute",
-              "parameters": [
-                {
-                  "name": "a",
-                  "type": "int"
-                },
-                {
-                  "name": "b",
-                  "type": "int"
-                }
-              ],
-              "qualifiedName": "utilCompute",
-              "returnType": "int"
-            }
-          ],
-          "parameters": [
-            {
-              "name": "v",
-              "text": "int v",
-              "type": "int"
-            },
-            {
-              "name": "max",
-              "text": "int max",
-              "type": "int"
-            }
-          ]
-        },
-        "qualifiedName": "utilNorm",
-        "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_UTIL_05",
-        "testSteps": [
-          {
-            "nodeId": "N1",
-            "number": "1",
-            "text": "Issue function utilNorm with inputs v, max.",
-            "type": "START"
-          },
-          {
-            "nodeId": "N3",
-            "number": "2",
-            "text": "int clipped = utilClip().",
-            "type": "ACTION"
-          },
-          {
-            "nodeId": "N4",
-            "number": "3",
-            "text": "Expect mock function utilCompute; return utilCompute().",
-            "type": "RETURN"
-          }
-        ],
-        "unitKey": "Layer1.Util|Util",
-        "unitName": "Util"
-      },
-      {
-        "expected": {
-          "globals": [],
-          "mockFunctions": [
-            "utilClamp()"
-          ],
           "outParameters": [],
           "returns": [
             {
@@ -3401,17 +2358,11 @@
               "name": "w",
               "text": "int w[-0x80000000-0x7FFFFFFF]",
               "type": "int"
-            },
-            {
-              "kind": "mockReturn",
-              "name": "utilClamp()",
-              "text": "int utilClamp()[-0x80000000-0x7FFFFFFF]",
-              "type": "int"
             }
           ],
           "isVoid": false
         },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_06",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_04",
         "location": {
           "endLine": 63,
           "file": "Layer1/Sample/Util/Util.cpp",
@@ -3420,32 +2371,8 @@
         "name": "utilBlend",
         "precondition": {
           "globals": [],
-          "mockFunctions": [
-            "utilClamp()"
-          ],
-          "mocks": [
-            {
-              "declaredIn": "Layer1/Sample/Util/Util.h",
-              "functionId": "Layer1.Util|Util|utilClamp|int,int,int",
-              "name": "utilClamp",
-              "parameters": [
-                {
-                  "name": "v",
-                  "type": "int"
-                },
-                {
-                  "name": "lo",
-                  "type": "int"
-                },
-                {
-                  "name": "hi",
-                  "type": "int"
-                }
-              ],
-              "qualifiedName": "utilClamp",
-              "returnType": "int"
-            }
-          ],
+          "mockFunctions": [],
+          "mocks": [],
           "parameters": [
             {
               "name": "a",
@@ -3466,7 +2393,7 @@
         },
         "qualifiedName": "utilBlend",
         "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_UTIL_06",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_UTIL_04",
         "testSteps": [
           {
             "nodeId": "N1",
@@ -3477,13 +2404,13 @@
           {
             "nodeId": "N3",
             "number": "2",
-            "text": "int wa = utilHalve().",
+            "text": "Call function utilHalve() with 100 - w, storing the result in wa; Call function utilHalve() with w, storing the result in wb; Set blend to a * wa + b * wb.",
             "type": "ACTION"
           },
           {
             "nodeId": "N4",
             "number": "3",
-            "text": "Expect mock function utilClamp; return utilClamp().",
+            "text": "Return utilClamp().",
             "type": "RETURN"
           }
         ],
@@ -3517,7 +2444,7 @@
           ],
           "isVoid": false
         },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_07",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_05",
         "location": {
           "endLine": 72,
           "file": "Layer1/Sample/Util/Util.cpp",
@@ -3538,7 +2465,7 @@
         },
         "qualifiedName": "utilLoopAccum",
         "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_UTIL_07",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_UTIL_05",
         "testSteps": [
           {
             "nodeId": "N1",
@@ -3549,7 +2476,7 @@
           {
             "nodeId": "N3",
             "number": "2",
-            "text": "int total = 0.",
+            "text": "Set total to 0.",
             "type": "ACTION"
           },
           {
@@ -3560,8 +2487,8 @@
           },
           {
             "nodeId": "N5",
-            "number": "3.1",
-            "text": "True: total += utilDouble().",
+            "number": "3.a",
+            "text": "True: Increment total by utilDouble(i).",
             "type": "ACTION"
           },
           {
@@ -3579,7 +2506,7 @@
           "globals": [],
           "mockFunctions": [
             "utilAbs()",
-            "utilNorm()",
+            "utilCompute()",
             "utilScale()"
           ],
           "outParameters": [],
@@ -3610,8 +2537,8 @@
             },
             {
               "kind": "mockReturn",
-              "name": "utilNorm()",
-              "text": "int utilNorm()[-0x80000000-0x7FFFFFFF]",
+              "name": "utilCompute()",
+              "text": "int utilCompute()[-0x80000000-0x7FFFFFFF]",
               "type": "int"
             },
             {
@@ -3623,7 +2550,7 @@
           ],
           "isVoid": false
         },
-        "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_08",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_06",
         "location": {
           "endLine": 80,
           "file": "Layer1/Sample/Util/Util.cpp",
@@ -3634,7 +2561,7 @@
           "globals": [],
           "mockFunctions": [
             "utilAbs()",
-            "utilNorm()",
+            "utilCompute()",
             "utilScale()"
           ],
           "mocks": [
@@ -3653,19 +2580,19 @@
             },
             {
               "declaredIn": "Layer1/Sample/Util/Util.h",
-              "functionId": "Layer1.Util|Util|utilNorm|int,int",
-              "name": "utilNorm",
+              "functionId": "Layer1.Util|Util|utilCompute|int,int",
+              "name": "utilCompute",
               "parameters": [
                 {
-                  "name": "v",
+                  "name": "a",
                   "type": "int"
                 },
                 {
-                  "name": "max",
+                  "name": "b",
                   "type": "int"
                 }
               ],
-              "qualifiedName": "utilNorm",
+              "qualifiedName": "utilCompute",
               "returnType": "int"
             },
             {
@@ -3696,7 +2623,7 @@
         },
         "qualifiedName": "utilChain",
         "returnType": "int",
-        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_UTIL_08",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_UTIL_06",
         "testSteps": [
           {
             "nodeId": "N1",
@@ -3707,7 +2634,7 @@
           {
             "nodeId": "N3",
             "number": "2",
-            "text": "Expect mock function utilAbs, utilNorm, utilScale; int abs_v = utilAbs().",
+            "text": "Update abs_v, scaled by mocking function utilAbs(), utilScale(); call function utilNorm() with abs_v, 500, storing the result in normed.",
             "type": "ACTION"
           },
           {
