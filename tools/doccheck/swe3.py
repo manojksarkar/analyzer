@@ -86,8 +86,17 @@ POLICIES = {
         "hasInterfaceTable": Policy("exact", MEDIUM, "unit interface table present"),
         "diagramCount":     Policy("exact", LOW, "unit diagrams"),
     },
+    # A header row is identified by the SYMBOL it declares, so the declaration and its
+    # value become compared FIELDS. Identifying it by the declaration text instead made the
+    # row's own value part of its identity: `#define MAXN 256` against `#define MAXN 512`
+    # read as one row missing and another appearing, and never as a changed value.
     "headerdef": {
-        "information": Policy("text", INFO, "information"),
+        "declKind":    Policy("exact", MEDIUM, "kind"),
+        "declaration": Policy("code", MEDIUM, "declaration"),
+        "value":       Policy("exact", MEDIUM, "value"),
+        # A struct's cell carries a sentence, not a value; a reworded sentence is not a
+        # defect, which is what "text" means here.
+        "description": Policy("text", INFO, "description"),
     },
     "function": {
         "risk":       Policy("exact", LOW, "Risk"),
@@ -340,8 +349,20 @@ def extract(blocks) -> Entity:
                 for i, row in enumerate(b.rows[1:]):
                     if not row or not row[0].text:
                         continue
-                    ent = Entity(kind="headerdef", name=row[0].text, index=i)
-                    ent.fields["information"] = row[1].text if len(row) > 1 else ""
+                    _kind, _sym, _norm = cells.declaration(row[0].text)
+                    _info = row[1].text if len(row) > 1 else ""
+                    # Fall back to the raw text as the name: a row nobody can parse must
+                    # still be a row, or the comparison loses it silently.
+                    ent = Entity(kind="headerdef", name=_sym or row[0].text, index=i)
+                    ent.fields["declKind"] = _kind or "unparsed"
+                    ent.fields["declaration"] = _norm or row[0].text
+                    # A value and a description are different fields because they deserve
+                    # different severities. A typedef gets either, depending on whether it
+                    # stands for an enum (values) or a struct (a sentence).
+                    if _kind in ("struct", "class") or (_kind == "typedef" and "=" not in _info):
+                        ent.fields["description"] = _info
+                    else:
+                        ent.fields["value"] = _info
                     unit.children.append(ent)
 
             elif component is not None and "component" in probe and "unit" in probe:

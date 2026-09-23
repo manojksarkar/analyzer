@@ -21,7 +21,7 @@ WIKI = "docs/spec/SWE3_WIKI.md"
 
 def _index(doc):
     """Lookups the attributions need, built once per document."""
-    units, functions, interfaces = {}, {}, {}
+    units, functions, interfaces, headerdefs = {}, {}, {}, {}
     for component in doc.of_kind("component"):
         for unit in component.of_kind("unit"):
             units[normalise_key(unit.name)] = unit
@@ -29,7 +29,10 @@ def _index(doc):
                 functions.setdefault(normalise_key(unit.name), set()).add(normalise_key(func.name))
             for iface in unit.of_kind("interface"):
                 interfaces.setdefault(normalise_key(unit.name), {})[normalise_key(iface.name)] = iface
-    return {"units": units, "functions": functions, "interfaces": interfaces}
+            for hd in unit.of_kind("headerdef"):
+                headerdefs.setdefault(normalise_key(unit.name), {})[normalise_key(hd.name)] = hd
+    return {"units": units, "functions": functions, "interfaces": interfaces,
+            "headerdefs": headerdefs}
 
 
 def _leaf(path):
@@ -96,6 +99,29 @@ def annotate(result, left, right):
             iface = li["interfaces"].get(unit_key, {}).get(leaf)
             if iface is not None and (iface.fields.get("interfaceType") or "").casefold().startswith("global"):
                 rule = ("a global variable is always In/Out (%s, 'Column 6')" % WIKI)
+
+        elif finding.kind == "extra" and "headerdef" in finding.summary:
+            # A header row only WE have. Since 2026-09-23 this table is not filtered by
+            # visibility, so a document written to the older rule is missing exactly the
+            # rows whose declaration says private -- a marking, or a class-scoped static.
+            # Reported at INFO with the rule, not as a defect against either document.
+            ent = ri["headerdefs"].get(unit_key, {}).get(leaf)
+            decl = ((ent.fields.get("declaration") if ent is not None else "") or "").upper()
+            if "PRIVATE" in decl or "PROTECTED" in decl or "STATIC" in decl or "::" in decl:
+                rule = ("the unit header table lists what a unit declares and uses, not what it "
+                        "publishes, so a private or file-local declaration belongs in it; a document "
+                        "written to the older rule leaves these out (%s, 'N.1.4 unit header table')" % WIKI)
+                demote = True
+
+        elif finding.kind == "missing" and "headerdef" in finding.summary:
+            # The mirror case: a row THEY have and we do not. A union or a `using` alias is
+            # the known one -- neither reaches our data dictionary at all, so no table of
+            # ours can carry it.
+            ent = li["headerdefs"].get(unit_key, {}).get(leaf)
+            decl = ((ent.fields.get("declaration") if ent is not None else "") or "").lower()
+            if decl.startswith("union ") or decl.startswith("using "):
+                rule = ("`union` and `using` declarations are not recorded by the parser at all, so no "
+                        "table of ours can list them (PROJECT_CONTEXT.md, 'Risk 8')")
 
         elif finding.kind == "differs" and finding.field in ("risk", "capacity"):
             rule = ("Risk is fixed at Medium and Capacity at Common; neither is worked out from "

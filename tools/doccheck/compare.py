@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 
 from . import match as matching
 from .model import (HIGH, INFO, LOW, MEDIUM, Policy, canonical_enum,
-                    is_placeholder, normalise_text)
+                    is_placeholder, normalise_code, normalise_text)
 
 _SEVERITY_ORDER = {HIGH: 0, MEDIUM: 1, LOW: 2, INFO: 3}
 
@@ -97,6 +97,10 @@ def _values_differ(policy, left, right, aliases):
     if how == "enum":
         return None, left, right                     # handled by the caller, needs the field name
 
+    if how == "code":
+        # A declaration, compared as code rather than as a string: see normalise_code.
+        return normalise_code(left) != normalise_code(right), left, right
+
     if how == "text":
         # Advisory: two ways of writing nothing are not a difference, and two
         # different sentences are only worth a line at INFO.
@@ -163,6 +167,22 @@ def _walk(result, level_of, policies, path, left, right, aliases, depth=0):
                 summary="%s count: %d -> %d" % (kind, len(lefts), len(rights)),
                 severity=LOW, left=len(lefts), right=len(rights),
             ))
+
+        # Then the same count BY SUB-KIND, where the entities carry one. Two documents can
+        # disagree about a whole category -- every private global, every struct -- and
+        # forty per-row findings say that forty times without ever naming it. One line per
+        # category, at the rung above the rows, is the shape that reads.
+        _sub = sorted({e.fields.get("declKind") for e in lefts + rights
+                       if e.fields.get("declKind")})
+        for sk in _sub:
+            la = sum(1 for e in lefts if e.fields.get("declKind") == sk)
+            rb = sum(1 for e in rights if e.fields.get("declKind") == sk)
+            if la != rb:
+                result.add(Finding(
+                    level=level, kind="count", path=path or "(document)",
+                    summary="%s %s count: %d -> %d" % (kind, sk, la, rb),
+                    severity=LOW, field="declKind", left=la, right=rb,
+                ))
 
         for entity in left_only:
             result.add(Finding(

@@ -113,6 +113,23 @@ def normalise_key(name: str) -> str:
     return s.casefold()
 
 
+_CODE_COMMENT_RE = re.compile(r"/\*.*?\*/|//[^\n]*", re.DOTALL)
+
+
+def normalise_code(value) -> str:
+    """A declaration reduced to what it declares.
+
+    Two authors wrap, indent and comment the same declaration differently, and none of
+    that changes what it declares. Comments go, every run of whitespace becomes one
+    space, and the space around punctuation goes too -- so `int  g_x=0 ;` and
+    `int g_x = 0;` are one declaration, while `int g_x = 1;` is not.
+    """
+    text = _CODE_COMMENT_RE.sub(" ", str(value or ""))
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r" ?([(){}\[\],;=:*&<>]) ?", r"\1", text)
+    return text
+
+
 def normalise_text(value) -> str:
     """Whitespace-collapsed, case-folded -- for `exact`.
 
