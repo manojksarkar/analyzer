@@ -208,6 +208,34 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-23c (**doccheck's terminal report redrawn for reading** — branch `fix/swe3-review-v1`,
+> `tools/doccheck/report.py` + `__main__.py`. Markdown and JSON output are UNCHANGED.)
+>
+> **Why.** Each finding printed as `old -> new` on one line: a declaration that lost two members printed
+> both ~400-char declarations; five ladder rows even when four were zero; no colour; one change in two units
+> printed twice.
+>
+> **Shape.** `− reference` / `+ compared` header (same file name → cut to the directory that differs) ·
+> ladder on ONE line (`L2 9`, `ok` for a clean rung; INFO never counts) · tree component → `unit › leaf`,
+> worst first · a finding's body is only what changed. **Diff is chosen from the VALUE's shape**
+> (`_value_view`), because `Finding` carries no policy: list → item diff (`normalise_text` keys); braced
+> string → member diff (`_block`: split at depth-0 `;`, at a function body's `}`, on `,` for enum /
+> initialiser; each member keeps its access label, so public→private shows as a change); else `old → new`
+> on one line, or `−`/`+` lines with changed words reverse-video (only when similarity ≥ 0.5). Trailing
+> unchanged runs are dropped; leading/middle ones print as `… N unchanged`. 8 rows per finding, never
+> splitting a −/+ pair; `--full` lifts that and lists INFO.
+> **Folding.** Identical `differs` (field, severity, rule, label, normalised values) prints once +
+> `≡ same change in …`; the ladder's own `missing`/`extra` at one path merge (`only in the reference:
+> interface [1], function`); a rule behind >1 finding prints in full once as `rule [n]`, then by number.
+> **Terminal.** `Style.for_stream`: colour + box-drawing + wrapping only on a tty; `--color
+> auto|always|never`, `NO_COLOR` honoured, Windows VT mode switched on via `SetConsoleMode`; non-tty =
+> plain ASCII, unwrapped. **Fancy glyphs are limited to what Consolas / Lucida Console / Courier New
+> carry** — ✓ ⋯ ↳ are not in them (checked) and draw as boxes in a console with no font fallback; hence
+> `ok`, `…`, `≡`.
+> **Also:** `--self` / `--pair` render through the same tree (`self_text`, `pair_text`), and compare mode
+> now PRINTS both self-check lists (before, only markdown/JSON had them). Tests:
+> `tests/unit/test_doccheck_report.py` (24); doccheck suite 665 green.
+
 > Updated: 2026-09-23b (**struct / class / union are listed in the unit header table, and the client
 > answered the whole question list** — branch `fix/swe3-review-v1`. `wip/swe3-unit-header-structs` is
 > SUPERSEDED: its rule was "methods out", and the answer is "methods in, bodies out". Do not cherry-pick it.)
