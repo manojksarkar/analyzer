@@ -340,7 +340,7 @@ passed for a local path, so it does not.)
 Every flag it takes, in one line:
 
 ```
-python analyzer.py generate --project-id myproj --commit <sha> --version-id v2 --branch main --scope "group:Support" --source D:\code\my-cpp --config my-config.json --data-dict dd2024 --create-version --no-llm --full --base-version v1 --no-narrowed-parse --verify-parse --unit Utils --force
+python analyzer.py generate --project-id myproj --commit <sha> --version-id v2 --branch main --scope "group:Support" --source D:\code\my-cpp --config my-config.json --data-dict dd2024 --create-version --no-llm --full --base-version v1 --no-narrowed-parse --verify-parse --unit Utils --doc-type all --force
 ```
 
 | Flag | Effect |
@@ -359,6 +359,7 @@ python analyzer.py generate --project-id myproj --commit <sha> --version-id v2 -
 | `--no-narrowed-parse` | re-parse everything instead of only the changed translation units |
 | `--verify-parse` | run narrowed AND full, diff them, use the full one. Slow; for validation. |
 | `--unit <name>` | narrow the per-function FLOWCHART work to this unit. Repeatable. See below — it is a speed aid, not a scope. |
+| `--doc-type <t>` | which document(s) to emit: `swe3` (default), `swe4`, `all`, `swe2`, `both`. See [Document types](#document-types) |
 | `--force` | accepted; the commit dir is reused either way |
 
 `--full`, `--no-narrowed-parse` and `--verify-parse` are all "do it the slow way on purpose".
@@ -368,6 +369,31 @@ None belongs in a routine run.
 
 ```
 python analyzer.py generate --project-id myproj --version-id v7 --branch main --commit <sha> --scope "group:Support" --create-version --base-version v5
+```
+
+#### Document types
+
+`--doc-type` picks which document set a run emits. Parsing and deriving are shared; only the
+views and the export differ.
+
+| Value | Emits |
+|---|---|
+| `swe3` (default) | Software Detailed Design — `<Component>/software_detailed_design_<Component>.docx` |
+| `swe4` | Software Unit Test Specification — `<Component>/software_unit_test_specification_<Component>.docx` |
+| `all` | `swe3` + `swe4` |
+| `swe2` | Software Architecture Design — `Software Architecture Design Specification.docx` |
+| `both` | `swe3` + `swe2` |
+
+`swe3` and `swe4` follow `--scope` exactly as described under [Scoping](#scoping). **`swe2` does
+not**: it is one whole-model document covering every layer, whatever `--scope` says, and it
+widens the parse to every layer to do so. `--scope` still narrows the `swe3`/`swe4` half of
+`both`. `all` does not include `swe2`; ask for it with `both` or `swe2`.
+
+```
+python analyzer.py generate --project-id myproj --version-id v1 --doc-type both
+```
+```
+python analyzer.py reexport --project-id myproj --version-id v1 --doc-type swe2
 ```
 
 ### Checking one unit's images with `--unit`
@@ -491,6 +517,7 @@ python analyzer.py reexport --project-id myproj --version-id v2 --from-phase 4 -
 | `--from-phase` | 2 = re-derive, then views + export; 3 = views + export (default); 4 = export only |
 | `--scope` | re-render a **narrower** slice than the version was generated with |
 | `--unit <name>` | narrow the per-function flowchart work to this unit. Repeatable. |
+| `--doc-type <t>` | which document(s) to rebuild. Default: the one the version was generated with (from its manifest), else `swe3` |
 
 It needs the version's commit still checked out, because flowcharts and line numbers are read
 from the source. If the checkout is gone it says so rather than producing an empty document.

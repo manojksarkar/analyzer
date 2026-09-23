@@ -6369,25 +6369,22 @@ etc. (see §6/§7). The port therefore:
 
 ### `--doc-type` flag
 
-`engine/run.py` accepts `--doc-type <swe3|swe2|both>` (default `swe3`, the existing SDD/SWE.3
-behaviour — unchanged unless the flag is passed). `swe2` and `both` are new. Named after the
-ASPICE process IDs (matching `SWE2_PLAN.md` / `SWE4_PLAN.md` / `ROADMAP.md`), not the old branch's
-generic `sdd`/`add` naming.
+`--doc-type <swe3|swe4|all|swe2|both>` (default `swe3`) is accepted by `analyzer.py generate`/`reexport`
+and `engine/run.py`, and threaded to `core.group_planner.plan_runs()`. `all` = swe3+swe4 (unchanged;
+swe2 is opt-in), `both` = swe3+swe2. User-facing table: `docs/CLI_COMMANDS.md#document-types`.
 
-Wired as a **hardcoded phase pairing** in `core.group_planner.plan_runs()`
-(`DOC_TYPE_SWE3`/`DOC_TYPE_SWE2`/`DOC_TYPE_BOTH`, `_swe2_doc_phases()`) — mirroring exactly how the
-existing single SWE.3 exporter (`docx_exporter.py`) is wired, **not** the generalized
-`EXPORTER_REGISTRY`/doc-type-dispatch mechanism a forward-looking note elsewhere in this file once
-sketched for SWE.4: that mechanism was never actually implemented in `poc-4` (verified empty via
-`git grep`), so building it speculatively for a second document type wasn't justified.
+Post-rebase on poc-4 (2026-09-23): SWE.3/SWE.4 go through `views.registry` (`EXPORTER_REGISTRY`,
+`concrete_doc_types`); SWE.2 is NOT in that registry — it has its own scripts (`run_sad_views.py`,
+`architecture_docx_exporter.py`) and is planned by `group_planner._swe2_plan()` /
+`_swe2_doc_phases()`. `_split_doc_type(doc_type)` -> `(view_doc_type | None, generate_swe2)` splits
+the selector; `swe2` alone plans no per-group runs. `run.py`'s `--to-phase` script map lists the SWE.2
+scripts (phase 3/4) so they survive the filter.
 
 Key behaviour: **SWE.2 always covers the full model** (every configured layer), regardless of
-`--selected-group` / `--selected-layer` / `--selected-component`, which only narrow the SWE.3 side.
-When `--doc-type swe2` or `both` is combined with one of those narrowing flags, `plan_runs()`
-widens the *build* (Phase 1+2) to a full, unfiltered parse — the SWE.3 export step still narrows
-its own output normally. See `_build_model_phases(..., selected_group=None if generate_swe2 else
-resolved_selected, ...)` in each of `plan_runs()`'s three branches (component-selection, flat/
-no-layers, layers-present).
+scope flags, which only narrow the SWE.3/SWE.4 side. It is ONE plan appended after the per-scope
+plans (not per group/component — the SAD scripts take no scope flags). When swe2/both is requested,
+the build (Phase 1+2) is widened to an unfiltered parse (`build_groups`/`build_layers` empty in
+`plan_runs()`); with `swe2` alone the planner emits its own "Build model (all layers)" plan.
 
 Output: `output/swe2/layer_static_diagrams/` (SVGs, PNGs, `_layer_static_data.json`,
 `_component_design_data.json`) and `output/Software Architecture Design Specification.docx`.
