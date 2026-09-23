@@ -485,15 +485,8 @@ def test_findings_are_ordered_worst_first():
 # entirely, because the key dropped everything after the first '('.
 
 def headerdef(decl, info="", index=0):
-    """Built the way swe3.py builds one, so the tests exercise the real shape."""
-    from doccheck import cells
-    kind, sym, norm = cells.declaration(decl)
-    fields = {"declKind": kind or "unparsed", "declaration": norm or decl}
-    if kind in ("struct", "class") or (kind == "typedef" and "=" not in info):
-        fields["description"] = info
-    else:
-        fields["value"] = info
-    return Entity(kind="headerdef", name=sym or decl, index=index, fields=fields)
+    """Built by swe3.py's own builder, so the tests exercise the real shape."""
+    return swe3.header_row(decl, info, index)
 
 
 def with_headers(rows):
@@ -566,9 +559,35 @@ def test_a_private_row_only_we_have_carries_the_rule_and_drops_to_info():
     assert extra[0].severity == INFO
 
 
-def test_a_union_only_they_have_is_explained():
+def test_a_union_only_they_have_is_a_plain_difference():
+    """Unions and `using` aliases are recorded since 147c4cd (client answer Q16). The rule
+    that blamed our parser for a missing one would now explain away a real gap."""
     left = with_headers([headerdef("#define A 1", "1")])
     right = with_headers([headerdef("#define A 1", "1"), headerdef("union U { int a; };", "-")])
     missing = [f for f in run(right, left).findings if f.kind == "missing"]
     assert len(missing) == 1
-    assert "not recorded by the parser" in missing[0].rule
+    assert missing[0].rule == ""
+    assert missing[0].severity == MEDIUM
+
+
+def test_a_reworded_union_description_is_advisory():
+    """A union's second cell is a sentence ("Union for U"), the same as a struct's."""
+    left = with_headers([headerdef("union U { int a; char b; };", "Union for U")])
+    right = with_headers([headerdef("union U { int a; char b; };", "A union of a and b")])
+    differs = kinds(run(left, right), "differs")
+    assert [f.field for f in differs] == ["description"]
+    assert differs[0].severity == INFO
+
+
+def test_a_using_alias_reads_as_a_typedef_named_by_its_alias():
+    from doccheck import cells
+    assert cells.declaration("using NestedAlias_t = int;")[:2] == ("typedef", "NestedAlias_t")
+    assert cells.declaration("using namespace std;")[:2] == ("using", "std")
+
+
+def test_one_alias_spelt_as_typedef_or_using_differs_only_in_its_declaration():
+    left = with_headers([headerdef("typedef int Key_t;", "NA")])
+    right = with_headers([headerdef("using Key_t = int;", "NA")])
+    result = run(left, right)
+    assert kinds(result, "missing", "extra") == []
+    assert [f.field for f in kinds(result, "differs")] == ["declaration"]
