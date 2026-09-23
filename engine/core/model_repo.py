@@ -66,6 +66,13 @@ DB_BACKED_PARSE = frozenset(("entity_files", "func_keys", "override_pairs", "met
 
 DB_BACKED = DB_BACKED_MODEL | DB_BACKED_STANDALONE | DB_BACKED_PARSE
 
+#: Model artifacts that can be legitimately EMPTY in a finished model, because their emptiness is
+#: a fact about the SOURCE: a scope that declares no global variables, a project with no types.
+#: Contrast `units` / `components`, whose emptiness is a fact about the RUN -- Phase 2 did not
+#: finish -- and which must keep reading as missing, or `--use-model` would resume from a model
+#: that was never derived and export empty documents.
+MAY_BE_EMPTY = frozenset(("globalVariables", "dataDictionary"))
+
 # Still a file, deliberately: `clang_include_paths` is per-run, machine-specific scratch —
 # absolute include directories under THIS machine's checkout. Storing it would hand the next node
 # paths that do not exist there, which is worse than not storing it at all.
@@ -386,6 +393,20 @@ class DbRepository(ModelRepository):
                     out.append(n)
                 continue
             if _is_absent(self._load_one(n)):
+                # `read` already resolves this ambiguity -- an empty artifact on a version whose
+                # model exists reads as `{}`, not as missing. `missing` did not, so the two
+                # answered differently for the same artifact: Phase 3 read an empty
+                # `globalVariables` without complaint during `generate`, and `--use-model`
+                # refused the identical model on resume with "the model is missing from the
+                # database: globalVariables". Every `reexport` of a scope with no global
+                # variables was blocked -- including `--from-phase 3`, which a corrected
+                # document needs.
+                #
+                # Narrower than `read` on purpose: only MAY_BE_EMPTY artifacts get the benefit of
+                # the doubt. An empty `units` after a failed Phase 2 still reads as missing,
+                # because that is the case this check exists to refuse.
+                if n in MAY_BE_EMPTY and self._model_exists():
+                    continue
                 out.append(n)
         return out
 

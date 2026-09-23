@@ -254,6 +254,35 @@
 >
 > Revert-checked: row-text 3, orphan-as-overridden 3, wrong field 3, R7 paging 2. 2222 passed.)
 
+> Updated: 2026-09-24b (**`--use-model` refused every version whose scope has no global
+> variables — so no `reexport`, including the `--from-phase 3` a corrected document needs.**
+>
+> `DbRepository.read` and `DbRepository.missing` answered differently for the same artifact.
+> `read` had already been fixed for this (see `TestEmptyIsNotMissing`, whose stated requirement
+> is "A project with no global variables must not fail"): an empty artifact on a version whose
+> model exists reads as `{}`, because `globalVariables` is legitimately empty on a scope that
+> declares none, and in the file era an empty `globalVariables.json` was still a file. `missing`
+> never got the same rule, and `--use-model` (run.py) asks `missing`. So Phase 3 read an empty
+> globals artifact happily during `generate`, and `reexport` refused the identical model with
+> "the model is missing from the database: globalVariables". Found on a Platform-scoped version:
+> 156 functions, 0 globals, every `reexport` exit 2.
+>
+> **Fix, deliberately narrower than `read`:** `model_repo.MAY_BE_EMPTY = {globalVariables,
+> dataDictionary}` — artifacts whose emptiness is a fact about the SOURCE. `missing` excuses an
+> empty one only when `_model_exists()` (Phase 1 persisted a model). `units` / `components` /
+> `functions` stay strict: their emptiness is a fact about the RUN — Phase 2 did not finish — and
+> refusing to resume from an underived model is the whole point of the `--use-model` check. A
+> blanket copy of `read`'s rule would have excused exactly that.
+>
+> Five tests in `TestEmptyIsNotMissing`, and three revert-checks: removing the fix fails 2;
+> excusing every empty artifact fails `test_units_still_missing_after_a_failed_phase_2`;
+> excusing globals even with no model fails `test_globals_still_missing_when_nothing_was_ever_
+> parsed`. Verified end to end: the Platform version that exited 2 now re-exports with
+> `--from-phase 4` and `--from-phase 3`, both exit 0.
+>
+> Only one caller of `missing()` exists (run.py's `--use-model` check), so the blast radius is
+> that check alone.)
+
 > Updated: 2026-09-24 (**`generate --unit` failed before parsing with "Units in scope: (none)".
 > `--selected-unit` is now validated where it is consumed — Phase 3 — except when the stored model
 > is already final.**
@@ -296,7 +325,7 @@
 > Trade-off, stated: on a FRESH run a wrong unit name is reported in Phase 3, after the parse.
 > Unavoidable — units do not exist until Phase 2 creates them.
 >
-> **Separate, pre-existing, found while verifying — NOT fixed, flagged:** `DbRepository.missing`
+> **Separate, pre-existing, found while verifying — fixed in 2026-09-24b above:** `DbRepository.missing`
 > uses `_is_absent`, which treats an EMPTY artifact as a MISSING one (`17c00b9`, doc 10 step 2).
 > A scope with zero global variables (v9 Platform: globals=0, functions=156) therefore fails
 > `--use-model` with "the model is missing from the database: globalVariables" — so
