@@ -79,8 +79,9 @@ def _resolve_units(model: dict, requested: list, allowed_components=None,
 
     `strict` is what separates the two callers, and conflating them was the bug:
 
-      * run.py validates ONCE against the whole run's scope, before Phase 1. A unit outside
-        that scope will produce nothing anywhere, so it is an error — strict=True.
+      * run.py validates ONCE against the whole run's scope, at startup -- and only when the
+        stored model is the one Phase 3 will use (`group_planner.unit_check_can_run_early`).
+        A unit outside that scope will produce nothing anywhere, so it is an error — strict=True.
       * Phase 3 runs once PER COMPONENT when documents are per component (the normal case).
         `--selected-unit Utils` reaches the App invocation as well as the Math one, and there
         the unit is not unknown, merely elsewhere — strict=False, narrow to nothing, say so.

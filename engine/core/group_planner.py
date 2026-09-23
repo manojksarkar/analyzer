@@ -141,6 +141,34 @@ def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
     ]
 
 
+def unit_check_can_run_early(from_phase: int, to_phase, use_model: bool) -> bool:
+    """Whether `run.py` may validate `--selected-unit` at startup, before any phase runs.
+
+    Lives here because this module already decides that `--selected-unit` goes to Phase 3 and to
+    nothing else (`_view_export_phases`); when to CHECK it follows from the same fact.
+
+    Only when the units it would read ARE the units Phase 3 will use. That needs two things:
+
+    * **Phases 1 and 2 do not run in this process** (`--use-model`, or `--from-phase 3`). If
+      either runs, the stored units are about to be rebuilt, and checking against them checks
+      against the wrong model.
+    * **Phase 3 does run in this process.** `--selected-unit` is consumed by Phase 3 alone -- the
+      planner hands it to `run_views.py` and to nothing else -- so a process that stops before
+      Phase 3, or starts after it, has nothing to validate.
+
+    Everything else defers to Phase 3, which validates against the model it has just built.
+
+    This used to be "whenever a units model exists". `generate` starts `run.py` twice -- Phase 1
+    alone, then Phases 2-4 -- and passes `--selected-unit` to both. On a version that already had
+    units from an earlier attempt, the Phase-1 process checked the unit against those LEFTOVER
+    units before parsing anything, found none in the group, and exited with
+    "Units in scope: (none)": blaming a unit name for a model that was about to be replaced.
+    """
+    phase3_runs = from_phase <= 3 and (to_phase is None or to_phase >= 3)
+    model_is_final = use_model or from_phase >= 3
+    return phase3_runs and model_is_final
+
+
 def _view_export_phases(*, output_dir: Optional[str] = None,
                         selected_group: Optional[str] = None,
                         filter_mode: Optional[str] = None,

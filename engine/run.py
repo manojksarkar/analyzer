@@ -777,15 +777,27 @@ except LlmConfigError as e:
     log(f"Invalid LLM config: {e}", component="run", err=True)
     sys.exit(2)
 
-# --selected-unit: fail before Phase 1 rather than in Phase 3. The unit names come from the
-# stored model, so this is only possible when one already exists — which is the case for the
-# runs the flag exists for (--use-model / --from-phase 3). A cold run has nothing to check
-# against yet, so validation falls through to Phase 3, where the model has just been built.
+# --selected-unit: fail before Phase 3 when that is honest, and only then.
+#
+# `--selected-unit` is consumed by Phase 3 alone -- the planner hands it to run_views.py and to
+# nothing else. Checking it here, at startup, saves a Phase-3 run on a typo, but only when the
+# units read NOW are the units Phase 3 will use: `group_planner.unit_check_can_run_early` says when.
+# For `reexport --from-phase 3` / `--use-model` they are, and a mistyped unit fails in seconds.
+#
+# For `generate` they are NOT. It starts this script twice -- Phase 1 alone, then Phases 2-4 --
+# and passes `--selected-unit` to both. Checking in either one checked against units that were
+# about to be rebuilt; on a version left with units by an earlier attempt, the Phase-1 process
+# exited with "Units in scope: (none)" before parsing anything. Those processes now defer, and
+# Phase 3 validates against the model it has just built.
 #
 # Read through the repository. This used to open model/units.json directly, and once the model
 # became rows that file was never there: the pre-check quietly never ran, and every mistyped
 # --selected-unit went back to failing in Phase 3 instead.
-if selected_units_arg:
+from core.group_planner import unit_check_can_run_early as _unit_check_early
+if selected_units_arg and not _unit_check_early(from_phase, to_phase, use_model):
+    log("--selected-unit will be validated in Phase 3, against the model this run builds",
+        component="run")
+elif selected_units_arg:
     _unit_model = None
     try:
         from core.model_io import read_model_file as _rmf
@@ -794,7 +806,12 @@ if selected_units_arg:
             _unit_model = {UNITS: _units_data}
     except Exception:
         _unit_model = None
-    if _unit_model:
+    if not _unit_model:
+        # --use-model already refused a missing model above, so this is rare -- but saying
+        # nothing would make a skipped check look like a passed one.
+        log("--selected-unit will be validated in Phase 3 (no stored units to check yet)",
+            component="run")
+    else:
         from core.config import get_flat_groups as _gfg
         _groups = _gfg(cfg) or {}
         _grp = _groups.get(selected_group_arg) if selected_group_arg else None
@@ -808,12 +825,15 @@ if selected_units_arg:
             _allowed = sorted(k.replace(" ", "-") for k in _grp.keys())
         else:
             _allowed = None      # whole model in scope
+        # Imported here, not at the top: run_views rewrites sys.argv and snapshots paths when
+        # it is imported, and only this branch needs it.
         import run_views as _rv
         selected_units_arg = _rv._resolve_units(
             _unit_model, selected_units_arg, _allowed)
-else:
-    log("--selected-unit will be validated in Phase 3 (no model stored yet)",
-        component="run")
+# No `else`. It used to hang here, paired with `if selected_units_arg:`, and so announced
+# "--selected-unit will be validated in Phase 3" on every run that had NO --selected-unit --
+# while the runs that did defer said nothing. Without the flag, nothing about units happens
+# in any phase, and nothing is said.
 
 try:
     plans = plan_runs(

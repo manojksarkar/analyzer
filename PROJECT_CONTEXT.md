@@ -254,6 +254,55 @@
 >
 > Revert-checked: row-text 3, orphan-as-overridden 3, wrong field 3, R7 paging 2. 2222 passed.)
 
+> Updated: 2026-09-24 (**`generate --unit` failed before parsing with "Units in scope: (none)".
+> `--selected-unit` is now validated where it is consumed — Phase 3 — except when the stored model
+> is already final.**
+>
+> Reported on a real project:
+> `generate --scope "group:Garbage Collection Manager" --unit MGCM_Completion` ->
+> `Error: unknown --selected-unit 'MGCM_Completion'. Units in scope: (none)`, traceback at
+> `generate.py:404`. Reproduced character-for-character (same message, same lines 404 and 397)
+> by re-running an existing version with a scope its leftover model does not cover.
+>
+> **Already the design, not the implementation.** The planner hands `--selected-unit` to
+> `run_views.py` ONLY (`group_planner._view_export_phases`); the parser and deriver never see it.
+> But `run.py` also validated it at STARTUP, against whatever units the version already had —
+> and `generate_full` starts `run.py` TWICE (`--to-phase 1`, then `--from-phase 2`) passing the
+> flag to both. Line 404 is the Phase-1-only process: it checked the unit against units left by
+> an EARLIER attempt at the same version id, before parsing anything, found none in the group,
+> and exited. On a genuinely fresh version there are no units yet, so the check was skipped and
+> Phase 3 validated correctly — which is why it only hit re-runs.
+>
+> **Fix:** `group_planner.unit_check_can_run_early(from_phase, to_phase, use_model)` — true only
+> when Phase 3 runs in THIS process AND Phases 1-2 do not (`--use-model` / `--from-phase 3`), i.e.
+> when the units read now are the units Phase 3 will use. `reexport --from-phase 3` keeps its
+> fast fail on a typo; both `generate` processes defer. Lives in `group_planner` because that
+> module already decides the flag goes to Phase 3 alone — and because `run_views` rewrites
+> `sys.argv` and snapshots paths on import, so importing it at the top of `run.py` for a
+> predicate would have added a side effect to every run. `run_views` is still imported only in
+> the branch that resolves units against a stored model, as before.
+>
+> **Second defect in the same block:** the `else` was paired with `if selected_units_arg:`, so
+> every run WITHOUT the flag logged "--selected-unit will be validated in Phase 3", while runs that
+> did defer said nothing. Removed; each deferring branch now says why.
+>
+> Verified end to end: the exact failing scenario now parses (Phase 1 8s), derives, and Phase 3
+> lists the scope's 71 REAL units instead of `(none)`; the same version with a real unit
+> (`--unit Gpio`) exits 0 with `narrowed to unit(s): Gpio`; a no-flag run reaching Phase 3 logs
+> nothing about units. 13 tests incl. the full decision table, two properties (never early when
+> the model is about to be rebuilt; never when Phase 3 does not run) and anchored wiring checks.
+> Revert-checked: 8/3/3/2 failures for the four ways of putting it back.
+>
+> Trade-off, stated: on a FRESH run a wrong unit name is reported in Phase 3, after the parse.
+> Unavoidable — units do not exist until Phase 2 creates them.
+>
+> **Separate, pre-existing, found while verifying — NOT fixed, flagged:** `DbRepository.missing`
+> uses `_is_absent`, which treats an EMPTY artifact as a MISSING one (`17c00b9`, doc 10 step 2).
+> A scope with zero global variables (v9 Platform: globals=0, functions=156) therefore fails
+> `--use-model` with "the model is missing from the database: globalVariables" — so
+> `reexport --from-phase 3/4` is refused for every such version, which blocks the review
+> workflow's export step on it.)
+
 > Updated: 2026-09-22e (**a real project reported `nodeCount: 0` on every flowchart and an empty
 > R7 label list. NOT a bug in the listing — the stored output predates `cfg`.**
 >

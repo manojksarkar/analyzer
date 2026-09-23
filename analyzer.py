@@ -690,7 +690,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--unit", action="append", metavar="NAME",
                    help="narrow the per-function FLOWCHART work to this unit. Repeatable. A "
                         "speed aid while iterating — the model and every other view stay "
-                        "whole, and the documents are still the ones --scope asks for.")
+                        "whole, and the documents are still the ones --scope asks for. Used "
+                        "by Phase 3 only: Phases 1-2 parse and derive the whole scope, and the "
+                        "name is checked against the units that run just built.")
     s.add_argument("--doc-type", default="swe3", choices=("swe3", "swe4", "all"),
                    help="which document(s) to emit: swe3 (detailed design, default), "
                         "swe4 (unit test specification), or all")
