@@ -31,15 +31,15 @@
       "information": "LEVEL_LOW=0, LEVEL_MID=1, LEVEL_HIGH=2"
     },
     {
+      "declaration": "int g_count = 0;",
+      "information": "0"
+    },
+    {
+      "declaration": "int g_result = 0;",
+      "information": "0"
+    },
+    {
       "declaration": "int g_sharedTick = 0;",
-      "information": "0"
-    },
-    {
-      "declaration": "PRIVATE int g_count = 0;",
-      "information": "0"
-    },
-    {
-      "declaration": "PUBLIC int g_result = 0;",
       "information": "0"
     }
   ],
@@ -49,11 +49,11 @@
       "information": "(6)"
     },
     {
-      "declaration": "PUBLIC int g_utilBase = 0;",
+      "declaration": "int g_utilBase = 0;",
       "information": "0"
     },
     {
-      "declaration": "PUBLIC int g_utilBuf[SHARED_BUFSZ] = {0};",
+      "declaration": "int g_utilBuf[SHARED_BUFSZ] = {0};",
       "information": "{0}"
     }
   ]

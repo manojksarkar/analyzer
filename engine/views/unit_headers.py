@@ -20,6 +20,7 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 from .registry import register
+from core.config import DEFAULT_VISIBILITY_MACROS
 from core.model_io import read_model_file
 from core.paths import paths as _paths
 from docx_common import load_abbreviations
@@ -70,6 +71,27 @@ def _strip_comments(text: str) -> str:
     lines = [ln.rstrip() for ln in out.splitlines()]
     lines = [ln for ln in lines if ln.strip()]
     return "\n".join(lines).strip()
+
+
+# PUBLIC / PRIVATE / PROTECTED / __OVLYINIT expand to NOTHING -- they reach libclang as
+# `-DPUBLIC=` so the code parses, and the compiler never sees a token. Printing them in a
+# design document prints build scaffolding: the reader learns nothing about the declaration
+# that the declaration does not already say, and in THIS table the word misleads, since
+# visibility stopped filtering it. Real C++ keywords are left alone -- `extern` says the unit
+# uses a global it does not own, and `static`, `const` and `volatile` change what the
+# declaration means. Client decision, 2026-09-23; SWE3_WIKI N.1.4.
+# A marking plus the whitespace it sits in front of, so removing it leaves no gap. Only
+# that whitespace: a first attempt collapsed every run of spaces and flattened the
+# indentation of a multi-line `enum {...}` and the continuation lines of a `#define`,
+# which is exactly the formatting the cell exists to show.
+_VISIBILITY_MACRO_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(m) for m in DEFAULT_VISIBILITY_MACROS) + r")\b[ \t]*"
+)
+
+
+def _strip_visibility_macros(text: str) -> str:
+    """Drop the nothing-macros from a declaration, leaving all other whitespace alone."""
+    return _VISIBILITY_MACRO_RE.sub("", text or "").strip()
 
 
 def _strip_ext(path: str) -> str:
@@ -428,7 +450,8 @@ def build_rows(
     # or a value (string/char literals are preserved). Done before dedup so rows
     # that differ only by a comment collapse together.
     for r in rows:
-        r["declaration"] = _strip_comments(r.get("declaration") or "") or NA
+        r["declaration"] = _strip_visibility_macros(
+            _strip_comments(r.get("declaration") or "")) or NA
         r["information"] = _strip_comments(r.get("information") or "") or NA
 
     # Deduplicate (same declaration can appear via enum + typedef entries)
