@@ -13,6 +13,17 @@
 //
 // The interface table is the other half of the contract: only `s_publicCount` and
 // `nestedApply` may appear there.
+// A UNION and a C++11 `using` alias at file scope. Neither reached the data dictionary
+// before 2026-09-23: UNION_DECL and TYPE_ALIAS_DECL were unhandled cursor kinds, so they
+// appeared in no table at any access level, while a `typedef union {...} U;` came through
+// its typedef. Both must now be listed like a struct and a typedef.
+union NestedWord {
+    unsigned int whole;
+    unsigned char bytes[4];
+};
+
+using NestedAlias_t = unsigned short;
+
 class NestedOwner {
 public:
     enum PublicMode { NM_FAST = 0, NM_SAFE = 1 };
@@ -32,6 +43,11 @@ protected:
     static int s_protectedMark;
 
 private:
+    // A nested union and a nested alias: like the nested enum/typedef/struct above, the
+    // class's own declaration shows them, so neither gets a row of its own.
+    union PrivateWord { unsigned int whole; unsigned char bytes[4]; };
+    using PrivateAlias_t = unsigned char;
+
     // All three ARE listed in the unit header table. The interface table never contains a
     // type at any access level, so nothing here is published as an interface.
     enum PrivateState { NS_IDLE = 0, NS_BUSY = 1 };

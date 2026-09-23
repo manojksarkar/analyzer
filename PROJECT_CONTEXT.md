@@ -208,6 +208,57 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-23b (**struct / class / union are listed in the unit header table, and the client
+> answered the whole question list** — branch `fix/swe3-review-v1`. `wip/swe3-unit-header-structs` is
+> SUPERSEDED: its rule was "methods out", and the answer is "methods in, bodies out". Do not cherry-pick it.)
+>
+> Seventeen questions went to the client (the list is in this session's history); the answers, and what each
+> one cost:
+>
+> | # | answer | implementation |
+> |---|---|---|
+> | Q1 | a record type is listed in its own right | kind filter admits `struct`/`class`/`union` |
+> | Q2 | the declaration **as written**, method signatures included | no method stripping |
+> | Q3 | methods as **declarations** only | `_declarations_only()` reduces an inline body: `int status() { return 1; }` → `int status();` |
+> | Q4 | keep the row | falls away — with methods in, no class is an empty shell |
+> | Q5, Q6 | keep access labels and the base-class clause | already the behaviour |
+> | Q7 | a type declared inside a record gets **no row of its own** | new **`nestedIn`** on every dd entry |
+> | Q8 | all data members | shown inside the record's own declaration |
+> | Q9 | a static member's definition gets no row | the globals loop skips an entry with `className` set |
+> | Q10 | skip an anonymous record | unchanged |
+> | Q11 | **keep** the `PUBLIC`/`PRIVATE` markings | **reverted `3b52d24`**, which had stripped them |
+> | Q12-Q15 | keep `extern`, `static`, `const`, `volatile`, `inline` | already the behaviour |
+> | Q16 | `union` and `using` must be documented | **`UNION_DECL`** and **`TYPE_ALIAS_DECL`** now recorded |
+> | Q17 | a one-line description | kind-aware label: `Structure for …`, `Class for …`, `Union for …` |
+>
+> **`nestedIn` is the one new model field**, and it exists because `qualifiedName` cannot answer the
+> question: it walks namespaces and classes alike, so `Outer::Inner` and `ns::Type` come back the same
+> shape. Only the parser, holding the cursor, can tell them apart —
+> `parser._nested_in_class()` reads `semantic_parent.kind`. Stamped on struct/class/union, enum and
+> typedef/using entries; the dd payload has no field whitelist, so it persists as-is.
+>
+> **Q16's two halves.** `UNION_DECL` joins the struct/class branch — a union's members are FIELD_DECLs like
+> a struct's, so only `kind` differs (`_RECORD_KIND`). `TYPE_ALIAS_DECL` records as a **typedef**: it answers
+> `underlying_typedef_type` identically, and a reader should not have to know which spelling the source
+> used. **Recording was not enough**: the view's snippet guard accepted only a line starting with `typedef`,
+> so a `using` alias was read as "an extra alias on a `} one_s, *one_s_2;` line" and dropped after being
+> recorded — and the same guard knew only `struct`, so `class` and `union` snippets were rejected too. Two
+> bugs a fixture found and no unit test would have.
+>
+> **Fixtures** — `Access/NestedTypes.h/.cpp` gains a file-scope `union NestedWord`, a file-scope
+> `using NestedAlias_t`, and a nested `union PrivateWord` + `using PrivateAlias_t` inside the class, so Q7
+> is covered for those kinds too. `NestedTypes` went from 14 rows to 7: the nine nested types and the three
+> class-static definitions collapsed into the class's own cell.
+>
+> **Tests** — `tests/unit/test_unit_header_orphan.py` is 37 cases. Three of them (`TestAgainstRealSource`)
+> write a real `.h` to `tmp_path`, because `build_rows` reads the declaration back from disk and the cases
+> that turn on what the source LOOKS like cannot be asserted filesystem-free. They live in the unit suite
+> rather than e2e on purpose: the e2e pipeline is scoped to `Layer1.My Sample`, which declares no record
+> type at all, so an e2e assertion about `Access` would silently skip. 2337 unit tests pass, 138 e2e.
+>
+> **The `Sample` snapshots did not move** — `My Sample` has no record type and no class static, so none of
+> this reaches it. That is also why the fixture had to go in `Access`.
+
 > Updated: 2026-09-23 (**the unit header table is no longer filtered by visibility, and a declaration is
 > no longer an interface** — branch `fix/swe3-review-v1`, commit `e1cee17`. Struct/class rows are the SAME
 > change split off onto `wip/swe3-unit-header-structs` (`7d74a06`) for discussion, at the user's

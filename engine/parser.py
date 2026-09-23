@@ -1240,6 +1240,30 @@ def _maybe_add_typedef_for_struct(name: str, qn: str, loc: dict, rel_file: str):
     }
 
 
+_RECORD_KIND = {
+    cindex.CursorKind.STRUCT_DECL: "struct",
+    cindex.CursorKind.CLASS_DECL: "class",
+    cindex.CursorKind.UNION_DECL: "union",
+}
+
+
+def _nested_in_class(cursor):
+    """Qualified name of the class or struct this type is declared INSIDE, else "".
+
+    `qualifiedName` cannot answer it: it walks namespaces and classes alike, so `ns::Foo`
+    and `Outer::Inner` come back the same shape. The unit header table needs the
+    difference -- a type declared inside a class is already shown by the class's own
+    declaration, so it must not also be listed on its own (client decision, 2026-09-23).
+    """
+    try:
+        parent = cursor.semantic_parent
+        if parent and parent.kind in _CLASS_PARENT_KINDS:
+            return get_qualified_name(parent) or (parent.spelling or "(anonymous)")
+    except Exception:
+        pass
+    return ""
+
+
 def visit_type_definitions(cursor):
     if not cursor.location.file or not is_project_file(cursor.location.file.name):
         for child in cursor.get_children():
@@ -1257,7 +1281,13 @@ def visit_type_definitions(cursor):
     # refuse another layer's answer (layers partition; they do not inherit).
     _layer = layer_for_rel_file(rel_file)
 
-    if cursor.kind in (cindex.CursorKind.STRUCT_DECL, cindex.CursorKind.CLASS_DECL):
+    # UNION_DECL joins struct/class here. It used to be handled nowhere, so a
+    # `union U {...};` reached the data dictionary NEVER -- no entry, no range, no row in
+    # any table at any access level -- while a `typedef union {...} U;` appeared through
+    # its typedef. A union's members are FIELD_DECLs like a struct's, so the same branch
+    # records it; only the `kind` differs. Client asked for it, 2026-09-23.
+    if cursor.kind in (cindex.CursorKind.STRUCT_DECL, cindex.CursorKind.CLASS_DECL,
+                       cindex.CursorKind.UNION_DECL):
         if cursor.spelling or cursor.is_definition():
             key = _get_type_key(cursor)
             fields = []
@@ -1279,7 +1309,7 @@ def visit_type_definitions(cursor):
             name = cursor.spelling or "(anonymous)"
             qn = get_qualified_name(cursor) if cursor.spelling else f"(anonymous)@{key}"
             struct_entry: dict = {
-                "kind": "struct" if cursor.kind == cindex.CursorKind.STRUCT_DECL else "class",
+                "kind": _RECORD_KIND.get(cursor.kind, "struct"),
                 "name": name,
                 "qualifiedName": qn,
                 "fields": fields,
@@ -1289,6 +1319,9 @@ def visit_type_definitions(cursor):
             cmt = _preceding_comment(cursor)
             if cmt:
                 struct_entry["comment"] = cmt
+            _nested = _nested_in_class(cursor)
+            if _nested:
+                struct_entry["nestedIn"] = _nested
             _dd_store(qn, struct_entry, _layer, loc)
             # NOTE: entity_hashes / _type_keys stay keyed by BARE qn even when the
             # dictionary entry above was layer-qualified. They must match edges.json
@@ -1335,6 +1368,9 @@ def visit_type_definitions(cursor):
         cmt = _preceding_comment(cursor)
         if cmt:
             enum_dict["comment"] = cmt
+        _nested = _nested_in_class(cursor)
+        if _nested:
+            enum_dict["nestedIn"] = _nested
         _dd_store(qn, enum_dict, _layer, loc)
         # Incremental (M1.2): enum hash keyed by qn; a definition wins over a forward decl.
         if cursor.is_definition() or qn not in entity_hashes:
@@ -1342,7 +1378,12 @@ def visit_type_definitions(cursor):
         _type_keys.add(qn)  # M1.2b
         entity_files[qn] = rel_file  # M4.3
 
-    elif cursor.kind == cindex.CursorKind.TYPEDEF_DECL:
+    # TYPE_ALIAS_DECL is C++11 `using T = int;`. Clang gives it its own kind, so it was
+    # handled nowhere and the alias reached no table. It answers
+    # underlying_typedef_type exactly as a TYPEDEF_DECL does, so it records as a typedef:
+    # the two declare the same thing and a reader should not have to know which spelling
+    # the source used.
+    elif cursor.kind in (cindex.CursorKind.TYPEDEF_DECL, cindex.CursorKind.TYPE_ALIAS_DECL):
         if cursor.spelling:
             qn = get_qualified_name(cursor)
             underlying = _typedef_underlying(cursor)
@@ -1368,6 +1409,9 @@ def visit_type_definitions(cursor):
             cmt = _preceding_comment(cursor)
             if cmt:
                 typedef_dict["comment"] = cmt
+            _nested = _nested_in_class(cursor)
+            if _nested:
+                typedef_dict["nestedIn"] = _nested
             if key == qn:
                 _dd_store(qn, typedef_dict, _layer, loc)
             else:

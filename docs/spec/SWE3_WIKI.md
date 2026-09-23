@@ -338,6 +338,22 @@ Two columns: `declaration` | `information`. One row per symbol the unit declares
 | `typedef` → enum | in the unit's own files | the enum's values |
 | `typedef` → struct | in the unit's own files | a one-line description, from the name and its fields (name alone when the LLM is off) |
 | `typedef` → anything else | in the unit's own files | `N/A` |
+| `using T = …;` | in the unit's own files | as a `typedef` — the two declare the same thing |
+| `struct` / `class` / `union` | in the unit's own files | a one-line description: `Structure for …`, `Class for …`, `Union for …` |
+
+#### A record type: what the cell holds
+
+The declaration **as written**, including method signatures and the access labels, so the
+reader sees the type the way the source declares it.
+
+| | |
+|---|---|
+| Methods | listed, as **declarations**. An inline body is reduced to its declaration: `int status() { return 1; }` is listed as `int status();`. The body is the unit's implementation, and the flowchart section documents that |
+| Data members | listed, static and non-static alike |
+| Access labels | kept — `public:`, `protected:`, `private:` |
+| Base classes | kept — `class MtxDerived : public MtxStruct` |
+| A type declared **inside** the record | shown there, and **nowhere else** — a nested `enum`, `typedef`, `struct`, `union` or `using` gets no row of its own, because this cell already declares it |
+| A static member's own definition | **not** listed. `int Foo::s_count = 0;` in the `.cpp` would repeat what `static int s_count;` in the class already said. The cost is the initial value, which lives only in the definition |
 
 #### Access specifier
 
@@ -395,8 +411,9 @@ different objects, not two views of one.
 |---|---|
 | include guards | a `#define FILE_H` with no value |
 | local variables | |
-| plain `struct` / `class` | reaches the table only through a `typedef` |
-| `union`, `using T = …` | not recorded at all |
+| a type declared inside a `struct`/`class`/`union` | the record's own cell declares it already |
+| a class static's out-of-line definition | `int Foo::s_count = 0;` — same reason |
+| an anonymous record | the `typedef … {…} S;` that names it carries the declaration |
 
 **Defines inside `#if` blocks:** a macro defined once in each branch is listed **once**. libclang keeps
 only the branch that is active for this build, and the text search is limited to the lines it kept. If
