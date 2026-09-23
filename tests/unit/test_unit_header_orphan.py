@@ -277,3 +277,239 @@ class TestOrphanHeaderGlobals:
             {}, {}, SRC_PATHS, None, GLOBAL_USERS,
         )
         assert "g_sharedFlag" not in _decls(rows)
+
+
+# ── struct / class / union rows ──────────────────────────────────────────────
+# The client's answers of 2026-09-23, one test each:
+#   Q1  a record type is listed in its own right, not only through a typedef
+#   Q2  the declaration as written, method signatures included
+#   Q3  an inline BODY is reduced to a declaration
+#   Q7  a type declared inside a class gets NO row of its own
+#   Q9  a class static's definition gets NO row of its own
+#   Q16 a union and a `using` alias are listed like a struct and a typedef
+RECORD_DD = {
+    "Cfg": {
+        "kind": "struct", "name": "Cfg", "qualifiedName": "Cfg",
+        "fields": [{"name": "mode", "type": "int"}],
+        "location": {"file": "Comp/UserUnit.cpp", "line": 20},
+    },
+    "Owner": {
+        "kind": "class", "name": "Owner", "qualifiedName": "Owner", "fields": [],
+        "location": {"file": "Comp/UserUnit.cpp", "line": 30},
+    },
+    "Word": {
+        "kind": "union", "name": "Word", "qualifiedName": "Word", "fields": [],
+        "location": {"file": "Comp/UserUnit.cpp", "line": 40},
+    },
+    "Alias_t": {
+        "kind": "typedef", "name": "Alias_t", "qualifiedName": "Alias_t",
+        "underlyingType": "unsigned short",
+        "location": {"file": "Comp/UserUnit.cpp", "line": 50},
+    },
+    # Declared INSIDE Owner: the class's own declaration already shows it.
+    "Owner::Mode": {
+        "kind": "enum", "name": "Mode", "qualifiedName": "Owner::Mode",
+        "nestedIn": "Owner",
+        "enumerators": [{"name": "FAST", "value": 0}],
+        "location": {"file": "Comp/UserUnit.cpp", "line": 31},
+    },
+    "Owner::Key_t": {
+        "kind": "typedef", "name": "Key_t", "qualifiedName": "Owner::Key_t",
+        "nestedIn": "Owner", "underlyingType": "int",
+        "location": {"file": "Comp/UserUnit.cpp", "line": 32},
+    },
+    "Owner::Slot": {
+        "kind": "struct", "name": "Slot", "qualifiedName": "Owner::Slot",
+        "nestedIn": "Owner", "fields": [],
+        "location": {"file": "Comp/UserUnit.cpp", "line": 33},
+    },
+    # A namespace-qualified type is NOT nested in a class and keeps its row.
+    "ns::Free": {
+        "kind": "struct", "name": "Free", "qualifiedName": "ns::Free", "fields": [],
+        "location": {"file": "Comp/UserUnit.cpp", "line": 60},
+    },
+    "(anonymous)@Comp/UserUnit.cpp:70": {
+        "kind": "struct", "name": "(anonymous)", "qualifiedName": "(anonymous)@k",
+        "fields": [], "location": {"file": "Comp/UserUnit.cpp", "line": 70},
+    },
+}
+
+CLASS_STATIC_GLOBALS = {
+    "Comp/UserUnit.cpp:80": {
+        "variableId": "Comp/UserUnit.cpp:80", "variableName": "s_count",
+        "qualifiedName": "Owner::s_count", "className": "Owner",
+        "visibility": "public", "value": "0",
+        "location": {"file": "Comp/UserUnit.cpp", "line": 80},
+    },
+    "Comp/UserUnit.cpp:81": {
+        "variableId": "Comp/UserUnit.cpp:81", "variableName": "g_fileScope",
+        "qualifiedName": "g_fileScope", "visibility": "public", "value": "1",
+        "location": {"file": "Comp/UserUnit.cpp", "line": 81},
+    },
+}
+
+
+class TestRecordRows:
+    def _rows(self, dd=None, globals_data=None):
+        unit = {"path": "Comp/UserUnit", "fileName": "UserUnit.cpp",
+                "functionIds": [USER_FID],
+                "globalVariableIds": list(globals_data or {})}
+        return dx.build_rows(unit, [], dd if dd is not None else RECORD_DD,
+                             globals_data or {}, "", None, {}, {}, {}, SRC_PATHS, None, {})
+
+    def test_struct_class_and_union_are_listed(self):
+        decls = _decls(self._rows())
+        assert "Cfg" in decls and "Owner" in decls and "Word" in decls
+
+    def test_labels_name_the_kind(self):
+        by = {r["declaration"]: r["information"] for r in self._rows()}
+        assert by["Cfg"] == "Structure for Cfg"
+        assert by["Owner"] == "Class for Owner"
+        assert by["Word"] == "Union for Word"
+
+    # A `using` alias is asserted in tests/e2e/test_unit_headers.py instead: a typedef row
+    # needs its declaration read back from source, and every typedef is skipped here where
+    # base_path is "" -- the same guard that drops an extra alias on a `} a, *b;` line.
+
+    def test_a_type_nested_in_a_class_gets_no_row(self):
+        decls = _decls(self._rows())
+        for nested in ("Mode", "Key_t", "Slot"):
+            assert nested not in decls, nested
+
+    def test_a_namespace_qualified_type_keeps_its_row(self):
+        """`ns::Free` reads like `Owner::Slot` but is not nested in a class."""
+        assert "Free" in _decls(self._rows())
+
+    def test_an_anonymous_record_is_skipped(self):
+        assert not any("anonymous" in d for d in _decls(self._rows()))
+
+    def test_a_class_statics_definition_gets_no_row(self):
+        decls = _decls(self._rows(globals_data=CLASS_STATIC_GLOBALS))
+        assert "Owner::s_count" not in decls
+        assert "g_fileScope" in decls
+
+
+class TestDeclarationsOnly:
+    def test_an_inline_body_becomes_a_declaration(self):
+        out = dx._declarations_only(
+            "class C {\npublic:\n    int status() { return 1; }\n};")
+        assert "int status();" in out
+        assert "return 1" not in out
+
+    def test_a_multi_line_body_is_removed_whole(self):
+        out = dx._declarations_only(
+            "class C {\n    int f() {\n        return 2;\n    }\n    int m_x;\n};")
+        assert "int f();" in out
+        assert "return 2" not in out
+        assert "int m_x;" in out
+
+    def test_a_declared_only_method_is_untouched(self):
+        src = "class C {\npublic:\n    int open(int slot);\n};"
+        assert dx._declarations_only(src) == src
+
+    def test_data_members_and_labels_survive(self):
+        out = dx._declarations_only(
+            "class C {\npublic:\n    int m_a;\nprivate:\n    static int s_b;\n};")
+        assert "public:" in out and "private:" in out
+        assert "int m_a;" in out and "static int s_b;" in out
+
+    def test_nested_types_keep_their_bodies(self):
+        out = dx._declarations_only(
+            "class C {\n    enum E { A = 0, B = 1 };\n    struct S { int id; };\n};")
+        assert "enum E { A = 0, B = 1 };" in out
+        assert "struct S { int id; };" in out
+
+    def test_default_and_pure_virtual_are_untouched(self):
+        src = ("class C {\npublic:\n    virtual ~C() = default;\n"
+               "    virtual int f(int a) = 0;\n};")
+        assert dx._declarations_only(src) == src
+
+    def test_a_function_pointer_member_is_data(self):
+        out = dx._declarations_only("struct S {\n    int (*fp)(int);\n};")
+        assert "(*fp)" in out
+
+    def test_comments_are_dropped(self):
+        out = dx._declarations_only(
+            "class C {\n    // explains the method\n    int f();\n};")
+        assert "explains" not in out and "int f();" in out
+
+
+# ── the client's answers, against a REAL source file ─────────────────────────
+# build_rows reads the declaration back from disk, so the cases that turn on what the
+# source LOOKS like need a file. A temp file keeps them in the unit suite, which always
+# runs, rather than in e2e where the pipeline is scoped to one group and they would skip.
+_REAL_HEADER = """#pragma once
+
+union Word {
+    unsigned int whole;
+    unsigned char bytes[4];
+};
+
+using Alias_t = unsigned short;
+
+class Owner {
+public:
+    enum Mode { FAST = 0, SAFE = 1 };
+    typedef int Key_t;
+    static int s_count;
+    int open(int slot);
+    int status() { return 1; }
+    int m_slot;
+protected:
+    int retryBudget();
+private:
+    using Byte_t = unsigned char;
+    int secretKey() {
+        return 4242;
+    }
+};
+"""
+
+
+class TestAgainstRealSource:
+    def _rows(self, tmp_path):
+        src = tmp_path / "Comp"
+        src.mkdir()
+        (src / "UserUnit.h").write_text(_REAL_HEADER, encoding="utf-8")
+        (src / "UserUnit.cpp").write_text("#include \"UserUnit.h\"\n", encoding="utf-8")
+        dd = {
+            "Word": {"kind": "union", "name": "Word", "qualifiedName": "Word", "fields": [],
+                     "location": {"file": "Comp/UserUnit.h", "line": 3}},
+            "Alias_t": {"kind": "typedef", "name": "Alias_t", "qualifiedName": "Alias_t",
+                        "underlyingType": "unsigned short",
+                        "location": {"file": "Comp/UserUnit.h", "line": 8}},
+            "Owner": {"kind": "class", "name": "Owner", "qualifiedName": "Owner", "fields": [],
+                      "location": {"file": "Comp/UserUnit.h", "line": 10}},
+            "Owner::Mode": {"kind": "enum", "name": "Mode", "qualifiedName": "Owner::Mode",
+                            "nestedIn": "Owner", "enumerators": [{"name": "FAST", "value": 0}],
+                            "location": {"file": "Comp/UserUnit.h", "line": 12}},
+            "Owner::Byte_t": {"kind": "typedef", "name": "Byte_t",
+                              "qualifiedName": "Owner::Byte_t", "nestedIn": "Owner",
+                              "underlyingType": "unsigned char",
+                              "location": {"file": "Comp/UserUnit.h", "line": 21}},
+        }
+        unit = {"path": "Comp/UserUnit", "fileName": "UserUnit.cpp",
+                "functionIds": [USER_FID], "globalVariableIds": []}
+        return dx.build_rows(unit, [], dd, {}, str(tmp_path), None, {},
+                             {}, {}, SRC_PATHS, None, {})
+
+    def test_union_and_using_are_listed_as_written(self, tmp_path):
+        decls = _decls(self._rows(tmp_path))
+        assert any(d.startswith("union Word {") for d in decls)
+        assert any(d.startswith("using Alias_t = unsigned short;") for d in decls)
+
+    def test_the_class_cell_keeps_signatures_and_drops_bodies(self, tmp_path):
+        cell = next(d for d in _decls(self._rows(tmp_path)) if d.startswith("class Owner"))
+        assert "int open(int slot);" in cell
+        assert "int status();" in cell and "return 1" not in cell
+        assert "int secretKey();" in cell and "4242" not in cell
+        assert "int m_slot;" in cell and "static int s_count;" in cell
+        assert "public:" in cell and "private:" in cell
+
+    def test_nested_types_appear_only_inside_the_class(self, tmp_path):
+        decls = _decls(self._rows(tmp_path))
+        cell = next(d for d in decls if d.startswith("class Owner"))
+        assert "enum Mode { FAST = 0, SAFE = 1 };" in cell
+        assert "using Byte_t = unsigned char;" in cell
+        others = [d for d in decls if d is not cell]
+        assert not any("Mode" in d or "Byte_t" in d for d in others)

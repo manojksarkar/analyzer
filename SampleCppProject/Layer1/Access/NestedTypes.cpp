@@ -18,7 +18,14 @@ struct NestedStats {
 
 static NestedStats s_stats = { 0, 0 };
 
+// Uses the file-scope union and alias, so neither is dead code.
+static NestedWord s_word = { 0 };
+
 int NestedOwner::nestedApply(int v) {
+    NestedAlias_t small = (NestedAlias_t)(v & 0xFFFF);
+    PrivateWord pw = { 0 };
+    PrivateAlias_t pb = (PrivateAlias_t)(v & 0xFF);
+    s_word.whole += small + pw.whole + pb;
     PrivateState st = (v > 0) ? NS_BUSY : NS_IDLE;
     PrivateByte_t b = (PrivateByte_t)(v & 0xFF);
     PrivateSlot slot = { v };

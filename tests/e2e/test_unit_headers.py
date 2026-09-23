@@ -71,11 +71,15 @@ def test_only_used_orphan_macros_are_lent(unit_headers):
     assert any("SHARED_SCALE_FACTOR" in d for d in lib)
 
 
-def test_a_plain_struct_is_not_listed(unit_headers):
-    """On this branch a struct reaches the table only through a typedef."""
-    for rows in unit_headers.values():
+def test_a_class_static_definition_has_no_row(unit_headers):
+    """The class declares the member, so its out-of-line definition is not listed again.
+
+    None of the My Sample units declares a class, so this asserts the absence pattern that
+    would appear if the rule regressed -- a `Foo::s_x` row.
+    """
+    for unit_key, rows in unit_headers.items():
         for d in _decls(rows):
-            assert not d.strip().startswith("class "), d
+            assert "::" not in d.split("=")[0], "%s: %r" % (unit_key, d)
 
 
 def test_snapshot(unit_headers, assert_snapshot, llm_descriptions_off):

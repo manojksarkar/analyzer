@@ -72,6 +72,104 @@ def _strip_comments(text: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _struct_description(type_name: str, fields: list, config, abbreviations,
+                       label: str = "Structure") -> str:
+    """One-line description for the information column of a struct/class/union row.
+
+    A record type has no value to print, so the cell carries meaning instead: the LLM's
+    sentence when descriptions are on and the provider answers, else the name-derived
+    fallback. Shared with the `typedef struct` path, so one type reads the same however it
+    was declared.
+    """
+    info = _struct_info_from_name(type_name, label)
+    if not config:
+        return info
+    try:
+        from llm_enrichment import get_struct_description, llm_provider_reachable
+        if llm_provider_reachable(config) and config.get("llm", {}).get("descriptions", True):
+            llm_desc = get_struct_description(type_name, fields or [], config, abbreviations or {})
+            if llm_desc:
+                return llm_desc
+    except ImportError:
+        pass
+    return info
+
+
+_ACCESS_LABEL_RE = re.compile(r"^(public|protected|private)" + chr(92) + "s*:")
+_RECORD_LABEL = {"class": "Class", "union": "Union", "struct": "Structure"}
+
+
+def _is_member_method(line: str) -> bool:
+    """True for a line that declares or defines a METHOD of the record being listed.
+
+    Told apart from data by the name-then-paren shape, with three exclusions: a nested type
+    keeps its own line, `int (*fp)(int);` is a function-POINTER member and therefore data,
+    and an initialiser that happens to call something (`int n = f();`) is data too, since
+    its `=` comes before the paren.
+    """
+    text = (line or "").strip()
+    if "(" not in text:
+        return False
+    for kw in ("enum ", "struct ", "union ", "class ", "typedef ", "using ",
+               "public:", "protected:", "private:"):
+        if text.startswith(kw):
+            return False
+    if "(*" in text:
+        return False
+    head = text.split("(", 1)[0]
+    if "=" in head:
+        return False
+    return bool(re.search(r"[A-Za-z_~][A-Za-z0-9_]*" + chr(92) + "s*$", head))
+
+
+def _declarations_only(decl: str) -> str:
+    """A record's declaration with every member body reduced to a declaration.
+
+    Methods stay -- the client wants the declaration as written -- but an inline BODY does
+    not: `int status() { return 1; }` is listed as `int status();`. The body is the unit's
+    implementation, which the flowchart section documents; here it only makes the cell tall.
+
+    Comments go first. Left in, they defeat nothing here, but they are stripped from the
+    cell later anyway and removing them now keeps a multi-line body's tail from surviving
+    as a comment after its code is gone.
+    """
+    lines = []
+    in_block = False
+    for ln in (decl or "").split(chr(10)):
+        t = ln.strip()
+        if in_block:
+            if "*/" in t:
+                in_block = False
+            continue
+        if t.startswith("/*") and "*/" not in t:
+            in_block = True
+            continue
+        if t.startswith("//") or (t.startswith("/*") and t.endswith("*/")) or t.startswith("*"):
+            continue
+        if not t:
+            continue
+        lines.append(ln)
+
+    out, dropping, depth = [], False, 0
+    for ln in lines:
+        if dropping:
+            depth += ln.count("{") - ln.count("}")
+            if depth <= 0:
+                dropping = False
+            continue
+        if _is_member_method(ln) and "{" in ln:
+            opened = ln.count("{") - ln.count("}")
+            head = ln.split("{", 1)[0].rstrip()
+            # `= default` / `= delete` live before the brace on some forms; a plain
+            # signature just gains its semicolon.
+            out.append(head + ";" if not head.endswith(";") else head)
+            if opened > 0:
+                dropping, depth = True, opened
+            continue
+        out.append(ln)
+    return chr(10).join(out)
+
+
 def _strip_ext(path: str) -> str:
     if not path:
         return path
@@ -92,10 +190,14 @@ def _unit_paths(unit_info: dict) -> List[str]:
         return [_strip_ext(p) for p in path]
     return [_strip_ext(path)]
 
-def _struct_info_from_name(name: str) -> str:
-    """Build a short description for a struct, e.g. 'HeapSort' -> 'Structure for Heap sorting'."""
+def _struct_info_from_name(name: str, label: str = "Structure") -> str:
+    """Build a short description, e.g. 'HeapSort' -> 'Structure for Heap sorting'.
+
+    `label` opens the sentence -- "Class" for a class, "Union" for a union, so a type is
+    not announced as something it is not.
+    """
     if not (name or "").strip():
-        return "Structure for (unnamed)"
+        return f"{label} for (unnamed)"
     s = name.strip()
     # Snake_case -> spaces; CamelCase -> spaces before capitals
     readable = []
@@ -111,7 +213,7 @@ def _struct_info_from_name(name: str) -> str:
     # Optional: lowercase trailing 'ing' context, e.g. "Heap Sort" -> "Heap sorting"
     if base and base.endswith(" Sort"):
         base = base[:-5] + " sorting"
-    return f"Structure for {base}"
+    return f"{label} for {base}"
 
 
 def _read_decl_snippet(abs_file: str, start_line: int, *, kind: str) -> str:
@@ -176,7 +278,10 @@ def _read_decl_snippet(abs_file: str, start_line: int, *, kind: str) -> str:
     if "(" in first_line and ")" in first_line and first_line.endswith(";"):
         return "-"
 
-    if kind == "typedef" and not out.lstrip().startswith("typedef"):
+    # `using T = int;` is recorded as a typedef -- the two declare the same thing -- so the
+    # snippet guard has to accept both spellings, or a C++11 alias is read as "an extra
+    # alias on a `} one_s, *one_s_2;` line" and dropped entirely.
+    if kind == "typedef" and not out.lstrip().startswith(("typedef", "using")):
         return "-"
 
     if kind == "enum" and not (
@@ -184,8 +289,8 @@ def _read_decl_snippet(abs_file: str, start_line: int, *, kind: str) -> str:
     ):
         return "-"
 
-    if kind == "struct":
-        if not out.lstrip().startswith(("struct", "typedef struct")):
+    if kind in ("struct", "class", "union"):
+        if not out.lstrip().startswith((kind, "typedef " + kind)):
             return "-"
 
     return out if out else "-"
@@ -278,6 +383,12 @@ def build_rows(
 
     for gid in _gids:
         g = (global_variables_data or {}).get(gid) or {}
+        # A class's static member is already listed inside that class's own declaration, so
+        # its out-of-line definition does not get a row of its own -- `int Foo::s_count = 0;`
+        # would repeat what `static int s_count;` in the class already said. The cost is the
+        # initial value, which lives only in the definition; accepted (client, 2026-09-23).
+        if (g.get("className") or "").strip():
+            continue
         if not (g.get("value") or "").strip() and g.get("qualifiedName") in _valued:
             continue
         loc = g.get("location") or {}
@@ -310,9 +421,20 @@ def build_rows(
         if not type_file:
             continue
         kind = t.get("kind", "")
-        # Include structs/unions so typedef-based structs (and unions) are visible
-        # in the unit header table alongside typedef/enum/define entries.
-        if kind not in ("typedef", "enum", "define"):
+        # struct / class / union are listed in their own right now, not only through a
+        # `typedef struct {...} S;` -- a type named in a flowchart or a description has to be
+        # explained somewhere (client, 2026-09-23).
+        if kind not in ("typedef", "enum", "define", "struct", "class", "union"):
+            continue
+        # A type declared INSIDE a class gets no row of its own: the class's declaration
+        # already shows it, so a row would state it twice. `nestedIn` is stamped by the
+        # parser, which is the only place that can tell `Outer::Inner` (a class) from
+        # `ns::Type` (a namespace) -- the qualified name reads the same either way.
+        if t.get("nestedIn"):
+            continue
+        # An anonymous record reaches us as the body of a `typedef ... {...} S;`, whose own
+        # entry emits the full declaration from the same line.
+        if kind in ("struct", "class", "union") and (t.get("name") or "") in ("", "(anonymous)"):
             continue
         is_own = type_file in unit_paths_set
         # An orphan header = a header file whose stem has no same-name source.
@@ -370,7 +492,7 @@ def build_rows(
         decl = _read_decl_snippet(abs_file, line, kind=kind)
 
         if kind == "typedef":
-            # If the snippet didn't start with "typedef", this entry is an alias
+            # If the snippet didn't start with "typedef" or "using", this entry is an alias
             # at a non-start position (e.g. "} one_s, *one_s_2;" line).  The full
             # declaration is emitted by the entry at the actual "typedef struct" line,
             # so skip this one entirely rather than falling back to just the name.
@@ -392,20 +514,14 @@ def build_rows(
                         parts.append(f"{n}={v}" if v is not None else n)
                 info = ", ".join(parts) if parts else NA
 
-            elif isinstance(enum_ent, dict) and enum_ent.get("kind") == "struct":
+            elif isinstance(enum_ent, dict) and enum_ent.get("kind") in ("struct", "class", "union"):
                 # typedef struct: description from name + fields (on the go, no store)
-                type_name = t.get("name") or underlying or _type_name
-                fields = enum_ent.get("fields") or []
-                info = _struct_info_from_name(type_name)  # fallback
-                if config:
-                    try:
-                        from llm_enrichment import get_struct_description, llm_provider_reachable
-                        if llm_provider_reachable(config) and config.get("llm", {}).get("descriptions", True):
-                            llm_desc = get_struct_description(type_name, fields, config, abbreviations or {})
-                            if llm_desc:
-                                info = llm_desc
-                    except ImportError:
-                        pass
+                info = _struct_description(
+                    t.get("name") or underlying or _type_name,
+                    enum_ent.get("fields") or [],
+                    config, abbreviations,
+                    _RECORD_LABEL.get(enum_ent.get("kind"), "Structure"),
+                )
             else:
                 info = NA
         elif kind == "enum":
@@ -417,6 +533,14 @@ def build_rows(
                 if n:
                     parts.append(f"{n}={v}" if v is not None else n)
             info = ", ".join(parts) if parts else NA
+        elif kind in ("struct", "class", "union"):
+            # The declaration as written, members and method SIGNATURES included -- only an
+            # inline body is reduced to its declaration (client, 2026-09-23).
+            decl = _declarations_only(decl)
+            info = _struct_description(
+                t.get("name") or _type_name, t.get("fields") or [], config, abbreviations,
+                _RECORD_LABEL.get(kind, "Structure"),
+            )
         else:
             info = NA
 
