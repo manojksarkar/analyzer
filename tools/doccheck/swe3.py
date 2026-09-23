@@ -94,8 +94,8 @@ POLICIES = {
         "declKind":    Policy("exact", MEDIUM, "kind"),
         "declaration": Policy("code", MEDIUM, "declaration"),
         "value":       Policy("exact", MEDIUM, "value"),
-        # A struct's cell carries a sentence, not a value; a reworded sentence is not a
-        # defect, which is what "text" means here.
+        # A struct, class or union's cell carries a sentence, not a value; a reworded
+        # sentence is not a defect, which is what "text" means here.
         "description": Policy("text", INFO, "description"),
     },
     "function": {
@@ -215,6 +215,33 @@ def _iface_row(row, cols, index):
 
     sd = cell("sourceDest")
     ent.fields["sourceDest"] = cells.name_set(sd.text if sd else "")
+    return ent
+
+
+# The kinds whose second cell is a sentence ("Structure for ...", "Union for ..."), not a
+# value -- `views/unit_headers.py` gives all three a one-line description.
+_RECORD_KINDS = ("struct", "class", "union")
+
+
+def header_row(text, info="", index=0):
+    """One row of a unit header table, named by the symbol it declares.
+
+    The one place a header row is built -- the extractor uses it, and so do the tests,
+    so what they check is what a document gets.
+    """
+    kind, sym, norm = cells.declaration(text)
+    # Fall back to the raw text as the name: a row nobody can parse must
+    # still be a row, or the comparison loses it silently.
+    ent = Entity(kind="headerdef", name=sym or text, index=index)
+    ent.fields["declKind"] = kind or "unparsed"
+    ent.fields["declaration"] = norm or text
+    # A value and a description are different fields because they deserve different
+    # severities. A typedef gets either, depending on whether it stands for an enum
+    # (values) or for a record (a sentence).
+    if kind in _RECORD_KINDS or (kind == "typedef" and "=" not in info):
+        ent.fields["description"] = info
+    else:
+        ent.fields["value"] = info
     return ent
 
 
@@ -349,21 +376,8 @@ def extract(blocks) -> Entity:
                 for i, row in enumerate(b.rows[1:]):
                     if not row or not row[0].text:
                         continue
-                    _kind, _sym, _norm = cells.declaration(row[0].text)
-                    _info = row[1].text if len(row) > 1 else ""
-                    # Fall back to the raw text as the name: a row nobody can parse must
-                    # still be a row, or the comparison loses it silently.
-                    ent = Entity(kind="headerdef", name=_sym or row[0].text, index=i)
-                    ent.fields["declKind"] = _kind or "unparsed"
-                    ent.fields["declaration"] = _norm or row[0].text
-                    # A value and a description are different fields because they deserve
-                    # different severities. A typedef gets either, depending on whether it
-                    # stands for an enum (values) or a struct (a sentence).
-                    if _kind in ("struct", "class") or (_kind == "typedef" and "=" not in _info):
-                        ent.fields["description"] = _info
-                    else:
-                        ent.fields["value"] = _info
-                    unit.children.append(ent)
+                    info = row[1].text if len(row) > 1 else ""
+                    unit.children.append(header_row(row[0].text, info, i))
 
             elif component is not None and "component" in probe and "unit" in probe:
                 cols = cells.resolve_columns(header, _UNIT_TABLE_COLUMNS)

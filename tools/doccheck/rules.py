@@ -113,15 +113,10 @@ def annotate(result, left, right):
                         "written to the older rule leaves these out (%s, 'N.1.4 unit header table')" % WIKI)
                 demote = True
 
-        elif finding.kind == "missing" and "headerdef" in finding.summary:
-            # The mirror case: a row THEY have and we do not. A union or a `using` alias is
-            # the known one -- neither reaches our data dictionary at all, so no table of
-            # ours can carry it.
-            ent = li["headerdefs"].get(unit_key, {}).get(leaf)
-            decl = ((ent.fields.get("declaration") if ent is not None else "") or "").lower()
-            if decl.startswith("union ") or decl.startswith("using "):
-                rule = ("`union` and `using` declarations are not recorded by the parser at all, so no "
-                        "table of ours can list them (PROJECT_CONTEXT.md, 'Risk 8')")
+        # A header row THEY have and we do not carries no rule. It used to: a `union` or a
+        # `using` alias never reached our data dictionary, so no table of ours could list
+        # one. Both are recorded since 147c4cd (client answer Q16), and the rule would now
+        # explain away a row that is genuinely missing.
 
         elif finding.kind == "differs" and finding.field in ("risk", "capacity"):
             rule = ("Risk is fixed at Medium and Capacity at Common; neither is worked out from "

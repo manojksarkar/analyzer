@@ -201,6 +201,17 @@ def declaration(text):
         names = _IDENT_IN_RE.findall(first)
         return ("typedef", names[-1] if names else "", body)
 
+    if body.startswith("using "):
+        # `using T = int;` declares what `typedef int T;` declares, and the parser records
+        # it as a typedef -- so it reads as one here, and the two spellings of one alias
+        # agree on kind. Any other `using` (a using-declaration or directive) declares no
+        # type; it is named by its last identifier rather than mistaken for a variable.
+        m = re.match(r"using\s+([A-Za-z_][A-Za-z0-9_]*)\s*=", body)
+        if m:
+            return ("typedef", m.group(1), body)
+        names = _IDENT_IN_RE.findall(body[len("using "):])
+        return ("using", names[-1] if names else "", body)
+
     for kw in _DECL_KEYWORDS:
         if body == kw or body.startswith(kw + " "):
             m = re.match(kw + r"\s+([A-Za-z_][A-Za-z0-9_]*)", body)
