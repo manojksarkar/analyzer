@@ -1,4 +1,4 @@
-"""Unit tests for docx_exporter._build_unit_header_table orphan-header surfacing.
+"""Unit tests for views/unit_headers.py::build_rows -- orphan-header surfacing.
 
 A unit's header table must list, besides its own declarations, the
 define/enum/typedef symbols defined in an *orphan header* (a header with no
@@ -16,7 +16,7 @@ pytestmark = pytest.mark.unit
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 
-import docx_exporter as dx  # noqa: E402
+from views import unit_headers as dx  # noqa: E402
 
 
 # Two real (source-backed) units, plus an orphan header Shared.h (no Shared.cpp).
@@ -73,7 +73,7 @@ def _decls(rows):
 
 def _build(unit_info):
     # base_path="" keeps this filesystem-free: enum decl snippet falls back to name.
-    return dx._build_unit_header_table(
+    return dx.build_rows(
         unit_info, [], DD, {}, "", None, {}, MACRO_USERS, TYPE_USERS, SRC_PATHS
     )
 
@@ -122,7 +122,7 @@ class TestTextualFallback:
                 "functionIds": [OTHER_FID], "globalVariableIds": []}
 
     def _build_with_text(self, unit_info, text_names):
-        return dx._build_unit_header_table(
+        return dx.build_rows(
             unit_info, [], DD, {}, "", None, {}, MACRO_USERS, TYPE_USERS,
             SRC_PATHS, text_names,
         )
@@ -188,7 +188,7 @@ class TestGlobalsNotFilteredByVisibility:
                 "functionIds": [USER_FID], "globalVariableIds": list(GLOBALS)}
 
     def _rows(self):
-        return dx._build_unit_header_table(
+        return dx.build_rows(
             self._unit(), [], DD, GLOBALS, "", None, {}, MACRO_USERS, TYPE_USERS, SRC_PATHS
         )
 
@@ -251,7 +251,7 @@ class TestOrphanHeaderGlobals:
     def _rows(self, own_gids=()):
         unit = {"path": "Comp/UserUnit", "fileName": "UserUnit.cpp",
                 "functionIds": [USER_FID], "globalVariableIds": list(own_gids)}
-        return dx._build_unit_header_table(
+        return dx.build_rows(
             unit, [], {}, ORPHAN_GLOBALS, "", None, {},
             {}, {}, SRC_PATHS, None, GLOBAL_USERS,
         )
@@ -272,7 +272,7 @@ class TestOrphanHeaderGlobals:
     def test_non_using_unit_gets_no_orphan_global(self):
         unit = {"path": "Comp/OtherUnit", "fileName": "OtherUnit.cpp",
                 "functionIds": [OTHER_FID], "globalVariableIds": []}
-        rows = dx._build_unit_header_table(
+        rows = dx.build_rows(
             unit, [], {}, ORPHAN_GLOBALS, "", None, {},
             {}, {}, SRC_PATHS, None, GLOBAL_USERS,
         )

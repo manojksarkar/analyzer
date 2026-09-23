@@ -9,6 +9,7 @@
   },
   "views": {
     "interfaceTables": true,
+    "unitHeaders": true,
     "unitDiagrams": true,
     "flowcharts": false,
     "behaviourDiagram": false,

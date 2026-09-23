@@ -1,5 +1,5 @@
 """Unit tests for comment stripping + multi-line initializer capture in the
-unit header table (docx_exporter._build_unit_header_table).
+unit header table (views/unit_headers.py::build_rows).
 
 Covers three reported issues:
   - comments must not appear in either column (declaration or value),
@@ -17,7 +17,7 @@ pytestmark = pytest.mark.unit
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 
-import docx_exporter as dx  # noqa: E402
+from views import unit_headers as dx  # noqa: E402
 
 
 class TestStripComments:
@@ -61,7 +61,7 @@ _DD_DEFINE = {
 def test_define_column_has_no_comment():
     unit_info = {"path": "Comp/U", "fileName": "U.cpp",
                  "functionIds": [], "globalVariableIds": []}
-    rows = dx._build_unit_header_table(
+    rows = dx.build_rows(
         unit_info, [], _DD_DEFINE, {}, "", None, {}, {}, {}, {"Comp/U"}
     )
     foo = [r for r in rows if "FOO" in (r.get("declaration") or "")]
@@ -93,7 +93,7 @@ def test_global_multiline_initializer_value(tmp_path):
     }
     unit_info = {"path": "Comp/U", "fileName": "U.cpp",
                  "functionIds": [], "globalVariableIds": ["g1"]}
-    rows = dx._build_unit_header_table(
+    rows = dx.build_rows(
         unit_info, [], {}, globals_data, str(tmp_path), None, {}, {}, {}, set()
     )
     tbl = [r for r in rows if "tbl" in (r.get("declaration") or "")]

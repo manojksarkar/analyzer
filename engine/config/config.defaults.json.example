@@ -44,6 +44,9 @@
   // -------------------------------------------------------------------------
   "views": {
     "interfaceTables": true,
+    // The unit header table. Defaults ON like interfaceTables: both are mandatory
+    // document content, not optional extras.
+    "unitHeaders": true,
     "unitDiagrams": true,
     // Flowcharts and behaviour diagrams are OFF: both need external tooling
     // (Graphviz / mmdc + a browser) that tools/doctor.py preflights.
