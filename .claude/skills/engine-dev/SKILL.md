@@ -108,6 +108,31 @@ Four phases. **Each is a separate Python subprocess**; they communicate through 
 
 Short, prefixed (`feat:`, `fix:`, `refactor:`, `docs:`). **No "Claude" mentions, no co-author trailer.**
 
+## Definition of done — every output-rule change
+
+The list the user should not have to retype. A rule change is not done until all six:
+
+1. **Fix** the code.
+2. **Fixture** — add the scenario to `SampleCppProject`, one file or class per behaviour. A rule with
+   no fixture is a rule nobody can check. Mind the placement gotcha: a file outside a mapped component
+   dir is silently excluded from the parse.
+3. **Tests** — extend the existing test module, don't start a new one. Assert the new row **and** the
+   case that must stay excluded.
+4. **Before/after** — run the pipeline both ways and show the actual cells that changed. Turn
+   `llm.descriptions` + `llm.behaviourNames` off (`--no-llm`), or it is minutes of LLM for nothing.
+   Documents come out per **group** (`--scope "group:L.G"`) or per component — a `layer:` scope writes
+   the model and **no documents**. Reading a `.docx` back: `tools/dump_docx.py`, but it flattens cell
+   line breaks to ` // `, so check a real cell with `python-docx` before believing a cell is ugly.
+5. **Docs** — output-visible rule → `docs/spec/SWE3_WIKI.md` (client-facing; tables, prose only where
+   rationale needs it; an undecided rule goes in as a `⚠ To confirm`, never as a rule). Mechanism, gaps
+   and the matrix → `PROJECT_CONTEXT.md` + its `> Updated:` log.
+6. **Every consumer** — an output rule has more than one implementation:
+   - `engine/docx_exporter.py` — the DOCX, and the only one that reads the C++ source
+   - `api/services/doc_render.py` — the web view, model JSON only, no source access
+   - `tools/doccheck/` — the comparison must be able to SEE the difference, or a client review reports
+     your change as a defect
+   - `tests/snapshots/Sample/*.json` — regenerate with `--update-snapshots` if view JSON moved
+
 ## Before you finish
 - Touched a phase? It still runs **standalone as a subprocess** — the phase boundary is files on disk.
 - New view? Registered + config-gated + reads model/logic only (no sibling-view output).

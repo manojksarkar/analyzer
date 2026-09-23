@@ -208,6 +208,118 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-23 (**the unit header table is no longer filtered by visibility, and a declaration is
+> no longer an interface** — branch `fix/swe3-review-v1`, commit `e1cee17`. Struct/class rows are the SAME
+> change split off onto `wip/swe3-unit-header-structs` (`7d74a06`) for discussion, at the user's
+> instruction. NOTE: that branch patches `_build_unit_header_table` inside `docx_exporter.py`, which the
+> view move below deleted — so it no longer cherry-picks cleanly. Re-apply its five edits to
+> `views/unit_headers.py` instead; `doc_render.py` needs none of them any more. Verified by real `--no-llm` pipeline runs on SampleCppProject, before/after.)
+>
+> **The table is now a PHASE-3 VIEW — `engine/views/unit_headers.py` -> `output/<group>/unit_headers.json`.**
+> It was the only table in the document built at EXPORT time, inside `docx_exporter.py`, and separately
+> re-implemented in `api/services/doc_render.py` because that one has no checkout to read declarations
+> from. Two implementations of one rule is how they drift: every change above had to be made twice, and
+> orphan-header lending only ever existed on the DOCX side. **-457 lines from `docx_exporter.py`, -104 from
+> `doc_render.py`, +31.** Both now read the rows; neither builds them.
+>
+> - `build_rows()` is the old `_build_unit_header_table`, moved whole, with `_read_decl_snippet`,
+>   `_strip_comments`, `_strip_ext`, `_path_no_ext`, `_unit_paths`, `_struct_info_from_name`, the
+>   orphan-header lending, the `global_users` inversion and the per-unit identifier scan.
+> - The view CAN read the C++ source: `metadata.json` carries `basePath`, the same way the exporter got it.
+>   That is why phase 3 is the right home and phase 1 is not — a change to a RENDERING rule re-runs views
+>   alone, where recording the declaration text in the model at parse time would cost a full re-parse every
+>   time a cell's shape changed.
+> - It reads `edges.json` and `metadata.json` through `core.model_io` — model files, written by phases 1-2.
+>   It reads no other VIEW's output, per the view contract.
+> - **Default ON**, alongside `interfaceTables`, in `views/__init__.py`'s `default` expression as well as
+>   `config.defaults.json` — a workspace config written before this view existed has no `views.unitHeaders`
+>   key at all, and the table is mandatory document content, not an optional extra.
+> - Header-only units are skipped: `units_data` is keyed off files, so an orphan header has an entry, but
+>   only a `.cpp`-backed unit gets a document section. Rows for one would render nowhere.
+> - The exporter falls back to an empty dict when the file is absent, and each unit's table then reads `NA`.
+>
+> **Verified as a refactor, not a change:** a real `--no-llm` run of `Layer1.My Sample` before and after
+> differs by exactly one line per document — the document date. Byte-identical otherwise.
+>
+> **Tests:** `tests/unit/test_unit_header_orphan.py` and `test_unit_header_comments.py` retargeted from
+> `docx_exporter._build_unit_header_table` to `views.unit_headers.build_rows` (29 pass). New
+> `tests/e2e/test_unit_headers.py` (8 cases) with a `unit_headers` fixture in `tests/e2e/conftest.py`,
+> mirroring `interface_tables`. **The `Sample/unit_headers.json` snapshot does not exist yet** — the next
+> `--update-snapshots` run writes it, and that is the same run the stale `Sample` snapshots need.
+>
+> **Client decision.** The unit header table says what a unit **declares and uses**, not what it publishes.
+> A private global named in the unit's own flowcharts and descriptions had nothing in the document
+> explaining it. The interface table keeps its public/private logic untouched — the client confirmed that
+> half is right.
+>
+> **Four changes, one question each time: "is this the unit's, and does the unit use it?"**
+>
+> 1. **No visibility filter on the header table.** The `visibility == "private"` skip is gone from BOTH
+>    builders — `docx_exporter.py::_build_unit_header_table` and
+>    `api/services/doc_render.py::_build_unit_header_rows`. Miss the second and the web inspector and the
+>    DOCX disagree.
+> 2. **A declaration is not an interface.** `extern const OpsFn g_opsTable[];` in `OpsClient.cpp` promised
+>    storage `OpsTable.cpp` owns; OpsClient was publishing it as its own interface row. Parser now records
+>    **`isDefinition`** on EVERY global (not just class statics — `_isDefinition` is gone, the public field
+>    replaced it), `_GLOBAL_PAYLOAD_FIELDS` persists it, and new **`model_deriver._glb_is_private()`**
+>    buries a declaration-only global: private OR `isDefinition is False`. Absent reads as a definition, so
+>    a pre-2026-09-23 model does not bury every global at once. Verified:
+>    `IF_LAYER1_FULL_OPSCLIENT_01 | g_opsTable` is gone from the Cross document, OpsTable's row stays.
+> 3. **Orphan-header globals are lent to the units that use them**, as that header's macros and types
+>    already were. `edges.json` has no variable-users index and needs none: `readsGlobalIds` +
+>    `writesGlobalIds` inverted give varId -> fids, intersected with the unit's `functionIds`. **Lent on
+>    USE, not on `#include`** — the client chose that explicitly over "included is enough". Verified: `Lib`
+>    gains `extern int g_sharedTick;`; `Util` includes the same header, uses nothing, gains **0 rows**.
+> 4. **One variable reaching a unit twice is listed once.** The model key is
+>    `component|unit|qualifiedName` with no line, so an `extern` in `Foo.h` and the definition in `Foo.cpp`
+>    land on ONE key — last cursor used to win, which could leave a unit describing its own variable as an
+>    extern promise and (with rule 2) drop its row. **A definition now wins the collision.** The header
+>    builder also drops a valueless row when a valued one for the same qualified name reaches the unit.
+>
+> **The matrix, now RUN-VERIFIED rather than code-read** (this branch; struct/class is the one row the wip
+> branch changes):
+>
+> | element | access | dataDictionary | interface table | unit header |
+> |---|---|:---:|:---:|:---:|
+> | `static T s_x;` in class | `public:` | no | yes | yes |
+> | `static T s_x;` in class | `protected:` / `private:` / unlabelled `class` | no | no | **yes** |
+> | `static T s_x;` in struct | unlabelled `struct` | no | yes | yes |
+> | `static T s_x;` file scope | — | no | **yes — see Risk 8** | yes |
+> | `static int c;` inside a function | — | no | no | no |
+> | `int g_x;` file scope | — | no | yes | yes |
+> | `PRIVATE int g_x;` macro-marked | — | no | no | **yes** |
+> | `extern int g_x;` declaration only | — | no | **no** | yes |
+> | global in an orphan header | — | no | no | **yes, in each using unit** |
+> | `enum` / `typedef` / `#define` | **any, incl. `private:`** | yes | no | yes |
+> | `typedef struct {…} S;` | any | yes | no | yes |
+> | `struct S {…};` / `class C {…};` | any | yes | no | no (**yes** on the wip branch) |
+> | `union U {…};` / `using T = int;` | any | **no — not recorded at all** | no | no |
+> | function / method | `public:` or unmarked | no | yes if externally called | no |
+> | function / method | `private:` / `protected:` | no | no | no |
+>
+> **Why types ignore access:** data-dictionary entries have no `visibility` field.
+> `visit_type_definitions` records an ENUM_DECL/TYPEDEF_DECL/STRUCT_DECL unconditionally
+> (`parser.py:1310`, `:1345`) without ever reading `cursor.access_specifier`, and the unit-header loop
+> filters on file + kind. There is nothing to filter on. Confirmed in output: `enum PrivateState`,
+> `typedef unsigned char PrivateByte_t` and `int NestedOwner::s_privateSecret = 0;` all ship from
+> `NestedTypes`, whose interface table carries only `nestedApply`, `nestedPublicMode` and `s_publicCount`.
+>
+> **Fixtures** (`SampleCppProject`): **`Layer1/Access/NestedTypes.h/.cpp` + `NestedTypesUser.cpp`** — every
+> access position against every kind, in one class, with no macros so the C++ label is the only marking,
+> plus a file-scope `static`, a file-scope struct and a cross-unit caller. **`Sample/Core/SharedDefs.h`**
+> gains `extern int g_sharedTick;`, defined in `Core.cpp`, read by `Lib.cpp::libTickScale`, untouched by
+> `Util` which includes the header — the control for use-vs-include.
+>
+> **Tests:** `tests/unit/test_unit_header_orphan.py` -> 20 cases here (35 on the wip branch). 2311 unit
+> tests pass. **Outstanding: `tests/snapshots/Sample/*.json` moved** with the `Core.cpp`/`Lib.cpp` fixture
+> edits and are NOT regenerated. **`api/services/doc_render.py` still has no orphan-header support at
+> all**, so the web inspector shows fewer header rows than the DOCX — pre-existing, and rule 3 widened it.
+>
+> **Docs:** `docs/spec/SWE3_WIKI.md` N.1.4 and N.1.5 rewritten as tables at the user's request (prose only
+> where rationale needs it); *Access specifier* under N.1.4 now reads **None**; *Public vs. private* states
+> that none of it applies to the header table; two new "To confirm" items (file-scope `static`, and the
+> declaration-is-not-an-interface rule).
+
 > Updated: 2026-09-22b (**publication is now judged per UNIT, not per file** — branch
 > `fix/swe3-review-v1`, **UNCOMMITTED, not verified on a real project**).
 >
@@ -5606,6 +5718,32 @@ Fix when it becomes live: break the scan on an access label too, with an
 explicit `^(public|private|protected)\s*:` match rather than adding `":"` to
 the `endswith` tuple, so `case X:` and goto labels do not break the multi-line
 `PRIVATE UNIT __OVLYINIT` form the scan exists for.
+
+### Risk 8 — storage class, and two unhandled cursor kinds
+
+Two gaps left after the 2026-09-23 unit-header work.
+
+**A file-scope `static` publishes as an interface.** `_global_visibility` consults
+`cursor.access_specifier` only when `_is_class_static_var` is true, so a file-scope
+`static int s_x;` — or a file-scope `const`, also internal linkage in C++ — records as
+`public` and earns an interface row, though no other unit can reach it. Internal linkage
+is a stronger guarantee than a `private:` label: the linker enforces it, not access
+control. `static` FUNCTIONS escape by accident — every caller is necessarily in their own
+unit, so `_has_external_caller` buries them — unless a static function is defined in a
+header included by several `.cpp`s, which is the hole in the accident. Fix is one clause in
+`_global_visibility`: a non-class VAR_DECL with `storage_class == StorageClass.STATIC` ->
+`"private"`. No declaration/definition ambiguity here, unlike the class-static case: a
+file-scope static has one cursor. Left open deliberately — it is a policy call, raised with
+the client in SWE3_WIKI N.1.5.
+
+**`UNION_DECL` and `TYPE_ALIAS_DECL` are not handled.** `visit_type_definitions` dispatches
+on STRUCT_DECL / CLASS_DECL / ENUM_DECL / TYPEDEF_DECL only, so a `union U {…};` and a
+C++11 `using T = int;` reach the data dictionary NEVER — no entry, no range, no row in any
+table, at any access level. A `typedef union {…} U;` does appear, through its typedef. The
+comment above the unit-header kind filter claims unions are included; it is wrong.
+
+Neither has a fixture, and both are code-read — unlike the rest of the 2026-09-23 matrix,
+which a pipeline run confirmed.
 
 ---
 
