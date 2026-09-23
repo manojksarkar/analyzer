@@ -434,6 +434,28 @@ def _fn_is_private(f: dict, functions_data: dict, base_path: str) -> bool:
     return not _has_external_caller(f, functions_data, base_path)
 
 
+def _glb_is_private(g: dict) -> bool:
+    """A global the unit must not publish as its interface.
+
+    Two reasons, and the second is not about visibility at all:
+
+    * marked (or C++-access) private -- the existing rule.
+    * a DECLARATION ONLY. `extern const OpsFn g_opsTable[];` in OpsClient.cpp is a promise
+      that the storage exists elsewhere; OpsClient owns nothing and merely reads someone
+      else's table, so publishing it as OpsClient's interface claims a relationship that
+      runs the other way. The defining unit still publishes it. Nothing is lost from the
+      document: the unit header table is not filtered, so the `extern` line is still
+      listed there and explained (SWE3_WIKI N.1.4).
+
+    A pre-2026-09-22 model has no `isDefinition` field, and `.get` returning None there
+    would bury every global at once. Absent is therefore read as "a definition", which is
+    what every global was assumed to be before the field existed.
+    """
+    if (g.get("visibility") or "").lower() == "private":
+        return True
+    return g.get("isDefinition") is False
+
+
 def _build_interface_index(base_path: str, functions_data: dict, global_variables_data: dict):
     # Buckets are keyed by UNIT (component|unit), matching what the interface ID
     # encodes — see _unit_of. Keying by file restarts numbering at 01 in each half
@@ -452,7 +474,7 @@ def _build_interface_index(base_path: str, functions_data: dict, global_variable
         unit = _unit_of(g, base_path)
         if not unit:
             continue
-        bucket = private_glbs_by_unit if (g.get("visibility") or "").lower() == "private" else public_glbs_by_unit
+        bucket = private_glbs_by_unit if _glb_is_private(g) else public_glbs_by_unit
         bucket.setdefault(unit, []).append((vid, g))
 
     idx_by_id = {}
@@ -523,8 +545,13 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
         layer_name = get_component_layer_name(config, key_parts[0]) if config else None
         layer_code = _id_seg_layer(layer_name) if layer_name else _id_seg(project_name)
         idx_code = f"{idx_by_id.get(vid, 0):02d}"
-        is_private = (g.get("visibility") or "").lower() == "private"
-        prefix = "PIF" if is_private else "IF"
+        if _glb_is_private(g):
+            # Recorded, so the five view filters and the two exporter filters -- all of
+            # which test `visibility == "private"` -- need no change.
+            g["visibility"] = "private"
+            prefix = "PIF"
+        else:
+            prefix = "IF"
         g["interfaceId"] = f"{prefix}_{layer_code}_{group_code}_{unit_name_code}_{idx_code}" if group_code else f"{prefix}_{layer_code}_{unit_name_code}_{idx_code}"
 
 

@@ -79,7 +79,7 @@ _FN_PAYLOAD_FIELDS = (
 # declared inside a class (a static member), it has no column of its own, and without it
 # here the scope is lost on the way into the database. The sample project has no
 # class-scoped global, which is why nothing caught it.
-_GLOBAL_PAYLOAD_FIELDS = ("type", "value", "description", "className")
+_GLOBAL_PAYLOAD_FIELDS = ("type", "value", "description", "className", "isDefinition")
 
 
 # ---------------------------------------------------------------------------

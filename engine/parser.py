@@ -1822,11 +1822,16 @@ def visit_definitions(cursor):
                 "visibility": _global_visibility(cursor),
                 "_sourceHash": hash_cursor(cursor),
             }
+            # Definition or mere declaration. `extern int g_x;` is a promise that the
+            # storage exists somewhere else; the unit holding it owns nothing and must not
+            # publish it as its interface. Recorded for EVERY global, not just class
+            # statics: the same question decides which cursor survives the key collapse
+            # below and which units may publish the variable.
+            globals_data[var_id]["isDefinition"] = bool(cursor.is_definition())
             if _is_class_static_var(cursor):
                 # Read by _collapse_class_static_declarations only; stripped from the model
                 # entry below, which is built field by field.
                 globals_data[var_id]["_classStatic"] = True
-                globals_data[var_id]["_isDefinition"] = bool(cursor.is_definition())
             if value_str:
                 globals_data[var_id]["value"] = value_str
 
@@ -2273,14 +2278,14 @@ def _collapse_class_static_declarations():
     defs = {}
     for vid in sorted(globals_data):
         g = globals_data[vid]
-        if g.get("_classStatic") and g.get("_isDefinition"):
+        if g.get("_classStatic") and g.get("isDefinition"):
             defs[g["qualifiedName"]] = vid
     if not defs:
         return
     redirect = {}
     for vid in sorted(globals_data):
         g = globals_data[vid]
-        if not g.get("_classStatic") or g.get("_isDefinition"):
+        if not g.get("_classStatic") or g.get("isDefinition"):
             continue
         target = defs.get(g["qualifiedName"])
         if target and target != vid:
@@ -2415,8 +2420,16 @@ def build_metadata():
         if g.get("value"):
             g_entry["value"] = g["value"]
         g_entry["visibility"] = g.get("visibility", "default")
+        g_entry["isDefinition"] = bool(g.get("isDefinition"))
         if g.get("className"):
             g_entry["className"] = g["className"]
+        # The key drops the line, so `extern int g_x;` in Foo.h and `int g_x = 0;` in
+        # Foo.cpp -- one unit, one qualified name -- land on ONE key. Last cursor used to
+        # win, which could leave the unit describing its own variable as an extern promise
+        # and (with the interface-table rule below) drop its row. A definition wins.
+        _prev = global_variables_dict.get(vid)
+        if _prev is not None and _prev.get("isDefinition") and not g_entry["isDefinition"]:
+            continue
         global_variables_dict[vid] = g_entry
 
     # M4.4 narrowed parse: cross-TU callees live in files we did NOT re-parse, so they

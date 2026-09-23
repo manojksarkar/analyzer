@@ -69,6 +69,13 @@ PUBLIC int libScaleShared(int v) {
     return v * SHARED_SCALE_FACTOR;
 }
 
+PUBLIC int libTickScale(int v) {
+    // Reads the orphan header's GLOBAL without declaring it anywhere in this unit.
+    // Lib's header table must list `extern int g_sharedTick;` -- the flowchart below
+    // names it, and no other table in Lib's section would explain it.
+    return v * g_sharedTick;
+}
+
 PUBLIC int libLinearScale(int v, int from_max, int to_max) {
     // Normalize to [-1..1] range then rescale to to_max
     int sign = libSign(v);                    // private call
