@@ -44,7 +44,10 @@ def run_views(model, output_dir, model_dir, config, doc_type=DOC_TYPE_SWE3):
         elif not use_config_defaults:
             enabled = False
         else:
-            default = view_name == "interfaceTables"
+            # Both are mandatory document CONTENT, not optional extras -- and the
+            # default has to hold for a workspace config written before this view
+            # existed, which has no `views.unitHeaders` key at all.
+            default = view_name in ("interfaceTables", "unitHeaders")
             val = views_cfg.get(view_name)
             if view_name not in views_cfg:
                 enabled = default
@@ -57,6 +60,7 @@ def run_views(model, output_dir, model_dir, config, doc_type=DOC_TYPE_SWE3):
 
 # Import view components so they register themselves
 from . import interface_tables  # noqa: F401
+from . import unit_headers  # noqa: F401
 from . import behaviour_diagram  # noqa: F401
 from . import unit_diagrams  # noqa: F401
 from . import flowcharts  # noqa: F401

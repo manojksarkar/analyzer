@@ -257,103 +257,6 @@ def _load_abbreviations(config: dict) -> dict:
 
 # ── unit header table builder (model-only, no source file reads) ──────────────
 
-def _build_unit_header_rows(
-    unit_info: dict,
-    data_dictionary: dict,
-    global_variables_data: dict,
-) -> list[dict]:
-    """Build unit-header rows from model data (no source file access required)."""
-    rows: list[dict] = []
-    dd = data_dictionary or {}
-
-    # Collect the unit's source-file paths (without extension) for DD matching
-    path = unit_info.get("path") or ""
-    if isinstance(path, list):
-        unit_paths: set[str] = {p.replace("\\", "/").rsplit(".", 1)[0] for p in path}
-    elif path:
-        unit_paths = {path.replace("\\", "/").rsplit(".", 1)[0]}
-    else:
-        unit_paths = set()
-
-    # Global variables -- ALL of them. No visibility filter here: the unit header table
-    # says what the unit declares and uses, not what it publishes (SWE3_WIKI N.1.4).
-    for gid in (unit_info.get("globalVariableIds") or []):
-        g = (global_variables_data or {}).get(gid) or {}
-        decl = g.get("qualifiedName") or g.get("name") or str(gid) or "N/A"
-        info = g.get("value") or "N/A"
-        rows.append({"declaration": decl, "information": info})
-
-    # typedefs / enums / defines from data dictionary
-    _seen_typedef_locs: set = set()
-    for type_name, t in dd.items():
-        loc = t.get("location") or {}
-        rel_file = (loc.get("file") or "").replace("\\", "/")
-        type_file = rel_file.rsplit(".", 1)[0] if "." in rel_file else rel_file
-        if not type_file or type_file not in unit_paths:
-            continue
-        kind = t.get("kind", "")
-        if kind not in ("typedef", "enum", "define"):
-            continue
-        line = loc.get("line") or 0
-        if kind == "typedef":
-            loc_key = (rel_file, line)
-            if loc_key in _seen_typedef_locs:
-                continue
-            _seen_typedef_locs.add(loc_key)
-
-        if kind == "define":
-            macro_name = t.get("name") or type_name or ""
-            macro_value = t.get("value", "") or ""
-            if not macro_value and _INCLUDE_GUARD_RE.match(macro_name):
-                continue
-            decl = t.get("text") or macro_name or "N/A"
-            info = macro_value or "N/A"
-            rows.append({"declaration": decl, "information": info})
-            continue
-
-        if kind == "typedef":
-            decl = t.get("name") or type_name or "N/A"
-            underlying = (t.get("underlyingType") or "").strip()
-            enum_ent = dd.get(underlying)
-            if isinstance(enum_ent, dict) and enum_ent.get("kind") == "enum":
-                enums = enum_ent.get("enumerators") or []
-                parts = []
-                for e in enums:
-                    n = e.get("name", "")
-                    v = e.get("value")
-                    if n:
-                        parts.append(f"{n}={v}" if v is not None else n)
-                info = ", ".join(parts) if parts else "N/A"
-            else:
-                info = "N/A"
-        elif kind == "enum":
-            decl = t.get("name") or type_name or "N/A"
-            enums = t.get("enumerators") or []
-            parts = []
-            for e in enums:
-                n = e.get("name", "")
-                v = e.get("value")
-                if n:
-                    parts.append(f"{n}={v}" if v is not None else n)
-            info = ", ".join(parts) if parts else "N/A"
-        else:
-            continue
-
-        rows.append({"declaration": decl, "information": info})
-
-    # Deduplicate preserving richest info
-    dedup: dict = {}
-    for r in rows:
-        d = (r.get("declaration") or "N/A").strip()
-        if d not in dedup:
-            dedup[d] = r
-    out = list(dedup.values())
-    out.sort(key=lambda r: (r.get("declaration") or "").lower())
-    return out
-
-
-# ── flowchart / behavior-diagram loaders ─────────────────────────────────────
-
 def _view_json(output_reader, group_dir: Path, rel_name: str):
     """One view artifact as parsed JSON — Postgres FIRST, then disk (doc 09, C0).
 
@@ -687,6 +590,11 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
 
     # Load interface data
     itf: dict = _view_json(output_reader, group_dir, "interface_tables.json") or {}
+    # The unit header rows, built by the phase-3 view. This module used to rebuild them
+    # from model JSON alone, which meant no declaration text (no checkout to read) and no
+    # orphan-header symbols -- a second implementation of one rule, drifting from the
+    # exporter's. Now both read the same file.
+    unit_headers: dict = _view_json(output_reader, group_dir, "unit_headers.json") or {}
     unit_names: dict[str, str] = itf.get("unitNames", {}) or {}
 
     # Group unit keys by component
@@ -821,7 +729,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
 
             # N.1.U.1 unit header
             unit_info = units_data.get(uk) or {}
-            header_rows = _build_unit_header_rows(unit_info, dd_data, globals_data)
+            header_rows = unit_headers.get(uk) or []
             if header_rows:
                 hdr_table = {
                     "headers": ["global variables / typedef / enum / define", "information"],

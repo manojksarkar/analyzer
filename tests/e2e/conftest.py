@@ -102,6 +102,18 @@ def interface_tables(run_pipeline):
     return merged
 
 
+
+@pytest.fixture(scope="session")
+def unit_headers(run_pipeline):
+    """Every component's unit_headers.json, merged. Keys are component-qualified."""
+    merged = {}
+    for c in COMPONENTS:
+        path = os.path.join(output_for(c), "unit_headers.json")
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as f:
+                merged.update(json.load(f))
+    return merged
+
 @pytest.fixture(scope="session")
 def test_specs(run_pipeline):
     """Merged the same way `interface_tables` is, and for the same reason.
