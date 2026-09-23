@@ -885,7 +885,6 @@ try:
         baseline_version_id=baseline_version_id_arg,
         include_emulator=include_emulator_arg,
         selected_units=selected_units_arg,
-        doc_type=doc_type_arg,
     )
 except ValueError as e:
     log(str(e), component="run", err=True)
