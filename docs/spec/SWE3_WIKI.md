@@ -404,13 +404,15 @@ libclang has no answer, every branch is kept, so the macro is never lost.
 
 **Known gap:** a macro value is shown as written (`(1<<6)`), not worked out (`64`).
 
-**⚠ To confirm:** the declaration is shown exactly as written, so a `PUBLIC` / `PRIVATE` / `PROTECTED`
-marking appears in the cell — `PUBLIC int g_result = 0;`. Those are project macros that expand to nothing,
-so the compiler never sees them and dropping them would lose nothing about the declaration; keeping them
-matches the source a reviewer holds next to the document. Real C++ keywords stay either way: `extern` says
-this unit uses a global it does not own, and `static`, `const` and `volatile` change what the declaration
-means. They appear in this table only — the interface table shows a short name and a type, so no marking
-and no storage class ever reaches it.
+**The declaration is shown exactly as written — markings included.** `PUBLIC int g_result = 0;` is listed
+as written, not as `int g_result = 0;`. The markings are project macros that expand to nothing, so the
+document could drop them without losing anything the compiler sees, but the source states intent with them
+and a reviewer holds the code next to the document. Client decision, 2026-09-23.
+
+Real C++ keywords are kept for a stronger reason: `extern` says the unit uses a global it does not own, and
+`static`, `const`, `volatile` and `inline` change what the declaration means. None of this reaches the
+[interface table](#n15--unit-interface-table), which shows a short name and a type — so no marking and no
+storage class appears there at all.
 
 ### N.1.5 — Unit interface table
 
