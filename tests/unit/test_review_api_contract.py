@@ -435,3 +435,16 @@ class TestSwaggerOffersTheValidSlotKinds:
         with TestClient(app) as c:
             r = c.get("/api/v1/projects/p1/versions/v1/overrides?slot_kind=notAKind")
         assert r.status_code in (401, 422), r.status_code
+
+
+class TestSwaggerShowsARealFlowchartExample:
+    """A Dict[str, str] body renders in Swagger as {"additionalProp1": "string", ...}, which a
+    tester reasonably reads as three required fields with meaningless names. The example has to
+    show node ids, which is what the keys actually are."""
+
+    def test_the_example_uses_node_ids(self):
+        from api.main import app
+        sch = app.openapi()["components"]["schemas"]["UpdateFlowchartRequest"]
+        ex = (sch.get("examples") or [{}])[0]
+        assert ex.get("labels"), "no example -- Swagger falls back to additionalProp1/2/3"
+        assert not any(k.startswith("additionalProp") for k in ex["labels"])

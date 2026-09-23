@@ -68,7 +68,13 @@ class UpdateSlotRequest(BaseModel):
 
 class UpdateFlowchartRequest(BaseModel):
     labels: Dict[str, str] = Field(
-        ..., description="{node_id: text} — ONLY the labels the reviewer changed")
+        ..., description="{nodeId: new text} — ONLY the labels the reviewer changed. "
+                         "Node ids come from R7's `labels[].nodeId`.")
+
+    # Without this Swagger renders a Dict[str, str] as {"additionalProp1": "string", ...},
+    # which reads as three required fields with meaningless names.
+    model_config = {"json_schema_extra": {"examples": [
+        {"labels": {"N2": "Verify the checksum", "N5": "Retry the write"}}]}}
 
 
 class UpdateBehaviourRequest(BaseModel):
