@@ -65,6 +65,10 @@ def main(argv=None):
     ap.add_argument("--gate", choices=[HIGH, MEDIUM, LOW, INFO], default=None,
                     help="exit non-zero when a finding at this severity or above exists")
     ap.add_argument("--quiet", action="store_true", help="print the summary line only")
+    ap.add_argument("--full", action="store_true",
+                    help="list info findings too, and every changed line of a long difference")
+    ap.add_argument("--color", choices=["auto", "always", "never"], default="auto",
+                    help="colour and box-drawing: auto uses them on a terminal only")
     a = ap.parse_args(argv)
 
     for path in (a.reference, a.compared):
@@ -73,14 +77,13 @@ def main(argv=None):
             return 2
 
     profile, left = _load(a.reference, a.profile)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    style = report.Style.for_stream(sys.stdout, a.color)
 
     if a.self or not a.compared:
         findings = comparing.self_checks(left, profile)
-        print("%s: %s, %d finding(s) checking the document against itself"
-              % (os.path.basename(a.reference), profile.DOC_TYPE, len(findings)))
-        for f in findings:
-            print("  %-4s %s" % (f.level, f.path or "(document)"))
-            print("        %s" % f.summary)
+        print(report.self_text(a.reference, profile.DOC_TYPE, findings, style, a.full), end="")
         if a.json_out:
             with open(a.json_out, "w", encoding="utf-8") as fh:
                 fh.write(report.to_json(comparing.Result(), a.reference, "",
@@ -96,14 +99,10 @@ def main(argv=None):
                   % profile.DOC_TYPE, file=sys.stderr)
             return 2
         findings = pairing.check(design, spec)
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        print(pairing.summary(design, spec, findings))
-        print()
-        for f in findings:
-            print("  %-6s %-4s %s" % (f.severity, f.level, f.path))
-            print("         %s" % f.summary)
-            if f.rule:
-                print("         rule: %s" % f.rule)
+        design_path, spec_path = ((a.reference, a.compared) if profile is swe3
+                                  else (a.compared, a.reference))
+        print(report.pair_text(design_path, spec_path, pairing.summary(design, spec, findings),
+                               findings, style, a.full), end="")
         if a.json_out:
             import json as _json
             with open(a.json_out, "w", encoding="utf-8") as fh:
@@ -128,8 +127,8 @@ def main(argv=None):
     if a.quiet:
         print(report.summary_line(result))
     else:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        print(report.text(result, a.reference, a.compared))
+        print(report.text(result, a.reference, a.compared, self_left, self_right,
+                          style=style, full=a.full), end="")
 
     if a.markdown:
         with open(a.markdown, "w", encoding="utf-8") as fh:
