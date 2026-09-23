@@ -158,6 +158,66 @@ def function_of(heading, unit_name=""):
         start = cut + 1
 
 
+_COMMENT_RE = re.compile(r"/\*.*?\*/|//[^\n]*", re.DOTALL)
+_IDENT_IN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*")
+_DECL_KEYWORDS = ("enum", "class", "struct", "union")
+
+
+def declaration(text):
+    """A unit-header declaration as (kind, name, normalised text).
+
+    The header table's first column is the declaration AS WRITTEN, so using it as a row's
+    identity makes the row's own VALUE part of its identity: `#define MAXN 256` against
+    `#define MAXN 512` reads as one row missing and another appearing, and the change to
+    the value -- the thing worth reporting -- is never stated. Worse in the other
+    direction: `normalise_key` drops everything after the first `(`, so
+    `#define SCALE (1<<6)` and `#define SCALE (1<<7)` collapse to one key and the
+    difference vanishes in silence.
+
+    So the symbol NAME is the identity and the declaration becomes a compared field.
+
+    Returns ("", "", "") when nothing can be parsed, and the caller then keeps the raw
+    text as the name -- a row that cannot be understood must still be a row.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return "", "", ""
+    body = _COMMENT_RE.sub(" ", raw)
+    body = re.sub(r"\s+", " ", body).strip()
+    if not body:
+        return "", "", ""
+
+    if body.startswith("#define"):
+        m = re.match(r"#define\s+([A-Za-z_][A-Za-z0-9_]*)", body)
+        return ("define", m.group(1), body) if m else ("define", "", body)
+
+    if body.startswith("typedef"):
+        # The alias is what names the type. `typedef struct {…} one_s, *one_s_2;` declares
+        # two, and the first is the one the exporter's own de-duplication keeps.
+        # After the LAST '}' first: `typedef struct { int a; } one_s;` has a ';' INSIDE the
+        # braces, so splitting on ';' before that would stop at the field and name it.
+        tail = body.rsplit("}", 1)[-1] if "}" in body else body
+        first = tail.split(";", 1)[0].split(",", 1)[0]
+        names = _IDENT_IN_RE.findall(first)
+        return ("typedef", names[-1] if names else "", body)
+
+    for kw in _DECL_KEYWORDS:
+        if body == kw or body.startswith(kw + " "):
+            m = re.match(kw + r"\s+([A-Za-z_][A-Za-z0-9_]*)", body)
+            return (kw, m.group(1) if m else "", body)
+
+    # A variable: cut at whatever ends the declared name -- an initialiser, an array
+    # bound, a bit-field width or the semicolon -- then take the last identifier, which
+    # is the name however many qualifiers and macros precede it.
+    # A bit-field's ':' ends the name, but '::' is part of it -- so the single colon is
+    # matched only when no second one follows.
+    # A bit-field's ':' ends the name; the '::' of a qualified name does not. Both
+    # sides are excluded -- a lookahead alone still matched the SECOND colon of '::'.
+    head = re.split(r"[=;\[]|(?<!:):(?!:)", body, maxsplit=1)[0]
+    names = [n for n in _IDENT_IN_RE.findall(head) if n not in ("extern", "static", "const", "volatile")]
+    return ("global", names[-1] if names else "", body)
+
+
 def resolve_columns(header, spec):
     """Map a field name to its column index by reading the header row.
 

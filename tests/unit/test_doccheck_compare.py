@@ -475,3 +475,100 @@ def test_findings_are_ordered_worst_first():
     order = [f.severity for f in result.findings]
     rank = {HIGH: 0, MEDIUM: 1, LOW: 2, INFO: 3}
     assert order == sorted(order, key=lambda s: rank[s])
+
+
+# --- unit header rows -------------------------------------------------------
+#
+# A header row is identified by the SYMBOL it declares, not by its declaration text. The
+# old identity made the row's own value part of its identity, so a changed macro value read
+# as one row missing plus one appearing -- and a changed value INSIDE parentheses vanished
+# entirely, because the key dropped everything after the first '('.
+
+def headerdef(decl, info="", index=0):
+    """Built the way swe3.py builds one, so the tests exercise the real shape."""
+    from doccheck import cells
+    kind, sym, norm = cells.declaration(decl)
+    fields = {"declKind": kind or "unparsed", "declaration": norm or decl}
+    if kind in ("struct", "class") or (kind == "typedef" and "=" not in info):
+        fields["description"] = info
+    else:
+        fields["value"] = info
+    return Entity(kind="headerdef", name=sym or decl, index=index, fields=fields)
+
+
+def with_headers(rows):
+    u = unit("HdrUnit")
+    for i, r in enumerate(rows):
+        r.index = i
+        u.children.append(r)
+    return document([component("Comp", [u])])
+
+
+def test_identical_header_tables_say_nothing():
+    doc = with_headers([headerdef("#define MAXN 256", "256"),
+                        headerdef("int g_x = 0;", "0")])
+    assert run(doc, copy.deepcopy(doc)).findings == []
+
+
+def test_changed_macro_value_is_one_differs_not_a_missing_and_an_extra():
+    left = with_headers([headerdef("#define MAXN 256", "256")])
+    right = with_headers([headerdef("#define MAXN 512", "512")])
+    result = run(left, right)
+    assert kinds(result, "missing", "extra") == []
+    differs = kinds(result, "differs")
+    assert {f.field for f in differs} == {"declaration", "value"}
+
+
+def test_changed_value_inside_parentheses_is_seen():
+    """The old key dropped everything after the first '(' -- this went unreported."""
+    left = with_headers([headerdef("#define SCALE (1<<6)", "(1<<6)")])
+    right = with_headers([headerdef("#define SCALE (1<<7)", "(1<<7)")])
+    assert kinds(run(left, right), "differs")
+
+
+def test_reformatting_a_declaration_is_not_a_difference():
+    left = with_headers([headerdef("int  g_x=0 ;", "0")])
+    right = with_headers([headerdef("int g_x = 0;   // now with a comment", "0")])
+    assert run(left, right).findings == []
+
+
+def test_a_renamed_symbol_is_missing_plus_extra():
+    left = with_headers([headerdef("#define MAXN 256", "256")])
+    right = with_headers([headerdef("#define MAX_ITEMS 256", "256")])
+    result = run(left, right)
+    assert len(kinds(result, "missing")) == 1
+    assert len(kinds(result, "extra")) == 1
+
+
+def test_a_reworded_struct_description_is_advisory():
+    left = with_headers([headerdef("struct S { int a; };", "Structure for S")])
+    right = with_headers([headerdef("struct S { int a; };", "A structure holding a")])
+    differs = kinds(run(left, right), "differs")
+    assert [f.field for f in differs] == ["description"]
+    assert differs[0].severity == INFO
+
+
+def test_counts_are_reported_per_kind():
+    left = with_headers([headerdef("#define A 1", "1"), headerdef("#define B 2", "2"),
+                         headerdef("int g_x = 0;", "0")])
+    right = with_headers([headerdef("#define A 1", "1")])
+    counts = [f.summary for f in kinds(run(left, right), "count")]
+    assert any("headerdef define count: 2 -> 1" in c for c in counts)
+    assert any("headerdef global count: 1 -> 0" in c for c in counts)
+
+
+def test_a_private_row_only_we_have_carries_the_rule_and_drops_to_info():
+    left = with_headers([headerdef("#define A 1", "1"), headerdef("PRIVATE int g_count = 0;", "0")])
+    right = with_headers([headerdef("#define A 1", "1")])
+    extra = [f for f in run(right, left).findings if f.kind == "extra"]
+    assert len(extra) == 1
+    assert "declares and uses" in extra[0].rule
+    assert extra[0].severity == INFO
+
+
+def test_a_union_only_they_have_is_explained():
+    left = with_headers([headerdef("#define A 1", "1")])
+    right = with_headers([headerdef("#define A 1", "1"), headerdef("union U { int a; };", "-")])
+    missing = [f for f in run(right, left).findings if f.kind == "missing"]
+    assert len(missing) == 1
+    assert "not recorded by the parser" in missing[0].rule
