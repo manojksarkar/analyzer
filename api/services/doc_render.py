@@ -275,11 +275,10 @@ def _build_unit_header_rows(
     else:
         unit_paths = set()
 
-    # Public global variables
+    # Global variables -- ALL of them. No visibility filter here: the unit header table
+    # says what the unit declares and uses, not what it publishes (SWE3_WIKI N.1.4).
     for gid in (unit_info.get("globalVariableIds") or []):
         g = (global_variables_data or {}).get(gid) or {}
-        if (g.get("visibility") or "").lower() == "private":
-            continue
         decl = g.get("qualifiedName") or g.get("name") or str(gid) or "N/A"
         info = g.get("value") or "N/A"
         rows.append({"declaration": decl, "information": info})

@@ -214,6 +214,7 @@ def _build_unit_header_table(
     type_users: Optional[dict] = None,
     source_unit_paths: Optional[set] = None,
     used_symbol_names: Optional[set] = None,
+    global_users: Optional[dict] = None,
 ) -> List[Dict[str, str]]:
     """Build rows for unit header table.
 
@@ -251,9 +252,45 @@ def _build_unit_header_table(
                 used_type_qns.add(_tq)
 
     # Globals: use model/globalVariables.json so we can read exact line(s)
-    for gid in unit_info.get("globalVariableIds", []) or []:
+    #
+    # NOT filtered on visibility, unlike the interface table. This table says what the
+    # unit DECLARES AND USES, not what it publishes -- a private global still appears in
+    # the unit's own flowcharts and descriptions, so leaving it out left the reader with a
+    # name the document never explains. Client decision, 2026-09-22; see SWE3_WIKI N.1.4.
+    _gids = list(unit_info.get("globalVariableIds", []) or [])
+
+    # A global declared in an ORPHAN header belongs to no unit, so it used to appear
+    # nowhere at all -- while the flowcharts of the units reading it named it. Lent to
+    # each unit that USES it, exactly as this header's macros and types already are
+    # (`global_users` is varId -> fids, inverted from reads/writesGlobalIds). Include
+    # alone is not enough: the unit has to reference it.
+    if unit_fids and global_users:
+        _own = set(_gids)
+        for _gid, _fids in global_users.items():
+            if _gid in _own or not unit_fids.intersection(_fids):
+                continue
+            _g = (global_variables_data or {}).get(_gid) or {}
+            _rf = ((_g.get("location") or {}).get("file") or "").replace("\\", "/")
+            if not _rf.lower().endswith((".h", ".hpp", ".hxx")):
+                continue
+            if _path_no_ext(_rf) in src_paths:          # companion header of some unit
+                continue
+            _gids.append(_gid)
+
+    # One variable, two cursors: `extern int g_x;` here and `int g_x = 0;` elsewhere are
+    # separate entries keyed by file:line, and nothing merges them. Where both reach one
+    # unit, keep the one carrying an initial value -- the declaration says strictly less
+    # about the same storage. Two initialiser-less statics of the same name stay separate:
+    # they are different objects, not two views of one.
+    _valued = {
+        ((global_variables_data or {}).get(g) or {}).get("qualifiedName")
+        for g in _gids
+        if (((global_variables_data or {}).get(g) or {}).get("value") or "").strip()
+    }
+
+    for gid in _gids:
         g = (global_variables_data or {}).get(gid) or {}
-        if (g.get("visibility") or "").lower() == "private":
+        if not (g.get("value") or "").strip() and g.get("qualifiedName") in _valued:
             continue
         loc = g.get("location") or {}
         rel_file = (loc.get("file") or "").replace("\\", "/")
@@ -1290,6 +1327,15 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
         _rf = ((_g.get("location") or {}).get("file") or "").replace("\\", "/")
         if _rf:
             _unit_src_rels.setdefault(_uk, set()).add(_rf)
+    # varId -> the functions that read or write it, inverted from the per-function sets.
+    # edges.json carries macroUsers/typeUsers but no equivalent for variables, and none is
+    # needed: reads/writesGlobalIds already say it. Feeds the orphan-header lending in
+    # _build_unit_header_table.
+    global_users: Dict[str, set] = {}
+    for _fid, _f in functions_data.items():
+        for _vid in (_f.get("readsGlobalIds") or []) + (_f.get("writesGlobalIds") or []):
+            global_users.setdefault(_vid, set()).add(_fid)
+
     unit_used_names: Dict[str, set] = {}
     for _uk, _rels in _unit_src_rels.items():
         _ids: set = set()
@@ -1483,6 +1529,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 type_users,
                 source_unit_paths,
                 unit_used_names.get(unit_key),
+                global_users,
             )
             _add_unit_header_table(doc, unit_header_rows, font_small)
 

@@ -168,9 +168,15 @@ PUBLIC int coreMultiCallChain(int a, int b, int c) {
     return chained;
 }
 
+// The definition of the orphan header's `extern int g_sharedTick;`. Two cursors, one
+// variable, two model entries keyed by file:line -- and both reach THIS unit, which is
+// the case the extern/definition collapse is about: Core lists it once, with its value.
+int g_sharedTick = 0;
+
 PUBLIC int coreLevelBudget(SharedLevel lvl) {
     // Uses orphan-header SharedDefs.h: type SharedLevel + macros
     // SHARED_MAX_ITEMS / SHARED_MIN_ITEMS (but NOT SHARED_SCALE_FACTOR).
+    g_sharedTick++;
     int budget = SHARED_MAX_ITEMS;
     if (lvl == LEVEL_HIGH) {
         budget = SHARED_MIN_ITEMS;

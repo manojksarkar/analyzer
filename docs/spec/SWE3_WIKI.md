@@ -15,7 +15,7 @@ list; this document is the reasoning behind it.
   - [N.1.1 Component diagrams](#n11--component-diagrams)
   - [N.1.2 Component/Unit table](#n12--componentunit-table)
   - [N.1.3 Unit architecture diagram](#n13--unit-architecture-diagram) — [which edges](#which-edges-are-drawn) · [arrow direction](#arrow-direction) · [layout](#layout)
-  - [N.1.4 Unit header table](#n14--unit-header-table) — [column 1 declaration](#column-1--declaration) · [column 2 information](#column-2--information) · [orphan-header symbols](#orphan-header-symbols) · [cleanup](#cleanup-and-de-duplication) · [exclusions](#exclusions)
+  - [N.1.4 Unit header table](#n14--unit-header-table) — [what is listed](#what-is-listed) · [access specifier](#access-specifier) · [column 1 declaration](#column-1--declaration) · [orphan-header symbols](#orphan-header-symbols) · [cleanup](#cleanup-and-de-duplication) · [exclusions](#exclusions)
   - [N.1.5 Unit interface table](#n15--unit-interface-table) — [which rows, in what order](#which-rows-and-in-what-order) · [1 Interface ID](#column-1--interface-id) · [2 Interface Name](#column-2--interface-name) · [3 Information](#column-3--information) · [4 Data Type](#column-4--data-type) · [5 Data Range](#column-5--data-range) · [6 Direction](#column-6--directioninout) · [7 Source/Destination](#column-7--sourcedestination) · [8 Interface Type](#column-8--interface-type)
   - [N.1.6 Per-function flowchart entry](#n16--per-function-flowchart-entry) — [which flowcharts](#which-flowcharts-appear-under-the-entry) · [how one is built](#how-a-flowchart-is-built) · [Input/Output Name](#input-name--output-name)
 - [N.2 Dynamic Behaviour](#n2-dynamic-behaviour) — [which interactions qualify](#which-interactions-get-an-entry) · [the diagram](#the-diagram) · [the description table](#the-description-table)
@@ -121,6 +121,9 @@ marking cannot be picked up by mistake. C++ access comes from the compiler's own
 
 A global is private if marked `PRIVATE` or `PROTECTED`, or — for a static data member — if its C++ access
 is private or protected. Globals have no call graph, so the marking alone decides.
+
+**None of this applies to the [unit header table](#n14--unit-header-table)**, which lists what a unit
+declares and uses, whatever its visibility.
 
 **⚠ To confirm.** Rule 3 now decides almost every function, and its answer depends on what was parsed:
 
@@ -321,77 +324,79 @@ group is external.
 
 ### N.1.4 — Unit header table
 
-Two columns. What gets listed, by kind:
+Two columns: `declaration` | `information`. One row per symbol the unit declares.
 
-| Kind | Listed when | Column 2 (`information`) |
-|---|---|---|
-| Global variable | declared in the unit's own files and not marked `PRIVATE` | the starting value: everything to the right of the first `=`. Brackets are counted, so a value spread over several lines is captured in full. `N/A` if there is none |
-| `#define` | defined in the unit's own files | the macro value; `N/A` if it has none |
-| `enum` | defined in the unit's own files | `NAME=value, NAME=value, …` |
-| `typedef` | defined in the unit's own files | the enum values when it stands for an enum; a one-line description when it stands for a struct; `N/A` otherwise |
+#### What is listed
 
 "The unit's own files" means **both** halves of the unit: its source file **and** its header.
 
+| Kind | Listed when | Column 2 — information |
+|---|---|---|
+| Global variable | in the unit's own files, or lent by an orphan header it uses | the starting value: everything right of the first `=`, brackets counted; `N/A` if none |
+| `#define` | in the unit's own files | the macro value; `N/A` if none |
+| `enum` | in the unit's own files | `NAME=value, NAME=value, …` |
+| `typedef` → enum | in the unit's own files | the enum's values |
+| `typedef` → struct | in the unit's own files | a one-line description, from the name and its fields (name alone when the LLM is off) |
+| `typedef` → anything else | in the unit's own files | `N/A` |
+
+#### Access specifier
+
+**None.** `public:`, `protected:` and `private:` change nothing here. This table says what the unit
+**declares and uses**, not what it publishes — a private global or type still appears in the unit's own
+flowcharts and descriptions, so leaving it out left the reader with a name the document never explains.
+
+Access decides the [interface table](#n15--unit-interface-table) only.
+
 #### Column 1 — declaration
 
-The declaration **exactly as it is written in the source**, not rebuilt from the parsed data.
+The declaration **exactly as it is written in the source**, never rebuilt from the parsed data.
 
-- The text is read back from the file at the recorded line. Brackets are counted, so a declaration that
-  runs over several lines (a long array, a `typedef struct { … } Name;`) is captured to its end instead of
-  being cut off at the first line.
-- For a `#define`, the macro text the parser captured is used, including lines joined with `\`.
-- If nothing readable comes back, the cell falls back to the symbol's name, so a row is never blank.
-- Some declarations name more than one alias, like `} one_s, *one_s_2;`. The extra alias line is dropped,
-  because the full declaration is already shown by the row that sits on the real `typedef` line.
-
-#### Column 2 — information
-
-The **value**, by kind, as in the table above. Two points worth agreeing:
-
-- For a global, the value is taken from the same multi-line text as the declaration, not from a single
-  line. That is what makes an array show `{ … }` instead of a stray fragment. The single-line value is
-  used only as a fallback.
-- For a `typedef struct`, the column holds a **one-line description** of the type instead. A struct has no
-  value to print, so the cell carries meaning instead. The description is built from the type name and its
-  fields, or from the name alone when the LLM is off.
+| | |
+|---|---|
+| Source | read back from the file at the recorded line |
+| Several lines | brackets are counted, so a long array or a `typedef struct { … } Name;` is captured to its end |
+| `#define` | the macro text the parser captured, including lines joined with `\` |
+| Nothing readable | falls back to the symbol's name — a row is never blank |
+| `} one_s, *one_s_2;` | the extra alias line is dropped; the real `typedef` line already shows the full declaration |
 
 #### Orphan-header symbols
 
-An **orphan header** is a header with no source file of the same name — a header that only holds
-definitions. It is not a unit, so on its own it would never appear in the document.
+An **orphan header** is a header with no source file of the same name. It is not a unit, so on its own it
+would never appear in the document.
 
-Its symbols are therefore listed **in the units that use them**, and only there. Each unit shows exactly
-the symbols it uses, never the whole header. A header that *does* have a source file of the same name is
-never pulled into another unit this way.
+| | |
+|---|---|
+| Where its symbols go | into each unit that **uses** them — only the ones used, never the whole header |
+| Not applied to | a header that *does* have a source file of the same name |
+| "Uses" — either source counts | the usage index built during parsing, or a text search of the unit's own source with comments and quoted text removed |
+| Enum used only through its values | matched on the value names |
+| Globals | carried across the same way — a global declared in an orphan header is listed in each unit whose functions read or write it |
 
-"Uses" is decided from two sources, and a symbol counts if **either** says so. Being slightly generous is
-deliberate — better to show a symbol twice than to lose it:
-1. the usage index built during parsing, which knows which functions of this unit mention the macro or
-   type; and
-2. a text search of the unit's own source, with comments and text in quotes removed first. This catches
-   uses the index cannot see, such as a macro used as an array size, in a global's starting value, or
-   inside another macro. Removing comments stops a symbol that is only *mentioned* in a comment from
-   counting. An enum that is used only through its values is found by matching those value names.
+Being slightly generous is deliberate: better to show a symbol twice than to lose it.
 
 #### Cleanup and de-duplication
 
 Applied to **both** columns, in this order:
 
-1. **Comments removed** — `//` and `/* */`, including ones spanning several lines. Text inside quotes is
-   kept. A comment is never part of a declaration or of a value. Comments in other languages are removed
-   the same way, not translated.
-2. **Duplicates removed**, matched on the declaration text. The same declaration can arrive twice: once as
-   an `enum` and once as the `typedef` that names it. The row with the more useful `name=value` information
-   is kept.
-3. **Sorted** by declaration text, ignoring upper/lower case.
+| | Step | |
+|---|---|---|
+| 1 | comments removed | `//` and `/* */`, including ones spanning several lines; text inside quotes is kept. A comment is never part of a declaration or a value |
+| 2 | duplicates removed | matched on the declaration text — the same declaration arrives once as an `enum` and once as the `typedef` naming it; the row with the more useful `name=value` information is kept |
+| 3 | sorted | by declaration text, ignoring upper/lower case |
 
-Comments are removed before duplicates are matched, so two rows that differ only by a trailing comment
-collapse into one.
+One variable declared twice — `extern int g_x;` in one file and `int g_x = 0;` in another — is listed
+**once** in any unit both reach: the one carrying an initial value, because the bare declaration says
+strictly less about the same storage. Two same-named statics with no initial value stay separate; they are
+different objects, not two views of one.
 
 #### Exclusions
 
-Never listed: include guards (a `#define FILE_H` with no value), private globals, local variables, and
-plain structs or classes. A struct reaches the table only through a `typedef`.
+| Never listed | |
+|---|---|
+| include guards | a `#define FILE_H` with no value |
+| local variables | |
+| plain `struct` / `class` | reaches the table only through a `typedef` |
+| `union`, `using T = …` | not recorded at all |
 
 **Defines inside `#if` blocks:** a macro defined once in each branch is listed **once**. libclang keeps
 only the branch that is active for this build, and the text search is limited to the lines it kept. If
@@ -417,21 +422,46 @@ Eight columns. Here they are at a glance; each one is then explained in full bel
 #### Which rows, and in what order
 
 **Which rows exist**
-- One row per **public function** and one per **public global** of the unit, across **both** halves of the
-  unit. A public inline function in `Foo.h` sits in the same table as the functions in `Foo.cpp`.
-- Private items get **no row at all**. They carry a `PIF_…` id inside the tool, but it is never printed:
-  not here, not on a diagram, not in a heading (see [Interface ID](#interface-id)).
-- Functions marked **hidden** are removed when the document is written. This works on the exact function,
-  so hiding one of two same-named methods leaves the other one in place.
-- A unit with no source file gets no table at all.
+
+| | |
+|---|---|
+| One row per | public **function** and public **global** of the unit, across **both** halves — a public inline function in `Foo.h` sits in the same table as the functions in `Foo.cpp` |
+| Private items | **no row at all**. They carry a `PIF_…` id inside the tool, never printed: not here, not on a diagram, not in a heading (see [Interface ID](#interface-id)) |
+| Hidden functions | removed when the document is written. This works on the exact function, so hiding one of two same-named methods leaves the other in place |
+| Types and macros | never appear here — they belong to the [unit header table](#n14--unit-header-table) |
+| A unit with no source file | no table at all |
+
+**By access specifier.** "Earned" = a caller in another unit, or an address in a pointer table — see
+[Public vs. private](#public-vs-private).
+
+| Declared under | Function / method | Global variable |
+|---|---|---|
+| `public:` | row, if earned | row |
+| `protected:` | no row | no row |
+| `private:` | no row | no row |
+| no label, in a `class` | no row | no row |
+| no label, in a `struct` | row, if earned | row |
+| file scope | row, if earned | row |
+| file scope, `static` | row, if earned | row — ⚠ below |
+| `extern` — a declaration, no definition | n/a | **no row** — the defining unit publishes it |
+
+**⚠ To confirm:** a file-scope `static` variable cannot be reached from another file at all, but is
+published as an interface row. Should `static` count as a marking, the way `PRIVATE` does? (A `static`
+function is already left out in practice — every caller is in its own unit, so it never earns a row.)
+
+**A declaration is not an interface.** `extern const OpsFn g_opsTable[];` in `OpsClient.cpp` is a promise
+that the storage exists somewhere else. OpsClient owns nothing and only reads someone else's table, so
+publishing it as OpsClient's interface states a relationship that runs the other way. The unit that
+**defines** the variable publishes it; every other unit shows the `extern` line in its
+[unit header table](#n14--unit-header-table) instead, where it is explained without being claimed.
 
 **Order**
-1. Rows are collected functions first (by line number), then globals (by line number).
-2. The table is then sorted by the **number at the end of the interface ID**, compared as a number, so
-   `_99` comes before `_100`. Sorting by line number would go wrong as soon as a unit spans `.cpp` and
-   `.h`, because the two files have their own line numbers.
-3. Because ids are given out functions first and globals second, that grouping survives the sort: all
-   functions, then all globals, each in id order. A row with no readable number sorts last.
+
+| | |
+|---|---|
+| 1 | rows are collected functions first (by line number), then globals (by line number) |
+| 2 | then sorted by the **number at the end of the interface ID**, compared as a number, so `_99` comes before `_100`. Sorting by line number would go wrong as soon as a unit spans `.cpp` and `.h`, because the two files have their own line numbers |
+| 3 | ids are given out functions first and globals second, so that grouping survives the sort: all functions, then all globals, each in id order. A row with no readable number sorts last |
 
 The result: the ID column always reads `01, 02, 03…` with no gaps, and the order of the table is the
 numbering itself.
@@ -443,19 +473,15 @@ IF_<LAYER>_<GROUP>_<UNIT>_<NN>          public   — this column
 PIF_<LAYER>_<GROUP>_<UNIT>_<NN>         private  — internal only, never printed anywhere
 ```
 
-- **The parts.** Each name is put in capitals and everything that is not a letter is removed:
-  `Sample Core` becomes `SAMPLECORE`, `Ftl_Map` becomes `FTLMAP`. The **layer** part keeps digits as well
-  (`Layer1` becomes `LAYER1`); the group and unit parts do not.
-- **If there is no layer.** A component that belongs to no layer uses the **project name** in that slot.
-- **If there is no group.** The group part is left out completely, giving `IF_<LAYER>_<UNIT>_<NN>`.
-- **The unit part** is the file name without its extension, not the folder path.
-- **`<NN>`** is a two-digit number counted **per unit**, not per file. That is what keeps `Foo.h` and
-  `Foo.cpp` on one list instead of both starting again at `01` and clashing.
-- **The order numbers are given out in**, inside a unit: functions first (by file name, then line, which
-  puts `.cpp` before `.h`), then globals the same way. So adding public functions in the header adds
-  numbers at the end instead of renumbering the ones already in use.
-- **Public and private are counted separately** inside the tool, so `IF_…_01` and `PIF_…_01` can both
-  exist, and the published `01, 02, 03…` never skips a number where a private function sits in the source.
+| | |
+|---|---|
+| The parts | each name is put in capitals and everything that is not a letter is removed: `Sample Core` → `SAMPLECORE`, `Ftl_Map` → `FTLMAP`. The **layer** part keeps digits as well (`Layer1` → `LAYER1`); the group and unit parts do not |
+| If there is no layer | a component that belongs to no layer uses the **project name** in that slot |
+| If there is no group | the group part is left out completely, giving `IF_<LAYER>_<UNIT>_<NN>` |
+| The unit part | the file name without its extension, not the folder path |
+| `<NN>` | a two-digit number counted **per unit**, not per file. That is what keeps `Foo.h` and `Foo.cpp` on one list instead of both starting again at `01` and clashing |
+| Numbering order | inside a unit: functions first (by file name, then line, which puts `.cpp` before `.h`), then globals the same way. So adding public functions in the header adds numbers at the end instead of renumbering the ones already in use |
+| Public and private | counted separately inside the tool, so `IF_…_01` and `PIF_…_01` can both exist, and the published `01, 02, 03…` never skips a number where a private function sits in the source |
 
 **⚠ To confirm:** the shortening rule. It is repeatable but it loses information: `Map` and `Map2` both
 give `MAP`, and `Sample Core` gives `SAMPLECORE`. If the client wants fixed-width codes, or an agreed list
@@ -463,26 +489,24 @@ of component codes, this is the one place to decide it.
 
 #### Column 2 — Interface Name
 
-- **Function:** the short name with its class in front — `MapCache::insert` for a method, `FtlLookup` for
-  a plain function. The namespace is **dropped**. The class is kept because it is the only thing that
-  tells two same-named methods in one unit apart.
-- The class comes from what the parser recorded, not from splitting the full name. A full name cannot be
-  split back into "namespace" and "class" reliably.
-- If no class was recorded, the cell shows the plain short name.
-- **Global:** the short name, everything after the last `::`.
+| Row | Shows |
+|---|---|
+| Function | the short name with its class in front — `MapCache::insert` for a method, `FtlLookup` for a plain function. The namespace is **dropped**; the class is kept because it is the only thing that tells two same-named methods in one unit apart |
+| Function, no class recorded | the plain short name |
+| Global | the short name — everything after the last `::` |
 
-Inside the tool a separate short name is kept for lookups (flowchart file names, behaviour rows). Only the
-displayed cell carries the class prefix, so changing what this column shows does not break those lookups.
+The class comes from what the parser recorded, not from splitting the full name, which cannot be split back
+into "namespace" and "class" reliably. Inside the tool a separate short name is kept for lookups (flowchart
+file names, behaviour rows), so changing what this column shows does not break them.
 
 #### Column 3 — Information
 
-- One line describing the function or global, or `-` when there is none.
-- These descriptions come from the LLM only. With descriptions turned off, **every** Information cell is
-  `-`, and the rest of the document is unaffected. No other column depends on this one.
-- A description is written from the item's own source, the descriptions of what it calls, and a map of the
-  repository. It can be improved by a second pass that adds the callers' context, and by a review pass for
-  longer functions. Answers are cached, so a function that has not changed is not asked about again.
-- Globals get their descriptions separately, from the declaration and the code around it.
+| | |
+|---|---|
+| Content | one line describing the function or global, or `-` when there is none |
+| Source | the LLM only. With descriptions turned off, **every** Information cell is `-`, and the rest of the document is unaffected — no other column depends on this one |
+| How it is written | from the item's own source, the descriptions of what it calls, and a map of the repository; improved by a second pass that adds the callers' context, and by a review pass for longer functions. Answers are cached, so a function that has not changed is not asked about again |
+| Globals | described separately, from the declaration and the code around it |
 
 **⚠ To confirm:** whether the text in this column is part of what the client checks, or whether `-` is
 acceptable for V1.
@@ -496,14 +520,13 @@ acceptable for V1.
 return: <type>
 ```
 
-- One entry per parameter, **in the order they are declared**, separated by `; `. Each entry is
-  `type name`. If the parameter has no recorded name, only the type is shown.
-- `const`, `volatile`, `*` and `&` are kept exactly as written in the source.
-- **No parameters → the cell reads `VOID`**, not an empty cell.
-- The `return:` line is added **only when a return type was recorded**. A `void` return is shown as
-  `VOID`, to match the no-parameter case.
-
-**Global rows:** the declared type, as written.
+| | |
+|---|---|
+| Parameters | one entry per parameter, **in the order they are declared**, separated by `; `. Each entry is `type name`; if the parameter has no recorded name, only the type is shown |
+| No parameters | the cell reads `VOID`, not an empty cell |
+| The `return:` line | added **only when a return type was recorded**. A `void` return is shown as `VOID`, to match the no-parameter case |
+| Qualifiers | `const`, `volatile`, `*` and `&` are kept exactly as written in the source |
+| **Global rows** | the declared type, as written |
 
 #### Column 5 — Data Range
 
@@ -514,18 +537,16 @@ Lines up with Column 4 line for line, so the *n*-th range belongs to the *n*-th 
 return: <range>
 ```
 
-- One range per parameter, in the same order, separated by `; `. **No parameters → the whole cell is
-  `NA`.**
-- The `return:` line holds the return type's range, or `NA` for `void` and for anything that could not be
-  worked out.
-- **Global rows:** the range of the declared type.
-- Ranges are looked up **by type name** in the shared data dictionary, using the rules in
-  [Data Range](#data-range). They are never worked out per call, and never fixed onto the parameter while
-  parsing — that is what lets a client-supplied CSV override them later.
-- A typedef is followed to the type it stands for, up to 10 steps, so `Lba_t → uint32_t` gives
-  `0-0xFFFFFFFF`. Structs, unions, pointers and floats are `NA` on purpose, not by failure.
-- Every run prints its coverage — `data ranges: 64/65 resolved, 1 NA (int[6] x1)` — naming the types that
-  came back `NA`. That is exactly the list a client-supplied CSV would need to cover.
+| | |
+|---|---|
+| Parameters | one range per parameter, in the same order, separated by `; ` |
+| No parameters | the whole cell is `NA` |
+| The `return:` line | the return type's range, or `NA` for `void` and for anything that could not be worked out |
+| **Global rows** | the range of the declared type |
+| Looked up | **by type name** in the shared data dictionary, using the rules in [Data Range](#data-range). Never worked out per call, and never fixed onto the parameter while parsing — that is what lets a client-supplied CSV override them later |
+| Typedefs | followed to the type they stand for, up to 10 steps, so `Lba_t → uint32_t` gives `0-0xFFFFFFFF` |
+| `NA` on purpose | structs, unions, pointers and floats — not by failure |
+| Coverage | printed every run — `data ranges: 64/65 resolved, 1 NA (int[6] x1)` — naming the types that came back `NA`. Exactly the list a client-supplied CSV would need to cover |
 
 #### Column 6 — Direction(In/Out)
 
@@ -540,18 +561,12 @@ return: <range>
 | 3 | it reads a global and writes none | **Out** | |
 | 3 | it touches no global | **Out** | a pure function |
 
-- **Whole words, not letters.** The name is split into words across `camelCase` and `snake_case`. So
-  `SetX`, `setX`, `Module_SetX`, `SET_X` and `coreSetResult` all match, while `Setup`, `Settings`,
-  `Setter`, `Reset`, `offset` and `target` do not.
-- **Rule 3 follows the call chain.** Before direction is decided, every function's global reads and writes
-  are extended with everything the functions it calls read and write, all the way down. So a function that
-  changes state only through a helper is `In`, not `Out`.
-- **Each decision is recorded in words**, for example `In: function name 'FtlSetEntry' contains 'Set'
-  (writes/updates state).`, `Out: returns a value (int).`, `In: writes global(s) gErrCount directly.`, or
-  `In: writes global(s) gState (via cacheFlush).` Any row can be checked without reading the code. This
-  text is not printed in the document today.
-
-**Global rows:** always `In/Out`. A global can be read and written, so it is both.
+| | |
+|---|---|
+| Whole words, not letters | the name is split into words across `camelCase` and `snake_case`. So `SetX`, `setX`, `Module_SetX`, `SET_X` and `coreSetResult` all match, while `Setup`, `Settings`, `Setter`, `Reset`, `offset` and `target` do not |
+| Rule 3 follows the call chain | before direction is decided, every function's global reads and writes are extended with everything the functions it calls read and write, all the way down. So a function that changes state only through a helper is `In`, not `Out` |
+| Each decision is recorded in words | `In: function name 'FtlSetEntry' contains 'Set' (writes/updates state).`, `Out: returns a value (int).`, `In: writes global(s) gState (via cacheFlush).` Any row can be checked without reading the code. This text is not printed in the document today |
+| **Global rows** | always `In/Out` — a global can be read and written, so it is both |
 
 **⚠ To confirm:** rule 1 also matches names like `isSet` or `hasGet`. A list of exceptions is easy to add
 if the client wants one.
@@ -560,18 +575,14 @@ if the client wants one.
 
 **Function rows** list **the callers only**:
 
-- Every **other** unit that calls this function, written `Component/Unit`, in A-Z order, separated by
-  `, `.
-- The function's **own unit is left out**. Units in the same component and the same group **are** included,
-  so this cell matches the [unit diagram](#n13--unit-architecture-diagram).
-- If a function is published through a table of function pointers, no function calls it by name, so the
-  **unit that registers it** is named instead. Otherwise the cell would read `-` for a real relationship.
-- **`-`** when nothing qualifies.
-- The list of units this function *calls* is worked out and kept in the intermediate data, but it is **not
-  printed**. Each relationship between two units is written down once, on the side that provides the
-  function, and this function's calls appear in those other units' rows.
-
-**Global rows:** the unit's own path, `Component/Unit`.
+| | |
+|---|---|
+| Listed | every **other** unit that calls this function, written `Component/Unit`, in A-Z order, separated by `, ` |
+| Left out | the function's **own unit**. Units in the same component and the same group **are** included, so this cell matches the [unit diagram](#n13--unit-architecture-diagram) |
+| Published through a pointer table | the **unit that registers it** is named instead — no function calls it by name, and otherwise the cell would read `-` for a real relationship |
+| Nothing qualifies | `-` |
+| Not printed | the list of units this function *calls*. It is worked out and kept in the intermediate data, but each relationship between two units is written down once, on the side that provides the function, and this function's calls appear in those other units' rows |
+| **Global rows** | the unit's own path, `Component/Unit` |
 
 **⚠ Two things to confirm here:**
 1. **Callers only.** This is the "write each relationship down once, on the provider's side" reading, and
