@@ -212,9 +212,6 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
         cacheVersion      - int >= 1 (bump to invalidate entity cache)
         rateLimitSeconds  - float >= 0, pause after each OpenAI call (0 = none)
         fewShotExamplesDir - str (default "few_shot_examples")
-        sslVerify         - true (default) | "system" | "<CA bundle path>" | false.
-                            Which certificates LLM requests trust -- see
-                            _normalise_ssl_verify. No environment variable, on purpose.
 
     Environment variables (override the matching config field if set):
         LLM_PROVIDER, LLM_BASE_URL, LLM_DEFAULT_MODEL,
@@ -397,8 +394,6 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
             f"llm.customHeaders must be an object (got {type(custom_headers).__name__})"
         )
 
-    ssl_verify = _normalise_ssl_verify(llm.get("sslVerify", True))
-
     return {
         "provider": provider,
         "baseUrl": base_url,
@@ -416,73 +411,12 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "enrichment": enrichment,
         "cacheVersion": cache_version,
         "fewShotExamplesDir": few_shot_dir.strip(),
-        # This dict is a WHITELIST: a key not returned here never reaches the client. Every
-        # new llm setting has to be added here as well as read above.
-        "sslVerify": ssl_verify,
     }
-
-
-def _normalise_ssl_verify(raw: Any):
-    """`llm.sslVerify` -> what `requests` should be given as `verify=`. Raises on a bad value.
-
-    ``true`` (default)   verify against Python's own CA list (certifi).
-    ``"system"``         verify against the OPERATING SYSTEM's certificate store -- on Windows
-                         the same store the browser uses, which is where a company's internal
-                         root CA is installed. The usual fix for CERTIFICATE_VERIFY_FAILED /
-                         "unable to get local issuer certificate" against a company gateway.
-                         Needs the `truststore` package.
-    ``"<path>.pem"``     verify against this CA bundle file. Relative paths are resolved from
-                         the repository root.
-    ``false``            do not verify. Traffic is still encrypted, but the gateway is not
-                         authenticated, so anything on the network path can impersonate it and
-                         read the API key. A last resort; every run says so.
-
-    Checked here, at config load, so a wrong value fails before Phase 1 rather than on every
-    LLM call hours into a run. Strings "true"/"false" are refused rather than guessed at: a
-    security switch that turns off because of a quoting mistake is the wrong failure.
-    """
-    if raw is None or raw is True:
-        return True
-    if raw is False:
-        return False
-    if isinstance(raw, str):
-        val = raw.strip()
-        if val.lower() in ("true", "false", "yes", "no", "0", "1", ""):
-            raise LlmConfigError(
-                f"llm.sslVerify must be JSON true or false, \"system\", or a path to a CA "
-                f"bundle (got the string {raw!r} -- remove the quotes for true/false)")
-        if val.lower() == "system":
-            try:
-                import truststore  # noqa: F401
-            except ImportError:
-                raise LlmConfigError(
-                    "llm.sslVerify is \"system\" (use the operating system's certificate "
-                    "store), which needs the 'truststore' package: pip install truststore")
-            return "system"
-        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        path = val if os.path.isabs(val) else os.path.join(root, val)
-        if not os.path.isfile(path):
-            raise LlmConfigError(f"llm.sslVerify: CA bundle not found: {path}")
-        return os.path.abspath(path)
-    raise LlmConfigError(
-        f"llm.sslVerify must be true, false, \"system\", or a path to a CA bundle "
-        f"(got {type(raw).__name__} {raw!r})")
 
 
 # ---------------------------------------------------------------------------
 # Startup banner
 # ---------------------------------------------------------------------------
-
-def _ssl_verify_display(v) -> str:
-    """One banner line, loud when verification is off."""
-    if v is False:
-        return "OFF -- the LLM gateway is NOT authenticated (llm.sslVerify = false)"
-    if v == "system":
-        return "operating system certificate store"
-    if isinstance(v, str) and v:
-        return f"CA bundle {v}"
-    return "on (Python's CA list)"
-
 
 def format_llm_config_banner(llm_cfg: Dict[str, Any]) -> str:
     """Format a multi-line banner showing the resolved LLM config.
@@ -528,7 +462,6 @@ def format_llm_config_banner(llm_cfg: Dict[str, Any]) -> str:
         f"{'  (no throttle)' if not llm_cfg.get('rateLimitSeconds') else '  (per process)'}"
         f"{'' if llm_cfg.get('provider') == 'openai' else '  (ignored on ollama)'}",
         f"  apiKey            : {api_key_display}",
-        f"  sslVerify         : {_ssl_verify_display(llm_cfg.get('sslVerify', True))}",
         f"  cacheVersion      : {llm_cfg.get('cacheVersion')}",
         f"  fewShotExamplesDir: {llm_cfg.get('fewShotExamplesDir')}",
         f"  descriptions      : {llm_cfg.get('descriptions')}",

@@ -125,7 +125,6 @@
       "audio",
       "video"
     ],
-    "sslVerify": true,
     "rateLimitSeconds": 3,
     "cacheVersion": 2,
     "enrichment": {

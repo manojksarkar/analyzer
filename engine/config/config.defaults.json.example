@@ -243,19 +243,6 @@
     // which has no limit and where 3s per call would dominate the run.
     "rateLimitSeconds": 3,
 
-    // Which certificates LLM requests trust.
-    //   true         Python's own CA list (certifi).
-    //   "system"     the operating system's certificate store -- the one the
-    //                browser uses, where a company's internal root CA lives.
-    //                The fix for "CERTIFICATE_VERIFY_FAILED ... unable to get
-    //                local issuer certificate" against a company gateway.
-    //                Needs `pip install truststore`.
-    //   "C:/certs/company-root-ca.pem"   this CA bundle (relative = repo root).
-    //   false        no verification: encrypted, but the gateway is not
-    //                authenticated and the API key could reach an impostor.
-    //                A last resort; every run prints a warning.
-    "sslVerify": true,
-
     // Bump to invalidate every cached completion.
     "cacheVersion": 2,
 

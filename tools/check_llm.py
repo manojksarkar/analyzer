@@ -100,8 +100,6 @@ def main(argv=None) -> int:
     print(f"  maxContextTokens  : {llm.get('maxContextTokens')}")
     print(f"  apiKey            : {'set (' + str(len(api_key)) + ' chars)' if api_key else 'NOT SET'}")
     print(f"  customHeaders     : {sorted(headers) if headers else 'none'}")
-    from core.config import _ssl_verify_display
-    print(f"  sslVerify         : {_ssl_verify_display(llm.get('sslVerify', True))}")
     print(f"  max_tokens sent   : {max_tokens}"
           + ("" if args.max_tokens else "   <- hardcoded in client.py, not configurable"))
     print()
@@ -140,11 +138,7 @@ def main(argv=None) -> int:
         print(f"  prompt size : {len(system) + len(user)} chars (~{approx} tokens)")
         t0 = time.perf_counter()
         try:
-            # Through the same helper as the pipeline, so this probe fails -- or succeeds --
-            # for the same TLS reason a real run would.
-            from llm_core.client import requests_verify
-            resp = requests.post(url, headers=hdrs, json=payload, timeout=timeout,
-                                 verify=requests_verify(llm.get("sslVerify", True)))
+            resp = requests.post(url, headers=hdrs, json=payload, timeout=timeout)
         except Exception as exc:
             print(f"  TRANSPORT FAILURE: {type(exc).__name__}: {exc}")
             failures += 1
