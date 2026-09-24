@@ -269,6 +269,25 @@ def test_a_dropped_interface_row_is_found_and_counted():
     assert counts and counts[0].left == 3 and counts[0].right == 2
 
 
+def test_functions_and_globals_are_counted_apart():
+    """S3-7 drops global rows only: the count says which category moved, once."""
+    right = sample()
+    u = right.of_kind("component")[0].of_kind("unit")[0]
+    u.children = [c for c in u.children if c.name != "s_count"]
+    counts = [f.summary for f in kinds(run(sample(), right), "count")]
+    assert "interface count: 3 -> 2" in counts
+    assert "interface Global Variable count: 1 -> 0" in counts
+    assert not any("Function count" in c for c in counts)
+
+
+def test_the_interface_type_is_grouped_whatever_its_spelling():
+    right = sample()
+    for row in right.of_kind("component")[0].of_kind("unit")[0].of_kind("interface"):
+        if row.fields.get("interfaceType") == "Global Variable":
+            row.fields["interfaceType"] = "global variable"
+    assert not [f for f in kinds(run(sample(), right), "count")]
+
+
 def test_a_function_with_no_interface_row_is_caught_without_a_second_document():
     doc = sample()
     u = doc.of_kind("component")[0].of_kind("unit")[0]
@@ -577,6 +596,41 @@ def test_a_private_row_only_we_have_carries_the_rule_and_drops_to_info():
     assert len(extra) == 1
     assert "declares and uses" in extra[0].rule
     assert extra[0].severity == INFO
+
+
+def _two_units(rows_a, rows_b):
+    ua, ub = unit("Core"), unit("Lib", index=1)
+    for i, r in enumerate(rows_a):
+        r.index = i
+        ua.children.append(r)
+    for i, r in enumerate(rows_b):
+        r.index = i
+        ub.children.append(r)
+    return document([component("Comp", [ua, ub])])
+
+
+def test_an_orphan_symbol_moved_to_its_owner_unit_is_explained():
+    """RV-4: they list SCALE in Lib, we list it once in Core (the header's owner)."""
+    theirs = _two_units([headerdef("#define MAXN 256", "256")],
+                        [headerdef("#define SCALE 8", "8")])
+    ours = _two_units([headerdef("#define MAXN 256", "256"), headerdef("#define SCALE 8", "8")],
+                      [])
+    result = run(theirs, ours)
+    moved = [f for f in result.findings if f.kind in ("missing", "extra")]
+    assert len(moved) == 2
+    for f in moved:
+        assert "listed once, in one owner unit" in f.rule
+        assert f.severity == INFO
+    missing = [f for f in moved if f.kind == "missing"][0]
+    assert "we list it under Core" in missing.rule
+
+
+def test_a_symbol_missing_everywhere_is_still_a_real_difference():
+    theirs = _two_units([headerdef("#define MAXN 256", "256")],
+                        [headerdef("#define SCALE 8", "8")])
+    ours = _two_units([headerdef("#define MAXN 256", "256")], [])
+    missing = [f for f in run(theirs, ours).findings if f.kind == "missing"]
+    assert len(missing) == 1 and missing[0].rule == "" and missing[0].severity == MEDIUM
 
 
 def test_a_union_only_they_have_is_a_plain_difference():

@@ -26,6 +26,9 @@ from .model import (HIGH, INFO, LOW, MEDIUM, Policy, canonical_enum,
 
 _SEVERITY_ORDER = {HIGH: 0, MEDIUM: 1, LOW: 2, INFO: 3}
 
+# Fields that split one entity kind into categories worth counting on their own.
+_SUB_KIND_FIELDS = ("declKind", "interfaceType")
+
 
 @dataclass
 class Finding:
@@ -171,18 +174,27 @@ def _walk(result, level_of, policies, path, left, right, aliases, depth=0):
         # Then the same count BY SUB-KIND, where the entities carry one. Two documents can
         # disagree about a whole category -- every private global, every struct -- and
         # forty per-row findings say that forty times without ever naming it. One line per
-        # category, at the rung above the rows, is the shape that reads.
-        _sub = sorted({e.fields.get("declKind") for e in lefts + rights
-                       if e.fields.get("declKind")})
-        for sk in _sub:
-            la = sum(1 for e in lefts if e.fields.get("declKind") == sk)
-            rb = sum(1 for e in rights if e.fields.get("declKind") == sk)
-            if la != rb:
-                result.add(Finding(
-                    level=level, kind="count", path=path or "(document)",
-                    summary="%s %s count: %d -> %d" % (kind, sk, la, rb),
-                    severity=LOW, field="declKind", left=la, right=rb,
-                ))
+        # category, at the rung above the rows, is the shape that reads. A header row's
+        # sub-kind is its declKind; an interface row's is its Interface Type, so functions
+        # and globals are counted apart (`interface Global Variable count: 2 -> 1`).
+        # Grouped case-insensitively, since another author may write `Global variable`.
+        for sub_field in _SUB_KIND_FIELDS:
+            spelled = {}
+            for e in lefts + rights:
+                v = (e.fields.get(sub_field) or "").strip()
+                if v:
+                    spelled.setdefault(v.casefold(), v)
+            for sk in sorted(spelled):
+                la = sum(1 for e in lefts
+                         if (e.fields.get(sub_field) or "").strip().casefold() == sk)
+                rb = sum(1 for e in rights
+                         if (e.fields.get(sub_field) or "").strip().casefold() == sk)
+                if la != rb:
+                    result.add(Finding(
+                        level=level, kind="count", path=path or "(document)",
+                        summary="%s %s count: %d -> %d" % (kind, spelled[sk], la, rb),
+                        severity=LOW, field=sub_field, left=la, right=rb,
+                    ))
 
         for entity in left_only:
             result.add(Finding(
