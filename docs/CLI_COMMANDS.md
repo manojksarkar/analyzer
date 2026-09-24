@@ -364,6 +364,15 @@ python analyzer.py generate --project-id myproj --commit <sha> --version-id v2 -
 `--full`, `--no-narrowed-parse` and `--verify-parse` are all "do it the slow way on purpose".
 None belongs in a routine run.
 
+**Check the summary before the parse starts.** Every `generate` prints a summary first, then
+parses, and the parse can run for hours. The summary shows the scope, the documents, the views
+on and off, each layer's data dictionary and macros (with the core they come from), the LLM,
+the baseline and the config file. A layer showing `none` has no dictionary, so if that's not
+what you meant, stop with Ctrl+C. The summary also warns about a misspelled core key
+(`datadictionary`) or a core that no layer lists. The run ignores both, so they only show up
+there. If a configured dictionary file does not exist, the run stops right there. Without this
+check it stopped only at the end of the parse.
+
 **Regenerating a commit that already has a version** — always name the baseline:
 
 ```
@@ -861,6 +870,7 @@ live *outside* your tree, like a third-party SDK.
 | `no database is configured` | Add the `db` section to `engine/config/config.local.json`, then `python analyzer.py setup`. The model and every version artifact live there and nowhere else. |
 | `WorkspaceNotFound: no workspace for project 'x'` | `python analyzer.py onboard` — the directory, config and rows all come from there. |
 | `this run needs the database but there is no versions row for '<pid>.vX'` | Reserve it (the message prints the exact command), or add `--create-version`. |
+| `STOPPING BEFORE THE PARSE - ... dataDictionary file not found: <path>` | Fix the path in `cores.<core>.dataDictionary` (the message names the key). Relative paths resolve from the repo root. |
 | `<pid> has no config yet, and no --config was given` | Pass `--config <your.json>`, or `--use-defaults` for the sample tree. |
 | `ALREADY EXISTS and differs from --config` | The project already has a config. `--force-config` replaces it. |
 | `--config not found: <path>` | The path does not resolve. Nothing was created; fix it and re-run. |

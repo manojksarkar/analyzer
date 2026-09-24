@@ -46,7 +46,8 @@ from incremental.impact import classify, impact_set
 from incremental.fingerprint import compute_fingerprints
 from incremental.affected import affected_tus, full_reparse_reason
 from incremental.parse_merge import merge_model, diff_models
-from incremental.report import build_report, emit_report
+from incremental.report import build_report, emit_report, emit_run_summary
+from core.config import layer_sources
 from incremental.generate import (AnalyzerRunFailed, _manifest, scope_to_args,
                                   per_component_docx_args,
                                   resolve_run_config, generate_full, _now_iso,
@@ -668,6 +669,22 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         store.write_manifest(version_id, m)     # close the lifecycle: 'failed', not mid-phase
         raise AnalyzerRunFailed(f"{stage} failed (exit {rc})", rc)
 
+    # What this run is about to do, BEFORE the parse - see generate_full. A decision "full"
+    # never reaches here: it delegated above and generate_full prints its own.
+    _stop = emit_run_summary(
+        project_id=project_id, version_id=version_id, branch=branch, commit=target,
+        scope=scope, doc_type=doc_type, cfg=cfg, no_llm=no_llm, data_dict_id=data_dict_id,
+        data_dict_path=ws.datadict_path(data_dict_id) if data_dict_id else None,
+        baseline=(f"{base_vid} @ {str(base_commit)[:10]} - incremental, "
+                  f"{decision.get('changedFiles')} changed file(s)"),
+        config_path=config_path or vcfg_path, project_root=project_root, warnings=decision["warnings"])
+    if _stop:
+        store.write_manifest(version_id, _manifest(
+            version_id, branch, target, scope, data_dict_id,
+            decision="incremental", regenerated=0, reused=0, status="failed",
+            warnings=decision["warnings"] + _stop))
+        raise AnalyzerRunFailed("stopped before the parse: " + "; ".join(_stop), 2)
+
     # PHASE-SPLIT (M3.2) — produce the blank-skeleton model in model/ (Phase 1). This gives
     # the fresh hashes + call graph + edges to compute the precise impact, AND lets us carry
     # forward the baseline's summaries BEFORE Phase 2 (the summarizer only fills functions
@@ -941,7 +958,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         "projectId": project_id, "branch": branch, "commit": target,
         "scope": _scope_label(scope), "docType": doc_type, "baselineVersionId": base_vid,
         "baselineCommit": decision["chosenBaseCommit"], "changedFiles": decision.get("changedFiles"),
-        "dataDictId": data_dict_id,
+        "dataDictId": data_dict_id, "dataDictionaries": layer_sources(cfg, "dataDictionary"),
         "llmModel": llm.get("defaultModel"), "elapsedSeconds": time.perf_counter() - _t0,
         "classification": classification,
         "functions": {"total": fn_total, "regenerated": fn_regen, "reused": fn_total - fn_regen},

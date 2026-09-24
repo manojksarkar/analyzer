@@ -16,10 +16,11 @@ in `core/` may import from analyzer-level modules (utils.py, etc.).
 
 from __future__ import annotations
 
+import difflib
 import json
 import os
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .paths import paths
 
@@ -1020,17 +1021,75 @@ def layer_source(cfg: Dict[str, Any], layer_name: str, key: str) -> Optional[str
     `--macros-layer` / `--data-dictionary-layer` flags that mirror them - working
     unchanged, so nothing outside this function had to learn about cores.
     """
+    return layer_source_origin(cfg, layer_name, key)[0]
+
+
+def layer_source_origin(cfg: Dict[str, Any], layer_name: str,
+                        key: str) -> Tuple[Optional[str], Optional[str]]:
+    """`layer_source`, plus where the path came from: the core's name, or "layer" for the
+    pre-`cores` layer-level key. (None, None) when neither declares it."""
     for core in get_layer_cores(cfg, layer_name):
         path = core_source(cfg, core, key)
         if path:
-            return path
+            return path, core
     layer_cfg = (cfg.get("layers") or {}).get(layer_name)
     if not isinstance(layer_cfg, dict):
-        return None
+        return None, None
     raw = layer_cfg.get(key)
     if not isinstance(raw, str) or not raw.strip():
-        return None
-    return raw.strip()
+        return None, None
+    return raw.strip(), "layer"
+
+
+# What a core may declare. Nothing reads any other key under `cores.<name>`, so a typo such
+# as `datadictionary` vanished without a word and the layer parsed with no dictionary.
+CORE_KEYS = ("dataDictionary", "macros", "compileCommands")
+
+
+def core_config_warnings(cfg: Dict[str, Any]) -> List[str]:
+    """Config that is valid but silently ignored, one message each:
+
+      * a key under `cores.<name>` that is not in CORE_KEYS - nothing reads it;
+      * a core that no `layers.<layer>.cores` lists - its inputs reach no file;
+      * a misspelled input key written directly on a layer (the pre-`cores` form).
+
+    Warnings, not errors: the run is valid, it just is not using what the config seems to say.
+    `validate_cores` already stops a run whose layer names a core that does not exist.
+    """
+    out: List[str] = []
+    by_lower = {k.lower(): k for k in CORE_KEYS}
+    layers = cfg.get("layers") or {}
+    used = {core for name in layers for core in get_layer_cores(cfg, name)}
+    for core, core_cfg in (cfg.get("cores") or {}).items():
+        for key in (core_cfg if isinstance(core_cfg, dict) else {}):
+            if key in CORE_KEYS:
+                continue
+            hint = by_lower.get(key.lower()) or next(
+                iter(difflib.get_close_matches(key, CORE_KEYS, n=1)), None)
+            out.append(f"cores.{core}.{key} is not a key anything reads"
+                       + (f" - did you mean {hint!r}?" if hint
+                          else f" (known: {', '.join(CORE_KEYS)})") + " It is ignored.")
+        if core not in used:
+            out.append(f"cores.{core} is listed by no layer (layers.<layer>.cores), "
+                       "so its inputs are ignored.")
+    for name, layer_cfg in layers.items():
+        for key in (layer_cfg if isinstance(layer_cfg, dict) else {}):
+            hint = by_lower.get(key.lower())
+            if hint and key != hint:
+                out.append(f"layers.{name}.{key} - did you mean {hint!r}? It is ignored.")
+    return out
+
+
+def missing_layer_inputs(cfg: Dict[str, Any], root: str, key: str) -> List[str]:
+    """One message per layer whose `key` file does not exist. Relative paths resolve against
+    `root` - the repo root, which is every phase's working directory."""
+    out: List[str] = []
+    for name in (cfg.get("layers") or {}):
+        path, origin = layer_source_origin(cfg, name, key)
+        if path and not os.path.isfile(path if os.path.isabs(path) else os.path.join(root, path)):
+            where = f"cores.{origin}" if origin != "layer" else f"layers.{name}"
+            out.append(f"{name}: {key} file not found: {path} (from {where}.{key})")
+    return out
 
 
 def layer_sources(cfg: Dict[str, Any], key: str) -> Dict[str, str]:

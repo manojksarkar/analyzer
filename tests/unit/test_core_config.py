@@ -11,7 +11,8 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 
 from core.config import (
     load_config, load_llm_config, LlmConfigError, format_llm_config_banner,
-    layer_source, layer_sources,
+    layer_source, layer_sources, layer_source_origin, core_config_warnings,
+    missing_layer_inputs,
 )
 
 
@@ -275,3 +276,64 @@ def test_the_annotated_example_matches_the_shipped_defaults():
         annotated = json.loads(_strip_trailing_commas(_strip_json_comments(fh.read())))
 
     assert annotated == shipped
+
+
+class TestInputsTheRunWouldIgnore:
+    """A core input that is spelled wrong, or sits on a core no layer uses, was dropped without
+    a word - the layer parsed with no dictionary and the log said "data dictionary : (none)"
+    either way. Reported: "I have added dataDictionary inside core" and none was used."""
+
+    def _cfg(self, core, layer_cores=("Core1",)):
+        return {"cores": {"Core1": core},
+                "layers": {"Layer1": {"path": "Layer1", "cores": list(layer_cores)}}}
+
+    def test_origin_names_the_core_or_the_layer(self):
+        assert layer_source_origin(self._cfg({"dataDictionary": "dd.csv"}),
+                                   "Layer1", "dataDictionary") == ("dd.csv", "Core1")
+        old = {"layers": {"Layer1": {"dataDictionary": "legacy.csv"}}}
+        assert layer_source_origin(old, "Layer1", "dataDictionary") == ("legacy.csv", "layer")
+        assert layer_source_origin(old, "Layer1", "macros") == (None, None)
+
+    def test_a_correct_config_warns_about_nothing(self):
+        assert core_config_warnings(self._cfg({"dataDictionary": "dd.csv", "macros": "m.json",
+                                               "compileCommands": "cc.json"})) == []
+
+    @pytest.mark.parametrize("key", ["datadictionary", "data_dictionary", "DataDictionary"])
+    def test_a_misspelled_key_is_named_with_the_fix(self, key):
+        cfg = self._cfg({key: "dd.csv"})
+        assert layer_source(cfg, "Layer1", "dataDictionary") is None, "it really is ignored"
+        [w] = core_config_warnings(cfg)
+        assert f"cores.Core1.{key}" in w and "did you mean 'dataDictionary'" in w
+
+    def test_an_unknown_key_lists_the_known_ones(self):
+        [w] = core_config_warnings(self._cfg({"flags": "x"}))
+        assert "cores.Core1.flags" in w and "dataDictionary, macros, compileCommands" in w
+
+    def test_a_core_no_layer_lists_is_named(self):
+        cfg = self._cfg({"dataDictionary": "dd.csv"}, layer_cores=())
+        assert layer_source(cfg, "Layer1", "dataDictionary") is None, "it really is ignored"
+        [w] = core_config_warnings(cfg)
+        assert "cores.Core1 is listed by no layer" in w
+
+    def test_a_misspelled_key_on_a_layer_is_named(self):
+        cfg = {"layers": {"Layer1": {"path": "Layer1", "datadictionary": "dd.csv"}}}
+        [w] = core_config_warnings(cfg)
+        assert "layers.Layer1.datadictionary" in w and "'dataDictionary'" in w
+
+    def test_other_layer_keys_are_left_alone(self):
+        cfg = {"layers": {"Layer1": {"path": "L", "groups": {}, "cores": [], "note": "x"}}}
+        assert core_config_warnings(cfg) == []
+
+    def test_a_missing_dictionary_file_is_reported_with_where_it_came_from(self, tmp_path):
+        (tmp_path / "here.csv").write_text("x", encoding="utf-8")
+        cfg = {"cores": {"Core1": {"dataDictionary": "here.csv"},
+                         "Core2": {"dataDictionary": "gone.csv"}},
+               "layers": {"Layer1": {"cores": ["Core1"]}, "Layer2": {"cores": ["Core2"]}}}
+        [m] = missing_layer_inputs(cfg, str(tmp_path), "dataDictionary")
+        assert m == "Layer2: dataDictionary file not found: gone.csv (from cores.Core2.dataDictionary)"
+
+    def test_an_absolute_path_is_checked_as_is(self, tmp_path):
+        f = tmp_path / "abs.csv"
+        f.write_text("x", encoding="utf-8")
+        cfg = {"layers": {"Layer1": {"dataDictionary": str(f)}}}
+        assert missing_layer_inputs(cfg, "/nowhere", "dataDictionary") == []
