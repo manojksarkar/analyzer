@@ -196,6 +196,8 @@ def _client_cache_key(llm_cfg: dict) -> str:
         str(llm_cfg.get("retries", "")),
         str(llm_cfg.get("timeoutSeconds", "")),
         str(llm_cfg.get("rateLimitSeconds", "")),
+        # A client built for one trust setting must not be handed out for another.
+        str(llm_cfg.get("sslVerify", True)),
     ])
 
 
@@ -221,6 +223,9 @@ def _get_client(config: dict) -> Optional["LlmClient"]:
         # so the throttle has to be threaded through explicitly — without this
         # the enrichment phases silently ignore llm.rateLimitSeconds.
         rate_limit_seconds=llm_cfg.get("rateLimitSeconds", 3.0),
+        # Same reason as the throttle above: this path does not go through from_config(), so a
+        # setting not threaded here is silently ignored by the phase that makes most calls.
+        ssl_verify=llm_cfg.get("sslVerify", True),
     )
     # Config that isn't visible to LlmClient but changes what we compare
     # between runs (see tools/llm_stats.py).
@@ -248,7 +253,9 @@ def llm_provider_reachable(config: dict) -> bool:
         return True  # assume reachable; first call will surface any failure
     base_url = llm_cfg["baseUrl"]
     try:
-        r = requests.get(f"{base_url}/api/tags", timeout=3)
+        from llm_core.client import requests_verify
+        r = requests.get(f"{base_url}/api/tags", timeout=3,
+                         verify=requests_verify(llm_cfg.get("sslVerify", True)))
         return r.status_code == 200
     except (requests.RequestException, OSError):
         return False

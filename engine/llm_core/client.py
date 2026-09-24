@@ -50,6 +50,64 @@ from . import tokens as token_counter
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# TLS verification (llm.sslVerify)
+# ---------------------------------------------------------------------------
+_TLS_LOCK = threading.Lock()
+_SYSTEM_STORE_INJECTED = False
+_UNVERIFIED_ANNOUNCED = False
+
+
+def requests_verify(setting) -> "bool | str":
+    """`llm.sslVerify` -> the value to pass as `requests.post(..., verify=...)`.
+
+    Every LLM request in the project goes through here, so there is one answer to "which
+    certificates does this run trust". See `core.config._normalise_ssl_verify` for the values.
+
+    ``"system"`` injects `truststore` once per process, so `requests` verifies against the
+    operating system's certificate store -- on Windows, the store the browser uses and where a
+    company's internal root CA lives. That is the usual cause of
+    "CERTIFICATE_VERIFY_FAILED ... unable to get local issuer certificate" against a company
+    gateway: the browser trusts it, Python's own CA list does not. truststore>=0.10 also replaces
+    the SSL context requests builds at import, so the order of imports does not matter.
+
+    ``False`` is announced once per process with a warning, and urllib3's per-request
+    InsecureRequestWarning is silenced in its place -- thousands of identical warnings bury the
+    one that matters.
+    """
+    global _SYSTEM_STORE_INJECTED, _UNVERIFIED_ANNOUNCED
+    if setting is False:
+        with _TLS_LOCK:
+            if not _UNVERIFIED_ANNOUNCED:
+                logger.warning(
+                    "llm.sslVerify is false: TLS certificates of the LLM endpoint are NOT "
+                    "verified. The connection is encrypted but the server is not authenticated, "
+                    "so the API key could be sent to an impostor. Prefer \"system\" or a CA "
+                    "bundle path.")
+                try:
+                    import urllib3
+                    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                except Exception:        # noqa: BLE001 -- cosmetic only
+                    pass
+                _UNVERIFIED_ANNOUNCED = True
+        return False
+    if setting == "system":
+        with _TLS_LOCK:
+            if not _SYSTEM_STORE_INJECTED:
+                try:
+                    import truststore
+                except ImportError as exc:
+                    raise RuntimeError(
+                        "llm.sslVerify is \"system\" but the 'truststore' package is not "
+                        "installed: pip install truststore") from exc
+                truststore.inject_into_ssl()
+                _SYSTEM_STORE_INJECTED = True
+        return True
+    if isinstance(setting, str) and setting:
+        return setting                   # a CA bundle path, checked by load_llm_config
+    return True
+
+
 _TRACE_COUNTER = 0
 
 
@@ -224,6 +282,7 @@ class LlmClient:
         num_ctx: int = 8192,
         max_retries: int = 1,
         rate_limit_seconds: Optional[float] = _OPENAI_RATE_LIMIT_SEC,
+        ssl_verify: "bool | str" = True,
         # Legacy-compat args
         url: Optional[str] = None,
         use_openai_format: bool = False,
@@ -247,6 +306,9 @@ class LlmClient:
                                           else rate_limit_seconds))
         self._api_key = api_key
         self._custom_headers = dict(custom_headers or {})
+        # Resolved once, here: a "system" store that cannot be loaded fails at construction
+        # rather than on every call.
+        self._verify = requests_verify(ssl_verify)
 
         # Endpoint resolution.
         # Legacy callers pass `url=` already pointing at the full endpoint
@@ -566,7 +628,8 @@ class LlmClient:
             },
         }
         with self._attempt("ollama") as m:
-            resp = requests.post(self._endpoint, json=payload, timeout=self._timeout)
+            resp = requests.post(self._endpoint, json=payload, timeout=self._timeout,
+                                 verify=self._verify)
             resp.raise_for_status()
             data = resp.json()
             text = (data.get("response") or "").strip()
@@ -597,7 +660,8 @@ class LlmClient:
             },
         }
         with self._attempt("ollama") as m:
-            resp = requests.post(chat_endpoint, json=payload, timeout=self._timeout)
+            resp = requests.post(chat_endpoint, json=payload, timeout=self._timeout,
+                                 verify=self._verify)
             resp.raise_for_status()
             data = resp.json()
             # /api/chat returns {"message": {"role": "assistant", "content": "..."}}
@@ -642,6 +706,7 @@ class LlmClient:
                         headers=headers,
                         json=payload,
                         timeout=self._timeout,
+                        verify=self._verify,
                     )
                     resp.raise_for_status()
                     data = resp.json()
@@ -681,6 +746,7 @@ class LlmClient:
                         headers=headers,
                         json=payload,
                         timeout=self._timeout,
+                        verify=self._verify,
                     )
                     resp.raise_for_status()
                     data = resp.json()
@@ -719,6 +785,7 @@ def from_config(llm_cfg: Dict) -> LlmClient:
     api_key = resolve_api_key(llm_cfg)
     rate_limit = llm_cfg.get("rateLimitSeconds")
     return LlmClient(
+        ssl_verify=llm_cfg.get("sslVerify", True),
         provider=provider,
         base_url=base_url,
         model=model,

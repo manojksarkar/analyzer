@@ -218,6 +218,46 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-24d (**`llm.sslVerify` — LLM calls to a company gateway failed with
+> CERTIFICATE_VERIFY_FAILED "unable to get local issuer certificate".**
+>
+> The gateway's certificate is signed by the company's own CA. The browser trusts it (the CA is
+> in the Windows certificate store); `requests` does not, because it verifies against certifi's
+> bundled list and nothing in the config could say otherwise. No call site passed `verify=`.
+>
+> **One setting, four values** (validated in `core.config._normalise_ssl_verify`, at config load
+> so a bad value fails before Phase 1, not on every call hours in):
+> `true` (default, unchanged behaviour) · `"system"` — the OS certificate store via `truststore`
+> (recommended on company machines; follows IT's CA rotations with no file to maintain) ·
+> `"<path>.pem"` — a CA bundle, relative to the repo root · `false` — no verification, warned
+> once per process, urllib3's per-request warning silenced so the one warning is not buried.
+> Quoted booleans (`"false"`) are REFUSED: a security switch that flips on a quoting mistake is
+> the wrong failure. No environment variable, per the no-env-vars preference.
+>
+> `llm_core.client.requests_verify()` is the single translation to `requests`' `verify=`, used by
+> all four request paths in the client, `tools/check_llm.py` (so `analyzer.py check-llm` fails or
+> passes for the same TLS reason a run would), and the Ollama `/api/tags` probe.
+>
+> Two traps, both tested: (1) `load_llm_config` returns an explicit dict — a WHITELIST — so the key
+> had to be added to the return or it silently never reached the client; (2) `llm_enrichment`
+> builds its client WITHOUT `from_config` (the throttle was once lost the same way), so the
+> setting is threaded there explicitly and added to `_client_cache_key`.
+>
+> `truststore>=0.10` added to requirements.txt: 0.10.x replaces the SSL context requests >= 2.32
+> may build at import, so injection works regardless of import order (verified in its source).
+> Added to config.defaults.json AND the annotated .example (an existing test caught the drift).
+>
+> Verified against a real TLS failure, not only mocks: a local HTTPS server with a certificate
+> from a throwaway private CA reproduces the exact message with the default; `sslVerify` = that
+> CA's .pem succeeds through the real LlmClient; `false` succeeds; `"system"` verifies pypi.org
+> through the Windows store. 26 tests; six revert-checks (a request without verify=, from_config,
+> the enrichment client, the cache key, the whitelist, quoted booleans) all caught.
+>
+> **Operational gotcha:** a project's `workspaces/<pid>/config.json` is FROZEN at onboard time
+> (defaults + config.local.json merged once) and runs use it as-is via ANALYZER_CONFIG. Setting
+> `sslVerify` in `config.local.json` reaches `check-llm` and future onboards, NOT existing
+> projects — each existing project's own config.json needs it too. 2290 passed, 34 skipped.)
+
 > Updated: 2026-09-24c (**re-export could not find a version's source, and told the user to
 > regenerate: a full LLM run to recover at most a git checkout.** Reported from the office box:
 > `reexport --from-phase 3` on a version whose re-export had worked days earlier said "the checkout

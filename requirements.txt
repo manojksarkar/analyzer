@@ -9,6 +9,7 @@
 # --- engine: C++ parsing + analysis + export ---
 libclang>=16.0.0            # clang.cindex — libclang bindings for the AST/CFG
 requests>=2.28.0            # LLM HTTP client (OpenAI / Ollama)
+truststore>=0.10           # llm.sslVerify "system": trust the OS certificate store
 python-docx>=1.0            # DOCX export
 Pillow>=10.0.0             # flowchart image rendering (PIL)
 numpy>=1.24.0              # flowchart layout math
