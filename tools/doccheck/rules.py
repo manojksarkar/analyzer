@@ -64,8 +64,16 @@ def annotate(result, left, right):
                         "source file (%s, 'Which units get a section')" % WIKI)
 
         elif finding.kind == "missing" and "interface" in finding.summary:
+            gone = li["interfaces"].get(unit_key, {}).get(leaf)
+            # A GLOBAL row we do not publish: since S3-7 a global needs a reader or writer in
+            # another unit, as a function needs a caller there. A document written to the old
+            # rule (the marking alone) lists every non-private global.
+            if gone is not None and (gone.fields.get("interfaceType") or "").casefold().startswith("global"):
+                rule = ("a global gets a row only when a function in another unit reads or "
+                        "writes it; one its own unit alone uses is left out (%s, 'Public vs. "
+                        "private')" % WIKI)
             # A row we do not publish, whose name is nonetheless a heading there.
-            if leaf in ri["functions"].get(unit_key, set()):
+            elif leaf in ri["functions"].get(unit_key, set()):
                 rule = ("the name is a heading in their document but not a row, so the two "
                         "documents disagree about public vs private (%s, 'Public vs. private')" % WIKI)
             else:

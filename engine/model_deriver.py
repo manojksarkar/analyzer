@@ -434,18 +434,62 @@ def _fn_is_private(f: dict, functions_data: dict, base_path: str) -> bool:
     return not _has_external_caller(f, functions_data, base_path)
 
 
-def _glb_is_private(g: dict) -> bool:
+def _glb_used_outside(functions_data: dict, global_variables_data: dict, base_path: str) -> set:
+    """Ids of the globals a function in ANOTHER unit reads or writes -- the only ones published.
+
+    The global counterpart of `_has_external_caller`: a function's row is earned by a caller
+    in another unit, and a global's by a reader or writer in another unit (S3-7). Direct
+    `readsGlobalIds`/`writesGlobalIds` only -- a unit that calls the owner's function, which
+    then touches the global, has used the function, not the global.
+
+    A read through an `extern` DECLARATION is recorded against the declaration's own entry:
+    a global is keyed component|unit|qualifiedName, and the declaring unit is not the
+    defining one (Lib reading `g_sharedTick` through SharedDefs.h lands on the SharedDefs
+    entry, not on Core's definition). So a use of a declaration is credited to every
+    definition of the same qualified name. Across layers too, since layers link together.
+    Two unrelated file-scope statics of one name would both be credited; the model records
+    no storage class to tell them apart, and the error is on the side of publishing.
+    """
+    unit_of = {vid: _unit_of(g, base_path) for vid, g in global_variables_data.items()}
+    definitions = {}
+    for vid, g in global_variables_data.items():
+        if g.get("isDefinition") is not False:
+            definitions.setdefault(g.get("qualifiedName") or "", []).append(vid)
+    used = set()
+    for f in functions_data.values():
+        fn_unit = _unit_of(f, base_path)
+        if not fn_unit:
+            continue
+        for vid in set(f.get("readsGlobalIds") or []) | set(f.get("writesGlobalIds") or []):
+            g = global_variables_data.get(vid)
+            if g is None:
+                continue
+            targets = ([vid] if g.get("isDefinition") is not False
+                       else definitions.get(g.get("qualifiedName") or "", []))
+            for t in targets:
+                if unit_of.get(t) and unit_of[t] != fn_unit:
+                    used.add(t)
+    return used
+
+
+def _glb_is_private(vid: str, g: dict, used_outside: set) -> bool:
     """A global the unit must not publish as its interface.
 
-    Two reasons, and the second is not about visibility at all:
+    Three reasons, checked in order:
 
-    * marked (or C++-access) private -- the existing rule.
+    * marked (or C++-access) private.
     * a DECLARATION ONLY. `extern const OpsFn g_opsTable[];` in OpsClient.cpp is a promise
       that the storage exists elsewhere; OpsClient owns nothing and merely reads someone
       else's table, so publishing it as OpsClient's interface claims a relationship that
       runs the other way. The defining unit still publishes it. Nothing is lost from the
       document: the unit header table is not filtered, so the `extern` line is still
       listed there and explained (SWE3_WIKI N.1.4).
+    * no function in another unit reads or writes it (`_glb_used_outside`). A marking may
+      restrict, never promote -- the rule functions have followed since 2026-09-20. A file-
+      scope `static` falls here by construction: nothing outside its file can name it.
+
+    The same trap as the function rule: "no user outside this unit" and "no user this run
+    could see" are one fact to the tool (an ISR, a pointer, assembly, an unparsed layer).
 
     A pre-2026-09-22 model has no `isDefinition` field, and `.get` returning None there
     would bury every global at once. Absent is therefore read as "a definition", which is
@@ -453,7 +497,9 @@ def _glb_is_private(g: dict) -> bool:
     """
     if (g.get("visibility") or "").lower() == "private":
         return True
-    return g.get("isDefinition") is False
+    if g.get("isDefinition") is False:
+        return True
+    return vid not in used_outside
 
 
 def _build_interface_index(base_path: str, functions_data: dict, global_variables_data: dict):
@@ -470,11 +516,12 @@ def _build_interface_index(base_path: str, functions_data: dict, global_variable
             continue
         bucket = private_fns_by_unit if _fn_is_private(f, functions_data, base_path) else public_fns_by_unit
         bucket.setdefault(unit, []).append((fid, f))
+    used_outside = _glb_used_outside(functions_data, global_variables_data, base_path)
     for vid, g in global_variables_data.items():
         unit = _unit_of(g, base_path)
         if not unit:
             continue
-        bucket = private_glbs_by_unit if _glb_is_private(g) else public_glbs_by_unit
+        bucket = private_glbs_by_unit if _glb_is_private(vid, g, used_outside) else public_glbs_by_unit
         bucket.setdefault(unit, []).append((vid, g))
 
     idx_by_id = {}
@@ -528,6 +575,7 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
         params = [{"name": p.get("name", ""), "type": p.get("type", "")} for p in raw_params]
         f["interfaceId"] = interface_id
         f["parameters"] = params
+    used_outside = _glb_used_outside(functions_data, global_variables_data, base_path)
     for vid, g in global_variables_data.items():
         loc = g.get("location") or {}
         fp = loc.get("file", "")
@@ -545,7 +593,7 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
         layer_name = get_component_layer_name(config, key_parts[0]) if config else None
         layer_code = _id_seg_layer(layer_name) if layer_name else _id_seg(project_name)
         idx_code = f"{idx_by_id.get(vid, 0):02d}"
-        if _glb_is_private(g):
+        if _glb_is_private(vid, g, used_outside):
             # Recorded, so the five view filters and the two exporter filters -- all of
             # which test `visibility == "private"` -- need no change.
             g["visibility"] = "private"

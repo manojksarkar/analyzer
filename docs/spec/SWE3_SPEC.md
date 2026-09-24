@@ -83,9 +83,14 @@ A unit is `Foo.h` + `Foo.cpp` together, so a caller in the companion header does
 the same granularity the Source/Destination cell uses (REQ-IT-12), which lists caller units other than
 the function's own.
 
+A **global** is listed only if a function in **another unit** reads or writes it; a marking only
+restricts. A use through an `extern` declaration counts for the definition of that qualified name, and a
+declaration-only global is never listed (the defining unit's row stands for it).
+
 **Verification:** Known private and protected items absent. A `PUBLIC` function whose only callers are in
 its own unit absent, whether they sit in the same file or in its companion header. Known cross-unit
-interfaces present.
+interfaces present. `g_sharedTick` (read by Lib through `SharedDefs.h`) and `g_utilBase` (read by Core
+through `Util.h`) listed; `PUBLIC` `g_result` and `g_utilBuf`, used by their own unit only, absent.
 
 ---
 
