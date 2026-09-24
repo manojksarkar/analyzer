@@ -29,6 +29,7 @@ their paths at module scope exactly as they did before.
 """
 
 import os
+import sys
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SAMPLE_PROJECT = os.path.join(PROJECT_ROOT, "SampleCppProject")
@@ -52,7 +53,14 @@ GROUP = f"{LAYER}.My Sample"
 # Only the DOCX headings show the bare name.
 COMPONENTS = tuple(f"{LAYER}.{c}" for c in ("Lib", "Sample-Core", "Util"))
 
-VERSION_DIR = os.path.join(PROJECT_ROOT, "workspaces", E2E_PID, "versions", E2E_VID)
+# `onboard` files that NAME under the id `<project>.<name>` (run_context.version_key), and
+# output, documents and the model are all keyed by the id.
+if os.path.join(PROJECT_ROOT, "engine") not in sys.path:
+    sys.path.append(os.path.join(PROJECT_ROOT, "engine"))
+from core.run_context import version_key          # noqa: E402
+E2E_VERSION_ID = version_key(E2E_PID, E2E_VID)
+
+VERSION_DIR = os.path.join(PROJECT_ROOT, "workspaces", E2E_PID, "versions", E2E_VERSION_ID)
 OUTPUT_DIR = os.path.join(VERSION_DIR, "output")
 DOCUMENTS_DIR = os.path.join(VERSION_DIR, "documents")
 

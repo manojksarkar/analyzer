@@ -131,6 +131,25 @@ def _project_defaults(project_id: str, version_id: str):
     return branch, commit
 
 
+def _version_id_for(project_id: str, version: str) -> str:
+    """The `versions.id` of this project's `version`, given its name or its id.
+
+    `--version-id` is a name, unique only inside its project; the engine works on the row's id.
+    One that does not exist yet gets the id `--create-version` reserves it under, so the run's
+    own missing-version check still speaks, with the fix in it.
+    """
+    from core.run_context import resolve_version, version_key
+    try:
+        from core.db import is_database_configured
+        if is_database_configured():
+            vid = resolve_version(project_id, version)
+            if vid:
+                return vid
+    except Exception:
+        pass                    # an unreachable database is reported by the run's own check
+    return version_key(project_id, version)
+
+
 def cmd_generate(a) -> int:
     """Produce a version.
 
@@ -144,14 +163,19 @@ def cmd_generate(a) -> int:
     from core.run_context import DatabaseRequired
     from incremental.git_ops import GitError
 
+    # Resolved once, here, so nothing downstream can look a version up without its project.
+    name = a.version_id
+    a.version_id = _version_id_for(a.project_id, name)
+    if a.base_version:
+        a.base_version = _version_id_for(a.project_id, a.base_version)
     _branch, _commit = _project_defaults(a.project_id, a.version_id)
     branch = a.branch or _branch or "main"
     commit = a.commit or _commit
     if not commit:
-        print(f"no --commit given, and version {a.version_id!r} has no commit recorded.\n"
+        print(f"no --commit given, and version {name!r} has no commit recorded.\n"
               f"  Either pass --commit <full-40-char-sha>, or reserve the version first:\n"
               f"    python analyzer.py onboard --project-id {a.project_id} "
-              f"--version-id {a.version_id} --commit <sha>", file=sys.stderr)
+              f"--version-id {name} --commit <sha>", file=sys.stderr)
         return 2
 
     scope = _parse_scope(a.scope)
@@ -217,6 +241,8 @@ def cmd_reexport(a) -> int:
     re-parse, run `generate`.
     """
     from incremental.store import make_store
+    name = a.version_id
+    a.version_id = _version_id_for(a.project_id, name)       # this project's row, as generate
     store = make_store(a.project_id)
     adir = store.artifact_dir(a.version_id)
     # WHICH config this version ran with, resolved exactly as generate_full resolves it.
@@ -243,19 +269,19 @@ def cmd_reexport(a) -> int:
         # off-by-one in the version id, and a path the caller has never seen does not say
         # 'that version is not there' — it reads like a broken install.
         known = _known_versions(a.project_id)
-        if not any(v == a.version_id for v, _, _ in known):
-            print(f"there is no version {a.version_id!r} for project {a.project_id!r}.", file=sys.stderr)
+        if not any(vid == a.version_id for vid, _, _, _ in known):
+            print(f"there is no version {name!r} for project {a.project_id!r}.", file=sys.stderr)
             if known:
                 print("\n  versions this project has:", file=sys.stderr)
-                for v, sha, st in known[:10]:
+                for _, v, sha, st in known[:10]:
                     print(f"    {v:<16} {sha:<12} {st}", file=sys.stderr)
             else:
                 print("\n  it has none yet — run `python analyzer.py generate` first.", file=sys.stderr)
             return 2
-        print(f"version {a.version_id!r} has no config at {cfg}.\n"
+        print(f"version {name!r} has no config at {cfg}.\n"
               f"  It is written at the start of a generate, so this version was reserved but "
               f"never generated. Run:\n"
-              f"    python analyzer.py generate --project-id {a.project_id} --version-id {a.version_id}", file=sys.stderr)
+              f"    python analyzer.py generate --project-id {a.project_id} --version-id {name}", file=sys.stderr)
         return 2
     checkout = _checkout_for(a.project_id, a.version_id, a.commit or "")
     if checkout is None:
@@ -310,7 +336,7 @@ def cmd_reexport(a) -> int:
 
 
 def _known_versions(project_id: str):
-    """This project's versions, newest first, with what each one has."""
+    """This project's versions, newest first: (id, name, commit, status)."""
     try:
         from core.db import get_engine, is_database_configured
         if not is_database_configured():
@@ -319,11 +345,11 @@ def _known_versions(project_id: str):
         from api.db.postgres import schema as sch
         with get_engine().connect() as cx:
             rows = cx.execute(
-                sa.select(sch.versions.c.id, sch.versions.c.commit_sha,
+                sa.select(sch.versions.c.id, sch.versions.c.version, sch.versions.c.commit_sha,
                           sch.versions.c.pipeline_status)
                 .where(sch.versions.c.project_id == project_id)
                 .order_by(sch.versions.c.created_at.desc())).all()
-        return [(r[0], (r[1] or '')[:10], r[2] or 'incomplete') for r in rows]
+        return [(r[0], r[1], (r[2] or '')[:10], r[3] or 'incomplete') for r in rows]
     except Exception:
         return []
 

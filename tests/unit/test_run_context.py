@@ -13,10 +13,13 @@ The two tests that matter most here are the ones a real run found, not review:
     files (write_model -> persist_model_from_dir -> clear_version + persist), so with no files
     it would clear the version and store an EMPTY model over what the phase just flushed.
 """
+import datetime
 import os
 import sys
 
 import pytest
+from sqlalchemy import create_engine, insert, select
+from sqlalchemy.pool import StaticPool
 
 pytestmark = pytest.mark.unit
 
@@ -25,6 +28,7 @@ sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "engine"))
 
 from core import run_context                     # noqa: E402
+from api.db.postgres import schema as s          # noqa: E402
 
 # Phases that WRITE the model, so losing their buffer loses real data.
 WRITING_PHASES = ["parser.py", "model_deriver.py", "run_views.py"]
@@ -267,3 +271,106 @@ def test_both_orchestrators_expose_create_version(name):
     cli = _src("analyzer.py")
     assert '"--create-version"' in cli, "the CLI must still offer it"
     assert "create_version=a.create_version" in cli, "and pass it through"
+
+
+class TestAVersionIdIsPerProject:
+    """Two projects may both have a `v1`; only project ids have to differ.
+
+    The CLI stored the name as `versions.id`, which is unique across ALL projects, and every
+    per-version table keys on that id alone. Two servers sharing one database each onboarded
+    their own project with `--version-id v1`: the second found the first's row, said "already
+    reserved", and both runs wrote into it. Each wrote its own checkout as base_path, so
+    project 1's flowchart step looked for source under project 2's workspace and made none.
+    """
+
+    SHA = {"project1": "a" * 40, "project2": "b" * 40}
+
+    @pytest.fixture
+    def db(self, monkeypatch):
+        eng = create_engine("sqlite://", connect_args={"check_same_thread": False},
+                            poolclass=StaticPool)
+        s.metadata.create_all(eng)
+        with eng.begin() as cx:
+            for pid in self.SHA:
+                cx.execute(insert(s.projects), {
+                    "id": pid, "name": pid,
+                    "created_at": datetime.datetime.now(datetime.timezone.utc)})
+        monkeypatch.setattr("core.db.get_engine", lambda: eng)
+        monkeypatch.setattr("core.db.is_database_configured", lambda: True)
+        return eng
+
+    def _reserve_v1_in_both(self):
+        for pid, sha in self.SHA.items():
+            assert run_context._create_version_row(run_context.version_key(pid, "v1"), pid, sha)
+
+    def test_the_id_carries_the_project(self):
+        assert run_context.version_key("project1", "v1") == "project1.v1"
+
+    def test_both_projects_get_a_row_named_v1(self, db):
+        self._reserve_v1_in_both()
+        with db.connect() as cx:
+            rows = cx.execute(select(s.versions.c.id, s.versions.c.project_id,
+                                     s.versions.c.version).order_by(s.versions.c.id)).all()
+        assert [tuple(r) for r in rows] == [("project1.v1", "project1", "v1"),
+                                            ("project2.v1", "project2", "v1")]
+
+    def test_each_project_resolves_v1_to_its_own_row(self, db):
+        self._reserve_v1_in_both()
+        assert run_context.resolve_version("project1", "v1") == "project1.v1"
+        assert run_context.resolve_version("project2", "v1") == "project2.v1"
+
+    def test_the_id_resolves_as_well_as_the_name(self, db):
+        self._reserve_v1_in_both()
+        assert run_context.resolve_version("project1", "project1.v1") == "project1.v1"
+
+    def test_it_never_resolves_to_another_projects_version(self, db):
+        assert run_context._create_version_row("project1.v1", "project1", "a" * 40)
+        assert run_context.resolve_version("project2", "v1") is None
+        assert run_context.resolve_version("project2", "project1.v1") is None
+
+    def test_the_fix_names_the_version_not_its_id(self, monkeypatch):
+        """The id is ours; the caller typed the name, and the command must take it back."""
+        monkeypatch.setattr("core.db.is_database_configured", lambda: True)
+        monkeypatch.setattr(run_context, "_version_row_exists", lambda vid: False)
+        with pytest.raises(run_context.DatabaseRequired) as exc:
+            run_context.effective_model_store("myproj.v1", project_id="myproj", commit="a" * 40)
+        assert "--version-id v1 " in str(exc.value)
+
+    def test_generate_hands_the_engine_this_projects_version(self, db, monkeypatch):
+        """The incident, short of running the engine: both projects `generate --version-id v1`,
+        and each must reach the engine as its own row, with its own commit."""
+        import analyzer as A
+        import incremental.engine as E
+        self._reserve_v1_in_both()
+        seen = {}
+
+        def _engine(project_id, branch, commit, scope, **kw):
+            seen[project_id] = (kw["version_id"], commit)
+            return {"versionId": kw["version_id"], "status": "complete", "commit": commit,
+                    "decision": "full"}
+
+        monkeypatch.setattr(E, "generate_incremental", _engine)
+        for pid in self.SHA:
+            a = A.build_parser().parse_args(["generate", "--project-id", pid, "--version-id", "v1"])
+            assert a.fn(a) == 0
+        assert seen == {"project1": ("project1.v1", "a" * 40),
+                        "project2": ("project2.v1", "b" * 40)}
+
+    def test_reexport_renders_this_projects_version(self, db, monkeypatch, tmp_path):
+        import analyzer as A
+        import incremental.store as store_mod
+        import incremental.stores as st
+        ws = tmp_path / "workspaces"
+        monkeypatch.setattr(st, "default_workspaces_root", lambda: str(ws))
+        monkeypatch.setattr(store_mod, "default_workspaces_root", lambda: str(ws))
+        self._reserve_v1_in_both()
+        for pid, sha in self.SHA.items():
+            (ws / pid / sha[:16] / ".git").mkdir(parents=True)          # its checkout
+            (ws / pid / "config.json").write_text("{}", encoding="utf-8")
+        runs = []
+        monkeypatch.setattr(A, "_script", lambda path, argv: runs.append(argv) or 1)
+        a = A.build_parser().parse_args(["reexport", "--project-id", "project2", "--version-id", "v1"])
+        assert a.fn(a) == 1                          # the stubbed run.py "failed"; it was reached
+        argv = runs[0]
+        assert argv[argv.index("--version-id") + 1] == "project2.v1"
+        assert argv[-1] == str(ws / "project2" / ("b" * 16)), "project 2's own checkout"

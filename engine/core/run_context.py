@@ -70,6 +70,51 @@ def set_run_context(*, version: Optional[str] = None, project: Optional[str] = N
             _SCRATCH_MODEL = bool(scratch)
 
 
+def version_key(project_id: str, name: str) -> str:
+    """The `versions.id` a CLI-reserved version gets: `<project>.<name>`, e.g. `project1.v1`.
+
+    A version NAME (`versions.version`) only has to be unique inside its project. The id is
+    what every per-version table keys on, alone, so it must be unique across projects. The CLI
+    used the name as the id, so two projects that each onboarded `--version-id v1` shared one
+    row: the second onboard said "already reserved", both runs wrote into it, and each wrote
+    its own checkout as `base_path`. Project 1's flowcharts then looked for source under
+    project 2's workspace and none were made.
+    """
+    return f"{project_id}.{name}"
+
+
+def _version_name(project_id: str, version_id: str) -> str:
+    """The name inside a `version_key` id. Any other id is its own name."""
+    prefix = f"{project_id}."
+    return version_id[len(prefix):] if version_id.startswith(prefix) else version_id
+
+
+def resolve_version(project_id: str, version: str, cx=None) -> Optional[str]:
+    """The id of THIS project's version `version`, given its name or its id. None if absent.
+
+    Never matches another project's version: that match is how two projects came to share one
+    row. Accepting the id too keeps `project1.v1` and the API's `ver…` ids usable anywhere a
+    name is.
+    """
+    import sqlalchemy as sa
+    from api.db.postgres import schema as s
+    v = s.versions
+
+    def _find(c):
+        for col in (v.c.version, v.c.id):              # the name first; it is what people type
+            row = c.execute(sa.select(v.c.id).where(
+                (v.c.project_id == project_id) & (col == version))).first()
+            if row:
+                return row[0]
+        return None
+
+    if cx is not None:
+        return _find(cx)
+    from .db import get_engine
+    with get_engine().connect() as c:
+        return _find(c)
+
+
 def _create_version_row(version_id: str, project_id: str, commit: str) -> bool:
     """Reserve the versions row a CLI run needs. True on success.
 
@@ -90,7 +135,8 @@ def _create_version_row(version_id: str, project_id: str, commit: str) -> bool:
                       file=sys.stderr)
                 return False
             cx.execute(sa.insert(s.versions), {
-                "id": version_id, "project_id": project_id, "version": version_id,
+                "id": version_id, "project_id": project_id,
+                "version": _version_name(project_id, version_id),
                 "commit_sha": commit, "status": "in_review",
                 "created_at": datetime.datetime.now(datetime.timezone.utc)})
         return True
@@ -160,7 +206,7 @@ def effective_model_store(version_id: Optional[str],
                 _sha = commit or "<full-40-char-sha>"
                 fix = (f"reserve it first —\n"
                        f"    python analyzer.py onboard --project-id {_pid} "
-                       f"--version-id {version_id} --commit {_sha}\n"
+                       f"--version-id {_version_name(project_id, version_id)} --commit {_sha}\n"
                        f"  or add --create-version to this command to do it in one step. "
                        f"(The API reserves the row itself when a job starts.)")
         else:

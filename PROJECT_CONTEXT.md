@@ -208,6 +208,50 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-24f (**A CLI version id is a name inside its project** — branch `fix/swe3-review-v1`,
+> `engine/core/run_context.py` + `tools/new_project.py` + `analyzer.py`.)
+>
+> Reported from the office: two servers, one shared Postgres, each onboarding + generating its own project
+> with `--version-id v1`. Project 1 got no flowcharts; the error named a path under `workspaces/project2/`.
+> Cause: the CLI wrote the name into `versions.id` — the global PK that every per-version table
+> (parse_snapshots, model rows, knowledge_base, output files) keys on ALONE — as well as `versions.version`.
+> The second onboard found project 1's row by id, printed "already reserved" and rewrote its `commit_sha` to
+> project 2's; both runs then wrote into that one row. `_persist_run_metadata` writes `versions.base_path`
+> right after Phase 1, so project 2's checkout overwrote project 1's, and the flowchart engine (reads
+> `base_path` by version id) looked for project 1's source under project 2's workspace. Model rows were
+> shared too (`load_functions` / `clear_version` filter by version id alone) — regenerate both.
+> Fix, **no schema change** (`uq_version_project_version` = (project_id, version) already existed; API ids
+> are `ver<uuid8>`, unaffected): `run_context.version_key(pid, name)` → `<pid>.<name>` is a CLI-reserved
+> version's id; `resolve_version(pid, name_or_id, cx=None)` finds THIS project's row by name, then by id,
+> never another project's. `new_project.py` step 4 resolves by project + name and inserts under
+> `version_key`; `_create_version_row` (`--create-version`) stores the name (`_version_name`, the inverse).
+> `analyzer.py` `generate` (incl. `--base-version`) and `reexport` resolve `--version-id` once
+> (`_version_id_for`) and hand the engine the id — engine, API, web app unchanged. `_known_versions` returns
+> (id, name, sha, status) so reexport lists names. `status` / `check` / `report --version` take the full id
+> (they have no `--project-id`). Artifact dir is now `workspaces/<pid>/versions/<pid>.<name>/`. No DB
+> migration (not in production — wipe + re-onboard); an old row whose id == name still resolves by name.
+> Tests: `test_run_context.py::TestAVersionIdIsPerProject` (SQLite: key, resolve, no cross-project match,
+> the fix hint names the name, `generate` hands each project its own id + commit, `reexport` renders
+> project 2's own row + checkout) and `test_new_project_config.py::TestAVersionNameIsPerProject`. Run
+> against the pre-fix `new_project.py`, the onboard test reproduces the incident ("v1 (already reserved)",
+> commit a→b).
+> Other CLI callers that reused the bare name: `tests/e2e_paths.py` now keys the e2e paths by
+> `version_key(E2E_PID, E2E_VID)` (`e2e-sample.e2ev1`), and `tests/conftest.py::_old_style_version` stops
+> the pipeline with a message when the DB still holds the old `e2ev1` row (onboard would reuse it and write
+> where no test looks) — wipe the DB or delete project `e2e-sample`. `tools/parity/compare_with_poc4.py`
+> reads output under the key and clears only its own project's versions (it deleted `version_id='v1'` rows
+> in EVERY project).
+> Verified on real Postgres, 2026-09-24 (scratch two-server scenario: two `ANALYZER_DATA_ROOT`s + one
+> throwaway DB, flowcharts ON, the two generates concurrent, `--no-llm`). OLD code: one shared row
+> (project1's, holding project2's commit + base_path); project1's version held 383/383 project2 entities;
+> project1's generate crashed on `pk_parse_snapshots` (both runs writing parse snapshots under `v1`); with
+> server2 hidden, project1's flowchart step built 0 and logged 51 × `Source file not found
+> …\server2\workspaces\project2\…` — the office error. FIXED: two rows with their own commit + base_path,
+> 0 foreign entities, 50 / 51 flowcharts, reexport with server2 hidden 50 built / 0 errors; incremental v2
+> (auto baseline and `--base-version v1`) and v3 (a modified function) correct; `tests/live` 42 + 62
+> passed; full pytest on a fresh DB 2758 passed / 34 skipped (27 live without `--project-id`, 7 e2e for
+> views off in the defaults).
+
 > Updated: 2026-09-24e (**check-llm speaks Ollama** — branch `fix/swe3-review-v1`, `tools/check_llm.py`.)
 >
 > The probe used to exit 2 on `provider: ollama`. It now sends `LlmClient._call_ollama`'s exact request

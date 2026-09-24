@@ -16,7 +16,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tests.e2e_paths import (                                    # noqa: E402
-    PROJECT_ROOT, SAMPLE_PROJECT, E2E_PID, E2E_VID, MODEL_DIR, GROUP,
+    PROJECT_ROOT, SAMPLE_PROJECT, E2E_PID, E2E_VID, E2E_VERSION_ID, MODEL_DIR, GROUP,
 )
 
 # Stores pipeline failure message if it failed; None means success or skipped.
@@ -83,9 +83,28 @@ def _dump_model(out):
         from core.db import get_engine
         from core import model_store
         with get_engine().connect() as cx:
-            model_store.dump_model_to_dir(cx, E2E_VID, MODEL_DIR)
+            model_store.dump_model_to_dir(cx, E2E_VERSION_ID, MODEL_DIR)
     except Exception as exc:                    # not fatal: only the model tests need it
         out.write("\n  (model dump unavailable: %s)\n" % exc)
+
+
+def _old_style_version():
+    """The id of an `e2ev1` row filed under the bare name, or None.
+
+    Reserved before version ids carried their project. onboard reuses it, so the run would
+    write under versions/e2ev1 while every e2e test reads versions/<E2E_VERSION_ID>.
+    """
+    try:
+        for _p in (PROJECT_ROOT, os.path.join(PROJECT_ROOT, "engine")):
+            if _p not in sys.path:
+                sys.path.insert(0, _p)
+        from core.db import get_engine
+        from core.run_context import resolve_version
+        with get_engine().connect() as cx:
+            vid = resolve_version(E2E_PID, E2E_VID, cx)
+    except Exception:
+        return None                             # onboard reports an unreachable database
+    return vid if vid and vid != E2E_VERSION_ID else None
 
 
 def pytest_addoption(parser):
@@ -159,6 +178,17 @@ def pytest_collection_finish(session):
         pipeline_env["PYTHONPATH"] = (
             PROJECT_ROOT + os.pathsep + existing_pypath if existing_pypath else PROJECT_ROOT
         )
+
+    stale = _old_style_version()
+    if stale:
+        _pipeline_failure = (
+            f"this database files the e2e version {E2E_VID!r} under the old-style id {stale!r} "
+            f"(from before version ids carried their project), and onboard would reuse it. "
+            f"Use a fresh database (`python analyzer.py setup` on an empty one) or delete "
+            f"project {E2E_PID!r}, then re-run.")
+        out.write(f"  Pipeline: {label} ... NOT RUN\n  {_pipeline_failure}\n{sep}\n\n")
+        out.flush()
+        return
 
     # The analyzer CLI, not run.py directly: a phase needs a version row to write into,
     # and onboarding is what creates one. tests/e2e_paths.py has the full why.
