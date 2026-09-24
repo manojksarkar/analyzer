@@ -615,30 +615,8 @@
         "calleesUnits": [],
         "callerUnits": [],
         "direction": "In/Out",
-        "globalId": "Layer1.Sample-Core|Core|g_result",
-        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_11",
-        "interfaceName": "g_result",
-        "location": {
-          "file": "Layer1/Sample/Core/Core",
-          "line": 6
-        },
-        "name": "g_result",
-        "qualifiedName": "g_result",
-        "range": "-0x80000000-0x7FFFFFFF",
-        "reason": "In/Out: global variables are bidirectional interfaces.",
-        "sourceDest": "Sample-Core/Core",
-        "type": "Global Variable",
-        "unitKey": "Layer1.Sample-Core|Core",
-        "unitName": "Core",
-        "value": "0",
-        "variableType": "int"
-      },
-      {
-        "calleesUnits": [],
-        "callerUnits": [],
-        "direction": "In/Out",
         "globalId": "Layer1.Sample-Core|Core|g_sharedTick",
-        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_12",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_11",
         "interfaceName": "g_sharedTick",
         "location": {
           "file": "Layer1/Sample/Core/Core",
@@ -905,28 +883,6 @@
         "unitName": "Util",
         "value": "0",
         "variableType": "int"
-      },
-      {
-        "calleesUnits": [],
-        "callerUnits": [],
-        "direction": "In/Out",
-        "globalId": "Layer1.Util|Util|g_utilBuf",
-        "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_08",
-        "interfaceName": "g_utilBuf",
-        "location": {
-          "file": "Layer1/Sample/Util/Util",
-          "line": 8
-        },
-        "name": "g_utilBuf",
-        "qualifiedName": "g_utilBuf",
-        "range": "NA",
-        "reason": "In/Out: global variables are bidirectional interfaces.",
-        "sourceDest": "Util/Util",
-        "type": "Global Variable",
-        "unitKey": "Layer1.Util|Util",
-        "unitName": "Util",
-        "value": "{0}",
-        "variableType": "int[6]"
       }
     ],
     "name": "Util"

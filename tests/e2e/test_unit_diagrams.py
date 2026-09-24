@@ -206,13 +206,14 @@ def test_every_edge_has_if_label(mmd_files, unit):
 # Globals (RV-6): the unit's published globals, drawn as boxes with no edges
 # ---------------------------------------------------------------------------
 
-# From the source: Core.cpp defines PUBLIC g_result, PRIVATE g_count and unmarked
-# g_sharedTick; Util.cpp defines PUBLIC g_utilBase and g_utilBuf; Lib defines none (it only
-# READS g_sharedTick through SharedDefs.h, which is Core's global, not Lib's).
+# The globals with an interface row -- the ones a function in another unit reads or writes
+# (S3-7). Core: g_sharedTick (Lib reads it through SharedDefs.h); PUBLIC g_result and
+# PRIVATE g_count are Core's alone. Util: g_utilBase (Core reads it through Util.h);
+# PUBLIC g_utilBuf is Util's alone. Lib defines no global.
 PUBLISHED_GLOBALS = {
-    "Core": ["g_result", "g_sharedTick"],
+    "Core": ["g_sharedTick"],
     "Lib":  [],
-    "Util": ["g_utilBase", "g_utilBuf"],
+    "Util": ["g_utilBase"],
 }
 
 
@@ -226,8 +227,13 @@ def test_published_globals_drawn(mmd_files, unit):
     assert _global_boxes(mmd_files[unit]) == PUBLISHED_GLOBALS[unit]
 
 
-def test_private_global_not_drawn(mmd_files):
-    assert "g_count" not in mmd_files["Core"]
+@pytest.mark.parametrize("unit,name", [
+    ("Core", "g_count"),     # PRIVATE
+    ("Core", "g_result"),    # PUBLIC, but no user outside Core
+    ("Util", "g_utilBuf"),   # PUBLIC, but no user outside Util
+])
+def test_global_without_a_row_not_drawn(mmd_files, unit, name):
+    assert name not in mmd_files[unit]
 
 
 @pytest.mark.parametrize("unit", UNITS)

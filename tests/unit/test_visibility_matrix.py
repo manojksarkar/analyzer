@@ -202,3 +202,72 @@ def test_public_no_longer_guarantees_a_row():
     """
     assert _fn_is_private(_fn("public"), WORLD, BASE) is True
     assert _fn_is_private(_fn(None), WORLD, BASE) is True
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — globals (S3-7): published only when a function in ANOTHER unit uses it
+# ---------------------------------------------------------------------------
+
+from model_deriver import _glb_is_private, _glb_used_outside  # noqa: E402
+
+G_DEF = "Layer1.Access|AccessMatrix|g_x"            # defined in AccessMatrix.cpp
+
+
+def _glb(qn="g_x", file="Layer1/Access/AccessMatrix.cpp", visibility=None, definition=True):
+    g = {"qualifiedName": qn, "location": {"file": os.path.join(BASE, file)}}
+    if visibility:
+        g["visibility"] = visibility
+    if not definition:
+        g["isDefinition"] = False
+    return g
+
+
+def _user(file, reads=(), writes=()):
+    return {"location": {"file": os.path.join(BASE, file)},
+            "readsGlobalIds": list(reads), "writesGlobalIds": list(writes)}
+
+
+def _private(globals_data, functions_data, vid=G_DEF):
+    used = _glb_used_outside(functions_data, globals_data, BASE)
+    return _glb_is_private(vid, globals_data[vid], used)
+
+
+@pytest.mark.parametrize("label,users,visibility,expected_private", [
+    ("read from another unit",           [_user("Layer1/App/Main.cpp", reads=[G_DEF])], None, False),
+    ("written from another unit",        [_user("Layer1/App/Main.cpp", writes=[G_DEF])], None, False),
+    ("used by its own unit only",        [_user("Layer1/Access/AccessMatrix.cpp", reads=[G_DEF])], None, True),
+    ("used from its companion header",   [_user("Layer1/Access/AccessMatrix.h", reads=[G_DEF])], None, True),
+    ("used by nobody",                   [], None, True),
+    ("PUBLIC, used by its own unit only", [_user("Layer1/Access/AccessMatrix.cpp", reads=[G_DEF])], "public", True),
+    ("PRIVATE, read from another unit",  [_user("Layer1/App/Main.cpp", reads=[G_DEF])], "private", True),
+])
+def test_phase_two_buckets_globals(label, users, visibility, expected_private):
+    globals_data = {G_DEF: _glb(visibility=visibility)}
+    functions_data = {f"f{i}": u for i, u in enumerate(users)}
+    assert _private(globals_data, functions_data) is expected_private, label
+
+
+def test_a_use_through_an_extern_declaration_counts_for_the_definition():
+    """Main.cpp reads g_x through its own `extern int g_x;`, which the model keys to Main's
+    unit, not to AccessMatrix's. The use still publishes the definition; the declaration
+    itself is never published."""
+    decl = "Layer1.App|Main|g_x"
+    globals_data = {G_DEF: _glb(), decl: _glb(file="Layer1/App/Main.cpp", definition=False)}
+    functions_data = {"f": _user("Layer1/App/Main.cpp", reads=[decl])}
+    assert _private(globals_data, functions_data) is False
+    assert _private(globals_data, functions_data, vid=decl) is True
+
+
+def test_an_extern_used_only_inside_the_defining_unit_does_not_publish():
+    """The declaration sits in another file (an orphan header), but the only reader is the
+    defining unit itself -- nothing outside the unit uses the storage."""
+    decl = "Layer1.Access|Shared|g_x"
+    globals_data = {G_DEF: _glb(), decl: _glb(file="Layer1/Access/Shared.h", definition=False)}
+    functions_data = {"f": _user("Layer1/Access/AccessMatrix.cpp", reads=[decl])}
+    assert _private(globals_data, functions_data) is True
+
+
+def test_a_marking_cannot_publish_a_global():
+    """`PUBLIC` and unmarked are indistinguishable: both need a user in another unit."""
+    for vis in ("public", None):
+        assert _private({G_DEF: _glb(visibility=vis)}, {}) is True

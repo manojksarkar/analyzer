@@ -203,3 +203,11 @@ PUBLIC void coreReset() {
 PRIVATE int coreLimit(int v) {
     return (v > UTIL_LIMIT) ? LIB_LIMIT : (int)UTIL_MODE_SAFE;
 }
+
+// ── A global used from another unit ─────────────────────────────────────────
+// Reading Util's g_utilBase (declared in Util.h) is what publishes it: a global gets an
+// interface row only when a function in another unit reads or writes it. Core's own
+// g_result is PUBLIC-marked but used by Core alone, so it gets none.
+PRIVATE int coreUtilBase(void) {
+    return g_utilBase;
+}

@@ -550,6 +550,26 @@ def test_counts_are_reported_per_kind():
     assert any("headerdef global count: 1 -> 0" in c for c in counts)
 
 
+def test_a_global_row_only_they_have_points_at_the_outside_user_rule():
+    """S3-7: a global needs a reader or writer in another unit to get a row."""
+    right = sample()
+    u = right.of_kind("component")[0].of_kind("unit")[0]
+    u.children = [c for c in u.children if c.name != "s_count"]
+    missing = [f for f in run(sample(), right).findings
+               if f.kind == "missing" and "interface" in f.summary]
+    assert [f.path for f in missing] == ["Diag / ClassStatics / s_count"]
+    assert "another unit reads or writes" in missing[0].rule
+
+
+def test_a_function_row_only_they_have_keeps_the_private_rule():
+    right = sample()
+    u = right.of_kind("component")[0].of_kind("unit")[1]
+    u.children = [c for c in u.children if c.name != "voidArg"]
+    missing = [f for f in run(sample(), right).findings
+               if f.kind == "missing" and "interface" in f.summary]
+    assert missing and "another unit reads or writes" not in missing[0].rule
+
+
 def test_a_private_row_only_we_have_carries_the_rule_and_drops_to_info():
     left = with_headers([headerdef("#define A 1", "1"), headerdef("PRIVATE int g_count = 0;", "0")])
     right = with_headers([headerdef("#define A 1", "1")])

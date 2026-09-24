@@ -188,7 +188,7 @@ def test_protected_name_absent_from_interface_rows(all_interface_rows):
     ("coreOrchestrate","Core"),
     ("libAdd",         "Lib"),  ("libNormalize",   "Lib"),
     ("utilCompute",    "Util"), ("utilScale",      "Util"),
-    ("g_result",       "Core"), ("g_utilBase",     "Util"),
+    ("g_sharedTick",   "Core"), ("g_utilBase",     "Util"),
 ])
 def test_public_name_in_docx(all_cell_text, name, unit):
     assert name in all_cell_text, f"'{name}' ({unit}) missing from DOCX interface table"
@@ -200,7 +200,7 @@ def test_public_name_in_docx(all_cell_text, name, unit):
 
 @pytest.mark.parametrize("name,expected_direction", [
     ("coreSetResult", "In"),
-    ("g_result",      "In/Out"),
+    ("g_utilBase",    "In/Out"),
 ])
 def test_direction_in_docx(all_interface_rows, name, expected_direction):
     row = next((r for r in all_interface_rows if r.cells[COL_IF_NAME].text.strip() == name), None)

@@ -208,6 +208,40 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-24c (**S3-7 — a global earns its interface row from a user in ANOTHER unit** —
+> branch `fix/swe3-review-v1`, `engine/model_deriver.py`. Also closes S3-8 and Risk 8's storage-class gap.)
+>
+> **Rule.** `_glb_is_private(vid, g, used_outside)`: marked/C++-private → private; `isDefinition is False`
+> → private; else private unless `vid in used_outside`. `_glb_used_outside(functions, globals, base)` =
+> ids some function in a different unit (`_unit_of`) reads or writes DIRECTLY (`readsGlobalIds` /
+> `writesGlobalIds`, before `_propagate_global_access`; calling the owner's function is not a use of its
+> global). Computed inside `_build_interface_index` and `_enrich_interfaces` (signatures unchanged), so
+> bucketing and the `private` stamp agree, and every view/exporter filter (`visibility == "private"`)
+> follows with no change: interface table, unit diagram boxes (RV-6), SWE.4 unaffected (verified).
+> **The extern trap, found by measuring before coding:** a read through `extern` is keyed to the
+> DECLARATION's own entry (`component|unit|qn` of the declaring file), not to the definition — Lib's read
+> of `g_sharedTick` lands on `Sample-Core|SharedDefs|g_sharedTick`, OpsClient's on its own
+> `OpsClient|g_opsTable`. A naive rule buried both. So a use of a declaration is credited to every
+> definition with that `qualifiedName`, across layers (layers link together). Two unrelated file-scope
+> statics of one name would both be credited — no storage class in the model to tell them apart; errs
+> toward publishing. A companion-header `extern` (Foo.h + Foo.cpp) needs none of this: one unit key, and
+> the definition wins the collision, so the read already names the definition.
+> **Measured (whole Layer1 model, 34 globals):** published 19 → 5 — `NestedOwner::s_publicCount`,
+> `StatCounters::s_publicCount` (their `*User.cpp`), `g_opsTable` (OpsClient via extern), `g_sharedTick`
+> (Lib via SharedDefs.h), `g_utilBase` (Core via Util.h). `s_fileLocal` (file-scope static) now private.
+> My Sample interface tables: Core −`g_result` (IF_…_CORE_11), `g_sharedTick` `_12` → `_11`; Util
+> −`g_utilBuf` (IF_…_UTIL_08). Functions keep their ids (globals are numbered after them).
+> **Fixture:** PRIVATE `coreUtilBase()` appended to Core.cpp reads `g_utilBase` through Util.h's existing
+> `PUBLIC extern int g_utilBase;` — the cross-unit use that keeps Util's row.
+> **Tests:** 2777 passed, 0 failed, 35 skipped (full run with a fresh pipeline). `test_visibility_matrix`
+> +10 (phase-2 global cells, extern credit both ways, marking cannot publish); e2e interface tables,
+> DOCX and unit diagrams retargeted (`g_result`/`g_utilBuf` absent, `g_sharedTick`/`g_utilBase` present);
+> doccheck: a missing GLOBAL row now carries this rule instead of the generic private one (+2 tests).
+> Snapshots: `unit_diagrams.json` by `--update-snapshots`; `interface_tables.json` hand-refreshed (its
+> test is skipped here, `llm.descriptions` on) after checking the diff is exactly the three rows above;
+> `test_specs.json` identical. Docs: SWE3_WIKI Public vs. private (+ the access-specifier table, the
+> static ⚠ removed), SWE3_SPEC REQ-IT-02, DESIGN.md (also dropped its stale "header table filtered").
+
 > Updated: 2026-09-24b (**RV-4 — an orphan header is listed ONCE, by one owner unit** — branch
 > `fix/swe3-review-v1`, `engine/views/unit_headers.py`. Supersedes the 2026-07-17 / 2026-09-23 "lent to
 > EACH unit that uses it" rule.)
@@ -5884,28 +5918,18 @@ the `endswith` tuple, so `case X:` and goto labels do not break the multi-line
 
 ### Risk 8 — storage class
 
-One gap left after the 2026-09-23 unit-header work.
-
-**A file-scope `static` publishes as an interface.** `_global_visibility` consults
-`cursor.access_specifier` only when `_is_class_static_var` is true, so a file-scope
-`static int s_x;` — or a file-scope `const`, also internal linkage in C++ — records as
-`public` and earns an interface row, though no other unit can reach it. Internal linkage
-is a stronger guarantee than a `private:` label: the linker enforces it, not access
-control. `static` FUNCTIONS escape by accident — every caller is necessarily in their own
-unit, so `_has_external_caller` buries them — unless a static function is defined in a
-header included by several `.cpp`s, which is the hole in the accident. Fix is one clause in
-`_global_visibility`: a non-class VAR_DECL with `storage_class == StorageClass.STATIC` ->
-`"private"`. No declaration/definition ambiguity here, unlike the class-static case: a
-file-scope static has one cursor. Left open deliberately — it is a policy call, raised with
-the client in SWE3_WIKI N.1.5.
+**FIXED 2026-09-24 by S3-7, with no storage-class clause.** A file-scope `static` (or `const`,
+internal linkage in C++) used to record as `public` and earn an interface row. Since S3-7 a global needs a
+reader or writer in another unit, and nothing outside its file can name an internal-linkage variable, so it
+never qualifies (`Access/NestedTypes.cpp` `s_fileLocal` is now private). The one way through: a `static`
+or `const` defined in a HEADER included by several units is one model entry keyed to that header, so its
+readers in the including units count as outside users and publish it under the header's unit — which, for
+an orphan header, has no section to render it in.
 
 **FIXED — `UNION_DECL` and `TYPE_ALIAS_DECL`** (`147c4cd`, client answer Q16). They used to
 reach the data dictionary never: `visit_type_definitions` dispatched on STRUCT_DECL /
 CLASS_DECL / ENUM_DECL / TYPEDEF_DECL only. A union now joins the struct/class branch, a
 `using` alias records as a typedef, and both have fixtures in `Access/NestedTypes.h`.
-
-The storage-class gap has no fixture and is code-read — unlike the rest of the 2026-09-23
-matrix, which a pipeline run confirmed.
 
 ---
 

@@ -93,14 +93,29 @@ def test_public_functions_present(request, entries_fixture, expected, unit):
     assert not missing, f"PUBLIC functions missing from {unit}: {missing}"
 
 
+# A global gets a row only when a function in ANOTHER unit reads or writes it (S3-7), the
+# bar a function already meets with a caller. Both published ones are reached through an
+# `extern`: g_sharedTick through the orphan SharedDefs.h (Lib reads it), g_utilBase through
+# Util's own Util.h (Core's coreUtilBase reads it).
 @pytest.mark.parametrize("entries_fixture,global_name,unit", [
-    ("core_entries", "g_result",   "Core"),
-    ("util_entries", "g_utilBase", "Util"),
+    ("core_entries", "g_sharedTick", "Core"),
+    ("util_entries", "g_utilBase",   "Util"),
 ])
-def test_public_global_present(request, entries_fixture, global_name, unit):
+def test_global_used_by_another_unit_present(request, entries_fixture, global_name, unit):
     entries = request.getfixturevalue(entries_fixture)
     names = {e["name"] for e in entries if e["type"] == "Global Variable"}
-    assert global_name in names, f"PUBLIC global '{global_name}' missing from {unit} entries"
+    assert global_name in names, f"global '{global_name}' missing from {unit} entries"
+
+
+# PUBLIC-marked, but only their own unit touches them: a marking may restrict, never promote.
+@pytest.mark.parametrize("entries_fixture,global_name,unit", [
+    ("core_entries", "g_result",  "Core"),
+    ("util_entries", "g_utilBuf", "Util"),
+])
+def test_global_used_only_by_its_own_unit_absent(request, entries_fixture, global_name, unit):
+    entries = request.getfixturevalue(entries_fixture)
+    names = {e["name"] for e in entries if e["type"] == "Global Variable"}
+    assert global_name not in names, f"'{global_name}' has no user outside {unit}"
 
 
 # ---------------------------------------------------------------------------

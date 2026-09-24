@@ -119,20 +119,32 @@ The markings are macros that expand to nothing, so the compiler never sees them;
 reading back up to 5 lines above the declaration, stopping at whatever precedes it so a neighbour's
 marking cannot be picked up by mistake. C++ access comes from the compiler's own parse.
 
-A global is private if marked `PRIVATE` or `PROTECTED`, or — for a static data member — if its C++ access
-is private or protected. Globals have no call graph, so the marking alone decides.
+A **global** follows the same idea, with readers and writers in place of callers. It is private when the
+first of these applies:
+
+1. Marked `PRIVATE` or `PROTECTED` — or, for a static data member, its C++ access is private or
+   protected → private.
+2. Only declared here (`extern`), not defined → private. The unit that defines it decides.
+3. Otherwise: **public if a function in another unit reads or writes it**, private if not.
+
+A use through an `extern` declaration counts for the variable it declares: `Lib` reading `g_sharedTick`
+through `SharedDefs.h` publishes `Core`'s `int g_sharedTick = 0;`. Calling a function of the owning unit
+that touches the global does not count; that is a use of the function, not the global. A file-scope
+`static` variable can never pass rule 3, because nothing outside its file can name it.
 
 **None of this applies to the [unit header table](#n14--unit-header-table)**, which lists what a unit
 declares and uses, whatever its visibility.
 
-**⚠ To confirm.** Rule 3 now decides almost every function, and its answer depends on what was parsed:
+**⚠ To confirm.** Rule 3 now decides almost every function and global, and its answer depends on what
+was parsed:
 
 - An entry point nothing calls by name — an ISR, a driver-registered callback — is private unless a
   dispatch table holds its address.
 - A run narrowed to one layer cannot see the layer above calling in, so that layer's own front door
   reads as uncalled.
 
-On the sample, 42 of 91 `PUBLIC`-marked functions lose their row, `main` among them.
+On the sample, 42 of 91 `PUBLIC`-marked functions lose their row, `main` among them, and 15 of 19
+published globals lose theirs.
 
 Private functions are not lost. When a public function calls a private one, the private function's
 flowchart is added under that public function (see [flowcharts](#n16--per-function-flowchart-entry)). It is
@@ -476,23 +488,23 @@ Eight columns. Here they are at a glance; each one is then explained in full bel
 | Types and macros | never appear here — they belong to the [unit header table](#n14--unit-header-table) |
 | A unit with no source file | no table at all |
 
-**By access specifier.** "Earned" = a caller in another unit, or an address in a pointer table — see
+**By access specifier.** "Earned" = for a function, a caller in another unit or an address in a pointer
+table; for a global, a function in another unit that reads or writes it — see
 [Public vs. private](#public-vs-private).
 
 | Declared under | Function / method | Global variable |
 |---|---|---|
-| `public:` | row, if earned | row |
+| `public:` | row, if earned | row, if earned |
 | `protected:` | no row | no row |
 | `private:` | no row | no row |
 | no label, in a `class` | no row | no row |
-| no label, in a `struct` | row, if earned | row |
-| file scope | row, if earned | row |
-| file scope, `static` | row, if earned | row — ⚠ below |
+| no label, in a `struct` | row, if earned | row, if earned |
+| file scope | row, if earned | row, if earned |
+| file scope, `static` | row, if earned | no row — nothing outside its file can use it |
 | `extern` — a declaration, no definition | n/a | **no row** — the defining unit publishes it |
 
-**⚠ To confirm:** a file-scope `static` variable cannot be reached from another file at all, but is
-published as an interface row. Should `static` count as a marking, the way `PRIVATE` does? (A `static`
-function is already left out in practice — every caller is in its own unit, so it never earns a row.)
+A `static` function or variable is left out without any special rule: every user is necessarily in its own
+unit, so it never earns a row.
 
 **A declaration is not an interface.** `extern const OpsFn g_opsTable[];` in `OpsClient.cpp` is a promise
 that the storage exists somewhere else. OpsClient owns nothing and only reads someone else's table, so
