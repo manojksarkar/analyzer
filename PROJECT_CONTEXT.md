@@ -208,6 +208,80 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-24h (**UT export: scope fixed at UT-from-SWE.4; UT templates + a validator for
+> them** — docs + `tools/check_ut_json.py`, no engine change, branch `feat/ut-export-templates`.)
+>
+> **Scope decision (user, 2026-09-23):** UT automation targets **UT only, derived from SWE.4** — function
+> specs and dynamic-behaviour specs both stay `level: "UT"` (REQ-UE-01, already what `ut_export.py` does).
+> **IT (`level: "IT"` + `steps[]`) is ignored here — it will come from SWE.2** (V-model SWE.2 ↔ SWE.5).
+> Do not map dynamic-behaviour specs to IT.
+> **User rule: no "client" wording in documents** — write "the target format", "the sample", "open
+> question". Applied to the UT docs, tool and test; ~20 older docs still use it (this file ~100,
+> SWE3_WIKI 20) — left for the user's call.
+> **The sample (photos, 2026-09-23)** is richer than UT_EXPORT_SPEC: case fields `target.unit`,
+> constructor/destructor flags, stub `mode` faked|prototype + `prototype_values`, struct/array/
+> `escape_hatch` inputs, `expected.globals/class_members/stub_params` with `derived_from`; the config
+> file uses `TestEnvironments` (EnvironmentId/Name, CoreType incl. SED, Probepoint by line + context,
+> usercode, Testcase path, `Librarydirectories`), NOT the spec's older `Units`/`unit_id` shape.
+> Field-by-field ✅/🟡/❓ in `docs/spec/UT_EXPORT_READINESS.md`. **Crux unchanged:** every per-case
+> `value` needs path solving (branch predicates are prose in `testSteps[].text`). Config file: not built.
+> **Not checked:** whether the model tracks non-static class-member reads/writes (`class_members`).
+> **CoreType = our `cores`** (user, verified in config): `cores.<name>` = {macros, compileCommands,
+> dataDictionary}; a unit gets its layer's core (`layers.<layer>.cores`, `MAX_CORES_PER_LAYER = 1`).
+> Evidence: core1 example build dir `…\DS5_CORE1`, its macros keyed `fcore`; core2 `…\DS5_CORE2`, `hil`.
+> So H `Macros.<core>Macros` ← per-core macros, `CoreType` ← layer's core — both derivable. **Config is
+> user input** (user): layer/core names, macros, paths are whatever the project configures — Sample =
+> Layer1/Layer2 + Core1/Core2, the real project brings its own names; NO name mapping needed. Hence
+> core names are placeholders in the template and `CoreType` is not in the validator's ENUM_PATHS.
+> Open (Q6): the sample mixes `SED` + `FCore` environments inside one layer (we
+> allow one core per layer). Readiness doc = TWO tables (test-case fields, hierarchy fields); doubts
+> (🔍 D1–D5) and open questions (❓ Q1–Q6) sit in their field's row, legend one line — user wants
+> tables + minimal prose, not many small tables ("so many tables"). Marks: ✅ / 🟡 / 📥 input (trace+derived_from ← Polarion;
+> review, environment block ← config; per-env Probepoint/usercode + Librarydirectories ← no config key
+> yet) / 🔍 doubts D1–D5 (our assumptions — settle by looking at real files or our code) / ❓ open
+> questions Q1–6 (exact field paths) / ➖. **One test-case file per UNIT (= test environment)** (user,
+> 2026-09-23, after first saying per section; the sample's repeated `Testcase` placeholder is no
+> evidence either way). We write one per GROUP → needs a per-unit split. D4 stays: the file's
+> `environment.name` = its environment's `EnvironmentName` (assumed). D5 closed.
+> **Section = component is an ASSUMPTION** (UT_EXPORT_SPEC stated it as fact; corrected): could be
+> our group (layer → group → component → unit has two levels where the format has one). Leaning
+> component (env name `<LAYER>_<SECTION>_<UNIT>_TS`; SWE.4 doc has a section per component). Doubt D1
+> (user: "we can have this as doubt"); settle from a real hierarchy file — one folder per section =
+> component, several = group. D2 class-member tracking, D3 ctor/dtor specs: checks in our own code.
+> **Stub `mode`** — user first read `prototype` as "call the real function"; our reading: BOTH are
+> stubs (a real call would not be under `stubs[]` nor carry `returns`); `uut_prototype_stubs` is the
+> VectorCAST name for stubs generated from a declaration whose body is not in the build. Unconfirmed.
+> **`trace`** proposal (not agreed): the SWE.3 interface ID the test verifies, until Polarion IDs exist.
+> **Templates:** `docs/spec/ut_templates/testcase.template.json` + `hierarchy.template.json` (+ README).
+> Transcribed from the photos (zoomed crops), then cleaned up. **User rule: never change the
+> FORMAT** — no key added/removed, nesting and value types as the sample. Cleanups = new values in
+> existing keys only: `review` on every case, destructor `expected` = constructor's four keys, IT step 2
+> `preconditions`, a probe point `position: "after"`, a header environment (`IsHeader: true`). **Project
+> names are placeholders** (config is user input): core names (`<CORE_NAME_n>Macros` keys, `CoreType`
+> `<CORE_NAME_n>`; sample HCore=1 FCore=2 NCore=3 SED=4), `SectionID` `<SECTION_ID>`, `EnvironmentId`
+> `<ENVIRONMENT_ID>` (sample IDs ABC1/PQR1/FIL1 kept as evidence in the readiness doc's Q2/Q3), and
+> the sample project's folder paths in `searchdirectories` / `Librarydirectories` (user: "not mandatory, static
+> paths") → `<project>\<search_directory_n>`, `<project>\<library_directory>`, one
+> `<external_search_directory>` (the sample had the UnitTest++ harness `src` outside the project).
+> Verified vs the verbatim transcription: identical except `Macros` literal keys → placeholder map.
+> Placeholder keys make `Macros` a map, so the validator needs no name rule (a short-lived
+> `NAME_KEYED_PATHS` was removed again). IT case
+> 004 KEPT (part of the format) — out of scope, so the validator learns case rules from UT cases only and
+> skips IT cases. Placeholder-KEYED dicts (`"<SECTION_NAME>": {...}`) mean "any key here". Deliberately
+> NOT added: the v0.1 guide's `Corresponding_cpp`/`_path` for headers (would change the format).
+> **Validator `tools/check_ut_json.py`** (stdlib only; tests `tests/unit/test_check_ut_json.py`, 8).
+> The template IS the schema: `learn()` merges every occurrence of a path into a `Node` (types, keys,
+> how often each key appears, string values); a dict whose keys ALL contain `<...>` becomes a map
+> (any key). ERROR = type / unknown-key / missing (key in EVERY template occurrence); WARN = value
+> outside ENUM_PATHS' seen set (the only hand-kept rule — other literals like `ABC1` are examples);
+> INFO = missing-optional / empty / placeholder left in / skipped IT case. Findings group by schema
+> path (`cases[].stubs[].mode`, `LayerMapping.*.…`) with a count + first location. Several files per
+> run, template picked per file (`cases` → testcase, `LayerMapping`/`Macros` → hierarchy); exit 0/1/2.
+> Our e2e-sample exports: 25 / 29 / 28 errors (Lib / Sample-Core / Util) — 28 distinct key paths:
+> renamed keys, `expected.return` a string not `{value, derived_from}`, our extra keys (types,
+> ranges, `declaredIn`, `atStep`), and `environment.name` / globals `unit`+`value` / the three
+> `expected` arrays missing.
+
 > Updated: 2026-09-24g (**A run says what it will do before it parses** — branch `fix/swe3-review-v1`,
 > `engine/incremental/report.py` + `generate.py` + `engine.py`, `engine/core/config.py`, `engine/parser.py`.)
 >

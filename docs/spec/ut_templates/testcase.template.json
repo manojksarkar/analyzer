@@ -1,0 +1,304 @@
+{
+  "format_version": "1.0",
+  "environment": {
+    "name": "<ENVIRONMENT_NAME>",
+    "flags": [
+      "<flag_name>"
+    ],
+    "probepoint": [
+      {
+        "unit": "<Namespace>::<ClassName>",
+        "line": 0,
+        "position": "before",
+        "code": "<injected_c++_code>;"
+      },
+      {
+        "unit": "<Namespace>::<ClassName>",
+        "line": 0,
+        "position": "after",
+        "code": "<injected_c++_code>;"
+      }
+    ],
+    "usercode": [
+      {
+        "description": "<description_of_setup_code>",
+        "code": "<c++_setup_code>;"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "id": "<TEST-CASE-ID-001>",
+      "name": "<Human-readable description of what this test validates>",
+      "level": "UT",
+      "trace": "<REQ-ID>",
+      "review": {
+        "author": "<Author Name>",
+        "reviewer": "<Reviewer Name>"
+      },
+      "target": {
+        "unit": "<Namespace>::<ClassName>",
+        "function": "<FunctionName>"
+      },
+      "preconditions": {
+        "globals": [
+          {
+            "unit": "<Namespace>::<ClassName>",
+            "name": "<g_globalVariable>",
+            "value": "<value>"
+          },
+          {
+            "unit": "<Namespace>::<ClassName>",
+            "name": "<m_classMember>",
+            "value": "<value>"
+          },
+          {
+            "unit": "<Namespace>::<ClassName>",
+            "name": "<stStruct.nNestedField>",
+            "value": "<value>"
+          }
+        ]
+      },
+      "stubs": [
+        {
+          "unit": "<Namespace>::<DependencyClass>",
+          "function": "<StubbedFunctionName>",
+          "mode": "faked",
+          "returns": {
+            "value": "<eERROR_CODE>"
+          }
+        },
+        {
+          "unit": "uut_prototype_stubs",
+          "function": "<Namespace>::<Class>::<PrototypeFunctionName>",
+          "mode": "prototype",
+          "returns": {
+            "value": "<eERROR_CODE>"
+          },
+          "prototype_values": {
+            "<stParam.nField>": "<value>"
+          }
+        }
+      ],
+      "inputs": [
+        {
+          "param": "<nScalarParam>",
+          "value": "<value>"
+        },
+        {
+          "param": "<bBoolParam>",
+          "value": true
+        },
+        {
+          "param": "<eEnumParam>",
+          "value": "<eENUM_VALUE>"
+        },
+        {
+          "param": "<pPointerParam>",
+          "value": null
+        },
+        {
+          "param": "<stStructParam>",
+          "value": {
+            "type": "<Namespace>::<StructType>",
+            "fields": {
+              "<fieldName>": "<value>"
+            }
+          }
+        },
+        {
+          "param": "<aArrayParam>",
+          "value": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "param": "<szStringParam>",
+          "escape_hatch": {
+            "language": "c++",
+            "code": "const char* <szStringParam> = \"<string_value>\";",
+            "justification": "<reason_for_escape_hatch>",
+            "limitation_ref": "<IN-XX>",
+            "kind": "value"
+          }
+        }
+      ],
+      "expected": {
+        "return": {
+          "value": "<eERROR_CODE>",
+          "derived_from": "<REQ-ID>"
+        },
+        "globals": [
+          {
+            "unit": "<Namespace>::<ClassName>",
+            "name": "<g_globalVariable>",
+            "value": "<value>",
+            "derived_from": "<REQ-ID>"
+          }
+        ],
+        "class_members": [
+          {
+            "unit": "<Namespace>::<ClassName>",
+            "name": "<m_classMember>",
+            "value": "<value>",
+            "derived_from": "<REQ-ID>"
+          }
+        ],
+        "stub_params": [
+          {
+            "unit": "<Namespace>::<DependencyClass>",
+            "function": "<StubbedFunctionName>",
+            "params": {
+              "<pOutputParam>": {
+                "value": "<eERROR_CODE>"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "<TEST-CASE-ID-002>",
+      "name": "<Verify constructor initializes all members to default>",
+      "level": "UT",
+      "trace": "<REQ-ID>",
+      "review": {
+        "author": "<Author Name>",
+        "reviewer": "<Reviewer Name>"
+      },
+      "target": {
+        "unit": "<Namespace>::<ClassName>",
+        "class": "<Namespace>::<ClassName>",
+        "function": "<Namespace>::<ClassName>",
+        "constructor": true
+      },
+      "preconditions": {
+        "globals": []
+      },
+      "stubs": [],
+      "inputs": [],
+      "expected": {
+        "return": {
+          "value": null,
+          "derived_from": "<REQ-ID>"
+        },
+        "globals": [],
+        "class_members": [
+          {
+            "unit": "<Namespace>::<ClassName>",
+            "name": "<m_classMember>",
+            "value": "<value>",
+            "derived_from": "<REQ-ID>"
+          }
+        ],
+        "stub_params": []
+      }
+    },
+    {
+      "id": "<TEST-CASE-ID-003>",
+      "name": "<Verify destructor cleans up resources>",
+      "level": "UT",
+      "trace": "<REQ-ID>",
+      "review": {
+        "author": "<Author Name>",
+        "reviewer": "<Reviewer Name>"
+      },
+      "target": {
+        "unit": "<Namespace>::<ClassName>",
+        "class": "<Namespace>::<ClassName>",
+        "function": "~<Namespace>::<ClassName>",
+        "destructor": true
+      },
+      "preconditions": {
+        "globals": []
+      },
+      "stubs": [],
+      "inputs": [],
+      "expected": {
+        "return": {
+          "value": null,
+          "derived_from": "<REQ-ID>"
+        },
+        "globals": [],
+        "class_members": [],
+        "stub_params": []
+      }
+    },
+    {
+      "id": "<TEST-CASE-ID-004>",
+      "name": "<Integration test: multi-step call sequence>",
+      "level": "IT",
+      "trace": "<REQ-ID>",
+      "review": {
+        "author": "<Author Name>",
+        "reviewer": "<Reviewer Name>"
+      },
+      "target": {
+        "unit": "<Namespace>::<ClassName>",
+        "function": "<FunctionName>"
+      },
+      "preconditions": {
+        "globals": []
+      },
+      "stubs": [],
+      "inputs": [],
+      "expected": {},
+      "steps": [
+        {
+          "step": 1,
+          "repeat": 1,
+          "preconditions": {
+            "globals": [
+              {
+                "unit": "<Namespace>::<ClassName>",
+                "name": "<g_globalVariable>",
+                "value": "<value>"
+              }
+            ]
+          },
+          "target": {
+            "unit": "<Namespace>::<ClassName>",
+            "function": "<FunctionName>"
+          },
+          "inputs": [
+            {
+              "param": "<nParam>",
+              "value": "<value>"
+            }
+          ],
+          "expected": {
+            "return": {
+              "value": "<eERROR_CODE>",
+              "derived_from": "<REQ-ID>"
+            }
+          }
+        },
+        {
+          "step": 2,
+          "repeat": 1,
+          "preconditions": {
+            "globals": []
+          },
+          "target": {
+            "unit": "<Namespace>::<ClassName>",
+            "function": "<FunctionName>"
+          },
+          "inputs": [
+            {
+              "param": "<nParam>",
+              "value": "<value>"
+            }
+          ],
+          "expected": {
+            "return": {
+              "value": "<eERROR_CODE>",
+              "derived_from": "<REQ-ID>"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

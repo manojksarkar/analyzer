@@ -1,0 +1,164 @@
+{
+  "Macros": {
+    "<CORE_NAME_1>Macros": [
+      "<MACRO_NAME_1>=<value>",
+      "<MACRO_NAME_2>=<value>",
+      "<FLAG_MACRO_NAME>"
+    ],
+    "<CORE_NAME_2>Macros": [
+      "<MACRO_NAME_1>=<value>",
+      "<MACRO_NAME_2>=<value>",
+      "<FLAG_MACRO_NAME>"
+    ],
+    "<CORE_NAME_3>Macros": [
+      "<MACRO_NAME_1>=<value>",
+      "<MACRO_NAME_2>=<value>",
+      "<FLAG_MACRO_NAME>"
+    ],
+    "<CORE_NAME_4>Macros": [
+      "<MACRO_NAME_1>=<value>",
+      "<MACRO_NAME_2>=<value>",
+      "<FLAG_MACRO_NAME>"
+    ]
+  },
+  "LayerMapping": {
+    "<LAYER_NAME_1>": {
+      "searchdirectories": [
+        "<project>\\<search_directory_1>",
+        "<project>\\<search_directory_2>"
+      ],
+      "Librarydirectories": [
+        "<project>\\<library_directory>"
+      ],
+      "Sections": {
+        "<SECTION_NAME>": {
+          "SectionID": "<SECTION_ID>",
+          "SectionName": "<SECTION_NAME>",
+          "TestEnvironments": {
+            "<LAYER>_<SECTION>_<UNIT>_TS": {
+              "EnvironmentId": "<ENVIRONMENT_ID>",
+              "EnvironmentName": "<LAYER>_<SECTION>_<UNIT>_TS",
+              "Filename": "<UnitFileName>",
+              "FilePath": "",
+              "CoreType": "<CORE_NAME_4>",
+              "IsHeader": false,
+              "Probepoint": [],
+              "usercode": [],
+              "Testcase": "<absolute_or_relative_path_to_testcase_json>"
+            },
+            "<LAYER>_<SECTION>_<UNIT_WITH_PROBE>_TS": {
+              "EnvironmentId": "<ENVIRONMENT_ID>",
+              "EnvironmentName": "<LAYER>_<SECTION>_<UNIT_WITH_PROBE>_TS",
+              "Filename": "<UnitFileNameWithProbe>",
+              "FilePath": "",
+              "CoreType": "<CORE_NAME_4>",
+              "IsHeader": false,
+              "Probepoint": [
+                {
+                  "ProbeId": 1,
+                  "ProbeFunction": "<Namespace>::<Class>::<Method>",
+                  "Probeline": "<source_code_line_to_probe>;",
+                  "ProbeContextBefore": [
+                    "<code_line_before_probe_1>;",
+                    "<code_line_before_probe_2>;"
+                  ],
+                  "ProbeContextAfter": [
+                    "<code_line_after_probe_1>;"
+                  ],
+                  "ProbeCodeBefore": [
+                    "<injected_code_before_line_1>;",
+                    "<injected_code_before_line_2>;"
+                  ],
+                  "ProbeCodeAfter": [
+                    "<injected_code_after_line_1>;"
+                  ]
+                }
+              ],
+              "usercode": [
+                "#include \"<CustomHeader>.h\"",
+                "#undef <MACRO_TO_OVERRIDE>",
+                "unsigned int <replacement_buffer>[1024];",
+                "#define <MACRO_TO_OVERRIDE> <replacement_buffer>"
+              ],
+              "Testcase": "<absolute_or_relative_path_to_testcase_json>"
+            },
+            "<LAYER>_<SECTION>_<HEADER_UNIT>_TS": {
+              "EnvironmentId": "<ENVIRONMENT_ID>",
+              "EnvironmentName": "<LAYER>_<SECTION>_<HEADER_UNIT>_TS",
+              "Filename": "<UnitHeaderFileName>",
+              "FilePath": "",
+              "CoreType": "<CORE_NAME_1>",
+              "IsHeader": true,
+              "Probepoint": [],
+              "usercode": [],
+              "Testcase": "<absolute_or_relative_path_to_testcase_json>"
+            }
+          }
+        },
+        "<SECTION_NAME_2>": {
+          "SectionID": "<SECTION_ID>",
+          "SectionName": "<SECTION_NAME_2>",
+          "TestEnvironments": {
+            "<LAYER>_<SECTION_2>_<UNIT>_TS": {
+              "EnvironmentId": "<ENVIRONMENT_ID>",
+              "EnvironmentName": "<LAYER>_<SECTION_2>_<UNIT>_TS",
+              "Filename": "<UnitFileName>",
+              "FilePath": "",
+              "CoreType": "<CORE_NAME_2>",
+              "IsHeader": false,
+              "Probepoint": [],
+              "usercode": [],
+              "Testcase": ""
+            }
+          }
+        }
+      }
+    },
+    "<LAYER_NAME_2>": {
+      "searchdirectories": [
+        "<project>\\<search_directory_1>",
+        "<external_search_directory>"
+      ],
+      "Librarydirectories": [
+        "<project>\\<library_directory>"
+      ],
+      "Sections": {
+        "<SECTION_NAME>": {
+          "SectionID": "<SECTION_ID>",
+          "SectionName": "<SECTION_NAME>",
+          "TestEnvironments": {
+            "<LAYER2>_<SECTION>_<UNIT>_TS": {
+              "EnvironmentId": "<ENVIRONMENT_ID>",
+              "EnvironmentName": "<LAYER2>_<SECTION>_<UNIT>_TS",
+              "Filename": "<UnitFileName>",
+              "FilePath": "",
+              "CoreType": "<CORE_NAME_2>",
+              "IsHeader": false,
+              "Probepoint": [
+                {
+                  "ProbeId": 1,
+                  "ProbeFunction": "<Namespace>::<Class>::<Method>",
+                  "Probeline": "<source_code_line_to_probe>;",
+                  "ProbeContextBefore": [
+                    "<code_line_before_probe>;"
+                  ],
+                  "ProbeContextAfter": [
+                    "<code_line_after_probe>;"
+                  ],
+                  "ProbeCodeBefore": [
+                    "<injected_code_before>;"
+                  ],
+                  "ProbeCodeAfter": [
+                    "<injected_code_after>;"
+                  ]
+                }
+              ],
+              "usercode": [],
+              "Testcase": ""
+            }
+          }
+        }
+      }
+    }
+  }
+}
