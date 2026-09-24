@@ -220,7 +220,7 @@ def run_db(scenario, sha, pid):
     cfg_path = os.path.join(SCRATCH, "db-config.json")
     json.dump(cfg, open(cfg_path, "w", encoding="utf-8"), indent=2)
     vid = "v1"
-    clear_version(pid, vid)
+    clear_project(pid)
     r = run([PY, os.path.join(DB_ROOT, "analyzer.py"), "onboard",
              "--project-id", pid, "--name", PROJECT_NAME, "--source", REPO,
              "--config", cfg_path, "--force-config", "--branch", "main",
@@ -230,19 +230,23 @@ def run_db(scenario, sha, pid):
     r = run([PY, os.path.join(DB_ROOT, "analyzer.py"), "generate",
              "--project-id", pid, "--version-id", vid, "--branch", "main",
              "--commit", sha, "--scope", scope, "--no-llm"], DB_ROOT)
-    return r, os.path.join(DB_ROOT, "workspaces", pid, "versions", vid, "output")
+    from core.run_context import version_key        # the id onboard filed `vid` under
+    return r, os.path.join(DB_ROOT, "workspaces", pid, "versions", version_key(pid, vid), "output")
 
 
-def clear_version(pid, vid):
+def clear_project(pid):
     sys.path[:0] = [DB_ROOT, os.path.join(DB_ROOT, "engine")]
     import sqlalchemy as sa
     from core.db import get_engine
     from api.db.postgres import schema as s
     with get_engine().begin() as cx:
+        # This project's versions only: an id is unique across projects, a name is not.
+        vids = [r[0] for r in cx.execute(sa.select(s.versions.c.id)
+                                         .where(s.versions.c.project_id == pid))]
         for t in (s.model_edges, s.entity_versions, s.model_units, s.model_components,
                   s.model_summaries, s.knowledge_base, s.incremental_plans,
                   s.tu_includes, s.parse_snapshots, s.version_output_files):
-            cx.execute(sa.delete(t).where(t.c.version_id == vid))
+            cx.execute(sa.delete(t).where(t.c.version_id.in_(vids)))
         cx.execute(sa.delete(s.versions).where(s.versions.c.project_id == pid))
         cx.execute(sa.delete(s.projects).where(s.projects.c.id == pid))
     rmtree(os.path.join(DB_ROOT, "workspaces", pid))

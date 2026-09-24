@@ -270,9 +270,14 @@ def main(argv=None) -> int:
             print(f"\n--commit must be the FULL 40-character sha, got {len(args.commit)} chars. "
                   f"`git rev-parse HEAD` gives it.")
             return 2
+        from core.run_context import resolve_version, version_key
         with eng.begin() as cx:
-            cur_v = cx.execute(sa.select(s.versions.c.commit_sha)
-                               .where(s.versions.c.id == args.version_id)).first()
+            # By project AND name: a name is unique only inside its project. Looking it up by id
+            # alone found ANOTHER project's `v1`, reported "already reserved", and left both
+            # projects writing into one row (see version_key).
+            vid = resolve_version(pid, args.version_id, cx)
+            cur_v = (cx.execute(sa.select(s.versions.c.commit_sha)
+                                .where(s.versions.c.id == vid)).first() if vid else None)
             if cur_v:
                 # Same trap as the projects row above. An existing row meant "nothing to do",
                 # so re-onboarding a version id with a NEW --commit silently kept the OLD sha.
@@ -286,16 +291,17 @@ def main(argv=None) -> int:
                 print(f"version  : {args.version_id} (already reserved)")
                 if (cur_v.commit_sha or "") != args.commit:
                     cx.execute(sa.update(s.versions)
-                               .where(s.versions.c.id == args.version_id)
+                               .where(s.versions.c.id == vid)
                                .values(commit_sha=args.commit))
                     print(f"           commit_sha: {(cur_v.commit_sha or '')[:10]!r} -> "
                           f"{args.commit[:10]!r}  (UPDATED from the command line)")
             else:
+                vid = version_key(pid, args.version_id)
                 cx.execute(sa.insert(s.versions), {
-                    "id": args.version_id, "project_id": pid, "version": args.version_id,
+                    "id": vid, "project_id": pid, "version": args.version_id,
                     "commit_sha": args.commit, "branch": args.branch,
                     "status": "in_review", "created_at": now})
-                print(f"version  : {args.version_id} RESERVED for {args.commit[:10]}")
+                print(f"version  : {args.version_id} RESERVED for {args.commit[:10]} (id {vid})")
 
     # The next command, with THIS project's values filled in. It named the old entry
     # point (`cd engine; python -m incremental.generate ...`), which no longer exists - so

@@ -205,3 +205,52 @@ class TestNothingIsCreatedBeforeTheConfigIsResolved:
         }}), encoding="utf-8")
         with pytest.raises(AssertionError, match="database was touched"):
             NP.main(["--project-id", "p1", "--config", str(good)])
+
+
+class TestAVersionNameIsPerProject:
+    """The reported failure: two servers sharing one database each onboarded their own project
+    with `--version-id v1`. The second onboard found the FIRST project's row, said "already
+    reserved", and both runs then wrote into that one row, so project 1's flowcharts looked for
+    source in project 2's workspace. A version name only has to be unique inside its project."""
+
+    @pytest.fixture(autouse=True)
+    def _isolated(self, tmp_path, monkeypatch):
+        import core.db
+        import incremental.stores as st
+        from sqlalchemy import create_engine
+        from sqlalchemy.pool import StaticPool
+        from api.db.postgres import schema as s
+        monkeypatch.setattr(st, "default_workspaces_root", lambda: str(tmp_path / "workspaces"))
+        self.eng = create_engine("sqlite://", connect_args={"check_same_thread": False},
+                                 poolclass=StaticPool)
+        s.metadata.create_all(self.eng)
+        monkeypatch.setattr(core.db, "get_engine", lambda: self.eng)
+        monkeypatch.setattr(core.db, "require_database", lambda: None)
+        monkeypatch.setattr(core.db, "database_url", lambda: "sqlite://")
+
+    def _onboard(self, pid, commit):
+        return NP.main(["--project-id", pid, "--use-defaults",
+                        "--version-id", "v1", "--commit", commit])
+
+    def _versions(self):
+        from sqlalchemy import select
+        from api.db.postgres import schema as s
+        v = s.versions
+        with self.eng.connect() as cx:
+            return [tuple(r) for r in cx.execute(
+                select(v.c.id, v.c.project_id, v.c.version, v.c.commit_sha).order_by(v.c.id))]
+
+    def test_two_projects_each_reserve_their_own_v1(self, capsys):
+        assert self._onboard("project1", "a" * 40) == 0
+        assert self._onboard("project2", "b" * 40) == 0
+        assert "already reserved" not in capsys.readouterr().out
+        assert self._versions() == [("project1.v1", "project1", "v1", "a" * 40),
+                                    ("project2.v1", "project2", "v1", "b" * 40)]
+
+    def test_re_onboarding_a_version_touches_only_that_projects_row(self, capsys):
+        self._onboard("project1", "a" * 40)
+        self._onboard("project2", "b" * 40)
+        assert self._onboard("project1", "c" * 40) == 0
+        assert "already reserved" in capsys.readouterr().out
+        assert self._versions() == [("project1.v1", "project1", "v1", "c" * 40),
+                                    ("project2.v1", "project2", "v1", "b" * 40)]

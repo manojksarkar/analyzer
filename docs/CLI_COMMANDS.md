@@ -140,7 +140,7 @@ Then look at what happened:
 python analyzer.py report
 ```
 
-Documents land in `workspaces/<pid>/versions/<version-id>/documents/`, with per-component copies
+Documents land in `workspaces/<pid>/versions/<pid>.<version-id>/documents/`, with per-component copies
 under `.../output/<Component>/`.
 
 ---
@@ -278,7 +278,7 @@ python analyzer.py onboard --project-id myproj --name "My Project" --source D:\c
 | `--config` | this project's config.json |
 | `--use-defaults` | use this repo's SAMPLE tree instead. An alternative to `--config`, never both. |
 | `--force-config` | replace a config that already exists |
-| `--version-id` / `--commit` | also reserve the first version. Both or neither. |
+| `--version-id` / `--commit` | also reserve the first version. Both or neither. The version id is a **name inside this project**: another project can have its own `v1`. It is stored under the id `<project>.<name>` (`myproj.v1`). |
 
 **A local path must be a git repository — for every run, not just incremental ones.** A plain
 directory fails at the clone with `fatal: Could not read from remote repository`, because a
@@ -345,7 +345,7 @@ python analyzer.py generate --project-id myproj --commit <sha> --version-id v2 -
 
 | Flag | Effect |
 |---|---|
-| `--project-id`, `--version-id` | required |
+| `--project-id`, `--version-id` | required. `--version-id` is this project's version name (`v2`); the full id (`myproj.v2`) works too. |
 | `--commit` | the full 40-character sha. **Default: the one recorded for this version** when it was reserved. |
 | `--branch` | **Default: the project's branch**, as recorded by `onboard`. |
 | `--scope` | one of `project` (default), `layer:A,B`, `group:A,B`, `component:A,B` |
@@ -679,21 +679,22 @@ generate a wider version for that.
 python analyzer.py status
 ```
 ```
-python analyzer.py status --version v2 --out dump.txt
+python analyzer.py status --version myproj.v2 --out dump.txt
 ```
 ```
 python analyzer.py check
 ```
 ```
-python analyzer.py check --version v2 --quiet --out report.txt
+python analyzer.py check --version myproj.v2 --quiet --out report.txt
 ```
 ```
 python analyzer.py report
 ```
 ```
-python analyzer.py report --version v2
+python analyzer.py report --version myproj.v2
 ```
 
+These take no `--project-id`, so `--version` is the full id: `<project>.<name>`.
 `status` prints row counts (or one version in full). `check` reports **only what looks wrong** —
 a healthy database gives a few lines saying so, and each finding says what it means and how to
 fix it; this is the one to reach for first. `report` prints a version's generation report,
@@ -859,7 +860,7 @@ live *outside* your tree, like a third-party SDK.
 |---|---|
 | `no database is configured` | Add the `db` section to `engine/config/config.local.json`, then `python analyzer.py setup`. The model and every version artifact live there and nowhere else. |
 | `WorkspaceNotFound: no workspace for project 'x'` | `python analyzer.py onboard` — the directory, config and rows all come from there. |
-| `this run needs the database but there is no versions row for 'vX'` | Reserve it (the message prints the exact command), or add `--create-version`. |
+| `this run needs the database but there is no versions row for '<pid>.vX'` | Reserve it (the message prints the exact command), or add `--create-version`. |
 | `<pid> has no config yet, and no --config was given` | Pass `--config <your.json>`, or `--use-defaults` for the sample tree. |
 | `ALREADY EXISTS and differs from --config` | The project already has a config. `--force-config` replaces it. |
 | `--config not found: <path>` | The path does not resolve. Nothing was created; fix it and re-run. |
