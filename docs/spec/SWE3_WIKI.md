@@ -14,7 +14,7 @@ list; this document is the reasoning behind it.
 - [N.1 Static Design](#n1-static-design)
   - [N.1.1 Component diagrams](#n11--component-diagrams)
   - [N.1.2 Component/Unit table](#n12--componentunit-table)
-  - [N.1.3 Unit architecture diagram](#n13--unit-architecture-diagram) — [which edges](#which-edges-are-drawn) · [arrow direction](#arrow-direction) · [layout](#layout)
+  - [N.1.3 Unit architecture diagram](#n13--unit-architecture-diagram) — [which edges](#which-edges-are-drawn) · [global variables](#global-variables) · [arrow direction](#arrow-direction) · [layout](#layout)
   - [N.1.4 Unit header table](#n14--unit-header-table) — [what is listed](#what-is-listed) · [access specifier](#access-specifier) · [column 1 declaration](#column-1--declaration) · [orphan-header symbols](#orphan-header-symbols) · [cleanup](#cleanup-and-de-duplication) · [exclusions](#exclusions)
   - [N.1.5 Unit interface table](#n15--unit-interface-table) — [which rows, in what order](#which-rows-and-in-what-order) · [1 Interface ID](#column-1--interface-id) · [2 Interface Name](#column-2--interface-name) · [3 Information](#column-3--information) · [4 Data Type](#column-4--data-type) · [5 Data Range](#column-5--data-range) · [6 Direction](#column-6--directioninout) · [7 Source/Destination](#column-7--sourcedestination) · [8 Interface Type](#column-8--interface-type)
   - [N.1.6 Per-function flowchart entry](#n16--per-function-flowchart-entry) — [which flowcharts](#which-flowcharts-appear-under-the-entry) · [how one is built](#how-a-flowchart-is-built) · [Input/Output Name](#input-name--output-name)
@@ -291,6 +291,19 @@ document, in the diagram of the unit that provides the function.**
 
 Private functions are left out here, just as they are in the interface table, so an arrow can never carry
 an id that the reader cannot find in a table.
+
+#### Global variables
+
+A global's direction is always `In/Out`, so it has no arrow. It is drawn as a box instead:
+
+| | |
+|---|---|
+| Which globals | the unit's own globals that have a row in its interface table. A private global, and an `extern` declaration of another unit's global, have no row and no box |
+| Where | inside the component box, stacked above the unit in interface-ID order, sharing an untitled panel with it |
+| Label | the variable's name, with its class for a class static member (`Owner::s_count`) |
+| Look | white/grey box, thin black border, **no edges** |
+
+Other units' globals are not drawn, not even the ones this unit reads or writes.
 
 #### Arrow direction
 

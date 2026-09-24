@@ -7,7 +7,7 @@ import sys
 
 from .registry import register
 from utils import (KEY_SEP, display_name, log, mmdc_path, safe_filename, os_type,
-                   render_mermaid_cached)
+                   render_mermaid_cached, scoped_name)
 
 
 def _project_root() -> str:
@@ -148,6 +148,28 @@ def _edge_label(ifaces):
     return _escape_label(_ROW_SEP.join(pad + ids + pad))
 
 
+_GLOBAL_CLASS_DEF = "  classDef globalVar fill:#f2f2f2,stroke:#333333,stroke-width:1px,color:#000000"
+
+
+def _published_globals(unit_info, globals_data):
+    """The unit's globals that have an interface-table row, as (interfaceId, name) pairs.
+
+    Same filter as the interface table (views/interface_tables.py): phase 2 stamps
+    `private` on every global it buries -- marked private, C++-private, or a declaration
+    only -- so `visibility != "private"` is the whole publication rule, applied upstream.
+    A global's direction is always In/Out, so it has no arrow to hang an id on; without
+    its own box it would be the one kind of interface the diagram never shows.
+    """
+    out = []
+    for vid in unit_info.get("globalVariableIds", []) or []:
+        g = (globals_data or {}).get(vid)
+        if not g or (g.get("visibility") or "").lower() == "private":
+            continue
+        name = scoped_name(g.get("qualifiedName", ""), g.get("className", ""))
+        out.append((g.get("interfaceId", ""), name or vid))
+    return sorted(out)
+
+
 def _build_unit_diagram(
     unit_key,
     unit_info,
@@ -157,9 +179,11 @@ def _build_unit_diagram(
     unit_names,
     *,
     allowed_components: set | None = None,
+    globals_data: dict | None = None,
 ):
     """Build Mermaid flowchart for one unit: one box per unit, edges labeled with interfaceIds.
-    If allowed_components is provided, "internal" means: units whose module is in allowed_components."""
+    If allowed_components is provided, "internal" means: units whose module is in allowed_components.
+    The unit's published globals are drawn as grey boxes inside the component box, no edges."""
     if not (unit_info.get("fileName") or "").endswith(".cpp"):
         return None
 
@@ -269,8 +293,13 @@ config:
         "flowchart LR",
         "  classDef internal fill:#87CEEB,stroke:#333,stroke-width:1px",
         "  classDef mainUnit fill:#87CEEB,stroke:#4682B4,stroke-width:3px",
-        "",
     ]
+    glbs = _published_globals(unit_info, globals_data)
+    # Only when there is a global to style: a unit without one keeps its diagram text, and
+    # so its cached PNG, byte-identical.
+    if glbs:
+        lines.append(_GLOBAL_CLASS_DEF)
+    lines.append("")
 
     # External callers (left)
     for pid in external_callers:
@@ -288,7 +317,27 @@ config:
     lines.append("")
     for pid in internal_callers:
         lines.append("    " + _node_line(pid).strip())
-    lines.append("    " + _node_line(this_id).strip())
+    # The unit's globals, stacked above it, no edges: a global is In/Out. They share an
+    # untitled inner box with the unit because ELK lays a disconnected node in the FIRST
+    # layer -- with a same-component caller present the globals landed in the left column,
+    # away from the unit they belong to. Inside the box they form one column with it. ELK
+    # stacks a box's disconnected nodes bottom-up, so they are emitted last-id-first to read
+    # in interface-id order from the top. Measured on mermaid 10.9.5; the box's own `style`
+    # and `class` are ignored by ELK, so it renders as a slightly darker panel.
+    glb_ids = []
+    if glbs:
+        lines.append(f'    subgraph {this_id}__box[" "]')
+        lines.append("      direction TB")
+        for n, (_iid, gname) in reversed(list(enumerate(glbs, 1))):
+            gid = f"{this_id}__glb{n}"
+            glb_ids.append(gid)
+            glabel = _escape_label(gname).replace("]", "'").replace("[", "'")
+            lines.append(f'      {gid}["{glabel}"]')
+        lines.append("      " + _node_line(this_id).strip())
+        lines.append("    end")
+        glb_ids.reverse()
+    else:
+        lines.append("    " + _node_line(this_id).strip())
     for pid in internal_callees:
         lines.append("    " + _node_line(_callee_node_id(pid), pid).strip())
     lines.append("")
@@ -303,6 +352,8 @@ config:
         lines.append(f"    {src} -->|{label}| {dst}")
     lines.append("")
     lines.append(f"    class {this_id} mainUnit")
+    if glb_ids:
+        lines.append("    class " + ",".join(glb_ids) + " globalVar")
     others = internal_callers + [_callee_node_id(p) for p in internal_callees]
     if others:
         lines.append("    class " + ",".join(others) + " internal")
@@ -335,6 +386,7 @@ def run(model, output_dir, model_dir, config):
 
     units_data = model.get("units", {})
     functions_data = model.get("functions", {})
+    globals_data = model.get("globalVariables", {}) or {}
     if not units_data or not functions_data:
         return
     allowed_components = {m.lower() for m in (config.get("_analyzerAllowedComponents") or [])}
@@ -387,6 +439,40 @@ def run(model, output_dir, model_dir, config):
     else:
         units_to_render = sorted(uk for uk in cpp_units if uk in affected)
 
+    def _mermaid_for(unit_key):
+        return _build_unit_diagram(
+            unit_key,
+            units_data[unit_key],
+            units_data,
+            functions_data,
+            fid_to_unit,
+            unit_names,
+            allowed_components=allowed_components or None,
+            globals_data=globals_data,
+        )
+
+    built = {}
+    if affected is not None:
+        # The plan's impact set is FUNCTIONS, but the diagram also shows the unit's globals,
+        # and a global can change on its own (added, removed, made private). Building the
+        # text is cheap; rendering is not. So every carried diagram's text is rebuilt and
+        # compared with the carried .mmd, and one that differs is rendered too -- which also
+        # refreshes a baseline diagram drawn by older code. Never stale (D7).
+        todo = set(units_to_render)
+        for uk in cpp_units:
+            if uk in todo:
+                continue
+            mermaid = _mermaid_for(uk)
+            safe = safe_filename(uk)
+            try:
+                with open(os.path.join(out_dir, f"{safe}.mmd"), encoding="utf-8") as fh:
+                    carried = fh.read()
+            except OSError:
+                carried = None
+            if mermaid != carried or not os.path.isfile(os.path.join(out_dir, f"{safe}.png")):
+                built[uk] = mermaid
+        units_to_render = sorted(todo | set(built))
+
     from core.progress import ProgressReporter
     from core.logging_setup import get_logger
     total = len(units_to_render)
@@ -394,16 +480,7 @@ def run(model, output_dir, model_dir, config):
     progress.start()
     for i, unit_key in enumerate(units_to_render, 1):
         progress.step(label=unit_key)
-        unit_info = units_data[unit_key]
-        mermaid = _build_unit_diagram(
-            unit_key,
-            unit_info,
-            units_data,
-            functions_data,
-            fid_to_unit,
-            unit_names,
-            allowed_components=allowed_components or None,
-        )
+        mermaid = built[unit_key] if unit_key in built else _mermaid_for(unit_key)
         if not mermaid:
             continue
         safe = safe_filename(unit_key)

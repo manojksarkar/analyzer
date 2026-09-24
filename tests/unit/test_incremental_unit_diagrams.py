@@ -129,3 +129,37 @@ class TestApplyIncrementalUnitPlan:
         assert affected == {"A", "B"}                       # A impacted + B (callee neighbour)
         assert "A.mmd" in files and "B.png" in files        # carried forward
         assert "Old.mmd" not in files and "Old.png" not in files  # orphan pruned
+
+    def test_a_carried_diagram_whose_text_moved_is_rendered(self, tmp_path, monkeypatch):
+        # The plan's impact set is functions only. A global added to unit A changes A's
+        # diagram with no impacted function, so A must be rendered from its TEXT differing
+        # from the carried .mmd; B's text is unchanged, so B stays carried.
+        units = {
+            "M|A": {"fileName": "A.cpp", "functionIds": ["a1"], "globalVariableIds": ["gA"]},
+            "M|B": {"fileName": "B.cpp", "functionIds": ["b1"], "globalVariableIds": []},
+        }
+        funcs = {"a1": {"qualifiedName": "a1", "calledByIds": []},
+                 "b1": {"qualifiedName": "b1", "calledByIds": []}}
+        glbs = {"gA": {"qualifiedName": "g_new", "interfaceId": "IF_M_A_01"}}
+        names = {"M|A": "A", "M|B": "B"}
+        b_text = _mod._build_unit_diagram("M|B", units["M|B"], units, funcs, {}, names,
+                                          globals_data=glbs)
+        base = tmp_path / "versions" / "v1" / "output" / "unit_diagrams"
+        base.mkdir(parents=True)
+        (base / "M_A.mmd").write_text("drawn before the global existed", encoding="utf-8")
+        (base / "M_B.mmd").write_text(b_text, encoding="utf-8")
+        for u in ("M_A", "M_B"):
+            (base / f"{u}.png").write_bytes(b"p")
+        plan = {"baselineVersionDir": str(tmp_path / "versions" / "v1"), "impactFids": []}
+        model_dir, _ = self._setup(tmp_path, plan)
+
+        rendered = []
+        monkeypatch.setattr(_mod, "render_mermaid_cached",
+                            lambda root, text, png, **kw: rendered.append(os.path.basename(png)))
+        model = {"units": units, "functions": funcs, "globalVariables": glbs}
+        _mod.run(model, str(tmp_path / "output"), model_dir, {"views": {"unitDiagrams": True}})
+
+        assert rendered == ["M_A.png"]
+        out = tmp_path / "output" / "unit_diagrams"
+        assert "g_new" in (out / "M_A.mmd").read_text(encoding="utf-8")
+        assert (out / "M_B.mmd").read_text(encoding="utf-8") == b_text

@@ -460,3 +460,80 @@ class TestBuildUnitDiagram:
         )
         assert result is not None
         assert "Mod" in result  # component subgraph label
+
+
+# ---------------------------------------------------------------------------
+# Globals (RV-6): the unit's published globals, grey boxes inside the component, no edges
+# ---------------------------------------------------------------------------
+
+def _glb_context(globals_data, glb_ids, peer_glb_ids=()):
+    unit_key, peer_key = "Mod|core", "Mod|peer"
+    unit_info = {"fileName": "core.cpp", "functionIds": [], "globalVariableIds": list(glb_ids)}
+    peer_info = {"fileName": "peer.cpp", "functionIds": [], "globalVariableIds": list(peer_glb_ids)}
+    units_data = {unit_key: unit_info, peer_key: peer_info}
+    unit_names = {unit_key: "core", peer_key: "peer"}
+    return _build_unit_diagram(unit_key, unit_info, units_data, {}, {}, unit_names,
+                               globals_data=globals_data)
+
+
+def _glb_labels(mermaid):
+    import re as _re
+    return [m.group(1) for m in _re.finditer(r'__glb\d+\["([^"]*)"\]', mermaid)]
+
+
+class TestUnitDiagramGlobals:
+    GLOBALS = {
+        "g1": {"qualifiedName": "g_result", "interfaceId": "IF_X_CORE_11", "visibility": "public"},
+        "g2": {"qualifiedName": "g_sharedTick", "interfaceId": "IF_X_CORE_12"},
+        "g3": {"qualifiedName": "g_count", "interfaceId": "PIF_X_CORE_01", "visibility": "private"},
+        "g4": {"qualifiedName": "Owner::s_count", "className": "Owner",
+               "interfaceId": "IF_X_CORE_13", "visibility": "public"},
+        "p1": {"qualifiedName": "g_peerOnly", "interfaceId": "IF_X_PEER_01", "visibility": "public"},
+    }
+
+    def test_published_globals_drawn_by_name(self):
+        result = _glb_context(self.GLOBALS, ["g1", "g2"])
+        assert sorted(_glb_labels(result)) == ["g_result", "g_sharedTick"]
+
+    def test_private_global_not_drawn(self):
+        # Phase 2 stamps `private` on everything it buries (marked private, C++-private,
+        # declaration only) -- the same filter the interface table applies.
+        result = _glb_context(self.GLOBALS, ["g1", "g3"])
+        assert _glb_labels(result) == ["g_result"]
+        assert "g_count" not in result
+
+    def test_class_static_keeps_its_class(self):
+        result = _glb_context(self.GLOBALS, ["g4"])
+        assert _glb_labels(result) == ["Owner::s_count"]
+
+    def test_peer_units_globals_not_drawn(self):
+        result = _glb_context(self.GLOBALS, ["g1"], peer_glb_ids=["p1"])
+        assert "g_peerOnly" not in result
+
+    def test_globals_styled_and_have_no_edges(self):
+        result = _glb_context(self.GLOBALS, ["g1", "g2"])
+        assert "classDef globalVar" in result
+        assert "class Mod_core__glb1,Mod_core__glb2 globalVar" in result
+        assert not any("__glb" in ln and "-->" in ln for ln in result.splitlines())
+
+    def test_globals_share_an_inner_box_with_the_unit_inside_the_component(self):
+        lines = _glb_context(self.GLOBALS, ["g1", "g2"]).splitlines()
+        idx = {k: next(i for i, ln in enumerate(lines) if k in ln)
+               for k in ('subgraph internal_mod', 'subgraph Mod_core__box',
+                         'Mod_core__glb1[', 'Mod_core__glb2[', 'Mod_core["')}
+        assert idx['subgraph internal_mod'] < idx['subgraph Mod_core__box']
+        # emitted last-id-first: ELK stacks a box's loose nodes bottom-up, so this reads
+        # g_result (…_11) above g_sharedTick (…_12) above the unit
+        assert (idx['subgraph Mod_core__box'] < idx['Mod_core__glb2[']
+                < idx['Mod_core__glb1['] < idx['Mod_core["'])
+
+    def test_no_published_global_leaves_the_diagram_unchanged(self):
+        # a unit without one keeps its text -- and so its cached PNG -- byte-identical
+        with_private = _glb_context(self.GLOBALS, ["g3"])
+        without = _glb_context(self.GLOBALS, [])
+        assert with_private == without
+        assert "globalVar" not in without and "__box" not in without
+
+    def test_brackets_in_a_name_do_not_break_the_node(self):
+        g = {"a": {"qualifiedName": "tbl[2]", "interfaceId": "IF_X_CORE_01"}}
+        assert _glb_labels(_glb_context(g, ["a"])) == ["tbl'2'"]
