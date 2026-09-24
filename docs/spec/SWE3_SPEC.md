@@ -292,6 +292,14 @@ When the document is generated for a specific group of modules, all units within
 
 ---
 
+### REQ-UD-09 — Global variables
+
+Every global that has a row in the unit's interface table is drawn as a box labelled with its name (class-qualified for a class static member), inside the component subgraph, grouped with the current unit in an untitled inner subgraph and ordered by interface ID. A global has no edges: its direction is always `In/Out`. Globals that are private, declaration-only, or owned by another unit are not drawn. A unit with no such global renders exactly as before.
+
+**Verification:** Core shows `g_result` and `g_sharedTick` and not the private `g_count`; Lib shows no global box; no line joins a global box with an arrow. (`tests/unit/test_unit_diagrams_view.py::TestUnitDiagramGlobals`, `tests/e2e/test_unit_diagrams.py`.) An incremental run re-renders a carried diagram whose text changed, even with no impacted function (`tests/unit/test_incremental_unit_diagrams.py`).
+
+---
+
 ## Dynamic Behaviour
 
 **Output:** Scenario entries in the Dynamic Behaviour sub-section of each module.

@@ -203,6 +203,39 @@ def test_every_edge_has_if_label(mmd_files, unit):
 
 
 # ---------------------------------------------------------------------------
+# Globals (RV-6): the unit's published globals, drawn as boxes with no edges
+# ---------------------------------------------------------------------------
+
+# From the source: Core.cpp defines PUBLIC g_result, PRIVATE g_count and unmarked
+# g_sharedTick; Util.cpp defines PUBLIC g_utilBase and g_utilBuf; Lib defines none (it only
+# READS g_sharedTick through SharedDefs.h, which is Core's global, not Lib's).
+PUBLISHED_GLOBALS = {
+    "Core": ["g_result", "g_sharedTick"],
+    "Lib":  [],
+    "Util": ["g_utilBase", "g_utilBuf"],
+}
+
+
+def _global_boxes(mermaid):
+    import re as _re
+    return sorted(m.group(1) for m in _re.finditer(r'__glb\d+\["([^"]*)"\]', mermaid))
+
+
+@pytest.mark.parametrize("unit", UNITS)
+def test_published_globals_drawn(mmd_files, unit):
+    assert _global_boxes(mmd_files[unit]) == PUBLISHED_GLOBALS[unit]
+
+
+def test_private_global_not_drawn(mmd_files):
+    assert "g_count" not in mmd_files["Core"]
+
+
+@pytest.mark.parametrize("unit", UNITS)
+def test_globals_have_no_edges(mmd_files, unit):
+    assert not [l for l in mmd_files[unit].splitlines() if "__glb" in l and "-->" in l]
+
+
+# ---------------------------------------------------------------------------
 # Snapshot — full .mmd content for all units
 # ---------------------------------------------------------------------------
 

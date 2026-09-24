@@ -208,6 +208,40 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-24 (**RV-6 — the unit diagram draws the unit's published globals** — branch
+> `fix/swe3-review-v1`, `engine/views/unit_diagrams.py`.)
+>
+> A global's direction is always `In/Out` (`model_deriver.py:1263`), so REQ-UD-05 had no arrow to put
+> its `IF_` on and globals were the one interface kind the diagram never showed. Now
+> `_published_globals(unit_info, globals_data)` takes the unit's `globalVariableIds` minus
+> `visibility == "private"` — the interface table's filter, because phase 2 stamps `private` on every
+> buried global (marked, C++-private, declaration-only). Label = `scoped_name(qn, className)`, so a
+> class static reads `Owner::s_count`. Box style `classDef globalVar` (grey `#f2f2f2`, black border).
+> **Layout, measured on mermaid 10.9.5 + ELK:** loose nodes in the component subgraph stack well when
+> the unit is alone, but ELK puts a disconnected node in the FIRST layer, so with a same-component
+> caller present they landed in the left column away from the unit. Fix: globals + the unit share an
+> untitled inner subgraph `{unit}__box`, which ELK lays out as one column. ELK stacks a box's loose
+> nodes bottom-up, so they are emitted last-id-first to read in id order top-down. `style`/`class` on
+> a subgraph are ignored by ELK (the outer "yellow" box renders violet too), so the inner box shows as
+> a slightly darker panel — tried `fill:none` and a transparent classDef, both no-ops. A unit with no
+> published global emits byte-identical text (no classDef, no box), so its cached PNG stays valid.
+> **Incremental (M3.10):** the plan's impact set is functions only, and a global can change alone. `run()`
+> now rebuilds every carried unit's text and renders the ones whose text differs from the carried
+> `.mmd` (or have no PNG): never stale, and it also refreshes diagrams drawn by older code.
+> **Verified:** full `pytest --update-snapshots` with a pipeline run, green; snapshot
+> `Sample/unit_diagrams.json` moved for Core (`g_result`, `g_sharedTick`) and Util (`g_utilBase`,
+> `g_utilBuf`) only; `g_count` (PRIVATE) absent. Tests: `test_unit_diagrams_view.py::TestUnitDiagramGlobals`
+> (8), `test_incremental_unit_diagrams.py` (+1), e2e `test_unit_diagrams.py` (+7). Docs: SWE3_SPEC
+> REQ-UD-09, SWE3_WIKI N.1.3 "Global variables". `doc_render.py` and doccheck read the PNG only.
+
+> Updated: 2026-09-23f (**firmware-team SWE.3 review, round 1: tracked in
+> [docs/BACKLOG.md](docs/BACKLOG.md) as RV-1…RV-7**. Docs only. **Status rule (user):** an agent marks
+> work `done` (on the branch, checked on the sample); only the user marks `fixed`, after office
+> verification. Fixed: RV-2 (access specifier). Done: RV-1 (class static writes and header rows),
+> RV-3 (container diagram fitted to the page, not sliced; the dependency and unit diagrams are out of
+> scope and stay a fixed 6 in), RV-7 (struct/class rows). Open: RV-5 (an orphan header gets its own unit key
+> in `_has_external_caller`), RV-6 (globals in the unit diagram). RV-4 needs a rule decision.)
+
 > Updated: 2026-09-23e (**doccheck caught up with `147c4cd`'s unit header table** — branch
 > `fix/swe3-review-v1`, `tools/doccheck/`.)
 >
