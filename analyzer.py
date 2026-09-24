@@ -708,9 +708,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--quiet", action="store_true", help="only problems")
     s.set_defaults(fn=cmd_doctor)
 
-    s = sub.add_parser("check-llm", help="ask the LLM gateway directly whether it answers")
+    s = sub.add_parser("check-llm", help="ask the LLM (gateway or Ollama) directly whether it answers")
     s.add_argument("--raw", action="store_true", help="print the untouched reply")
-    s.add_argument("--only", help="run just this prompt by name")
+    s.add_argument("--only", help="run just one prompt: tiny, description or large (or 1-3)")
     s.add_argument("--max-tokens", type=int)
     s.set_defaults(fn=cmd_check_llm)
 

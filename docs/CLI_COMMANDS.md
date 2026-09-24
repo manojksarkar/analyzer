@@ -245,7 +245,7 @@ default**. The run log says so: `narrowed parse: 1 affected TU(s)`.
 | `check` | check the database, reporting only what is wrong |
 | `report` | a version's generation report |
 | `doctor` | check prerequisites (clang, node, graphviz, browser) |
-| `check-llm` | ask the LLM gateway directly whether it answers |
+| `check-llm` | ask the LLM (gateway or Ollama) directly whether it answers |
 | `check-datadict` | validate a data-dictionary CSV before a run |
 | `llm-stats` | compare the LLM cost of two runs |
 | `verify` | run the correctness gates |
@@ -720,8 +720,11 @@ python analyzer.py check-datadict dd_layer1.csv --layer Layer1 --quiet
 ```
 
 `doctor` checks clang, node, graphviz and the browser before a long run stops on a missing one.
-`check-llm` asks the gateway directly, so "no descriptions in the document" can be attributed to
-the model rather than the pipeline. `check-datadict` validates a CSV **before** a run — a
+`check-llm` asks the model directly — the gateway or Ollama, whichever `llm.provider` names — so
+"no descriptions in the document" can be attributed to the model rather than the pipeline.
+`--only` takes `tiny`, `description` or `large` (or 1-3). On Ollama it also flags a prompt cut to
+fit `numCtx` (Ollama reports no error) and the model's load time, which counts against
+`timeoutSeconds`. `check-datadict` validates a CSV **before** a run — a
 malformed one used to be accepted in silence and the ranges simply never appeared.
 
 ### `llm-stats`
