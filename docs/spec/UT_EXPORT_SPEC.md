@@ -39,7 +39,8 @@ Maps the test tree onto the source tree.
                         └── Testcases → [Testcase]   (see §2)
 ```
 
-`Section` is our **component**, `Layer` our **layer**. The `Corresponding_cpp` pairing is the same
+`Layer` is our **layer**. `Section` is **assumed** to be our **component** — unconfirmed, it could be
+our group ([readiness D1](UT_EXPORT_READINESS.md#hierarchy-file)). The `Corresponding_cpp` pairing is the same
 idea as our "a unit is a path, not a file" rule — `Foo.h` and `Foo.cpp` are one unit, see
 [SWE4_WIKI § Precondition](SWE4_WIKI.md).
 
@@ -92,6 +93,9 @@ Both SWE.4 spec kinds are unit-test specifications — the two sections of one
 | per-function spec | `"UT"` | `test_specs.json` → `<unit>.functions[]` |
 | dynamic-behaviour spec | `"UT"` | `test_specs.json` → `dynamicSpecs[]` |
 
+`"IT"` cases (with `steps[]`) are not emitted: integration tests will be derived from SWE.2,
+not SWE.4 (decided 2026-09-23). Field readiness → [UT_EXPORT_READINESS](UT_EXPORT_READINESS.md).
+
 **Verification:** every emitted case has `level: "UT"`.
 
 ### REQ-UE-02 — Field mapping
@@ -114,7 +118,7 @@ Hierarchy file:
 | field | source | status |
 |---|---|---|
 | `Layer` | run layer | ready |
-| `SectionID` / `SectionName` | component | ready |
+| `SectionID` / `SectionName` | component (assumed — could be group, readiness D1) | ready once settled |
 | `unit_id` / `Filename` / `FilePath` | `spec.unitKey`, `unit.fileName`, `spec.location.file` | ready |
 | `IsHeader` | `views/test_specs.py::_is_header` | ready |
 | `Corresponding_cpp[_path]` | the unit's `.cpp` sibling — units are already path-keyed | ready |
