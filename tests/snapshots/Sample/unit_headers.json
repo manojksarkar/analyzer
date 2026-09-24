@@ -1,15 +1,14 @@
 {
-  "Layer1.Lib|Lib": [
+  "Layer1.Lib|Lib": [],
+  "Layer1.Sample-Core|Core": [
     {
-      "declaration": "#define SHARED_SCALE_FACTOR 8",
-      "information": "8"
+      "declaration": "#define LIB_LIMIT (64)",
+      "information": "(64)"
     },
     {
-      "declaration": "extern int g_sharedTick;",
-      "information": "N/A"
-    }
-  ],
-  "Layer1.Sample-Core|Core": [
+      "declaration": "#define SHARED_BUFSZ (6)",
+      "information": "(6)"
+    },
     {
       "declaration": "#define SHARED_MASK ((1 << 0) | \\\n                     (1 << 1) | \\\n                     (1 << 2))",
       "information": "((1 << 0) | (1 << 1) | (1 << 2))"
@@ -21,6 +20,10 @@
     {
       "declaration": "#define SHARED_MIN_ITEMS 4",
       "information": "4"
+    },
+    {
+      "declaration": "#define SHARED_SCALE_FACTOR 8",
+      "information": "8"
     },
     {
       "declaration": "enum Mode { MODE_FAST = 0, MODE_SAFE = 1 };",
@@ -45,8 +48,12 @@
   ],
   "Layer1.Util|Util": [
     {
-      "declaration": "#define SHARED_BUFSZ (6)",
-      "information": "(6)"
+      "declaration": "#define UTIL_LIMIT (32)",
+      "information": "(32)"
+    },
+    {
+      "declaration": "enum UtilMode {\n    UTIL_MODE_FAST = 0,\n    UTIL_MODE_SAFE = 1\n};",
+      "information": "UTIL_MODE_FAST=0, UTIL_MODE_SAFE=1"
     },
     {
       "declaration": "PUBLIC int g_utilBase = 0;",

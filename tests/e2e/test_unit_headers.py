@@ -42,15 +42,49 @@ def test_a_private_global_is_listed(unit_headers):
     assert any("g_result" in d for d in decls)
 
 
-def test_an_orphan_header_global_reaches_its_user_only(unit_headers):
-    """g_sharedTick is declared in SharedDefs.h, defined in Core.cpp, read by Lib.
+CORE, LIB, UTIL = "Layer1.Sample-Core|Core", "Layer1.Lib|Lib", "Layer1.Util|Util"
 
-    Util includes the same header and touches nothing in it, which is the control: lending
-    is on USE, not on #include.
-    """
-    assert any("g_sharedTick" in d for d in _decls(unit_headers["Layer1.Lib|Lib"]))
-    assert any("g_sharedTick" in d for d in _decls(unit_headers["Layer1.Sample-Core|Core"]))
-    assert not any("g_sharedTick" in d for d in _decls(unit_headers["Layer1.Util|Util"]))
+
+def _units_listing(unit_headers, symbol):
+    """The units with a row DECLARING `symbol` -- a row that merely uses it does not count."""
+    return sorted(uk for uk in (CORE, LIB, UTIL)
+                  if any(d.startswith(symbol) or f" {symbol}" in f" {d}".split("=")[0]
+                         for d in _decls(unit_headers[uk])))
+
+
+@pytest.mark.parametrize("symbol", [
+    "#define SHARED_MAX_ITEMS",      # used by Core
+    "#define SHARED_SCALE_FACTOR",   # used by Lib only
+    "#define SHARED_BUFSZ",          # used by Util only, at file scope (Util's own
+                                     # `g_utilBuf[SHARED_BUFSZ]` row still names it)
+    "enum SharedLevel",      # used by Core
+])
+def test_an_orphan_header_is_listed_once_by_its_owner(unit_headers, symbol):
+    """SharedDefs.h sits in Core's component and Core uses it, so Core owns it: Core lists
+    every symbol of it that ANY unit uses, and Lib and Util list none (review RV-4)."""
+    assert _units_listing(unit_headers, symbol) == [CORE]
+
+
+def test_an_orphan_header_global_is_not_repeated_in_its_reader(unit_headers):
+    """g_sharedTick is declared in SharedDefs.h, defined in Core.cpp and read by Lib. Lib no
+    longer repeats the header's `extern`; Core's definition is the one row."""
+    assert _units_listing(unit_headers, "g_sharedTick") == [CORE]
+
+
+def test_the_owner_is_the_first_user_in_the_headers_own_component(unit_headers):
+    """UtilLimits.h is in Util's component and used by Util and Core. Util owns it, although
+    Core comes first by name."""
+    assert _units_listing(unit_headers, "#define UTIL_LIMIT ") == [UTIL]
+    assert _units_listing(unit_headers, "enum UtilMode") == [UTIL]
+
+
+def test_with_no_user_in_its_component_the_first_user_by_name_owns_it(unit_headers):
+    """LibLimits.h is in Lib's component, but only Core and Util use it: Core owns it."""
+    assert _units_listing(unit_headers, "#define LIB_LIMIT") == [CORE]
+
+
+def test_an_orphan_symbol_nobody_uses_is_listed_nowhere(unit_headers):
+    assert _units_listing(unit_headers, "#define UTIL_LIMIT_UNUSED") == []
 
 
 def test_the_defining_unit_shows_the_definition_not_the_extern(unit_headers):
@@ -60,15 +94,6 @@ def test_the_defining_unit_shows_the_definition_not_the_extern(unit_headers):
     assert len(rows) == 1
     assert "extern" not in rows[0]["declaration"]
     assert rows[0]["information"] == "0"
-
-
-def test_only_used_orphan_macros_are_lent(unit_headers):
-    """Each unit shows its own subset of SharedDefs.h, never the whole header."""
-    core = _decls(unit_headers["Layer1.Sample-Core|Core"])
-    lib = _decls(unit_headers["Layer1.Lib|Lib"])
-    assert any("SHARED_MAX_ITEMS" in d for d in core)
-    assert not any("SHARED_SCALE_FACTOR" in d for d in core)
-    assert any("SHARED_SCALE_FACTOR" in d for d in lib)
 
 
 def test_a_class_static_definition_has_no_row(unit_headers):

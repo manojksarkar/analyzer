@@ -194,25 +194,25 @@ Global variable rows have no caller or callee lists.
 
 ## Unit Header Table
 
-**Output:** One table per unit, embedded in the DOCX unit section. Lists the unit's global variables, typedefs, enums and defines.
+**Output:** One table per unit, embedded in the DOCX unit section. Lists the unit's global variables, typedefs, enums, defines and record types, plus the symbols of any orphan header it owns.
 
 ---
 
 ### REQ-UH-01 — Own declarations
 
-The table lists every public global variable, typedef, enum and define **defined in the unit's own file(s)** (its source and companion header). Structs/classes are out of scope.
+The table lists every global variable, typedef (`using` included), enum, define, struct, class and union **defined in the unit's own file(s)** (its source and companion header), whatever its visibility: it says what the unit declares, not what it publishes. A type nested in a record, and a class static member's out-of-line definition, appear only inside the record's own declaration.
 
-**Verification:** A unit's own typedef/enum/define entries appear; its private globals do not.
+**Verification:** A unit's own typedef/enum/define/record entries appear, and so do its private globals (`g_count` in Core).
 
 ---
 
-### REQ-UH-02 — Orphan-header symbols (used-only)
+### REQ-UH-02 — Orphan-header symbols (one owner per header)
 
-Besides its own declarations, a unit's table also lists the **define / enum / typedef** symbols that this unit **uses** which are defined in an **orphan header** — a header (`.h/.hpp/.hxx`) that has **no same-name source file**. A symbol from an orphan header appears **only in the units that reference it**: each unit shows exactly the subset it uses, never the header's full contents, and never in a unit that does not use it. Companion headers (a header whose stem has a `.cpp/.cc/.cxx`) are not orphan headers, so their content is not pulled into other units.
+The **define / enum / typedef / struct / class / union** symbols and **globals** declared in an **orphan header** — a header (`.h/.hpp/.hxx`) that has **no same-name source file** — are listed **once**, in the header's **owner** unit. The owner is the first unit by name in the header's own component that uses any of its symbols; if no unit in that component uses it, the first using unit by name anywhere. It is chosen over every source-backed unit in the model, not the rendered group, so every document agrees. The owner lists every symbol of the header that **any** unit uses; other units list none of it; a symbol no unit uses is listed nowhere. Companion headers (a header whose stem has a `.cpp/.cc/.cxx`) are not orphan headers.
 
-Usage is the **union** of two signals: (1) the precomputed usage index `model/edges.json` (`macroUsers` keyed `name@relFile`, `typeUsers` keyed by qualified name) intersected with the unit's own `functionIds`; and (2) a **textual fallback** — the symbol name appears among the identifiers in the unit's own source file(s), after stripping comments and string/char literals. The fallback recovers usages `edges.json` cannot see because it only records function-body/signature tokens: a macro used at file scope (array size, global initializer) or inside another macro. Comment/string stripping prevents a symbol merely *mentioned* in a comment from counting as usage. **Residual gap:** an enum referenced only by an enumerator value whose spelling never appears in the unit's own text (e.g. reached purely through another macro) may still be missed.
+Usage is the **union** of two signals: (1) the precomputed usage index `model/edges.json` (`macroUsers` keyed `name@relFile`, `typeUsers` keyed by qualified name) intersected with the unit's own `functionIds`; and (2) a **textual fallback** — the symbol name appears among the identifiers in the unit's own source file(s), after stripping comments and string/char literals. The fallback recovers usages `edges.json` cannot see because it only records function-body/signature tokens: a macro used at file scope (array size, global initializer) or inside another macro. An enum also counts through any enumerator name. A global counts only through a function of the unit reading or writing it. **Residual gap:** an enum referenced only by an enumerator value whose spelling never appears in the unit's own text (e.g. reached purely through another macro) may still be missed.
 
-**Verification:** Given an orphan header with several symbols used by different units, each unit's header table shows only the symbols it uses (including a macro used only at file scope); a non-using unit shows none; a companion header of another unit is never pulled in; a symbol named only in a comment is not surfaced. (`tests/unit/test_unit_header_orphan.py`.)
+**Verification:** `SharedDefs.h` (Core's component; used by Core, Lib and Util) is listed only by Core, including `SHARED_SCALE_FACTOR` (used only by Lib) and `SHARED_BUFSZ` (used only by Util, at file scope); `UtilLimits.h` (Util's component; used by Core and Util) only by Util; `LibLimits.h` (Lib's component; used only by Core and Util) only by Core; `UTIL_LIMIT_UNUSED` nowhere. (`tests/e2e/test_unit_headers.py`, `tests/unit/test_unit_header_orphan.py`.)
 
 ---
 
