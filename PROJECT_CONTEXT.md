@@ -305,6 +305,12 @@
 > `g_utilBuf`) only; `g_count` (PRIVATE) absent. Tests: `test_unit_diagrams_view.py::TestUnitDiagramGlobals`
 > (8), `test_incremental_unit_diagrams.py` (+1), e2e `test_unit_diagrams.py` (+7). Docs: SWE3_SPEC
 > REQ-UD-09, SWE3_WIKI N.1.3 "Global variables". `doc_render.py` and doccheck read the PNG only.
+> **Real-fixture check (2026-09-24, after S3-7):** the e2e group (My Sample) has one unit per component,
+> so the sibling-unit layout and the class-static label have no e2e case. Rendered instead with the real
+> `_build_unit_diagram` over the e2ev1 stored model: `Access|NestedTypes` (box `NestedOwner::s_publicCount`,
+> sibling `NestedTypesUser` in the component), `Diag|ClassStatics` (`StatCounters::s_publicCount`),
+> `Cross|OpsTable` (`g_opsTable`, published through OpsClient's extern) — each global stacked with its
+> unit, sibling beside it. Visual check only; no automated test renders a group outside My Sample.
 
 > Updated: 2026-09-23f (**firmware-team SWE.3 review, round 1: tracked in
 > [docs/BACKLOG.md](docs/BACKLOG.md) as RV-1…RV-7**. Docs only. **Status rule (user):** an agent marks
