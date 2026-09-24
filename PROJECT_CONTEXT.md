@@ -208,6 +208,26 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-24e (**check-llm speaks Ollama** — branch `fix/swe3-review-v1`, `tools/check_llm.py`.)
+>
+> The probe used to exit 2 on `provider: ollama`. It now sends `LlmClient._call_ollama`'s exact request
+> (`{baseUrl}/api/generate`, same options, no headers, no pause), pinned by `tests/unit/test_check_llm.py`,
+> which puts one config through both and compares. Ollama output adds `done_reason`, `thinking`, model load
+> time and **PROMPT CUT**. `--only` takes `tiny`/`description`/`large` or 1-3 (the documented
+> `--only description` used to die in argparse).
+> **Measured on the local Ollama 0.34** — what the pipeline sees on Ollama:
+> - A prompt over `num_ctx` is cut to about HALF of it (large prompt 2968 → 514 tokens at numCtx 1024) and
+>   the model still answers: HTTP 200, non-empty, about a prompt it never fully saw — not "returns empty" as
+>   the `_call_ollama` comment says. The only trace is `prompt_eval_count`.
+> - gpt-oss reasons into a separate `thinking` field; `_call_ollama` reads only `response`, so a reasoning
+>   that outruns the hardcoded `num_predict: 2048` gives `response: ""`, `done_reason: length` → the
+>   pipeline's "returned empty response".
+> - Cold-loading gpt-oss (20B) took 157 s, all inside the first call's `timeoutSeconds`.
+> Open, OpenAI path untouched: the probe sends only config `customHeaders` + bearer, while the engine's
+> `build_openai_headers` resolves `x-dep-ticket`/`User-Type`/`User-Id`/`Send-System-Name` env-first with
+> defaults and adds msg-id UUIDs; and the probe accepts a `baseUrl` ending in `/chat/completions`, which the engine doubles.
+> So against the gateway the probe can pass or fail where the engine would not.
+
 > Updated: 2026-09-24d (**doccheck counts functions and globals apart, and explains an RV-4 move** —
 > branch `fix/swe3-review-v1`, `tools/doccheck/compare.py` + `rules.py`.)
 >
