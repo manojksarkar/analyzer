@@ -39,7 +39,7 @@ if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
 from core.paths import paths as _paths, set_output_dir, set_model_dir
-from core.config import load_config
+from core.config import load_config, layer_sources
 from core.run_context import effective_model_store, DatabaseRequired as _DatabaseRequired
 from incremental import git_ops
 from incremental.stores import Workspace, VersionStore, _rmtree_force
@@ -397,6 +397,22 @@ def generate_full(
         store.write_manifest(version_id, m)     # close the lifecycle: 'failed', not mid-phase
         raise AnalyzerRunFailed(f"analyzer run failed (exit {rc})", rc)
 
+    # What this run is about to do, BEFORE the parse - which can run for hours - so a wrong
+    # scope, document type or dictionary is seen while stopping is still cheap.
+    from incremental.report import emit_run_summary
+    _stop = emit_run_summary(
+        project_id=project_id, version_id=version_id, branch=branch, commit=actual_commit,
+        scope=scope, doc_type=doc_type, cfg=cfg, no_llm=no_llm, data_dict_id=data_dict_id,
+        data_dict_path=ws.datadict_path(data_dict_id) if data_dict_id else None,
+        baseline="none - full generation", config_path=config_path or vcfg_path,
+        project_root=project_root)
+    if _stop:
+        store.write_manifest(version_id, _manifest(
+            version_id, branch, actual_commit, scope, data_dict_id,
+            decision="full", regenerated=0, reused=0, status="failed", warnings=_stop,
+            doc_type=doc_type))
+        raise AnalyzerRunFailed("stopped before the parse: " + "; ".join(_stop), 2)
+
     # Phase-split (M4.4): Phase 1 (parse) -> snapshot the blank-skeleton model into the
     # version (the baseline a future narrowed parse merges against) -> Phase 2+.
     rc = subprocess.run(base_cmd + ["--to-phase", "1", repo_dir],
@@ -471,7 +487,8 @@ def generate_full(
         "versionId": version_id, "decision": "full", "status": "complete",
         "projectId": project_id, "branch": branch, "commit": actual_commit,
         "scope": stype if (stype == "project" or not names) else f"{stype}:{','.join(names)}",
-        "dataDictId": data_dict_id,
+        "docType": doc_type, "dataDictId": data_dict_id,
+        "dataDictionaries": layer_sources(cfg, "dataDictionary"),
         "llmModel": llm.get("defaultModel"), "elapsedSeconds": time.perf_counter() - _t0,
         "functions": {"total": len(functions), "regenerated": len(functions), "reused": 0},
         "globals": {"total": len(globals_), "regenerated": len(globals_), "reused": 0},

@@ -208,6 +208,34 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-24g (**A run says what it will do before it parses** — branch `fix/swe3-review-v1`,
+> `engine/incremental/report.py` + `generate.py` + `engine.py`, `engine/core/config.py`, `engine/parser.py`.)
+>
+> Asked for from the office: the parse runs for minutes to hours with the screen idle, and what the run
+> was about to do was missing or buried. Scope appeared only in the end report, the doc type nowhere, and
+> the parser banner's `data dictionary : (none)` showed only `--data-dictionary`. The end report's
+> `Data dict : None` showed only `dataDictId`. A run on per-layer dictionaries read "(none)" in both.
+> Now `report.emit_run_summary` (pure core: `build_run_summary`) prints a block BEFORE Phase 1 in
+> `generate_full` and before the parse in `generate_incremental` (after the baseline decision; decision
+> "full" delegates and prints there). The block lists: version name + id, commit/branch, scope, documents
+> (swe3/swe4/all, named), views on/off (`config_views` mirrors `run_views`' config rule; a test runs the
+> real `run_views` against it), each layer's dictionary and macros with their origin core (`layer: none`
+> when absent), project-wide `--data-dict`, LLM (`load_llm_config` on the run config), baseline, and the
+> SOURCE config path. Config checks in `core/config.py`: `CORE_KEYS` (dataDictionary / macros /
+> compileCommands), `layer_source_origin`, `core_config_warnings` (an unknown/misspelled core key, a core
+> no layer lists, a misspelled input key on a layer — all silently ignored before), `missing_layer_inputs`.
+> **A configured dictionary file that does not exist now STOPS the run before the parse**
+> (`AnalyzerRunFailed` rc 2, manifest `failed`). The parser merges dictionaries at the END of Phase 1 and
+> aborted there, after the whole parse. A missing `--data-dict` file only WARNS, because the API passes
+> `currentDataDictId` implicitly (it was silently dropped before). Parser banner now lists every dictionary
+> source; end report adds `Doc type` + per-layer dictionaries.
+> Verified by real runs (SampleCppProject, throwaway DB): summary = output lines 1–21, parse starts at line
+> 52. A config with `cores.Core1.datadictionary` + a missing Core2 CSV → warning + `STOPPING BEFORE THE
+> PARSE`, exit 2 after 5 s. Tests: `test_core_config.py::TestInputsTheRunWouldIgnore`,
+> `test_incremental_report.py::{TestEndReportNamesItsInputs, TestRunSummary, TestEmitRunSummary,
+> TestSummaryViewsMatchThePipeline}`. **Step 2 pending (user-approved order):** cut console noise — one run
+> printed 797 lines, 323 of them per-function "fallback labels" warnings expected under `--no-llm`.
+
 > Updated: 2026-09-24f (**A CLI version id is a name inside its project** — branch `fix/swe3-review-v1`,
 > `engine/core/run_context.py` + `tools/new_project.py` + `analyzer.py`.)
 >

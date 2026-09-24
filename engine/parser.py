@@ -3069,7 +3069,9 @@ def main():
     _log.info("  component map   : %d file(s)", len(_FILE_COMPONENT_MAP))
     _log.info("  exclude patterns: %s", ", ".join(_EXCLUDE_NAME_PATTERNS) or "(none)")
     _log.info("  include dirs    : %d", sum(len(v) for v in _layer_include_paths.values()))
-    _log.info("  data dictionary : %s", _data_dict_path or "(none)")
+    # Every source, not just --data-dictionary: a run on per-layer dictionaries read "(none)".
+    _log.info("  data dictionary : %s", "; ".join(
+        f"{layer or 'project-wide'} <- {path}" for layer, path in _dd_sources) or "(none)")
     _log.info("=" * 60)
     _log.debug("CLANG_ARGS (global): %s", " ".join(CLANG_ARGS))
     for _lname in sorted(_LAYER_INCLUDE_ARGS):
