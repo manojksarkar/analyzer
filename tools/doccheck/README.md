@@ -42,12 +42,16 @@ report its forty rows as forty missing rows:
 |---|---|
 | **L0** | sections present, and in order |
 | **L1** | components and units — which exist, then in what order |
-| **L2** | per unit — interface rows, header definitions, functions, test cases |
+| **L2** | per unit — interface rows, header definitions, functions, test cases. Counted in total and per category: interface rows by Interface Type (functions and globals apart), header rows by kind |
 | **L3** | the fields of a matched row, each by its own rule |
 | **L4** | dynamic behaviour — the set of interactions |
 
 Severity is `high` / `medium` / `low` / `info`, and a finding carries the
-documented rule that would explain it where one does.
+documented rule that would explain it where one does. Two rules only see what one
+document holds: a missing global row is put down to "no user in another unit", and a
+header row that moved to another unit of the same document to "an orphan header is
+listed once, in its owner unit" — so the second one is invisible when each document
+covers a single component.
 
 ## Reading the terminal report
 

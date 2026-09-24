@@ -208,6 +208,19 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-24d (**doccheck counts functions and globals apart, and explains an RV-4 move** —
+> branch `fix/swe3-review-v1`, `tools/doccheck/compare.py` + `rules.py`.)
+>
+> **Sub-kind counts:** the per-category count that header rows had (`declKind`) is now driven by
+> `_SUB_KIND_FIELDS = ("declKind", "interfaceType")`, grouped case-insensitively, so interface rows add
+> `interface Global Variable count: 2 -> 1` / `interface Function count: …` beside the total.
+> **RV-4 rule:** a `headerdef` missing from a unit on one side while ANOTHER unit of the same side lists it
+> gets "listed once, in one owner unit; we/they list it under <Unit>" and is demoted to INFO. Evidence is in
+> the document only, so it is blind when a document holds one component (the e2e run writes one per
+> component). Verified on real documents (abcheck v15 vs e2ev1, Sample-Core): `interface Global Variable
+> count: 2 -> 1`, `g_result` carries the S3-7 rule; the three rows that moved into Core stay unexplained
+> for that reason. doccheck tests 667 green (+4). README updated.
+
 > Updated: 2026-09-24c (**S3-7 — a global earns its interface row from a user in ANOTHER unit** —
 > branch `fix/swe3-review-v1`, `engine/model_deriver.py`. Also closes S3-8 and Risk 8's storage-class gap.)
 >

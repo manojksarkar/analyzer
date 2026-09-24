@@ -35,6 +35,15 @@ def _index(doc):
             "headerdefs": headerdefs}
 
 
+def _listed_in_another_unit(index, unit_key, leaf):
+    """The name of the first OTHER unit (sorted) whose header table lists `leaf`, or ''."""
+    for other in sorted(index["headerdefs"]):
+        if other != unit_key and leaf in index["headerdefs"][other]:
+            unit = index["units"].get(other)
+            return unit.name if unit is not None else other
+    return ""
+
+
 def _leaf(path):
     return path.rsplit(" / ", 1)[-1] if path else ""
 
@@ -107,6 +116,20 @@ def annotate(result, left, right):
             iface = li["interfaces"].get(unit_key, {}).get(leaf)
             if iface is not None and (iface.fields.get("interfaceType") or "").casefold().startswith("global"):
                 rule = ("a global variable is always In/Out (%s, 'Column 6')" % WIKI)
+
+        elif (finding.kind in ("missing", "extra") and "headerdef" in finding.summary
+              and _listed_in_another_unit(ri if finding.kind == "missing" else li,
+                                          unit_key, leaf)):
+            # RV-4: an orphan header's symbols are listed ONCE, in the header's owner unit.
+            # A row missing from this unit on one side and present in ANOTHER unit of the
+            # same side is that move, not a loss -- the evidence is in the document itself.
+            where = _listed_in_another_unit(ri if finding.kind == "missing" else li,
+                                            unit_key, leaf)
+            side = "we list" if finding.kind == "missing" else "they list"
+            rule = ("a symbol from a header with no source file of its own is listed once, in "
+                    "one owner unit; %s it under %s (%s, 'Orphan-header symbols')"
+                    % (side, where, WIKI))
+            demote = True
 
         elif finding.kind == "extra" and "headerdef" in finding.summary:
             # A header row only WE have. Since 2026-09-23 this table is not filtered by
