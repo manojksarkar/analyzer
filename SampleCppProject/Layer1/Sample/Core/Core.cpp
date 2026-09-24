@@ -192,3 +192,14 @@ PUBLIC void coreReset() {
     g_result = 0;
     g_count = 0;
 }
+
+// ── Orphan headers owned elsewhere ───────────────────────────────────────────
+// Included here, at the end, so no line above moves. Core uses both headers but
+// lists only LibLimits.h: nothing in Lib's component uses it, so it falls to the
+// first user by name (Core). UtilLimits.h goes to Util, a user in its own component.
+#include "../Util/UtilLimits.h"
+#include "../Lib/LibLimits.h"
+
+PRIVATE int coreLimit(int v) {
+    return (v > UTIL_LIMIT) ? LIB_LIMIT : (int)UTIL_MODE_SAFE;
+}

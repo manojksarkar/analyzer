@@ -208,6 +208,44 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-24b (**RV-4 — an orphan header is listed ONCE, by one owner unit** — branch
+> `fix/swe3-review-v1`, `engine/views/unit_headers.py`. Supersedes the 2026-07-17 / 2026-09-23 "lent to
+> EACH unit that uses it" rule.)
+>
+> **Rule (user, 2026-09-23/24):** each orphan header (no same-name source) gets ONE owner = the first unit
+> by name (`units[uk].name`, casefolded, then key) in the header's OWN component that uses anything from it;
+> if none there does, the first using unit anywhere. The owner lists every symbol of the header that ANY
+> unit uses; the other users list none; unused symbols appear nowhere. All kinds: define, enum, typedef/
+> using, struct/class/union, globals. **"Uses" is unchanged**: edges.json `macroUsers`/`typeUsers` ∩ unit
+> fids, OR the name in the unit's own source text (comments/literals stripped), enums also via an
+> enumerator name, globals only via `reads/writesGlobalIds` of the unit's functions.
+> **Code.** The inline per-unit test in `build_rows` became `_orphan_candidates(dd, globals, src_paths)`
+> (every orphan symbol → its header, same kind/nestedIn/anonymous filters as the row loop) +
+> `_orphan_uses(...)` (the subset one unit uses). `_orphan_owners(uses_by_unit, header_component,
+> names)` picks owners; `_lent_by_unit(model, …)` runs it over EVERY source-backed unit in the model (not
+> the rendered group — the owner must be the same in every document), with inverted fid→macro/type
+> indexes. Header → component: the units entry keyed off the header (when it has a function/global), else
+> `components[*].headerFiles`; unknown → fallback pool. `build_rows(..., lent=set)` lists exactly the lent
+> `("dd", ddKey)`/`("glb", varId)` keys; `lent=None` keeps the per-unit test (used by the unit tests).
+> **Consequence:** a unit's table can be empty (Lib now reads `NA`), and a shared enum can be declared in
+> another group's document. The extern-vs-definition collapse still applies inside the owner: Core lists
+> `int g_sharedTick = 0;`, the header's `extern` disappears, and Lib (the reader) lists nothing for it.
+> **Fixtures:** `Sample/Util/UtilLimits.h` (Util's component, used by Core + Util → Util: own component
+> beats name order; `UTIL_LIMIT_UNUSED` → nowhere) and `Sample/Lib/LibLimits.h` (Lib's component, used
+> only by Core + Util → fallback → Core), used from new PRIVATE `coreLimit` / `utilLimit` appended at
+> the END of Core.cpp / Util.cpp (includes there too) so no existing line, and no interface id, moves.
+> **Before/after (real pipeline, My Sample):** Core +`LIB_LIMIT`, +`SHARED_BUFSZ`, +`SHARED_SCALE_FACTOR`;
+> Lib −`SHARED_SCALE_FACTOR`, −`extern int g_sharedTick;` (now empty); Util −`SHARED_BUFSZ`,
+> +`UTIL_LIMIT`, +`enum UtilMode`. Nothing else moved. **Tests:** 2761 passed, 0 failed, 34 skipped
+> (`--skip-pipeline` on the output of a fresh pipeline run). `test_unit_header_orphan.py` +14
+> (`TestOneOwnerPerHeader`, `TestBuildRowsWithLent`, `TestLentByUnit`); e2e `test_unit_headers.py`
+> rewritten for the owner rule (matches the DECLARING row, since Util's own `g_utilBuf[SHARED_BUFSZ]`
+> names the macro). `Sample/unit_headers.json`: its test is SKIPPED on this box (`llm.descriptions` on),
+> so it was rewritten by hand from the fresh `--no-llm` output, in `assert_snapshot`'s format, after
+> checking it differs from the old snapshot by exactly the eight intended rows. Docs: SWE3_SPEC REQ-UH-02 (+ stale
+> REQ-UH-01 fixed: visibility no longer filters, records listed), SWE3_WIKI "Orphan-header symbols".
+> doccheck has no orphan-header rule, so nothing to change there.
+
 > Updated: 2026-09-24 (**RV-6 — the unit diagram draws the unit's published globals** — branch
 > `fix/swe3-review-v1`, `engine/views/unit_diagrams.py`.)
 >

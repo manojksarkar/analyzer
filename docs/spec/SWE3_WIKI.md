@@ -83,7 +83,7 @@ everything that refers to it. **⚠ To confirm:** whether this happens at all in
 ### Which units get a section
 
 - Only units that **have a source file**. A unit that is only a header gets no section, no interface table
-  and no diagram. Its content shows up inside the units that *use* it instead — see the
+  and no diagram. Its content is listed once, inside one unit that *uses* it — see the
   [unit header table](#n14--unit-header-table).
 - Only components of the selected group. Code outside the group can still appear as a *name* on a diagram
   or in the Source/Destination column, but it gets no section of its own.
@@ -345,7 +345,7 @@ Two columns: `declaration` | `information`. One row per symbol the unit declares
 
 | Kind | Listed when | Column 2 — information |
 |---|---|---|
-| Global variable | in the unit's own files, or lent by an orphan header it uses | the starting value: everything right of the first `=`, brackets counted; `N/A` if none |
+| Global variable | in the unit's own files, or in an orphan header this unit owns | the starting value: everything right of the first `=`, brackets counted; `N/A` if none |
 | `#define` | in the unit's own files | the macro value; `N/A` if none |
 | `enum` | in the unit's own files | `NAME=value, NAME=value, …` |
 | `typedef` → enum | in the unit's own files | the enum's values |
@@ -395,13 +395,18 @@ would never appear in the document.
 
 | | |
 |---|---|
-| Where its symbols go | into each unit that **uses** them — only the ones used, never the whole header |
+| Where its symbols go | into **one** unit, the header's **owner**, and nowhere else |
+| The owner | the first unit, by name, in the header's **own component** that uses anything from it. If no unit in that component uses it: the first using unit, by name, anywhere |
+| What the owner lists | every symbol of the header that **any** unit uses, including the ones only other units use. A symbol nobody uses is not listed |
+| Other units that use it | list none of it |
 | Not applied to | a header that *does* have a source file of the same name |
 | "Uses" — either source counts | the usage index built during parsing, or a text search of the unit's own source with comments and quoted text removed |
 | Enum used only through its values | matched on the value names |
-| Globals | carried across the same way — a global declared in an orphan header is listed in each unit whose functions read or write it |
+| Globals | follow the same rule. A global counts as used when a function of the unit reads or writes it; including the header is not enough |
 
-Being slightly generous is deliberate: better to show a symbol twice than to lose it.
+The owner is chosen over the whole project, not only the group being documented, so a header is listed in
+the same unit in every document. A reader of another group's document may therefore find a shared enum
+declared in a different document.
 
 #### Cleanup and de-duplication
 

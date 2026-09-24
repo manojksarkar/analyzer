@@ -97,3 +97,13 @@ PUBLIC int utilGotoGuard(int v, int limit) {
 done:
     return status;
 }
+
+// ── Orphan headers ───────────────────────────────────────────────────────────
+// Included here, at the end, so no line above moves. Util lists UtilLimits.h (a user
+// in the header's own component) but not LibLimits.h, which Core lists.
+#include "UtilLimits.h"
+#include "../Lib/LibLimits.h"
+
+PRIVATE int utilLimit(int v) {
+    return (v > UTIL_LIMIT) ? LIB_LIMIT : (int)UTIL_MODE_FAST;
+}

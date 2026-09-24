@@ -295,6 +295,104 @@ def _read_decl_snippet(abs_file: str, start_line: int, *, kind: str) -> str:
 
     return out if out else "-"
 
+_HEADER_EXTS = (".h", ".hpp", ".hxx")
+_LISTED_KINDS = ("typedef", "enum", "define", "struct", "class", "union")
+
+
+def _orphan_candidates(dd: dict, globals_data: dict, source_unit_paths: set):
+    """Every symbol declared in an ORPHAN header, keyed the way `lent` sets are.
+
+    Returns ``{("dd", ddKey) | ("glb", varId): header path without extension}``. An orphan
+    header is a header whose stem has no same-name source file, so it has no unit (and no
+    section) of its own. The kind filters here are the ones the row loop applies, so a
+    symbol that could never become a row cannot make a unit a USER of its header either.
+    """
+    src_paths = source_unit_paths or set()
+    out: Dict[Tuple[str, str], str] = {}
+    for key, t in (dd or {}).items():
+        rel = ((t.get("location") or {}).get("file") or "").replace("\\", "/")
+        hdr = _path_no_ext(rel)
+        if not hdr or not rel.lower().endswith(_HEADER_EXTS) or hdr in src_paths:
+            continue
+        kind = t.get("kind", "")
+        if kind not in _LISTED_KINDS or t.get("nestedIn"):
+            continue
+        if kind in ("struct", "class", "union") and (t.get("name") or "") in ("", "(anonymous)"):
+            continue
+        out[("dd", key)] = hdr
+    for gid, g in (globals_data or {}).items():
+        rel = ((g.get("location") or {}).get("file") or "").replace("\\", "/")
+        hdr = _path_no_ext(rel)
+        if not hdr or not rel.lower().endswith(_HEADER_EXTS) or hdr in src_paths:
+            continue
+        out[("glb", gid)] = hdr
+    return out
+
+
+def _orphan_uses(candidates: dict, dd: dict, unit_fids: set, used_macro_keys: set,
+                 used_type_qns: set, text_names: set, global_users: dict) -> dict:
+    """The orphan-header symbols ONE unit uses: the subset of `candidates` it references.
+
+    "Uses" = the usage index (edges.json: a function of this unit mentions it) OR the name
+    appears in the unit's own source text, comments and literals removed -- the text
+    catches file-scope uses (array sizes, initialisers, macro-in-macro) the index cannot
+    see. An enum also counts through any of its enumerator names. A global counts only
+    through a function of the unit reading or writing it; including the header is not use.
+    """
+    out = {}
+    for ck, hdr in candidates.items():
+        cat, key = ck
+        if cat == "glb":
+            if unit_fids and unit_fids.intersection((global_users or {}).get(key) or ()):
+                out[ck] = hdr
+            continue
+        t = dd.get(key) or {}
+        sym = t.get("name") or key
+        if t.get("kind") == "define":
+            rel = ((t.get("location") or {}).get("file") or "").replace("\\", "/")
+            hit = f"{t.get('name') or ''}@{rel}" in used_macro_keys or sym in text_names
+        else:
+            qn = t.get("qualifiedName") or key
+            hit = qn in used_type_qns or sym in text_names or qn in text_names
+            if not hit and t.get("kind") == "enum":
+                hit = any((e.get("name") or "") in text_names for e in (t.get("enumerators") or []))
+        if hit:
+            out[ck] = hdr
+    return out
+
+
+def _unit_index_uses(unit_fids: set, macro_users: dict, type_users: dict):
+    """(macro keys, type qualified names) that a function of the unit mentions, per edges.json."""
+    used_macro_keys = {mk for mk, fids in (macro_users or {}).items() if unit_fids.intersection(fids)}
+    used_type_qns = {tq for tq, fids in (type_users or {}).items() if unit_fids.intersection(fids)}
+    return used_macro_keys, used_type_qns
+
+
+def _orphan_owners(uses_by_unit: dict, header_component, unit_names: dict) -> Dict[str, set]:
+    """unitKey -> the orphan-header symbols that unit lists. Each header is listed ONCE.
+
+    One owner per header, not per symbol, so a header's symbols are never scattered across
+    units: the first unit by name in the header's OWN component that uses anything from it,
+    or -- when no unit there does -- the first using unit anywhere. The owner lists every
+    symbol of that header that ANY unit uses; the other users list none of it (review
+    RV-4, 2026-09-24: an enum repeated in every using unit). Chosen over the whole model,
+    not the group being rendered, so one header lands in the same place in every document.
+    """
+    users: Dict[str, set] = {}
+    used: Dict[str, set] = {}
+    for uk, syms in uses_by_unit.items():
+        for ck, hdr in syms.items():
+            users.setdefault(hdr, set()).add(uk)
+            used.setdefault(hdr, set()).add(ck)
+    lent: Dict[str, set] = {}
+    for hdr in sorted(users):
+        comp = header_component(hdr)
+        pool = [u for u in users[hdr] if comp and u.split(KEY_SEP)[0] == comp] or users[hdr]
+        owner = min(pool, key=lambda u: ((unit_names.get(u) or u).casefold(), u))
+        lent.setdefault(owner, set()).update(used[hdr])
+    return lent
+
+
 def build_rows(
     unit_info: dict,
     interfaces: list,
@@ -308,41 +406,32 @@ def build_rows(
     source_unit_paths: Optional[set] = None,
     used_symbol_names: Optional[set] = None,
     global_users: Optional[dict] = None,
+    lent: Optional[set] = None,
 ) -> List[Dict[str, str]]:
     """Build rows for unit header table.
 
     - Column 1: full declaration as in code
     - Column 2: value (initializer / underlying type / enumerator values)
 
-    Besides declarations defined in the unit's own file, also surfaces
-    define/enum/typedef symbols defined in an *orphan header* (a header with no
-    same-name source) — but only the ones THIS unit uses, per model/edges.json
-    (``macroUsers``/``typeUsers``). ``source_unit_paths`` is the set of
-    extension-less paths that have a source file, used to tell an orphan header
-    apart from a companion header.
+    Besides declarations defined in the unit's own files, also lists symbols declared
+    in an *orphan header* (a header with no same-name source): exactly the ``lent`` set,
+    ``{("dd", ddKey) | ("glb", varId)}``. ``run`` hands each header's used symbols to ONE
+    owner unit (`_orphan_owners`). Called without ``lent``, the unit lists the orphan
+    symbols it uses itself -- the per-unit test the owner rule is built from.
+    ``source_unit_paths`` is the set of extension-less paths that have a source file,
+    used to tell an orphan header apart from a companion header.
     """
     rows: List[Dict[str, str]] = []
     dd = data_dictionary or {}
     unit_paths_set = set(_unit_paths(unit_info))
 
-    # Orphan-header symbols this unit USES (from edges.json). A symbol qualifies
-    # only if some function of this unit references it; symbols from an orphan
-    # header the unit does not touch are never listed.
     unit_fids = set(unit_info.get("functionIds") or [])
-    src_paths = source_unit_paths or set()
-    # Identifier tokens appearing anywhere in this unit's own source — the textual
-    # fallback that catches orphan-header usage edges.json misses (macros used at
-    # file scope: array sizes, global initializers, macro-in-macro).
-    text_names = used_symbol_names or set()
-    used_macro_keys: set = set()
-    used_type_qns: set = set()
-    if unit_fids:
-        for _mk, _fids in (macro_users or {}).items():
-            if unit_fids.intersection(_fids):
-                used_macro_keys.add(_mk)
-        for _tq, _fids in (type_users or {}).items():
-            if unit_fids.intersection(_fids):
-                used_type_qns.add(_tq)
+    if lent is None:
+        _mk, _tq = _unit_index_uses(unit_fids, macro_users, type_users)
+        lent = set(_orphan_uses(
+            _orphan_candidates(dd, global_variables_data, source_unit_paths),
+            dd, unit_fids, _mk, _tq, used_symbol_names or set(), global_users,
+        ))
 
     # Globals: use model/globalVariables.json so we can read exact line(s)
     #
@@ -353,22 +442,10 @@ def build_rows(
     _gids = list(unit_info.get("globalVariableIds", []) or [])
 
     # A global declared in an ORPHAN header belongs to no unit, so it used to appear
-    # nowhere at all -- while the flowcharts of the units reading it named it. Lent to
-    # each unit that USES it, exactly as this header's macros and types already are
-    # (`global_users` is varId -> fids, inverted from reads/writesGlobalIds). Include
-    # alone is not enough: the unit has to reference it.
-    if unit_fids and global_users:
-        _own = set(_gids)
-        for _gid, _fids in global_users.items():
-            if _gid in _own or not unit_fids.intersection(_fids):
-                continue
-            _g = (global_variables_data or {}).get(_gid) or {}
-            _rf = ((_g.get("location") or {}).get("file") or "").replace("\\", "/")
-            if not _rf.lower().endswith((".h", ".hpp", ".hxx")):
-                continue
-            if _path_no_ext(_rf) in src_paths:          # companion header of some unit
-                continue
-            _gids.append(_gid)
+    # nowhere at all -- while the flowcharts of the units reading it named it. It is listed
+    # with the rest of its header's symbols, by that header's owner unit (see `lent`).
+    _own = set(_gids)
+    _gids.extend(sorted(key for cat, key in lent if cat == "glb" and key not in _own))
 
     # One variable, two cursors: `extern int g_x;` here and `int g_x = 0;` elsewhere are
     # separate entries keyed by file:line, and nothing merges them. Where both reach one
@@ -437,37 +514,10 @@ def build_rows(
         if kind in ("struct", "class", "union") and (t.get("name") or "") in ("", "(anonymous)"):
             continue
         is_own = type_file in unit_paths_set
-        # An orphan header = a header file whose stem has no same-name source.
-        is_orphan_header = (
-            rel_file.lower().endswith((".h", ".hpp", ".hxx"))
-            and type_file not in src_paths
-        )
-        if not is_own:
-            # Only pull in orphan-header symbols this unit actually uses. "Used" =
-            # the precise edges.json index OR (fallback) the symbol name appears in
-            # this unit's own source text — the latter catches file-scope usages
-            # (array sizes, initializers, macro-in-macro) that edges cannot see.
-            if not is_orphan_header:
-                continue
-            _sym_name = t.get("name") or _type_name
-            if kind == "define":
-                if (f"{t.get('name') or ''}@{rel_file}" not in used_macro_keys
-                        and _sym_name not in text_names):
-                    continue
-            else:
-                _qn = t.get("qualifiedName") or _type_name
-                _hit = (_qn in used_type_qns
-                        or _sym_name in text_names or _qn in text_names)
-                # An enum can be used purely via its enumerators (e.g. `x = eNone`)
-                # without the enum type name ever appearing in source or edges —
-                # recover it when any enumerator name shows up in this unit's text.
-                if not _hit and kind == "enum":
-                    _hit = any(
-                        (e.get("name") or "") in text_names
-                        for e in (t.get("enumerators") or [])
-                    )
-                if not _hit:
-                    continue
+        # Anything else is listed only when it comes from an orphan header and this unit
+        # is where that header's symbols are listed (`lent`).
+        if not is_own and ("dd", _type_name) not in lent:
+            continue
         line = int(loc.get("line") or 0)
         if kind == "typedef":
             loc_key = (rel_file, line)
@@ -626,6 +676,49 @@ def _global_users(functions_data: dict) -> Dict[str, set]:
     return users
 
 
+def _lent_by_unit(model, dd, globals_data, macro_users, type_users, source_unit_paths,
+                  used_names, global_users) -> Dict[str, set]:
+    """unitKey -> the orphan-header symbols it lists, over EVERY source-backed unit.
+
+    Not limited to the group being rendered: the owner of a header must come out the same
+    in every document, or two documents would each list it -- or neither would.
+    """
+    units_data = model.get("units", {}) or {}
+    candidates = _orphan_candidates(dd, globals_data, source_unit_paths)
+    if not candidates:
+        return {}
+    macro_by_fid: Dict[str, set] = {}
+    for mk, fids in (macro_users or {}).items():
+        for fid in fids:
+            macro_by_fid.setdefault(fid, set()).add(mk)
+    type_by_fid: Dict[str, set] = {}
+    for tq, fids in (type_users or {}).items():
+        for fid in fids:
+            type_by_fid.setdefault(fid, set()).add(tq)
+    uses = {}
+    for uk, u in units_data.items():
+        if not (u.get("fileName") or "").lower().endswith((".cpp", ".cc", ".cxx")):
+            continue
+        fids = set(u.get("functionIds") or [])
+        mk = set().union(*(macro_by_fid.get(f, set()) for f in fids)) if fids else set()
+        tq = set().union(*(type_by_fid.get(f, set()) for f in fids)) if fids else set()
+        found = _orphan_uses(candidates, dd, fids, mk, tq, used_names.get(uk) or set(),
+                             global_users)
+        if found:
+            uses[uk] = found
+    # A header's component: the unit keyed off it when it has one (a header with a function
+    # or a global), else the component whose source folders hold it.
+    header_comp: Dict[str, str] = {}
+    for uk, u in units_data.items():
+        if u.get("path") and KEY_SEP in uk:
+            header_comp.setdefault(u["path"], uk.split(KEY_SEP)[0])
+    for comp, c in sorted((model.get("components") or {}).items()):
+        for h in (c or {}).get("headerFiles") or []:
+            header_comp.setdefault(_path_no_ext(h), comp)
+    names = {uk: (u.get("name") or uk.split(KEY_SEP)[-1]) for uk, u in units_data.items()}
+    return _orphan_owners(uses, lambda h: header_comp.get(h, ""), names)
+
+
 @register("unitHeaders")
 def run(model, output_dir, model_dir, config):
     units_data = model.get("units", {})
@@ -648,6 +741,8 @@ def run(model, output_dir, model_dir, config):
     }
     global_users = _global_users(functions_data)
     used_names = _unit_used_names(functions_data, globals_data, base_path)
+    lent_by_unit = _lent_by_unit(model, data_dict, globals_data, macro_users, type_users,
+                                 source_unit_paths, used_names, global_users)
     # Only the typedef->struct description uses these, and only when the LLM is on.
     abbreviations = load_abbreviations(_paths().project_root, config)
 
@@ -659,7 +754,7 @@ def run(model, output_dir, model_dir, config):
         # Only a source-backed unit gets a section in the document, so only one needs rows.
         # A header-only entry -- an orphan header, which units_data holds because a unit is
         # keyed off a file -- would put rows in the JSON that nothing renders, and its
-        # symbols are already lent to the units that use them.
+        # symbols are already listed by the unit that owns that header (`_lent_by_unit`).
         if not (unit_info.get("fileName") or "").lower().endswith((".cpp", ".cc", ".cxx")):
             continue
         rows_by_unit[unit_key] = build_rows(
@@ -667,6 +762,7 @@ def run(model, output_dir, model_dir, config):
             macro_users, type_users, source_unit_paths,
             used_names.get(unit_key),
             global_users,
+            lent=lent_by_unit.get(unit_key, set()),
         )
 
     out_path = os.path.join(output_dir, "unit_headers.json")

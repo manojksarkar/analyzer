@@ -513,3 +513,127 @@ class TestAgainstRealSource:
         assert "using Byte_t = unsigned char;" in cell
         others = [d for d in decls if d is not cell]
         assert not any("Mode" in d or "Byte_t" in d for d in others)
+
+
+# ---------------------------------------------------------------------------
+# RV-4: an orphan header is listed ONCE, by one owner unit
+# ---------------------------------------------------------------------------
+
+class TestOneOwnerPerHeader:
+    """`_orphan_owners`: which unit lists a header's symbols.
+
+    The first unit by name in the header's own component that uses anything from it; if
+    no unit there does, the first using unit anywhere. The owner lists every symbol of the
+    header that any unit uses; the other users list none of it.
+    """
+    NAMES = {"X|Alpha": "Alpha", "Y|Zed": "Zed", "Y|Beta": "Beta", "W|Aaa": "Aaa"}
+
+    def test_first_user_in_the_headers_own_component_owns_it(self):
+        # Alpha comes first by name, but Beta is the first user INSIDE component Y
+        uses = {"X|Alpha": {("dd", "E"): "Y/Hdr"},
+                "Y|Zed": {("dd", "E"): "Y/Hdr"},
+                "Y|Beta": {("dd", "M"): "Y/Hdr"}}
+        lent = dx._orphan_owners(uses, lambda h: "Y", self.NAMES)
+        assert lent == {"Y|Beta": {("dd", "E"), ("dd", "M")}}
+
+    def test_owner_lists_what_only_others_use(self):
+        uses = {"Y|Beta": {("dd", "M"): "Y/Hdr"}, "X|Alpha": {("glb", "g"): "Y/Hdr"}}
+        lent = dx._orphan_owners(uses, lambda h: "Y", self.NAMES)
+        assert lent == {"Y|Beta": {("dd", "M"), ("glb", "g")}}
+
+    def test_no_user_in_its_component_falls_back_to_first_user_anywhere(self):
+        uses = {"Y|Zed": {("dd", "E"): "Q/Hdr"}, "W|Aaa": {("dd", "E"): "Q/Hdr"}}
+        lent = dx._orphan_owners(uses, lambda h: "Q", self.NAMES)
+        assert lent == {"W|Aaa": {("dd", "E")}}
+
+    def test_an_unknown_component_falls_back_too(self):
+        uses = {"Y|Zed": {("dd", "E"): "Hdr"}, "X|Alpha": {("dd", "E"): "Hdr"}}
+        assert dx._orphan_owners(uses, lambda h: "", self.NAMES) == {"X|Alpha": {("dd", "E")}}
+
+    def test_each_header_has_its_own_owner(self):
+        uses = {"X|Alpha": {("dd", "A1"): "X/HdrA", ("dd", "B1"): "Y/HdrB"},
+                "Y|Zed": {("dd", "B1"): "Y/HdrB"}}
+        comp = {"X/HdrA": "X", "Y/HdrB": "Y"}
+        lent = dx._orphan_owners(uses, comp.get, self.NAMES)
+        assert lent == {"X|Alpha": {("dd", "A1")}, "Y|Zed": {("dd", "B1")}}
+
+    def test_owner_does_not_depend_on_dict_order(self):
+        a = {"Y|Zed": {("dd", "E"): "Y/Hdr"}, "Y|Beta": {("dd", "E"): "Y/Hdr"}}
+        b = dict(reversed(list(a.items())))
+        assert dx._orphan_owners(a, lambda h: "Y", self.NAMES) == \
+            dx._orphan_owners(b, lambda h: "Y", self.NAMES)
+
+
+class TestBuildRowsWithLent:
+    """build_rows lists exactly the lent orphan symbols; its own symbols are untouched."""
+
+    def _user(self):
+        return {"path": "Comp/UserUnit", "fileName": "UserUnit.cpp",
+                "functionIds": [USER_FID], "globalVariableIds": []}
+
+    def _other(self):
+        return {"path": "Comp/OtherUnit", "fileName": "OtherUnit.cpp",
+                "functionIds": [OTHER_FID], "globalVariableIds": []}
+
+    def _rows(self, unit, lent, globals_data=None):
+        return dx.build_rows(unit, [], DD, globals_data or {}, "", None, {},
+                             MACRO_USERS, TYPE_USERS, SRC_PATHS, None, GLOBAL_USERS,
+                             lent=lent)
+
+    def test_a_user_that_is_not_the_owner_lists_none_of_it(self):
+        decls = _decls(self._rows(self._user(), set()))
+        assert not any(("MAXN" in d or "Level" in d) for d in decls)
+
+    def test_own_symbols_do_not_depend_on_lent(self):
+        assert any("#define OWN 1" in d for d in _decls(self._rows(self._user(), set())))
+
+    def test_the_owner_lists_symbols_it_does_not_use_itself(self):
+        lent = {("dd", "MAXN@Comp/Shared.h:3"), ("dd", "Level")}
+        rows = self._rows(self._other(), lent)
+        assert any("#define MAXN 256" in d for d in _decls(rows))
+        assert any("LO=0" in (r.get("information") or "") for r in rows)
+
+    def test_a_lent_orphan_global_is_listed(self):
+        rows = self._rows(self._other(), {("glb", "Comp/Shared.h:5")}, ORPHAN_GLOBALS)
+        assert "g_sharedFlag" in _decls(rows)
+
+    def test_a_companion_header_symbol_is_never_lent(self):
+        # the candidate set never contains one, so no owner can receive it
+        cands = dx._orphan_candidates(DD, ORPHAN_GLOBALS, SRC_PATHS)
+        assert ("dd", "COMPANION@Comp/OtherUnit.h:1") not in cands
+        assert ("glb", "Comp/OtherUnit.h:7") not in cands
+
+
+class TestLentByUnit:
+    """The pre-pass in run(): uses over every source-backed unit, then one owner per header."""
+
+    def _model(self):
+        return {
+            "units": {
+                "Comp|UserUnit": {"name": "UserUnit", "path": "Comp/UserUnit",
+                                  "fileName": "UserUnit.cpp", "functionIds": [USER_FID]},
+                "Comp|OtherUnit": {"name": "OtherUnit", "path": "Comp/OtherUnit",
+                                   "fileName": "OtherUnit.cpp", "functionIds": [OTHER_FID]},
+            },
+            "components": {"Comp": {"headerFiles": ["Comp/Shared.h", "Comp/OtherUnit.h"]}},
+        }
+
+    def test_the_only_user_owns_the_header(self):
+        lent = dx._lent_by_unit(self._model(), DD, {}, MACRO_USERS, TYPE_USERS, SRC_PATHS,
+                                {}, {})
+        assert lent == {"Comp|UserUnit": {("dd", "MAXN@Comp/Shared.h:3"), ("dd", "Level")}}
+
+    def test_two_users_one_owner_holding_both_uses(self):
+        # OtherUnit's text names SCALE; OtherUnit < UserUnit by name, so it owns Shared.h
+        lent = dx._lent_by_unit(self._model(), DD, {}, MACRO_USERS, TYPE_USERS, SRC_PATHS,
+                                {"Comp|OtherUnit": {"SCALE"}}, {})
+        assert set(lent) == {"Comp|OtherUnit"}
+        assert lent["Comp|OtherUnit"] == {("dd", "MAXN@Comp/Shared.h:3"), ("dd", "Level"),
+                                          ("dd", "SCALE@Comp/Shared.h:4")}
+
+    def test_a_header_only_unit_is_never_an_owner(self):
+        model = self._model()
+        model["units"]["Comp|Shared"] = {"name": "Shared", "path": "Comp/Shared",
+                                         "fileName": "Shared.h", "functionIds": [USER_FID]}
+        lent = dx._lent_by_unit(model, DD, {}, MACRO_USERS, TYPE_USERS, SRC_PATHS, {}, {})
+        assert "Comp|Shared" not in lent
