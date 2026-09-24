@@ -423,27 +423,23 @@ def _known_versions(project_id: str):
 
 
 def _checkout_for(project_id: str, version_id: str):
-    """The commit directory a version was produced from — where its C++ source is."""
-    from core.db import get_engine, is_database_configured
-    if not is_database_configured():
-        print("no database is configured.", file=sys.stderr)
+    """The commit directory a version was produced from — where its C++ source is.
+
+    Found wherever it actually is, and restored from the project's repository when it is
+    nowhere — see `incremental.source_checkout`. This used to look in one place and answer
+    "generate again", which is a full LLM run to recover what is at most a git checkout.
+    """
+    from incremental.source_checkout import SourceUnavailable, locate_or_restore
+    try:
+        src = locate_or_restore(project_id, version_id)
+    except SourceUnavailable as exc:
+        print(str(exc), file=sys.stderr)
         return None
-    import sqlalchemy as sa
-    from api.db.postgres import schema as s
-    from incremental.stores import Workspace
-    with get_engine().connect() as cx:
-        row = cx.execute(sa.select(s.versions.c.commit_sha)
-                         .where(s.versions.c.id == version_id)).first()
-    if not row or not row[0]:
-        print(f"version {version_id!r} has no commit recorded.", file=sys.stderr)
-        return None
-    d = Workspace(project_id).commit_dir(row[0])
-    if not os.path.isdir(d):
-        print(f"the checkout for {version_id!r} is gone ({d}).\n"
-              f"  Re-export reads the SOURCE for line numbers and flowcharts, so it needs the "
-              f"commit on disk. Generate again to restore it.", file=sys.stderr)
-        return None
-    return d
+    if src.how == "restored":
+        print(f"restored the source checkout for {version_id!r} ({src.path})")
+    elif src.how != "in place":
+        print(f"using the source checkout for {version_id!r} from {src.path} ({src.how})")
+    return src.path
 
 
 def cmd_status(a) -> int:

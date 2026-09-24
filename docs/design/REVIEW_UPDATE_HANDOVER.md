@@ -103,7 +103,9 @@ Everything else is new files. These are the ones a merge can actually collide on
 |---|---|---|
 | `api/db/postgres/schema.py` | +3 tables, +`slot_shape`, +`model_units.description`, all three in `PER_VERSION_TABLES` | low — additive |
 | `engine/run.py` | +`_refuse_stale_export`, +`--force-export` (allowlist, parse branch, help) | low — one call beside `_restore_output_from_db` |
-| `api/services/pipeline_runner.py` | +`_reexport_from_phase`; the re-export's `from_phase` is now computed, not 4 | **medium** — same function as any re-export change |
+| `api/services/pipeline_runner.py` | +`_reexport_from_phase`; the re-export's `from_phase` is now computed, not 4; the source checkout is resolved by `source_checkout`, and the disk-only `model/` check is gone | **medium** — same function as any re-export change |
+| `engine/incremental/source_checkout.py` | new: find a version's checkout (expected folder, `base_path`, short-SHA folder) or clone that one commit | low — additive |
+| `engine/incremental/clone.py` | `_do_checkout` fetches the exact commit when it is outside the 50-commit shallow window | **medium** — `generate` uses it too; only the failure path changed |
 | `engine/views/flowcharts.py` | `_apply_text_overrides()` + one call between the incremental merge and the PNG render | **medium** — that function is large and often edited |
 | `engine/views/behaviour_diagram.py` | `_apply_text_overrides()` + one call before the manifest write; `externalCallerId` added to each row | **medium** |
 | `engine/behaviour_diagram/llm_call_description.py` | `_one_line()` on the LLM result | low |
@@ -351,7 +353,7 @@ the same pair (`currentFunctionId` exists for exactly this reason); this half wa
 
 ```
 python -m alembic heads                 # exactly one
-python -m pytest tests/unit tests/api -q   # 2222 passed, 34 skipped at the tip of this branch
+python -m pytest tests/unit tests/api -q   # 2260 passed, 34 skipped at the tip of this branch
 ```
 
 The feature has also been run end to end against a **SQLite** database on a machine with no

@@ -218,6 +218,50 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-24 (**re-export could not find a version's source, and told the user to
+> regenerate: a full LLM run to recover at most a git checkout.** Reported from the office box:
+> `reexport --from-phase 3` on a version whose re-export had worked days earlier said "the checkout
+> for 'v1' is gone ... Generate again to restore it", and on `v2` "has no commit recorded".
+>
+> Phase 3 reads the C++ SOURCE (flowchart graphs, line numbers), so it needs the commit on disk.
+> `analyzer._checkout_for` looked in exactly ONE place, `workspaces/<pid>/<recorded_sha[:16]>`.
+> Three ways the source was there or recoverable and that lookup missed it:
+>
+> 1. **Short-SHA folder name.** `generate` names the checkout from the commit AS TYPED
+>    (`ws.commit_dir(commit)`, generate.py:300) but records `actual_commit`, the full sha from
+>    `git rev-parse HEAD`. `--commit 8b3e313f` -> folder `8b3e313f`, lookup `8b3e313f892f2b3b`.
+> 2. **Another working copy.** `workspaces/` is under the data root and gitignored, so a second
+>    clone of the analyzer (e.g. one per branch) starts with none of it, while the shared database
+>    lists every version. `versions.base_path` records the folder a version was generated from.
+> 3. **Genuinely absent.** One commit to clone, not a regeneration.
+>
+> **`engine/incremental/source_checkout.locate_or_restore(project_id, version_id)`** tries those
+> in order, cheapest first, and verifies each candidate is AT the recorded commit before using it
+> (right name + wrong source = line numbers for different code, undetectable downstream). Paths are
+> computed rather than taken from `Workspace(...)`, which RAISES when `workspaces/<pid>/` is absent,
+> the freshest-working-copy case this exists for. Used by BOTH front doors: `analyzer._checkout_for`
+> and `pipeline_runner._do_reexport` -- the export-guard lesson again.
+>
+> **Git layer, `clone._do_checkout`:** the clone is SHALLOW (newest 50 commits). Re-exporting an
+> older version is exactly when its commit has left that window, and checkout failed with no
+> explanation. `_fetch_commit` fetches the commit by SHA from the AUTHENTICATED url --
+> `shallow_clone` resets `origin` to the credential-free URL on purpose, so `git fetch origin`
+> fails on a private repo -- falling back to `--unshallow`. Only the failure path changed.
+>
+> **API re-export:** it refused unless `<version>/model/` existed ON DISK, the same filesystem check
+> run.py already dropped because it "refused a perfectly good stored model". The model is rows;
+> run.py's `--use-model` asks the repository. Removed; the version's own model/output folders are
+> created if missing -- never the shared <repo> dirs `test_reexport_isolation` guards.
+>
+> A reserved, never-generated version (`v2`) now says so and lists the versions that CAN be
+> re-exported, instead of "has no commit recorded".
+>
+> Proven on the e2e project: checkout folder removed -> reexport -> "restored the source checkout",
+> DOCX exported. `tests/unit/test_source_checkout.py` (15) builds a 60-commit repo ONCE per module
+> with a single `git fast-import` -- a commit loop was 180 git spawns per test on Windows, about
+> five minutes -- sent as BYTES, because text mode on Windows writes CRLF and fast-import then
+> rejects the branch name. Revert-checked 5 of 5. 2260 passed.)
+
 > Updated: 2026-09-23 (**three defects in the listings, found by answering "when do I get text,
 > llmText and humanText?" -- the question made me check rather than recall.**
 >

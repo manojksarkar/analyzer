@@ -169,13 +169,37 @@ def ensure_commit_checkout(commit_dir: str, repo_url: str, branch: str, commit: 
 def _do_checkout(commit_dir: str, repo_url: str, branch: str, commit: str,
                  *, token: str = "", depth: int = _DEPTH) -> None:
     """The actual clone/checkout. Callers hold the directory lock."""
-    if os.path.isdir(os.path.join(commit_dir, ".git")):
-        git_ops.checkout(commit_dir, commit)
-        return
-    if not repo_url:
-        raise GitError(f"cannot clone {commit_dir!r}: no repo_url for the project "
-                       f"(onboard the project, or pass --repo-url)")
-    # PAT goes in the username position (GitHub/GitLab accept token-as-username).
-    shallow_clone(repo_url, commit_dir, ref=(branch or None), depth=depth,
-                  username=(token or ""), token="")
+    if not os.path.isdir(os.path.join(commit_dir, ".git")):
+        if not repo_url:
+            raise GitError(f"cannot clone {commit_dir!r}: no repo_url for the project "
+                           f"(onboard the project, or pass --repo-url)")
+        # PAT goes in the username position (GitHub/GitLab accept token-as-username).
+        shallow_clone(repo_url, commit_dir, ref=(branch or None), depth=depth,
+                      username=(token or ""), token="")
+    if not git_ops.commit_exists(commit_dir, commit):
+        _fetch_commit(commit_dir, repo_url, commit, token=token)
     git_ops.checkout(commit_dir, commit)
+
+
+def _fetch_commit(commit_dir: str, repo_url: str, commit: str, *, token: str = "") -> None:
+    """Bring ONE commit into a shallow checkout that does not have it.
+
+    The clone above keeps only the newest `_DEPTH` commits of the branch. That is fine for a new
+    generation, which is almost always near the tip, and wrong for anything that comes back to an
+    OLDER version -- re-exporting one after the branch has moved on, say. Its commit has scrolled
+    out of the window and `checkout` fails with nothing to say why.
+
+    Fetches the commit by SHA from the AUTHENTICATED url, not `origin`: `shallow_clone` resets
+    `origin` to the credential-free URL on purpose, so a plain `git fetch origin` would fail on a
+    private repo for a reason unrelated to the commit. Falls back to `--unshallow` for a server
+    that refuses fetch-by-SHA, which is slower but gets there.
+    """
+    src = _auth_url(repo_url, token or "", "") if repo_url else "origin"
+    safe = _clean_url(repo_url) if repo_url else "origin"
+    proc = git_ops._run(["-C", commit_dir, "fetch", "--depth", "1", src, commit])
+    if proc.returncode != 0 or not git_ops.commit_exists(commit_dir, commit):
+        git_ops._run(["-C", commit_dir, "fetch", "--unshallow", src])
+    if not git_ops.commit_exists(commit_dir, commit):
+        why = (proc.stderr or "").strip().replace(src, safe)
+        raise GitError(f"commit {commit[:12]} is not in the checkout and could not be fetched "
+                       f"from {safe}: {why or 'no further detail from git'}")

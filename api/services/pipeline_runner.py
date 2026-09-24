@@ -1633,16 +1633,41 @@ def _do_reexport(db: Any, job_id: str) -> None:
         return
 
     root = get_settings().repo_root
+    version_id = getattr(job, "version_id", None)
     cdir = _commit_dir(job.project_id, job.commit_sha)   # the git CHECKOUT (run.py's project dir)
+    if version_id:
+        # Found wherever it actually is, and restored from the project's repository when it is
+        # nowhere -- the same resolver `analyzer.py reexport` uses, so the two front doors
+        # cannot disagree about whether a version can be re-exported. Phase 3 reads the SOURCE
+        # (flowcharts, line numbers), so without this a re-export failed on any host that had
+        # not generated the version itself: a second working copy, a cleaned workspace, a
+        # short-SHA folder name.
+        try:
+            engine_dir = str(root / "engine")
+            if engine_dir not in sys.path:
+                sys.path.insert(0, engine_dir)
+            from incremental.source_checkout import SourceUnavailable, locate_or_restore
+            cdir = Path(locate_or_restore(job.project_id, version_id).path)
+        except SourceUnavailable as exc:
+            _mark_failed(db, job_id, str(exc))
+            return
     # This version's ARTIFACTS (model/output) — the version-keyed dir when the run captured one,
     # else the legacy commit dir. Kept distinct from the checkout above: run.py parses source from
     # the checkout, while model/output are per-version.
-    adir = _version_dir(job.project_id, getattr(job, "version_id", None))
-    if adir is None or not (adir / "model").is_dir():
+    #
+    # The model itself is ROWS. This used to refuse unless `<adir>/model/` existed on disk --
+    # the same filesystem check run.py dropped because it "refused a perfectly good stored
+    # model". A host that did not generate the version has no such folder and every re-export
+    # failed as "generate this version first". run.py's `--use-model` asks the repository and
+    # exits 2 with a clear message when the model really is missing.
+    adir = _version_dir(job.project_id, version_id)
+    if adir is None:
         adir = cdir
-    if not (adir / "model").is_dir():
-        _mark_failed(db, job_id, "Version model not found — generate this version first.")
-        return
+    # THIS version's own folders -- created if a host that did not generate it has none. Never
+    # the shared <repo>/model or <repo>/output, and nothing is deleted or copied: that staging
+    # step is what test_reexport_isolation guards against, and this is not it.
+    (adir / "model").mkdir(parents=True, exist_ok=True)
+    (adir / "output").mkdir(parents=True, exist_ok=True)
 
     workspace_dir = root / "workspaces" / job.project_id
     config_path = workspace_dir / "config.json"
