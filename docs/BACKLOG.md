@@ -58,6 +58,21 @@
 | S4-1 | Table B metadata (Alias Test ID · Risk · Test Method · Test Environment · Linked Work Items) | input | blocked | SWE4_PLAN |
 | S4-2 | §3 Code Metric / Coding Rule / Test Coverage | input | open | SWE4_PLAN |
 
+## Views — each view belongs to one document (agreed 2026-09-25, parked)
+> Rules agreed: a run **ignores** the views of a document it is not writing (not checked, not generated, config left as it is; `all` = both). `flowcharts: true` = control flow + labels + images. A view that is on pulls in only the part it needs from a view that is off or ignored (`functionSteps` on + `flowcharts` off → control flow, no images). Switches stay in the config — the web app needs fast development runs too.
+
+| ID | Item | Type | Status | Ref |
+|---|---|---|---|---|
+| VW-1 | A view belongs to one document; a run ignores the other document's views. Replaces the doc-type forcing, which overrides the config for `flowcharts` / `testSpecs` / `utExport`. Open: group the config as `views.swe3` / `views.swe4`, or keep it flat | enhance | open | views/registry.py `DOC_TYPE_VIEWS` |
+| VW-2 | Views declare what they need; the runner builds only the needed part of an off or ignored view. Today the link is files on disk plus import order: unit specs read `flowcharts/*.json`, and a missing control flow prints "Not available" with no warning | debt | open | views/__init__.py, views/test_steps.py |
+| VW-3 | Split `testSpecs`: it keeps the instant columns (no switch); new `functionSteps` / `dynamicSteps` fill Test Steps + Expected Results — the only slow part of SWE.4 (control flow + LLM labels). Off → the cells say `Not generated (views.<x> is off)`. Open: the names | enhance | open | views/test_specs.py |
+| VW-4 | Remove `functionTestSpecs` / `dynamicBehaviourSpecs`: off drops the whole per-function spec (Table A + B), not one column — no use case | debt | open | config.defaults.json |
+| VW-5 | An SWE.4 switch narrows the SWE.3 flowcharts: `functionTestSpecs: false` → most functions lose their flowchart; both spec switches off → no flowcharts at all, with no warning. Found by reading the code, not confirmed by a run. Goes away with VW-4 | issue | open | views/flowcharts.py `_spec_scope_function_ids` |
+| VW-6 | `"utExport": false` is ignored under `--doc-type swe4` / `all`; make it a real off switch | issue | open | views/ut_export.py |
+| VW-7 | `generate` defaults to `--doc-type all`, in analyzer.py only. The web app stays `swe3` until it lists SWE.4 documents — the API registers only `software_detailed_design_<group>.docx` | enhance | open | analyzer.py `--doc-type` |
+| VW-8 | Pre-parse summary: the views on/off for the doc type, and what is built only because another view needs it | enhance | open | incremental/report.py |
+| VW-9 | `config.defaults.json` ships the development profile (`flowcharts`, `behaviourDiagram` off) and every project inherits it. Open: complete or fast as the shipped default | enhance | open | config.defaults.json |
+
 ## SWE.2 — architecture
 | ID | Item | Type | Status | Ref |
 |---|---|---|---|---|
