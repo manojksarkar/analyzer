@@ -16,6 +16,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
+_UT_DIR = "ut"      # = engine/views/ut_export.py UT_DIR; this module imports nothing from the engine
+
 
 class OutputReader:
     """Reads view-output text files for one version. ``rel_path`` is a POSIX path relative to the
@@ -66,12 +68,15 @@ class OutputReader:
         return None
 
     def groups(self) -> set[str]:
-        """The set of top-level output subdirs (component groups) that have view files."""
+        """The set of top-level output subdirs (component groups) that have view files.
+
+        `ut/` is not a group: it is the project-level UT export folder
+        (engine/views/ut_export.py), one per version beside the group folders."""
         pg = self._pg_files()
         if pg:
-            return {rel.split("/", 1)[0] for rel in pg if "/" in rel}
-        if self.snap_dir is not None:
-            out = self.snap_dir / "output"
-            if out.is_dir():
-                return {d.name for d in out.iterdir() if d.is_dir()}
-        return set()
+            found = {rel.split("/", 1)[0] for rel in pg if "/" in rel}
+        elif self.snap_dir is not None and (self.snap_dir / "output").is_dir():
+            found = {d.name for d in (self.snap_dir / "output").iterdir() if d.is_dir()}
+        else:
+            found = set()
+        return found - {_UT_DIR}

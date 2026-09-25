@@ -67,6 +67,18 @@ def test_falls_back_to_disk_when_pg_empty(tmp_path):
     assert json.loads(r.read_text("G/interface_tables.json"))["disk"] is True
 
 
+def test_the_ut_export_folder_is_not_a_group(tmp_path):
+    """output/ut/ is the project-level UT export; counting it as a group would make every
+    version compare report an added group called `ut`."""
+    db = _sql_db()
+    _put(db, "ver1", "G/interface_tables.json", "{}", "G")
+    _put(db, "ver1", "ut/hierarchy.json", "{}", "ut")
+    assert OutputReader(db, "ver1", None).groups() == {"G"}
+    for d in ("G", "ut"):
+        (tmp_path / "output" / d).mkdir(parents=True)
+    assert OutputReader(SimpleNamespace(), "ver2", tmp_path).groups() == {"G"}
+
+
 def test_no_sql_engine_uses_disk(tmp_path):
     db = SimpleNamespace()                        # in-memory/json backend: no _engine
     out = tmp_path / "output" / "G"

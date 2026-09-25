@@ -308,6 +308,20 @@ def _mock_writeback_entries(func, mocked_ids, functions_data, dd):
     anywhere in the body qualifies, where the wiki means one a branch depends on —
     narrowing that needs the CFG. The result is a superset, never a wrong entry.
     """
+    return [{"kind": "mockWriteback", "name": s["label"], "type": s["type"],
+             "text": _ranged(s["type"], s["label"], dd)}
+            for s in mock_writeback_sources(func, mocked_ids, functions_data, dd)]
+
+
+def mock_writeback_sources(func, mocked_ids, functions_data, dd):
+    """Where each write-back input comes from: [{label, type, mock, param, field}].
+
+    The same walk `_mock_writeback_entries` renders, with the two facts the
+    document does not print but a stub writer needs: WHICH mocked callee writes
+    the field (`mock`, its function id) and through WHICH of its parameters
+    (`param`). The UT export uses them to pick the stub's mode and to fill its
+    `prototype_values` -- see docs/spec/UT_EXPORT_SPEC.md.
+    """
     reads = func.get("readsFields") or []
     if not reads:
         return []
@@ -339,9 +353,8 @@ def _mock_writeback_entries(func, mocked_ids, functions_data, dd):
                 if label in seen:
                     continue
                 seen.add(label)
-                ftype = fld.get("type", "")
-                out.append({"kind": "mockWriteback", "name": label, "type": ftype,
-                            "text": _ranged(ftype, label, dd)})
+                out.append({"label": label, "type": fld.get("type", ""), "mock": cid,
+                            "param": p.get("name", ""), "field": fname})
     return out
 
 
