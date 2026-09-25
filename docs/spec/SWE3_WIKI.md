@@ -128,9 +128,11 @@ first of these applies:
 3. Otherwise: **public if a function in another unit reads or writes it**, private if not.
 
 A use through an `extern` declaration counts for the variable it declares: `Lib` reading `g_sharedTick`
-through `SharedDefs.h` publishes `Core`'s `int g_sharedTick = 0;`. Calling a function of the owning unit
-that touches the global does not count; that is a use of the function, not the global. A file-scope
-`static` variable can never pass rule 3, because nothing outside its file can name it.
+through `SharedDefs.h` publishes `Core`'s `int g_sharedTick = 0;`. So does a use of a class's static
+member through an object (`obj.s_count`, `p->s_count`) — unless that member is private or protected,
+which rule 1 settles first. Calling a function of the owning unit that touches the global does not
+count; that is a use of the function, not the global. A file-scope `static` variable can never pass
+rule 3, because nothing outside its file can name it.
 
 **None of this applies to the [unit header table](#n14--unit-header-table)**, which lists what a unit
 declares and uses, whatever its visibility.
@@ -622,11 +624,16 @@ return: <range>
 |---|---|
 | Whole words, not letters | the name is split into words across `camelCase` and `snake_case`. So `SetX`, `setX`, `Module_SetX`, `SET_X` and `coreSetResult` all match, while `Setup`, `Settings`, `Setter`, `Reset`, `offset` and `target` do not |
 | Rule 3 follows the call chain | before direction is decided, every function's global reads and writes are extended with everything the functions it calls read and write, all the way down. So a function that changes state only through a helper is `In`, not `Out` |
+| Static members are globals | a class's `static` data member counts for rule 3 however it is written: `Foo::s_x`, a bare `s_x` inside the class, or through an object — `this->s_x`, `obj.s_x`, `p->s_x`. Its access (`public`, `protected`, `private`) makes no difference here. The object used to reach it is neither read nor written |
 | Each decision is recorded in words | `In: function name 'FtlSetEntry' contains 'Set' (writes/updates state).`, `Out: returns a value (int).`, `In: writes global(s) gState (via cacheFlush).` Any row can be checked without reading the code. This text is not printed in the document today |
 | **Global rows** | always `In/Out` — a global can be read and written, so it is both |
 
 **⚠ To confirm:** rule 1 also matches names like `isSet` or `hasGet`. A list of exceptions is easy to add
 if the client wants one.
+
+**⚠ To confirm:** a function that returns a value **and** writes a global is `Out`, because rule 2 is
+checked before rule 3 — `int bump() { s_count++; return s_count; }` reads `Out: returns a value (int).`
+Letting a write decide first would turn every status-returning function that changes state into `In`.
 
 #### Column 7 — Source/Destination
 
@@ -893,6 +900,8 @@ joined straight to the `FtlCache` arrow.
 
 - [ ] The way names are shortened for interface ids (capital letters only) — confirm or replace.
 - [ ] Direction rule 1 also matches names like `isSet` — accept it, or agree a list of exceptions.
+- [ ] Direction: a function that returns a value and also writes a global is `Out` (rule 2 before rule 3) —
+      confirm, or let the write decide first.
 - [ ] Component names still differ slightly: Source/Destination keeps hyphens (`Sample-Core/Core`) while
       headings show spaces (`Sample Core`). Confirm this is acceptable.
 - [ ] Source/Destination lists callers only — confirm this is the intended reading.

@@ -2056,10 +2056,23 @@ def visit_global_access(cursor, current_key=None, is_write=False, is_compound=Fa
             except Exception:
                 pass
     elif kind == cindex.CursorKind.MEMBER_REF_EXPR and current_key:
+        ref = cursor.referenced
+        if ref and ref.kind == cindex.CursorKind.VAR_DECL:
+            # A STATIC data member named through an object: `this->s_x`, `obj.s_x`,
+            # `p->s_x`. The same storage as `Foo::s_x`, which arrives as a DECL_REF_EXPR;
+            # this spelling arrives here instead, and was dropped -- a void function whose
+            # only job is `this->s_x++` read out as "accesses no globals".
+            _record_global_use(ref, current_key, is_write, is_compound)
+            # The object only picks the class: the member does not live inside it, so it
+            # is neither read nor written (`p->s_x = 1` is no write through p). Anything
+            # the object expression itself uses (the `g_i` of `arr[g_i].s_x`) is walked.
+            for child in cursor.get_children():
+                if not _names_an_object(child):
+                    visit_global_access(child, current_key, False, False)
+            return
         # `e.lba` / `p->ppn`. `op.apply()` is also a MEMBER_REF_EXPR, so only a
         # FIELD_DECL referent counts -- a method is not data the test can set up.
         # A compound assign (`s->n += 1`) reads the field as well as writing it.
-        ref = cursor.referenced
         if ref and ref.kind == cindex.CursorKind.FIELD_DECL \
                 and (not is_write or is_compound):
             field = cursor.spelling or ""
@@ -2084,28 +2097,49 @@ def visit_global_access(cursor, current_key=None, is_write=False, is_compound=Fa
             if ref.spelling and ("*" in ptype or "&" in ptype):
                 param_writes[current_key].add(ref.spelling)
         if ref and ref.kind == cindex.CursorKind.VAR_DECL:
-            par = ref.semantic_parent
-            # Same widening as the is_global_var gate, and it has to be the same or the
-            # variable is recorded while every read and write of it is dropped -- which
-            # leaves `Foo::s_count++` reading as "accesses no globals".
-            # `referenced` resolves to the DEFINITION when the TU has one and to the
-            # declaration otherwise, which is exactly the cursor _keep_class_static_cursor
-            # recorded, so var_id lines up without further canonicalisation here.
-            if par and (par.kind in (cindex.CursorKind.TRANSLATION_UNIT, cindex.CursorKind.NAMESPACE)
-                        or par.kind in _CLASS_PARENT_KINDS):
-                if ref.location.file and is_project_file(ref.location.file.name):
-                    var_id = f"{ref.location.file.name}:{ref.location.line}"
-                    if var_id in globals_data:
-                        if is_write:
-                            global_access_writes[current_key].add(var_id)
-                            if is_compound:
-                                global_access_reads[current_key].add(var_id)
-                        else:
-                            global_access_reads[current_key].add(var_id)
+            _record_global_use(ref, current_key, is_write, is_compound)
         return
 
     for child in cursor.get_children():
         visit_global_access(child, current_key, is_write, is_compound)
+
+
+def _record_global_use(ref, current_key, is_write, is_compound):
+    """Record one read or write of the variable `ref`, if it is one of the globals.
+
+    The one gate for both spellings of a variable -- a DECL_REF_EXPR (`g_x`, `Foo::s_x`, a
+    bare `s_x` inside the class) and a MEMBER_REF_EXPR (`obj.s_x`) -- so the two cannot
+    disagree about which variables count or which entry a use lands on.
+    """
+    par = ref.semantic_parent
+    # Same widening as the is_global_var gate, and it has to be the same or the
+    # variable is recorded while every read and write of it is dropped -- which
+    # leaves `Foo::s_count++` reading as "accesses no globals".
+    # `referenced` resolves to the DEFINITION when the TU has one and to the
+    # declaration otherwise, which is exactly the cursor _keep_class_static_cursor
+    # recorded, so var_id lines up without further canonicalisation here.
+    if par and (par.kind in (cindex.CursorKind.TRANSLATION_UNIT, cindex.CursorKind.NAMESPACE)
+                or par.kind in _CLASS_PARENT_KINDS):
+        if ref.location.file and is_project_file(ref.location.file.name):
+            var_id = f"{ref.location.file.name}:{ref.location.line}"
+            if var_id in globals_data:
+                if is_write:
+                    global_access_writes[current_key].add(var_id)
+                    if is_compound:
+                        global_access_reads[current_key].add(var_id)
+                else:
+                    global_access_reads[current_key].add(var_id)
+
+
+def _names_an_object(cursor):
+    """True when `cursor` only NAMES an object -- `obj`, `p`, `this` -- under the implicit
+    conversions and parentheses clang wraps it in."""
+    while cursor.kind in (cindex.CursorKind.UNEXPOSED_EXPR, cindex.CursorKind.PAREN_EXPR):
+        kids = list(cursor.get_children())
+        if len(kids) != 1:
+            return False
+        cursor = kids[0]
+    return cursor.kind in (cindex.CursorKind.DECL_REF_EXPR, cindex.CursorKind.CXX_THIS_EXPR)
 
 
 def visit_calls(cursor, current_key=None):
