@@ -761,6 +761,9 @@ def _enrich_behaviour_names(functions_data: dict, global_variables_data: dict, o
             for ch in "();,+-*/%&|^<>!?:":
                 return_expr = return_expr.replace(ch, " ")
             parts = [p for p in return_expr.split() if p]
+            # `return this->s_mark;` names s_mark, not `this`.
+            if parts and parts[0] == "this":
+                parts = parts[1:]
             cand = parts[0] if parts else ""
             if cand and (cand[0].isalpha() or cand[0] == "_"):
                 simple_ret_ident = cand

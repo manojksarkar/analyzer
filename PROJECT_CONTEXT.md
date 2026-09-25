@@ -208,6 +208,78 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-25b (**a static member reached through an object is a global use; a brace in an inline
+> body's literal no longer eats members** — branch `fix/swe3-header-class-and-protected-direction`,
+> `engine/parser.py` (→ re-parse) + `engine/views/unit_headers.py`.)
+>
+> **Question behind it (office review):** "protected static members can be reached from another unit, so the
+> functions modifying them should be In." Direction never looked at visibility — a writer of a protected
+> static named `Cls::s_x` or bare `s_x` was already In (`NsCounters::bumpNs`). What made writers read Out was
+> (1) the spelling gap below, and (2) rule order: a Get name or a return value decides before the write
+> (**question A — left open**, wiki ⚠ + Open item; the rule order is untouched).
+> **B — `this->s_x` / `obj.s_x` / `p->s_x` were invisible.** Clang gives a static data member named through
+> an object a MEMBER_REF_EXPR → VAR_DECL; `visit_global_access` recorded VAR_DECL only via DECL_REF_EXPR. The
+> member form fell past the FIELD_DECL test and recursed into its base with `is_write` still set, so: the
+> member was never read or written (`this->s_mark++` → `Out: accesses no globals`); a global OBJECT base was
+> recorded as the thing written (`g_obj.s_x = 4` → `writes global(s) g_obj`); a pointer/reference PARAM base
+> went into `writesParams` (SWE.4 expected "updated ViaCounters * p"). **Fix:** the DECL_REF_EXPR recording
+> moved into `_record_global_use(ref, key, is_write, is_compound)`, shared by both branches — same gate, same
+> var_id, so the class-static collapse lands both spellings on the definition. The MEMBER_REF_EXPR branch
+> records a VAR_DECL referent through it, then walks the base with the flag cleared, skipping a bare object
+> name (`_names_an_object`: DECL_REF_EXPR / CXX_THIS_EXPR under UNEXPOSED/PAREN) — the object is neither read
+> nor written; an index inside it (`arr[g_i].s_x`) is still walked. FIELD_DECL path unchanged.
+> **Unit header gap left by `36246ae`:** `_declarations_only` still counted braces on the raw line, so
+> `{ return "{"; }` opened a body and dropped every member after it, and `return '}';` in a multi-line body
+> left a stray `}`. Now counts on `_code_only(ln, False)`; the body brace is the first `{` outside a literal
+> (`f(const char* s = "{") {`).
+> **Fixtures** (`Layer1/Diag`, outside the e2e scope): `StaticViaObject.{h,cpp}` + `StaticViaObjectUser.cpp`
+> + orphan `ViaLimits.h` — this-> write / read / `|=` / field hop; local, pointer, reference, array, global
+> object and global pointer bases; transitive; a derived class in ANOTHER unit writing a protected static;
+> rule-order controls `getAndBump` (Get) and `bumpAndReturn` (return); field control `this->m_count`; an
+> in-class-initialised `static const` in an orphan header; `s_seenOnlyViaObject`, public and used outside its
+> unit only through an object. `LongDeclShapes.{h,cpp}` — struct 66 / union 63 / enum 68 / `typedef struct` 64
+> / class 70 lines (nested enum + inline body past line 60), `}` and `{` in own-line comments, braces in
+> string/char literals, the 60/61 boundary. Complements `Access/LongDecls`.
+> **Verified — full `--no-llm --doc-type all` runs of the whole sample** (28 components, 56 documents; model
+> JSON + every view JSON + DOCX text + PNG hashes compared): (1) new code on the OLD sample vs the baseline:
+> **606/606 files identical** (a libclang scan finds 0 member-syntax static accesses in the 109 existing
+> .cpp). (2) new vs old code on the new fixtures: 12 of 615 files differ, all in Diag's two new units. SWE.3:
+> 10 functions Out→In (8 direct; `callsBumpThis`, `viaDriveDerived` transitive), 4 reason-only (reads now
+> named; `g_viaObject`/`g_viaPointer` → `s_public`), controls unchanged; **no function row added or removed,
+> one global row added** — `IF_LAYER1_DIAG_STATICVIAOBJECT_17 s_seenOnlyViaObject` (was PIF_; the unit's 6
+> other PIF_ globals renumber, not shown anywhere). Protected `s_mark`, private `s_private`, own-unit
+> `s_public` stay unpublished. Unit diagram: the new global's box, arrows re-sorted, `markFromDerived`
+> reversed. Unit header: `BraceInString` 5 → 7 lines, nothing else. SWE.4: same 21 TCs and ids, 14 change
+> Precondition/Input/Expected (the member is now set up and asserted; `*p`/`r` no longer "updated");
+> `callsBumpThis`/`viaDriveDerived` unchanged — their write is in a mocked callee. ut_export: the same 14.
+> Behaviour Input/Output names now come from the member (`BumpThis input` → `Mark`). units / dd / edges /
+> components / hashes identical. Offline `build_rows` old-vs-new over every unit (106 old sample, 109 new):
+> only BraceInString. DOCX cells re-read with python-docx: whole, no `trHeight` / `cantSplit`.
+> **Tests:** `test_class_static_field_writes.py` 12 → 36 (exact read/write sets for every fixture function
+> over both TUs; no param write for `p`/`r`; `this->` lands on the definition's var_id; field form
+> unchanged) — 18 of the new 24 fail on the old code. `test_unit_header_comments.py` 23 → 45 (literal braces
+> in inline bodies, default-argument brace, every LongDeclShapes type through `build_rows`) — 8 of the new
+> 22 fail on the old code. **Full suite, plain `pytest` (fresh e2e pipeline, 125 s): 2937 passed, 33
+> skipped, 9 failed** — all 9 are finding (a) below, on the `longdecl-ab.*` scratch versions another session
+> left in `workspaces/`; e2e + `Sample` snapshots unchanged.
+> **Found, not fixed:** (a) doccheck's SWE.4 reader keys class methods by bare name while SWE.4 headings read
+> `Class::method`, so `test_doccheck_swe4` fails for any stored version holding an SWE.4 document of a
+> component with class methods (Access, Diag, Signal). e2e covers My Sample only, so it never showed; it is
+> pre-existing, not from this change. (b) SWE.4 lists a `const` global read as Precondition + Input
+> (`viaReadCap`: `const int s_cap`) — the reads → inputs rule has no const exception.
+> **Also fixed — behaviour Output Name `This`.** `_enrich_behaviour_names` takes the first word of the
+> space-joined `returnExpr`, so `this -> s_mark` gave `This`. A leading `this` is now skipped: `this->s_mark`
+> → `Mark`; `return this;` / `*this` name nothing and fall to the usual fallbacks (a written global, else
+> `<Function> result`, which the LLM path replaces). The return-type fallback still ignores `T *` / `T &`
+> (last token `*`/`&`) — left alone, it would move every pointer-returning function. Over the whole sample
+> model: 2 of 379 names change (`getAndBump`, `bumpAndReturn`: This → Mark). Shown only in the flowchart
+> table and Dynamic Behaviour section (both views off in the default config). Tests: `test_model_deriver.py`
+> +3.
+> Docs: SWE3_WIKI §Public vs. private (a use through an object publishes, unless private/protected), Column 6
+> row "Static members are globals", ⚠ To confirm + Open item for the rule order; SWE3_SPEC REQ-IT-05 (static
+> members + the open exception); DESIGN.md "Direction Inference" rewritten — it still said "no global
+> access = In" and predated the 3.17 order.
+
 > Updated: 2026-09-25 (**a unit header declaration is read until its braces close** — branch
 > `fix/swe3-header-class-and-protected-direction`, `engine/views/unit_headers.py`. Views only, no re-parse.)
 >
@@ -4633,7 +4705,10 @@ backslash continuation. Stores `name`, `value`, full macro text, and
 
 ### Direction assignment (`build_metadata`)
 
-Based on direct global access recorded by `visit_global_access`:
+Based on direct global access recorded by `visit_global_access`. A static data member counts in both
+spellings clang gives it — DECL_REF_EXPR (`Foo::s_x`, bare `s_x`) and MEMBER_REF_EXPR (`this->s_x`,
+`obj.s_x`, `p->s_x`) — through one gate, `_record_global_use`; the object in the member form is neither
+read nor written (2026-09-25b):
 - writes any global (including via nested lambda) → `direction = "In"`
 - reads globals, writes none → `direction = "Out"`
 - no global access → `direction = "Out"` (pure function)

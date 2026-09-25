@@ -241,6 +241,23 @@ class TestEnrichBehaviourNames:
         assert f["behaviourOutputName"] != "TRUE/FALSE"
         assert "Status" in f["behaviourOutputName"]
 
+    def test_this_arrow_names_the_member_not_this(self):
+        """`return this->s_mark;` (tokens joined by spaces) names the member."""
+        f = self._run({
+            "parameters": [], "returnType": "int", "returnExpr": "this -> s_mark",
+            "qualifiedName": "ViaCounters::getAndBump",
+        })
+        assert f["behaviourOutputName"] == "Mark"
+
+    @pytest.mark.parametrize("expr, rtype", [("this", "ViaCounters *"), ("* this", "ViaCounters &")])
+    def test_returning_the_object_itself_falls_back_to_the_function_name(self, expr, rtype):
+        """`return this;` / `return *this;` name nothing; the generic fallback applies."""
+        f = self._run({
+            "parameters": [], "returnType": rtype, "returnExpr": expr,
+            "qualifiedName": "ViaCounters::self",
+        })
+        assert f["behaviourOutputName"] == "Self result"
+
 
 # ---------------------------------------------------------------------------
 # _enrich_interfaces — interfaceId format
