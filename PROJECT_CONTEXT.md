@@ -208,6 +208,37 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-25 (**a unit header declaration is read until its braces close** — branch
+> `fix/swe3-header-class-and-protected-direction`, `engine/views/unit_headers.py`. Views only, no re-parse.)
+>
+> **Bug.** `_read_decl_snippet` stopped after 60 source lines, blank and comment lines counted (they are
+> stripped from the cell afterwards). A commented class lost its last members and `};`; an initializer over
+> 60 lines lost its tail in BOTH columns (the value column is the snippet's right-hand side). Every kind
+> reads through it: globals, struct/class/union, enum, typedef. Row height was never the cause.
+> **Fix.** No length cap. `_MAX_DECL_LINES = 2000` only stops a runaway, and a declaration that never closes
+> logs `never closed; its cell stops at line N` (`component="unitHeaders"`, `err=True`). Braces and `;` are
+> counted on `_code_only(line, in_block)`: the line without `//`, `/* */` (open block carried across lines)
+> and string/char literals (a `'` after an alnum is a digit separator, `1'000`). Before, `int first; // was:
+> if (first) {` held a struct open to EOF — the 60 cap hid how far — and swallowed the next declaration.
+> **Second site, same cause:** `_declarations_only` dropped whole-line comments only, so that trailing
+> comment read as a method with a body and the members after it were dropped as the body; it now runs
+> `_strip_comments` first (also stops dropping a data line that starts with `*`).
+> **Fixture:** `Access/LongDecls.h/.cpp` — 64-line commented class `LongRecord` (`longLastMethod` and `};`
+> must survive), 66-line `g_longTable[64]`, `struct LongCommentBrace` with a `{` in a trailing comment,
+> then `typedef … LongAfter_t` (must NOT be swallowed). In Access, not My Sample: a class in Core.h adds its
+> methods as Core functions → interface rows/IDs and every snapshot move.
+> **Before/after (real `--no-llm` run, group Layer1.Access):** LongDecls only — class 23 → 25 cell lines
+> (ends `static int longLastMethod(int v);` `};`), table 60 → 66 in both columns (value ends `0x3F }`),
+> struct 3 → 4 (`int second;` `};` back, `LongAfter_t` gone). The other 8 Access units and
+> `interface_tables.json` identical; DOCX cells checked with python-docx. Old vs new `build_rows` over the
+> stored models of ALL source-backed units (Layer1 33, Layer2 73): LongDecls is the only change.
+> **Tests:** `test_unit_header_comments.py` +14 (class and initializer over 60 lines; brace in `//`,
+> `/* */`, char and string literal; never-closes limit + warning; `_code_only` ×7), all failing on the old
+> code. Full suite with a fresh pipeline: 2825 passed, 33 skipped, 0 failed. `Sample/unit_headers.json`
+> (test skipped here, `llm.descriptions` on) compared by hand with the fresh e2e output: identical.
+> Consumers: `docx_exporter` and `doc_render` read the rows; doccheck compares the cell text — nothing to
+> change. Docs: SWE3_WIKI N.1.4 "Column 1 — declaration", row "Several lines".
+
 > Updated: 2026-09-24g (**A run says what it will do before it parses** — branch `fix/swe3-review-v1`,
 > `engine/incremental/report.py` + `generate.py` + `engine.py`, `engine/core/config.py`, `engine/parser.py`.)
 >

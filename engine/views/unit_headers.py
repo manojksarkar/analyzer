@@ -129,26 +129,11 @@ def _declarations_only(decl: str) -> str:
     not: `int status() { return 1; }` is listed as `int status();`. The body is the unit's
     implementation, which the flowchart section documents; here it only makes the cell tall.
 
-    Comments go first. Left in, they defeat nothing here, but they are stripped from the
-    cell later anyway and removing them now keeps a multi-line body's tail from surviving
-    as a comment after its code is gone.
+    Comments go first, trailing ones too: they are stripped from the cell later anyway, and
+    `int first;  // was: if (first) {` otherwise reads as a method whose `{` opens a body,
+    and the members after it are dropped as that body.
     """
-    lines = []
-    in_block = False
-    for ln in (decl or "").split(chr(10)):
-        t = ln.strip()
-        if in_block:
-            if "*/" in t:
-                in_block = False
-            continue
-        if t.startswith("/*") and "*/" not in t:
-            in_block = True
-            continue
-        if t.startswith("//") or (t.startswith("/*") and t.endswith("*/")) or t.startswith("*"):
-            continue
-        if not t:
-            continue
-        lines.append(ln)
+    lines = (_strip_comments(decl) or "").split(chr(10))
 
     out, dropping, depth = [], False, 0
     for ln in lines:
@@ -216,6 +201,42 @@ def _struct_info_from_name(name: str, label: str = "Structure") -> str:
     return f"{label} for {base}"
 
 
+# A declaration is read until its braces close. This cap only stops a runaway read -- a
+# brace the count cannot see closed, such as one opened in each `#if` branch -- and it
+# says so when it fires. The old cap was 60 lines, comments and blank lines included, and
+# it silently cut real classes and initializer tables short.
+_MAX_DECL_LINES = 2000
+
+
+def _code_only(line: str, in_block: bool) -> Tuple[str, bool]:
+    """`line` without its comments and string/char literals, so the brace and `;` counts
+    see code only. `in_block` carries an unclosed `/* */` over to the next line."""
+    out, i, n = [], 0, len(line)
+    while i < n:
+        if in_block:
+            end = line.find("*/", i)
+            if end < 0:
+                return "".join(out), True
+            i, in_block = end + 2, False
+            continue
+        c = line[i]
+        if line.startswith("//", i):
+            break
+        if line.startswith("/*", i):
+            i, in_block = i + 2, True
+            continue
+        # A quote right after a digit or letter is a digit separator (`1'000`), not a char literal.
+        if c == '"' or (c == "'" and not (i and line[i - 1].isalnum())):
+            i += 1
+            while i < n and line[i] != c:
+                i += 2 if line[i] == "\\" else 1
+            i += 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out), in_block
+
+
 def _read_decl_snippet(abs_file: str, start_line: int, *, kind: str) -> str:
     """Extract declaration snippet safely using brace depth."""
 
@@ -233,18 +254,21 @@ def _read_decl_snippet(abs_file: str, start_line: int, *, kind: str) -> str:
 
     i = start_line - 1
     buf = []
-    max_lines = 60
 
     brace_depth = 0
     started = False
+    in_block = False
+    closed = False
 
-    for _ in range(max_lines):
+    for _ in range(_MAX_DECL_LINES):
 
         if i >= len(lines):
             break
 
         line = lines[i].rstrip("\n")
         stripped = line.strip()
+        # A `{` in a comment (`// was: if (x) {`) used to hold the declaration open.
+        code, in_block = _code_only(line, in_block)
 
         # skip leading comments
         if not started and (not stripped or stripped.startswith("//") or stripped.startswith("/*")):
@@ -253,22 +277,29 @@ def _read_decl_snippet(abs_file: str, start_line: int, *, kind: str) -> str:
 
         buf.append(line)
 
-        if "{" in line:
-            brace_depth += line.count("{")
+        if "{" in code:
+            brace_depth += code.count("{")
             started = True
 
-        if "}" in line:
-            brace_depth -= line.count("}")
+        if "}" in code:
+            brace_depth -= code.count("}")
 
         # stop when typedef/struct block closes
-        if started and brace_depth == 0 and ";" in line:
+        if started and brace_depth == 0 and ";" in code:
+            closed = True
             break
 
         # stop simple declarations
-        if not started and ";" in line:
+        if not started and ";" in code:
+            closed = True
             break
 
         i += 1
+
+    if buf and not closed:
+        log("declaration at %s:%d never closed; its cell stops at line %d (limit %d lines)"
+            % (abs_file, start_line, min(i, len(lines)), _MAX_DECL_LINES),
+            component="unitHeaders", err=True)
 
     out = "\n".join(buf).strip()
 
