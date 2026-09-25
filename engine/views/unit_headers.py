@@ -131,20 +131,25 @@ def _declarations_only(decl: str) -> str:
 
     Comments go first, trailing ones too: they are stripped from the cell later anyway, and
     `int first;  // was: if (first) {` otherwise reads as a method whose `{` opens a body,
-    and the members after it are dropped as that body.
+    and the members after it are dropped as that body. Braces are then counted on code only,
+    for the same reason: the `{` in `return "{";` opens nothing.
     """
     lines = (_strip_comments(decl) or "").split(chr(10))
 
     out, dropping, depth = [], False, 0
     for ln in lines:
+        code = _code_only(ln, False)[0]
         if dropping:
-            depth += ln.count("{") - ln.count("}")
+            depth += code.count("{") - code.count("}")
             if depth <= 0:
                 dropping = False
             continue
-        if _is_member_method(ln) and "{" in ln:
-            opened = ln.count("{") - ln.count("}")
-            head = ln.split("{", 1)[0].rstrip()
+        if _is_member_method(ln) and "{" in code:
+            opened = code.count("{") - code.count("}")
+            # The body's brace is the first one outside a literal (`f(const char *s = "{") {`).
+            body = next(i for i, ch in enumerate(ln)
+                        if ch == "{" and _code_only(ln[:i + 1], False)[0].endswith("{"))
+            head = ln[:body].rstrip()
             # `= default` / `= delete` live before the brace on some forms; a plain
             # signature just gains its semicolon.
             out.append(head + ";" if not head.endswith(";") else head)
