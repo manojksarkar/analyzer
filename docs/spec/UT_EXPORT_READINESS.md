@@ -19,13 +19,14 @@ Both are written to `output/ut/`.
 - **Validated:** `tools/check_ut_json.py` reports 0 errors
 - **Sample project:** every test case solved — inputs and expected values
 - **Names:** layer and core names come from the project config (Sample: `Layer1`, `Core1`)
+- **Read by:** the test tool that defines this format, still in development, so the format may change
 - **Open items:** in the last column of each table
 
 ## Legend
 
 - **Status:** ✅ Done · 🟡 Partial — more work needed · 📥 Input — supplied from outside ·
   ❓ Blocked — needs an answer · ➖ Out of scope
-- **Based on:** Agreed — decided with the team · Assumed — our choice, the sample is silent ·
+- **Based on:** Agreed — confirmed with the team · Assumed — our choice, the sample is silent ·
   Sample — follows the sample · Config — set in the project config (`views.utExport`) ·
   Code — computed from the source · Checked — confirmed in our code
 - **Open question:** ❓ needs an answer · 🔍 a real file will settle it
@@ -66,7 +67,7 @@ Row names: `layer ›`, `section ›` and `environment ›` mean a field inside 
 | `cases[].id` | ✅ Done | Ours, e.g. `TC_IF_LAYER1_CORE_06_01` | Assumed | ❓ What format? Sample: `<TEST-CASE-ID-001>` |
 | `cases[].name` | ✅ Done | `<function> returns <value> at step <n>` | Assumed | — |
 | `cases[].level` | ✅ Done | `UT` | Agreed | — |
-| `cases[].trace` | 📥 Input | Empty until requirement IDs exist | — | — |
+| `cases[].trace` | 📥 Input | Polarion requirement ID; empty until available | Agreed | ❓ How do we get the IDs and their link to functions? |
 | `cases[].review.author`, `reviewer` | 📥 Input | `review` | Config | — |
 | `cases[].target.unit`, `function` | ✅ Done | Class method: class + method · C function: unit + function | Assumed | — |
 | `cases[].target.class`, `constructor`, `destructor` | 🟡 Partial | Supported, but the parser does not read constructors / destructors yet | Checked | — |
@@ -86,5 +87,5 @@ Row names: `layer ›`, `section ›` and `environment ›` mean a field inside 
 | `cases[].expected.globals[]` | ✅ Done | Globals the path writes, when the value is computable | Code | — |
 | `cases[].expected.class_members[]` | 🟡 Partial | Empty: the parser does not record member writes | Checked | — |
 | `cases[].expected.stub_params[]` | ✅ Done | Each stub called on the path, with its known arguments | Code | — |
-| `cases[].expected.*.derived_from` | 📥 Input | Empty until requirement IDs exist | — | — |
+| `cases[].expected.*.derived_from` | 📥 Input | Polarion requirement ID; empty until available | Agreed | — |
 | `cases[].steps[]` | ➖ Out of scope | Integration tests only | — | — |
