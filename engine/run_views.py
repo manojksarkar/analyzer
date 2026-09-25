@@ -346,8 +346,18 @@ def _layers_by_name(config) -> dict:
     return out
 
 
+def _clang_macros(model_dir):
+    """Phase 1's scope-keyed `-D` flags (`<model>/clang_macros.json`), or None."""
+    import json as _json
+    try:
+        with open(os.path.join(model_dir or "", "clang_macros.json"), encoding="utf-8") as f:
+            return _json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
 def _record_derivation(output_dir, ran, model, config, read_at, layer_filter,
-                       doc_type=None) -> None:
+                       doc_type=None, model_dir=None) -> None:
     """Leave the export guard its record of what this run rebuilt (`REQ-AP-04`).
 
     The record is turned into `view_derivations` rows when the output is captured, in the same
@@ -380,7 +390,10 @@ def _record_derivation(output_dir, ran, model, config, read_at, layer_filter,
         context = {"allowedComponents": sorted(allowed) if allowed else None,
                    "layerComponents": sorted(layer_filter) if layer_filter else None,
                    "views": (config.get("views") or {}),
-                   "layers": _layers_by_name(config)}
+                   "layers": _layers_by_name(config),
+                   # the macros the UT export solved its values with (Phase 1's file, beside the
+                   # model): a save has no model folder to read them from
+                   "clangMacros": _clang_macros(model_dir)}
         # Which document each view was built for -- by the rule that chose to build it. One
         # `--doc-type all` run builds the flowcharts for SWE.4 alone when `views.flowcharts` is
         # off, and the SWE.3 exporter then prints none (`export_guard._swe3_built`).
@@ -541,7 +554,7 @@ def main():
 
     # REQ-AP-04. What this run rebuilt -- which views, for which components, from corrections read
     # when -- for the export guard. See review.export_guard.
-    _record_derivation(output_dir, ran, model, config, read_at, layer_filter, doc_type)
+    _record_derivation(output_dir, ran, model, config, read_at, layer_filter, doc_type, model_dir)
 
     # REQ-CS-01's other half. A queued behaviour description has no model field to blank, so
     # Phase 2 cannot pay that debt -- but the behaviour view rebuilds every row it writes, so

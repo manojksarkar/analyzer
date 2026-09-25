@@ -393,6 +393,24 @@ def test_mock_writeback_absent_when_the_function_reads_no_fields():
     assert [e for e in entries if e["kind"] == "mockWriteback"] == []
 
 
+def test_mock_writeback_sources_name_the_writing_mock_and_its_parameter():
+    """The UT export needs WHICH stub writes a field and through WHICH parameter
+    (stub mode, prototype_values); the document needs neither. Same walk, so the
+    two can never disagree about which fields are listed."""
+    from views.test_specs import mock_writeback_sources
+    lookup = {"readsFields": [{"var": "e", "structType": "MapEntry", "field": "lba"}]}
+    functions = {"F|Fil|FilReadPage": _fn("FilReadPage", file="Fil.cpp", line=1,
+                                          params=[{"name": "idx", "type": "uint16_t"},
+                                                  {"name": "e", "type": "MapEntry *"}],
+                                          iid="FIL_01")}
+    dd = {"MapEntry": {"kind": "struct", "fields": [{"name": "lba", "type": "uint32_t"}]}}
+    assert mock_writeback_sources(lookup, {"F|Fil|FilReadPage"}, functions, dd) == [
+        {"label": "e.lba", "type": "uint32_t", "mock": "F|Fil|FilReadPage",
+         "param": "e", "field": "lba"}]
+    wb = [e for e in _writeback_model() if e["kind"] == "mockWriteback"]
+    assert [e["name"] for e in wb] == ["e.lba", "e.ppn"]      # the document is unchanged
+
+
 def test_mock_writeback_ignores_a_same_named_field_of_another_struct():
     """The base's declared type disambiguates: reading `other.lba` says nothing
     about the MapEntry that FilReadPage writes back."""

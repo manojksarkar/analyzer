@@ -190,8 +190,8 @@ def rederive(conn, version_id: str, component: str, model) -> List[str]:
         layer = context.get("layerComponents")
         scoped = narrow(whole, layer) if layer else whole
 
-        fresh = build_specs(scoped, config, cfgs_from_entries(
-            _flowcharts(conn, version_id, paths, d, labels, shapes)), verbose=False)
+        cfgs = cfgs_from_entries(_flowcharts(conn, version_id, paths, d, labels, shapes))
+        fresh = build_specs(scoped, config, cfgs, verbose=False)
         merged = merge(specs[d], fresh, component)
         spec_path = _join(d, TEST_SPECS)
         _write_if_changed(write_output_row, conn, version_id, spec_path,
@@ -202,7 +202,10 @@ def rederive(conn, version_id: str, component: str, model) -> List[str]:
             ut_config = config
             if isinstance(ut_entry, dict) and isinstance(ut_entry.get("context"), dict):
                 ut_config = {"views": ut_entry["context"].get("views") or {}}
-            payload = ut_export.build(merged, whole.get(DATA_DICTIONARY) or {}, ut_config)
+            # the graphs and the macros the run solved its values with, so a save writes what
+            # a run writes
+            payload = ut_export.build(merged, whole.get(DATA_DICTIONARY) or {}, ut_config, cfgs=cfgs,
+                                      macros_by_layer=ut_export.macros_by_layer(context.get("clangMacros")))
             _write_if_changed(write_output_row, conn, version_id, ut_path,
                               json.dumps(payload, indent=2), stored.get(ut_path))
         elif isinstance(ut_entry, dict) and comp in (ut_entry.get("components") or ()):

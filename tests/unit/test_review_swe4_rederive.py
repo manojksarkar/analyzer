@@ -115,7 +115,8 @@ def _whole(model, flowcharts, labels=None):
                     node["label"] = text
     specs = build_specs(model, _config(["Ext", "Sig"]), cfgs_from_entries(files), verbose=False)
     return (json.dumps(specs, indent=2),
-            json.dumps(ut_export.build(specs, {}, _config(["Ext", "Sig"])), indent=2))
+            json.dumps(ut_export.build(specs, {}, _config(["Ext", "Sig"]), cfgs=cfgs_from_entries(files)),
+                       indent=2))
 
 
 @pytest.fixture

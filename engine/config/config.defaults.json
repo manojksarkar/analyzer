@@ -28,7 +28,10 @@
         "flags": [],
         "probepoint": [],
         "usercode": []
-      }
+      },
+      "targetFormat": true,
+      "libraryDirectories": {},
+      "environments": {}
     }
   },
   "cores": {
