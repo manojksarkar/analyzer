@@ -241,3 +241,51 @@ class TestTheKindListMatchesTheSpec:
     def test_every_kind_declares_its_parts(self):
         for kind in slot.ALL_KINDS:
             assert slot.parts_for(kind), kind
+
+
+
+class TestKeysAsCallersSendThem:
+    """`slot.from_request` -- a key as it arrives in a request, not as the server built it.
+
+    A composite key's separator is U+0001. Every JSON viewer -- Swagger, Postman, a browser --
+    DISPLAYS it as the six characters `\\u0001`, and nobody can type the real character. So a key
+    copied from R7's response and pasted into R4 sent a backslash, and R4 answered
+    "409 has no override" for a correction that existed; R5 answered `200 []`. Reported from the
+    first manual test of undo on a flowchart label.
+    """
+
+    NODE = "Sample-Core|Core|coreAdd|int,int"
+
+    def test_the_displayed_spelling_is_the_same_key(self):
+        shown = self.NODE + slot.ESCAPED_SEP + "N3"            # what Swagger shows
+        assert slot.from_request(slot.NODE_LABEL, shown) == slot.for_node(self.NODE, "N3")
+
+    def test_the_real_key_is_unchanged(self):
+        real = slot.for_node(self.NODE, "N3")
+        assert slot.from_request(slot.NODE_LABEL, real) == real
+
+    def test_the_escape_is_exactly_six_characters(self):
+        """A constant that was accidentally the separator itself would make the replace a
+        no-op and every test above vacuous."""
+        assert slot.ESCAPED_SEP == chr(92) + "u0001" and slot.SEP not in slot.ESCAPED_SEP
+
+    def test_behaviour_rows_too(self):
+        shown = "Comp|U|f|" + slot.ESCAPED_SEP + "CompX|V|caller|"
+        assert slot.from_request(slot.BEHAVIOUR_DESCRIPTION, shown) == \
+            slot.for_behaviour_row("Comp|U|f|", "CompX|V|caller|")
+
+    def test_a_flowchart_id_is_named_as_one(self):
+        """The commonest mistake: labels are stored per NODE."""
+        with pytest.raises(slot.SlotKeyError) as exc:
+            slot.from_request(slot.NODE_LABEL, self.NODE)
+        msg = str(exc.value)
+        assert "flowchart id" in msg and "per node" in msg and "R7" in msg
+
+    def test_a_behaviour_key_without_both_ids_says_where_to_get_one(self):
+        with pytest.raises(slot.SlotKeyError) as exc:
+            slot.from_request(slot.BEHAVIOUR_DESCRIPTION, "Comp|U|f|")
+        assert "R11" in str(exc.value)
+
+    def test_single_part_kinds_are_untouched(self):
+        assert slot.from_request(slot.DESCRIPTION, "Comp|U|f|int") == "Comp|U|f|int"
+        assert slot.from_request(slot.UNIT_DESCRIPTION, "Comp|U") == "Comp|U"

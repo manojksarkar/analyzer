@@ -218,6 +218,45 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-25 (**undo and history of a flowchart label were unusable from Swagger; the
+> superuser flag was only half applied; and when each correction becomes VISIBLE is now written
+> down — two kinds never appear on the page.**
+>
+> **1. A composite slot key copied from any JSON viewer matched nothing.** The `nodeLabel` and
+> `behaviourDescription` keys contain the U+0001 separator. JSON writes it as `\u0001`, so
+> Swagger/Postman/browsers DISPLAY six characters, and nobody can type the real one. The pasted key
+> carried a backslash: R4 answered 409 "has no override", R5 `200 []`, R2 404 — for a correction
+> that existed (reported from the first manual undo of a flowchart label). Separately, the most
+> common mistake — a node label addressed by its FLOWCHART id — got those same three wrong answers.
+> `slot.from_request(kind, key)` (in `slot.py`, the one place key rules live): reads the displayed
+> spelling `slot.ESCAPED_SEP` as the separator (a real key never contains a backslash), then
+> `parse`s, and a malformed key is a 400 naming its parts and where to copy it from ("this looks
+> like a flowchart id on its own. Flowchart labels are stored per node..."). Wired into R2, R3, R4,
+> R5 through the router's `_key()`. Verified with the key exactly as Swagger shows it: R2 200, R5
+> history, R4 undo restores the LLM label. Five revert-checks caught.
+>
+> Trap met twice while testing this: a bash heredoc collapses `\\` to `\`, so a
+> "literal backslash-u0001" test string silently became the real separator and the test proved
+> nothing. Test data involving escapes goes in files written directly, built with `chr(92)`.
+>
+> **2. `require_project_admin` ignored `is_superuser`** (only `require_project_member` honoured
+> it). 25 routes use the admin check — re-export among them — so on a project with no admin row for
+> the operator (one created through the UI by someone else) it could read everything and got
+> "Admin role required." Same early return now; the ordinary-member refusal is tested unchanged.
+>
+> **3. When a correction becomes visible** — from reading `api/services/doc_render.py`, now in the
+> API spec §14. All seven kinds save to the DB in the request; the page re-reads per load.
+> description (patched interface table), behaviour input/output names (model) and behaviour rows
+> (stored row) show on the next load. A nodeLabel's PICTURE changes only after the owed render —
+> the page shows the PNG whenever one exists and the diagram text only as a fallback.
+> **unitDescription and structDescription are not shown on the page at all**: the unit section has
+> no description and struct rows print `N/A`, while the Word exporter reads both (REQ-PRE-01 moved
+> the exporter, not the page). Pre-existing renderer gap, recorded in spec §17, not fixed.
+>
+> Also documented: nothing exports automatically — `POST /jobs/{jobId}/reexport` (project admin)
+> does, choosing phase 3 when stale; `GET .../documents/{docId}/download` serves the stored file
+> without rebuilding or checking staleness. 2282 passed, 37 skipped.)
+
 > Updated: 2026-09-24e (**`llm.sslVerify` (6edfcd3) REVERTED. The "unable to get local issuer
 > certificate" failure is not a trust problem in the client: `tools/check_llm.py` reaches the same
 > gateway fine with the default certificate list.**

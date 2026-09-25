@@ -178,3 +178,38 @@ class TestOnboardingKeepsTheDataHonest:
         src = open(os.path.join(PROJECT_ROOT, "tools", "db_setup.py"), encoding="utf-8").read()
         assert "is_superuser" in src and "project_members" in src, (
             "setup no longer repairs a database that predates the flag")
+
+
+
+class TestAdminOnlyRoutesToo:
+    """"All access to all projects" includes the admin-only routes.
+
+    `require_project_member` honoured the flag; `require_project_admin` did not. On a project
+    the superuser had no admin row for, it could read everything and got "Admin role required."
+    on re-export, team management and the rest of the 25 routes that use the admin check.
+    """
+
+    def test_an_admin_only_route_answers_a_superuser(self, client, auth_header, orphan_project,
+                                                     superuser):
+        r = client.patch(f"/api/v1/projects/{orphan_project}", headers=auth_header,
+                         json={"client": "Changed by the operator"})
+        assert r.status_code == 200, r.text
+
+    def test_it_needs_no_admin_row(self, client, auth_header, orphan_project, superuser, db):
+        eng = _engine_of(db)
+        with eng.connect() as cx:
+            rows = cx.execute(sa.select(sa.func.count()).select_from(s.project_members)
+                              .where(s.project_members.c.project_id == orphan_project)).scalar()
+        assert rows == 0, "the fixture is not testing what it claims to"
+        assert client.patch(f"/api/v1/projects/{orphan_project}", headers=auth_header,
+                            json={"client": "x"}).status_code == 200
+
+    def test_an_ordinary_member_is_still_refused(self, client, orphan_project, superuser, db):
+        """The exception stays an exception: a plain member of p1 is not an admin of it."""
+        tok = client.post("/api/v1/auth/signin",
+                          json={"email": "bob@aspice.dev", "password": "secret"})
+        if tok.status_code != 200:
+            pytest.skip("no bob in this seed")
+        h = {"Authorization": "Bearer " + tok.json()["access_token"]}
+        assert client.patch(f"/api/v1/projects/{orphan_project}", headers=h,
+                            json={"client": "x"}).status_code == 403

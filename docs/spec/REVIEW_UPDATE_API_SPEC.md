@@ -77,6 +77,17 @@ A key contains `|`, `:`, `,`, `*`, spaces and a `U+0001` separator, so **keys tr
 a query parameter, never in a path segment.** URL-encode them in query strings as usual; `U+0001`
 becomes `%01`.
 
+**Copying a key by hand** (Swagger, Postman, a browser): every JSON viewer DISPLAYS the `U+0001`
+separator as the six characters `\u0001`, and nobody can type the real character. The
+server accepts that displayed spelling as the same key, so a `slotKey` copied from any response and
+pasted into R2, R3, R4 or R5 works as it is. A real key never contains a backslash, so this cannot
+collide with one. A UI reading the key out of parsed JSON is unaffected — it already holds the real
+character.
+
+**A malformed key is a 400 that says what the key is made of.** The commonest mistake is a node
+label addressed by its **flowchart id**: labels are stored per node, so a `nodeLabel` key is the
+flowchart id, the separator, then the node id — take the node's `slotKey` from R7.
+
 The one exception is `{flowchart_token}`, the flowchart id in base64url without padding. Its
 alphabet is `[A-Za-z0-9_-]`, so nothing needs escaping. R7 returns both the id and the token.
 
@@ -260,6 +271,7 @@ GET /api/v1/projects/ftl-a1b2c3/versions/v-7/overrides/slot
 | code | when |
 |---|---|
 | 404 | `{"detail": "no override on that slot"}` — the slot has never been corrected. Expected, not an error condition: fall back to the LLM text you already have |
+| 400 | malformed `slot_key` for the kind — e.g. a flowchart id given for `nodeLabel`. `detail` says what the key should be and where to copy it from (§2) |
 | 401 / 403 / 503 | see §16 |
 
 ---
@@ -375,7 +387,12 @@ with `humanText` equal to `llmText`.
 |---|---|
 | 409 | no original to restore — the slot was empty before the first correction, so `llmText` is `null`. Disable the undo control when `llmText` is `null` rather than letting the reviewer discover this |
 | 404 | the slot does not resolve in this version |
+| 400 | malformed `slot_key` for the kind (§2) |
 | 401 / 403 / 503 | see §16 |
+
+**R4 undoes every kind**, not just the ones R3 saves: a `nodeLabel` (one node at a time — take its
+`slotKey` from R7; the flowchart is redrawn as for R8) and a `behaviourDescription` (the whole bullet
+list goes back).
 
 ---
 
@@ -389,13 +406,17 @@ The retained edits of one slot, **oldest first**, bounded by `llm.overrideHistor
 The LLM original is **not** in here — it is `llmText` on the override itself, which is what makes
 "the original is never evicted by the cap" structural rather than a rule someone must remember.
 
+**R1 or R5?** R1 answers "what has been corrected in this version" — one row per corrected slot,
+showing its current text. R5 answers "how did THIS slot change" — every edit, oldest first. Correct a
+description three times and R1 shows one row (the last text); R5 for that slot shows three.
+
 **Query parameters** — identical to R2: `slot_kind`, `slot_key`, both required.
 
 **Response 200**
 
 | field | type | notes |
 |---|---|---|
-| `history` | object[] | empty array for a slot that was never corrected — **not** 404 |
+| `history` | object[] | empty array for a slot that was never corrected — **not** 404. A MALFORMED key is a 400 instead (§2), so an empty list always means "well-formed, never corrected" |
 | `history[].seq` | integer | 1-based, ascending |
 | `history[].humanText` | string | |
 | `history[].updatedBy` | string \| null | |
@@ -664,6 +685,48 @@ an export now would carry the new wording and the old picture.
 make one unrenderable flowchart permanently unexportable. It appears in `explanation` instead, so a
 document goes out with somebody knowing the image is out of date rather than nobody.
 
+### How the Word document gets the corrections
+
+**Nothing exports automatically.** A save (R3/R6/R8) updates the database in the same request and
+never starts an export. The Word file changes only when someone runs a re-export:
+
+```
+POST /api/v1/projects/{projectId}/jobs/{jobId}/reexport      (project admin; runs in the background)
+```
+
+The server decides how much to rebuild — R9's question, asked for you: when the version is stale it
+re-derives the views first (Phase 3: corrected text into the view rows, owed flowchart pictures
+drawn), then exports; otherwise it exports only.
+
+**Download serves the stored file as it is.** `GET .../documents/{docId}/download` neither rebuilds
+nor checks staleness, so a download taken after corrections and before a re-export is the OLD
+document. That is what R9 is for in the UI:
+
+| R9 says | the UI shows |
+|---|---|
+| `stale: false` | the normal Download button |
+| `stale: true` | "N corrections are not in the Word file yet" + a Re-export action, and Download marked as the previous version |
+| `pendingRenders > 0` | "N flowchart pictures will be redrawn by the re-export" |
+| `failedRenders > 0` | a warning that those pictures are out of date |
+
+### When a correction becomes visible
+
+Every kind is saved to the database in the request. What the document PAGE (`.../render`) shows
+depends on where the page reads that kind from — it is re-read on every page load, never pushed, so
+the UI must refetch after a save:
+
+| kind | on the page after a save | in the Word file |
+|---|---|---|
+| `description` | next page load — the stored interface table is patched | after re-export |
+| `behaviourInputName`, `behaviourOutputName` | next page load — read from the model | after re-export |
+| `behaviourDescription` | next page load — the stored behaviour row is written | after re-export |
+| `nodeLabel` | the **picture** changes only after the owed render (next re-export); the page shows the PNG whenever one exists, and falls back to the diagram text only when none does. R7 shows the new text immediately | after re-export |
+| `unitDescription` | **not shown on the page at all** — the page's unit section has no description | after re-export |
+| `structDescription` | **not shown on the page** — struct rows display `N/A` | after re-export |
+
+The last two are gaps in the page renderer (`api/services/doc_render.py`), not in saving: the Word
+exporter reads both fields (REQ-PRE-01), the page was never updated to. Recorded in §17.
+
 ---
 
 ## 15. R10 — the regeneration queue
@@ -842,6 +905,11 @@ Honest gaps, so the UI does not plan around something that is not there.
 - **No cleanup endpoint** for orphaned corrections — deliberately, pending a decision; see
   [REVIEW_UPDATE_DESIGN Open items](../design/REVIEW_UPDATE_DESIGN.md#open-items).
 - **No bulk or batch write** beyond R8's one flowchart. Correct slots one call at a time.
+- **The document page does not show unit or struct descriptions** (§14, "When a correction becomes
+  visible"), so corrections to those two kinds appear only in the Word file. The page renderer lags
+  the Word exporter here; both read the same stored fields once it catches up.
+- **A corrected flowchart's picture is redrawn by the next run or re-export**, not by the save —
+  R8 over HTTP has no output tree to draw into, so `renderPending` is `true`.
 
 ---
 

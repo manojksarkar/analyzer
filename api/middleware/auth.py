@@ -132,7 +132,16 @@ def require_project_admin(
     current_user: User,
     db: InMemoryDatabase,
 ) -> None:
-    """Raises 403 if the user is not an admin of the project."""
+    """Raises 403 if the user is not an admin of the project.
+
+    A **superuser** passes, exactly as in `require_project_member`. Honouring the flag there and
+    not here gave the operator account half of "all access to all projects": on a project it had
+    no admin row for -- one created through the UI by someone else -- it could read everything
+    and got "Admin role required." on re-export, team management and the rest of the 25 routes
+    that ask this question.
+    """
+    if getattr(current_user, "is_superuser", False):
+        return
     member = db.members.get_member(project_id, current_user.id)
     if member is None or member.role != "admin":
         raise HTTPException(

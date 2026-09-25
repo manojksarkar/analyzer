@@ -136,6 +136,61 @@ def parse(kind: str, key: str) -> Dict[str, str]:
     return dict(zip(names, values))
 
 
+#: The separator as it appears when a key is copied out of JSON. `json.dumps` writes control
+#: characters as ``\uXXXX``, so every JSON viewer -- Swagger's response pane, Postman, a browser
+#: -- DISPLAYS a composite key with the six characters ``\u0001`` where the separator is. Pasting
+#: that back sends a backslash, not the separator, and nobody can type U+0001 into a text field.
+ESCAPED_SEP = "\\u0001"
+
+#: Where a caller gets a key of each composite kind, for the error message.
+_KEY_SOURCE = {
+    NODE_LABEL: "Copy `slotKey` for the node from R7 (GET .../flowcharts/{token}/labels) "
+                "or from R1",
+    BEHAVIOUR_DESCRIPTION: "Copy `slotKey` from R11 (GET .../slots?slot_kind="
+                           "behaviourDescription) or from R1",
+}
+
+
+def from_request(kind: str, key: str) -> str:
+    """A slot key as a CALLER sent it -> the canonical key. Raises SlotKeyError, saying what the
+    key should look like, when it is malformed.
+
+    Two things happen here that `parse` alone does not do.
+
+    **The displayed spelling is accepted.** A composite key copied from any JSON viewer arrives
+    with the text ``\\u0001`` in place of the separator, and used to match nothing: R5 answered
+    `200 []`, R4 `409 has no override`, R2 `404`, for a correction that existed. A real key can
+    never contain a backslash -- keys are built from C++ names, parameter types and paths -- so
+    reading the escape as the separator cannot collide with a genuine key.
+
+    **A malformed key is named as malformed.** The commonest mistake is a node label addressed
+    by its flowchart id: labels are stored per NODE, so the flowchart id alone matches nothing,
+    and three endpoints used to report that three different wrong ways. Now it is one 400 that
+    says what the key is made of and where to copy it from.
+    """
+    canon = (key or "").replace(ESCAPED_SEP, SEP)
+    try:
+        parse(kind, canon)
+    except SlotKeyError:
+        names = parts_for(kind)
+        if len(names) > 1:
+            if SEP not in canon:
+                if kind == NODE_LABEL:
+                    hint = ("this looks like a flowchart id on its own. Flowchart labels are "
+                            "stored per node, so the key is the flowchart id, the separator, "
+                            "then the node id")
+                else:
+                    hint = "it has no separator between its parts"
+            else:
+                hint = "it does not have exactly %d non-empty parts" % len(names)
+            raise SlotKeyError(
+                "%s slot_key must be %s joined by the separator U+0001 -- %s. %s."
+                % (kind, " + ".join(names), hint,
+                   _KEY_SOURCE.get(kind, "Copy it from a response"))) from None
+        raise
+    return canon
+
+
 def is_valid(kind: str, key: str) -> bool:
     """Whether `key` is well-formed for `kind`. Never raises."""
     try:

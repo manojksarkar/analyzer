@@ -448,3 +448,57 @@ class TestR7SeesEveryCorrectionOnItsOwnFlowchart:
         assert n1["isOverridden"] is True, (
             "a correction on THIS flowchart was lost behind 1,001 newer ones elsewhere")
         assert n1["humanText"] == "The oldest correction."
+
+
+
+class TestKeysCopiedFromSwaggerWork:
+    """The key exactly as a JSON viewer displays it -- `\\u0001` as six characters.
+
+    Before: R4 answered 409 "has no override", R5 `200 []`, R2 404, all for a correction that
+    existed, because the pasted key carried a backslash instead of the separator. Found by the
+    first manual undo of a flowchart label in Swagger.
+    """
+
+    def _shown(self, client, auth_header, node="n1"):
+        from review import slot as slot_mod
+        r = client.get(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header)
+        real = next(n["slotKey"] for n in r.json()["labels"] if n["nodeId"] == node)
+        return real.replace(slot_mod.SEP, slot_mod.ESCAPED_SEP)
+
+    def _correct(self, client, auth_header, node="n1"):
+        assert client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
+                          json={"labels": {node: "Corrected in Swagger."}}).status_code == 200
+
+    def test_r2_reads_it(self, client, review_db, auth_header):
+        self._correct(client, auth_header)
+        r = client.get(BASE + "/overrides/slot", headers=auth_header,
+                       params={"slot_kind": "nodeLabel", "slot_key": self._shown(client, auth_header)})
+        assert r.status_code == 200 and r.json()["humanText"] == "Corrected in Swagger."
+
+    def test_r5_reads_its_history(self, client, review_db, auth_header):
+        self._correct(client, auth_header)
+        r = client.get(BASE + "/overrides/history", headers=auth_header,
+                       params={"slot_kind": "nodeLabel", "slot_key": self._shown(client, auth_header)})
+        assert r.status_code == 200 and len(r.json()["history"]) == 1
+
+    def test_r4_undoes_it(self, client, review_db, auth_header):
+        self._correct(client, auth_header)
+        r = client.delete(BASE + "/overrides/slot", headers=auth_header,
+                          params={"slot_kind": "nodeLabel", "slot_key": self._shown(client, auth_header)})
+        assert r.status_code == 200 and r.json()["undone"] is True
+        labels = client.get(BASE + "/flowcharts/%s/labels" % _token(),
+                            headers=auth_header).json()["labels"]
+        assert next(n["text"] for n in labels if n["nodeId"] == "n1") == "llm n1"
+
+
+class TestAFlowchartIdIsNotANodeKey:
+    """Three endpoints used to report the same mistake three different wrong ways."""
+
+    @pytest.mark.parametrize("method,path", [("get", "/overrides/slot"),
+                                             ("get", "/overrides/history"),
+                                             ("delete", "/overrides/slot")])
+    def test_it_is_a_400_that_says_so(self, client, review_db, auth_header, method, path):
+        r = getattr(client, method)(BASE + path, headers=auth_header,
+                                    params={"slot_kind": "nodeLabel", "slot_key": FID})
+        assert r.status_code == 400, r.text
+        assert "flowchart id" in r.json()["detail"] and "R7" in r.json()["detail"]

@@ -112,6 +112,21 @@ def _as_http(exc: Exception) -> HTTPException:
     return HTTPException(status_code=getattr(exc, "status", 400), detail=str(exc))
 
 
+def _key(slot_kind: str, slot_key: str) -> str:
+    """The canonical key for what the caller sent, or 400 saying what the key should be.
+
+    Accepts the key as any JSON viewer DISPLAYS it -- Swagger shows the U+0001 separator as the
+    six characters `\\u0001`, and nobody can type the real character into a text field -- and
+    rejects a malformed key by name rather than answering `200 []`, `404` or `409` for a
+    correction that exists. See `slot.from_request`.
+    """
+    from review import slot as slot_mod
+    try:
+        return slot_mod.from_request(slot_kind, slot_key)
+    except slot_mod.SlotKeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 def _row(r) -> Dict[str, Any]:
     return {
         "slotKind": r.slot_kind,
@@ -213,8 +228,9 @@ def get_slot(
     """`REQ-API-02`. A query parameter, not a path segment: a slot key contains `|`, `:`, `,`,
     `*`, spaces and a control character."""
     require_project_member(project_id, current_user, db)
+    key = _key(slot_kind.value, slot_key)
     with _connection().connect() as cx:
-        row = _service().get_override(cx, version_id, slot_kind.value, slot_key)
+        row = _service().get_override(cx, version_id, slot_kind.value, key)
     if row is None:
         raise HTTPException(status_code=404, detail="no override on that slot")
     return _row(row)
@@ -310,8 +326,8 @@ def update_slot(
             # "current run", so there is none installed, and `model_repo.repository()` would
             # raise. The model write then joins THIS transaction (REQ-AP-02).
             models = svc.ModelAccess(version_id=version_id, project_id=project_id)
-            out = svc.apply_override(cx, version_id, body.slot_kind.value, body.slot_key,
-                                     body.text,
+            out = svc.apply_override(cx, version_id, body.slot_kind.value,
+                                     _key(body.slot_kind.value, body.slot_key), body.text,
                                      models=models, user_id=current_user.id)
         except Exception as exc:
             raise _as_http(exc)
@@ -402,14 +418,15 @@ def undo_slot(
     """`REQ-API-04`. Restores the LLM's original wording. **The record survives** — undo is an
     ordinary edit whose text happens to be the original, so both texts and the history remain."""
     require_project_member(project_id, current_user, db)
+    key = _key(slot_kind.value, slot_key)
     svc = _service()
     with _connection().begin() as cx:
         try:
-            svc.undo_override(cx, version_id, slot_kind.value, slot_key,
+            svc.undo_override(cx, version_id, slot_kind.value, key,
                               models=svc.ModelAccess(version_id=version_id,
                                                      project_id=project_id),
                               user_id=current_user.id)
-            row = svc.get_override(cx, version_id, slot_kind.value, slot_key)
+            row = svc.get_override(cx, version_id, slot_kind.value, key)
             payload = _row(row) if row else None
         except Exception as exc:
             raise _as_http(exc)
@@ -431,8 +448,9 @@ def slot_history(
     (`REQ-ST-04`). The LLM original is not in here; it is on the override itself, which is what
     makes "the original is never evicted" structural."""
     require_project_member(project_id, current_user, db)
+    key = _key(slot_kind.value, slot_key)
     with _connection().connect() as cx:
-        rows = _service().history_for(cx, version_id, slot_kind.value, slot_key)
+        rows = _service().history_for(cx, version_id, slot_kind.value, key)
     return {"history": [{"seq": r.seq, "humanText": r.human_text, "updatedBy": r.updated_by,
                          "updatedAt": r.updated_at.isoformat() if r.updated_at else None}
                         for r in rows]}
