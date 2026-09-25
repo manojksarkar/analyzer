@@ -372,6 +372,44 @@ class TestTheFlowchartEditorHasWhatItNeeds:
         assert u.status_code == 200 and u.json()["undone"] is True
 
 
+class TestTheEditorCanDrawTheCorrectedDiagram:
+    """R7 carries the Graphviz DOT from the database. The PNG beside the document is a file on
+    disk, redrawn only by the next re-export (`renderPending`), so a UI showing the PNG shows the
+    OLD label after a save and after a reload. The DOT is rebuilt by R8 in the same request, so a
+    UI that draws it shows the correction at once."""
+
+    LABEL = "WP-flag-checked"      # one token: never wrapped onto two lines in the DOT
+
+    def _dot(self, client, auth_header):
+        r = client.get(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header)
+        assert r.status_code == 200, r.text
+        return r.json()["dot"]
+
+    def test_the_diagram_comes_with_the_labels(self, client, review_db, auth_header):
+        assert self._dot(client, auth_header) == "digraph G { generated }"
+
+    def test_a_save_redraws_the_diagram_in_the_same_request(self, client, review_db,
+                                                            auth_header):
+        put = client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
+                         json={"labels": {"n1": self.LABEL}})
+        assert put.status_code == 200, put.text
+        assert put.json()["renderPending"] is True      # the PNG is still the old picture ...
+        dot = self._dot(client, auth_header)
+        assert self.LABEL in dot                        # ... but the diagram is already right
+        assert dot.lstrip().startswith("digraph")
+
+    def test_an_undo_takes_the_correction_back_out(self, client, review_db, auth_header):
+        body = client.get(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header).json()
+        key = next(n["slotKey"] for n in body["labels"] if n["nodeId"] == "n1")
+        client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
+                   json={"labels": {"n1": self.LABEL}})
+        assert client.delete(BASE + "/overrides/slot", headers=auth_header,
+                             params={"slot_kind": "nodeLabel", "slot_key": key}).status_code == 200
+        dot = self._dot(client, auth_header)
+        assert self.LABEL not in dot
+        assert "llm n1" in dot
+
+
 class TestRenderPendingTellsTheTruth:
     def test_a_save_with_no_output_tree_reports_the_picture_as_owed(self, client, review_db,
                                                                     auth_header):

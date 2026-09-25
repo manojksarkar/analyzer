@@ -293,7 +293,13 @@ def get_flowchart_labels(
     # re-derived. Say which it is rather than leaving the caller to guess.
     body = {"flowchartId": flowchart_id, "flowchartToken": flowchart_token,
             "functionName": entry.get("name"), "labels": labels,
-            "graphAvailable": bool(labels)}
+            "graphAvailable": bool(labels),
+            # The Graphviz DOT, read from the DATABASE -- rebuilt by R8 in the same request that
+            # saves a label. A UI draws it with @viz-js/viz, the library the pipeline itself uses
+            # to turn DOT into the SVG it screenshots for the Word file, so the editor shows the
+            # corrected flowchart the moment it is saved. The PNG beside the document is a
+            # file on disk and is only redrawn by the next re-export.
+            "dot": entry.get("flowchart") or ""}
     if not labels:
         body["note"] = (
             "This flowchart has no stored graph, so its labels cannot be listed or corrected. "

@@ -20,6 +20,7 @@ separate feature with its own surface.
 - [1. What can be edited](#1-what-can-be-edited)
 - [2. Slot keys, and why they are not in the path](#2-slot-keys-and-why-they-are-not-in-the-path)
 - [3. Endpoint index](#3-endpoint-index)
+- [3a. UI flows — which calls, in which order](#3a-ui-flows--which-calls-in-which-order)
 - [4. Wire format — read this before writing a client](#4-wire-format--read-this-before-writing-a-client)
 - [5. Shared objects](#5-shared-objects)
 - [6. R1 — list the corrections in a version](#6-r1--list-the-corrections-in-a-version)
@@ -120,11 +121,117 @@ Every path is under the `/api/v1` prefix. All require project **membership** (`R
 
 ---
 
+## 3a. UI flows — which calls, in which order
+
+The endpoints from a screen's point of view. Each path below is under `/api/v1/projects/{projectId}`;
+each R-number's full contract is in §6–§15a. Every call sends `Authorization: Bearer <token>`.
+Nothing is pushed: **after a save, refetch** what the screen shows.
+
+**Which versions.** R1–R11 work on any version. The document page (`/documents/{docId}/render`) and
+the re-export button need a job row and document rows, which only a run started from the web app
+writes. A version generated with `analyzer.py generate` has neither: correct it with these
+endpoints, then export with `python analyzer.py reexport --project-id <p> --version-id <v>`.
+
+### Flow 1 — open a document
+
+| step | call | why |
+|---|---|---|
+| 1 | `GET /documents?version_id={versionId}` | the version's documents, one per component; `documents[].id` is the `docId` |
+| 2 | `GET /documents/{docId}/render` | the page. Draw its flowcharts from their DOT — see *Drawing a flowchart* below |
+| 3 | R9 `GET /versions/{versionId}/export-readiness` | the banner: `stale: true` means corrections are not in the Word file yet |
+| 4 | R1 `GET /versions/{versionId}/overrides` | optional: mark corrected items. Fetch once, index by `slotKey` |
+
+### Flow 2 — correct a text: `description`, `behaviourInputName`, `behaviourOutputName`, `unitDescription`, `structDescription`
+
+| step | call | why |
+|---|---|---|
+| 1 | R11 `GET /versions/{versionId}/slots?slot_kind=<kind>&unit=<unit>` | the editable items, each with `slotKey`, `label` and current `text` |
+| 2 | R3 `PUT /versions/{versionId}/overrides/slot` with `{"slot_kind", "slot_key", "text"}` | save |
+| 3 | — | when `queuedForRegeneration` is not empty, say which other texts the next run rewrites |
+| 4 | R11 again, then R9 | show the saved text; update the banner |
+
+### Flow 3 — correct a Dynamic Behaviour row
+
+| step | call | why |
+|---|---|---|
+| 1 | R11 `GET /versions/{versionId}/slots?slot_kind=behaviourDescription&unit=<unit>` | rows with `bullets`, `functionId`, `externalCallerId` and `slotKey` |
+| 2 | R6 `PUT /versions/{versionId}/overrides/behaviour` with `{"function_id", "external_caller_id", "bullets"}` | save the **whole** list; both ids copied from step 1 |
+| 3 | R11 again, then R9 | |
+
+### Flow 4 — correct flowchart labels
+
+| step | call | why |
+|---|---|---|
+| 1 | R11 `GET /versions/{versionId}/slots?slot_kind=nodeLabel&unit=<unit>` | one row per flowchart, with its `flowchartToken`. Coming from the page, match the flowchart by `functionName` within its unit — the page carries no tokens (§17) |
+| 2 | R7 `GET /versions/{versionId}/flowcharts/{flowchartToken}/labels` | every node's `nodeId`, `text` and `slotKey`, and the diagram as `dot`. Draw the diagram; list the labels for editing |
+| 3 | R8 `PUT /versions/{versionId}/flowcharts/{flowchartToken}/labels` with `{"labels": {"<nodeId>": "<text>"}}` | **only the labels that changed**, all in one call |
+| 4 | R7 again | redraw from `dot`: the correction shows at once. `renderPending: true` is about the PNG in the Word file only |
+
+### Flow 5 — undo and history, any kind
+
+| call | notes |
+|---|---|
+| R4 `DELETE /versions/{versionId}/overrides/slot?slot_kind=…&slot_key=…` | back to the LLM's text. A flowchart label is undone per node, with that node's `slotKey` from R7; a behaviour row with the `slotKey` from R11. Disable Undo when `llmText` is `null` |
+| R5 `GET /versions/{versionId}/overrides/history?slot_kind=…&slot_key=…` | every edit of that one slot, oldest first |
+
+### Flow 6 — put the corrections into the Word file
+
+| step | call | why |
+|---|---|---|
+| 1 | R9 | `stale: true`: show "N corrections are not in the Word file yet" and a Re-export button. `pendingRenders` = flowchart pictures the re-export redraws |
+| 2 | `GET /jobs/current` | the job to re-export: `job.id`, when `job.version_id` is this version (snake_case, §4) |
+| 3 | `POST /jobs/{jobId}/reexport` | project **admin** only — show the button when `GET /projects/{projectId}` gives `my_role: "admin"`. Runs in the background; the server re-derives first when stale |
+| 4 | R9 again | clears the banner once the corrections are re-derived. That happens **before** the Word file is written, so it does not mean "re-export finished" (§17) |
+| 5 | `GET /documents/{docId}/download` | the stored file — the previous one until the re-export has finished |
+
+Nothing exports on its own.
+
+### Flow 7 — needs attention (optional panel)
+
+R10 `GET /versions/{versionId}/regeneration-queue`: texts the next run rewrites because a correction
+changed what they were written from. Show each with its `reason`.
+
+### Drawing a flowchart
+
+The page payload and R7 both carry the flowchart as **Graphviz DOT, read from the database**:
+
+| where | field |
+|---|---|
+| page: `flowchart_table.flowcharts[]` | `mermaid` — a legacy name; the content is DOT, not Mermaid |
+| R7 | `dot` |
+
+R8 rebuilds that DOT in the same request that saves a label, so **draw the DOT and a reload shows the
+corrected flowchart at once**. The PNG (`image_url`) is a file on disk that only the next re-export
+redraws, so a page that shows the PNG shows the old label until then. Keep the PNG as the fallback.
+
+Draw it with **`@viz-js/viz`**: Graphviz compiled to WebAssembly, and the library the pipeline itself
+uses for the Word file's pictures (`engine/config/render_dot.mjs`), so the browser and the document
+lay the graph out alike. Use the pipeline's version range, `^3.29.0` (root `package.json`).
+
+```ts
+import { instance } from '@viz-js/viz'   // import lazily: the WebAssembly is large
+
+const viz = await instance()              // create once, reuse
+try {
+  const svg = viz.renderSVGElement(dot)   // an SVGSVGElement: put it in a scrollable, zoomable box
+} catch {
+  // throws when the DOT cannot be drawn: show the PNG (image_url) instead
+}
+```
+
+A long flowchart is cut into **parts** for the Word page (`label` ends "Part K of N"; the later parts
+have `mermaid: null`). In the browser, draw the first part's DOT once as one scrollable diagram and
+skip the later parts.
+
+---
+
 ## 4. Wire format — read this before writing a client
 
-**Requests are `snake_case`. Responses are `camelCase`.** This is not a typo and it is not
-negotiable per-endpoint — it is how the whole platform API is built, and the review routes follow
-it.
+**Requests are `snake_case`. Responses are `camelCase`.** This is not a typo, and it holds for
+every review endpoint (R1–R11). **The platform endpoints a review screen also calls — jobs,
+documents, the page payload — answer in `snake_case`** (`job.version_id`, `image_url`, `my_role`);
+the web-app's mappers (`web-app/src/services/mappers/`) convert those. Do not expect one convention
+across both.
 
 | direction | convention | example |
 |---|---|---|
@@ -145,7 +252,7 @@ Content-Type: application/json
 ```
 
 **Trying it by hand** — Swagger UI is at `/docs` (self-hosted, so it works behind a firewall that
-blocks CDNs). The ten endpoints are grouped under **review** and each is named by its R-number, so
+blocks CDNs). The eleven endpoints are grouped under **review** and each is named by its R-number, so
 the list reads in the order of this document. Sign in with `POST /api/v1/auth/signin`, paste the
 `access_token` into **Authorize**, then use Try-it-out. Take a `slot_key` from an R1 response
 rather than typing one — Swagger URL-encodes it for you.
@@ -462,7 +569,8 @@ The row is a **list** of bullets, one per call arrow, edited as one block (`REQ-
 
 **Both ids are entity keys.** Not the row's `externalUnitFunction` display label — that is
 `"<unit> - <name>"`, and two different callers can share one, so a correction addressed by it would
-land on the wrong row (`REQ-ID-01`).
+land on the wrong row (`REQ-ID-01`). Copy both from the row R11 returns: `functionId` and
+`externalCallerId`.
 
 **Response 200**
 
@@ -523,6 +631,7 @@ key in base64url without padding (`REQ-ID-04`). One request opens the editor; on
 | `labels` | object[] | **every** node, in graph order — corrected or not |
 | `graphAvailable` | boolean | `false` when the stored output carries no graph; `labels` is then `[]` |
 | `note` | string | present only when `graphAvailable` is `false`, saying why |
+| `dot` | string | the flowchart as **Graphviz DOT**, read from the database — draw it (§3a, *Drawing a flowchart*). R8 rebuilds it in the same request, so after a save it already carries the new labels; the PNG does not. `""` when none is stored |
 | `labels[].nodeId` | string | e.g. `n7`. Use as the key in R8 |
 | `labels[].slotKey` | string | **this node's slot key** — send it to R4 (undo) or R5 (history). Never assemble one yourself (§2) |
 | `labels[].text` | string | **what the picture carries now** — the stored label |
@@ -537,12 +646,15 @@ key in base64url without padding (`REQ-ID-04`). One request opens the editor; on
   "flowchartToken": "R3Bpb3xHcGlvRHJ2fEdwaW9fSW5pdHx2b2lk",
   "functionName": "Gpio_Init",
   "labels": [
-    { "nodeId": "n0", "slotKey": "Gpio|GpioDrv|Gpio_Init|voidn0",
-      "text": "Start", "llmText": null, "isOverridden": false },
-    { "nodeId": "n7", "slotKey": "Gpio|GpioDrv|Gpio_Init|voidn7",
-      "text": "Check the write-protect flag",
-      "llmText": "Check flag", "isOverridden": true }
-  ]
+    { "nodeId": "n0", "slotKey": "Gpio|GpioDrv|Gpio_Init|void\u0001n0",
+      "text": "Start", "humanText": null, "llmText": null,
+      "isOverridden": false, "isOrphaned": false },
+    { "nodeId": "n7", "slotKey": "Gpio|GpioDrv|Gpio_Init|void\u0001n7",
+      "text": "Check the write-protect flag", "humanText": "Check the write-protect flag",
+      "llmText": "Check flag", "isOverridden": true, "isOrphaned": false }
+  ],
+  "graphAvailable": true,
+  "dot": "digraph G {\n  rankdir=TB;\n  …\n  n7 [shape=box, label=\"Check the write-protect flag\"];\n  …\n}"
 }
 ```
 
@@ -614,8 +726,10 @@ Three rules (`REQ-API-08`):
 the **picture** may not be. It is `true` whenever a render job was raised and **not finished inside
 this call**, which on a host with no output tree is always. Note that the stored JSON and DOT *are*
 rebuilt either way: "the graph was rebuilt" and "the image was drawn" are different facts, and this
-flag reports the second. It always agrees with R9's `pendingRenders`. Where it does not, the job stays pending and a host that has
-the tree finishes it. Either way the export consults the same rows, so a document cannot go out
+flag reports the second. It always agrees with R9's `pendingRenders`. A picture not drawn here stays
+pending, and the next run or re-export on a host with the tree draws it. **A UI that draws R7's `dot`
+shows the corrected flowchart straight after the save** — this flag is only about the PNG the Word
+file carries. Either way the export consults the same rows, so a document cannot go out
 carrying new text and an old image (`REQ-IM-02`) — R9 reports it as `pendingRenders`.
 
 **`slotShape`** identifies the graph the correction was written against, so the same text is not
@@ -720,7 +834,7 @@ the UI must refetch after a save:
 | `description` | next page load — the stored interface table is patched | after re-export |
 | `behaviourInputName`, `behaviourOutputName` | next page load — read from the model | after re-export |
 | `behaviourDescription` | next page load — the stored behaviour row is written | after re-export |
-| `nodeLabel` | the **picture** changes only after the owed render (next re-export); the page shows the PNG whenever one exists, and falls back to the diagram text only when none does. R7 shows the new text immediately | after re-export |
+| `nodeLabel` | next page load **when the UI draws the DOT** (§3a, *Drawing a flowchart*): the payload's DOT is read from the database, and R8 rebuilt it. The PNG (`image_url`) changes only after the owed render (next re-export), so a page that shows the PNG shows the old label until then. Today's web-app does, and prints the DOT as text only when no PNG exists | after re-export |
 | `unitDescription` | **not shown on the page at all** — the page's unit section has no description | after re-export |
 | `structDescription` | **not shown on the page** — struct rows display `N/A` | after re-export |
 
@@ -815,6 +929,7 @@ A row, for the six per-slot kinds:
 | `isOverridden` | boolean | a correction is **in force**. `false` for an orphan |
 | `isOrphaned` | boolean | a correction exists but no longer applies |
 | `bullets` | string[] | `behaviourDescription` only, in place of `text` |
+| `functionId` / `externalCallerId` | string | `behaviourDescription` only: the two ids R6 takes |
 
 ```json
 {
@@ -908,8 +1023,18 @@ Honest gaps, so the UI does not plan around something that is not there.
 - **The document page does not show unit or struct descriptions** (§14, "When a correction becomes
   visible"), so corrections to those two kinds appear only in the Word file. The page renderer lags
   the Word exporter here; both read the same stored fields once it catches up.
-- **A corrected flowchart's picture is redrawn by the next run or re-export**, not by the save —
-  R8 over HTTP has no output tree to draw into, so `renderPending` is `true`.
+- **A corrected flowchart's PNG is redrawn by the next run or re-export**, not by the save — R8
+  over HTTP has no output tree to draw into, so `renderPending` is `true`. Its DOT is rebuilt by the
+  save: draw that (§3a) and the page is current at once.
+- **A re-export has no completion signal.** It runs on the version's existing job and never changes
+  that job's `status`, which stays `complete`; so neither `GET /jobs/{jobId}` nor its `events` stream
+  can say "started" or "finished" (a failure does show, as `failed`). R9 turning `stale: false`
+  means the corrections were re-derived, which happens before the Word file is written. Until the
+  job reports its re-export, "Re-export started" is all the UI can honestly say.
+- **Only the newest version can be re-exported from the UI.** The endpoint takes a job id, and the
+  only way to find one is `GET /jobs/current`, the project's latest job. A version carries no job id.
+- **The page payload carries no slot keys**, so "edit this sentence" on the page means finding the
+  item in R11 (same unit, by `label` or `functionName`) and using its `slotKey`.
 
 ---
 

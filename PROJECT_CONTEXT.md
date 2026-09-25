@@ -218,6 +218,55 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-25b (**Is a corrected flowchart shown from the database? Its DOT is, its
+> picture is not. R7 now returns the DOT, and the API spec has the UI flows (§3a).**
+>
+> **The question (user):** after a label is corrected, does reloading the page show it? The page
+> payload (`GET /documents/{docId}/render`) reads each flowchart's Graphviz DOT from the DATABASE
+> (`doc_render._load_flowcharts` through `OutputReader` / `version_output_files`), and R8 rebuilds
+> that DOT in the same request (`redraw.patch_unit_flowcharts` sets `entry["flowchart"] =
+> dot_for(cfg)`). Proven on the local e2e v1 with the page's own loader: the corrected label is in the
+> DOT after R8 and gone after R4. BUT the web-app shows the PNG (`image_url`, a file on disk that only
+> the next re-export redraws) and prints the DOT (legacy field name `mermaid`) as raw text only when
+> no PNG exists; it has no Graphviz renderer. So today a reload shows the OLD picture. The fix belongs
+> in the UI: draw the DOT with `@viz-js/viz`, the pipeline's own DOT-to-SVG library
+> (`engine/config/render_dot.mjs`; root `package.json` `^3.29.0`, Graphviz 15.1.1), PNG as the
+> fallback. Checked: the DOT R7 returns after a save renders with that library (status success,
+> corrected label in the SVG).
+>
+> **R7 returns `dot`** (`api/routes/text_overrides.py`), a backward-compatible addition, so the
+> flowchart editor draws the diagram before and after a save with no second endpoint. Tests
+> `TestTheEditorCanDrawTheCorrectedDiagram` (3 tests x 2 backends); revert-checked: dropping the
+> field is caught by 6, R8 not rebuilding the stored DOT by 4.
+>
+> **API spec §3a, UI flows:** seven flows as call sequences (open a document, correct a text, a
+> behaviour row, flowchart labels, undo/history, export, regeneration queue) plus "Drawing a
+> flowchart". Corrected on the way: §4 said the whole platform answers camelCase, but the
+> jobs/documents/render endpoints answer snake_case (`job.version_id`, `image_url`, `my_role`), and
+> only R1-R11 are camelCase; the R7 example held two REAL U+0001 characters (invisible, and invalid
+> JSON), now `\u0001`; R11's table lacked `functionId`/`externalCallerId`, which R6 needs;
+> "ten endpoints" is now eleven.
+>
+> **Gaps recorded in spec §17, not fixed (pre-existing; each needs a decision):** (1) a re-export has
+> no completion signal: it runs on the version's existing job and never changes its `status`, which
+> stays `complete`, so `GET /jobs/{id}` and the SSE stream say "complete" at once, and R9 clears after
+> Phase 3, before the DOCX is written. (2) Only the newest version can be re-exported from the UI:
+> the endpoint takes a job id, `GET /jobs/current` is the only way to find one, and versions carry
+> none. (3) The page payload carries no slot keys, so the UI matches R11 rows by name. Also noted in
+> §3a: `analyzer.py generate` writes no job and no document rows, so a CLI-generated version has no
+> web page; review it through R1-R11 and export it with `analyzer.py reexport`.
+>
+> **Found while testing, unrelated to this change, NOT fixed:** a bare `pytest` (which also collects
+> `tests/e2e` and regenerates `workspaces/e2e-sample`) shows 4 errors and 1 failure. (1) The
+> `test_specs` fixture in `tests/e2e/conftest.py` still reads `output/My-Sample/test_specs.json`;
+> generation is per component now and writes `output/<component>/test_specs.json`, so all four SWE.4
+> e2e tests error. Earlier runs in this work used `tests/unit tests/api`, which never collect e2e.
+> (2) The `unit_diagrams` snapshot (2026-08-26) numbers the Lib interfaces 01-06, only the called
+> ones; a fresh run numbers every public function (libSubtract 02, libMin 06, ...), so the same
+> correct edges (Core calls libAdd, libMultiply, libNormalize) carry different ids. The interface-
+> table snapshot that would show this directly is SKIPPED on this machine because the local config
+> has `llm.descriptions` on. Cause not traced. 2288 passed, 37 skipped (tests/unit + tests/api).)
+
 > Updated: 2026-09-25 (**undo and history of a flowchart label were unusable from Swagger; the
 > superuser flag was only half applied; and when each correction becomes VISIBLE is now written
 > down — two kinds never appear on the page.**
