@@ -60,7 +60,18 @@
     // unedited run cannot ship someone else's name as author/reviewer.
     "utExport": {
       "review": { "author": "", "reviewer": "" },
-      "environment": { "flags": [], "probepoint": [], "usercode": [] }
+      "environment": { "flags": [], "probepoint": [], "usercode": [] },
+      // Also write the TARGET format (output/ut/: ONE hierarchy.json for the
+      // project + one <env>.json per unit) beside our per-group ut_export.json.
+      // See UT_EXPORT_SPEC.
+      "targetFormat": true,
+      // hierarchy.json Librarydirectories, per layer: {"Layer1": ["path", ...]}.
+      "libraryDirectories": {},
+      // Per test environment (<LAYER>_<COMPONENT>_<UNIT>_TS), split by file because
+      // the two usercode shapes differ:
+      // {"<env>": {"testcase": {flags, probepoint, usercode},
+      //            "hierarchy": {Probepoint, usercode}}}
+      "environments": {}
     }
   },
 
