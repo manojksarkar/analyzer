@@ -218,6 +218,56 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-26 (**Every run started from the web app failed at once -- and once it could
+> start, it hung for ever on SQLite. Both fixed. A CLI-onboarded project is now refused instead of
+> silently damaged.**
+>
+> **1. The API spawned retired scripts.** e0f5aef (2026-08-24, "one CLI") turned
+> `engine/incremental/generate.py` and `engine.py` into redirects that print "This is not a command
+> any more" and exit 2, but `pipeline_runner._inner_run_locked` kept spawning them, so every
+> `POST /projects/{p}/jobs` failed before parsing -- on every branch since, `develop` included.
+> Reported from Swagger. `_generate_cmd` now builds `analyzer.py generate`, a translation of the same
+> options to the CLI's names (`--full`, `--base-version`, `--data-dict`, `--no-llm`,
+> `--no-narrowed-parse`; no `--doc-type`, swe3 as before). The tests parse the command with
+> `analyzer.build_parser()`, so a renamed flag fails there and not in a job.
+>
+> **2. A CLI-onboarded project is refused: 409 `NO_ARCHITECTURE`.** Its row has no
+> `architecture_layers` (tools/new_project.py writes none). The runner builds
+> `workspaces/<p>/config.json` from the database, so a run REPLACED the onboarding config with
+> config.defaults.json's sample layers before failing (checked with the runner's own function,
+> into a scratch dir), and `_make_documents` creates documents only for components declared in the
+> database, so it would have produced none. Refused in `start_job` before anything is reserved or
+> written. Running CLI projects from the web app (use the onboarding config, documents from its
+> layers) is a design choice left open.
+>
+> **3. The runner deadlocked when anything in its output loop raised.** Found by running a real API
+> generation (sample project, created web-app style): 10+ minutes at "running". py-spy: `run.py`
+> blocked in logging's write to the pipe; the API thread in `proc.wait()` past its read loop. The
+> loop had raised: `_now() - job.started_at` is aware-minus-naive on SQLite, which stores no zone
+> -- TypeError on the first line -- and the `finally` then waited for a child blocked on the
+> undrained pipe. PostgreSQL returns aware timestamps, so the office does not hit this trigger;
+> any exception in that loop hung a job the same way. Fixed three ways: `_elapsed_since` (naive
+> read as UTC) at all three `- started_at` sites; `_progress` makes per-line bookkeeping
+> best-effort, logged once per function per job; a loop left early stops the whole process tree
+> before waiting (`_stop_tree`: psutil descendants, `taskkill /T` without it). Cancel and timeout
+> use it too -- they terminated only `analyzer.py` and left `run.py` running on its own.
+> Revert-checked, including real child -> shell -> grandchild trees flooding the pipe.
+>
+> **Verified end to end with the real pipeline on the local SQLite database:** a project created
+> through POST /projects (sample layers, flowcharts on), POST /jobs (full, group My Sample, no_llm)
+> -> complete in 39 s, 3 documents, GET /jobs/current returns it; R8 on a coreAdd node -> R9 stale,
+> 1 picture owed -> POST /jobs/{id}/reexport -> R9 fresh, 0 owed, the 3 DOCX and the corrected
+> flowchart PNG rewritten, download 200. The job read `complete` for the whole 38 s re-export -- the
+> missing completion signal, as described.
+>
+> **Found, not fixed:** a failed re-export is never recorded (`_mark_failed` skips a job that is
+> already `complete`) -- spec §17 said it shows as `failed`, corrected. The shipped
+> config.defaults.json has `views.flowcharts` and `views.behaviourDiagram` OFF, and the New Project
+> wizard sets no views, so a web-app project draws neither unless its `build_config.views` or the
+> server's config.local.json turns them on. `analyzer.py onboard` passes `--branch main` unless
+> given one, so re-onboarding an existing project resets its default branch to main. The e2e
+> fixture/snapshot drift of 2026-09-25b is unchanged. 2323 passed, 37 skipped (tests/unit + tests/api).)
+
 > Updated: 2026-09-25b (**Is a corrected flowchart shown from the database? Its DOT is, its
 > picture is not. R7 now returns the DOT, and the API spec has the UI flows (§3a).**
 >

@@ -92,6 +92,21 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def _elapsed_since(started_at: Optional[datetime], now: Optional[datetime] = None) -> int:
+    """Whole seconds since `started_at`, whichever backend handed it back.
+
+    `started_at` is written timezone-aware (`_now()` is UTC), and PostgreSQL returns it that way.
+    SQLite stores no zone and returns it NAIVE, and aware-minus-naive raises TypeError -- which,
+    raised from the per-line progress update, hung every job the API started on SQLite (see
+    `_progress`). Naive is read as UTC, because UTC is what was written.
+    """
+    if started_at is None:
+        return 0
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=UTC)
+    return max(0, int(((now or _now()) - started_at).total_seconds()))
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -103,14 +118,46 @@ def start(db: Any, job_id: str) -> None:
 
 
 def cancel_subprocess(job_id: str) -> None:
-    """Terminate the subprocess for the given job (if still alive)."""
+    """Stop the subprocess for the given job (if still alive), and what it started."""
     with _LOCK:
         proc = _job_procs.get(job_id)
-    if proc is not None and proc.poll() is None:
+    if proc is not None:
+        _stop_tree(proc)
+
+
+def _stop_tree(proc: subprocess.Popen) -> None:
+    """Stop a job's subprocess AND everything it started.
+
+    `proc.terminate()` alone stops only the direct child. That child is `analyzer.py`, which runs
+    each phase as its own `run.py` (through cmd.exe on Windows), so the phase carried on without
+    its parent: still writing to the database, and blocked for ever on the output pipe once
+    nobody read it. Descendants first, so none is re-parented and missed. psutil when present --
+    a requirement, but optional at runtime as in engine/core/subprocess_util.py -- otherwise
+    `taskkill /T` on Windows.
+    """
+    if proc.poll() is not None:
+        return
+    try:
+        import psutil
+    except ImportError:
+        psutil = None
+    if psutil is not None:
         try:
-            proc.terminate()
-        except OSError:
-            pass
+            family = psutil.Process(proc.pid).children(recursive=True)
+        except psutil.Error:
+            family = []
+        for p in family:
+            try:
+                p.terminate()
+            except psutil.Error:
+                pass
+    elif os.name == "nt":
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                       capture_output=True, shell=True)
+    try:
+        proc.terminate()
+    except OSError:
+        pass
 
 
 def signal_resume(job_id: str) -> None:
@@ -165,6 +212,7 @@ def _cleanup_state(job_id: str) -> None:
     with _LOCK:
         _job_procs.pop(job_id, None)
         _job_resume_events.pop(job_id, None)
+        _progress_warned.difference_update({k for k in _progress_warned if k[0] == job_id})
         # Keep logs so SSE can drain remaining lines after completion
 
 
@@ -416,46 +464,75 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
     job.current_activity = _ACTIVITY[1]
     db.jobs.update(job)
 
-    # 3. Run the version4 incremental engine (does what the old /generate did):
-    #    mode "full"  -> src/incremental/generate.py (force a full generation)
-    #    otherwise    -> src/incremental/engine.py, which selects the nearest-ancestor
-    #                    baseline itself (an explicit reference_version_id still wins) and
-    #                    falls back to full when there is none.
-    #    The engine reuses the checkout we just made, writes model/output + manifest INTO
-    #    the commit dir (workspaces/<pid>/<commit[:16]>/), and seeds the reuse index. The
-    #    job lifecycle (SSE phase tailing, cancel) wraps the subprocess as before.
+    # 3. Produce the version through `analyzer.py generate` -- see `_generate_cmd`. The engine
+    #    reuses the checkout we just made, writes model/output + manifest into the version's own
+    #    directory, and seeds the reuse index. The job lifecycle (SSE phase tailing, cancel)
+    #    wraps the subprocess as before.
     job = db.jobs.get(job_id)
-    mode = (getattr(job, "mode", "auto") or "auto")
-    scope = getattr(job, "scope", None) or {"type": "project"}
-    script = "generate.py" if mode == "full" else "engine.py"
-    cmd = [sys.executable, str(root / "engine" / "incremental" / script),
-           "--project-id", job.project_id, "--branch", job.branch,
-           "--commit", job.commit_sha, "--scope", _scope_to_cli(scope),
-           "--config", str(config_path)]
-    if getattr(job, "version_id", None):
-        # Run under the real `ver…` id reserved at job start (08), so the engine's identity,
-        # reuse index and DB records all match the API/DB — no more commit[:16] namespace.
-        cmd += ["--version-id", job.version_id]
-    if mode != "full" and getattr(job, "reference_version_id", None):
-        # list_versions returns real ver ids now, so the baseline override IS the real id.
-        cmd += ["--base-version-id", job.reference_version_id]
+    if not getattr(job, "version_id", None):
+        # Every job reserves one at creation; the CLI requires it. Say so rather than hand the
+        # subprocess a None.
+        _mark_failed(db, job_id, "This job has no version id, so there is nothing to generate "
+                                 "into. Start a new job.")
+        return
     if getattr(job, "data_dict_id", None):
         # Materialise it FIRST — the engine resolves the id to a file, and nothing else
         # creates that file.
         _materialise_data_dictionary(db, job)
-        cmd += ["--data-dict-id", job.data_dict_id]
-    if getattr(job, "no_llm", False):
-        cmd.append("--no-llm")
-    # Narrowed parse is ON by default in the engine, so a job opts OUT rather than in. It only
-    # applies to an incremental run (a full generation has no baseline to merge against), and it
-    # falls back to a full parse by itself whenever it cannot prove the merge safe.
-    if mode != "full" and getattr(job, "narrowed_parse", True) is False:
-        cmd.append("--no-narrowed-parse")
-    _append_log(job_id, f"Generating ({'full' if mode == 'full' else 'auto'}) via {script}…")
+    mode = (getattr(job, "mode", "auto") or "auto")
+    cmd = _generate_cmd(job, root, config_path)
+    _append_log(job_id, f"Generating ({'full' if mode == 'full' else 'auto'}) via analyzer.py generate…")
 
     ok = _execute_subprocess(db, job_id, cmd, phase_start=1, extra_env=_engine_db_env(db))
     if ok:
         _complete(db, job_id)
+
+
+def _generate_cmd(job: Any, root: Path, config_path: Path) -> list[str]:
+    """The command that produces a job's version: `analyzer.py generate`.
+
+    This spawned `engine/incremental/generate.py` (mode "full") or `engine.py` (otherwise) until
+    e0f5aef made `analyzer.py` the only front door. Both scripts' `main()` now print "This is not
+    a command any more" and exit 2, so every run started from the web app failed before parsing
+    anything. `analyzer.py generate` calls the same two functions with the same options under the
+    CLI's names, so this is a translation, not a change of behaviour:
+
+        mode "full"               --full                 generate_full
+        anything else             (default)              generate_incremental, which falls back
+                                                         to full when there is no usable baseline
+        reference_version_id      --base-version         incremental only; the real `ver…` id
+        narrowed_parse is False   --no-narrowed-parse    incremental only
+        data_dict_id              --data-dict
+        no_llm                    --no-llm
+
+    No `--doc-type`: the scripts never passed one, and both functions default to swe3, as the
+    CLI does.
+    """
+    mode = (getattr(job, "mode", "auto") or "auto")
+    scope = getattr(job, "scope", None) or {"type": "project"}
+    cmd = [sys.executable, str(root / "analyzer.py"), "generate",
+           "--project-id", job.project_id,
+           # The real `ver…` id reserved at job start (08), so the engine's identity, reuse index
+           # and DB records all match the API/DB.
+           "--version-id", job.version_id,
+           "--branch", job.branch, "--commit", job.commit_sha,
+           "--scope", _scope_to_cli(scope),
+           "--config", str(config_path)]
+    if mode == "full":
+        cmd.append("--full")
+    else:
+        if getattr(job, "reference_version_id", None):
+            cmd += ["--base-version", job.reference_version_id]
+        # Narrowed parse is ON by default in the engine, so a job opts OUT rather than in. A full
+        # generation has no baseline to merge against, and the engine falls back to a full parse
+        # by itself whenever it cannot prove the merge safe.
+        if getattr(job, "narrowed_parse", True) is False:
+            cmd.append("--no-narrowed-parse")
+    if getattr(job, "data_dict_id", None):
+        cmd += ["--data-dict", job.data_dict_id]
+    if getattr(job, "no_llm", False):
+        cmd.append("--no-llm")
+    return cmd
 
 
 # ---------------------------------------------------------------------------
@@ -1014,6 +1091,11 @@ def _execute_subprocess(
         job.phase = phase_start
         db.jobs.update(job)
 
+    # This loop is the only thing reading the child's output. Every way out of it before the end
+    # of that output -- a cancel, or anything raising -- leaves a child writing into a pipe nobody
+    # drains: it blocks when the pipe fills, and `wait()` below then waits for ever with the job
+    # stuck at "running". So an early exit stops the whole tree first.
+    abandoned = True
     try:
         for raw_line in proc.stdout:
             line = raw_line.rstrip("\n\r")
@@ -1027,17 +1109,14 @@ def _execute_subprocess(
             line_count += 1
 
             # Cancel check (every 20 lines to keep overhead low)
-            if line_count % 20 == 0 and _is_cancelled(db, job_id):
-                try:
-                    proc.terminate()
-                except OSError:
-                    pass
+            if line_count % 20 == 0 and _progress(job_id, _is_cancelled, db, job_id):
                 return False
 
             # Phase transition detection
             new_phase = _detect_phase(line, current_phase)
             if new_phase != current_phase:
-                _transition_phase(db, job_id, current_phase, new_phase, phase_start_time)
+                _progress(job_id, _transition_phase, db, job_id, current_phase, new_phase,
+                          phase_start_time)
                 current_phase = new_phase
                 phase_start_time = _now()
 
@@ -1045,22 +1124,22 @@ def _execute_subprocess(
             # component's Phase 3 is not still announced as "Exporting".
             _marker = _marker_phase(line)
             if _marker:
-                _set_activity(db, job_id, _ACTIVITY[_marker])
+                _progress(job_id, _set_activity, db, job_id, _ACTIVITY[_marker])
 
             # Update activity detail from log content (strip log prefix)
             detail = _strip_log_prefix(line)
             if detail and len(detail) > 10:
-                _update_activity(db, job_id, detail[:120])
+                _progress(job_id, _update_activity, db, job_id, detail[:120])
+        abandoned = False
 
     finally:
+        if abandoned:
+            _stop_tree(proc)
         try:
             proc.wait(timeout=_timeout)
         except subprocess.TimeoutExpired:
             _timed_out = True
-            try:
-                proc.terminate()
-            except OSError:
-                pass
+            _stop_tree(proc)
             proc.wait()
 
     if _timed_out:
@@ -1146,7 +1225,7 @@ def _transition_phase(db: Any, job_id: str, old_phase: int, new_phase: int,
     job.phase = new_phase
     job.phase_pct = 0
     job.current_activity = _ACTIVITY.get(new_phase, f"Phase {new_phase}…")
-    job.elapsed_seconds = int((_now() - job.started_at).total_seconds())
+    job.elapsed_seconds = _elapsed_since(job.started_at)
     job.eta_seconds = max(0, (4 - new_phase) * 120)
     db.jobs.update(job)
     _append_log(job_id, f"→ Phase {new_phase}: {_ACTIVITY.get(new_phase, '')}")
@@ -1164,8 +1243,38 @@ def _update_activity(db: Any, job_id: str, detail: str) -> None:
     job = db.jobs.get(job_id)
     if job:
         job.activity_detail = detail
-        job.elapsed_seconds = int((_now() - job.started_at).total_seconds())
+        job.elapsed_seconds = _elapsed_since(job.started_at)
         db.jobs.update(job)
+
+
+_progress_warned: set = set()      # (job_id, function) pairs already logged -- see _progress
+
+
+def _progress(job_id: str, fn, *args):
+    """One bookkeeping call from the output loop -- it never stops the job.
+
+    These run once per output line, and that loop is the only thing draining the child's pipe.
+    An exception from one used to end the loop, after which `wait()` waited for a child blocked
+    writing into the undrained pipe: the job hung at "running" for ever. That is how every job the
+    API started on SQLite hung at its first line (`_elapsed_since` has the trigger). A lost
+    progress line is cosmetic; a lost run is not.
+
+    Returns what `fn` returned, or None when it raised -- which `_is_cancelled` reads as "not
+    cancelled", the right default when the question could not be answered. Logged once per
+    function per job, so a database that stays down cannot flood the log a line at a time.
+    """
+    try:
+        return fn(*args)
+    except Exception as exc:                                  # noqa: BLE001 - see docstring
+        key = (job_id, getattr(fn, "__name__", repr(fn)))
+        with _LOCK:
+            first = key not in _progress_warned
+            _progress_warned.add(key)
+        if first:
+            _log.warning("job %s: progress update %s failed (the run continues; further "
+                         "failures of it are not logged): %s: %s",
+                         job_id, key[1], type(exc).__name__, exc)
+        return None
 
 
 def _is_cancelled(db: Any, job_id: str) -> bool:
@@ -1277,7 +1386,7 @@ def _complete(db: Any, job_id: str) -> None:
     job.eta_seconds = 0
     job.completed_at = now
     job.version_id = version.id
-    job.elapsed_seconds = int((now - job.started_at).total_seconds())
+    job.elapsed_seconds = _elapsed_since(job.started_at, now)
     for p in job.phases:
         p.status = "done"
     db.jobs.update(job)

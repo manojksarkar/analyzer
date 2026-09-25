@@ -131,6 +131,9 @@ Nothing is pushed: **after a save, refetch** what the screen shows.
 the re-export button need a job row and document rows, which only a run started from the web app
 writes. A version generated with `analyzer.py generate` has neither: correct it with these
 endpoints, then export with `python analyzer.py reexport --project-id <p> --version-id <v>`.
+A project onboarded with `analyzer.py onboard` cannot be run from the web app either:
+`POST /jobs` answers **409 `NO_ARCHITECTURE`**, because its layers live in
+`workspaces/<p>/config.json` rather than the database, and a run would replace that file.
 
 ### Flow 1 — open a document
 
@@ -1028,9 +1031,12 @@ Honest gaps, so the UI does not plan around something that is not there.
   save: draw that (§3a) and the page is current at once.
 - **A re-export has no completion signal.** It runs on the version's existing job and never changes
   that job's `status`, which stays `complete`; so neither `GET /jobs/{jobId}` nor its `events` stream
-  can say "started" or "finished" (a failure does show, as `failed`). R9 turning `stale: false`
-  means the corrections were re-derived, which happens before the Word file is written. Until the
-  job reports its re-export, "Re-export started" is all the UI can honestly say.
+  can say "started" or "finished". The web app's job polling and live stream only run while a job
+  is `queued`, `running` or `paused`, so they never start for a re-export. **A failure is not
+  recorded either**: the failure path leaves a job that is already `complete` untouched, so a failed
+  re-export shows only in the server log. R9 turning `stale: false` means the corrections were
+  re-derived, which happens before the Word file is written. Until the job reports its re-export,
+  "Re-export started" is all the UI can honestly say.
 - **Only the newest version can be re-exported from the UI.** The endpoint takes a job id, and the
   only way to find one is `GET /jobs/current`, the project's latest job. A version carries no job id.
 - **The page payload carries no slot keys**, so "edit this sentence" on the page means finding the
