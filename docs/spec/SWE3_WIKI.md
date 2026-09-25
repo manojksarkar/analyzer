@@ -395,7 +395,7 @@ The declaration **exactly as it is written in the source**, never rebuilt from t
 | | |
 |---|---|
 | Source | read back from the file at the recorded line |
-| Several lines | brackets are counted, so a long array or a `typedef struct { … } Name;` is captured to its end |
+| Several lines | brackets are counted, so a long array, class or `typedef struct { … } Name;` is captured to its end, however long. A bracket inside a comment or a string does not count. A declaration still open after 2000 lines is cut there, and the run logs a warning |
 | `#define` | the macro text the parser captured, including lines joined with `\` |
 | Nothing readable | falls back to the symbol's name — a row is never blank |
 | `} one_s, *one_s_2;` | the extra alias line is dropped; the real `typedef` line already shows the full declaration |
