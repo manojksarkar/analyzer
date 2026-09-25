@@ -180,3 +180,115 @@ def test_a_declaration_that_never_closes_stops_at_the_limit_and_says_so(tmp_path
 ])
 def test_code_only(line, in_block, code, still_open):
     assert dx._code_only(line, in_block) == (code, still_open)
+
+
+# --- a brace inside a literal in an INLINE BODY ---------------------------------
+# The reader gets the whole record, but the step that lists an inline method as its
+# declaration (_declarations_only) counted braces on the raw line: the `{` in "{" read as a
+# body still open, and the members after it were dropped as the rest of that body.
+
+@pytest.mark.parametrize("body", [
+    '{ return "{"; }',
+    "{ return '{'; }",
+    '{ return "}"; }',
+    "{ return '}'; }",
+    '{ return "{{"; }',
+    '{ return "\\"{"; }',          # an escaped quote before the brace
+])
+def test_a_brace_in_a_literal_in_an_inline_body_keeps_the_members_after_it(body):
+    decl = "class C {\npublic:\n    int mark(void) const " + body + "\n    int after;\n};"
+    assert dx._declarations_only(decl).split("\n") == [
+        "class C {", "public:", "    int mark(void) const;", "    int after;", "};"]
+
+
+def test_a_literal_brace_in_a_multi_line_body_leaves_no_stray_brace():
+    """`return '}';` used to close the body one line early, so its real `}` was listed as a
+    member of the class."""
+    decl = ("class C {\npublic:\n    char f(void) {\n        return '}';\n    }\n"
+            "    int after;\n};")
+    assert dx._declarations_only(decl).split("\n") == [
+        "class C {", "public:", "    char f(void);", "    int after;", "};"]
+
+
+def test_a_brace_in_a_default_argument_is_not_taken_for_the_body():
+    decl = 'class C {\npublic:\n    void log(const char* f = "{") { go(); }\n    int after;\n};'
+    assert dx._declarations_only(decl).split("\n") == [
+        "class C {", "public:", '    void log(const char* f = "{");', "    int after;", "};"]
+
+
+def test_an_inline_body_without_literals_is_reduced_as_before():
+    decl = ("class C {\npublic:\n    int f(void) {\n        if (x) { return 1; }\n"
+            "        return 0;\n    }\n    int g(void) const { return 2; }\n    int after;\n};")
+    assert dx._declarations_only(decl).split("\n") == [
+        "class C {", "public:", "    int f(void);", "    int g(void) const;", "    int after;",
+        "};"]
+
+
+# --- the real fixture: Diag/LongDeclShapes.h -----------------------------------
+# Every kind the table lists, past 60 lines, plus the brace-in-noise cases and the 60/61
+# boundary. Read from the real file through build_rows, so the fixture cannot drift from
+# the test.
+
+SHAPES_DIR = os.path.join(PROJECT_ROOT, "SampleCppProject", "Layer1", "Diag")
+SHAPES_H = os.path.join(SHAPES_DIR, "LongDeclShapes.h")
+
+
+def _shape_rows():
+    import re
+    with open(SHAPES_H, encoding="utf-8") as fh:
+        src = fh.read().splitlines()
+    dd = {}
+    for n, text in enumerate(src, 1):
+        m = re.match(r"^(class|struct|union|enum) (\w+) \{$", text)
+        if m:
+            dd[m.group(2)] = {"kind": m.group(1), "name": m.group(2),
+                              "location": {"file": "LongDeclShapes.h", "line": n}}
+        elif text == "typedef struct {":
+            dd["LongPacket_t"] = {"kind": "typedef", "name": "LongPacket_t",
+                                  "location": {"file": "LongDeclShapes.h", "line": n}}
+    unit_info = {"path": "LongDeclShapes", "fileName": "LongDeclShapes.cpp",
+                 "functionIds": [], "globalVariableIds": []}
+    rows = dx.build_rows(unit_info, [], dd, {}, SHAPES_DIR, None, {}, {}, {}, set())
+    by_name = {}
+    for r in rows:
+        head = r["declaration"].split("\n")[0]
+        name = "LongPacket_t" if head == "typedef struct {" else head.split()[1]
+        by_name[name] = r["declaration"].split("\n")
+    return by_name
+
+
+@pytest.mark.parametrize("name, n_lines, last_member, closing", [
+    ("LongRegisterBank",   70, "    int lastRegister;",         "};"),
+    ("LongFrame",          66, "    unsigned char lastByte;",   "};"),
+    ("LongWord",           63, "    long lastView;",            "};"),
+    ("LongOpcode",         68, "    OP_LAST = 99",              "};"),
+    ("LongPacket_t",       64, "    unsigned short lastWord;",  "} LongPacket_t;"),
+    ("BraceInComment",      5, "    int afterBrace;",           "};"),   # comment line stripped
+    ("OpenBraceInComment",  4, "    int onlyMember;",           "};"),   # comment line stripped
+    ("BraceInString",       7, "    int tail;",                 "};"),
+    ("Exactly60",          60, "    int s56;",                  "};"),   # control: was whole
+    ("Exactly61",          61, "    int s57;",                  "};"),
+])
+def test_every_long_declaration_is_listed_whole(name, n_lines, last_member, closing):
+    cell = _shape_rows()[name]
+    assert cell[-2:] == [last_member, closing], name
+    assert len(cell) == n_lines, name
+
+
+def test_the_fixture_lists_each_type_once_and_nothing_else():
+    assert sorted(_shape_rows()) == sorted([
+        "LongRegisterBank", "LongFrame", "LongWord", "LongOpcode", "LongPacket_t",
+        "BraceInComment", "OpenBraceInComment", "BraceInString", "Exactly60", "Exactly61"])
+
+
+def test_the_long_class_keeps_its_inline_method_as_a_declaration():
+    cell = _shape_rows()["LongRegisterBank"]
+    assert "    int width(void) const;" in cell
+    assert not any("return 32" in ln for ln in cell)
+
+
+def test_braces_in_literals_keep_every_member():
+    assert _shape_rows()["BraceInString"] == [
+        "class BraceInString {", "public:",
+        "    const char* openMark(void) const;", "    int afterOpen;",
+        "    char closeMark(void) const;", "    int tail;", "};"]
