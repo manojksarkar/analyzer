@@ -9,6 +9,9 @@ Templates of the two UT-automation JSON files. Readiness → [UT_EXPORT_READINES
 
 Format unchanged from the sample (photos, 2026-09-23); no key added or removed.
 
+**Generated** by the `utExport` view (SWE.4) into one folder for the project: `output/ut/hierarchy.json`
+and one `output/ut/<env>.json` per unit — see [UT_EXPORT_SPEC](../UT_EXPORT_SPEC.md) REQ-UE-07..10.
+
 ## Check a file
 
 `python tools/check_ut_json.py <file.json> [more.json ...]` — template picked from the content;
