@@ -126,8 +126,12 @@ Every row contains all eight columns:
 A function that modifies shared state has direction **In**.
 A function that only reads shared state, or has no side effects at all, has direction **Out**.
 Global variables always have direction **In/Out**.
+Shared state includes a class's static data member however it is named — `Foo::s_x`, a bare `s_x`, or
+through an object (`this->s_x`, `obj.s_x`, `p->s_x`) — and whatever its access.
+Known exception, open: a `Get` name or a non-void return decides first, so such a modifier is `Out`
+([SWE3_WIKI Column 6](SWE3_WIKI.md#column-6--directioninout)).
 
-**Verification:** Known modifier functions are `In`. Known read-only and pure functions are `Out`. All global variable rows are `In/Out`.
+**Verification:** Known modifier functions are `In`. Known read-only and pure functions are `Out`. All global variable rows are `In/Out`. Fixture `Layer1/Diag/StaticViaObject*`: every `this->`/object writer is `In`, `peekThis` and `viaReadCap` are `Out`.
 
 ---
 
