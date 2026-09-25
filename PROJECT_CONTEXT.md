@@ -208,6 +208,50 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-25 (**UT export generates the TARGET format and SOLVES input values** — branch
+> `feat/ut-export-templates`, reviewed by the user before commit.)
+>
+> **Two outputs from test_specs.json** (`views/ut_export.py`): our `ut_export.json` KEPT (user: ours may be
+> useful, our reading may be wrong) — same shape plus `inputs[].value` filled, `preconditions.globals[].value`,
+> `expected.value`, per-case `solve {status, inputs, expected, notes}`; and the target format in ONE
+> project-level folder `output/ut/` (beside the group folders): one `hierarchy.json` + one
+> `<LAYER>_<COMPONENT>_<UNIT>_TS.json` per unit (`views/ut_target.py`, pure builders). **One hierarchy,
+> rebuilt whole** (user, 2026-09-25 — it was one per group): views run per group, so each group run writes
+> its test-case files, then `write_hierarchy` collects the units from every group folder's
+> `test_specs.json` under the output root, keeps those whose component the config still names, deletes
+> any `*_TS.json` no such unit owns (only those), and writes the hierarchy from scratch — group runs are
+> sequential, the last leaves the whole project. `api/services/output_reader.groups()` skips `ut/` (else
+> version compare reports an added group `ut`). Config `views.utExport.targetFormat` (default true),
+> `libraryDirectories {layer: [..]}`, `environments {env: {testcase: {...}, hierarchy: {...}}}` — split by
+> file because the two `usercode` shapes differ. Spec REQ-UE-06..10, Decisions table, Assumptions A1–A30.
+> Readiness doc = plain words, no codes (user): per field `Status · Current · Based on · Open question`.
+> **Path solving `views/ut_paths.py`** (no IO, deterministic): per return, walk CFG entry→RETURN, conditions
+> parsed (C subset incl. casts, `?:`, bit ops, `static_cast<>`) → atoms `v OP c`, `REL v1 OP v2+c`,
+> `BITS (v&m)==x`; locals tracked through assignments (`_freeze` captures the OLD value: `x = x/2` no
+> cycle); enums + `#define` (dd kind "define", layer's own wins, ambiguous dropped) + `-D` macros as
+> constants. Value = admissible nearest 0 (stub return nearest 1). **Execution**: helpers with a CFG
+> (`helpers_from_cfgs`, short-name collisions dropped) are RUN concretely (`execute`/`_run`: loops iterate,
+> 20k-node cap, 4-deep calls, helper sees only its params + globals + stubs); conditions that cannot be
+> inverted are CHECKED concretely + bounded search (`_search`); if still unsolved the WHOLE function is
+> executed with candidate inputs (`_solve_by_execution`) — the run that exits through the target return
+> is the proof and gives expected return/globals/stub calls. Writes through pointer/array are SKIPPED
+> (safe: reading them back is unsupported). Out-parameters are variables too (`if (!op)`); target
+> `inputs` lists every parameter. `test_specs.mock_writeback_sources` factored out (document unchanged,
+> snapshot passes) → stub `mode` prototype iff the stub writes back.
+> **Numbers**: real pipeline, Sample `My Sample` group: 32/32 cases solved (inputs + expected), 6 target
+> files 0 validator errors; other local workspaces 86–100% (misses: array index, `obj.method()` on a real
+> object, struct fields without a dd). Solver ≈2 s per 100 cases. Values hand-checked vs source
+> (`coreEarlyReturn(10001)` → 201 through two nested helpers).
+> **Checked**: class members — parser records field reads only through a named var (`obj.f`, `p->f`), not
+> `this->m`, and NO field writes → `class_members` needs a parser change. Constructors/destructors — NOT
+> recorded (`_DIAG_FUNCTIONISH_KINDS`) → never specced. UT files are persisted with the version
+> (`version_output_files` walks recursively) but no API route serves them.
+> **Tests**: `tests/unit/test_ut_paths.py` (68), `test_ut_target.py` (20), `test_ut_export.py` (29 — incl.
+> one folder / one hierarchy, rerun byte-identical, removed component + unit without specs pruned, only
+> `*_TS.json` deleted), `test_test_specs_view.py` (+1), `tests/api/test_output_reader.py` (+1, `ut/` is not a
+> group), `tests/e2e/test_ut_export.py` (6, real pipeline). Unit+api 2766 green; e2e 162 + 6 skipped green. The local DB's `e2e-sample` project had an old-style version id (from
+> `b3e0717`) that blocked e2e — deleted with `tools/delete_project.py` (e2e rebuilds it).
+
 > Updated: 2026-09-24h (**UT export: scope fixed at UT-from-SWE.4; UT templates + a validator for
 > them** — docs + `tools/check_ut_json.py`, no engine change, branch `feat/ut-export-templates`.)
 >
