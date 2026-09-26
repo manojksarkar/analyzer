@@ -29,9 +29,11 @@ def test_every_unit_with_a_section_has_an_entry(unit_headers):
 
 
 def test_rows_have_both_columns(unit_headers):
+    """Two columns, plus `typeKey`: the record whose description the row prints (its
+    `structDescription` slot key), `None` on a row that prints a value."""
     for unit_key, rows in unit_headers.items():
         for row in rows:
-            assert set(row) == {"declaration", "information"}, unit_key
+            assert set(row) == {"declaration", "information", "typeKey"}, unit_key
             assert row["declaration"], unit_key
 
 

@@ -69,7 +69,8 @@ in the UI (`REQ-ID-01`). Take it from an R1/R2/R7 response and send it back unch
 
 | `slot_kind` | shape of `slot_key` |
 |---|---|
-| `description`, `behaviourInputName`, `behaviourOutputName`, `structDescription` | the entity key |
+| `description`, `behaviourInputName`, `behaviourOutputName` | the entity key |
+| `structDescription` | the type's data-dictionary key, e.g. `AddOperation` or `NS::Wrapped` |
 | `unitDescription` | the unit key, `Component\|Unit` |
 | `behaviourDescription` | `functionId` + `U+0001` + `externalCallerId` |
 | `nodeLabel` | `entityKey` + `U+0001` + `nodeId` |
@@ -159,6 +160,10 @@ A project onboarded with `analyzer.py onboard` cannot be run from the web app ei
 | 2 | R3 `PUT /versions/{versionId}/overrides/slot` with `{"slot_kind", "slot_key", "text"}` | save |
 | 3 | — | when `queuedForRegeneration` is not empty, say which other texts the next run rewrites |
 | 4 | R11 again, then R9 | show the saved text; update the banner |
+
+For `structDescription` the same `unit=` filter returns the structs, classes and unions that unit's
+**unit header table** shows; match a row on the page by `label` (the type name). The corrected text
+reaches the page and the Word file with the next re-export (§14).
 
 ### Flow 3 — correct a Dynamic Behaviour row
 
@@ -942,8 +947,8 @@ response instead of dug out of stored view output.
 | name | type | required | default | notes |
 |---|---|---|---|---|
 | `slot_kind` | string | **yes** | — | one of §1 |
-| `unit` | string | no | — | narrow to one unit. Refused with **400** for `structDescription` |
-| `component` | string | no | — | narrow to one component, by its **layer-qualified id** (`Layer1.Sample-Core`) — the same string as a document's `group` in `GET /documents`. Same exception |
+| `unit` | string | no | — | narrow to one unit, by its name (`Core`). For `structDescription`: the records that unit's header table shows (see `shownIn`) |
+| `component` | string | no | — | narrow to one component, by its **layer-qualified id** (`Layer1.Sample-Core`) — the same string as a document's `group` in `GET /documents`. For `structDescription`, as for `unit` |
 | `limit` | integer | no | `200` | 1–1000 |
 | `offset` | integer | no | `0` | ≥ 0 |
 
@@ -957,7 +962,9 @@ A row, for the six per-slot kinds:
 | `slotKind` | string | |
 | `slotKey` | string | **send this to R2–R6 verbatim** |
 | `label` | string | a display name — the function, unit or type |
-| `component` / `unit` | string \| null | `null` for `structDescription`, which has neither |
+| `component` / `unit` | string \| null | for `structDescription`: the first unit that shows it, or `null` when no document of this version does |
+| `shownIn` | string[] | `structDescription` only: the unit keys (`Layer1.Cross\|Dispatch`) whose unit header table shows this description. `[]` = no document of this version shows it |
+| `kindOfType` | string | `structDescription` only: `struct`, `class` or `union` |
 | `text` | string | **what the document prints now**, read from where the document reads it. May be `""` — a slot can be legitimately empty and is still editable |
 | `humanText` | string \| null | the reviewer's words whenever a correction exists, orphaned or not |
 | `llmText` | string \| null | the captured original; `null` until the first edit |
@@ -994,6 +1001,20 @@ graph, so each row carries the token **R7** takes:
 `overriddenCount` excludes orphans: they are kept but not applied, so counting them would promise
 an edit the document does not carry.
 
+**`structDescription` lists the structs, classes and unions a document can describe** — each one
+with a row of its own in the unit header table, or named by a typedef row there. Not primitives,
+`#define`s, enums, typedefs or records declared inside a class: their rows show a value or nothing,
+so a correction would be saved and never seen (R3 refuses them with 404). The key is the type's
+data-dictionary key, so it names no unit; `shownIn` says where the description is printed, read
+from the version's stored unit header rows, and `unit` / `component` filter on it:
+
+```json
+{ "slotKind": "structDescription", "slotKey": "AddOperation", "label": "AddOperation",
+  "kindOfType": "class", "component": "Layer1.Cross", "unit": "Dispatch",
+  "shownIn": ["Layer1.Cross|Dispatch"], "artifact": "dataDictionary",
+  "text": "Adds two operands.", "llmText": null, "isOverridden": false, "isOrphaned": false }
+```
+
 **`text`, `humanText` and the two flags, together.** For a live correction `text` and
 `humanText` are the same sentence — the save wrote it into the model. They differ in exactly one
 case: an **orphan**, which is kept (`REQ-ID-03`) but never applied. Its function's code changed, so
@@ -1015,7 +1036,7 @@ field a kind lives in.
 
 | code | when |
 |---|---|
-| 400 | `unit` or `component` given for `structDescription`, which has neither — refused rather than ignored, so an unfiltered result is never read as a filtered one |
+| 400 | `unit` or `component` given for `structDescription` on a version whose unit header rows were derived before they named their type — they cannot say which unit shows what. Refused rather than answered empty; re-export the version, or list without a filter |
 | 422 | `slot_kind` missing or not one of the seven |
 | 401 / 403 / 503 | see §16 |
 
@@ -1059,8 +1080,9 @@ Honest gaps, so the UI does not plan around something that is not there.
   visible"), so a `unitDescription` correction appears only in the Word file. The page renderer lags
   the Word exporter here; both read the same stored field once it catches up. (Struct, class and
   union descriptions are on the page now, in the unit header table, after a re-export.)
-- **R11 lists slots the document does not show**: every function's `description`, published or not
-  (§14). Nothing marks which ones have a row yet.
+- **R11 lists function slots the document does not show**: every function's `description`,
+  published or not (§14), and nothing marks which ones have a row. (`structDescription` rows do
+  say where they are shown — `shownIn`.)
 - **A corrected flowchart's PNG is redrawn by the next run or re-export**, not by the save — R8
   over HTTP has no output tree to draw into, so `renderPending` is `true`. Its DOT is rebuilt by the
   save: draw that (§3a) and the page is current at once.
