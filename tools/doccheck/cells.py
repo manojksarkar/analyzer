@@ -129,6 +129,11 @@ def key_value_rows(rows):
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_~][A-Za-z0-9_]*(?:::[A-Za-z_~][A-Za-z0-9_]*)*$")
 
 
+def starts_with_unit(heading, unit_name):
+    """Whether a `<Unit>-<Function>` heading names `unit_name` -- the dash may be spaced."""
+    return bool(re.match(r"^%s\s*-" % re.escape(unit_name or ""), (heading or "").strip()))
+
+
 def function_of(heading, unit_name=""):
     """`Dispatch-AddOperation::apply` -> `AddOperation::apply`.
 
@@ -143,16 +148,17 @@ def function_of(heading, unit_name=""):
     `Core-doThing` is not a name.
     """
     text = (heading or "").strip()
-    if unit_name and text.startswith(unit_name + "-"):
-        candidate = text[len(unit_name) + 1:]
-        if _IDENTIFIER_RE.match(candidate):
-            return candidate
+    # Another author may space the separator: `Unit - function` is the same heading.
+    if unit_name:
+        m = re.match(r"^%s\s*-\s*(.+)$" % re.escape(unit_name), text)
+        if m and _IDENTIFIER_RE.match(m.group(1).strip()):
+            return m.group(1).strip()
     start = 0
     while True:
         cut = text.find("-", start)
         if cut < 0:
             return text
-        candidate = text[cut + 1:]
+        candidate = text[cut + 1:].strip()
         if _IDENTIFIER_RE.match(candidate):
             return candidate
         start = cut + 1

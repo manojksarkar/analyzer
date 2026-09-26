@@ -182,7 +182,7 @@ def test_a_flipped_direction_cell_reaches_the_report(mutable):
     result = mutable.compare()
     differs = [f for f in result.findings if f.field == "direction"]
     assert len(differs) == 1, [f.summary for f in result.findings]
-    assert differs[0].severity == "high"
+    assert differs[0].priority == "P1"
     assert name in differs[0].path
 
 
@@ -208,8 +208,8 @@ def test_a_deleted_interface_row_is_reported_as_missing(mutable):
     missing = [f for f in result.findings
                if f.kind == "missing" and f.path.endswith(name)]
     assert len(missing) == 1
-    counts = [f for f in result.findings if f.kind == "count"]
-    assert counts and counts[0].left == counts[0].right + 1
+    rows = [c for c in result.checks if c.what == "interface table rows" and not c.ok]
+    assert rows and rows[0].left == rows[0].right + 1
 
 
 def test_a_deleted_unit_section_reports_the_unit_and_not_its_rows(mutable):
@@ -233,7 +233,7 @@ def test_a_deleted_unit_section_reports_the_unit_and_not_its_rows(mutable):
     below = [f for f in result.findings if "/ %s /" % victim in f.path]
     assert below == [], "the deleted unit leaked %d child findings" % len(below)
     missing = [f for f in result.findings if f.kind == "missing" and f.path.endswith(victim)]
-    assert len(missing) == 1 and missing[0].severity == "high"
+    assert len(missing) == 1 and missing[0].priority == "P1"
 
 
 def test_a_changed_source_destination_is_read_as_a_set(mutable):
@@ -277,7 +277,7 @@ def test_dropping_a_caller_is_a_difference(mutable):
     mutable.save(document)
 
     differs = [f for f in mutable.compare().findings if f.field == "sourceDest"]
-    assert len(differs) == 1 and differs[0].severity == "high"
+    assert len(differs) == 1 and differs[0].priority == "P1"
 
 
 def test_a_renamed_unit_heading_is_read_as_a_rename(mutable):
@@ -311,8 +311,8 @@ def test_the_json_report_is_serialisable_and_carries_the_inventory(mutable, tmp_
     import json
     payload = json.loads(report.to_json(result, mutable.reference, mutable.path))
     assert payload["summary"]["findings"] == len(result.findings)
-    assert payload["inventory"]["unit"]["reference"] > 0
-    assert all("severity" in f for f in payload["findings"])
+    assert payload["inventory"]["unit"]["left"] > 0
+    assert all("priority" in f and "level" in f for f in payload["findings"])
 
 
 def test_the_markdown_report_renders_without_the_findings_list_being_empty(mutable):
@@ -324,6 +324,6 @@ def test_the_markdown_report_renders_without_the_findings_list_being_empty(mutab
     mutable.save(document)
 
     text = report.markdown(mutable.compare(), "a.docx", "b.docx")
-    assert "# Document comparison" in text
-    assert "## Ladder" in text
+    assert "# doccheck — SWE.3 compare" in text
+    assert "## Summary" in text and "## L5 · Content" in text
     assert "Direction" in text

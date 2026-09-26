@@ -1,15 +1,23 @@
-"""Compare two generated documents, or check one on its own.
+"""Compare two generated documents, pair a design with its spec, or check one alone.
 
-    python -m doccheck a.docx b.docx                 # compare, terminal report
-    python -m doccheck a.docx b.docx --markdown r.md # and write the long form
-    python -m doccheck a.docx --self                 # one document, on its own
-    python -m doccheck a.docx b.docx --json r.json --gate high
+    python -m doccheck a.docx b.docx                  # compare two of one type
+    python -m doccheck design.docx spec.docx          # SWE.3 + SWE.4: paired
+    python -m doccheck a.docx --self                  # one document, on its own
+    python -m doccheck a.docx b.docx --markdown r.md  # and the long form
+    python -m doccheck a.docx b.docx --level 3        # stop after L3
+    python -m doccheck a.docx b.docx --json r.json --gate P1
 
-`--gate` sets the severity that makes the exit code non-zero, so the same command
-serves a reviewer reading the report and a pipeline deciding whether to stop.
+Two documents of one type are compared; a SWE.3 and a SWE.4 are paired (the
+V-model check), with or without `--pair`. The type is worked out from each
+document itself; `--profile` forces it for a comparison.
 
-The document type is worked out from the document itself; `--profile` forces it.
-Nothing here needs the repository, a database or a pipeline run: two paths in, a
+Every check reports on the same five levels -- headings, inventory, sections,
+views, content -- and gives every finding a priority, P1 (blocker) to P4
+(cosmetic). `--gate` sets the priority that makes the exit code non-zero, so the
+same command serves a reviewer reading the report and a pipeline deciding
+whether to stop.
+
+Nothing here needs the repository, a database or a pipeline run: paths in, a
 report out, which is what running it where the client's document lives requires.
 """
 from __future__ import annotations
@@ -24,10 +32,12 @@ if __package__ in (None, ""):            # run as a file rather than a module
 
 from . import (blocks, compare as comparing, match, pairing, report, rules, swe3,
                swe4)
-from .model import HIGH, INFO, LOW, MEDIUM
+from .model import P1, P2, P3, P4, PRIORITIES, priority_rank
 
 PROFILES = {"swe3": swe3, "swe4": swe4}
-_GATE_ORDER = {HIGH: 0, MEDIUM: 1, LOW: 2, INFO: 3}
+
+# The severities the first version used, still accepted by --gate.
+_OLD_GATES = {"high": P1, "medium": P2, "low": P3, "info": P4}
 
 
 def detect(blocks_, filename=""):
@@ -49,27 +59,47 @@ def _load(path, forced):
     return profile, profile.extract(bs)
 
 
+def _gate(findings, gate):
+    """1 when a counted finding at the gate's priority or worse exists."""
+    if not gate:
+        return 0
+    limit = priority_rank(_OLD_GATES.get(gate, gate))
+    return 1 if any(f.counted and priority_rank(f.priority) <= limit for f in findings) else 0
+
+
+def _write(path, text):
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    print("wrote %s" % path, file=sys.stderr)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="doccheck", description=__doc__.splitlines()[0])
-    ap.add_argument("reference", help="the document to compare against")
-    ap.add_argument("compared", nargs="?", help="the document under review")
+    ap.add_argument("reference", help="the document to compare against (or the design)")
+    ap.add_argument("compared", nargs="?", help="the document under review (or the spec)")
     ap.add_argument("--self", action="store_true",
                     help="check one document against its own rules, no second document")
     ap.add_argument("--pair", action="store_true",
-                    help="hold a SWE.3 design against its SWE.4 specification (V-model)")
+                    help="hold a SWE.3 design against its SWE.4 specification (V-model); "
+                         "chosen anyway when the two documents are of those two types")
     ap.add_argument("--profile", choices=sorted(PROFILES),
                     help="force the document type instead of detecting it")
     ap.add_argument("--aliases", help="a file of `ours = theirs` name pairs")
+    ap.add_argument("--level", type=int, choices=[1, 2, 3, 4, 5], default=5,
+                    help="stop after this level: 1 headings, 2 inventory, 3 sections, "
+                         "4 views, 5 content (the default)")
     ap.add_argument("--markdown", help="write the long-form report here")
     ap.add_argument("--json", dest="json_out", help="write machine-readable findings here")
-    ap.add_argument("--gate", choices=[HIGH, MEDIUM, LOW, INFO], default=None,
-                    help="exit non-zero when a finding at this severity or above exists")
+    ap.add_argument("--gate", choices=list(PRIORITIES) + sorted(_OLD_GATES), default=None,
+                    help="exit non-zero when a finding at this priority or worse exists")
     ap.add_argument("--quiet", action="store_true", help="print the summary line only")
     ap.add_argument("--full", action="store_true",
-                    help="list info findings too, and every changed line of a long difference")
+                    help="list P3/P4 findings too, and every changed line of a long difference")
     ap.add_argument("--color", choices=["auto", "always", "never"], default="auto",
                     help="colour and box-drawing: auto uses them on a terminal only")
-    a = ap.parse_args(argv)
+    args = sys.argv[1:] if argv is None else list(argv)
+    a = ap.parse_args(args)
+    command = "doccheck " + " ".join(args)
 
     for path in (a.reference, a.compared):
         if path and not os.path.isfile(path):
@@ -82,68 +112,42 @@ def main(argv=None):
     style = report.Style.for_stream(sys.stdout, a.color)
 
     if a.self or not a.compared:
-        findings = comparing.self_checks(left, profile)
-        print(report.self_text(a.reference, profile.DOC_TYPE, findings, style, a.full), end="")
-        if a.json_out:
-            with open(a.json_out, "w", encoding="utf-8") as fh:
-                fh.write(report.to_json(comparing.Result(), a.reference, "",
-                                        self_left=findings))
-        return 1 if (findings and a.gate) else 0
-
-    right_profile, right = _load(a.compared, a.profile)
-
-    if a.pair:
-        design, spec = (left, right) if profile is swe3 else (right, left)
-        if profile is right_profile:
-            print("--pair wants one SWE.3 document and one SWE.4 document; both are %s"
-                  % profile.DOC_TYPE, file=sys.stderr)
-            return 2
-        findings = pairing.check(design, spec)
-        design_path, spec_path = ((a.reference, a.compared) if profile is swe3
-                                  else (a.compared, a.reference))
-        print(report.pair_text(design_path, spec_path, pairing.summary(design, spec, findings),
-                               findings, style, a.full), end="")
-        if a.json_out:
-            import json as _json
-            with open(a.json_out, "w", encoding="utf-8") as fh:
-                fh.write(_json.dumps([f.__dict__ for f in findings], indent=2, default=str) + "\n")
-            print("wrote %s" % a.json_out)
-        if a.gate:
-            limit = _GATE_ORDER[a.gate]
-            return 1 if any(_GATE_ORDER.get(f.severity, 9) <= limit for f in findings) else 0
-        return 0
-
-    if right_profile is not profile:
-        print("the two documents are different types (%s and %s)"
-              % (profile.DOC_TYPE, right_profile.DOC_TYPE), file=sys.stderr)
-        return 2
-
-    aliases = match.Aliases.load(a.aliases) if a.aliases else match.Aliases()
-    result = comparing.compare(left, right, profile, aliases)
-    rules.annotate(result, left, right)
-    self_left = comparing.self_checks(left, profile)
-    self_right = comparing.self_checks(right, profile)
+        result = comparing.self_result(left, profile, a.level)
+        findings = result.findings
+        right_name = ""
+    else:
+        right_profile, right = _load(a.compared, None if a.pair else a.profile)
+        if a.pair or right_profile is not profile:
+            if right_profile is profile:
+                print("--pair wants one SWE.3 document and one SWE.4 document; both are %s"
+                      % profile.DOC_TYPE, file=sys.stderr)
+                return 2
+            swap = profile is swe4
+            design, spec = (right, left) if swap else (left, right)
+            a.reference, a.compared = ((a.compared, a.reference) if swap
+                                       else (a.reference, a.compared))
+            result = pairing.check(design, spec, a.level)
+            result.self_left = comparing.self_checks(design, swe3, a.level)
+            result.self_right = comparing.self_checks(spec, swe4, a.level)
+            pairing.explain_id_gaps(result.self_right, design, spec)
+        else:
+            aliases = match.Aliases.load(a.aliases) if a.aliases else match.Aliases()
+            result = comparing.compare(left, right, profile, aliases, a.level)
+            rules.annotate(result, left, right, profile)
+            result.self_left = comparing.self_checks(left, profile, a.level)
+            result.self_right = comparing.self_checks(right, profile, a.level)
+        findings = result.findings
+        right_name = a.compared
 
     if a.quiet:
         print(report.summary_line(result))
     else:
-        print(report.text(result, a.reference, a.compared, self_left, self_right,
-                          style=style, full=a.full), end="")
-
+        print(report.text(result, a.reference, right_name, style=style, full=a.full), end="")
     if a.markdown:
-        with open(a.markdown, "w", encoding="utf-8") as fh:
-            fh.write(report.markdown(result, a.reference, a.compared, self_left, self_right))
-        print("wrote %s" % a.markdown)
+        _write(a.markdown, report.markdown(result, a.reference, right_name, command=command))
     if a.json_out:
-        with open(a.json_out, "w", encoding="utf-8") as fh:
-            fh.write(report.to_json(result, a.reference, a.compared, self_left, self_right))
-        print("wrote %s" % a.json_out)
-
-    if a.gate:
-        limit = _GATE_ORDER[a.gate]
-        if any(_GATE_ORDER.get(f.severity, 9) <= limit for f in result.findings):
-            return 1
-    return 0
+        _write(a.json_out, report.to_json(result, a.reference, right_name))
+    return _gate(findings, a.gate)
 
 
 if __name__ == "__main__":

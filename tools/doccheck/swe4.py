@@ -24,7 +24,7 @@ from __future__ import annotations
 import re
 
 from . import cells
-from .model import HIGH, INFO, LOW, MEDIUM, Entity, Policy
+from .model import P1, P2, P4, Entity, Kind, Policy
 
 DOC_TYPE = "SWE.4"
 
@@ -73,31 +73,47 @@ FIXED = {
 }
 
 
+# --- how each field is compared ---------------------------------------------
+#
+# L4 counts what a table holds (how many preconditions, steps, results); L5 reads
+# what they say. A count that differs is counted once, at L4, and the L5 detail
+# that follows from it is shown but not counted again (`FOLLOWS`).
+#
+# Cell text is P2, not P1: another author words every step differently, and a
+# worded step is a thing to judge. P1 is kept for structure -- a missing table, a
+# missing unit -- where there is nothing to judge.
+
+_TABLE_A, _TABLE_B = "Table A", "Table B"
+
 POLICIES = {
     "testcase": {
-        "testCaseId":      Policy("ident", INFO, "Test Case ID (ours, not compared)"),
-        "description":     Policy("text", INFO, "the sentence above the tables"),
-        "evalEquipment":   Policy("exact", LOW, "Eval. Equipment Name"),
-        "platform":        Policy("exact", LOW, "Test Platform"),
-        "precondition":    Policy("seq", HIGH, "Precondition"),
-        "input":           Policy("seq", HIGH, "Input"),
-        "testSteps":       Policy("seq", HIGH, "Test Steps"),
-        "testStepShape":   Policy("seq", HIGH, "Test Steps nesting"),
-        "expected":        Policy("seq", HIGH, "Expected Results"),
-        "priority":        Policy("exact", LOW, "Priority"),
-        "risk":            Policy("exact", LOW, "Risk"),
-        "testMethod":      Policy("exact", LOW, "Test Method"),
-        "testEnvironment": Policy("exact", LOW, "Test Environment"),
-        "generationMethod": Policy("exact", MEDIUM, "Test Case Generation Method"),
-        "linkedWorkItems": Policy("exact", LOW, "Linked Work Items"),
-        "hasTableA":       Policy("exact", HIGH, "Table A present"),
-        "hasTableB":       Policy("exact", HIGH, "Table B present"),
+        "hasTableA":         Policy("exact", P1, "Table A present", "L4", _TABLE_A),
+        "hasTableB":         Policy("exact", P1, "Table B present", "L4", _TABLE_B),
+        "preconditionCount": Policy("exact", P2, "Precondition items", "L4", _TABLE_A),
+        "inputCount":        Policy("exact", P2, "Input items", "L4", _TABLE_A),
+        "stepCount":         Policy("exact", P2, "Test Steps items", "L4", _TABLE_A),
+        "stepDepth":         Policy("exact", P2, "Test Steps nesting depth", "L4", _TABLE_A),
+        "expectedCount":     Policy("exact", P2, "Expected Results items", "L4", _TABLE_A),
+        "tableBLabels":      Policy("set", P2, "Table B rows", "L4", _TABLE_B),
+        "testCaseId":        Policy("ident", P4, "Test Case ID (ours, not compared)", "L5", _TABLE_B),
+        "description":       Policy("text", P4, "the sentence above the tables", "L5", "description"),
+        "evalEquipment":     Policy("exact", P2, "Eval. Equipment Name", "L5", _TABLE_A),
+        "platform":          Policy("exact", P2, "Test Platform", "L5", _TABLE_A),
+        "precondition":      Policy("seq", P2, "Precondition", "L5", _TABLE_A),
+        "input":             Policy("seq", P2, "Input", "L5", _TABLE_A),
+        "testSteps":         Policy("seq", P2, "Test Steps", "L5", _TABLE_A),
+        "testStepShape":     Policy("seq", P2, "Test Steps nesting", "L5", _TABLE_A),
+        "expected":          Policy("seq", P2, "Expected Results", "L5", _TABLE_A),
+        "aliasTestId":       Policy("exact", P2, "Alias Test ID", "L5", _TABLE_B),
+        "priority":          Policy("exact", P2, "Priority", "L5", _TABLE_B),
+        "risk":              Policy("exact", P2, "Risk", "L5", _TABLE_B),
+        "testMethod":        Policy("exact", P2, "Test Method", "L5", _TABLE_B),
+        "testEnvironment":   Policy("exact", P2, "Test Environment", "L5", _TABLE_B),
+        "generationMethod":  Policy("exact", P2, "Test Case Generation Method", "L5", _TABLE_B),
+        "linkedWorkItems":   Policy("exact", P2, "Linked Work Items", "L5", _TABLE_B),
     },
-    "unit": {
-        "testCaseCount": Policy("exact", MEDIUM, "test cases"),
-    },
+    "unit": {},
     "component": {},
-    "section": {},
     "document": {},
 }
 
@@ -106,19 +122,92 @@ POLICIES = {
 # here too -- the wiki records that scheme as still open.
 POLICIES["interaction"] = dict(POLICIES["testcase"])
 POLICIES["interaction"].update({
-    "unit":           Policy("name", HIGH, "target unit"),
-    "function":       Policy("name", HIGH, "target function"),
-    "callerUnit":     Policy("name", HIGH, "entry-point unit"),
-    "callerFunction": Policy("name", HIGH, "entry-point function"),
+    "unit":           Policy("name", P1, "target unit", "L5", "heading"),
+    "function":       Policy("name", P1, "target function", "L5", "heading"),
+    "callerUnit":     Policy("name", P1, "entry-point unit", "L5", "heading"),
+    "callerFunction": Policy("name", P1, "entry-point function", "L5", "heading"),
 })
 
-LEVELS = {
-    "section": "L0",
-    "component": "L1",
-    "unit": "L1",
-    "testcase": "L2",
-    "interaction": "L4",
+# A field that only restates another field of the same entity (see swe3.FOLLOWS).
+FOLLOWS = {(kind, field): counted
+           for kind in ("testcase", "interaction")
+           for field, counted in (("precondition", "preconditionCount"),
+                                  ("input", "inputCount"),
+                                  ("testSteps", "stepCount"),
+                                  ("testStepShape", "stepCount"),
+                                  ("expected", "expectedCount"))}
+
+# A cell of a table one side does not have is not "different": the table is missing,
+# and that is the one finding.
+FIELD_REQUIRES = {
+    (kind, field): ("hasTableA" if policy.view == _TABLE_A else "hasTableB")
+    for kind in ("testcase", "interaction")
+    for field, policy in POLICIES[kind].items()
+    if policy.view in (_TABLE_A, _TABLE_B) and field not in ("hasTableA", "hasTableB")
 }
+
+KINDS = {
+    "component":   Kind("L2", "components", "", P1, P1),
+    "unit":        Kind("L2", "units", "", P1, P1),
+    "interaction": Kind("L2", "interaction specs", "Dynamic Behaviour"),
+    "testcase":    Kind("L3", "test case headings", "test cases"),
+}
+CHILDREN = {
+    "document": ("component",),
+    "component": ("unit", "interaction"),
+    "unit": ("testcase",),
+}
+
+HEADING_TYPES = (
+    ("introduction", "Introduction", P2),
+    ("introduction/purpose", "Introduction › Purpose", P4),
+    ("introduction/scope", "Introduction › Scope", P4),
+    ("introduction/terms", "Introduction › Terms, Abbreviations and Definitions", P4),
+    ("body", "Software Unit Test Specification", P1),
+    ("component", "<Component>", P1),
+    ("unit", "<Unit>", P1),
+    ("testcase", "<Unit> › <Unit>-<Function>", P1),
+    ("dynamic", "<Component> › Dynamic Behaviour", P2),
+    ("interaction", "<Unit> - <Function> (<CallerUnit> - <CallerFunction>)", P2),
+    ("metrics", "Code Metric, Coding Rule, Test Coverage", P2),
+    ("appendix", "Appendix A · Reference", P2),
+)
+
+LEVELS = {kind: spec.level for kind, spec in KINDS.items()}
+
+LEVEL_WHAT = {
+    "L1": "every heading type is present",
+    "L2": "components, units and interaction specs (count and names)",
+    "L3": "per unit: test case headings (count and names)",
+    "L4": "per test case: Table A and B present, how many preconditions, inputs, steps, results",
+    "L5": "what Table A and Table B say",
+}
+
+NOT_COMPARED = [
+    "Test Case IDs are not compared across two documents: each is built on its own document's "
+    "Interface IDs, so they are checked inside one document (see 'Each document on its own').",
+]
+
+
+def _fixed_type(title):
+    """The heading type of a fixed level-1 section, or None."""
+    t = (title or "").casefold()
+    if t.startswith("introduction"):
+        return "introduction"
+    if t.startswith("code metric"):
+        return "metrics"
+    if t.startswith("reference") or t.startswith("appendix"):
+        return "appendix"
+    return None
+
+
+_INTRO_SUBS = (("purpose", "introduction/purpose"), ("scope", "introduction/scope"),
+               ("terms", "introduction/terms"))
+
+
+def other_heading(level, title):
+    """The heading type of a heading the wiki does not name: its level and its title."""
+    return "other: H%d %s" % (level, (title or "").strip())
 
 
 def _is_fixed_section(title):
@@ -154,9 +243,13 @@ def _table_b(ent, block):
     """The vertical metadata form."""
     kv = cells.key_value_rows(block.rows)
     ent.fields["hasTableB"] = True
+    labels = []
     for name, label in _TABLE_B_FIELDS:
         c = cells.find_label(kv, label)
         ent.fields[name] = c.text if c is not None else ""
+        if c is not None:
+            labels.append(label)
+    ent.fields["tableBLabels"] = labels
 
 
 def _is_table_b(block):
@@ -170,8 +263,10 @@ def _is_table_b(block):
 def extract(blocks) -> Entity:
     """A SWE.4 block stream as an entity tree."""
     doc = Entity(kind="document", name=DOC_TYPE, key=DOC_TYPE)
+    headings = {}
     in_body = False
     in_dynamic = False
+    fixed = None
     component = None
     unit = None
     case = None
@@ -181,6 +276,9 @@ def extract(blocks) -> Entity:
         counters[kind] = counters.get(kind, 0) + 1
         return counters[kind] - 1
 
+    def _seen(heading_type):
+        headings[heading_type] = headings.get(heading_type, 0) + 1
+
     for b in blocks:
         if b.kind == "heading":
             if b.level == 1:
@@ -188,6 +286,13 @@ def extract(blocks) -> Entity:
                 in_dynamic = False
                 title = (b.text or "").casefold()
                 in_body = title.startswith(_BODY_HEADING)
+                fixed = None if in_body else _fixed_type(b.text)
+                if in_body:
+                    _seen("body")
+                elif fixed:
+                    _seen(fixed)
+                else:
+                    _seen(other_heading(1, b.text))
                 if not in_body and _is_fixed_section(b.text):
                     doc.children.append(Entity(kind="section", name=b.text,
                                                number=b.number, index=_count("section")))
@@ -196,23 +301,33 @@ def extract(blocks) -> Entity:
                 unit = case = None
                 in_dynamic = False
                 if in_body:
+                    _seen("component")
                     component = Entity(kind="component", name=b.text, number=b.number,
                                        index=_count("component"))
                     doc.children.append(component)
+                elif fixed == "introduction":
+                    t = (b.text or "").casefold()
+                    _seen(next((key for word, key in _INTRO_SUBS if t.startswith(word)),
+                               other_heading(2, b.text)))
+                else:
+                    _seen(other_heading(2, b.text))
 
             elif b.level == 3 and component is not None:
                 case = None
                 if (b.text or "").casefold().startswith(_DYNAMIC_HEADING):
                     # Not a unit: the component's interaction specs live here.
+                    _seen("dynamic")
                     unit = None
                     in_dynamic = True
                 else:
+                    _seen("unit")
                     in_dynamic = False
                     unit = Entity(kind="unit", name=b.text, number=b.number,
                                   index=_count("unit"))
                     component.children.append(unit)
 
             elif b.level == 4 and in_dynamic and component is not None:
+                _seen("interaction")
                 case = Entity(kind="interaction", name=b.text, number=b.number,
                               index=_count("interaction"))
                 m = _INTERACTION_RE.match(b.text)
@@ -222,18 +337,24 @@ def extract(blocks) -> Entity:
                     case.fields["callerUnit"] = m.group("cunit").strip()
                     case.fields["callerFunction"] = m.group("cfunc").strip()
                 case.fields["qualifiedName"] = b.text
+                case.fields["heading"] = b.text
                 case.fields["hasTableA"] = False
                 case.fields["hasTableB"] = False
                 component.children.append(case)
 
             elif b.level == 4 and unit is not None:
+                _seen("testcase")
                 name = cells.function_of(b.text, unit.name)
                 case = Entity(kind="testcase", name=name, number=b.number,
                               index=_count("testcase"))
                 case.fields["qualifiedName"] = b.text
+                case.fields["heading"] = b.text
                 case.fields["hasTableA"] = False
                 case.fields["hasTableB"] = False
                 unit.children.append(case)
+
+            else:
+                _seen(other_heading(b.level, b.text))
 
         elif b.kind == "para":
             if case is not None and b.text and not case.fields.get("description"):
@@ -247,17 +368,83 @@ def extract(blocks) -> Entity:
             else:
                 _table_a(case, b)
 
+    doc.fields["headingTypes"] = headings
     _finalise(doc)
     return doc
 
 
 def _finalise(doc):
     for component in doc.of_kind("component"):
+        cases = list(component.of_kind("interaction"))
         for unit in component.of_kind("unit"):
             unit.fields["testCaseCount"] = len(unit.of_kind("testcase"))
+            cases.extend(unit.of_kind("testcase"))
+        for case in cases:
+            if not case.fields.get("hasTableA"):
+                continue
+            f = case.fields
+            f["preconditionCount"] = len(f.get("precondition") or [])
+            f["inputCount"] = len(f.get("input") or [])
+            f["stepCount"] = len(f.get("testSteps") or [])
+            f["stepDepth"] = max(f.get("testStepShape") or [0])
+            f["expectedCount"] = len(f.get("expected") or [])
+
+
+def heading_types(doc):
+    """{heading type: how many}, as `extract` records it, or derived from the tree."""
+    got = doc.fields.get("headingTypes")
+    if got is not None:
+        return got
+    out = {}
+
+    def seen(key, n=1):
+        if n:
+            out[key] = out.get(key, 0) + n
+    for section in doc.of_kind("section"):
+        seen(_fixed_type(section.name) or other_heading(1, section.name))
+    if doc.of_kind("component"):
+        seen("body")
+    for component in doc.of_kind("component"):
+        seen("component")
+        units = component.of_kind("unit")
+        seen("unit", len(units))
+        seen("testcase", sum(len(u.of_kind("testcase")) for u in units))
+        interactions = component.of_kind("interaction")
+        seen("dynamic", 1 if interactions else 0)
+        seen("interaction", len(interactions))
+    return out
 
 
 # --- checks a document can fail on its own ----------------------------------
+
+SELF_LEVEL_WHAT = {
+    "L1": "(no single-document check at this level)",
+    "L2": "every interaction heading reads '<Unit> - <Function> (<Caller> - <Function>)'",
+    "L3": "every unit has test cases; headings start with their unit; no two read the same",
+    "L4": "every spec has Table A and Table B, and expected results when it has steps",
+    "L5": "Test Case IDs are well formed and distinct; fixed values hold; steps nest cleanly",
+}
+
+# Each self-check's level, priority and the view it is about.
+SELF_CHECKS = {
+    "tc-id-missing":        ("L5", P2, "Table B"),
+    "tc-id-malformed":      ("L5", P1, "Table B"),
+    "tc-id-private":        ("L5", P1, "Table B"),
+    # A gap is legal: a header-defined public function keeps its interface id and
+    # gets no spec, so the ids of the specs that follow it skip a number.
+    "tc-id-gap":            ("L5", P2, "Table B"),
+    "tc-id-collision":      ("L5", P1, "Table B"),
+    "fixed-value-drift":    ("L5", P2, "Table B"),
+    "interaction-heading-unreadable": ("L2", P2, "Dynamic Behaviour"),
+    "missing-table-a":      ("L4", P1, "Table A"),
+    "missing-table-b":      ("L4", P1, "Table B"),
+    "no-expected-results":  ("L4", P1, "Table A"),
+    "heading-unit-mismatch": ("L3", P2, "test cases"),
+    "duplicate-heading":    ("L3", P1, "test cases"),
+    "unit-without-cases":   ("L3", P2, "test cases"),
+    "steps-start-nested":   ("L5", P2, "Table A"),
+    "steps-skip-level":     ("L5", P2, "Table A"),
+}
 
 def id_integrity(doc):
     """The Test Case ID against its place, and the values the wiki fixes."""
@@ -330,7 +517,7 @@ def _table_checks(out, where, ent, expect_prefix=None):
     if not ent.fields.get("hasTableB"):
         out.append(("missing-table-b", where, "no Table B (the metadata)"))
     qualified = ent.fields.get("qualifiedName", "")
-    if expect_prefix and qualified and not qualified.startswith(expect_prefix + "-"):
+    if expect_prefix and qualified and not cells.starts_with_unit(qualified, expect_prefix):
         out.append(("heading-unit-mismatch", where,
                     "the heading %r does not start with its unit %r"
                     % (qualified, expect_prefix)))
@@ -369,4 +556,16 @@ def self_consistency(doc):
             for case in cases:
                 where = "%s / %s / %s" % (component.name, unit.name, case.name)
                 _table_checks(out, where, case, expect_prefix=unit.name)
+            # Two specs under one heading cannot be told apart by a tester, and cannot
+            # be paired with the design -- the `Dispatch-apply` defect.
+            by_heading = {}
+            for case in cases:
+                by_heading.setdefault((case.fields.get("heading") or case.name).casefold(),
+                                      []).append(case)
+            for group in by_heading.values():
+                if len(group) > 1:
+                    out.append(("duplicate-heading",
+                                "%s / %s / %s" % (component.name, unit.name, group[0].name),
+                                "%d test specifications share the heading %r"
+                                % (len(group), group[0].fields.get("heading") or group[0].name)))
     return out
