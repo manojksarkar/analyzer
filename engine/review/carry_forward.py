@@ -76,6 +76,7 @@ class _Target:
         self._types: Optional[Dict[str, dict]] = None
         self._shapes: Optional[Dict[str, str]] = None
         self._behaviour: Optional[Set[str]] = None
+        self._behaviour_derived: Optional[bool] = None
 
     @property
     def hashes(self) -> Dict[str, str]:
@@ -140,16 +141,29 @@ class _Target:
         return self._shapes
 
     @property
+    def behaviour_derived(self) -> bool:
+        """True when this version already has behaviour-diagram output to ask.
+
+        A new version has none while it is being carried into: this runs before Phase 3, and
+        Phase 3 is what draws the diagrams. Only a re-run over a version that was already
+        generated finds them.
+        """
+        self.behaviour_keys
+        return bool(self._behaviour_derived)
+
+    @property
     def behaviour_keys(self) -> Set[str]:
         if self._behaviour is None:
             from review import phase3_overrides as p3
             self._behaviour = set()
+            self._behaviour_derived = False
             for r in self._conn.execute(
                     select(s.version_output_files.c.rel_path,
                            s.version_output_files.c.content)
                     .where(s.version_output_files.c.version_id == self._v)).fetchall():
                 if not r.rel_path.endswith("_behaviour_pngs.json"):
                     continue
+                self._behaviour_derived = True
                 try:
                     payload = json.loads(r.content or "{}")
                 except ValueError:
@@ -181,8 +195,29 @@ def _still_applies(row, target: _Target, baseline: _Target) -> Optional[str]:
         return None if key in target.units else "that unit is not in the new version"
 
     if kind == slot.BEHAVIOUR_DESCRIPTION:
-        return (None if key in target.behaviour_keys
-                else "that call no longer appears in the behaviour diagrams")
+        # Where the new version's behaviour rows exist -- a re-run over a version already
+        # generated -- they are the real answer.
+        if target.behaviour_derived:
+            return (None if key in target.behaviour_keys
+                    else "that call no longer appears in the behaviour diagrams")
+        # On a NEW version they do not exist yet: this runs before Phase 3, which draws them.
+        # Asking only for rows orphaned every behaviour correction on every generation (a real
+        # two-version run showed it, with nothing near the call changed). So judge the row by
+        # what it describes -- the function and the external caller that calls it, the same way
+        # the other function kinds are judged: both still there and neither changed means the
+        # same call, and the correction applies. If the call is gone after all, Phase 3 draws no
+        # row for it and the correction lands nowhere; it is not put on anything else.
+        try:
+            parts = slot.parse(slot.BEHAVIOUR_DESCRIPTION, key)
+        except slot.SlotKeyError:
+            return "the slot key is malformed"
+        for entity, who in ((parts["function_id"], "the function"),
+                            (parts["external_caller_id"], "its caller")):
+            if entity not in target.hashes:
+                return "%s is not in the new version" % who
+            if baseline.hashes.get(entity) != target.hashes.get(entity):
+                return "the code of %s changed" % who
+        return None
 
     if kind == slot.NODE_LABEL:
         try:
