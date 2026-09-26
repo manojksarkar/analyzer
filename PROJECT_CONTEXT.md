@@ -218,6 +218,37 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-26c (**The review routes never checked that the version in the path belongs to
+> the project in the path. An unknown id looked like an empty version; another project's version
+> answered with that project's text, and took writes. Every route now answers 404, and a TAG sent
+> instead of the id is answered with the id.**
+>
+> Reported from a web-app run: R11 gave `total: 0` for all seven kinds. The caller sent the tag
+> `v1`; a run started through `POST /jobs` stores its version under a generated id (`ver…`),
+> while `analyzer.py` versions carry the id the operator typed, so the habit carried over. The
+> local reproduction (the saved example bodies, group Full) showed the worse half: this dev DB has
+> a CLI version whose id IS `v1`, in another project, and R11 answered with that project's slots
+> -- 45 flowcharts that were not the new project's. `require_project_member` guards the PATH
+> project only, and every query beneath is by version alone, so any member of project A could read
+> -- and via R3/R6/R8 write -- project B's corrections by pairing A's path with B's version id.
+>
+> `_version(project_id, version_id)` in api/routes/text_overrides.py, called in all eleven routes
+> right after the membership check (so a non-member still gets 403 and learns nothing about
+> versions). Read through `_connection()`, the database the routes read their data from. When the
+> value is one of the project's tags, the 404 names the id: "'v1' is this project's version TAG;
+> its id is 'verb908a2e3'". Verified on the reproduction: tag -> that 404, id -> 200 with 61
+> flowcharts. Tests: every route x unknown version, every route x another project's version, no
+> write reaching the other project, the tag hint. Revert-checked four ways, including one route
+> alone. Two older tests expected 200 from `/versions/v1/overrides` on a project with no such
+> version (to prove the membership gate opens); they now expect the version's own 404. Spec §3
+> (versionId is the id), §6 and §16 updated.
+>
+> Also from the reproduction, not a bug: a run scoped to group "Full" has NO Dynamic Behaviour
+> rows. A behaviour row is a call INTO a unit from another component in the parse; Hub/Poly are
+> called only from App/Main.cpp (group Support), and what Cross calls in Iface is declared but
+> never defined. Testing R6 needs a scope in which components call each other.
+> 2421 passed, 37 skipped (tests/unit + tests/api).)
+
 > Updated: 2026-09-26b (**A sign-in lasts a working day, not 15 minutes -- and the server can set
 > it.**
 >

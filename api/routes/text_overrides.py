@@ -127,6 +127,38 @@ def _key(slot_kind: str, slot_key: str) -> str:
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+def _version(project_id: str, version_id: str) -> None:
+    """404 unless `version_id` is a version OF `project_id`.
+
+    Every route here is addressed /projects/{p}/versions/{v}, but the reads and writes beneath
+    are by version alone. Without this check:
+
+      * an id that does not exist answered as if the version were empty -- which is exactly what
+        a version's TAG looks like, because a run started from the web app is stored under a
+        generated id (`ver1a2b3c4d`), not the tag it was given (`v1`);
+      * a version of ANOTHER project answered with that project's text, and took writes to it,
+        from anyone who is a member of the project in the path.
+
+    Read through `_connection()`, the database every route here reads its data from.
+    """
+    from sqlalchemy import select
+    from ..db.postgres import schema as s
+    with _connection().connect() as cx:
+        row = cx.execute(select(s.versions.c.project_id)
+                         .where(s.versions.c.id == version_id)).first()
+        if row is not None and row.project_id == project_id:
+            return
+        tagged = cx.execute(select(s.versions.c.id)
+                            .where(s.versions.c.project_id == project_id,
+                                   s.versions.c.version == version_id)).first()
+    hint = ""
+    if tagged is not None:
+        hint = (f" '{version_id}' is this project's version TAG; its id is '{tagged.id}'. These "
+                f"endpoints take the id -- GET /api/v1/projects/{project_id}/versions lists both.")
+    raise HTTPException(status_code=404,
+                        detail=f"no version '{version_id}' in project '{project_id}'.{hint}")
+
+
 def _row(r) -> Dict[str, Any]:
     return {
         "slotKind": r.slot_kind,
@@ -161,6 +193,7 @@ def list_overrides(
     has. It merges these by `slotKey` instead.
     """
     require_project_member(project_id, current_user, db)
+    _version(project_id, version_id)
     svc = _service()
     with _connection().connect() as cx:
         try:
@@ -198,6 +231,7 @@ def list_slots(
     flowchart is one function's graph. Each row carries the token R7 takes.
     """
     require_project_member(project_id, current_user, db)
+    _version(project_id, version_id)
     kind = slot_kind.value
     from review import catalog, resolver as _resolver
     # Only the model-backed kinds read the model. Building a repository for a flowchart listing
@@ -228,6 +262,7 @@ def get_slot(
     """`REQ-API-02`. A query parameter, not a path segment: a slot key contains `|`, `:`, `,`,
     `*`, spaces and a control character."""
     require_project_member(project_id, current_user, db)
+    _version(project_id, version_id)
     key = _key(slot_kind.value, slot_key)
     with _connection().connect() as cx:
         row = _service().get_override(cx, version_id, slot_kind.value, key)
@@ -249,6 +284,7 @@ def get_flowchart_labels(
     """`REQ-API-02` / `REQ-ID-04`. Every node label of one flowchart, so the editor opens with one
     request and saves with one."""
     require_project_member(project_id, current_user, db)
+    _version(project_id, version_id)
     from review import rerender, slot as slot_mod
     try:
         flowchart_id = slot_mod.decode(flowchart_token)
@@ -325,6 +361,7 @@ def update_slot(
 ):
     """`REQ-API-03`. One slot per call, for the six kinds that are not a flowchart."""
     require_project_member(project_id, current_user, db)
+    _version(project_id, version_id)
     svc = _service()
     with _connection().begin() as cx:          # one transaction, REQ-AP-02
         try:
@@ -363,6 +400,7 @@ def update_flowchart_labels(
     from a half-applied edit.
     """
     require_project_member(project_id, current_user, db)
+    _version(project_id, version_id)
     from review import slot as slot_mod
     try:
         flowchart_id = slot_mod.decode(flowchart_token)
@@ -398,6 +436,7 @@ def update_behaviour(
 ):
     """`REQ-ED-02`. The bullet list is accepted and returned as a unit."""
     require_project_member(project_id, current_user, db)
+    _version(project_id, version_id)
     svc = _service()
     with _connection().begin() as cx:
         try:
@@ -424,6 +463,7 @@ def undo_slot(
     """`REQ-API-04`. Restores the LLM's original wording. **The record survives** — undo is an
     ordinary edit whose text happens to be the original, so both texts and the history remain."""
     require_project_member(project_id, current_user, db)
+    _version(project_id, version_id)
     key = _key(slot_kind.value, slot_key)
     svc = _service()
     with _connection().begin() as cx:
@@ -454,6 +494,7 @@ def slot_history(
     (`REQ-ST-04`). The LLM original is not in here; it is on the override itself, which is what
     makes "the original is never evicted" structural."""
     require_project_member(project_id, current_user, db)
+    _version(project_id, version_id)
     key = _key(slot_kind.value, slot_key)
     with _connection().connect() as cx:
         rows = _service().history_for(cx, version_id, slot_kind.value, key)
@@ -479,6 +520,7 @@ def regeneration_queue(
     with both consumes this.
     """
     require_project_member(project_id, current_user, db)
+    _version(project_id, version_id)
     from review.cascade import pending
     with _connection().connect() as cx:
         rows = pending(cx, version_id)
@@ -505,6 +547,7 @@ def export_readiness(
     """`REQ-AP-04`. Whether exporting now would ship text a correction has already replaced, so
     the UI can say so before someone downloads a document that is quietly out of date."""
     require_project_member(project_id, current_user, db)
+    _version(project_id, version_id)
     from review.export_guard import staleness
     with _connection().connect() as cx:
         st = staleness(cx, version_id)

@@ -112,6 +112,13 @@ alphabet is `[A-Za-z0-9_-]`, so nothing needs escaping. R7 returns both the id a
 
 Every path is under the `/api/v1` prefix. All require project **membership** (`REQ-API-05`).
 
+**`versionId` is the version's id, not its tag.** A run started from the web app stores the version
+under a generated id such as `ver1a2b3c4d`; the name it was given, such as `v1`, is only its tag.
+Take the id from the job (`job.version_id`) or from `GET /projects/{projectId}/versions` (`id`, next
+to `tag`). A version that is not one of this project's is **404** on every endpoint here, and when
+the value sent is the project's tag for a version, the message names that version's id. (A version
+generated with `analyzer.py` has the id you gave it, so there the two are the same.)
+
 > **Membership is a row, with one exception.** Access is per project: signing in gives you
 > nothing on a project you were not added to, and every endpoint here answers
 > `403 "Project membership required."`. `POST /api/v1/projects` adds its creator; CLI onboarding
@@ -359,7 +366,8 @@ corrected returns an empty list.
 }
 ```
 
-**Errors** — 401, 403, 503. An unknown `versionId` returns an empty list, not 404.
+**Errors** — 401, 403, 503, and **404** when `versionId` is not one of this project's versions (§3).
+An empty list means a real version with no corrections.
 
 ---
 
@@ -1004,7 +1012,7 @@ Error bodies are `{"detail": "…"}`, except 401 (an object, §4) and 422 from s
 | 400 | malformed slot key or flowchart token |
 | 401 | missing, malformed or non-access Bearer token |
 | 403 | not a member of the project |
-| 404 | unknown version, slot, flowchart, or a node named in a flowchart save |
+| 404 | a version that is not one of the project's (every endpoint; a tag sent instead of the id is answered with the id — §3), or an unknown slot, flowchart, or node named in a flowchart save |
 | 409 | undo with no LLM original to restore |
 | 422 | empty or whitespace-only text (`REQ-ST-06`); or a request body/query field missing — **check `snake_case` first** (§4) |
 | 501 | a slot kind with no save path on that endpoint (`nodeLabel`, `behaviourDescription` on R3) |

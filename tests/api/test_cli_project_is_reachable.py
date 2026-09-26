@@ -112,7 +112,13 @@ class TestGrantFixesIt:
         with _engine_of(db).begin() as cx:
             grant(cx, cli_project, uid)
         r = client.get(f"/api/v1/projects/{cli_project}{suffix}", headers=auth_header)
-        assert r.status_code == 200, r.text
+        if "/versions/" in suffix:
+            # Through the membership gate: this project has no version 'v1', and saying so is
+            # the route's own answer, not the 403 the grant removes. (It answered 200 with an
+            # empty list before the review routes checked that a version is the project's own.)
+            assert r.status_code == 404 and "no version" in r.text, r.text
+        else:
+            assert r.status_code == 200, r.text
 
     def test_it_is_idempotent(self, client, cli_project, db):
         """The obvious response to a lingering 403 is to run it again, and a second row for the

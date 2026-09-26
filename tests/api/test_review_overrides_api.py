@@ -20,7 +20,7 @@ import os
 import sys
 
 import pytest
-from sqlalchemy import create_engine, insert
+from sqlalchemy import create_engine, insert, select
 from sqlalchemy.pool import StaticPool
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -540,3 +540,86 @@ class TestAFlowchartIdIsNotANodeKey:
                                     params={"slot_kind": "nodeLabel", "slot_key": FID})
         assert r.status_code == 400, r.text
         assert "flowchart id" in r.json()["detail"] and "R7" in r.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# The version in the path must be one of the project's own
+# ---------------------------------------------------------------------------
+def _every_route():
+    """(label, method, path-after-the-version, request kwargs) -- R1 to R11, each with a minimal
+    request it would otherwise accept."""
+    from review import slot
+    tok = slot.encode(FID)
+    q = {"slot_kind": "description", "slot_key": FID}
+    return [
+        ("R1", "get", "/overrides", {}),
+        ("R2", "get", "/overrides/slot", {"params": q}),
+        ("R3", "put", "/overrides/slot", {"json": {**q, "text": "x"}}),
+        ("R4", "delete", "/overrides/slot", {"params": q}),
+        ("R5", "get", "/overrides/history", {"params": q}),
+        ("R6", "put", "/overrides/behaviour", {"json": {"function_id": FID,
+                                                        "external_caller_id": CALLER,
+                                                        "bullets": ["x"]}}),
+        ("R7", "get", "/flowcharts/%s/labels" % tok, {}),
+        ("R8", "put", "/flowcharts/%s/labels" % tok, {"json": {"labels": {"n1": "x"}}}),
+        ("R9", "get", "/export-readiness", {}),
+        ("R10", "get", "/regeneration-queue", {}),
+        ("R11", "get", "/slots", {"params": {"slot_kind": "description"}}),
+    ]
+
+
+ROUTES = [pytest.param(m, p, kw, id=label) for label, m, p, kw in _every_route()]
+
+
+class TestTheVersionMustBeTheProjectsOwn:
+    """Every route is addressed /projects/{p}/versions/{v}, but reads and writes by version alone.
+
+    Reported from a web-app run: R11 answered `total: 0` for every kind because the caller sent
+    the version's TAG (`v1`) -- a run started from the web app is stored under a generated id --
+    and an unknown id looked exactly like an empty version. Reproducing it showed the worse half:
+    where some OTHER project had a version with that id, R11 answered with that project's slots.
+    """
+
+    @pytest.mark.parametrize("method,path,kw", ROUTES)
+    def test_an_unknown_version_is_404(self, client, review_db, auth_header, method, path, kw):
+        url = "/api/v1/projects/%s/versions/no-such-version%s" % (PROJECT, path)
+        r = getattr(client, method)(url, headers=auth_header, **kw)
+        assert r.status_code == 404, r.text
+        assert "no version 'no-such-version'" in r.json()["detail"]
+
+    @pytest.mark.parametrize("method,path,kw", ROUTES)
+    def test_another_projects_version_is_404(self, client, review_db, auth_header,
+                                             method, path, kw):
+        """alice is an admin of p1 AND p2; the path decides which project is being read."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        with review_db.begin() as cx:
+            cx.execute(insert(s.projects).values(id="p2", name="p2", created_at=now))
+            cx.execute(insert(s.versions).values(id="rv-other", project_id="p2", version="v1",
+                                                 created_at=now))
+        url = "/api/v1/projects/%s/versions/rv-other%s" % (PROJECT, path)
+        r = getattr(client, method)(url, headers=auth_header, **kw)
+        assert r.status_code == 404, r.text
+
+    def test_a_write_never_reaches_the_other_project(self, client, review_db, auth_header):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        with review_db.begin() as cx:
+            cx.execute(insert(s.projects).values(id="p2", name="p2", created_at=now))
+            cx.execute(insert(s.versions).values(id="rv-other", project_id="p2", version="v9",
+                                                 created_at=now))
+        client.put("/api/v1/projects/%s/versions/rv-other/overrides/slot" % PROJECT,
+                   headers=auth_header,
+                   json={"slot_kind": "description", "slot_key": FID, "text": "sneaky"})
+        with review_db.connect() as cx:
+            assert cx.execute(select(s.text_overrides)
+                              .where(s.text_overrides.c.version_id == "rv-other")).first() is None
+
+    def test_the_tag_is_answered_with_the_id(self, client, review_db, auth_header):
+        """The fixture's version is id `rv-1`, tag `v1` -- the shape a web-app run has."""
+        r = client.get("/api/v1/projects/%s/versions/v1/slots" % PROJECT, headers=auth_header,
+                       params={"slot_kind": "description"})
+        assert r.status_code == 404
+        assert "TAG" in r.json()["detail"] and "'%s'" % VERSION in r.json()["detail"]
+
+    def test_the_id_still_works(self, client, review_db, auth_header):
+        r = client.get(BASE + "/slots", headers=auth_header, params={"slot_kind": "description"})
+        assert r.status_code == 200 and r.json()["total"] >= 1

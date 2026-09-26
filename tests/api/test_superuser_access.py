@@ -92,7 +92,14 @@ class TestWithTheFlag:
     def test_every_project_route_answers(self, client, auth_header, orphan_project,
                                          superuser, suffix):
         r = client.get(f"/api/v1/projects/{orphan_project}{suffix}", headers=auth_header)
-        assert r.status_code == 200, r.text
+        if "/versions/" in suffix:
+            # Through the membership gate: the orphan has no version 'v1', and saying so is the
+            # route's own answer -- not the 403 this test exists to rule out. (It answered 200
+            # with an empty list before the review routes checked that a version is the
+            # project's own.)
+            assert r.status_code == 404 and "no version" in r.text, r.text
+        else:
+            assert r.status_code == 200, r.text
 
     def test_it_needs_no_membership_row(self, client, auth_header, orphan_project,
                                         superuser, db):
