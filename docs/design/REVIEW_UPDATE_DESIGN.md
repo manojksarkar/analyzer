@@ -288,8 +288,10 @@ key. No LLM, no parse, no subprocess.
 
 | slot kind | views re-derived |
 |---|---|
-| `description`, `behaviourInputName/OutputName` | `interfaceTables` for the function's component |
-| `unitDescription`, `structDescription` | `interfaceTables` for that component |
+| `description` | `interfaceTables` and `testSpecs` for the function's component (a SWE.4 spec copies the description) |
+| `behaviourInputName/OutputName` | `interfaceTables` for the function's component |
+| `unitDescription` | `interfaceTables` for that component |
+| `structDescription` | `unitHeaders` — the unit header table shows it for struct, class and union rows |
 | `behaviourDescription` | `behaviourDiagram` rows for that component |
 | `nodeLabel` | the flowchart JSON for that unit |
 
