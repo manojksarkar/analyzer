@@ -14,6 +14,11 @@ is how a module ends up knowing both and being the only place that can answer ei
 | `unitDescription` | `units` | `unit_key` | `description` |
 | `structDescription` | `dataDictionary` | `entity_key` | `description` |
 
+`structDescription` names only a record a document shows a description for — a struct, class or
+union with a row in the unit header table (`utils.is_described_record`). The data dictionary holds
+primitives, `#define`s, enums, typedefs and nested records too; a correction to one of those would
+be stored and never printed, so it is refused as not found.
+
 `description` looks in `functions` first and then `globalVariables` because both carry one and a
 key identifies which it is — a global's description is editable too (the cascade in
 REVIEW_UPDATE_DESIGN §6 regenerates its unit's description from it).
@@ -104,10 +109,39 @@ def locate(model: Dict[str, Any], kind: str, key: str) -> Location:
     for artifact in artifacts:
         entries = model.get(artifact) or {}
         if entry_key in entries:
+            if kind == slot.STRUCT_DESCRIPTION:
+                _require_described_record(entries, entry_key)
             return Location(artifact, entry_key, field)
 
     raise SlotNotFound(
         "%s: %r is not in %s for this version" % (kind, entry_key, " or ".join(artifacts)))
+
+
+def _require_described_record(data_dictionary: Dict[str, Any], entry_key: str) -> None:
+    """A `structDescription` names a record whose description a document can SHOW.
+
+    The data dictionary also holds primitives, `#define`s, enums, typedefs and records declared
+    inside a class. Each carries a `description` field the model will happily store, and none of
+    them has a row that prints it -- so a correction there would save, report success, and never
+    be seen. Refused instead, by the rule the unit header table picks its rows by.
+
+    Imported here, not at the top: `utils` loads the engine config when it is imported, and this
+    module has to stay importable without that (see the note above the artifact names).
+    """
+    from utils import RECORD_KINDS, is_described_record
+    if is_described_record(data_dictionary, entry_key):
+        return
+    entry = data_dictionary.get(entry_key) or {}
+    kind_of = entry.get("kind") or "type"
+    if kind_of not in RECORD_KINDS:
+        why = "it is %s %s" % ("an" if kind_of[:1] in "aeiou" else "a", kind_of)
+    elif entry.get("nestedIn"):
+        why = "it is declared inside %s, whose row shows it" % entry.get("nestedIn")
+    else:
+        why = "it is an anonymous %s with no row of its own" % kind_of
+    raise SlotNotFound(
+        "structDescription: %r has no description in any document -- %s. Only a struct, class or "
+        "union with a row in the unit header table has one" % (entry_key, why))
 
 
 def read_text(model: Dict[str, Any], kind: str, key: str) -> str:

@@ -87,6 +87,36 @@ class TestTheModelIsWritten:
                slot.for_entity(slot.STRUCT_DESCRIPTION, TYPE), "Tuning parameters.")
         assert m.artifact("dataDictionary")[TYPE]["description"] == "Tuning parameters."
 
+    @pytest.mark.parametrize("key,entry,why", [
+        ("MAX_LEN", {"kind": "define", "name": "MAX_LEN", "value": "64"}, "is a define"),
+        ("Mode_t", {"kind": "enum", "name": "Mode_t"}, "is an enum"),
+        ("UINT8", {"kind": "typedef", "name": "UINT8"}, "is a typedef"),
+        ("Cfg::Part", {"kind": "struct", "name": "Part", "nestedIn": "Cfg"},
+         "declared inside Cfg"),
+    ])
+    def test_a_type_no_document_describes_is_refused(self, conn, key, entry, why):
+        """Its entry has a `description` field the model would store, and no row prints it:
+        the save would succeed and the correction never appear. Refused as not found."""
+        model = _model()
+        model["dataDictionary"][key] = entry
+        m = svc.ModelAccess(artifacts=model)
+        with pytest.raises(svc.SlotUnknown, match=why):
+            _apply(conn, m, slot.STRUCT_DESCRIPTION,
+                   slot.for_entity(slot.STRUCT_DESCRIPTION, key), "Words.")
+        assert "description" not in m.artifact("dataDictionary")[key]
+
+    def test_a_nested_record_a_typedef_row_shows_is_editable(self, conn):
+        """`typedef Cfg::Part Part_t;` prints Part's description on its own row."""
+        model = _model()
+        model["dataDictionary"]["Cfg::Part"] = {"kind": "struct", "name": "Part",
+                                                "nestedIn": "Cfg"}
+        model["dataDictionary"]["Part_t"] = {"kind": "typedef", "name": "Part_t",
+                                             "underlyingType": "Cfg::Part"}
+        m = svc.ModelAccess(artifacts=model)
+        _apply(conn, m, slot.STRUCT_DESCRIPTION,
+               slot.for_entity(slot.STRUCT_DESCRIPTION, "Cfg::Part"), "One part.")
+        assert m.artifact("dataDictionary")["Cfg::Part"]["description"] == "One part."
+
     def test_a_behaviour_name_lands_on_its_own_field(self, conn):
         m = svc.ModelAccess(artifacts=_model())
         _apply(conn, m, slot.BEHAVIOUR_INPUT_NAME,

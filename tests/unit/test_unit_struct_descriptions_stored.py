@@ -186,6 +186,41 @@ class TestTheExporterNoLongerGenerates:
                 "re-pay for it" % name)
 
 
+class TestWhichRecordsHaveADescription:
+    """One rule -- `utils.is_described_record` -- decides which records the unit header table
+    describes, and so which ones Phase 2 asks the LLM about and a reviewer is offered."""
+
+    DD = {
+        "Pump": {"kind": "class", "name": "Pump"},
+        "Num": {"kind": "union", "name": "Num"},
+        "Cfg_t": {"kind": "struct", "name": "Cfg_t"},
+        "Outer::Inner": {"kind": "struct", "name": "Inner", "nestedIn": "Outer"},
+        "Outer::Named": {"kind": "struct", "name": "Named", "nestedIn": "Outer"},
+        "Named_t": {"kind": "typedef", "name": "Named_t", "underlyingType": "Outer::Named"},
+        "(anonymous)@x": {"kind": "struct", "name": "(anonymous)"},
+        "UINT8": {"kind": "typedef", "name": "UINT8", "underlyingType": "unsigned char"},
+        "MAX": {"kind": "define", "name": "MAX", "value": "3"},
+        "Mode": {"kind": "enum", "name": "Mode"},
+        "int": {"kind": "primitive", "name": "int"},
+    }
+    DESCRIBED = {"Pump", "Num", "Cfg_t", "Outer::Named"}
+
+    def test_the_rule(self):
+        from utils import described_record_keys, is_described_record
+        assert described_record_keys(self.DD) == self.DESCRIBED
+        for key in self.DD:
+            assert is_described_record(self.DD, key) == (key in self.DESCRIBED), key
+
+    def test_phase2_asks_the_llm_about_those_only(self, monkeypatch):
+        """A nested or anonymous record has no row, so its text would be paid for, never read."""
+        import copy
+        calls = TestPhase2GeneratesAndStores._patch_llm(None, monkeypatch)
+        dd = copy.deepcopy(self.DD)
+        _n_u, n_s = md._enrich_unit_and_struct_descriptions({}, {}, {}, dd, {})
+        assert n_s == calls["struct"] == len(self.DESCRIBED)
+        assert {k for k, e in dd.items() if e.get("description")} == self.DESCRIBED
+
+
 class TestTheUnitHeaderTableReadsTheStoredText:
     """The unit header table is a Phase-3 view (views/unit_headers.py). Its information column
     for a struct, class or union row is the STORED description -- what Phase 2 generated, or a
@@ -236,6 +271,25 @@ class TestTheUnitHeaderTableReadsTheStoredText:
         rows = self._rows(tmp_path, dd, "class Pump {\npublic:\n    int rate;\n};\n")
         row = next(r for r in rows if "class Pump" in r["declaration"])
         assert row["information"] == uh._struct_info_from_name("Pump", "Class")
+
+    def test_every_row_says_whose_description_it_prints(self, tmp_path):
+        """`typeKey` is the `structDescription` slot key of the text in `information`, `None`
+        when that is a value -- and present on EVERY row, which is how the review routes tell
+        this output from output derived before it existed."""
+        dd = {"Pump": self._entry("class", "Pump", description="Drives the pump."),
+              "MAX": self._entry("define", "MAX", line=5, value="3", text="#define MAX 3")}
+        rows = self._rows(tmp_path, dd,
+                          "class Pump {\npublic:\n    int rate;\n};\n#define MAX 3\n")
+        pump = next(r for r in rows if "class Pump" in r["declaration"])
+        mx = next(r for r in rows if "MAX" in r["declaration"])
+        assert pump["typeKey"] == "Pump"
+        assert "typeKey" in mx and mx["typeKey"] is None
+
+    def test_a_typedef_row_names_the_record_it_describes(self, tmp_path):
+        dd = {"Cfg": self._entry("struct", "Cfg", description="Holds the settings."),
+              "typedef@Cfg:Comp/U.h:1": self._entry("typedef", "Cfg_t", underlyingType="Cfg")}
+        rows = self._rows(tmp_path, dd, "typedef struct Cfg {\n    int x;\n} Cfg_t;\n")
+        assert {r["typeKey"] for r in rows} == {"Cfg"}
 
     def test_no_llm_description_call_remains_in_the_view(self):
         src = open(os.path.join(PROJECT_ROOT, "engine", "views", "unit_headers.py"),
