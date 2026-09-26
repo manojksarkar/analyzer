@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import unicodedata
+from contextlib import contextmanager
 from typing import Optional
 
 # Matches docker-compose.yml, so `docker compose up -d` needs no extra configuration.
@@ -282,6 +283,28 @@ def set_pipeline_status(status: str, *, version_id: Optional[str] = None) -> Non
     vid = version_id or os.environ.get("ANALYZER_VERSION_ID", "").strip()
     if not vid or not status:
         return
+    _write_pipeline_status(vid, status)
+
+
+#: Where a version's generation lifecycle ENDS -- NULL is a row written before the lifecycle
+#: existed, which `pg_stores.list_versions` treats as complete.
+_FINISHED_STATUSES = (None, "complete", "failed")
+
+
+def _read_pipeline_status(vid: str):
+    """`(True, status)` for the row, `(False, None)` when there is no row or no database."""
+    try:
+        from sqlalchemy import text
+        with get_engine().connect() as cx:
+            row = cx.execute(text("SELECT pipeline_status FROM versions WHERE id = :v"),
+                             {"v": vid}).first()
+    except Exception:
+        return False, None
+    return (True, row[0]) if row is not None else (False, None)
+
+
+def _write_pipeline_status(vid: str, status: Optional[str]) -> None:
+    """Set the column to exactly `status`, NULL included. Best-effort, like every write here."""
     try:
         from sqlalchemy import text
         with get_engine().begin() as cx:
@@ -291,6 +314,33 @@ def set_pipeline_status(status: str, *, version_id: Optional[str] = None) -> Non
             )
     except Exception:
         pass                                    # progress reporting never breaks a run
+
+
+@contextmanager
+def finished_status_kept(active: bool, *, version_id: Optional[str] = None):
+    """Leave a FINISHED version's ``pipeline_status`` as it was, whatever the phases report.
+
+    For a run that re-renders a version without rebuilding its model -- a re-export, Phase 3
+    or 4 alone. `PhaseRunner` marks each phase it starts ('viewing', 'exporting'), which is
+    right for a generation: its last step, `write_manifest`, closes the lifecycle at
+    'complete'. A re-export has no such step, so the version stayed at 'exporting' for good --
+    and `pg_stores.list_versions` accepts only NULL or 'complete' as a baseline. The next
+    version generated from it silently ran FULL: every LLM call paid again, and none of the
+    reviewers' corrections carried (REQ-VR-01), because they are carried on the incremental
+    path. A correction is always followed by a re-export, so that was every reviewed version.
+
+    The phases still report while they run, so a watcher sees progress; the status is put
+    back when the run ends, whether it succeeded or not -- the model was never touched, so the
+    version is exactly as finished as it was. Only a finished status is put back: one still
+    in progress means a generation owns this run, and its own last step closes it.
+    """
+    vid = version_id or os.environ.get("ANALYZER_VERSION_ID", "").strip()
+    found, before = _read_pipeline_status(vid) if (active and vid) else (False, None)
+    try:
+        yield
+    finally:
+        if found and before in _FINISHED_STATUSES:
+            _write_pipeline_status(vid, before)
 
 
 def reset_engine() -> None:

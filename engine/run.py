@@ -1055,9 +1055,16 @@ _refuse_stale_export(from_phase, force_export)
 
 runner = PhaseRunner(project_root=SCRIPT_DIR)
 total_time = 0.0
-for plan in plans:
-    log(plan.label, component="run")
-    total_time += runner.run(plan.phases, from_phase=plan.runner_from_phase)
+# From Phase 3 on, this run re-renders a version whose model it does not touch -- a re-export,
+# from either front door. The phases mark their progress on the version row as they go, and
+# nothing after them would close it again: without this a finished version was left at
+# 'exporting', refused as a baseline, and the next version silently ran FULL -- dropping every
+# carried correction with it. See `finished_status_kept`.
+from core.db import finished_status_kept
+with finished_status_kept(from_phase >= 3):
+    for plan in plans:
+        log(plan.label, component="run")
+        total_time += runner.run(plan.phases, from_phase=plan.runner_from_phase)
 
 print(flush=True)
 log(f"Done. Total: {total_time:.2f}s", component="run")
