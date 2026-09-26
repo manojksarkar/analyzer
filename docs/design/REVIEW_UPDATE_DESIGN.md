@@ -785,6 +785,10 @@ in the type entity's payload), and have the exporter read rather than generate.
 Side effects beyond this feature: the HTML view can show them at all, and every export stops
 re-paying for the LLM calls with possibly different wording each time.
 
+Since the rebase onto develop the struct description's reader is `views/unit_headers.py` — develop
+made the unit header table a Phase-3 view, with class and union rows — not the exporter. It reads
+the stored description too, so Phase 2 generates one for all three record kinds.
+
 ### 12.2 `REQ-PRE-02` — view output read from the database
 
 Storage is done (`persist_output_files`). **Reading** is not: `docx_exporter` takes a `json_path`,

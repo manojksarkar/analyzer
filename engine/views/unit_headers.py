@@ -72,27 +72,20 @@ def _strip_comments(text: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _struct_description(type_name: str, fields: list, config, abbreviations,
-                       label: str = "Structure") -> str:
+def _struct_description(type_name: str, entry: dict, label: str = "Structure") -> str:
     """One-line description for the information column of a struct/class/union row.
 
-    A record type has no value to print, so the cell carries meaning instead: the LLM's
-    sentence when descriptions are on and the provider answers, else the name-derived
-    fallback. Shared with the `typedef struct` path, so one type reads the same however it
-    was declared.
+    A record type has no value to print, so the cell carries meaning instead: the description
+    STORED on the type's data-dictionary entry, else the name-derived fallback. Shared with the
+    `typedef struct` path, so one type reads the same however it was declared.
+
+    Read, not generated (REQ-PRE-01). Phase 2 generates it and stores it on the entry, which is
+    also where a reviewer's correction lands (`structDescription`). Asking the LLM here, while the
+    view runs, kept the sentence nowhere: the page could not show it, every run re-paid for it, and
+    a correction could never reach the document because this overwrote it on every render.
     """
-    info = _struct_info_from_name(type_name, label)
-    if not config:
-        return info
-    try:
-        from llm_enrichment import get_struct_description, llm_provider_reachable
-        if llm_provider_reachable(config) and config.get("llm", {}).get("descriptions", True):
-            llm_desc = get_struct_description(type_name, fields or [], config, abbreviations or {})
-            if llm_desc:
-                return llm_desc
-    except ImportError:
-        pass
-    return info
+    stored = str((entry or {}).get("description") or "").strip()
+    return stored or _struct_info_from_name(type_name, label)
 
 
 _ACCESS_LABEL_RE = re.compile(r"^(public|protected|private)" + chr(92) + "s*:")
@@ -565,11 +558,10 @@ def build_rows(
                 info = ", ".join(parts) if parts else NA
 
             elif isinstance(enum_ent, dict) and enum_ent.get("kind") in ("struct", "class", "union"):
-                # typedef struct: description from name + fields (on the go, no store)
+                # typedef struct: the underlying record's stored description (REQ-PRE-01)
                 info = _struct_description(
                     t.get("name") or underlying or _type_name,
-                    enum_ent.get("fields") or [],
-                    config, abbreviations,
+                    enum_ent,
                     _RECORD_LABEL.get(enum_ent.get("kind"), "Structure"),
                 )
             else:
@@ -588,8 +580,7 @@ def build_rows(
             # inline body is reduced to its declaration (client, 2026-09-23).
             decl = _declarations_only(decl)
             info = _struct_description(
-                t.get("name") or _type_name, t.get("fields") or [], config, abbreviations,
-                _RECORD_LABEL.get(kind, "Structure"),
+                t.get("name") or _type_name, t, _RECORD_LABEL.get(kind, "Structure"),
             )
         else:
             info = NA
@@ -743,7 +734,8 @@ def run(model, output_dir, model_dir, config):
     used_names = _unit_used_names(functions_data, globals_data, base_path)
     lent_by_unit = _lent_by_unit(model, data_dict, globals_data, macro_users, type_users,
                                  source_unit_paths, used_names, global_users)
-    # Only the typedef->struct description uses these, and only when the LLM is on.
+    # Kept for build_rows' signature. Record descriptions are READ from the stored entry now
+    # (see _struct_description), so nothing here asks the LLM.
     abbreviations = load_abbreviations(_paths().project_root, config)
 
     allowed = {c.lower() for c in (config.get("_analyzerAllowedComponents") or [])}

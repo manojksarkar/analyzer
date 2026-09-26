@@ -1255,7 +1255,8 @@ def _enrich_unit_and_struct_descriptions(units_data: dict, functions_data: dict,
             n_units += 1
 
     for entry in data_dict.values():
-        if not isinstance(entry, dict) or entry.get("kind") != "struct":
+        # struct, class and union: the unit header table describes all three (develop, 794b95f).
+        if not isinstance(entry, dict) or entry.get("kind") not in ("struct", "class", "union"):
             continue
         if entry.get("description"):
             continue
