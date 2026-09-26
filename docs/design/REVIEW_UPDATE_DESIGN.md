@@ -606,12 +606,22 @@ human-authored — needed for undo, for the UI's "overridden" flag, and for `REQ
 ```
 for each override on the baseline:
     if the slot still resolves in the new version
-       and (slot is not nodeLabel or (the function's source_hash is unchanged        REQ-VR-03
-                                      and slot_shape matches the graph in hand)):    REQ-ID-02
+       and (slot is a unit description                          -- the unit still has code in it
+            or slot is a struct description and the type's definition is unchanged
+            or the function's (or global's) source_hash is unchanged                 REQ-VR-01
+               and (slot is not nodeLabel or slot_shape matches the graph in hand)): REQ-ID-02
         copy the row to the new version, shape and all
     else:
         copy it marked orphaned — never drop it                                      REQ-ID-03
 ```
+
+"Still resolves" is judged against what the new version holds **when the carry runs**: after its
+Phase 1, before its Phase 2. So units, which Phase 2 builds, are read from the entity keys of the
+functions and globals the parse produced; and a struct is looked up in the parsed data dictionary,
+not in `hashes` — most data-dictionary entries have no source hash (19 of 91 on the sample). A
+type's definition is its entry minus `description` and `location`. The first version of this
+check asked the `model_units` table and `hashes`, both of which a real run fills later or not at
+all, so every unit and struct description came out orphaned on the next version.
 
 "**the graph in hand**" is doing real work in that condition. Carry-forward runs in **Phase 2**, and
 Phase 3 is what produces the new version's flowcharts — so at carry time the new version usually has
@@ -649,9 +659,26 @@ offer, so carry-forward leaves it alone.
 
 `overrides_for_config` then builds what a Phase-3 run feeds to
 [§5.1](#51-text-that-phase-3-produces)'s `from_config`. Only the two Phase-3 kinds appear in it: the
-other five are in the model already, carried there by the engine's own `carry_forward_globals`, and
-Phase 3 derives from the model — putting them in both places would be the second copy this design
-exists to avoid.
+other five live in the model, and Phase 3 derives from the model — putting them in both places
+would be the second copy this design exists to avoid.
+
+**Putting the five back after Phase 2.** "Carried there by the engine's own `carry_forward_globals`"
+was true of function descriptions only. Phase 2 rebuilds the rest from scratch: `units` is built
+afresh and every unit description generated again, a new version's data dictionary comes from its
+own parse, and behaviour input/output names are recomputed for every function a run derives — all
+of them on `reexport --from-phase 2`. Measured on the sample: v1 corrected, v2 generated from it,
+and v2 printed the LLM's unit and struct text while the records still claimed to be in force; a
+Phase-2 re-derive of v1 printed computed behaviour names and an empty unit description.
+
+So Phase 2 ends with `_reapply_corrections` (`model_deriver.py`), which calls
+`carry_forward.apply_live_corrections`: every correction **in force** for the version is written into
+the rebuilt model through the resolver a save uses, after every step that writes text and before the
+model is persisted (units and the data dictionary are persisted when it changed them, not only when
+the LLM did). An orphan is never applied (`REQ-ID-03`); a correction whose code changed was orphaned
+by the carry above, so the new code keeps its fresh text (`REQ-VR-01`); the LLM cache is untouched
+(`REQ-VR-02`). The carry runs before Phase 2 (`incremental/engine.py`), so on a new version the
+write-back sees the rows it carried. Never fatal: the corrections stay stored and the next run
+applies them.
 
 `--full` has no baseline, so nothing is carried and the overrides simply are not applied
 (`REQ-VR-03`) — **they are not deleted**. `--full` is the standing remedy for several problems and

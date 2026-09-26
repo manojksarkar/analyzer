@@ -218,6 +218,44 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-26e (**Corrections now survive the next version and a Phase-2 re-derive --
+> unit, struct and behaviour-name corrections were lost -- and a correction to code that changed is
+> kept but no longer applied (REQ-VR-01).**
+>
+> Measured on the real pipeline before fixing (sample project, group Full, via the API): v1 got one
+> correction of each model-backed kind, `directionAdd` was changed, v2 generated from v1. v2 showed
+> the unit and struct corrections ORPHANED ("that unit is not in the new version") with their text
+> lost, and `directionAdd`'s description "in force" over the fresh text of the new code. A
+> `reexport --from-phase 2` of v1 printed computed behaviour names (`ReadOnly`) and an empty unit
+> description while the records still said "in force".
+>
+> Two causes. (1) `carry_forward._still_applies` judged the new version by what it holds AFTER Phase
+> 2, but the carry runs BEFORE it: units came from `model_units` (empty until Phase 2) and structs
+> from `hashes` (19 of 91 data-dictionary entries have one). And the function kinds carried as
+> live even when the code changed -- the design said a changed function does not carry its
+> override, but its pseudocode only applied that to node labels. Now: a unit exists when the new
+> version's functions or globals belong to it (`unit_key_of` over the entity keys); a struct is
+> looked up in the parsed data dictionary (`model_store.load_types`) and orphaned when its
+> definition -- the entry minus `description` and `location` -- changed; description and behaviour
+> names are orphaned "its code changed" when the source hash differs. The baseline is read lazily
+> through `_Target` (flowcharts only for node labels). (2) Phase 2 rebuilds `units` from scratch,
+> re-generates unit and struct descriptions and recomputes behaviour names, and nothing put the
+> corrections back -- "carried there by carry_forward_globals" was true of function descriptions
+> only. `carry_forward.apply_live_corrections` writes every correction in force into the model
+> through the resolver a save uses; `model_deriver._reapply_corrections` calls it last, after every
+> text step, before the model is persisted, and units / data dictionary are written when it changed
+> them (they were written only when the LLM generated something). Orphans are never applied; the
+> LLM cache is not touched (REQ-VR-02).
+>
+> After the fix, same run: v2 -> unchanged function's description and behaviour names human, unit
+> and struct human, `directionAdd` orphaned with fresh text; `reexport --from-phase 2` of v1 ->
+> all six human. Shown with the write-back switched off and on over the same v1. Tests: the carry
+> against a target with no units and no type hashes, changed / moved / removed structs, changed code
+> for the three function kinds, the write-back (every kind, orphans, Phase-3 kinds, idempotence),
+> and the Phase-2 wiring (called, after the text steps, before persisting, what it changed saved).
+> Eight revert-checks caught. The old unit test seeded the target WITH units -- which no real run has
+> at carry time -- which is how it passed. Design §10 corrected. 2483 passed, 37 skipped.)
+
 > Updated: 2026-09-26d (**A re-export is a job of its own, addressed by version: its status goes
 > queued -> running -> complete | failed, one runs at a time per version, and any version can be
 > re-exported -- not only the newest.**

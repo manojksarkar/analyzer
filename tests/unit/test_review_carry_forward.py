@@ -42,13 +42,13 @@ def _cfg(*ids):
 
 
 def _seed_version(cx, vid, *, source_hash="h1", node_ids=("n0", "n1", "n2"),
-                  functions=(FID,), units=(UNIT,), behaviour=True):
+                  functions=(FID,), units=(UNIT,), behaviour=True, datadict=None):
     cx.execute(sa.insert(s.versions).values(id=vid, project_id="p", version=vid,
                                             created_at=NOW))
     model_store.persist_model(
         cx, "p", vid,
         functions={f: {"qualifiedName": "ns::x", "description": "d"} for f in functions},
-        globals={}, datadict={}, edges={"typeUsers": {}, "macroUsers": {}},
+        globals={}, datadict=datadict or {}, edges={"typeUsers": {}, "macroUsers": {}},
         hashes={f: source_hash for f in functions},
         units={u: {"name": u.split("|")[-1], "path": "a", "fileName": "f.cpp",
                    "includedHeaders": []} for u in units},
@@ -306,3 +306,148 @@ class TestWhatPhase3Receives:
         payload = cf.overrides_for_config(conn, "v3")
         assert payload["nodeLabel"] == {FID: {"n1": "Node text."}}
         assert payload["nodeLabelShapes"] == {FID: shape}
+
+
+# ---------------------------------------------------------------------------------------------
+# What a NEW version actually holds when the carry runs: its parse, and nothing Phase 2 builds.
+#
+# The tests above seed the target WITH units, which no real run has at that point -- Phase 2
+# builds them after the carry. That is how every unit description came out orphaned on a real
+# two-version run while these tests passed. Measured: v1 corrected, v2 generated from it, and v2
+# showed "that unit is not in the new version" and the LLM's (empty) text.
+# ---------------------------------------------------------------------------------------------
+STRUCT = "GG"
+GG = {"kind": "struct", "name": "GG", "qualifiedName": "GG",
+      "fields": [{"name": "x", "type": "int"}], "range": "NA",
+      "location": {"file": "a/gg.h", "line": 3}}
+
+
+class TestTheCarryMatchesWhatANewVersionHolds:
+    def test_a_unit_description_carries_before_phase_2_has_built_units(self, conn):
+        _override(conn, "v3", slot.UNIT_DESCRIPTION, slot.for_unit(UNIT))
+        _seed_version(conn, "v4", units=())                   # functions, but no units yet
+        out = cf.carry_overrides(conn, "v3", "v4")
+        assert (out.carried, out.orphaned) == (1, 0), out.reasons
+
+    def test_a_unit_with_nothing_left_in_it_is_orphaned(self, conn):
+        _override(conn, "v3", slot.UNIT_DESCRIPTION, slot.for_unit(UNIT))
+        _seed_version(conn, "v4", units=(), functions=("Comp|UnitB|ns::other|void",))
+        out = cf.carry_overrides(conn, "v3", "v4")
+        assert out.orphaned == 1 and "unit" in out.reasons[0][2]
+
+    def test_a_struct_description_carries_though_types_have_no_hash(self, conn):
+        """Most data-dictionary entries have no source hash (19 of 91 on the sample)."""
+        _seed_version(conn, "v3b", datadict={STRUCT: dict(GG, description="written by the LLM")})
+        _override(conn, "v3b", slot.STRUCT_DESCRIPTION,
+                  slot.for_entity(slot.STRUCT_DESCRIPTION, STRUCT))
+        _seed_version(conn, "v4", datadict={STRUCT: dict(GG)})
+        out = cf.carry_overrides(conn, "v3b", "v4")
+        assert (out.carried, out.orphaned) == (1, 0), out.reasons
+
+    def test_a_struct_that_only_moved_still_carries(self, conn):
+        _seed_version(conn, "v3b", datadict={STRUCT: dict(GG)})
+        _override(conn, "v3b", slot.STRUCT_DESCRIPTION,
+                  slot.for_entity(slot.STRUCT_DESCRIPTION, STRUCT))
+        moved = dict(GG, location={"file": "a/gg.h", "line": 9})
+        _seed_version(conn, "v4", datadict={STRUCT: moved})
+        assert cf.carry_overrides(conn, "v3b", "v4").carried == 1
+
+    def test_a_struct_whose_definition_changed_is_orphaned(self, conn):
+        _seed_version(conn, "v3b", datadict={STRUCT: dict(GG)})
+        _override(conn, "v3b", slot.STRUCT_DESCRIPTION,
+                  slot.for_entity(slot.STRUCT_DESCRIPTION, STRUCT))
+        changed = dict(GG, fields=[{"name": "y", "type": "long"}])
+        _seed_version(conn, "v4", datadict={STRUCT: changed})
+        out = cf.carry_overrides(conn, "v3b", "v4")
+        assert out.orphaned == 1 and "definition changed" in out.reasons[0][2]
+
+    def test_a_struct_that_is_gone_is_orphaned(self, conn):
+        _seed_version(conn, "v3b", datadict={STRUCT: dict(GG)})
+        _override(conn, "v3b", slot.STRUCT_DESCRIPTION,
+                  slot.for_entity(slot.STRUCT_DESCRIPTION, STRUCT))
+        _seed_version(conn, "v4")
+        assert cf.carry_overrides(conn, "v3b", "v4").orphaned == 1
+
+
+class TestChangedCodeGetsFreshText:
+    """`REQ-VR-01` for the function kinds, as node labels already had it. Carried as live, the
+    correction claimed to be in force over the fresh LLM text the new code received."""
+
+    @pytest.mark.parametrize("kind", [slot.DESCRIPTION, slot.BEHAVIOUR_INPUT_NAME,
+                                      slot.BEHAVIOUR_OUTPUT_NAME])
+    def test_it_is_kept_but_not_applied(self, conn, kind):
+        _override(conn, "v3", kind, slot.for_entity(kind, FID))
+        _seed_version(conn, "v4", source_hash="h2")
+        out = cf.carry_overrides(conn, "v3", "v4")
+        assert (out.carried, out.orphaned) == (0, 1)
+        assert "code changed" in out.reasons[0][2]
+        row = conn.execute(sa.select(s.text_overrides)
+                           .where(s.text_overrides.c.version_id == "v4")).first()
+        assert row.human_text == "Corrected."                 # kept (REQ-ID-03)
+
+    @pytest.mark.parametrize("kind", [slot.DESCRIPTION, slot.BEHAVIOUR_INPUT_NAME,
+                                      slot.BEHAVIOUR_OUTPUT_NAME])
+    def test_unchanged_code_still_carries_it(self, conn, kind):
+        _override(conn, "v3", kind, slot.for_entity(kind, FID))
+        _seed_version(conn, "v4", source_hash="h1")
+        assert cf.carry_overrides(conn, "v3", "v4").carried == 1
+
+
+class TestCorrectionsGoBackIntoTheRebuiltModel:
+    """`apply_live_corrections`: what Phase 2 calls once it has rebuilt the model."""
+
+    def _model(self):
+        return {"functions": {FID: {"description": "llm d", "behaviourInputName": "llm in",
+                                    "behaviourOutputName": "llm out"}},
+                "globalVariables": {},
+                "units": {UNIT: {"name": "UnitA", "description": "llm unit"}},
+                "dataDictionary": {STRUCT: dict(GG, description="llm struct")}}
+
+    def _all(self, conn):
+        for kind, key in [(slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, FID)),
+                          (slot.BEHAVIOUR_INPUT_NAME,
+                           slot.for_entity(slot.BEHAVIOUR_INPUT_NAME, FID)),
+                          (slot.BEHAVIOUR_OUTPUT_NAME,
+                           slot.for_entity(slot.BEHAVIOUR_OUTPUT_NAME, FID)),
+                          (slot.UNIT_DESCRIPTION, slot.for_unit(UNIT)),
+                          (slot.STRUCT_DESCRIPTION,
+                           slot.for_entity(slot.STRUCT_DESCRIPTION, STRUCT))]:
+            _override(conn, "v3", kind, key, human="human " + kind)
+
+    def test_every_model_backed_kind_is_put_back(self, conn):
+        self._all(conn)
+        model = self._model()
+        changed = cf.apply_live_corrections(conn, "v3", model)
+        f = model["functions"][FID]
+        assert f["description"] == "human description"
+        assert f["behaviourInputName"] == "human behaviourInputName"
+        assert f["behaviourOutputName"] == "human behaviourOutputName"
+        assert model["units"][UNIT]["description"] == "human unitDescription"
+        assert model["dataDictionary"][STRUCT]["description"] == "human structDescription"
+        assert changed == {"functions": 3, "units": 1, "dataDictionary": 1}
+
+    def test_an_orphan_is_never_applied(self, conn):
+        _override(conn, "v3", slot.UNIT_DESCRIPTION, slot.for_unit(UNIT), orphaned=True)
+        model = self._model()
+        assert cf.apply_live_corrections(conn, "v3", model) == {}
+        assert model["units"][UNIT]["description"] == "llm unit"
+
+    def test_the_phase_3_kinds_are_left_to_phase_3(self, conn):
+        _override(conn, "v3", slot.NODE_LABEL, slot.for_node(FID, "n1"))
+        _override(conn, "v3", slot.BEHAVIOUR_DESCRIPTION, slot.for_behaviour_row(FID, CALLER))
+        assert cf.apply_live_corrections(conn, "v3", self._model()) == {}
+
+    def test_what_is_already_there_is_not_counted(self, conn):
+        self._all(conn)
+        model = self._model()
+        cf.apply_live_corrections(conn, "v3", model)
+        assert cf.apply_live_corrections(conn, "v3", model) == {}
+
+    def test_a_slot_missing_from_the_model_is_skipped(self, conn):
+        _override(conn, "v3", slot.UNIT_DESCRIPTION, slot.for_unit("Comp|Gone"))
+        assert cf.apply_live_corrections(conn, "v3", self._model()) == {}
+
+    def test_another_versions_corrections_are_not_applied(self, conn):
+        self._all(conn)
+        _seed_version(conn, "v4")
+        assert cf.apply_live_corrections(conn, "v4", self._model()) == {}

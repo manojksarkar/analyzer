@@ -575,6 +575,43 @@ def _retire_regeneration_queue(queued, functions_data: dict, global_variables_da
         get_logger("model_deriver").warning("review: could not retire queue entries: %s", exc)
 
 
+def _reapply_corrections(functions_data: dict, global_variables_data: dict, units_data: dict,
+                         data_dict: dict) -> dict:
+    """Put the reviewers' corrections back into the model this phase rebuilt (`REQ-VR-01`).
+
+    Called last, after every step that writes text. `units` is rebuilt from scratch and every
+    unit description generated again; a new version's data dictionary comes from its own parse;
+    behaviour names are recomputed for every function derived -- all of them on
+    `reexport --from-phase 2`. Without this, those corrections were lost: v2 printed the LLM's
+    unit and struct descriptions over the reviewer's, and a re-derive printed fresh behaviour
+    names, while the stored corrections still claimed to be in force.
+
+    Returns `{artifact: count}` for what changed, so the caller persists exactly those. Never
+    fatal, as with the queue above: a phase that has paid for the parse and the LLM is not lost
+    over this; the corrections stay stored and the next run applies them.
+    """
+    eng, vid = _review_conn_and_version()
+    if not eng:
+        return {}
+    try:
+        from review.carry_forward import apply_live_corrections
+        model = {"functions": functions_data, "globalVariables": global_variables_data,
+                 "units": units_data, "dataDictionary": data_dict}
+        with eng.connect() as cx:
+            changed = apply_live_corrections(cx, vid, model)
+        if changed:
+            from core.logging_setup import get_logger
+            get_logger("model_deriver").info(
+                "review: re-applied %d correction(s) to the rebuilt model (%s)",
+                sum(changed.values()),
+                ", ".join("%s %d" % (k, v) for k, v in sorted(changed.items())))
+        return changed
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        from core.logging_setup import get_logger
+        get_logger("model_deriver").warning("review: could not re-apply corrections: %s", exc)
+        return {}
+
+
 def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data: dict, config: dict, only_globals=None):
     """LLM enrichment for descriptions only. Direction comes from parser (global read/write analysis).
 
@@ -1416,15 +1453,18 @@ def main():
     _n_units, _n_structs = _enrich_unit_and_struct_descriptions(
         units_data, functions_data, global_variables_data, data_dict, config)
 
+    # Last text step: the reviewers' corrections go back over whatever the steps above rebuilt.
+    _corrected = _reapply_corrections(functions_data, global_variables_data, units_data, data_dict)
+
     # Clean and persist
     for fentry in functions_data.values():
         fentry.pop("params", None)
     from core.model_io import write_model_file as _write, FUNCTIONS, GLOBALS, UNITS, DATA_DICTIONARY as _DD
     _write(FUNCTIONS, functions_data)
     _write(GLOBALS, global_variables_data)
-    if _n_units:
+    if _n_units or _corrected.get("units"):
         _write(UNITS, units_data)          # units were written before the descriptions existed
-    if _n_structs:
+    if _n_structs or _corrected.get("dataDictionary"):
         _write(_DD, data_dict)
     from core.model_io import artifact_location as _where
     print(f"  functions ({len(functions_data)}) -> {_where('functions')}")

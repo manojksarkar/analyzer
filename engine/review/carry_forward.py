@@ -42,7 +42,7 @@ import datetime
 import json
 import os
 import sys
-from typing import Dict, NamedTuple, Optional, Set
+from typing import Any, Dict, NamedTuple, Optional, Set
 
 from sqlalchemy import insert, select
 
@@ -73,6 +73,7 @@ class _Target:
         self._conn, self._v = conn, version_id
         self._hashes: Optional[Dict[str, str]] = None
         self._units: Optional[Set[str]] = None
+        self._types: Optional[Dict[str, dict]] = None
         self._shapes: Optional[Dict[str, str]] = None
         self._behaviour: Optional[Set[str]] = None
 
@@ -85,11 +86,32 @@ class _Target:
 
     @property
     def units(self) -> Set[str]:
+        """The version's units -- stored ones, and those its functions and globals belong to.
+
+        The carry runs after Phase 1 and BEFORE Phase 2, and units are built in Phase 2: a new
+        version has no `model_units` rows yet. Asking only the table orphaned every unit
+        description ("that unit is not in the new version") on every generation. A unit exists
+        when something in it does, and the entity keys say which unit that is.
+        """
         if self._units is None:
-            self._units = {r.unit_key for r in self._conn.execute(
+            from review.cascade import unit_key_of
+            stored = {r.unit_key for r in self._conn.execute(
                 select(s.model_units.c.unit_key)
                 .where(s.model_units.c.version_id == self._v)).fetchall()}
+            self._units = stored | {u for u in map(unit_key_of, self.hashes) if u}
         return self._units
+
+    @property
+    def types(self) -> Dict[str, dict]:
+        """`{type_or_macro_key: entry}` -- the data dictionary, as Phase 1 stored it.
+
+        Not `hashes`: most data-dictionary entries have no source hash (19 of 91 on the sample),
+        so asking `hashes` orphaned nearly every struct description.
+        """
+        if self._types is None:
+            from core import model_store
+            self._types = model_store.load_types(self._conn, self._v)
+        return self._types
 
     @property
     def shapes(self) -> Dict[str, str]:
@@ -142,8 +164,16 @@ class _Target:
         return self._behaviour
 
 
-def _still_applies(row, target: _Target, baseline_hashes: Dict[str, str],
-                   baseline_shapes: Dict[str, str]) -> Optional[str]:
+def _definition(entry: Optional[dict]) -> Optional[dict]:
+    """A data-dictionary entry minus what is not its definition: the description (the very text
+    being carried -- the baseline's holds the human's words) and the location (a line added
+    above a type moves it without changing it)."""
+    if entry is None:
+        return None
+    return {k: v for k, v in entry.items() if k not in ("description", "location")}
+
+
+def _still_applies(row, target: _Target, baseline: _Target) -> Optional[str]:
     """`None` if the correction still applies, else why it does not."""
     kind, key = row.slot_kind, row.slot_key
 
@@ -162,7 +192,7 @@ def _still_applies(row, target: _Target, baseline_hashes: Dict[str, str],
         fid = parts["entity_key"]
         if fid not in target.hashes:
             return "that function is not in the new version"
-        if baseline_hashes.get(fid) != target.hashes.get(fid):
+        if baseline.hashes.get(fid) != target.hashes.get(fid):
             # The code changed, so the labels describe statements that may no longer exist.
             # Fresh LLM text is the right answer here (REQ-VR-01).
             return "that function's code changed"
@@ -178,7 +208,7 @@ def _still_applies(row, target: _Target, baseline_hashes: Dict[str, str],
         # renumbers the target while the baseline still matches. `phase3_overrides` closes that
         # by re-checking the shape against the CFG it is actually writing into, which is the last
         # moment before the text lands and the only place the target's real graph exists.
-        current = target.shapes.get(fid) or baseline_shapes.get(fid)
+        current = target.shapes.get(fid) or baseline.shapes.get(fid)
         if not slot.shape_matches(row.slot_shape, current):
             return ("the flowchart was renumbered even though the code did not change, so the "
                     "correction can no longer be placed")
@@ -189,7 +219,26 @@ def _still_applies(row, target: _Target, baseline_hashes: Dict[str, str],
         entity = slot.parse(kind, key)["entity_key"]
     except slot.SlotKeyError:
         return "the slot key is malformed"
-    return None if entity in target.hashes else "that entity is not in the new version"
+
+    if kind == slot.STRUCT_DESCRIPTION:
+        # A data-dictionary entry: compared by its definition, since most have no source hash.
+        current = target.types.get(entity)
+        if current is None:
+            return "that type is not in the new version"
+        if _definition(baseline.types.get(entity)) != _definition(current):
+            return "that type's definition changed"
+        return None
+
+    # A function or a global: a description, or a behaviour input/output name.
+    if entity not in target.hashes:
+        return "that entity is not in the new version"
+    if baseline.hashes.get(entity) != target.hashes.get(entity):
+        # REQ-VR-01, as for node labels above: the words were written for code that is not there
+        # any more. The new version gets fresh LLM text for it, and the correction is kept but not
+        # applied. Carrying it as live used to leave it claiming to be in force over text it did
+        # not write -- and re-applying it after Phase 2 would put the old words on the new code.
+        return "its code changed"
+    return None
 
 
 def carry_overrides(conn, baseline_version_id: str, target_version_id: str, *,
@@ -216,10 +265,8 @@ def carry_overrides(conn, baseline_version_id: str, target_version_id: str, *,
         select(s.text_overrides.c.slot_kind, s.text_overrides.c.slot_key)
         .where(s.text_overrides.c.version_id == target_version_id)).fetchall()}
 
-    from core import model_store
-    baseline_hashes = model_store.load_hashes(conn, baseline_version_id)
     target = _Target(conn, target_version_id)
-    baseline = _Target(conn, baseline_version_id)      # lazy; only its shapes are read
+    baseline = _Target(conn, baseline_version_id)      # lazy: only what a row needs is read
     stamp = now or datetime.datetime.now(datetime.timezone.utc)
 
     carried = orphaned = 0
@@ -227,7 +274,7 @@ def carry_overrides(conn, baseline_version_id: str, target_version_id: str, *,
     for row in src:
         if (row.slot_kind, row.slot_key) in existing:
             continue
-        why = _still_applies(row, target, baseline_hashes, baseline.shapes)
+        why = _still_applies(row, target, baseline)
         # An already-orphaned correction stays orphaned: whatever stopped resolving in the
         # baseline has not come back just because a new version was generated.
         is_orphan = bool(why) or bool(row.is_orphaned)
@@ -256,6 +303,48 @@ def carry_overrides(conn, baseline_version_id: str, target_version_id: str, *,
         else:
             carried += 1
     return Carried(carried, orphaned, tuple(reasons))
+
+
+def apply_live_corrections(conn, version_id: str, model: Dict[str, Any]) -> Dict[str, int]:
+    """Write this version's corrections that are in force back into `model`, which Phase 2 has
+    just rebuilt. Returns `{artifact: count}` for what it changed.
+
+    A correction lives in the model -- that is where a save writes it, and Phase 3 and the
+    exporter read it from there. But Phase 2 rebuilds parts of the model from scratch, and they
+    lost what the reviewer wrote:
+
+      * `units` is built afresh and every unit description re-generated;
+      * the data dictionary of a NEW version comes from its own parse, so its struct
+        descriptions are generated again;
+      * behaviour input/output names are recomputed for every function a run derives -- all of
+        them on `reexport --from-phase 2`.
+
+    So the text is put back last, through the same resolver a save writes through. Only
+    corrections in force: an orphan is kept but never applied (`REQ-ID-03`), and `carry_overrides`
+    has already orphaned whatever a new version changed underneath (`REQ-VR-01`). The LLM cache
+    is not touched (`REQ-VR-02`).
+    """
+    from review import resolver
+    rows = conn.execute(
+        select(s.text_overrides.c.slot_kind, s.text_overrides.c.slot_key,
+               s.text_overrides.c.human_text)
+        .where(s.text_overrides.c.version_id == version_id,
+               s.text_overrides.c.is_orphaned.is_(False),
+               s.text_overrides.c.slot_kind.in_(resolver.MODEL_BACKED_KINDS))).fetchall()
+    changed: Dict[str, int] = {}
+    for r in rows:
+        text = (r.human_text or "").strip()
+        if not text:
+            continue
+        try:
+            loc = resolver.locate(model, r.slot_kind, r.slot_key)
+            if resolver.read_text(model, r.slot_kind, r.slot_key) == text:
+                continue
+        except (resolver.SlotError, slot.SlotKeyError):
+            continue      # nothing here to write it into; whether it applies was judged already
+        resolver.write_text(model, r.slot_kind, r.slot_key, text)
+        changed[loc.artifact] = changed.get(loc.artifact, 0) + 1
+    return changed
 
 
 def overrides_for_config(conn, version_id: str) -> Dict[str, Dict]:

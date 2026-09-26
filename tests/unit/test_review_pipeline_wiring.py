@@ -259,3 +259,70 @@ class TestTheApiRederivesInsteadOfRefusing:
         src = _src(self.SRC)
         body = src[src.index("def _reexport_from_phase("):src.index("def _do_reexport(")]
         assert body.count("return 4") >= 3 and "except Exception" in body
+
+
+class TestPhase2PutsTheCorrectionsBack:
+    """REQ-VR-01. Phase 2 rebuilds units from scratch, re-parses a new version's data dictionary
+    and recomputes behaviour names, so unit, struct and behaviour-name corrections were lost on
+    every new version and every `reexport --from-phase 2` -- while the stored corrections still
+    claimed to be in force. `_reapply_corrections` writes them back; these check that a real run
+    reaches it, at the right moment, and persists what it changed."""
+
+    SRC = "engine/model_deriver.py"
+
+    def _main(self):
+        src = _src(self.SRC)
+        return src[src.index("\ndef main():"):]
+
+    def test_main_calls_it(self):
+        assert re.search(r"^[ \t]*_corrected = _reapply_corrections\(", self._main(), re.M)
+
+    def test_after_every_step_that_writes_text(self):
+        """Last: the unit and struct descriptions are generated just before it, and would
+        otherwise be written over the corrections."""
+        body = self._main()
+        call = body.index("_corrected = _reapply_corrections(")
+        for step in ("_enrich_behaviour_names(functions_data", "_enrich_from_llm(base_path",
+                     "_enrich_unit_and_struct_descriptions("):
+            assert body.index(step) < call, step + " runs after the corrections are put back"
+
+    def test_before_the_model_is_written(self):
+        body = self._main()
+        assert body.index("_corrected = _reapply_corrections(") < body.index(
+            "_write(FUNCTIONS, functions_data)")
+
+    def test_what_it_changed_is_persisted(self):
+        """Units and the data dictionary were only written when the LLM generated something;
+        a corrected unit on a run with the LLM off would have been put back and then dropped."""
+        body = self._main()
+        assert 'if _n_units or _corrected.get("units"):' in body
+        assert 'if _n_structs or _corrected.get("dataDictionary"):' in body
+
+    def test_it_writes_into_the_dicts_the_phase_persists(self, monkeypatch):
+        import datetime
+        import sqlalchemy as sa
+        from api.db.postgres import schema as s
+        import model_deriver
+        from review import slot
+
+        eng = sa.create_engine("sqlite://")
+        s.metadata.create_all(eng)
+        now = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+        with eng.begin() as cx:
+            cx.execute(sa.insert(s.projects).values(id="p", name="p", created_at=now))
+            cx.execute(sa.insert(s.versions).values(id="v1", project_id="p", version="v1",
+                                                    created_at=now))
+            cx.execute(sa.insert(s.text_overrides).values(
+                version_id="v1", slot_kind=slot.UNIT_DESCRIPTION, slot_key="C|U",
+                llm_text="", human_text="What the reviewer wrote.", is_orphaned=False,
+                updated_at=now))
+        monkeypatch.setattr(model_deriver, "_review_conn_and_version", lambda: (eng, "v1"))
+        units = {"C|U": {"name": "U"}}
+        changed = model_deriver._reapply_corrections({}, {}, units, {})
+        assert units["C|U"]["description"] == "What the reviewer wrote."
+        assert changed == {"units": 1}
+
+    def test_without_a_database_it_does_nothing(self, monkeypatch):
+        import model_deriver
+        monkeypatch.setattr(model_deriver, "_review_conn_and_version", lambda: (None, None))
+        assert model_deriver._reapply_corrections({}, {}, {"C|U": {}}, {}) == {}
