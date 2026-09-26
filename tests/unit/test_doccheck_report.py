@@ -1,14 +1,17 @@
-"""The terminal report: a change drawn as what changed, and nothing else.
+"""The reports: a change drawn as what changed, on five levels, in three forms.
 
-The old report printed a finding as `old -> new` on one line, so a declaration
-that lost two members printed both declarations in full and left the reader to
-find the difference. These pin the shape that replaced it: members and items
-diffed one by one, the changed words marked, one change printed once however
-many places it occurs in, and plain ASCII whenever the output is not a terminal.
+The terminal report prints each level's disagreeing summary rows and its P1/P2
+findings, a change as what changed and nothing else: members and items diffed one
+by one, the changed words marked, one change printed once however many places it
+occurs in, plain ASCII whenever the output is not a terminal.
 
-Everything here builds findings directly -- the renderer does not care where a
-finding came from, and a `.docx` would only slow the tests down.
+The markdown report shows every level's summary and collapses the details under
+`<details>` -- summaries visible, details a click away. JSON carries all of it.
+
+Everything here builds findings and summary rows directly -- the renderer does not
+care where they came from, and a `.docx` would only slow the tests down.
 """
+import json
 import os
 import re
 import sys
@@ -20,37 +23,50 @@ if os.path.join(_ROOT, "tools") not in sys.path:
     sys.path.insert(0, os.path.join(_ROOT, "tools"))
 
 from doccheck import report                                   # noqa: E402
-from doccheck.compare import Finding, Result                  # noqa: E402
-from doccheck.model import HIGH, INFO, LOW, MEDIUM            # noqa: E402
+from doccheck.compare import Check, Finding, Result           # noqa: E402
+from doccheck.model import P1, P2, P3, P4                     # noqa: E402
 
 pytestmark = pytest.mark.unit
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
-def _result(*findings):
-    result = Result()
+def _where(path):
+    parts = path.split(" / ")
+    return dict(component=parts[0], unit=parts[1] if len(parts) > 1 else "",
+                item=parts[2] if len(parts) > 2 else "")
+
+
+def _result(*findings, checks=(), mode="compare"):
+    result = Result(mode=mode, doc_type="SWE.3")
     for f in findings:
         result.add(f)
+    result.checks = list(checks)
     result.findings.sort(key=lambda f: f.sort_key())
     return result
 
 
-def _differs(path, label, left, right, severity=MEDIUM, field="", level="L2", rule=""):
+def _differs(path, label, left, right, priority=P2, field="", level="L5", rule="",
+             explained=False, view="interface table", follows=""):
     return Finding(level=level, kind="differs", path=path, field=field or label,
-                   summary="%s: %s -> %s" % (label, left, right), severity=severity,
-                   left=left, right=right, rule=rule)
+                   summary="%s: %s -> %s" % (label, left, right), priority=priority,
+                   left=left, right=right, rule=rule, explained=explained, view=view,
+                   follows=follows, entity="interface", **_where(path))
 
 
-def _missing(path, kind, rule="", severity=MEDIUM):
+def _missing(path, entity="interface", rule="", priority=P2, level="L4"):
     name = path.rsplit(" / ", 1)[-1]
-    return Finding(level="L2", kind="missing", path=path, severity=severity, left=name,
-                   summary="%s %r is in the reference and not in the other document"
-                           % (kind, name), rule=rule)
+    return Finding(level=level, kind="missing", path=path, priority=priority, left=name,
+                   summary="%s %r is only in the reference" % (entity, name), rule=rule,
+                   entity=entity, **_where(path))
 
 
 def _text(*findings, **kw):
     return report.text(_result(*findings), "a.docx", "b.docx", **kw)
+
+
+def _md(*findings, checks=(), mode="compare"):
+    return report.markdown(_result(*findings, checks=checks, mode=mode), "a.docx", "b.docx")
 
 
 # --- a declaration is diffed member by member ---------------------------------------
@@ -96,7 +112,7 @@ def test_an_enum_splits_on_commas_and_a_plain_declaration_is_no_block():
 def test_a_reworded_step_prints_that_step_and_counts_the_rest():
     f = _differs("C / U / f", "Test Steps",
                  ["Issue function f.", "Expect a.", "Return x."],
-                 ["Issue function f.", "Expect b.", "Return x."], severity=HIGH)
+                 ["Issue function f.", "Expect b.", "Return x."], priority=P1)
     out = _text(f)
     assert "Test Steps: 1 changed" in out
     assert "... 1 unchanged" in out                  # where the change sits
@@ -105,13 +121,13 @@ def test_a_reworded_step_prints_that_step_and_counts_the_rest():
 
 
 def test_a_value_that_fits_reads_on_one_line():
-    out = _text(_differs("C / U / f", "Direction", "In", "Out", severity=HIGH))
+    out = _text(_differs("C / U / f", "Direction", "In", "Out", priority=P1))
     assert "Direction: In -> Out" in out
 
 
 def test_a_long_difference_is_cut_and_full_shows_it_all():
     f = _differs("C / U / f", "Test Steps", ["step %d" % i for i in range(20)],
-                 ["step %d changed" % i for i in range(20)], severity=HIGH)
+                 ["step %d changed" % i for i in range(20)], priority=P1)
     cut = _text(f)
     assert "... 32 more (--full shows all)" in cut
     assert cut.count("step ") < 12
@@ -180,58 +196,79 @@ def test_the_same_change_in_two_places_prints_once():
     out = _text(_differs("Access / U1 / Owner", "declaration", left, right),
                 _differs("Access / U2 / Owner", "declaration", left, right))
     assert out.count("members removed") + out.count("member removed") == 1
-    assert "=> same change in U2 > Owner" in out
+    assert "=> same change in Owner" in out
 
 
-def test_one_side_findings_merge_and_a_repeated_rule_prints_once():
+def test_a_repeated_rule_prints_once_and_is_numbered():
     rule = "we leave private items out of the table entirely"
-    out = _text(_missing("C / U / f1", "interface", rule), _missing("C / U / f1", "function"),
-                _missing("C / U / f2", "interface", rule), _missing("C / U / f2", "function"))
-    assert out.count("- only in the reference: interface [1], function") == 2
+    out = _text(_missing("C / U / f1", rule=rule), _missing("C / U / f2", rule=rule))
     assert out.count(rule) == 1
-    assert "rule [1]: " + rule in out
+    assert "possible reason [1]: " + rule in out
+    assert "possible reason [1], as above" in out
 
 
 def test_a_rule_explaining_one_finding_carries_no_number():
     out = _text(_differs("C / U / f", "Direction", "In", "Out", rule="because"))
-    assert "rule: because" in out
+    assert "possible reason: because" in out
 
 
-# --- the frame around the findings ------------------------------------------------------
+def test_a_broken_rule_is_named_as_the_rule():
+    f = _differs("C / U / f", "Direction", "In", "Out", rule="the pairing rule")
+    f.breaks = True
+    assert "the rule: the pairing rule" in _text(f)
+
+
+# --- the frame: the ladder, the levels, what is left out ------------------------------
 
 def test_the_ladder_line_names_only_the_levels_that_disagree():
     out = _text(_differs("C / U / f", "Direction", "In", "Out"),
-                _differs("C / U", "flowcharts", 1, 2, severity=INFO, level="L1"))
-    assert "L0 ok   L1 ok   L2 1   L3 ok   L4 ok" in out     # info is not a disagreement
+                _differs("C / U / f", "Risk", "A", "B", priority=P3, explained=True,
+                         level="L3"))
+    assert "L1 ok   L2 ok   L3 ok   L4 ok   L5 1" in out     # explained is not a disagreement
 
 
-def test_info_is_counted_but_listed_only_with_full():
-    info = _differs("C / U / f", "Information", "one sentence", "another", severity=INFO)
-    medium = _differs("C / U / g", "Direction", "In", "Out")
-    out = _text(info, medium)
-    assert "1 info finding not shown (--full lists them)" in out
+def test_p3_and_p4_are_counted_but_listed_only_with_full():
+    cosmetic = _differs("C / U / f", "Information", "one sentence", "another", priority=P4)
+    real = _differs("C / U / g", "Direction", "In", "Out")
+    out = _text(cosmetic, real)
+    assert "1 finding not listed" in out
     assert "one sentence" not in out
-    whole = _text(info, medium, full=True)
-    assert "one sentence" in whole and "not shown" not in whole
+    whole = _text(cosmetic, real, full=True)
+    assert "one sentence" in whole and "not listed" not in whole
+
+
+def test_a_finding_that_follows_is_not_counted():
+    f = _missing("C / U / f")
+    f.follows = "function heading at L3"
+    out = _text(f, _differs("C / U / g", "Direction", "In", "Out"))
+    assert "P2 1" in out.replace(",", " ·").replace(" · ", " ") or "P2 1" in out
+    assert "L4 ok" in out
 
 
 def test_a_finding_quieter_than_its_entry_says_so():
-    out = _text(_differs("C / U / f", "Direction", "In", "Out", severity=HIGH),
-                _differs("C / U / f", "Risk", "A", "B", severity=LOW))
-    assert "Risk: A -> B (low)" in out
+    out = _text(_differs("C / U / f", "Direction", "In", "Out", priority=P1),
+                _differs("C / U / f", "Risk", "A", "B", priority=P2))
+    assert "Risk: A -> B (P2)" in out
 
 
 def test_findings_group_under_their_component_worst_first():
-    out = _text(_differs("Beta / U / f", "Risk", "A", "B", severity=LOW),
-                _differs("Alpha / U / f", "Direction", "In", "Out", severity=HIGH))
+    out = _text(_differs("Beta / U / f", "Risk", "A", "B", priority=P2),
+                _differs("Alpha / U / f", "Direction", "In", "Out", priority=P1))
     lines = [line.strip() for line in out.splitlines()]
     assert lines.index("Alpha") < lines.index("Beta")
 
 
 def test_agreement_is_said_in_words():
     out = report.text(Result(), "a.docx", "b.docx")
-    assert "the two documents agree on everything compared" in out
+    assert "nothing to report at any level" in out
     assert "no findings" in out
+
+
+def test_the_max_level_limits_the_ladder():
+    result = _result()
+    result.max_level = 2
+    out = report.text(result, "a.docx", "b.docx")
+    assert "L1 ok   L2 ok" in out and "L3" not in out
 
 
 def test_two_files_of_one_name_are_told_apart_by_their_directory():
@@ -242,16 +279,113 @@ def test_two_files_of_one_name_are_told_apart_by_their_directory():
 
 
 def test_the_pair_report_signs_design_and_specification():
-    f = Finding(level="L4", kind="extra", path="Signal / Driver - acquire (Hub - compute)",
-                summary="the test specification specifies an interaction the design draws "
-                        "no diagram for", severity=HIGH, rule="pairing rule")
-    out = report.pair_text("d/design.docx", "s/spec.docx", "headline", [f])
+    f = Finding(level="L2", kind="extra", path="Signal / Driver - acquire (Hub - compute)",
+                summary="the specification has an interaction spec the design draws no "
+                        "diagram for", priority=P1, rule="pairing rule", breaks=True,
+                component="Signal", unit="Driver", item="Driver - acquire (Hub - compute)",
+                entity="interaction")
+    result = _result(f, mode="pair")
+    result.sides = ("design", "specification")
+    out = report.text(result, "d/design.docx", "s/spec.docx")
     assert "- design         design.docx" in out
     assert "+ specification  spec.docx" in out
-    assert "Driver - acquire (Hub - compute)" in out and "rule: pairing rule" in out
+    assert "Driver - acquire (Hub - compute)" in out and "the rule: pairing rule" in out
 
 
 def test_the_self_report_names_the_document_and_its_type():
-    out = report.self_text("x/doc.docx", "SWE.3", [])
+    result = _result(mode="self")
+    out = report.text(result, "x/doc.docx")
     assert "doc.docx  SWE.3, checked against itself" in out
     assert "no findings" in out
+
+
+# --- markdown: summaries shown, details collapsed ------------------------------------
+
+def test_markdown_has_a_summary_and_a_section_per_level():
+    out = _md(_differs("C / U / f", "Direction", "In", "Out", priority=P1))
+    assert "## Summary" in out
+    for level in ("## L1", "## L2", "## L3", "## L4", "## L5"):
+        assert level in out
+    assert "| **L5** content |" in out and "✗ 1" in out
+
+
+def test_every_accordion_starts_closed():
+    out = _md(_differs("C / U / f", "Direction", "In", "Out", priority=P1),
+              _missing("C / U / g"))
+    assert "<details>" in out and "<details open>" not in out
+
+
+def test_markdown_groups_content_by_unit_then_view():
+    out = _md(_differs("C / U / f", "Direction", "In", "Out", priority=P1),
+              _differs("C / U / h", "Input Name", "a", "b", view="function sections"))
+    assert "<summary><b>C › U</b> · P1 1 · P2 1</summary>" in out
+    assert "<summary><b>C › U › interface table</b> · P1 1</summary>" in out
+    assert "<summary><b>C › U › function sections</b> · P2 1</summary>" in out
+
+
+def test_markdown_shows_a_list_change_as_a_diff_block():
+    out = _md(_differs("C / U / f", "Test Steps", ["a", "b"], ["a", "c"]))
+    assert "```diff" in out and "- b" in out and "+ c" in out
+
+
+def test_markdown_marks_the_words_of_a_reworded_sentence():
+    old = "Returns the absolute value of the argument it was given by the caller"
+    new = "Returns the non-negative value of the argument it was given by the caller"
+    out = _md(_differs("C / U / f", "Information", old, new, priority=P4, field="information"))
+    assert "~~absolute~~ **non-negative**" in out
+
+
+def test_explained_findings_sit_in_their_own_collapsed_table():
+    out = _md(_differs("C / U / f", "Risk", "A", "Medium", priority=P3, explained=True,
+                       rule="fixed at Medium", view="function sections", field="risk"))
+    assert "<i>Explained by a rule · 1</i>" in out
+    assert "| f | Risk `A` → `Medium` | fixed at Medium |" in out
+
+
+def test_a_follows_finding_says_so_in_markdown():
+    f = _missing("C / U / f")
+    f.follows = "function heading at L3"
+    out = _md(f)
+    assert "follows from the function heading at L3" in out
+    assert "shown for detail" in out
+
+
+def test_markdown_escapes_names_that_look_like_formatting():
+    out = _md(_missing("C / U / _MTM_SB_SETDbType"))
+    assert "\\_MTM\\_SB\\_SETDbType" in out
+
+
+def test_markdown_l2_and_l3_tables_come_from_the_summary_rows():
+    checks = [Check(level="L2", what="units", component="C", left=3, right=2, ok=False,
+                    names="✗ 1 differs", detail="− U2", entity="unit"),
+              Check(level="L3", what="function headings", component="C", unit="U", left=5,
+                    right=5, ok=False, names="✗ 2 differ", entity="function"),
+              Check(level="L3", what="unit header section", component="C", unit="U",
+                    left=True, right=False, ok=False, entity="unit")]
+    out = _md(_missing("C / U2", entity="unit", priority=P1, level="L2"), checks=checks)
+    assert "| C › units | 3 | 2 | ✗ 1 differs | **P1** |" in out
+    assert "| **U** | 5 | 5 | ✗ 2 differ | **✗ only in −** |" in out
+
+
+def test_the_self_markdown_lists_findings_by_level():
+    f = Finding(level="L5", kind="integrity", path="C / U / f", priority=P1,
+                summary="interface id numbering reads 09 where 08 was due",
+                component="C", unit="U", item="f", field="id-gap")
+    out = report.markdown(_result(f, mode="self"), "doc.docx")
+    assert "# doccheck — SWE.3 on its own" in out
+    assert "<summary><b>L5 C › U</b> · P1 1</summary>" in out
+    assert "## Each document on its own" not in out
+
+
+# --- json ----------------------------------------------------------------------------
+
+def test_json_carries_levels_checks_and_findings():
+    checks = [Check(level="L2", what="units", component="C", left=1, right=1)]
+    payload = json.loads(report.to_json(
+        _result(_differs("C / U / f", "Direction", "In", "Out", priority=P1), checks=checks),
+        "a.docx", "b.docx"))
+    assert payload["schema"] == "doccheck/2"
+    assert payload["summary"]["P1"] == 1 and payload["summary"]["open"] == 1
+    assert payload["summary"]["levels"]["L5"]["worst"] == P1
+    assert payload["checks"][0]["what"] == "units"
+    assert payload["findings"][0]["counted"] is True

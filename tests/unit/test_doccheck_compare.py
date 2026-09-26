@@ -21,7 +21,7 @@ if os.path.join(_ROOT, "tools") not in sys.path:
     sys.path.insert(0, os.path.join(_ROOT, "tools"))
 
 from doccheck import compare as comparing, match, rules, swe3    # noqa: E402
-from doccheck.model import HIGH, INFO, LOW, MEDIUM, Entity       # noqa: E402
+from doccheck.model import P1, P2, P3, P4, Entity                # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -119,7 +119,7 @@ def sample():
 
 def run(left, right, aliases=None):
     result = comparing.compare(left, right, swe3, aliases)
-    rules.annotate(result, left, right)
+    rules.annotate(result, left, right, swe3)
     return result
 
 
@@ -129,6 +129,13 @@ def kinds(result, *wanted):
 
 def paths(result, *wanted):
     return sorted(f.path for f in result.findings if f.kind in wanted)
+
+
+def check(result, what, unit=None):
+    """The summary row for `what` (in `unit`, when given)."""
+    rows = [c for c in result.checks if c.what == what and (unit is None or c.unit == unit)]
+    assert rows, "no summary row %r in %s" % (what, sorted({c.what for c in result.checks}))
+    return rows[0]
 
 
 # --- the floor --------------------------------------------------------------
@@ -143,16 +150,16 @@ def test_the_sample_passes_its_own_integrity_checks():
     assert comparing.self_checks(sample(), swe3) == []
 
 
-# --- L0: document shape -----------------------------------------------------
+# --- L1: headings -----------------------------------------------------------
 
-def test_a_missing_top_level_section_is_found_at_L0():
+def test_a_missing_top_level_section_is_found_at_L1():
     right = sample()
     right.children = [c for c in right.children
                       if not (c.kind == "section" and c.name == "Code Metrics")]
     result = run(sample(), right)
     missing = kinds(result, "missing")
-    assert [f.path for f in missing] == ["Code Metrics"]
-    assert missing[0].level == "L0"
+    assert [f.item for f in missing] == ["Code Metrics, Coding Rule, Test Coverage"]
+    assert missing[0].level == "L1" and missing[0].path == "(document)"
 
 
 def test_an_added_section_is_reported_as_extra_not_as_a_change():
@@ -162,19 +169,19 @@ def test_an_added_section_is_reported_as_extra_not_as_a_change():
     assert [f.kind for f in kinds(result, "extra", "missing")] == ["extra"]
 
 
-# --- L1: inventory ----------------------------------------------------------
+# --- L2: inventory ----------------------------------------------------------
 
-def test_a_missing_unit_is_high_severity():
+def test_a_missing_unit_is_a_blocker():
     right = sample()
     diag = right.of_kind("component")[0]
     diag.children = [c for c in diag.children if c.name != "VoidAsVar"]
     diag.fields["unitTableUnits"] = ["ClassStatics"]
     result = run(sample(), right)
-    missing = [f for f in result.findings if f.kind == "missing" and "unit" in f.summary]
+    missing = [f for f in result.findings if f.kind == "missing" and f.entity == "unit"]
     assert len(missing) == 1
     assert missing[0].path == "Diag / VoidAsVar"
-    assert missing[0].severity == HIGH
-    assert missing[0].level == "L1"
+    assert missing[0].priority == P1
+    assert missing[0].level == "L2"
 
 
 def test_a_missing_unit_does_not_drag_its_rows_into_the_report():
@@ -241,7 +248,7 @@ def test_reordered_units_are_reported_as_order_and_nothing_else():
     result = run(sample(), right)
     assert not kinds(result, "missing", "extra", "differs")
     order = kinds(result, "order")
-    assert order and all(f.severity == LOW for f in order)
+    assert order and all(f.priority == P4 for f in order)
 
 
 def test_moving_one_unit_reports_one_unit_not_all_of_them():
@@ -256,17 +263,19 @@ def test_moving_one_unit_reports_one_unit_not_all_of_them():
     assert moved[0].path == "C / U7"
 
 
-# --- L2: per unit -----------------------------------------------------------
+# --- L4: per table ----------------------------------------------------------
 
 def test_a_dropped_interface_row_is_found_and_counted():
     right = sample()
     u = right.of_kind("component")[0].of_kind("unit")[0]
     u.children = [c for c in u.children if c.name != "statRead"]
     result = run(sample(), right)
-    missing = [f for f in result.findings if f.kind == "missing" and "interface" in f.summary]
+    missing = [f for f in result.findings if f.kind == "missing" and f.entity == "interface"]
     assert [f.path for f in missing] == ["Diag / ClassStatics / statRead"]
-    counts = [f for f in result.findings if f.kind == "count" and "interface" in f.summary]
-    assert counts and counts[0].left == 3 and counts[0].right == 2
+    assert missing[0].level == "L4"
+    row = check(result, "interface table rows", "ClassStatics")
+    assert (row.left, row.right, row.ok) == (3, 2, False)
+    assert "\u2212 statRead" in row.detail
 
 
 def test_functions_and_globals_are_counted_apart():
@@ -274,10 +283,13 @@ def test_functions_and_globals_are_counted_apart():
     right = sample()
     u = right.of_kind("component")[0].of_kind("unit")[0]
     u.children = [c for c in u.children if c.name != "s_count"]
-    counts = [f.summary for f in kinds(run(sample(), right), "count")]
-    assert "interface count: 3 -> 2" in counts
-    assert "interface Global Variable count: 1 -> 0" in counts
-    assert not any("Function count" in c for c in counts)
+    result = run(sample(), right)
+    glob = check(result, "interface table rows · Global Variable", "ClassStatics")
+    func = check(result, "interface table rows · Function", "ClassStatics")
+    assert (glob.left, glob.right, glob.ok) == (1, 0, False)
+    assert func.ok
+    # A summary row, not a finding: the one missing row is the finding.
+    assert not [f for f in result.findings if f.kind == "count"]
 
 
 def test_the_interface_type_is_grouped_whatever_its_spelling():
@@ -285,7 +297,8 @@ def test_the_interface_type_is_grouped_whatever_its_spelling():
     for row in right.of_kind("component")[0].of_kind("unit")[0].of_kind("interface"):
         if row.fields.get("interfaceType") == "Global Variable":
             row.fields["interfaceType"] = "global variable"
-    assert not [f for f in kinds(run(sample(), right), "count")]
+    result = run(sample(), right)
+    assert all(c.ok for c in result.checks if " · " in c.what)
 
 
 def test_a_function_with_no_interface_row_is_caught_without_a_second_document():
@@ -305,16 +318,17 @@ def test_a_unit_missing_from_the_component_table_is_caught_the_same_way():
                for f in findings)
 
 
-# --- L3: the fields of a matched row ----------------------------------------
+# --- L5: the fields of a matched row ----------------------------------------
 
-def test_a_flipped_direction_is_high_severity():
+def test_a_flipped_direction_is_a_blocker():
     right = sample()
     row = right.of_kind("component")[0].of_kind("unit")[0].of_kind("interface")[0]
     row.fields["direction"] = "In"
     result = run(sample(), right)
     differs = kinds(result, "differs")
     assert len(differs) == 1
-    assert differs[0].field == "direction" and differs[0].severity == HIGH
+    assert differs[0].field == "direction" and differs[0].priority == P1
+    assert differs[0].level == "L5" and differs[0].view == "interface table"
 
 
 @pytest.mark.parametrize("written,same_as", [
@@ -348,7 +362,7 @@ def test_a_caller_that_is_gone_is_a_difference():
     right.of_kind("component")[0].of_kind("unit")[0].of_kind("interface")[0].fields["sourceDest"] = []
     differs = kinds(run(sample(), right), "differs")
     assert len(differs) == 1 and differs[0].field == "sourceDest"
-    assert differs[0].severity == HIGH
+    assert differs[0].priority == P1
 
 
 def test_parameters_are_a_sequence_so_their_order_is_a_difference():
@@ -366,13 +380,13 @@ def test_the_interface_id_is_ours_and_is_never_compared_across_documents():
     assert not [f for f in run(sample(), right).findings if f.field == "interfaceId"]
 
 
-def test_a_reworded_description_is_informational_not_a_defect():
+def test_a_reworded_description_is_cosmetic_not_a_defect():
     right = sample()
     row = right.of_kind("component")[0].of_kind("unit")[0].of_kind("interface")[0]
     row.fields["information"] = "Bumps the counter by one."
     differs = kinds(run(sample(), right), "differs")
     assert len(differs) == 1
-    assert differs[0].field == "information" and differs[0].severity == INFO
+    assert differs[0].field == "information" and differs[0].priority == P4
 
 
 @pytest.mark.parametrize("a,b", [("-", "N/A"), ("", "-"), ("NA", "n/a"), ("-", "None")])
@@ -388,10 +402,10 @@ def test_a_row_that_changed_kind_is_caught_by_the_type_column():
     row = right.of_kind("component")[0].of_kind("unit")[0].of_kind("interface")[2]
     row.fields["interfaceType"] = "Function"
     differs = [f for f in kinds(run(sample(), right), "differs") if f.field == "interfaceType"]
-    assert len(differs) == 1 and differs[0].severity == HIGH
+    assert len(differs) == 1 and differs[0].priority == P1
 
 
-# --- L4: dynamic behaviour --------------------------------------------------
+# --- dynamic behaviour: present at L2, compared at L4/L5 --------------------------------------------------
 
 def test_interactions_compare_as_a_set_of_four_names():
     left = document([component("Diag", [unit("A")], [
@@ -405,7 +419,7 @@ def test_interactions_compare_as_a_set_of_four_names():
     assert run(left, right).findings == []
 
 
-def test_a_dropped_interaction_is_found_at_L4():
+def test_a_dropped_interaction_is_found_at_L2():
     left = document([component("Diag", [unit("A")], [
         interaction("A", "run", "B", "call", index=0),
         interaction("A", "stop", "C", "halt", index=1),
@@ -417,7 +431,8 @@ def test_a_dropped_interaction_is_found_at_L4():
         d.of_kind("component")[0].fields["unitTableUnits"] = ["A"]
     result = run(left, right)
     missing = kinds(result, "missing")
-    assert len(missing) == 1 and missing[0].level == "L4"
+    assert len(missing) == 1 and missing[0].level == "L2"
+    assert missing[0].entity == "interaction" and missing[0].unit == "A"
 
 
 def test_changed_arrows_are_a_sequence_difference():
@@ -455,13 +470,14 @@ def test_extra_callers_on_their_side_point_at_the_callers_only_rule():
     assert differs and "call" in differs[0].rule
 
 
-def test_a_fixed_placeholder_drifting_is_demoted_to_informational():
+def test_a_fixed_placeholder_drifting_is_explained():
     right = sample()
     fn = right.of_kind("component")[0].of_kind("unit")[0].of_kind("function")[0]
     fn.fields["risk"] = "High"
     result = run(sample(), right)
     differs = [f for f in result.findings if f.field == "risk"]
-    assert differs and differs[0].severity == INFO and "fixed at Medium" in differs[0].rule
+    assert differs and differs[0].priority == P3 and "fixed at Medium" in differs[0].rule
+    assert differs[0].explained and differs[0].was == P2
 
 
 def test_an_unresolved_data_range_points_at_the_data_dictionary():
@@ -491,9 +507,8 @@ def test_findings_are_ordered_worst_first():
     row = diag.of_kind("unit")[0].of_kind("interface")[0]
     row.fields["information"] = "reworded"
     result = run(sample(), right)
-    order = [f.severity for f in result.findings]
-    rank = {HIGH: 0, MEDIUM: 1, LOW: 2, INFO: 3}
-    assert order == sorted(order, key=lambda s: rank[s])
+    order = [f.priority for f in result.findings]
+    assert order == sorted(order)
 
 
 # --- unit header rows -------------------------------------------------------
@@ -557,16 +572,17 @@ def test_a_reworded_struct_description_is_advisory():
     right = with_headers([headerdef("struct S { int a; };", "A structure holding a")])
     differs = kinds(run(left, right), "differs")
     assert [f.field for f in differs] == ["description"]
-    assert differs[0].severity == INFO
+    assert differs[0].priority == P4
 
 
 def test_counts_are_reported_per_kind():
     left = with_headers([headerdef("#define A 1", "1"), headerdef("#define B 2", "2"),
                          headerdef("int g_x = 0;", "0")])
     right = with_headers([headerdef("#define A 1", "1")])
-    counts = [f.summary for f in kinds(run(left, right), "count")]
-    assert any("headerdef define count: 2 -> 1" in c for c in counts)
-    assert any("headerdef global count: 1 -> 0" in c for c in counts)
+    result = run(left, right)
+    define = check(result, "unit header table rows · define")
+    glob = check(result, "unit header table rows · global")
+    assert (define.left, define.right) == (2, 1) and (glob.left, glob.right) == (1, 0)
 
 
 def test_a_global_row_only_they_have_points_at_the_outside_user_rule():
@@ -575,7 +591,7 @@ def test_a_global_row_only_they_have_points_at_the_outside_user_rule():
     u = right.of_kind("component")[0].of_kind("unit")[0]
     u.children = [c for c in u.children if c.name != "s_count"]
     missing = [f for f in run(sample(), right).findings
-               if f.kind == "missing" and "interface" in f.summary]
+               if f.kind == "missing" and f.entity == "interface"]
     assert [f.path for f in missing] == ["Diag / ClassStatics / s_count"]
     assert "another unit reads or writes" in missing[0].rule
 
@@ -585,17 +601,17 @@ def test_a_function_row_only_they_have_keeps_the_private_rule():
     u = right.of_kind("component")[0].of_kind("unit")[1]
     u.children = [c for c in u.children if c.name != "voidArg"]
     missing = [f for f in run(sample(), right).findings
-               if f.kind == "missing" and "interface" in f.summary]
+               if f.kind == "missing" and f.entity == "interface"]
     assert missing and "another unit reads or writes" not in missing[0].rule
 
 
-def test_a_private_row_only_we_have_carries_the_rule_and_drops_to_info():
+def test_a_private_row_only_we_have_carries_the_rule_and_is_explained():
     left = with_headers([headerdef("#define A 1", "1"), headerdef("PRIVATE int g_count = 0;", "0")])
     right = with_headers([headerdef("#define A 1", "1")])
     extra = [f for f in run(right, left).findings if f.kind == "extra"]
     assert len(extra) == 1
     assert "declares and uses" in extra[0].rule
-    assert extra[0].severity == INFO
+    assert extra[0].priority == P3 and extra[0].explained
 
 
 def _two_units(rows_a, rows_b):
@@ -620,7 +636,7 @@ def test_an_orphan_symbol_moved_to_its_owner_unit_is_explained():
     assert len(moved) == 2
     for f in moved:
         assert "listed once, in one owner unit" in f.rule
-        assert f.severity == INFO
+        assert f.priority == P3
     missing = [f for f in moved if f.kind == "missing"][0]
     assert "we list it under Core" in missing.rule
 
@@ -630,7 +646,7 @@ def test_a_symbol_missing_everywhere_is_still_a_real_difference():
                         [headerdef("#define SCALE 8", "8")])
     ours = _two_units([headerdef("#define MAXN 256", "256")], [])
     missing = [f for f in run(theirs, ours).findings if f.kind == "missing"]
-    assert len(missing) == 1 and missing[0].rule == "" and missing[0].severity == MEDIUM
+    assert len(missing) == 1 and missing[0].rule == "" and missing[0].priority == P2
 
 
 def test_a_union_only_they_have_is_a_plain_difference():
@@ -641,7 +657,7 @@ def test_a_union_only_they_have_is_a_plain_difference():
     missing = [f for f in run(right, left).findings if f.kind == "missing"]
     assert len(missing) == 1
     assert missing[0].rule == ""
-    assert missing[0].severity == MEDIUM
+    assert missing[0].priority == P2
 
 
 def test_a_reworded_union_description_is_advisory():
@@ -650,7 +666,7 @@ def test_a_reworded_union_description_is_advisory():
     right = with_headers([headerdef("union U { int a; char b; };", "A union of a and b")])
     differs = kinds(run(left, right), "differs")
     assert [f.field for f in differs] == ["description"]
-    assert differs[0].severity == INFO
+    assert differs[0].priority == P4
 
 
 def test_a_using_alias_reads_as_a_typedef_named_by_its_alias():

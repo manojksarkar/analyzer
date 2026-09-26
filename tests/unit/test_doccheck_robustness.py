@@ -21,7 +21,7 @@ if os.path.join(_ROOT, "tools") not in sys.path:
 docx = pytest.importorskip("docx", reason="python-docx is needed to write a .docx")
 
 from doccheck import blocks, cells, compare as comparing, match, swe3   # noqa: E402
-from doccheck.model import HIGH, INFO, LOW, MEDIUM                      # noqa: E402
+from doccheck.model import P1, P2, P3, P4                              # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -127,7 +127,8 @@ def test_renamed_and_reordered_columns_are_still_the_same_eight_columns(tmp_path
     theirs = build_design(str(tmp_path / "theirs.docx"),
                           columns=THEIR_COLUMNS, order=THEIR_ORDER)
     result = _compare(ours, theirs)
-    assert result.findings == [], [f.summary for f in result.findings]
+    # Only the column headings' wording differs -- cosmetic, and said once.
+    assert [(f.field, f.priority) for f in result.findings] == [("interfaceColumns", P4)]
 
 
 def test_data_type_is_not_claimed_by_the_interface_type_column(tmp_path):
@@ -171,7 +172,11 @@ def test_a_missing_interface_table_is_a_finding_not_a_crash(tmp_path):
     theirs = build_design(str(tmp_path / "theirs.docx"), interface_table=False)
     result = _compare(ours, theirs)
     assert [f.field for f in result.findings if f.kind == "differs"] == ["hasInterfaceTable"]
-    assert len([f for f in result.findings if f.kind == "missing"]) == len(ROWS)
+    # The rows of a table one side does not have are not compared -- the table is the
+    # finding, not every row in it.
+    assert not [f for f in result.findings if f.kind == "missing"]
+    rows = [c for c in result.checks if c.what == "interface table rows"]
+    assert rows and rows[0].skipped
 
 
 # --- content that differs ---------------------------------------------------
@@ -191,7 +196,7 @@ def test_a_direction_that_really_changed_is_a_finding(tmp_path):
     ours = build_design(str(tmp_path / "ours.docx"))
     theirs = build_design(str(tmp_path / "theirs.docx"), rows=rows)
     differs = [f for f in _compare(ours, theirs).findings if f.field == "direction"]
-    assert len(differs) == 1 and differs[0].severity == HIGH
+    assert len(differs) == 1 and differs[0].priority == P1
 
 
 def test_a_global_row_keeps_its_declared_type_out_of_the_parameter_list(tmp_path):
@@ -319,8 +324,13 @@ def test_a_flowchart_entry_carries_its_input_and_output_names(tmp_path):
 def test_a_changed_arrow_is_a_finding_and_a_reworded_one_is_not_silent(tmp_path):
     a = build_with_behaviour(str(tmp_path / "a.docx"), ["A calls B", "B returns to A"])
     b = build_with_behaviour(str(tmp_path / "b.docx"), ["A calls B"])
-    differs = [f for f in _compare(a, b).findings if f.field == "arrows"]
-    assert len(differs) == 1 and differs[0].level == "L4"
+    result = _compare(a, b)
+    differs = [f for f in result.findings if f.field == "arrows"]
+    assert len(differs) == 1 and differs[0].level == "L5"
+    # one bullet fewer is counted once, at L4; the L5 detail follows from it
+    count = [f for f in result.findings if f.field == "arrowCount"]
+    assert len(count) == 1 and count[0].level == "L4"
+    assert differs[0].follows
 
 
 def test_a_dropped_interaction_is_found_in_a_real_document(tmp_path):
@@ -329,7 +339,7 @@ def test_a_dropped_interaction_is_found_in_a_real_document(tmp_path):
                      rows=[dict(ROWS[0], interfaceName="lookup",
                                 interfaceId="IF_LAYER1_G_MAP_01")])
     missing = [f for f in _compare(a, b).findings
-               if f.kind == "missing" and f.level == "L4"]
+               if f.kind == "missing" and f.entity == "interaction"]
     assert len(missing) == 1
 
 
@@ -395,7 +405,7 @@ def test_the_cli_writes_the_reports_it_is_asked_for(tmp_path):
     assert main([ours, theirs, "--markdown", md, "--json", js]) == 0
     assert "Direction" in open(md, encoding="utf-8").read()
     import json
-    assert json.load(open(js, encoding="utf-8"))["summary"]["high"] >= 1
+    assert json.load(open(js, encoding="utf-8"))["summary"]["P1"] >= 1
 
 
 def test_the_profile_is_detected_from_the_document(tmp_path):

@@ -36,8 +36,43 @@ from dataclasses import dataclass, field
 # difference worth a line in a report.
 PLACEHOLDERS = {"", "-", "n/a", "na", "none", "tbd", "void"}
 
-# Severity decides the order of the report and what a gate fails on.
-HIGH, MEDIUM, LOW, INFO = "high", "medium", "low", "info"
+# Priority -- how bad a difference is. It decides the order of the report and what a
+# gate fails on.
+#
+#   P1  blocker    breaks a documented rule: a missing unit, a wrong Direction or
+#                  Data Type, a broken ID, a design and a spec that do not pair
+#   P2  review     a real difference a person has to judge
+#   P3  explained  a documented rule produces it -- listed with the rule, never
+#                  counted as a defect. Only `rules.py` gives it, never a policy.
+#   P4  cosmetic   order and wording only
+P1, P2, P3, P4 = "P1", "P2", "P3", "P4"
+PRIORITIES = (P1, P2, P3, P4)
+PRIORITY_NAMES = {P1: "blocker", P2: "review", P3: "explained", P4: "cosmetic"}
+
+# Level -- where a difference sits. Each level zooms in one step, and each checks
+# only what the level above matched:
+#
+#   L1  headings    every kind of heading is there
+#   L2  inventory   the same components, units and dynamic behaviours
+#   L3  sections    per unit: the same function headings and sub-sections
+#   L4  views       per table and diagram: the same rows and images, counted
+#   L5  content     what the matched rows, declarations and arrows say
+LEVELS = ("L1", "L2", "L3", "L4", "L5")
+LEVEL_NAMES = {"L1": "headings", "L2": "inventory", "L3": "sections", "L4": "views",
+               "L5": "content"}
+
+
+def level_number(level: str) -> int:
+    """`L3` -> 3; anything unreadable sorts last."""
+    try:
+        return int(str(level).lstrip("L"))
+    except ValueError:
+        return 9
+
+
+def priority_rank(priority: str) -> int:
+    """P1 -> 0 ... P4 -> 3, for sorting worst first."""
+    return PRIORITIES.index(priority) if priority in PRIORITIES else 9
 
 
 @dataclass
@@ -85,14 +120,43 @@ class Entity:
 
 @dataclass
 class Policy:
-    """How one field is compared, and how loudly a difference is reported."""
+    """How one field is compared, how loudly a difference is reported, and where.
+
+    `level` is the rung the field belongs to: a unit's "has a unit header section"
+    is an L3 fact, its diagram count an L4 one, a row's Direction an L5 one.
+    `view` names the table or diagram the field is read from, so the report can
+    group what changed by where a reader would look for it; empty means "the view
+    of the entity the field sits on".
+    """
     how: str
-    severity: str = MEDIUM
+    priority: str = P2
     label: str = ""
+    level: str = "L5"
+    view: str = ""
 
     def __post_init__(self):
         if not self.label:
             self.label = self.how
+
+
+@dataclass
+class Kind:
+    """How one kind of entity is matched: the level its presence is checked at.
+
+    `noun` is what a report calls a list of them ("function headings"), `view` the
+    table or section they are read from, `missing` / `extra` the priority of one
+    that is only on one side. `sub_field` splits them into categories counted on
+    their own (Interface Type, a header row's kind). `requires` names a flag both
+    parents must carry before the children are compared at all: rows of a table
+    one side does not have are not "missing", the table is.
+    """
+    level: str
+    noun: str
+    view: str = ""
+    missing: str = P2
+    extra: str = P2
+    sub_field: str = ""
+    requires: str = ""
 
 
 def normalise_key(name: str) -> str:

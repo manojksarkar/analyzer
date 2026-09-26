@@ -1,16 +1,24 @@
 """Findings as something a person reads, and as something a script reads.
 
-The markdown form leads with the ladder, because the first question is always
-"how far down did it get before it stopped agreeing" -- if the unit inventory
-does not match, nothing below it is worth reading yet.
+Every report has the same shape, whatever was checked -- two documents of one
+type, a design against its specification, or one document on its own:
 
-The terminal form shows a change as what changed and nothing else. A declaration
-that lost two members prints those two members, not both four-hundred-character
-declarations side by side; a test step that was reworded prints that step, with
-the changed words picked out. Findings sit under the component they belong to,
-worst first, and the same change in two places prints once. Colour and
-box-drawing are used only where the terminal can show them -- a pipe or a file
-gets plain ASCII, unwrapped, so it still greps.
+    the documents     which is `−` and which is `+`
+    Summary           one row per level: what it checks, whether it agrees, the
+                      worst priority -- and the totals per priority
+    L1 .. L5          each level's summary table, always shown; its findings
+                      underneath, collapsed until opened
+    on its own        each document checked against its own rules
+
+The markdown form collapses with `<details>`, so a long report reads as its
+summaries until a reader opens the part they care about. The terminal form has no
+collapsing: it prints the summaries and the P1/P2 findings, and `--full` lists the
+rest. JSON carries all of it for a script.
+
+A change is shown as what changed and nothing else. A declaration that lost two
+members prints those two members, not both four-hundred-character declarations; a
+list prints the items that changed; a reworded sentence has its changed words
+picked out. The same change in several places prints once.
 """
 from __future__ import annotations
 
@@ -21,97 +29,12 @@ import os
 import re
 import shutil
 
-from .model import HIGH, INFO, LOW, MEDIUM, normalise_code, normalise_text
-
-_LADDER = [
-    ("L0", "document shape"),
-    ("L1", "unit inventory"),
-    ("L2", "per unit"),
-    ("L3", "per row"),
-    ("L4", "dynamic behaviour"),
-]
-
-
-def _counts(findings):
-    out = {}
-    for f in findings:
-        out[f.severity] = out.get(f.severity, 0) + 1
-    return out
-
-
-def summary_line(result):
-    c = _counts(result.findings)
-    return "%d finding(s): %d high, %d medium, %d low, %d info" % (
-        len(result.findings), c.get(HIGH, 0), c.get(MEDIUM, 0), c.get(LOW, 0), c.get(INFO, 0))
-
-
-def markdown(result, left_name, right_name, self_left=None, self_right=None):
-    out = []
-    add = out.append
-    add("# Document comparison")
-    add("")
-    add("| | document |")
-    add("|---|---|")
-    add("| reference | `%s` |" % left_name)
-    add("| compared | `%s` |" % right_name)
-    add("")
-    add(summary_line(result))
-    add("")
-
-    add("## Ladder")
-    add("")
-    add("| level | what | high | medium | low | info |")
-    add("|---|---|---|---|---|---|")
-    for level, label in _LADDER:
-        at = [f for f in result.findings if f.level == level]
-        c = _counts(at)
-        add("| %s | %s | %d | %d | %d | %d |" % (
-            level, label, c.get(HIGH, 0), c.get(MEDIUM, 0), c.get(LOW, 0), c.get(INFO, 0)))
-    add("")
-
-    add("## Inventory")
-    add("")
-    add("| kind | reference | compared | matched | score |")
-    add("|---|---|---|---|---|")
-    for kind in sorted(set(result.left_total) | set(result.right_total)):
-        add("| %s | %d | %d | %d | %.0f%% |" % (
-            kind, result.left_total.get(kind, 0), result.right_total.get(kind, 0),
-            result.matched.get(kind, 0), 100 * result.score(kind)))
-    add("")
-
-    for name, findings in (("Reference document, checked against itself", self_left or []),
-                           ("Compared document, checked against itself", self_right or [])):
-        if findings:
-            add("## %s" % name)
-            add("")
-            for f in findings:
-                add("- **%s** — %s" % (f.path or "(document)", f.summary))
-            add("")
-
-    add("## Findings")
-    add("")
-    if not result.findings:
-        add("Nothing to report: the two documents agree on everything compared.")
-        return "\n".join(out) + "\n"
-
-    current = None
-    for f in result.findings:
-        if f.severity != current:
-            current = f.severity
-            add("")
-            add("### %s" % {HIGH: "High", MEDIUM: "Medium", LOW: "Low", INFO: "Informational"}[f.severity])
-            add("")
-        where = f.path or "(document)"
-        add("- `%s` — %s" % (where, f.summary))
-        if f.rule:
-            add("  - explained by: %s" % f.rule)
-    add("")
-    return "\n".join(out) + "\n"
+from .model import (LEVEL_NAMES, LEVELS, P1, P2, P3, P4, PRIORITIES, level_number,
+                    normalise_code, normalise_text, priority_rank)
 
 
 # --- the terminal -------------------------------------------------------------
 
-_RANK = {HIGH: 0, MEDIUM: 1, LOW: 2, INFO: 3}
 
 # Every fancy glyph is one the stock Windows console fonts (Consolas, Lucida
 # Console, Courier New) carry: a console with no font fallback draws anything
@@ -124,7 +47,7 @@ _GLYPHS = {
 }
 
 # ANSI SGR codes. `mark` is reverse video: the changed words inside a changed line.
-_SGR = {HIGH: "1;31", MEDIUM: "33", LOW: "36", INFO: "2", "minus": "31", "plus": "32",
+_SGR = {P1: "1;31", P2: "33", P3: "2", P4: "36", "minus": "31", "plus": "32",
         "ok": "32", "dim": "2", "bold": "1", "mark": "7"}
 
 _ROWS = 8           # changed lines shown per finding before --full is needed
@@ -409,114 +332,6 @@ def _value_view(label, a, b, style):
     return _tokens(label), _pair_rows(sa, sb)
 
 
-# --- one finding ------------------------------------------------------------------
-
-_ONLY_RE = re.compile(r"^(\S+) .* is in the (reference|other document) and not in the "
-                      r"(?:reference|other document)$")
-
-
-def _only(f):
-    """(entity kind, side) for the ladder's own 'only on one side' wording, else None."""
-    if f.kind not in ("missing", "extra"):
-        return None
-    m = _ONLY_RE.match(f.summary or "")
-    return m and (m.group(1), "reference" if m.group(2) == "reference" else "compared")
-
-
-def _view(f, style):
-    """(headline tokens, rows) for one finding."""
-    summary = f.summary or ""
-    if ": " in summary and " -> " in summary and (f.left is not None or f.right is not None):
-        return _value_view(summary.split(": ", 1)[0], f.left, f.right, style)
-    if f.kind == "differs" and f.left is not None and f.right is not None:
-        return _tokens(summary), _pair_rows(_plain(f.left), _plain(f.right))
-    return _tokens(summary), []
-
-
-def _change_key(f):
-    """What makes two findings the same change, or None for one that never folds."""
-    if f.kind != "differs" or (f.left is None and f.right is None):
-        return None
-
-    def norm(v):
-        if isinstance(v, (list, tuple)):
-            return tuple(normalise_text(x) for x in v)
-        if isinstance(v, str) and "{" in v:
-            return normalise_code(v)
-        return normalise_text(v)
-    return f.field, f.severity, f.rule, f.summary.split(": ", 1)[0], norm(f.left), norm(f.right)
-
-
-def _where(f):
-    """(group, entry) for a finding: its component, and the rest of its path."""
-    path = f.path or ""
-    if not path or path == "(document)":
-        return "(document)", ()
-    parts = tuple(p for p in path.split(" / ") if p)
-    if f.level == "L0":
-        return "(document)", parts
-    return parts[0], parts[1:]
-
-
-def _items(findings, style):
-    """An entry's findings as display items, one-side findings merged.
-
-    An item is a dict: severity, the finding it came from, and either headline
-    tokens and rows, or -- for the ladder's 'only on one side' findings -- the
-    entity kinds found on that side, each with its rule. `interface` and
-    `function` both missing at one path read as one line.
-    """
-    items, merged = [], {}
-    for f in findings:
-        only = _only(f)
-        if only:
-            key = (f.kind, only[1], f.severity)
-            if key in merged:
-                merged[key]["kinds"].append((only[0], f.rule))
-                continue
-            item = merged[key] = dict(severity=f.severity, finding=f, side=only[1],
-                                      sign=f.kind, kinds=[(only[0], f.rule)])
-        else:
-            head, rows = _view(f, style)
-            item = dict(severity=f.severity, finding=f, head=head, rows=rows, rule=f.rule)
-        items.append(item)
-    return items
-
-
-class _Rules:
-    """Numbers for the rules that explain more than one finding.
-
-    A rule is a sentence or two, and twenty findings explained by one rule would
-    print it twenty times. A rule that repeats is printed in full once, as
-    `rule [1]: ...`, and referred to as `[1]` everywhere after.
-    """
-
-    def __init__(self, findings):
-        seen = {}
-        for f in findings:
-            if f.rule:
-                seen[f.rule] = seen.get(f.rule, 0) + 1
-        self.repeated = {rule for rule, n in seen.items() if n > 1}
-        self.numbers = {}
-
-    def ref(self, rule):
-        """(number or None, first time this rule is shown)."""
-        if rule not in self.repeated:
-            return None, True
-        if rule in self.numbers:
-            return self.numbers[rule], False
-        self.numbers[rule] = len(self.numbers) + 1
-        return self.numbers[rule], True
-
-
-def _rule_lines(out, style, prefix, rule, number, first):
-    if first:
-        text = "rule [%d]: %s" % (number, rule) if number else "rule: " + rule
-    else:
-        text = "rule [%d], as above" % number
-    _put(out, style, prefix, _tokens(text, "dim"), hang="      ")
-
-
 def _row_lines(out, style, prefix, row):
     g = style.g
     if row[0] == "gap":
@@ -534,128 +349,782 @@ def _row_lines(out, style, prefix, row):
     _put(out, style, prefix, [(marker + " ", (color,))] + body, hang="  ")
 
 
-class _Draw:
-    """What drawing one tree needs besides the findings: the style, the options,
-    and the state that runs across entries (folded places, rule numbers)."""
+# --- what every renderer is built from ---------------------------------------------
 
-    def __init__(self, style, full, sides, also, rules):
-        self.style, self.full, self.sides, self.also, self.rules = style, full, sides, also, rules
+LEVEL_TITLES = {"L1": "Headings", "L2": "Inventory", "L3": "Sections (per unit)",
+                "L4": "Views (per table and diagram)", "L5": "Content (per unit, then per view)"}
+
+# What a report calls one entity of a kind.
+_NOUN = {"interface": "interface row", "headerdef": "header row",
+         "function": "function heading", "unit": "unit", "component": "component",
+         "interaction": "dynamic behaviour", "testcase": "test case", "heading": "heading"}
+
+# Fields whose value is a sentence: a change is shown word by word.
+_TEXT_FIELDS = {"information", "description", "requirements"}
 
 
-def _item_lines(out, d, prefix, item, entry_rank):
-    style, g = d.style, d.style.g
-    notes = []                                                  # (number, rule, first)
-    if "kinds" in item:
-        color = "minus" if item["sign"] == "missing" else "plus"
-        side = d.sides[0] if item["side"] == "reference" else d.sides[1]
-        named = []
-        for kind, rule in item["kinds"]:
-            number, first = d.rules.ref(rule) if rule else (None, False)
-            named.append(kind + (" [%d]" % number if number else ""))
-            if rule and first and (number, rule, True) not in notes:
-                notes.append((number, rule, True))
-        marker = g["minus"] if item["sign"] == "missing" else g["plus"]
-        head = _tokens("%s only in the %s: %s" % (marker, side, ", ".join(named)), color)
-        rows = []
+def _counts(findings):
+    """{priority: n} over the findings that count -- a `follows` restates another."""
+    out = {p: 0 for p in PRIORITIES}
+    for f in findings:
+        if f.counted:
+            out[f.priority] = out.get(f.priority, 0) + 1
+    return out
+
+
+def _open(findings):
+    """Counted findings a rule does not explain -- the ones to act on."""
+    return [f for f in findings if f.counted and f.priority != P3]
+
+
+def _worst(findings):
+    fs = _open(findings)
+    return min((f.priority for f in fs), key=priority_rank) if fs else ""
+
+
+def _levels_on(result):
+    return [lv for lv in LEVELS if level_number(lv) <= result.max_level]
+
+
+def _at(findings, level):
+    return [f for f in findings if f.level == level]
+
+
+def _tally_parts(findings):
+    c = _counts(findings)
+    parts = ["%s %d" % (p, c[p]) for p in (P1, P2, P4) if c.get(p)]
+    if c.get(P3):
+        parts.append("%d explained" % c[P3])
+    return parts
+
+
+def _group(findings, *keys):
+    """Findings grouped by attributes, groups in first-seen order."""
+    out = {}
+    for f in findings:
+        out.setdefault(tuple(getattr(f, k) for k in keys), []).append(f)
+    return out
+
+
+def _change_key(f):
+    """What makes two findings the same change, or None for one that never folds."""
+    if f.kind != "differs" or (f.left is None and f.right is None):
+        return None
+
+    def norm(v):
+        if isinstance(v, (list, tuple)):
+            return tuple(normalise_text(x) for x in v)
+        if isinstance(v, str) and "{" in v:
+            return normalise_code(v)
+        return normalise_text(v)
+    return (f.level, f.view, f.field, f.priority, f.rule, f.follows,
+            f.summary.split(": ", 1)[0], norm(f.left), norm(f.right))
+
+
+def _place(f):
+    return f.item or f.unit or f.component or f.path
+
+
+def _fold(findings):
+    """[(finding, [other places])] -- the same change in several places, once."""
+    first, out = {}, []
+    for f in findings:
+        k = _change_key(f)
+        if k is not None and k in first:
+            first[k][1].append(_place(f))
+            continue
+        entry = (f, [])
+        if k is not None:
+            first[k] = entry
+        out.append(entry)
+    return out
+
+
+def _check_findings(result, check):
+    """The findings a summary row stands for."""
+    out = []
+    for f in result.findings:
+        if f.level != check.level or f.component != check.component:
+            continue
+        if check.unit and f.unit != check.unit:
+            continue
+        if f.kind == "differs":
+            if f.summary.split(": ", 1)[0] == check.what:
+                out.append(f)
+        elif check.entity and f.entity == check.entity and not check.follows:
+            if check.level == "L1":
+                if f.item == check.what:
+                    out.append(f)
+            elif not check.unit or f.unit == check.unit:
+                out.append(f)
+    return out
+
+
+# --- markdown ------------------------------------------------------------------
+
+_MD_SPECIAL = re.compile(r"([\\`*_\[\]<>|#])")
+
+
+def _esc(text):
+    """Text safe in a markdown line: nothing in a name turns into formatting."""
+    return _MD_SPECIAL.sub(r"\\\1", str(text))
+
+
+def _html(text):
+    return (str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+
+
+def _code(text):
+    s = str(text)
+    if not s or s == "(empty)":
+        return "*empty*"
+    tick = "``" if "`" in s else "`"
+    pad = " " if tick == "``" else ""
+    return "%s%s%s%s%s" % (tick, pad, s, pad, tick)
+
+
+def _cell(value):
+    """A table cell: `|` escaped, a newline kept off the row."""
+    return str(value).replace("|", "\\|").replace("\n", " ")
+
+
+def _flag(v):
+    return "✓" if v else "✗"
+
+
+def _num(v):
+    if v is None:
+        return "—"
+    if isinstance(v, bool):
+        return _flag(v)
+    return str(v)
+
+
+def _md_words(sa, sb):
+    """`old new` as one line with the removed words struck and the added ones bold."""
+    ta, tb = _TOKEN_RE.findall(sa), _TOKEN_RE.findall(sb)
+    out = []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, ta, tb, autojunk=False).get_opcodes():
+        if tag == "equal":
+            out.append(_esc("".join(ta[i1:i2])))
+            continue
+        gone, came = "".join(ta[i1:i2]).strip(), "".join(tb[j1:j2]).strip()
+        if gone:
+            out.append("~~%s~~" % _esc(gone))
+        if came:
+            out.append((" " if gone else "") + "**%s**" % _esc(came))
+        if tag != "insert" and ta[i2 - 1:i2] and ta[i2 - 1].isspace():
+            out.append(" ")
+    return "".join(out)
+
+
+def _diff_lines(rows):
+    out = []
+    for row in rows:
+        if row[0] == "gap":
+            out.append("  … %d unchanged" % row[1])
+        elif row[0] == "more":
+            out.append("  … %d more" % row[1])
+        else:
+            out.append("%s %s" % ("-" if row[0] == "-" else "+", row[1]))
+    return out
+
+
+def _rule_word(f):
+    if f.explained:
+        return "explained"
+    return "the rule" if f.breaks else "possible reason"
+
+
+# The two sides' names while one report is drawn -- "reference" / "compared
+# document", or "design" / "specification".
+_SIDES = ["reference", "compared document"]
+
+
+def _md_change(f):
+    """(headline, diff block lines or None, a paragraph or None) for one finding."""
+    noun = _NOUN.get(f.entity, f.entity or "item")
+    if f.kind in ("missing", "extra") and f.item and f.level != "L1"             and f.field != "interactionCall":
+        sign, side = ("−", _SIDES[0]) if f.kind == "missing" else ("+", _SIDES[1])
+        return "**%s** · %s, only in the %s (%s)" % (_esc(f.item), noun, side, sign), None, None
+    if f.kind == "renamed" and f.left is not None:
+        return "**%s** → **%s** · %s renamed" % (_esc(f.left), _esc(f.right), noun), None, None
+    if f.kind == "order":
+        return "**%s** · %s moved: position %s → %s" % (_esc(f.item), noun, f.left, f.right),             None, None
+    if f.kind != "differs":
+        return _esc(f.summary), None, None
+    label = _esc(f.summary.split(": ", 1)[0])
+    a, b = f.left, f.right
+    if isinstance(a, bool) and isinstance(b, bool):
+        side = ("the %s (−)" % _SIDES[0]) if a else ("the %s (+)" % _SIDES[1])
+        return "%s: only in %s" % (label, side), None, None
+    if isinstance(a, (list, tuple)) or isinstance(b, (list, tuple)):
+        rows, tally = _diff_items([_plain(x) for x in a or []],
+                                  [_plain(x) for x in b or []], normalise_text)
+        if rows:
+            return "%s: %s" % (label, _tally(tally) or "order changed"), _diff_lines(rows), None
+    elif isinstance(a, str) and isinstance(b, str):
+        view = _block_view(a, b)
+        if view:
+            return "%s: %s" % (label, view[0]), _diff_lines(view[1]), None
+    sa, sb = _plain(a), _plain(b)
+    if len(sa) + len(sb) <= 70:
+        return "%s %s → %s" % (label, _code(sa), _code(sb)), None, None
+    if f.field in _TEXT_FIELDS and _marks(sa, sb):
+        return "%s reworded" % label, None, _md_words(sa, sb)
+    return label, _diff_lines(_pair_rows(sa, sb)), None
+
+
+class _MdRules:
+    """Numbers for a rule that more than one finding in a list carries."""
+
+    def __init__(self, findings):
+        seen = {}
+        for f in findings:
+            if f.rule:
+                seen[f.rule] = seen.get(f.rule, 0) + 1
+        self.repeated = {r for r, n in seen.items() if n > 1}
+        self.numbers = {}
+
+    def note(self, f):
+        word = _rule_word(f)
+        if f.rule not in self.repeated:
+            return "*%s:* %s" % (word, _esc(f.rule))
+        if f.rule in self.numbers:
+            return "*%s [%d], as above*" % (word, self.numbers[f.rule])
+        self.numbers[f.rule] = len(self.numbers) + 1
+        return "*%s [%d]:* %s" % (word, self.numbers[f.rule], _esc(f.rule))
+
+
+def _md_finding(out, f, also=(), indent="", numbered=None):
+    """One finding as a bullet: priority, where, what; then how it changed and why."""
+    head, block, para = _md_change(f)
+    where = f.item or (f.unit if f.entity == "unit" or not f.item else "") or f.component
+    lead = "**%s**" % f.priority
+    if where and f.kind == "differs":
+        lead += " · **%s**" % _esc(where)
+    out.append("%s- %s · %s" % (indent, lead, head))
+    pad = indent + "  "
+    if block:
+        out += ["", pad + "```diff"] + [pad + line for line in block] + [pad + "```"]
+    if para:
+        out += ["", pad + para]
+    notes = []
+    if also:
+        shown = list(also[:8]) + (["and %d more" % (len(also) - 8)] if len(also) > 8 else [])
+        notes.append("≡ same change in " + ", ".join("**%s**" % _esc(p) for p in shown))
+    if f.rule:
+        notes.append(numbered.note(f) if numbered else "*%s:* %s" % (_rule_word(f), _esc(f.rule)))
+    if f.follows:
+        notes.append("*↳ follows from the %s: shown for detail, not counted*" % _esc(f.follows))
+    for note in notes:
+        out += ["", pad + note]
+    out.append("")
+
+
+def _md_findings(out, findings, indent=""):
+    folded = _fold(sorted(findings, key=lambda f: (f.follows != "", priority_rank(f.priority),
+                                                   f.path, f.field)))
+    numbered = _MdRules([f for f, _a in folded])
+    for f, also in folded:
+        _md_finding(out, f, also, indent, numbered)
+
+
+def _summary_line(findings):
+    parts = _tally_parts(findings)
+    follows = sum(1 for f in findings if not f.counted)
+    if follows:
+        parts.append("%d following from above" % follows)
+    return " · ".join(parts) if parts else "no findings"
+
+
+def _details(out, summary_html, body_fn, opened=False):
+    out.append("<details%s>" % (" open" if opened else ""))
+    out.append("<summary>%s</summary>" % summary_html)
+    out.append("")
+    body_fn(out)
+    out.append("</details>")
+    out.append("")
+
+
+def _md_header(out, result, left_name, right_name, command):
+    kind = {"compare": "%s compare" % result.doc_type, "pair": result.doc_type,
+            "self": "%s on its own" % result.doc_type}.get(result.mode, result.doc_type)
+    out += ["# doccheck — %s" % kind, "", "|  |  |", "|---|---|"]
+    if result.mode == "self":
+        out.append("| document | `%s` |" % _cell(left_name))
     else:
-        head, rows = list(item["head"]), item["rows"]
-        if item["rule"]:
-            number, first = d.rules.ref(item["rule"])
-            notes.append((number, item["rule"], first))
-    if _RANK.get(item["severity"], 9) > entry_rank:             # quieter than its entry
-        head = head + _tokens(" (%s)" % item["severity"], item["severity"])
-    _put(out, style, prefix, head, hang="  ")
+        out.append("| **−** %s | `%s` |" % (result.sides[0], _cell(left_name)))
+        out.append("| **+** %s | `%s` |" % (result.sides[1], _cell(right_name)))
+    what = {"compare": "one document against another of the same type",
+            "pair": "a SWE.3 design against its SWE.4 specification (V-model)",
+            "self": "one document against its own rules"}.get(result.mode, "")
+    out.append("| check | **%s**: %s · levels L1–L%d |" % (result.mode, what, result.max_level))
+    if command:
+        out.append("| command | `%s` |" % _cell(command))
+    out.append("")
 
-    if not d.full and len(rows) > _ROWS:
+
+def _md_summary(out, result, level_what):
+    out += ["## Summary", "", "| level | what it checks | result | worst |",
+            "|---|---|:-:|:-:|"]
+    for lv in _levels_on(result):
+        at = _at(result.findings, lv)
+        opened, explained = len(_open(at)), _counts(at)[P3]
+        res = "✓" if not opened else "✗ %d" % opened
+        if explained:
+            res += " · %d explained" % explained
+        worst = _worst(at)
+        out.append("| **%s** %s | %s | %s | %s |" % (
+            lv, LEVEL_NAMES[lv], _cell(level_what.get(lv, "")), res,
+            "**%s**" % worst if worst == P1 else worst or "·"))
+    out.append("")
+    parts = _tally_parts(result.findings)
+    total = " · ".join(("**%s**" % p) if not p.endswith("explained") else p for p in parts)
+    follows = sum(1 for f in result.findings if not f.counted)
+    line = total or "**no findings**: the two documents agree on everything compared"
+    if follows:
+        line += " · %d more shown for detail (they follow from a finding above)" % follows
+    out += [line, ""]
+    out.append("Every level shows its summary; the details are collapsed. Click a line to "
+               "open it." + ("" if result.mode == "self" else
+                             " Names are compared as well as counts, so 5 = 5 with different "
+                             "names is still ✗."))
+    out.append("")
+    for note in result.notes:
+        out.append("- %s" % _esc(note))
+    if result.notes:
+        out.append("")
+
+
+def _md_l1(out, result):
+    rows = [c for c in result.checks if c.level == "L1"]
+    bad = [c for c in rows if not c.ok]
+    if bad:
+        out += ["| heading type | − | + | |", "|---|:-:|:-:|---|"]
+        for c in bad:
+            fs = _check_findings(result, c)
+            worst = _worst(fs) or (fs[0].priority if fs else "")
+            side = "only in the %s" % (result.sides[0] if c.left else result.sides[1])
+            out.append("| %s | %s | %s | **%s** · %s |" % (
+                _cell(_esc(c.what)), _flag(c.left), _flag(c.right), worst, side))
+        out.append("")
+    else:
+        used = sum(1 for c in rows if c.left or c.right)
+        out += ["Every heading type is on both sides or on neither (%d of the %d types are "
+                "used)." % (used, len(rows)), ""]
+
+    def body(o):
+        o += ["| heading type | − | + |", "|---|:-:|:-:|"]
+        for c in rows:
+            o.append("| %s | %s | %s |" % (_cell(_esc(c.what)),
+                                           "✓ %d" % c.left if c.left else "—",
+                                           "✓ %d" % c.right if c.right else "—"))
+        o.append("")
+    _details(out, "All %d heading types, with how many of each" % len(rows), body)
+    fs = [f for f in _at(result.findings, "L1") if f.rule]
+    if fs:
+        _details(out, "Details · %s" % _summary_line(fs), lambda o: _md_findings(o, fs))
+
+
+def _md_l2(out, result):
+    rows = [c for c in result.checks if c.level == "L2"]
+    if not rows and not _at(result.findings, "L2"):
+        out += ["Nothing was compared at this level.", ""]
+        return
+    if rows:
+        out += ["| | − | + | names | |", "|---|--:|--:|:-:|---|"]
+    for c in rows:
+        label = ("%s › %s" % (c.component, c.what)) if c.component else c.what
+        fs = _check_findings(result, c)
+        if c.follows:
+            note = "*↳ follows from %s*" % _esc(c.follows)
+        elif c.skipped:
+            note = "*%s*" % _esc(c.skipped)
+        else:
+            note = "**%s**" % _worst(fs) if _worst(fs) else ""
+        names = c.names or ("✓" if c.ok else "✗")
+        out.append("| %s | %s | %s | %s | %s |" % (_cell(_esc(label)), _num(c.left),
+                                                  _num(c.right), names, note))
+    if rows:
+        out.append("")
+    fs = _at(result.findings, "L2")
+    if fs:
+        _details(out, "Details · %s" % _summary_line(fs), lambda o: _md_findings(o, fs))
+
+
+def _units(result, level):
+    """(component, unit) in document order, from a level's summary rows."""
+    seen = {}
+    for c in result.checks:
+        if c.level == level:
+            seen.setdefault((c.component, c.unit), None)
+    return list(seen)
+
+
+def _md_l3(out, result):
+    rows = [c for c in result.checks if c.level == "L3"]
+    units = _units(result, "L3")
+    skipped = [f for f in result.findings if f.level == "L2" and f.entity == "unit"
+               and f.kind in ("missing", "extra")]
+    if not rows and not skipped:
+        if not _at(result.findings, "L3"):
+            out += ["Nothing was compared at this level.", ""]
+            return
+        units = []
+    lists, flags = [], []
+    for c in rows:
+        target = lists if c.names else flags
+        if c.what not in target:
+            target.append(c.what)
+    head = ["unit"]
+    for w in lists:
+        head += ["%s −" % w, "+", "names"]
+    head += flags
+    if units or skipped:
+        out.append("| %s |" % " | ".join(_cell(h) for h in head))
+        out.append("|%s|" % "|".join(["---"] + ["--:", "--:", ":-:"] * len(lists)
+                                     + [":-:"] * len(flags)))
+    by_unit = {}
+    for c in rows:
+        by_unit.setdefault((c.component, c.unit), {})[c.what] = c
+    many = len({u for _c, u in units}) != len(units)
+    for comp, unit in units:
+        cells_ = ["**%s**" % _esc("%s › %s" % (comp, unit) if many else unit)]
+        mine = by_unit.get((comp, unit), {})
+        for w in lists:
+            c = mine.get(w)
+            cells_ += ([_num(c.left), _num(c.right), c.names] if c else ["—", "—", ""])
+        for w in flags:
+            c = mine.get(w)
+            if c is None:
+                cells_.append("—")
+            elif c.left and c.right:
+                cells_.append("✓")
+            elif not c.left and not c.right:
+                cells_.append("— neither")
+            else:
+                cells_.append("**✗ only in %s**" % ("−" if c.left else "+"))
+        out.append("| %s |" % " | ".join(_cell(x) for x in cells_))
+    for f in skipped:
+        cells_ = ["%s" % _esc(f.item)] + ["—", "—", ""] * len(lists) + [""] * len(flags)
+        cells_[-1 if flags else min(3, len(cells_) - 1)] = "*skipped: unit only in %s (L2)*" % (
+            "−" if f.kind == "missing" else "+")
+        out.append("| %s |" % " | ".join(_cell(x) for x in cells_))
+    if units or skipped:
+        out.append("")
+    for (comp, unit), fs in _group(_at(result.findings, "L3"), "component", "unit").items():
+        _details(out, "<b>%s</b> · %s" % (_html(unit or comp), _html(_summary_line(fs))),
+                 lambda o, fs=fs: _md_findings(o, fs))
+
+
+def _row_label(c):
+    if c.follows and c.what.startswith(c.follows):
+        return "&nbsp;&nbsp;↳ by kind: %s" % _esc(c.what[len(c.follows):].lstrip(" ·"))
+    return _esc(c.what)
+
+
+def _md_l4(out, result):
+    checks = [c for c in result.checks if c.level == "L4"]
+    findings = _group(_at(result.findings, "L4"), "component", "unit")
+    if not (checks or findings):
+        out += ["Nothing was compared at this level.", ""]
+        return
+    by_unit = {}
+    for c in checks:
+        by_unit.setdefault((c.component, c.unit), []).append(c)
+    for key in findings:
+        by_unit.setdefault(key, [])
+    equal = []
+    for (comp, unit), cs in by_unit.items():
+        fs = findings.get((comp, unit), [])
+        if all(c.ok or c.follows for c in cs) and not fs:
+            equal.append((comp, unit))
+            continue
+        title = "%s › %s" % (comp, unit) if unit else "%s (component)" % comp
+        differ = sum(1 for c in cs if not c.ok and not c.follows)
+
+        def body(o, cs=cs, fs=fs):
+            if cs:
+                o += ["| view | − | + | what differs | |", "|---|--:|--:|---|---|"]
+            for c in cs:
+                cf = _check_findings(result, c)
+                if c.skipped:
+                    note = "*%s*" % _esc(c.skipped)
+                elif c.follows and not c.ok:
+                    note = ""
+                else:
+                    worst = _worst(cf)
+                    expl = sum(1 for f in cf if f.explained)
+                    fol = cf and all(f.follows for f in cf)
+                    note = ("**%s**" % worst if worst else "") or (
+                        "*explained*" if expl else ("*↳ follows*" if fol else ""))
+                what = "—" if c.skipped else (c.detail or ("✓" if c.ok else "✗"))
+                o.append("| %s | %s | %s | %s | %s |" % (_cell(_row_label(c)), _num(c.left),
+                                                         _num(c.right), _cell(_esc(what)), note))
+            if cs:
+                o.append("")
+            if fs:
+                _md_findings(o, fs)
+        _details(out, "<b>%s</b> · %d of %d views differ · %s" % (
+            _html(title), differ, len([c for c in cs if not c.follows]),
+            _html(_summary_line(fs))), body)
+    if equal:
+        names = ", ".join((u or "%s (component)" % c) for c, u in equal)
+        _details(out, "%d %s: all views equal" % (len(equal), "place" if len(equal) == 1
+                                                  else "places"),
+                 lambda o: o.extend([_esc(names), ""]))
+
+
+def _md_l5(out, result):
+    fs5 = _at(result.findings, "L5")
+    by_unit = _group(fs5, "component", "unit")
+    for (comp, unit), fs in by_unit.items():
+        title = "%s › %s" % (comp, unit) if unit else comp
+
+        def body(o, fs=fs, title=title):
+            for (view,), vfs in _group(fs, "view").items():
+                shown = [f for f in vfs if not f.explained]
+                explained = [f for f in vfs if f.explained]
+
+                def vbody(p, shown=shown, explained=explained):
+                    _md_findings(p, shown)
+                    if explained:
+                        def ebody(q, explained=explained):
+                            q += ["| where | what | rule |", "|---|---|---|"]
+                            for f, also in _fold(explained):
+                                where = _place(f) + (" and %d more" % len(also) if also else "")
+                                q.append("| %s | %s | %s |" % (
+                                    _cell(_esc(where)), _cell(_md_change(f)[0]),
+                                    _cell(_esc(f.rule))))
+                            q.append("")
+                        _details(p, "<i>Explained by a rule · %d</i>" % len(explained), ebody)
+                _details(o, "<b>%s › %s</b> · %s" % (_html(title), _html(view or "content"),
+                                                     _html(_summary_line(vfs))), vbody)
+        _details(out, "<b>%s</b> · %s" % (_html(title), _html(_summary_line(fs))), body)
+    quiet = [(k, n) for k, n in _compared_units(result).items() if k not in by_unit]
+    if quiet:
+        names = ", ".join("%s (%d)" % (u or c, n) for (c, u), n in quiet)
+        _details(out, "%d %s: all content equal" % (len(quiet), "unit" if len(quiet) == 1
+                                                    else "units"),
+                 lambda o: o.extend(["Matched items compared, per unit: " + _esc(names), ""]))
+    if not fs5 and not quiet:
+        out += ["Nothing was compared at this level.", ""]
+
+
+def _compared_units(result):
+    out = {}
+    for (comp, unit, _view), n in result.compared.items():
+        out[(comp, unit)] = out.get((comp, unit), 0) + n
+    return out
+
+
+def _md_self_block(out, findings):
+    for lv in LEVELS:
+        at = _at(findings, lv)
+        if not at:
+            continue
+        for (comp, unit), fs in _group(at, "component", "unit").items():
+            title = " › ".join(x for x in (comp, unit) if x) or "document"
+            _details(out, "<b>%s %s</b> · %s" % (lv, _html(title), _html(_summary_line(fs))),
+                     lambda o, fs=fs: _md_findings(o, fs))
+
+
+def _md_own(out, result):
+    out += ["## Each document on its own", "", "| | result |", "|---|---|"]
+    for sign, role, fs in (("−", result.sides[0], result.self_left),
+                           ("+", result.sides[1], result.self_right)):
+        out.append("| **%s** %s | %s |" % (sign, role, _summary_line(fs) if fs else "clean"))
+    out.append("")
+    for sign, role, fs in (("−", result.sides[0], result.self_left),
+                           ("+", result.sides[1], result.self_right)):
+        if fs:
+            def body(o, fs=fs):
+                _md_self_block(o, fs)
+            _details(out, "<b>%s %s</b> · %s" % (sign, _html(role), _html(_summary_line(fs))),
+                     body)
+
+
+_LEGEND = [
+    "| priority | meaning |", "|---|---|",
+    "| P1 blocker | breaks a documented rule: a missing unit, a wrong Direction or Data Type, "
+    "broken IDs, a design and a spec that do not pair |",
+    "| P2 review | a real difference a person has to judge |",
+    "| P3 explained | a documented rule produces it; listed with the rule, never counted as a "
+    "defect |",
+    "| P4 cosmetic | order and wording only |", "",
+    "| level | question |", "|---|---|",
+    "| L1 headings | Is every kind of heading there? |",
+    "| L2 inventory | Are the same components, units and dynamic behaviours there, by name? |",
+    "| L3 sections | Does each unit have the same function headings and sub-sections? |",
+    "| L4 views | Does each table and diagram have the same rows and images? |",
+    "| L5 content | Do the matched rows say the same thing? |", "",
+    "`−` is the first document and `+` the second. `≡` means the same change appears in "
+    "other places too; it is printed once. *↳ follows* marks a finding that restates one "
+    "found at a higher level: shown for its detail, not counted again. A *possible reason* "
+    "is a documented rule that would produce the difference but cannot be proved from the "
+    "documents; an *explained* one is fully accounted for.", "",
+]
+
+
+def markdown(result, left_name, right_name="", self_left=None, self_right=None,
+             level_what=None, command=""):
+    """The long-form report: summaries shown, details collapsed."""
+    if self_left is not None:
+        result.self_left = self_left
+    if self_right is not None:
+        result.self_right = self_right
+    level_what = level_what or getattr(result, "level_what", {}) or {}
+    _SIDES[:] = list(result.sides)
+    out = []
+    _md_header(out, result, left_name, right_name, command)
+    _md_summary(out, result, level_what)
+    out += ["---", ""]
+    if result.mode == "self":
+        for lv in _levels_on(result):
+            out += ["## %s · %s" % (lv, LEVEL_TITLES[lv].split(" (")[0]), ""]
+            at = _at(result.findings, lv)
+            if at:
+                _md_self_block(out, at)
+            else:
+                out += ["Nothing to report.", ""]
+    else:
+        renderers = {"L1": _md_l1, "L2": _md_l2, "L3": _md_l3, "L4": _md_l4, "L5": _md_l5}
+        for lv in _levels_on(result):
+            out += ["## %s · %s" % (lv, LEVEL_TITLES[lv]), ""]
+            renderers[lv](out, result)
+        out += ["---", ""]
+        _md_own(out, result)
+    out += ["---", ""]
+    _details(out, "<b>How to read this</b>", lambda o: o.extend(_LEGEND))
+    return "\n".join(out).rstrip() + "\n"
+
+
+# --- the terminal -----------------------------------------------------------------
+
+def _entry_of(f):
+    """(group, entry) for a finding: its component, and where under it."""
+    if f.level == "L1" or not f.component:
+        return "(document)", (f.item,) if f.item else ()
+    rest = tuple(x for x in (f.unit, f.item if f.item != f.unit else "") if x)
+    return f.component, rest
+
+
+def _t_view(f, style):
+    """(headline tokens, rows) for one finding on a terminal."""
+    if f.kind == "differs" and isinstance(f.left, bool) and isinstance(f.right, bool):
+        return _tokens("%s: only in the %s" % (f.summary.split(": ", 1)[0],
+                                               _SIDES[0] if f.left else _SIDES[1])), []
+    if f.kind == "differs" and (f.left is not None or f.right is not None):
+        return _value_view(f.summary.split(": ", 1)[0], f.left, f.right, style)
+    return _tokens(f.summary), []
+
+
+class _Rules:
+    """Numbers for the rules that explain more than one finding, printed in full once."""
+
+    def __init__(self, findings):
+        seen = {}
+        for f in findings:
+            if f.rule:
+                seen[f.rule] = seen.get(f.rule, 0) + 1
+        self.repeated = {rule for rule, n in seen.items() if n > 1}
+        self.numbers = {}
+
+    def ref(self, rule):
+        if rule not in self.repeated:
+            return None, True
+        if rule in self.numbers:
+            return self.numbers[rule], False
+        self.numbers[rule] = len(self.numbers) + 1
+        return self.numbers[rule], True
+
+
+def _heading(style, prefix, label, priority):
+    """One tree line: the label, and the priority right-aligned when there is one."""
+    line = style.paint(prefix, "dim") + _draw(label, style)
+    if not priority:
+        return line.rstrip()
+    used = len(prefix) + sum(len(t) for t, _ in label)
+    col = min(style.width or _ALIGN, _ALIGN)
+    return line + " " * max(col - used - len(priority), 2) + style.paint(priority, priority)
+
+
+def _t_item(out, style, prefix, f, also, rules, full, entry_rank):
+    g = style.g
+    head, rows = _t_view(f, style)
+    head = list(head)
+    if priority_rank(f.priority) > entry_rank:
+        head += _tokens(" (%s)" % f.priority, f.priority)
+    if f.follows:
+        head += _tokens(" ↳ follows from the %s" % f.follows, "dim")
+    _put(out, style, prefix, head, hang="  ")
+    if not full and len(rows) > _ROWS:
         cut = _ROWS
-        if rows[cut - 1][0] == "-" and rows[cut][0] == "+":     # never split an old from its new
+        if rows[cut - 1][0] == "-" and rows[cut][0] == "+":        # never split an old from its new
             cut += 1
         hidden = sum(1 for r in rows[cut:] if r[0] in "-+")
         rows = rows[:cut] + ([("more", hidden)] if hidden else [])
     for row in rows:
         _row_lines(out, style, prefix + "  ", row)
-
-    for number, rule, first in notes:
-        _rule_lines(out, style, prefix + ("  " if "kinds" in item else ""), rule, number, first)
-    places = d.also.get(id(item["finding"]), [])
-    if places:
-        shown = places if d.full or len(places) <= _ALSO else places[:_ALSO]
+    if f.rule:
+        number, first = rules.ref(f.rule)
+        word = _rule_word(f)
+        if first:
+            text = "%s [%d]: %s" % (word, number, f.rule) if number else "%s: %s" % (word, f.rule)
+        else:
+            text = "%s [%d], as above" % (word, number)
+        _put(out, style, prefix, _tokens(text, "dim"), hang="      ")
+    if also:
+        shown = also if full or len(also) <= _ALSO else also[:_ALSO]
         text = "%s same change in %s" % (g["same"], ", ".join(shown))
-        if len(shown) < len(places):
-            text += " and %d more" % (len(places) - len(shown))
+        if len(shown) < len(also):
+            text += " and %d more" % (len(also) - len(shown))
         _put(out, style, prefix, _tokens(text, "dim"), hang="  ")
 
 
-def _heading(style, prefix, label, severity):
-    """One tree line: the label, and the severity right-aligned when there is one."""
-    line = style.paint(prefix, "dim") + _draw(label, style)
-    if not severity:
-        return line.rstrip()
-    used = len(prefix) + sum(len(t) for t, _ in label)
-    col = min(style.width or _ALIGN, _ALIGN)
-    tag = severity.upper()
-    return line + " " * max(col - used - len(tag), 2) + style.paint(tag, severity)
-
-
-def _tree(findings, style, full, sides=("reference", "compared document")):
-    """Findings drawn as component, then entry, then what changed -- worst first."""
+def _t_tree(findings, style, full):
+    """Findings drawn as component, then unit and item, then what changed -- worst first."""
     g = style.g
-
-    # The same change in several places prints once, under the first of them.
-    first, kept, also = {}, [], {}
-    for f in findings:
-        key = _change_key(f)
-        if key is not None and key in first:
-            canon = first[key]
-            group, entry = _where(f)
-            label = entry if group == _where(canon)[0] else (group,) + entry
-            also.setdefault(id(canon), []).append(g["sep"].join(label) or group)
-            continue
-        if key is not None:
-            first[key] = f
-        kept.append(f)
-
+    folded = _fold(sorted(findings, key=lambda f: f.sort_key()))
     groups = {}
-    for f in kept:
-        group, entry = _where(f)
-        groups.setdefault(group, {}).setdefault(entry, []).append(f)
+    for f, also in folded:
+        group, entry = _entry_of(f)
+        groups.setdefault(group, {}).setdefault(entry, []).append((f, also))
+    rules = _Rules([f for f, _a in folded])
 
-    def rank(fs):
-        return min(_RANK.get(f.severity, 9) for f in fs)
+    def rank(items):
+        return min(priority_rank(f.priority) for f, _a in items)
 
-    def worst(fs):
-        return min((f.severity for f in fs), key=lambda s: _RANK.get(s, 9))
-
-    d = _Draw(style, full, sides, also, _Rules(kept))
     out = []
-    for group in sorted(groups, key=lambda k: rank([f for fs in groups[k].values() for f in fs])):
+    for group in sorted(groups, key=lambda k: rank([x for v in groups[k].values() for x in v])):
         entries = groups[group]
         own = entries.pop((), [])
         rest = sorted(entries.items(), key=lambda kv: rank(kv[1]))
-        out.append(_heading(style, " ", _tokens(group, "bold"), own and worst(own)))
+        worst = PRIORITIES[rank(own)] if own else ""
+        out.append(_heading(style, " ", _tokens(group, "bold"), worst))
         body = " " + (g["pipe"] if rest else g["blank"]) + "  "
-        for item in _items(own, style):
-            _item_lines(out, d, body, item, rank(own))
+        for f, also in own:
+            _t_item(out, style, body, f, also, rules, full, rank(own))
         if own and rest:
             out.append(style.paint(" " + g["pipe"], "dim").rstrip())
-        for n, (entry, fs) in enumerate(rest):
+        for n, (entry, items) in enumerate(rest):
             last = n == len(rest) - 1
             label = []
             for i, part in enumerate(entry):
                 if i:
                     label += _tokens(g["sep"])
                 label += _tokens(part, "bold") if i == len(entry) - 1 else _tokens(part)
-            out.append(_heading(style, " " + (g["last"] if last else g["tee"]), label, worst(fs)))
+            out.append(_heading(style, " " + (g["last"] if last else g["tee"]), label,
+                                PRIORITIES[rank(items)]))
             body = " " + (g["blank"] if last else g["pipe"]) + "  "
-            for item in _items(fs, style):
-                _item_lines(out, d, body, item, rank(fs))
+            for f, also in items:
+                _t_item(out, style, body, f, also, rules, full, rank(items))
             if not last:
                 out.append(style.paint(" " + g["pipe"], "dim").rstrip())
         out.append("")
     return out
 
-
-# --- the whole report ---------------------------------------------------------------
 
 def _names(a, b, style):
     """Two paths cut down to what tells them apart."""
@@ -683,120 +1152,168 @@ def _sides(style, left, right):
             " %s %s  %s" % (style.paint(style.g["plus"], "plus"), rw.ljust(pad), rn)]
 
 
-def _ladder(findings, style):
-    """`L0 ok  L1 ok  L2 9  ...` -- how far down the two documents agree."""
+def _ladder(result, style):
+    """`L1 ok  L2 2  ...` -- how far down the two documents agree."""
     parts = []
-    for level, _label in _LADDER:
-        at = [f for f in findings if f.level == level and f.severity != INFO]
+    for lv in _levels_on(result):
+        at = _open(_at(result.findings, lv))
         if not at:
-            parts.append("%s %s" % (level, style.paint(style.g["ok"], "ok")))
+            parts.append("%s %s" % (lv, style.paint(style.g["ok"], "ok")))
         else:
-            sev = min((f.severity for f in at), key=lambda s: _RANK.get(s, 9))
-            parts.append("%s %s" % (level, style.paint(str(len(at)), sev)))
+            parts.append("%s %s" % (lv, style.paint(str(len(at)), _worst(at))))
     return "   ".join(parts)
 
 
-def _tallies(findings, style, total=True):
-    """`9 findings: 2 high · 7 medium`, each count in its severity's colour."""
-    if not findings:
+def _tallies(findings, style):
+    parts = _tally_parts(findings)
+    if not parts:
         return style.paint("no findings", "ok")
-    c = _counts(findings)
-    parts = [style.paint("%d %s" % (c[s], s), s) for s in (HIGH, MEDIUM, LOW, INFO) if c.get(s)]
-    line = style.g["dot"].join(parts)
-    if total:
-        line = "%d finding%s: %s" % (len(findings), "" if len(findings) == 1 else "s", line)
-    return line
+    painted = []
+    for p in parts:
+        key = p.split()[0] if p[0] == "P" else P3
+        painted.append(style.paint(p, key))
+    return style.g["dot"].join(painted)
 
 
-def _footer(style, findings, full):
-    info = sum(1 for f in findings if f.severity == INFO)
-    if full or not info:
-        return []
-    return [style.paint(" %d info finding%s not shown (--full lists them)"
-                        % (info, "" if info == 1 else "s"), "dim")]
+def _t_checks(out, result, level, style):
+    """The summary rows of one level that disagree, one line each."""
+    for c in result.checks:
+        if c.level != level or c.ok or c.follows:
+            continue
+        where = " › ".join(x for x in (c.component, c.unit) if x)
+        label = "%s%s" % ((where + " › ") if where else "", c.what)
+        counts = "" if c.left is None and c.right is None else "%s %s %s" % (
+            _num(c.left), style.g["arrow"], _num(c.right))
+        text = "   %s  %s  %s" % (label, counts, c.skipped or c.detail or "")
+        _put(out, style, "", _tokens(text.rstrip()), hang="      ")
 
 
-def _shown(findings, full):
-    return list(findings) if full else [f for f in findings if f.severity != INFO]
+def text(result, left_name, right_name="", self_left=None, self_right=None,
+         style=None, full=False, level_what=None):
+    """The terminal report: the ladder, each level's disagreeing rows and findings.
 
-
-def text(result, left_name, right_name, self_left=None, self_right=None,
-         style=None, full=False):
-    """The terminal report of a comparison.
-
-    The two documents, the ladder on one line, then what changed, grouped under
-    the component it belongs to. INFO findings -- advisory, or fully explained by
-    a documented rule -- are counted but listed only with `full`, which also
-    lifts the cap on how many changed lines one finding prints.
+    P3 and P4 findings, and findings that follow from one above, are counted but
+    listed only with `full` -- which also lifts the cap on how many changed lines
+    one finding prints.
     """
     style = style or Style()
-    out = _sides(style, ("reference", left_name), ("compared", right_name))
-    ladder, tallies = _ladder(result.findings, style), _tallies(result.findings, style)
+    if self_left is not None:
+        result.self_left = self_left
+    if self_right is not None:
+        result.self_right = self_right
+    level_what = level_what or getattr(result, "level_what", {}) or {}
+    _SIDES[:] = list(result.sides)
+    if result.mode == "self":
+        out = [" %s  %s, checked against itself" % (style.paint(os.path.basename(left_name),
+                                                                "bold"), result.doc_type)]
+    else:
+        out = _sides(style, (result.sides[0], left_name), (result.sides[1], right_name))
+    ladder, tallies = _ladder(result, style), _tallies(result.findings, style)
     line = " %s     %s" % (ladder, tallies)
-    if style.width and len(_ANSI_RE.sub("", line)) > style.width:   # a narrow terminal
+    if style.width and len(_ANSI_RE.sub("", line)) > style.width:     # a narrow terminal
         out += ["", " " + ladder, " " + tallies, ""]
     else:
         out += ["", line, ""]
     if not result.findings:
-        out += [" " + style.paint("the two documents agree on everything compared", "ok"), ""]
-    out += _tree(_shown(result.findings, full), style, full)
-    for title, findings in (("the reference, checked against itself", self_left),
-                            ("the compared document, checked against itself", self_right)):
-        if findings:
-            out += [" %s  %s" % (style.paint(title, "bold"), _tallies(findings, style, False)),
-                    ""]
-            out += _tree(_shown(findings, full), style, full)
-    out += _footer(style, result.findings, full)
-    return "\n".join(out).rstrip() + "\n"
+        out += [" " + style.paint("nothing to report at any level", "ok"), ""]
+    hidden = 0
+    for lv in _levels_on(result):
+        at = _at(result.findings, lv)
+        shown = at if full else [f for f in at if f.counted and f.priority in (P1, P2)]
+        hidden += len(at) - len(shown)
+        bad_rows = any(c.level == lv and not c.ok and not c.follows for c in result.checks)
+        if not shown and not bad_rows:
+            continue
+        out.append(" %s" % style.paint("%s %s — %s" % (lv, LEVEL_NAMES[lv],
+                                                      level_what.get(lv, "")), "bold"))
+        if result.mode != "self":
+            _t_checks(out, result, lv, style)
+        out.append("")
+        if shown:
+            out += _t_tree(shown, style, full)
+    if result.mode != "self":
+        for title, fs in (("the %s, checked against itself" % result.sides[0], result.self_left),
+                          ("the %s, checked against itself" % result.sides[1], result.self_right)):
+            if fs:
+                shown = fs if full else [f for f in fs if f.priority in (P1, P2)]
+                hidden += len(fs) - len(shown)
+                out += [" %s  %s" % (style.paint(title, "bold"), _tallies(fs, style)), ""]
+                out += _t_tree(shown, style, full)
+    for note in result.notes:
+        _put(out, style, " ", _tokens("note: " + note, "dim"), hang="       ")
+    if hidden and not full:
+        out.append(style.paint(" %d finding%s not listed: P3 explained, P4 cosmetic, or "
+                               "restating one above (--full lists them)"
+                               % (hidden, "" if hidden == 1 else "s"), "dim"))
+    text_ = "\n".join(out).rstrip() + "\n"
+    return text_ if style.fancy else _ascii(text_)
 
 
-def pair_text(design_name, spec_name, headline, findings, style=None, full=False):
-    """The terminal report of a SWE.3 design held against its SWE.4 specification."""
-    style = style or Style()
-    out = _sides(style, ("design", design_name), ("specification", spec_name))
-    out += ["", " " + headline, " " + _tallies(findings, style, False), ""]
-    if not findings:
-        out += [" " + style.paint("the design and the specification pair cleanly", "ok"), ""]
-    out += _tree(_shown(findings, full), style, full, sides=("design", "specification"))
-    out += _footer(style, findings, full)
-    return "\n".join(out).rstrip() + "\n"
+# The glyphs the report itself draws, and what a plain (non-terminal) stream gets
+# instead: a pipe or a file stays ASCII, so it still greps.
+_ASCII = {"−": "-", "·": ",", "→": "->", "↔": "<->", "›": ">", "✓": "ok", "✗": "x",
+          "↳": "->", "—": "-", "…": "...", "≡": "=>", "│": "|", "├": "|", "└": "`",
+          "─": "-"}
 
 
-def self_text(name, doc_type, findings, style=None, full=False):
-    """The terminal report of one document checked against its own rules."""
-    style = style or Style()
-    out = [" %s  %s, checked against itself" % (style.paint(os.path.basename(name), "bold"),
-                                                doc_type),
-           " " + _tallies(findings, style), ""]
-    out += _tree(_shown(findings, full), style, full)
-    out += _footer(style, findings, full)
-    return "\n".join(out).rstrip() + "\n"
+def _ascii(text):
+    for glyph, plain in _ASCII.items():
+        text = text.replace(glyph, plain)
+    return text
 
 
-def to_json(result, left_name, right_name, self_left=None, self_right=None):
+def summary_line(result):
+    c = _counts(result.findings)
+    return "%d finding(s): %s" % (len(result.findings),
+                                  ", ".join("%d %s" % (c[p], p) for p in PRIORITIES))
+
+
+# --- json ---------------------------------------------------------------------------
+
+SCHEMA = "doccheck/2"
+
+
+def _finding_dict(f):
+    d = dict(f.__dict__)
+    d["counted"] = f.counted
+    return d
+
+
+def to_json(result, left_name, right_name="", self_left=None, self_right=None,
+            level_what=None):
+    if self_left is not None:
+        result.self_left = self_left
+    if self_right is not None:
+        result.self_right = self_right
+    level_what = level_what or getattr(result, "level_what", {}) or {}
+    levels = {}
+    for lv in _levels_on(result):
+        at = _at(result.findings, lv)
+        c = _counts(at)
+        levels[lv] = {"what": level_what.get(lv, ""), "open": len(_open(at)),
+                      "worst": _worst(at), **{p: c[p] for p in PRIORITIES},
+                      "follows": sum(1 for f in at if not f.counted)}
+    c = _counts(result.findings)
     payload = {
-        "reference": left_name,
-        "compared": right_name,
-        "summary": {
-            "findings": len(result.findings),
-            "high": len([f for f in result.findings if f.severity == HIGH]),
-            "medium": len([f for f in result.findings if f.severity == MEDIUM]),
-            "low": len([f for f in result.findings if f.severity == LOW]),
-            "info": len([f for f in result.findings if f.severity == INFO]),
-        },
+        "schema": SCHEMA,
+        "mode": result.mode,
+        "docType": result.doc_type,
+        "maxLevel": result.max_level,
+        "left": {"role": result.sides[0], "path": left_name},
+        "right": {"role": result.sides[1], "path": right_name},
+        "summary": {"findings": len(result.findings), "open": len(_open(result.findings)),
+                    **{p: c[p] for p in PRIORITIES}, "levels": levels},
+        "notes": list(result.notes),
         "inventory": {
-            kind: {
-                "reference": result.left_total.get(kind, 0),
-                "compared": result.right_total.get(kind, 0),
-                "matched": result.matched.get(kind, 0),
-                "score": round(result.score(kind), 4),
-            }
+            kind: {"left": result.left_total.get(kind, 0),
+                   "right": result.right_total.get(kind, 0),
+                   "matched": result.matched.get(kind, 0),
+                   "score": round(result.score(kind), 4)}
             for kind in sorted(set(result.left_total) | set(result.right_total))
         },
-        "self_checks": {
-            "reference": [f.__dict__ for f in (self_left or [])],
-            "compared": [f.__dict__ for f in (self_right or [])],
-        },
-        "findings": [f.__dict__ for f in result.findings],
+        "checks": [dict(c.__dict__) for c in result.checks],
+        "findings": [_finding_dict(f) for f in result.findings],
+        "selfChecks": {"left": [_finding_dict(f) for f in result.self_left],
+                       "right": [_finding_dict(f) for f in result.self_right]},
     }
-    return json.dumps(payload, indent=2, default=str) + "\n"
+    return json.dumps(payload, indent=2, default=str, ensure_ascii=False) + "\n"
