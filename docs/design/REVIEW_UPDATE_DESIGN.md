@@ -616,6 +616,8 @@ for each override on the baseline:
     if the slot still resolves in the new version
        and (slot is a unit description                          -- the unit still has code in it
             or slot is a struct description and the type's definition is unchanged
+            or slot is a behaviour row and the function and its caller are both
+               unchanged -- or, where the new version's rows exist already, the row is among them
             or the function's (or global's) source_hash is unchanged                 REQ-VR-01
                and (slot is not nodeLabel or slot_shape matches the graph in hand)): REQ-ID-02
         copy the row to the new version, shape and all
@@ -630,6 +632,14 @@ not in `hashes` — most data-dictionary entries have no source hash (19 of 91 o
 type's definition is its entry minus `description` and `location`. The first version of this
 check asked the `model_units` table and `hashes`, both of which a real run fills later or not at
 all, so every unit and struct description came out orphaned on the next version.
+
+A behaviour row had the same fault a step later: it asked the new version's
+`_behaviour_pngs.json` rows, which only Phase 3 draws, so every behaviour correction came out
+orphaned on every generation (found running two versions, with nothing near the call changed). A
+row is now judged by what it describes — the function and the external caller that calls it,
+both present with unchanged code — and the stored rows are asked only where they already exist, on
+a re-run over a version that was generated before. If the call has gone after all, Phase 3 draws no
+row for it and the correction lands nowhere; it is never put on another row.
 
 "**the graph in hand**" is doing real work in that condition. Carry-forward runs in **Phase 2**, and
 Phase 3 is what produces the new version's flowcharts — so at carry time the new version usually has

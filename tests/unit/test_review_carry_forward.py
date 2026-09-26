@@ -42,14 +42,14 @@ def _cfg(*ids):
 
 
 def _seed_version(cx, vid, *, source_hash="h1", node_ids=("n0", "n1", "n2"),
-                  functions=(FID,), units=(UNIT,), behaviour=True, datadict=None):
+                  functions=(FID,), units=(UNIT,), behaviour=True, datadict=None, hashes=None):
     cx.execute(sa.insert(s.versions).values(id=vid, project_id="p", version=vid,
                                             created_at=NOW))
     model_store.persist_model(
         cx, "p", vid,
         functions={f: {"qualifiedName": "ns::x", "description": "d"} for f in functions},
         globals={}, datadict=datadict or {}, edges={"typeUsers": {}, "macroUsers": {}},
-        hashes={f: source_hash for f in functions},
+        hashes=hashes or {f: source_hash for f in functions},
         units={u: {"name": u.split("|")[-1], "path": "a", "fileName": "f.cpp",
                    "includedHeaders": []} for u in units},
         components={}, summaries={})
@@ -111,6 +111,48 @@ class TestUnchangedCodeKeepsTheHumanText:
                   shape=slot.cfg_shape(["n0", "n1", "n2"]))
         _seed_version(conn, "v4")
         assert cf.carry_overrides(conn, "v3", "v4").carried == 1
+
+
+class TestABehaviourRowIsJudgedBeforePhase3DrawsIt:
+    """The carry runs after Phase 1 and BEFORE Phase 3 -- and Phase 3 draws the behaviour
+    diagrams, so a new version has no behaviour rows yet. Asking only for rows orphaned every
+    behaviour correction on every generation: a real two-version run showed it, with nothing near
+    the call changed. The test above seeds the target WITH rows, which no real run has at this
+    point, and that is how it passed.
+
+    Where there are no rows yet, the row is judged by what it describes: the function and the
+    external caller that calls it."""
+
+    KEY = slot.for_behaviour_row(FID, CALLER)
+
+    def _versions(self, conn, *, target_hashes, target_rows=False):
+        _seed_version(conn, "b1", functions=(FID, CALLER), hashes={FID: "h1", CALLER: "h1"})
+        _override(conn, "b1", slot.BEHAVIOUR_DESCRIPTION, self.KEY)
+        _seed_version(conn, "t1", functions=tuple(target_hashes), hashes=target_hashes,
+                      behaviour=target_rows)
+        return cf.carry_overrides(conn, "b1", "t1")
+
+    def test_neither_end_changed_carries_it(self, conn):
+        out = self._versions(conn, target_hashes={FID: "h1", CALLER: "h1"})
+        assert (out.carried, out.orphaned) == (1, 0)
+
+    def test_the_caller_changed(self, conn):
+        out = self._versions(conn, target_hashes={FID: "h1", CALLER: "h2"})
+        assert (out.carried, out.orphaned) == (0, 1)
+        assert "its caller" in out.reasons[0][2]
+
+    def test_the_function_changed(self, conn):
+        out = self._versions(conn, target_hashes={FID: "h2", CALLER: "h1"})
+        assert out.orphaned == 1 and "the function" in out.reasons[0][2]
+
+    def test_the_caller_is_gone(self, conn):
+        out = self._versions(conn, target_hashes={FID: "h1"})
+        assert out.orphaned == 1 and "not in the new version" in out.reasons[0][2]
+
+    def test_rows_already_drawn_are_the_answer(self, conn):
+        """A re-run over a version that was already generated: its rows exist and are asked."""
+        out = self._versions(conn, target_hashes={FID: "h1", CALLER: "h1"}, target_rows=True)
+        assert out.carried == 1
 
 
 class TestTheNodeListGuard:
