@@ -734,6 +734,7 @@ def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = F
         try:
             local = _load_base_config(local_path)
             local.pop("db", None)
+            local.pop("auth", None)        # the API server's own setting; no engine reads it
             _deep_merge(cfg, local)
         except Exception:                            # best-effort: run with the non-secret config
             pass

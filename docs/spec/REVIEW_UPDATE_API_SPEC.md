@@ -263,6 +263,11 @@ rather than typing one — Swagger URL-encodes it for you.
 A missing or non-access token is **401**
 (`{"detail": {"code": "UNAUTHENTICATED", "message": "…", "status": 401}}`).
 
+**A sign-in lasts 8 hours** by default; after that every call answers 401 `"Signature has
+expired"` and Swagger needs a fresh token from `/auth/signin`. The server sets it with
+`auth.accessTokenMinutes` in `engine/config/config.local.json`. The web app renews on its own with
+the refresh token, so a UI only needs to handle a 401 once it has tried that.
+
 **Timestamps** are ISO-8601 UTC strings (`"2026-09-18T09:14:22Z"`) or `null`. **`null` vs absent:**
 every field documented below is always present in a 200 response; optional means it may be `null`,
 never missing.

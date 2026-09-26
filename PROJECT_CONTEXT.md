@@ -218,6 +218,29 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-26b (**A sign-in lasts a working day, not 15 minutes -- and the server can set
+> it.**
+>
+> Testing through Swagger meant "401 Signature has expired" every quarter of an hour: sign in again,
+> re-paste the token. `ACCESS_TOKEN_EXPIRE_MINUTES` was a hard-coded 15 in `api/middleware/auth.py`.
+> The web app never noticed -- `web-app/src/lib/http.ts` refreshes with the 7-day refresh token on
+> a 401 and retries -- so only hand-driven clients paid for it.
+>
+> Now `DEFAULT_ACCESS_TOKEN_EXPIRE_MINUTES = 480`, overridable per machine with
+> `"auth": {"accessTokenMinutes": N}` in engine/config/config.local.json, read the way the `db`
+> section is (a MACHINE setting, config.local.json specifically). A missing file, section or key
+> means the default; a value that is not a positive whole number (a string, 0, negative, `true`,
+> 3.5) or an unreadable file is reported on stderr and ignored -- reading it must never break
+> sign-in. Read once at start-up, and the API now says so there:
+> `[api] sign-ins last 480 minutes (...)`. The runner leaves `auth` out of the per-project runtime
+> configs it copies config.local.json into, as it does `db` -- no engine reads it.
+>
+> Trade-off, stated rather than hidden: a bearer token cannot be revoked, so a longer lifetime is a
+> longer window for a leaked one. Fine for the internal test server; a production deployment that
+> wants the old window sets `accessTokenMinutes: 15`. Expiry itself is still enforced (tested).
+> Verified: sign-in as admin@aspice.dev -> 8.0-hour token -> `GET /projects` 200. Five revert-checks
+> caught. 2338 passed, 37 skipped (tests/unit + tests/api).)
+
 > Updated: 2026-09-26 (**Every run started from the web app failed at once -- and once it could
 > start, it hung for ever on SQLite. Both fixed. A CLI-onboarded project is now refused instead of
 > silently damaged.**

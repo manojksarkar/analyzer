@@ -76,6 +76,10 @@ async def _db_startup_check() -> None:
     import os
     import sys
     from .db.session import _db
+    from .middleware.auth import ACCESS_TOKEN_EXPIRE_MINUTES
+    # Said at start-up, because the only other way to find out is to wait for a 401.
+    print(f"[api] sign-ins last {ACCESS_TOKEN_EXPIRE_MINUTES} minutes "
+          f"(auth.accessTokenMinutes in engine/config/config.local.json)", file=sys.stderr)
     engine = getattr(_db, "_engine", None)
     if engine is None:
         # D-16: Postgres is the only real backend. In-memory is a test/dev seam that persists
