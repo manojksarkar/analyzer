@@ -697,6 +697,11 @@ on `model_units.description` (migration `0009_model_units_description`); the str
 rides the type's payload, which `persist_types` already stores whole. The exporter reads both and
 keeps its deterministic fallback for versions generated before the move.
 
+On develop the unit header table left the exporter for a Phase-3 view (`views/unit_headers.py`),
+which lists class and union rows too and asked the LLM for each row's description again, at view
+time. After the rebase it reads the stored description like the exporter does, and Phase 2
+generates one for struct, class and union alike.
+
 **Verification:** both appear as stored model fields after Phase 2, and the exporter reads rather
 than generates them — `tests/unit/test_unit_struct_descriptions_stored.py` (14).
 
