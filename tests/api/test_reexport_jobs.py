@@ -296,3 +296,57 @@ class TestRefusals:
         r = client.post(f"/api/v1/projects/{pid}/jobs", headers=auth_header,
                         json={"commit_sha": "a" * 40, "version_tag": "vx", "mode": REEXPORT_MODE})
         assert r.status_code == 400
+
+
+class TestAReexportRegistersMissingDocuments:
+    """A version generated while `_make_documents` matched output dirs by the bare component
+    name has its DOCX files on disk and no `documents` rows -- since 1df3016 every web-app run.
+    Re-exporting it is how it gets its document list back."""
+
+    LAYERS = [{"name": "L1", "groups": [{"name": "G1", "components": [{"name": "Comp A"}]}]}]
+
+    def _setup(self, db, monkeypatch, tmp_path):
+        pid = _project(db)
+        project = db.projects.get(pid)
+        project.architecture_layers = self.LAYERS
+        db.projects.update(project)
+        vid = _version(db, pid)
+        comp_dir = tmp_path / "output" / "L1.Comp-A"
+        comp_dir.mkdir(parents=True)
+        (comp_dir / "software_detailed_design_L1.Comp-A.docx").write_bytes(b"PK")
+        monkeypatch.setattr(pr.doc_render, "commit_output_root",
+                            lambda *a, **k: tmp_path / "output")
+        return pid, vid
+
+    def _reexport(self, client, auth_header, monkeypatch, pid, vid):
+        engine = _Engine(monkeypatch)
+        engine.release.set()
+        r = _start(client, auth_header, pid, vid)
+        assert r.status_code == 202, r.text
+        engine.finish(r.json()["job_id"])
+        return _job(client, auth_header, pid, r.json()["job_id"])
+
+    def test_they_are_registered(self, client, db, auth_header, monkeypatch, tmp_path):
+        pid, vid = self._setup(db, monkeypatch, tmp_path)
+        job = self._reexport(client, auth_header, monkeypatch, pid, vid)
+        assert job["status"] == "complete"
+        docs, total = db.documents.list_for_project(pid, version_id=vid, per_page=50)
+        assert total == 1
+        assert (docs[0].name, docs[0].layer, docs[0].group) == ("Comp A", "L1", "L1.Comp-A")
+        assert db.versions.get(vid).docs_count == 1
+
+    def test_a_second_reexport_registers_nothing_twice(self, client, db, auth_header,
+                                                       monkeypatch, tmp_path):
+        pid, vid = self._setup(db, monkeypatch, tmp_path)
+        self._reexport(client, auth_header, monkeypatch, pid, vid)
+        self._reexport(client, auth_header, monkeypatch, pid, vid)
+        assert db.documents.list_for_project(pid, version_id=vid, per_page=50)[1] == 1
+
+    def test_a_failed_reexport_registers_nothing(self, client, db, auth_header, monkeypatch,
+                                                 tmp_path):
+        pid, vid = self._setup(db, monkeypatch, tmp_path)
+        engine = _Engine(monkeypatch, outcome="fail")
+        engine.release.set()
+        r = _start(client, auth_header, pid, vid)
+        engine.finish(r.json()["job_id"])
+        assert db.documents.list_for_project(pid, version_id=vid, per_page=50)[1] == 0
