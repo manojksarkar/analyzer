@@ -650,3 +650,57 @@ class TestExportReadinessReportsTheReexport:
         rx = client.get(BASE + "/export-readiness", headers=auth_header).json()["reexport"]
         assert rx["jobId"] == "jobrx2" and rx["status"] == "running"
         assert rx["startedAt"] and rx["completedAt"] is None and rx["errorMessage"] is None
+
+
+class TestStructDescriptionsEndToEnd:
+    """Develop's unit header table describes structs, classes and unions. The review flow for
+    that text: R11 lists the records a unit shows (`unit` filter, `shownIn`), R3 corrects one by
+    its type key, and a type no document describes is refused rather than saved for nothing."""
+
+    TYPES = {
+        "Pump": {"kind": "class", "name": "Pump", "qualifiedName": "Pump",
+                 "description": "Drives the pump."},
+        "MAX_LEN": {"kind": "define", "name": "MAX_LEN", "qualifiedName": "MAX_LEN",
+                    "value": "64"},
+    }
+
+    @pytest.fixture
+    def with_types(self, review_db):
+        from core import model_store
+        with review_db.begin() as cx:
+            model_store.persist_types(cx, PROJECT, VERSION, self.TYPES)
+            cx.execute(insert(s.version_output_files).values(
+                version_id=VERSION, rel_path="Sample/unit_headers.json", group_name="Sample",
+                content=json.dumps({"Sample-Core|Core": [
+                    {"declaration": "class Pump {...}", "information": "Drives the pump.",
+                     "typeKey": "Pump"},
+                    {"declaration": "#define MAX_LEN 64", "information": "64",
+                     "typeKey": None}]})))
+        return review_db
+
+    def test_r11_lists_what_a_unit_shows(self, client, with_types, auth_header):
+        r = client.get(BASE + "/slots", headers=auth_header,
+                       params={"slot_kind": "structDescription", "unit": "Core"})
+        assert r.status_code == 200, r.text
+        slots = r.json()["slots"]
+        assert [x["slotKey"] for x in slots] == ["Pump"]
+        assert slots[0]["shownIn"] == ["Sample-Core|Core"]
+        assert (slots[0]["component"], slots[0]["unit"]) == ("Sample-Core", "Core")
+        assert slots[0]["kindOfType"] == "class" and slots[0]["text"] == "Drives the pump."
+
+    def test_r3_corrects_it_by_its_type_key(self, client, with_types, auth_header):
+        r = client.put(BASE + "/overrides/slot", headers=auth_header,
+                       json={"slot_kind": "structDescription", "slot_key": "Pump",
+                             "text": "Moves coolant."})
+        assert r.status_code == 200, r.text
+        assert r.json()["llmText"] == "Drives the pump."
+        from core import model_store
+        with with_types.connect() as cx:
+            assert model_store.load_types(cx, VERSION)["Pump"]["description"] == "Moves coolant."
+
+    def test_a_define_is_refused_with_the_reason(self, client, with_types, auth_header):
+        r = client.put(BASE + "/overrides/slot", headers=auth_header,
+                       json={"slot_kind": "structDescription", "slot_key": "MAX_LEN",
+                             "text": "Words."})
+        assert r.status_code == 404
+        assert "is a define" in r.text

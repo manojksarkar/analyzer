@@ -140,24 +140,81 @@ def _model_backed(conn, version_id, kind, models, unit, component, limit, offset
     return _page(items, limit, offset)
 
 
-def _structs(conn, version_id, models, limit, offset) -> Page:
-    """`structDescription` is keyed by type name and has no unit or component at all."""
+def _shown_in(conn, version_id):
+    """`(known, {type key: [unit keys]})` -- which units' header tables show each record's
+    description, read from this version's stored unit header rows (`typeKey`).
+
+    The rows are the table itself, so this is exact where anything computed from the model would
+    have to re-implement the view's row rules -- orphan-header lending among them. `known` is
+    False when the stored rows predate `typeKey` (every row carries the field now, `None` on a
+    row that prints a value), or when there are none: then nothing can be said about where a
+    description is shown.
+    """
+    vof = s.version_output_files
+    rows = conn.execute(
+        select(vof.c.rel_path, vof.c.content)
+        .where(vof.c.version_id == version_id, vof.c.rel_path.like("%unit_headers.json"))
+    ).fetchall()
+    known = False
+    shown: Dict[str, List[str]] = {}
+    for r in rows:
+        if not (r.rel_path or "").replace("\\", "/").endswith("unit_headers.json"):
+            continue
+        try:
+            by_unit = json.loads(r.content or "{}")
+        except ValueError:
+            continue
+        for unit_key, unit_rows in (by_unit or {}).items():
+            for hrow in unit_rows or []:
+                if not isinstance(hrow, dict) or "typeKey" not in hrow:
+                    continue
+                known = True
+                type_key = hrow.get("typeKey")
+                if type_key and unit_key not in shown.setdefault(type_key, []):
+                    shown[type_key].append(unit_key)
+    return known, shown
+
+
+def _structs(conn, version_id, models, unit, component, limit, offset) -> Page:
+    """`structDescription`: the records a document can show a description for.
+
+    Keyed by type, so the key names no unit -- but the unit header table shows the description
+    under particular units, and that is where a reviewer meets it. `shownIn` lists them (from the
+    stored rows, see `_shown_in`); `unit` and `component` filter on it, the same way they filter
+    the kinds whose key does carry a unit.
+    """
     kind = slot.STRUCT_DESCRIPTION
+    known, shown = _shown_in(conn, version_id)
+    if (unit or component) and not known:
+        # Refused rather than answered empty: an empty list would read as "this unit shows no
+        # struct descriptions" when the truth is "this output cannot say".
+        raise NotScoped("this version's unit header table was derived before its rows named "
+                        "their type, so it cannot say which unit shows which description. "
+                        "Re-export the version, or list structDescription without a filter")
     done = _overridden(conn, version_id, kind)
+    model = models.as_model()
     items = []
     for type_name, entry in sorted((models.artifact("dataDictionary") or {}).items()):
         if not isinstance(entry, dict):
             continue
         key = slot.for_entity(kind, type_name)
         try:
-            text = resolver.read_text(models.as_model(), kind, key)
+            text = resolver.read_text(model, kind, key)
         except (resolver.SlotError, slot.SlotKeyError):
-            continue
+            continue          # not a record a document describes; see resolver
+        where = shown.get(type_name) or []
+        scopes = [_scope_of(u) for u in where]
+        if unit or component:
+            if not any((not unit or un == unit) and (not component or comp == component)
+                       for comp, un in scopes):
+                continue
+        comp, un = scopes[0] if scopes else (None, None)
         row = done.get(key)
         items.append({
             "slotKind": kind, "slotKey": key, "label": type_name,
-            "component": None, "unit": None, "artifact": "dataDictionary",
+            "component": comp, "unit": un, "artifact": "dataDictionary",
             "kindOfType": entry.get("kind"),
+            "shownIn": where,
             **_state(row, text),
         })
     return _page(items, limit, offset)
@@ -298,16 +355,10 @@ def list_slots(conn, version_id: str, slot_kind: str, *, models=None,
         raise slot.SlotKeyError(
             "unknown slot kind %r; expected one of %s" % (slot_kind, ", ".join(slot.ALL_KINDS)))
 
-    if (unit or component) and slot_kind == slot.STRUCT_DESCRIPTION:
-        # Refused rather than ignored. A filter that silently does nothing is worse than one
-        # that is rejected: the caller reads the unfiltered result as the filtered one.
-        raise NotScoped("structDescription is not scoped by unit or component — "
-                        "a data-dictionary type belongs to the project, not to a unit")
-
     if slot_kind == slot.NODE_LABEL:
         return _flowcharts(conn, version_id, unit, component, limit, offset)
     if slot_kind == slot.BEHAVIOUR_DESCRIPTION:
         return _behaviour_rows(conn, version_id, unit, component, limit, offset)
     if slot_kind == slot.STRUCT_DESCRIPTION:
-        return _structs(conn, version_id, models, limit, offset)
+        return _structs(conn, version_id, models, unit, component, limit, offset)
     return _model_backed(conn, version_id, slot_kind, models, unit, component, limit, offset)

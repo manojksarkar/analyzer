@@ -45,7 +45,17 @@ def _model():
         "globalVariables": {GLOBAL: {"name": "g_count", "description": "A counter."}},
         "units": {"Comp|UnitA": {"name": "UnitA", "description": "Unit A."},
                   "Comp|UnitB": {"name": "UnitB", "description": ""}},
-        "dataDictionary": {"Buffer_t": {"kind": "struct", "description": "A buffer."}},
+        "dataDictionary": {
+            "Buffer_t": {"kind": "struct", "name": "Buffer_t", "description": "A buffer."},
+            # Stored with a description field like any entry, and shown by no document -- so
+            # never offered as a slot (a correction would save and never be seen).
+            "UINT8": {"kind": "typedef", "name": "UINT8", "underlyingType": "unsigned char"},
+            "MAX_LEN": {"kind": "define", "name": "MAX_LEN", "value": "64"},
+            "Mode_t": {"kind": "enum", "name": "Mode_t", "enumerators": []},
+            "int": {"kind": "primitive", "name": "int"},
+            "Outer": {"kind": "class", "name": "Outer", "description": "Holds things."},
+            "Outer::Inner": {"kind": "struct", "name": "Inner", "nestedIn": "Outer"},
+        },
     }
 
 
@@ -115,8 +125,64 @@ class TestTheModelBackedKinds:
 
     def test_structs_are_listed(self, conn, models):
         page = catalog.list_slots(conn, "v1", slot.STRUCT_DESCRIPTION, models=models)
-        assert _keys(page) == ["Buffer_t"]
-        assert page.items[0]["text"] == "A buffer."
+        row = next(i for i in page.items if i["slotKey"] == "Buffer_t")
+        assert row["text"] == "A buffer." and row["kindOfType"] == "struct"
+
+    def test_only_records_a_document_describes_are_offered(self, conn, models):
+        """The data dictionary holds typedefs, defines, enums, primitives and nested records,
+        each with a `description` field the model would store -- and no row that prints it."""
+        page = catalog.list_slots(conn, "v1", slot.STRUCT_DESCRIPTION, models=models)
+        assert sorted(_keys(page)) == ["Buffer_t", "Outer"]
+
+
+def _unit_headers(conn, by_unit, rel_path="G/unit_headers.json"):
+    conn.execute(sa.insert(s.version_output_files).values(
+        version_id="v1", rel_path=rel_path, content=json.dumps(by_unit), group_name="G"))
+
+
+def _hrow(decl, info, type_key=None, *, legacy=False):
+    row = {"declaration": decl, "information": info}
+    if not legacy:
+        row["typeKey"] = type_key
+    return row
+
+
+class TestWhereAStructDescriptionIsShown:
+    """The key names a type, not a unit -- but the unit header table shows the description
+    under particular units, which is where a reviewer meets it. The stored rows say which."""
+
+    def test_each_row_says_which_units_show_it(self, conn, models):
+        _unit_headers(conn, {
+            "Comp|UnitA": [_hrow("struct Buffer_t {...}", "A buffer.", "Buffer_t"),
+                           _hrow("#define MAX_LEN 64", "64")],
+            "Comp|UnitB": [_hrow("typedef struct Buffer_t Buf;", "A buffer.", "Buffer_t")]})
+        page = catalog.list_slots(conn, "v1", slot.STRUCT_DESCRIPTION, models=models)
+        row = next(i for i in page.items if i["slotKey"] == "Buffer_t")
+        assert row["shownIn"] == ["Comp|UnitA", "Comp|UnitB"]
+        assert (row["component"], row["unit"]) == ("Comp", "UnitA")
+        outer = next(i for i in page.items if i["slotKey"] == "Outer")
+        assert outer["shownIn"] == [] and outer["unit"] is None, "shown by no document here"
+
+    def test_a_unit_filter_keeps_what_that_unit_shows(self, conn, models):
+        _unit_headers(conn, {"Comp|UnitA": [_hrow("struct Buffer_t {...}", "A buffer.", "Buffer_t")],
+                             "Comp|UnitB": [_hrow("class Outer {...}", "Holds things.", "Outer")]})
+        assert _keys(catalog.list_slots(conn, "v1", slot.STRUCT_DESCRIPTION, models=models,
+                                        unit="UnitB")) == ["Outer"]
+        assert _keys(catalog.list_slots(conn, "v1", slot.STRUCT_DESCRIPTION, models=models,
+                                        component="Comp")) == ["Buffer_t", "Outer"]
+        assert catalog.list_slots(conn, "v1", slot.STRUCT_DESCRIPTION, models=models,
+                                  component="Other").total == 0
+
+    def test_output_that_cannot_say_refuses_a_filter(self, conn, models):
+        """Rows derived before `typeKey` existed cannot say where anything is shown. An empty
+        answer would read as "this unit shows none"; refused instead, with the remedy."""
+        _unit_headers(conn, {"Comp|UnitA": [_hrow("struct Buffer_t {...}", "A buffer.",
+                                                  legacy=True)]})
+        with pytest.raises(catalog.NotScoped, match="Re-export"):
+            catalog.list_slots(conn, "v1", slot.STRUCT_DESCRIPTION, models=models, unit="UnitA")
+        # ...while the unfiltered list still answers.
+        assert "Buffer_t" in _keys(catalog.list_slots(conn, "v1", slot.STRUCT_DESCRIPTION,
+                                                      models=models))
 
 
 class TestOverrideState:
@@ -156,8 +222,16 @@ class TestOverrideState:
         """A lookup per slot would be 57,000 round trips on a real version."""
         src = open(os.path.join(PROJECT_ROOT, "engine", "review", "catalog.py"),
                    encoding="utf-8").read()
-        body = src[src.index("def _model_backed("):src.index("def _structs(")]
+        start = src.index("def _model_backed(")
+        body = src[start:src.index("\ndef ", start + 1)]          # that function alone
         assert "_overridden(conn" in body and body.count("conn.execute") == 0
+
+    def test_structs_read_their_placement_in_one_query_too(self, conn, models):
+        src = open(os.path.join(PROJECT_ROOT, "engine", "review", "catalog.py"),
+                   encoding="utf-8").read()
+        start = src.index("def _structs(")
+        body = src[start:src.index("\ndef ", start + 1)]
+        assert "_shown_in(conn" in body and body.count("conn.execute") == 0
 
 
 class TestNarrowing:
@@ -171,9 +245,10 @@ class TestNarrowing:
         assert catalog.list_slots(conn, "v1", slot.DESCRIPTION, models=models,
                                   component="Nope").total == 0
 
-    def test_a_struct_filter_is_refused_not_ignored(self, conn, models):
-        """A filter that silently does nothing is worse than one that is rejected: the caller
-        reads the unfiltered result as the filtered one."""
+    def test_a_struct_filter_nothing_can_answer_is_refused_not_ignored(self, conn, models):
+        """No stored unit header rows at all: nothing says where a struct is shown. A filter
+        that silently does nothing is worse than one that is rejected -- the caller reads the
+        unfiltered result as the filtered one."""
         with pytest.raises(catalog.NotScoped):
             catalog.list_slots(conn, "v1", slot.STRUCT_DESCRIPTION, models=models, unit="UnitA")
 

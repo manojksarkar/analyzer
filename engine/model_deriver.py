@@ -5,7 +5,7 @@ import sys
 import json
 
 from utils import (load_config, norm_path, make_unit_key, path_from_unit_rel, KEY_SEP,
-                   resolve_group, short_name, display_name, scoped_name)
+                   resolve_group, short_name, display_name, scoped_name, described_record_keys)
 from core.config import get_component_layer_name
 from core.paths import paths as _paths
 from core.run_context import apply_cli_run_context
@@ -1254,10 +1254,12 @@ def _enrich_unit_and_struct_descriptions(units_data: dict, functions_data: dict,
             unit["description"] = text
             n_units += 1
 
-    for entry in data_dict.values():
-        # struct, class and union: the unit header table describes all three (develop, 794b95f).
-        if not isinstance(entry, dict) or entry.get("kind") not in ("struct", "class", "union"):
-            continue
+    # The records a document can show a description for: a struct, class or union with a row of
+    # its own in the unit header table, or one a typedef row names (develop, 794b95f). Not one
+    # declared inside a class, nor an anonymous one -- no row prints their text, so asking the LLM
+    # for it would be paid for and never read. The same rule decides what a reviewer is offered.
+    for key in sorted(described_record_keys(data_dict)):
+        entry = data_dict[key]
         if entry.get("description"):
             continue
         name = entry.get("name") or entry.get("qualifiedName") or ""

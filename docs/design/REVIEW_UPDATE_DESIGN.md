@@ -145,10 +145,16 @@ apply ahead of the code. `0010_text_overrides` creates the three tables; `0011_s
 | `description` | `entity_key` | `entities.entity_key`, unique per project |
 | `behaviourInputName` | `entity_key` | same |
 | `behaviourOutputName` | `entity_key` | same |
-| `structDescription` | `entity_key` (kind=`type`) | same |
+| `structDescription` | `entity_key` (kind=`type`) — only a struct, class or union the unit header table describes (`utils.is_described_record`) | same |
 | `unitDescription` | `unit_key` | `model_units.unit_key` = `Component\|Unit` |
 | `behaviourDescription` | `<functionId>` ␁ `<externalCallerId>` | the `_docxRows` entry — **both entity keys**, see `REQ-ID-01` |
 | `nodeLabel` | `<entity_key>` ␁ `<node_id>` | `cfg.nodes[].id` |
+
+A `structDescription` key names a type, not a unit, yet the unit header table prints the text under
+particular units. Each of that table's rows carries `typeKey` (the record whose description it
+prints, `None` on a value row), so R11 reads where a description is shown from the stored rows
+themselves — `shownIn`, and the `unit` / `component` filters — instead of re-implementing the
+view's row rules, orphan-header lending included.
 
 ␁ is **SOH (0x01)**, not `#` or `|`. `entity_key` is itself `component|unit|name|paramTypes`, so a
 composite joined with `|` can only be split by counting pipes and hoping, and `#` can appear in a

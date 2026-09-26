@@ -429,6 +429,56 @@ def scoped_name(full_name: str, class_name: str = "") -> str:
     return f"{cls}::{base}" if cls and base else base
 
 
+#: Data-dictionary kinds the unit header table describes in words rather than by value.
+RECORD_KINDS = ("struct", "class", "union")
+
+
+def has_own_header_row(entry) -> bool:
+    """A struct, class or union that the unit header table gives a row of its own.
+
+    Not one declared inside a class -- the class's declaration already shows it -- and not an
+    anonymous record, which reaches the table only as the body of a `typedef ... {...} S;` row.
+    `views/unit_headers.py` picks its rows by this rule; Phase 2 and the review routes use it to
+    decide which descriptions exist to be generated and corrected, so the three cannot drift.
+    """
+    return (isinstance(entry, dict) and entry.get("kind") in RECORD_KINDS
+            and not entry.get("nestedIn")
+            and (entry.get("name") or "") not in ("", "(anonymous)"))
+
+
+def _typedef_names_record(data_dictionary: dict, record_key: str) -> bool:
+    """True when a `typedef` row of the unit header table shows `record_key`'s description --
+    `typedef Outer::Inner Alias;` prints Inner's text on Alias's row."""
+    for entry in (data_dictionary or {}).values():
+        if (isinstance(entry, dict) and entry.get("kind") == "typedef"
+                and not entry.get("nestedIn")
+                and (entry.get("underlyingType") or "").strip() == record_key):
+            return True
+    return False
+
+
+def is_described_record(data_dictionary: dict, key: str) -> bool:
+    """True for the data-dictionary entry `key` when a document can show its description:
+    a record with a row of its own, or one a typedef row names."""
+    entry = (data_dictionary or {}).get(key)
+    if has_own_header_row(entry):
+        return True
+    return (isinstance(entry, dict) and entry.get("kind") in RECORD_KINDS
+            and _typedef_names_record(data_dictionary, key))
+
+
+def described_record_keys(data_dictionary: dict) -> set:
+    """Every key `is_described_record` accepts, in one pass over the dictionary."""
+    dd = data_dictionary or {}
+    keys = {k for k, e in dd.items() if has_own_header_row(e)}
+    for entry in dd.values():
+        if isinstance(entry, dict) and entry.get("kind") == "typedef" and not entry.get("nestedIn"):
+            under = (entry.get("underlyingType") or "").strip()
+            if isinstance(dd.get(under), dict) and dd[under].get("kind") in RECORD_KINDS:
+                keys.add(under)
+    return keys
+
+
 def path_is_under(base_path: str, candidate_path: str) -> bool:
     """True if candidate_path resolves to the project root or a path inside it.
 

@@ -233,8 +233,10 @@ def list_slots(
     project_id: str,
     version_id: str,
     slot_kind: SlotKind = Query(..., description="which kind of slot to list"),
-    unit: Optional[str] = Query(None, description="narrow to one unit"),
-    component: Optional[str] = Query(None, description="narrow to one component"),
+    unit: Optional[str] = Query(None, description="narrow to one unit (its name, e.g. `OpsTable`)"),
+    component: Optional[str] = Query(
+        None, description="narrow to one component, by its layer-qualified id (`Layer1.Cross`) "
+                          "- a document's `group`"),
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
@@ -248,6 +250,10 @@ def list_slots(
 
     `nodeLabel` is listed per FLOWCHART, not per node: a version has ~42,000 node labels, and a
     flowchart is one function's graph. Each row carries the token R7 takes.
+
+    `structDescription` lists the structs, classes and unions whose description the unit header
+    table can show. The key names the type, not a unit, so each row says where it is shown
+    (`shownIn`, unit keys), and `unit` / `component` filter on that.
     """
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
