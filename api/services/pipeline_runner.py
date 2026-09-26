@@ -2000,6 +2000,7 @@ def _run_reexport(db: Any, job_id: str) -> None:
         job.current_activity = "Preparing re-export…"
         db.jobs.update(job)
         if _do_reexport(db, job_id) and not _is_cancelled(db, job_id):
+            _register_missing_documents(db, job_id)
             _complete_reexport(db, job_id)
     except Exception as exc:                  # noqa: BLE001 - recorded on the job, not lost
         _mark_failed(db, job_id, f"Re-export error: {exc}")
@@ -2007,6 +2008,43 @@ def _run_reexport(db: Any, job_id: str) -> None:
         _cleanup_state(job_id)
         with _REEXPORT_LOCK:
             _reexport_threads.pop(job_id, None)
+
+
+def _register_missing_documents(db: Any, job_id: str) -> int:
+    """Register the documents of a re-exported version that has none. Returns how many.
+
+    A version generated while `_make_documents` matched output dirs by the bare component name
+    has its DOCX files on disk and no `documents` rows: since 1df3016 the dirs carry the
+    layer-qualified id, so that was every run started from the web app. Re-exporting such a
+    version is how it gets its document list back. One that already has documents is left alone,
+    so a re-export never registers a document twice.
+
+    Best-effort: the re-export has succeeded by now, and its job must not fail over this.
+    """
+    try:
+        job = db.jobs.get(job_id)
+        version_id = getattr(job, "version_id", None) if job else None
+        version = db.versions.get(version_id) if version_id else None
+        project = db.projects.get(job.project_id) if version else None
+        if version is None or project is None:
+            return 0
+        _existing, total = db.documents.list_for_project(project.id, version_id=version.id,
+                                                         per_page=1)
+        if total:
+            return 0
+        now = _now()
+        docs = _make_documents(db, project, version, now)
+        if docs:
+            out_root = doc_render.commit_output_root(project.id, version.commit_sha, version.id)
+            _make_sections(db, docs, now,
+                           out_root or (_commit_dir(project.id, version.commit_sha) / "output"))
+            version.docs_count = len(docs)
+            db.versions.update(version)
+            _append_log(job_id, f"Registered {len(docs)} document(s) this version was missing.")
+        return len(docs)
+    except Exception as exc:                  # noqa: BLE001 - see docstring
+        _log.warning("re-export %s: could not register the version's documents: %s", job_id, exc)
+        return 0
 
 
 def _complete_reexport(db: Any, job_id: str) -> None:
