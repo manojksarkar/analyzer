@@ -327,6 +327,13 @@ def cmd_reexport(a) -> int:
     # after a --no-llm run and failed after every real one.
     cfg = os.path.join(adir, "config.json")
     if not os.path.isfile(cfg):
+        # A version that is not THIS project's -- a typo, or another project's id -- is refused
+        # here, before the project's own config stands in for its missing one. Checking only
+        # when that config was missing too let such an id through to the checkout search, which
+        # answered with advice about commits for a version that does not exist.
+        known = _known_versions(a.project_id)
+        if known and not any(vid == a.version_id for vid, _, _, _ in known):
+            return _no_such_version(a.project_id, name, known)
         # WorkspaceNotFound when the project itself is unknown — a traceback there would
         # bury the message below, which says what to do about it.
         try:
@@ -345,14 +352,7 @@ def cmd_reexport(a) -> int:
         # 'that version is not there' — it reads like a broken install.
         known = _known_versions(a.project_id)
         if not any(vid == a.version_id for vid, _, _, _ in known):
-            print(f"there is no version {name!r} for project {a.project_id!r}.", file=sys.stderr)
-            if known:
-                print("\n  versions this project has:", file=sys.stderr)
-                for _, v, sha, st in known[:10]:
-                    print(f"    {v:<16} {sha:<12} {st}", file=sys.stderr)
-            else:
-                print("\n  it has none yet — run `python analyzer.py generate` first.", file=sys.stderr)
-            return 2
+            return _no_such_version(a.project_id, name, known)
         print(f"version {name!r} has no config at {cfg}.\n"
               f"  It is written at the start of a generate, so this version was reserved but "
               f"never generated. Run:\n"
@@ -446,6 +446,21 @@ def _known_versions(project_id: str):
         return [(r[0], r[1], (r[2] or '')[:10], r[3] or 'incomplete') for r in rows]
     except Exception:
         return []
+
+
+def _no_such_version(project_id: str, name: str, known) -> int:
+    """Say that `name` is not one of this project's versions, name the ones that are, and
+    return the usage exit code. The commonest cause by far is a typo or an off-by-one in the
+    version id, and a path the caller has never seen does not say 'that version is not there'
+    -- it reads like a broken install."""
+    print(f"there is no version {name!r} for project {project_id!r}.", file=sys.stderr)
+    if known:
+        print("\n  versions this project has:", file=sys.stderr)
+        for _, v, sha, st in known[:10]:
+            print(f"    {v:<16} {sha:<12} {st}", file=sys.stderr)
+    else:
+        print("\n  it has none yet — run `python analyzer.py generate` first.", file=sys.stderr)
+    return 2
 
 
 def _checkout_for(project_id: str, version_id: str, commit: str = ""):
