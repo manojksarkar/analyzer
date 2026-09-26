@@ -503,7 +503,8 @@ def load_hashes(conn, version_id) -> Dict[str, str]:
 def persist_units(conn, version_id, units):
     rows = [{"version_id": version_id, "unit_key": uk, "component": _split_key(uk)[0],
              "name": u.get("name"), "path": u.get("path"), "file_name": u.get("fileName"),
-             "included_headers": u.get("includedHeaders")}
+             "included_headers": u.get("includedHeaders"),
+             "description": u.get("description")}
             for uk, u in units.items()]
     if rows:
         conn.execute(insert(s.model_units), rows)
@@ -526,7 +527,8 @@ def load_units(conn, version_id) -> Dict[str, dict]:
         units[r.unit_key] = {"name": r.name, "path": r.path, "fileName": r.file_name,
                              "functionIds": [], "globalVariableIds": [],
                              "callerUnits": [], "calleesUnits": [],
-                             "includedHeaders": r.included_headers or []}
+                             "includedHeaders": r.included_headers or [],
+                             "description": r.description or ""}
     # functionIds / globalVariableIds: entities that live in each unit
     ev, ent = s.entity_versions, s.entities
     for r in conn.execute(select(ent.c.entity_key, ent.c.kind, ev.c.component, ev.c.unit)

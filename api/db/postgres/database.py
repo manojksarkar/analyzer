@@ -21,7 +21,7 @@ from sqlalchemy import and_, delete, func, insert, select, update
 from ...models.domain import (
     User, Project, ProjectMember, AccessRequest, Version, Commit, AnalysisJob,
     Document, DocumentSection, DocumentAssignment, Function, CompareResult,
-    DocumentDiff, Notification,
+    DocumentDiff, Notification, REEXPORT_MODE,
 )
 from ...repositories.interfaces import (
     IUserRepository, IProjectRepository, IProjectMemberRepository,
@@ -95,6 +95,9 @@ class _ProjectRepo(_Base, IProjectRepository):
         stmt = select(s.projects).where(s.projects.c.id.in_(
             select(m.c.project_id).where((m.c.user_id == user_id) & (m.c.status == "active"))))
         return self._all(stmt, Project)
+
+    def list_all(self):
+        return self._all(select(s.projects), Project)
 
     def get(self, project_id):
         return self._first(select(s.projects).where(s.projects.c.id == project_id), Project)
@@ -212,10 +215,17 @@ class _JobRepo(_Base, IAnalysisJobRepository):
         return self._first(select(s.analysis_jobs).where(s.analysis_jobs.c.id == job_id), AnalysisJob)
 
     def get_current(self, project_id):
+        # The latest GENERATION job: a re-export is a job of its own, followed by its id.
         j = s.analysis_jobs
-        stmt = (select(j).where((j.c.project_id == project_id) & (j.c.status != "cancelled"))
+        stmt = (select(j).where((j.c.project_id == project_id) & (j.c.status != "cancelled")
+                                & (j.c.mode.is_(None) | (j.c.mode != REEXPORT_MODE)))
                 .order_by(j.c.started_at.desc()).limit(1))
         return self._first(stmt, AnalysisJob)
+
+    def list_for_version(self, version_id):
+        j = s.analysis_jobs
+        return self._all(select(j).where(j.c.version_id == version_id)
+                         .order_by(j.c.started_at.desc()), AnalysisJob)
 
     def update(self, job):
         self._put(s.analysis_jobs, ["id"], to_row(job)); return job

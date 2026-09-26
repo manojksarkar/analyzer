@@ -547,6 +547,31 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
     return True
 
 
+def _carry_review_overrides(baseline_version_id: str, target_version_id: str) -> None:
+    """Copy the baseline's reviewer corrections onto this version (`REQ-VR-01`).
+
+    Never fatal. A generation that has already paid for the parse and the LLM must not be lost
+    because corrections could not be copied; the run reports it and the corrections stay on the
+    baseline, where they can be carried by a later run.
+    """
+    try:
+        from core.db import get_engine, is_database_configured
+        if not (baseline_version_id and target_version_id and is_database_configured()):
+            return
+        from review.carry_forward import carry_overrides
+        with get_engine().begin() as cx:
+            out = carry_overrides(cx, baseline_version_id, target_version_id)
+        if out.carried or out.orphaned:
+            from core.logging_setup import get_logger
+            get_logger("incremental").info(
+                "review: carried %d correction(s) from %s; %d no longer apply",
+                out.carried, baseline_version_id, out.orphaned)
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        from core.logging_setup import get_logger
+        get_logger("incremental").warning(
+            "review: could not carry corrections from %s: %s", baseline_version_id, exc)
+
+
 def generate_incremental(project_id: str, branch: str, commit: str,
                          scope: Optional[Dict[str, Any]] = None, *,
                          workspaces_root: Optional[str] = None,
@@ -779,6 +804,13 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # Carry forward baseline outputs for the reuse set so Phase 2 skips them.
     n_carried = carry_forward_descriptions(plan["reused"], target_functions, base_functions)
     n_carried_g = carry_forward_globals(reused_globals, target_globals, base_globals)
+
+    # REQ-VR-01. The two lines above carry the reviewer's TEXT, because the baseline's model
+    # already holds it -- that is where an override writes. What they do not carry is the
+    # override ROWS, so without this the new version would not know which of its text is
+    # human-authored: undo would have nothing to restore to, the cascade would regenerate over
+    # a human's wording, and the two Phase-3 kinds would vanish entirely.
+    _carry_review_overrides(base_vid, version_id)
 
     # M3.7 — cross-version reuse (D3 / §5 step 6): for IMPACT-set entities whose content
     # fingerprint was already produced by a *prior* version (a revert, or code identical

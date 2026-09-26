@@ -93,11 +93,33 @@ class TestEntityIdentity:
             % (vid, len(dupes), "\n      ".join("%s x%d" % (r[0], r[1]) for r in dupes[:8])))
 
     def test_every_entity_belongs_to_this_project(self, db, project_id, vid):
-        leaked = db.scalar(
-            "select count(*) from entity_versions v "
+        """Which project owns the entities a version's rows point at.
+
+        `_ensure_entities` scopes its lookup by project_id, so the engine cannot create a
+        cross-project reference — which makes a failure here either a real integrity
+        problem or a wrong question. So report the OWNERS and the totals rather than a bare
+        count: 'N rows are wrong' is not actionable, 'N of M rows point at project X, and
+        this version belongs to Y' names the next step either way.
+
+        `versions.id` is a GLOBAL primary key, not per project, so a version id reused
+        across projects is one row — worth seeing in the same breath.
+        """
+        total = db.scalar("select count(*) from entity_versions where version_id = :v", v=vid)
+        owners = db.rows(
+            "select e.project_id, count(*) c from entity_versions v "
             "join entities e on e.entity_id = v.entity_id "
-            "where v.version_id = :v and e.project_id <> :p", v=vid, p=project_id)
-        assert not leaked, (
-            "%s: %d row(s) point at an entity owned by ANOTHER project. entities is keyed "
-            "(project_id, entity_key), so this means a version is reading another "
-            "project's model." % (vid, leaked))
+            "where v.version_id = :v group by e.project_id order by count(*) desc", v=vid)
+        version_owner = db.scalar("select project_id from versions where id = :v", v=vid)
+        foreign = [(o, c) for o, c in owners if o != project_id]
+        assert not foreign, (
+            "%s: %d of %d row(s) point at entities owned by another project.\n"
+            "  this version's row says project_id = %r\n"
+            "  --project-id given was            %r\n"
+            "  entity owners for this version:\n      %s\n"
+            "entities is keyed (project_id, entity_key) and _ensure_entities scopes its "
+            "lookup by project, so the engine cannot produce this. Either the version and "
+            "its entities were written under different project ids, or rows survived a "
+            "project deletion that did not cascade. Note versions.id is GLOBAL: a version "
+            "id reused across projects is a single row."
+            % (vid, sum(c for _o, c in foreign), total, version_owner, project_id,
+               "\n      ".join("%r: %d rows" % (o, c) for o, c in owners)))

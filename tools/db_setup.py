@@ -45,6 +45,45 @@ def _maint_dsn(raw: str) -> tuple[str, str]:
     return maint, target_db
 
 
+def _add_missing_columns(eng, metadata):
+    """Add columns the schema declares but the live tables lack. Returns (added, blocked).
+
+    Only **additive** and only where it is safe: a column is added when it is nullable or has a
+    server default, because those are the only kinds a table with existing rows can accept. A
+    NOT NULL column with no default is reported rather than attempted -- guessing a backfill
+    value is how a schema repair turns into a data corruption.
+
+    Nothing is ever dropped or retyped. A column that is live but not in the schema is left
+    alone: it belongs to a newer branch, or to a migration somebody is mid-way through, and
+    dropping it here would delete data to make a tool's output tidy.
+    """
+    from sqlalchemy import inspect
+    from sqlalchemy.schema import CreateColumn
+
+    insp = inspect(eng)
+    live_tables = set(insp.get_table_names())
+    prep = eng.dialect.identifier_preparer
+    added, blocked = [], []
+
+    for table in metadata.sorted_tables:
+        if table.name not in live_tables:
+            continue                       # create_all just made it, whole
+        live_cols = {c["name"] for c in insp.get_columns(table.name)}
+        for col in table.columns:
+            if col.name in live_cols:
+                continue
+            where = f"{table.name}.{col.name}"
+            if not col.nullable and col.server_default is None:
+                blocked.append(f"{where} ({col.type})")
+                continue
+            ddl = CreateColumn(col).compile(dialect=eng.dialect)
+            with eng.begin() as cx:
+                cx.exec_driver_sql(
+                    f"ALTER TABLE {prep.format_table(table)} ADD COLUMN {ddl}")
+            added.append(f"{where} ({col.type})")
+    return added, blocked
+
+
 def main() -> int:
     try:  # keep a homoglyph/non-ASCII DSN from crashing prints on a cp1252 console
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -128,6 +167,38 @@ def main() -> int:
     metadata.create_all(eng)
     print(f"\nschema created: {len(metadata.tables)} tables")
 
+    # 2b. add columns that exist in the schema but not in the live table.
+    #
+    # `create_all()` creates MISSING TABLES and nothing else -- it never alters one that is
+    # already there. So on a database that has been used before, every migration that adds a
+    # column to an existing table is silently skipped, and the mismatch surfaces much later as
+    # `UndefinedColumn: column model_units.description does not exist` in the middle of a run,
+    # from a SELECT that names every column the schema declares.
+    #
+    # That is exactly what happened with `0009_model_units_description`: the three new TABLES on
+    # that branch appeared, so the setup looked like it had worked, and the one new COLUMN did
+    # not. A fresh database hides it completely, which is why it reached an office machine.
+    #
+    # This is not a replacement for Alembic -- `alembic upgrade head` remains the migration
+    # path. It is what makes `analyzer.py setup` honest about the word "upgrade" on a database
+    # whose tables were made by `create_all` and which therefore may have no usable
+    # `alembic_version` to upgrade FROM.
+    print()
+    added, blocked = _add_missing_columns(eng, metadata)
+    if added:
+        for line in added:
+            print(f"  added missing column: {line}")
+        print(f"schema upgraded: {len(added)} column(s) added")
+    else:
+        print("schema up to date: no missing columns")
+    if blocked:
+        print("\n!! These columns are declared NOT NULL with no default, so they cannot be")
+        print("   added to a table that already has rows. Run the migration instead:")
+        print("       python -m alembic upgrade head")
+        for line in blocked:
+            print(f"     - {line}")
+        return 1
+
     # 3. repair rows stranded mid-phase (idempotent).
     #
     # versions.pipeline_status was introduced unwritten, so NULL meant "finished" and
@@ -142,6 +213,43 @@ def main() -> int:
     # generated) did finish, so it is safe to close out here.
     from sqlalchemy import text
     with eng.begin() as cx:
+        # projects.updated_at was never written by CLI onboarding, and the API's project view
+        # calls .isoformat() on it -- so one such row made `GET /projects` answer 500 for the
+        # WHOLE list. The reader is null-safe now; this repairs the rows already written, since
+        # a fix that only helps projects onboarded from today is not a fix for this database.
+        m = cx.execute(text("UPDATE projects SET updated_at = created_at "
+                            "WHERE updated_at IS NULL")).rowcount
+        if m:
+            print(f"repaired {m} project row(s) with no updated_at -> created_at")
+
+        # The operator account. `is_superuser` arrives as `false` for every existing row, so a
+        # database that has been in use would come back from this upgrade with NOBODY able to
+        # reach a project -- the column would be there and mean nothing.
+        #
+        # Only when there is no superuser at all: once somebody has chosen who the operators
+        # are, re-running setup must not quietly add another.
+        if not cx.execute(text("SELECT 1 FROM users WHERE is_superuser")).first():
+            k = cx.execute(text("UPDATE users SET is_superuser = %s WHERE email = 'admin@aspice.dev'"
+                                % ("true" if is_pg else "1"))).rowcount
+            if k:
+                print("promoted admin@aspice.dev to superuser (access to every project)")
+
+        # And give every superuser a membership row on every project. Access does not DEPEND on
+        # these -- `require_project_member` lets a superuser through without one, which is what
+        # makes it reliable -- but the team list and `my_role` are read from them, so without
+        # this the operator appears on no team and the UI greys out controls the API honours.
+        j = cx.execute(text(
+            "INSERT INTO project_members (id, project_id, user_id, role, status, "
+            "                             invited_by, invited_at, joined_at) "
+            "SELECT 'm-su-' || u.id || '-' || p.id, p.id, u.id, 'admin', 'active', "
+            "       u.id, p.created_at, p.created_at "
+            "  FROM users u CROSS JOIN projects p "
+            " WHERE u.is_superuser "
+            "   AND NOT EXISTS (SELECT 1 FROM project_members m "
+            "                    WHERE m.project_id = p.id AND m.user_id = u.id)")).rowcount
+        if j:
+            print(f"added {j} superuser membership row(s) across existing projects")
+
         n = cx.execute(text(
             "UPDATE versions SET pipeline_status = 'complete' "
             "WHERE pipeline_status IN ('parsing','deriving','viewing','exporting') "

@@ -9,10 +9,11 @@ from .functions import router as functions_router
 from .notifications import router as notifications_router
 from .repositories import router as repositories_router
 from .users import router as users_router
+from .text_overrides import router as text_overrides_router
 
 __all__ = [
     "auth_router", "projects_router", "commits_versions_router",
     "jobs_router", "documents_router", "team_router",
     "compare_router", "functions_router", "notifications_router",
-    "repositories_router", "users_router",
+    "repositories_router", "users_router", "text_overrides_router",
 ]

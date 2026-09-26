@@ -5,7 +5,7 @@ import sys
 import json
 
 from utils import (load_config, norm_path, make_unit_key, path_from_unit_rel, KEY_SEP,
-                   resolve_group, short_name, display_name)
+                   resolve_group, short_name, display_name, scoped_name)
 from core.config import get_component_layer_name
 from core.paths import paths as _paths
 from core.run_context import apply_cli_run_context
@@ -502,25 +502,59 @@ def _glb_is_private(vid: str, g: dict, used_outside: set) -> bool:
     return vid not in used_outside
 
 
-def _build_interface_index(base_path: str, functions_data: dict, global_variables_data: dict):
-    # Buckets are keyed by UNIT (component|unit), matching what the interface ID
-    # encodes — see _unit_of. Keying by file restarts numbering at 01 in each half
-    # of a .h + .cpp unit and produces duplicate IDs.
+def _iface_scope_key(data: dict, base_path: str, project_name: str, config: dict):
+    """The (layer, group, unit) CODE triple an interface id actually encodes.
+
+    ONE definition, used by the numbering and by the id itself, because they must agree and
+    twice they have not. Numbering was first keyed by FILE while the id encoded the unit, so
+    a .h + .cpp pair restarted at 01; that was fixed by keying on the unit. But the id does
+    not encode the unit — it encodes `_id_seg(unit)`, and `_id_seg` keeps only A-Z, dropping
+    digits and underscores. So `UHP_HmacCom` and `UHP_Hmac_Com2` both encode as UHPHMACCOM
+    while being numbered independently, and both emit _01, _02, _03.
+
+    Seen on a real project: four ids each used by two functions. In an ASPICE traceability
+    matrix a duplicate id makes two entries indistinguishable.
+
+    Deriving the bucket from the same expression as the id removes the class of mistake
+    rather than this instance of it.
+    """
+    fp = (data.get("location") or {}).get("file", "")
+    try:
+        rel = os.path.relpath(norm_path(fp, base_path), base_path).replace("\\", "/") if fp else fp
+    except ValueError:
+        rel = fp or ""
+    unit_key = make_unit_key(rel) if rel else KEY_SEP
+    parts = unit_key.split(KEY_SEP)
+    unit_code = _id_seg(parts[1]) if len(parts) > 1 else _id_seg(parts[0])
+    # display_name(): the group id is layer-qualified now (1df3016), and _id_seg over
+    # "Layer1.My Sample" would fold the layer's letters into the GROUP code - while
+    # layer_code already carries the layer as its own segment.
+    group_code = _id_seg(display_name(resolve_group(parts[0])))
+    layer_name = get_component_layer_name(config, parts[0]) if config else None
+    layer_code = _id_seg_layer(layer_name) if layer_name else _id_seg(project_name)
+    return layer_code, group_code, unit_code
+
+
+def _build_interface_index(base_path: str, functions_data: dict, global_variables_data: dict,
+                           project_name: str = "", config: dict = None):
+    # Buckets are keyed by the CODE TRIPLE the interface id encodes, not by the unit key.
+    # Keying by anything the id does not distinguish restarts numbering at 01 for entries
+    # that will share an id prefix — first by file (fixed), then by unit (this).
     public_fns_by_unit = {}
     private_fns_by_unit = {}
     public_glbs_by_unit = {}
     private_glbs_by_unit = {}
     for fid, f in functions_data.items():
-        unit = _unit_of(f, base_path)
-        if not unit:
+        if not _unit_of(f, base_path):
             continue
+        unit = _iface_scope_key(f, base_path, project_name, config)
         bucket = private_fns_by_unit if _fn_is_private(f, functions_data, base_path) else public_fns_by_unit
         bucket.setdefault(unit, []).append((fid, f))
     used_outside = _glb_used_outside(functions_data, global_variables_data, base_path)
     for vid, g in global_variables_data.items():
-        unit = _unit_of(g, base_path)
-        if not unit:
+        if not _unit_of(g, base_path):
             continue
+        unit = _iface_scope_key(g, base_path, project_name, config)
         bucket = private_glbs_by_unit if _glb_is_private(vid, g, used_outside) else public_glbs_by_unit
         bucket.setdefault(unit, []).append((vid, g))
 
@@ -555,15 +589,8 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
             rel = os.path.relpath(norm_path(fp, base_path), base_path).replace("\\", "/") if fp else fp
         except ValueError:
             rel = fp or ""
-        unit_key = make_unit_key(rel) if rel else KEY_SEP
-        key_parts = unit_key.split(KEY_SEP)
-        unit_name_code = _id_seg(key_parts[1]) if len(key_parts) > 1 else _id_seg(key_parts[0])
-        # display_name(): the group id is layer-qualified now, and _id_seg over
-        # "Layer1.My Sample" would fold the layer's letters into the GROUP code -
-        # while layer_code already carries the layer as its own segment.
-        group_code = _id_seg(display_name(resolve_group(key_parts[0])))
-        layer_name = get_component_layer_name(config, key_parts[0]) if config else None
-        layer_code = _id_seg_layer(layer_name) if layer_name else _id_seg(project_name)
+        layer_code, group_code, unit_name_code = _iface_scope_key(
+            f, base_path, project_name, config)
         idx_code = f"{idx_by_id.get(fid, 0):02d}"
         if _fn_is_private(f, functions_data, base_path):
             f["visibility"] = "private"
@@ -601,6 +628,115 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
         else:
             prefix = "IF"
         g["interfaceId"] = f"{prefix}_{layer_code}_{group_code}_{unit_name_code}_{idx_code}" if group_code else f"{prefix}_{layer_code}_{unit_name_code}_{idx_code}"
+
+
+
+def _review_conn_and_version():
+    """`(engine, version_id)` when this run has both, else `(None, None)`.
+
+    A standalone run has no version and a DB-less one has no engine. Neither is unusual and
+    neither is a reason to fail a phase.
+    """
+    try:
+        from core.db import get_engine, is_database_configured
+        from core.run_context import version_id
+        vid = version_id()
+        if vid and is_database_configured():
+            return get_engine(), vid
+    except Exception:                              # noqa: BLE001
+        pass
+    return None, None
+
+
+def _take_regeneration_queue(functions_data: dict, global_variables_data: dict):
+    """Blank the text of queued slots so the enrichment below rewrites them (`REQ-CS-01`).
+
+    Never fatal: a phase that has already paid for the parse must not be lost because the queue
+    could not be read. The entries simply stay queued for the next run.
+    """
+    eng, vid = _review_conn_and_version()
+    if not eng:
+        return []
+    try:
+        from review.cascade import blank_queued_text
+        model = {"functions": functions_data, "globalVariables": global_variables_data,
+                 "units": {}, "dataDictionary": {}}
+        with eng.connect() as cx:
+            queued = blank_queued_text(cx, vid, model)
+        if queued:
+            from core.logging_setup import get_logger
+            get_logger("model_deriver").info(
+                "review: regenerating %d description(s) invalidated by a correction", len(queued))
+        return queued
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        from core.logging_setup import get_logger
+        get_logger("model_deriver").warning("review: could not read the regeneration queue: %s", exc)
+        return []
+
+
+def _retire_regeneration_queue(queued, functions_data: dict, global_variables_data: dict) -> None:
+    """Clear the entries whose text actually came back, and restore the text of those that did not.
+
+    The restore matters more than the bookkeeping. `blank_queued_text` emptied those descriptions
+    only to ask for a rewrite; if the rewrite did not happen the model must go back to what it
+    was, or this phase publishes an empty description where there was a readable one.
+    """
+    if not queued:
+        return
+    eng, vid = _review_conn_and_version()
+    if not eng:
+        return
+    try:
+        from review.cascade import clear_rewritten
+        model = {"functions": functions_data, "globalVariables": global_variables_data,
+                 "units": {}, "dataDictionary": {}}
+        with eng.begin() as cx:
+            out = clear_rewritten(cx, vid, queued, model)
+        if out.restored:
+            from core.logging_setup import get_logger
+            get_logger("model_deriver").warning(
+                "review: %d description(s) were not rewritten (no LLM answer) — the previous "
+                "wording was restored and they stay queued for the next run", out.restored)
+    except Exception as exc:                       # noqa: BLE001
+        from core.logging_setup import get_logger
+        get_logger("model_deriver").warning("review: could not retire queue entries: %s", exc)
+
+
+def _reapply_corrections(functions_data: dict, global_variables_data: dict, units_data: dict,
+                         data_dict: dict) -> dict:
+    """Put the reviewers' corrections back into the model this phase rebuilt (`REQ-VR-01`).
+
+    Called last, after every step that writes text. `units` is rebuilt from scratch and every
+    unit description generated again; a new version's data dictionary comes from its own parse;
+    behaviour names are recomputed for every function derived -- all of them on
+    `reexport --from-phase 2`. Without this, those corrections were lost: v2 printed the LLM's
+    unit and struct descriptions over the reviewer's, and a re-derive printed fresh behaviour
+    names, while the stored corrections still claimed to be in force.
+
+    Returns `{artifact: count}` for what changed, so the caller persists exactly those. Never
+    fatal, as with the queue above: a phase that has paid for the parse and the LLM is not lost
+    over this; the corrections stay stored and the next run applies them.
+    """
+    eng, vid = _review_conn_and_version()
+    if not eng:
+        return {}
+    try:
+        from review.carry_forward import apply_live_corrections
+        model = {"functions": functions_data, "globalVariables": global_variables_data,
+                 "units": units_data, "dataDictionary": data_dict}
+        with eng.connect() as cx:
+            changed = apply_live_corrections(cx, vid, model)
+        if changed:
+            from core.logging_setup import get_logger
+            get_logger("model_deriver").info(
+                "review: re-applied %d correction(s) to the rebuilt model (%s)",
+                sum(changed.values()),
+                ", ".join("%s %d" % (k, v) for k, v in sorted(changed.items())))
+        return changed
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        from core.logging_setup import get_logger
+        get_logger("model_deriver").warning("review: could not re-apply corrections: %s", exc)
+        return {}
 
 
 def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data: dict, config: dict, only_globals=None):
@@ -642,6 +778,13 @@ def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data
         _gl("model_deriver").info("no knowledge base available — descriptions will be generated without repo-map "
                   "and sibling context (expected on the FIRST run of a project only)")
 
+    # REQ-CS-01. A correction to one description leaves the text generated FROM it describing
+    # wording the human has already rejected. Those dependents were recorded when the correction
+    # was saved; this is where the debt is paid. Blanking their text is the whole instruction --
+    # the enrichment below skips a function whose description is already present, so removing it
+    # IS "generate this again".
+    _queued = _take_regeneration_queue(functions_data, global_variables_data)
+
     # Rich enrichment path — budget-aware with degradation ladder
     desc = enrich_functions_rich(functions_data, base_path, config, knowledge=knowledge)
     for key, f in functions_data.items():
@@ -665,6 +808,11 @@ def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data
         key = f"{g.get('location', {}).get('file', '')}:{g.get('location', {}).get('line', '')}"
         if g_desc.get(key, {}).get("description"):
             g["description"] = g_desc[key]["description"]
+
+    # Retire only what actually came back with text. An entry whose slot is still empty means the
+    # regeneration did not happen -- the LLM was unreachable, or descriptions are off -- and
+    # dropping it would turn "still owed" into "done".
+    _retire_regeneration_queue(_queued, functions_data, global_variables_data)
 
 
 def _readable_label(name: str) -> str:
@@ -1013,6 +1161,119 @@ def _run_hierarchy_summarizer(
     }
 
 
+def _iface_items_for_unit(unit_key: str, units_data: dict, functions_data: dict,
+                          global_variables_data: dict):
+    """(fn_items, gv_items) for one unit: [(display name, one-line description)].
+
+    Mirrors what `interface_tables` publishes, because the unit description used to be
+    generated in the DOCX exporter FROM those published entries. Two rules come from there
+    and are not incidental:
+
+      * PRIVATE entities are skipped -- the interface tables exclude them
+        (interface_tables.py:92 and :162), so they never reached the prompt.
+      * the name is the class-qualified `scoped_name`, which is what `interfaceName`
+        carries, so two same-named methods in one unit stay distinguishable.
+
+    Entries with no description contribute nothing; duplicates are dropped, order kept.
+    """
+    unit = units_data.get(unit_key) or {}
+    fn_items, gv_items = [], []
+
+    def _add(bucket, entry):
+        d = str(entry.get("description") or "").strip()
+        if not d or d in ("-", "N/A"):
+            return
+        name = scoped_name(entry.get("qualifiedName", ""), entry.get("className", ""))
+        bucket.append((str(name).strip(), " ".join(d.split())))
+
+    for fid in unit.get("functionIds") or []:
+        f = functions_data.get(fid)
+        if f and (f.get("visibility") or "").lower() != "private":
+            _add(fn_items, f)
+    for vid in unit.get("globalVariableIds") or []:
+        g = global_variables_data.get(vid)
+        if g and (g.get("visibility") or "").lower() != "private":
+            _add(gv_items, g)
+
+    def _dedup(items):
+        seen, out = set(), []
+        for n, d in items:
+            key = (n or "").strip().lower() + "|" + (d or "").strip().lower()
+            if key not in seen:
+                seen.add(key)
+                out.append((n, d))
+        return out
+
+    return _dedup(fn_items), _dedup(gv_items)
+
+
+def _enrich_unit_and_struct_descriptions(units_data: dict, functions_data: dict,
+                                         global_variables_data: dict, data_dict: dict,
+                                         config: dict) -> tuple:
+    """Generate and STORE the unit and struct descriptions. Returns (n_units, n_structs).
+
+    Both used to be produced inside the DOCX exporter and thrown away -- `get_unit_description`
+    at docx_exporter.py:1074 and `get_struct_description` at :371, the latter commented "on the
+    go, no store". Two consequences beyond their being uneditable: the HTML view could not show
+    them at all, because it does not run the exporter; and every export re-paid for the LLM
+    calls, with no guarantee two exports of one version read the same.
+
+    They belong here, after function and global descriptions are enriched, because the unit
+    description is generated FROM them.
+
+    Best-effort by design: a description that cannot be generated is simply absent, and the
+    exporter keeps its deterministic fallback. A missing sentence must not fail a phase that
+    has already paid for the parse and the enrichment.
+    """
+    try:
+        from llm_enrichment import (llm_provider_reachable, get_unit_description,
+                                    get_struct_description)
+        from docx_common import load_abbreviations
+    except ImportError:
+        return 0, 0
+    if not (config.get("llm", {}).get("descriptions", True) and llm_provider_reachable(config)):
+        return 0, 0
+
+    abbreviations = load_abbreviations(PROJECT_ROOT, config) or {}
+    n_units = n_structs = 0
+
+    for unit_key, unit in units_data.items():
+        if unit.get("description"):
+            continue                      # carried forward from a baseline -- do not re-pay
+        fn_items, gv_items = _iface_items_for_unit(
+            unit_key, units_data, functions_data, global_variables_data)
+        if not (fn_items or gv_items):
+            continue
+        display = unit.get("name") or unit_key.split(KEY_SEP)[-1]
+        try:
+            text = (get_unit_description(display, fn_items, gv_items, config,
+                                         abbreviations) or "").strip()
+        except Exception:
+            continue
+        if text and text not in ("-", "N/A"):
+            unit["description"] = text
+            n_units += 1
+
+    for entry in data_dict.values():
+        if not isinstance(entry, dict) or entry.get("kind") != "struct":
+            continue
+        if entry.get("description"):
+            continue
+        name = entry.get("name") or entry.get("qualifiedName") or ""
+        fields = entry.get("fields") or []
+        if not name:
+            continue
+        try:
+            text = (get_struct_description(name, fields, config, abbreviations) or "").strip()
+        except Exception:
+            continue
+        if text and text not in ("-", "N/A"):
+            entry["description"] = text
+            n_structs += 1
+
+    return n_units, n_structs
+
+
 def _generate_knowledge_base(
     base_path: str,
     project_name: str,
@@ -1195,7 +1456,8 @@ def main():
     data_dict = read_model_file(DATA_DICTIONARY, required=False, default={})
 
     units_data, unit_by_file = _build_units_components(base_path, functions_data, global_variables_data)
-    idx_by_id = _build_interface_index(base_path, functions_data, global_variables_data)
+    idx_by_id = _build_interface_index(base_path, functions_data, global_variables_data,
+                                       project_name, config)
     _enrich_interfaces(base_path, project_name, functions_data, global_variables_data, idx_by_id, config)
     # Propagate global access along call graph so outers inherit inner globals
     _propagate_global_access(functions_data)
@@ -1311,15 +1573,31 @@ def main():
         g["direction"] = "In/Out"
         g["directionReason"] = "In/Out: global variables are bidirectional interfaces."
 
+    # Unit and struct descriptions (REQ-PRE-01). Generated HERE, not in the DOCX exporter,
+    # and stored -- the unit description is built FROM the function and global descriptions,
+    # so it has to come after they are enriched. Storing them is what lets the HTML view show
+    # them at all and stops every export re-paying for the same LLM calls.
+    _n_units, _n_structs = _enrich_unit_and_struct_descriptions(
+        units_data, functions_data, global_variables_data, data_dict, config)
+
+    # Last text step: the reviewers' corrections go back over whatever the steps above rebuilt.
+    _corrected = _reapply_corrections(functions_data, global_variables_data, units_data, data_dict)
+
     # Clean and persist
     for fentry in functions_data.values():
         fentry.pop("params", None)
-    from core.model_io import write_model_file as _write, FUNCTIONS, GLOBALS
+    from core.model_io import write_model_file as _write, FUNCTIONS, GLOBALS, UNITS, DATA_DICTIONARY as _DD
     _write(FUNCTIONS, functions_data)
     _write(GLOBALS, global_variables_data)
+    if _n_units or _corrected.get("units"):
+        _write(UNITS, units_data)          # units were written before the descriptions existed
+    if _n_structs or _corrected.get("dataDictionary"):
+        _write(_DD, data_dict)
     from core.model_io import artifact_location as _where
     print(f"  functions ({len(functions_data)}) -> {_where('functions')}")
     print(f"  globalVariables ({len(global_variables_data)}) -> {_where('globalVariables')}")
+    if _n_units or _n_structs:
+        print(f"  descriptions: {_n_units} unit(s), {_n_structs} struct(s) -> {_where('units')}")
 
     # Always generate knowledge_base.json (Flowchart engine reads this)
     _generate_knowledge_base(base_path, project_name, functions_data, global_variables_data, data_dict, summaries)

@@ -35,6 +35,9 @@ class User:
     avatar_url: Optional[str]
     hashed_password: str
     created_at: datetime
+    #: May act on EVERY project, with no `project_members` row. The operator account.
+    #: Defaults False so a row read from a database that predates the column is ordinary.
+    is_superuser: bool = False
 
 
 @dataclass
@@ -140,6 +143,12 @@ class AnalysisPhase:
     duration_seconds: Optional[int]
 
 
+#: `AnalysisJob.mode` of a re-export. A re-export is a job of its own -- queued, running,
+#: complete or failed like a generation -- so the ways a client already follows a job apply to it.
+#: It is never a project's "current" job, which stays its latest generation.
+REEXPORT_MODE = "reexport"
+
+
 @dataclass
 class AnalysisJob:
     id: str
@@ -163,6 +172,8 @@ class AnalysisJob:
     branch: str = "main"
     version_tag: Optional[str] = None
     mode: str = "auto"                  # "auto" = nearest-ancestor baseline | "full" = force full
+                                        # | "reexport" = a re-export of an existing version
+                                        # (REEXPORT_MODE), a job of its own
     decision: Optional[str] = None      # "incremental" | "full" — resolved by the worker
     baseline_commit: Optional[str] = None
     scope: Optional[dict] = None        # {"type": "project|group|component", "names": [...]}

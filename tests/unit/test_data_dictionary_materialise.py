@@ -35,8 +35,11 @@ class TestTheChainIsJoined:
         """The engine resolves the id to a PATH, so the file has to exist by then."""
         src = _src()
         i_mat = src.index("_materialise_data_dictionary(db, job)")
-        i_arg = src.index('cmd += ["--data-dict-id", job.data_dict_id]')
-        assert i_mat < i_arg, "the id is passed before the file is written"
+        i_cmd = src.index("cmd = _generate_cmd(job, root, config_path)")
+        assert i_mat < i_cmd, "the id is passed before the file is written"
+        # ...and it is passed, under the name `analyzer.py generate` gives it. The runner used
+        # to spawn engine/incremental/*.py, which called it --data-dict-id.
+        assert 'cmd += ["--data-dict", job.data_dict_id]' in src
 
     def test_it_reads_the_in_memory_upload(self):
         assert "from ..routes.repositories import _UPLOADS" in _src()

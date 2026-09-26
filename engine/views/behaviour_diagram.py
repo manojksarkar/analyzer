@@ -212,10 +212,24 @@ def run(model, output_dir, model_dir, config):
                     func_qualified, (functions_data.get(fid) or {}).get("className", "")
                 ),
                 "externalUnitFunction": external_unit_external_function,
+                # The caller's entity key, beside its display label -- the same pairing as
+                # currentFunctionId beside currentFunctionName, and for the same reason. The
+                # label is "<unit> - <shortName>", which drops the component, the class and the
+                # parameter types, so AddOperation::apply and MultiplyOperation::apply in one
+                # unit produce the SAME label. A reviewer's correction is addressed by this id
+                # (REQ-ID-01); addressing it by the label would let a correction to one row
+                # silently overwrite the other.
+                "externalCallerId": caller_fid,
                 "pngPath": png_path,
                 "behaviorDescription": behaviour_descriptions[idx] if idx < len(behaviour_descriptions) else [],
             })
             count += 1
+
+    # REQ-AP-05. A behaviour description has no model field -- it is made here, in Phase 3 --
+    # so the override table is its source and the corrections are an INPUT to this run, applied
+    # before the manifest is written. Writing a correction into this file instead would be undone
+    # by the next run, which regenerates the descriptions and drops it with no error.
+    _apply_text_overrides(docx_rows, config)
 
     out_path = os.path.join(out_dir, "_behaviour_pngs.json")
     # A straight write, because docx_rows is now COMPLETE for this component: every
@@ -248,3 +262,31 @@ def run(model, output_dir, model_dir, config):
             "produces them any more.", component="behaviourDiagram", err=True)
 
     progress.done(summary="output/behaviour_diagrams/ (%d diagrams)" % count)
+
+
+def _apply_text_overrides(docx_rows, config) -> int:
+    """Put reviewers' corrected behaviour descriptions into this run's rows (REQ-AP-05).
+
+    The corrections arrive in `config[phase3_overrides.CONFIG_KEY]["behaviourDescription"]` --
+    the same key the flowcharts view reads, with the shape defined once in
+    `phase3_overrides.from_config` so the two cannot disagree about it.
+
+    Never fatal: a generation that has already paid for the diagrams and the LLM must not be lost
+    because a correction could not be applied.
+    """
+    try:
+        from review.phase3_overrides import (BEHAVIOUR_KIND, apply_to_docx_rows, from_config)
+        by_slot = from_config(config, BEHAVIOUR_KIND)
+    except Exception:                              # noqa: BLE001 - see docstring
+        return 0
+    if not by_slot:
+        return 0
+    try:
+        done = apply_to_docx_rows(docx_rows, by_slot)
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        log("could not apply text overrides: %s" % exc, component="behaviourDiagram", err=True)
+        return 0
+    if done:
+        log("applied %d corrected behaviour description(s)" % len(done),
+            component="behaviourDiagram")
+    return len(done)

@@ -98,7 +98,53 @@ def cmd_onboard(a) -> int:
         argv += ["--version-id", a.version_id]
     if a.commit:
         argv += ["--commit", a.commit]
-    return _tool("new_project", argv)
+    rc = _tool("new_project", argv)
+    if rc == 0:
+        rc = _grant_after_onboard(a)
+    return rc
+
+
+def _grant_after_onboard(a) -> int:
+    """Give somebody API access to what we just onboarded.
+
+    Without a `project_members` row the project is invisible over HTTP to an ORDINARY user:
+    `GET /projects` lists only what you are a member of, and every `/projects/{id}/...` route
+    answers 403. The API's own create-project endpoint adds the caller for exactly this reason;
+    the CLI has no caller, so it adds the superusers instead.
+
+    A superuser reaches the project either way — `require_project_member` lets them through
+    without a row, which is what makes their access reliable. The row is still written, because
+    the team list and `my_role` are READ from `project_members`: without it the operator appears
+    on no team and the UI greys out controls the API will honour.
+
+    Never fatal. The project IS onboarded and generates fine from the CLI at this point; failing
+    the command over an access row would be the tail wagging the dog. It says so instead.
+    """
+    argv = ["--project-id", a.project_id, "--role", a.owner_role]
+    if a.owner_all:
+        argv.append("--all")
+    elif a.owner:
+        argv += ["--email", a.owner]
+    else:
+        argv.append("--superusers")
+    try:
+        return _tool("grant_access", argv)
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        print(f"\nonboarded, but could not grant API access ({exc}).")
+        print(f"      python analyzer.py grant --project-id {a.project_id} --email <you>")
+        return 0
+
+
+def cmd_grant(a) -> int:
+    """Give a user access to a project, so the API will serve it.
+
+    Authorisation here is per project, via `project_members`. There is no global admin role —
+    `User` has no role field at all — so a project nobody was added to has nobody who can read
+    it over HTTP, whichever account you sign in with.
+    """
+    argv = ["--project-id", a.project_id, "--role", a.role]
+    argv += ["--all"] if a.all else ["--email", a.email]
+    return _tool("grant_access", argv)
 
 
 def _project_defaults(project_id: str, version_id: str):
@@ -227,6 +273,35 @@ def cmd_generate(a) -> int:
     return 0
 
 
+
+def _refuse_stale_export(version_id: str) -> int:
+    """0 if this version is safe to export only (REQ-AP-04), 2 if it would ship stale text.
+
+    Never blocks a run it cannot judge. With no database configured there is no override table
+    to be stale against, and a guard that turns a missing optional feature into a failed export
+    would be worse than the problem it prevents.
+    """
+    try:
+        from core.db import get_engine, is_database_configured
+        if not is_database_configured():
+            return 0
+        from review.export_guard import StaleExport, assert_exportable
+        with get_engine().connect() as cx:
+            assert_exportable(cx, version_id)
+    except ImportError:
+        return 0
+    except Exception as exc:
+        if type(exc).__name__ != "StaleExport":
+            # Could not check -- say so and continue. Silence here would look like a pass.
+            print(f"note: could not check whether the views are up to date ({exc}).",
+                  file=sys.stderr)
+            return 0
+        print(str(exc), file=sys.stderr)
+        print("\n  Or re-run with --force to export anyway.", file=sys.stderr)
+        return 2
+    return 0
+
+
 def cmd_reexport(a) -> int:
     """Rebuild a version's documents from its STORED model, without parsing.
 
@@ -286,10 +361,29 @@ def cmd_reexport(a) -> int:
     checkout = _checkout_for(a.project_id, a.version_id, a.commit or "")
     if checkout is None:
         return 2
+
+    # REQ-AP-04. `--from-phase 4` is "export only" and SKIPS Phase 3, the step that rebuilds the
+    # view rows the document is built from. A correction saved a second ago has updated the model
+    # and the override table; exporting now ships the previous wording with nothing to notice.
+    # Phases 2 and 3 re-derive on their way through, so only phase 4 needs asking.
+    #
+    # `run.py` asks the same question again, and IT is the real guarantee — it is what both this
+    # command and the API's re-export service spawn. Asking here as well is not redundant: it
+    # fails before the checkout and the subprocess, so the CLI says so immediately.
+    forced = bool(getattr(a, "force", False))
+    if a.from_phase >= 4 and not forced:
+        rc = _refuse_stale_export(a.version_id)
+        if rc:
+            return rc
+
     argv = ["--config", cfg, "--version-id", a.version_id, "--project-id", a.project_id,
             "--model-root", os.path.join(adir, "model"),
             "--output-root", os.path.join(adir, "output"),
             "--from-phase", str(a.from_phase)]
+    # `--force` was already honoured above; it has to travel, or run.py's backstop would refuse
+    # the very export the user just insisted on.
+    if forced:
+        argv.append("--force-export")
     # --use-model means 'skip phases 1 AND 2 and reuse the stored model'. For a
     # re-derive we WANT phase 2 to run, so it must not be passed — with it, phase 2
     # would be skipped and --from-phase 2 would quietly do nothing but re-render.
@@ -368,7 +462,9 @@ def _checkout_for(project_id: str, version_id: str, commit: str = ""):
                         generated, while the real checkout sat there unused.
 
     The first candidate whose directory EXISTS wins. A commit with no checkout is useless
-    here whichever source named it.
+    here whichever source named it -- until nothing in this workspace has it: then
+    `incremental.source_checkout` looks elsewhere on the machine and, failing that, clones the
+    one commit back.
     """
     from core.db import get_engine, is_database_configured
     if not is_database_configured():
@@ -414,6 +510,26 @@ def _checkout_for(project_id: str, version_id: str, commit: str = ""):
         d = ws.commit_dir(sha)
         if os.path.isdir(d):
             return d
+
+    # Nothing in this workspace. Before telling the user to generate again -- a full LLM run to
+    # recover what is at most a git checkout -- look where else it may be (another working copy's
+    # `versions.base_path`, a folder named from a short sha) and, failing those, clone that ONE
+    # commit from the project's repository. An explicit --commit never reaches here: it was
+    # obeyed or refused above, never swapped or fetched. The manifest's commit is preferred over
+    # the column, for the reason above.
+    from incremental.source_checkout import SourceUnavailable, locate_or_restore
+    prefer = next((sha for sha, src in cands if src == "the version's manifest"), None)
+    try:
+        found = locate_or_restore(project_id, version_id, commit=prefer)
+    except SourceUnavailable as exc:
+        print(str(exc), file=sys.stderr)
+    else:
+        if found.how == "restored":
+            print(f"restored the source checkout for {version_id!r} ({found.path})")
+        else:
+            print(f"using the source checkout for {version_id!r} from {found.path} "
+                  f"({found.how})")
+        return found.path
 
     # Nothing resolved. Say what was tried and what is actually on disk - the answer is
     # almost always one of the directories listed, passed back as --commit.
@@ -639,10 +755,26 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--use-defaults", action="store_true",
                    help="use this repo's SAMPLE tree as the config. Alternative to --config, "
                         "never both.")
+    s.add_argument("--owner", metavar="EMAIL",
+                   help="give this user API access to the project. The default is every "
+                        "superuser, so the operator account is on the team list of what you "
+                        "just created; naming someone here adds them instead.")
+    s.add_argument("--owner-all", action="store_true",
+                   help="give EVERY user API access. For a single-team internal instance.")
+    s.add_argument("--owner-role", default="admin", choices=("admin", "developer", "reviewer"))
     s.add_argument("--force-config", action="store_true", help="replace an existing config")
     s.add_argument("--version-id", help="also reserve this version")
     s.add_argument("--commit", help="the full 40-character sha that version is for")
     s.set_defaults(fn=cmd_onboard)
+
+    # -- grant ---------------------------------------------------------------
+    s = sub.add_parser("grant", help="give a user API access to a project",
+                       description=cmd_grant.__doc__)
+    s.add_argument("--project-id", required=True)
+    s.add_argument("--email", help="the user to add")
+    s.add_argument("--all", action="store_true", help="add EVERY user in the database")
+    s.add_argument("--role", default="admin", choices=("admin", "developer", "reviewer"))
+    s.set_defaults(fn=cmd_grant)
 
     # -- generate ------------------------------------------------------------
     s = sub.add_parser("generate", help="produce a version from a commit",
@@ -679,7 +811,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--unit", action="append", metavar="NAME",
                    help="narrow the per-function FLOWCHART work to this unit. Repeatable. A "
                         "speed aid while iterating — the model and every other view stay "
-                        "whole, and the documents are still the ones --scope asks for.")
+                        "whole, and the documents are still the ones --scope asks for. Used "
+                        "by Phase 3 only: Phases 1-2 parse and derive the whole scope, and the "
+                        "name is checked against the units that run just built.")
     s.add_argument("--doc-type", default="swe3", choices=("swe3", "swe4", "all"),
                    help="which document(s) to emit: swe3 (detailed design, default), "
                         "swe4 (unit test specification), or all")
@@ -691,6 +825,9 @@ def build_parser() -> argparse.ArgumentParser:
                        description=cmd_reexport.__doc__)
     s.add_argument("--project-id", required=True)
     s.add_argument("--version-id", required=True)
+    s.add_argument("--force", action="store_true",
+                   help="export even when a correction is newer than the derived views "
+                        "(REQ-AP-04); the document will carry the previous text")
     s.add_argument("--from-phase", type=int, default=3, choices=(2, 3, 4),
                    help="2 = re-derive (units, components, summaries) then views + export; "
                         "3 = views + export (default); 4 = export only")

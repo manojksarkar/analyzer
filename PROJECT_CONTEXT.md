@@ -4,6 +4,16 @@
 > Optimize it for findability and completeness, not polish — no prose warm-up, no formatting for human readers.
 > A section outline is fine purely as an agent-navigation aid. Humans read the docs under `docs/` instead.
 
+> **⭐ IN FLIGHT — branch `review_update_v1` (Review & Update: correcting LLM text in a document).**
+> - **Merging this branch? Read [docs/design/REVIEW_UPDATE_HANDOVER.md](docs/design/REVIEW_UPDATE_HANDOVER.md) first.**
+>   Migration chain, the merge conflict surface file by file, and the invariants that break silently
+>   with the test that catches each.
+> - Contract: [docs/spec/REVIEW_UPDATE_SPEC.md](docs/spec/REVIEW_UPDATE_SPEC.md) (`REQ-` ids) ·
+>   how: [docs/design/REVIEW_UPDATE_DESIGN.md](docs/design/REVIEW_UPDATE_DESIGN.md) ·
+>   HTTP: [docs/spec/REVIEW_UPDATE_API_SPEC.md](docs/spec/REVIEW_UPDATE_API_SPEC.md).
+> - Code lives in `engine/review/`. Build order + progress: DESIGN §13. Reasoning for every decision
+>   is in the dated entries below, 2026-09-16 → 2026-09-20.
+
 > **⭐ WORK STATUS — 2026-08-14 · branch `db-with-increment-changes` (READ THIS FIRST in a new chat).**
 > - **The PostgreSQL migration is COMPLETE and validated on the office box.** Postgres holds the model,
 >   view outputs, reuse index, run metadata, resolved config and all app data. `JsonDatabase` is deleted;
@@ -208,6 +218,282 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-26e (**Corrections now survive the next version and a Phase-2 re-derive --
+> unit, struct and behaviour-name corrections were lost -- and a correction to code that changed is
+> kept but no longer applied (REQ-VR-01).**
+>
+> Measured on the real pipeline before fixing (sample project, group Full, via the API): v1 got one
+> correction of each model-backed kind, `directionAdd` was changed, v2 generated from v1. v2 showed
+> the unit and struct corrections ORPHANED ("that unit is not in the new version") with their text
+> lost, and `directionAdd`'s description "in force" over the fresh text of the new code. A
+> `reexport --from-phase 2` of v1 printed computed behaviour names (`ReadOnly`) and an empty unit
+> description while the records still said "in force".
+>
+> Two causes. (1) `carry_forward._still_applies` judged the new version by what it holds AFTER Phase
+> 2, but the carry runs BEFORE it: units came from `model_units` (empty until Phase 2) and structs
+> from `hashes` (19 of 91 data-dictionary entries have one). And the function kinds carried as
+> live even when the code changed -- the design said a changed function does not carry its
+> override, but its pseudocode only applied that to node labels. Now: a unit exists when the new
+> version's functions or globals belong to it (`unit_key_of` over the entity keys); a struct is
+> looked up in the parsed data dictionary (`model_store.load_types`) and orphaned when its
+> definition -- the entry minus `description` and `location` -- changed; description and behaviour
+> names are orphaned "its code changed" when the source hash differs. The baseline is read lazily
+> through `_Target` (flowcharts only for node labels). (2) Phase 2 rebuilds `units` from scratch,
+> re-generates unit and struct descriptions and recomputes behaviour names, and nothing put the
+> corrections back -- "carried there by carry_forward_globals" was true of function descriptions
+> only. `carry_forward.apply_live_corrections` writes every correction in force into the model
+> through the resolver a save uses; `model_deriver._reapply_corrections` calls it last, after every
+> text step, before the model is persisted, and units / data dictionary are written when it changed
+> them (they were written only when the LLM generated something). Orphans are never applied; the
+> LLM cache is not touched (REQ-VR-02).
+>
+> After the fix, same run: v2 -> unchanged function's description and behaviour names human, unit
+> and struct human, `directionAdd` orphaned with fresh text; `reexport --from-phase 2` of v1 ->
+> all six human. Shown with the write-back switched off and on over the same v1. Tests: the carry
+> against a target with no units and no type hashes, changed / moved / removed structs, changed code
+> for the three function kinds, the write-back (every kind, orphans, Phase-3 kinds, idempotence),
+> and the Phase-2 wiring (called, after the text steps, before persisting, what it changed saved).
+> Eight revert-checks caught. The old unit test seeded the target WITH units -- which no real run has
+> at carry time -- which is how it passed. Design §10 corrected. 2483 passed, 37 skipped.)
+
+> Updated: 2026-09-26d (**A re-export is a job of its own, addressed by version: its status goes
+> queued -> running -> complete | failed, one runs at a time per version, and any version can be
+> re-exported -- not only the newest.**
+>
+> Both defects surfaced at the review feature's export step. (1) A re-export reused the version's
+> GENERATION job and never changed its status, which stayed `complete`: polling it or its live
+> stream said "finished" before anything ran (the web app's polling and SSE only run while a job is
+> queued/running/paused), a failure was never recorded (`_mark_failed` skips a job already
+> complete), and nothing stopped a second one on the same folder. (2) It was addressed by job id,
+> and a client could find only the project's newest job (`GET /jobs/current`).
+>
+> `POST /projects/{p}/versions/{v}/reexport` (admin) -> 202 `{job_id, status, version_id}`:
+> `pipeline_runner.start_reexport` creates an `analysis_jobs` row with `mode: "reexport"`
+> (`domain.REEXPORT_MODE`; no schema change -- `mode` was "auto"|"full"), phases 3 and 4 only,
+> copying scope / no_llm / data dictionary / tag from the version's generation job, and runs
+> `_run_reexport` on a thread: `_init_state` (the live stream's log buffer, which re-exports never
+> had), running, `_do_reexport` (now returns bool; phase 3 marked `skipped` when not stale),
+> complete -- unless cancelled -- or failed with the reason. Refusals (`ReexportRefused`, 409 with
+> `code`, and `job_id` when another job is in the way): REEXPORT_RUNNING, VERSION_NOT_READY (its
+> generation is not complete), NO_GENERATION_JOB (a CLI version: use `analyzer.py reexport`). A
+> row left `running` by a server that stopped mid-run is not alive in this process
+> (`_reexport_threads`), so it is marked failed "Interrupted" rather than blocking the version
+> for ever. Guard + create run under a lock -- single API process, like JOB_MAX_CONCURRENCY.
+> `jobs.get_current` excludes re-export jobs, so the project page's "current job" stays the
+> latest generation; `jobs.list_for_version` is new (interface + both backends). The old
+> `POST /jobs/{job_id}/reexport` delegates to the same logic and answers with the NEW job's id.
+> `POST /jobs` refuses `mode: "reexport"`. R9 gains `reexport` -- the version's newest re-export
+> job `{jobId, status, startedAt, completedAt, errorMessage}` or null -- so a reloaded page follows
+> a running re-export instead of offering to start another. `JobView` documents `mode`.
+>
+> Verified on the real pipeline (local SQLite): two versions generated through the API; a label
+> corrected in the OLDER one; `POST /versions/{v1}/reexport` -> 202; a second POST while it ran ->
+> 409 REEXPORT_RUNNING naming the job; R9 during -> reexport running; polling saw running ->
+> complete (32 s); phases 3 and 4 done; R9 after -> stale false, 0 pictures owed; v1's Word files
+> rewritten, v2's untouched; `jobs/current` still v2's generation; the old endpoint -> a new job ->
+> complete. Tests `tests/api/test_reexport_jobs.py` (17 x 2 backends) + R9's field; nine
+> revert-checks caught -- one only after its test stopped relying on two jobs getting different
+> timestamps (Windows clocks can hand them the same one). Spec §3a Flow 6, R9, §14 updated; the
+> two gaps removed from §17.
+>
+> **Found, not fixed:** a CLI version id is checked for existence only, never ownership.
+> `tools/new_project.py` prints "(already reserved)" when ANOTHER project has that id, and
+> `run_context.effective_model_store` accepts it -- so `generate --project-id B --version-id v1`
+> writes project B's run into project A's `v1`. The API is not exposed (it generates `ver…` ids).
+> 2459 passed, 37 skipped (tests/unit + tests/api).)
+
+> Updated: 2026-09-26c (**The review routes never checked that the version in the path belongs to
+> the project in the path. An unknown id looked like an empty version; another project's version
+> answered with that project's text, and took writes. Every route now answers 404, and a TAG sent
+> instead of the id is answered with the id.**
+>
+> Reported from a web-app run: R11 gave `total: 0` for all seven kinds. The caller sent the tag
+> `v1`; a run started through `POST /jobs` stores its version under a generated id (`ver…`),
+> while `analyzer.py` versions carry the id the operator typed, so the habit carried over. The
+> local reproduction (the saved example bodies, group Full) showed the worse half: this dev DB has
+> a CLI version whose id IS `v1`, in another project, and R11 answered with that project's slots
+> -- 45 flowcharts that were not the new project's. `require_project_member` guards the PATH
+> project only, and every query beneath is by version alone, so any member of project A could read
+> -- and via R3/R6/R8 write -- project B's corrections by pairing A's path with B's version id.
+>
+> `_version(project_id, version_id)` in api/routes/text_overrides.py, called in all eleven routes
+> right after the membership check (so a non-member still gets 403 and learns nothing about
+> versions). Read through `_connection()`, the database the routes read their data from. When the
+> value is one of the project's tags, the 404 names the id: "'v1' is this project's version TAG;
+> its id is 'verb908a2e3'". Verified on the reproduction: tag -> that 404, id -> 200 with 61
+> flowcharts. Tests: every route x unknown version, every route x another project's version, no
+> write reaching the other project, the tag hint. Revert-checked four ways, including one route
+> alone. Two older tests expected 200 from `/versions/v1/overrides` on a project with no such
+> version (to prove the membership gate opens); they now expect the version's own 404. Spec §3
+> (versionId is the id), §6 and §16 updated.
+>
+> Also from the reproduction, not a bug: a run scoped to group "Full" has NO Dynamic Behaviour
+> rows. A behaviour row is a call INTO a unit from another component in the parse; Hub/Poly are
+> called only from App/Main.cpp (group Support), and what Cross calls in Iface is declared but
+> never defined. Testing R6 needs a scope in which components call each other.
+> 2421 passed, 37 skipped (tests/unit + tests/api).)
+
+> Updated: 2026-09-26b (**A sign-in lasts a working day, not 15 minutes -- and the server can set
+> it.**
+>
+> Testing through Swagger meant "401 Signature has expired" every quarter of an hour: sign in again,
+> re-paste the token. `ACCESS_TOKEN_EXPIRE_MINUTES` was a hard-coded 15 in `api/middleware/auth.py`.
+> The web app never noticed -- `web-app/src/lib/http.ts` refreshes with the 7-day refresh token on
+> a 401 and retries -- so only hand-driven clients paid for it.
+>
+> Now `DEFAULT_ACCESS_TOKEN_EXPIRE_MINUTES = 480`, overridable per machine with
+> `"auth": {"accessTokenMinutes": N}` in engine/config/config.local.json, read the way the `db`
+> section is (a MACHINE setting, config.local.json specifically). A missing file, section or key
+> means the default; a value that is not a positive whole number (a string, 0, negative, `true`,
+> 3.5) or an unreadable file is reported on stderr and ignored -- reading it must never break
+> sign-in. Read once at start-up, and the API now says so there:
+> `[api] sign-ins last 480 minutes (...)`. The runner leaves `auth` out of the per-project runtime
+> configs it copies config.local.json into, as it does `db` -- no engine reads it.
+>
+> Trade-off, stated rather than hidden: a bearer token cannot be revoked, so a longer lifetime is a
+> longer window for a leaked one. Fine for the internal test server; a production deployment that
+> wants the old window sets `accessTokenMinutes: 15`. Expiry itself is still enforced (tested).
+> Verified: sign-in as admin@aspice.dev -> 8.0-hour token -> `GET /projects` 200. Five revert-checks
+> caught. 2338 passed, 37 skipped (tests/unit + tests/api).)
+
+> Updated: 2026-09-26 (**Every run started from the web app failed at once -- and once it could
+> start, it hung for ever on SQLite. Both fixed. A CLI-onboarded project is now refused instead of
+> silently damaged.**
+>
+> **1. The API spawned retired scripts.** e0f5aef (2026-08-24, "one CLI") turned
+> `engine/incremental/generate.py` and `engine.py` into redirects that print "This is not a command
+> any more" and exit 2, but `pipeline_runner._inner_run_locked` kept spawning them, so every
+> `POST /projects/{p}/jobs` failed before parsing -- on every branch since, `develop` included.
+> Reported from Swagger. `_generate_cmd` now builds `analyzer.py generate`, a translation of the same
+> options to the CLI's names (`--full`, `--base-version`, `--data-dict`, `--no-llm`,
+> `--no-narrowed-parse`; no `--doc-type`, swe3 as before). The tests parse the command with
+> `analyzer.build_parser()`, so a renamed flag fails there and not in a job.
+>
+> **2. A CLI-onboarded project is refused: 409 `NO_ARCHITECTURE`.** Its row has no
+> `architecture_layers` (tools/new_project.py writes none). The runner builds
+> `workspaces/<p>/config.json` from the database, so a run REPLACED the onboarding config with
+> config.defaults.json's sample layers before failing (checked with the runner's own function,
+> into a scratch dir), and `_make_documents` creates documents only for components declared in the
+> database, so it would have produced none. Refused in `start_job` before anything is reserved or
+> written. Running CLI projects from the web app (use the onboarding config, documents from its
+> layers) is a design choice left open.
+>
+> **3. The runner deadlocked when anything in its output loop raised.** Found by running a real API
+> generation (sample project, created web-app style): 10+ minutes at "running". py-spy: `run.py`
+> blocked in logging's write to the pipe; the API thread in `proc.wait()` past its read loop. The
+> loop had raised: `_now() - job.started_at` is aware-minus-naive on SQLite, which stores no zone
+> -- TypeError on the first line -- and the `finally` then waited for a child blocked on the
+> undrained pipe. PostgreSQL returns aware timestamps, so the office does not hit this trigger;
+> any exception in that loop hung a job the same way. Fixed three ways: `_elapsed_since` (naive
+> read as UTC) at all three `- started_at` sites; `_progress` makes per-line bookkeeping
+> best-effort, logged once per function per job; a loop left early stops the whole process tree
+> before waiting (`_stop_tree`: psutil descendants, `taskkill /T` without it). Cancel and timeout
+> use it too -- they terminated only `analyzer.py` and left `run.py` running on its own.
+> Revert-checked, including real child -> shell -> grandchild trees flooding the pipe.
+>
+> **Verified end to end with the real pipeline on the local SQLite database:** a project created
+> through POST /projects (sample layers, flowcharts on), POST /jobs (full, group My Sample, no_llm)
+> -> complete in 39 s, 3 documents, GET /jobs/current returns it; R8 on a coreAdd node -> R9 stale,
+> 1 picture owed -> POST /jobs/{id}/reexport -> R9 fresh, 0 owed, the 3 DOCX and the corrected
+> flowchart PNG rewritten, download 200. The job read `complete` for the whole 38 s re-export -- the
+> missing completion signal, as described.
+>
+> **Found, not fixed:** a failed re-export is never recorded (`_mark_failed` skips a job that is
+> already `complete`) -- spec §17 said it shows as `failed`, corrected. The shipped
+> config.defaults.json has `views.flowcharts` and `views.behaviourDiagram` OFF, and the New Project
+> wizard sets no views, so a web-app project draws neither unless its `build_config.views` or the
+> server's config.local.json turns them on. `analyzer.py onboard` passes `--branch main` unless
+> given one, so re-onboarding an existing project resets its default branch to main. The e2e
+> fixture/snapshot drift of 2026-09-25b is unchanged. 2323 passed, 37 skipped (tests/unit + tests/api).)
+
+> Updated: 2026-09-25b (**Is a corrected flowchart shown from the database? Its DOT is, its
+> picture is not. R7 now returns the DOT, and the API spec has the UI flows (§3a).**
+>
+> **The question (user):** after a label is corrected, does reloading the page show it? The page
+> payload (`GET /documents/{docId}/render`) reads each flowchart's Graphviz DOT from the DATABASE
+> (`doc_render._load_flowcharts` through `OutputReader` / `version_output_files`), and R8 rebuilds
+> that DOT in the same request (`redraw.patch_unit_flowcharts` sets `entry["flowchart"] =
+> dot_for(cfg)`). Proven on the local e2e v1 with the page's own loader: the corrected label is in the
+> DOT after R8 and gone after R4. BUT the web-app shows the PNG (`image_url`, a file on disk that only
+> the next re-export redraws) and prints the DOT (legacy field name `mermaid`) as raw text only when
+> no PNG exists; it has no Graphviz renderer. So today a reload shows the OLD picture. The fix belongs
+> in the UI: draw the DOT with `@viz-js/viz`, the pipeline's own DOT-to-SVG library
+> (`engine/config/render_dot.mjs`; root `package.json` `^3.29.0`, Graphviz 15.1.1), PNG as the
+> fallback. Checked: the DOT R7 returns after a save renders with that library (status success,
+> corrected label in the SVG).
+>
+> **R7 returns `dot`** (`api/routes/text_overrides.py`), a backward-compatible addition, so the
+> flowchart editor draws the diagram before and after a save with no second endpoint. Tests
+> `TestTheEditorCanDrawTheCorrectedDiagram` (3 tests x 2 backends); revert-checked: dropping the
+> field is caught by 6, R8 not rebuilding the stored DOT by 4.
+>
+> **API spec §3a, UI flows:** seven flows as call sequences (open a document, correct a text, a
+> behaviour row, flowchart labels, undo/history, export, regeneration queue) plus "Drawing a
+> flowchart". Corrected on the way: §4 said the whole platform answers camelCase, but the
+> jobs/documents/render endpoints answer snake_case (`job.version_id`, `image_url`, `my_role`), and
+> only R1-R11 are camelCase; the R7 example held two REAL U+0001 characters (invisible, and invalid
+> JSON), now `\u0001`; R11's table lacked `functionId`/`externalCallerId`, which R6 needs;
+> "ten endpoints" is now eleven.
+>
+> **Gaps recorded in spec §17, not fixed (pre-existing; each needs a decision):** (1) a re-export has
+> no completion signal: it runs on the version's existing job and never changes its `status`, which
+> stays `complete`, so `GET /jobs/{id}` and the SSE stream say "complete" at once, and R9 clears after
+> Phase 3, before the DOCX is written. (2) Only the newest version can be re-exported from the UI:
+> the endpoint takes a job id, `GET /jobs/current` is the only way to find one, and versions carry
+> none. (3) The page payload carries no slot keys, so the UI matches R11 rows by name. Also noted in
+> §3a: `analyzer.py generate` writes no job and no document rows, so a CLI-generated version has no
+> web page; review it through R1-R11 and export it with `analyzer.py reexport`.
+>
+> **Found while testing, unrelated to this change, NOT fixed:** a bare `pytest` (which also collects
+> `tests/e2e` and regenerates `workspaces/e2e-sample`) shows 4 errors and 1 failure. (1) The
+> `test_specs` fixture in `tests/e2e/conftest.py` still reads `output/My-Sample/test_specs.json`;
+> generation is per component now and writes `output/<component>/test_specs.json`, so all four SWE.4
+> e2e tests error. Earlier runs in this work used `tests/unit tests/api`, which never collect e2e.
+> (2) The `unit_diagrams` snapshot (2026-08-26) numbers the Lib interfaces 01-06, only the called
+> ones; a fresh run numbers every public function (libSubtract 02, libMin 06, ...), so the same
+> correct edges (Core calls libAdd, libMultiply, libNormalize) carry different ids. The interface-
+> table snapshot that would show this directly is SKIPPED on this machine because the local config
+> has `llm.descriptions` on. Cause not traced. 2288 passed, 37 skipped (tests/unit + tests/api).)
+
+> Updated: 2026-09-25 (**undo and history of a flowchart label were unusable from Swagger; the
+> superuser flag was only half applied; and when each correction becomes VISIBLE is now written
+> down — two kinds never appear on the page.**
+>
+> **1. A composite slot key copied from any JSON viewer matched nothing.** The `nodeLabel` and
+> `behaviourDescription` keys contain the U+0001 separator. JSON writes it as `\u0001`, so
+> Swagger/Postman/browsers DISPLAY six characters, and nobody can type the real one. The pasted key
+> carried a backslash: R4 answered 409 "has no override", R5 `200 []`, R2 404 — for a correction
+> that existed (reported from the first manual undo of a flowchart label). Separately, the most
+> common mistake — a node label addressed by its FLOWCHART id — got those same three wrong answers.
+> `slot.from_request(kind, key)` (in `slot.py`, the one place key rules live): reads the displayed
+> spelling `slot.ESCAPED_SEP` as the separator (a real key never contains a backslash), then
+> `parse`s, and a malformed key is a 400 naming its parts and where to copy it from ("this looks
+> like a flowchart id on its own. Flowchart labels are stored per node..."). Wired into R2, R3, R4,
+> R5 through the router's `_key()`. Verified with the key exactly as Swagger shows it: R2 200, R5
+> history, R4 undo restores the LLM label. Five revert-checks caught.
+>
+> Trap met twice while testing this: a bash heredoc collapses `\\` to `\`, so a
+> "literal backslash-u0001" test string silently became the real separator and the test proved
+> nothing. Test data involving escapes goes in files written directly, built with `chr(92)`.
+>
+> **2. `require_project_admin` ignored `is_superuser`** (only `require_project_member` honoured
+> it). 25 routes use the admin check — re-export among them — so on a project with no admin row for
+> the operator (one created through the UI by someone else) it could read everything and got
+> "Admin role required." Same early return now; the ordinary-member refusal is tested unchanged.
+>
+> **3. When a correction becomes visible** — from reading `api/services/doc_render.py`, now in the
+> API spec §14. All seven kinds save to the DB in the request; the page re-reads per load.
+> description (patched interface table), behaviour input/output names (model) and behaviour rows
+> (stored row) show on the next load. A nodeLabel's PICTURE changes only after the owed render —
+> the page shows the PNG whenever one exists and the diagram text only as a fallback.
+> **unitDescription and structDescription are not shown on the page at all**: the unit section has
+> no description and struct rows print `N/A`, while the Word exporter reads both (REQ-PRE-01 moved
+> the exporter, not the page). Pre-existing renderer gap, recorded in spec §17, not fixed.
+>
+> Also documented: nothing exports automatically — `POST /jobs/{jobId}/reexport` (project admin)
+> does, choosing phase 3 when stale; `GET .../documents/{docId}/download` serves the stored file
+> without rebuilding or checking staleness. 2282 passed, 37 skipped.)
+
 > Updated: 2026-09-24g (**A run says what it will do before it parses** — branch `fix/swe3-review-v1`,
 > `engine/incremental/report.py` + `generate.py` + `engine.py`, `engine/core/config.py`, `engine/parser.py`.)
 >
@@ -300,6 +586,25 @@
 > defaults and adds msg-id UUIDs; and the probe accepts a `baseUrl` ending in `/chat/completions`, which the engine doubles.
 > So against the gateway the probe can pass or fail where the engine would not.
 
+> Updated: 2026-09-24e (**`llm.sslVerify` (6edfcd3) REVERTED. The "unable to get local issuer
+> certificate" failure is not a trust problem in the client: `tools/check_llm.py` reaches the same
+> gateway fine with the default certificate list.**
+>
+> Compared the two paths instead of assuming. The HTTP call is identical (`requests.post`, same
+> `{baseUrl}/chat/completions`, no `verify=` in either); child processes inherit the full
+> environment (no `env=` on any subprocess launch) and nothing in the pipeline touches
+> `REQUESTS_CA_BUNDLE` / `SSL_CERT_FILE` / proxy variables. What differs is the CONFIG:
+> `check_llm.py` reads `config.defaults.json` + `config.local.json`, while every phase of a
+> `generate` — the flowchart engine included, via the inherited ANALYZER_CONFIG — reads
+> `workspaces/<pid>/config.json`, which is copied from those files at ONBOARD time and never
+> refreshed. LLM settings changed in `config.local.json` after onboarding reach `check_llm` but not
+> the project's runs. `check_llm.py`'s docstring ("the same client the phases use", "reads the
+> real config") is wrong on both counts for a project run — which is how it can pass while a run
+> fails.
+>
+> Next step when this recurs: compare the `llm` block of the two files (baseUrl, customHeaders,
+> apiKey) before changing any TLS setting.)
+
 > Updated: 2026-09-24d (**doccheck counts functions and globals apart, and explains an RV-4 move** —
 > branch `fix/swe3-review-v1`, `tools/doccheck/compare.py` + `rules.py`.)
 >
@@ -347,6 +652,50 @@
 > `test_specs.json` identical. Docs: SWE3_WIKI Public vs. private (+ the access-specifier table, the
 > static ⚠ removed), SWE3_SPEC REQ-IT-02, DESIGN.md (also dropped its stale "header table filtered").
 
+> Updated: 2026-09-24c (**re-export could not find a version's source, and told the user to
+> regenerate: a full LLM run to recover at most a git checkout.** Reported from the office box:
+> `reexport --from-phase 3` on a version whose re-export had worked days earlier said "the checkout
+> for 'v1' is gone ... Generate again to restore it", and on `v2` "has no commit recorded".
+>
+> Phase 3 reads the C++ SOURCE (flowchart graphs, line numbers), so it needs the commit on disk.
+> `analyzer._checkout_for` looked in exactly ONE place, `workspaces/<pid>/<recorded_sha[:16]>`.
+> Three ways the source was there or recoverable and that lookup missed it:
+>
+> 1. **Short-SHA folder name.** `generate` names the checkout from the commit AS TYPED
+>    (`ws.commit_dir(commit)`, generate.py:300) but records `actual_commit`, the full sha from
+>    `git rev-parse HEAD`. `--commit 8b3e313f` -> folder `8b3e313f`, lookup `8b3e313f892f2b3b`.
+> 2. **Another working copy.** `workspaces/` is under the data root and gitignored, so a second
+>    clone of the analyzer (e.g. one per branch) starts with none of it, while the shared database
+>    lists every version. `versions.base_path` records the folder a version was generated from.
+> 3. **Genuinely absent.** One commit to clone, not a regeneration.
+>
+> **`engine/incremental/source_checkout.locate_or_restore(project_id, version_id)`** tries those
+> in order, cheapest first, and verifies each candidate is AT the recorded commit before using it
+> (right name + wrong source = line numbers for different code, undetectable downstream). Paths are
+> computed rather than taken from `Workspace(...)`, which RAISES when `workspaces/<pid>/` is absent,
+> the freshest-working-copy case this exists for. Used by BOTH front doors: `analyzer._checkout_for`
+> and `pipeline_runner._do_reexport` -- the export-guard lesson again.
+>
+> **Git layer, `clone._do_checkout`:** the clone is SHALLOW (newest 50 commits). Re-exporting an
+> older version is exactly when its commit has left that window, and checkout failed with no
+> explanation. `_fetch_commit` fetches the commit by SHA from the AUTHENTICATED url --
+> `shallow_clone` resets `origin` to the credential-free URL on purpose, so `git fetch origin`
+> fails on a private repo -- falling back to `--unshallow`. Only the failure path changed.
+>
+> **API re-export:** it refused unless `<version>/model/` existed ON DISK, the same filesystem check
+> run.py already dropped because it "refused a perfectly good stored model". The model is rows;
+> run.py's `--use-model` asks the repository. Removed; the version's own model/output folders are
+> created if missing -- never the shared <repo> dirs `test_reexport_isolation` guards.
+>
+> A reserved, never-generated version (`v2`) now says so and lists the versions that CAN be
+> re-exported, instead of "has no commit recorded".
+>
+> Proven on the e2e project: checkout folder removed -> reexport -> "restored the source checkout",
+> DOCX exported. `tests/unit/test_source_checkout.py` (15) builds a 60-commit repo ONCE per module
+> with a single `git fast-import` -- a commit loop was 180 git spawns per test on Windows, about
+> five minutes -- sent as BYTES, because text mode on Windows writes CRLF and fast-import then
+> rejects the branch name. Revert-checked 5 of 5. 2260 passed.)
+
 > Updated: 2026-09-24b (**RV-4 — an orphan header is listed ONCE, by one owner unit** — branch
 > `fix/swe3-review-v1`, `engine/views/unit_headers.py`. Supersedes the 2026-07-17 / 2026-09-23 "lent to
 > EACH unit that uses it" rule.)
@@ -385,6 +734,35 @@
 > REQ-UH-01 fixed: visibility no longer filters, records listed), SWE3_WIKI "Orphan-header symbols".
 > doccheck has no orphan-header rule, so nothing to change there.
 
+> Updated: 2026-09-24b (**`--use-model` refused every version whose scope has no global
+> variables — so no `reexport`, including the `--from-phase 3` a corrected document needs.**
+>
+> `DbRepository.read` and `DbRepository.missing` answered differently for the same artifact.
+> `read` had already been fixed for this (see `TestEmptyIsNotMissing`, whose stated requirement
+> is "A project with no global variables must not fail"): an empty artifact on a version whose
+> model exists reads as `{}`, because `globalVariables` is legitimately empty on a scope that
+> declares none, and in the file era an empty `globalVariables.json` was still a file. `missing`
+> never got the same rule, and `--use-model` (run.py) asks `missing`. So Phase 3 read an empty
+> globals artifact happily during `generate`, and `reexport` refused the identical model with
+> "the model is missing from the database: globalVariables". Found on a Platform-scoped version:
+> 156 functions, 0 globals, every `reexport` exit 2.
+>
+> **Fix, deliberately narrower than `read`:** `model_repo.MAY_BE_EMPTY = {globalVariables,
+> dataDictionary}` — artifacts whose emptiness is a fact about the SOURCE. `missing` excuses an
+> empty one only when `_model_exists()` (Phase 1 persisted a model). `units` / `components` /
+> `functions` stay strict: their emptiness is a fact about the RUN — Phase 2 did not finish — and
+> refusing to resume from an underived model is the whole point of the `--use-model` check. A
+> blanket copy of `read`'s rule would have excused exactly that.
+>
+> Five tests in `TestEmptyIsNotMissing`, and three revert-checks: removing the fix fails 2;
+> excusing every empty artifact fails `test_units_still_missing_after_a_failed_phase_2`;
+> excusing globals even with no model fails `test_globals_still_missing_when_nothing_was_ever_
+> parsed`. Verified end to end: the Platform version that exited 2 now re-exports with
+> `--from-phase 4` and `--from-phase 3`, both exit 0.
+>
+> Only one caller of `missing()` exists (run.py's `--use-model` check), so the blast radius is
+> that check alone.)
+
 > Updated: 2026-09-24 (**RV-6 — the unit diagram draws the unit's published globals** — branch
 > `fix/swe3-review-v1`, `engine/views/unit_diagrams.py`.)
 >
@@ -416,6 +794,55 @@
 > sibling `NestedTypesUser` in the component), `Diag|ClassStatics` (`StatCounters::s_publicCount`),
 > `Cross|OpsTable` (`g_opsTable`, published through OpsClient's extern) — each global stacked with its
 > unit, sibling beside it. Visual check only; no automated test renders a group outside My Sample.
+
+> Updated: 2026-09-24 (**`generate --unit` failed before parsing with "Units in scope: (none)".
+> `--selected-unit` is now validated where it is consumed — Phase 3 — except when the stored model
+> is already final.**
+>
+> Reported on a real project:
+> `generate --scope "group:Garbage Collection Manager" --unit MGCM_Completion` ->
+> `Error: unknown --selected-unit 'MGCM_Completion'. Units in scope: (none)`, traceback at
+> `generate.py:404`. Reproduced character-for-character (same message, same lines 404 and 397)
+> by re-running an existing version with a scope its leftover model does not cover.
+>
+> **Already the design, not the implementation.** The planner hands `--selected-unit` to
+> `run_views.py` ONLY (`group_planner._view_export_phases`); the parser and deriver never see it.
+> But `run.py` also validated it at STARTUP, against whatever units the version already had —
+> and `generate_full` starts `run.py` TWICE (`--to-phase 1`, then `--from-phase 2`) passing the
+> flag to both. Line 404 is the Phase-1-only process: it checked the unit against units left by
+> an EARLIER attempt at the same version id, before parsing anything, found none in the group,
+> and exited. On a genuinely fresh version there are no units yet, so the check was skipped and
+> Phase 3 validated correctly — which is why it only hit re-runs.
+>
+> **Fix:** `group_planner.unit_check_can_run_early(from_phase, to_phase, use_model)` — true only
+> when Phase 3 runs in THIS process AND Phases 1-2 do not (`--use-model` / `--from-phase 3`), i.e.
+> when the units read now are the units Phase 3 will use. `reexport --from-phase 3` keeps its
+> fast fail on a typo; both `generate` processes defer. Lives in `group_planner` because that
+> module already decides the flag goes to Phase 3 alone — and because `run_views` rewrites
+> `sys.argv` and snapshots paths on import, so importing it at the top of `run.py` for a
+> predicate would have added a side effect to every run. `run_views` is still imported only in
+> the branch that resolves units against a stored model, as before.
+>
+> **Second defect in the same block:** the `else` was paired with `if selected_units_arg:`, so
+> every run WITHOUT the flag logged "--selected-unit will be validated in Phase 3", while runs that
+> did defer said nothing. Removed; each deferring branch now says why.
+>
+> Verified end to end: the exact failing scenario now parses (Phase 1 8s), derives, and Phase 3
+> lists the scope's 71 REAL units instead of `(none)`; the same version with a real unit
+> (`--unit Gpio`) exits 0 with `narrowed to unit(s): Gpio`; a no-flag run reaching Phase 3 logs
+> nothing about units. 13 tests incl. the full decision table, two properties (never early when
+> the model is about to be rebuilt; never when Phase 3 does not run) and anchored wiring checks.
+> Revert-checked: 8/3/3/2 failures for the four ways of putting it back.
+>
+> Trade-off, stated: on a FRESH run a wrong unit name is reported in Phase 3, after the parse.
+> Unavoidable — units do not exist until Phase 2 creates them.
+>
+> **Separate, pre-existing, found while verifying — fixed in 2026-09-24b above:** `DbRepository.missing`
+> uses `_is_absent`, which treats an EMPTY artifact as a MISSING one (`17c00b9`, doc 10 step 2).
+> A scope with zero global variables (v9 Platform: globals=0, functions=156) therefore fails
+> `--use-model` with "the model is missing from the database: globalVariables" — so
+> `reexport --from-phase 3/4` is refused for every such version, which blocks the review
+> workflow's export step on it.)
 
 > Updated: 2026-09-23f (**firmware-team SWE.3 review, round 1: tracked in
 > [docs/BACKLOG.md](docs/BACKLOG.md) as RV-1…RV-7**. Docs only. **Status rule (user):** an agent marks
@@ -628,6 +1055,135 @@
 > that none of it applies to the header table; two new "To confirm" items (file-scope `static`, and the
 > declaration-is-not-an-interface rule).
 
+> Updated: 2026-09-23 (**three defects in the listings, found by answering "when do I get text,
+> llmText and humanText?" -- the question made me check rather than recall.**
+>
+> **1. R11 showed an ORPHAN's stale words as `text`.** `catalog` took `text` from the override
+> row whenever one existed. For a live correction that is harmless (the save wrote the same words
+> into the model), but an orphan is never applied: its function's code changed, the document
+> prints fresh LLM text, and the listing said the reviewer's old sentence was current -- with
+> `isOverridden: true`. Probed: document 'Fresh LLM text for the NEW code.', R11 'Stale human
+> text for the OLD code.'. Now `text` is always read from where the document reads it; the rule
+> lives once in `catalog._state`, which R7 imports; `humanText` is returned separately so an
+> orphan's work stays visible AS what it is; `isOverridden` means IN FORCE and is false for one.
+>
+> **2. R7 read the newest 1,000 node corrections for the WHOLE version** (`list_overrides(...,
+> limit=1000)`) and looked this flowchart's nodes up in that page. Past a thousand corrections an
+> older one on the flowchart being opened fell off, reported as never corrected while the picture
+> carried it. Now `override_service.overrides_by_key` asks for exactly this flowchart's node keys
+> (chunked at 500, SQLite caps bound parameters). Regression test inserts 1,001 newer corrections
+> elsewhere.
+>
+> **3. R11 listed every real behaviour row with NO bullets.** It read `behaviorDescriptionList`
+> -- which is only the exporter's PARAMETER name. The view writes, the exporter reads and R6
+> patches `behaviorDescription`. The test fixture stored the same wrong name, so fixture and
+> reader agreed and the test passed. Found only by rewriting the test to go through the REAL save
+> (`apply_behaviour_override`), which wrote the real field the reader never looked at.
+>
+> Both (1) and (3) hid behind fixtures that inserted a row `apply_override` can never produce. The
+> tests now save through the real paths, and the behaviour field is checked against the writer and
+> the reader rather than against another test. HANDOVER 4.18.
+>
+> Verified while answering, not changed: behaviour names ARE read from the model by the exporter
+> (`functions_data.get(...).get("behaviourInputName")`), so only `description` has a derived copy
+> needing a patch. Flowcharts write `.json` + `.png` and NO `.mmd` -- the DOT lives inside the
+> JSON; the only `.mmd` is a unit diagram, which no correction touches.
+>
+> Revert-checked: row-text 3, orphan-as-overridden 3, wrong field 3, R7 paging 2. 2222 passed.)
+
+> Updated: 2026-09-22e (**a real project reported `nodeCount: 0` on every flowchart and an empty
+> R7 label list. NOT a bug in the listing — the stored output predates `cfg`.**
+>
+> `engine/flowchart/output/writer.py` writes `entry["cfg"] = fc.cfg` only `if fc.cfg`, and
+> `flowchart_engine` has only set `cfg=serialize_cfg(cfg)` since **2026-09-01** (`3355930`, the
+> SWE.4 port). A version generated before that has `functionKey`, `name` and the DOT — and no
+> graph. So `nodeCount` 0 and `labels: []` were both truthful, and the whole nodeLabel path is
+> unavailable on such a version until it is re-derived.
+>
+> **What WAS wrong is that nothing said so.** R7 returned `[]`, which reads as "this flowchart has
+> no nodes"; R8 answered 404 "has no node(s) N2", which blames the caller's node id for the
+> absence of the entire graph. Three ways of not saying the one useful thing.
+>
+> Now: `NoStoredGraph(OverrideError)` with **status 409** — the flowchart IS there, its graph is
+> not, and those are different things to fix — raised BEFORE the per-node validation, or every
+> node is reported missing. R7 returns `graphAvailable` and, when false, a `note` distinguishing
+> "predates the CFG" from "this flowchart failed to build" (`entry["error"]`). Nothing is written
+> on the refusal.
+>
+> Re-deriving fixes it: the CFG is rebuilt from the stored model, no re-parse
+> (`reexport --from-phase 3`).
+>
+> Diagnostic worth keeping: count flowchart entries by `cfg` present / `error` present / neither.
+> Neither = old vintage. On a recently generated version: 22 with a graph, 0 errors, 0 neither.
+>
+> 2209 passed, 34 skipped. Revert-checked: removing the guard fails 4.)
+
+> Updated: 2026-09-22d (**walking the flowchart-label UI flow end to end found two defects and a
+> wrong spec. None of 2191 tests caught any of them.**
+>
+> **1. R7 did not return each node's `slotKey`.** A node key is `flowchartId + U+0001 + nodeId`
+> and `REQ-ID-01` forbids a caller building one — so undo (R4) and history (R5) on a single label
+> were impossible for a UI that obeyed the rule. R7 is what a flowchart editor OPENS with;
+> anything the editor must send back has to come from it. Now returned per node.
+>
+> **2. `renderPending` was computed from `redrawn` and was therefore always False over HTTP.**
+> `redraw_flowchart` rebuilds the stored JSON + DOT whether or not there is an output tree; the
+> PNG needs somewhere to put it. So on every API save `redrawn` was non-empty, the picture was
+> owed, and the caller was told `renderPending: false` while R9 said `pendingRenders: 1` at the
+> same moment. A UI would show "image up to date" while the export blocked on that job. Now
+> `FlowchartApplied.render_pending`, derived from whether the JOB was completed in the call
+> (`drew_inline`), with a test asserting R8 and R9 agree. Revert-checked: 7 and 6 tests.
+>
+> **3. `viewsDerived` is always `[]` over HTTP, and the spec claimed otherwise.** No production
+> caller passes `derive=` — only tests do. That is CORRECT, not a missing wire: stamping a
+> derivation at save time would mark the version fresh when its document has not been rebuilt, and
+> R9 would stop reporting the staleness the export depends on. The spec's examples showed
+> `["interfaceTables"]` and `["flowcharts", "testSpecs"]`, which the API never returns. Corrected,
+> with the reason, rather than wiring something that would break the guard.
+>
+> HANDOVER gains 4.16 (renderPending is about the picture, not the stored graph) and 4.17 (anything
+> the caller must send back has to come from a read). 2205 passed, 34 skipped.
+>
+> **The lesson, third time this session: walking a real user flow finds what unit tests cannot.**
+> Each of these sat behind a correct-looking assertion.)
+
+> Updated: 2026-09-22c (**R11 `GET .../slots` — what CAN be edited. `REQ-API-01`'s other half,
+> which I had under-delivered.** Asked for after a testing session where the only way to obtain a
+> `slot_key` was a hand-written script over stored view output.
+>
+> R1 is an OVERLAY of corrections and is empty until somebody corrects something — correct, and
+> deliberately not a slot enumeration. But it left "what is there to correct, and what is its key?"
+> unanswered, and `REQ-ID-01` forbids a caller inventing a key. So the listing was missing, not the
+> overlay.
+>
+> **`engine/review/catalog.py`**, router stays thin. Three decisions were put to the user first:
+> nodeLabel listed PER FLOWCHART (~42,000 nodes in a version; each row carries the token R7 takes),
+> rows include the CURRENT text, and optional `unit`/`component` filters plus paging.
+>
+> **The rule that makes it trustworthy: the text is read through `resolver`, the same way
+> `apply_override` writes it.** A listing that read `comment` while a save wrote `description`
+> would show one sentence and replace another, each looking right alone. Pinned by a test that the
+> SAME key reads a DIFFERENT field for `description` vs `behaviourInputName`.
+>
+> Sources per kind, established by inspection rather than assumption: functions/globals/units/
+> dataDictionary via `ModelAccess` (only built for the five model-backed kinds — a flowchart
+> listing must not pay for a model read); flowchart JSON in `version_output_files` for nodeLabel;
+> `_behaviour_pngs.json` `_docxRows` via `p3.behaviour_rows` for behaviourDescription, addressed by
+> the two entity keys and skipping rows with no `externalCallerId`, which cannot be addressed
+> unambiguously.
+>
+> Two judgements: a `unit`/`component` filter on `structDescription` is REFUSED with 400, not
+> ignored — an ignored filter makes an unfiltered result read as a filtered one; and
+> `overriddenCount` excludes orphans, which are kept but not applied.
+>
+> Incidental finding: function/global model entries carry NO `unit`/`component` fields. The scope
+> is in the entity key (`Component|Unit|name|params`), which is where `_scope_of` reads it.
+>
+> 28 tests incl. one asserting every one of `slot.ALL_KINDS` is listable, so an eighth kind cannot
+> arrive with no way in. Verified over HTTP against the real e2e data: description 158,
+> description+unit=Core 24, nodeLabel 22 flowcharts, structDescription+unit 400, bad kind 422.
+> 2191 passed, 34 skipped.)
+
 > Updated: 2026-09-22b (**publication is now judged per UNIT, not per file** — branch
 > `fix/swe3-review-v1`, **UNCOMMITTED, not verified on a real project**).
 >
@@ -698,6 +1254,49 @@
 > explicit and carries a *To confirm with the client* line. The two readings differ only for a function
 > marked `inline` inside a `.cpp`, which is specced today; making the rule keyword-based would need new parse
 > data, and would leave such a function verified nowhere, so the current behaviour is the recommended one.
+
+> Updated: 2026-09-22b (**`users.is_superuser` — an operator account that reaches every project.
+> Migration 0014.** Asked for after the 2026-09-22 entry below: `admin@aspice.dev` should have all
+> access to all projects, and must be a member of anything onboarded.
+>
+> **Why a flag and not just a membership row on onboard.** They look equivalent; they are not. A
+> `project_members` row can be missed by any path that forgets to write it — which is exactly how
+> a CLI-onboarded project became unreachable — and by anything that creates a project in future.
+> A flag cannot be forgotten because nothing has to remember it. So the flag is the GUARANTEE
+> (`require_project_member` returns early for a superuser) and the row is still written, for the
+> team list and `my_role`, which are READ from `project_members`. Proven: a project created after
+> the fact, with zero membership rows, answers 200.
+>
+> **Why a column and not a hard-coded email.** It is data — greppable, visible in the database,
+> changeable without a deploy, and testable. The tests promote ALICE, not `admin@aspice.dev`,
+> precisely so that a hard-coded address would fail them.
+>
+> **`server_default=text("false")` is load-bearing, not decoration.** The column is NOT NULL and
+> is added to databases that already have user rows; without a default that ALTER is impossible
+> and `setup`'s column repair would correctly refuse it. Directly exercised by
+> `TestTheColumnCanReachAnExistingDatabase`.
+>
+> Changed: `schema.users.is_superuser` · `domain.User.is_superuser = False` (defaulted, so a row
+> from a database predating the column reads as ordinary) · `require_project_member` early-return ·
+> `list_projects` uses the new `projects.list_all()` when superuser, or every project would OPEN
+> but none would be LISTED · `_project_view.my_role` falls back to "admin" for a superuser with no
+> row, since None greys out controls the API honours — a REAL membership still wins ·
+> `_ensure_default_admin` creates the seeded account with the flag · `onboard` adds every
+> superuser by DEFAULT (`--owner EMAIL` / `--owner-all` override) · `grant --superusers`.
+>
+> **`db_setup` repairs an existing database**, since a forward-only fix leaves the office box with
+> the column present and meaningless: promotes `admin@aspice.dev` ONLY when no superuser exists
+> yet (re-running must not quietly add one after somebody has chosen the operators), then
+> backfills a membership row per superuser per project with a NOT EXISTS guard.
+>
+> `tests/api/test_superuser_access.py` (17). Revert-checked: the bypass fails 5, the listing 1,
+> the `my_role` fallback 1, the server default 2. Chain linear at `0014_users_is_superuser`.
+> 2159 passed, 34 skipped.
+>
+> **SECURITY, said once and recorded:** `admin@aspice.dev` ships with the password `admin` and now
+> reaches every project on the instance. Acceptable on an internal box; before this is shared,
+> promote a real account and demote the seeded one — it is one UPDATE, which is the point of it
+> being data.)
 
 > Updated: 2026-09-22 (**`tools/doccheck/` — compare two generated documents by what they say**. Written on
 > `feat/doc-compare` off `develop`, 7 commits, 622 tests; **the whole of that branch is now on
@@ -782,6 +1381,53 @@
 >    `--project-id` since the model moved to Postgres, so it fails in Phase 1 with "no model repository is
 >    installed for this run". It writes `model/clang_include_paths.json` before failing.)
 
+> Updated: 2026-09-22 (**a CLI-onboarded project was unreachable over HTTP. Two defects in the
+> seam between the two front doors, found by the first Swagger session on the office box.**
+>
+> Symptoms: `GET /projects` returned `[]` while `GET /projects/search` listed everything, and
+> every `/projects/{id}/...` route answered 403 "Project membership required." - signed in as
+> `admin@aspice.dev`.
+>
+> **There is no global admin in this system.** `User` has NO role field; `admin@aspice.dev` is a
+> seeded LOGIN, not a superuser. Authorisation is per project via `project_members`, and
+> `require_project_member` is correct as written.
+>
+> **Defect 1 - the CLI never created a membership.** `POST /api/v1/projects` adds the caller as
+> an admin member because it knows who is calling; `analyzer.py onboard` has no caller, so it
+> wrote the `projects` row and stopped. A project that generates perfectly from the CLI was
+> therefore invisible over HTTP, INCLUDING all ten review endpoints. `list_projects` uses
+> `list_for_user`, hence the empty list; `search_projects` uses `search()` with no membership
+> filter at all, which is why search still found them (pre-existing inconsistency, left alone,
+> flagged to the user).
+>
+> **Defect 2 - `projects.updated_at` was never written either**, and `_project_view` called
+> `.isoformat()` on it unconditionally. Only visible AFTER defect 1 is fixed, and then it is
+> worse: one such row makes `GET /projects` answer 500 for the WHOLE list, not just that project.
+>
+> **Fixes.** `tools/grant_access.py` + `analyzer.py grant --project-id X --email Y` (or `--all`),
+> idempotent and reactivating a non-active row - a membership that exists but is not `active`
+> fails the check exactly like a missing one. `onboard` gains `--owner` / `--owner-all` /
+> `--owner-role`, and when given NEITHER it prints what will happen and how to fix it, because
+> silence is what turned this into a diagnosis. `_project_view` is null-safe on both timestamps;
+> `new_project.py` writes `updated_at` on insert and on update; `db_setup` backfills
+> `UPDATE projects SET updated_at = created_at WHERE updated_at IS NULL`, since a forward-only
+> fix does nothing for the database that already has the rows.
+>
+> `tests/api/test_cli_project_is_reachable.py` (16 tests, skipped on the in-memory backend since
+> they are about rows) reproduces both symptoms against the real app and proves the fix, including
+> that R1 goes 403 -> 200. Revert-checked: the null-safe guard fails 5, onboarding's `updated_at`
+> fails 1, `grant`'s already-exists branch fails 1.
+>
+> One test trap worth remembering: the SQL test backend uses StaticPool, so `connect()` hands back
+> the SAME DBAPI connection. Calling a repository helper inside an open `eng.begin()` block runs a
+> second Connection over the same physical one and discards the pending write - which looked
+> exactly like `grant` not being idempotent. Resolve ids BEFORE opening the transaction.
+>
+> 2142 passed, 23 skipped.
+>
+> **The lesson: two front doors that write the same table must write the same ROWS.** Everything
+> the API needs and only the API writes is invisible until someone tries the other door.)
+
 > Updated: 2026-09-21b (**SWE.4 prints the class-qualified method name**, branch `feat/doc-compare`.
 > Found by `tools/doccheck --pair`; see the 2026-09-21 entry.
 >
@@ -857,6 +1503,169 @@
 >
 > **Root cause still open:** nothing writes `versions.commit_sha` after a successful generate. Filling it
 > in `persist_run_outcome` would remove the need for all of the above.
+
+> Updated: 2026-09-21 (**`analyzer.py setup` could not upgrade a database that already existed.
+> Found on the first real Postgres install, by a run dying mid-Phase-1.**
+>
+> ```
+> psycopg.errors.UndefinedColumn: column model_units.description does not exist
+> ```
+>
+> **Root cause.** `tools/db_setup.py` calls `metadata.create_all()` and nothing else - it does
+> NOT run Alembic. `create_all` creates MISSING TABLES and never alters a table that is already
+> there. So on a database that had been used before, `0009_model_units_description`
+> (`op.add_column("model_units", "description")`) was silently skipped, while `0010`/`0012`/`0013`
+> - which create NEW tables - applied fine. The setup therefore looked like it had worked.
+> `0011`'s `text_overrides.slot_shape` escaped only because its table is new in `0010`, so
+> `create_all` built it complete; that is luck, not a property of column migrations.
+>
+> **Why no test saw it.** A fresh database hides it completely: `create_all` on an empty database
+> builds every table from the CURRENT schema, columns and all. The whole SQLite end-to-end run
+> passed for exactly that reason. The gap exists only on a pre-existing database, and the office
+> box was the first one.
+>
+> **Fix.** `db_setup._add_missing_columns(eng, metadata)` runs after `create_all`: compares the
+> live columns of every existing table against the schema and ALTERs in what is missing, printing
+> each one. Strictly additive. A column that is NOT NULL with no server default is NOT attempted -
+> it is named and the operator is sent to `alembic upgrade head`, because inventing a backfill
+> value is how a schema repair becomes data corruption. A column that is live but absent from the
+> schema is left alone: it belongs to another branch, and dropping it to tidy a tool's output
+> would delete data. Idempotent.
+>
+> This is NOT a replacement for Alembic. It is what makes `setup`'s own help text ("create or
+> upgrade the database schema") true on a database whose tables were made by `create_all` and
+> which may therefore have no usable `alembic_version` row to upgrade FROM - running
+> `alembic upgrade head` there would try to re-create tables that already exist.
+>
+> **Immediate remedy for any database built before this branch** (there may be several):
+> re-run `python analyzer.py setup`, or apply the one statement by hand -
+> `ALTER TABLE model_units ADD COLUMN description TEXT;`
+>
+> `tests/unit/test_db_setup_upgrade.py` (11 tests) reproduces the pre-branch database, asserts
+> `create_all` alone does NOT add the column - so a future SQLAlchemy change is noticed - then
+> that the repair adds it, that the exact failing SELECT works afterwards, that existing rows
+> survive, that it is idempotent, that a NOT NULL column is refused and does not stop the others,
+> and that a future-branch column is not dropped. Revert-checked: removing the ALTER fails 6,
+> removing the NOT NULL guard fails 2.
+>
+> HANDOVER 2.1 carries the warning, since every developer merging this hits the same thing.
+> 2121 passed, 10 skipped.
+>
+> **The lesson: `create_all` is not a migration runner, and a green fresh-database test says
+> nothing about an existing one.** Any future migration that adds a column to an existing table
+> would have failed the same way.)
+
+> Updated: 2026-09-20c (**review_update_v1 - the API spec now carries a full request/response
+> contract per endpoint, and it was documenting a wire format the server does not accept.**
+>
+> **The defect.** REVIEW_UPDATE_API_SPEC showed camelCase REQUEST bodies -
+> `{"slotKind": ..., "slotKey": ..., "text": ...}` and `{"functionId": ..., "externalCallerId": ...}` -
+> and camelCase query parameters (`?slotKind=&slotKey=`). The routes use plain pydantic models
+> (`UpdateSlotRequest`, `UpdateBehaviourRequest`, `UpdateFlowchartRequest`) with no alias generator,
+> so the wire names are the PYTHON field names: `slot_kind`, `slot_key`, `function_id`,
+> `external_caller_id`. Every write a UI built from that document would have returned 422. Checked
+> the rest of the API before changing anything: `commits_versions`, `documents`, `auth`, `functions`
+> all use snake_case request bodies, so the routes were consistent with the platform and only the
+> DOC was wrong. Responses are hand-built camelCase and are correct.
+>
+> Rule now stated in its own section 4: **requests snake_case, responses camelCase**, with the
+> headers, the 401 body shape and the null-vs-absent rule beside it.
+>
+> **A second one: the contract test never compared R10.** `_documented()` matched
+> `^\| \*\*R\d\*\*` - "R10" matches "R1" and then fails on the literal `**` - so the newest
+> endpoint was the one nobody checked, and `test_the_spec_documents_nine_endpoints` asserted the
+> shrunken count. Now `R\d+`, `== 10`, plus `test_every_r_number_in_the_index_is_matched` which
+> fails if the matcher ever reads fewer rows than the table has. Its section boundary is the next
+> heading, not `---`, because a markdown table separator row IS `|---|`.
+>
+> **New tests** (`TestTheSpecDocumentsTheRealWireFormat`): every JSON block following a
+> `**Request body**` heading is parsed and its key set must equal one of the pydantic models',
+> and each model must be shown exactly once. Restricted to request examples on purpose - searching
+> the whole document for camelCase would fail on the response examples, which are right. Three
+> revert-checks: restoring the old camelCase body for R3, for R6, and dropping R10 from the index
+> each fail a named test.
+>
+> **Spec rewritten for a UI engineer**: per endpoint, path/query/body parameter tables with type,
+> required, default; a response field table with type and nullability; a worked JSON example for
+> each direction; and a per-endpoint error table. Shared `Override` and `QueuedSlot` objects are
+> defined once in section 5 rather than re-shown. Also corrected while verifying against the
+> router: R3's response never contained `tablesPatched` (it was in the spec), `slotShape` is a full
+> 64-char sha256 and not the `"9f2c..."` stub, R5 returns `{"history": []}` for an unknown slot
+> rather than 404, and R2's 404 is the ordinary "not corrected yet" case rather than an error.
+> Section 14 now tells the UI that `stale: true` needs no special handling since the API re-derives
+> (2026-09-20b) instead of refusing.
+>
+> Every `viewsDerived` value in the doc was checked against `review/derive.py::_VIEWS` rather than
+> copied: interfaceTables for the five model-backed kinds, behaviourDiagram for R6,
+> flowcharts + testSpecs for R8.)
+
+> Updated: 2026-09-20b (**review_update_v1 - a second audit, this time against the PIPELINE rather
+> than against the feature's own tests. All 43 requirements are met; three real problems were in
+> the seams, and none of them could fail a test that existed.**
+>
+> Method worth repeating: trace every REQ id to code AND tests, then walk every point where the
+> feature touches the existing pipeline and ask what a failure there does to an ordinary run. Seven
+> requirements turned out to carry no `REQ-` comment anywhere (AP-03, API-06, ED-03, ED-04, ST-01,
+> ST-07, VR-02) - all verified met, just uncited. The integration surface is NINE call sites, not
+> the "two" DESIGN 13.1 claimed.
+>
+> **1. A blank description is a REQUEST, not an outcome - and could be published as one.**
+> `cascade.blank_queued_text` empties a description only because the enrichment skips anything
+> already filled in; emptying the slot IS "write this again". If the rewrite then did not happen -
+> LLM unreachable, `--no-llm`, descriptions off - nothing put the text back. The entry correctly
+> stayed queued, but the model was persisted with `""` and the document showed an empty cell where
+> a reader had a sentence. Strictly worse than the wording the correction superseded, and a
+> regression this feature introduced: before it, an LLM outage left carried-forward text intact.
+> Fixed: `Blanked(row, previous_text)` carries what was removed, and `clear_rewritten` returns
+> `Retired(cleared, restored)`, putting the old wording back and leaving the debt queued.
+>
+> **2. The export guard protected the CLI and not the UI.** `analyzer.py` held
+> `assert_exportable`; the API's re-export spawns `engine/run.py --from-phase 4` DIRECTLY and never
+> went near it. The reviewer-facing path was the unguarded one. And what went out was not merely
+> stale text: a node-label correction patches the database immediately (`redraw_flowchart` needs no
+> files) and leaves the PICTURE owed, so the document's sentence and the diagram beside it
+> disagreed, with no warning. `_restore_output_from_db` was already in `run.py` for exactly this
+> reason - the same lesson, learnt once and not applied to the other half. Fixed:
+> `run.py::_refuse_stale_export` is the backstop every front door spawns, `--force` travels as
+> `--force-export` (allowlist + parse branch + help, or run.py rejects it outright), and
+> `analyzer.py` keeps its own check because it fails before the checkout and the subprocess.
+>
+> Only phase 4 is gated, and that is NOT just an optimisation: `stamp_pipeline_derivation` records
+> the derivation when output is CAPTURED, after phase 4. A run including phase 3 is applying the
+> corrections on its way through, but at phase 4 the stamps are still the previous run's - gating
+> there would refuse exactly the run that fixes the problem. Verified nothing else spawns
+> `--from-phase 4`: ordinary generations use `--from-phase 2` or run the phases together.
+>
+> **3. On the API the remedy is applied, not recommended.**
+> `pipeline_runner._reexport_from_phase` asks the guard and runs from PHASE 3 when the version is
+> stale - which is the remedy the guard's own message already names. A reviewer who pressed
+> "re-export" seconds after fixing a sentence should not have to learn what a phase is. Falls back
+> to 4 whenever the question cannot be asked (no version, no database, feature absent, guard
+> raising): an unavailable guard must not quietly change what the pipeline does.
+>
+> **Proven on the real SQLite project, not only in tests.** Spawning `run.py --from-phase 4` the
+> way the API does: nothing corrected -> exit 0, document written; corrected just now -> exit 2,
+> NO document, with the re-derive instruction; same export `--force-export` -> exit 0, document
+> written. `_reexport_from_phase` returns 3 for that version.
+>
+> **Checked and NOT broken** (measured, not assumed): every hook is a clean no-op on a project
+> with no corrections; all nine sites are guarded by `is_database_configured()` + try/except, so a
+> missing database or un-migrated tables degrade rather than fail a generation;
+> `_analyzerTextOverrides` is local to `run_views.main()` and never persisted; the API re-export
+> does reach `capture_output`, so pictures are drawn and derivations stamped on both paths;
+> migration chain linear at `0013_render_jobs`.
+>
+> One accepted nit: `_stamp_derivation` shares a transaction with `persist_output_files`, so a
+> failure there discards the output capture. Measured - it rolls back atomically, leaves the
+> previous rows intact, and the existing error message says exactly that. Loud and safe; left
+> alone.
+>
+> Seven revert-checks: each part of each fix was broken on purpose and a test failed for it.
+> DESIGN gains 13.1 (rewritten, nine sites), 13.2 and 13.3; HANDOVER gains invariants 4.14 and
+> 4.15 and two rows on the merge-conflict table.
+>
+> **The lesson: a feature's own tests cannot see the seams it sits in.** Every one of these passed
+> 600 review tests while the bug was live.)
 
 > Updated: 2026-09-20 (**visibility reworked: protected is private, methods read their C++ access, and a
 > `PUBLIC` marking no longer guarantees a row** — branch `fix/swe3-review-v1`, **UNCOMMITTED**).
@@ -946,6 +1755,414 @@
 > goes straight to `generate_full` and never selects a baseline — `_scratch_repo` builds a new repo with a
 > new commit every run, so no earlier version's commit survives to be an ancestor of it. Verified end to
 > end: pipeline OK in 68s, then 1987 passed.)
+
+> Updated: 2026-09-20 (**review_update_v1 - the feature run END TO END on SQLite, and the ordering
+> bug that only a real run could find**. No PostgreSQL on this machine, so the whole feature was
+> exercised against a SQLite database with a real 205-file C++ source tree: a full v1 (140
+> functions, 26 DOCX), a correction of each kind, an export, then an incremental v2. The unit and
+> API suites passed throughout and did not see the bug below.
+>
+> **What the run proved works.** A `description` correction reaches the model, is copied into
+> `interface_tables.json` by `rerender.patch_interface_tables`, and the string appears in the
+> exported `software_detailed_design_Sample-Core.docx`. The export guard refused a stale
+> `--from-phase 4` and accepted it after `--from-phase 3` re-derived. A `nodeLabel` correction
+> reached the stored CFG, rebuilt the DOT, recorded a `slot_shape` and redrew the PNG.
+>
+> **The bug: carry-forward runs in Phase 2; the flowchart it needs does not exist until Phase 3.**
+> On v2 the node-label correction was ORPHANED even though `source_hash` was identical and the
+> shape was identical in the baseline, the target and the recorded override. `_still_applies` read
+> `target.shapes`, which is built from the target's flowchart OUTPUT - and at carry time Phase 3
+> has not run, so it was empty. `shape_matches` correctly refuses a missing claim, so every node
+> correction orphaned itself on the first regeneration. Nothing in 1600+ unit tests could see it:
+> each half was right, and only their ORDER was wrong.
+>
+> **Three-part fix.** (a) `_still_applies` falls back to the BASELINE's graph, which is what is
+> being carried from. (b) The `slot_shape` IS now copied onto the carried row (orphans excepted) -
+> **this reverses the decision recorded in the 2026-09-19 entry and DESIGN 10**, which nulled it.
+> Nulling means the next generation sees "no claim", and a refused missing claim orphans the row a
+> version later. The shape is a claim about the graph the TEXT was written for; that claim travels
+> with the text. (c) The decisive `REQ-ID-02` check moved to
+> `phase3_overrides.apply_to_flowchart_json(entries, by_flowchart, shapes)` - the last moment
+> before the label is replaced, and the only point at which the graph being written exists. A
+> mismatch there DROPS the correction and leaves the LLM label.
+>
+> Carry-forward's baseline check is deliberately the weaker one now: its job is to mark a stale
+> correction orphaned so the reviewer is TOLD, not to be the barrier. `nodeLabelShapes` travels
+> beside `nodeLabel` through `overrides_for_config` -> `_analyzerTextOverrides` -> `shapes_from_config`
+> -> `redraw.py` -> `views/flowcharts.py`.
+>
+> **Re-run after the fix**: `[run_views] applying 2 reviewer correction(s) to this run`; the v2
+> `nodeLabel` row carries `orphan=False` and its shape; the corrected label is in v2's stored CFG
+> and its regenerated DOT. New tests: `TestTheShapeIsCheckedWhereTheTextLands` (6) and five in
+> `test_review_carry_forward.py`, including `test_a_target_with_no_flowchart_yet_still_carries`
+> which pins exactly this. DESIGN gains 10.1; HANDOVER gains invariant 4.13, and its 7 no longer
+> claims steps 6-9 are unbuilt.
+>
+> **The lesson, again: measuring beats recalling.** Every part of this feature was reasoned about
+> carefully and tested; the defect was in the seam between two correct parts, and only running it
+> showed it.)
+
+> Updated: 2026-09-19e (**review_update_v1 - a spec-vs-code audit, and its four fixes**. Checked
+> all 43 requirements against the implementation rather than from memory; four genuine
+> misalignments, all now closed.
+>
+> **1. A corrected description never reached the document.** The document does NOT read a
+> function's description from the model - `interface_tables.json` holds a COPY, and both the DOCX
+> exporter and the HTML view read the copy. So the model write left the page showing the LLM's
+> words. `rerender.patch_interface_tables` now brings every group's copy into step in the same
+> transaction. Root cause: `derive.make_deriver` has NO CALLER - nothing ever passed `derive=`, so
+> the "re-derive the affected views" step of the design never ran in production. Scope turned out
+> small once measured: unit/struct descriptions and behaviour names are read from the MODEL
+> (`_load_model_json`) and were never stale, so it is one artifact and one field. It also removed
+> an inconsistency nobody could have guessed - a corrected node label reached the document
+> instantly while a corrected description did not.
+>
+> **2. `llm.overrideHistoryDepth` was documented and ignored.** Named in the spec, in the schema
+> comment and in the API docs, read by nothing; the cap was always 10. Now read from
+> `versions.resolved_config` - the config the version was generated with, not today's.
+>
+> **3. The provenance columns were always NULL** (`REQ-TD-02`). `llm_model` and
+> `llm_cache_version` now come from the same version config. **`llm_context` is deliberately left
+> null**: the text was generated in a past run and the prompt context was not kept, so filling it
+> with today's context would put a plausible-looking falsehood in the training data. The spec now
+> says capturing it belongs where the text is GENERATED.
+>
+> **4. `REQ-IM-03` said "never shows a stale image"; the code allows it.** A failed render does not
+> block, or one unrenderable flowchart would make a version permanently unexportable. Narrowed the
+> requirement to "never without saying so" AND made that true: `assert_exportable` now warns about
+> failed renders even when it lets the export through - previously the promise was false in silence.
+>
+> Four reverts checked, one per fix. 26 tests. Unit + API suites 2069 passed / 10 skipped.
+>
+> **Still open from the audit, all documented:** `llm_context` capture at generation time, and the
+> three path-taking output readers (`REQ-PRE-02`'s first line).)
+
+> Updated: 2026-09-19d (**review_update_v1 step 9 - `REQ-PRE-02`, the export path**. Two holes,
+> both quiet, both closed; a third named and left.
+>
+> **An export-only run read whatever was on disk.** `--from-phase 4` SKIPS Phase 3, so it exported
+> this machine's text files - while the DATABASE is what a correction updates
+> (`rerender.write_output_row` writes the row, not the file). Correct a flowchart label, re-export,
+> and the document came from the previous text on a machine that was simply never told.
+> `run.py::_restore_output_from_db` now restores the version's stored text before Phase 4, so the
+> exporter, the flowchart engine and the SWE.4 views all read database content. Only for phase 4: a
+> run that includes Phase 3 rewrites `output/` from the model anyway.
+>
+> **The output capture swallowed its own failures.** `except Exception: pass` under the note
+> "best-effort: disk output is intact" - and the disk being intact is exactly what made it
+> dangerous. The document served from the database, or from another node, kept the previous render
+> while that machine looked correct. Now reported at ERROR level, and still not fatal: the
+> documents are already produced.
+>
+> **What landed is verified.** A returned count is not proof - it counts rows offered, not rows
+> that survived. `_verify_output_capture` compares text files on disk against rows written and
+> warns on a divergence. Binaries are excluded (PNG/DOCX stay as files, D-14) or every run would
+> report one; the walk is recursive, because views write into `output/<group>/`.
+>
+> **Named and left:** the three readers still take a PATH rather than a database handle -
+> `export_docx(json_path=...)`, the flowchart engine's `--interface-json`, `test_steps._load_cfgs`.
+> Restoring first makes them read the right CONTENT; rewiring them to read rows directly is what
+> would let `output/` hold only `.png` and `.docx`, which is REQ-PRE-02's first line. That touches
+> the DOCX exporter and the flowchart subprocess, so it is its own piece of work.
+>
+> Four reverts checked. 14 tests. Unit + API suites 2042 passed / 10 skipped.
+>
+> **THE FEATURE IS FUNCTIONALLY COMPLETE.** All seven kinds can be corrected; corrections reach the
+> document, survive a regeneration, carry into the next version, invalidate what they should, and
+> block a stale export.)
+
+> Updated: 2026-09-19c (**review_update_v1 - both queues are now DRAINED by a run**. The
+> obligations recorded in steps 6 and 7 were being collected by nobody, which is a slow lie: the
+> document stays stale while a table says somebody will deal with it.
+>
+> **The regeneration queue is paid in TWO places**, because its kinds live in different phases.
+> `description`/`unitDescription` in Phase 2 (`model_deriver._take_regeneration_queue`), and
+> `behaviourDescription` in Phase 3 (`run_views._retire_behaviour_regenerations`), because the
+> behaviour view rebuilds every row it writes - running it IS the regeneration.
+>
+> **No force-regenerate switch was added, and none is needed.** `_enrich_from_llm` already
+> documents that descriptions "skip when already present (the engine carries them forward)", so
+> BLANKING the stale text is exactly the instruction to generate it again. A second way to say
+> that would be two expressions for one fact.
+>
+> **Only what came back is retired.** An entry whose slot is still empty after the enrichment means
+> the regeneration did not happen - LLM unreachable, or `llm.descriptions` off - and clearing it
+> would turn "still owed" into "done". An entry whose slot has LEFT the version is retired, or it
+> would be retried for ever against something that is not there.
+>
+> **The render queue is drained at `store.capture_output`** - the first moment both the job and an
+> output tree are in the same place. Nothing runs on a timer, deliberately: a schedule would be a
+> second way for a picture to appear, and the export already blocks until the job is done.
+>
+> **A testing note.** The wiring class matched `_take_regeneration_queue(functions_data`, which is
+> ALSO how the definition begins - so two of its tests were reading the def's position and would
+> have passed with no call site at all. This is the third time that trap has bitten in this
+> feature. Every matcher now requires the call to be INDENTED, and
+> `test_no_matcher_can_match_a_definition` runs each matcher against the def text to prove it
+> rejects it.
+>
+> `TestEveryPieceHasACaller` now walks `engine/review/` and fails if any module has no caller in
+> the pipeline, the API or the CLI - so a new unwired module is caught when it is added rather than
+> when someone notices the feature doing nothing.
+>
+> Three reverts checked. 24 tests. Unit + API suites 2028 passed / 10 skipped.
+>
+> **Remaining: step 9 (`REQ-PRE-02` - read output from the database). The feature itself is
+> functionally complete.**)
+
+> Updated: 2026-09-19b (**review_update_v1 - the pipeline now CALLS the feature**. Two one-line
+> call sites; everything beneath them was already built and tested but nothing reached them.
+>
+> `incremental/engine.py::_carry_review_overrides` sits beside `carry_forward_globals`, because the
+> two belong together: one moves the reviewer's WORDS (the baseline's model already holds them),
+> the other the RECORD of who wrote them. Without the second the new version does not know which of
+> its text is human-authored - undo has nothing to restore to, the cascade regenerates over a
+> human's wording, and the two Phase-3 kinds vanish.
+>
+> `run_views.py::_with_text_overrides` attaches this version's corrections to the config
+> immediately before the views run (REQ-AP-05). Attached in the RUNNER, not in a view: a view stays
+> a pure function of `(model, config)` and never opens a database of its own. The phases are
+> separate subprocesses, so the runner is also the first place with both the version id and the
+> config in hand.
+>
+> **Both call sites are non-fatal.** A generation that has already paid for the parse and the LLM
+> must not be lost because corrections could not be copied or loaded; they are logged and stay
+> where they are for a later run.
+>
+> `tests/unit/test_review_pipeline_wiring.py` checks each call site exists and runs at the right
+> point, with a matcher proven unable to match a `def` line - the mistake made earlier in this
+> feature, where a wiring test could not fail. `TestEveryPieceHasACaller` maps every piece to its
+> caller, and asserts that `run_pending` and the regeneration-queue consumer still have NONE, so
+> the day one acquires a caller the docs listing them as missing fail alongside it.
+>
+> Three reverts checked: Phase 3 not handed the corrections, the generation not carrying them, and
+> the corrections attached after the views ran. Each fails.
+>
+> 18 tests. Unit + API suites 2004 passed / 10 skipped.
+>
+> **Remaining: 6b (consume the regeneration queue), a scheduler for `render_queue.run_pending`,
+> and 9 (`REQ-PRE-02` - read output from the database).**)
+
+> Updated: 2026-09-19 (**review_update_v1 step 8 - carry-forward; `slot_shape` finally has a
+> reader**. `engine/review/carry_forward.py`.
+>
+> **This is the first consumer of `slot_shape`.** It has been written and guarded since the schema
+> landed and nothing read it, so until now the REQ-ID-02 guard existed but could not be shown to
+> work. It can now: seed v4 from v3 on byte-identical source with one node added, and the
+> correction is orphaned rather than carried. Reverting the shape check (gating on `source_hash`
+> alone, as the design originally said) fails that test.
+>
+> **What already worked, and what was missing.** The TEXT of the five model-backed kinds carries
+> itself - `engine.carry_forward_globals` copies `description` from the baseline's model, and the
+> baseline's model already holds the human's text. What was missing is the override ROWS: without
+> them the new version does not know which text is human-authored, so undo has nothing to restore
+> to, the cascade would regenerate over a human's wording, and the two Phase-3 kinds (whose text
+> lives ONLY in the override table) would simply vanish.
+>
+> **Three decisions the design's pseudocode did not cover.** The shape is NOT carried onto the new
+> row - it describes the baseline's graph, and copying it would let the NEXT version check a
+> correction against a shape nothing verified for it. Every orphan carries a REASON ("that
+> function's code changed", "the flowchart was renumbered even though the code did not"), because
+> a reviewer whose correction stopped applying is owed an explanation rather than a silent
+> disappearance. And a correction already made against the target wins - it is newer than anything
+> the baseline can offer.
+>
+> `overrides_for_config` builds the Phase-3 payload in the shape `phase3_overrides.from_config`
+> reads. Only the two Phase-3 kinds appear: the other five are in the model already, and putting
+> them in both places would be the second copy this design exists to remove.
+>
+> Four reverts checked; three fail tests. The fourth - removing the orphan filter from the SQL -
+> changes nothing observable, because `labels_by_flowchart` filters again downstream. That is
+> deliberate defence in depth and the code and the test now say so rather than implying coverage
+> that does not exist.
+>
+> 19 tests. Unit + API suites 1986 passed / 10 skipped.
+>
+> **Remaining: wiring carry-forward into a run, 6b (consume the regeneration queue), 9
+> (`REQ-PRE-02`), and a scheduler for `render_queue.run_pending`.**)
+
+> Updated: 2026-09-18f (**review_update_v1 step 7 - images**. `engine/review/render_queue.py`,
+> `render_jobs` (+ alembic `0013`), and the export guard now blocks on pending pictures.
+>
+> **No daemon thread was added, and the design said one.** The row, not a thread, is what was
+> actually needed: a DURABLE answer to "is this version's picture current" that an export on
+> ANOTHER host can read. A thread would have given a faster redraw on one host and no answer
+> anywhere else. The render runs inline where the saving host has an output tree (job `done`
+> before the response); otherwise it stays `pending` until `run_pending` is called where the tree
+> lives. Both paths write the same rows.
+>
+> **`REQ-IM-02` in force:** a pending render makes the version stale even when the TEXT is
+> current - exporting now would ship the new wording and the old picture.
+>
+> **A FAILED render deliberately does NOT block.** It cannot be waited for, and blocking would
+> make one unrenderable flowchart permanently unexportable - the cure worse than the disease. It
+> is reported through `failed_renders` and `explain()`, so a document goes out with somebody
+> knowing the image is stale rather than nobody. Reverting this (making failures block) fails a
+> test written for exactly that over-correction.
+>
+> **Two corrections to one flowchart make TWO jobs**, not one. Collapsing them would let a render
+> that began before the second edit satisfy it, leaving the picture one edit behind with nothing
+> pending to say so. `render_dot_cached` is content-addressed, so a redundant redraw is a file
+> copy.
+>
+> `run_pending` re-reads the CURRENT CFG rather than anything carried on the job: by then the
+> flowchart may have been corrected again, and the picture must match what the document will show.
+> Each job completes individually, so one flowchart that cannot be drawn strands neither the
+> others nor the export.
+>
+> API: `pendingRenders` / `failedRenders` on R9, `renderJobs` on R8. The CLI needed no change - it
+> already prints `Staleness.explain()`, which now covers renders.
+>
+> 20 tests; three reverts checked (pending not blocking, failed blocking, worker using the
+> queue-time graph). Unit + API suites 1967 passed / 10 skipped.
+>
+> **Remaining: 6b (consume the regeneration queue), 8 (carry-forward - `slot_shape`'s first
+> reader), 9 (`REQ-PRE-02`).**)
+
+> Updated: 2026-09-18e (**review_update_v1 step 6 - the cascade, recorded rather than run**.
+> `engine/review/cascade.py`, `regeneration_queue` (+ alembic `0012`), R10 on the API.
+>
+> Some LLM text is generated FROM other LLM text, so correcting one piece leaves what was built on
+> it describing wording the human rejected. Four chains exist; **chain 4 (node labels) starts from
+> the SOURCE**, never from a description, which is what bounds the whole thing - otherwise one
+> correction would invalidate ~42,000 node labels.
+>
+> **The design said regenerate; it records instead**, and the reasons were checked not assumed:
+> `get_description` needs the function's SOURCE, which is NOT in the model (`_FN_PAYLOAD_FIELDS`
+> has no body) - it is in the git checkout, which an API host may not have; and regenerating is an
+> LLM call, so a saved sentence would take minutes.
+>
+> **Skipping it was not an option either.** `llm_core.cache.compute_hash` keys a description on the
+> callee's SOURCE plus its dependency hashes. Correcting a DESCRIPTION changes neither, so the next
+> run hits the cache and the caller keeps its stale wording for ever. Without the queue the cascade
+> would simply never happen.
+>
+> `dependents_of()` = the unit's description + direct callers (one indexed lookup on
+> `ix_edges_reverse`, the index the schema already comments "who depends on X") + behaviour rows at
+> either end. One level only (`REQ-CS-02`). A dependent that already has its OWN override is
+> skipped (`REQ-CS-03`) - a human's text is never regenerated over. A global reaches only its unit.
+> Every other kind cascades to nothing.
+>
+> `enqueue` is idempotent per slot: two corrections invalidating the same caller need it rebuilt
+> once. `clear` takes a specific slot, never a whole version - an entry must survive until the
+> thing it names is actually rebuilt, or a half-finished run leaves the document stale with an
+> empty queue saying everything is fine.
+>
+> R3's response now carries `queuedForRegeneration` so the UI can tell the reviewer their edit
+> changed something they did not touch; R10 lists the queue with the correction that caused each
+> entry.
+>
+> Reverted three rules - transitive cascade, regenerating over an existing override, and enqueue
+> appending instead of moving forward - each fails its tests. 24 tests.
+>
+> **STILL OPEN (step 6b): nothing consumes the queue.** Entries are recorded correctly and
+> reported; the run that rebuilds them and clears each entry as it goes is not written. Until then
+> a queued dependent keeps its old wording.
+>
+> Unit + API suites: see the commit. Next: step 7, images as a background job.)
+
+> Updated: 2026-09-18d (**review_update_v1 - HTTP tests for the review API, and the two defects
+> they found**. `tests/api/test_review_overrides_api.py`, 31 tests across both API backends.
+>
+> **Defect 1: every slot update was a 500.** The handler built `ModelAccess()` with no repository,
+> and an API process has no "current run" - `model_repo.repository()` raises by design, since a
+> default was once what made a misconfigured run look successful. `ModelAccess` now takes
+> `(version_id, project_id)` and builds a `DbRepository` itself.
+>
+> **Defect 2: a save returned 200 and stored nothing.** `DbRepository.write` only BUFFERS; the row
+> does not move until `flush`, and `ModelAccess.save()` never called one. Exactly the
+> looks-successful-stores-nothing shape this feature exists to remove, and invisible to every unit
+> test because those pass an in-memory artifacts dict.
+>
+> `flush` now takes an optional `conn` (`model_repo.py`, additive, default unchanged) so the model
+> write joins the caller's transaction. Without it the model and the override row would commit
+> separately and `REQ-AP-02`'s "cannot be half-applied" would have been a claim rather than a fact.
+>
+> Reverting defect 1 fails 18 HTTP tests; reverting defect 2 fails exactly ONE -
+> `test_the_model_really_moved` - so without that single test the bug ships with 60 other HTTP
+> tests green. Worth remembering when judging what a passing suite proves.
+>
+> Also fixed while writing them: the first version of the non-member test used alice, who is an
+> admin on BOTH p1 and p2, so it asserted 403 and got 200. bob (u2) is on p1 only.
+>
+> **Unit + API suites 1923 passed / 10 skipped.** Next: step 6, the cascade.)
+
+> Updated: 2026-09-18c (**review_update_v1 step 5 - the HTTP API and undo**.
+> `api/routes/text_overrides.py` (9 endpoints, registered in `api/main.py`), undo + the overlay
+> list in `override_service`, and **a new section 10 in
+> `docs/production-redesign/05-incremental-api-spec.md`** - the contract the UI is built against.
+>
+> **Undo (`REQ-API-04`) is an ordinary edit whose text happens to be the LLM original**, not a
+> separate state. So it reuses the same write path per kind, the row survives with both texts and
+> its history (which is what the requirement asks for), re-applying it during a Phase-3 run writes
+> the LLM's own words back (a no-op), and `REQ-TD-01`'s "skip pairs whose two texts are equal"
+> already excludes it from a training export. **409** when the slot was empty before the first
+> correction: `REQ-ST-06` forbids writing empty text, and deleting the row instead would destroy
+> the user's work and history to express "there was nothing here".
+>
+> **`GET .../overrides` is an OVERLAY, not a slot enumeration.** `REQ-API-01` asks for the
+> document's slots with their text and whether each is overridden; a version holds ~57,000, so
+> enumerating them would rebuild the document the UI already fetched from
+> `/components` + `/functions` + `/flowcharts`. The endpoint returns only the corrected ones and
+> the UI merges by `slotKey`. Page size capped at 1000.
+>
+> **Keys never travel in a path segment** - they contain `|`, `:`, `,`, `*`, spaces and the 0x01
+> separator. They go in the body or a query parameter. The flowchart routes are the exception and
+> use `slot.encode()`'s base64url token, whose alphabet needs no escaping. A test asserts no review
+> route has any path parameter other than project_id / version_id / flowchart_token.
+>
+> **The transaction is opened in the handler**, because `apply_override` deliberately neither
+> begins nor commits: the edit and its re-derivation land together or not at all (`REQ-AP-02`).
+> 503 when no database is configured - corrections live nowhere else, so the write is refused
+> rather than silently dropped.
+>
+> `tests/unit/test_review_api_contract.py` parses section 10's endpoint table and fails if a
+> documented route is not registered, plus a guard that the comparison is not vacuous if the
+> heading or table format changes. Path-parameter NAMES are normalised before comparing: the spec
+> says `{projectId}` throughout and FastAPI says `{project_id}`, a convention difference that
+> predates this work.
+>
+> Reverted undo-deletes-the-row and router-unregistered; each fails several tests.
+> **Unit + API suites 1861 passed / 10 skipped.** Next: step 6, the cascade.)
+
+> Updated: 2026-09-18b (**review_update_v1 step 4 - the export guard; plus a merge handover doc**.
+> `engine/review/export_guard.py`, a stamp in `incremental/store.py::capture_output`, a check in
+> `analyzer.py reexport`.
+>
+> **`REQ-AP-04`.** `reexport --from-phase 4` is "export only" and SKIPS Phase 3 - the step that
+> rebuilds the view rows the document is built from. A correction saved a second earlier has moved
+> the model and the override table; the export then ships the previous wording with nothing to
+> notice. The guard is a QUERY over stored facts, not a flag:
+> `max(text_overrides.updated_at) > min(view_derivations.derived_at)` => stale. So a future write
+> path that forgets to re-derive still cannot slip past it.
+>
+> **The baseline had to be created.** Nothing wrote `view_derivations` except the override path, so
+> the first correction to any version would have reported it stale for ever.
+> `capture_output` now stamps it - the one point Phase-3 output reaches the database, so every
+> ordinary run has a baseline. It writes `view_name = "*"` (`export_guard.PIPELINE_ALL`) for the
+> whole group: Phase 3 is a subprocess and the capture point does not know which individual views
+> ran, so naming them would invent precision this code does not have. `min(derived_at)` is correct
+> either way.
+>
+> **Absence of evidence counts as stale**: corrections with no derivation row at all is not proof
+> of freshness. A guard that reads "no data" as "fine" is the guard that does not guard.
+>
+> Only phase 4 is gated - phases 2 and 3 re-derive on the way through, so refusing them would block
+> the command that fixes the problem. `--force` exports anyway. With no database configured the
+> guard returns 0 rather than failing: turning a missing optional feature into a failed export
+> would be worse than the problem.
+>
+> Timestamps are normalised to UTC before comparing - SQLite returns naive datetimes where Postgres
+> returns aware ones, and comparing the two raises TypeError, which inside an export path reads as
+> a crash rather than as the stale-or-not answer.
+>
+> **New: `docs/design/REVIEW_UPDATE_HANDOVER.md`** - written for whoever merges this branch into
+> Manoj's. Migration chain (0009-0011 on top of 0008, and what to do if develop grows its own
+> 0009), the merge conflict surface file by file, the seven invariants that break silently with
+> the test that catches each, the two pre-existing defects fixed along the way, and how to verify
+> after the merge. Linked from README.
+>
+> Unit suite 1673 passed / 10 skipped. **Next: step 5, API + undo.**)
 
 > Updated: 2026-09-18 (**a static member written through a FIELD is now covered** — branch
 > `fix/swe3-review-v1`, **UNCOMMITTED**). `StatCounters::s_counts.inserts++` — a void function whose only
@@ -1092,6 +2309,254 @@
 > direction, `test_interface_tables` protected/public/direction, `test_unit_diagrams` snapshot). They are
 > SWE.3 static-design paths this change does not touch.)
 
+> Updated: 2026-09-18 (**review_update_v1 steps 3b + REQ-API-08 built; behaviourDescription now
+> has a save path, and its slot key had a collision**. `engine/review/` gains `redraw.py`,
+> `rerender.py`, `phase3_overrides.py`, `resolver.py`, `override_service.py`, `derive.py`.
+>
+> **A slot-key collision found and fixed.** `REQ-ID-01` addressed a behaviour row by
+> `(currentFunctionId, externalUnitFunction)`. The second is a DISPLAY label,
+> `f"{parts[1]} - {external_func}"`, built by dropping the component, the class/namespace and the
+> parameter types - so `AddOperation::apply` and `MultiplyOperation::apply` in one unit both
+> render `"UnitB - apply"`. As half a slot key, with `(version_id, slot_kind, slot_key)` unique,
+> a correction to one row silently overwrites the other. The view already learned this on the
+> OTHER half of the pair: `currentFunctionId` exists because the exporter used to re-find the
+> function by short name and picked the wrong one for exactly those two methods. Rows now carry
+> `externalCallerId` (the caller entity key) beside the label, and that is what addresses them.
+>
+> **Storage decisions.** A behaviour description is a list of bullets stored as ONE text joined by
+> newline, not JSON - `human_text` stays genuinely text for all seven kinds, so `REQ-ST-06` is one
+> rule and the `REQ-TD-01` pair stays sentence-against-sentence. Safe because
+> `llm_call_description._one_line` now collapses each bullet where it is generated; the LLM result
+> was only `.strip()`ed before, so internal newlines survived despite the prompt asking for one
+> line. A flowchart stays one row PER LABEL while its API is per flowchart (`REQ-API-08`).
+>
+> **`REQ-AP-05` in code.** Corrections reach Phase 3 as an INPUT via
+> `config["_analyzerTextOverrides"]`, keyed by kind, shape defined once in
+> `phase3_overrides.from_config` so the two views cannot disagree. `flowcharts` applies them after
+> the engine writes its JSON and BEFORE any PNG is drawn; `behaviourDiagram` before the manifest is
+> written. Regeneration is therefore idempotent.
+>
+> **`REQ-AP-06`**: a save re-parses nothing. `cfg_for_rendering` (flowchart/models.py) rebuilds the
+> graph `build_dot` needs from the stored dict - NOT named `deserialize_cfg`, because
+> `serialize_cfg` is lossy (`label or raw_code`; drops function_key/qualified_name/source_file), so
+> the test is DOT-equality, not a round trip.
+>
+> **`REQ-CS-04`**: a node label re-derives `testSpecs` as well as `flowcharts`, because
+> `test_steps._splice_callee` transcribes a cross-unit callee's steps in place and chains onward.
+>
+> **New invariant with a test**: only `model_store.persist_output_files` and
+> `review.rerender.write_output_row` write a `version_output_files` row;
+> `tests/unit/test_output_row_writers.py` greps engine/, api/ and tools/ for a third.
+>
+> **Two testing notes.** Dropping `raw_code` from `cfg_for_rendering` cannot fail the DOT test and
+> no test pretends it can - `serialize_cfg` writes `label or raw_code`, so the fallback never fires
+> on a reloaded graph. And the first wiring test COULD NOT FAIL: it matched
+> `"_apply_text_overrides(out_dir, config)"`, which also matches the function's own `def` line, so
+> removing the call site kept it green. It now matches the indented CALL and carries a test that
+> the matcher rejects the def line.
+>
+> Unit suite 1655 passed / 10 skipped. **Next: step 4, the export guard.**)
+
+> Updated: 2026-09-17d (**review_update_v1 - how the two non-model kinds are corrected**. Spec
+> `REQ-AP-05`, `REQ-AP-06`, `REQ-CS-04`, rewritten `REQ-AP-01` + `REQ-IM-01`; design 5.1-5.3, 7,
+> 15. **Docs only.** Resolves both open questions raised at step 3.
+>
+> **Rejected: giving `nodeLabel`/`behaviourDescription` a model home.** It would mean moving
+> flowchart label generation into Phase 2 - and Phase 3 is the phase that runs per group and can be
+> PARALLELISED, while labels are the largest LLM cost in the system (~42,000 labels, ~10,000 calls).
+> Moving them takes the most expensive work out of the parallel phase and makes it serial and
+> global. Phase 3 cannot write the model instead (it runs per group, so the model would hold
+> whichever groups last ran). It would also cost scoping: `model_deriver.py`/`parser.py` have NO
+> component scoping, five Phase-3 views do.
+>
+> **Chosen (`REQ-AP-05`): a correction is applied where the text is produced.** Phase-2 text
+> (descriptions, behaviour names) -> the model, as built. Phase-3 text (node labels, behaviour
+> descriptions) -> the override table is the source and the correction is an INPUT to Phase 3, never
+> a patch on its output. Regeneration is then idempotent. One rule covering both cases, so the
+> "five this way, two that way" split is gone. For these two kinds this also keeps FEWER copies of
+> the human text than a model home would (override table only, vs model + override row).
+>
+> Two mechanisms already exist: Phase 3 already hands `knowledge_base.json` to the flowchart
+> subprocess, and `_apply_cached_labels` already pastes a `{node_id: label}` map onto a fresh CFG
+> and rejects it unless the node-id set matches - the same guard as `slot_shape`.
+>
+> **`REQ-AP-06`: saving re-parses nothing.** The CFG is already in `version_output_files`, so a save
+> patches it, rebuilds the DOT, re-renders one PNG. No libclang, no LLM, no subprocess, no C++
+> source - a correction can be saved from a machine without the tree. The DOT is regenerated, never
+> patched: labels are wrapped/escaped on the way in, so patching text would put those rules in a
+> second place. Needs ~25 lines (`cfg_for_rendering`, dict -> the graph fields `build_dot` reads -
+> verified as only `nodes`/`edges`/`entry_node_id` + node `id`/`type`/`label`/`raw_code`, all of
+> which ARE stored). NOT a `deserialize_cfg`: `serialize_cfg` is lossy (`label or raw_code`, drops
+> `function_key`/`qualified_name`/`source_file`), so the test is DOT-equality -
+> `build_dot(cfg) == build_dot(cfg_for_rendering(serialize_cfg(cfg)))` - not a round trip.
+>
+> **`REQ-CS-04`: a node label edit re-derives the component SWE.4 specs.** `_splice_callee`
+> transcribes a cross-unit callee steps in place AND chains, so a label fixed in unit B changes
+> unit A document. Re-deriving all of a component specs is cheap (that view calls no LLM) and
+> correct by construction, versus a transitive traversal that must be right.
+>
+> **Corrected, from reading the code:** a `behaviourDescription` edit renders NOTHING.
+> `MermaidBuilder` labels arrows `<callee>()` - the function name - and appends the description to a
+> separate list. The design previously claimed it re-renders the diagram; it does not.
+>
+> **New invariant, restated honestly:** a `version_output_files` row is written by
+> `persist_output_files` (after a view) or by `review.rerender.write_flowchart_json`, and nothing
+> else - because `persist_output_files` deletes all rows for a version and rebuilds from a full
+> `output_dir` walk, so it has no single-row form and a save has no output dir. Enforced by a
+> source-grep test.
+>
+> **Still open, unchanged and pre-existing:** `test_steps._load_cfgs` reads the flowcharts VIEW
+> output directory and returns `{}` when absent, so every Test Step silently empties if that view
+> did not run. A model home would have fixed it as a side effect; this design does not and does not
+> worsen it. Its own fix, logged.)
+
+> Updated: 2026-09-17c (**review_update_v1 — the flowchart API becomes flowchart-wise, not
+> label-wise** (user modification). Spec `REQ-API-08` + `REQ-ID-04` + `REQ-ST-07`; design §4.1 and
+> §11.1. **Docs only — no code changed, suite still 1550/10.**
+>
+> A version holds ~42,000 node labels against ~2,000 other slots, so one call per label would make
+> the flowchart the only screen whose save cost scales with how much the reviewer fixed. The UI now
+> saves a whole flowchart in one request. **Storage is unchanged: still one row per label**, each
+> with its own `llm_text`, history and `slot_shape` (`REQ-ST-07`). API granularity and storage
+> granularity are different questions with different answers.
+>
+> **Flowchart id = the function's `entity_key`** (`REQ-ID-04`). A flowchart IS one function's CFG —
+> the picture is `<unit>_<function>.png` and the graph hangs off a per-function entry in the unit
+> JSON — so it is the string already at the front of every node-label key. No mapping table, no
+> second id. base64url via `slot.encode()` in a URL path.
+>
+> Three decided rules (`REQ-API-08`): **only changed labels are sent** — a stale copy of an
+> untouched label would overwrite someone else's correction to it, and the server cannot tell
+> unchanged from deliberately reverted, so this is what keeps `REQ-API-07`'s last-write-wins
+> meaning *per slot*; **all or nothing** — validate every label before writing any, or the
+> re-render runs against a half-applied edit; **one re-derivation and one Graphviz run per call**
+> however many labels it carried, which is the real saving, not the request count.
+>
+> Also decided: a reviewer typing the LLM's original wording back is an ordinary edit and the row
+> stays (undo is separate, `REQ-API-04`) — but a **training export must skip pairs whose two texts
+> are equal** (`REQ-TD-01`), or the model learns its own output needed changing into itself.
+>
+> **Nothing already built was invalidated** — `slot.py`, `cfg_shape`, all three tables, both
+> migrations and `override_service.apply_override` are unaffected, because the change is at the API
+> layer and storage stayed per label. `apply_flowchart_overrides` will wrap `apply_override`, not
+> replace it. The shape capture gets *cleaner*: read the node list once per save and stamp every
+> row from it, so they cannot disagree.
+>
+> **New build-order step 3b, now blocking: a model home for `nodeLabel` and `behaviourDescription`.**
+> It already gated 2 of 7 kinds and the `slot_shape` write; it now gates the whole of `REQ-API-08`,
+> because the flowchart endpoint carries exactly the kind that has nowhere to write.)
+
+> Updated: 2026-09-17b (**review_update_v1 step 3 — the override service**. `engine/review/`
+> gains `resolver.py`, `override_service.py`, `derive.py`.
+>
+> `apply_override(conn, version_id, kind, key, text, models=...)` is the single entry point:
+> reject empty (REQ-ST-06) → resolve the slot to a model field → capture `llm_text` ONCE on the
+> first edit (REQ-ST-03) → write the model through the repository gateway → upsert
+> `text_overrides` → append history and trim to N (REQ-ST-04) → re-derive views → stamp
+> `view_derivations` (REQ-AP-04). It neither begins nor commits: the CALLER owns the
+> transaction, so an API handler wraps the edit and its response in one unit (REQ-AP-02).
+> `ModelAccess` writes back ONLY the artifact that changed — handing `model_repo`'s flush all
+> four when one moved is how a one-field edit becomes a whole-model rewrite.
+>
+> **Found while building: two of the seven editable kinds have no model field.** `nodeLabel`
+> lives in the flowchart JSON and `behaviourDescription` in `_behaviour_pngs.json`
+> (`_docxRows[].behaviorDescription`) — both **Phase-3 view output**. "Write the override into
+> the model" has nothing to write to, and writing into the view output would be reverted by the
+> next derivation, which is the two-copies arrangement REQ-AP-01 exists to remove. Both are
+> refused with `NotEditableHere` (501) rather than silently no-opping. Two candidate fixes in
+> REVIEW_UPDATE_DESIGN Open items: give them model fields the way REQ-PRE-01 did for unit/struct
+> descriptions, or have `flowcharts` + `behaviour_diagram` apply overrides at derivation time so
+> the override table IS the source. **This also blocks `slot_shape` from ever being written**,
+> so the REQ-ID-02 capture is deliberately NOT in `apply_override` — code no caller can reach is
+> code no test can check.
+>
+> **Also found: `test_steps` re-derivation is too narrow.** REQ-ED-03 makes a Test Step's
+> wording a node label, and `test_steps._splice_callee` nests a CROSS-UNIT callee's steps under
+> the calling step — so a `nodeLabel` edit in unit A changes unit B's Test Steps, and design §5's
+> "the flowchart JSON for that unit" would leave B stale. Logged in Open items.
+>
+> Node labels are generated ~4 per LLM call in region-aware batches
+> (`flowchart/llm/generator.py`), so neither per-node nor per-flowchart matches generation; the
+> batch is an implementation detail, not an addressing unit.
+>
+> 34 service tests, each of the five silent-failure rules reverted to confirm a test fails.
+> Unit suite 1550 passed / 10 skipped. **Step 4 = the export guard** next.)
+
+> Updated: 2026-09-17 (**review_update_v1 step 2 — slot storage + addressing; and REQ-ID-02's
+> justification was wrong**. Branch `review_update_v1`, commit `2d351c9` plus this change.
+> Spec [REVIEW_UPDATE_SPEC](docs/spec/REVIEW_UPDATE_SPEC.md) · design
+> [REVIEW_UPDATE_DESIGN](docs/design/REVIEW_UPDATE_DESIGN.md).
+>
+> **Three tables** (`api/db/postgres/schema.py`, alembic `0010_text_overrides`), all cascading from
+> `versions` and all registered in `PER_VERSION_TABLES`: `text_overrides` (CURRENT state of one
+> slot, one row — read on every HTML render, so a single indexed lookup, never "newest row in
+> history"; carries BOTH `llm_text` and `human_text`), `text_override_history` (append-only,
+> trimmed to newest N per slot; `llm_text` deliberately NOT here, which makes "the original is
+> never evicted" structural), `view_derivations` (when each view was last derived — input to the
+> export guard, because `reexport --from-phase 4` skips Phase 3 and would otherwise ship stale
+> text silently).
+>
+> **`engine/review/slot.py`** is the ONLY place a slot key is built or split. Composite keys join
+> on **0x01 (SOH)**, NOT the 0x1f `hashing.py` uses: Python counts 0x1c-0x1f as whitespace, so
+> `"a".strip()` deletes it, and a slot key (unlike a hash input) travels through request
+> bodies and form fields that trim. This was measured, not theorised — `make()` stripped each part
+> before checking it for the separator, so a part ending in 0x1f had it silently removed and a key
+> for a DIFFERENT slot came back; the test for it reported DID NOT RAISE.
+>
+> **REQ-ID-02 corrected (`0011_slot_shape`, `text_overrides.slot_shape`).** The design had said
+> positional node ids are safe because "an override only carries forward when `source_hash` is
+> unchanged, and unchanged source produces an identical CFG". **That is false**, and
+> `flowchart_engine._apply_cached_labels` already knew it: identical source renumbers when the CFG
+> builder changes (analyzer upgrade) or when `cfgSimplification` merges nodes past its 15-node
+> threshold (`engine/flowchart/llm/generator.py:159`). The correction would land on a different
+> node with no error — the September silent-wrong-attribution shape again. Each `nodeLabel`
+> override now stores `slot.cfg_shape(...)`, a hash of the flowchart's node-id list, and is reused
+> only when `source_hash` is unchanged AND the shape still matches; otherwise it orphans.
+> `cfg_shape([])` **raises** rather than returning `sha256("")` — that constant-for-every-failure
+> hash is exactly what stopped 73% of a document regenerating in September.
+>
+> Storing a whole flowchart's labels as ONE override was considered and rejected: it wins only on
+> atomic all-or-nothing reuse, which `slot_shape` gives anyway, and loses on undo granularity,
+> `REQ-TD-01` training pairs (blob-vs-blob needs a diff to recover what changed), the `REQ-ST-04`
+> N-cap counting per flowchart instead of per label, and two reviewers clobbering each other
+> through a read-modify-write. The *invalidation* unit is still the whole flowchart — a PNG cannot
+> be partly re-rendered.
+>
+> Build order: steps 1-2 done, **step 3 = `override_service`** next. 38 slot tests; unit suite
+> 1505 passed / 10 skipped before the shape tests landed.)
+
+> Updated: 2026-09-16 (**unit and struct descriptions move out of the DOCX exporter into Phase 2
+> and become stored data** - branch `review_update_v1`, step 1 of
+> [REVIEW_UPDATE_DESIGN](docs/design/REVIEW_UPDATE_DESIGN.md).
+>
+> **What was wrong.** Both were produced INSIDE the exporter and kept nowhere:
+> `get_unit_description(...)` at `docx_exporter.py:1074` while rendering the Component/Unit table,
+> and `get_struct_description(...)` at `:371`, the latter commented *"on the go, no store"*. Three
+> consequences: the **HTML view could not show either** (it does not run the exporter, so the cell
+> was absent from the product's main review surface); **every export re-paid** for the LLM calls,
+> with no reason two exports of one version would word them the same; and neither could be corrected
+> by a reviewer, because there was nothing to correct.
+>
+> **Where they went.** `model_deriver._enrich_unit_and_struct_descriptions`, after the function and
+> global descriptions — the unit description is generated FROM them, so it cannot run earlier. The
+> unit description is stored on the new `model_units.description` (migration
+> `0009_model_units_description`); the struct description needs no migration, because `persist_types`
+> already stores a type's whole payload minus `location`, so a `description` key added in Phase 2
+> lands by itself.
+>
+> **Keeping the wording.** The unit description was generated from the PUBLISHED interface entries,
+> so `_iface_items_for_unit` reproduces two rules that are not incidental: private entities are
+> excluded (`interface_tables.py:92` and `:162` skip them, so they never reached the prompt), and the
+> name is the class-qualified `scoped_name` that `interfaceName` carried, so two same-named methods
+> in one unit stay distinguishable. Both are pinned by tests; dropping the private filter fails one.
+>
+> **Best-effort, deliberately.** A description that cannot be generated is simply absent and the
+> exporter keeps its deterministic fallback — a missing sentence must not fail a phase that has
+> already paid for the parse and the enrichment. An existing description is never regenerated, which
+> also means a carried-forward or human-corrected one is not overwritten.
+>
+> Tests: `tests/unit/test_unit_struct_descriptions_stored.py` (14), including the persist/load
+> round-trip and a guard that no `get_*_description` call remains in the exporter. Suite 1478 green.)
 > Updated: 2026-09-10 (**the project-directory walk is no longer an include-path source by default**
 > — branch `fix/swe4-review-v1`, **UNCOMMITTED**.
 >
