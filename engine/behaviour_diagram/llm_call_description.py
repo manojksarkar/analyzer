@@ -165,6 +165,18 @@ class CallDescriptionGenerator:
 
             with tokens.stage("behaviour.call_description"):
                 result = self._llm_client.generate(system, prompt)
-            return result.strip() if result else ""
+            return _one_line(result) if result else ""
         except Exception:
             return ""
+
+
+def _one_line(text: str) -> str:
+    """Collapse a description onto a single line.
+
+    The prompt asks for one line of at most twenty words and a model may ignore both. A stray
+    newline inside a bullet is a formatting fault in the DOCX on its own, and it also breaks the
+    storage of a reviewer's correction: the bullets of one behaviour row are stored joined by
+    newline, so a bullet containing one would come back as two (REQ-ED-02). Normalising here
+    makes the separator safe by construction rather than by a rule someone must remember.
+    """
+    return " ".join((text or "").split())

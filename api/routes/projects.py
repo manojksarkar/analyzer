@@ -52,6 +52,19 @@ class AccessRequestAction(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _is_superuser(db, user_id: str) -> bool:
+    """`my_role` is computed from a user id, not a User, so the flag is looked up here.
+
+    Best-effort: a failure to answer must not turn a project listing into a 500. Reporting a
+    superuser as an ordinary member is a cosmetic loss; the API still honours them.
+    """
+    try:
+        u = db.users.get_by_id(user_id)
+        return bool(getattr(u, "is_superuser", False)) if u else False
+    except Exception:                                  # noqa: BLE001 - see docstring
+        return False
+
+
 def _project_view(project: Project, db: InMemoryDatabase, user_id: str) -> dict:
     member = db.members.get_member(project.id, user_id)
     versions = db.versions.list_for_project(project.id)
@@ -71,7 +84,9 @@ def _project_view(project: Project, db: InMemoryDatabase, user_id: str) -> dict:
         "current_version": latest.tag if latest else None,
         "doc_counts": stats,
         "team_count": len(db.members.list_members(project.id)),
-        "my_role": member.role if member else None,
+        # A superuser with no membership row is still an admin of this project as far as the
+        # UI is concerned -- reporting None would grey out controls the API will honour.
+        "my_role": member.role if member else ("admin" if _is_superuser(db, user_id) else None),
         "repo_url": project.repo_url,
         "default_branch": project.default_branch,
         # Surface the captured build config so the overview can show it even
@@ -79,8 +94,11 @@ def _project_view(project: Project, db: InMemoryDatabase, user_id: str) -> dict:
         "build_config": {k: v for k, v in (project.build_config or {}).items()
                          if k != "repo_access_token"},
         "architecture_layers": project.architecture_layers,
-        "created_at": project.created_at.isoformat(),
-        "updated_at": project.updated_at.isoformat(),
+        # Null-safe. A row written by `analyzer.py onboard` has no `updated_at` -- the CLI
+        # has no notion of "modified" -- and an unconditional .isoformat() turned the whole
+        # project LIST into a 500 for every project, not just that one.
+        "created_at": project.created_at.isoformat() if project.created_at else None,
+        "updated_at": project.updated_at.isoformat() if project.updated_at else None,
     }
 
 
@@ -93,7 +111,11 @@ def list_projects(
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
-    projects = db.projects.list_for_user(current_user.id)
+    # A superuser sees everything. Without this the bypass in `require_project_member` would
+    # be half a feature: every project would OPEN but none would be LISTED, which reads as the
+    # projects having vanished.
+    projects = (db.projects.list_all() if getattr(current_user, "is_superuser", False)
+                else db.projects.list_for_user(current_user.id))
     return {"projects": [_project_view(p, db, current_user.id) for p in projects]}
 
 

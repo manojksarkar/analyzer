@@ -1,0 +1,6 @@
+{
+  "commit_sha": "<full 40-character commit id>",
+  "version_tag": "v1",
+  "mode": "full",
+  "scope": { "type": "group", "names": ["Full"] }
+}

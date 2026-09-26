@@ -118,8 +118,9 @@ def _resolve_units(model: dict, requested: list, allowed_components=None,
 
     `strict` is what separates the two callers, and conflating them was the bug:
 
-      * run.py validates ONCE against the whole run's scope, before Phase 1. A unit outside
-        that scope will produce nothing anywhere, so it is an error — strict=True.
+      * run.py validates ONCE against the whole run's scope, at startup -- and only when the
+        stored model is the one Phase 3 will use (`group_planner.unit_check_can_run_early`).
+        A unit outside that scope will produce nothing anywhere, so it is an error — strict=True.
       * Phase 3 runs once PER COMPONENT when documents are per component (the normal case).
         `--selected-unit Utils` reaches the App invocation as well as the Math one, and there
         the unit is not unknown, merely elsewhere — strict=False, narrow to nothing, say so.
@@ -190,6 +191,54 @@ def _load_model():
         print(f"Error: {e}. Run Phase 2 (model_deriver) first.")
         raise SystemExit(1)
 
+
+
+def _with_text_overrides(config):
+    """`config` plus this version's reviewer corrections (`REQ-AP-05`).
+
+    Returns `config` unchanged when there is no version id (a standalone run) or no database --
+    both are ordinary, and neither is a reason to fail a phase that has already paid for the
+    parse and the enrichment. A correction that cannot be loaded is logged, not raised: losing a
+    whole generation over it would cost far more than the correction is worth.
+    """
+    try:
+        from core.run_context import version_id as _vid
+        from core.db import get_engine, is_database_configured
+        vid = _vid()
+        if not (vid and is_database_configured()):
+            return config
+        from review.carry_forward import config_with_overrides
+        with get_engine().connect() as cx:
+            out = config_with_overrides(cx, vid, config)
+        from review.phase3_overrides import CONFIG_KEY
+        n = sum(len(v) for v in (out.get(CONFIG_KEY) or {}).values())
+        if n:
+            print("[run_views] applying %d reviewer correction(s) to this run" % n)
+        return out
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        print("[run_views] could not load text overrides: %s" % exc)
+        return config
+
+
+def _retire_behaviour_regenerations() -> None:
+    """Clear queued behaviour-row regenerations, now that the views have rebuilt them.
+
+    Never fatal: the views have already run and their output is written; failing the phase here
+    would throw that away over bookkeeping.
+    """
+    try:
+        from core.run_context import version_id as _vid
+        from core.db import get_engine, is_database_configured
+        vid = _vid()
+        if not (vid and is_database_configured()):
+            return
+        from review.cascade import clear_behaviour_entries
+        with get_engine().begin() as cx:
+            n = clear_behaviour_entries(cx, vid)
+        if n:
+            print("[run_views] retired %d regenerated behaviour description(s)" % n)
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        print("[run_views] could not retire behaviour regenerations: %s" % exc)
 
 def main():
     args = sys.argv[1:]        # path flags already applied at import
@@ -302,7 +351,18 @@ def main():
         # would print `narrowed to unit(s): __none__`, which reads like a bug.
         if selected_units != ["__none__"]:
             print(f"[run_views] narrowed to unit(s): {', '.join(selected_units)}")
+    # REQ-AP-05. The two Phase-3 kinds -- node labels and behaviour descriptions -- have no
+    # model field, so their corrections are an INPUT to this phase. Attached HERE, in the
+    # runner, rather than inside a view: a view stays a pure function of (model, config) and
+    # never opens a database of its own.
+    config = _with_text_overrides(config)
+
     run_views(model, output_dir, model_dir, config, doc_type=doc_type)
+
+    # REQ-CS-01's other half. A queued behaviour description has no model field to blank, so
+    # Phase 2 cannot pay that debt -- but the behaviour view rebuilds every row it writes, so
+    # running it IS the regeneration. Retired here, where it actually happened.
+    _retire_behaviour_regenerations()
 
 
 if __name__ == "__main__":
