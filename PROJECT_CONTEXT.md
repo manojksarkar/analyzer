@@ -218,6 +218,66 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-27 (**`review_update_v2` verified line by line against both branches, and
+> develop's struct/class/union descriptions made fully reviewable: R11 offers only the records a
+> document describes and says where each is shown; a re-export registers the documents a version is
+> missing; `reexport` refuses another project's version at once; and Dynamic Behaviour corrections
+> now survive the next version -- every one of them was orphaned on every generation.**
+>
+> Completeness, checked mechanically: every line develop added since the merge-base is in the
+> branch except 55 deliberate edits (the view-time LLM call in `views/unit_headers.py`, one
+> `_checkout_for` docstring line, one import, develop's form of one live test, `typeKey` in the
+> e2e snapshot and its column test); every line review_update_v1 added is there except 86
+> deliberate edits (the `_checkout_for` merge, the unit header table leaving the exporter, the
+> view mapping, R11's struct listing, spec examples with layer-qualified ids). No line either side
+> DELETED came back, except `from incremental.stores import Workspace`, which develop's
+> `_checkout_for` needs.
+>
+> LLM text on develop, by call site on base / develop / branch: no new prompt. Two existing texts
+> show in new places -- the struct description (the call moved from
+> `docx_exporter._build_unit_header_table` into `views/unit_headers.py`, now also for plain
+> struct, class and union rows) and flowchart node labels inside SWE.4 test steps ("Check whether
+> <label>."), which `nodeLabel` already covers.
+>
+> Struct descriptions, the whole design: one rule, `utils.is_described_record` -- a struct, class
+> or union with its own unit header row (not nested in a class, not anonymous), or one a typedef
+> row names -- decides what Phase 2 generates, which rows the view prints, and what R11/R2/R3
+> accept. The data dictionary also holds primitives, `#define`s, enums, typedefs and nested
+> records; R11 used to offer all of them (123 entries on the sample for 27 real ones) and R3 saved
+> corrections nobody would ever see -- now 404 with the reason. Every unit header row carries
+> `typeKey` (the record whose description it prints, `None` on a value row); R11 reads it from the
+> stored rows for `shownIn` and the `unit` / `component` filters, which it used to refuse with 400
+> -- 400 now only for output derived before `typeKey`. The slot key is the type's data-dictionary
+> key (`AddOperation`, `NS::Wrapped`). No new endpoint.
+>
+> Fixes completed: `_run_reexport` registers the documents of a version that has none (every
+> web-app run on develop since 1df3016 left them unregistered) -- re-exporting such a version is
+> the repair. `cmd_reexport` checks the version is the project's own before the project config
+> stands in for the version's: a foreign or mistyped id used to reach the checkout search and get
+> advice about `--commit` for a version that does not exist.
+>
+> Found by this round: `carry_forward._still_applies` judged a behaviour row by the NEW version's
+> `_behaviour_pngs.json` rows -- which only Phase 3 draws, after the carry -- so every behaviour
+> correction was orphaned on every generation (the fault 2026-09-26e fixed for units and structs,
+> one kind later; its unit test seeded the target WITH rows). A row is now judged by what it
+> describes, the function and its external caller, both present with unchanged code; stored rows
+> are asked only where they already exist (a re-run). Also learned: develop's default behaviour
+> filter (`views.sequenceDiagrams.filterMode` = `skip_within_unit`) draws NO row on the sample --
+> it wants a call chain across two units of one component -- and a `layer:` scope builds the
+> model only, no documents; `all_callers` at group Layer1.My Sample draws 18.
+>
+> Verified on the real pipeline, fresh SQLite. API, group Full: 27 records offered, 9 shown,
+> `unit=Dispatch` = its 3 classes, R3 refuses a `#define`; corrections of description (published,
+> private, changed), behaviour names, unit, 27 types, a flowchart label; re-export -> v1 still
+> 'complete', 2 documents, Word shows them; CLI `reexport --from-phase 2` keeps every one; v2
+> incremental (194 reused) carries all, `directionAdd` orphaned. CLI: `own-a` and `own-b` both
+> onboard `v1` -> two rows; generating one leaves the other empty; neither takes the other's id.
+> SWE.4: libAbs's DECISION label corrected -> "Check whether HUMAN DECISION." in test_specs.json
+> and the SWE.4 Word file, and carried to v2. Dynamic Behaviour (group Layer1.My Sample,
+> `all_callers`): R6 on `libAdd <- coreAdd` -> re-export -> Word; v2 with an unrelated function
+> changed -> incremental, the row carried and in v2's Word file (before the fix: orphaned).
+> Suites: unit + api + e2e all green.)
+
 > Updated: 2026-09-26f (**Review & update rebased onto develop as branch `review_update_v2`:
 > develop's one new LLM text -- the struct/class/union description in the unit header table -- is
 > now stored and correctable; and two bugs found by running the feature end to end on the merged
