@@ -188,13 +188,14 @@ A project onboarded with `analyzer.py onboard` cannot be run from the web app ei
 
 | step | call | why |
 |---|---|---|
-| 1 | R9 | `stale: true`: show "N corrections are not in the Word file yet" and a Re-export button. `pendingRenders` = flowchart pictures the re-export redraws |
-| 2 | `GET /jobs/current` | the job to re-export: `job.id`, when `job.version_id` is this version (snake_case, §4) |
-| 3 | `POST /jobs/{jobId}/reexport` | project **admin** only — show the button when `GET /projects/{projectId}` gives `my_role: "admin"`. Runs in the background; the server re-derives first when stale |
-| 4 | R9 again | clears the banner once the corrections are re-derived. That happens **before** the Word file is written, so it does not mean "re-export finished" (§17) |
-| 5 | `GET /documents/{docId}/download` | the stored file — the previous one until the re-export has finished |
+| 1 | R9 | `stale: true`: show "N corrections are not in the Word file yet" and a Re-export button. `pendingRenders` = flowchart pictures the re-export redraws. `reexport.status` `queued` or `running`: one is already under way — follow `reexport.jobId` (step 3) instead of offering the button |
+| 2 | `POST /versions/{versionId}/reexport` | project **admin** only — show the button when `GET /projects/{projectId}` gives `my_role: "admin"`. **Any** version, not only the newest. Answers **202** `{"job_id", "status": "queued", "version_id"}` at once; the server re-derives first when the version is stale. **409 `REEXPORT_RUNNING`** while one is running for this version — its `detail.job_id` is the job to follow |
+| 3 | `GET /jobs/{job_id}` every few seconds, or the stream `GET /jobs/{job_id}/events` | `status` goes `queued` → `running` → `complete`, or `failed` with `error_message` saying why. Keep the button disabled until then. The job has `mode: "reexport"` and phases 3 and 4 only (3 is `skipped` when there was nothing to re-derive). Jobs answer in snake_case (§4) |
+| 4 | R9 again | `stale: false` and `reexport.status: "complete"` |
+| 5 | `GET /documents/{docId}/download` | the new Word file. Until step 3 says `complete`, the previous one |
 
-Nothing exports on its own.
+Nothing exports on its own. `GET /jobs/current` is the project's latest *generation*; a re-export is
+never "current", so follow it by its own `job_id`.
 
 ### Flow 7 — needs attention (optional panel)
 
@@ -788,6 +789,11 @@ No parameters.
 | `failedRenders` | integer | renders that gave up — reported, **does not block** |
 | `newestOverrideAt` | string \| null | ISO-8601 UTC |
 | `oldestDerivationAt` | string \| null | ISO-8601 UTC; `null` when the views were never derived |
+| `reexport` | object \| null | the version's newest **re-export job**, `null` when it was never re-exported. `status` `queued` or `running` means one is under way: follow its `jobId` instead of starting another (§3a Flow 6) |
+| `reexport.jobId` | string | follow it with `GET /jobs/{jobId}` or `GET /jobs/{jobId}/events` |
+| `reexport.status` | string | `queued` \| `running` \| `complete` \| `failed` \| `cancelled` |
+| `reexport.startedAt` / `completedAt` | string \| null | ISO-8601 UTC |
+| `reexport.errorMessage` | string \| null | why it failed |
 
 ```json
 {
@@ -798,7 +804,9 @@ No parameters.
   "pendingRenders": 1,
   "failedRenders": 0,
   "newestOverrideAt": "2026-09-18T09:14:22Z",
-  "oldestDerivationAt": "2026-09-18T08:02:10Z"
+  "oldestDerivationAt": "2026-09-18T08:02:10Z",
+  "reexport": { "jobId": "job3c9e1f20", "status": "running",
+                "startedAt": "2026-09-18T09:20:03Z", "completedAt": null, "errorMessage": null }
 }
 ```
 
@@ -821,8 +829,12 @@ document goes out with somebody knowing the image is out of date rather than nob
 never starts an export. The Word file changes only when someone runs a re-export:
 
 ```
-POST /api/v1/projects/{projectId}/jobs/{jobId}/reexport      (project admin; runs in the background)
+POST /api/v1/projects/{projectId}/versions/{versionId}/reexport   (project admin; 202, runs in the background)
 ```
+
+A re-export is **a job of its own** (`mode: "reexport"`): follow it by the `job_id` it answers with,
+one at a time per version (§3a Flow 6). The older `POST /projects/{projectId}/jobs/{jobId}/reexport`
+does the same for the version that job produced, and answers with the new job's id.
 
 The server decides how much to rebuild — R9's question, asked for you: when the version is stale it
 re-derives the views first (Phase 3: corrected text into the view rows, owed flowchart pictures
@@ -1042,16 +1054,6 @@ Honest gaps, so the UI does not plan around something that is not there.
 - **A corrected flowchart's PNG is redrawn by the next run or re-export**, not by the save — R8
   over HTTP has no output tree to draw into, so `renderPending` is `true`. Its DOT is rebuilt by the
   save: draw that (§3a) and the page is current at once.
-- **A re-export has no completion signal.** It runs on the version's existing job and never changes
-  that job's `status`, which stays `complete`; so neither `GET /jobs/{jobId}` nor its `events` stream
-  can say "started" or "finished". The web app's job polling and live stream only run while a job
-  is `queued`, `running` or `paused`, so they never start for a re-export. **A failure is not
-  recorded either**: the failure path leaves a job that is already `complete` untouched, so a failed
-  re-export shows only in the server log. R9 turning `stale: false` means the corrections were
-  re-derived, which happens before the Word file is written. Until the job reports its re-export,
-  "Re-export started" is all the UI can honestly say.
-- **Only the newest version can be re-exported from the UI.** The endpoint takes a job id, and the
-  only way to find one is `GET /jobs/current`, the project's latest job. A version carries no job id.
 - **The page payload carries no slot keys**, so "edit this sentence" on the page means finding the
   item in R11 (same unit, by `label` or `functionName`) and using its `slotKey`.
 

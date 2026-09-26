@@ -623,3 +623,30 @@ class TestTheVersionMustBeTheProjectsOwn:
     def test_the_id_still_works(self, client, review_db, auth_header):
         r = client.get(BASE + "/slots", headers=auth_header, params={"slot_kind": "description"})
         assert r.status_code == 200 and r.json()["total"] >= 1
+
+
+class TestExportReadinessReportsTheReexport:
+    """R9 is what a page calls on load for its banner. It also says whether a re-export is
+    running, so a reloaded page -- or someone else's -- follows that job instead of offering to
+    start another."""
+
+    def _job(self, review_db, job_id, mode, status, minutes_ago=0, error=None):
+        started = (datetime.datetime.now(datetime.timezone.utc)
+                   - datetime.timedelta(minutes=minutes_ago))
+        with review_db.begin() as cx:
+            cx.execute(insert(s.analysis_jobs).values(
+                id=job_id, project_id=PROJECT, version_id=VERSION, status=status, mode=mode,
+                started_at=started, error_message=error))
+
+    def test_never_re_exported_is_null(self, client, review_db, auth_header):
+        self._job(review_db, "jobgen1", "full", "complete", minutes_ago=60)
+        r = client.get(BASE + "/export-readiness", headers=auth_header)
+        assert r.status_code == 200 and r.json()["reexport"] is None
+
+    def test_the_newest_reexport_is_reported(self, client, review_db, auth_header):
+        self._job(review_db, "jobgen1", "full", "complete", minutes_ago=60)
+        self._job(review_db, "jobrx1", "reexport", "failed", minutes_ago=30, error="boom")
+        self._job(review_db, "jobrx2", "reexport", "running", minutes_ago=1)
+        rx = client.get(BASE + "/export-readiness", headers=auth_header).json()["reexport"]
+        assert rx["jobId"] == "jobrx2" and rx["status"] == "running"
+        assert rx["startedAt"] and rx["completedAt"] is None and rx["errorMessage"] is None

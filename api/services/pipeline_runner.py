@@ -37,7 +37,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Set
 
-from ..models.domain import Version, Document
+from ..models.domain import Version, Document, AnalysisJob, AnalysisPhase, REEXPORT_MODE
 from . import git_cli
 from . import doc_render
 from .model_reader import ModelReader
@@ -168,11 +168,89 @@ def signal_resume(job_id: str) -> None:
         ev.set()
 
 
-def reexport(db: Any, job_id: str) -> None:
-    """Run Phase 4 only (re-export DOCX) on a daemon thread."""
-    t = threading.Thread(target=_do_reexport, args=(db, job_id), daemon=True,
-                         name=f"reexport-{job_id}")
-    t.start()
+class ReexportRefused(Exception):
+    """Why a re-export cannot start now. `status` and `code` are the HTTP answer; `job_id` names
+    the job that is in the way, so a client can follow it instead of starting another."""
+
+    def __init__(self, status: int, code: str, message: str, job_id: Optional[str] = None):
+        super().__init__(message)
+        self.status, self.code, self.job_id = status, code, job_id
+
+
+_REEXPORT_ACTIVE = ("queued", "running")
+_REEXPORT_LOCK = threading.Lock()          # guard + create, so two requests cannot both pass
+_reexport_threads: dict[str, threading.Thread] = {}
+
+
+def _reexport_alive(job_id: str) -> bool:
+    """Whether THIS process is still running that re-export. A row left `running` by a server
+    that stopped mid-run is not: nothing will ever finish it."""
+    t = _reexport_threads.get(job_id)
+    return t is not None and t.is_alive()
+
+
+def start_reexport(db: Any, version: Any) -> AnalysisJob:
+    """Re-export `version` as a job of its own, and return that job.
+
+    A re-export used to reuse the version's GENERATION job and never change its status, which
+    stayed `complete`: polling it, or its live stream, said "finished" before anything ran, and
+    a failure was not recorded at all. Nothing stopped a second one starting on the same folder.
+    And it was addressed by job id, which a client could find only for the project's newest job.
+
+    Now it has its own row -- `mode: "reexport"`, phases 3 and 4 -- whose status goes
+    queued -> running -> complete | failed like any job's, so `GET /jobs/{id}` and
+    `GET /jobs/{id}/events` follow it unchanged. It is addressed by VERSION, so any version with
+    a finished generation can be re-exported. One at a time per version: a second request while
+    one runs is refused with the running job's id.
+
+    Raises ReexportRefused. The version must belong to the project; the caller checks that.
+    """
+    with _REEXPORT_LOCK:
+        jobs = db.jobs.list_for_version(version.id)
+        generation = next((j for j in jobs if getattr(j, "mode", None) != REEXPORT_MODE), None)
+        if generation is None:
+            raise ReexportRefused(
+                409, "NO_GENERATION_JOB",
+                f"Version '{version.id}' was not generated through the web app, so there is no "
+                f"run to repeat its export from. Re-export it with `python analyzer.py reexport "
+                f"--project-id {version.project_id} --version-id {version.id}`.")
+        if generation.status != "complete":
+            raise ReexportRefused(
+                409, "VERSION_NOT_READY",
+                f"Version '{version.id}' has no finished generation to re-export: its job "
+                f"{generation.id} is '{generation.status}'.", generation.id)
+        running = next((j for j in jobs if getattr(j, "mode", None) == REEXPORT_MODE
+                        and j.status in _REEXPORT_ACTIVE), None)
+        if running is not None:
+            if _reexport_alive(running.id):
+                raise ReexportRefused(
+                    409, "REEXPORT_RUNNING",
+                    f"Version '{version.id}' is already being re-exported by job {running.id}. "
+                    f"Follow that job rather than starting another on the same folder.",
+                    running.id)
+            _mark_failed(db, running.id, "Interrupted: the API server stopped while this "
+                                         "re-export was running. Start it again.")
+        job = AnalysisJob(
+            id=f"job{uuid.uuid4().hex[:8]}", project_id=version.project_id,
+            commit_sha=generation.commit_sha, version_id=version.id,
+            reference_version_id=None, status="queued", pause_after_phase1=False,
+            layer_filter=generation.layer_filter, phase=3, phase_pct=0,
+            current_activity="Queued — waiting for worker…", activity_detail="",
+            elapsed_seconds=0, eta_seconds=None,
+            phases=[AnalysisPhase(3, "Run Views", "pending", None),
+                    AnalysisPhase(4, "Export DOCX", "pending", None)],
+            started_at=_now(), completed_at=None, error_message=None,
+            branch=generation.branch, version_tag=generation.version_tag,
+            # How the version was generated is how it is re-rendered: same scope, same LLM
+            # switch, same data dictionary, same document title.
+            mode=REEXPORT_MODE, scope=generation.scope, no_llm=generation.no_llm,
+            data_dict_id=generation.data_dict_id, narrowed_parse=generation.narrowed_parse)
+        db.jobs.create(job)
+        t = threading.Thread(target=_run_reexport, args=(db, job.id), daemon=True,
+                             name=f"reexport-{job.id}")
+        _reexport_threads[job.id] = t
+        t.start()
+    return job
 
 
 def get_log_lines(job_id: str, after_idx: int) -> tuple[list[str], int]:
@@ -1734,13 +1812,19 @@ def _reexport_from_phase(version_id: Optional[str]) -> int:
     return 3
 
 
-def _do_reexport(db: Any, job_id: str) -> None:
+def _do_reexport(db: Any, job_id: str) -> bool:
+    """Re-render and re-export one version, as re-export job `job_id`. True when it succeeded.
+
+    Every failure is recorded on the job (`_mark_failed`) before False comes back; the caller
+    marks success.
+    """
     job = db.jobs.get(job_id)
     if not job:
-        return
+        return False
     project = db.projects.get(job.project_id)
     if not project:
-        return
+        _mark_failed(db, job_id, f"Project {job.project_id} not found.")
+        return False
 
     root = get_settings().repo_root
     version_id = getattr(job, "version_id", None)
@@ -1760,7 +1844,7 @@ def _do_reexport(db: Any, job_id: str) -> None:
             cdir = Path(locate_or_restore(job.project_id, version_id).path)
         except SourceUnavailable as exc:
             _mark_failed(db, job_id, str(exc))
-            return
+            return False
     # This version's ARTIFACTS (model/output) — the version-keyed dir when the run captured one,
     # else the legacy commit dir. Kept distinct from the checkout above: run.py parses source from
     # the checkout, while model/output are per-version.
@@ -1786,7 +1870,7 @@ def _do_reexport(db: Any, job_id: str) -> None:
             config_path, _ = _write_project_config(project, workspace_dir)
         except Exception as exc:
             _mark_failed(db, job_id, f"Config generation failed: {exc}")
-            return
+            return False
 
     # Re-export = run.py Phase 4 (--use-model), run IN PLACE against this version's own
     # model/ and output/.
@@ -1814,9 +1898,55 @@ def _do_reexport(db: Any, job_id: str) -> None:
                      arch_layers=arch_layers,
                      model_root=adir / "model", output_root=adir / "output",
                      version_id=getattr(job, "version_id", None))
-    if _execute_subprocess(db, job_id, cmd, phase_start=from_phase):
-        # Re-persist the re-rendered views (C0). The document render now reads interface
-        # tables / flowcharts / behaviour rows from Postgres when they are there, so a
-        # re-export that only rewrote FILES would leave the stored copies stale and appear to
-        # have had no effect. capture_output also re-collects the .docx into documents/.
-        _capture_reexport_output(db, job, adir)
+    if from_phase > 3:
+        # Nothing to re-derive: say so on the job rather than leave phase 3 "pending" for ever.
+        job = db.jobs.get(job_id)
+        for p in job.phases:
+            if p.number < from_phase and p.status == "pending":
+                p.status = "skipped"
+        db.jobs.update(job)
+    if not _execute_subprocess(db, job_id, cmd, phase_start=from_phase):
+        return False
+    # Re-persist the re-rendered views (C0). The document render now reads interface
+    # tables / flowcharts / behaviour rows from Postgres when they are there, so a
+    # re-export that only rewrote FILES would leave the stored copies stale and appear to
+    # have had no effect. capture_output also re-collects the .docx into documents/.
+    _capture_reexport_output(db, job, adir)
+    return True
+
+
+def _run_reexport(db: Any, job_id: str) -> None:
+    """The re-export job's thread: queued -> running -> complete | failed, as a generation does."""
+    try:
+        _init_state(job_id)                  # the log buffer the live stream reads
+        job = db.jobs.get(job_id)
+        if not job or job.status == "cancelled":
+            return
+        job.status = "running"
+        job.current_activity = "Preparing re-export…"
+        db.jobs.update(job)
+        if _do_reexport(db, job_id) and not _is_cancelled(db, job_id):
+            _complete_reexport(db, job_id)
+    except Exception as exc:                  # noqa: BLE001 - recorded on the job, not lost
+        _mark_failed(db, job_id, f"Re-export error: {exc}")
+    finally:
+        _cleanup_state(job_id)
+        with _REEXPORT_LOCK:
+            _reexport_threads.pop(job_id, None)
+
+
+def _complete_reexport(db: Any, job_id: str) -> None:
+    now = _now()
+    job = db.jobs.get(job_id)
+    job.status = "complete"
+    job.phase = 4
+    job.phase_pct = 100
+    job.current_activity = "Done"
+    job.activity_detail = "Re-exported"
+    job.eta_seconds = 0
+    job.completed_at = now
+    job.elapsed_seconds = _elapsed_since(job.started_at, now)
+    for p in job.phases:
+        if p.status in ("pending", "running"):
+            p.status = "done"
+    db.jobs.update(job)

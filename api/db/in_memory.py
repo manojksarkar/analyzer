@@ -19,7 +19,7 @@ import uuid
 from ..models.domain import (
     User, Project, ProjectMember, Version, Commit, AnalysisJob,
     AnalysisPhase, Document, DocumentSection, DocumentAssignment,
-    Function, CompareResult, DocumentDiff, Notification, AccessRequest,
+    Function, CompareResult, DocumentDiff, Notification, AccessRequest, REEXPORT_MODE,
 )
 from ..repositories.interfaces import (
     IUserRepository, IProjectRepository, IProjectMemberRepository,
@@ -525,14 +525,20 @@ class _InMemJobRepo(IAnalysisJobRepository):
         return copy.deepcopy(self._store.get(job_id))
 
     def get_current(self, project_id):
-        # Latest non-cancelled job for the project
+        # Latest non-cancelled GENERATION job for the project. A re-export is a job of its own,
+        # followed by its id; it is not "the project's run".
         candidates = [
             j for j in self._store.values()
             if j.project_id == project_id and j.status not in ("cancelled",)
+            and getattr(j, "mode", None) != REEXPORT_MODE
         ]
         if not candidates:
             return None
         return copy.deepcopy(max(candidates, key=lambda j: j.started_at))
+
+    def list_for_version(self, version_id):
+        jobs = [j for j in self._store.values() if j.version_id == version_id]
+        return [copy.deepcopy(j) for j in sorted(jobs, key=lambda j: j.started_at, reverse=True)]
 
     def update(self, job):
         self._store[job.id] = job

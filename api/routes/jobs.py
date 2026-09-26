@@ -13,12 +13,12 @@ from sse_starlette.sse import EventSourceResponse
 from ..db.session import get_db
 from ..db.in_memory import InMemoryDatabase
 from ..middleware.auth import get_current_user, require_project_admin, require_project_member
-from ..models.domain import User, AnalysisJob, AnalysisPhase
+from ..models.domain import User, AnalysisJob, AnalysisPhase, REEXPORT_MODE
 from ..services.errors import not_found, conflict, bad_request
 from ..services import pipeline_runner
 from ..schemas import (
     StartJobResponse, JobResponse, CurrentJobResponse,
-    FunctionListResponse, ReexportResponse,
+    FunctionListResponse, ReexportResponse, ReexportVersionResponse,
 )
 
 router = APIRouter(tags=["jobs"])
@@ -126,6 +126,9 @@ def start_job(
     version_name = (body.version_tag or "").strip()
     if not version_name:
         raise bad_request("A version name is required.")
+    if (body.mode or "").strip() == REEXPORT_MODE:
+        raise bad_request("A re-export is started with POST "
+                          "/projects/{project_id}/versions/{version_id}/reexport, not as a new job.")
     if db.versions.get_by_tag(project_id, version_name):
         raise conflict("VERSION_EXISTS",
                        f"Version '{version_name}' already exists in this project.")
@@ -379,6 +382,41 @@ def list_functions(
     }
 
 
+def _start_reexport(db, version):
+    """`pipeline_runner.start_reexport`, with its refusals as HTTP errors. A refusal caused by
+    another job names it (`job_id`), so a client can follow that job instead of guessing."""
+    try:
+        return pipeline_runner.start_reexport(db, version)
+    except pipeline_runner.ReexportRefused as exc:
+        detail = {"code": exc.code, "message": str(exc), "status": exc.status}
+        if exc.job_id:
+            detail["job_id"] = exc.job_id
+        raise HTTPException(status_code=exc.status, detail=detail)
+
+
+@router.post("/projects/{project_id}/versions/{version_id}/reexport", status_code=202,
+             responses={202: {"model": ReexportVersionResponse}})
+def reexport_version(
+    project_id: str,
+    version_id: str,
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """Re-export ONE version -- any version with a finished generation, not only the newest.
+
+    Starts a job of its own (`mode: "reexport"`) and answers with its id at once. Follow it like
+    any job, `GET /jobs/{job_id}` or the `GET /jobs/{job_id}/events` stream: `status` goes
+    queued -> running -> complete | failed (`error_message` says why). Refused with 409 and the
+    running job's id while one is already re-exporting this version.
+    """
+    require_project_admin(project_id, current_user, db)
+    version = db.versions.get(version_id)
+    if not version or version.project_id != project_id:
+        raise not_found("Version", version_id)
+    job = _start_reexport(db, version)
+    return {"job_id": job.id, "status": job.status, "version_id": version.id}
+
+
 @router.post("/projects/{project_id}/jobs/{job_id}/reexport",
              responses={200: {"model": ReexportResponse}})
 def reexport(
@@ -387,9 +425,15 @@ def reexport(
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
+    """Re-export the version this job produced. Kept for existing callers;
+    `POST /projects/{project_id}/versions/{version_id}/reexport` is the same thing addressed by
+    version. `job_id` in the answer is the NEW re-export job -- the one to follow."""
     require_project_admin(project_id, current_user, db)
     job = db.jobs.get(job_id)
     if not job or job.project_id != project_id:
         raise not_found("AnalysisJob", job_id)
-    pipeline_runner.reexport(db, job_id)
-    return {"message": "Re-export queued.", "job_id": job_id}
+    version = db.versions.get(job.version_id) if job.version_id else None
+    if not version:
+        raise not_found("Version", job.version_id or "(none)")
+    started = _start_reexport(db, version)
+    return {"message": "Re-export queued.", "job_id": started.id}

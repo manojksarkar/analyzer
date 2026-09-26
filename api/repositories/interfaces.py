@@ -140,7 +140,12 @@ class IAnalysisJobRepository(ABC):
     def get(self, job_id: str) -> Optional[AnalysisJob]: ...
 
     @abstractmethod
-    def get_current(self, project_id: str) -> Optional[AnalysisJob]: ...
+    def get_current(self, project_id: str) -> Optional[AnalysisJob]:
+        """The project's latest non-cancelled GENERATION job. Re-exports are never current."""
+
+    @abstractmethod
+    def list_for_version(self, version_id: str) -> list[AnalysisJob]:
+        """Every job for a version, newest first: its generation, and any re-exports."""
 
     @abstractmethod
     def update(self, job: AnalysisJob) -> AnalysisJob: ...

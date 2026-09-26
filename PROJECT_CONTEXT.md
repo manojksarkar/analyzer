@@ -218,6 +218,52 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-26d (**A re-export is a job of its own, addressed by version: its status goes
+> queued -> running -> complete | failed, one runs at a time per version, and any version can be
+> re-exported -- not only the newest.**
+>
+> Both defects surfaced at the review feature's export step. (1) A re-export reused the version's
+> GENERATION job and never changed its status, which stayed `complete`: polling it or its live
+> stream said "finished" before anything ran (the web app's polling and SSE only run while a job is
+> queued/running/paused), a failure was never recorded (`_mark_failed` skips a job already
+> complete), and nothing stopped a second one on the same folder. (2) It was addressed by job id,
+> and a client could find only the project's newest job (`GET /jobs/current`).
+>
+> `POST /projects/{p}/versions/{v}/reexport` (admin) -> 202 `{job_id, status, version_id}`:
+> `pipeline_runner.start_reexport` creates an `analysis_jobs` row with `mode: "reexport"`
+> (`domain.REEXPORT_MODE`; no schema change -- `mode` was "auto"|"full"), phases 3 and 4 only,
+> copying scope / no_llm / data dictionary / tag from the version's generation job, and runs
+> `_run_reexport` on a thread: `_init_state` (the live stream's log buffer, which re-exports never
+> had), running, `_do_reexport` (now returns bool; phase 3 marked `skipped` when not stale),
+> complete -- unless cancelled -- or failed with the reason. Refusals (`ReexportRefused`, 409 with
+> `code`, and `job_id` when another job is in the way): REEXPORT_RUNNING, VERSION_NOT_READY (its
+> generation is not complete), NO_GENERATION_JOB (a CLI version: use `analyzer.py reexport`). A
+> row left `running` by a server that stopped mid-run is not alive in this process
+> (`_reexport_threads`), so it is marked failed "Interrupted" rather than blocking the version
+> for ever. Guard + create run under a lock -- single API process, like JOB_MAX_CONCURRENCY.
+> `jobs.get_current` excludes re-export jobs, so the project page's "current job" stays the
+> latest generation; `jobs.list_for_version` is new (interface + both backends). The old
+> `POST /jobs/{job_id}/reexport` delegates to the same logic and answers with the NEW job's id.
+> `POST /jobs` refuses `mode: "reexport"`. R9 gains `reexport` -- the version's newest re-export
+> job `{jobId, status, startedAt, completedAt, errorMessage}` or null -- so a reloaded page follows
+> a running re-export instead of offering to start another. `JobView` documents `mode`.
+>
+> Verified on the real pipeline (local SQLite): two versions generated through the API; a label
+> corrected in the OLDER one; `POST /versions/{v1}/reexport` -> 202; a second POST while it ran ->
+> 409 REEXPORT_RUNNING naming the job; R9 during -> reexport running; polling saw running ->
+> complete (32 s); phases 3 and 4 done; R9 after -> stale false, 0 pictures owed; v1's Word files
+> rewritten, v2's untouched; `jobs/current` still v2's generation; the old endpoint -> a new job ->
+> complete. Tests `tests/api/test_reexport_jobs.py` (17 x 2 backends) + R9's field; nine
+> revert-checks caught -- one only after its test stopped relying on two jobs getting different
+> timestamps (Windows clocks can hand them the same one). Spec §3a Flow 6, R9, §14 updated; the
+> two gaps removed from §17.
+>
+> **Found, not fixed:** a CLI version id is checked for existence only, never ownership.
+> `tools/new_project.py` prints "(already reserved)" when ANOTHER project has that id, and
+> `run_context.effective_model_store` accepts it -- so `generate --project-id B --version-id v1`
+> writes project B's run into project A's `v1`. The API is not exposed (it generates `ver…` ids).
+> 2459 passed, 37 skipped (tests/unit + tests/api).)
+
 > Updated: 2026-09-26c (**The review routes never checked that the version in the path belongs to
 > the project in the path. An unknown id looked like an empty version; another project's version
 > answered with that project's text, and took writes. Every route now answers 404, and a TAG sent

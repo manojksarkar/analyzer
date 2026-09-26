@@ -159,6 +159,25 @@ def _version(project_id: str, version_id: str) -> None:
                         detail=f"no version '{version_id}' in project '{project_id}'.{hint}")
 
 
+def _latest_reexport(cx, version_id: str) -> Optional[Dict[str, Any]]:
+    """The newest re-export job of a version, shaped for R9, or None when it was never
+    re-exported. Read from `analysis_jobs` directly, on the connection R9 already holds."""
+    from sqlalchemy import select
+    from ..db.postgres import schema as s
+    from ..models.domain import REEXPORT_MODE
+    j = s.analysis_jobs
+    r = cx.execute(select(j.c.id, j.c.status, j.c.started_at, j.c.completed_at,
+                          j.c.error_message)
+                   .where(j.c.version_id == version_id, j.c.mode == REEXPORT_MODE)
+                   .order_by(j.c.started_at.desc()).limit(1)).first()
+    if r is None:
+        return None
+    return {"jobId": r.id, "status": r.status,
+            "startedAt": r.started_at.isoformat() if r.started_at else None,
+            "completedAt": r.completed_at.isoformat() if r.completed_at else None,
+            "errorMessage": r.error_message}
+
+
 def _row(r) -> Dict[str, Any]:
     return {
         "slotKind": r.slot_kind,
@@ -551,7 +570,12 @@ def export_readiness(
     from review.export_guard import staleness
     with _connection().connect() as cx:
         st = staleness(cx, version_id)
+        reexport = _latest_reexport(cx, version_id)
     return {"stale": st.is_stale, "reason": st.reason, "explanation": st.explain(),
+            # The version's latest re-export job, or null. How a page that was reloaded -- or
+            # opened by someone else -- learns a re-export is already running, and follows that
+            # job instead of offering to start a second one.
+            "reexport": reexport,
             "overrideCount": st.override_count,
             # REQ-IM-02/03: a picture still being drawn blocks the export; one that failed does
             # not, but the UI must be able to say the image is out of date.

@@ -220,11 +220,20 @@ class JobView(BaseModel):
     started_at: str
     completed_at: Optional[str] = None
     error_message: Optional[str] = None
+    # "auto" | "full" for a generation; "reexport" for a re-export, a job of its own whose
+    # phases are 3 and 4 only (3 is "skipped" when there was nothing to re-derive).
+    mode: Optional[str] = None
 
 
 class StartJobResponse(BaseModel):
     job_id: str
     status: str
+
+
+class ReexportVersionResponse(BaseModel):
+    job_id: str             # the re-export job: follow it with GET /jobs/{job_id} or /events
+    status: str             # "queued"
+    version_id: str
 
 
 class JobResponse(BaseModel):
