@@ -331,6 +331,24 @@ class TestTheViewMapping:
         with pytest.raises(slot.SlotKeyError):
             derive.views_for("somethingElse")
 
+    def test_every_mapped_view_is_a_registered_view(self):
+        """A mapping that names a view nobody registers is found only when a correction is
+        derived -- `make_deriver` raises then. The unit header table leaving the DOCX exporter
+        for a view of its own is exactly the kind of move that strands a name."""
+        from views.registry import VIEW_REGISTRY
+        import views  # noqa: F401 - importing the package is what registers the views
+        for kind in slot.ALL_KINDS:
+            for name in derive.views_for(kind):
+                assert name in VIEW_REGISTRY, (kind, name)
+
+    def test_a_struct_description_rebuilds_the_unit_header_table(self):
+        """The table's information column for a struct, class or union row is the stored
+        description; the interface tables never show it."""
+        assert derive.views_for(slot.STRUCT_DESCRIPTION) == ("unitHeaders",)
+
+    def test_a_description_rebuilds_the_swe4_specs_that_copy_it(self):
+        assert "testSpecs" in derive.views_for(slot.DESCRIPTION)
+
     def test_the_component_comes_off_the_front_of_the_id(self):
         assert derive.component_of(slot.DESCRIPTION,
                                    slot.for_entity(slot.DESCRIPTION, FID)) == "Comp"
