@@ -1668,7 +1668,8 @@ def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> l
     """Create one Document per *real* generated DOCX in this version's output/.
 
     Runs are generated **per component** (``--component-per-docx``), so the
-    pipeline writes ``output/<component>/software_detailed_design_<component>.docx``
+    pipeline writes ``output/<id>/software_detailed_design_<id>.docx``, where ``<id>`` is
+    the component's layer-qualified id (``Layer1.Sample-Core``)
     — one dir per component declared under a group in ``architecture_layers``.
     This creates one record per such dir that actually holds a real DOCX (verified
     via ``doc_render.find_docx`` — the same file download/render serve), so records
@@ -1702,6 +1703,12 @@ def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> l
     # spaces -> hyphens) -> (display name, parent layer). Per-component output
     # dirs are named by component, so a dir is only "real" when it matches one of
     # these — guarding against stale dirs from prior runs / other projects.
+    #
+    # The dir carries the component's LAYER-QUALIFIED id (`Layer1.Sample-Core`), not its bare
+    # name, since group and component ids carry their layer (1df3016). Matching the bare name
+    # matched nothing: every run finished with its documents on disk and none registered, so the
+    # web app listed no documents at all. Qualified the same way the engine qualifies it.
+    from core.config import make_qualified_id
     comp_by_dir: dict[str, tuple[str, str]] = {}
     for _layer in (project.architecture_layers or []):
         if not isinstance(_layer, dict):
@@ -1713,7 +1720,7 @@ def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> l
             for _c in (_g.get("components") or []):
                 cname = _c if isinstance(_c, str) else (str(_c.get("name") or "") if isinstance(_c, dict) else "")
                 if cname:
-                    comp_by_dir[cname.replace(" ", "-")] = (cname, lname)
+                    comp_by_dir[make_qualified_id(lname, cname).replace(" ", "-")] = (cname, lname)
 
     # One SWE.3 detailed-design doc per component output dir that holds a real DOCX.
     for d in sorted(out_root.iterdir()):
