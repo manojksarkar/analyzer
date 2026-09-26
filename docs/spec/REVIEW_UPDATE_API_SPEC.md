@@ -49,7 +49,7 @@ Seven **slot kinds** (`REQ-ED-01`). Every request names one:
 | `behaviourInputName` | the behaviour table's input name | R3 |
 | `behaviourOutputName` | the behaviour table's output name | R3 |
 | `unitDescription` | a unit's description | R3 |
-| `structDescription` | a struct's description | R3 |
+| `structDescription` | a struct's, class's or union's description — the information column of its unit header row | R3 |
 | `behaviourDescription` | a Dynamic Behaviour row — a **list** of bullets, edited as one block | **R6** |
 | `nodeLabel` | one flowchart node's label | **R8** |
 
@@ -301,7 +301,7 @@ Returned by R1 (in a list), R2 (bare) and R4 (nested). One slot's current state.
 ```json
 {
   "slotKind": "description",
-  "slotKey": "Gpio|GpioDrv|Gpio_Init|void",
+  "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void",
   "llmText": "Initializes the module.",
   "humanText": "Initialises the GPIO driver and clears pending interrupts.",
   "isOrphaned": false,
@@ -353,7 +353,7 @@ corrected returns an empty list.
   "overrides": [
     {
       "slotKind": "description",
-      "slotKey": "Gpio|GpioDrv|Gpio_Init|void",
+      "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void",
       "llmText": "Initializes the module.",
       "humanText": "Initialises the GPIO driver and clears pending interrupts.",
       "isOrphaned": false,
@@ -417,7 +417,7 @@ For the five model-backed kinds. `nodeLabel` → R8, `behaviourDescription` → 
 ```json
 {
   "slot_kind": "description",
-  "slot_key": "Gpio|GpioDrv|Gpio_Init|void",
+  "slot_key": "Layer2.Gpio|GpioDrv|Gpio_Init|void",
   "text": "Initialises the GPIO driver and clears pending interrupts."
 }
 ```
@@ -438,15 +438,15 @@ For the five model-backed kinds. `nodeLabel` → R8, `behaviourDescription` → 
 ```json
 {
   "slotKind": "description",
-  "slotKey": "Gpio|GpioDrv|Gpio_Init|void",
+  "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void",
   "humanText": "Initialises the GPIO driver and clears pending interrupts.",
   "llmText": "Initializes the module.",
   "previousText": "Initializes the module.",
   "firstEdit": true,
   "viewsDerived": [],
   "queuedForRegeneration": [
-    { "slotKind": "unitDescription", "slotKey": "Gpio|GpioDrv" },
-    { "slotKind": "description", "slotKey": "App|AppMain|App_Start|void" }
+    { "slotKind": "unitDescription", "slotKey": "Layer2.Gpio|GpioDrv" },
+    { "slotKind": "description", "slotKey": "Layer1.App|AppMain|App_Start|void" }
   ]
 }
 ```
@@ -495,7 +495,7 @@ with `humanText` equal to `llmText`.
   "undone": true,
   "override": {
     "slotKind": "description",
-    "slotKey": "Gpio|GpioDrv|Gpio_Init|void",
+    "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void",
     "llmText": "Initializes the module.",
     "humanText": "Initializes the module.",
     "isOrphaned": false,
@@ -575,8 +575,8 @@ The row is a **list** of bullets, one per call arrow, edited as one block (`REQ-
 
 ```json
 {
-  "function_id": "Gpio|GpioDrv|Gpio_Init|void",
-  "external_caller_id": "App|AppMain|App_Start|void",
+  "function_id": "Layer2.Gpio|GpioDrv|Gpio_Init|void",
+  "external_caller_id": "Layer1.App|AppMain|App_Start|void",
   "bullets": [
     "App_Start calls Gpio_Init to bring the port up",
     "Gpio_Init returns the port state"
@@ -601,7 +601,7 @@ land on the wrong row (`REQ-ID-01`). Copy both from the row R11 returns: `functi
 
 ```json
 {
-  "slotKey": "Gpio|GpioDrv|Gpio_Init|void\u0001App|AppMain|App_Start|void",
+  "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void\u0001Layer1.App|AppMain|App_Start|void",
   "bullets": [
     "App_Start calls Gpio_Init to bring the port up",
     "Gpio_Init returns the port state"
@@ -636,7 +636,7 @@ key in base64url without padding (`REQ-ID-04`). One request opens the editor; on
 
 | name | type | notes |
 |---|---|---|
-| `flowchartToken` | string | base64url, no padding. e.g. `Gpio\|GpioDrv\|Gpio_Init\|void` → `R3Bpb3xHcGlvRHJ2fEdwaW9fSW5pdHx2b2lk` |
+| `flowchartToken` | string | base64url, no padding. e.g. `Layer2.Gpio\|GpioDrv\|Gpio_Init\|void` → `TGF5ZXIyLkdwaW98R3Bpb0RydnxHcGlvX0luaXR8dm9pZA` |
 
 **Response 200**
 
@@ -659,14 +659,14 @@ key in base64url without padding (`REQ-ID-04`). One request opens the editor; on
 
 ```json
 {
-  "flowchartId": "Gpio|GpioDrv|Gpio_Init|void",
-  "flowchartToken": "R3Bpb3xHcGlvRHJ2fEdwaW9fSW5pdHx2b2lk",
+  "flowchartId": "Layer2.Gpio|GpioDrv|Gpio_Init|void",
+  "flowchartToken": "TGF5ZXIyLkdwaW98R3Bpb0RydnxHcGlvX0luaXR8dm9pZA",
   "functionName": "Gpio_Init",
   "labels": [
-    { "nodeId": "n0", "slotKey": "Gpio|GpioDrv|Gpio_Init|void\u0001n0",
+    { "nodeId": "n0", "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void\u0001n0",
       "text": "Start", "humanText": null, "llmText": null,
       "isOverridden": false, "isOrphaned": false },
-    { "nodeId": "n7", "slotKey": "Gpio|GpioDrv|Gpio_Init|void\u0001n7",
+    { "nodeId": "n7", "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void\u0001n7",
       "text": "Check the write-protect flag", "humanText": "Check the write-protect flag",
       "llmText": "Check flag", "isOverridden": true, "isOrphaned": false }
   ],
@@ -729,7 +729,7 @@ Three rules (`REQ-API-08`):
 
 ```json
 {
-  "flowchartId": "Gpio|GpioDrv|Gpio_Init|void",
+  "flowchartId": "Layer2.Gpio|GpioDrv|Gpio_Init|void",
   "applied": ["n7", "n9"],
   "firstEdits": ["n9"],
   "slotShape": "8d08d2a38307c1a44778f12cdb76fd1cb4af0d23dcfa1b25fd7698374f005819",
@@ -863,11 +863,18 @@ the UI must refetch after a save:
 | `behaviourInputName`, `behaviourOutputName` | next page load — read from the model | after re-export |
 | `behaviourDescription` | next page load — the stored behaviour row is written | after re-export |
 | `nodeLabel` | next page load **when the UI draws the DOT** (§3a, *Drawing a flowchart*): the payload's DOT is read from the database, and R8 rebuilt it. The PNG (`image_url`) changes only after the owed render (next re-export), so a page that shows the PNG shows the old label until then. Today's web-app does, and prints the DOT as text only when no PNG exists | after re-export |
-| `unitDescription` | **not shown on the page at all** — the page's unit section has no description | after re-export |
-| `structDescription` | **not shown on the page** — struct rows display `N/A` | after re-export |
+| `unitDescription` | **not shown on the page at all** — the page's Component/Unit table joins the interface descriptions instead of reading the stored one | after re-export |
+| `structDescription` | **after re-export** — the unit header table on the page is the Phase-3 view's output (`unit_headers.json`), and the re-export rebuilds it | after re-export |
 
-The last two are gaps in the page renderer (`api/services/doc_render.py`), not in saving: the Word
-exporter reads both fields (REQ-PRE-01), the page was never updated to. Recorded in §17.
+`unitDescription` is a gap in the page renderer (`api/services/doc_render.py`), not in saving: the
+Word exporter reads the stored field (REQ-PRE-01), the page was never updated to. Recorded in §17.
+
+**A correction to a function the document does not show is saved and never seen.** A function gets
+an interface row — and a flowchart — only when a unit OTHER than its own calls it, among the files
+this run parsed (develop 470d15c: a `PUBLIC` marking no longer publishes by itself). A run scoped
+to one group cannot see its callers in other groups, so most of its functions are private and
+absent from the SWE.3 document, while R11 still lists every function's `description`. Test with a
+scope whose callers are in it, or pick a function that has a row.
 
 ---
 
@@ -898,9 +905,9 @@ No parameters.
   "pending": [
     {
       "slotKind": "description",
-      "slotKey": "App|AppMain|App_Start|void",
+      "slotKey": "Layer1.App|AppMain|App_Start|void",
       "reason": "its description was written with this function as context",
-      "causedBy": { "slotKind": "description", "slotKey": "Gpio|GpioDrv|Gpio_Init|void" },
+      "causedBy": { "slotKind": "description", "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void" },
       "requestedAt": "2026-09-18T09:14:22Z"
     }
   ],
@@ -936,7 +943,7 @@ response instead of dug out of stored view output.
 |---|---|---|---|---|
 | `slot_kind` | string | **yes** | — | one of §1 |
 | `unit` | string | no | — | narrow to one unit. Refused with **400** for `structDescription` |
-| `component` | string | no | — | narrow to one component. Same exception |
+| `component` | string | no | — | narrow to one component, by its **layer-qualified id** (`Layer1.Sample-Core`) — the same string as a document's `group` in `GET /documents`. Same exception |
 | `limit` | integer | no | `200` | 1–1000 |
 | `offset` | integer | no | `0` | ≥ 0 |
 
@@ -963,8 +970,8 @@ A row, for the six per-slot kinds:
 {
   "slotKind": "description",
   "slots": [
-    { "slotKind": "description", "slotKey": "Sample-Core|Core|coreAdd|int,int",
-      "label": "coreAdd", "component": "Sample-Core", "unit": "Core",
+    { "slotKind": "description", "slotKey": "Layer1.Sample-Core|Core|coreAdd|int,int",
+      "label": "coreAdd", "component": "Layer1.Sample-Core", "unit": "Core",
       "text": "Adds two integers.", "llmText": null,
       "isOverridden": false, "isOrphaned": false }
   ],
@@ -978,9 +985,9 @@ graph, so each row carries the token **R7** takes:
 
 ```json
 { "slotKind": "nodeLabel",
-  "flowchartId": "Sample-Core|Core|coreAdd|int,int",
-  "flowchartToken": "U2FtcGxlLUNvcmV8Q29yZXxjb3JlQWRkfGludCxpbnQ",
-  "functionName": "coreAdd", "component": "Sample-Core", "unit": "Core",
+  "flowchartId": "Layer1.Sample-Core|Core|coreAdd|int,int",
+  "flowchartToken": "TGF5ZXIxLlNhbXBsZS1Db3JlfENvcmV8Y29yZUFkZHxpbnQsaW50",
+  "functionName": "coreAdd", "component": "Layer1.Sample-Core", "unit": "Core",
   "nodeCount": 7, "overriddenCount": 1 }
 ```
 
@@ -1048,9 +1055,12 @@ Honest gaps, so the UI does not plan around something that is not there.
 - **No cleanup endpoint** for orphaned corrections — deliberately, pending a decision; see
   [REVIEW_UPDATE_DESIGN Open items](../design/REVIEW_UPDATE_DESIGN.md#open-items).
 - **No bulk or batch write** beyond R8's one flowchart. Correct slots one call at a time.
-- **The document page does not show unit or struct descriptions** (§14, "When a correction becomes
-  visible"), so corrections to those two kinds appear only in the Word file. The page renderer lags
-  the Word exporter here; both read the same stored fields once it catches up.
+- **The document page does not show unit descriptions** (§14, "When a correction becomes
+  visible"), so a `unitDescription` correction appears only in the Word file. The page renderer lags
+  the Word exporter here; both read the same stored field once it catches up. (Struct, class and
+  union descriptions are on the page now, in the unit header table, after a re-export.)
+- **R11 lists slots the document does not show**: every function's `description`, published or not
+  (§14). Nothing marks which ones have a row yet.
 - **A corrected flowchart's PNG is redrawn by the next run or re-export**, not by the save — R8
   over HTTP has no output tree to draw into, so `renderPending` is `true`. Its DOT is rebuilt by the
   save: draw that (§3a) and the page is current at once.

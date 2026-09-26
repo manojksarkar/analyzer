@@ -218,6 +218,61 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-26f (**Review & update rebased onto develop as branch `review_update_v2`:
+> develop's one new LLM text -- the struct/class/union description in the unit header table -- is
+> now stored and correctable; and two bugs found by running the feature end to end on the merged
+> code are fixed: web-app runs registered no documents, and every re-export took the version out of
+> the baseline pool, so the next version ran full and carried no corrections.**
+>
+> How: `git merge --squash review_update_v1` onto origin/develop (8628b2d) in a worktree, so
+> review_update_v1 is untouched (no force-push). 6 files conflicted; 12 more were changed on both
+> sides and merged clean -- each read side by side. Decisions: `analyzer.py _checkout_for` keeps
+> develop's candidate order and its strict `--commit` (obeyed or refused), with this branch's
+> `source_checkout.locate_or_restore` as the last resort before "nothing resolved". `docx_exporter`:
+> develop moved the unit header table out to a Phase-3 view; the stored unit description in the
+> component unit table stays. `model_deriver`: develop's global publication rules
+> (`_glb_used_outside`, `_glb_is_private`) with this branch's `_iface_scope_key`, whose group
+> segment now goes through `display_name()` -- group ids are layer-qualified (1df3016), and `_id_seg`
+> over `Layer1.My Sample` would fold the layer's letters into the GROUP code. PROJECT_CONTEXT
+> entries interleaved by date; `tests/live/test_storage_integrity.py` keeps this branch's version
+> (same assertion, a message that names the owners). A `ModelRepository.describe` both sides added
+> was left defined twice -- removed.
+>
+> Develop's new LLM-generated text: one. `views/unit_headers.py` asked the LLM, at view time, for
+> each struct/class/union row's information column. It now reads the stored `description`
+> (REQ-PRE-01), which Phase 2 generates for struct, class AND union (was struct only) with the same
+> `get_struct_description` prompt -- so `structDescription` (R3) corrects it, carry-forward keeps
+> it, and one correction reaches a `typedef struct X {...} X_t;` row too. SWE.4 test steps (develop,
+> deterministic) fall back to the flowchart node label; that is the `cfg.nodes[].label` a
+> `nodeLabel` correction writes, and flowcharts run before testSpecs, so corrected labels reach
+> them. `derive.VIEWS_BY_KIND` said `structDescription` -> interfaceTables (it is shown by
+> `unitHeaders`) and missed `testSpecs` for `description` (a SWE.4 spec copies it); corrected, with
+> a test that every mapped view is registered. Latent: nothing derives in-request over HTTP.
+>
+> Found by testing: (1) `_make_documents` matched output dirs against the bare component name,
+> but since 1df3016 the dir is the layer-qualified id (`Layer1.Cross`) -- every web-app run
+> finished with its DOCX on disk and no `documents` rows (develop has this bug). Matched by
+> `make_qualified_id` now. (2) `PhaseRunner` writes 'viewing'/'exporting' on the version row for an
+> API run and only `generate` closes it at 'complete'; an API re-export (Phase 3-4 alone) left the
+> version at 'exporting' for good, and `pg_stores.list_versions` refuses that as a baseline -- so
+> the next version ran FULL, re-paid every LLM call and carried nothing (REQ-VR-01 broken in the
+> normal flow: correct, re-export, next version). On the merge-base, review_update_v1 and develop
+> alike; CLI runs set no `ANALYZER_VERSION_ID` and were unaffected. `core.db.finished_status_kept`
+> now puts a finished status back when a Phase-3/4-only run ends, whatever the outcome; `run.py`
+> wraps its phase loop in it. Rows already stranded are repaired by `analyzer.py setup` (existing
+> backfill). Also noted, not changed: develop 470d15c publishes a function only when another unit
+> in the PARSED scope calls it, so a group-scoped run (the saved "Full" bodies) shows almost no
+> interface rows or flowcharts -- R11 still lists every function; API spec §14 says so.
+>
+> Verified: unit+api 3033 passed; e2e 156 passed on a fresh database (the old dev DB holds an
+> old-style `e2ev1` id develop's fixture refuses). The sample through the API, group Full, no LLM:
+> generate v1 -> 30 record types offered (class/union included) -> correct 30 types, 3 functions,
+> a unit, a label -> R9 stale -> `POST /versions/{v}/reexport` -> job complete, R9 clean, v1 still
+> 'complete' -> Word: every corrected type row, the published function, the unit description ->
+> page shows the type rows -> v2 from v1 with `directionAdd` changed: incremental (194 reused),
+> unchanged function / unit / 30 types carried, `directionAdd` orphaned. API spec: examples use
+> layer-qualified ids; §14/§17 updated.)
+
 > Updated: 2026-09-26e (**Corrections now survive the next version and a Phase-2 re-derive --
 > unit, struct and behaviour-name corrections were lost -- and a correction to code that changed is
 > kept but no longer applied (REQ-VR-01).**
