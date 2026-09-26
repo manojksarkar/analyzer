@@ -208,6 +208,91 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-26 (**doccheck v2 — five levels, P1–P4 priorities, one report for every check** —
+> branch `fix/swe3-header-class-and-protected-direction` (NOT committed; user reviews first). `tools/doccheck/` all modules; tests `tests/unit/test_doccheck_*.py` + `doccheck_scenarios.py`.)
+>
+> **Levels (user's definition, 2026-09-26)** replace the old L0–L4 ladder: **L1 headings** (every heading KIND
+> present — `HEADING_TYPES` per profile; an unnamed heading is `other: H<n> <title>`), **L2 inventory**
+> (components, units, dynamic behaviours / interaction specs — count AND names), **L3 sections** (per unit:
+> function / test-case headings by name; SWE.3 `hasHeaderSection` / `hasInterfaceSection` = the `unit header` /
+> `unit interface` H4 exists), **L4 views** (per table/diagram: rows by name + by sub-kind, interface columns set
+> P2 / wording P4, unit-diagram + flowchart image counts; SWE.4 Table A/B present + item counts), **L5 content**
+> (cells of matched rows). Old bug fixed on the way: field differences were tagged L2, so the ladder's "L3" was
+> always ok.
+> **Priorities** replace high/medium/low/info: P1 blocker · P2 review · P3 explained (only `rules.py` sets it,
+> keeps `was`) · P4 cosmetic. `--gate` takes P1–P4 (old names mapped). **SWE.4 cell text is P2, not P1** (another
+> author words every step differently); P1 is structure (missing unit, missing Table A/B, pairing).
+> **Model.** `Policy(how, priority, label, level, view)`; `Kind(level, noun, view, missing, extra, sub_field,
+> requires)` per entity kind + `CHILDREN`; `FOLLOWS` (a field that restates another of the same entity: counted
+> under it) and `FIELD_REQUIRES` (a table's cells compared only when both sides have the table — SWE.3 columns,
+> every SWE.4 Table A/B field). `compare.py`: `Finding` (+ priority, explained, breaks, follows, component,
+> unit, view, item, entity, was) and `Check` (one summary row: left/right, names "✗ 2 differ", detail
+> "− a · + b · c → d", follows, skipped). L2–L4 fields aggregate into one Check per (unit, view, label);
+> `Result.compared[(comp, unit, view)]` counts L5-compared entities ("all content equal").
+> **One fact counted once**: `_mark_follows` — a missing/extra/renamed at a lower level with the same (component,
+> unit, kind, name key) follows the first (function heading L3 → its interface row L4); the Component/Unit table
+> follows the unit headings; `mark_heading_follows` — anything under a heading KIND one side has none of follows
+> the L1 finding. A `follows` finding is shown (detail) and never counted, gated or in the ladder.
+> **Rules** are per document type (`rules._BY_TYPE`): the SWE.3 "header-only unit" rule no longer lands on SWE.4
+> units (bug). SWE.4 rules: fixed Table B values + configured ones (Priority, Test Environment, Eval. Equipment,
+> Platform) → P3; missing test case / unit / interaction → possible reason. Removed the stale SWE.3 "hidden =
+> row but no flowchart" rule (the wiki's hidden removes both). Pair rules carry `breaks=True` ("the rule:");
+> the stale "selector drift / swe4_dynamic_diff" wording on pair interactions is replaced by the two settings.
+> **Pair** (`pairing.check` now returns a `Result`): heading ↔ heading — SWE.3 function heading ↔ SWE.4 test
+> case (interface row used only for `TC_` + Interface ID); design units/components with no function heading
+> expect no spec (a `skipped` note, not a finding); interactions one to one at L2; L4 empty by design; L5 TC id
+> + heading text (case/space only → P4). A SWE.3 + SWE.4 pair is detected without `--pair`, either order.
+> **Extractor changes**: heading types recorded; `heading_types(doc)` derives them from a tree built without a
+> document (tests); a level-1 heading with no Static Design / Dynamic Behaviour / unit is a section, not a
+> component ("Revision History" read as a missing component before); SWE.4 `tableBLabels` + item counts.
+> **Self checks** carry level/priority/view (`SELF_CHECKS`); new: SWE.3 `row-without-heading`,
+> `duplicate-heading` (P2, overloads are legal), SWE.4 `duplicate-heading` (P1 — the `Dispatch-apply` defect;
+> `fresh/v1/Cross` predates its fix and is exempted by name in the corpus test).
+> **Reports** (`report.py`) — one data model, three renderers: markdown (Summary table + per level: L1 type
+> table, L2/L3 tables, L4 per-unit `<details>`, L5 unit → view `<details>`, explained in a closed table per view,
+> all accordions closed, repeated rules numbered), terminal (ladder, per level the disagreeing rows + P1/P2
+> tree; ASCII on a pipe), JSON `schema: doccheck/2`. `--markdown`/`--json` now work for `--self` and pair
+> (were silently ignored); "wrote X" goes to stderr.
+> **Tests**: 894 passed; the 9 failures are the pre-existing `longdecl-ab` corpus ones (documents newer than
+> their sibling JSON — `test_doccheck_swe4` read-back). New: `test_doccheck_levels.py` (32),
+> `test_doccheck_cli.py` (9), `test_doccheck_scenarios.py` (25 — one change per scenario in the real
+> `longdecl-ab.office/Access` pair via python-docx, asserting level + priority and that nothing else counts;
+> it found both extractor bugs above). `python tests/unit/doccheck_scenarios.py OUT` writes the four demo
+> reports (SWE.3 compare, SWE.4 compare, pair, self).
+> **Pair, SWE.3 as the input to SWE.4 (user, same day):** L4 = interface table Function rows ↔ test cases
+> (`pairing._Pair.rows`; a row+heading both unspecced is counted at L3, the L4 one follows via `_mark_follows`;
+> a row with no heading is found at L4 alone) and call arrows ↔ cross-unit calls per matched interaction
+> (`_Pair.calls`: arrow `A calls B[ to reason]` from `mermaid_builder.py`, entry arrow skipped; spec calls from
+> `Successfully called <Unit>.<fn>` / `<Unit> calls <Unit>.<fn>` (`views/test_steps.py`), mock lines skipped;
+> matched on the bare name). L5 = which arrow/call is missing (P2, `breaks`), plus component/unit heading
+> text. A test case whose design function has a ROW but lost its flowchart heading is P2 (design at odds with
+> itself), not the P1 "spec for something unpublished". Units/components owe specs when they have headings OR
+> Function rows (`_expects_spec`). No generated SWE.3 here draws behaviour diagrams, so
+> `doccheck_scenarios.PAIR` adds two to the real design with python-docx (one matching `mtxCallSealed`, one
+> with a wrong arrow) — the demo pair report shows both. Suite: 904 passed, same 9 pre-existing failures.
+> **Pair headings (same day):** L5 heading text for component / unit / test case / interaction, all in view
+> `headings` (P4 case/space only, P2 otherwise; a rename found at L2/L3 makes it `follows`). Fixed
+> `cells.function_of`: `Unit - function` (spaced dash, another author's style) now splits to `function` — it
+> used to keep the whole heading as the name, turning a cosmetic difference into a missing + an extra test
+> case (affects SWE.3 and SWE.4 extraction alike). `doccheck_scenarios.PAIR_HEADINGS` (7, applied to the
+> real spec) drive the pair demo; suite 912 passed, same 9 pre-existing failures.
+> **Pair reads ONE WAY (user, same day): SWE.3 is the input.** Only-in-design (coverage gap) → P2 at every
+> level (L1 kind, L2 component/unit/behaviour, L3/L4 function); only-in-spec (invented) → P1 (incl. L5 a spec
+> call with no arrow). TC id ≠ `TC_`+Interface id → P1. `pairing.explain_id_gaps` turns the spec's
+> `tc-id-gap` self finding into P3 when every skipped number is a design Function row with no spec (the spec
+> keeps the design's numbers). **Heading self-checks now symmetric**: SWE.3 gained `heading-unit-mismatch`
+> (flowchart heading starts with its unit; spaced dash allowed via `cells.starts_with_unit`, also used by
+> SWE.4), `interaction-heading-unreadable`, `interaction-unit-unknown`, `interaction-function-unknown` (the
+> behaviour heading's unit/function exist in the component). Zero hits over all 102 SWE.3 documents on disk.
+> Suite 922 passed, same 9 pre-existing failures.
+> **Inline public functions (user):** a design function with no test case is P3 explained when the spec names
+> it elsewhere — as a mock in a caller's spec or run inside its own unit's specs (`pairing._spec_mentions`,
+> `_Pair.inline_reason`; SWE4_WIKI 'Who gets a spec'); otherwise P2 with its Source/Destination callers in the
+> rule. Neither document says where a function is DEFINED, so there is no stronger evidence; on the local
+> pair `companionHeaderInline` (caller AccessCompanionUser has no spec) stays P2. Suite 925 passed.
+> **Not done**: folder mode (two `documents/` dirs → one index), HTML renderer, `regress` mode (IDs + image
+> hashes for our-vs-our).
+
 > Updated: 2026-09-25b (**a static member reached through an object is a global use; a brace in an inline
 > body's literal no longer eats members** — branch `fix/swe3-header-class-and-protected-direction`,
 > `engine/parser.py` (→ re-parse) + `engine/views/unit_headers.py`.)
@@ -3290,8 +3375,9 @@ analyzer/                     (repo root — cwd of the pipeline; model/ output/
   SampleCppProject/           Fixture C++ tree — Layer1 + Layer2/Platform (see §15)
   tools/                      Dev-only tooling — mock-api (mock backend), create-sample-project, import-output-project,
                               dump_docx.py (flatten a generated .docx to diffable text: headings/tables/`[image … sha=…]`),
-                              doccheck/ (compare two .docx by CONTENT — extract→match→compare→report, SWE.3+SWE.4,
-                              `--self` one document, `--pair` SWE.3-vs-SWE.4; see tools/doccheck/README.md)
+                              doccheck/ (compare .docx by CONTENT on five levels L1 headings…L5 content, P1–P4;
+                              SWE.3/SWE.3, SWE.4/SWE.4, SWE.3↔SWE.4 pair (auto), `--self`; md/json/terminal;
+                              see tools/doccheck/README.md)
   tests/  docs/
   model/                      Phase 1+2 output (JSON) — at repo root (cwd)
     clang_include_paths.json  Written by run.py before Phase 1; {LayerName:[abs_dirs]}
