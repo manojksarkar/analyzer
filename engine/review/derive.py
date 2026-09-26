@@ -12,8 +12,9 @@ changes nothing in the document.
 
 | slot kind | view |
 |---|---|
-| `description`, `behaviourInputName`, `behaviourOutputName` | `interfaceTables` |
-| `unitDescription`, `structDescription` | `interfaceTables` |
+| `description` | `interfaceTables` **and** `testSpecs` (a SWE.4 spec copies it) |
+| `behaviourInputName`, `behaviourOutputName`, `unitDescription` | `interfaceTables` |
+| `structDescription` | `unitHeaders` (the unit header table's information column) |
 | `behaviourDescription` | `behaviourDiagram` |
 | `nodeLabel` | `flowcharts` **and** `testSpecs` (`REQ-CS-04`) |
 
@@ -41,11 +42,15 @@ from review import resolver, slot
 #: slot kind -> the views that must be re-derived. Tuples so a kind can grow a second view
 #: without every caller changing shape.
 VIEWS_BY_KIND: Dict[str, Tuple[str, ...]] = {
-    slot.DESCRIPTION:           ("interfaceTables",),
+    # testSpecs too: a SWE.4 spec carries a copy of its function's description
+    # (views/test_specs.py), and the SWE.4 exporter prints that copy.
+    slot.DESCRIPTION:           ("interfaceTables", "testSpecs"),
     slot.BEHAVIOUR_INPUT_NAME:  ("interfaceTables",),
     slot.BEHAVIOUR_OUTPUT_NAME: ("interfaceTables",),
     slot.UNIT_DESCRIPTION:      ("interfaceTables",),
-    slot.STRUCT_DESCRIPTION:    ("interfaceTables",),
+    # The unit header table is a Phase-3 view of its own (views/unit_headers.py), and its
+    # information column for a struct, class or union row is this stored description.
+    slot.STRUCT_DESCRIPTION:    ("unitHeaders",),
     slot.BEHAVIOUR_DESCRIPTION: ("behaviourDiagram",),
     # flowcharts AND testSpecs (REQ-CS-04). A Dynamic Behaviour spec transcribes a
     # cross-unit callee's steps in place -- and chains onward -- so a label corrected in one
