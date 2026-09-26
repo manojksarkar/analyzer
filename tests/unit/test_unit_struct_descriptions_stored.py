@@ -122,6 +122,17 @@ class TestPhase2GeneratesAndStores:
         _n_u, n_s = md._enrich_unit_and_struct_descriptions({}, {}, {}, dd, {})
         assert n_s == 0 and "description" not in dd["E"]
 
+    def test_classes_and_unions_are_described_too(self, monkeypatch):
+        """The unit header table lists class and union rows beside struct rows, and describes
+        all three. Its text is read from here, so a class left undescribed would show the
+        name-derived fallback forever -- and give a reviewer nothing to correct."""
+        self._patch_llm(monkeypatch)
+        dd = {"Pump": {"kind": "class", "name": "Pump", "fields": [{"name": "rate"}]},
+              "Num": {"kind": "union", "name": "Num", "fields": [{"name": "i"}]}}
+        _n_u, n_s = md._enrich_unit_and_struct_descriptions({}, {}, {}, dd, {})
+        assert n_s == 2
+        assert dd["Pump"]["description"] == dd["Num"]["description"] == "A struct."
+
     def test_an_existing_description_is_not_regenerated(self, monkeypatch):
         """Carried forward from a baseline, or already corrected by a human -- either way,
         re-paying for it would also overwrite it."""
@@ -173,6 +184,63 @@ class TestTheExporterNoLongerGenerates:
                 "%s is still called during export: the text would be regenerated instead of "
                 "read, so a reviewer's correction would be ignored and every export would "
                 "re-pay for it" % name)
+
+
+class TestTheUnitHeaderTableReadsTheStoredText:
+    """The unit header table is a Phase-3 view (views/unit_headers.py). Its information column
+    for a struct, class or union row is the STORED description -- what Phase 2 generated, or a
+    reviewer's correction of it (`structDescription`). Asking the LLM there, at view time, would
+    print different words from the ones a reviewer corrected."""
+
+    UNIT = {"path": "Comp/U", "fileName": "U.cpp", "functionIds": [], "globalVariableIds": []}
+
+    def _rows(self, tmp_path, dd, src):
+        from views import unit_headers as uh
+        (tmp_path / "Comp").mkdir()
+        (tmp_path / "Comp" / "U.h").write_text(src, encoding="utf-8")
+        return uh.build_rows(self.UNIT, [], dd, {}, str(tmp_path), None, {}, {}, {}, {"Comp/U"})
+
+    @staticmethod
+    def _entry(kind, name, line=1, **extra):
+        return dict({"kind": kind, "name": name, "qualifiedName": name, "fields": [],
+                     "location": {"file": "Comp/U.h", "line": line}}, **extra)
+
+    def test_a_class_row_shows_the_stored_description(self, tmp_path):
+        dd = {"Pump": self._entry("class", "Pump", description="Drives the pump.")}
+        rows = self._rows(tmp_path, dd, "class Pump {\npublic:\n    int rate;\n};\n")
+        row = next(r for r in rows if "class Pump" in r["declaration"])
+        assert row["information"] == "Drives the pump."
+
+    def test_a_union_row_shows_the_stored_description(self, tmp_path):
+        dd = {"Num": self._entry("union", "Num", description="One number, two views.")}
+        rows = self._rows(tmp_path, dd, "union Num {\n    int i;\n    float f;\n};\n")
+        row = next(r for r in rows if "union Num" in r["declaration"])
+        assert row["information"] == "One number, two views."
+
+    def test_a_typedef_row_shows_its_records_description(self, tmp_path):
+        """`typedef struct Cfg {...} Cfg_t;` is one type however it is named, so it reads the
+        same text -- and one correction reaches both rows."""
+        dd = {"Cfg": self._entry("struct", "Cfg", description="Holds the settings."),
+              "typedef@Cfg:Comp/U.h:1": self._entry("typedef", "Cfg_t", underlyingType="Cfg")}
+        rows = self._rows(tmp_path, dd, "typedef struct Cfg {\n    int x;\n} Cfg_t;\n")
+        typedef_rows = [r for r in rows if r["declaration"].startswith("typedef")]
+        assert typedef_rows and all(r["information"] == "Holds the settings." for r in typedef_rows)
+
+    def test_with_nothing_stored_the_view_falls_back_without_the_llm(self, tmp_path, monkeypatch):
+        mod = type(sys)("llm_enrichment")
+        mod.llm_provider_reachable = lambda cfg: True
+        mod.get_struct_description = lambda *a, **k: pytest.fail("the view asked the LLM")
+        monkeypatch.setitem(sys.modules, "llm_enrichment", mod)
+        from views import unit_headers as uh
+        dd = {"Pump": self._entry("class", "Pump")}
+        rows = self._rows(tmp_path, dd, "class Pump {\npublic:\n    int rate;\n};\n")
+        row = next(r for r in rows if "class Pump" in r["declaration"])
+        assert row["information"] == uh._struct_info_from_name("Pump", "Class")
+
+    def test_no_llm_description_call_remains_in_the_view(self):
+        src = open(os.path.join(PROJECT_ROOT, "engine", "views", "unit_headers.py"),
+                   encoding="utf-8").read()
+        assert "get_struct_description" not in src
 
 
 class TestTheUnitDescriptionRoundTrips:
