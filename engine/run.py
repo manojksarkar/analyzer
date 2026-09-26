@@ -42,6 +42,10 @@ Options:
                        Doc type is a dimension, not a phase: Phases 1-3 are
                        shared; Phase 4 dispatches one exporter per doc type
                        (EXPORTER_REGISTRY). Default swe3 reproduces prior output.
+  --force-export       Export even when a reviewer's correction is newer than the
+                       last time the views were derived. Only matters for
+                       --from-phase 4, which skips the step that would apply it.
+                       Without this the run refuses and says how to re-derive.
   --from-phase N       Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export)
   --to-phase N         Stop after phase N (1-4). Lets the incremental engine run
                        parse+derive only (--to-phase 2), compute impact, then
@@ -189,7 +193,7 @@ from core.model_io import FUNCTIONS, GLOBALS, UNITS, COMPONENTS
 _KNOWN_FLAGS = (
     "--help", "-h",
     "--clean", "--config",
-    "--use-model", "--skip-model",
+    "--use-model", "--skip-model", "--force-export",
     "--no-llm-summarize", "--llm-summarize",
     "--selected-group", "--selected-layer", "--selected-component", "--selected-unit",
     "--component-per-docx", "--filter-mode",
@@ -211,6 +215,7 @@ _KNOWN_FLAGS = (
 
 clean_all               = False
 use_model               = False
+force_export            = False  # export even when a correction is newer than the last derivation
 no_llm_summarize        = False
 from_phase              = 1
 to_phase                = None   # stop after this phase (1-4); None = run through phase 4
@@ -257,6 +262,8 @@ while i < len(sys.argv):
             sys.exit(1)
     elif a in ("--use-model", "--skip-model"):
         use_model = True
+    elif a == "--force-export":
+        force_export = True
     elif a == "--no-llm-summarize":
         no_llm_summarize = True
     elif a == "--llm-summarize":
@@ -845,15 +852,27 @@ except LlmConfigError as e:
     log(f"Invalid LLM config: {e}", component="run", err=True)
     sys.exit(2)
 
-# --selected-unit: fail before Phase 1 rather than in Phase 3. The unit names come from the
-# stored model, so this is only possible when one already exists — which is the case for the
-# runs the flag exists for (--use-model / --from-phase 3). A cold run has nothing to check
-# against yet, so validation falls through to Phase 3, where the model has just been built.
+# --selected-unit: fail before Phase 3 when that is honest, and only then.
+#
+# `--selected-unit` is consumed by Phase 3 alone -- the planner hands it to run_views.py and to
+# nothing else. Checking it here, at startup, saves a Phase-3 run on a typo, but only when the
+# units read NOW are the units Phase 3 will use: `group_planner.unit_check_can_run_early` says when.
+# For `reexport --from-phase 3` / `--use-model` they are, and a mistyped unit fails in seconds.
+#
+# For `generate` they are NOT. It starts this script twice -- Phase 1 alone, then Phases 2-4 --
+# and passes `--selected-unit` to both. Checking in either one checked against units that were
+# about to be rebuilt; on a version left with units by an earlier attempt, the Phase-1 process
+# exited with "Units in scope: (none)" before parsing anything. Those processes now defer, and
+# Phase 3 validates against the model it has just built.
 #
 # Read through the repository. This used to open model/units.json directly, and once the model
 # became rows that file was never there: the pre-check quietly never ran, and every mistyped
 # --selected-unit went back to failing in Phase 3 instead.
-if selected_units_arg:
+from core.group_planner import unit_check_can_run_early as _unit_check_early
+if selected_units_arg and not _unit_check_early(from_phase, to_phase, use_model):
+    log("--selected-unit will be validated in Phase 3, against the model this run builds",
+        component="run")
+elif selected_units_arg:
     _unit_model = None
     try:
         from core.model_io import read_model_file as _rmf
@@ -862,7 +881,12 @@ if selected_units_arg:
             _unit_model = {UNITS: _units_data}
     except Exception:
         _unit_model = None
-    if _unit_model:
+    if not _unit_model:
+        # --use-model already refused a missing model above, so this is rare -- but saying
+        # nothing would make a skipped check look like a passed one.
+        log("--selected-unit will be validated in Phase 3 (no stored units to check yet)",
+            component="run")
+    else:
         from core.config import get_flat_groups as _gfg
         _groups = _gfg(cfg) or {}
         _grp = _groups.get(selected_group_arg) if selected_group_arg else None
@@ -876,12 +900,15 @@ if selected_units_arg:
             _allowed = sorted(k.replace(" ", "-") for k in _grp.keys())
         else:
             _allowed = None      # whole model in scope
+        # Imported here, not at the top: run_views rewrites sys.argv and snapshots paths when
+        # it is imported, and only this branch needs it.
         import run_views as _rv
         selected_units_arg = _rv._resolve_units(
             _unit_model, selected_units_arg, _allowed)
-else:
-    log("--selected-unit will be validated in Phase 3 (no model stored yet)",
-        component="run")
+# No `else`. It used to hang here, paired with `if selected_units_arg:`, and so announced
+# "--selected-unit will be validated in Phase 3" on every run that had NO --selected-unit --
+# while the runs that did defer said nothing. Without the flag, nothing about units happens
+# in any phase, and nothing is said.
 
 try:
     plans = plan_runs(
@@ -911,6 +938,86 @@ except ValueError as e:
     log(str(e), component="run", err=True)
     sys.exit(2)
 
+def _restore_output_from_db(from_phase: int) -> None:
+    """Write this version's stored view output back to `output/` before an export-only run.
+
+    The database is the source; the files are a materialisation of it that the exporter, the
+    flowchart engine and the SWE.4 views all read. Rather than rewiring three readers -- one of
+    them the DOCX exporter -- the materialisation is refreshed, which is what
+    `model_store.restore_output_files` already exists to do.
+
+    Silent no-op when there is no version or no database: a standalone run has neither, and its
+    `output/` is the only copy there is.
+
+    Never fatal. If the restore fails the export still runs from what is on disk, which is what it
+    did before this existed -- but it is reported, because a document built from an unknown
+    vintage is worth knowing about (REQ-PRE-02).
+    """
+    if from_phase < 4:
+        return
+    try:
+        from core.run_context import version_id as _vid
+        from core.db import get_engine, is_database_configured
+        vid = _vid()
+        if not (vid and is_database_configured()):
+            return
+        from core.model_store import restore_output_files
+        with get_engine().connect() as cx:
+            n = restore_output_files(cx, vid, _paths().output_dir)
+        if n:
+            log(f"restored {n} view output file(s) from the database before exporting",
+                component="run")
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        log(f"WARNING: could not restore view output from the database ({exc}); exporting from "
+            f"whatever is in output/ on this machine", component="run", err=True)
+
+
+def _refuse_stale_export(from_phase: int, force: bool) -> None:
+    """Stop an export-only run that would ship superseded text or an out-of-date picture.
+
+    `REQ-AP-04`. This lives HERE, next to `_restore_output_from_db`, because this file is what
+    BOTH front doors spawn -- `analyzer.py reexport` and the API's re-export service. The check
+    used to sit in `analyzer.py` alone, which meant the CLI refused and the UI did not: a
+    reviewer correcting a node label on a host with no output tree got a document whose text was
+    corrected and whose flowchart picture still showed the LLM's label, with no warning. An
+    internally contradictory document is worse than a uniformly stale one.
+
+    `analyzer.py` still checks first, before spawning anything, so the CLI fails fast with a
+    better message. This is the backstop that no caller can forget.
+
+    Only for phase 4, and that is not merely an optimisation: `stamp_pipeline_derivation` records
+    the derivation when output is CAPTURED, which happens after phase 4. A run that includes
+    phase 3 is applying the corrections on its way through, but at the moment it reached phase 4
+    the stamps would still be the previous run's -- so checking would refuse exactly the run that
+    fixes the problem. Verified that nothing else spawns `--from-phase 4`: ordinary generations
+    use `--from-phase 2` or run the phases together.
+    """
+    if from_phase < 4 or force:
+        return
+    try:
+        from core.run_context import version_id as _vid
+        from core.db import get_engine, is_database_configured
+        vid = _vid()
+        if not (vid and is_database_configured()):
+            return
+        from review.export_guard import StaleExport, assert_exportable
+        with get_engine().connect() as cx:
+            assert_exportable(cx, vid)
+    except ImportError:
+        return                 # the feature is not present in this tree
+    except Exception as exc:   # noqa: BLE001
+        if type(exc).__name__ != "StaleExport":
+            # Could not check. Say so and continue -- turning "the guard is unavailable" into a
+            # failed export would be worse than the problem it prevents. Silence would be worse
+            # still: it reads exactly like a pass.
+            log(f"WARNING: could not check whether the views are up to date ({exc}); "
+                f"exporting anyway", component="run", err=True)
+            return
+        log(str(exc), component="run", err=True)
+        log("Or re-run with --force-export to export anyway.", component="run", err=True)
+        sys.exit(2)
+
+
 # --to-phase N: stop after global phase N. Drop phases mapped above N from every
 # plan (and any plan left empty). Lets the incremental engine Phase-split (run
 # parse+derive, compute impact, then resume views+export). Additive: when
@@ -928,6 +1035,23 @@ if to_phase is not None:
                                       runner_from_phase=_plan.runner_from_phase))
     plans = _filtered
     log(f"--to-phase {to_phase}: running {len(plans)} plan(s) up to phase {to_phase}.", component="run")
+
+# REQ-PRE-02. An export-only run (`--from-phase 4`) SKIPS Phase 3, so it exports whatever text
+# happens to be in `output/` on this machine. That is the wrong source: the database is where the
+# view rows live, and it is what a reviewer's correction updates -- `rerender.write_output_row`
+# writes the row, not the file. Without this, correcting a flowchart label and re-exporting would
+# produce a document built from the previous text, on a machine whose disk simply had not been
+# told.
+#
+# Only for phase 4. A run that includes Phase 3 rewrites `output/` from the model anyway, and
+# restoring first would be work whose result is immediately overwritten.
+_restore_output_from_db(from_phase)
+
+# REQ-AP-04, and the other half of the same thought. The restore above brings the TEXT up to
+# date from the database; it cannot redraw a picture, and it cannot apply a correction that is
+# an INPUT to Phase 3 rather than a row Phase 3 wrote. So ask before exporting, and refuse
+# rather than ship a document whose words and diagrams disagree. Exits 2 when it refuses.
+_refuse_stale_export(from_phase, force_export)
 
 runner = PhaseRunner(project_root=SCRIPT_DIR)
 total_time = 0.0

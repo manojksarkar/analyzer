@@ -34,8 +34,52 @@ from ..models.domain import User
 # ---------------------------------------------------------------------------
 SECRET_KEY = os.getenv("JWT_SECRET", "dev-secret-key-change-in-production")
 ALGORITHM  = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES  = 15
 REFRESH_TOKEN_EXPIRE_DAYS    = 7
+
+# How long a sign-in lasts before every request answers 401 "Signature has expired". It was 15
+# minutes: no cost to the web app, which renews silently with its refresh token on a 401
+# (web-app/src/lib/http.ts), but someone testing through Swagger had to sign in and re-paste the
+# token every quarter of an hour. A working day by default; a server that wants a shorter window
+# sets `auth.accessTokenMinutes` in engine/config/config.local.json.
+DEFAULT_ACCESS_TOKEN_EXPIRE_MINUTES = 8 * 60
+
+
+def _configured_access_token_minutes() -> int:
+    """`auth.accessTokenMinutes` from engine/config/config.local.json, else the default.
+
+    Read from config.local.json the way the `db` section is (core/db.py `_db_section`): how long
+    this server's sign-ins last is a MACHINE setting. It must never break sign-in, so a missing
+    file, section or key means the default, and a value that is not a positive whole number of
+    minutes is reported and ignored. Read once at start-up: restart the API after changing it.
+    """
+    import json
+    import sys
+    try:
+        from ..db.session import _engine_on_path
+        _engine_on_path()
+        from core.paths import paths
+        from core.config import _strip_json_comments, _strip_trailing_commas
+        path = paths().config_local_path
+        if not os.path.isfile(path):
+            return DEFAULT_ACCESS_TOKEN_EXPIRE_MINUTES
+        with open(path, encoding="utf-8") as fh:
+            cfg = json.loads(_strip_trailing_commas(_strip_json_comments(fh.read()))) or {}
+        value = (cfg.get("auth") or {}).get("accessTokenMinutes")
+    except Exception as exc:                                  # noqa: BLE001 - see docstring
+        print(f"[api] could not read auth.accessTokenMinutes ({type(exc).__name__}: {exc}); "
+              f"sign-ins last {DEFAULT_ACCESS_TOKEN_EXPIRE_MINUTES} minutes", file=sys.stderr)
+        return DEFAULT_ACCESS_TOKEN_EXPIRE_MINUTES
+    if value is None:
+        return DEFAULT_ACCESS_TOKEN_EXPIRE_MINUTES
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        print(f"[api] auth.accessTokenMinutes must be a positive whole number of minutes, got "
+              f"{value!r}; sign-ins last {DEFAULT_ACCESS_TOKEN_EXPIRE_MINUTES} minutes",
+              file=sys.stderr)
+        return DEFAULT_ACCESS_TOKEN_EXPIRE_MINUTES
+    return value
+
+
+ACCESS_TOKEN_EXPIRE_MINUTES = _configured_access_token_minutes()
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -132,7 +176,16 @@ def require_project_admin(
     current_user: User,
     db: InMemoryDatabase,
 ) -> None:
-    """Raises 403 if the user is not an admin of the project."""
+    """Raises 403 if the user is not an admin of the project.
+
+    A **superuser** passes, exactly as in `require_project_member`. Honouring the flag there and
+    not here gave the operator account half of "all access to all projects": on a project it had
+    no admin row for -- one created through the UI by someone else -- it could read everything
+    and got "Admin role required." on re-export, team management and the rest of the 25 routes
+    that ask this question.
+    """
+    if getattr(current_user, "is_superuser", False):
+        return
     member = db.members.get_member(project_id, current_user.id)
     if member is None or member.role != "admin":
         raise HTTPException(
@@ -146,7 +199,16 @@ def require_project_member(
     current_user: User,
     db: InMemoryDatabase,
 ) -> None:
-    """Raises 403 if the user is not an active member of the project."""
+    """Raises 403 if the user is not an active member of the project.
+
+    A **superuser** passes without one. That is the guarantee: a `project_members` row can be
+    missed by any code path that forgets to write it -- which is exactly how a CLI-onboarded
+    project became unreachable -- so the operator's access cannot depend on one existing.
+    Onboarding writes the row as well, for the team list and `my_role`, but this is what makes
+    it reliable rather than merely usual.
+    """
+    if getattr(current_user, "is_superuser", False):
+        return
     member = db.members.get_member(project_id, current_user.id)
     if member is None or member.status != "active":
         raise HTTPException(

@@ -26,7 +26,7 @@ from .routes import (
     auth_router, projects_router, commits_versions_router,
     jobs_router, documents_router, team_router,
     compare_router, functions_router, notifications_router,
-    repositories_router, users_router,
+    repositories_router, users_router, text_overrides_router,
 )
 
 # ---------------------------------------------------------------------------
@@ -59,7 +59,10 @@ def _ensure_default_admin(db) -> None:
         db.users.create(User(
             id="admin", email="admin@aspice.dev", name="Administrator", initials="AD",
             avatar_url=None, hashed_password=hash_password("admin"),
-            created_at=datetime.datetime.now(datetime.timezone.utc)))
+            created_at=datetime.datetime.now(datetime.timezone.utc),
+            # The operator account. Without this a brand-new database has a login that can
+            # sign in and see nothing, because every project route is membership-gated.
+            is_superuser=True))
         print("[api] created default admin — sign in: admin@aspice.dev / admin", file=sys.stderr)
     except Exception as exc:                                  # noqa: BLE001
         print(f"[api] could not ensure default admin: {type(exc).__name__}: {exc}", file=sys.stderr)
@@ -73,6 +76,10 @@ async def _db_startup_check() -> None:
     import os
     import sys
     from .db.session import _db
+    from .middleware.auth import ACCESS_TOKEN_EXPIRE_MINUTES
+    # Said at start-up, because the only other way to find out is to wait for a 401.
+    print(f"[api] sign-ins last {ACCESS_TOKEN_EXPIRE_MINUTES} minutes "
+          f"(auth.accessTokenMinutes in engine/config/config.local.json)", file=sys.stderr)
     engine = getattr(_db, "_engine", None)
     if engine is None:
         # D-16: Postgres is the only real backend. In-memory is a test/dev seam that persists
@@ -167,6 +174,8 @@ app.include_router(functions_router,         prefix=PREFIX)
 app.include_router(notifications_router,     prefix=PREFIX)
 app.include_router(repositories_router,      prefix=PREFIX)
 app.include_router(users_router,             prefix=PREFIX)
+# Review & Update -- correcting LLM text in a generated document (spec 05 section 10)
+app.include_router(text_overrides_router,    prefix=PREFIX)
 
 # ---------------------------------------------------------------------------
 # Health check

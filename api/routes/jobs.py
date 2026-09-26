@@ -13,12 +13,12 @@ from sse_starlette.sse import EventSourceResponse
 from ..db.session import get_db
 from ..db.in_memory import InMemoryDatabase
 from ..middleware.auth import get_current_user, require_project_admin, require_project_member
-from ..models.domain import User, AnalysisJob, AnalysisPhase
+from ..models.domain import User, AnalysisJob, AnalysisPhase, REEXPORT_MODE
 from ..services.errors import not_found, conflict, bad_request
 from ..services import pipeline_runner
 from ..schemas import (
     StartJobResponse, JobResponse, CurrentJobResponse,
-    FunctionListResponse, ReexportResponse,
+    FunctionListResponse, ReexportResponse, ReexportVersionResponse,
 )
 
 router = APIRouter(tags=["jobs"])
@@ -106,12 +106,29 @@ def start_job(
     if not project:
         raise not_found("Project", project_id)
     require_project_admin(project_id, current_user, db)
+    # A project onboarded with `analyzer.py onboard` has no architecture in the database: its
+    # layers are in workspaces/<pid>/config.json, which onboarding wrote. A run from here builds
+    # that file from the database instead, so it would REPLACE the project's config with the
+    # built-in sample project's layers; and `_make_documents` creates documents only for the
+    # components declared here, so the run would produce none. Refused before anything is
+    # reserved or written.
+    if not (project.architecture_layers or []):
+        raise conflict(
+            "NO_ARCHITECTURE",
+            f"Project '{project_id}' has no architecture in the database — it was onboarded with "
+            f"`analyzer.py onboard`, so its layers are in workspaces/{project_id}/config.json. A run "
+            f"started here would replace that file and create no documents. Generate it with "
+            f"`python analyzer.py generate --project-id {project_id} --version-id <id> "
+            f"--commit <sha>`, or create the project in the web app with its architecture.")
     # Version identity (D-3): the version is REQUIRED and UNIQUE within the project.
     # No auto-generated name, no silent "-1" rename — a duplicate is rejected. Checked
     # before the active-job guard so a malformed request fails as 400, deterministically.
     version_name = (body.version_tag or "").strip()
     if not version_name:
         raise bad_request("A version name is required.")
+    if (body.mode or "").strip() == REEXPORT_MODE:
+        raise bad_request("A re-export is started with POST "
+                          "/projects/{project_id}/versions/{version_id}/reexport, not as a new job.")
     if db.versions.get_by_tag(project_id, version_name):
         raise conflict("VERSION_EXISTS",
                        f"Version '{version_name}' already exists in this project.")
@@ -365,6 +382,41 @@ def list_functions(
     }
 
 
+def _start_reexport(db, version):
+    """`pipeline_runner.start_reexport`, with its refusals as HTTP errors. A refusal caused by
+    another job names it (`job_id`), so a client can follow that job instead of guessing."""
+    try:
+        return pipeline_runner.start_reexport(db, version)
+    except pipeline_runner.ReexportRefused as exc:
+        detail = {"code": exc.code, "message": str(exc), "status": exc.status}
+        if exc.job_id:
+            detail["job_id"] = exc.job_id
+        raise HTTPException(status_code=exc.status, detail=detail)
+
+
+@router.post("/projects/{project_id}/versions/{version_id}/reexport", status_code=202,
+             responses={202: {"model": ReexportVersionResponse}})
+def reexport_version(
+    project_id: str,
+    version_id: str,
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """Re-export ONE version -- any version with a finished generation, not only the newest.
+
+    Starts a job of its own (`mode: "reexport"`) and answers with its id at once. Follow it like
+    any job, `GET /jobs/{job_id}` or the `GET /jobs/{job_id}/events` stream: `status` goes
+    queued -> running -> complete | failed (`error_message` says why). Refused with 409 and the
+    running job's id while one is already re-exporting this version.
+    """
+    require_project_admin(project_id, current_user, db)
+    version = db.versions.get(version_id)
+    if not version or version.project_id != project_id:
+        raise not_found("Version", version_id)
+    job = _start_reexport(db, version)
+    return {"job_id": job.id, "status": job.status, "version_id": version.id}
+
+
 @router.post("/projects/{project_id}/jobs/{job_id}/reexport",
              responses={200: {"model": ReexportResponse}})
 def reexport(
@@ -373,9 +425,15 @@ def reexport(
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
+    """Re-export the version this job produced. Kept for existing callers;
+    `POST /projects/{project_id}/versions/{version_id}/reexport` is the same thing addressed by
+    version. `job_id` in the answer is the NEW re-export job -- the one to follow."""
     require_project_admin(project_id, current_user, db)
     job = db.jobs.get(job_id)
     if not job or job.project_id != project_id:
         raise not_found("AnalysisJob", job_id)
-    pipeline_runner.reexport(db, job_id)
-    return {"message": "Re-export queued.", "job_id": job_id}
+    version = db.versions.get(job.version_id) if job.version_id else None
+    if not version:
+        raise not_found("Version", job.version_id or "(none)")
+    started = _start_reexport(db, version)
+    return {"message": "Re-export queued.", "job_id": started.id}

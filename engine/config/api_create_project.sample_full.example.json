@@ -1,0 +1,54 @@
+{
+  "name": "Sample Full",
+  "client": "internal",
+  "compliance_standard": "ASPICE_L2",
+  "repo_url": "C:/work/sample-repo",
+  "default_branch": "main",
+  "build_config": { "views": { "flowcharts": true, "behaviourDiagram": true } },
+  "architecture_layers": [
+    {
+      "name": "Layer1", "path": "Layer1",
+      "groups": [
+        { "name": "My Sample", "components": [
+            { "name": "Sample Core", "files": ["Layer1/Sample/Core"] },
+            { "name": "Lib",         "files": ["Layer1/Sample/Lib"] },
+            { "name": "Util",        "files": ["Layer1/Sample/Util"] } ] },
+        { "name": "Full", "components": [
+            { "name": "Iface", "files": ["Layer1/Direction", "Layer1/Types", "Layer1/Flow"] },
+            { "name": "Cross", "files": ["Layer1/Hub", "Layer1/Poly"] } ] },
+        { "name": "Support", "components": [
+            { "name": "Math",  "files": ["Layer1/Math"] },
+            { "name": "App",   "files": ["Layer1/App"] },
+            { "name": "Outer", "files": ["Layer1/Outer/Inner"] } ] },
+        { "name": "Access", "components": [ { "name": "Access", "files": ["Layer1/Access"] } ] },
+        { "name": "Signal", "components": [ { "name": "Signal", "files": ["Layer1/Signal"] } ] },
+        { "name": "Diag",   "components": [ { "name": "Diag",   "files": ["Layer1/Diag"] } ] }
+      ]
+    },
+    {
+      "name": "Layer2", "path": "Layer2",
+      "groups": [
+        { "name": "My Sample", "components": [
+            { "name": "Sample Core", "files": ["Layer2/Sample/Core"] },
+            { "name": "Lib",         "files": ["Layer2/Sample/Lib"] } ] },
+        { "name": "Platform", "components": [
+            { "name": "Gpio",      "files": ["Layer2/Platform/Gpio"] },
+            { "name": "Uart",      "files": ["Layer2/Platform/Uart"] },
+            { "name": "Spi",       "files": ["Layer2/Platform/Spi"] },
+            { "name": "I2c",       "files": ["Layer2/Platform/I2c"] },
+            { "name": "Adc",       "files": ["Layer2/Platform/Adc"] },
+            { "name": "Display",   "files": ["Layer2/Platform/Display"] },
+            { "name": "Storage",   "files": ["Layer2/Platform/Storage"] },
+            { "name": "Network",   "files": ["Layer2/Platform/Network"] },
+            { "name": "Logger",    "files": ["Layer2/Platform/Logger"] },
+            { "name": "Config",    "files": ["Layer2/Platform/Config"] },
+            { "name": "EventBus",  "files": ["Layer2/Platform/EventBus"] },
+            { "name": "Timer",     "files": ["Layer2/Platform/Timer"] },
+            { "name": "Protocol",  "files": ["Layer2/Platform/Protocol"] },
+            { "name": "Scheduler", "files": ["Layer2/Platform/Scheduler"] },
+            { "name": "Cache",     "files": ["Layer2/Platform/Cache"] } ] }
+      ]
+    },
+    { "name": "Layer3", "path": "Layer3", "groups": [] }
+  ]
+}
