@@ -191,6 +191,26 @@ class TestOneRunMaySpanLayers:
         args = self._parser_args(selected_layer="L2")
         assert self._flag_values(args, "--selected-layer") == ["L2"]
 
+    def test_a_layer_scope_documents_every_group_in_it(self):
+        """The layer's config names its groups bare (`Platform`); the planner's group ids are
+        layer-qualified (`L2.Platform`). Compared as they came they never matched, so a layer
+        run built the model and planned no view or export at all -- no document."""
+        from core.group_planner import plan_runs
+        labels = [p.label for p in plan_runs(
+            self.CFG, project_path=".", use_model=True, no_llm_summarize=True,
+            filter_mode=None, selected_group=None, selected_layer="L2")]
+        assert any("L2.Platform" in l for l in labels), labels
+        assert any("L2.Extra" in l for l in labels), labels
+        assert not any("L1.Support" in l for l in labels), "only the named layer's groups"
+
+    def test_two_layers_document_both(self):
+        from core.group_planner import plan_runs
+        labels = [p.label for p in plan_runs(
+            self.CFG, project_path=".", use_model=True, no_llm_summarize=True,
+            filter_mode=None, selected_group=None, selected_layer=["L1", "L2"])]
+        assert all(any(g in l for l in labels) for g in ("L1.Support", "L2.Platform", "L2.Extra")), \
+            labels
+
     def test_components_from_two_layers_are_planned_together(self):
         """Refused outright before — 'All --selected-component names must be in the
         same layer'."""
