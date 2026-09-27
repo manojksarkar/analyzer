@@ -218,6 +218,41 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-27c (**Checked against Manoj's written rules, and one more place where a version
+> id crossed projects: a web job's baseline.**
+>
+> Baseline: `POST /projects/{pid}/jobs` stored `reference_version_id` as sent. The engine was safe --
+> `--base-version` resolves inside the project (976ee0f) -- but `_load_and_register_functions` read
+> that version's functions to mark which ones are new, from whichever project owned it. The route now
+> resolves it inside the project: by id, else by this project's version name (the CLI's
+> `--base-version` takes either), and stores the id. Anything else is a 404 before a job or a version
+> exists. `tests/api/test_start_job_baseline_is_this_projects.py`.
+>
+> 976ee0f's rule, checked over every path that takes a version id: the 11 review routes go through
+> `require_project_member` + `_version()`; the version, compare and re-export routes check the
+> project; `source_checkout._version_row` filters by project; the CLI refuses a foreign id (3b357fa).
+> The asset routes are unauthenticated on purpose (their docstring) and were left alone. The live
+> suite (`pytest tests/live --project-id <pid>`) passes on two projects that both have a `v1`.
+>
+> Manoj's docs against this branch:
+> - The `engine-dev` skill said a `layer:` scope writes no documents; `docs/CLI_COMMANDS.md` and
+>   `plan_runs` say one per component. The skill line described the bug 1df3016 introduced (fixed
+>   in 2026-09-27b), so the line is corrected.
+> - Interface ids: `SWE3_WIKI` counts `<NN>` within the unit, `SWE3_SPEC` REQ-IT-04 requires the id
+>   to be unique. The two disagree only when two units' ids start the same (`Map`, `Map2`); this
+>   branch counts those together (15df7c5), so no id is printed twice. Written into the wiki's
+>   existing ⚠ To confirm. On the sample, all 229 ids are identical to develop's.
+> - `DB_SCHEMA.md` and `schema-atlas.html` list every table but the five review ones. Added as a
+>   sixth group, with an ER diagram and two cookbook queries (run on SQLite; PostgreSQL pending).
+> - Unit header descriptions: Phase 2 generates them with develop's prompt and fallback, and the view
+>   reads them. One stored text per record, so for `typedef struct S_s {...} S_t;` the `S_t` and
+>   `S_s` rows read the same -- the intent in develop's own docstring ("one type reads the same
+>   however it was declared"); develop asked the LLM once per name.
+> - Commits: the skill says no "Claude" mention and no co-author trailer. The 18 commits already on
+>   this branch carry one (so do most of the user's commits on develop); commits from here on do not.
+>
+> Suites: unit + api + e2e 3303 passed.)
+
 > Updated: 2026-09-27b (**The open points from the rebase review, fixed: a `layer:` scope produces
 > documents again; the document page shows the unit description; every R11 row says where its text
 > is shown (`shownIn`); sample request bodies that produce Dynamic Behaviour rows; one dead
