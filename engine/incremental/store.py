@@ -214,29 +214,6 @@ class ArtifactStore(ABC):
         """Persist the structured model (functions/globals/datadict/edges/hashes/units/
         components/summaries) for `version_id` from a generated model/ dir. Idempotent."""
 
-    @abstractmethod
-    def read_model_parts(self, version_id: str, names) -> Dict[str, Any]:
-        """Just the named parts of a model — {"functions", "globals", "hashes", "edges", ...}.
-
-        `read_model` fetches all eight, three of them expensive joins over entity_versions +
-        entities + content_blobs. Every orchestrator caller wants three or four, and the
-        baseline reads used to be separate calls that each opened their OWN connection — the
-        per-entity-connection cost doc 09 B5a warns about, one level up.
-        """
-        out: Dict[str, Any] = {}
-        for n in names:
-            if n == "functions":
-                out[n] = self.read_functions(version_id)
-            elif n == "globals":
-                out[n] = self.read_globals(version_id)
-            elif n == "hashes":
-                out[n] = self.read_hashes(version_id)
-            elif n == "edges":
-                out[n] = self.read_edges(version_id)
-            else:
-                out[n] = (self.read_model(version_id) or {}).get(n) or {}
-        return out
-
     def read_model(self, version_id: str) -> Dict[str, Any]:
         """{functions, globals, datadict, edges, units, components, summaries, hashes}."""
 
@@ -254,7 +231,17 @@ class ArtifactStore(ABC):
         return 0
 
     def read_model_parts(self, version_id: str, names) -> Dict[str, Any]:
-        """ONE connection, only the loaders asked for."""
+        """Just the named parts of a model — {"functions", "globals", "hashes", "edges", ...}, on
+        ONE connection, with only the loaders asked for.
+
+        `read_model` fetches all eight, three of them expensive joins over entity_versions +
+        entities + content_blobs. Every orchestrator caller wants three or four, and the
+        baseline reads used to be separate calls that each opened their OWN connection — the
+        per-entity-connection cost doc 09 B5a warns about, one level up.
+
+        (This class used to define the method twice: an abstract per-part version above this
+        one, which Python discarded in favour of this, so it never ran.)
+        """
         from incremental import model_store as _ms
         loaders = {"functions": _ms.load_functions, "globals": _ms.load_globals,
                    "hashes": _ms.load_hashes, "edges": _ms.load_edges,
