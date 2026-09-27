@@ -185,6 +185,82 @@ class TestWhereAStructDescriptionIsShown:
                                                       models=models))
 
 
+def _store(conn, rel_path, content):
+    conn.execute(sa.insert(s.version_output_files).values(
+        version_id="v1", rel_path=rel_path, content=json.dumps(content), group_name="G"))
+
+
+class TestEveryRowSaysWhereItsTextIsShown:
+    """A slot exists for every function in the model, but a document shows only some: a function
+    gets an interface row -- and with it a flowchart table and behaviour names -- only when another
+    unit in the parsed scope calls it (develop 470d15c). In a run scoped to one group most are
+    shown nowhere, and a correction to one of those saves and is never seen. `shownIn` says which,
+    read from the stored views -- what the documents actually print."""
+
+    def _documents(self, conn, *, drawn=True):
+        # UnitA is documented: doThing and g_count are published. UnitB has a section too,
+        # but `other` is private -- listed nowhere.
+        _store(conn, "G/interface_tables.json", {
+            "unitNames": {"Comp|UnitA": "UnitA", "Comp|UnitB": "UnitB"},
+            "Comp|UnitA": {"name": "UnitA", "entries": [{"functionId": FN}, {"globalId": GLOBAL}]},
+            "Comp|UnitB": {"name": "UnitB", "entries": []}})
+        if drawn:
+            _store(conn, "G/flowcharts/UnitA.json", [{"name": "doThing", "functionKey": FN,
+                                                      "cfg": {"nodes": [], "edges": []}}])
+
+    def _shown(self, conn, models, kind):
+        return {i["slotKey"]: i["shownIn"]
+                for i in catalog.list_slots(conn, "v1", kind, models=models).items}
+
+    def test_a_description_is_shown_where_its_interface_row_is(self, conn, models):
+        self._documents(conn)
+        assert self._shown(conn, models, slot.DESCRIPTION) == {
+            FN: ["Comp|UnitA"], GLOBAL: ["Comp|UnitA"], FN2: []}
+
+    def test_behaviour_names_need_the_flowchart_table_or_a_behaviour_row(self, conn, models):
+        self._documents(conn)
+        _store(conn, "G/behaviour_diagrams/_behaviour_pngs.json", {"_docxRows": {"Comp": {
+            "UnitB": [{"currentFunctionId": FN2, "externalCallerId": "X|Y|z|"}]}}})
+        assert self._shown(conn, models, slot.BEHAVIOUR_INPUT_NAME) == {
+            FN: ["Comp|UnitA"], FN2: ["Comp|UnitB"]}
+
+    def test_without_a_drawn_flowchart_behaviour_names_are_not_shown(self, conn, models):
+        """Flowcharts off: a published function's section is its description paragraph only."""
+        self._documents(conn, drawn=False)
+        assert self._shown(conn, models, slot.BEHAVIOUR_OUTPUT_NAME)[FN] == []
+
+    def test_a_unit_is_shown_when_it_has_a_section(self, conn, models):
+        self._documents(conn)
+        assert self._shown(conn, models, slot.UNIT_DESCRIPTION) == {
+            "Comp|UnitA": ["Comp|UnitA"], "Comp|UnitB": ["Comp|UnitB"]}
+
+    def test_nothing_derived_means_nothing_shown(self, conn, models):
+        assert set(map(tuple, self._shown(conn, models, slot.DESCRIPTION).values())) == {()}
+
+    def test_a_hidden_function_is_shown_nowhere(self, conn):
+        """The exporter drops a hidden function from the document entirely."""
+        self._documents(conn)
+        model = _model()
+        model["functions"][FN]["hidden"] = True
+        page = catalog.list_slots(conn, "v1", slot.DESCRIPTION,
+                                  models=svc.ModelAccess(artifacts=model))
+        assert next(i for i in page.items if i["slotKey"] == FN)["shownIn"] == []
+
+    def test_a_flowchart_is_shown_where_its_function_is_published(self, conn):
+        self._documents(conn)
+        _store(conn, "G/flowcharts/UnitB.json", [{"name": "other", "functionKey": FN2,
+                                                  "cfg": {"nodes": [], "edges": []}}])
+        rows = {i["flowchartId"]: i["shownIn"]
+                for i in catalog.list_slots(conn, "v1", slot.NODE_LABEL).items}
+        assert rows == {FN: ["Comp|UnitA"], FN2: []}
+
+    def test_a_behaviour_row_is_shown_where_it_sits(self, conn):
+        _store(conn, "G/behaviour_diagrams/_behaviour_pngs.json", {"_docxRows": {"Comp": {
+            "UnitA": [{"currentFunctionId": FN, "externalCallerId": "X|Y|z|"}]}}})
+        page = catalog.list_slots(conn, "v1", slot.BEHAVIOUR_DESCRIPTION)
+        assert page.items[0]["shownIn"] == ["Comp|UnitA"]
+
+
 class TestOverrideState:
     def test_a_corrected_slot_shows_the_human_text(self, conn, models):
         """Through the REAL save, not a hand-inserted row.

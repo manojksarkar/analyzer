@@ -704,3 +704,32 @@ class TestStructDescriptionsEndToEnd:
                              "text": "Words."})
         assert r.status_code == 404
         assert "is a define" in r.text
+
+
+class TestR11SaysWhereATextIsShown:
+    """`shownIn` on every row: the units whose document shows the text. `[]` is a slot that
+    saves but is printed nowhere in this version -- e.g. a private function in a group run."""
+
+    def _slots(self, client, auth_header, kind):
+        r = client.get(BASE + "/slots", headers=auth_header, params={"slot_kind": kind})
+        assert r.status_code == 200, r.text
+        return r.json()["slots"]
+
+    def test_a_function_no_document_lists_is_shown_nowhere(self, client, review_db, auth_header):
+        row = next(x for x in self._slots(client, auth_header, "description")
+                   if x["slotKey"] == FID)
+        assert row["shownIn"] == []
+
+    def test_once_its_interface_row_is_stored_it_is_shown_there(self, client, review_db,
+                                                                auth_header):
+        with review_db.begin() as cx:
+            cx.execute(insert(s.version_output_files).values(
+                version_id=VERSION, rel_path="Sample/interface_tables.json", group_name="Sample",
+                content=json.dumps({"unitNames": {"Sample-Core|Core": "Core"},
+                                    "Sample-Core|Core": {"name": "Core",
+                                                         "entries": [{"functionId": FID}]}})))
+        row = next(x for x in self._slots(client, auth_header, "description")
+                   if x["slotKey"] == FID)
+        assert row["shownIn"] == ["Sample-Core|Core"]
+        flow = self._slots(client, auth_header, "nodeLabel")[0]
+        assert flow["shownIn"] == ["Sample-Core|Core"]
