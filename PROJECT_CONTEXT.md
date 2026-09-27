@@ -218,6 +218,60 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-27b (**The open points from the rebase review, fixed: a `layer:` scope produces
+> documents again; the document page shows the unit description; every R11 row says where its text
+> is shown (`shownIn`); sample request bodies that produce Dynamic Behaviour rows; one dead
+> duplicate method removed.**
+>
+> Layer scope (develop bug since 1df3016): `group_planner.plan_runs` took a layer's group names from
+> its config, bare (`Full`), and kept the planner's groups whose ids were among them -- but those ids
+> are layer-qualified (`Layer1.Full`). Nothing matched, so `--scope layer:L` (the API's
+> `{"type": "layer"}`) built the model and planned no view or export: no document. The names are
+> qualified with `make_qualified_id` first; the intent -- "build model, then per-group
+> view+export" -- is unchanged. The layer tests only checked the parser's arguments.
+>
+> Page: the Component/Unit table joined the unit's interface descriptions while the Word file prints
+> the STORED unit description, so the two disagreed and a `unitDescription` correction never showed
+> on the page. The page reads the stored text now (from the model, so on the next load -- no
+> re-export), the join stays as the fallback, exactly as the exporter's.
+>
+> `shownIn` on every R11 row: a slot exists for every function in the model, but a document shows
+> only the ones another unit in the parsed scope calls (develop 470d15c), so in a group run most
+> function corrections save and are printed nowhere -- indistinguishable, until now, from ones that
+> are. `catalog._placement` reads the stored interface tables, behaviour rows and flowchart file
+> names (not their content) once per listing; `shownIn` is the units whose SWE.3 document prints the
+> text, per kind (description: interface table; behaviour names: a drawn flowchart table or a
+> behaviour row; unit: its section; flowchart: its function's interface row; behaviour row: its
+> unit). A hidden function is shown nowhere. The rule itself is develop's and unchanged.
+>
+> Sample bodies: `engine/config/api_*.sample_behaviour.example.json` -- the Full layers, group
+> `Layer1.My Sample`, `views.sequenceDiagrams.filterMode: all_callers`: 18 behaviour rows, where the
+> Full pair (the shipped defaults) draws none. Pinned by `test_api_request_examples.py`.
+>
+> `ArtifactStore.read_model_parts` was defined twice in `incremental/store.py`; Python used the
+> second, so the first (abstract, per-part) never ran. Removed, its explanation folded into the
+> survivor; the abstract-method set is identical.
+>
+> Found by running the layer fix: the first layer-scoped run took 66 minutes, 61 of them in ONE
+> unit diagram (`Layer1.Diag|ArmIntrinsics`) whose mmdc render hung. Its timeout was 60 seconds.
+> `utils._run_mmdc` and `_run_dot_render` called `subprocess.run(..., timeout, shell=True)`, which
+> on a timeout kills only `cmd.exe` and then reads the pipes to the end -- held open by the Node and
+> Chromium beneath it, so the read waited for them. Measured on a stand-in: `timeout=3` returned
+> after 41 s. `core.subprocess_util.run_capture` stops the whole tree first (psutil, else
+> `taskkill /T`) and is otherwise `subprocess.run`: same result, same `TimeoutExpired`, same
+> `shell=True` on Windows. A hung render now fails at its timeout, like any failed render: the
+> document goes on without that picture (as it always did when a render failed); a render that
+> succeeds takes the same path as before.
+> Why mmdc hangs on that one diagram is not established -- for Manoj; it rendered normally on the
+> next run, so it is intermittent.
+>
+> Verified on the real pipeline, fresh SQLite: `layer:Layer1` job -> 11 documents, 75 s (was
+> 66 min); R11 `shownIn` for descriptions == exactly what the stored interface tables list
+> (25 of 229 slots); a `unitDescription` correction on the page at the next load, before any
+> re-export; the behaviour sample bodies, as saved -> 18 rows, each shown in its own unit; and the
+> whole-feature run of the Full sample (every kind, re-export, CLI re-derive, v2 carry) unchanged.
+> Suites: unit + api + e2e 3295 passed.)
+
 > Updated: 2026-09-27 (**`review_update_v2` verified line by line against both branches, and
 > develop's struct/class/union descriptions made fully reviewable: R11 offers only the records a
 > document describes and says where each is shown; a re-export registers the documents a version is
