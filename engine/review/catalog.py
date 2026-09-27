@@ -27,9 +27,9 @@ Everything else is paginated, and may be narrowed by unit or component.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, NamedTuple, Optional
+from typing import Any, Dict, List, NamedTuple, Optional, Set
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from review import phase3_overrides as p3, resolver, slot
 from api.db.postgres import schema as s
@@ -97,6 +97,94 @@ def _state(row, in_force: str) -> Dict[str, Any]:
     }
 
 
+class _Placement(NamedTuple):
+    """Where this version's SWE.3 documents show a text, read from its stored views."""
+    listed: Dict[str, List[str]]        # entity key -> unit keys whose interface table lists it
+    in_behaviour: Dict[str, List[str]]  # function id -> unit keys whose Dynamic Behaviour rows show it
+    drawn_units: Set[str]               # unit keys whose functions have a stored flowchart
+    documented_units: Set[str]          # unit keys with a section in a document
+
+
+def _placement(conn, version_id: str) -> _Placement:
+    """Read where each text is shown, so a row can say so (`shownIn`).
+
+    A slot exists for every function and global in the model, but a document shows only some of
+    them: a function gets an interface row -- and with it a flowchart table and its behaviour
+    names -- only when another unit in the parsed scope calls it (develop 470d15c), so in a run
+    scoped to one group most functions are shown nowhere. A correction to one of those saves and
+    is never seen; without this a reviewer could not tell it from one that is.
+
+    Read from the stored view output, which IS what the documents print, rather than recomputed
+    from the model. Flowcharts are matched to units by their file NAME inside the same output
+    directory as the unit's interface table -- only the names are read, because their content is
+    the bulk of a version and nothing here needs it.
+    """
+    vof = s.version_output_files
+    listed: Dict[str, List[str]] = {}
+    in_behaviour: Dict[str, List[str]] = {}
+    units_by_dir: Dict[str, Set[str]] = {}
+
+    def _add(where: Dict[str, List[str]], key: str, unit_key: str) -> None:
+        if unit_key not in where.setdefault(key, []):
+            where[key].append(unit_key)
+
+    for r in conn.execute(
+            select(vof.c.rel_path, vof.c.content)
+            .where(vof.c.version_id == version_id,
+                   or_(vof.c.rel_path.like("%interface_tables.json"),
+                       vof.c.rel_path.like("%_behaviour_pngs.json")))).fetchall():
+        path = (r.rel_path or "").replace("\\", "/")
+        try:
+            payload = json.loads(r.content or "{}") or {}
+        except ValueError:
+            continue
+        if path.endswith("interface_tables.json"):
+            out_dir = path[:-len("interface_tables.json")]
+            for unit_key, unit in payload.items():
+                if unit_key == "unitNames" or not isinstance(unit, dict):
+                    continue
+                units_by_dir.setdefault(out_dir, set()).add(unit_key)
+                for entry in unit.get("entries") or []:
+                    key = (entry or {}).get("functionId") or (entry or {}).get("globalId")
+                    if key:
+                        _add(listed, key, unit_key)
+        else:
+            for comp, unit, row in p3.behaviour_rows(payload.get("_docxRows")):
+                fid = row.get("currentFunctionId")
+                if fid:
+                    _add(in_behaviour, fid, "%s|%s" % (comp, unit))
+
+    drawn: Set[str] = set()
+    for r in conn.execute(
+            select(vof.c.rel_path)
+            .where(vof.c.version_id == version_id,
+                   vof.c.rel_path.like("%/flowcharts/%.json"))).fetchall():
+        path = (r.rel_path or "").replace("\\", "/")
+        if path.endswith("_summary.json"):
+            continue
+        out_dir, _, name = path.rpartition("/flowcharts/")
+        stem = name[:-len(".json")]
+        drawn |= {u for u in units_by_dir.get(out_dir + "/", ()) if u.split("|")[-1] == stem}
+
+    documented = set().union(*units_by_dir.values()) if units_by_dir else set()
+    return _Placement(listed, in_behaviour, drawn, documented)
+
+
+def _shown_for(kind: str, entity_key: str, entry: Dict[str, Any], where: _Placement) -> List[str]:
+    """The units whose SWE.3 document shows this slot's text; `[]` for none."""
+    if entry.get("hidden"):
+        return []                               # the exporter drops a hidden function entirely
+    if kind == slot.UNIT_DESCRIPTION:
+        return [entity_key] if entity_key in where.documented_units else []
+    listed = where.listed.get(entity_key, [])
+    if kind == slot.DESCRIPTION:
+        return list(listed)
+    # behaviour input/output names: printed in a published function's flowchart table (so only
+    # where it was drawn), and in the Dynamic Behaviour rows that show the function.
+    shown = [u for u in listed if u in where.drawn_units]
+    return shown + [u for u in where.in_behaviour.get(entity_key, []) if u not in shown]
+
+
 def _page(items: List[Dict[str, Any]], limit: int, offset: int) -> Page:
     total = len(items)
     lo = max(0, int(offset))
@@ -110,6 +198,7 @@ def _page(items: List[Dict[str, Any]], limit: int, offset: int) -> Page:
 def _model_backed(conn, version_id, kind, models, unit, component, limit, offset) -> Page:
     artifacts, _field = resolver._HOMES[kind]
     done = _overridden(conn, version_id, kind)
+    where = _placement(conn, version_id)
     items: List[Dict[str, Any]] = []
 
     for artifact in artifacts:
@@ -135,6 +224,7 @@ def _model_backed(conn, version_id, kind, models, unit, component, limit, offset
                 "component": comp,
                 "unit": un,
                 "artifact": artifact,
+                "shownIn": _shown_for(kind, entity_key, entry, where),
                 **_state(row, text),
             })
     return _page(items, limit, offset)
@@ -244,6 +334,8 @@ def _flowcharts(conn, version_id, unit, component, limit, offset) -> Page:
     rows = conn.execute(
         select(s.version_output_files.c.rel_path, s.version_output_files.c.content)
         .where(s.version_output_files.c.version_id == version_id)).fetchall()
+    # A flowchart is printed in the flowchart table of a function the interface table lists.
+    listed = _placement(conn, version_id).listed
 
     items = []
     for r in rows:
@@ -274,6 +366,7 @@ def _flowcharts(conn, version_id, unit, component, limit, offset) -> Page:
                 "unit": un,
                 "nodeCount": len(nodes),
                 "overriddenCount": per_flowchart.get(fid, 0),
+                "shownIn": list(listed.get(fid, [])),
             })
     items.sort(key=lambda i: (i["component"] or "", i["unit"] or "", i["flowchartId"]))
     return _page(items, limit, offset)
@@ -327,6 +420,8 @@ def _behaviour_rows(conn, version_id, unit, component, limit, offset) -> Page:
                 "label": row.get("externalUnitFunction"),
                 "component": comp,
                 "unit": un,
+                # A behaviour row is the Dynamic Behaviour section itself: shown where it sits.
+                "shownIn": ["%s|%s" % (comp, un)],
                 # What is in force -- the stored row, which R6 patches for a live correction and
                 # which an orphan never reached.
                 "bullets": list(bullets),
