@@ -66,3 +66,44 @@ def test_flowcharts_are_switched_on():
     """Off in the shipped defaults; the review feature needs them for label corrections."""
     views = _load(PROJECT)["build_config"]["views"]
     assert views["flowcharts"] is True and views["behaviourDiagram"] is True
+
+
+# ---------------------------------------------------------------------------
+# The Dynamic Behaviour pair: the "Full" group draws no behaviour row on the sample -- develop's
+# default filter (`skip_within_unit`) wants a call chain across two units of ONE component, and
+# the sample has none that qualifies -- so a behaviour correction (R6) cannot be tried there.
+# This pair runs group Layer1.My Sample with one diagram per external caller: 18 rows.
+# ---------------------------------------------------------------------------
+BEH_PROJECT = os.path.join(CONFIG_DIR, "api_create_project.sample_behaviour.example.json")
+BEH_JOB = os.path.join(CONFIG_DIR, "api_start_job.sample_behaviour.example.json")
+
+
+def test_the_behaviour_bodies_are_accepted_by_the_api():
+    from api.routes.projects import CreateProjectRequest
+    from api.routes.jobs import StartJobRequest
+    CreateProjectRequest(**_load(BEH_PROJECT))
+    StartJobRequest(**_load(BEH_JOB))
+
+
+def test_the_behaviour_project_is_the_full_one_but_for_its_views():
+    """Same layers -- so the default-layers check above covers it too -- and a different name, so
+    both can live in one database."""
+    full, beh = _load(PROJECT), _load(BEH_PROJECT)
+    assert beh["architecture_layers"] == full["architecture_layers"]
+    assert beh["name"] != full["name"]
+
+
+def test_the_behaviour_project_draws_a_row_per_caller():
+    views = _load(BEH_PROJECT)["build_config"]["views"]
+    assert views["behaviourDiagram"] is True and views["flowcharts"] is True
+    assert views["sequenceDiagrams"]["filterMode"] == "all_callers"
+
+
+def test_the_behaviour_job_names_the_group_by_its_layer():
+    """`My Sample` is a group in Layer1 AND Layer2, so the bare name is ambiguous; the layer-
+    qualified id is what the planner resolves."""
+    qualified = {"%s.%s" % (layer["name"], g["name"])
+                 for layer in _load(BEH_PROJECT)["architecture_layers"] for g in layer["groups"]}
+    scope = _load(BEH_JOB)["scope"]
+    assert scope == {"type": "group", "names": ["Layer1.My Sample"]}
+    assert set(scope["names"]) <= qualified
