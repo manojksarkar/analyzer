@@ -273,6 +273,14 @@ the list reads in the order of this document. Sign in with `POST /api/v1/auth/si
 `access_token` into **Authorize**, then use Try-it-out. Take a `slot_key` from an R1 response
 rather than typing one — Swagger URL-encodes it for you.
 
+**Sample bodies** for `POST /projects` and `POST /projects/{id}/jobs`, on SampleCppProject, are in
+`engine/config/` (set `repo_url` to a git copy of the sample and `commit_sha` to a commit in it):
+
+| pair | runs | use it to try |
+|---|---|---|
+| `api_create_project.sample_full.example.json` + `api_start_job.sample_full.example.json` | group `Full`, the shipped defaults | every kind but `behaviourDescription`. Only `opsAdd`/`opsSub` are published in this scope, so most function slots show `shownIn: []` |
+| `api_create_project.sample_behaviour.example.json` + `api_start_job.sample_behaviour.example.json` | group `Layer1.My Sample`, one behaviour diagram per external caller (`views.sequenceDiagrams.filterMode: all_callers`) | `behaviourDescription` (R6): 18 rows. The default filter draws none on the sample |
+
 A missing or non-access token is **401**
 (`{"detail": {"code": "UNAUTHENTICATED", "message": "…", "status": 401}}`).
 
@@ -868,18 +876,16 @@ the UI must refetch after a save:
 | `behaviourInputName`, `behaviourOutputName` | next page load — read from the model | after re-export |
 | `behaviourDescription` | next page load — the stored behaviour row is written | after re-export |
 | `nodeLabel` | next page load **when the UI draws the DOT** (§3a, *Drawing a flowchart*): the payload's DOT is read from the database, and R8 rebuilt it. The PNG (`image_url`) changes only after the owed render (next re-export), so a page that shows the PNG shows the old label until then. Today's web-app does, and prints the DOT as text only when no PNG exists | after re-export |
-| `unitDescription` | **not shown on the page at all** — the page's Component/Unit table joins the interface descriptions instead of reading the stored one | after re-export |
+| `unitDescription` | next page load — the Component/Unit table reads the stored description from the model, as the Word file does | after re-export |
 | `structDescription` | **after re-export** — the unit header table on the page is the Phase-3 view's output (`unit_headers.json`), and the re-export rebuilds it | after re-export |
 
-`unitDescription` is a gap in the page renderer (`api/services/doc_render.py`), not in saving: the
-Word exporter reads the stored field (REQ-PRE-01), the page was never updated to. Recorded in §17.
-
-**A correction to a function the document does not show is saved and never seen.** A function gets
-an interface row — and a flowchart — only when a unit OTHER than its own calls it, among the files
-this run parsed (develop 470d15c: a `PUBLIC` marking no longer publishes by itself). A run scoped
-to one group cannot see its callers in other groups, so most of its functions are private and
-absent from the SWE.3 document, while R11 still lists every function's `description`. Test with a
-scope whose callers are in it, or pick a function that has a row.
+**A correction to a text the document does not show is saved and never seen — and R11 says which
+those are.** A function gets an interface row — and a flowchart, and behaviour names in its
+flowchart table — only when a unit OTHER than its own calls it, among the files this run parsed
+(develop 470d15c: a `PUBLIC` marking no longer publishes by itself). A run scoped to one group
+cannot see its callers in other groups, so most of its functions are private and absent from the
+SWE.3 document. Every R11 row carries `shownIn` (§15a): the units whose document prints the text,
+`[]` when none does. Show or hide those rows accordingly.
 
 ---
 
@@ -963,7 +969,7 @@ A row, for the six per-slot kinds:
 | `slotKey` | string | **send this to R2–R6 verbatim** |
 | `label` | string | a display name — the function, unit or type |
 | `component` / `unit` | string \| null | for `structDescription`: the first unit that shows it, or `null` when no document of this version does |
-| `shownIn` | string[] | `structDescription` only: the unit keys (`Layer1.Cross\|Dispatch`) whose unit header table shows this description. `[]` = no document of this version shows it |
+| `shownIn` | string[] | **every kind**: the unit keys (`Layer1.Cross\|Dispatch`) whose SWE.3 document prints this text, read from the version's stored views. `[]` = no document of this version shows it — the save works and nobody will see it. `description`: the units whose interface table lists the function or global. `behaviourInputName` / `behaviourOutputName`: those units where the function's flowchart was drawn, plus the units whose Dynamic Behaviour rows show it. `unitDescription`: the unit, when it has a section. `structDescription`: the units whose unit header table shows it. `behaviourDescription`: its own unit. A hidden function is shown nowhere |
 | `kindOfType` | string | `structDescription` only: `struct`, `class` or `union` |
 | `text` | string | **what the document prints now**, read from where the document reads it. May be `""` — a slot can be legitimately empty and is still editable |
 | `humanText` | string \| null | the reviewer's words whenever a correction exists, orphaned or not |
@@ -979,6 +985,7 @@ A row, for the six per-slot kinds:
   "slots": [
     { "slotKind": "description", "slotKey": "Layer1.Sample-Core|Core|coreAdd|int,int",
       "label": "coreAdd", "component": "Layer1.Sample-Core", "unit": "Core",
+      "shownIn": ["Layer1.Sample-Core|Core"],
       "text": "Adds two integers.", "llmText": null,
       "isOverridden": false, "isOrphaned": false }
   ],
@@ -995,8 +1002,11 @@ graph, so each row carries the token **R7** takes:
   "flowchartId": "Layer1.Sample-Core|Core|coreAdd|int,int",
   "flowchartToken": "TGF5ZXIxLlNhbXBsZS1Db3JlfENvcmV8Y29yZUFkZHxpbnQsaW50",
   "functionName": "coreAdd", "component": "Layer1.Sample-Core", "unit": "Core",
-  "nodeCount": 7, "overriddenCount": 1 }
+  "nodeCount": 7, "overriddenCount": 1, "shownIn": ["Layer1.Sample-Core|Core"] }
 ```
+
+A flowchart's `shownIn` is where its flowchart table is printed: a function the interface table
+lists. A flowchart is stored for every function, published or not.
 
 `overriddenCount` excludes orphans: they are kept but not applied, so counting them would promise
 an edit the document does not carry.
@@ -1076,13 +1086,6 @@ Honest gaps, so the UI does not plan around something that is not there.
 - **No cleanup endpoint** for orphaned corrections — deliberately, pending a decision; see
   [REVIEW_UPDATE_DESIGN Open items](../design/REVIEW_UPDATE_DESIGN.md#open-items).
 - **No bulk or batch write** beyond R8's one flowchart. Correct slots one call at a time.
-- **The document page does not show unit descriptions** (§14, "When a correction becomes
-  visible"), so a `unitDescription` correction appears only in the Word file. The page renderer lags
-  the Word exporter here; both read the same stored field once it catches up. (Struct, class and
-  union descriptions are on the page now, in the unit header table, after a re-export.)
-- **R11 lists function slots the document does not show**: every function's `description`,
-  published or not (§14), and nothing marks which ones have a row. (`structDescription` rows do
-  say where they are shown — `shownIn`.)
 - **A corrected flowchart's PNG is redrawn by the next run or re-export**, not by the save — R8
   over HTTP has no output tree to draw into, so `renderPending` is `true`. Its DOT is rebuilt by the
   save: draw that (§3a) and the page is current at once.
