@@ -115,6 +115,21 @@ def start_job(
     if db.versions.get_by_tag(project_id, version_name):
         raise conflict("VERSION_EXISTS",
                        f"Version '{version_name}' already exists in this project.")
+    # The baseline is one of THIS project's versions -- 976ee0f's rule, "resolved inside its
+    # project, never another project's". Found by id, else by this project's version name (the
+    # CLI's --base-version takes either), and stored as the id. It used to be passed on
+    # unchecked: the engine refused a foreign id and chose a baseline itself, but
+    # `_load_and_register_functions` read that version's functions to mark which ones are new
+    # -- another project's model.
+    reference_version_id = None
+    if (body.reference_version_id or "").strip():
+        ref = body.reference_version_id.strip()
+        base = db.versions.get(ref)
+        if base is None or base.project_id != project_id:
+            base = db.versions.get_by_tag(project_id, ref)
+        if base is None:
+            raise not_found("Version", f"'{ref}' in project '{project_id}'")
+        reference_version_id = base.id
     # Prevent duplicate active jobs
     existing = db.jobs.get_current(project_id)
     if existing and existing.status in ("queued", "running", "paused"):
@@ -131,7 +146,7 @@ def start_job(
         project_id=project_id,
         commit_sha=body.commit_sha,
         version_id=version_id,
-        reference_version_id=body.reference_version_id,
+        reference_version_id=reference_version_id,
         status="queued",
         pause_after_phase1=body.pause_after_phase1,
         layer_filter=body.layer_filter,
