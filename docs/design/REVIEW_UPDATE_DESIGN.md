@@ -156,6 +156,11 @@ prints, `None` on a value row), so R11 reads where a description is shown from t
 themselves — `shownIn`, and the `unit` / `component` filters — instead of re-implementing the
 view's row rules, orphan-header lending included.
 
+Every other kind's R11 row carries `shownIn` too, read the same way — from the stored interface
+tables, flowchart files and behaviour rows (`catalog._placement`) — because a slot exists for every
+function while a document shows only the ones another unit in the parsed scope calls (develop
+470d15c). A `[]` tells the UI the correction would be saved and never printed.
+
 ␁ is **SOH (0x01)**, not `#` or `|`. `entity_key` is itself `component|unit|name|paramTypes`, so a
 composite joined with `|` can only be split by counting pipes and hoping, and `#` can appear in a
 generated display name. 0x01 can occur in none of them, so parsing is exact.
