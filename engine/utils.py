@@ -128,10 +128,10 @@ def _run_mmdc(project_root: str, mermaid: str, png_path: str, *,
         if puppeteer and os.path.isfile(pup):
             cmd += ["-p", pup]
         try:
-            if os_type == "Windows":
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False, shell=True)
-            else:
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
+            # Stops the whole tree at the timeout: through the shell, `subprocess.run` killed only
+            # cmd.exe and then waited on the Chromium it had started -- an hour, once.
+            from core.subprocess_util import run_capture
+            r = run_capture(cmd, timeout=timeout, shell=(os_type == "Windows"))
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
             log(f"mmdc could not run: {type(exc).__name__}: {exc}",
                 component="render", err=True)
@@ -218,12 +218,9 @@ def _run_dot_render(project_root: str, dot: str, png_path: str, *,
             f.write(dot or "")
         cmd = ["node", script, dot_path, png_path, str(scale)]
         try:
-            if os_type == "Windows":
-                r = subprocess.run(cmd, capture_output=True, text=True,
-                                   timeout=timeout, check=False, shell=True)
-            else:
-                r = subprocess.run(cmd, capture_output=True, text=True,
-                                   timeout=timeout, check=False)
+            # The whole tree stops at the timeout -- see `_run_mmdc`, and core.subprocess_util.
+            from core.subprocess_util import run_capture
+            r = run_capture(cmd, timeout=timeout, shell=(os_type == "Windows"))
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
             log(f"render_dot.mjs could not run: {type(exc).__name__}: {exc}",
                 component="render", err=True)
