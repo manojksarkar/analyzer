@@ -4,15 +4,19 @@
 > Optimize it for findability and completeness, not polish — no prose warm-up, no formatting for human readers.
 > A section outline is fine purely as an agent-navigation aid. Humans read the docs under `docs/` instead.
 
-> **⭐ IN FLIGHT — branch `review_update_v1` (Review & Update: correcting LLM text in a document).**
-> - **Merging this branch? Read [docs/design/REVIEW_UPDATE_HANDOVER.md](docs/design/REVIEW_UPDATE_HANDOVER.md) first.**
->   Migration chain, the merge conflict surface file by file, and the invariants that break silently
->   with the test that catches each.
+> **⭐ IN FLIGHT — branch `review_update_v2`, PR to `develop` (Review & Update: correcting LLM text
+> in a document).** `review_update_v1` squash-merged onto `develop` 8628b2d (`b10a71b`) + follow-up
+> commits; `review_update_v1` kept unchanged. Suites pass on SQLite; **the PostgreSQL run is next**.
+> - **Merging or reviewing it? Read [docs/design/REVIEW_UPDATE_HANDOVER.md](docs/design/REVIEW_UPDATE_HANDOVER.md) first.**
+>   Migration chain, the merge conflict surface file by file (§3.3: what the rebase changed in
+>   develop's code), the invariants that break silently with the test that catches each, and
+>   **§8: five decisions waiting on the develop owner** (BACKLOG `RU-1`…`RU-5`).
 > - Contract: [docs/spec/REVIEW_UPDATE_SPEC.md](docs/spec/REVIEW_UPDATE_SPEC.md) (`REQ-` ids) ·
 >   how: [docs/design/REVIEW_UPDATE_DESIGN.md](docs/design/REVIEW_UPDATE_DESIGN.md) ·
 >   HTTP: [docs/spec/REVIEW_UPDATE_API_SPEC.md](docs/spec/REVIEW_UPDATE_API_SPEC.md).
-> - Code lives in `engine/review/`. Build order + progress: DESIGN §13. Reasoning for every decision
->   is in the dated entries below, 2026-09-16 → 2026-09-20.
+> - Code lives in `engine/review/`; the rules for engine code that touches it are in the `engine-dev`
+>   skill §8. Reasoning for every decision is in the dated entries below: the feature 2026-09-16 →
+>   2026-09-20, the rebase onto develop 2026-09-26f → 2026-09-27d.
 
 > **⭐ WORK STATUS — 2026-08-14 · branch `db-with-increment-changes` (READ THIS FIRST in a new chat).**
 > - **The PostgreSQL migration is COMPLETE and validated on the office box.** Postgres holds the model,
@@ -217,6 +221,34 @@
 >   `edgeRouting:ORTHOGONAL`) are not yet applied → **pending**.
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
+
+> Updated: 2026-09-27d (**Context files, skills and the merge handover brought up to date for
+> `review_update_v2` — docs and comments only, no behaviour change.**
+>
+> - A wrong claim corrected in three docstrings (`views/unit_headers._struct_description`,
+>   `model_deriver._enrich_unit_and_struct_descriptions`, `test_unit_struct_descriptions_stored`):
+>   they said the page could not show develop's struct description. It could — develop's 101e3f0
+>   generates it in the unit header view, whose output the page reads. What was wrong is that it
+>   lived only there and was written afresh on every run, so a correction had no model field to live
+>   in. The unit description, made only by the exporter, did never reach the page.
+>
+> - Skills. `engine-dev` §8: the review rules for engine code — seven kinds and their homes, a new
+>   LLM-written text needs a slot kind, unit and struct descriptions are generated in Phase 2 and only
+>   read after it, corrections go back on last, one rule for which records are described, Phase 3 applies before it
+>   draws, two writers of output rows, the export guard. `engine-flowchart`: node labels are
+>   correctable (`cfg_for_rendering`, `slot_shape`), the carry-forward call; and a correction — the
+>   flowchart JSON has stored a lossy serialized CFG since 3355930, where the skill said only the DOT
+>   was kept. `engine-behaviour`: the row fields incl. `externalCallerId`, the default filter, how a
+>   row is addressed, `_one_line`. `ui-dev` §6: rules for the review screens (slot keys only from
+>   reads, `text` / `isOverridden` / `isOrphaned`, `shownIn`, refetch, R9, draw from DOT).
+>   `docs-maintainer`: DB_SCHEMA + atlas are twins; the API spec tables a test parses; the review
+>   doc set.
+> - `docs/design/REVIEW_UPDATE_HANDOVER.md` now describes v2: §3.3 what the rebase changed in
+>   develop's code, invariants §4.19–4.24, the develop defects the rebase found (§5), current
+>   verification (§6), and §8 the five decisions for the develop owner — BACKLOG `RU-1`…`RU-5`. Two
+>   stale cross-references fixed (§4.2 → §4.5, §4.6 → §4.12).
+> - `api/PROJECT_CONTEXT.md`, `api/PLAN.md`, `web-app/PLAN.md`: the review API and what the web app
+>   still has to build. README links `docs/REVIEW_UPDATE_REQUIREMENTS.md`, which nothing linked.)
 
 > Updated: 2026-09-27c (**Checked against Manoj's written rules, and one more place where a version
 > id crossed projects: a web job's baseline.**

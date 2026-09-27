@@ -1212,11 +1212,11 @@ def _enrich_unit_and_struct_descriptions(units_data: dict, functions_data: dict,
                                          config: dict) -> tuple:
     """Generate and STORE the unit and struct descriptions. Returns (n_units, n_structs).
 
-    Both used to be produced inside the DOCX exporter and thrown away -- `get_unit_description`
-    at docx_exporter.py:1074 and `get_struct_description` at :371, the latter commented "on the
-    go, no store". Two consequences beyond their being uneditable: the HTML view could not show
-    them at all, because it does not run the exporter; and every export re-paid for the LLM
-    calls, with no guarantee two exports of one version read the same.
+    Both used to be produced at render time and stored in no model field -- `get_unit_description`
+    inside the DOCX exporter, and `get_struct_description` inside it too ("on the go, no store")
+    until develop's 101e3f0 moved it into the unit header view, which wrote it afresh on every run.
+    So neither could hold a reviewer's correction; and the unit description, made only by the
+    exporter, never reached the HTML view, which does not run the exporter.
 
     They belong here, after function and global descriptions are enriched, because the unit
     description is generated FROM them.

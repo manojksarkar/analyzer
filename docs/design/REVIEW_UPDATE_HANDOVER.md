@@ -1,17 +1,23 @@
-# Review & Update — handover for merging `review_update_v1`
+# Review & Update — handover for merging `review_update_v2` into `develop`
 
-For whoever integrates this branch. It says **what changed, what it touches, what must not be
-broken, and how to check** — it does not restate the feature. For that:
+For whoever reviews and merges this branch. It says **what changed, what it touches, what must not
+be broken, how to check, and what is waiting on a decision** — it does not restate the feature. For
+that:
 
 - **What and why** → [REVIEW_UPDATE_SPEC](../spec/REVIEW_UPDATE_SPEC.md) (`REQ-` ids)
 - **The HTTP contract** → [REVIEW_UPDATE_API_SPEC](../spec/REVIEW_UPDATE_API_SPEC.md)
 - **How** → [REVIEW_UPDATE_DESIGN](REVIEW_UPDATE_DESIGN.md)
-- **Chronology and the reasoning behind each decision** → root `PROJECT_CONTEXT.md`, the
-  `> Updated: 2026-09-16 …` through `2026-09-18` entries
+- **Chronology and the reasoning behind each decision** → root `PROJECT_CONTEXT.md`: the feature in
+  the `> Updated: 2026-09-16 …` through `2026-09-20` entries, the rebase onto develop in
+  `2026-09-26f` through `2026-09-27d`
 
-Branch: `review_update_v1` · base: `origin/develop` · state at writing: **the feature is functionally complete**. Build-order steps 1–8 done
-and wired into the pipeline; step 9 done for the export path, with the three path-taking readers
-left (see §7).
+Branch: `review_update_v2` = `review_update_v1` squash-merged onto `origin/develop` at `8628b2d`
+(commit `b10a71b`), then separate follow-up commits: fixes the rebase review found, develop's new
+LLM text (struct/class/union descriptions) made correctable, and docs — `git log
+origin/develop..review_update_v2`. `review_update_v1` is kept unchanged. State: **the feature is
+functionally complete** (build-order steps 1–8 wired into the pipeline, step 9 done for the export
+path with three path-taking readers left, §7); every suite passes on SQLite; the PostgreSQL run is
+still to do. **Five decisions wait on the develop owner — §8.**
 
 ---
 
@@ -40,11 +46,11 @@ This branch adds **six** migrations on top of `0008`:
                       └─ 0014_users_is_superuser   users.is_superuser
 ```
 
-`develop` was at `0008` when this was written. **If `develop` has since added its own `0009`,
-there will be two heads after the merge** and `alembic upgrade head` will refuse. The fix is to
-re-point this branch's `0009` at the new head and renumber — all six migrations are additive
-(new tables, one new nullable column) and touch nothing existing, so they can sit anywhere after
-`0008`.
+`develop` is still at `0008` (checked at `8628b2d`), so the chain is linear: `alembic heads` prints
+`0014_users_is_superuser (head)`. **If `develop` adds its own `0009` before this merges, there will
+be two heads** and `alembic upgrade head` will refuse. The fix is to re-point this branch's `0009`
+at the new head and renumber — all six migrations are additive (new tables, new columns) and touch
+nothing existing, so they can sit anywhere after `0008`.
 
 Check with:
 
@@ -72,12 +78,13 @@ built it complete. Do not read that as "column migrations are fine".
 
 ### 2.2 This branch carries work that is not this feature
 
-Nine commits before `5a792ed` are unrelated engine defect fixes and test infrastructure from the
-preceding review (the NUL-in-description crash, the `model_repo` flush defect, the interface-id
-collision, `tools/audit_project.py`, `tests/live/`). They are independent of Review & Update and
-can be reasoned about separately if the merge needs splitting.
+On `review_update_v1`, nine commits before `5a792ed` are unrelated engine defect fixes and test
+infrastructure from the preceding review (the NUL-in-description crash, the `model_repo` flush
+defect, the interface-id collision `15df7c5`, `tools/audit_project.py`, `tests/live/`). In
+`review_update_v2` they are inside the one squash commit `b10a71b`; to reason about them apart,
+read them on `review_update_v1`. The interface-id change is output-visible — §8.1.
 
-The feature itself starts at `5a792ed` (the requirements doc).
+The follow-up commits on `review_update_v2` also fix develop defects the rebase found — §5.
 
 ---
 
@@ -124,7 +131,27 @@ Everything else is new files. These are the ones a merge can actually collide on
 
 The `flowcharts.py` and `behaviour_diagram.py` hooks are each ~3 lines at a named point, so a
 conflict there is usually resolved by re-inserting the call at the same place. **Where it goes
-matters** — see §4.2.
+matters** — see §4.5.
+
+### 3.3 Changed by the rebase onto develop (after `b10a71b`)
+
+What the follow-up commits change in develop's own code. Each one keeps develop's documented rule
+and is argued in `PROJECT_CONTEXT.md` 2026-09-26f → 2026-09-27d.
+
+| file | change | why |
+|---|---|---|
+| `engine/views/unit_headers.py` | reads the STORED struct/class/union description (Phase 2 writes it) instead of asking the LLM while the view runs; every row carries `typeKey` | develop's new LLM text (794b95f) must be storable and correctable — §8.5 |
+| `engine/model_deriver.py` | describes exactly `utils.described_record_keys(...)` in Phase 2 | one rule for the view, Phase 2 and the review routes |
+| `engine/utils.py` | `RECORD_KINDS`, `has_own_header_row`, `is_described_record`, `described_record_keys`; `_run_mmdc` / `_run_dot_render` call `core.subprocess_util.run_capture` | the record rule in one place; a render timeout that stops the whole tree |
+| `engine/core/subprocess_util.py` | `stop_tree`, `run_capture` | on Windows `subprocess.run(timeout, shell=True)` killed only `cmd.exe`; a hung mmdc held a run for 61 min — §8.4 |
+| `engine/core/group_planner.py` | `plan_runs` qualifies a layer's group names with `make_qualified_id` | since 1df3016 a `layer:` scope planned no document |
+| `api/services/doc_render.py` | the page's Component/Unit table reads the stored unit description; the join stays the fallback | the page and the Word file printed different sentences, and a `unitDescription` correction never reached the page |
+| `api/services/pipeline_runner.py` | `_make_documents` names directories by the layer-qualified id; a re-export registers documents a version is missing | the web app listed no documents for layer-qualified output |
+| `engine/core/db.py`, `engine/run.py` | `finished_status_kept` around the phase loop | a re-export (from Phase 3) left `pipeline_status` unfinished, so the version stopped being a baseline and its corrections were lost at the next version |
+| `engine/review/carry_forward.py` | a behaviour row is judged by the function and caller hashes when the new version has no behaviour output yet | every Dynamic Behaviour correction was orphaned on every generation |
+| `engine/review/catalog.py`, `resolver.py` | struct rows (`typeKey`, R3 refusal for records no document describes); `shownIn` on every R11 row | develop's struct descriptions made correctable; 470d15c publishes few functions — §8.2 |
+| `analyzer.py` | `reexport` refuses another project's version id at once (`_no_such_version`) | 976ee0f's rule reached only part of the command |
+| `api/routes/jobs.py` | `reference_version_id` resolved inside the project (id, else version name) and stored as the id | the baseline could be another project's version |
 
 ---
 
@@ -333,27 +360,89 @@ checked against the WRITER (`behaviour_diagram.py`) and the READER (`docx_export
 → `test_review_catalog.py::TestAnOrphanIsNotInForce`, `::TestTheFixtureMatchesWhatTheViewWrites`,
 `test_review_overrides_api.py::TestR7ReportsWhatIsInForce`.
 
+### 4.19 One rule decides which records have a description
+
+A struct, class or union gets a description when it has a unit-header row of its own or a typedef
+row names it — `utils.has_own_header_row` / `is_described_record`. The unit header view picks its
+rows by it, Phase 2 generates for `described_record_keys`, and R3/R11 offer only those records. A
+second copy of the rule in any one of them means text that is paid for and never printed, or a
+correction that saves and never appears.
+
+→ `test_unit_struct_descriptions_stored.py::TestWhichRecordsHaveADescription`,
+`test_review_catalog.py::TestWhereAStructDescriptionIsShown`.
+
+### 4.20 `shownIn` is read from the stored output, never recomputed
+
+R11's `shownIn` says which units' documents print a text. `catalog._placement` reads it from the
+stored interface tables, behaviour rows and flowchart file names — not from the publication rule —
+so if develop changes who is published, `shownIn` follows by itself.
+
+→ `test_review_catalog.py::TestEveryRowSaysWhereItsTextIsShown`,
+`test_review_overrides_api.py::TestR11SaysWhereATextIsShown`.
+
+### 4.21 A behaviour row is judged before Phase 3 has drawn it
+
+Carry-forward runs before Phase 3, so the new version has no behaviour rows yet. A row is then
+judged by the hashes of its function and its caller. Judging it by the (missing) row orphaned every
+Dynamic Behaviour correction on every generation.
+
+→ `test_review_carry_forward.py::TestABehaviourRowIsJudgedBeforePhase3DrawsIt`.
+
+### 4.22 A re-export leaves a finished version finished
+
+`finished_status_kept` wraps `run.py`'s phase loop when it starts at Phase 3 or later. Without it the
+version's `pipeline_status` is left at `exporting`; `list_versions` then no longer offers it as a
+baseline, and the next version starts without its corrections.
+
+→ `test_reexport_keeps_the_baseline.py::TestAFinishedVersionStaysFinished`, `::TestRunPyWrapsThePhases`.
+
+### 4.23 A version id from outside resolves inside its project
+
+develop's 976ee0f makes a version id a name inside its project. Every door that takes one keeps
+that: the review routes (`_version()`), the CLI `reexport`, and the start-job baseline.
+
+→ `test_review_overrides_api.py::TestTheVersionMustBeTheProjectsOwn`,
+`test_reexport_refuses_a_foreign_version.py`, `test_start_job_baseline_is_this_projects.py`.
+
+### 4.24 A render's timeout stops the whole process tree
+
+`core.subprocess_util.run_capture`. Through the shell, `subprocess.run(timeout=…)` killed only
+`cmd.exe` and then waited on the Node and Chromium beneath it.
+
+→ `test_render_timeout_stops_the_tree.py::test_a_timeout_does_not_wait_for_a_grandchild_holding_the_pipes`.
+
 ---
 
-## 5. Two defects this branch found in existing code
+## 5. Defects this branch found in existing code
 
-Both were pre-existing and are fixed here; mention them if the merge touches the same lines.
+All were pre-existing and are fixed here; mention them if the merge touches the same lines. The
+first two were found while building the feature, the rest by the rebase onto develop.
 
 **`llm_call_description` returned multi-line descriptions.** The result was `.strip()`ed and
 nothing more, so an internal newline survived despite the prompt asking for one line. Now collapsed
 onto one line at the point of generation. Independent of this feature — a stray newline in a bullet
 was a DOCX formatting fault already.
 
-**`externalUnitFunction` was a lossy id.** See §4.6. The view had already fixed the *other* half of
+**`externalUnitFunction` was a lossy id.** See §4.12. The view had already fixed the *other* half of
 the same pair (`currentFunctionId` exists for exactly this reason); this half was left.
+
+**A `layer:` scope planned no document** (since 1df3016): `plan_runs` compared the layer's bare
+group names with layer-qualified group ids. `docs/CLI_COMMANDS.md` says one document per component.
+
+**The web app listed no documents** for layer-qualified output: `_make_documents` looked for
+directories under the bare group name.
+
+**A hung diagram render held a run for an hour** — §4.24.
+
+**A web job's baseline could belong to another project** — §4.23.
 
 ---
 
 ## 6. Verifying after the merge
 
 ```
-python -m alembic heads                 # exactly one
-python -m pytest tests/unit tests/api -q   # 2260 passed, 34 skipped at the tip of this branch
+python -m alembic heads                           # exactly one: 0014_users_is_superuser
+python -m pytest tests/unit tests/api tests/e2e   # 3303 passed, 44 skipped on review_update_v2
 ```
 
 The feature has also been run end to end against a **SQLite** database on a machine with no
@@ -361,6 +450,11 @@ PostgreSQL — a full v1, a correction of each kind, an export, then an incremen
 corrected text was found in the `.docx`, in `interface_tables.json`, in the stored CFG and in the
 regenerated DOT. That run is what found the carry-forward ordering bug behind §4.13. If you change
 anything in `engine/review/`, repeat it: the unit suite passed throughout, and did not see it.
+
+After the rebase the same was repeated on develop's code: a `layer:Layer1` web job (11 documents in
+75 s), every kind corrected and carried into an incremental v2, the CLI re-derive
+(`reexport --from-phase 2`), two CLI projects that both have a `v1`, and the Dynamic Behaviour rows
+from `engine/config/api_*.sample_behaviour.example.json` (18 rows). **Not yet run on PostgreSQL.**
 
 The review tests specifically:
 
@@ -397,4 +491,79 @@ Consequences worth knowing:
 Open items, both pre-existing, are listed in
 [REVIEW_UPDATE_DESIGN Open items](REVIEW_UPDATE_DESIGN.md#open-items) — notably `test_steps`
 reading the flowcharts view's output directory and silently emptying every Test Step if that view
-did not run.
+did not run. What the HTTP API does not do yet (no orphan clean-up, no bulk write, no slot keys in
+the page payload) is in [REVIEW_UPDATE_API_SPEC §17](../spec/REVIEW_UPDATE_API_SPEC.md#17-not-yet-implemented).
+The web app has no review screen yet (`web-app/PLAN.md`).
+
+---
+
+## 8. Waiting on the develop owner
+
+Things this branch met in develop's area and did not settle alone. None blocks the merge; where
+the branch had to pick, the pick is reversible. Tracked as `RU-1`…`RU-5` in
+[BACKLOG](../BACKLOG.md).
+
+### 8.1 Interface ids of units whose ids start the same — `RU-1`
+
+`SWE3_WIKI` counts `<NN>` **within the unit**; `SWE3_SPEC` REQ-IT-04 requires the id to be
+**unique**. They disagree only when two units' ids start the same: `Map` and `Map2` in one group both
+give `IF_<L>_<G>_MAP_…`, and develop numbers each from `_01`, so the document prints
+`IF_…_MAP_01` twice. This branch (`15df7c5`, `model_deriver._iface_scope_key`) numbers by what the id
+encodes — `Map` gets `_01`, `_02`, `Map2` continues at `_03` — and says so under the wiki's existing
+⚠ To confirm. On `SampleCppProject` no two units collide: all 229 ids are identical to develop's.
+
+- **Keep:** add a `Map` / `Map2` pair to `SampleCppProject` (the Definition of done asks for a
+  fixture), extend `tests/unit/test_interface_id_uniqueness.py` with it, move the wiki sentence out of
+  the ⚠ To confirm.
+- **Revert to per-unit counting:** key `_build_interface_index`'s buckets by unit again and delete
+  the wiki sentence — and accept duplicate ids until the client decides how names are shortened.
+
+### 8.2 Most corrections in a group run print nowhere — `RU-2`
+
+develop's rule (470d15c, `SWE3_WIKI` Public vs. private): a function is public only if a function in
+another file calls it. In a group or layer run the parse is the layer, so a caller in another layer is
+invisible and its callee reads as private — the trap develop's S3-7 note names. On the sample layer
+run, 25 of 229 descriptions are printed. Reviewers are offered every slot; R11's `shownIn` says which
+ones a document prints (`[]` = none), read from the stored output (§4.20).
+
+- **The rule is as meant:** nothing to do; the UI shows `shownIn`.
+- **The rule changes** (e.g. publish by the whole model): only `model_deriver` changes;
+  `shownIn` follows by itself.
+
+### 8.3 The default behaviour filter draws no Dynamic Behaviour on the sample — `RU-3`
+
+The shipped profile has `views.behaviourDiagram` off (develop's VW-9). With it on,
+`views.sequenceDiagrams.filterMode` is still absent from `config.defaults.json`, so
+`generator._get_filter_mode` uses `skip_within_unit` — which draws no row on `SampleCppProject`;
+`all_callers` draws 18 for `Layer1.My Sample`. The branch changes no default: to exercise
+`behaviourDescription` corrections it ships `engine/config/api_*.sample_behaviour.example.json`.
+
+- **Default as meant:** nothing to do.
+- **Change it:** set `views.sequenceDiagrams.filterMode` in `config.defaults.json` (with VW-9's
+  decision on the profile) — every project's documents gain diagrams.
+
+### 8.4 An intermittent mmdc hang — `RU-4`
+
+The first layer-scoped run took 66 minutes, 61 of them in one unit diagram
+(`Layer1.Diag|ArmIntrinsics`) whose mmdc render hung past its 60-second timeout. The next run drew it
+normally. The branch makes the timeout real (§4.24): a hung render now fails in 60 s and the document
+goes on without that picture, as for any failed render. Why mmdc hung is not known.
+
+- **Nothing to decide unless it recurs.** A `mmdc could not run: TimeoutExpired` line in the log marks
+  one.
+
+### 8.5 Unit and struct descriptions are generated in Phase 2 — `RU-5`
+
+`REQ-PRE-01`: a text a reviewer can correct must be stored in the model. develop generated the unit
+description inside the exporter, so the page never showed it, and the struct/class/union description
+while the unit header view ran (101e3f0), writing it afresh on every run — neither had a model field
+a correction could live in, and the next render would have put the LLM's words back. Both are now
+generated in Phase 2 with develop's prompts and fallbacks (`_enrich_unit_and_struct_descriptions`)
+and only read afterwards; the page shows the same unit sentence as the Word file. One text per record: for `typedef struct S_s {…} S_t;` the `S_t` row
+reads `S_s`'s text, where develop asked the LLM once per name — the intent of develop's own
+docstring, "one type reads the same however it was declared". With the LLM off the output is
+unchanged.
+
+- **Agree:** nothing to do.
+- **Disagree:** the text has to stay stored for a correction to reach the document; talk before
+  moving it back.

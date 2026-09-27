@@ -31,6 +31,15 @@ These render placeholder/no-op today because no endpoint exists yet (full per-pa
 - **Projects / shell** — project discovery/search ("Request Access"); Archive; Profile, Help, Settings; SSO;
   Forgot-password reset flow.
 
+## Remaining — backend exists, no screen yet
+
+- [ ] **Review & update** — correct the LLM's wording in a document (descriptions, unit and struct
+      descriptions, behaviour names, Dynamic Behaviour bullets, flowchart labels), undo, history, and an
+      export-readiness banner. API: [REVIEW_UPDATE_API_SPEC](../docs/spec/REVIEW_UPDATE_API_SPEC.md) — §3a
+      lists the calls per screen (on branch `review_update_v2` until it merges). Rules: the `ui-dev` skill §6.
+- [ ] **Flowcharts from DOT** — the in-app flowchart view still renders the stored string as Mermaid; the
+      engine has written Graphviz DOT since 2026-07-27. Needed by the flowchart label editor too.
+
 ## Remaining — frontend-only work
 
 - [ ] Clear pre-existing lint debt (`NewProjectPage` set-state-in-effect / unused-expr).
