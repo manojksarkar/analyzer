@@ -3,7 +3,8 @@ name: engine-dev
 description: >-
   The engine/ developer role — the Python pipeline that turns parsed C++ into ASPICE documents (SWE.3/SWE.4).
   Load this BEFORE writing or editing any engine/ code: the parse→derive→views→export pipeline, the model
-  schema, views + DOCX exporters, LLM enrichment, config, orchestration, or engine tests. Carries the
+  schema, views + DOCX exporters, LLM enrichment, config, orchestration, the review & update feature
+  (engine/review/ — reviewers correcting LLM text), or engine tests. Carries the
   pipeline / registry / model-IO / determinism / testing conventions and points into PROJECT_CONTEXT.md for
   depth. Excludes the flowchart/CFG + incremental engine (→ engine-flowchart) and behaviour diagrams
   (→ engine-behaviour).
@@ -108,6 +109,39 @@ Four phases. **Each is a separate Python subprocess**; they communicate through 
 
 Short, prefixed (`feat:`, `fix:`, `refactor:`, `docs:`). **No "Claude" mentions, no co-author trailer.**
 
+## 8. Review & update — reviewers correct the LLM's text
+
+A reviewer can correct any LLM-written text in a generated document. The correction is stored beside the
+LLM original (`text_overrides`), reaches the DOCX and the web page, survives a regeneration and carries
+into the next version. Code: `engine/review/`. What: [REVIEW_UPDATE_SPEC](docs/spec/REVIEW_UPDATE_SPEC.md)
+· how: [REVIEW_UPDATE_DESIGN](docs/design/REVIEW_UPDATE_DESIGN.md) · what breaks silently, each with the
+test that catches it: [REVIEW_UPDATE_HANDOVER §4](docs/design/REVIEW_UPDATE_HANDOVER.md).
+
+- **Seven editable kinds** (`review/slot.py` `ALL_KINDS`). Five live in the model (`resolver._HOMES`):
+  `description` (function or global), `behaviourInputName`, `behaviourOutputName`, `unitDescription`
+  (`units[].description`), `structDescription` (a struct/class/union's data-dictionary entry). Two are
+  Phase-3 output (`phase3_overrides.APPLIED_AT_DERIVE`): `nodeLabel`, `behaviourDescription`.
+- **New LLM-written text = a new slot kind**, or no reviewer can correct it: add it to `ALL_KINDS`, give it
+  a home (`_HOMES` or `APPLIED_AT_DERIVE`), list it in `review/catalog.py` (R11) and decide its
+  carry-forward rule (`carry_forward._still_applies`). `TestEveryKindIsAccountedFor` checks the homes, not
+  that you remembered. Develop's struct descriptions (794b95f) went through exactly this.
+- **Descriptions: Phase 2 generates, everything after it only reads.** Unit and struct descriptions are
+  generated and stored in Phase 2 (`_enrich_unit_and_struct_descriptions`, REQ-PRE-01); the unit header
+  view and the exporter read the stored text and keep only the no-LLM fallback — two tests grep them for
+  a description call. (Node labels and behaviour bullets are still written in Phase 3, and their
+  corrections go back there — "Phase 3 applies before it draws" below.)
+- **Corrections go back on last.** `_reapply_corrections` is Phase 2's final text step: an enrichment
+  step added after it overwrites the reviewers' words. Enrichment skips text that is already filled in,
+  so a blank is how the regeneration queue asks for a rewrite (`review/cascade.py`).
+- **Which records get a description is ONE rule** — `utils.has_own_header_row` / `is_described_record`
+  / `described_record_keys`, shared by the unit header view, Phase 2 and the review routes.
+- **Phase 3 applies before it draws:** `flowcharts._apply_text_overrides` after the incremental merge and
+  before the render; `behaviour_diagram._apply_text_overrides` before the manifest write.
+- **Two writers of `version_output_files`, no third:** `model_store.persist_output_files` and
+  `review.rerender.write_output_row` (`test_output_row_writers.py`).
+- **An export can refuse:** `run.py --from-phase 4` stops when a correction is newer than the stored view
+  output (`_refuse_stale_export`; `--force-export`, `analyzer.py reexport --force`).
+
 ## Definition of done — every output-rule change
 
 The list the user should not have to retype. A rule change is not done until all six:
@@ -122,8 +156,9 @@ The list the user should not have to retype. A rule change is not done until all
    `llm.descriptions` + `llm.behaviourNames` off (`--no-llm`), or it is minutes of LLM for nothing.
    Documents come out per **group** (`--scope "group:L.G"`) or per component — a `layer:` scope writes
    one per component of the layer, as `docs/CLI_COMMANDS.md` says (after 1df3016 it wrote **none**
-   until `plan_runs` matched the layer's groups by their qualified ids). Reading a `.docx` back: `tools/dump_docx.py`, but it flattens cell
-   line breaks to ` // `, so check a real cell with `python-docx` before believing a cell is ugly.
+   until `plan_runs` matched the layer's groups by their qualified ids). Reading a `.docx` back:
+   `tools/dump_docx.py`, but it flattens cell line breaks to ` // `, so check a real cell with
+   `python-docx` before believing a cell is ugly.
 5. **Docs** — output-visible rule → `docs/spec/SWE3_WIKI.md` (client-facing; tables, prose only where
    rationale needs it; an undecided rule goes in as a `⚠ To confirm`, never as a rule). Mechanism, gaps
    and the matrix → `PROJECT_CONTEXT.md` + its `> Updated:` log.
@@ -138,5 +173,7 @@ The list the user should not have to retype. A rule change is not done until all
 - Touched a phase? It still runs **standalone as a subprocess** — the phase boundary is files on disk.
 - New view? Registered + config-gated + reads model/logic only (no sibling-view output).
 - LLM call? Cached, `kind`-tagged, grounded — rerun is deterministic.
+- New LLM-written text, or a text generated or stored somewhere else? A reviewer must still be able to
+  correct it (§8) — run `pytest tests/unit/test_review_*.py`.
 - Meaningful change? Update **PROJECT_CONTEXT.md** (+ its `> Updated:` log) — pair with `docs-maintainer`.
 - In a carved-out area (flowchart/CFG, incremental, behaviour diagrams)? Use that spoke skill instead.

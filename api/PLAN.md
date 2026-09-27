@@ -14,6 +14,13 @@
 | **M2 — real functions / render / assets / download / export-all** (live `output/`, fixtures now only a no-run fallback) | ✅ Done |
 | **M3 — real compare** (incremental engine over two real version snapshots) | ✅ Done |
 | **M4 — persistence, config, docs, tests** | ◐ Partial — remaining below |
+| **M5 — review & update** (`routes/text_overrides.py`, R1–R11: correct the LLM's text in a document — [contract](../docs/spec/REVIEW_UPDATE_API_SPEC.md)) | ◐ Built on `review_update_v2`, PR to `develop`; PostgreSQL run pending — remaining below |
+
+## Remaining (M5)
+
+- [ ] **PostgreSQL run** of the review routes (everything so far on SQLite).
+- [ ] What the contract does not do yet — no orphan clean-up, no bulk write, no slot keys in the page
+      payload: [REVIEW_UPDATE_API_SPEC §17](../docs/spec/REVIEW_UPDATE_API_SPEC.md#17-not-yet-implemented).
 
 ## Remaining (M4)
 

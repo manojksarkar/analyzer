@@ -73,6 +73,17 @@
 | VW-8 | Pre-parse summary: the views on/off for the doc type, and what is built only because another view needs it | enhance | open | incremental/report.py |
 | VW-9 | `config.defaults.json` ships the development profile (`flowcharts`, `behaviourDiagram` off) and every project inherits it. Open: complete or fast as the shipped default | enhance | open | config.defaults.json |
 
+## Review & update — waiting on the develop owner (branch `review_update_v2`)
+> Points the branch met in develop's area and did not settle alone. None blocks the merge; where the branch had to pick, the pick is reversible. **Status** `decide` = waits on the develop owner's answer. Detail and what to do either way: [REVIEW_UPDATE_HANDOVER §8](design/REVIEW_UPDATE_HANDOVER.md#8-waiting-on-the-develop-owner).
+
+| ID | Item | Type | Status | Ref |
+|---|---|---|---|---|
+| RU-1 | Units whose interface ids start the same (`Map`, `Map2` in one group) share one count so no id is printed twice (`15df7c5`) — SWE3_WIKI says `<NN>` counts within the unit, SWE3_SPEC REQ-IT-04 says the id is unique. Keep → add a `Map`/`Map2` fixture; revert → accept duplicate ids. No id changes on the sample (229/229) | issue | decide | model_deriver.py `_iface_scope_key`, SWE3_WIKI Interface ID |
+| RU-2 | In a group or layer run a function called only from another layer reads as private (470d15c; S3-7's trap), so most description corrections save and print nowhere — 25 of 229 printed on the sample. R11 `shownIn` says where each text is printed. Confirm the rule is meant | issue | decide | SWE3_WIKI Public vs. private, review/catalog.py |
+| RU-3 | With `views.behaviourDiagram` on, the default `views.sequenceDiagrams.filterMode` (`skip_within_unit`, absent from config.defaults.json) draws no Dynamic Behaviour row on the sample; `all_callers` draws 18. Related: VW-9 | enhance | decide | behaviour_diagram/generator.py, api_*.sample_behaviour.example.json |
+| RU-4 | mmdc hung once for 61 min on the unit diagram of `Layer1.Diag\|ArmIntrinsics`; drew normally next run. A timeout now stops the whole process tree (`5cfc286`), so a hang costs 60 s and one picture. Cause unknown | issue | open | utils.py `_run_mmdc`, core/subprocess_util.py |
+| RU-5 | Unit and struct/class/union descriptions are generated in Phase 2 and stored (REQ-PRE-01), not in the exporter / unit header view; same prompts and fallbacks; one text per record (a typedef row reads its record's). Confirm | debt | decide | model_deriver.py `_enrich_unit_and_struct_descriptions`, views/unit_headers.py |
+
 ## SWE.2 — architecture
 | ID | Item | Type | Status | Ref |
 |---|---|---|---|---|
