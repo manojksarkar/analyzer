@@ -121,7 +121,8 @@ The list the user should not have to retype. A rule change is not done until all
 4. **Before/after** — run the pipeline both ways and show the actual cells that changed. Turn
    `llm.descriptions` + `llm.behaviourNames` off (`--no-llm`), or it is minutes of LLM for nothing.
    Documents come out per **group** (`--scope "group:L.G"`) or per component — a `layer:` scope writes
-   the model and **no documents**. Reading a `.docx` back: `tools/dump_docx.py`, but it flattens cell
+   one per component of the layer, as `docs/CLI_COMMANDS.md` says (after 1df3016 it wrote **none**
+   until `plan_runs` matched the layer's groups by their qualified ids). Reading a `.docx` back: `tools/dump_docx.py`, but it flattens cell
    line breaks to ` // `, so check a real cell with `python-docx` before believing a cell is ugly.
 5. **Docs** — output-visible rule → `docs/spec/SWE3_WIKI.md` (client-facing; tables, prose only where
    rationale needs it; an undecided rule goes in as a `⚠ To confirm`, never as a rule). Mechanism, gaps

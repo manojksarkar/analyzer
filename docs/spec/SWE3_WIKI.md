@@ -185,7 +185,9 @@ PIF_<LAYER>_<GROUP>_<UNIT>_<NN>         private  — internal only, NEVER printe
 
 **⚠ To confirm:** the way names are shortened. It is repeatable but it loses information — `Map` and `Map2`
 both give `MAP`. If the client wants fixed-width codes, or a list of agreed component codes, this is the
-one place to decide it.
+one place to decide it. Until then, units whose ids would start the same — `Map` and `Map2` in one group —
+**share one count**, so no id is printed twice (the id must be unique, SWE3_SPEC REQ-IT-04): `Map`'s
+functions take `_01`, `_02` and `Map2`'s continue at `_03`.
 
 ### Data Range
 
