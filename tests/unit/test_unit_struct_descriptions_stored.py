@@ -1,16 +1,17 @@
 """Unit and struct descriptions are generated in Phase 2 and STORED (REQ-PRE-01).
 
-Both used to be produced inside the DOCX exporter and thrown away:
+Both used to be produced at render time and stored in no model field:
 
     docx_exporter.py:371   "typedef struct: description from name + fields (on the go, no store)"
     docx_exporter.py:1074  get_unit_description(...) called inline while rendering the table
 
-So the HTML view could not show either one -- it does not run the exporter -- every export
-re-paid for the LLM calls with no guarantee two exports of one version read the same, and
-neither could be corrected by a reviewer because there was nothing to correct.
+(develop's 101e3f0 later moved the struct one into the unit header view, which wrote it afresh on
+every run.) So neither could be corrected by a reviewer -- there was nothing to correct, and the
+next render would have put the LLM's words back -- and the unit description, made only by the
+exporter, never reached the HTML view.
 
 Phase 2 generates them now, after the function and global descriptions the unit description is
-built FROM, and the exporter only renders.
+built FROM, and the exporter and the view only render.
 """
 import os
 import sys

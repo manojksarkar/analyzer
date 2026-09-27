@@ -66,6 +66,11 @@ Rules that fall out of this:
 - After any meaningful project change, **update `PROJECT_CONTEXT.md`** (and its `> Updated:` log) without being
   asked. CLAUDE.md tells every session to read that file first. **Subsystem changes** update *that subsystem's*
   `PROJECT_CONTEXT.md` too (e.g. `api/PROJECT_CONTEXT.md`), which may be staler than the root one.
+- **Docs that a test or a twin depends on.** `docs/design/DB_SCHEMA.md` and `schema-atlas.html` carry the same
+  content, kept in step by hand — a table change updates both. `docs/spec/REVIEW_UPDATE_API_SPEC.md` §3's
+  endpoint table and its `**Request body**` examples are parsed by `tests/unit/test_review_api_contract.py`:
+  keep their shape. The review & update set is REQUIREMENTS (`docs/`) → SPEC + API_SPEC (`docs/spec/`) →
+  DESIGN + HANDOVER (`docs/design/`); the HANDOVER is what a merger reads first.
 - **Two kinds of plan — keep them apart.** `docs/planning/*_PLAN.md` are *doc-type* plans (how we generate an
   ASPICE output document; leadership-facing). A **subsystem `PLAN.md`** (`api/PLAN.md`, `web-app/PLAN.md`) is
   that subsystem's *engineering* plan — forward build direction/status beside the code. It is **forward work

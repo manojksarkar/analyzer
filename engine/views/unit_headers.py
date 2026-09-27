@@ -80,9 +80,10 @@ def _struct_description(type_name: str, entry: dict, label: str = "Structure") -
     `typedef struct` path, so one type reads the same however it was declared.
 
     Read, not generated (REQ-PRE-01). Phase 2 generates it and stores it on the entry, which is
-    also where a reviewer's correction lands (`structDescription`). Asking the LLM here, while the
-    view runs, kept the sentence nowhere: the page could not show it, every run re-paid for it, and
-    a correction could never reach the document because this overwrote it on every render.
+    also where a reviewer's correction lands (`structDescription`). Asked for here, while the view
+    ran (101e3f0), the sentence lived only in this view's output and was written afresh from the
+    LLM cache on every run: a correction had no model field to live in, and the next render would
+    have put the LLM's words back.
     """
     stored = str((entry or {}).get("description") or "").strip()
     return stored or _struct_info_from_name(type_name, label)

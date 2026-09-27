@@ -19,6 +19,9 @@ Start context (read as needed, don't duplicate here):
 - **Product/design what & why** → [web-app/PROJECT_CONTEXT.md](web-app/PROJECT_CONTEXT.md) (agent-facing).
 - **API wiring, wire-format mappers, per-page gaps** → [web-app/INTEGRATION_NOTES.md](web-app/INTEGRATION_NOTES.md).
 - **Testing (unit + live-API contract suite)** → [web-app/TESTING.md](web-app/TESTING.md).
+- **Review & update (reviewers correct LLM text)** → the HTTP contract
+  [docs/spec/REVIEW_UPDATE_API_SPEC.md](docs/spec/REVIEW_UPDATE_API_SPEC.md) — backend built, no screen yet
+  (§6 below).
 
 ## 1. Structure (layered)
 
@@ -126,3 +129,20 @@ value. Spot-check against the mock in [docs/ui-mockups/](docs/ui-mockups/).
 ## 5. Commits
 
 Short, prefixed (`feat:`, `fix:`, `docs:`, `refactor:`). No "Claude" mentions, no co-author trailer.
+
+## 6. Review & update screens (backend built, no screen yet)
+
+A reviewer corrects the LLM's wording in a generated document. Build against
+[REVIEW_UPDATE_API_SPEC](docs/spec/REVIEW_UPDATE_API_SPEC.md) — §3a lists the calls per screen, in order.
+Rules the spec's tests cannot enforce on the client:
+
+- **Never build a slot key.** Take `slotKey` from a read — R7 for a flowchart's nodes, R11 for
+  everything else — and send it back unchanged. The page payload carries none: find the item in R11
+  (same unit, by `label` or `functionName`).
+- **`text` is what the document prints.** `isOverridden` means a correction is in force; an orphaned one
+  (`isOrphaned`) is not, and its `humanText` is not on the page.
+- **`shownIn: []` means no document prints that text** (in this scope the function is not published).
+  Say so next to the field rather than hide it.
+- **After a save, refetch** — nothing is pushed. Before offering an export, read R9: `stale` or
+  `pendingRenders` means the Word file does not match the corrections yet.
+- **Draw flowcharts from their DOT**, not as Mermaid (the in-app view is not ported yet — `engine-flowchart`).
