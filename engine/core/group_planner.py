@@ -309,7 +309,12 @@ def plan_runs(
                 f"Unknown --selected-layer {_l!r}. "
                 f"Valid layers: {', '.join(valid_layers) if valid_layers else '(none)'}"
             )
-        layer_group_names |= set((layer_cfg.get("groups") or {}).keys())
+        # `group_names` are LAYER-QUALIFIED ids (`Layer1.Support`, see
+        # core.config._resolve_layer_paths); the layer's own config lists its groups bare. The
+        # two were compared as they came, so since ids gained their layer (1df3016) nothing
+        # matched: a `--scope layer:L` run built the model and planned no document at all.
+        from .config import make_qualified_id
+        layer_group_names |= {make_qualified_id(_l, g) for g in (layer_cfg.get("groups") or {})}
     layer_target_groups = ([g for g in group_names if g in layer_group_names]
                            if _requested_layers else [])
 
