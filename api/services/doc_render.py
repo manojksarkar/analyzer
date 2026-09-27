@@ -700,7 +700,17 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                 if d not in seen_descs:
                     seen_descs.add(d)
                     all_descs.append(d)
-            desc = "; ".join(all_descs)[:120] if all_descs else "N/A"
+            # The unit's STORED description, as the Word exporter prints it (REQ-PRE-01) -- the
+            # text Phase 2 generated, or a reviewer's correction of it (`unitDescription`). The
+            # join below is the exporter's fallback too, for a version generated before the
+            # description was stored or with the LLM off. Showing only the join here put one
+            # sentence on the page and another in the Word file, and hid a unit correction from
+            # the page altogether.
+            stored = str((units_data.get(uk) or {}).get("description") or "").strip()
+            if stored and stored not in ("-", "N/A"):
+                desc = stored
+            else:
+                desc = "; ".join(all_descs)[:120] if all_descs else "N/A"
             comp_unit_rows.append([comp_display, uname, desc, "N/A"])
 
         if comp_unit_rows:
