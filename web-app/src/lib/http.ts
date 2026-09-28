@@ -149,12 +149,19 @@ async function upload<T>(path: string, form: FormData, _retry = false): Promise<
   return (text ? JSON.parse(text) : undefined) as T
 }
 
-/** Fetch a binary endpoint with auth and trigger a browser download. */
-async function download(path: string, fallbackName: string, params?: QueryParams): Promise<void> {
+/** Fetch a binary endpoint with auth (+ one-shot 401 refresh) and trigger a browser download. */
+async function download(path: string, fallbackName: string, params?: QueryParams, _retry = false): Promise<void> {
   const token = useAuthStore.getState().accessToken
   const res = await fetch(buildUrl(path, params), {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   })
+  // Access tokens are short-lived; without this a download after an idle spell failed where
+  // any other request would have refreshed and retried.
+  if (res.status === 401 && !_retry) {
+    if (await refreshAccessToken()) return download(path, fallbackName, params, true)
+    useAuthStore.getState().signOut()
+    throw await parseError(res)
+  }
   if (!res.ok) throw await parseError(res)
   const blob = await res.blob()
   const disposition = res.headers.get('Content-Disposition') ?? ''
@@ -167,7 +174,8 @@ async function download(path: string, fallbackName: string, params?: QueryParams
   document.body.appendChild(a)
   a.click()
   a.remove()
-  URL.revokeObjectURL(url)
+  // Revoking in the same tick can cancel the download in some browsers.
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
 export const http = {
