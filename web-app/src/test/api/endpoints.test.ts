@@ -206,7 +206,7 @@ describe('API responses', () => {
     const projects = await get('GET /projects', '/projects', Envelopes.projects)
     await get('GET /projects/search', '/projects/search?q=a', Envelopes.projectSearch, { optional: true })
     await get('GET /notifications', '/notifications', Envelopes.notifications)
-    await get('GET /users/search', '/users/search?q=a', Envelopes.usersSearch, { optional: true })
+    const directory = await get('GET /users/search', '/users/search?q=a', Envelopes.usersSearch, { optional: true })
 
     /* ── project-scoped reads ── */
     const projectId = firstId(projects.body, 'projects')
@@ -283,9 +283,15 @@ describe('API responses', () => {
           await call('DELETE …/versions/:id', 'DELETE', `${np}/versions/${newVid}`, { optional: true })
         }
 
-        await call('POST …/members/invite', 'POST', `${np}/members/invite`, {
-          body: { email: 'api.test.probe@aspice.dev', role: 'developer' }, optional: true,
-        })
+        // Invite someone who has an account: an address without one is refused (404), and the
+        // throwaway project's only member is its creator.
+        const invitee = ((directory.body as { users?: { email: string }[] } | undefined)?.users ?? [])
+          .map((u) => u.email).find((e) => e !== EMAIL)
+        if (invitee) {
+          await call('POST …/members/invite', 'POST', `${np}/members/invite`, {
+            body: { email: invitee, role: 'developer' },
+          })
+        }
         const pend = await call('GET …/members/pending', 'GET', `${np}/members/pending`, {
           schema: Envelopes.membersPending, optional: true,
         })
