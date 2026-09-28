@@ -66,7 +66,8 @@ Rules that fall out of this:
   shallower one. The shared generation method lives once in `DOC_GENERATION_PLAYBOOK.md`; plans point to it.
 - After any meaningful project change, without being asked, **update the project context**: the
   `project-context/` topic file that holds the area, a dated `> Updated:` entry at the top of the newest
-  `project-context/history/` file, and the index's *Current state* if the status moved. The index's *Keeping
+  `project-context/history/` file plus its line in `history/TIMELINE.md`, and the index's *Current state*
+  if the status moved. The index's *Keeping
   the context readable* has the rules and the size limits. CLAUDE.md imports the index; AGENTS.md sends every
   other assistant to it. **Subsystem changes** update *that subsystem's* `PROJECT_CONTEXT.md` too (e.g.
   `api/PROJECT_CONTEXT.md`), which may be staler than the root one.

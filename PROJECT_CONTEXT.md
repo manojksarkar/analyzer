@@ -12,17 +12,21 @@
 
 ## How to read the context
 
-1. **This file, whole.** CLAUDE.md imports it; AGENTS.md sends every other assistant here.
-2. **The role skill before you change code** — `.claude/skills/<role>/SKILL.md`: `engine-dev` (pipeline,
+1. **This file, whole** — [What changed after the numbered sections](#what-changed-after-the-numbered-sections)
+   included. CLAUDE.md imports it; AGENTS.md sends every other assistant here.
+2. **The [timeline](project-context/history/TIMELINE.md)** — every dated change in one line, newest
+   first, in one read. It is how you learn what the older sections do not say.
+3. **The role skill before you change code** — `.claude/skills/<role>/SKILL.md`: `engine-dev` (pipeline,
    model, views, DOCX, LLM, review & update), `engine-flowchart` (flowcharts, CFG, the incremental
    engine), `engine-behaviour` (behaviour diagrams), `ui-dev` (web app), `docs-maintainer` (any doc).
-3. **The topic file for your area**, whole — see [which file for which task](#which-file-for-which-task).
-4. **The history for the why.** Every change has a dated entry with its reasoning. All of them, one line
-   each: `grep -n "^> Updated:" project-context/history/*.md` — or search a keyword.
+4. **The topic file for your area**, whole — see [which file for which task](#which-file-for-which-task).
+5. **The dated entries that touch your task** — the detail and the reasoning behind each change. Find
+   them from the timeline, or by date tag or keyword in `project-context/history/`.
 
-The numbered sections (§1–§24) were kept current by hand and some have drifted — §1–§3 still name
-`engine/run.py` as the entry point and `model/*.json` as the model store, and §24 names `frontend/`,
-now `web-app/`. Where a section and a newer dated entry disagree, the newer entry and the code win.
+The numbered sections (§1–§24) were mostly written before September 2026 and kept current by hand, and
+some have drifted — §1–§3 still name `engine/run.py` as the entry point and `model/*.json` as the model
+store, and §24 names `frontend/`, now `web-app/`. Where a section and a newer dated entry disagree, the
+newer entry and the code win.
 
 ## Current state
 
@@ -80,11 +84,54 @@ now `web-app/`. Where a section and a newer dated entry disagree, the newer entr
 - **Tests.** `python -m pytest tests/unit tests/api tests/e2e` — e2e runs the real pipeline on
   `SampleCppProject` (group `Layer1.My Sample`); `tests/live/` needs a real database.
 
+## What changed after the numbered sections
+
+The big shifts since most of §1–§24 were written. Each names its dated entry: find the tag in the
+[timeline](project-context/history/TIMELINE.md), then open the entry in its history file.
+
+- **Storage.** PostgreSQL became the source of truth (2026-08-13) and the file-backed model was removed
+  (2026-08-23): the model lives only in the database, per version id; SQLite works for local runs and
+  tests. Create or upgrade a database with `analyzer.py setup` — `alembic upgrade head` cannot build a
+  fresh one (2026-09-01, 2026-09-21).
+- **One CLI.** `analyzer.py` replaced four front doors (2026-08-24); `engine/run.py` still runs the
+  phases beneath it. Re-derive without re-parsing (2026-08-25); a run says what it will do before it
+  parses (2026-09-24g).
+- **Config** has three sources with three roles (2026-08-09, §6): `config.defaults.json` (tracked
+  defaults), `config.local.json` (this machine's secrets — database and LLM credentials) and each
+  version's resolved config, stored in `versions.resolved_config`.
+- **Per-layer inputs.** Macros as JSON, per layer (2026-08-07); the data dictionary per layer
+  (2026-08-18); include paths from each core's `compile_commands.json` (2026-09-02), the project-folder
+  walk only on request (2026-09-10); `clang.clangArgs` for cross-target parsing (2026-08-13).
+- **Identity.** Group and component ids are layer-qualified (2026-09-06); one run may span layers
+  (2026-09-07); a CLI version id is `<project>.<name>` (2026-09-24f).
+- **Flowcharts** render with Graphviz DOT, not Mermaid, with word-wrapped labels (2026-07-27,
+  2026-07-29 — notes in [STATUS_BOARDS.md](project-context/history/STATUS_BOARDS.md)); a component renders
+  only its own (2026-08-25b); oversize pictures are handled (2026-09-21). Unit and behaviour diagrams are
+  still Mermaid; the behaviour-diagram package was replaced (2026-08-22b).
+- **What is published.** A `PUBLIC` marking no longer guarantees a row, and protected counts as private
+  (2026-09-20); a function is published only when another UNIT calls it (2026-09-22b), a global only when
+  another unit reads or writes it (2026-09-24c). The client-facing rules: [SWE3_WIKI](docs/spec/SWE3_WIKI.md).
+- **Unit header table.** No visibility filter (2026-09-23); struct, class and union are listed
+  (2026-09-23b); an orphan header is listed once, by one owner unit (2026-09-24b). The unit diagram draws
+  the unit's published globals (2026-09-24).
+- **SWE.4** runs on the database pipeline (2026-09-01b), prints class-qualified names (2026-09-21b) and
+  agrees with SWE.3 on external callers (2026-09-21d).
+- **LLM.** Every call is timed and attributed to a pipeline stage (2026-08-12b); the gateway throttle is
+  `llm.rateLimitSeconds` (2026-08-12); `analyzer.py check-llm` asks the LLM directly (2026-09-24e).
+- **API and web app.** A CLI-onboarded project is reachable over HTTP — `analyzer.py grant`, and a
+  superuser who reaches every project (2026-09-22, 2026-09-22b); web-app runs go through
+  `analyzer.py generate` (2026-09-26); a sign-in lasts a working day (2026-09-26b); a re-export is a job
+  of its own (2026-09-26d).
+- **Review & update** — reviewers correct LLM-written text (2026-09-16 → 2026-09-27d); see
+  [Current state](#current-state).
+- **Tools.** `tools/doccheck/` compares two generated documents by content (2026-09-22);
+  `tools/audit_project.py` audits what a project stored (2026-09-05c).
+
 ## Which file for which task
 
 | You are about to… | Read, after this file |
 |---|---|
-| get the whole picture | [ARCHITECTURE.md](project-context/ARCHITECTURE.md), then [VIEWS_AND_EXPORT.md](project-context/VIEWS_AND_EXPORT.md) |
+| get the whole picture | [ARCHITECTURE.md](project-context/ARCHITECTURE.md), then [VIEWS_AND_EXPORT.md](project-context/VIEWS_AND_EXPORT.md); the [timeline](project-context/history/TIMELINE.md) for what changed since |
 | change parsing, the model or the LLM descriptions (Phases 1–2) | [PARSE_AND_DERIVE.md](project-context/PARSE_AND_DERIVE.md), [CORE_AND_LLM.md](project-context/CORE_AND_LLM.md); skill `engine-dev` |
 | change a view, a flowchart, a behaviour diagram or a document (Phases 3–4) | [VIEWS_AND_EXPORT.md](project-context/VIEWS_AND_EXPORT.md); skill `engine-dev`, `engine-flowchart` or `engine-behaviour`; the rules each document section follows: [SWE3_WIKI](docs/spec/SWE3_WIKI.md), [SWE3_SPEC](docs/spec/SWE3_SPEC.md), [SWE4_WIKI](docs/spec/SWE4_WIKI.md) |
 | change a CLI flag or the config | [CLI_AND_CONFIG.md](project-context/CLI_AND_CONFIG.md), [docs/CLI_COMMANDS.md](docs/CLI_COMMANDS.md) |
@@ -120,6 +167,7 @@ so neighbouring files can overlap by a few days — search the date tag.
 
 | File | Entries |
 |---|---|
+| [TIMELINE.md](project-context/history/TIMELINE.md) | **every dated change in one line, newest first — start here** |
 | [10-2026-09-26.md](project-context/history/10-2026-09-26.md) | from 2026-09-26e — **the newest: new entries go at the top** |
 | [09-2026-09-24.md](project-context/history/09-2026-09-24.md) | 2026-09-24 … 2026-09-26d (17 entries) |
 | [08-2026-09-21.md](project-context/history/08-2026-09-21.md) | 2026-09-21 … 2026-09-23f (15 entries) |
@@ -151,14 +199,17 @@ so neighbouring files can overlap by a few days — search the date tag.
 ## Keeping the context readable
 
 - **Where a change goes.** The current truth about an area → the topic file that holds it. Every
-  meaningful change → also a dated entry at the **top of the newest history file** (first row under
-  [History](#history)): `> Updated: YYYY-MM-DD[a-z] (**one-line summary.** detail …)`, as before.
-  In-flight work → [Current state](#current-state); keep it short, and move what is done into the
-  history. A new area → a new file in `project-context/`, added to [the context files](#the-context-files).
+  meaningful change → also a dated entry at the **top of the newest history file** (the first numbered
+  file under [History](#history)): `> Updated: YYYY-MM-DD[a-z] (**one-line summary.** detail …)`, as
+  before, **and its line at the top of [TIMELINE.md](project-context/history/TIMELINE.md)**. A change
+  that makes a numbered section wrong → fix the section, or add a line to
+  [What changed](#what-changed-after-the-numbered-sections). In-flight work →
+  [Current state](#current-state); keep it short, and move what is done into the history. A new area →
+  a new file in `project-context/`, added to [the context files](#the-context-files).
 - **Size limits**, so any tool reads a file whole: this index at most 300 lines; every file in
   `project-context/` at most 1,200 lines and 60,000 characters (about 20k tokens; one Claude Code read
-  returns up to 25k). `tests/unit/test_project_context_fits.py` fails past a limit, or when a file is not
-  linked from here. Newest history file full → start `NN-<date of its first entry>.md` with the next
+  returns up to 25k). `tests/unit/test_project_context_fits.py` fails past a limit, when a file is not
+  linked from here, or when a dated entry has no line in the timeline. Newest history file full → start `NN-<date of its first entry>.md` with the next
   number and add its row. A topic file full → split it by section and update the table.
 - **Links** in `project-context/` are relative to their own folder: `../engine/…`, and `../../docs/…`
   from `history/`.

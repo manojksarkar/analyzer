@@ -3,8 +3,8 @@
 > **Project context — one part of it.** Start at [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md),
 > the index: current state, how to read the context, every file. The sections below moved here
 > from the single-file context on 2026-09-28, unchanged except link paths, and keep their numbers —
-> "PROJECT_CONTEXT §N" still finds them. Written over time: where a section and a newer dated
-> entry in [history/](history/) disagree, the newer entry and the code win.
+> "PROJECT_CONTEXT §N" still finds them. Some of it has drifted since: read the index's [What changed
+> after the numbered sections](../PROJECT_CONTEXT.md#what-changed-after-the-numbered-sections) first.
 
 **Sections:** [19. API Server (`api/`)](#19-api-server-api) · [21. Companion: the older FastAPI backend (SUPERSEDED)](#21-companion-the-older-fastapi-backend-superseded) · [24. Frontend — `frontend/designs/`](#24-frontend--frontenddesigns)
 

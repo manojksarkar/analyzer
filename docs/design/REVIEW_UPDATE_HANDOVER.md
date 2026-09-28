@@ -94,7 +94,8 @@ On 2026-09-28 this branch split the single 8,991-line `PROJECT_CONTEXT.md` into 
 reports a conflict in `PROJECT_CONTEXT.md`. Keep this branch's index, and move `develop`'s changes to
 where that content lives now:
 
-- a new `> Updated:` entry → the top of the newest file in `project-context/history/`;
+- a new `> Updated:` entry → the top of the newest file in `project-context/history/`, plus its line
+  at the top of `project-context/history/TIMELINE.md`;
 - an edit to a numbered section (`## N.`) → the topic file that holds §N (the table in the index);
 - an edit to a status block at the top → the index's *Current state*.
 

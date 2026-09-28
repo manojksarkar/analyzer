@@ -3,8 +3,8 @@
 > **Project context — one part of it.** Start at [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md),
 > the index: current state, how to read the context, every file. The sections below moved here
 > from the single-file context on 2026-09-28, unchanged except link paths, and keep their numbers —
-> "PROJECT_CONTEXT §N" still finds them. Written over time: where a section and a newer dated
-> entry in [history/](history/) disagree, the newer entry and the code win.
+> "PROJECT_CONTEXT §N" still finds them. Some of it has drifted since: read the index's [What changed
+> after the numbered sections](../PROJECT_CONTEXT.md#what-changed-after-the-numbered-sections) first.
 
 **Sections:** [10. Phase 1 — `engine/parser.py`](#10-phase-1--engineparserpy) · [11. Phase 2 — `engine/model_deriver.py`](#11-phase-2--enginemodel_deriverpy)
 
