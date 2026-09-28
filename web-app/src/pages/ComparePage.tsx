@@ -386,18 +386,27 @@ export function ComparePage() {
   const reviewMode = docDetail?.status === 'in_review'
   const visibleSections = changesOnly ? changedSections : sections
 
+  // A removed document exists only in the baseline, so it is not in `allDocs` (the current
+  // version's list). "All" lists it too, and the total counts it — the footer read
+  // "10 changed of 3" when ten documents were removed and three kept.
+  const removedRows: TreeRow[] = useMemo(() => (compareDocs?.documents ?? [])
+    .filter((d) => d.diffType === 'removed')
+    .map((d) => ({ id: d.documentId, name: d.name, diffType: d.diffType, changed: true })), [compareDocs])
   const treeRows: TreeRow[] = useMemo(() => {
     if (treeMode === 'diff') {
       return (compareDocs?.documents ?? []).map((d) => ({ id: d.documentId, name: d.name, diffType: d.diffType, changed: true }))
     }
-    return (allDocs ?? []).map((d) => ({
-      id: d.id, name: d.name,
-      diffType: changedById.get(d.id)?.diffType ?? 'unchanged',
-      changed: changedSet.has(d.id),
-    }))
-  }, [treeMode, compareDocs, allDocs, changedById, changedSet])
+    return [
+      ...(allDocs ?? []).map((d) => ({
+        id: d.id, name: d.name,
+        diffType: changedById.get(d.id)?.diffType ?? 'unchanged',
+        changed: changedSet.has(d.id),
+      })),
+      ...removedRows,
+    ]
+  }, [treeMode, compareDocs, allDocs, changedById, changedSet, removedRows])
   const changedCount = changedSet.size
-  const totalCount = allDocs?.length ?? changedCount
+  const totalCount = allDocs ? allDocs.length + removedRows.length : changedCount
 
   function selectDoc(id: string) {
     setPickedDocId(id)
