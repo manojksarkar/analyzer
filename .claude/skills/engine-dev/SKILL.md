@@ -23,7 +23,8 @@ building views, exporting DOCX — **except** two carved-out areas:
 
 Start context (read as needed, don't duplicate here):
 - **Everything — pipeline, schema, flags, views, DOCX, LLM, risks, decisions** → root
-  [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) (agent-facing source of truth; read it first, per CLAUDE.md).
+  [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md), the index into [project-context/](project-context/) (agent-facing
+  source of truth; CLAUDE.md loads the index — then read the topic file for your area).
 - **Doc contracts** → [docs/spec/SWE3_SPEC.md](docs/spec/SWE3_SPEC.md), [docs/spec/SWE4_SPEC.md](docs/spec/SWE4_SPEC.md).
 - **Carved-out areas** → `engine-flowchart` (flowchart/CFG + incremental), `engine-behaviour`.
 
@@ -161,7 +162,8 @@ The list the user should not have to retype. A rule change is not done until all
    `python-docx` before believing a cell is ugly.
 5. **Docs** — output-visible rule → `docs/spec/SWE3_WIKI.md` (client-facing; tables, prose only where
    rationale needs it; an undecided rule goes in as a `⚠ To confirm`, never as a rule). Mechanism, gaps
-   and the matrix → `PROJECT_CONTEXT.md` + its `> Updated:` log.
+   and the matrix → the `project-context/` topic file + a dated entry in the newest `project-context/history/`
+   file.
 6. **Every consumer** — an output rule has more than one implementation:
    - `engine/docx_exporter.py` — the DOCX, and the only one that reads the C++ source
    - `api/services/doc_render.py` — the web view, model JSON only, no source access
@@ -175,5 +177,6 @@ The list the user should not have to retype. A rule change is not done until all
 - LLM call? Cached, `kind`-tagged, grounded — rerun is deterministic.
 - New LLM-written text, or a text generated or stored somewhere else? A reviewer must still be able to
   correct it (§8) — run `pytest tests/unit/test_review_*.py`.
-- Meaningful change? Update **PROJECT_CONTEXT.md** (+ its `> Updated:` log) — pair with `docs-maintainer`.
+- Meaningful change? Update the **project context** — the topic file and a dated entry in the newest history
+  file (see the index) — pair with `docs-maintainer`.
 - In a carved-out area (flowchart/CFG, incremental, behaviour diagrams)? Use that spoke skill instead.
