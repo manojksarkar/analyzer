@@ -106,6 +106,20 @@ def start_job(
     if not project:
         raise not_found("Project", project_id)
     require_project_admin(project_id, current_user, db)
+    # A project onboarded with `analyzer.py onboard` has no architecture in the database: its
+    # layers are in workspaces/<pid>/config.json, which onboarding wrote. A run from here builds
+    # that file from the database instead, so it would REPLACE the project's config with the
+    # built-in sample project's layers; and `_make_documents` creates documents only for the
+    # components declared here, so the run would produce none. Refused before anything is
+    # reserved or written.
+    if not (project.architecture_layers or []):
+        raise conflict(
+            "NO_ARCHITECTURE",
+            f"Project '{project_id}' has no architecture in the database — it was onboarded with "
+            f"`analyzer.py onboard`, so its layers are in workspaces/{project_id}/config.json. A run "
+            f"started here would replace that file and create no documents. Generate it with "
+            f"`python analyzer.py generate --project-id {project_id} --version-id <id> "
+            f"--commit <sha>`, or create the project in the web app with its architecture.")
     # Version identity (D-3): the version is REQUIRED and UNIQUE within the project.
     # No auto-generated name, no silent "-1" rename — a duplicate is rejected. Checked
     # before the active-job guard so a malformed request fails as 400, deterministically.
