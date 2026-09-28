@@ -7,9 +7,9 @@ that:
 - **What and why** → [REVIEW_UPDATE_SPEC](../spec/REVIEW_UPDATE_SPEC.md) (`REQ-` ids)
 - **The HTTP contract** → [REVIEW_UPDATE_API_SPEC](../spec/REVIEW_UPDATE_API_SPEC.md)
 - **How** → [REVIEW_UPDATE_DESIGN](REVIEW_UPDATE_DESIGN.md)
-- **Chronology and the reasoning behind each decision** → root `PROJECT_CONTEXT.md`: the feature in
-  the `> Updated: 2026-09-16 …` through `2026-09-20` entries, the rebase onto develop in
-  `2026-09-26f` through `2026-09-27d`
+- **Chronology and the reasoning behind each decision** → the dated entries in
+  [project-context/history/](../../project-context/history/): the feature in `2026-09-16` through
+  `2026-09-20`, the rebase onto develop in `2026-09-26f` through `2026-09-27d`
 
 Branch: `review_update_v2` = `review_update_v1` squash-merged onto `origin/develop` at `8628b2d`
 (commit `b10a71b`), then separate follow-up commits: fixes the rebase review found, develop's new
@@ -30,7 +30,7 @@ regeneration, and carries into the next version. Seven kinds of text are editabl
 
 ---
 
-## 2. Two things to do before anything else
+## 2. Three things to do before anything else
 
 ### 2.1 Alembic — check the head is still linear
 
@@ -86,6 +86,21 @@ read them on `review_update_v1`. The interface-id change is output-visible — �
 
 The follow-up commits on `review_update_v2` also fix develop defects the rebase found — §5.
 
+### 2.3 `PROJECT_CONTEXT.md` is an index on this branch
+
+On 2026-09-28 this branch split the single 8,991-line `PROJECT_CONTEXT.md` into an index plus
+`project-context/` (topic files and the dated history), because a new session read only its first
+2,000 lines. `develop` still has the single file, so if `develop` edits it before this merges, git
+reports a conflict in `PROJECT_CONTEXT.md`. Keep this branch's index, and move `develop`'s changes to
+where that content lives now:
+
+- a new `> Updated:` entry → the top of the newest file in `project-context/history/`;
+- an edit to a numbered section (`## N.`) → the topic file that holds §N (the table in the index);
+- an edit to a status block at the top → the index's *Current state*.
+
+`git diff 8628b2d origin/develop -- PROJECT_CONTEXT.md` lists what `develop` changed;
+`tests/unit/test_project_context_fits.py` then checks the sizes and the index's links.
+
 ---
 
 ## 3. Files, and why each was touched
@@ -136,7 +151,8 @@ matters** — see §4.5.
 ### 3.3 Changed by the rebase onto develop (after `b10a71b`)
 
 What the follow-up commits change in develop's own code. Each one keeps develop's documented rule
-and is argued in `PROJECT_CONTEXT.md` 2026-09-26f → 2026-09-27d.
+and is argued in the dated history entries 2026-09-26f → 2026-09-27d
+([project-context/history/](../../project-context/history/)).
 
 | file | change | why |
 |---|---|---|

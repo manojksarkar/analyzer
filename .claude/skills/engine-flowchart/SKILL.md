@@ -25,7 +25,9 @@ Start context (read as needed, don't duplicate here):
 - **Flowchart deep dive** → [engine/flowchart/README.md](engine/flowchart/README.md) + the end-to-end trace
   [engine/flowchart/FLOW.md](engine/flowchart/FLOW.md).
 - **Incremental design** → [docs/production-redesign/04-incremental-changes-implementation.md](docs/production-redesign/04-incremental-changes-implementation.md).
-- **How these plug into the pipeline / everything else** → root [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md), and `engine-dev`.
+- **How these plug into the pipeline / everything else** → root [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) (the
+  index; the flowchart engine is §13 in [VIEWS_AND_EXPORT.md](project-context/VIEWS_AND_EXPORT.md), incremental
+  is §23 in [INCREMENTAL.md](project-context/INCREMENTAL.md)), and `engine-dev`.
 
 ## 1. Flowchart engine (`engine/flowchart/`)
 
@@ -108,5 +110,6 @@ Start context (read as needed, don't duplicate here):
 - Incremental change? Pure planners unit-tested; reuse/impact accounted; the version4 model files stay consistent.
 - CFG builder change that renumbers nodes? Label corrections on those flowcharts orphan by design — say so
   in PROJECT_CONTEXT, and run `pytest tests/unit/test_review_*.py`.
-- Meaningful change? Update PROJECT_CONTEXT.md + the flowchart README/FLOW.md — pair with `docs-maintainer`.
+- Meaningful change? Update the project context (`project-context/`: topic file + dated history entry) + the
+  flowchart README/FLOW.md — pair with `docs-maintainer`.
 - Touching the model schema, doc-gen, or the main LLM/config? That's `engine-dev`.
