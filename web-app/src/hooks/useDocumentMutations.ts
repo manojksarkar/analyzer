@@ -33,11 +33,18 @@ export function useApproveDocs(projectId: string) {
 
 /**
  * Returns a downloader for a document's DOCX (authed blob). Not a cache
- * mutation — just an action — so it stays a plain callback and the caller keeps
- * its own error handling (bulk download skips single failures silently).
+ * mutation — just an action — so it stays a plain callback. A failure is
+ * reported here: two of its three callers ignored the rejection, so a download
+ * that failed (a missing DOCX, an expired session) did nothing visible.
  */
 export function useDownloadDoc(projectId: string) {
-  return (docId: string, name: string) => documentsApi.download(projectId, docId, name)
+  return async (docId: string, name: string): Promise<void> => {
+    try {
+      await documentsApi.download(projectId, docId, name)
+    } catch (e) {
+      toast.error('Download failed', `${name}: ${(e as Error).message}`)
+    }
+  }
 }
 
 export function useRequestChanges(projectId: string) {

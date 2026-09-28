@@ -139,9 +139,8 @@ export function DocumentsPage() {
 
   async function downloadSelected() {
     const docs = filtered.filter((d) => selected.has(d.id))
-    for (const d of docs) {
-      try { await downloadDoc(d.id, d.name) } catch { /* skip a single failure */ }
-    }
+    // One at a time; a failure is reported by the hook and the rest still download.
+    for (const d of docs) await downloadDoc(d.id, d.name)
   }
 
   // Download is available to everyone; Assign/Approve are admin-only (design).
