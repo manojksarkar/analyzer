@@ -2,13 +2,15 @@ import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useProject, useDocuments, useTeam, useCommits, useVersions } from '../hooks/useProjects'
 import { useSelfAssign } from '../hooks/useDocumentMutations'
-import { useCurrentJob, useStartJob, useCancelJob, useJobEvents } from '../hooks/useJobs'
+import { useCurrentJob, useStartJob, useCancelJob, useJobEvents, useJobFunctions } from '../hooks/useJobs'
 import { useProjectViewState } from '../hooks/useProjectViewState'
 import { DashboardSkeleton, Icon, RoleBadge, Text } from '../components/ui'
+import { SubbarCta } from '../components/shell/SubbarCta'
 import { cn } from '../lib/cn'
 import { useAuthStore } from '../store/auth'
-import type { StartJobInput } from '../services/api'
-import type { DocStatus, TeamMember, JobPhase, JobPhaseStatus, Project, Commit, Version, Document } from '../types'
+import type { JobScope, StartJobInput } from '../services/api'
+import type { AnalysisJob, DocStatus, TeamMember, JobPhase, JobPhaseStatus, Project, Commit, Version, Document } from '../types'
+import { relativeTime } from '../lib/format'
 
 /* ── Job formatting helpers ── */
 const PHASE_UI: Record<JobPhaseStatus, 'done' | 'active' | 'pending'> = {
@@ -206,6 +208,50 @@ function PhaseStep({ n, label, status, time }: { n: number; label: string; statu
   )
 }
 
+/* ─── The project's latest run ended in an error ─── */
+function FailedRunBanner({ job, isAdmin, onRerun }: { job: AnalysisJob; isAdmin: boolean; onRerun: () => void }) {
+  const [open, setOpen] = useState(false)
+  const lines = (job.errorMessage ?? '').trim().split('\n')
+  const headline = lines[0] || 'The analysis stopped with an error.'
+  const details = lines.slice(1).join('\n').trim()
+  return (
+    <div role="alert" className="mb-6 rounded-xl border border-error/40 bg-error-container/40 px-5 py-4">
+      <div className="flex items-start gap-3">
+        <Icon name="error" size={20} fill className="flex-shrink-0 text-error mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-on-surface text-body">
+            Last analysis failed{job.versionTag ? ` — ${job.versionTag}` : ''}
+          </p>
+          <p className="text-caption text-outline font-mono mt-0.5">
+            {job.branch} @ {job.shortSha}{job.completedAt ? ` · ${relativeTime(job.completedAt)}` : ''}
+          </p>
+          <p className="text-xs text-on-error-container font-mono mt-2 break-words">{headline}</p>
+          {details && (
+            <>
+              <button onClick={() => setOpen((v) => !v)} className="mt-2 flex items-center gap-1 text-caption font-mono text-secondary hover:underline">
+                <Icon name={open ? 'expand_less' : 'expand_more'} size={14} />
+                {open ? 'Hide details' : 'Show details'}
+              </button>
+              {open && (
+                <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-white border border-outline-variant p-3 text-caption font-mono text-on-surface-variant whitespace-pre-wrap">{details}</pre>
+              )}
+            </>
+          )}
+        </div>
+        {isAdmin && (
+          <button
+            onClick={onRerun}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors flex-shrink-0 font-mono text-caption font-bold tracking-[0.04em]"
+          >
+            <Icon name="replay" size={14} />
+            Re-run
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /* ─── Run Analysis modal (matches project-detail.html) ─── */
 function suggestNextVersion(versions?: Version[]): string {
   if (!versions || versions.length === 0) return 'v1.0.0'
@@ -240,14 +286,20 @@ function RunAnalysisModal({
   const branch = cs.find((c) => c.sha === commitSha)?.branch || cs[0]?.branch || project.defaultBranch || 'main'
   const [referenceId, setReferenceId] = useState('')
   const [versionName, setVersionName] = useState(() => suggestNextVersion(versions))
-  const [pause, setPause] = useState(false)
   const [advOpen, setAdvOpen] = useState(false)
-  const [layerFilter, setLayerFilter] = useState('')
+  const [scopeKey, setScopeKey] = useState('')
 
   const refVersions = (versions ?? []).filter((v): v is Version & { id: string } => !!v.id)
-  const layerOptions = project.architectureLayers.flatMap((l) =>
-    l.groups.map((g) => ({ value: g.name, label: `${l.name} — ${g.name}` })),
-  )
+  // A whole layer, or one group of it. Groups are sent layer-qualified (`Layer1.My Sample`), the
+  // id the engine gives them, so a group name two layers share is never ambiguous.
+  const scopeOptions: { key: string; label: string; scope: JobScope }[] = project.architectureLayers.flatMap((l) => [
+    { key: `layer:${l.name}`, label: `${l.name} — all groups`, scope: { type: 'layer' as const, names: [l.name] } },
+    ...l.groups.map((g) => ({
+      key: `group:${l.name}.${g.name}`,
+      label: `${l.name} — ${g.name}`,
+      scope: { type: 'group' as const, names: [`${l.name}.${g.name}`] },
+    })),
+  ])
 
   function submit() {
     if (!commitSha) return
@@ -255,8 +307,7 @@ function RunAnalysisModal({
       commit_sha: commitSha,
       version_tag: versionName.trim() || undefined,
       reference_version_id: referenceId || undefined,
-      pause_after_phase1: pause,
-      layer_filter: layerFilter || undefined,
+      scope: scopeOptions.find((o) => o.key === scopeKey)?.scope,
     })
   }
 
@@ -328,17 +379,18 @@ function RunAnalysisModal({
             </div>
           </div>
 
-          {/* Pause after Phase 1 */}
-          <label className="flex items-start gap-3 cursor-pointer group">
-            <input type="checkbox" checked={pause} onChange={(e) => setPause(e.target.checked)} className="mt-0.5 rounded border-outline-variant text-secondary flex-shrink-0 w-[15px] h-[15px]" />
+          {/* Pause after Phase 1 — the server does not act on it yet: a run goes through all
+              four phases, and there is no function-visibility editor to pause for. */}
+          <label className="flex items-start gap-3 cursor-not-allowed opacity-60">
+            <input type="checkbox" checked={false} disabled readOnly className="mt-0.5 rounded border-outline-variant text-secondary flex-shrink-0 w-[15px] h-[15px]" />
             <div>
-              <span className="text-on-surface group-hover:text-secondary transition-colors text-xs">Pause after Phase 1 to review function visibility</span>
-              <p className="text-on-surface-variant mt-0.5 text-caption">Lets you hide functions before diagrams and DOCX are generated.</p>
+              <span className="text-on-surface text-xs">Pause after Phase 1 to review function visibility</span>
+              <p className="text-on-surface-variant mt-0.5 text-caption">Not available yet — a run goes through all four phases without stopping.</p>
             </div>
           </label>
 
           {/* Advanced — Layer / Group filter */}
-          {layerOptions.length > 0 && (
+          {scopeOptions.length > 0 && (
             <div>
               <button onClick={() => setAdvOpen((v) => !v)} className="flex items-center gap-2 w-full text-left py-0.5 group">
                 <Icon name="chevron_right" size={14} className={cn('transition-transform text-on-surface-variant', advOpen && 'rotate-90')} />
@@ -348,9 +400,9 @@ function RunAnalysisModal({
               {advOpen && (
                 <div className="pt-3 pl-5">
                   <label className={cn('text-on-surface-variant block mb-2', FIELD_LABEL)}>Layer / Group</label>
-                  <select value={layerFilter} onChange={(e) => setLayerFilter(e.target.value)} className={cn('w-full border border-outline-variant rounded-lg px-3 py-2 text-on-surface bg-white cursor-pointer focus:outline-none', SELECT_CLS)}>
+                  <select value={scopeKey} onChange={(e) => setScopeKey(e.target.value)} className={cn('w-full border border-outline-variant rounded-lg px-3 py-2 text-on-surface bg-white cursor-pointer focus:outline-none', SELECT_CLS)}>
                     <option value="">All layers (default)</option>
-                    {layerOptions.map((o) => <option key={o.label} value={o.value}>{o.label}</option>)}
+                    {scopeOptions.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
                   </select>
                 </div>
               )}
@@ -771,23 +823,35 @@ function ReviewQueueCard({ documents, go, projectId }: { documents: Document[]; 
   )
 }
 
-function FunctionVisibilityCard({ latestVersion }: { latestVersion: string }) {
-  // Placeholder — no function-visibility endpoint yet (see INTEGRATION_NOTES).
+function FunctionVisibilityCard({ projectId, job, latestVersion }: { projectId: string; job?: AnalysisJob | null; latestVersion: string }) {
+  // Counts from the latest finished run's function list (`GET …/jobs/{id}/functions`). There is
+  // no editor to hide functions yet, so Manage is shown as unavailable rather than doing nothing.
+  const finished = job?.status === 'complete' ? job : undefined
+  const { data, isLoading } = useJobFunctions(projectId, finished?.id)
+  const summary = data?.summary
   return (
     <div className="bg-white border border-outline-variant rounded-xl overflow-hidden">
       <div className="px-4 py-3.5 border-b border-outline-variant flex items-center justify-between">
         <div>
           <Text as="h2" variant="heading" className="text-on-surface">Function Visibility</Text>
-          <Text as="p" variant="caption" className="font-mono mt-0.5">3 of 26 functions hidden from DOCX</Text>
+          <Text as="p" variant="caption" className="font-mono mt-0.5">
+            {summary
+              ? `${summary.hidden} of ${summary.total} functions hidden from DOCX`
+              : finished && isLoading ? 'Loading…' : 'No finished run to count yet'}
+          </Text>
         </div>
-        <button className="flex items-center gap-1 px-3 py-1.5 border border-outline-variant rounded-lg hover:bg-surface-container transition-colors text-secondary font-mono text-caption">
+        <button
+          disabled
+          title="Not available yet — there is no editor to hide functions"
+          className="flex items-center gap-1 px-3 py-1.5 border border-outline-variant rounded-lg text-secondary font-mono text-caption opacity-50 cursor-not-allowed"
+        >
           Manage<Icon name="arrow_forward" size={14} />
         </button>
       </div>
       <div className="px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-1.5">
-          <Icon name="visibility_off" size={14} className="text-error" />
-          <span className="font-mono text-xs text-error">3 hidden</span>
+          <Icon name={summary?.hidden ? 'visibility_off' : 'visibility'} size={14} className={summary?.hidden ? 'text-error' : 'text-on-surface-variant'} />
+          <span className={cn('font-mono text-xs', summary?.hidden ? 'text-error' : 'text-on-surface-variant')}>{summary ? `${summary.hidden} hidden` : '—'}</span>
         </div>
         <span className="text-on-surface-variant font-mono text-caption">Last: {latestVersion}</span>
       </div>
@@ -796,28 +860,42 @@ function FunctionVisibilityCard({ latestVersion }: { latestVersion: string }) {
 }
 
 // Placeholder activity feeds (no activity/audit endpoint yet — see INTEGRATION_NOTES).
-const LAST_ACTIONS_ADMIN = [
-  { icon: 'check_circle', color: 'text-[#00a572]', text: 'Sarah C. approved CAN-Matrix', time: '1d ago' },
-  { icon: 'play_circle', color: 'text-secondary', text: 'Manoj S. ran analysis — v1.2.0', time: '3d ago' },
-  { icon: 'person_add', color: 'text-[#7c3aed]', text: 'Ana F. assigned to System Architecture', time: '4d ago' },
-  { icon: 'sell', color: 'text-[#00a572]', text: 'v1.1.0 tagged — Engine + Brake complete', time: '6d ago' },
-  { icon: 'rate_review', color: 'text-amber', text: 'Liam P. submitted Diagnostics for review', time: '1w ago' },
-]
-const LAST_ACTIONS_DEV = [
-  { icon: 'check_circle', color: 'text-[#00a572]', text: 'Sarah C. approved your Brake-FMEA', time: '1d ago' },
-  { icon: 'play_circle', color: 'text-secondary', text: 'Analysis ran — v1.2.0 ready', time: '3d ago' },
-  { icon: 'person_add', color: 'text-[#7c3aed]', text: 'Zara P. assigned you to Detailed SW Design', time: '5d ago' },
-  { icon: 'rate_review', color: 'text-amber', text: 'Ana F. submitted System Arch for review', time: '1w ago' },
-]
+type LastAction = { icon: string; color: string; text: string; time: string }
 
-function LastActionsCard({ isAdmin }: { isAdmin: boolean }) {
-  const actions = isAdmin ? LAST_ACTIONS_ADMIN : LAST_ACTIONS_DEV
+/** What happened last, from what the server does record: the latest job and the versions.
+ *  (There is no activity log to read reviews and assignments from.) */
+function lastActions(job: AnalysisJob | null | undefined, versions: Version[] | undefined): LastAction[] {
+  const out: LastAction[] = []
+  if (job && ['queued', 'running', 'paused'].includes(job.status)) {
+    out.push({ icon: 'play_circle', color: 'text-secondary', text: `Analysis running${job.versionTag ? ` — ${job.versionTag}` : ''}`, time: relativeTime(job.startedAt) })
+  } else if (job?.status === 'failed') {
+    out.push({ icon: 'error', color: 'text-error', text: `Analysis failed${job.versionTag ? ` — ${job.versionTag}` : ''}`, time: relativeTime(job.completedAt) })
+  } else if (job?.status === 'cancelled') {
+    out.push({ icon: 'cancel', color: 'text-outline', text: `Analysis cancelled${job.versionTag ? ` — ${job.versionTag}` : ''}`, time: relativeTime(job.completedAt) })
+  }
+  for (const v of (versions ?? []).slice(0, 5)) {
+    const approved = v.status === 'approved' || v.status === 'complete'
+    out.push({
+      icon: approved ? 'check_circle' : v.status === 'in_review' ? 'rate_review' : 'sell',
+      color: approved ? 'text-[#00a572]' : v.status === 'in_review' ? 'text-amber' : 'text-outline',
+      text: `${v.tag} generated from ${v.branch} @ ${v.shortSha}${approved ? ' — approved' : v.status === 'in_review' ? ' — in review' : ''}`,
+      time: v.date,
+    })
+  }
+  return out
+}
+
+function LastActionsCard({ job, versions }: { job?: AnalysisJob | null; versions?: Version[] }) {
+  const actions = lastActions(job, versions)
   return (
     <div className="bg-white border border-outline-variant rounded-xl overflow-hidden flex-1 flex flex-col">
       <div className="px-4 py-3.5 border-b border-outline-variant">
         <Text as="h2" variant="heading" className="text-on-surface">Last Actions</Text>
       </div>
       <div className="flex-1 overflow-y-auto">
+        {actions.length === 0 && (
+          <p className="px-4 py-3 text-xs text-on-surface-variant">Nothing yet.</p>
+        )}
         {actions.map((a, i) => (
           <div key={i} className="flex items-start gap-2.5 px-4 py-3 border-b border-[#f0f1f3]">
             <Icon name={a.icon} size={15} fill className={cn('flex-shrink-0 mt-px', a.color)} />
@@ -832,8 +910,8 @@ function LastActionsCard({ isAdmin }: { isAdmin: boolean }) {
   )
 }
 
-function GeneratedContent({ project, documents, team, versions, isAdmin, projectId, go, selfAssign, meName, teamLoading }: {
-  project: Project; documents?: Document[]; team?: TeamMember[]; versions?: Version[]
+function GeneratedContent({ project, documents, team, versions, job, isAdmin, projectId, go, selfAssign, meName, teamLoading }: {
+  project: Project; documents?: Document[]; team?: TeamMember[]; versions?: Version[]; job?: AnalysisJob | null
   isAdmin: boolean; projectId: string; go: Nav; selfAssign: SelfAssign; meName: string; teamLoading: boolean
 }) {
   const docs = documents ?? []
@@ -851,8 +929,8 @@ function GeneratedContent({ project, documents, team, versions, isAdmin, project
         </div>
         <div className="w-[300px] flex-shrink-0 flex flex-col gap-4">
           {isAdmin && <ReviewQueueCard documents={docs} go={go} projectId={projectId} />}
-          <FunctionVisibilityCard latestVersion={latestVersion} />
-          <LastActionsCard isAdmin={isAdmin} />
+          <FunctionVisibilityCard projectId={projectId} job={job} latestVersion={latestVersion} />
+          <LastActionsCard job={job} versions={versions} />
         </div>
       </div>
     </>
@@ -891,6 +969,19 @@ export function ProjectDetailPage() {
 
   return (
     <div className="flex-1 overflow-y-auto bg-background">
+      {/* The page's Subbar action. Without it a project that has a version had no way to start
+          its next run: the only other buttons are on the empty state and the failure banner. */}
+      {isAdmin && !isLoading && pageState !== 'running' && (
+        <SubbarCta>
+          <button
+            onClick={() => setRunOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors font-mono text-caption font-bold tracking-[0.04em]"
+          >
+            <Icon name="play_circle" size={14} fill />
+            RUN ANALYSIS
+          </button>
+        </SubbarCta>
+      )}
       <div className="px-6 py-6 max-w-[1280px] mx-auto">
 
         {/* ══ LOADING — gate the empty-state flash until the view state resolves ══ */}
@@ -898,6 +989,11 @@ export function ProjectDetailPage() {
           <DashboardSkeleton />
         ) : (
           <>
+
+        {/* ══ LAST RUN FAILED — the error, which no other state shows ══ */}
+        {job?.status === 'failed' && pageState !== 'running' && (
+          <FailedRunBanner job={job} isAdmin={isAdmin} onRerun={() => setRunOpen(true)} />
+        )}
 
         {/* ══ EMPTY STATE (not yet analysed) ══ */}
         {pageState === 'never' && (
@@ -1062,6 +1158,7 @@ export function ProjectDetailPage() {
               documents={documents}
               team={team}
               versions={versions}
+              job={job}
               isAdmin={isAdmin}
               projectId={projectId ?? ''}
               go={(to) => navigate(to)}

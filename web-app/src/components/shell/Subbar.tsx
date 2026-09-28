@@ -342,9 +342,11 @@ interface SubbarProps {
   selectedCommit?: Commit
   statusBadge?: ReactNode
   cta?: ReactNode
+  /** Receives the element pages render their action into (see SubbarCta). */
+  ctaSlotRef?: (el: HTMLDivElement | null) => void
 }
 
-export function Subbar({ projectName, selectedVersion, selectedCommit, statusBadge, cta }: SubbarProps) {
+export function Subbar({ projectName, selectedVersion, selectedCommit, statusBadge, cta, ctaSlotRef }: SubbarProps) {
   return (
     <div className="h-12 flex-shrink-0 flex items-center justify-between px-4 bg-white border-b border-outline-variant z-20">
       <div className="flex items-center gap-2">
@@ -365,7 +367,7 @@ export function Subbar({ projectName, selectedVersion, selectedCommit, statusBad
         )}
       </div>
 
-      {cta && <div className="flex items-center gap-1.5">{cta}</div>}
+      <div ref={ctaSlotRef} className="flex items-center gap-1.5">{cta}</div>
     </div>
   )
 }

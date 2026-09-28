@@ -2,12 +2,19 @@ import { http } from '../../lib/http'
 import type { AnalysisJob, JobFunctions, JobStatus } from '../../types'
 import { mapJob, mapJobFunctions, type ApiJob, type ApiFunction } from '../mappers'
 
+/** What a run analyses. `names` are layer names, or layer-qualified group ids (`Layer1.My Sample`). */
+export interface JobScope {
+  type: 'project' | 'layer' | 'group' | 'component'
+  names: string[]
+}
+
 export interface StartJobInput {
   commit_sha: string
   version_tag?: string
   reference_version_id?: string
   pause_after_phase1?: boolean
-  layer_filter?: string
+  /** Narrows the run. The server's generation command reads `scope`, not `layer_filter`. */
+  scope?: JobScope
 }
 
 export const jobsApi = {

@@ -1,8 +1,9 @@
-import { Suspense } from 'react'
+import { Suspense, useState } from 'react'
 import { Outlet, useParams } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { Subbar, StatusBadge } from './Subbar'
+import { SubbarCtaProvider } from './SubbarCta'
 import { ErrorBoundary } from '../ErrorBoundary'
 import { Skeleton } from '../ui'
 import { useProject, useVersions, useCommits } from '../../hooks/useProjects'
@@ -39,6 +40,8 @@ export function ProjectLayout({ breadcrumbLabel, breadcrumbParentLabel, breadcru
   // Subbar status reflects the picker selection (and any live run) — shared with
   // the detail page via useProjectViewState.
   const { pageState, isLoading: viewLoading } = useProjectViewState(projectId ?? '')
+  // The Subbar's action slot, filled by the page through <SubbarCta>.
+  const [ctaSlot, setCtaSlot] = useState<HTMLDivElement | null>(null)
 
   const breadcrumbs = breadcrumbParentLabel
     ? [
@@ -66,11 +69,14 @@ export function ProjectLayout({ breadcrumbLabel, breadcrumbParentLabel, breadcru
                 ? <StatusBadge state={pageState} />
                 : undefined
           }
+          ctaSlotRef={setCtaSlot}
         />
         <div className="flex-1 flex flex-col overflow-hidden min-h-0">
           <ErrorBoundary>
             <Suspense fallback={<PageSkeleton />}>
-              <Outlet />
+              <SubbarCtaProvider slot={ctaSlot}>
+                <Outlet />
+              </SubbarCtaProvider>
             </Suspense>
           </ErrorBoundary>
         </div>
