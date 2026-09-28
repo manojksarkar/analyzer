@@ -152,7 +152,7 @@ export function Sidebar() {
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-secondary flex-shrink-0" />
                 <p className="text-on-surface-variant uppercase tracking-wide font-mono text-caption font-medium">
-                  {user?.role === 'admin' ? 'Admin' : 'Dev'}
+                  {project?.userRole === 'admin' ? 'Admin' : 'Dev'}
                 </p>
               </div>
             </div>
