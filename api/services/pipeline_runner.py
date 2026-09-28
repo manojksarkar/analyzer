@@ -27,10 +27,12 @@ import copy
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from collections import deque
 from datetime import datetime, timezone
@@ -224,6 +226,7 @@ def _cleanup_state(job_id: str) -> None:
         _job_procs.pop(job_id, None)
         _job_resume_events.pop(job_id, None)
         _progress_warned.difference_update({k for k in _progress_warned if k[0] == job_id})
+        _step_clocks.pop(job_id, None)
         _job_threads.pop(job_id, None)
         # Keep logs so SSE can drain remaining lines after completion
 
@@ -1350,7 +1353,45 @@ def _update_activity(db: Any, job_id: str, detail: str) -> None:
     if job:
         job.activity_detail = detail
         job.elapsed_seconds = _elapsed_since(job.started_at)
+        _count_progress(job, detail)
         db.jobs.update(job)
+
+
+# "[45/159] coreDoWhileClamp" -- a ProgressReporter step (engine/core/progress.py), logged every
+# few items. The phase runner's own "[2/4] === Derive Model ===" and "[2/4] Derive Model — 12.3s"
+# lines count phases, not items, and are skipped.
+_ITEM_COUNTER = re.compile(r"^\[(\d+)/(\d+)\](?:\s+(.*))?$")
+_step_clocks: dict = {}    # job_id -> (total, monotonic time first seen, done first seen)
+
+
+def _count_progress(job: Any, detail: str) -> None:
+    """Set the phase percentage and the time left from the engine's item counter.
+
+    Nothing set `phase_pct`, so the web app's progress bar sat at 0% for a whole phase, and
+    `eta_seconds` was only ever the transition guess of two minutes per remaining phase: "~4m
+    remaining" for an LLM phase that takes an hour. The estimate is the rate seen so far in this
+    counted step, plus that same guess for the phases still to come.
+    """
+    m = _ITEM_COUNTER.match(detail or "")
+    if not m:
+        return
+    rest = m.group(3) or ""
+    if rest.startswith("===") or " — " in rest:
+        return
+    done, total = int(m.group(1)), int(m.group(2))
+    if total <= 0 or done > total:
+        return
+    now = time.monotonic()
+    with _LOCK:
+        clock = _step_clocks.get(job.id)
+        if clock is None or clock[0] != total or done < clock[2]:     # a new counted step
+            clock = (total, now, done)
+            _step_clocks[job.id] = clock
+    job.phase_pct = done * 100 // total
+    _, t0, done0 = clock
+    later = max(0, (4 - (job.phase or 4)) * 120)
+    if done > done0:
+        job.eta_seconds = int((now - t0) / (done - done0) * (total - done)) + later
 
 
 _progress_warned: set = set()      # (job_id, function) pairs already logged -- see _progress
