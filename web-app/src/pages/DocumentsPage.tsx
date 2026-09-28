@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useProject, useDocuments, useVersions, useCommits } from '../hooks/useProjects'
-import { useApproveDocs, useDownloadDoc, useSelfAssign } from '../hooks/useDocumentMutations'
+import { useApproveDocs, useDownloadAll, useDownloadDoc, useSelfAssign } from '../hooks/useDocumentMutations'
+import { SubbarCta } from '../components/shell/SubbarCta'
 import { useProjectViewState } from '../hooks/useProjectViewState'
 import { useAuthStore } from '../store/auth'
 import { Card, Icon, TableSkeleton, Text, toast } from '../components/ui'
@@ -63,6 +64,7 @@ export function DocumentsPage() {
   )
   const approveDocs = useApproveDocs(pid)
   const downloadDoc = useDownloadDoc(pid)
+  const downloadAll = useDownloadAll(pid)
   const selfAssign = useSelfAssign(pid)
 
   // Role is per-project (API's my_role → project.userRole); "me" matches by name.
@@ -187,6 +189,19 @@ export function DocumentsPage() {
 
   return (
     <div className="flex-1 flex overflow-hidden min-h-0">
+      {/* The page's Subbar action (mockup: "Download All") — every DOCX of the viewed version. */}
+      {viewVersion?.id && all.length > 0 && (
+        <SubbarCta>
+          <button
+            onClick={() => downloadAll.mutate({ versionId: viewVersion.id!, fileName: `${project?.name ?? pid}-${viewVersion.tag}.zip` })}
+            disabled={downloadAll.isPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-outline-variant bg-white hover:bg-surface-container rounded-lg transition-colors text-on-surface font-mono text-caption font-bold tracking-[0.04em] disabled:opacity-60"
+          >
+            <Icon name="download" size={14} />
+            {downloadAll.isPending ? 'PREPARING…' : 'DOWNLOAD ALL'}
+          </button>
+        </SubbarCta>
+      )}
       <DocTreePanel
         groups={treeGroups}
         assigneeOptions={assigneeOptions}

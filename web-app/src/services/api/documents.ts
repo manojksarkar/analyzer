@@ -88,4 +88,10 @@ export const documentsApi = {
     body: { version_id: string; process_filter?: string[] },
   ): Promise<{ download_url: string }> =>
     http.post(`/projects/${projectId}/documents/export-all`, body),
+  /** Every DOCX of a version as one ZIP: ask for the export, then fetch the URL it names. */
+  downloadAll: async (projectId: string, versionId: string, fileName: string): Promise<void> => {
+    const { download_url } = await documentsApi.exportAll(projectId, { version_id: versionId })
+    // The URL is the API's own path (`/api/v1/projects/…`); the client adds its base itself.
+    await http.download(download_url.replace(/^(?:https?:\/\/[^/]+)?\/api\/v\d+/, ''), fileName)
+  },
 }

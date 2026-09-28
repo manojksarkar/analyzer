@@ -47,6 +47,15 @@ export function useDownloadDoc(projectId: string) {
   }
 }
 
+/** Every DOCX of one version as a ZIP (`POST …/documents/export-all`, then its URL). */
+export function useDownloadAll(projectId: string) {
+  return useMutation({
+    mutationFn: ({ versionId, fileName }: { versionId: string; fileName: string }) =>
+      documentsApi.downloadAll(projectId, versionId, fileName),
+    onError: (e: Error) => toast.error('Download failed', e.message),
+  })
+}
+
 export function useRequestChanges(projectId: string) {
   const invalidate = useDocsInvalidate(projectId)
   return useMutation({
