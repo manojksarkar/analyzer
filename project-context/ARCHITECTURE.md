@@ -3,8 +3,8 @@
 > **Project context — one part of it.** Start at [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md),
 > the index: current state, how to read the context, every file. The sections below moved here
 > from the single-file context on 2026-09-28, unchanged except link paths, and keep their numbers —
-> "PROJECT_CONTEXT §N" still finds them. Written over time: where a section and a newer dated
-> entry in [history/](history/) disagree, the newer entry and the code win.
+> "PROJECT_CONTEXT §N" still finds them. Some of it has drifted since: read the index's [What changed
+> after the numbered sections](../PROJECT_CONTEXT.md#what-changed-after-the-numbered-sections) first.
 
 **Sections:** [1. What this project does](#1-what-this-project-does) · [2. Top-level layout](#2-top-level-layout) · [3. The 4-phase pipeline](#3-the-4-phase-pipeline) · [15. Test fixture — `SampleCppProject/`](#15-test-fixture--samplecppproject) · [20. Dependencies](#20-dependencies) · [21. End-to-end code flow — single command, full pipeline](#21-end-to-end-code-flow--single-command-full-pipeline)
 

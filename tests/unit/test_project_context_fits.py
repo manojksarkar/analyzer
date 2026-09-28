@@ -5,9 +5,13 @@ session read its first 2,000 lines — the newest change notes — and never rea
 which began at line 4,831. Since 2026-09-28 it is an index, and the detail is in `project-context/`:
 topic files and the dated history, each small enough for one read. Nothing breaks when a file grows
 past that; a reader just stops early and never knows what it missed. So the limits are checked here.
+
+The same goes for the timeline: a dated entry with no line there is a change a new session never
+hears of, because the topic files predate most of the history.
 """
 import os
 import re
+from collections import Counter
 
 import pytest
 
@@ -16,6 +20,9 @@ pytestmark = pytest.mark.unit
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 INDEX = os.path.join(ROOT, "PROJECT_CONTEXT.md")
 CONTEXT = os.path.join(ROOT, "project-context")
+TIMELINE = os.path.join(CONTEXT, "history", "TIMELINE.md")
+_ENTRY = re.compile(r"^> Updated: (\d{4}-\d{2}-\d{2}[a-z]?)", re.M)
+_TIMELINE_ROW = re.compile(r"^\| (\d{4}-\d{2}-\d{2}[a-z]?) \|", re.M)
 
 #: CLAUDE.md imports the index, so it is loaded into every session.
 INDEX_MAX_LINES = 300
@@ -76,6 +83,18 @@ def test_every_context_file_is_linked_from_the_index():
     orphans = [_rel(p) for p in _context_files() if os.path.normpath(p) not in linked]
     assert not orphans, (
         "not linked from PROJECT_CONTEXT.md, so no session will find them: %s" % orphans)
+
+
+def test_every_dated_entry_has_a_line_in_the_timeline():
+    entries = Counter()
+    for path in _context_files():
+        if os.path.basename(path)[:2].isdigit():             # the numbered history files
+            entries.update(_ENTRY.findall(_read(path)))
+    rows = Counter(_TIMELINE_ROW.findall(_read(TIMELINE)))
+    missing = sorted(tag for tag, n in entries.items() if rows[tag] < n)
+    assert entries and not missing, (
+        "dated entries with no line in project-context/history/TIMELINE.md: %s. Add one row per "
+        "entry at the top of its month — | date tag | one-line headline | file |." % missing)
 
 
 def test_every_link_in_the_index_resolves():
