@@ -145,9 +145,20 @@ app.add_middleware(
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    # Starlette answers an unhandled exception from ServerErrorMiddleware, which sits OUTSIDE
+    # CORSMiddleware, so this response never gets its CORS headers. The browser then blocks it
+    # and the web app reports "Failed to fetch" instead of the message below. Echo the origin
+    # the way CORSMiddleware does for every other response (allow_origins=["*"] with credentials).
+    headers = {}
+    origin = request.headers.get("origin")
+    if origin:
+        headers = {"Access-Control-Allow-Origin": origin,
+                   "Access-Control-Allow-Credentials": "true",
+                   "Vary": "Origin"}
     return JSONResponse(
         status_code=500,
         content={"error": {"code": "INTERNAL_ERROR", "message": str(exc), "status": 500}},
+        headers=headers,
     )
 
 # ---------------------------------------------------------------------------
