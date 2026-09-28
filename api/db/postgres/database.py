@@ -106,6 +106,9 @@ class _ProjectRepo(_Base, IProjectRepository):
         self._put(s.projects, ["id"], to_row(project)); return project
 
     def delete(self, project_id):
+        # job_functions has no foreign key to the project, so nothing cascades to it: its rows
+        # outlived every deleted project.
+        self._exec(delete(s.job_functions).where(s.job_functions.c.project_id == project_id))
         self._exec(delete(s.projects).where(s.projects.c.id == project_id))
 
     def search(self, query):

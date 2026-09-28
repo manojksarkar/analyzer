@@ -211,7 +211,45 @@ def delete_project(
     if not project:
         raise not_found("Project", project_id)
     require_project_admin(project_id, current_user, db)
+    from ..services import pipeline_runner
+    job = db.jobs.get_current(project_id)
+    if job and job.status in ("queued", "running", "paused") and pipeline_runner.job_alive(job.id):
+        # Its thread would go on writing versions, documents and files for a project that is gone.
+        raise conflict("JOB_RUNNING", "An analysis is running for this project. "
+                                      "Cancel it before deleting the project.")
     db.projects.delete(project_id)
+    _remove_workspace(project_id)
+
+
+def _remove_workspace(project_id: str) -> None:
+    """Delete `workspaces/<project_id>/` -- the git checkout and every version's output.
+
+    Nothing refers to it once the project row is gone, and a real project's folder holds a
+    checkout per commit plus every version's documents and diagrams: leaving it behind was a
+    silent disk leak on every delete. Best effort -- a failure is logged, the deletion stands.
+    """
+    import logging
+    import os
+    import shutil
+    import stat
+    import sys
+    from ..services.settings import get_settings
+
+    root = get_settings().workspaces.resolve()
+    target = (root / project_id).resolve()
+    if target.parent != root or not target.is_dir():       # never outside the workspaces root
+        return
+
+    def _retry(func, path, _exc):                           # git pack files are read-only
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+
+    kwargs = {"onexc": _retry} if sys.version_info >= (3, 12) else {"onerror": _retry}
+    try:
+        shutil.rmtree(target, **kwargs)
+    except Exception as exc:                                # noqa: BLE001 - logged, not fatal
+        logging.getLogger(__name__).warning(
+            "project %s deleted, but its workspace %s was not: %s", project_id, target, exc)
 
 
 # ---------------------------------------------------------------------------
