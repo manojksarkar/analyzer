@@ -8,8 +8,9 @@ export const ApiVersionSchema = z.object({
 })
 export type ApiVersion = z.infer<typeof ApiVersionSchema>
 
+// A `draft` version has no documents: its run is still going, or it was only tagged.
 const versionPageState = (status: string): PageState =>
-  status === 'approved' ? 'complete' : 'in_review'
+  status === 'approved' ? 'complete' : status === 'draft' ? 'never' : 'in_review'
 
 export function mapVersion(v: ApiVersion): Version {
   return {

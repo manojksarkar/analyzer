@@ -4,6 +4,7 @@ import { useProject, useVersions, useCommits } from '../hooks/useProjects'
 import { useCreateVersion } from '../hooks/useVersionMutations'
 import { Card, Icon, Skeleton, Text, toast } from '../components/ui'
 import { cn } from '../lib/cn'
+import { useUIStore } from '../store/ui'
 import type { Commit, Version, VersionStatus } from '../types'
 
 type Filter = 'all' | 'in_review' | 'complete'
@@ -15,6 +16,14 @@ function accentColor(s: VersionStatus): string {
 }
 
 function StatusPill({ status }: { status: VersionStatus }) {
+  if (status === 'draft') {
+    // Reserved for a run that has not finished, or tagged without one: no documents yet.
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-mono text-label font-bold bg-[#f3f4f6] text-outline border border-[#e2e3e8]">
+        <span className="inline-block w-1 h-1 rounded-full bg-outline" aria-hidden />Not Run
+      </span>
+    )
+  }
   if (status === 'in_review') {
     return (
       <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-mono text-label font-bold bg-[#fff8e6] text-[#b45309] border border-amber">
@@ -40,6 +49,14 @@ export function VersionsPage() {
 
   const isAdmin = project?.userRole === 'admin'
   const createVersion = useCreateVersion(projectId ?? '')
+  const setSelectedRef = useUIStore((s) => s.setSelectedRef)
+
+  // Documents and Compare show the Subbar's selected version, so select THIS one first —
+  // otherwise both buttons opened the latest version whichever row was clicked.
+  function openVersion(v: Version, page: 'documents' | 'compare') {
+    if (projectId && v.id) setSelectedRef(projectId, { type: 'version', id: v.id })
+    navigate(`/projects/${projectId}/${page}`)
+  }
 
   function tagCommit(c: Commit) {
     if (!isAdmin) { toast.info('Tag version', 'Only project admins can tag versions.'); return }
@@ -114,8 +131,8 @@ export function VersionsPage() {
             ) : (
               filtered.map((v, i, arr) => (
                 <VersionRow key={v.tag} v={v} isCurrent={i === 0 && filter === 'all'} last={i === arr.length - 1}
-                  onView={() => navigate(`/projects/${projectId}/documents`)}
-                  onCompare={() => navigate(`/projects/${projectId}/compare`)} />
+                  onView={() => openVersion(v, 'documents')}
+                  onCompare={() => openVersion(v, 'compare')} />
               ))
             )}
           </div>
