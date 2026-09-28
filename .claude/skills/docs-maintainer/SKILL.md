@@ -23,15 +23,16 @@ Default posture for **every** doc: **minimum, clean, crisp.** Say the thing once
 stop. A short doc that's current beats a long one that rots. Cut restated background, hedging, and duplicated
 detail — link to the one authoritative place instead of repeating it.
 
-Start every docs task by reading `PROJECT_CONTEXT.md` (the engineering source of truth) and, for generation
-work, `docs/planning/DOC_GENERATION_PLAYBOOK.md`.
+Start every docs task by reading `PROJECT_CONTEXT.md` (the index into the engineering source of truth,
+`project-context/`) and, for generation work, `docs/planning/DOC_GENERATION_PLAYBOOK.md`.
 
 ## 1. Know the audience: human vs. agent
 
 Before anything else, identify who reads the doc, and write for them:
 - **Human-facing** — leadership (`docs/planning/`), client + engineers (`docs/spec/`, `docs/design/`). Optimize
   for clarity and the right altitude for that reader.
-- **Agent-facing** — `PROJECT_CONTEXT.md` is read by you and other agents every session, **not by humans**.
+- **Agent-facing** — `PROJECT_CONTEXT.md` (the index) and `project-context/` are read by you and other agents
+  every session, **not by humans**.
   Optimize for **findability and completeness, not polish**: no prose warm-up, no human formatting. Humans read
   the `docs/` suite instead.
 
@@ -47,7 +48,7 @@ see the last row.
 |---|---|---|
 | `README.md` (repo root) | **Human doc hub** — the entry point | **Pointed nav.** One-line what-it-is + quick start + a linked index of every doc. **Keep its links in sync whenever a doc is added/moved/renamed.** |
 | `docs/planning/` | **Leadership-facing** (shared with the director) | **Pointed & slim.** One page where possible. Milestones / key decisions / remaining work. **No** person-day estimates, task numbers, or engineering detail. |
-| `PROJECT_CONTEXT.md` (repo root) | **Agent-facing** source of truth (you/other agents) | **Descriptive & deep, no polish.** The one place full detail lives. Keep it current after every meaningful change. |
+| `PROJECT_CONTEXT.md` (repo root) + `project-context/` | **Agent-facing** source of truth (you/other agents) | **Descriptive & deep, no polish.** `PROJECT_CONTEXT.md` is the **index** — current state, reading guide, the file map — and CLAUDE.md imports it, so it stays short (≤ 300 lines). The detail lives once, in `project-context/`: topic files (the current truth per area) and `history/` (the dated `> Updated:` log). Keep it current after every meaningful change. |
 | `CLAUDE.md`, `AGENTS.md` (root) | **Agent operating instructions** | **Directive.** How agents work in this repo; edit deliberately, they steer every session. |
 | `docs/BACKLOG.md` | Engineering — known issues / burn-down | **Pointed.** Terse list of issues/tasks, not prose. |
 | `docs/spec/` (`SWE3_SPEC`, `SWE4_SPEC`, `TEST_INVENTORY`, …) | Engineering — precise contracts | **Structured & exact.** Derivation logic, tables, rules. Unambiguous over readable. |
@@ -59,18 +60,22 @@ see the last row.
 Rules that fall out of this:
 - **The README hub is the index — keep it correct.** Adding, moving, or renaming any doc means updating the
   links in root `README.md` in the same change.
-- **Don't put engineering depth in `docs/planning/`** — it goes to `PROJECT_CONTEXT.md`. Don't bloat
-  `PROJECT_CONTEXT.md` with leadership summary — link it.
+- **Don't put engineering depth in `docs/planning/`** — it goes to the project context (`project-context/`).
+  Don't bloat the project context with leadership summary — link it.
 - **One fact, one home.** If two docs would state the same thing, put it in the deeper doc and link from the
   shallower one. The shared generation method lives once in `DOC_GENERATION_PLAYBOOK.md`; plans point to it.
-- After any meaningful project change, **update `PROJECT_CONTEXT.md`** (and its `> Updated:` log) without being
-  asked. CLAUDE.md tells every session to read that file first. **Subsystem changes** update *that subsystem's*
-  `PROJECT_CONTEXT.md` too (e.g. `api/PROJECT_CONTEXT.md`), which may be staler than the root one.
+- After any meaningful project change, without being asked, **update the project context**: the
+  `project-context/` topic file that holds the area, a dated `> Updated:` entry at the top of the newest
+  `project-context/history/` file, and the index's *Current state* if the status moved. The index's *Keeping
+  the context readable* has the rules and the size limits. CLAUDE.md imports the index; AGENTS.md sends every
+  other assistant to it. **Subsystem changes** update *that subsystem's* `PROJECT_CONTEXT.md` too (e.g.
+  `api/PROJECT_CONTEXT.md`), which may be staler than the root one.
 - **Docs that a test or a twin depends on.** `docs/design/DB_SCHEMA.md` and `schema-atlas.html` carry the same
   content, kept in step by hand — a table change updates both. `docs/spec/REVIEW_UPDATE_API_SPEC.md` §3's
   endpoint table and its `**Request body**` examples are parsed by `tests/unit/test_review_api_contract.py`:
   keep their shape. The review & update set is REQUIREMENTS (`docs/`) → SPEC + API_SPEC (`docs/spec/`) →
-  DESIGN + HANDOVER (`docs/design/`); the HANDOVER is what a merger reads first.
+  DESIGN + HANDOVER (`docs/design/`); the HANDOVER is what a merger reads first. The project context's file
+  sizes, the index's links and CLAUDE.md's import of it: `tests/unit/test_project_context_fits.py`.
 - **Two kinds of plan — keep them apart.** `docs/planning/*_PLAN.md` are *doc-type* plans (how we generate an
   ASPICE output document; leadership-facing). A **subsystem `PLAN.md`** (`api/PLAN.md`, `web-app/PLAN.md`) is
   that subsystem's *engineering* plan — forward build direction/status beside the code. It is **forward work
@@ -83,6 +88,8 @@ Rules that fall out of this:
   `PROJECT_CONTEXT.md`, `BACKLOG.md`, `ROADMAP.md`.
 - **`NN-kebab-title.md`** (zero-padded numeric prefix) for an *ordered* series meant to be read in sequence:
   `01-technology-selection-study.md`, `02-database-design-study.md`.
+- **The project context:** topic files `project-context/UPPER_SNAKE.md`; the dated log
+  `project-context/history/NN-<date of its first entry>.md`, numbered in time order.
 - **`<subsystem>/PLAN.md`** for a subsystem's engineering plan — same name across subsystems (`api/PLAN.md`,
   `web-app/PLAN.md`), not verbose variants like `IMPLEMENTATION_PLAN.md`.
 - Put the doc in the folder that matches its audience (§1), not next to the code.
@@ -96,7 +103,7 @@ Rules that fall out of this:
 - **Outline on top only for big or shipped docs.** Add a linked heading list when a doc exceeds ~150 lines or
   ~6 top-level sections, or when it ships to DOCX (specs — Word has no auto-outline). Editors already render an
   outline from headings, so **skip a hand-written one on slim docs** (`docs/planning/`, anything ≲1 screen) —
-  a manual TOC just rots. For `PROJECT_CONTEXT.md` an outline is an **agent-navigation aid only**, not polish.
+  a manual TOC just rots. For the project context an outline is an **agent-navigation aid only**, not polish.
 - Convert relative dates to absolute (`2026-07-21`, not "last week").
 - Cross-link related docs inline with relative Markdown links; don't restate their content.
 - No filler, no throat-clearing, no restating the obvious. If a section isn't earning its length, cut it.
@@ -111,7 +118,7 @@ Follow `docs/planning/DOC_GENERATION_PLAYBOOK.md`. Core rules:
   **Gaps** (needs upstream input — stub/omit), **Optional inputs** (sharpen, never block).
 - **V-model pairings:** SWE.3 ↔ SWE.4, SWE.2 ↔ SWE.5.
 - Requirements-traceability IDs (Polarion / SWE.1) aren't available yet — **defer** those fields.
-- DOCX is the shipped format — see PROJECT_CONTEXT.md for the export pipeline; keep generated structure
+- DOCX is the shipped format — see `project-context/VIEWS_AND_EXPORT.md` for the export pipeline; keep generated structure
   compatible with it.
 
 ## 6. Plan & spec templates — every doc-type follows the same skeleton
@@ -154,5 +161,5 @@ REQ IDs: `REQ-<2–3-letter feature>-NN` (e.g. `REQ-IT-04`, `REQ-TC-02`). One re
 
 - Right folder + right register for the audience? (§1–§2)
 - Anything here already stated elsewhere? Link instead. (one-fact-one-home)
-- Did an engineering change happen? Update `PROJECT_CONTEXT.md`.
+- Did an engineering change happen? Update the project context — the topic file and a dated history entry.
 - Is it as short as it can be while still complete? If not, cut.

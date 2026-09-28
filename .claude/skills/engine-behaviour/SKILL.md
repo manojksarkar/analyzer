@@ -19,7 +19,8 @@ units/components** (one diagram per external caller), plus the LLM call-descript
 > renders PNG via `mmdc` · **not** the behaviour-*name* derivation (that's `engine-dev`).
 
 Start context (read as needed, don't duplicate here):
-- **Deep detail / how it plugs into the pipeline** → root [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md), and `engine-dev`.
+- **Deep detail / how it plugs into the pipeline** → root [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) (the index;
+  Phase 3 views are §12 in [VIEWS_AND_EXPORT.md](project-context/VIEWS_AND_EXPORT.md)), and `engine-dev`.
 - The package is self-describing — start at [generator.py](engine/behaviour_diagram/generator.py) and the
   view [views/behaviour_diagram.py](engine/views/behaviour_diagram.py).
 
@@ -70,5 +71,6 @@ Start context (read as needed, don't duplicate here):
 - Description change? It flows through `CallDescriptionGenerator` (this package's LLM path), not the main enrichment.
 - Changed a row's fields or how its description is built? A reviewer's correction must still land —
   `pytest tests/unit/test_review_behaviour_save.py tests/unit/test_review_phase3_overrides.py`.
-- Meaningful change? Update PROJECT_CONTEXT.md — pair with `docs-maintainer`.
+- Meaningful change? Update the project context (`project-context/`: topic file + dated history entry) — pair
+  with `docs-maintainer`.
 - Touching behaviour-*name* derivation, the model schema, or the DOCX exporter? That's `engine-dev`.

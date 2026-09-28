@@ -2,10 +2,14 @@
 
 ## READ FIRST — before any work in this repo
 
-Read the full project context file before answering questions or making changes:
+The project context is an index plus a folder, split so that every file fits in one read:
 
-**`PROJECT_CONTEXT.md`** (repo root)
+- **`PROJECT_CONTEXT.md`** (repo root) — the index: current state, how to read the rest, and which file
+  holds what. It is imported at the end of this file, so it is already loaded: follow its reading guide.
+- **`project-context/`** — the detail: topic files (architecture, each pipeline phase, CLI and config,
+  incremental generation, API and frontend, risks and decisions) and the dated history of every change.
+  Before you change an area, read its topic file whole.
 
-It contains everything: pipeline phases, model schema, CLI flags, config structure, all views, DOCX export, LLM integration, known risks, design decisions, past mistakes, and test fixture details.
+Do not rely on memory or assumptions — read the files. They are kept up to date after every meaningful change.
 
-Do not rely on memory or assumptions — read the file. It is kept up to date after every meaningful change.
+@PROJECT_CONTEXT.md

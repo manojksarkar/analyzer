@@ -21,7 +21,8 @@ removed when the web app landed.)
 
 ## Documentation
 
-Deep engineering context (agent-facing, start here): **[PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)**.
+Deep engineering context (agent-facing, start here): **[PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)** — the index into
+[project-context/](project-context/) (topic files and the dated history).
 
 - **Architecture** — [DESIGN.md](docs/design/DESIGN.md) (model format, config, logic flow, DOCX export) · [review & update](docs/design/REVIEW_UPDATE_DESIGN.md) · [review & update — merge handover](docs/design/REVIEW_UPDATE_HANDOVER.md)
 - **Database** — [DB_SCHEMA.md](docs/design/DB_SCHEMA.md) (ER diagrams + debugging query cookbook) · [zoomable viewer](docs/design/schema-atlas.html) (offline HTML, pan/zoom diagrams)
