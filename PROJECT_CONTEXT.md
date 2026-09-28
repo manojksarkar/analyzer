@@ -208,6 +208,60 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-29 (**The web app works end to end on develop again — branch `ui_v2`, cut from develop
+> `5542736`; local commits only, NOT pushed, NOT merged (user reviews first).** Verified in a headless browser
+> (puppeteer) against the real API on PostgreSQL — scratch database `analyzer_ui` on the local cluster, the API
+> pointed at it with `DATABASE_URL`: wizard → project → Run Analysis → a real run (~1 h 50 min, LLM on local
+> Ollama) → 13 documents, all 71 diagram PNGs load, DOCX + Download All ZIP, a layer/group-scoped run (4 min,
+> LLM cache warm), Compare across the two versions, claim/approve/invite/sign-out/token refresh, admin + dev.
+>
+> **Was broken on develop, now fixed:**
+> - **Every web-app run failed at once**: the runner spawned the retired `engine/incremental/*.py` ("This is not a
+>   command any more", exit 2). Ported from `review_update_v2` byte-for-byte (`_generate_cmd`, `_elapsed_since`,
+>   `_progress`, `_stop_tree`, 409 `NO_ARCHITECTURE`) in its own commit `0a2f7e5`. Cherry-picked `314860b`
+>   (documents of a layer-qualified run get registered) and `dbe679f` (a job's baseline is the project's own
+>   version); NOT `6d0dc50` (it needs review_update_v2's re-export-as-a-job).
+> - A failed or cancelled run left its draft version on PostgreSQL (`analysis_jobs.version_id` FK refused the
+>   delete; swallowed) → the empty draft became the Subbar default and held the name. `_release_draft_version`
+>   detaches the job first; cancelling a job no thread runs (`job_alive`) cleans up in the route.
+> - Invites: an unknown email → 500 (FK to `users`); Resend / re-invite → 500 (unique project+user). Now 404
+>   `USER_NOT_FOUND`, 409 `ALREADY_MEMBER`, Resend refreshes the pending row.
+> - A 500 had no CORS headers (ServerErrorMiddleware sits outside CORSMiddleware) → the browser showed "Failed to
+>   fetch"; the global handler echoes the origin. Export ZIP entries named `doc.name` collided across layers → the
+>   DOCX file name. Project delete left `job_functions` rows (no FK) and `workspaces/<pid>/` → both removed; a
+>   delete is refused (409 `JOB_RUNNING`) while a live run exists. `phase_pct` was never set and the ETA was a
+>   fixed guess → `_count_progress` reads the engine's `[n/N]` item counter.
+> - UI: sidebar role always "Dev" (dead global `user.role`); once a version existed there was no way to start
+>   another run → Subbar action slot (`components/shell/SubbarCta.tsx`) with RUN ANALYSIS (Overview) and
+>   DOWNLOAD ALL (Documents); a failed run was invisible → banner with `error_message`; the Layer/Group filter
+>   sent `layer_filter`, which `_generate_cmd` ignores → `scope` with layer-qualified group ids; "pause after
+>   Phase 1" did nothing (the runner ignores it) → disabled; Function Visibility and Last Actions showed mockup
+>   data → real counts, and runs + versions; Versions "View docs"/"Compare" ignored the clicked version and a
+>   `draft` read "Approved"; a failed download was silent, and downloads did not refresh an expired token;
+>   Compare counted "10 changed of 3" (removed documents missing from All).
+>
+> **Found, not fixed** — decisions or backend work, listed in `web-app/PLAN.md` "Remaining": function hiding is
+> three disconnected stores (`job_functions` / `entity_versions.is_visible` / the exporter's `hidden`); nothing
+> creates an account and a pending invite never activates; a scoped run's version holds only its scope, so
+> Compare shows the rest as removed; a tag is an empty draft no run fills; a job left `running` by an API restart
+> stays so until cancelled; `stale` is never set. Engine: `core/db._enforce_sqlite_foreign_keys` listens on the
+> SQLAlchemy `Engine` CLASS, so once a process made a SQLite engine every PostgreSQL connection also gets
+> `PRAGMA foreign_keys=ON` and fails to connect (processes mixing both, e.g. test runs). Unrelated, pre-existing:
+> `tests/unit/test_doccheck_swe4.py` fails on the local `workspaces/longdecl-ab` data; ~250 leftover
+> `workspaces/p*` folders (131 MB) from past runs, left alone.
+>
+> **Tests:** new `tests/api/test_{unfinished_run_frees_its_version,team_invite,server_error_reaches_the_browser,
+> export_all_names,delete_project_cleans_up}.py`, `tests/unit/test_runner_progress_counter.py`,
+> `web-app/src/services/mappers/__tests__/version.test.ts`; ported `test_api_generation_command.py`,
+> `test_runner_never_hangs.py`, `test_start_job_needs_architecture.py`. **Trap:** in `tests/api` an
+> un-overridden `get_db()` is the REAL database of `config.local.json` — never `app.dependency_overrides.clear()`
+> (it happened once tonight; no damage, that database has no `u1`).
+>
+> **Merging after review_update_v2:** the conflict surface is `api/services/pipeline_runner.py` (the ported
+> functions are identical; `_release_draft_version`, `job_alive`, `_count_progress` are new around them),
+> `api/routes/jobs.py` (NO_ARCHITECTURE identical; cancel cleanup new) and
+> `tests/unit/test_data_dictionary_materialise.py` (identical).)
+
 > Updated: 2026-09-26 (**doccheck v2 — five levels, P1–P4 priorities, one report for every check** —
 > branch `fix/swe3-header-class-and-protected-direction` (NOT committed; user reviews first). `tools/doccheck/` all modules; tests `tests/unit/test_doccheck_*.py` + `doccheck_scenarios.py`.)
 >
