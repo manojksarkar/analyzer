@@ -55,6 +55,7 @@ _job_logs: dict[str, deque] = {}        # recent log lines (ring buffer)
 _job_log_totals: dict[str, int] = {}    # monotonic line count (for SSE cursor)
 _job_procs: dict[str, subprocess.Popen] = {}
 _job_resume_events: dict[str, threading.Event] = {}
+_job_threads: dict[str, threading.Thread] = {}   # see job_alive
 _LOG_MAX = 500
 
 # Concurrency semaphore — lazily initialised from JOB_MAX_CONCURRENCY setting.
@@ -114,7 +115,17 @@ def _elapsed_since(started_at: Optional[datetime], now: Optional[datetime] = Non
 def start(db: Any, job_id: str) -> None:
     """Kick off the real pipeline on a daemon thread (returns immediately)."""
     t = threading.Thread(target=_run, args=(db, job_id), daemon=True, name=f"job-{job_id}")
+    with _LOCK:
+        _job_threads[job_id] = t
     t.start()
+
+
+def job_alive(job_id: str) -> bool:
+    """Whether THIS process is running that job. A row left `running` by a server that stopped
+    mid-run is not: no thread here will ever finish it, or clean up after it."""
+    with _LOCK:
+        t = _job_threads.get(job_id)
+    return t is not None and t.is_alive()
 
 
 def cancel_subprocess(job_id: str) -> None:
@@ -213,6 +224,7 @@ def _cleanup_state(job_id: str) -> None:
         _job_procs.pop(job_id, None)
         _job_resume_events.pop(job_id, None)
         _progress_warned.difference_update({k for k in _progress_warned if k[0] == job_id})
+        _job_threads.pop(job_id, None)
         # Keep logs so SSE can drain remaining lines after completion
 
 
@@ -366,14 +378,33 @@ def _mark_failed(db: Any, job_id: str, message: str) -> None:
         job.completed_at = _now()
         db.jobs.update(job)
         # drop the reserved (still-draft) version so its name is free for a retry
-        vid = getattr(job, "version_id", None)
-        if vid:
-            v = db.versions.get(vid)
-            if v is not None and getattr(v, "status", None) == "draft":
-                try:
-                    db.versions.delete(vid)
-                except Exception:               # best-effort cleanup
-                    pass
+        _release_draft_version(db, job)
+
+
+def _release_draft_version(db: Any, job: Any) -> None:
+    """Delete the draft version a job reserved and did not finish, so its name is free again.
+
+    `analysis_jobs.version_id` is a foreign key to `versions.id` with no ON DELETE, so PostgreSQL
+    refused to delete the version while its own job still pointed at it -- and the refusal was
+    swallowed as best-effort cleanup. Every failed or cancelled run left an empty draft behind as
+    the project's newest version: the Subbar showed it by default instead of the last good one,
+    the Versions page listed it, and its name could not be used for the retry. The job is
+    detached first; its `version_tag` still names what it was generating. The engine's
+    per-version rows go with the version (ON DELETE CASCADE).
+    """
+    vid = getattr(job, "version_id", None)
+    if not vid:
+        return
+    v = db.versions.get(vid)
+    if v is None or getattr(v, "status", None) != "draft":
+        return
+    job.version_id = None
+    db.jobs.update(job)
+    try:
+        db.versions.delete(vid)
+    except Exception as exc:                                  # noqa: BLE001 - logged, not fatal
+        _log.warning("job %s: could not delete its unfinished draft version %s: %s: %s",
+                     job.id, vid, type(exc).__name__, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -387,6 +418,14 @@ def _run(db: Any, job_id: str) -> None:
     except Exception as exc:
         _mark_failed(db, job_id, f"Runner error: {exc}")
     finally:
+        # A cancelled run's draft goes too -- here, once the subprocess has exited, not in the
+        # cancel route while the engine may still be writing rows under that version.
+        try:
+            job = db.jobs.get(job_id)
+            if job is not None and job.status == "cancelled":
+                _release_draft_version(db, job)
+        except Exception as exc:                              # noqa: BLE001 - cleanup only
+            _log.warning("job %s: draft cleanup after cancel failed: %s", job_id, exc)
         _cleanup_state(job_id)
 
 

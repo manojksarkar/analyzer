@@ -183,7 +183,8 @@ def start_job(
     # Reserve the version row (status 'draft') BEFORE inserting the job: analysis_jobs.version_id
     # is a FK to versions.id, so the job may only reference a version that already exists. The
     # engine writes its per-version rows under this same id, _make_version finalizes it at
-    # completion, and _mark_failed deletes the draft on failure — so a failed run leaves no orphan.
+    # completion, and a failed or cancelled run deletes its draft (_release_draft_version) — so it
+    # leaves no orphan.
     pipeline_runner._reserve_version(db, job, project)
     try:
         db.jobs.create(job)
@@ -267,6 +268,10 @@ def cancel_job(
     job.completed_at = datetime.now(UTC)
     db.jobs.update(job)
     pipeline_runner.cancel_subprocess(job_id)
+    if not pipeline_runner.job_alive(job_id):
+        # Nothing here is running it -- a job left `running` by a server that stopped mid-run --
+        # so no runner thread will delete its unfinished draft version. Do it now.
+        pipeline_runner._release_draft_version(db, job)
     return {"job": _job_dict(job)}
 
 
