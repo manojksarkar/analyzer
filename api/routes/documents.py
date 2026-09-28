@@ -403,7 +403,10 @@ def download_export_all(
             out_root = doc_render.commit_output_root(project_id, version.commit_sha, version.id) if version else None
             docx = doc_render.find_docx(doc.group, out_root)
             if docx is not None:
-                zf.write(docx, arcname=f"{doc.name}.docx")
+                # The DOCX's own name carries the layer-qualified component id, so it is unique.
+                # `doc.name` is not: two layers with a component of the same name wrote two
+                # entries with one name, and unzipping kept only one of them.
+                zf.write(docx, arcname=docx.name)
                 added += 1
 
     if added == 0:
