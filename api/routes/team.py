@@ -4,14 +4,14 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ..db.session import get_db
 from ..db.in_memory import InMemoryDatabase
 from ..middleware.auth import get_current_user, require_project_admin, require_project_member
 from ..models.domain import User, ProjectMember
-from ..services.errors import not_found
+from ..services.errors import conflict, not_found
 
 router = APIRouter(tags=["team"])
 UTC = timezone.utc
@@ -89,24 +89,46 @@ def invite_member(
     if not db.projects.get(project_id):
         raise not_found("Project", project_id)
     require_project_admin(project_id, current_user, db)
-    invited_user = db.users.get_by_email(body.email)
+    email = body.email.strip()
+    invited_user = db.users.get_by_email(email)
+    if invited_user is None:
+        # A membership row references users.id, and nothing creates an account for an address.
+        # An unknown address used to be stored under a made-up id ("pending_<email>"), which the
+        # in-memory seam accepted and the database refused: a 500 for every such invite.
+        raise HTTPException(status_code=404, detail={
+            "code": "USER_NOT_FOUND",
+            "message": f"No user account uses {email}. Only people who already have an "
+                       f"account can be invited to a project.",
+            "status": 404})
     now = datetime.now(UTC)
-    member = ProjectMember(
-        id=f"m{uuid.uuid4().hex[:8]}",
-        project_id=project_id,
-        user_id=invited_user.id if invited_user else f"pending_{body.email}",
-        role=body.role,
-        status="pending",
-        invited_by=current_user.id,
-        invited_at=now,
-        joined_at=None,
-    )
-    db.members.add_member(member)
+    member = db.members.get_member(project_id, invited_user.id)
+    if member is not None and member.status == "active":
+        raise conflict("ALREADY_MEMBER",
+                       f"{invited_user.name} ({email}) is already a member of this project.")
+    if member is not None:
+        # Invited again ("Resend"): refresh the one pending row. (project, user) is unique, so
+        # adding a second row was a 500 too.
+        member.role = body.role
+        member.invited_by = current_user.id
+        member.invited_at = now
+        db.members.update_member(member)
+    else:
+        member = ProjectMember(
+            id=f"m{uuid.uuid4().hex[:8]}",
+            project_id=project_id,
+            user_id=invited_user.id,
+            role=body.role,
+            status="pending",
+            invited_by=current_user.id,
+            invited_at=now,
+            joined_at=None,
+        )
+        db.members.add_member(member)
     return {
         "invite": {
             "id": member.id,
-            "email": body.email,
-            "role": body.role,
+            "email": email,
+            "role": member.role,
             "status": "pending",
         }
     }
