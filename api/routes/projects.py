@@ -128,11 +128,14 @@ def preview_config(
     url = (body.repo_url or "").strip()
     if url:
         try:
-            repo_dir = str(repo_git._clone_or_reuse(url, (body.branch or "").strip() or None,
-                                                    body.access_token, blobless=True))
-            tree = git_cli.list_tree(repo_dir, "HEAD")
+            # The branch as it is now: a reused clone is refreshed, and read at the fetched tip.
+            branch = (body.branch or "").strip() or None
+            clone = repo_git._clone_or_reuse(url, branch, body.access_token, blobless=True,
+                                             refresh=True)
+            repo_dir, tip = str(clone), repo_git.tree_ref(clone, branch)
+            tree = git_cli.list_tree(repo_dir, tip)
             creds = repo_git._creds(body.access_token)
-            read_file = lambda path: git_cli.read_file(repo_dir, path, url, *creds)  # noqa: E731
+            read_file = lambda path: git_cli.read_file(repo_dir, path, url, *creds, ref=tip)  # noqa: E731
         except git_cli.GitError as exc:
             note = (f"The repository could not be read ({repo_git._friendly(str(exc))}), so "
                     f"paths were not checked.")
@@ -140,7 +143,7 @@ def preview_config(
         cfg, tree_nodes=tree, read_file=read_file,
         store_file=lambda data, name, kind: store_upload(data, name, kind, current_user.id))
     if note:
-        result["report"].insert(0, {"level": "check", "text": note})
+        result["report"].insert(0, {"level": "check", "text": note, "topic": "repository"})
     return result
 
 

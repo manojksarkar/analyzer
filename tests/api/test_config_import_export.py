@@ -238,3 +238,32 @@ class TestRoutes:
         assert back["architecture_layers"][0]["groups"][0]["components"][0]["files"] == \
             ["Layer1/Sample/Lib/Lib.cpp", "Layer1/Sample/Lib/Lib.h"]
         assert back["settings"] == {"views": {"flowcharts": True}}
+
+
+class TestTheWizardKnowsWhatEachItemIsAbout:
+    def test_each_report_item_names_its_part_of_the_wizard(self):
+        r = pc.preview(pc.parse(CONFIG))
+        topic = {i["text"].split(":")[0]: i["topic"] for i in r["report"]}
+        assert topic["Project"] == "project" and topic["Architecture"] == "architecture"
+        assert topic["Preprocessor definitions"] == "files"
+        assert topic["Compiler settings"] == "settings"
+        assert {i["topic"] for i in r["report"]} <= {"project", "architecture", "files",
+                                                    "settings", "other"}
+
+
+class TestLayerPaths:
+    def _preview(self, text):
+        return pc.preview(pc.parse(text), tree_nodes=TREE, read_file=lambda p: None,
+                          store_file=lambda *a: {"id": "x", "file_name": "x", "size": 0})
+
+    def test_a_layer_path_in_another_case_takes_the_repositorys_spelling(self):
+        r = self._preview(CONFIG.replace('"path": "Layer1"', '"path": "layer1"'))
+        layer = r["draft"]["architecture_layers"][0]
+        assert layer["path"] == "Layer1"
+        assert layer["groups"][0]["components"][0]["files"] == ["Layer1/Sample/Core"]
+
+    def test_a_layer_whose_path_is_not_there_is_left_out_whole(self):
+        r = self._preview(CONFIG.replace('"path": "Layer1"', '"path": "Nowhere"'))
+        assert r["draft"]["architecture_layers"] == []
+        assert any("layer Layer1 (its path `Nowhere` is not a folder there)" in t
+                   for t in _texts(r, "check"))

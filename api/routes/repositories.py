@@ -97,13 +97,15 @@ def browse(
     ref: Optional[str] = Query(None, description="Branch / ref to browse"),
     path: str = Query("", description="Repo-root-relative folder path"),
     access_token: Optional[str] = Query(None, description="Token for private repos"),
+    refresh: bool = Query(False, description="Fetch the branch's current tip first"),
     current_user: User = Depends(get_current_user),
 ):
-    """Browse the repository source tree rooted at ``path`` (real depth-1 clone)."""
+    """Browse the repository source tree rooted at ``path`` (real depth-1 clone). With
+    ``refresh`` the cached clone is brought up to the branch's current tip first."""
     if not (repo_url or "").strip():
         raise bad_request("A repository URL is required to browse.")
     try:
-        return repo_git.browse(repo_url, ref, path, access_token)
+        return repo_git.browse(repo_url, ref, path, access_token, refresh=refresh)
     except repo_git.git_cli.GitError as exc:
         raise bad_request(repo_git._friendly(str(exc)))
 

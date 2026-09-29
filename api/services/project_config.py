@@ -124,12 +124,14 @@ def preview(cfg: dict, *, tree_nodes: Optional[list] = None,
     taken as written, and the files are left for the user to upload.
 
     Returns `{draft, expected_uploads, report, repository_checked}`; each report item is
-    `{level: filled | check | skipped, text}`.
+    `{level: filled | check | skipped, text, topic}`. The topic - project, architecture, files,
+    settings, other - says which part of the wizard an item is about: once the user has changed
+    the architecture, the wizard keeps its architecture items and takes the rest from a new check.
     """
     report: list = []
 
-    def say(level: str, text: str) -> None:
-        report.append({"level": level, "text": text})
+    def say(level: str, text: str, topic: str = "other") -> None:
+        report.append({"level": level, "text": text, "topic": topic})
 
     tree = _RepoTree(tree_nodes) if tree_nodes is not None else None
     draft: dict = {"name": None, "repo_url": None, "branch": None, "architecture_layers": [],
@@ -138,16 +140,18 @@ def preview(cfg: dict, *, tree_nodes: Optional[list] = None,
 
     defines = _read_project(cfg.get("project"), draft, say)
     if any(k in cfg for k in _TOKEN_KEYS):
-        say(SKIPPED, _TOKEN_MESSAGE)
-    _read_layers(cfg, draft, tree, say)
-    _read_cores(cfg, draft, expected, tree, read_file, store_file, say)
+        say(SKIPPED, _TOKEN_MESSAGE, "project")
+    _read_layers(cfg, draft, tree, lambda level, text: say(level, text, "architecture"))
+    _read_cores(cfg, draft, expected, tree, read_file, store_file,
+                lambda level, text: say(level, text, "files"))
     if defines and draft["definitions"] is None and expected["definitions"] is None:
         draft["definitions"] = {"mode": "manual", "defines": defines}
-        say(FILLED, f"Preprocessor definitions: {len(defines)} typed in (`project.defines`).")
+        say(FILLED, f"Preprocessor definitions: {len(defines)} typed in (`project.defines`).",
+            "files")
     elif defines:
         say(SKIPPED, "`project.defines` was not used: the file also names a definitions file, "
-                     "and a project has one or the other.")
-    _read_settings(cfg, draft, say)
+                     "and a project has one or the other.", "files")
+    _read_settings(cfg, draft, lambda level, text: say(level, text, "settings"))
     for key in cfg:
         if key not in _KNOWN and key not in _TOKEN_KEYS and not str(key).startswith("_"):
             say(SKIPPED, f"`{key}` is not a config section, so it was not read.")
@@ -160,7 +164,7 @@ def _read_project(block: Any, draft: dict, say) -> list:
     if block is None:
         return []
     if not isinstance(block, dict):
-        say(SKIPPED, "`project` should be an object, so it was not read.")
+        say(SKIPPED, "`project` should be an object, so it was not read.", "project")
         return []
     got = []
     for key, field in (("name", "name"), ("repository", "repo_url"), ("branch", "branch")):
@@ -169,9 +173,9 @@ def _read_project(block: Any, draft: dict, say) -> list:
             draft[field] = value.strip()
             got.append(key)
     if got:
-        say(FILLED, f"Project: {', '.join(got)}.")
+        say(FILLED, f"Project: {', '.join(got)}.", "project")
     if any(k in block for k in _TOKEN_KEYS):
-        say(SKIPPED, _TOKEN_MESSAGE)
+        say(SKIPPED, _TOKEN_MESSAGE, "project")
     raw = block.get("defines")
     return [str(d).strip() for d in raw if str(d).strip()] if isinstance(raw, list) else []
 
@@ -197,8 +201,13 @@ def _read_layers(cfg: dict, draft: dict, tree: Optional[_RepoTree], say) -> None
             say(SKIPPED, f"Layer `{lname}` is not an object, so it was not read.")
             continue
         lpath = _norm(str(lcfg.get("path") or lname))
-        if tree is not None and lpath and lpath != "." and tree.find(lpath) is None:
-            missing.append(f"layer {lname}: `{lpath}`")
+        if tree is not None and lpath and lpath != ".":
+            actual = tree.find(lpath)
+            if actual is None or actual not in tree.folders:
+                # Every component path starts with it, so none of them can be there either.
+                missing.append(f"layer {lname} (its path `{lpath}` is not a folder there)")
+                continue
+            lpath = actual
         groups = []
         for gname, comps in (lcfg.get("groups") or {}).items():
             if not isinstance(comps, dict):
@@ -223,8 +232,8 @@ def _read_layers(cfg: dict, draft: dict, tree: Optional[_RepoTree], say) -> None
                     if full not in files:
                         files.append(full)
                 if absent and not files:
-                    # None of its paths exists: a component with no files would only produce an
-                    # empty document, so it is left out rather than kept as a husk.
+                    # None of its paths exists: a component with no files stops every run of the
+                    # project before the parse, so it is left out rather than kept as a husk.
                     missing.append(f"{lname} / {gname} / {cname} (none of its paths: {', '.join(absent)})")
                     continue
                 missing.extend(f"{lname} / {gname} / {cname}: {a}" for a in absent)

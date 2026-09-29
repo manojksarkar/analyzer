@@ -149,16 +149,20 @@ def fetch(
 ) -> None:
     """Update a cached shallow clone's ``origin/<ref>`` to the current remote tip.
 
-    Fetches straight from the credential-injected URL (not the clone's
-    credential-free ``origin``), so private repos keep working without
+    Fetches from ``origin`` with the credential-injected URL supplied for this one
+    command (``-c remote.origin.url=...``), so private repos keep working without
     persisting the token, and stays shallow (``--depth``) to match the clone.
-    Without this a reused clone is frozen at clone time and newly-pushed commits
-    never appear. Raises GitError on failure."""
+    Through ``origin`` - not the bare URL - because a blobless clone's filter belongs
+    to that remote: fetching the URL downloaded the content of every file the new
+    commits added or changed. Without
+    this a reused clone is frozen at clone time and newly-pushed commits never
+    appear. Raises GitError on failure."""
     branch = (ref or "").strip()
     if not branch:
         return
     auth = _auth_url(clone_url, username, token)
-    proc = _run(["-C", repo_dir, "fetch", "--depth", str(int(depth)), auth,
+    proc = _run(["-C", repo_dir, "-c", f"remote.origin.url={auth}", "fetch",
+                 "--depth", str(int(depth)), "origin",
                  f"+refs/heads/{branch}:refs/remotes/origin/{branch}"])
     if proc.returncode != 0:
         msg = proc.stderr.strip().replace(auth, _clean_url(clone_url))
@@ -185,6 +189,12 @@ def read_file(
     if proc.returncode != 0 or len(proc.stdout) > max_bytes:
         return None
     return proc.stdout
+
+
+def has_ref(repo_dir: str, ref: str) -> bool:
+    """Whether ``ref`` names a commit in the clone."""
+    return _run(["-C", repo_dir, "rev-parse", "--verify", "--quiet",
+                 f"{ref}^{{commit}}"]).returncode == 0
 
 
 def list_tree(repo_dir: str, ref: str = "HEAD") -> List[Dict]:
