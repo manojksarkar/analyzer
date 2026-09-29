@@ -280,12 +280,16 @@ class TestOverrideState:
         assert row["humanText"] == "Corrected."
         assert row["llmText"] == "Does the thing."
 
-    def test_an_uncorrected_slot_has_no_llm_text(self, conn, models):
-        """`llmText` is the captured ORIGINAL, which only exists once someone has edited."""
+    def test_an_uncorrected_slot_carries_its_llm_text(self, conn, models):
+        """`llmText` means one thing everywhere: what the LLM wrote for this slot. Nobody has
+        corrected it, so that is what the document prints (`REQ-API-09`). It used to be null
+        until a first edit here, and filled in R3's answer."""
         row = next(i for i in catalog.list_slots(conn, "v1", slot.DESCRIPTION,
                                                  models=models).items
                    if i["slotKey"] == FN)
-        assert row["llmText"] is None and row["isOverridden"] is False
+        assert row["llmText"] == row["text"] == "Does the thing."
+        assert row["isOverridden"] is False and row["humanText"] is None
+        assert row["canUndo"] is False and row["updatedAt"] is None
 
     def test_an_orphan_is_shown_as_one(self, conn, models):
         _override(conn, slot.DESCRIPTION, FN, orphaned=True)
@@ -451,6 +455,85 @@ class TestBehaviourRows:
         assert row["humanText"] == "one\ntwo"
 
 
+class TestOneShapeForASlot:
+    """`slot_view` (`REQ-API-09`): the fields every route gives a slot, whatever its kind."""
+
+    FIELDS = {"slotKind", "slotKey", "text", "llmText", "humanText", "isOverridden",
+              "isOrphaned", "canUndo", "updatedBy", "updatedAt"}
+
+    class _Row:
+        def __init__(self, llm, human, orphaned=False):
+            import datetime
+            self.llm_text, self.human_text, self.is_orphaned = llm, human, orphaned
+            self.updated_by = "u1"
+            self.updated_at = datetime.datetime(2026, 1, 1)
+
+    def test_every_kind_has_the_same_fields(self):
+        for kind in slot.ALL_KINDS:
+            parts = {n: "Comp|UnitA|f|" if n != "node_id" else "n1" for n in slot.parts_for(kind)}
+            key = slot.make(kind, **parts)
+            assert self.FIELDS <= set(catalog.slot_view(kind, key, "t", None)), kind
+
+    def test_a_node_label_says_where_it_is(self):
+        v = catalog.slot_view(slot.NODE_LABEL, slot.for_node("C|U|f|", "n7"), "Check", None)
+        assert (v["flowchartId"], v["nodeId"]) == ("C|U|f|", "n7")
+
+    def test_a_behaviour_row_says_where_it_is_and_lists_its_bullets(self):
+        key = slot.for_behaviour_row("C|U|f|", "D|V|g|")
+        v = catalog.slot_view(slot.BEHAVIOUR_DESCRIPTION, key, "one\ntwo", None)
+        assert (v["functionId"], v["externalCallerId"]) == ("C|U|f|", "D|V|g|")
+        assert v["bullets"] == ["one", "two"]
+
+    def test_undo_is_offered_only_where_it_would_change_the_text(self):
+        view = catalog.slot_view
+        assert view(slot.DESCRIPTION, FN, "Human.", self._Row("LLM.", "Human."))["canUndo"]
+        assert not view(slot.DESCRIPTION, FN, "LLM.", None)["canUndo"]               # none
+        assert not view(slot.DESCRIPTION, FN, "LLM.", self._Row("LLM.", "LLM."))["canUndo"]
+        assert not view(slot.DESCRIPTION, FN, "Human.", self._Row(None, "Human."))["canUndo"]
+        assert not view(slot.DESCRIPTION, FN, "New.", self._Row("Old.", "H.", True))["canUndo"]
+
+    def test_an_empty_slot_has_no_llm_text(self):
+        """The one case `llmText` is null: the LLM wrote nothing -- which is also why an undo of
+        the first correction there is refused."""
+        assert catalog.slot_view(slot.DESCRIPTION, FN, "", None)["llmText"] is None
+        assert catalog.slot_view(slot.DESCRIPTION, FN, "Human.",
+                                 self._Row("", "Human."))["llmText"] is None
+
+
+class TestReadingAnySlot:
+    """`slot_views` / `texts_in_force`: what R1 and R2 read -- the text from where the document
+    reads it, for any slot, corrected or not."""
+
+    def test_a_description_reads_from_the_model(self, conn, models):
+        (v,) = catalog.slot_views(conn, "v1", [(slot.DESCRIPTION, FN)], models)
+        assert v["text"] == "Does the thing." and v["isOverridden"] is False
+
+    def test_a_slot_that_is_not_there_is_none(self, conn, models):
+        assert catalog.slot_views(conn, "v1", [(slot.DESCRIPTION, "C|U|gone|")], models) == [None]
+
+    def test_an_orphan_of_a_slot_that_left_is_still_shown(self, conn, models):
+        """Its record is the reviewer's work: shown, with nothing printed."""
+        _override(conn, slot.DESCRIPTION, "C|U|gone|", orphaned=True)
+        (v,) = catalog.slot_views(conn, "v1", [(slot.DESCRIPTION, "C|U|gone|")], models)
+        assert v["text"] == "" and v["isOrphaned"] is True and v["humanText"] == "Corrected."
+
+    def test_node_labels_read_from_the_stored_flowchart(self, conn):
+        """More than a few flowcharts are found in one pass; a few, one by one -- same answer."""
+        fids = ["Comp|U%d|f|" % i for i in range(5)]
+        for i, fid in enumerate(fids):
+            conn.execute(sa.insert(s.version_output_files).values(
+                version_id="v1", rel_path="G/flowcharts/U%d.json" % i, group_name="G",
+                content=json.dumps([{"functionKey": fid, "cfg": {"nodes": [
+                    {"id": "n0", "label": "label %d" % i}]}}])))
+        many = catalog.slot_views(conn, "v1", [(slot.NODE_LABEL, slot.for_node(f, "n0"))
+                                               for f in fids])
+        few = catalog.slot_views(conn, "v1", [(slot.NODE_LABEL, slot.for_node(fids[3], "n0"))])
+        assert [v["text"] for v in many] == ["label %d" % i for i in range(5)]
+        assert few[0]["text"] == "label 3"
+        assert catalog.slot_views(conn, "v1", [(slot.NODE_LABEL,
+                                                slot.for_node(fids[0], "n9"))]) == [None]
+
+
 class TestEveryKindIsListable:
     def test_no_kind_raises(self, conn, models):
         """An eighth kind added without a branch here would be silently unlistable -- the
@@ -490,15 +573,20 @@ class TestAnOrphanIsNotInForce:
 
     def test_the_reviewers_words_stay_visible(self, conn, models):
         """Kept means visible -- as what it is, not as what is printed. Without `humanText` the
-        fix above would have made an orphan's work disappear from the listing entirely."""
+        fix above would have made an orphan's work disappear from the listing entirely.
+
+        `llmText` is the LLM's wording for the slot as it stands -- the fresh text for the new
+        code, which a new edit would capture as its original -- not the old code's original the
+        orphan was written against."""
         self._orphan(conn)
         row = self._row(conn, models)
         assert row["humanText"] == "Stale words for the OLD code."
-        assert row["llmText"] == "Old LLM text."
+        assert row["llmText"] == row["text"] == "Does the thing."
+        assert row["canUndo"] is False
 
     def test_an_uncorrected_slot_has_no_human_text(self, conn, models):
         row = self._row(conn, models)
-        assert row["humanText"] is None and row["llmText"] is None
+        assert row["humanText"] is None and row["llmText"] == "Does the thing."
 
 
 

@@ -236,16 +236,72 @@ def _latest_reexport(cx, version_id: str) -> Optional[Dict[str, Any]]:
             "errorMessage": r.error_message}
 
 
-def _row(r) -> Dict[str, Any]:
-    return {
-        "slotKind": r.slot_kind,
-        "slotKey": r.slot_key,
-        "llmText": r.llm_text,
-        "humanText": r.human_text,
-        "isOrphaned": bool(r.is_orphaned),
-        "updatedBy": r.updated_by,
-        "updatedAt": r.updated_at.isoformat() if r.updated_at else None,
-    }
+def _models_for(version_id: str, project_id: str, kinds):
+    """A `ModelAccess` when one of `kinds` lives in the model, else None -- a listing of node
+    labels or behaviour rows must not pay for a model read nobody asked for."""
+    from review import resolver as _resolver
+    if any(k in _resolver.MODEL_BACKED_KINDS for k in kinds):
+        return _service().ModelAccess(version_id=version_id, project_id=project_id)
+    return None
+
+
+def _saved(res, slot_kind: str, slot_key: str) -> Dict[str, Any]:
+    """What a save did, beside the slot as it now is -- the same four fields from R3, R4, R6 and
+    each node of R8 (`REQ-API-09`).
+
+    `previousText` is what the document printed before this save (`None` when it printed
+    nothing); `firstEdit` is true when the save started a correction rather than changing one in
+    force; `queuedForRegeneration` is what the save made out of date -- `[]` for the kinds that
+    cascade to nothing (`REQ-CS-01`).
+    """
+    from review import slot as slot_mod
+    svc = _service()
+    if isinstance(res, svc.FlowchartApplied):
+        node = slot_mod.parse(slot_mod.NODE_LABEL, slot_key)["node_id"]
+        previous, first, queued = (res.previous or {}).get(node), node in res.first_edits, ()
+    elif isinstance(res, svc.BehaviourApplied):
+        previous, first, queued = res.previous_text, res.first_edit, ()
+    else:
+        previous, first, queued = res.previous_text, res.first_edit, res.queued_for_regeneration
+    return {"previousText": previous or None, "firstEdit": bool(first),
+            "viewsDerived": list(res.views_derived or ()),
+            # What this correction invalidated. Returned so the UI can say that an edit changed
+            # something the reviewer did not touch, rather than letting it appear unannounced.
+            "queuedForRegeneration": [{"slotKind": k, "slotKey": v} for k, v in queued]}
+
+
+def _flowchart_entry(cx, version_id: str, flowchart_id: str):
+    """The stored flowchart entry of `flowchart_id` -- its CFG and its DOT -- or None."""
+    import json
+    from review import rerender
+    found = rerender.find_flowchart_row(cx, version_id, flowchart_id)
+    if not found:
+        return None
+    try:
+        entries = json.loads(found[2] or "[]")
+    except ValueError:
+        return None
+    return next((e for e in entries if isinstance(entries, list) and isinstance(e, dict)
+                 and e.get("functionKey") == flowchart_id), None)
+
+
+def _node_slots(cx, version_id: str, flowchart_id: str, entry, node_ids=None):
+    """The `Slot` of each node of a stored flowchart -- every node, or `node_ids` in that order.
+
+    `text` is the stored label: what the picture and the SWE.4 step carry. Only THIS flowchart's
+    corrections are read: paging the whole version (newest 1,000) dropped older corrections on the
+    flowchart being opened, and reported their nodes as uncorrected.
+    """
+    from review import catalog, slot as slot_mod
+    nodes = [n for n in ((entry or {}).get("cfg") or {}).get("nodes") or []
+             if isinstance(n, dict) and n.get("id")]
+    if node_ids is not None:
+        by_id = {str(n["id"]): n for n in nodes}
+        nodes = [by_id[n] for n in node_ids if n in by_id]
+    keys = [slot_mod.for_node(flowchart_id, str(n["id"])) for n in nodes]
+    rows = _service().overrides_by_key(cx, version_id, slot_mod.NODE_LABEL, keys)
+    return [catalog.slot_view(slot_mod.NODE_LABEL, k, n.get("label") or "", rows.get(k))
+            for k, n in zip(keys, nodes)]
 
 
 # ---------------------------------------------------------------------------
@@ -272,15 +328,21 @@ def list_overrides(
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
     svc = _service()
+    from review import catalog
     with _connection().connect() as cx:
         try:
             kind = slot_kind.value if slot_kind else None
             rows = svc.list_overrides(cx, version_id, slot_kind=kind,
                                       limit=limit, offset=offset)
             total = svc.count_overrides(cx, version_id, slot_kind=kind)
+            pairs = [(r.slot_kind, r.slot_key) for r in rows]
+            slots = catalog.slot_views(
+                cx, version_id, pairs,
+                _models_for(version_id, project_id, {k for k, _key in pairs}),
+                rows={(r.slot_kind, r.slot_key): r for r in rows})
         except Exception as exc:
             raise _as_http(exc)
-    return {"overrides": [_row(r) for r in rows], "total": total,
+    return {"overrides": [x for x in slots if x is not None], "total": total,
             "limit": limit, "offset": offset}
 
 
@@ -342,16 +404,25 @@ def get_slot(
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
-    """`REQ-API-02`. A query parameter, not a path segment: a slot key contains `|`, `:`, `,`,
-    `*`, spaces and a control character."""
+    """`REQ-API-02`. Any slot of the version, corrected or not, in the one `Slot` shape
+    (`REQ-API-09`) -- `isOverridden` says which. A query parameter, not a path segment: a slot key
+    contains `|`, `:`, `,`, `*`, spaces and a control character."""
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
-    key = _key(slot_kind.value, slot_key)
+    kind = slot_kind.value
+    key = _key(kind, slot_key)
+    from review import catalog
     with _connection().connect() as cx:
-        row = _service().get_override(cx, version_id, slot_kind.value, key)
-    if row is None:
-        raise HTTPException(status_code=404, detail="no override on that slot")
-    return _row(row)
+        try:
+            got = catalog.slot_views(cx, version_id, [(kind, key)],
+                                     _models_for(version_id, project_id, {kind}))[0]
+        except Exception as exc:
+            raise _as_http(exc)
+    if got is None:
+        raise HTTPException(status_code=404, detail=(
+            "no %s slot %r in version %s -- take the key from R11 (or R7 for a node label)"
+            % (kind, key, version_id)))
+    return got
 
 
 @router.get(
@@ -370,40 +441,15 @@ def get_flowchart_labels(
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
     flowchart_id = _flowchart_id(flowchart_id)
-    from review import rerender, slot as slot_mod
-
-    import json
-    from review.catalog import _state
     with _connection().connect() as cx:
-        found = rerender.find_flowchart_row(cx, version_id, flowchart_id)
-        if not found:
-            raise HTTPException(status_code=404, detail="no flowchart %s" % flowchart_id)
-        entry = next((e for e in json.loads(found[2])
-                      if e.get("functionKey") == flowchart_id), None)
+        entry = _flowchart_entry(cx, version_id, flowchart_id)
         if entry is None:
             raise HTTPException(status_code=404, detail="no flowchart %s" % flowchart_id)
-        nodes = [n for n in (entry.get("cfg") or {}).get("nodes") or []
-                 if isinstance(n, dict) and n.get("id")]
-        # Only THIS flowchart's keys. Paging the whole version (newest 1,000) dropped older
-        # corrections on the flowchart being opened, and reported their nodes as uncorrected.
-        overrides = _service().overrides_by_key(
-            cx, version_id, slot_mod.NODE_LABEL,
-            [slot_mod.for_node(flowchart_id, str(n["id"])) for n in nodes])
-
-    labels = []
-    for node in nodes:
-        nid = str(node.get("id"))
-        key = slot_mod.for_node(flowchart_id, nid)
-        labels.append({"nodeId": nid,
-                       # The key for THIS node, so undo (R4) and history (R5) work on a single
-                       # label without the caller assembling one. A node key is
-                       # `flowchartId + U+0001 + nodeId`, and `REQ-ID-01` says a key is built by
-                       # the server and never by hand -- so not returning it here left the UI
-                       # with a rule it could not follow.
-                       "slotKey": key,
-                       # `text` is the stored label: what the picture and the SWE.4 step carry.
-                       # The same rule as R11 decides the rest -- an orphan is not in force.
-                       **_state(overrides.get(key), node.get("label") or "")})
+        # Each node as a `Slot` -- with its own `slotKey`, so undo (R4) and history (R5) work on a
+        # single label without the caller assembling one: a node key is
+        # `flowchartId + U+0001 + nodeId`, and `REQ-ID-01` says a key is built by the server and
+        # never by hand.
+        labels = _node_slots(cx, version_id, flowchart_id, entry)
     # An empty list here is ambiguous on its own: it reads as "this flowchart has no nodes".
     # `cfg` has only been stored since 2026-09-01, so a version generated before that has the
     # picture and the DOT but not the graph -- and its labels cannot be corrected until it is
@@ -440,10 +486,12 @@ def update_slot(
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
-    """`REQ-API-03`. One slot per call, for the six kinds that are not a flowchart."""
+    """`REQ-API-03`. One slot per call, for the kinds that are not a flowchart or a behaviour
+    row. Answers the slot as it now is (`REQ-API-09`) and what the save did."""
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
     svc = _service()
+    from review import catalog
     with _connection().begin() as cx:          # one transaction, REQ-AP-02
         try:
             # The repository is built from (version, project): an API process has no
@@ -454,15 +502,11 @@ def update_slot(
                                      _key(body.slot_kind.value, body.slot_key), body.text,
                                      models=models, user_id=current_user.id,
                                      derive=_swe4_deriver(cx, models))
+            # Read back through the save's own model and connection: what the document prints now.
+            now = catalog.slot_views(cx, version_id, [(out.slot_kind, out.slot_key)], models)[0]
         except Exception as exc:
             raise _as_http(exc)
-    return {"slotKind": out.slot_kind, "slotKey": out.slot_key, "humanText": out.human_text,
-            "llmText": out.llm_text, "previousText": out.previous_text,
-            "firstEdit": out.first_edit, "viewsDerived": list(out.views_derived),
-            # What this correction invalidated. Returned so the UI can say that an edit changed
-            # something the reviewer did not touch, rather than letting it appear unannounced.
-            "queuedForRegeneration": [{"slotKind": k, "slotKey": v}
-                                      for k, v in out.queued_for_regeneration]}
+    return {**now, **_saved(out, out.slot_kind, out.slot_key)}
 
 
 @router.put(
@@ -492,16 +536,22 @@ def update_flowchart_labels(
             out = svc.apply_flowchart_overrides(cx, version_id, flowchart_id, dict(body.labels),
                                                 user_id=current_user.id,
                                                 derive=_swe4_deriver(cx, models))
+            # The saved nodes as they now are, read back from the flowchart the save rewrote --
+            # with the DOT it rebuilt, so the editor redraws without a second request.
+            entry = _flowchart_entry(cx, version_id, out.flowchart_id)
+            nodes = _node_slots(cx, version_id, out.flowchart_id, entry, list(out.applied))
         except Exception as exc:
             raise _as_http(exc)
-    return {"flowchartId": out.flowchart_id, "applied": list(out.applied),
-            "firstEdits": list(out.first_edits), "slotShape": out.slot_shape,
+    return {"flowchartId": out.flowchart_id,
+            "labels": [{**n, **_saved(out, n["slotKind"], n["slotKey"])} for n in nodes],
+            "viewsDerived": list(out.views_derived),
+            "queuedForRegeneration": [],
             # True while the picture is owed. The service decides it from the JOBS, not from
             # whether the stored DOT was rebuilt -- those are different facts, and conflating
             # them told the caller "no render pending" while the export blocked on one.
             "renderPending": out.render_pending,
             "renderJobs": list(out.render_jobs),
-            "viewsDerived": list(out.views_derived)}
+            "dot": (entry or {}).get("flowchart") or ""}
 
 
 @router.put(
@@ -514,19 +564,22 @@ def update_behaviour(
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
-    """`REQ-ED-02`. The bullet list is accepted and returned as a unit."""
+    """`REQ-ED-02`. The bullet list is accepted as a unit; the answer is the row as a `Slot`
+    (`REQ-API-09`) -- its bullets one per line in `text`, and as a list in `bullets`."""
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
     svc = _service()
+    from review import catalog, slot as slot_mod
     with _connection().begin() as cx:
         try:
             out = svc.apply_behaviour_override(cx, version_id, body.function_id,
                                                body.external_caller_id, list(body.bullets),
                                                user_id=current_user.id)
+            now = catalog.slot_views(cx, version_id,
+                                     [(slot_mod.BEHAVIOUR_DESCRIPTION, out.slot_key)])[0]
         except Exception as exc:
             raise _as_http(exc)
-    return {"slotKey": out.slot_key, "bullets": list(out.bullets), "llmText": out.llm_text,
-            "firstEdit": out.first_edit, "viewsDerived": list(out.views_derived)}
+    return {**now, **_saved(out, slot_mod.BEHAVIOUR_DESCRIPTION, out.slot_key)}
 
 
 @router.delete(
@@ -541,21 +594,30 @@ def undo_slot(
     db: InMemoryDatabase = Depends(get_db),
 ):
     """`REQ-API-04`. Restores the LLM's original wording. **The record survives** — undo is an
-    ordinary edit whose text happens to be the original, so both texts and the history remain."""
+    ordinary edit whose text happens to be the original, so both texts and the history remain.
+    Answers like a save (`REQ-API-09`): the slot as it now is, and what the undo did -- for a node
+    label also the picture's state and the rebuilt DOT, as R8 does."""
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
-    key = _key(slot_kind.value, slot_key)
+    kind = slot_kind.value
+    key = _key(kind, slot_key)
     svc = _service()
+    from review import catalog, slot as slot_mod
     with _connection().begin() as cx:
         try:
             models = svc.ModelAccess(version_id=version_id, project_id=project_id)
-            svc.undo_override(cx, version_id, slot_kind.value, key, models=models,
-                              user_id=current_user.id, derive=_swe4_deriver(cx, models))
-            row = svc.get_override(cx, version_id, slot_kind.value, key)
-            payload = _row(row) if row else None
+            out = svc.undo_override(cx, version_id, kind, key, models=models,
+                                    user_id=current_user.id, derive=_swe4_deriver(cx, models))
+            now = catalog.slot_views(cx, version_id, [(kind, key)], models)[0]
+            entry = (_flowchart_entry(cx, version_id, now["flowchartId"])
+                     if kind == slot_mod.NODE_LABEL else None)
         except Exception as exc:
             raise _as_http(exc)
-    return {"undone": True, "override": payload}
+    body = {**now, **_saved(out, kind, key)}
+    if kind == slot_mod.NODE_LABEL:
+        body.update({"renderPending": out.render_pending, "renderJobs": list(out.render_jobs),
+                     "dot": (entry or {}).get("flowchart") or ""})
+    return body
 
 
 @router.get(

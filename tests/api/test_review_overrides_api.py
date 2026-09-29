@@ -180,10 +180,21 @@ class TestUpdatingASlot:
                              "slot_key": slot.for_node(FID, "n1"), "text": "Words."})
         assert r.status_code == 501
 
-    def test_reading_a_slot_nobody_corrected_is_404(self, client, review_db, auth_header):
+    def test_a_slot_nobody_corrected_reads_as_uncorrected(self, client, review_db, auth_header):
+        """R2 reads a SLOT, not a correction (`REQ-API-02`): a 404 here used to mean "not
+        corrected yet", which a client had to treat as success."""
         r = client.get(BASE + "/overrides/slot", headers=auth_header,
                        params={"slot_kind": "description", "slot_key": FID})
-        assert r.status_code == 404
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["text"] == body["llmText"] == "Does the thing."
+        assert body["isOverridden"] is False and body["humanText"] is None
+        assert body["canUndo"] is False
+
+    def test_a_slot_not_in_the_version_is_404(self, client, review_db, auth_header):
+        r = client.get(BASE + "/overrides/slot", headers=auth_header,
+                       params={"slot_kind": "description", "slot_key": "No|Such|fn|"})
+        assert r.status_code == 404 and "R11" in r.json()["detail"]
 
 
 class TestTheOverlayList:
@@ -220,10 +231,16 @@ class TestFlowchartLabels:
         assert all(l["isOverridden"] is False for l in body["labels"])
 
     def test_a_save_applies_and_shows_up(self, client, review_db, auth_header):
+        """R8 answers with each saved node as it now is -- it used to name the nodes and say
+        nothing about their text."""
         r = _save_labels(client, auth_header, {"n1": "Check the write-protect flag"})
         assert r.status_code == 200, r.text
-        assert r.json()["applied"] == ["n1"]
-        assert r.json()["slotShape"]
+        (saved,) = r.json()["labels"]
+        assert saved["nodeId"] == "n1" and saved["slotKind"] == "nodeLabel"
+        assert saved["text"] == saved["humanText"] == "Check the write-protect flag"
+        assert saved["previousText"] == saved["llmText"] == "llm n1"
+        assert saved["firstEdit"] is True and saved["isOverridden"] is True
+        assert "slotShape" not in r.json() and "applied" not in r.json()
 
         body = _read_labels(client, auth_header).json()
         n1 = next(l for l in body["labels"] if l["nodeId"] == "n1")
@@ -234,7 +251,8 @@ class TestFlowchartLabels:
     def test_several_labels_in_one_call(self, client, review_db, auth_header):
         r = _save_labels(client, auth_header, {"n0": "Begin", "n2": "Finish"})
         assert r.status_code == 200
-        assert sorted(r.json()["applied"]) == ["n0", "n2"]
+        assert [(n["nodeId"], n["text"]) for n in r.json()["labels"]] == [("n0", "Begin"),
+                                                                         ("n2", "Finish")]
 
     def test_a_node_that_does_not_exist_fails_the_whole_call(self, client, review_db,
                                                              auth_header):
@@ -390,8 +408,10 @@ class TestUndoAndHistory:
         r = client.delete(BASE + "/overrides/slot", headers=auth_header,
                           params={"slot_kind": "description", "slot_key": FID})
         assert r.status_code == 200, r.text
-        assert r.json()["undone"] is True
-        assert r.json()["override"]["humanText"] == "Does the thing."
+        body = r.json()
+        assert body["text"] == body["humanText"] == body["llmText"] == "Does the thing."
+        assert body["previousText"] == "Corrected."
+        assert body["isOverridden"] is True and body["canUndo"] is False    # the record survives
 
         from core import model_store
         with review_db.connect() as cx:
@@ -473,7 +493,7 @@ class TestTheFlowchartEditorHasWhatItNeeds:
 
         u = client.delete(BASE + "/overrides/slot", headers=auth_header,
                           params={"slot_kind": "nodeLabel", "slot_key": node["slotKey"]})
-        assert u.status_code == 200 and u.json()["undone"] is True
+        assert u.status_code == 200 and u.json()["text"] == node["text"]
 
 
 class TestTheEditorCanDrawTheCorrectedDiagram:
@@ -620,7 +640,7 @@ class TestKeysCopiedFromSwaggerWork:
         self._correct(client, auth_header)
         r = client.delete(BASE + "/overrides/slot", headers=auth_header,
                           params={"slot_kind": "nodeLabel", "slot_key": self._shown(client, auth_header)})
-        assert r.status_code == 200 and r.json()["undone"] is True
+        assert r.status_code == 200 and r.json()["text"] == "llm n1"
         labels = _read_labels(client, auth_header).json()["labels"]
         assert next(n["text"] for n in labels if n["nodeId"] == "n1") == "llm n1"
 
@@ -953,7 +973,7 @@ class TestAnErrorSaysWhoseFaultItIs:
         assert r.status_code == 409 and "regenerating" in r.json()["detail"]
         got = client.get(BASE + "/overrides/slot", headers=auth_header,
                          params={"slot_kind": "description", "slot_key": FID})
-        assert got.status_code == 404, "nothing was saved"
+        assert got.json()["isOverridden"] is False, "nothing was saved"
 
 
 class TestAnOrphanOverHttp:
@@ -988,3 +1008,72 @@ class TestR11MatchesAComponentHoweverItIsSpelled:
                        params={"slot_kind": "description", "component": asked})
         assert r.status_code == 200, r.text
         assert [x["slotKey"] for x in r.json()["slots"]] == [FID]
+
+
+class TestEveryRouteGivesASlotInOneShape:
+    """`REQ-API-09`. One set of fields for a slot, whichever route returns it, so a client reads
+    the same names for a description, a node label and a behaviour row. Before it, R3 had
+    `previousText` and no `isOverridden`, R2 no `text`, R6 no `humanText`, and R8 no text at all.
+    """
+
+    SLOT = {"slotKind", "slotKey", "text", "llmText", "humanText", "isOverridden",
+            "isOrphaned", "canUndo", "updatedBy", "updatedAt"}
+    SAVE = {"previousText", "firstEdit", "viewsDerived", "queuedForRegeneration"}
+    NODE = "Sample-Core|Core|ns::doThing|void\x01n1"
+
+    def _saves(self, client, auth_header):
+        r3 = client.put(BASE + "/overrides/slot", headers=auth_header,
+                        json={"slot_kind": "description", "slot_key": FID, "text": "Human words."})
+        r6 = client.put(BASE + "/overrides/behaviour", headers=auth_header,
+                        json={"function_id": FID, "external_caller_id": CALLER,
+                              "bullets": ["one", "two"]})
+        r8 = _save_labels(client, auth_header, {"n1": "Checked label"})
+        assert (r3.status_code, r6.status_code, r8.status_code) == (200, 200, 200), \
+            (r3.text, r6.text, r8.text)
+        return r3.json(), r6.json(), r8.json()["labels"][0]
+
+    def test_every_save_answers_the_slot_and_what_it_did(self, client, review_db, auth_header):
+        for body in self._saves(client, auth_header):
+            assert self.SLOT | self.SAVE <= set(body), sorted(self.SLOT | self.SAVE - set(body))
+
+    def test_every_read_answers_the_same_slot(self, client, review_db, auth_header):
+        """R1, R2, R7 and R11 agree field for field with what the save answered."""
+        r3, r6, r8 = self._saves(client, auth_header)
+        slots = {(b["slotKind"], b["slotKey"]): {k: b[k] for k in self.SLOT}
+                 for b in (r3, r6, r8)}
+        r1 = client.get(BASE + "/overrides", headers=auth_header).json()["overrides"]
+        assert {(x["slotKind"], x["slotKey"]): {k: x[k] for k in self.SLOT} for x in r1} == slots
+        for (kind, key), want in slots.items():
+            r2 = client.get(BASE + "/overrides/slot", headers=auth_header,
+                            params={"slot_kind": kind, "slot_key": key}).json()
+            assert {k: r2[k] for k in self.SLOT} == want, kind
+            listed = client.get(BASE + "/slots", headers=auth_header,
+                                params={"slot_kind": kind}).json()["slots"]
+            if kind != "nodeLabel":                         # R11 lists flowcharts, not nodes
+                row = next(x for x in listed if x["slotKey"] == key)
+                assert {k: row[k] for k in self.SLOT} == want, kind
+        n1 = next(n for n in _read_labels(client, auth_header).json()["labels"]
+                  if n["nodeId"] == "n1")
+        assert {k: n1[k] for k in self.SLOT} == slots[("nodeLabel", r8["slotKey"])]
+
+    def test_a_behaviour_row_reads_as_text_and_as_bullets(self, client, review_db, auth_header):
+        _r3, r6, _r8 = self._saves(client, auth_header)
+        assert r6["text"] == r6["humanText"] == "one\ntwo" and r6["bullets"] == ["one", "two"]
+        assert r6["previousText"] == r6["llmText"] == "start calls doThing"
+        assert (r6["functionId"], r6["externalCallerId"]) == (FID, CALLER)
+        assert r6["queuedForRegeneration"] == []
+
+    def test_r8_carries_the_rebuilt_diagram(self, client, review_db, auth_header):
+        """So the editor redraws from the save's answer, without asking R7 again."""
+        r = _save_labels(client, auth_header, {"n1": "Checked-label"})
+        assert "Checked-label" in r.json()["dot"]
+
+    def test_an_undo_answers_like_a_save(self, client, review_db, auth_header):
+        self._saves(client, auth_header)
+        for kind, key in (("description", FID), ("nodeLabel", self.NODE)):
+            u = client.delete(BASE + "/overrides/slot", headers=auth_header,
+                              params={"slot_kind": kind, "slot_key": key})
+            assert u.status_code == 200, u.text
+            assert self.SLOT | self.SAVE <= set(u.json()), kind
+            assert u.json()["text"] == u.json()["llmText"] and u.json()["canUndo"] is False
+        assert "llm n1" in u.json()["dot"] and "renderPending" in u.json()

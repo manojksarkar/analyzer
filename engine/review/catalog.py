@@ -73,30 +73,210 @@ def _overridden(conn, version_id: str, slot_kind: str) -> Dict[str, Any]:
     return {r.slot_key: r for r in rows}
 
 
-def _state(row, in_force: str) -> Dict[str, Any]:
-    """The four facts about a slot's correction, and the text a reader actually sees.
+def slot_view(slot_kind: str, slot_key: str, text: Optional[str], row) -> Dict[str, Any]:
+    """One slot, in the shape every review response gives it (`REQ-API-09`).
 
-    `text` is **what is in force** -- read from where the document reads it, never from the
-    override row. For a live correction the two agree, because the save wrote the human text into
-    the model (or the stored view row). For an ORPHAN they do not: it is kept (`REQ-ID-03`) but
-    never applied, so the document carries the model's text and the row carries words written
-    for code that has since changed.
+    Every route that returns a slot's text returns this -- R1, R2, R3, R4, R6, R11, and each node
+    of R7 and R8 -- so a client reads one set of fields whatever the kind or the route. Before it,
+    R3 had `previousText` and no `isOverridden`, R7 had `text` and R2 did not, R8 returned no text
+    at all, and `llmText` was null until a first correction in one route and filled in another.
 
-    An earlier version took `text` from the row whenever one existed, and so showed a reviewer
-    their stale correction as the current wording of a function whose document said something
-    else entirely. `humanText` is returned separately so an orphan's work stays visible -- as
-    what it is, not as what is printed.
+    * `text` -- **what the document prints now**, read from where the document reads it, never
+      from the override row (`texts_in_force`). For a live correction the two agree, because the
+      save wrote the human text into the model or the stored view row. For an ORPHAN they do not:
+      it is kept (`REQ-ID-03`) but never applied, so the document carries the current LLM text.
+      An earlier version took `text` from the row whenever one existed, and so showed a reviewer
+      their stale correction as the wording of a function whose document said something else.
+      `""` when the slot is no longer in this version and only an orphan's record remains.
+    * `llmText` -- the LLM's wording for this slot: the original a correction in force replaced,
+      else the same as `text` (which is then LLM text). `None` only when the LLM wrote nothing --
+      the slot was empty before its first correction, which is also why undo can be refused.
+    * `humanText` -- the reviewer's words, `None` when there is no correction. An orphan keeps
+      its words here, visible as what they are rather than as what is printed.
+    * `isOverridden` -- a correction is IN FORCE: the document prints `humanText`. An orphan is
+      not one.
+    * `isOrphaned` -- a correction exists, written for code that has since changed; not printed.
+    * `canUndo` -- an undo would change the text: a correction in force, an original to go back
+      to, and the two differ. Decided here so no client carries the rule.
+    * `updatedBy`, `updatedAt` -- the last save of the correction, `None` when there is none.
 
-    `isOverridden` means a correction is IN FORCE. An orphan is not one.
+    Plus the slot's address where its key has parts: a node label's `flowchartId` and `nodeId`, a
+    behaviour row's `functionId`, `externalCallerId` and `bullets` (the lines of `text`).
     """
+    text = text or ""
     orphaned = bool(row is not None and row.is_orphaned)
-    return {
-        "text": in_force,
-        "llmText": row.llm_text if row is not None else None,
-        "humanText": row.human_text if row is not None else None,
-        "isOverridden": row is not None and not orphaned,
+    in_force = row is not None and not orphaned
+    llm = (row.llm_text if in_force else text) or ""
+    llm = llm if llm.strip() else None
+    human = row.human_text if row is not None else None
+    out = {
+        "slotKind": slot_kind,
+        "slotKey": slot_key,
+        "text": text,
+        "llmText": llm,
+        "humanText": human,
+        "isOverridden": in_force,
         "isOrphaned": orphaned,
+        "canUndo": bool(in_force and llm is not None
+                        and (human or "").strip() != llm.strip()),
+        "updatedBy": row.updated_by if row is not None else None,
+        "updatedAt": (row.updated_at.isoformat()
+                      if row is not None and row.updated_at else None),
     }
+    out.update(_address(slot_kind, slot_key, text))
+    return out
+
+
+def _address(slot_kind: str, slot_key: str, text: str) -> Dict[str, Any]:
+    """The parts of a composite key, so a client never takes a key apart (`REQ-ID-01`)."""
+    try:
+        if slot_kind == slot.NODE_LABEL:
+            parts = slot.parse(slot_kind, slot_key)
+            return {"flowchartId": parts["entity_key"], "nodeId": parts["node_id"]}
+        if slot_kind == slot.BEHAVIOUR_DESCRIPTION:
+            parts = slot.parse(slot_kind, slot_key)
+            return {"functionId": parts["function_id"],
+                    "externalCallerId": parts["external_caller_id"],
+                    "bullets": p3.split_bullets(text)}
+    except slot.SlotKeyError:
+        pass
+    return {}
+
+
+def texts_in_force(conn, version_id: str, pairs, models=None) -> Dict[tuple, Optional[str]]:
+    """`{(slot_kind, slot_key): text}` -- what the document prints for each slot, or `None` for
+    a slot that is not in this version.
+
+    Read from where the document reads it: the model for the five model-backed kinds (through
+    `resolver`, the way a save writes it), the stored flowchart for a node label, the stored
+    behaviour manifest for a behaviour row. `models` is a `ModelAccess`, or None when no
+    model-backed kind is asked for; only the artifacts the asked kinds live in are read.
+    """
+    from review import rerender
+
+    pairs = list(dict.fromkeys(pairs or ()))
+    out: Dict[tuple, Optional[str]] = {}
+    backed = [(k, key) for k, key in pairs if k in resolver.MODEL_BACKED_KINDS]
+    if backed:
+        needed = {a for k, _key in backed for a in resolver._HOMES[k][0]}
+        model = {a: models.artifact(a) for a in needed} if models is not None else {}
+        for pair in backed:
+            try:
+                out[pair] = resolver.read_text(model, *pair)
+            except (resolver.SlotError, slot.SlotKeyError):
+                out[pair] = None
+
+    wanted: Dict[str, Set[str]] = {}
+    for k, key in pairs:
+        if k == slot.NODE_LABEL:
+            try:
+                parts = slot.parse(k, key)
+            except slot.SlotKeyError:
+                out[(k, key)] = None
+                continue
+            wanted.setdefault(parts["entity_key"], set()).add(parts["node_id"])
+    if wanted:
+        labels = _stored_labels(conn, version_id, wanted)
+        for fid, nodes in wanted.items():
+            for node in nodes:
+                out[(slot.NODE_LABEL, slot.for_node(fid, node))] = \
+                    (labels.get(fid) or {}).get(node)
+
+    rows = [(k, key) for k, key in pairs if k == slot.BEHAVIOUR_DESCRIPTION]
+    if rows:
+        stored: Dict[str, str] = {}
+        for r in rerender.output_rows(conn, version_id, rerender.BEHAVIOUR_MANIFEST):
+            try:
+                payload = json.loads(r.content or "{}")
+            except ValueError:
+                continue
+            for _c, _u, row in p3.behaviour_rows((payload or {}).get("_docxRows")):
+                fid, caller = row.get("currentFunctionId"), row.get("externalCallerId")
+                if fid and caller:
+                    try:
+                        key = slot.for_behaviour_row(fid, caller)
+                    except slot.SlotKeyError:
+                        continue
+                    stored.setdefault(key, p3.join_bullets(row.get("behaviorDescription")))
+        for pair in rows:
+            out[pair] = stored.get(pair[1])
+
+    for pair in pairs:
+        out.setdefault(pair, None)
+    return out
+
+
+def _stored_labels(conn, version_id: str, wanted) -> Dict[str, Dict[str, str]]:
+    """`{flowchart_id: {node_id: label}}` for the flowcharts in `wanted`, from the stored rows.
+
+    A few flowcharts are looked up one by one (`find_flowchart_row` asks for the rows that mention
+    each); more are found in one pass over the version's flowchart rows, parsing only the rows
+    that mention one of them.
+    """
+    from review import rerender
+
+    def _labels(entry):
+        return {str(n.get("id")): str(n.get("label") or "")
+                for n in ((entry or {}).get("cfg") or {}).get("nodes") or []
+                if isinstance(n, dict) and n.get("id")}
+
+    def _entry(content, fid):
+        try:
+            entries = json.loads(content or "[]")
+        except ValueError:
+            return None
+        if not isinstance(entries, list):
+            return None
+        return next((e for e in entries
+                     if isinstance(e, dict) and e.get("functionKey") == fid), None)
+
+    out: Dict[str, Dict[str, str]] = {}
+    if len(wanted) <= 3:
+        for fid in wanted:
+            found = rerender.find_flowchart_row(conn, version_id, fid)
+            if found:
+                out[fid] = _labels(_entry(found[2], fid))
+        return out
+    spelled = {fid: json.dumps(fid)[1:-1] for fid in wanted}
+    for r in rerender.output_rows(conn, version_id, rerender.FLOWCHARTS):
+        content = r.content or ""
+        for fid in [f for f, sp in spelled.items() if f not in out and sp in content]:
+            entry = _entry(content, fid)
+            if entry is not None:
+                out[fid] = _labels(entry)
+    for fid in set(wanted) - set(out):
+        found = rerender.find_flowchart_row(conn, version_id, fid)     # spelled otherwise
+        if found:
+            out[fid] = _labels(_entry(found[2], fid))
+    return out
+
+
+def slot_views(conn, version_id: str, pairs, models=None, *, rows=None) -> List[Any]:
+    """`slot_view` for each `(slot_kind, slot_key)`, in order -- `None` for a slot that is
+    neither in this version nor corrected in it.
+
+    `rows` are override rows already in hand (`{(kind, key): row}`); the rest are read. A slot
+    that left the version but still has a correction -- an orphan, typically -- is returned with
+    `text` `""`: its record is the reviewer's work, and is shown rather than hidden.
+    """
+    from review.override_service import overrides_by_key
+
+    pairs = list(pairs or ())
+    have = dict(rows or {})
+    by_kind: Dict[str, List[str]] = {}
+    for k, key in pairs:
+        if (k, key) not in have:
+            by_kind.setdefault(k, []).append(key)
+    for k, keys in by_kind.items():
+        for key, r in overrides_by_key(conn, version_id, k, keys).items():
+            have[(k, key)] = r
+    texts = texts_in_force(conn, version_id, pairs, models)
+    out = []
+    for pair in pairs:
+        row, text = have.get(pair), texts.get(pair)
+        out.append(None if row is None and text is None
+                   else slot_view(pair[0], pair[1], text, row))
+    return out
 
 
 class _Placement(NamedTuple):
@@ -218,16 +398,13 @@ def _model_backed(conn, version_id, kind, models, unit, component, limit, offset
                 text = resolver.read_text(models.as_model(), kind, key)
             except (resolver.SlotError, slot.SlotKeyError):
                 continue          # not addressable in this version; not listable either
-            row = done.get(key)
             items.append({
-                "slotKind": kind,
-                "slotKey": key,
+                **slot_view(kind, key, text, done.get(key)),
                 "label": entry.get("name") or entry.get("qualifiedName") or entity_key,
                 "component": comp,
                 "unit": un,
                 "artifact": artifact,
                 "shownIn": _shown_for(kind, entity_key, entry, where),
-                **_state(row, text),
             })
     return _page(items, limit, offset)
 
@@ -302,13 +479,12 @@ def _structs(conn, version_id, models, unit, component, limit, offset) -> Page:
                        for comp, un in scopes):
                 continue
         comp, un = scopes[0] if scopes else (None, None)
-        row = done.get(key)
         items.append({
-            "slotKind": kind, "slotKey": key, "label": type_name,
+            **slot_view(kind, key, text, done.get(key)),
+            "label": type_name,
             "component": comp, "unit": un, "artifact": "dataDictionary",
             "kindOfType": entry.get("kind"),
             "shownIn": where,
-            **_state(row, text),
         })
     return _page(items, limit, offset)
 
@@ -398,30 +574,20 @@ def _behaviour_rows(conn, version_id, unit, component, limit, offset) -> Page:
             if component and component_id(comp) != component:
                 continue
             key = slot.for_behaviour_row(fid, caller)
-            ov = done.get(key)
             # `behaviorDescription` -- the field the behaviour view writes, the DOCX exporter
             # reads (docx_exporter: row.get("behaviorDescription")) and R6 patches. An earlier
             # version read `behaviorDescriptionList`, which is only the exporter's PARAMETER name;
             # no row has ever carried it, so every behaviour row listed with no bullets at all.
-            bullets = row.get("behaviorDescription") or []
-            state = _state(ov, p3.join_bullets(bullets))
+            # What is in force is the stored row, which R6 patches for a live correction and which
+            # an orphan never reached; `slot_view` carries it as `text` and as `bullets`.
+            text = p3.join_bullets(row.get("behaviorDescription") or [])
             items.append({
-                "slotKind": kind,
-                "slotKey": key,
-                "functionId": fid,
-                "externalCallerId": caller,
+                **slot_view(kind, key, text, done.get(key)),
                 "label": row.get("externalUnitFunction"),
                 "component": comp,
                 "unit": un,
                 # A behaviour row is the Dynamic Behaviour section itself: shown where it sits.
                 "shownIn": ["%s|%s" % (comp, un)],
-                # What is in force -- the stored row, which R6 patches for a live correction and
-                # which an orphan never reached.
-                "bullets": list(bullets),
-                "llmText": state["llmText"],
-                "humanText": state["humanText"],
-                "isOverridden": state["isOverridden"],
-                "isOrphaned": state["isOrphaned"],
             })
     items.sort(key=lambda i: (i["component"] or "", i["unit"] or "", i["slotKey"]))
     return _page(items, limit, offset)
