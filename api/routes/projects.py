@@ -80,8 +80,22 @@ def _project_view(project: Project, db: InMemoryDatabase, user_id: str) -> dict:
         "build_config": {k: v for k, v in (project.build_config or {}).items()
                          if k != "repo_access_token"},
         "architecture_layers": project.architecture_layers,
+        **_cores_view(project),
         "created_at": project.created_at.isoformat(),
         "updated_at": project.updated_at.isoformat(),
+    }
+
+
+def _cores_view(project: Project) -> dict:
+    """The project's cores - each with its inputs' file names and the layers it builds - and the
+    core of every layer. A project from before cores reads as one core, Core1, that every layer
+    uses (services/project_cores.py), so the web app never has to know the older shape."""
+    from ..services.project_cores import describe, project_cores
+    cores, layer_core = project_cores(project.build_config, project.architecture_layers)
+    return {
+        "cores": [{"name": c["name"], **describe(c),
+                   "layers": [l for l, k in layer_core.items() if k == c["name"]]} for c in cores],
+        "layer_cores": layer_core,
     }
 
 
@@ -135,7 +149,9 @@ def preview_config(
             repo_dir, tip = str(clone), repo_git.tree_ref(clone, branch)
             tree = git_cli.list_tree(repo_dir, tip)
             creds = repo_git._creds(body.access_token)
-            read_file = lambda path: git_cli.read_file(repo_dir, path, url, *creds, ref=tip)  # noqa: E731
+            # up to 100 MB: a core's compile_commands.json lists every translation unit
+            read_file = lambda path: git_cli.read_file(repo_dir, path, url, *creds, ref=tip,  # noqa: E731
+                                                       max_bytes=100 * 1024 * 1024)
         except git_cli.GitError as exc:
             note = (f"The repository could not be read ({repo_git._friendly(str(exc))}), so "
                     f"paths were not checked.")
@@ -177,6 +193,11 @@ def create_project(
             "status": 404})
     # Stash the repo access token inside build_config; _project_view never echoes
     # build_config, so the token is not exposed in any API response.
+    # Cores the run would refuse or read wrongly are refused here, before anything is written.
+    from ..services.project_cores import core_problems
+    problems = core_problems(body.build_config, body.architecture_layers)
+    if problems:
+        raise bad_request(" ".join(problems))
     build_config = dict(body.build_config)
     if body.access_token:
         build_config["repo_access_token"] = body.access_token

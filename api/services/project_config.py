@@ -12,7 +12,10 @@ The format is the engine's own (`engine/config/config.defaults.json`), plus one 
 what only the web app needs; the engine ignores it:
 
     "project": {"name": "Brake ECU", "repository": "https://github.com/org/repo", "branch": "main",
-                "defines": ["DEBUG=1"]}
+                "defines": {"Core1": ["DEBUG=1"]}}
+
+`defines` holds each core's typed definitions (the engine reads macros from files only). A plain
+list - written before cores - is the one core `Core1` that every layer uses.
 
 An access token is never read from a file: config files get shared and committed.
 """
@@ -135,22 +138,16 @@ def preview(cfg: dict, *, tree_nodes: Optional[list] = None,
 
     tree = _RepoTree(tree_nodes) if tree_nodes is not None else None
     draft: dict = {"name": None, "repo_url": None, "branch": None, "architecture_layers": [],
-                   "definitions": None, "data_dictionary": None, "settings": {}}
-    expected: dict = {"definitions": None, "data_dictionary": None}
+                   "cores": [], "settings": {}}
+    expected: dict = {}                 # core -> {macros, data_dictionary, compile_commands}
 
     defines = _read_project(cfg.get("project"), draft, say)
     if any(k in cfg for k in _TOKEN_KEYS):
         say(SKIPPED, _TOKEN_MESSAGE, "project")
     _read_layers(cfg, draft, tree, lambda level, text: say(level, text, "architecture"))
-    _read_cores(cfg, draft, expected, tree, read_file, store_file,
-                lambda level, text: say(level, text, "files"))
-    if defines and draft["definitions"] is None and expected["definitions"] is None:
-        draft["definitions"] = {"mode": "manual", "defines": defines}
-        say(FILLED, f"Preprocessor definitions: {len(defines)} typed in (`project.defines`).",
-            "files")
-    elif defines:
-        say(SKIPPED, "`project.defines` was not used: the file also names a definitions file, "
-                     "and a project has one or the other.", "files")
+    files = lambda level, text: say(level, text, "files")  # noqa: E731
+    _read_cores(cfg, draft, expected, tree, read_file, store_file, files)
+    _apply_defines(defines, draft, expected, files)
     _read_settings(cfg, draft, lambda level, text: say(level, text, "settings"))
     for key in cfg:
         if key not in _KNOWN and key not in _TOKEN_KEYS and not str(key).startswith("_"):
@@ -159,13 +156,14 @@ def preview(cfg: dict, *, tree_nodes: Optional[list] = None,
             "repository_checked": tree is not None}
 
 
-def _read_project(block: Any, draft: dict, say) -> list:
-    """Name, repository and branch from the optional `project` block; returns its `defines`."""
+def _read_project(block: Any, draft: dict, say) -> Any:
+    """Name, repository and branch from the optional `project` block; returns its `defines` as
+    written - `{Core: [...]}`, or a list from a file made before cores."""
     if block is None:
-        return []
+        return None
     if not isinstance(block, dict):
         say(SKIPPED, "`project` should be an object, so it was not read.", "project")
-        return []
+        return None
     got = []
     for key, field in (("name", "name"), ("repository", "repo_url"), ("branch", "branch")):
         value = block.get(key)
@@ -176,13 +174,12 @@ def _read_project(block: Any, draft: dict, say) -> list:
         say(FILLED, f"Project: {', '.join(got)}.", "project")
     if any(k in block for k in _TOKEN_KEYS):
         say(SKIPPED, _TOKEN_MESSAGE, "project")
-    raw = block.get("defines")
-    return [str(d).strip() for d in raw if str(d).strip()] if isinstance(raw, list) else []
+    return block.get("defines")
 
 
 def _read_layers(cfg: dict, draft: dict, tree: Optional[_RepoTree], say) -> None:
     _engine()
-    from core.config import validate_layer_names
+    from core.config import get_layer_cores, validate_layer_names
     layers = cfg.get("layers")
     if not layers:
         say(CHECK, "The file has no `layers`, so the architecture is empty -- add it in step 3.")
@@ -243,7 +240,12 @@ def _read_layers(cfg: dict, draft: dict, tree: Optional[_RepoTree], say) -> None
             n_comps += len(components)
             groups.append({"name": str(gname), "components": components})
         n_groups += len(groups)
-        out.append({"name": str(lname), "path": lpath, "lib_paths": [], "groups": groups})
+        cores = get_layer_cores(cfg, lname)
+        if len(cores) > 1:
+            say(CHECK, f"Layer {lname} lists {len(cores)} cores; a layer is built for one, so it "
+                       f"takes {cores[0]}.")
+        out.append({"name": str(lname), "path": lpath, "lib_paths": [], "groups": groups,
+                    "core": cores[0] if cores else None})
 
     draft["architecture_layers"] = out
     say(FILLED, f"Architecture: {len(out)} layer{'s' * (len(out) != 1)}, "
@@ -256,60 +258,124 @@ def _read_layers(cfg: dict, draft: dict, tree: Optional[_RepoTree], say) -> None
         say(CHECK, f"Not in the repository, so left out -- {m}.")
 
 
+_CORE_INPUTS = (("macros", "preprocessor_definitions", "macros"),
+                ("dataDictionary", "data_dictionary", "data_dictionary"),
+                ("compileCommands", "compile_commands", "compile_commands"))
+
+
 def _read_cores(cfg: dict, draft: dict, expected: dict, tree: Optional[_RepoTree],
                 read_file, store_file, say) -> None:
-    """The definitions and data dictionary of the core the layers use -- one core for now."""
+    """Every core the config declares: its macros, data dictionary and compile commands, read
+    from the repository when it has them - else left for step 2, by name."""
     _engine()
-    from core.config import core_source, get_layer_cores, validate_cores
+    from core.config import validate_cores
     for problem in validate_cores(cfg):
         say(CHECK, problem)
-    used: list = []
-    for lname in (cfg.get("layers") or {}) if isinstance(cfg.get("layers"), dict) else ():
-        for core in get_layer_cores(cfg, lname):
-            if core not in used:
-                used.append(core)
-    if not used:
-        if cfg.get("cores"):
-            say(SKIPPED, "No layer uses a core (`layers.<name>.cores`), so the `cores` files were "
-                         "not read.")
+    raw = cfg.get("cores")
+    if raw is None:
         return
-    core = used[0]
-    if len(used) > 1:
-        say(SKIPPED, f"Only one core's files are used for now: {core}. Not read: "
-                     f"{', '.join(used[1:])} -- every layer gets {core}'s definitions and data "
-                     f"dictionary.")
-
-    for key, kind, label, field in (
-            ("macros", "preprocessor_definitions", "Preprocessor definitions", "definitions"),
-            ("dataDictionary", "data_dictionary", "Data dictionary", "data_dictionary")):
-        src = core_source(cfg, core, key)
-        if not src:
+    if not isinstance(raw, dict):
+        say(SKIPPED, "`cores` should be an object, so the cores were not read.")
+        return
+    names = [str(n) for n, c in raw.items() if isinstance(c, dict)]
+    if names:
+        say(FILLED, f"Cores: {', '.join(f'`{n}`' for n in names)} (step 2).")
+    used = {l.get("core") for l in draft["architecture_layers"]}
+    for name, ccfg in raw.items():
+        name = str(name)
+        if not isinstance(ccfg, dict):
+            say(SKIPPED, f"`cores.{name}` should be an object, so it was not read.")
             continue
-        name = PurePosixPath(src.replace("\\", "/")).name
-        upload = _from_repository(src, kind, tree, read_file, store_file)
-        if isinstance(upload, str):                       # found, but not a usable file
-            expected[field] = name
-            say(CHECK, f"{label}: `{name}` is in the repository but could not be used -- {upload}")
-        elif upload:
-            entry = {"file_id": upload["id"], "file_name": upload["file_name"],
-                     "size": upload["size"]}
-            draft[field] = {"mode": "upload", **entry} if field == "definitions" else entry
-            say(FILLED, f"{label}: `{name}`, read from the repository.")
-        else:
-            expected[field] = name
-            if _is_machine_path(src):
-                say(CHECK, f"{label}: upload `{name}` in step 2 -- `{src}` is a path on the "
-                           f"machine that wrote the config.")
+        core = {"name": name, "macros": None, "data_dictionary": None, "compile_commands": None}
+        want = {"macros": None, "data_dictionary": None, "compile_commands": None}
+        found: list = []
+        later: list = []            # to be read once the repository is connected
+        missing: list = []          # the repository does not have them
+        machine: list = []          # absolute paths on the machine that wrote the file
+        for key, kind, field in _CORE_INPUTS:
+            spec = ccfg.get(key)
+            src = (spec.get("file") or spec.get("path")) if isinstance(spec, dict) else spec
+            if isinstance(spec, dict) and spec.get("rootPrefix"):
+                say(SKIPPED, f"`cores.{name}.{key}.rootPrefix` is not used: the prefix is worked "
+                             f"out from the repository.")
+            if not isinstance(src, str) or not src.strip():
+                continue
+            src = src.strip()
+            fname = PurePosixPath(src.replace("\\", "/")).name
+            upload = _from_repository(src, kind, tree, read_file, store_file)
+            if isinstance(upload, dict):
+                entry = {"file_id": upload["id"], "file_name": upload["file_name"],
+                         "size": upload["size"]}
+                core[field] = {"mode": "upload", **entry} if field == "macros" else entry
+                found.append(f"`{fname}`")
+                continue
+            want[field] = fname
+            if isinstance(upload, str):                    # there, but not a usable file
+                say(CHECK, f"{name}: `{fname}` is in the repository but could not be used -- "
+                           f"{upload}")
+            elif _is_machine_path(src):
+                machine.append(f"`{fname}`")
             elif tree is None:
-                say(CHECK, f"{label}: `{name}` is read from the repository once it is connected "
-                           f"(Test Connection), or upload it in step 2.")
+                later.append(f"`{fname}`")
             else:
-                say(CHECK, f"{label}: upload `{name}` in step 2 -- the repository has no file "
-                           f"`{_norm(src)}`.")
-    if core_source(cfg, core, "compileCommands"):
-        say(SKIPPED, f"`cores.{core}.compileCommands` (include paths from compile_commands.json) "
-                     f"is not imported: the web app has no field for it yet. Add include folders "
-                     f"per layer in step 3 (Lib Paths).")
+                missing.append(f"`{fname}`")
+        if found:
+            say(FILLED, f"{name}: {', '.join(found)}, read from the repository.")
+        if later:
+            say(CHECK, f"{name}: {', '.join(later)} - read from the repository once it is "
+                       f"connected (Test Connection), or upload in step 2.")
+        if missing:
+            say(CHECK, f"{name}: upload {', '.join(missing)} in step 2 - not in the repository.")
+        if machine:
+            say(CHECK, f"{name}: upload {', '.join(machine)} in step 2 - paths on the machine "
+                       f"that wrote the config.")
+        if name not in used:
+            say(CHECK, f"{name}: no layer uses it (`layers.<name>.cores`) -- pick it for a layer "
+                       f"in step 3.")
+        draft["cores"].append(core)
+        expected[name] = want
+
+
+def _apply_defines(defines: Any, draft: dict, expected: dict, say) -> None:
+    """`project.defines`: typed definitions per core - `{Core: [...]}`. A plain list, from a file
+    written before cores, is the one core `Core1` that every layer uses."""
+    if not defines:
+        return
+
+    def clean(lines: Any) -> list:
+        return [str(d).strip() for d in lines if str(d).strip()] if isinstance(lines, list) else []
+
+    if isinstance(defines, list):
+        lines = clean(defines)
+        if not lines:
+            return
+        if draft["cores"]:
+            say(SKIPPED, "`project.defines` does not say which core its definitions are for; "
+                         "write them as `project.defines.<Core>`.")
+            return
+        draft["cores"].append({"name": "Core1", "macros": {"mode": "manual", "defines": lines},
+                               "data_dictionary": None, "compile_commands": None})
+        expected["Core1"] = {"macros": None, "data_dictionary": None, "compile_commands": None}
+        for layer in draft["architecture_layers"]:
+            layer["core"] = layer.get("core") or "Core1"
+        say(FILLED, f"Core1: {len(lines)} typed definitions (`project.defines`), used by every "
+                    f"layer.")
+        return
+    if not isinstance(defines, dict):
+        say(SKIPPED, "`project.defines` should be an object of cores, so it was not read.")
+        return
+    by_name = {c["name"]: c for c in draft["cores"]}
+    for name, lines in defines.items():
+        core = by_name.get(str(name))
+        if core is None:
+            say(SKIPPED, f"`project.defines.{name}`: `cores` has no core `{name}`, so it was not "
+                         f"read.")
+        elif core["macros"] or (expected.get(str(name)) or {}).get("macros"):
+            say(SKIPPED, f"`project.defines.{name}` was not used: `cores.{name}.macros` names a "
+                         f"file, and a core has one or the other.")
+        elif clean(lines):
+            core["macros"] = {"mode": "manual", "defines": clean(lines)}
+            say(FILLED, f"{name}: {len(clean(lines))} typed definitions (`project.defines`).")
 
 
 def _from_repository(src: str, kind: str, tree: Optional[_RepoTree], read_file, store_file):
@@ -322,7 +388,7 @@ def _from_repository(src: str, kind: str, tree: Optional[_RepoTree], read_file, 
         return None
     data = read_file(actual)
     if data is None:
-        return "reading it failed (a file over 5 MB is not read)."
+        return "reading it failed (a file over 100 MB is not read)."
     try:
         return store_file(data, PurePosixPath(actual).name, kind)
     except ValueError as exc:
@@ -367,31 +433,40 @@ def to_config_text(project: Any, today: Optional[datetime.date] = None) -> str:
     """The project as a config file (JSON with a comment header): what the command line needs to
     onboard it, and what the wizard imports again. Never the access token."""
     from .pipeline_runner import _convert_layers
+    from .project_cores import project_cores
     bc = project.build_config or {}
     layers = _convert_layers(project.architecture_layers or [])
+    cores, layer_core = project_cores(bc, project.architecture_layers or [])
+    for lname, core in layer_core.items():
+        if core and lname in layers:
+            layers[lname]["cores"] = [core]
 
     proj: dict = {"name": project.name}
     if project.repo_url:
         proj["repository"] = project.repo_url
     if project.default_branch:
         proj["branch"] = project.default_branch
-    defs = bc.get("preprocessor_definitions") if isinstance(bc.get("preprocessor_definitions"), dict) else {}
-    if defs.get("mode") == "manual" and defs.get("defines"):
-        proj["defines"] = [str(d) for d in defs["defines"]]
 
-    core: dict = {}
-    if defs.get("mode") == "upload" and defs.get("file_name"):
-        core["macros"] = defs["file_name"]
-    dd = bc.get("data_dictionary")
-    if isinstance(dd, dict) and dd.get("file_name"):
-        core["dataDictionary"] = dd["file_name"]
-    if core:
-        for layer in layers.values():
-            layer["cores"] = ["Core1"]
+    cores_cfg: dict = {}
+    typed: dict = {}
+    for c in cores:
+        entry: dict = {}
+        m = c["macros"]
+        if m and m["mode"] == "upload" and m.get("file_name"):
+            entry["macros"] = m["file_name"]
+        elif m and m["mode"] == "manual":
+            typed[c["name"]] = m["defines"]
+        for key, field in (("dataDictionary", "data_dictionary"), ("compileCommands", "compile_commands")):
+            if (c.get(field) or {}).get("file_name"):
+                entry[key] = c[field]["file_name"]
+        cores_cfg[c["name"]] = entry
+    if typed:
+        proj["defines"] = typed
+    files = any(cores_cfg.values())
 
     cfg: dict = {"project": proj, "layers": layers}
-    if core:
-        cfg["cores"] = {"Core1": core}
+    if cores_cfg:
+        cfg["cores"] = cores_cfg
     for section in _PROJECT_SECTIONS:
         if isinstance(bc.get(section), dict) and bc[section]:
             cfg[section] = bc[section]
@@ -404,8 +479,11 @@ def to_config_text(project: Any, today: Optional[datetime.date] = None) -> str:
         " --branch <branch> --version-id v1 --commit <sha>",
         "`project` is read only by the web app. The access token is not included.",
     ]
-    if core:
-        header.append("`cores.Core1` names the files uploaded in the web app: put them next to this "
+    if files:
+        header.append("`cores` names the files uploaded in the web app: put them next to this "
                       "file, or fix the paths, before using it from the command line.")
+    if typed:
+        header.append("`project.defines` holds each core's typed definitions; the command line "
+                      "reads macros from a file (`cores.<Core>.macros`).")
     return ("".join(f"// {h}\n" for h in header)
             + json.dumps(cfg, indent=2, ensure_ascii=False) + "\n")

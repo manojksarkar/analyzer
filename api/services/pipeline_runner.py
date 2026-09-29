@@ -768,13 +768,17 @@ def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = F
         raise ValueError("ambiguous architecture layer names - "
                          + "; ".join(name_problems))
 
-    # Preprocessor definitions -> a macro file the engine reads via clang.macrosFile.
-    # The wizard stores them as JSON (manual list or an upload reference); without
-    # this they never reached Clang at all.
-    macros_file = _materialize_macros(bc.get("preprocessor_definitions"), workspace_dir)
-    if macros_file:
-        cfg.setdefault("clang", {})
-        cfg["clang"]["macrosFile"] = str(macros_file)
+    # Cores: each one's macros, data dictionary and compile commands as files the engine reads
+    # (cores.<Core>), and the core each layer is built for (layers.<Layer>.cores) - so a layer's
+    # files parse with its own core's -D set and include paths. A project from before cores (one
+    # definitions file and one dictionary) is one core, Core1, used by every layer.
+    from .project_cores import project_cores
+    cores, layer_core = project_cores(bc, project.architecture_layers or [])
+    if cores:
+        cfg["cores"] = {c["name"]: _materialize_core(c, workspace_dir) for c in cores}
+        for lname, core in layer_core.items():
+            if core and lname in (cfg.get("layers") or {}):
+                cfg["layers"][lname]["cores"] = [core]
 
     # noLlm — disable per-entity LLM (descriptions + behaviour names), mirroring
     # apply_no_llm. Phase summarization is disabled via --no-llm-summarize in _build_cmd.
@@ -805,6 +809,24 @@ def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = F
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
     return out_path, analysis_cfg
+
+
+def _materialize_core(core: dict, workspace_dir: Path) -> dict:
+    """One core's inputs as the paths the engine reads: `{macros, dataDictionary,
+    compileCommands}`, each only when the core has it. Typed macros are written to
+    `cores/<core>/macros.json`; an uploaded file is read where the upload route stored it."""
+    from ..routes.repositories import resolve_upload
+    out: dict = {}
+    folder = workspace_dir / "cores" / re.sub(r"[^A-Za-z0-9._-]+", "_", core["name"])
+    macros = _materialize_macros(core.get("macros"), folder)
+    if macros:
+        out["macros"] = str(macros)
+    for key, field in (("dataDictionary", "data_dictionary"), ("compileCommands", "compile_commands")):
+        ref = core.get(field)
+        path = resolve_upload(ref["file_id"]) if ref else None
+        if path is not None:
+            out[key] = str(path)
+    return out
 
 
 def _materialize_macros(defs: Any, workspace_dir: Path) -> Optional[Path]:

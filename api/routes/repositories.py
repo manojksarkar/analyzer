@@ -35,13 +35,17 @@ _UPLOADS: dict[str, dict[str, Any]] = {}
 
 # Upload guard rails.
 _MAX_UPLOAD_BYTES = 5 * 1024 * 1024   # 5 MB — defs / data-dictionary files are small
-_ALLOWED_KINDS = {"preprocessor_definitions", "data_dictionary"}
+# A build's compile_commands.json lists every translation unit with its full command line:
+# tens of MB for a firmware tree.
+_MAX_BYTES_BY_KIND = {"compile_commands": 100 * 1024 * 1024}
+_ALLOWED_KINDS = {"preprocessor_definitions", "data_dictionary", "compile_commands"}
 
 # Extensions each kind can actually be read from. Definitions accept CSV plus the
 # JSON shapes engine/core/macro_input.py understands (toolchain dump, map, list).
 _ALLOWED_EXTS = {
     "preprocessor_definitions": {".csv", ".json"},
     "data_dictionary": {".csv", ".xlsx", ".xls"},
+    "compile_commands": {".json"},
 }
 
 
@@ -145,8 +149,9 @@ def store_upload(data: bytes, file_name: str, kind: str, uploaded_by: str,
             f"'{file_name}' is not a supported {kind.replace('_', ' ')} file. "
             f"Expected: {', '.join(sorted(allowed_exts))}."
         )
-    if len(data) > _MAX_UPLOAD_BYTES:
-        raise ValueError("File exceeds the 5 MB upload limit.")
+    limit = _MAX_BYTES_BY_KIND.get(kind, _MAX_UPLOAD_BYTES)
+    if len(data) > limit:
+        raise ValueError(f"File exceeds the {limit // (1024 * 1024)} MB upload limit.")
 
     upload_id = f"up_{uuid.uuid4().hex[:12]}"
     # On disk, not in memory: the wizard stores the id in build_config and a job

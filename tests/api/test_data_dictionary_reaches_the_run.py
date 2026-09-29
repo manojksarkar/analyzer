@@ -62,12 +62,24 @@ def test_the_runner_reads_an_upload_from_disk(client, auth_header, uploads_root)
     assert pr._upload_bytes(uid) == CSV
 
 
-def test_a_job_uses_the_project_dictionary_when_it_names_none(db, client, auth_header, tmp_path):
+def test_the_project_dictionary_reaches_the_run_through_its_core(db, client, auth_header, tmp_path,
+                                                                  uploads_root, monkeypatch):
+    # The project's dictionary is its core's (a project from before cores is Core1, used by every
+    # layer), so a job that names none adds no second, project-wide copy of it.
+    up = uploads_root / "uploads" / "up_wizard"
+    up.mkdir(parents=True)
+    (up / "dd.csv").write_bytes(CSV)
     pid = _project(db, {"data_dictionary": {"file_name": "dd.csv", "file_id": "up_wizard"}})
     with patch("api.services.settings.get_settings",
                return_value=types.SimpleNamespace(workspaces=tmp_path, repo_root=tmp_path)):
         job_id = _start(client, auth_header, pid)
-    assert db.jobs.get(job_id).data_dict_id == "up_wizard"
+    assert db.jobs.get(job_id).data_dict_id is None
+    monkeypatch.setattr(pr, "get_settings", lambda: types.SimpleNamespace(repo_root=tmp_path))
+    (tmp_path / "engine" / "config").mkdir(parents=True)
+    (tmp_path / "engine" / "config" / "config.defaults.json").write_text("{}", encoding="utf-8")
+    _, cfg = pr._write_project_config(db.projects.get(pid), tmp_path / "ws")
+    assert cfg["cores"]["Core1"]["dataDictionary"].endswith("dd.csv")
+    assert cfg["layers"]["Layer1"]["cores"] == ["Core1"]
 
 
 def test_a_job_that_names_a_dictionary_keeps_it(db, client, auth_header):

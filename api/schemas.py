@@ -108,6 +108,9 @@ class ProjectView(BaseModel):
     default_branch: str
     build_config: Dict[str, Any]
     architecture_layers: List[Dict[str, Any]]
+    # {name, macros, data_dictionary, compile_commands (file names or "N typed"), layers}
+    cores: List[Dict[str, Any]] = []
+    layer_cores: Dict[str, Optional[str]] = {}     # layer name -> its core
     created_at: str
     updated_at: str
 

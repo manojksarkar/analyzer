@@ -79,23 +79,28 @@ class TestWithoutTheRepository:
             ("Both", ["Layer1/Math/Utils.cpp", "Layer1/App"])]
         assert "Paths are checked" in " ".join(_texts(self.r, "check"))
 
-    def test_core_files_on_another_machine_are_left_to_upload(self):
-        assert self.r["expected_uploads"] == {"definitions": "macros.json", "data_dictionary": "dd.csv"}
-        assert self.d["definitions"] is None and self.d["data_dictionary"] is None
+    def test_each_cores_files_are_asked_for_by_name(self):
+        assert self.d["cores"] == [{"name": "Core1", "macros": None, "data_dictionary": None,
+                                    "compile_commands": None}]
+        assert self.r["expected_uploads"] == {"Core1": {
+            "macros": "macros.json", "data_dictionary": "dd.csv",
+            "compile_commands": "compile_commands.json"}}
+        assert self.d["architecture_layers"][0]["core"] == "Core1"
 
     def test_each_file_to_upload_says_why(self):
         checks = " ".join(_texts(self.r, "check"))
         # a repository path is looked for once the repository is connected ...
-        assert "`macros.json` is read from the repository once it is connected" in checks
+        assert ("Core1: `macros.json`, `compile_commands.json` - read from the repository once "
+                "it is connected") in checks
         # ... a path on the machine that wrote the file never is
-        assert "upload `dd.csv` in step 2 -- `C:\\work\\dd.csv` is a path on the machine" in checks
+        assert "Core1: upload `dd.csv` in step 2 - paths on the machine" in checks
 
     def test_project_settings_are_kept_and_machine_and_server_ones_are_not(self):
         assert self.d["settings"] == {"clang": {"clangArgs": ["--target=arm-none-eabi"]},
                                       "views": {"flowcharts": True, "behaviourDiagram": False}}
         skipped = " ".join(_texts(self.r, "skipped"))
         assert "clang.llvmLibPath" in skipped and "`llm`" in skipped
-        assert "compileCommands" in skipped
+        assert "compileCommands" not in skipped, "a core's compile commands are imported"
 
 
 class TestTokensAreNeverRead:
@@ -109,25 +114,50 @@ class TestTokensAreNeverRead:
         assert any("tokens are never read" in t for t in _texts(r, "skipped"))
 
 
-class TestDefinitions:
-    def test_project_defines_become_typed_definitions(self):
-        r = pc.preview(pc.parse('{"project": {"defines": ["DEBUG=1", "ARM"]}, "layers": {}}'))
-        assert r["draft"]["definitions"] == {"mode": "manual", "defines": ["DEBUG=1", "ARM"]}
-
-    def test_a_definitions_file_wins_over_project_defines(self):
-        r = pc.preview(pc.parse(
-            '{"project": {"defines": ["X"]}, "layers": {"L": {"path": "L", "cores": ["C"],'
-            ' "groups": {}}}, "cores": {"C": {"macros": "m.json"}}}'))
-        assert r["draft"]["definitions"] is None
-        assert r["expected_uploads"]["definitions"] == "m.json"
-        assert any("project.defines" in t for t in _texts(r, "skipped"))
-
-    def test_only_the_first_core_is_used(self):
+class TestCores:
+    def test_every_core_is_read_and_each_layer_takes_its_own(self):
         r = pc.preview(pc.parse(
             '{"layers": {"A": {"cores": ["C1"], "groups": {}}, "B": {"cores": ["C2"], "groups": {}}},'
             ' "cores": {"C1": {"macros": "one.json"}, "C2": {"macros": "two.json"}}}'))
-        assert r["expected_uploads"]["definitions"] == "one.json"
-        assert any("Not read: C2" in t for t in _texts(r, "skipped"))
+        assert [c["name"] for c in r["draft"]["cores"]] == ["C1", "C2"]
+        assert {k: v["macros"] for k, v in r["expected_uploads"].items()} == {
+            "C1": "one.json", "C2": "two.json"}
+        assert [(l["name"], l["core"]) for l in r["draft"]["architecture_layers"]] == [
+            ("A", "C1"), ("B", "C2")]
+
+    def test_a_core_no_layer_uses_is_named(self):
+        r = pc.preview(pc.parse('{"layers": {"A": {"groups": {}}}, "cores": {"C1": {}}}'))
+        assert [c["name"] for c in r["draft"]["cores"]] == ["C1"]
+        assert r["draft"]["architecture_layers"][0]["core"] is None
+        assert any("C1: no layer uses it" in t for t in _texts(r, "check"))
+
+    def test_compile_commands_may_be_an_object_whose_prefix_is_worked_out(self):
+        r = pc.preview(pc.parse(
+            '{"layers": {"A": {"cores": ["C1"], "groups": {}}}, "cores": {"C1": {"compileCommands":'
+            ' {"file": "build/compile_commands.json", "rootPrefix": "D:/work"}}}}'))
+        assert r["expected_uploads"]["C1"]["compile_commands"] == "compile_commands.json"
+        assert any("rootPrefix` is not used" in t for t in _texts(r, "skipped"))
+
+    def test_a_plain_defines_list_is_core1_for_every_layer(self):
+        # a file written before cores: its typed definitions were the whole project's
+        r = pc.preview(pc.parse('{"project": {"defines": ["DEBUG=1", "ARM"]},'
+                                ' "layers": {"L": {"path": "L", "groups": {}}}}'))
+        assert r["draft"]["cores"] == [{"name": "Core1",
+                                        "macros": {"mode": "manual", "defines": ["DEBUG=1", "ARM"]},
+                                        "data_dictionary": None, "compile_commands": None}]
+        assert r["draft"]["architecture_layers"][0]["core"] == "Core1"
+
+    def test_typed_defines_go_to_their_core_unless_it_names_a_file(self):
+        r = pc.preview(pc.parse(
+            '{"project": {"defines": {"C": ["X"], "D": ["Y=1"], "E": ["Z"]}},'
+            ' "layers": {"L": {"path": "L", "cores": ["C"], "groups": {}}},'
+            ' "cores": {"C": {"macros": "m.json"}, "D": {}}}'))
+        cores = {c["name"]: c for c in r["draft"]["cores"]}
+        assert cores["C"]["macros"] is None and r["expected_uploads"]["C"]["macros"] == "m.json"
+        assert cores["D"]["macros"] == {"mode": "manual", "defines": ["Y=1"]}
+        skipped = " ".join(_texts(r, "skipped"))
+        assert "`project.defines.C` was not used" in skipped
+        assert "`project.defines.E`: `cores` has no core `E`" in skipped
 
 
 class TestWithTheRepository:
@@ -158,32 +188,45 @@ class TestWithTheRepository:
         comps = r["draft"]["architecture_layers"][0]["groups"][0]["components"]
         assert comps[0]["files"] == ["Layer1/Sample/Core"]
 
-    def test_a_definitions_file_in_the_repository_is_read_as_an_upload(self):
+    def test_a_macros_file_in_the_repository_is_read_as_an_upload(self):
         r, stored = self._preview()
         assert stored == [("macros.json", "preprocessor_definitions", b'["FROM_REPO=1"]')]
-        assert r["draft"]["definitions"] == {"mode": "upload", "file_id": "up_1",
-                                             "file_name": "macros.json", "size": 15}
+        assert r["draft"]["cores"][0]["macros"] == {"mode": "upload", "file_id": "up_1",
+                                                    "file_name": "macros.json", "size": 15}
         # the data dictionary is a Windows path: never looked up in the repository
-        assert r["expected_uploads"] == {"definitions": None, "data_dictionary": "dd.csv"}
+        assert r["expected_uploads"]["Core1"] == {"macros": None, "data_dictionary": "dd.csv",
+                                                  "compile_commands": "compile_commands.json"}
+
+    def test_compile_commands_in_the_repository_are_read_too(self):
+        tree = TREE + [{"type": "folder", "name": "build", "path": "build", "children": [
+            {"type": "file", "name": "compile_commands.json", "path": "build/compile_commands.json"}]}]
+        stored = []
+        r = pc.preview(pc.parse(CONFIG), tree_nodes=tree,
+                       read_file=lambda p: b"[]" if p == "build/compile_commands.json" else None,
+                       store_file=lambda data, name, kind: stored.append((name, kind))
+                       or {"id": "up_cc", "file_name": name, "size": len(data)})
+        assert ("compile_commands.json", "compile_commands") in stored
+        assert r["draft"]["cores"][0]["compile_commands"] == {
+            "file_id": "up_cc", "file_name": "compile_commands.json", "size": 2}
 
     def test_a_file_the_repository_does_not_have_is_left_to_upload(self):
         # a downloaded config names the web app's uploads by file name alone
         r, stored = self._preview(CONFIG.replace('"cfg/macros.json"', '"macros.json"'))
-        assert stored == [] and r["expected_uploads"]["definitions"] == "macros.json"
-        assert any("upload `macros.json` in step 2 -- the repository has no file `macros.json`" in t
-                   for t in _texts(r, "check"))
+        assert stored == [] and r["expected_uploads"]["Core1"]["macros"] == "macros.json"
+        assert any("Core1: upload `macros.json`, `compile_commands.json` in step 2 - not in the "
+                   "repository" in t for t in _texts(r, "check"))
 
     def test_a_file_that_cannot_be_read_says_so(self):
         r, stored = self._preview(read=lambda p: None)
-        assert stored == [] and r["expected_uploads"]["definitions"] == "macros.json"
+        assert stored == [] and r["expected_uploads"]["Core1"]["macros"] == "macros.json"
         assert any("could not be used -- reading it failed" in t for t in _texts(r, "check"))
 
     def test_an_unusable_file_is_reported_not_stored(self):
         def refuse(data, name, kind):
             raise ValueError("'macros.json' is not a supported file.")
         r = pc.preview(pc.parse(CONFIG), tree_nodes=TREE, read_file=lambda p: b"x", store_file=refuse)
-        assert r["draft"]["definitions"] is None
-        assert r["expected_uploads"]["definitions"] == "macros.json"
+        assert r["draft"]["cores"][0]["macros"] is None
+        assert r["expected_uploads"]["Core1"]["macros"] == "macros.json"
         assert any("could not be used" in t for t in _texts(r, "check"))
 
 
@@ -240,12 +283,50 @@ class TestRoutes:
         assert back["settings"] == {"views": {"flowcharts": True}}
 
 
+class TestCoresRoundTrip:
+    def test_every_core_goes_out_and_comes_back(self):
+        from types import SimpleNamespace
+        layers = [
+            {"name": "Layer1", "path": "Layer1", "core": "Core1", "groups": [
+                {"name": "G", "components": [{"name": "A", "files": ["Layer1/A"]}]}]},
+            {"name": "Layer2", "path": "Layer2", "core": "Core2", "groups": [
+                {"name": "H", "components": [{"name": "B", "files": ["Layer2/B"]}]}]},
+            {"name": "Layer3", "path": "Layer3", "core": None, "groups": [
+                {"name": "I", "components": [{"name": "C", "files": ["Layer3/C"]}]}]}]
+        project = SimpleNamespace(name="Brake ECU", repo_url="https://example.invalid/b.git",
+                                  default_branch="main", architecture_layers=layers, build_config={
+            "cores": [
+                {"name": "Core1", "macros": {"mode": "upload", "file_id": "up_m", "file_name": "m1.json"},
+                 "data_dictionary": {"file_id": "up_d", "file_name": "dd1.csv"},
+                 "compile_commands": {"file_id": "up_c", "file_name": "compile_commands.json"}},
+                {"name": "Core2", "macros": {"mode": "manual", "defines": ["_CONFIG_CMCORE=1"]},
+                 "data_dictionary": None, "compile_commands": None}]})
+
+        cfg = pc.parse(pc.to_config_text(project))
+
+        assert cfg["cores"] == {"Core1": {"macros": "m1.json", "dataDictionary": "dd1.csv",
+                                          "compileCommands": "compile_commands.json"},
+                                "Core2": {}}
+        assert cfg["project"]["defines"] == {"Core2": ["_CONFIG_CMCORE=1"]}
+        assert [cfg["layers"][n].get("cores") for n in ("Layer1", "Layer2", "Layer3")] == [
+            ["Core1"], ["Core2"], None]
+
+        back = pc.preview(cfg)
+        assert [(l["name"], l["core"]) for l in back["draft"]["architecture_layers"]] == [
+            ("Layer1", "Core1"), ("Layer2", "Core2"), ("Layer3", None)]
+        cores = {c["name"]: c for c in back["draft"]["cores"]}
+        assert cores["Core2"]["macros"] == {"mode": "manual", "defines": ["_CONFIG_CMCORE=1"]}
+        assert back["expected_uploads"]["Core1"] == {
+            "macros": "m1.json", "data_dictionary": "dd1.csv",
+            "compile_commands": "compile_commands.json"}
+
+
 class TestTheWizardKnowsWhatEachItemIsAbout:
     def test_each_report_item_names_its_part_of_the_wizard(self):
         r = pc.preview(pc.parse(CONFIG))
         topic = {i["text"].split(":")[0]: i["topic"] for i in r["report"]}
         assert topic["Project"] == "project" and topic["Architecture"] == "architecture"
-        assert topic["Preprocessor definitions"] == "files"
+        assert topic["Cores"] == "files" and topic["Core1"] == "files"
         assert topic["Compiler settings"] == "settings"
         assert {i["topic"] for i in r["report"]} <= {"project", "architecture", "files",
                                                     "settings", "other"}
