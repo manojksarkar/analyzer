@@ -16,7 +16,7 @@ changes nothing in the document.
 | `behaviourInputName`, `behaviourOutputName`, `unitDescription` | `interfaceTables` |
 | `structDescription` | `unitHeaders` (the unit header table's information column) |
 | `behaviourDescription` | `behaviourDiagram` |
-| `nodeLabel` | `flowcharts` **and** `testSpecs` (`REQ-CS-04`) |
+| `nodeLabel` | `flowcharts`, `testSpecs` (`REQ-CS-04`) **and** `utExport` |
 
 Scoped to one component through `config["_analyzerAllowedComponents"]`, which every view already
 honours. A view is `run(model, output_dir, model_dir, config)` and is a pure function of the
@@ -57,7 +57,10 @@ VIEWS_BY_KIND: Dict[str, Tuple[str, ...]] = {
     # unit changes ANOTHER unit's document. Re-deriving the component's specs rather than
     # computing who transcribes whom: that view calls no LLM, so it is cheap, and correct by
     # construction instead of correct-if-the-traversal-is-right.
-    slot.NODE_LABEL:            ("flowcharts", "testSpecs"),
+    #
+    # And utExport: it is built from test_specs.json, and a return step's label is the
+    # expected return of its case (`ut_export._cases_for`). A description never reaches it.
+    slot.NODE_LABEL:            ("flowcharts", "testSpecs", "utExport"),
 }
 
 

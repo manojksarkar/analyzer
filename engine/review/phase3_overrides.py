@@ -25,7 +25,7 @@ that impossible to add by accident — the same coverage shape as `derive.views_
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Mapping, NamedTuple, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, NamedTuple, Optional, Tuple
 
 from review import slot
 

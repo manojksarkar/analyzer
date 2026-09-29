@@ -116,15 +116,21 @@ def _draw_pending_pictures(engine, version_id: str, output_dir: str) -> None:
         get_logger("incremental").warning("review: could not draw pending pictures: %s", exc)
 
 
-def _stamp_derivation(cx, version_id: str) -> None:
-    """Record a Phase-3 derivation for the export guard (REQ-AP-04).
+def _stamp_derivation(cx, version_id: str, output_dir: str) -> None:
+    """Record what Phase 3 derived, for the export guard (REQ-AP-04).
+
+    From the records Phase 3 left in the output directories (`export_guard.DERIVATION_RECORD`):
+    which views each run rebuilt, for which components, from corrections read when. They REPLACE
+    the version's stamps, as the files just replaced its output rows. Not a stamp for "now" --
+    that claimed a derivation for every view of every group whatever Phase 3 had done, including
+    nothing at all on an export-only run.
 
     Kept out of `persist_output_files` on purpose: that function's job is the rows, and the guard
     is a separate fact about when they were produced. Imported inside the call so `engine/review/`
     is not a load-time dependency of the store.
     """
-    from review.export_guard import stamp_pipeline_derivation
-    stamp_pipeline_derivation(cx, version_id)
+    from review.export_guard import stamp_recorded_derivations
+    stamp_recorded_derivations(cx, version_id, output_dir)
 
 
 class ArtifactStore(ABC):
@@ -384,10 +390,9 @@ class PgStore(ArtifactStore):
                 stored = persist_output_files(cx, version_id, output_dir)
                 # REQ-AP-04's baseline: when this version's output was last derived. Recorded
                 # here because this is the one point Phase-3 output reaches the database, so
-                # every ordinary run has a baseline -- not only versions somebody corrected.
-                # Without it the first correction to any version would report it stale for
-                # ever, since there would be nothing to compare against.
-                _stamp_derivation(cx, version_id)
+                # every ordinary run has a baseline -- not only versions somebody corrected --
+                # and in the same transaction, so the stamps always describe the rows stored.
+                _stamp_derivation(cx, version_id, output_dir)
             _verify_output_capture(version_id, output_dir, stored)
         except Exception as exc:
             # NOT swallowed. This used to be `except Exception: pass` under the note
