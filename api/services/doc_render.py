@@ -83,14 +83,21 @@ def resolve_asset(group: Optional[str], asset_path: str,
     return None
 
 
-def find_docx(group: Optional[str], output_root: Optional[Path] = None) -> Optional[Path]:
-    """Return the real DOCX path for ``group`` in the (version's) output if it exists."""
-    if not group:
+# The file each process's exporter writes into a component's output dir (engine group_planner).
+DOCX_PREFIX = {"SWE.3": "software_detailed_design", "SWE.4": "software_unit_test_specification"}
+
+
+def find_docx(group: Optional[str], output_root: Optional[Path] = None,
+              process: str = "SWE.3") -> Optional[Path]:
+    """Return the real DOCX path of ``process``'s document for ``group`` in the (version's)
+    output if it exists. One component dir holds both documents of a run."""
+    prefix = DOCX_PREFIX.get(process)
+    if not group or not prefix:
         return None
     base = output_group_dir(group, output_root)
     if not base:
         return None
-    p = base / f"software_detailed_design_{group}.docx"
+    p = base / f"{prefix}_{group}.docx"
     return p if p.is_file() else None
 
 

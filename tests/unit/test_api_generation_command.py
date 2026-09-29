@@ -111,7 +111,12 @@ class TestTheCliAcceptsEveryOption:
     def test_the_defaults_add_nothing(self):
         _, a = _parsed(_job())
         assert a.data_dict is None and a.no_llm is False and a.base_version is None
-        assert a.doc_type == "swe3"      # what both engine functions default to, as before
+
+    def test_every_run_makes_both_documents(self):
+        """A run that makes a component's SWE.3 makes its SWE.4 too, full or incremental."""
+        for mode in ("auto", "full"):
+            _, a = _parsed(_job(mode=mode))
+            assert a.doc_type == "all"
 
 
 class TestTheRunnerUsesIt:

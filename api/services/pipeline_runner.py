@@ -552,8 +552,9 @@ def _generate_cmd(job: Any, root: Path, config_path: Path) -> list[str]:
         data_dict_id              --data-dict
         no_llm                    --no-llm
 
-    No `--doc-type`: the scripts never passed one, and both functions default to swe3, as the
-    CLI does.
+    `--doc-type all`, always: a run that makes a component's Detailed Design (SWE.3) makes its
+    Unit Test Specification (SWE.4) too (docs/ui-mockups/documents.html). The engine derives
+    SWE.4 from the same model with no LLM, so the second document costs little.
     """
     mode = (getattr(job, "mode", "auto") or "auto")
     scope = getattr(job, "scope", None) or {"type": "project"}
@@ -564,7 +565,8 @@ def _generate_cmd(job: Any, root: Path, config_path: Path) -> list[str]:
            "--version-id", job.version_id,
            "--branch", job.branch, "--commit", job.commit_sha,
            "--scope", _scope_to_cli(scope),
-           "--config", str(config_path)]
+           "--config", str(config_path),
+           "--doc-type", "all"]
     if mode == "full":
         cmd.append("--full")
     else:
@@ -1627,6 +1629,25 @@ def _make_sections(db: Any, docs: list, now: datetime, output_dir: Path) -> None
                     review_state=None, reviewed_by=None, reviewed_at=None,
                 ),
             ]
+        elif doc.process == "SWE.4":
+            # The three numbered chapters of the SWE.4 DOCX (engine/swe4_exporter.py). The keys
+            # are the ids the page gives those chapters, so the review tracker can jump to them.
+            sections = [
+                DocumentSection(
+                    id=f"sec{uuid.uuid4().hex[:8]}", document_id=doc.id,
+                    section_key=key, title=title, order=order, content=content,
+                    review_state=None, reviewed_by=None, reviewed_at=None,
+                )
+                for order, (key, title, content) in enumerate((
+                    ("intro", "1. Introduction",
+                     f"Purpose and scope of the unit tests of '{doc.name}', and the terms used."),
+                    ("test_spec", "2. Unit Test Specification",
+                     "Per function: precondition, inputs, test steps along its control flow and "
+                     "the expected results, with the test case metadata."),
+                    ("metrics", "3. Code Metric, Coding Rule, Test Coverage",
+                     "Code metrics, coding-rule compliance and test-coverage results."),
+                ), start=1)
+            ]
         else:
             # SWE.2 / SWE.3 — read unit count from interface_tables.json
             n_units, n_comps = 0, 1
@@ -1784,17 +1805,19 @@ def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> l
                 if cname:
                     comp_by_dir[make_qualified_id(lname, cname).replace(" ", "-")] = (cname, lname)
 
-    # One SWE.3 detailed-design doc per component output dir that holds a real DOCX.
+    # Per component output dir: its Detailed Design (SWE.3) and its Unit Test Specification
+    # (SWE.4) — each registered only when its real DOCX is there. Each has a review of its own.
     for d in sorted(out_root.iterdir()):
         if not d.is_dir():
             continue
         meta = comp_by_dir.get(d.name)
         if meta is None:
             continue
-        if find_docx(d.name, out_root) is None:
-            continue
         disp, lname = meta
-        add("SWE.3", disp, "Detailed Design", lname, d.name)
+        for process, subtitle in (("SWE.3", "Detailed Design"),
+                                  ("SWE.4", "Unit Test Specification")):
+            if find_docx(d.name, out_root, process) is not None:
+                add(process, disp, subtitle, lname, d.name)
 
     return docs
 

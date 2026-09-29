@@ -32,18 +32,19 @@ def _project(db):
     return project
 
 
-def _write_docx(out_root, dir_name):
+def _write_docx(out_root, dir_name, prefixes=("software_detailed_design",)):
     d = out_root / dir_name
     d.mkdir(parents=True)
-    (d / f"software_detailed_design_{dir_name}.docx").write_bytes(b"PK")
+    for prefix in prefixes:
+        (d / f"{prefix}_{dir_name}.docx").write_bytes(b"PK")
 
 
-def _register(db, tmp_path, dirs):
+def _register(db, tmp_path, dirs, prefixes=("software_detailed_design",)):
     project = _project(db)
     out_root = tmp_path / "output"
     out_root.mkdir()
     for name in dirs:
-        _write_docx(out_root, name)
+        _write_docx(out_root, name, prefixes)
     now = datetime.datetime.now(datetime.timezone.utc)
     version = Version(id="ver" + uuid.uuid4().hex[:8], project_id=project.id, tag="v1",
                       commit_sha="0" * 40, branch="main", description="", status="in_review",
@@ -71,3 +72,37 @@ class TestOneDocumentPerComponentDocx:
     def test_a_dir_no_component_declares_is_skipped(self, db, tmp_path):
         docs = _register(db, tmp_path, ["Layer1.Stale", "Layer3.Lib"])
         assert docs == []
+
+
+BOTH = ("software_detailed_design", "software_unit_test_specification")
+
+
+class TestTheUnitTestSpecificationBesideIt:
+    """A run writes a component's SWE.4 DOCX next to its SWE.3 one; each is a document."""
+
+    def test_both_documents_of_a_component_are_registered(self, db, tmp_path):
+        docs = _register(db, tmp_path, ["Layer1.Lib", "Layer2.Lib"], BOTH)
+        got = sorted((d.process, d.group, d.subtitle) for d in docs)
+        assert got == [("SWE.3", "Layer1.Lib", "Detailed Design"),
+                       ("SWE.3", "Layer2.Lib", "Detailed Design"),
+                       ("SWE.4", "Layer1.Lib", "Unit Test Specification"),
+                       ("SWE.4", "Layer2.Lib", "Unit Test Specification")]
+
+    def test_each_finds_its_own_file(self, db, tmp_path):
+        from api.services.doc_render import find_docx
+        docs = _register(db, tmp_path, ["Layer1.Lib"], BOTH)
+        files = {d.process: find_docx(d.group, tmp_path / "output", d.process).name for d in docs}
+        assert files == {"SWE.3": "software_detailed_design_Layer1.Lib.docx",
+                         "SWE.4": "software_unit_test_specification_Layer1.Lib.docx"}
+
+    def test_no_swe4_file_no_swe4_document(self, db, tmp_path):
+        docs = _register(db, tmp_path, ["Layer1.Lib"])
+        assert [d.process for d in docs] == ["SWE.3"]
+
+    def test_a_swe4_document_gets_the_chapters_of_its_docx(self, db, tmp_path):
+        docs = _register(db, tmp_path, ["Layer1.Lib"], BOTH)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        pr._make_sections(db, docs, now, tmp_path / "output")
+        swe4 = next(d for d in docs if d.process == "SWE.4")
+        keys = [s.section_key for s in sorted(db.documents.list_sections(swe4.id), key=lambda s: s.order)]
+        assert keys == ["intro", "test_spec", "metrics"]

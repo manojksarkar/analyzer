@@ -402,7 +402,7 @@ def download_export_all(
         for doc in docs:
             version = db.versions.get(doc.version_id) if doc.version_id else None
             out_root = doc_render.commit_output_root(project_id, version.commit_sha, version.id) if version else None
-            docx = doc_render.find_docx(doc.group, out_root)
+            docx = doc_render.find_docx(doc.group, out_root, doc.process)
             if docx is not None:
                 # The DOCX's own name carries the layer-qualified component id, so it is unique.
                 # `doc.name` is not: two layers with a component of the same name wrote two
@@ -444,12 +444,14 @@ def download_document(
         raise not_found("Document", doc_id)
     version = db.versions.get(doc.version_id) if doc.version_id else None
     out_root = doc_render.commit_output_root(project_id, version.commit_sha, version.id) if version else None
-    docx = doc_render.find_docx(doc.group, out_root)
+    docx = doc_render.find_docx(doc.group, out_root, doc.process)
     if docx is not None:
+        # The file's own name: `doc.name` is the component, which its SWE.3 and SWE.4
+        # documents share.
         return FileResponse(
             docx,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f'attachment; filename="{doc.name}.docx"'},
+            headers={"Content-Disposition": f'attachment; filename="{docx.name}"'},
         )
     return Response(
         content=b"PK\x03\x04",
@@ -658,7 +660,7 @@ def export_document(
         raise not_found("Document", doc_id)
     version = db.versions.get(doc.version_id) if doc.version_id else None
     out_root = doc_render.commit_output_root(project_id, version.commit_sha, version.id) if version else None
-    docx = doc_render.find_docx(doc.group, out_root)
+    docx = doc_render.find_docx(doc.group, out_root, doc.process)
     if docx is not None:
         return FileResponse(
             docx,
