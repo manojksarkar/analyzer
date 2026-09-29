@@ -834,6 +834,7 @@ def _enrich_behaviour_names_llm(
             extract_source,
             get_behaviour_names,
             load_abbreviations,
+            analyzer_root,
         )
     except ImportError:
         return
@@ -841,7 +842,7 @@ def _enrich_behaviour_names_llm(
         return
     from core.progress import ProgressReporter
     from core.logging_setup import get_logger
-    abbreviations = load_abbreviations(SCRIPT_DIR, config)  # SCRIPT_DIR == engine/, which contains config/
+    abbreviations = load_abbreviations(analyzer_root(), config)
     order = list(functions_data.keys())
     n = len(order)
     progress = ProgressReporter("LLM-behaviour-names", total=n, logger=get_logger("model_deriver"))

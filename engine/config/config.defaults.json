@@ -125,8 +125,8 @@
     "numCtx": 8192,
     "retries": 1,
     "fewShotExamplesDir": "few_shot_examples",
-    "abbreviationsPath": "config/abbreviations.txt",
-    "domainContextPath": "config/domain.txt",
+    "abbreviationsPath": "engine/config/abbreviations.txt",
+    "domainContextPath": "engine/config/domain.txt",
     "descriptionBlocklist": [
       "audio",
       "video"
