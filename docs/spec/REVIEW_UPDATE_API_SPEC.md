@@ -445,7 +445,7 @@ For the five model-backed kinds. `nodeLabel` → R8, `behaviourDescription` → 
 | `llmText` | string \| null | the original, unchanged by this call |
 | `previousText` | string \| null | what this call replaced. `null` on the first edit |
 | `firstEdit` | boolean | true when this slot had no correction before |
-| `viewsDerived` | string[] | **always `[]` over HTTP** — see the note below |
+| `viewsDerived` | string[] | the SWE.4 views this save re-derived — see the note below. `[]` for a version with no SWE.4 output, which is every web-app version |
 | `queuedForRegeneration` | `QueuedSlot[]` | see below |
 
 ```json
@@ -464,11 +464,14 @@ For the five model-backed kinds. `nodeLabel` → R8, `behaviourDescription` → 
 }
 ```
 
-**`viewsDerived` is empty over HTTP, and that is correct.** The service can re-derive a view and
-stamp it as freshly derived, but only with an output tree, a model and a config — which an API host
-is not guaranteed to have. More importantly, stamping a derivation at *save* time would mark the
-version **fresh** when its document has not been rebuilt, and R9 would stop reporting the staleness
-the export depends on. The field is reserved for a caller that really does re-derive.
+**`viewsDerived` names only views this request rebuilt.** A `description` correction reaches the
+SWE.4 test spec that copies it, so on a version with SWE.4 output — one generated from the CLI — the
+save re-derives the component's specs and the UT export built from them, from the stored rows
+(`REQ-CS-04`), and returns `["testSpecs", "utExport"]`. Those views are then stamped as derived, and
+only those: the SWE.3 rows a save changes are patched in place, not re-derived, so R9 keeps
+reporting the staleness the SWE.3 export depends on. `[]` on a version with no SWE.4 output, or when
+the specs cannot be rebuilt as they were built (output from before 2026-09-29) — the export guard
+then keeps SWE.4 stale until Phase 3 runs.
 
 **Show `queuedForRegeneration`.** The reviewer is about to see wording change in places they did not
 touch, on the next run. An unannounced change reads as a bug.
@@ -610,7 +613,7 @@ land on the wrong row (`REQ-ID-01`). Copy both from the row R11 returns: `functi
 | `bullets` | string[] | as stored, each collapsed to one line |
 | `llmText` | string \| null | the original list, newline-joined |
 | `firstEdit` | boolean | |
-| `viewsDerived` | string[] | |
+| `viewsDerived` | string[] | always `[]`: the behaviour row is patched in place, and no SWE.4 view prints this text |
 
 ```json
 {
@@ -621,7 +624,7 @@ land on the wrong row (`REQ-ID-01`). Copy both from the row R11 returns: `functi
   ],
   "llmText": "App_Start calls Gpio_Init\nGpio_Init returns",
   "firstEdit": true,
-  "viewsDerived": ["behaviourDiagram"]
+  "viewsDerived": []
 }
 ```
 
@@ -738,7 +741,7 @@ Three rules (`REQ-API-08`):
 | `slotShape` | string \| null | sha256 hex (64 chars) of the graph these labels were written against — see below |
 | `renderPending` | boolean | `true` while the picture is **owed** |
 | `renderJobs` | integer[] | job ids raised by this call |
-| `viewsDerived` | string[] | **always `[]` over HTTP** — see §8. Editing a node label does change the SWE.4 Test Step, but the next Phase-3 run is what rebuilds it |
+| `viewsDerived` | string[] | `["testSpecs", "utExport"]` when the version has SWE.4 output: a label is a Test Step ("Check whether <label>"), and a return's label the expected return of a UT case, so the component's specs are re-derived in this request — see §8. `[]` otherwise |
 
 ```json
 {
@@ -786,7 +789,10 @@ and R5 still work on a single `nodeLabel` slot key.
 `GET /projects/{projectId}/versions/{versionId}/export-readiness`
 
 Whether exporting now would ship text a correction has already replaced (`REQ-AP-04`). **Call it
-before offering a download.**
+before offering a download.** It asks about the SWE.3 document — the one the web app exports — so
+only the views SWE.3 prints count: a label on a flowchart SWE.3 does not embed (`views.flowcharts`
+off, the default) does not make it stale. A SWE.4 document of a CLI-generated version is exported
+from the CLI, which asks its own question (`analyzer.py reexport --doc-type swe4`).
 
 No parameters.
 
@@ -830,7 +836,8 @@ refuses instead and prints `reexport --from-phase 3`; the difference is delibera
 [DESIGN §13.3](../design/REVIEW_UPDATE_DESIGN.md#133-the-export-guard-lives-in-runpy-not-only-in-analyzerpy).)
 
 **`pendingRenders` also makes a version stale** (`REQ-IM-02`), even when every sentence is current:
-an export now would carry the new wording and the old picture.
+an export now would carry the new wording and the old picture — when the SWE.3 document embeds the
+flowcharts at all.
 
 **`failedRenders` does not block.** A render that gave up cannot be waited for, and blocking would
 make one unrenderable flowchart permanently unexportable. It appears in `explanation` instead, so a

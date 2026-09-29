@@ -500,6 +500,27 @@ python analyzer.py reexport --project-id myproj --version-id v2 --from-phase 4 -
 | `--from-phase` | 2 = re-derive, then views + export; 3 = views + export (default); 4 = export only |
 | `--scope` | re-render a **narrower** slice than the version was generated with |
 | `--unit <name>` | narrow the per-function flowchart work to this unit. Repeatable. |
+| `--doc-type` | `swe3`, `swe4` or `all`. Default: what the version was generated with |
+| `--force` | export even when a reviewer's correction is newer than the stored views — see below |
+
+**An export-only run can refuse.** `--from-phase 4` skips Phase 3, so it exports the views as they
+were last built. When a reviewer has corrected a text since, in a part the documents being exported
+print, it stops with exit code 2 and names the correction and the view:
+
+```
+version myproj.v2 is not safe to export: a correction is newer than the derived output (nodeLabel in layer1.lib, its testSpecs) (1 correction(s) in this version).
+  Re-derive the views first:
+    python analyzer.py reexport --project-id <pid> --version-id myproj.v2 --from-phase 3
+
+  Or re-run with --force to export anyway.
+```
+
+It asks about the documents this run writes (`--doc-type`): SWE.4 is judged on its test specs and
+UT export, SWE.3 on what a SWE.3 run built — so a flowchart label does not hold up a SWE.3 document
+that embeds no flowcharts (`views.flowcharts` off, the default). A correction saved through the web
+app on a version with SWE.4 output re-derives that component's SWE.4 specs at once, so
+`--from-phase 4 --doc-type swe4` right after it is allowed and prints the corrected text.
+`--from-phase 2` and `3` are never refused: they apply every correction on their way through.
 
 It needs the version's commit still checked out, because flowcharts and line numbers are read
 from the source. If the checkout is gone it says so rather than producing an empty document.
@@ -543,12 +564,12 @@ after    entities=60  units=2  edges=18
 ```
 
 What a re-export *does* change is `version_output_files` — the stored render — which is
-**replaced** with whatever is in `output/` when it finishes. Two things follow:
-
-* Leave `output/` alone and you keep what the interrupted run produced, plus the unit you
-  just rendered. Nothing is lost.
-* Wipe `output/` first and the stored set shrinks to only what you re-render. Not corruption,
-  but not what you want if you were only checking one unit.
+**replaced** with whatever is in `output/` when it finishes. So it first writes the stored text
+files back into `output/`, and then re-renders on top of them: the stored set keeps everything the
+run did not rebuild, whatever this machine's `output/` held, and every reader — the exporter, the
+flowchart engine, the SWE.4 views — reads what the database holds, corrections included. (Until
+2026-09-29 that restore silently failed, so a wiped `output/` shrank the stored set to what the run
+re-rendered.) Images are not stored, so they come from `output/` or are drawn again.
 
 It also does **not** mark the version complete: `reexport` never writes the manifest, so an
 interrupted version stays interrupted.

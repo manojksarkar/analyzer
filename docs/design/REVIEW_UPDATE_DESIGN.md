@@ -123,10 +123,13 @@ The export guard's input (`REQ-AP-04`).
 
 | column | notes |
 |---|---|
-| `version_id`, `view_name`, `group_name` | what was derived |
-| `derived_at` | |
+| `version_id`, `view_name` | a view (`interfaceTables`, `testSpecs`, …) |
+| `group_name` | the **component** it was derived for, in `export_guard.component_id` form (`layer1.sample-core`) |
+| `derived_at` | when its inputs were read |
 
-Guard: `max(text_overrides.updated_at) > min(view_derivations.derived_at)` ⇒ stale.
+One row per (version, view, component). The rows are an index of the derivation records stored with
+the output — see [§9](#9-the-export-guard). Rows with `view_name = "*"` were written before
+2026-09-29 and are ignored.
 
 ### 2.4 Migration
 
@@ -304,9 +307,22 @@ key. No LLM, no parse, no subprocess.
 | `unitDescription` | `interfaceTables` for that component |
 | `structDescription` | `unitHeaders` — the unit header table shows it for struct, class and union rows |
 | `behaviourDescription` | `behaviourDiagram` rows for that component |
-| `nodeLabel` | the flowchart JSON for that unit |
+| `nodeLabel` | the flowchart JSON for that unit, and `testSpecs` + `utExport` for its component (`REQ-CS-04`) |
 
-Each derivation stamps `view_derivations`.
+What a **save** does with this table: the SWE.3 rows are patched in place (§5.2), and the SWE.4 rows
+are re-derived from the stored rows — `review.swe4_rederive`, below. Only a re-derivation is stamped
+in `view_derivations`; a patch is not, so the SWE.3 export still waits for Phase 3.
+
+**The SWE.4 rows at save time.** `test_specs.build(model, config, cfgs)` and
+`ut_export.build(specs, dd, config)` are the views' own builders, split from their `run` so they need
+no output tree. The save supplies what Phase 3 would: the settings the specs were built with (Phase 3
+keeps them in the derivation record beside the SWE.4 entries — a CLI version stores no config
+anywhere else), the model as the save holds it, and the stored flowchart rows with every label
+correction applied by the same `apply_to_flowchart_json`. It builds the saved slot's component only
+and merges it into the stored file — nothing in a spec depends on the document's other components —
+and rebuilds the UT export from the merged file. With nothing corrected the rows come back byte for
+byte; after a correction they equal what the next Phase-3 run writes (both checked on the sample).
+A directory whose record predates the settings is left alone, and nothing is stamped.
 
 **The rule that keeps `REQ-AP-01` true:** nothing except a `VIEW_REGISTRY` call writes a
 `version_output_files` row. If a future change adds a second writer, the invariant is gone and the
@@ -567,16 +583,30 @@ The only new read is the API's own "does this slot have an override" for the UI'
 
 `REQ-AP-04`, and the piece that makes this reliable rather than merely correct.
 
-Before Phase 4 runs — in `cmd_reexport` and in the API's export path:
+Before Phase 4 runs — in `cmd_reexport` and in the API's export path — for the documents being
+exported:
 
 ```
-stale = EXISTS(text_overrides for this version newer than the oldest view_derivations row)
-        OR EXISTS(render_jobs pending for this version)
+for every correction in this version:
+    for every view its text reaches (derive.views_for) that those documents print:
+        that view's derivation for the correction's component is older  =>  stale
+OR a picture is still being drawn, and a document being exported embeds flowcharts
 
 if stale:
     re-derive the affected views, wait for pending renders, then export
     (or refuse, naming what is stale, when re-deriving is not possible)
 ```
+
+**What a document prints.** SWE.4 is read from `testSpecs` and `utExport` (`SWE4_VIEWS`); the
+flowcharts a SWE.4 run also builds are the specs' input, and the specs are what carry a label into
+it. SWE.3 is read from the views a SWE.3 run built — each record entry keeps `docTypes`, from the
+same rule that chose to build it (`views.views_to_run`). The SWE.3 exporter embeds the flowcharts
+only when `views.flowcharts` is on, so with it off (the default) a label correction does not hold up
+a SWE.3 export. With no document type named, or no record to say, every view counts.
+
+**Per component.** A correction is judged against its own component's derivation — the first
+segment of its key. A struct description's key is the type's name, which names no component, so it
+needs every component's derivation of `unitHeaders` to be newer.
 
 `reexport --from-phase 4` is documented as *"export only"* and **skips Phase 3** — the step that
 rebuilds the view rows from the model. Only phase 4 is gated: phases 2 and 3 re-derive on the way
@@ -584,18 +614,31 @@ through, so refusing them would block the very command that fixes the problem. `
 anyway, because a guard with no override is one people route around by other means.
 
 **The baseline.** `view_derivations` has to be written by ordinary runs, not only by the override
-path, or the first correction to any version would report it stale for ever — there would be
-nothing to compare against. `incremental/store.py::capture_output` stamps it, that being the one
-point Phase-3 output reaches the database. It writes `view_name = "*"` (`export_guard.PIPELINE_ALL`)
-for the whole group: Phase 3 runs as a subprocess and the capture point does not know which
-individual views ran, so naming them there would invent precision this code does not have. The
-guard needs `min(derived_at)`, which is correct either way.
+path, or the first correction to any version would report it stale for ever. Phase 3 knows what it
+ran, so it says so: `run_views.py` leaves a record in each output directory (`_derivations.json`) —
+the views it ran, for which components and documents, and when it read its inputs (before loading
+the model, so a correction saved during the run is newer than the stamp). The record is an output
+file like any other, so the capture stores it with the rows, and
+`incremental/store.py::capture_output` **replaces** the version's `view_derivations` rows with what
+the stored records say, in the same transaction.
+
+Until 2026-09-29 the capture wrote one `view_name = "*"` row for the whole version, whatever Phase 3
+had done — after a SWE.3-only run, after an export-only run that ran no Phase 3 at all. Reproduced: a
+label corrected, a SWE.3 re-export (what the web app runs), then
+`reexport --from-phase 4 --doc-type all` shipped the SWE.4 document with the old Test Step and no
+warning.
+
+**A save's stamp.** A save that re-derives rows (the SWE.4 specs, §5) stamps them for its component
+and marks the same records (`saved`, per component — `export_guard.stamp_saved`). The next capture
+rebuilds the stamps from the records, so the mark is what keeps the stamp — and a run that
+overwrote the save's rows overwrote the mark with them, so the correction reads as stale again.
+Merging at capture instead of replacing would vouch for rows that no longer carry the correction.
 
 **Absence of evidence counts as stale.** Corrections with no derivation row at all is not proof of
 freshness. A guard that reads "no data" as "fine" is the guard that does not guard.
 
-**Pending renders are not part of the check yet** — `render_jobs` arrives with step 7. Without this guard it ships the previous text, silently.
-Moving output into the database does not fix it: it is still the row Phase 3 wrote last time.
+Without this guard an export-only run ships the previous text, silently. Moving output into the
+database does not fix it: it is still the row Phase 3 wrote last time.
 
 The guard is a **check, not an assumption**. Even if a future change adds a write path that forgets
 to re-derive, the export cannot quietly ship stale text.
@@ -814,8 +857,12 @@ the stored description too, so Phase 2 generates one for all three record kinds.
 
 ### 12.2 `REQ-PRE-02` — view output read from the database
 
-Storage is done (`persist_output_files`). **Reading** is not: `docx_exporter` takes a `json_path`,
-the flowchart engine takes `--interface-json`, and the SWE.4 views read the flowcharts directory.
+Storage is done (`persist_output_files`). **Reading** is not: `docx_exporter` takes a `json_path`
+and the flowchart engine takes `--interface-json`. The SWE.4 builders can read stored rows
+(`test_steps.cfgs_from_entries`, used by a save — §5). A run that exports or re-derives writes the
+stored rows over its disk first (`run.py::_restore_output_from_db`) — since 2026-09-29: before that
+it named a function that did not exist, the error was caught as "could not restore", and every run
+exported from disk.
 
 Note `PgStore.capture_output` swallows its own failures (`except Exception: pass` — *"best-effort,
 disk output is intact"*), so disk and database can disagree today with nothing reporting it.
@@ -853,7 +900,7 @@ was a gap before `REQ-API-08`; it is a blocker now, because the flowchart endpoi
 
 ### 13.1 Where the pipeline calls this feature
 
-**Nine call sites.** An earlier version of this section said "two" and listed four, which was
+**Eleven call sites.** An earlier version of this section said "two" and listed four, which was
 wrong in a way that matters for a merge: anyone reading it would not know which files this feature
 can change the behaviour of. Every one is deliberately thin — everything beneath them is tested on
 its own — and every one is **non-fatal**.
@@ -868,7 +915,9 @@ its own — and every one is **non-fatal**.
 | 3 | `from_config` + `apply_to_docx_rows` | `views/behaviour_diagram.py::_apply_text_overrides` | the behaviour view rebuilds every row it writes, so this is where that text exists |
 | 3 | `clear_behaviour_entries` | `run_views.py::_retire_behaviour_regenerations` | running the view IS the regeneration, so retire where it happened |
 | 4 | `assert_exportable` | `run.py::_refuse_stale_export` **and** `analyzer.py::cmd_reexport` | see §13.3 — one is the guarantee, the other is a fast failure |
-| capture | `stamp_pipeline_derivation` + `run_pending` | `incremental/store.py::capture_output` | the one point Phase-3 output reaches the database, and a host that has the output tree |
+| 3 | `record_derivation` | `run_views.py::_record_derivation`, after `run_views(...)` | only Phase 3 knows which views it ran, for which components and documents |
+| capture | `stamp_recorded_derivations` + `run_pending` | `incremental/store.py::capture_output` | the one point Phase-3 output reaches the database, and a host that has the output tree |
+| save | `make_save_deriver` | `api/routes/text_overrides.py` (R3, R4, R8) | the SWE.4 rows a correction reaches, re-derived in the save's transaction |
 
 Being non-fatal is the rule, not a courtesy: a generation that has already paid for the parse and
 the LLM must never be lost because a correction could not be carried, read or applied. Each site
@@ -905,10 +954,10 @@ So `run.py::_refuse_stale_export` is the guarantee — every front door spawns i
 `analyzer.py` keeps its own check because it fails before the checkout and the subprocess. `--force`
 travels to it as `--force-export`, or the CLI would honour an override the backstop then refused.
 
-Only phase 4 is gated, and that is not merely an optimisation: `stamp_pipeline_derivation` records
-the derivation when output is **captured**, which happens after phase 4. A run that includes phase 3
-is applying the corrections on its way through, but at the moment it reaches phase 4 the stamps are
-still the previous run's — so checking there would refuse exactly the run that fixes the problem.
+Only phase 4 is gated, and that is not merely an optimisation: the stamps are written when output
+is **captured**, which happens after phase 4. A run that includes phase 3 is applying the
+corrections on its way through, but at the moment it reaches phase 4 the stamps are still the
+previous run's — so checking there would refuse exactly the run that fixes the problem.
 
 **On the API the remedy is applied, not recommended.** `pipeline_runner._reexport_from_phase` asks
 the guard and runs from **phase 3** when the version is stale, which is the remedy the guard's own
