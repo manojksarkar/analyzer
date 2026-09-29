@@ -570,12 +570,15 @@ def export_readiness(
     db: InMemoryDatabase = Depends(get_db),
 ):
     """`REQ-AP-04`. Whether exporting now would ship text a correction has already replaced, so
-    the UI can say so before someone downloads a document that is quietly out of date."""
+    the UI can say so before someone downloads a document that is quietly out of date.
+
+    About the documents the web app exports -- SWE.3. A SWE.4 document of a CLI-generated version
+    is exported from the CLI, which asks its own question (`analyzer.py reexport`)."""
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
     from review.export_guard import staleness
     with _connection().connect() as cx:
-        st = staleness(cx, version_id)
+        st = staleness(cx, version_id, "swe3")
         reexport = _latest_reexport(cx, version_id)
     return {"stale": st.is_stale, "reason": st.reason, "explanation": st.explain(),
             # The version's latest re-export job, or null. How a page that was reloaded -- or

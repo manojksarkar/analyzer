@@ -939,21 +939,22 @@ except ValueError as e:
     sys.exit(2)
 
 def _restore_output_from_db(from_phase: int) -> None:
-    """Write this version's stored view output back to `output/` before an export-only run.
+    """Write this version's stored view output back to `output/` before a run that re-renders it.
 
     The database is the source; the files are a materialisation of it that the exporter, the
     flowchart engine and the SWE.4 views all read. Rather than rewiring three readers -- one of
     them the DOCX exporter -- the materialisation is refreshed, which is what
-    `model_store.restore_output_files` already exists to do.
+    `model_store.dump_output_files_to_dir` already exists to do.
 
-    Silent no-op when there is no version or no database: a standalone run has neither, and its
-    `output/` is the only copy there is.
+    Also before a re-derive (`--from-phase 2`/`3`): it rebuilds only what it runs, and the capture
+    after it REPLACES every stored row with this disk. From a stale or empty disk that put old rows
+    back and dropped the rest -- a SWE.3 re-export lost a CLI version's SWE.4 specs. A new version
+    has no rows yet, so a generation is unaffected.
 
-    Never fatal. If the restore fails the export still runs from what is on disk, which is what it
-    did before this existed -- but it is reported, because a document built from an unknown
-    vintage is worth knowing about (REQ-PRE-02).
+    Silent no-op without a version or a database. Never fatal: a failed restore is reported and
+    the run goes on from disk, as it did before this existed (REQ-PRE-02).
     """
-    if from_phase < 4:
+    if from_phase < 2:
         return
     try:
         from core.run_context import version_id as _vid
@@ -961,14 +962,15 @@ def _restore_output_from_db(from_phase: int) -> None:
         vid = _vid()
         if not (vid and is_database_configured()):
             return
-        from core.model_store import restore_output_files
+        from core.model_store import dump_output_files_to_dir
+        from core.paths import paths
         with get_engine().connect() as cx:
-            n = restore_output_files(cx, vid, _paths().output_dir)
+            n = dump_output_files_to_dir(cx, vid, paths().output_dir)
         if n:
-            log(f"restored {n} view output file(s) from the database before exporting",
+            log(f"restored {n} view output file(s) from the database",
                 component="run")
     except Exception as exc:                       # noqa: BLE001 - see docstring
-        log(f"WARNING: could not restore view output from the database ({exc}); exporting from "
+        log(f"WARNING: could not restore view output from the database ({exc}); running from "
             f"whatever is in output/ on this machine", component="run", err=True)
 
 
@@ -985,8 +987,8 @@ def _refuse_stale_export(from_phase: int, force: bool) -> None:
     `analyzer.py` still checks first, before spawning anything, so the CLI fails fast with a
     better message. This is the backstop that no caller can forget.
 
-    Only for phase 4, and that is not merely an optimisation: `stamp_pipeline_derivation` records
-    the derivation when output is CAPTURED, which happens after phase 4. A run that includes
+    Only for phase 4, and that is not merely an optimisation: the derivation stamps are written
+    when output is CAPTURED, which happens after phase 4. A run that includes
     phase 3 is applying the corrections on its way through, but at the moment it reached phase 4
     the stamps would still be the previous run's -- so checking would refuse exactly the run that
     fixes the problem. Verified that nothing else spawns `--from-phase 4`: ordinary generations
@@ -1002,7 +1004,10 @@ def _refuse_stale_export(from_phase: int, force: bool) -> None:
             return
         from review.export_guard import StaleExport, assert_exportable
         with get_engine().connect() as cx:
-            assert_exportable(cx, vid)
+            # Asked about the documents THIS run exports: a SWE.3 export is not held up by SWE.4
+            # specs it does not print, and a SWE.4 export is not waved through by a SWE.3
+            # re-derive.
+            assert_exportable(cx, vid, doc_type_arg)
     except ImportError:
         return                 # the feature is not present in this tree
     except Exception as exc:   # noqa: BLE001
@@ -1043,8 +1048,9 @@ if to_phase is not None:
 # produce a document built from the previous text, on a machine whose disk simply had not been
 # told.
 #
-# Only for phase 4. A run that includes Phase 3 rewrites `output/` from the model anyway, and
-# restoring first would be work whose result is immediately overwritten.
+# Also before a re-derive (`--from-phase 2`/`3`): it rebuilds only what it runs, and the capture
+# afterwards replaces every stored row with this disk -- see `_restore_output_from_db`. A new
+# version has no rows yet, so a generation restores nothing.
 _restore_output_from_db(from_phase)
 
 # REQ-AP-04, and the other half of the same thought. The restore above brings the TEXT up to

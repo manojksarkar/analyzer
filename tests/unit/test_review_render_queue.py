@@ -99,9 +99,11 @@ class TestTheQueue:
 class TestTheExportGuard:
     def _correct(self, conn):
         conn.execute(sa.insert(s.text_overrides).values(
-            version_id="v1", slot_kind=slot.DESCRIPTION, slot_key="k", llm_text="a",
+            version_id="v1", slot_kind=slot.DESCRIPTION, slot_key="Comp|UnitA|f|", llm_text="a",
             human_text="b", is_orphaned=False, updated_at=T0))
-        guard.stamp_pipeline_derivation(conn, "v1", now=T0 + datetime.timedelta(days=1))
+        guard.stamp_view_derivations(conn, "v1",
+                                     [("interfaceTables", "Comp"), ("testSpecs", "Comp")],
+                                     T0 + datetime.timedelta(days=1))
 
     def test_a_pending_render_blocks_the_export(self, conn):
         """REQ-IM-02. The text is fresh -- the derivation is newer than the correction -- and the

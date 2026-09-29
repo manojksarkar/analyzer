@@ -328,11 +328,24 @@ class TestDerivation:
         assert seen["slot_kind"] == slot.DESCRIPTION
         assert list(out.views_derived) == ["interfaceTables"]
         rows = conn.execute(sa.select(s.view_derivations)).fetchall()
-        assert [(r.view_name, r.group_name) for r in rows] == [("interfaceTables", "")]
+        # Stamped for the saved slot's component -- the guard judges every correction by its own
+        # component's derivation, so a stamp naming none would vouch for nothing.
+        assert [(r.view_name, r.group_name) for r in rows] == [("interfaceTables", "comp")]
+
+    def test_a_slot_that_names_no_component_stamps_nothing(self, conn):
+        """A parsed struct is keyed by its type's name (`Point`), which names no component. A
+        stamp for no component would vouch for nothing; the guard asks every component instead."""
+        model = _model()
+        model["dataDictionary"]["Point"] = {"kind": "struct", "name": "Point"}
+        m = svc.ModelAccess(artifacts=model)
+        _apply(conn, m, slot.STRUCT_DESCRIPTION, slot.for_entity(slot.STRUCT_DESCRIPTION, "Point"),
+               "Words.", derive=lambda **kw: ["unitHeaders"])
+        assert conn.execute(sa.select(sa.func.count())
+                            .select_from(s.view_derivations)).scalar() == 0
 
     def test_a_re_derivation_moves_the_stamp_forward(self, conn):
-        """The export guard compares the OLDEST derivation against the newest override, so a
-        stale row left behind would report the version as permanently stale."""
+        """A re-derived view must have its row moved forward, not appended: the guard reads the
+        newest stamp per view and component, and a second row is a second answer."""
         t0 = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
         t1 = datetime.datetime(2026, 2, 1, tzinfo=datetime.timezone.utc)
         m = svc.ModelAccess(artifacts=_model())
@@ -341,7 +354,7 @@ class TestDerivation:
         _apply(conn, m, slot.DESCRIPTION, key, "One.", derive=d, now=t0)
         _apply(conn, m, slot.DESCRIPTION, key, "Two.", derive=d, now=t1)
         rows = conn.execute(sa.select(s.view_derivations)).fetchall()
-        assert len(rows) == 1, "one row per (version, view, group), moved forward not appended"
+        assert len(rows) == 1, "one row per (version, view, component), moved forward not appended"
 
     def test_no_deriver_stamps_nothing(self, conn):
         m = svc.ModelAccess(artifacts=_model())
