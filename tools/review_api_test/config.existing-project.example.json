@@ -1,0 +1,20 @@
+{
+  "server": {
+    "base_url": "http://<server>:8000",
+    "email": "you@company.com",
+    "password": "your-password",
+    "database": "postgresql"
+  },
+  "onboard": { "project_id": "p1a2b3c4d" },
+  "generate": {
+    "version_id": "",
+    "start_job": {
+      "commit_sha": "latest",
+      "version_tag": "api-test-{timestamp}",
+      "mode": "full",
+      "no_llm": false,
+      "scope": { "type": "component", "names": ["<same as your first job>"] }
+    },
+    "branch": "main"
+  }
+}
