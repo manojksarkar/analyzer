@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ConfigPreview, UploadedFile } from '../../types'
+import type { ConfigPreview, ConfigReportTopic, UploadedFile } from '../../types'
 
 const ApiUploadedFileSchema = z.object({ file_id: z.string(), file_name: z.string(), size: z.number() })
 
@@ -29,7 +29,11 @@ export const ApiConfigPreviewSchema = z.object({
     definitions: z.string().nullable(),
     data_dictionary: z.string().nullable(),
   }),
-  report: z.array(z.object({ level: z.enum(['filled', 'check', 'skipped']), text: z.string() })),
+  report: z.array(z.object({
+    level: z.enum(['filled', 'check', 'skipped']),
+    text: z.string(),
+    topic: z.string().optional(),
+  })),
   repository_checked: z.boolean(),
 })
 export type ApiConfigPreview = z.infer<typeof ApiConfigPreviewSchema>
@@ -37,6 +41,10 @@ export type ApiConfigPreview = z.infer<typeof ApiConfigPreviewSchema>
 const mapUploadedFile = (f: z.infer<typeof ApiUploadedFileSchema>): UploadedFile => ({
   fileId: f.file_id, fileName: f.file_name, size: f.size,
 })
+
+const TOPICS: ConfigReportTopic[] = ['project', 'architecture', 'files', 'settings', 'repository', 'other']
+const topicOf = (t?: string): ConfigReportTopic =>
+  TOPICS.includes(t as ConfigReportTopic) ? (t as ConfigReportTopic) : 'other'
 
 export function mapConfigPreview(r: ApiConfigPreview): ConfigPreview {
   const d = r.draft
@@ -60,7 +68,7 @@ export function mapConfigPreview(r: ApiConfigPreview): ConfigPreview {
       definitions: r.expected_uploads.definitions,
       dataDictionary: r.expected_uploads.data_dictionary,
     },
-    report: r.report,
+    report: r.report.map((i) => ({ level: i.level, text: i.text, topic: topicOf(i.topic) })),
     repositoryChecked: r.repository_checked,
   }
 }

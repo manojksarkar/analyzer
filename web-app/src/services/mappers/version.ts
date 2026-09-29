@@ -5,6 +5,7 @@ import { formatDate, shortSha } from '../../lib/format'
 export const ApiVersionSchema = z.object({
   id: z.string(), tag: z.string(), commit_sha: z.string(), branch: z.string(), description: z.string(),
   status: z.string(), docs_count: z.number(), created_by: z.string(), created_at: z.string(),
+  warnings: z.array(z.string()).optional(),
 })
 export type ApiVersion = z.infer<typeof ApiVersionSchema>
 
@@ -24,5 +25,6 @@ export function mapVersion(v: ApiVersion): Version {
     docsCount: v.docs_count,
     date: formatDate(v.created_at) ?? '',
     pageState: versionPageState(v.status),
+    warnings: v.warnings ?? [],
   }
 }

@@ -29,4 +29,10 @@ describe('mapVersion', () => {
   it('reads a draft as not run — its run has not finished, or it was only tagged', () => {
     expect(mapVersion({ ...base, status: 'draft', docs_count: 0 }).pageState).toBe('never')
   })
+
+  it("carries the run's warnings, and none from an API that does not send them", () => {
+    const w = 'Layer1 / G / Ghost: `Layer1/Gone` is not in the checkout'
+    expect(mapVersion({ ...base, warnings: [w] }).warnings).toEqual([w])
+    expect(mapVersion(base).warnings).toEqual([])
+  })
 })

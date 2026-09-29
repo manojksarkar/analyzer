@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assignmentsOf, draftToLayers, ownerOf, settingsSummary } from '../helpers'
+import { assignmentsOf, draftToLayers, indexTree, ownerOf, pathProblems, settingsSummary } from '../helpers'
 
 describe('draftToLayers', () => {
   it('builds the wizard tree with fresh ids and imported components collapsed', () => {
@@ -45,5 +45,54 @@ describe('settingsSummary', () => {
 
   it('is empty when nothing was imported', () => {
     expect(settingsSummary({})).toBe('')
+  })
+})
+
+describe('pathProblems', () => {
+  // Layer1/Sample/Core/Core.cpp, Layer1/Math/Utils.cpp, include/ — the branch's tree.
+  const tree = indexTree([
+    { type: 'folder', name: 'Layer1', path: 'Layer1', children: [
+      { type: 'folder', name: 'Sample', path: 'Layer1/Sample', children: [
+        { type: 'folder', name: 'Core', path: 'Layer1/Sample/Core', children: [
+          { type: 'file', name: 'Core.cpp', path: 'Layer1/Sample/Core/Core.cpp' }] }] },
+      { type: 'folder', name: 'Math', path: 'Layer1/Math', children: [
+        { type: 'file', name: 'Utils.cpp', path: 'Layer1/Math/Utils.cpp' }] }] },
+    { type: 'folder', name: 'include', path: 'include', children: [] },
+  ])
+  const layer = (path: string, comps: { name: string; files: string[] }[], libPaths: string[] = []) => ({
+    id: 'L', name: 'Layer1', path, libPaths, collapsed: false,
+    groups: [{ id: 'G', name: 'G', collapsed: false, comps: comps.map((c, i) => ({ id: `c${i}`, collapsed: true, ...c })) }],
+  })
+  const texts = (layers: ReturnType<typeof layer>[]) => pathProblems(layers, tree, 'main').map((p) => p.text)
+
+  it('passes a project whose every path is on the branch', () => {
+    expect(texts([layer('Layer1', [{ name: 'Core', files: ['Layer1/Sample/Core'] },
+      { name: 'Math', files: ['Layer1/Math/Utils.cpp'] }], ['include', '/opt/sdk/include', ''])])).toEqual([])
+  })
+
+  it('names a path the branch does not have — the run would skip it and the document come out empty', () => {
+    expect(texts([layer('Layer1', [{ name: 'Ghost', files: ['Layer1/Gone'] }])]))
+      .toEqual(['Layer1 / G / Ghost: `Layer1/Gone` is not on branch `main`'])
+  })
+
+  it('names a layer with no root folder, or one that is not there', () => {
+    expect(texts([layer('', [{ name: 'Core', files: ['Layer1/Sample/Core'] }])]))
+      .toEqual(["Layer1: no root folder — pick the layer's folder"])
+    expect(texts([layer('Layer9', [{ name: 'Core', files: ['Layer1/Sample/Core'] }])])).toEqual([
+      'Layer1: `Layer9` is not a folder on branch `main`',
+      "Layer1 / G / Core: `Layer1/Sample/Core` is outside the layer's folder `Layer9`",
+    ])
+  })
+
+  it('names a component with no files, a relative lib path that is not there, and a project with no component', () => {
+    expect(texts([layer('Layer1', [{ name: 'Empty', files: [] }], ['libs/missing'])])).toEqual([
+      'Layer1 / G / Empty: no files — a run would stop on it',
+      'Layer1: lib path `libs/missing` is not a folder on branch `main`',
+    ])
+    expect(texts([])).toEqual(['No component yet — a run needs at least one'])
+  })
+
+  it('takes the repository root as a layer folder', () => {
+    expect(texts([layer('.', [{ name: 'Core', files: ['Layer1/Sample/Core'] }])])).toEqual([])
   })
 })

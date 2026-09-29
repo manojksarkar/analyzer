@@ -15,7 +15,7 @@ const base: ApiConfigPreview = {
     settings: { views: { flowcharts: true } },
   },
   expected_uploads: { definitions: null, data_dictionary: 'dd.csv' },
-  report: [{ level: 'filled', text: 'Architecture: 1 layer.' }],
+  report: [{ level: 'filled', text: 'Architecture: 1 layer.', topic: 'architecture' }],
   repository_checked: true,
 }
 
@@ -32,6 +32,12 @@ describe('mapConfigPreview', () => {
     expect(p.draft.definitions).toEqual({ kind: 'file', file: { fileId: 'up_1', fileName: 'macros.json', size: 15 } })
     expect(p.expectedUploads).toEqual({ definitions: null, dataDictionary: 'dd.csv' })
     expect(p.repositoryChecked).toBe(true)
+  })
+
+  it('keeps what each report item is about, and reads an unknown or missing topic as other', () => {
+    expect(mapConfigPreview(base).report[0].topic).toBe('architecture')
+    const odd = mapConfigPreview({ ...base, report: [{ level: 'check', text: 'x', topic: 'nonsense' }, { level: 'check', text: 'y' }] })
+    expect(odd.report.map((i) => i.topic)).toEqual(['other', 'other'])
   })
 
   it('maps typed definitions from `project.defines`', () => {

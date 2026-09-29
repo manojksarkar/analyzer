@@ -4,7 +4,7 @@ import { useProject, useDocuments, useTeam, useCommits, useVersions, useDownload
 import { useDownloadDoc, useSelfAssign } from '../hooks/useDocumentMutations'
 import { useCurrentJob, useStartJob, useCancelJob, useJobEvents, useJobFunctions } from '../hooks/useJobs'
 import { useProjectViewState } from '../hooks/useProjectViewState'
-import { DashboardSkeleton, Icon, RoleBadge, Text } from '../components/ui'
+import { CodeText, DashboardSkeleton, Icon, RoleBadge, Text } from '../components/ui'
 import { SubbarCta } from '../components/shell/SubbarCta'
 import { cn } from '../lib/cn'
 import { useAuthStore } from '../store/auth'
@@ -214,6 +214,41 @@ function PhaseStep({ n, label, status, time }: { n: number; label: string; statu
       </div>
       <p className={cn('mt-1.5 font-semibold text-body', status === 'pending' ? 'text-outline' : 'text-on-surface')}>{label}</p>
       <p className={cn('mt-0.5 text-label font-mono', timeColor)}>{time}</p>
+    </div>
+  )
+}
+
+/* ─── The run that made the version on screen warned about something ─── */
+// A path the checkout did not have (of a component with other files), a dictionary the run went
+// without: the run still finished, so nothing else says so - and its documents lack those.
+function RunWarningsBanner({ version }: { version: Version }) {
+  const [open, setOpen] = useState(false)
+  const n = version.warnings.length
+  const shown = open ? version.warnings : version.warnings.slice(0, 3)
+  return (
+    <div role="status" className="mb-6 rounded-xl border border-amber bg-[#fff8e6] px-5 py-4">
+      <div className="flex items-start gap-3">
+        <Icon name="warning" size={20} fill className="flex-shrink-0 text-[#d97706] mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-on-surface text-body">
+            The run that made {version.tag} reported {n} warning{n === 1 ? '' : 's'}
+          </p>
+          <p className="text-caption text-on-surface-variant mt-0.5">
+            Its documents were generated, but without what these name.
+          </p>
+          <ul className="mt-2 ml-5 list-disc space-y-1">
+            {shown.map((w, i) => (
+              <li key={i} className="text-xs text-on-surface leading-[1.45] break-words"><CodeText text={w} /></li>
+            ))}
+          </ul>
+          {n > 3 && (
+            <button onClick={() => setOpen((v) => !v)} className="mt-2 flex items-center gap-1 text-caption font-mono text-secondary hover:underline">
+              <Icon name={open ? 'expand_less' : 'expand_more'} size={14} />
+              {open ? 'Show fewer' : `Show all ${n}`}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -957,7 +992,7 @@ export function ProjectDetailPage() {
 
   const { data: project } = useProject(projectId ?? '')
   // pageState + the version to view come from the Subbar selection (shared store).
-  const { pageState, isLoading, viewVersionId, selectedCommit } = useProjectViewState(projectId ?? '')
+  const { pageState, isLoading, viewVersion, viewVersionId, selectedCommit } = useProjectViewState(projectId ?? '')
   const { data: documents, isLoading: documentsLoading } = useDocuments(projectId ?? '', viewVersionId ? { versionId: viewVersionId } : undefined)
   const { data: team, isLoading: teamLoading } = useTeam(projectId ?? '')
   const { data: commits, isLoading: commitsLoading } = useCommits(projectId ?? '')
@@ -1005,6 +1040,11 @@ export function ProjectDetailPage() {
         {/* ══ LAST RUN FAILED — the error, which no other state shows ══ */}
         {job?.status === 'failed' && pageState !== 'running' && (
           <FailedRunBanner job={job} isAdmin={isAdmin} onRerun={() => setRunOpen(true)} />
+        )}
+
+        {/* ══ THE RUN FINISHED, WITH WARNINGS — e.g. a component path the checkout did not have ══ */}
+        {viewVersion && viewVersion.warnings.length > 0 && pageState !== 'running' && (
+          <RunWarningsBanner key={viewVersion.id} version={viewVersion} />
         )}
 
         {/* ══ EMPTY STATE (not yet analysed) ══ */}

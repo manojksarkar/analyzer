@@ -1,15 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCreateProject } from '../../hooks/useProjects'
 import { useRepositoryWizard } from '../../hooks/useRepositoryWizard'
 import { useAuthStore } from '../../store/auth'
-import { Icon, BrandMark, toast } from '../../components/ui'
+import { CodeText, Icon, BrandMark, toast } from '../../components/ui'
 import { cn } from '../../lib/cn'
 import { APP_NAME, APP_TAGLINE } from '../../constants/branding'
 import type { CreateProjectInput, RepoEntry, OrgUser } from '../../services/api'
 import type { ConfigPreview } from '../../types'
 import { ConfigImport } from './components/ConfigImport'
-import { assignmentsOf, draftToLayers, ownerOf, settingsSummary, type Comp, type Group, type Layer, type Member, type Role } from './helpers'
+import { assignmentsOf, draftToLayers, indexTree, ownerOf, pathProblems, settingsSummary, type Comp, type Group, type Layer, type Member, type Role } from './helpers'
 
 // Rail entries — short title + sub, mirroring the design's step rail.
 const STEPS = [
@@ -205,15 +205,27 @@ function WizardView({
   // True while the (blobless) clone + tree fetch is in flight — drives the
   // loaders in the Add-Component panel and the folder picker.
   const [repoTreeLoading, setRepoTreeLoading] = useState(false)
+  // Which branch the tree is of, and whether reading it failed: every path of the new project is
+  // checked against it before the project is created.
+  const [repoTreeFor, setRepoTreeFor] = useState('')
+  const [repoTreeFailed, setRepoTreeFailed] = useState(false)
+  // The newest request wins: a slower answer for a branch or repository the user has already left
+  // is dropped (the tree, and the check of an imported config).
+  const treeSeq = useRef(0)
+  const checkSeq = useRef(0)
 
   // ── Config import (step 1, optional) — fills every step it can ──
   const [imported, setImported] = useState<{ text: string; fileName: string; preview: ConfigPreview } | null>(null)
   const [importBusy, setImportBusy] = useState(false)
+  // A check of the import against the repository is under way (a network round trip or two).
+  const [importChecking, setImportChecking] = useState(false)
   // The branch the config names, picked once Test Connection lists the branches.
   const [preferredBranch, setPreferredBranch] = useState('')
   // True once the user edits the imported architecture: the re-check after Test Connection then
   // leaves the tree alone and only refreshes the report.
   const archEdited = useRef(false)
+  const [archChanged, setArchChanged] = useState(false)
+  function markArchEdited(edited = true) { archEdited.current = edited; setArchChanged(edited) }
 
   // ── Step 2: build configuration ──
   const [defTab, setDefTab] = useState<'upload' | 'manual'>('upload')
@@ -270,17 +282,26 @@ function WizardView({
     setBranches([])
     setBranch('')
     setRepoTree([])
+    treeSeq.current++; checkSeq.current++                  // drop answers about the old one
+    setRepoTreeFor(''); setRepoTreeFailed(false); setImportChecking(false)
+    // An import checked against the old repository is not checked against this one.
+    setImported((p) => (p?.preview.repositoryChecked ? { ...p, preview: { ...p.preview, repositoryChecked: false } } : p))
   }
   // Load the source tree for a specific branch/ref (architecture + folder pickers).
   // Re-run whenever the selected branch changes so the tree matches the branch.
   async function loadRepoTree(ref: string) {
-    setRepoTreeLoading(true)
+    const seq = ++treeSeq.current
+    setRepoTreeLoading(true); setRepoTreeFailed(false)
     try {
-      setRepoTree(await repo.browse(repoUrl.trim(), ref || undefined, '', token.trim() || undefined))
+      // refresh: the branch as it is now, not the snapshot cached when it was first opened.
+      const nodes = await repo.browse(repoUrl.trim(), ref || undefined, '', token.trim() || undefined, true)
+      if (seq !== treeSeq.current) return
+      setRepoTree(nodes); setRepoTreeFor(ref)
     } catch {
-      setRepoTree([])
+      if (seq !== treeSeq.current) return
+      setRepoTree([]); setRepoTreeFor(''); setRepoTreeFailed(true)
     } finally {
-      setRepoTreeLoading(false)
+      if (seq === treeSeq.current) setRepoTreeLoading(false)
     }
   }
   async function testConnection() {
@@ -312,7 +333,7 @@ function WizardView({
       await loadRepoTree(initialBranch)
       // An imported config's paths were taken as written: check them against this repository.
       if (imported && !imported.preview.repositoryChecked) {
-        await checkImportAgainstRepo(imported.text, imported.fileName, initialBranch, !archEdited.current)
+        await checkImportAgainstRepo(imported, initialBranch, !archEdited.current)
       }
     } catch (e) {
       setTestState('idle')
@@ -335,7 +356,7 @@ function WizardView({
         const want = preview.draft.branch
         const ref = want && branches.includes(want) ? want : branch
         if (ref !== branch) { setBranch(ref); void loadRepoTree(ref) }
-        await checkImportAgainstRepo(text, file.name, ref, true)
+        await checkImportAgainstRepo({ text, fileName: file.name, preview }, ref, true)
       }
     } catch (e) {
       toast.error('Could not read the config', (e as Error).message)
@@ -343,18 +364,28 @@ function WizardView({
       setImportBusy(false)
     }
   }
-  async function checkImportAgainstRepo(text: string, fileName: string, ref: string, layersToo: boolean) {
+  async function checkImportAgainstRepo(imp: { text: string; fileName: string; preview: ConfigPreview }, ref: string, layersToo: boolean) {
+    const seq = ++checkSeq.current
+    setImportChecking(true)
     try {
       const preview = await repo.previewConfig({
-        text, repo_url: repoUrl.trim(), branch: ref || undefined, access_token: token.trim() || undefined,
+        text: imp.text, repo_url: repoUrl.trim(), branch: ref || undefined, access_token: token.trim() || undefined,
       })
-      applyImport(preview, { project: false, layers: layersToo })
-      setImported({ text, fileName, preview })
+      if (seq !== checkSeq.current) return                   // the user has moved on
+      applyImport(preview, { project: false, layers: layersToo }, imp.preview)
+      // The architecture is the user's now: keep what the import said about it, take the rest.
+      const report = layersToo ? preview.report : [
+        ...imp.preview.report.filter((i) => i.topic === 'architecture'),
+        ...preview.report.filter((i) => i.topic !== 'architecture'),
+      ]
+      setImported({ text: imp.text, fileName: imp.fileName, preview: { ...preview, report } })
     } catch (e) {
-      toast.error('Could not check the config against the repository', (e as Error).message)
+      if (seq === checkSeq.current) toast.error('Could not check the config against the repository', (e as Error).message)
+    } finally {
+      if (seq === checkSeq.current) setImportChecking(false)
     }
   }
-  function applyImport(preview: ConfigPreview, opts: { project: boolean; layers: boolean }) {
+  function applyImport(preview: ConfigPreview, opts: { project: boolean; layers: boolean }, prev?: ConfigPreview) {
     const d = preview.draft
     if (opts.project) {
       if (d.name) setName(d.name)
@@ -366,14 +397,24 @@ function WizardView({
       const next = draftToLayers(d.layers, uid)
       setLayers(next)
       setFileAssignments(assignmentsOf(next))
-      archEdited.current = false
+      markArchEdited(false)
     }
-    // Files the config names that were found in the repository — never over one the user chose.
-    if (d.definitions?.kind === 'file' && !defFileId) {
+    // Files the config names, found in the repository. They follow the branch: a file this import
+    // filled in is replaced by this branch's copy, or taken back when the branch has none. A file
+    // the user chose is never touched.
+    const prevDef = prev?.draft.definitions
+    const defFromImport = !!defFileId && prevDef?.kind === 'file' && prevDef.file.fileId === defFileId
+    if (d.definitions?.kind === 'file' && (!defFileId || defFromImport)) {
       setDefTab('upload'); setDefFileName(d.definitions.file.fileName); setDefFileId(d.definitions.file.fileId)
+    } else if (defFromImport) {
+      setDefFileName(''); setDefFileId('')
     }
-    if (d.dataDictionary && !ddFile) {
+    const prevDd = prev?.draft.dataDictionary
+    const ddFromImport = !!ddFile && !!prevDd && prevDd.fileId === ddFile.id
+    if (d.dataDictionary && (!ddFile || ddFromImport)) {
       setDdFile({ name: d.dataDictionary.fileName, size: d.dataDictionary.size, id: d.dataDictionary.fileId })
+    } else if (ddFromImport) {
+      setDdFile(null)
     }
   }
 
@@ -401,7 +442,7 @@ function WizardView({
   function confirmAddLayer() {
     const nm = newLayerName.trim().toUpperCase().replace(/\s+/g, '_')
     if (!nm) return
-    archEdited.current = true
+    markArchEdited()
     setLayers((prev) => [...prev, { id: uid(), name: nm, path: newLayerPath.trim(), groups: [], libPaths: [], collapsed: false }])
     setNewLayerName(''); setNewLayerPath(''); setAddLayerOpen(false)
   }
@@ -410,7 +451,7 @@ function WizardView({
   function confirmGroup() {
     const v = inlineVal.trim()
     if (!v || !inlineAdd) return
-    archEdited.current = true
+    markArchEdited()
     patchLayer(inlineAdd.parentId, (l) => ({ ...l, groups: [...l.groups, { id: uid(), name: v, comps: [], collapsed: false }] }))
     setInlineAdd(null); setInlineVal('')
   }
@@ -418,17 +459,17 @@ function WizardView({
     setFileAssignments((prev) => { const next = { ...prev }; files.forEach((f) => delete next[f]); return next })
   }
   function removeGroup(layerId: string, g: Group) {
-    archEdited.current = true
+    markArchEdited()
     freeFiles(g.comps.flatMap((c) => c.files))
     patchLayer(layerId, (l) => ({ ...l, groups: l.groups.filter((x) => x.id !== g.id) }))
   }
   function removeLayer(layer: Layer) {
-    archEdited.current = true
+    markArchEdited()
     freeFiles(layer.groups.flatMap((g) => g.comps.flatMap((c) => c.files)))
     setLayers((prev) => prev.filter((l) => l.id !== layer.id))
   }
   function removeComp(layerId: string, groupId: string, comp: Comp) {
-    archEdited.current = true
+    markArchEdited()
     freeFiles(comp.files)
     patchLayer(layerId, (l) => ({ ...l, groups: l.groups.map((g) => (g.id === groupId ? { ...g, comps: g.comps.filter((c) => c.id !== comp.id) } : g)) }))
   }
@@ -459,7 +500,7 @@ function WizardView({
   function confirmAddComponent() {
     const nm = compName.trim()
     if (!nm || !compPanel) return
-    archEdited.current = true
+    markArchEdited()
     const files = [...selectedFiles]
     setFileAssignments((prev) => { const next = { ...prev }; files.forEach((f) => (next[f] = nm)); return next })
     patchLayer(compPanel.layerId, (l) => ({ ...l, groups: l.groups.map((g) => (g.id === compPanel.groupId ? { ...g, comps: [...g.comps, { id: uid(), name: nm, files, collapsed: false }] } : g)) }))
@@ -480,12 +521,28 @@ function WizardView({
   }
   function confirmFolderPicker() {
     if (!fpSelected || !fpTarget) return
-    if (fpTarget.kind === 'lib-path') archEdited.current = true
+    if (fpTarget.kind === 'lib-path') markArchEdited()
     if (fpTarget.kind === 'new-layer-path') setNewLayerPath(fpSelected)
     else patchLayer(fpTarget.layerId, (l) => ({ ...l, libPaths: l.libPaths.map((x, i) => (i === fpTarget.index ? fpSelected : x)) }))
     setFpTarget(null)
   }
   const totalComps = layers.reduce((a, l) => a + l.groups.reduce((b, g) => b + g.comps.length, 0), 0)
+  // Every path of the project against the selected branch (helpers.pathProblems). A run reads
+  // exactly these paths: one that is not there was skipped without a word, and a component left
+  // with no file stopped the run after the whole parse. So the project is created only when
+  // there are none.
+  const treeIndex = useMemo(() => indexTree(repoTree), [repoTree])
+  const problems = useMemo(() => pathProblems(layers, treeIndex, branch), [layers, treeIndex, branch])
+  const treeReady = !!branch && !repoTreeLoading && !repoTreeFailed && repoTreeFor === branch
+  const issueAt = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const pr of problems) m.set(`${pr.layerId}|${pr.compId ?? ''}|${pr.path}`, pr.text)
+    return m
+  }, [problems])
+  const compIssue = (layerId: string, compId: string) =>
+    treeReady ? problems.filter((pr) => pr.layerId === layerId && pr.compId === compId).map((pr) => pr.text).join('\n') : ''
+  const pathIssue = (layerId: string, compId: string, path: string) =>
+    treeReady ? issueAt.get(`${layerId}|${compId}|${path}`) : undefined
 
   /* ── Step 4 helpers ── */
   const takenEmails = [me.email, ...members.map((m) => m.email)]
@@ -529,6 +586,22 @@ function WizardView({
       }
       if (!branch) { setErrs({ branch: true }); return false }
       setErrs({})
+    }
+    if (n === 3 || n === 5) {
+      if (repoTreeLoading) {
+        toast.info('Still reading the repository', `Checking the paths against branch ${branch}. Try again in a moment.`)
+        return false
+      }
+      if (!treeReady) {
+        toast.error('The paths cannot be checked', "The repository's files could not be read. Test the connection again in step 1.")
+        return false
+      }
+      if (problems.length) {
+        const more = problems.length > 1 ? ` (and ${problems.length - 1} more, marked in step 3)` : ''
+        toast.error(problems.length === 1 ? 'One thing to fix' : `${problems.length} things to fix`, problems[0].text.replace(/`/g, '') + more)
+        if (n === 5) setCur(3)
+        return false
+      }
     }
     return true
   }
@@ -585,7 +658,8 @@ function WizardView({
 
             {/* ══ STEP 1 — PROJECT & REPOSITORY ══ */}
             {cur === 1 && (
-              <ConfigImport fileName={imported?.fileName} preview={imported?.preview} busy={importBusy} onPick={(f) => { void importConfig(f) }} />
+              <ConfigImport fileName={imported?.fileName} preview={imported?.preview} busy={importBusy} onPick={(f) => { void importConfig(f) }} archChanged={archChanged} branch={branch}
+                checking={importChecking || (!!imported && !imported.preview.repositoryChecked && (testState === 'connecting' || repoTreeLoading))} />
             )}
             {cur === 1 && (
               <div className="card space-y-4">
@@ -634,9 +708,12 @@ function WizardView({
                     <select className={`inp ${errs.branch ? 'err' : ''}`} value={branch} onChange={(e) => {
                       const b = e.target.value; setBranch(b); setErrs((p) => ({ ...p, branch: false }))
                       if (b) {
-                        void loadRepoTree(b)
-                        // Paths differ between branches: check an imported config against this one.
-                        if (imported) void checkImportAgainstRepo(imported.text, imported.fileName, b, !archEdited.current)
+                        // Paths differ between branches: check an imported config against this one -
+                        // after the tree, which fetches the branch; the check then reuses it.
+                        void (async () => {
+                          await loadRepoTree(b)
+                          if (imported) await checkImportAgainstRepo(imported, b, !archEdited.current)
+                        })()
                       }
                     }}>
                       <option value="">Select a branch…</option>
@@ -768,6 +845,36 @@ function WizardView({
                   </button>
                 </div>
 
+                {repoTreeLoading ? (
+                  <p className="flex items-center gap-2 font-mono text-caption text-on-surface-variant">
+                    <Icon name="progress_activity" size={14} className="animate-spin" />
+                    Reading branch {branch} to check every path…
+                  </p>
+                ) : !treeReady ? (
+                  <div className="flex items-start gap-2 p-3 bg-error-container border border-error rounded-xl text-xs text-on-error-container">
+                    <Icon name="error" size={15} fill className="flex-shrink-0 mt-px text-error" />
+                    <span>The repository&apos;s files could not be read, so no path can be checked. Test the connection again in step 1.</span>
+                  </div>
+                ) : problems.length > 0 ? (
+                  <div className="p-3.5 bg-error-container border border-error rounded-xl">
+                    <p className="flex items-center gap-2 font-mono text-xs font-semibold text-on-error-container">
+                      <Icon name="error" size={15} fill className="text-error" />
+                      {problems.length === 1 ? 'One thing' : `${problems.length} things`} to fix before the project is created
+                    </p>
+                    <ul className="mt-2 ml-6 space-y-1 list-disc">
+                      {problems.slice(0, 8).map((pr, i) => (
+                        <li key={i} className="text-xs text-on-error-container leading-[1.45]"><CodeText text={pr.text} /></li>
+                      ))}
+                    </ul>
+                    {problems.length > 8 && <p className="mt-1.5 ml-6 text-xs text-on-error-container">…and {problems.length - 8} more, marked below.</p>}
+                  </div>
+                ) : (
+                  <p className="flex items-center gap-2 font-mono text-caption text-[#00a572]">
+                    <Icon name="check_circle" size={14} fill />
+                    Every path is on branch {branch}.
+                  </p>
+                )}
+
                 <div className="space-y-2">
                   {layers.length === 0 && !addLayerOpen && (
                     <div className="flex flex-col items-center justify-center py-10 text-center">
@@ -783,7 +890,7 @@ function WizardView({
                         <Icon name={layer.collapsed ? 'keyboard_arrow_right' : 'keyboard_arrow_down'} size={15} className="text-on-surface-variant" />
                         <div className="flex-1 min-w-0">
                           <div className="text-on-surface font-mono text-body font-bold leading-[1.3]">{layer.name}</div>
-                          <span className={`layer-path-display ${layer.path ? '' : 'empty'}`}>{layer.path || 'Set root path…'}</span>
+                          <span className={cn(`layer-path-display ${layer.path ? '' : 'empty'}`, pathIssue(layer.id, '', layer.path) && 'err')} title={pathIssue(layer.id, '', layer.path)?.replace(/`/g, '')}>{layer.path || 'Set root path…'}</span>
                         </div>
                         <button onClick={(e) => { e.stopPropagation(); removeLayer(layer) }} className="p-1 text-on-surface-variant hover:text-error transition-colors">
                           <Icon name="close" size={15} />
@@ -815,17 +922,26 @@ function WizardView({
                                         </button>
                                         <Icon name="folder" size={13} className="text-secondary opacity-60" />
                                         <span className="text-on-surface flex-1 font-mono text-body">{c.name}</span>
+                                        {compIssue(layer.id, c.id) && (
+                                          <span title={compIssue(layer.id, c.id).replace(/`/g, '')} className="flex items-center text-error">
+                                            <Icon name="error" size={14} fill />
+                                          </span>
+                                        )}
                                         <button onClick={() => removeComp(layer.id, g.id, c)} className="p-1 text-on-surface-variant hover:text-error transition-colors">
                                           <Icon name="close" size={13} />
                                         </button>
                                       </div>
                                       {c.files.length > 0 && !c.collapsed && (
                                         <div className="comp-files">
-                                          {c.files.map((f) => (
-                                            <div key={f} className="file-row">
-                                              <Icon name="description" size={12} className="text-[#b0b3b8]" />{f.split('/').pop()}
-                                            </div>
-                                          ))}
+                                          {c.files.map((f) => {
+                                            const issue = pathIssue(layer.id, c.id, f)
+                                            return (
+                                              <div key={f} className={cn('file-row', issue && 'err')} title={issue?.replace(/`/g, '') ?? f}>
+                                                <Icon name={treeIndex.get(f) === 'folder' ? 'folder' : 'description'} size={12} className={issue ? 'text-error' : 'text-[#b0b3b8]'} />{f.split('/').pop()}
+                                                {issue && <span className="ml-1.5 font-mono text-micro">not usable</span>}
+                                              </div>
+                                            )
+                                          })}
                                         </div>
                                       )}
                                     </div>
@@ -859,16 +975,16 @@ function WizardView({
                                 {layer.libPaths.map((p, idx) => (
                                   <div key={idx} className="ext-path-row">
                                     <Icon name="folder_open" size={13} className="text-[#00a572] flex-shrink-0" />
-                                    <input className="ext-path-input" value={p} placeholder="/path/to/include" onChange={(e) => { archEdited.current = true; patchLayer(layer.id, (l) => ({ ...l, libPaths: l.libPaths.map((x, i) => i === idx ? e.target.value : x) })) }} />
+                                    <input className={cn('ext-path-input', pathIssue(layer.id, '', p) && 'err')} title={pathIssue(layer.id, '', p)?.replace(/`/g, '')} value={p} placeholder="/path/to/include" onChange={(e) => { markArchEdited(); patchLayer(layer.id, (l) => ({ ...l, libPaths: l.libPaths.map((x, i) => i === idx ? e.target.value : x) })) }} />
                                     <button type="button" className="ext-browse-btn" onClick={() => openFolderPicker({ kind: 'lib-path', layerId: layer.id, index: idx })}>
                                       <Icon name="folder_open" size={11} />BROWSE
                                     </button>
-                                    <button onClick={() => { archEdited.current = true; patchLayer(layer.id, (l) => ({ ...l, libPaths: l.libPaths.filter((_, i) => i !== idx) })) }} className="flex items-center bg-transparent border-none cursor-pointer p-0 text-outline">
+                                    <button onClick={() => { markArchEdited(); patchLayer(layer.id, (l) => ({ ...l, libPaths: l.libPaths.filter((_, i) => i !== idx) })) }} className="flex items-center bg-transparent border-none cursor-pointer p-0 text-outline">
                                       <Icon name="close" size={13} className="leading-none" />
                                     </button>
                                   </div>
                                 ))}
-                                <button onClick={() => { archEdited.current = true; patchLayer(layer.id, (l) => ({ ...l, libPaths: [...l.libPaths, ''] })) }} className="inc-add-btn">
+                                <button onClick={() => { markArchEdited(); patchLayer(layer.id, (l) => ({ ...l, libPaths: [...l.libPaths, ''] })) }} className="inc-add-btn">
                                   <Icon name="add" size={12} className="align-middle" /> Add path
                                 </button>
                               </div>
@@ -1120,6 +1236,14 @@ function WizardView({
                     <button onClick={() => setCur(3)} className="text-secondary hover:underline font-mono text-caption">Edit</button>
                   </div>
                   <div className="rev-row"><span>Layers</span><span>{layers.length} layer{layers.length !== 1 ? 's' : ''} · {totalComps} component{totalComps !== 1 ? 's' : ''}</span></div>
+                  <div className="rev-row">
+                    <span>Paths</span>
+                    <span className={treeReady && !problems.length ? 'text-[#00a572]' : 'text-error'}>
+                      {!treeReady ? 'not checked: the repository could not be read'
+                        : problems.length ? `${problems.length} to fix in step 3`
+                          : `all on branch ${branch}`}
+                    </span>
+                  </div>
                   {layers.length === 0 ? (
                     <p className="px-4 py-3 font-mono text-caption text-outline">No layers defined.</p>
                   ) : (

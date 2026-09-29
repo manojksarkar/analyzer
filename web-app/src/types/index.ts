@@ -50,7 +50,10 @@ export interface ProjectBuildConfig {
 
 /** A config file read into the New Project wizard (`POST /projects/config/preview`). */
 export type ConfigReportLevel = 'filled' | 'check' | 'skipped'
-export interface ConfigReportItem { level: ConfigReportLevel; text: string }
+/** Which part of the wizard an item is about. Once the user changes the architecture, a new
+ *  check keeps the old `architecture` items and replaces the rest. */
+export type ConfigReportTopic = 'project' | 'architecture' | 'files' | 'settings' | 'repository' | 'other'
+export interface ConfigReportItem { level: ConfigReportLevel; text: string; topic: ConfigReportTopic }
 /** A build-configuration file stored as an upload. */
 export interface UploadedFile { fileId: string; fileName: string; size: number }
 export interface ConfigDraft {
@@ -104,6 +107,9 @@ export interface Version {
   date: string
   pageState: PageState
   newCommitsSince?: number
+  /** What the run that made this version warned about — a component path the checkout did not
+   *  have, a dictionary it ran without (`versions.run_report.warnings`). */
+  warnings: string[]
 }
 
 export interface Commit {

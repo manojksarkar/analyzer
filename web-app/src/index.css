@@ -175,6 +175,8 @@ select.inp { appearance: auto; }
 .ext-path-row:last-of-type { border-bottom: none; margin-bottom: 0; }
 .ext-path-input { font-family: "JetBrains Mono", monospace; font-size: 11px; line-height: 1.3; color: #006e45; background: none; border: none; outline: none; flex: 1; min-width: 0; padding: 0; height: 18px; }
 .ext-path-input::placeholder { color: #a0c4b8; }
+/* A path the selected branch does not have (NewProjectPage's path check). */
+.ext-path-input.err, .file-row.err, .layer-path-display.err { color: var(--color-error); }
 .ext-browse-btn { flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px; padding: 1px 5px; border: 1px solid rgba(0,165,114,.35); border-radius: 3px; background: transparent; cursor: pointer; font-family: "JetBrains Mono", monospace; font-size: 9px; font-weight: 700; letter-spacing: .04em; color: #00815a; }
 .ext-browse-btn:hover { background: #d6f5ea; }
 .tree-comp-row { display: flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 3px; }

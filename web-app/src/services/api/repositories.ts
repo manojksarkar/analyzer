@@ -42,17 +42,20 @@ export const repositoriesApi = {
     }
   },
   /** Browse the source tree rooted at `path` (full nested subtree). */
+  /** `refresh` fetches the branch's current tip first — the tree every path is checked against. */
   browse: async (
     repoUrl: string,
     ref?: string,
     path = '',
     accessToken?: string,
+    refresh = false,
   ): Promise<RepoEntry[]> => {
     const r = await http.get<{ entries: RepoEntry[] }>('/repositories/browse', {
       repo_url: repoUrl,
       ref,
       path,
       access_token: accessToken,
+      refresh: refresh ? 'true' : undefined,
     })
     return r.entries
   },

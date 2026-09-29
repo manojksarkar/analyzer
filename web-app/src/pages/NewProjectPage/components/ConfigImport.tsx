@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { Icon } from '../../../components/ui'
+import { CodeText, Icon } from '../../../components/ui'
 import { cn } from '../../../lib/cn'
 import type { ConfigPreview, ConfigReportLevel } from '../../../types'
 
@@ -9,21 +9,18 @@ const LEVEL: Record<ConfigReportLevel, { icon: string; cls: string }> = {
   skipped: { icon: 'block',        cls: 'text-outline' },
 }
 
-/** Report text marks config names with backticks; show them as code. */
-function withCode(text: string) {
-  return text.split('`').map((part, i) =>
-    i % 2
-      ? <code key={i} className="font-mono text-caption bg-surface-container-low px-1 rounded">{part}</code>
-      : part)
-}
-
 /** Step 1's "start from a config file": pick the file, then what reading it filled in, what
  *  needs the user, and what was left out. */
-export function ConfigImport({ fileName, preview, busy, onPick }: {
+export function ConfigImport({ fileName, preview, busy, onPick, archChanged, branch, checking }: {
   fileName?: string
   preview?: ConfigPreview
   busy: boolean
   onPick: (file: File) => void
+  /** The user changed the imported architecture: a new check no longer replaces it. */
+  archChanged: boolean
+  branch: string
+  /** The paths are being checked against the repository right now. */
+  checking: boolean
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const count = (level: ConfigReportLevel) => preview?.report.filter((r) => r.level === level).length ?? 0
@@ -65,16 +62,27 @@ export function ConfigImport({ fileName, preview, busy, onPick }: {
           <p className="font-mono text-caption text-on-surface-variant mb-2">
             <span className="text-on-surface font-semibold">{fileName}</span>
             {` · ${count('filled')} filled · ${count('check')} to check · ${count('skipped')} not used`}
-            {!preview.repositoryChecked && ' · paths are checked after Test Connection'}
+            {checking
+              ? ` · checking the paths against ${branch ? `branch ${branch}` : 'the repository'}…`
+              : !preview.repositoryChecked && ' · paths are checked after Test Connection'}
           </p>
           <ul className="space-y-1.5">
             {preview.report.map((item, i) => (
               <li key={i} className="flex items-start gap-2 text-xs text-on-surface">
                 <Icon name={LEVEL[item.level].icon} size={14} fill className={cn('flex-shrink-0 mt-px', LEVEL[item.level].cls)} />
-                <span className="leading-[1.45]">{withCode(item.text)}</span>
+                <span className="leading-[1.45]"><CodeText text={item.text} /></span>
               </li>
             ))}
           </ul>
+          {archChanged && (
+            <p className="mt-2 flex items-start gap-2 text-xs text-on-surface-variant">
+              <Icon name="info" size={14} className="flex-shrink-0 mt-px text-secondary" />
+              <span className="leading-[1.45]">
+                You changed the architecture after importing, so a new check leaves it as it is.
+                Step 3 checks every path against {branch ? <CodeText text={`branch \`${branch}\``} /> : 'the branch'}, and the project is created only when all of them are there.
+              </span>
+            </p>
+          )}
         </div>
       )}
     </div>
