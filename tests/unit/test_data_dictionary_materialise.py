@@ -41,8 +41,11 @@ class TestTheChainIsJoined:
         # to spawn engine/incremental/*.py, which called it --data-dict-id.
         assert 'cmd += ["--data-dict", job.data_dict_id]' in src
 
-    def test_it_reads_the_in_memory_upload(self):
-        assert "from ..routes.repositories import _UPLOADS" in _src()
+    def test_it_reads_the_upload_from_disk(self):
+        """Uploads are stored on disk; `_UPLOADS` holds only metadata. Reading its `data` key --
+        never set -- is how every dictionary was "missing" (tests/api/test_data_dictionary_
+        reaches_the_run.py runs the chain for real)."""
+        assert "from ..routes.repositories import resolve_upload" in _src()
 
     def test_it_persists_so_a_restart_does_not_lose_it(self):
         """_UPLOADS is memory only: an API restart, or a second node, loses the CSV entirely."""
