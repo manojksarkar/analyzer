@@ -83,6 +83,10 @@ def _version_render(db: Any, project: Any, doc: Any, version: Any,
         from .output_reader import OutputReader as _OutputReader
         reader = ModelReader(db, getattr(version, "id", None),
                              model_root if model_root.is_dir() else None)
+        if doc.process == "SWE.4":
+            from .swe4_render import build_swe4_render
+            return build_swe4_render(doc, project, version, group_dir, model_reader=reader,
+                                     output_reader=_OutputReader(db, getattr(version, "id", None), snap))
         return doc_render.build_render(
             doc, project, version, group_dir, project_id,
             model_root=model_root if model_root.is_dir() else None,
@@ -109,7 +113,10 @@ def _section_blocks(sec: dict) -> list[dict]:
     t = sec.get("type")
     blocks: list[dict] = []
 
-    if t == "table" and sec.get("table"):
+    if t in ("table", "test_spec") and sec.get("table"):
+        # A SWE.4 test spec diffs as the DOCX prints it: its description, then Table A + B.
+        if t == "test_spec" and sec.get("content"):
+            blocks.append({"kind": "text", "text": str(sec["content"])})
         tbl = sec["table"]
         blocks.append({"kind": "table",
                        "headers": list(tbl.get("headers") or []),
@@ -394,6 +401,8 @@ def _artifact_label(sec: dict) -> str:
         return "Function flowchart"
     if t == "behavior_table":
         return "Dynamic behaviour"
+    if t == "test_spec":
+        return "Unit test specification"
     if t == "table":
         if sid.endswith("-iface"):
             return "Unit interface table"

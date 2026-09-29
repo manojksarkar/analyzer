@@ -15,7 +15,7 @@ from ..db.in_memory import InMemoryDatabase
 from ..middleware.auth import get_current_user, require_project_admin, require_project_member
 from ..models.domain import User, DocumentAssignment
 from ..services.errors import not_found, forbidden
-from ..services import doc_render
+from ..services import doc_render, swe4_render
 from ..services.model_reader import ModelReader
 from ..services.output_reader import OutputReader
 from ..schemas import (
@@ -293,6 +293,14 @@ def render_document(
     # output), not the shared latest run.
     out_root = doc_render.commit_output_root(project_id, version.commit_sha, version.id) if version else None
     group_dir = doc_render.output_group_dir(doc.group, out_root)
+    if doc.process == "SWE.4":
+        # The Unit Test Specification, from the component's test_specs.json. With no output on
+        # this machine it still comes back whole in shape - the chapters, no specs.
+        reader = ModelReader(db, version.id if version else None, doc_render._REPO_ROOT / "model")
+        out_reader = OutputReader(db, version.id if version else None,
+                                  out_root.parent if out_root is not None else None)
+        return {"document": swe4_render.build_swe4_render(
+            doc, project, version, group_dir, model_reader=reader, output_reader=out_reader)}
     if group_dir is not None:
         # Imported projects (created by tools/import-output-project, no repo_url) render
         # their own copied model snapshot (workspaces/<pid>/<commit[:16]>/model). Real

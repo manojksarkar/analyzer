@@ -141,10 +141,43 @@ def _resolve_ref(db: Any, project_id: str, ref: str):
 # Document helpers
 # ---------------------------------------------------------------------------
 
-def _docs_by_group(db: Any, project_id: str, version_id: str) -> dict[str, Any]:
-    """Return {group: Document} for documents in a specific version."""
-    docs, _ = db.documents.list_for_project(project_id, version_id=version_id, per_page=200)
-    return {d.group: d for d in docs if d.group}
+def _docs_by_group(db: Any, project_id: str, version_id: str,
+                   process: str = "SWE.3") -> dict[str, Any]:
+    """Return {group: Document} for one process's documents in a specific version. A component
+    has one document per process, so the group alone keys only within a process."""
+    docs, _ = db.documents.list_for_project(project_id, version_id=version_id, per_page=1000)
+    return {d.group: d for d in docs if d.group and d.process == process}
+
+
+def _specs_fingerprint(reader: Optional[OutputReader], group: str) -> str:
+    """A component's test_specs.json, normalised: what its SWE.4 document is made from."""
+    txt = reader.read_text(f"{group}/test_specs.json") if reader is not None else None
+    if not txt:
+        return ""
+    try:
+        return json.dumps(json.loads(txt), sort_keys=True)
+    except ValueError:
+        return txt
+
+
+def _swe4_changes(db: Any, project_id: str, cur_ver: Any, base_ver: Any,
+                  c_reader: Optional[OutputReader], b_reader: Optional[OutputReader]
+                  ) -> tuple[dict, list]:
+    """SWE.4 documents added, changed (their test specs differ) and removed between versions."""
+    c4 = _docs_by_group(db, project_id, cur_ver.id, "SWE.4")
+    b4 = _docs_by_group(db, project_id, base_ver.id, "SWE.4")
+    common = c4.keys() & b4.keys()
+    changed = {g for g in common
+               if _specs_fingerprint(c_reader, g) != _specs_fingerprint(b_reader, g)}
+    counts = {"added": len(c4.keys() - b4.keys()), "changed": len(changed),
+              "removed": len(b4.keys() - c4.keys()), "unchanged": len(common - changed)}
+    docs = ([{"document_id": c4[g].id, "name": c4[g].name, "process": "SWE.4",
+              "diff_type": "added", "sections_changed": []} for g in sorted(c4.keys() - b4.keys())]
+            + [{"document_id": c4[g].id, "name": c4[g].name, "process": "SWE.4",
+                "diff_type": "changed", "sections_changed": []} for g in sorted(changed)]
+            + [{"document_id": b4[g].id, "name": b4[g].name, "process": "SWE.4",
+                "diff_type": "removed", "sections_changed": []} for g in sorted(b4.keys() - c4.keys())])
+    return counts, docs
 
 
 # ---------------------------------------------------------------------------
@@ -160,16 +193,15 @@ def _db_fallback_compare(db: Any, project_id: str, cur_ver, base_ver,
     b_docs, _ = db.documents.list_for_project(project_id,
                                                version_id=base_ver.id if base_ver else None,
                                                per_page=200)
-    c_groups = {d.group for d in c_docs if d.group}
-    b_groups = {d.group for d in b_docs if d.group}
-    added = c_groups - b_groups
-    removed = b_groups - c_groups
-    common = c_groups & b_groups
+    # (process, group): a component's SWE.3 and SWE.4 documents share the group.
+    c_by_group = {(d.process, d.group): d for d in c_docs if d.group}
+    b_by_group = {(d.process, d.group): d for d in b_docs if d.group}
+    added = c_by_group.keys() - b_by_group.keys()
+    removed = b_by_group.keys() - c_by_group.keys()
+    common = c_by_group.keys() & b_by_group.keys()
     summary = {"added": len(added), "changed": 0,
                "removed": len(removed), "unchanged": len(common)}
     changed_docs = []
-    c_by_group = {d.group: d for d in c_docs if d.group}
-    b_by_group = {d.group: d for d in b_docs if d.group}
     for g in sorted(added):
         d = c_by_group[g]
         changed_docs.append({"document_id": d.id, "name": d.name,
@@ -325,6 +357,12 @@ def compute_compare(db: Any, project_id: str, current_ref: str, baseline_ref: st
             changed_docs.append({"document_id": d.id, "name": d.name,
                                   "process": d.process, "diff_type": "removed",
                                   "sections_changed": []})
+
+    # The SWE.4 document of each component, beside its SWE.3 one.
+    counts4, docs4 = _swe4_changes(db, project_id, cur_ver, base_ver, c_reader, b_reader)
+    for k, n in counts4.items():
+        summary[k] += n
+    changed_docs.extend(docs4)
 
     return {"current": c_info, "baseline": b_info,
             "summary": summary, "changed_documents": changed_docs}
