@@ -47,17 +47,28 @@ def load_cfgs(output_dir):
     fc_dir = os.path.join(output_dir, "flowcharts")
     if not os.path.isdir(fc_dir):
         return {}
-    cfgs = {}
+    files = []
     for name in sorted(os.listdir(fc_dir)):
         if not name.endswith(".json") or name == "_summary.json":
             continue
         try:
             with open(os.path.join(fc_dir, name), "r", encoding="utf-8") as f:
-                entries = json.load(f)
+                files.append(json.load(f))
         except (OSError, ValueError):
             continue
+    return cfgs_from_entries(files)
+
+
+def cfgs_from_entries(files):
+    """{functionKey: cfg} from flowchart files' contents -- lists of entries, in file order.
+
+    Split out of `load_cfgs` so the same rule reads the stored rows: a correction saved from a
+    host with no output tree re-derives the SWE.4 specs from them (`review.swe4_rederive`).
+    """
+    cfgs = {}
+    for entries in files:
         for entry in entries or []:
-            cfg = entry.get("cfg")
+            cfg = entry.get("cfg") if isinstance(entry, dict) else None
             if cfg and entry.get("functionKey"):
                 cfgs[entry["functionKey"]] = cfg
     return cfgs
@@ -863,16 +874,18 @@ def build_steps(cfg, spec, mock_names=(), splice=None, home_unit=""):
     return w.steps, w.returns, w.write_steps
 
 
-def attach(test_specs, output_dir):
+def attach(test_specs, output_dir, cfgs=None):
     """Fill `testSteps` and `expected.returns` on every spec that has a CFG.
 
     Best-effort: a spec whose function has no flowchart keeps its empty lists,
-    so the document still renders.
+    so the document still renders. `cfgs` defaults to the ones on disk under
+    `output_dir`; a caller that has them already passes them.
     """
-    cfgs = load_cfgs(output_dir)
+    cfgs = load_cfgs(output_dir) if cfgs is None else cfgs
     if not cfgs:
-        log("no flowchart CFGs under %s - Test Steps left empty"
-            % os.path.join(output_dir, "flowcharts"), component="testSpecs")
+        where = os.path.join(output_dir, "flowcharts") if output_dir else "the stored flowcharts"
+        log("no flowchart CFGs under %s - Test Steps left empty" % where,
+            component="testSpecs")
         return 0
     filled = 0
     for key, unit in test_specs.items():
@@ -925,7 +938,7 @@ def _splice_map(spec, cfgs, functions_data, unit_of, unit_names):
             if len(entries) == 1}
 
 
-def attach_dynamic(dynamic, output_dir, functions_data, unit_of, unit_names):
+def attach_dynamic(dynamic, output_dir, functions_data, unit_of, unit_names, cfgs=None):
     """Fill `testSteps` and `expected.returns` on every dynamic behaviour spec.
 
     Same CFG pass as `attach`, with one difference: an executing cross-unit
@@ -934,7 +947,7 @@ def attach_dynamic(dynamic, output_dir, functions_data, unit_of, unit_names):
     """
     if not dynamic:
         return 0
-    cfgs = load_cfgs(output_dir)
+    cfgs = load_cfgs(output_dir) if cfgs is None else cfgs
     if not cfgs:
         return 0
     filled = 0

@@ -201,15 +201,8 @@ def run(model, output_dir, model_dir, config):
     with open(specs_path, encoding="utf-8") as f:
         test_specs = json.load(f)
 
-    dd = model.get("dataDictionary", {}) or {}
-    review = _review(config)
-    cases = []
-    for spec in _iter_specs(test_specs):
-        cases.extend(_cases_for(spec, dd, review))
-
-    payload = {"format_version": FORMAT_VERSION,
-               "environment": _environment(config),
-               "cases": cases}
+    payload = build(test_specs, model.get("dataDictionary", {}) or {}, config)
+    cases = payload["cases"]
 
     os.makedirs(output_dir, exist_ok=True)
     out_path = os.path.join(output_dir, "ut_export.json")
@@ -218,3 +211,18 @@ def run(model, output_dir, model_dir, config):
     log("%s (%d case(s) from %d spec(s))"
         % (out_path, len(cases), sum(1 for _ in _iter_specs(test_specs))),
         component="utExport")
+
+
+def build(test_specs, dd, config):
+    """The `ut_export.json` payload for one `test_specs.json`.
+
+    `run` without the files: split out so a correction saved from a host with no output tree can
+    rebuild the export from the stored specs (`review.swe4_rederive`) through the same code.
+    """
+    review = _review(config)
+    cases = []
+    for spec in _iter_specs(test_specs):
+        cases.extend(_cases_for(spec, dd or {}, review))
+    return {"format_version": FORMAT_VERSION,
+            "environment": _environment(config),
+            "cases": cases}
