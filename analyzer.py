@@ -274,8 +274,12 @@ def cmd_generate(a) -> int:
 
 
 
-def _refuse_stale_export(version_id: str) -> int:
-    """0 if this version is safe to export only (REQ-AP-04), 2 if it would ship stale text.
+def _refuse_stale_export(version_id: str, doc_type: str = None) -> int:
+    """0 if this version's `doc_type` documents are safe to export only (REQ-AP-04), 2 if they
+    would ship stale text.
+
+    Asked about the documents this export writes: a SWE.3 re-derive does not make the SWE.4 specs
+    current, and SWE.4 specs a SWE.3 export does not print must not hold it up.
 
     Never blocks a run it cannot judge. With no database configured there is no override table
     to be stale against, and a guard that turns a missing optional feature into a failed export
@@ -287,7 +291,7 @@ def _refuse_stale_export(version_id: str) -> int:
             return 0
         from review.export_guard import StaleExport, assert_exportable
         with get_engine().connect() as cx:
-            assert_exportable(cx, version_id)
+            assert_exportable(cx, version_id, doc_type)
     except ImportError:
         return 0
     except Exception as exc:
@@ -370,9 +374,15 @@ def cmd_reexport(a) -> int:
     # `run.py` asks the same question again, and IT is the real guarantee — it is what both this
     # command and the API's re-export service spawn. Asking here as well is not redundant: it
     # fails before the checkout and the subprocess, so the CLI says so immediately.
+    #
+    # Which documents: a version generated as swe4/all must not come back as swe3 just because the
+    # re-export did not say. The manifest records what it was; --doc-type overrides. Older
+    # manifests have no docType, so swe3 stays the fallback. Resolved here, before the question,
+    # because the answer depends on it.
+    doc_type = a.doc_type or (store.read_manifest(a.version_id) or {}).get("docType") or "swe3"
     forced = bool(getattr(a, "force", False))
     if a.from_phase >= 4 and not forced:
-        rc = _refuse_stale_export(a.version_id)
+        rc = _refuse_stale_export(a.version_id, doc_type)
         if rc:
             return rc
 
@@ -402,10 +412,7 @@ def cmd_reexport(a) -> int:
     else:
         scope = (store.read_manifest(a.version_id) or {}).get("scope") or {"type": "project"}
     argv += scope_to_args(scope) + per_component_docx_args(scope)
-    # Same reasoning as `scope` above: a version generated as swe4/all must not come back
-    # as swe3 just because the re-export did not say. The manifest records what it was;
-    # --doc-type overrides. Older manifests have no docType, so swe3 stays the fallback.
-    doc_type = a.doc_type or (store.read_manifest(a.version_id) or {}).get("docType") or "swe3"
+    # The same documents the guard was asked about above -- see there.
     argv += ["--doc-type", doc_type]
     for u in a.unit or []:
         argv += ["--selected-unit", u]

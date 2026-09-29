@@ -128,8 +128,10 @@ class TestEveryPieceHasACaller:
         "export_guard.assert_exportable (cli, fails fast)": ("analyzer.py", "assert_exportable"),
         "export_guard.staleness (api re-export)": ("api/services/pipeline_runner.py",
                                                    "staleness"),
-        "export_guard.stamp_pipeline_derivation": ("engine/incremental/store.py",
-                                                   "stamp_pipeline_derivation"),
+        # Phase 3 records what it rebuilt; the capture stamps it, with the rows it vouches for.
+        "export_guard.record_derivation": ("engine/run_views.py", "record_derivation"),
+        "export_guard.stamp_recorded_derivations": ("engine/incremental/store.py",
+                                                    "stamp_recorded_derivations"),
         "cascade.enqueue": ("engine/review/override_service.py", "_cascade.enqueue"),
         "render_queue.enqueue": ("engine/review/override_service.py", "render_queue.enqueue"),
         "render_queue.run_pending": ("engine/incremental/store.py", "run_pending"),

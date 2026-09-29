@@ -1873,7 +1873,10 @@ def _reexport_from_phase(version_id: Optional[str]) -> int:
             return 4
         from review.export_guard import staleness                  # type: ignore[import]
         with get_engine().connect() as cx:
-            st = staleness(cx, version_id)
+            # Asked about SWE.3 only: this re-export runs run.py with no --doc-type, so SWE.3 is
+            # all it writes. SWE.4 specs it does not rebuild are not its question -- and its
+            # derivation, recorded per view, cannot vouch for them either.
+            st = staleness(cx, version_id, "swe3")
     except Exception as exc:                                       # noqa: BLE001 - see docstring
         _log.warning("re-export: could not check whether %s is up to date (%s); "
                      "exporting without re-deriving", version_id, exc)

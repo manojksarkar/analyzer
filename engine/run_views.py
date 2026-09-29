@@ -240,6 +240,64 @@ def _retire_behaviour_regenerations() -> None:
     except Exception as exc:                       # noqa: BLE001 - see docstring
         print("[run_views] could not retire behaviour regenerations: %s" % exc)
 
+
+def _layers_by_name(config) -> dict:
+    """`layers` reduced to what the SWE.4 views read from it -- which components each group of
+    each layer holds (`test_specs._layer_components`). Paths and file names stay out: they are
+    machine-specific, and the record they would travel in is stored with the output."""
+    out = {}
+    for lname, lcfg in ((config or {}).get("layers") or {}).items():
+        if not isinstance(lcfg, dict):
+            continue
+        groups = {gname: {c: {} for c in grp}
+                  for gname, grp in (lcfg.get("groups") or {}).items() if isinstance(grp, dict)}
+        out[lname] = {"groups": groups}
+    return out
+
+
+def _record_derivation(output_dir, ran, model, config, read_at, layer_filter,
+                       doc_type=None) -> None:
+    """Leave the export guard its record of what this run rebuilt (`REQ-AP-04`).
+
+    The record is turned into `view_derivations` rows when the output is captured, in the same
+    transaction as the rows themselves -- so it is written only for a versioned run with a
+    database, which is the only kind that is captured. Not for a run narrowed to some units
+    (`--selected-unit`): it rebuilt part of a component, and a stamp for the whole component would
+    vouch for text it never touched. Never fatal -- the views are built; a missing record only
+    makes the guard more cautious.
+    """
+    try:
+        from core.run_context import version_id as _vid
+        from core.db import is_database_configured
+        if not ran or not (_vid() and is_database_configured()):
+            return
+        if config.get("_analyzerSelectedUnits"):
+            print("[run_views] --selected-unit narrowed this run; not recorded as a derivation")
+            return
+        from core.model_io import COMPONENTS
+        allowed = config.get("_analyzerAllowedComponents")
+        components = list(allowed) if allowed else list((model.get(COMPONENTS) or {}).keys())
+        # What the SWE.4 views were built with, so a save can re-derive them exactly as this run
+        # did (review.swe4_rederive) -- a version generated from the CLI stores no config of its
+        # own anywhere else.
+        context = {"allowedComponents": sorted(allowed) if allowed else None,
+                   "layerComponents": sorted(layer_filter) if layer_filter else None,
+                   "views": (config.get("views") or {}),
+                   "layers": _layers_by_name(config)}
+        # Which document each view was built for -- by the rule that chose to build it. One
+        # `--doc-type all` run builds the flowcharts for SWE.4 alone when `views.flowcharts` is
+        # off, and the SWE.3 exporter then prints none (`export_guard._swe3_built`).
+        from views import views_to_run
+        from views.registry import concrete_doc_types
+        types = concrete_doc_types(doc_type or "swe3")
+        built_for = {v: [t for t in types if v in views_to_run(t, config)] for v in ran}
+        from review.export_guard import record_derivation
+        record_derivation(output_dir, ran, components, read_at, context=context,
+                          doc_types=built_for)
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        print("[run_views] could not record this derivation: %s" % exc)
+
+
 def main():
     args = sys.argv[1:]        # path flags already applied at import
 
@@ -285,10 +343,16 @@ def main():
     from core.config import app_config
     from views import run_views
 
+    # REQ-AP-04. This run's derivation is stamped with the moment it READ its inputs: taken before
+    # the model is loaded, so a correction saved after it -- into the model or the override table
+    # -- is newer than the stamp and still reads as stale.
+    import datetime as _dt
+    read_at = _dt.datetime.now(_dt.timezone.utc)
     model = _load_model()
     config = app_config()
     config = dict(config)  # make a copy so we can modify it
     model_dir = _p.model_dir
+    layer_filter = None    # the components the model is narrowed to, for the derivation record
     # Apply filter mode override from command line
     if filter_mode_override:
         if "views" not in config:
@@ -326,6 +390,7 @@ def main():
             layer_comps = get_layer_components(config, resolved)
             if layer_comps:
                 model = _filter_model_to_components(model, layer_comps)
+                layer_filter = layer_comps
     elif selected_components:
         from core.config import get_component_layer_name, get_layer_flat_groups
         config = dict(config)
@@ -342,6 +407,7 @@ def main():
                     layer_comps.update(g.keys())
         if layer_comps:
             model = _filter_model_to_components(model, layer_comps)
+            layer_filter = layer_comps
     if selected_units:
         selected_units = _resolve_units(
             model, selected_units, config.get("_analyzerAllowedComponents"), strict=False)
@@ -357,7 +423,11 @@ def main():
     # never opens a database of its own.
     config = _with_text_overrides(config)
 
-    run_views(model, output_dir, model_dir, config, doc_type=doc_type)
+    ran = run_views(model, output_dir, model_dir, config, doc_type=doc_type) or []
+
+    # REQ-AP-04. What this run rebuilt -- which views, for which components, from corrections read
+    # when -- for the export guard. See review.export_guard.
+    _record_derivation(output_dir, ran, model, config, read_at, layer_filter, doc_type)
 
     # REQ-CS-01's other half. A queued behaviour description has no model field to blank, so
     # Phase 2 cannot pay that debt -- but the behaviour view rebuilds every row it writes, so

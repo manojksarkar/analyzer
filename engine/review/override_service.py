@@ -15,8 +15,9 @@ so there is no partial success to recover from: either the whole edit lands or n
     write human_text into the model
     upsert text_overrides                    REQ-ST-05  (one row, direct lookup)
     append history and trim to N             REQ-ST-04
-    re-derive the affected views             REQ-AP-01  (caller-supplied; see derive.py)
-    stamp view_derivations                   REQ-AP-04
+    re-derive the affected views             REQ-AP-01  (caller-supplied; see derive.py and
+                                                        swe4_rederive.py)
+    stamp view_derivations                   REQ-AP-04  (and mark the stored records)
 
 The cascade (§6) and image renders (§7) are steps 6 and 7 of the build order and are not here.
 Renders are deliberately *not* transactional anyway — they are slow, and idempotent if retried.
@@ -201,6 +202,14 @@ class ModelAccess:
         """The artifact dict `resolver` works against."""
         return {name: self.artifact(name) for name in self.ARTIFACTS}
 
+    def loaded(self, name: str) -> Optional[Dict[str, Any]]:
+        """The artifact if this edit already holds it -- with its correction, if it made one --
+        else None. For a caller that must not read through a connection of its own once the
+        save has written (`swe4_rederive.model_of`)."""
+        if name in self._loaded:
+            return self._loaded[name]
+        return {} if self._explicit else None
+
     def mark_dirty(self, name: str) -> None:
         self._dirty.add(name)
 
@@ -248,9 +257,10 @@ def apply_override(conn,
     and a test can roll the whole thing back.
 
     `derive` is called after the rows are written and before the stamp, with the keyword
-    arguments `(version_id, slot_kind, location)`. It returns the view names it re-derived.
-    Injecting it keeps this module free of the view machinery, which needs an output directory
-    and a config that no unit test should have to build.
+    arguments `(version_id, slot_kind, location)`. It returns the view names it re-derived for the
+    slot's component -- in every stored directory that carries them, since they are stamped for
+    the component as a whole. Injecting it keeps this module free of the view machinery; the API
+    passes `review.swe4_rederive.make_save_deriver`.
     """
     text = (human_text or "").strip()
     if not text:
@@ -350,7 +360,8 @@ def apply_override(conn,
     # --- the views ---------------------------------------------------------
     views = list(derive(version_id=version_id, slot_kind=slot_kind, location=location) or ()) \
         if derive else []
-    _stamp_derivations(conn, version_id, views, stamp)
+    _stamp_derivations(conn, version_id, views, stamp,
+                       _component_of_id(next(iter(slot.parse(slot_kind, slot_key).values()), "")))
 
     return Applied(version_id=version_id, slot_kind=slot_kind, slot_key=slot_key,
                    llm_text=llm_text or "", human_text=text, previous_text=previous_text,
@@ -495,7 +506,7 @@ def apply_flowchart_overrides(conn,
     # component's SWE.4 specs as well as the flowchart (REQ-CS-04).
     views = list(derive(version_id=version_id, slot_kind=slot.NODE_LABEL,
                         flowchart_id=flowchart_id) or ()) if derive else []
-    _stamp_derivations(conn, version_id, views, stamp)
+    _stamp_derivations(conn, version_id, views, stamp, _component_of_id(flowchart_id))
 
     return FlowchartApplied(version_id=version_id, flowchart_id=flowchart_id, slot_shape=shape,
                             applied=applied, first_edits=first_edits, redrawn=redrawn,
@@ -574,7 +585,7 @@ def apply_behaviour_override(conn,
 
     views = list(derive(version_id=version_id, slot_kind=slot.BEHAVIOUR_DESCRIPTION,
                         slot_key=key) or ()) if derive else []
-    _stamp_derivations(conn, version_id, views, stamp)
+    _stamp_derivations(conn, version_id, views, stamp, _component_of_id(function_id))
 
     stored = get_override(conn, version_id, slot.BEHAVIOUR_DESCRIPTION, key)
     return BehaviourApplied(version_id=version_id, slot_key=key,
@@ -655,24 +666,29 @@ def _append_history(conn, version_id, slot_kind, slot_key, text, user_id, stamp,
 # ---------------------------------------------------------------------------
 # derivation stamps
 # ---------------------------------------------------------------------------
-def _stamp_derivations(conn, version_id, views, stamp) -> None:
+def _stamp_derivations(conn, version_id, views, stamp, component=None) -> None:
     """Record that these views were derived now — the export guard's input (REQ-AP-04).
 
-    A view is `name` or `(name, group)`. The guard compares the OLDEST derivation against the
-    newest override, so a view that was re-derived must have its row moved forward; leaving a
-    stale row would report the version as permanently stale.
+    A view is `name` or `(name, component)`; a bare name was re-derived for `component`, the saved
+    slot's, in every stored directory that carries it -- that is what `derive=` promises. Stamped
+    at the save's own time, the correction's `updated_at`, and marked in the stored records so the
+    next capture keeps the stamp (`export_guard.stamp_saved`). With no component to name -- a
+    struct description's key is its type's name -- nothing is stamped: a stamp for no component
+    would vouch for nothing, and the guard ignores one.
     """
+    from review.export_guard import stamp_saved
+    pairs = []
     for view in views or ():
-        name, group = view if isinstance(view, (tuple, list)) else (view, "")
-        where = (s.view_derivations.c.version_id == version_id,
-                 s.view_derivations.c.view_name == name,
-                 s.view_derivations.c.group_name == (group or ""))
-        touched = conn.execute(update(s.view_derivations).where(*where)
-                               .values(derived_at=stamp)).rowcount
-        if not touched:
-            conn.execute(insert(s.view_derivations).values(
-                version_id=version_id, view_name=name, group_name=(group or ""),
-                derived_at=stamp))
+        name, comp = view if isinstance(view, (tuple, list)) else (view, component)
+        if name and comp:
+            pairs.append((name, comp))
+    stamp_saved(conn, version_id, pairs, stamp)
+
+
+def _component_of_id(ident: Optional[str]) -> Optional[str]:
+    """`Comp|Unit|name|params` (or `Comp|Unit`) -> `Comp`; None for an id that names no
+    component, such as a data-dictionary key."""
+    return ident.split("|", 1)[0] if ident and "|" in ident else None
 
 
 # ---------------------------------------------------------------------------
