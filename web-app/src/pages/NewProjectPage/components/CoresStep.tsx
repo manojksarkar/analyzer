@@ -99,6 +99,12 @@ export function CoresStep({ cores, layers, wanted, uploading, onAdd, onRemove, o
     <FileControl slot={slot} file={c[slot]} want={want} icon={icon} busy={uploading.has(`${c.id}:${slot}`)}
       onPick={(f) => onPick(c.id, slot, f)} onClear={() => onChange(c.id, { [slot]: null })} />
   )
+  // The optional inputs stay out of the way until they have a file, a config asks for one, or
+  // the user adds one.
+  const [opened, setOpened] = useState<Set<string>>(new Set())
+  const shows = (c: Core, slot: CoreFile, want?: string | null) =>
+    !!c[slot] || !!want || uploading.has(`${c.id}:${slot}`) || opened.has(`${c.id}:${slot}`)
+  const open = (c: Core, slot: CoreFile) => setOpened((p) => new Set(p).add(`${c.id}:${slot}`))
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -162,12 +168,31 @@ export function CoresStep({ cores, layers, wanted, uploading, onAdd, onRemove, o
                     </>
                   )}
                 </CoreRow>
-                <CoreRow label="Data dictionary" help="Signal names, units, ranges" optional>
-                  {file(c, 'dataDictionary', 'menu_book', want?.dataDictionary)}
-                </CoreRow>
-                <CoreRow label="Compile commands" help="Include paths from the build" optional>
-                  {file(c, 'compileCommands', 'terminal', want?.compileCommands)}
-                </CoreRow>
+                {shows(c, 'dataDictionary', want?.dataDictionary) && (
+                  <CoreRow label="Data dictionary" help="Signal names, units, ranges" optional>
+                    {file(c, 'dataDictionary', 'menu_book', want?.dataDictionary)}
+                  </CoreRow>
+                )}
+                {shows(c, 'compileCommands', want?.compileCommands) && (
+                  <CoreRow label="Compile commands" help="Include paths from the build" optional>
+                    {file(c, 'compileCommands', 'terminal', want?.compileCommands)}
+                  </CoreRow>
+                )}
+                {(!shows(c, 'dataDictionary', want?.dataDictionary) || !shows(c, 'compileCommands', want?.compileCommands)) && (
+                  <div className="flex items-center gap-4 px-4 py-2.5 border-t border-surface-container-low">
+                    <span className="font-mono text-label text-outline uppercase tracking-[.06em]">Optional</span>
+                    {!shows(c, 'dataDictionary', want?.dataDictionary) && (
+                      <button type="button" className="switch-link mt-0 flex items-center gap-1" onClick={() => open(c, 'dataDictionary')}>
+                        <Icon name="add" size={13} />Data dictionary
+                      </button>
+                    )}
+                    {!shows(c, 'compileCommands', want?.compileCommands) && (
+                      <button type="button" className="switch-link mt-0 flex items-center gap-1" onClick={() => open(c, 'compileCommands')}>
+                        <Icon name="add" size={13} />Compile commands
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )
           })}

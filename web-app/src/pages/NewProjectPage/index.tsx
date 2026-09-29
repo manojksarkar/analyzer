@@ -10,9 +10,10 @@ import type { CreateProjectInput, RepoEntry, OrgUser } from '../../services/api'
 import type { ConfigPreview } from '../../types'
 import { ConfigImport } from './components/ConfigImport'
 import { CoresReview, CoresStep } from './components/CoresStep'
+import { Readiness, type ReadinessItem } from './components/Readiness'
 import {
   assignmentsOf, CORE_FILES, coreInput, coreProblems, draftToCores, draftToLayers, fitsCoreFile, followBranch, indexTree,
-  newCore, nextCoreName, ownerOf, pathProblems, settingsSummary,
+  newCore, nextCoreName, ownerOf, pathProblems, settingsSummary, typedDefines,
   type Comp, type Core, type CoreFile, type Group, type Layer, type Member, type Role,
 } from './helpers'
 
@@ -21,7 +22,7 @@ const STEPS = [
   { title: 'Project & Repository', sub: 'Name, source path' },
   { title: 'Cores',                sub: 'Macros & dictionary per core' },
   { title: 'Architecture',         sub: 'Layers & groups' },
-  { title: 'Team & Access',        sub: 'Add developers' },
+  { title: 'Team & Access',        sub: 'Optional · add people later' },
   { title: 'Review & Initialize',  sub: 'Confirm & create project' },
 ]
 
@@ -32,6 +33,15 @@ const STEP_HEADERS = [
   { title: 'Architecture Mapping', sub: 'Map layers and groups. Components are discovered automatically from source folders.' },
   { title: 'Team & Access',        sub: 'Add team members and assign their role. More members can be added later from Project Settings.' },
   { title: 'Review & Initialize',  sub: 'Confirm every setting before the first analysis run.' },
+]
+
+// The action bar's note for each step: what is required, and what can be left out.
+const STEP_HINTS = [
+  'Name, repository and branch are required',
+  'Optional - a layer with no core is parsed without macros',
+  'At least one component with files is required',
+  'Optional - people can be added later from Team',
+  'Nothing is created until you initialize',
 ]
 
 const TREE_CB = 'w-3.5 h-3.5 accent-secondary cursor-pointer flex-shrink-0'
@@ -82,6 +92,7 @@ function repoRootName(url: string): string {
 
 let _uid = 0
 const uid = () => `id${++_uid}`
+const plural = (n: number, w: string) => `${n} ${w}${n !== 1 ? 's' : ''}`
 
 function initialsOf(label: string) {
   return label.split(' ').map((w) => w[0] || '').join('').slice(0, 2).toUpperCase()
@@ -120,8 +131,8 @@ function PageHeader({ step, onBack, backLabel }: { step: number; onBack: () => v
 
 /* ─── Step rail ─────────────────────────────────────────────────────── */
 function StepRail({
-  cur, done, onClose, onGo,
-}: { cur: number; done: Set<number>; onClose: () => void; onGo: (n: number) => void }) {
+  cur, done, issues, onClose, onGo,
+}: { cur: number; done: Set<number>; issues: Set<number>; onClose: () => void; onGo: (n: number) => void }) {
   const pct = Math.round((done.size / STEPS.length) * 100)
   return (
     <aside className="w-60 flex-shrink-0 bg-white border-r border-outline-variant flex flex-col overflow-y-auto">
@@ -152,10 +163,13 @@ function StepRail({
                 {state === 'done'
                   ? <Icon name="check" size={14} fill />
                   : n}
+                {issues.has(n) && <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-error border-2 border-white" />}
               </div>
               <div className="pt-[3px]">
                 <p className={cn('font-mono text-xs leading-[1.2]', n === cur ? 'text-secondary font-semibold' : done.has(n) ? 'text-on-surface font-medium' : 'text-on-surface-variant font-medium')}>{s.title}</p>
-                <p className={cn('font-mono text-caption mt-0.5', n === cur ? 'text-secondary' : 'text-outline')}>{s.sub}</p>
+                <p className={cn('font-mono text-caption mt-0.5', issues.has(n) ? 'text-error' : n === cur ? 'text-secondary' : 'text-outline')}>
+                  {issues.has(n) ? 'Needs a fix' : s.sub}
+                </p>
               </div>
             </div>
           )
@@ -182,6 +196,22 @@ function StepHeader({ title, sub }: { title: string; sub: string }) {
   )
 }
 
+/* ─── What stops a step, inside the step ────────────────────────────── */
+function StepIssues({ items }: { items: string[] }) {
+  if (!items.length) return null
+  return (
+    <div role="alert" className="p-3.5 bg-error-container border border-error rounded-xl">
+      <p className="flex items-center gap-2 font-mono text-xs font-semibold text-on-error-container">
+        <Icon name="error" size={15} fill className="text-error" />
+        {items.length === 1 ? 'One thing' : `${items.length} things`} to fix before you continue
+      </p>
+      <ul className="mt-2 ml-6 space-y-1 list-disc">
+        {items.map((t, i) => <li key={i} className="text-xs text-on-error-container leading-[1.45]"><CodeText text={t} /></li>)}
+      </ul>
+    </div>
+  )
+}
+
 /* ─── Wizard ────────────────────────────────────────────────────────── */
 function WizardView({
   onCancel, onSubmit, submitting, onStepChange,
@@ -190,6 +220,8 @@ function WizardView({
   // 1-based step + `done` set (steps advanced past) — drives the rail + bar.
   const [cur, setCur] = useState(1)
   const [done, setDone] = useState<Set<number>>(new Set())
+  // Steps where Continue was tried: their problems show inside the step from then on.
+  const [attempted, setAttempted] = useState<Set<number>>(new Set())
   const scrollRef = useRef<HTMLDivElement>(null)
   // The pinned "self" row uses the real logged-in user (admin/creator).
   const authUser = useAuthStore((s) => s.user)
@@ -200,6 +232,7 @@ function WizardView({
   const [repoUrl, setRepoUrl] = useState('')
   const [token, setToken] = useState('')
   const [showToken, setShowToken] = useState(false)
+  const [tokenOpen, setTokenOpen] = useState(false)
   const [branch, setBranch] = useState('')
   const [branches, setBranches] = useState<string[]>([])
   const [testState, setTestState] = useState<'idle' | 'connecting' | 'connected'>('idle')
@@ -222,6 +255,8 @@ function WizardView({
   // ── Config import (step 1, optional) — fills every step it can ──
   const [imported, setImported] = useState<{ text: string; fileName: string; preview: ConfigPreview } | null>(null)
   const [importBusy, setImportBusy] = useState(false)
+  // What the config also named but the user's own value was kept for (e.g. "project name").
+  const [importKept, setImportKept] = useState<string[]>([])
   // A check of the import against the repository is under way (a network round trip or two).
   const [importChecking, setImportChecking] = useState(false)
   // The branch the config names, picked once Test Connection lists the branches.
@@ -251,6 +286,8 @@ function WizardView({
   const [newLayerName, setNewLayerName] = useState('')
   const [newLayerPath, setNewLayerPath] = useState('')
   const [newLayerCore, setNewLayerCore] = useState('')
+  // The last removal, until undone, replaced, or the user leaves the step.
+  const [lastRemoved, setLastRemoved] = useState<{ label: string; layers: Layer[]; assignments: Record<string, string> } | null>(null)
   const [inlineAdd, setInlineAdd] = useState<{ parentId: string } | null>(null)
   const [inlineVal, setInlineVal] = useState('')
   // Add-Component right panel
@@ -271,6 +308,8 @@ function WizardView({
   const [search, setSearch] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [inviteRole, setInviteRole] = useState<Role>('Developer')
+  const [rolesOpen, setRolesOpen] = useState(false)
+  const [reviewTreeOpen, setReviewTreeOpen] = useState(false)
   // Org directory results from GET /users/search (debounced as the user types).
   const [searchResults, setSearchResults] = useState<OrgUser[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
@@ -280,6 +319,12 @@ function WizardView({
     scrollRef.current?.scrollTo({ top: 0 })
     onStepChange(cur)
   }, [cur, onStepChange])
+  // An undo is offered for a while, not forever.
+  useEffect(() => {
+    if (!lastRemoved) return
+    const t = window.setTimeout(() => setLastRemoved(null), 10000)
+    return () => window.clearTimeout(t)
+  }, [lastRemoved])
 
   /* ── Step 1 helpers ── */
   function repoChanged() {
@@ -356,9 +401,9 @@ function WizardView({
       const preview = await repo.previewConfig({ text })
       applyImport(preview, { project: true, layers: true })
       setImported({ text, fileName: file.name, preview })
-      // Already connected to the repository the config names: check its paths right away.
-      const sameRepo = !preview.draft.repoUrl || preview.draft.repoUrl === repoUrl.trim()
-      if (testState === 'connected' && sameRepo) {
+      // Already connected: check the config's paths against that repository - the one the
+      // project uses, whatever repository the config names.
+      if (testState === 'connected') {
         const want = preview.draft.branch
         const ref = want && branches.includes(want) ? want : branch
         if (ref !== branch) { setBranch(ref); void loadRepoTree(ref) }
@@ -394,8 +439,17 @@ function WizardView({
   function applyImport(preview: ConfigPreview, opts: { project: boolean; layers: boolean }, prev?: ConfigPreview) {
     const d = preview.draft
     if (opts.project) {
-      if (d.name) setName(d.name)
-      if (d.repoUrl && d.repoUrl !== repoUrl.trim()) { setRepoUrl(d.repoUrl); repoChanged() }
+      // A config fills the name and repository only when they are empty: what the user typed wins.
+      const keptNow: string[] = []
+      if (d.name && name.trim() !== d.name) {
+        if (!name.trim()) setName(d.name)
+        else keptNow.push('project name')
+      }
+      if (d.repoUrl && repoUrl.trim() !== d.repoUrl) {
+        if (!repoUrl.trim()) { setRepoUrl(d.repoUrl); repoChanged() }
+        else keptNow.push('repository')
+      }
+      setImportKept(keptNow)
       setPreferredBranch(d.branch ?? '')
       // The config's cores replace the wizard's: its layers name them.
       updateCores(() => draftToCores(d.cores, uid))
@@ -475,17 +529,30 @@ function WizardView({
   function freeFiles(files: string[]) {
     setFileAssignments((prev) => { const next = { ...prev }; files.forEach((f) => delete next[f]); return next })
   }
+  // One click removes a whole layer or group: keep what was there, so it can be undone.
+  function keepForUndo(label: string) {
+    setLastRemoved({ label, layers, assignments: fileAssignments })
+  }
+  function undoRemove() {
+    if (!lastRemoved) return
+    setLayers(lastRemoved.layers)
+    setFileAssignments(lastRemoved.assignments)
+    setLastRemoved(null)
+  }
   function removeGroup(layerId: string, g: Group) {
+    keepForUndo(`Removed group ${g.name} (${plural(g.comps.length, 'component')})`)
     markArchEdited()
     freeFiles(g.comps.flatMap((c) => c.files))
     patchLayer(layerId, (l) => ({ ...l, groups: l.groups.filter((x) => x.id !== g.id) }))
   }
   function removeLayer(layer: Layer) {
+    keepForUndo(`Removed layer ${layer.name} (${plural(layer.groups.reduce((a, g) => a + g.comps.length, 0), 'component')})`)
     markArchEdited()
     freeFiles(layer.groups.flatMap((g) => g.comps.flatMap((c) => c.files)))
     setLayers((prev) => prev.filter((l) => l.id !== layer.id))
   }
   function removeComp(layerId: string, groupId: string, comp: Comp) {
+    keepForUndo(`Removed component ${comp.name}`)
     markArchEdited()
     freeFiles(comp.files)
     patchLayer(layerId, (l) => ({ ...l, groups: l.groups.map((g) => (g.id === groupId ? { ...g, comps: g.comps.filter((c) => c.id !== comp.id) } : g)) }))
@@ -556,6 +623,8 @@ function WizardView({
     for (const pr of problems) m.set(`${pr.layerId}|${pr.compId ?? ''}|${pr.path}`, pr.text)
     return m
   }, [problems])
+  const layerIssueCount = (layerId: string) =>
+    treeReady ? problems.filter((pr) => pr.layerId === layerId).length : 0
   const compIssue = (layerId: string, compId: string) =>
     treeReady ? problems.filter((pr) => pr.layerId === layerId && pr.compId === compId).map((pr) => pr.text).join('\n') : ''
   const pathIssue = (layerId: string, compId: string, path: string) =>
@@ -591,48 +660,42 @@ function WizardView({
   const searchMatches = searchResults.filter((u) => !takenEmails.includes(u.email))
 
   /* ── Navigation ── */
+  // What stops each step, worked out live. It shows inside the step once Continue was tried there
+  // (not in a toast that is gone before it is read), and marks the step in the rail.
+  function issuesFor(n: number): string[] {
+    if (n === 1) {
+      return [
+        !name.trim() && 'Give the project a name',
+        !repoUrl.trim() && 'Enter the repository URL',
+        !!repoUrl.trim() && testState !== 'connected' && 'Test the connection to load the branches',
+        testState === 'connected' && !branch && 'Pick a branch',
+      ].filter((t): t is string => !!t)
+    }
+    if (n === 2) return uploading.size ? ['Core files are still uploading - wait for them to finish'] : coreProblems(cores)
+    if (n === 3) {
+      if (repoTreeLoading) return []                     // the step says it is reading the branch
+      if (!treeReady) return ["The repository's files could not be read - test the connection again in step 1"]
+      return problems.map((p) => p.text)
+    }
+    return []
+  }
+  const railIssues = new Set([1, 2, 3].filter((n) => (attempted.has(n) || done.has(n)) && issuesFor(n).length > 0))
   function validate(n: number): boolean {
     if (n === 1) {
-      const e: typeof errs = {}
-      if (!name.trim()) e.name = true
-      if (!repoUrl.trim()) e.repo = true
-      if (e.name || e.repo) { setErrs(e); return false }
-      if (testState !== 'connected') {
-        setTestMsg({ text: 'Test the connection first to load branches.', tone: 'error' })
-        return false
-      }
-      if (!branch) { setErrs({ branch: true }); return false }
-      setErrs({})
+      setErrs({ name: !name.trim(), repo: !repoUrl.trim(), branch: testState === 'connected' && !branch })
+      if (repoUrl.trim() && testState !== 'connected') setTestMsg({ text: 'Test the connection first to load branches.', tone: 'error' })
     }
-    if (n === 2 || n === 5) {
-      if (uploading.size) {
-        toast.info('Still uploading', 'Wait for the core files to finish uploading.')
-        return false
-      }
-      const bad = coreProblems(cores)
-      if (bad.length) {
-        toast.error(bad.length === 1 ? 'One thing to fix' : `${bad.length} things to fix`, bad.join('. '))
-        if (n === 5) setCur(2)
-        return false
-      }
+    if ((n === 3 || n === 5) && repoTreeLoading) {
+      toast.info('Still reading the repository', `Checking the paths against branch ${branch}. Try again in a moment.`)
+      return false
     }
-    if (n === 3 || n === 5) {
-      if (repoTreeLoading) {
-        toast.info('Still reading the repository', `Checking the paths against branch ${branch}. Try again in a moment.`)
-        return false
-      }
-      if (!treeReady) {
-        toast.error('The paths cannot be checked', "The repository's files could not be read. Test the connection again in step 1.")
-        return false
-      }
-      if (problems.length) {
-        const more = problems.length > 1 ? ` (and ${problems.length - 1} more, marked in step 3)` : ''
-        toast.error(problems.length === 1 ? 'One thing to fix' : `${problems.length} things to fix`, problems[0].text.replace(/`/g, '') + more)
-        if (n === 5) setCur(3)
-        return false
-      }
-    }
-    return true
+    // The last step re-checks every step before it and takes the user to the first that needs a fix.
+    const bad = (n === STEPS.length ? [1, 2, 3] : [n]).find((k) => issuesFor(k).length > 0)
+    if (bad === undefined) return true
+    setAttempted((p) => new Set(p).add(bad))
+    if (bad !== cur) setCur(bad)
+    scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+    return false
   }
   function back() { if (cur > 1) setCur(cur - 1) }
   function cont() {
@@ -670,24 +733,65 @@ function WizardView({
   }
   function railGo(n: number) { if (n < cur || done.has(n)) setCur(n) }
 
+  /* ── Step 5: is the project ready? `error` blocks creating it; `warn` is what it would miss. ── */
+  const readiness: ReadinessItem[] = (() => {
+    const out: ReadinessItem[] = []
+    const s1 = issuesFor(1)
+    out.push(s1.length ? { state: 'error', title: 'Project and repository', detail: s1.join(' · '), fix: 1 }
+      : { state: 'ok', title: `Repository connected · branch ${branch}` })
+    const s3 = issuesFor(3)
+    out.push(repoTreeLoading ? { state: 'warn', title: `Still reading branch ${branch} to check every path` }
+      : s3.length ? { state: 'error', title: `${plural(s3.length, 'thing')} to fix in the architecture`,
+        detail: s3[0] + (s3.length > 1 ? ` (and ${s3.length - 1} more)` : ''), fix: 3 }
+        : { state: 'ok', title: `Every path is on branch ${branch} · ${plural(layers.length, 'layer')}, ${plural(totalComps, 'component')}` })
+    const s2 = issuesFor(2)
+    out.push(s2.length ? { state: 'error', title: 'Cores', detail: s2.join(' · '), fix: 2 }
+      : cores.length ? { state: 'ok', title: `${plural(cores.length, 'core')}: ${cores.map((c) => c.name.trim()).join(', ')}` }
+        : { state: 'warn', title: 'No cores', detail: 'Every layer is parsed without macros or a data dictionary.', fix: 2 })
+    // Files an imported config names that were never uploaded, per core.
+    const pending = cores.map((c) => {
+      const w = wantedFor(c)
+      const files = !w ? [] : [
+        c.macroMode === 'file' && !c.macroFile && w.macros,
+        !c.dataDictionary && w.dataDictionary,
+        !c.compileCommands && w.compileCommands,
+      ].filter((f): f is string => !!f)
+      return { core: c, files }
+    }).filter((x) => x.files.length)
+    if (pending.length) {
+      const n = pending.reduce((a, x) => a + x.files.length, 0)
+      out.push({ state: 'warn', title: `${plural(n, 'file')} the config names ${n === 1 ? 'is' : 'are'} not uploaded`,
+        detail: pending.map((x) => `${x.core.name.trim()}: ${x.files.join(', ')}`).join(' · '), fix: 2 })
+    }
+    const noMacros = cores.filter((c) => !pending.some((x) => x.core.id === c.id)
+      && !(c.macroMode === 'typed' ? typedDefines(c.macroText).length : c.macroFile)).map((c) => c.name.trim())
+    if (noMacros.length) {
+      out.push({ state: 'warn', title: `${noMacros.join(', ')}: no macros`,
+        detail: 'Its layers parse without their -D flags, so #if branches may be read the wrong way.', fix: 2 })
+    }
+    const noCore = cores.length ? layers.filter((l) => !cores.some((c) => c.id === l.coreId)).map((l) => l.name) : []
+    if (noCore.length) {
+      out.push({ state: 'warn', title: `${noCore.join(', ')}: no core`, detail: 'Parsed without macros or a data dictionary.', fix: 3 })
+    }
+    out.push({ state: 'ok', title: members.length ? `You and ${plural(members.length, 'member')}` : 'Just you - people can be added later from Team' })
+    return out
+  })()
   const isLast = cur === STEPS.length
   const testMsgCls = testMsg?.tone === 'error' ? 'text-error' : testMsg?.tone === 'ok' ? 'text-[#00a572]' : 'text-on-surface-variant'
 
   return (
     <div className="flex-1 overflow-hidden flex">
-      <StepRail cur={cur} done={done} onClose={onCancel} onGo={railGo} />
+      <StepRail cur={cur} done={done} issues={railIssues} onClose={onCancel} onGo={railGo} />
 
       {/* Form area */}
       <div className="flex-1 flex flex-col overflow-hidden bg-background">
         <div ref={scrollRef} className="flex-1 overflow-y-auto">
           <div className="max-w-2xl mx-auto px-6 py-6 space-y-5">
             <StepHeader title={STEP_HEADERS[cur - 1].title} sub={STEP_HEADERS[cur - 1].sub} />
+            {/* Step 3 lists its own path problems, marked on the tree. */}
+            {attempted.has(cur) && cur !== 3 && <StepIssues items={issuesFor(cur)} />}
 
             {/* ══ STEP 1 — PROJECT & REPOSITORY ══ */}
-            {cur === 1 && (
-              <ConfigImport fileName={imported?.fileName} preview={imported?.preview} busy={importBusy} onPick={(f) => { void importConfig(f) }} archChanged={archChanged} branch={branch}
-                checking={importChecking || (!!imported && !imported.preview.repositoryChecked && (testState === 'connecting' || repoTreeLoading))} />
-            )}
             {cur === 1 && (
               <div className="card space-y-4">
                 <div>
@@ -700,18 +804,25 @@ function WizardView({
                   <input className={`inp mono ${errs.repo ? 'err' : ''}`} value={repoUrl} onChange={(e) => { setRepoUrl(e.target.value); setErrs((p) => ({ ...p, repo: false })); repoChanged() }} type="text" placeholder="https://github.com/org/repo.git" />
                 </div>
 
-                <div>
-                  <div className="lbl">
-                    Access Token
-                    <span className="ml-auto text-on-surface-variant font-mono text-caption font-normal tracking-normal normal-case">Optional — for private repos</span>
+                {/* Only a private repository needs a token: out of the way until asked for. */}
+                {tokenOpen || token ? (
+                  <div>
+                    <div className="lbl">
+                      Access Token
+                      <span className="ml-auto text-on-surface-variant font-mono text-caption font-normal tracking-normal normal-case">Optional — for private repos</span>
+                    </div>
+                    <div className="relative">
+                      <input autoFocus={!token} className="inp mono pr-10" value={token} onChange={(e) => { setToken(e.target.value); repoChanged() }} type={showToken ? 'text' : 'password'} placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" />
+                      <button type="button" onClick={() => setShowToken((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors">
+                        <Icon name={showToken ? 'visibility' : 'visibility_off'} size={17} />
+                      </button>
+                    </div>
                   </div>
-                  <div className="relative">
-                    <input className="inp mono pr-10" value={token} onChange={(e) => { setToken(e.target.value); repoChanged() }} type={showToken ? 'text' : 'password'} placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" />
-                    <button type="button" onClick={() => setShowToken((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors">
-                      <Icon name={showToken ? 'visibility' : 'visibility_off'} size={17} />
-                    </button>
-                  </div>
-                </div>
+                ) : (
+                  <button type="button" onClick={() => setTokenOpen(true)} className="-mt-1 flex items-center gap-1 text-caption text-secondary hover:underline">
+                    <Icon name="lock" size={13} />Private repository? Add an access token
+                  </button>
+                )}
 
                 {/* Test connection */}
                 <div className="flex items-center gap-3 pt-1">
@@ -749,6 +860,11 @@ function WizardView({
                   </div>
                 )}
               </div>
+            )}
+            {/* Config import sits below the repository: once connected, the config is checked against it right away. */}
+            {cur === 1 && (
+              <ConfigImport fileName={imported?.fileName} preview={imported?.preview} busy={importBusy} onPick={(f) => { void importConfig(f) }} archChanged={archChanged} branch={branch} kept={importKept}
+                checking={importChecking || (!!imported && !imported.preview.repositoryChecked && (testState === 'connecting' || repoTreeLoading))} />
             )}
 
             {/* ══ STEP 2 — CORES ══ */}
@@ -815,8 +931,17 @@ function WizardView({
                       <div className="layer-head" onClick={() => patchLayer(layer.id, (l) => ({ ...l, collapsed: !l.collapsed }))}>
                         <Icon name={layer.collapsed ? 'keyboard_arrow_right' : 'keyboard_arrow_down'} size={15} className="text-on-surface-variant" />
                         <div className="flex-1 min-w-0">
-                          <div className="text-on-surface font-mono text-body font-bold leading-[1.3]">{layer.name}</div>
-                          <span className={cn(`layer-path-display ${layer.path ? '' : 'empty'}`, pathIssue(layer.id, '', layer.path) && 'err')} title={pathIssue(layer.id, '', layer.path)?.replace(/`/g, '')}>{layer.path || 'Set root path…'}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-on-surface font-mono text-body font-bold leading-[1.3]">{layer.name}</span>
+                            {layerIssueCount(layer.id) > 0 && (
+                              <span className="px-1.5 rounded bg-error-container text-error font-mono text-micro font-bold">{layerIssueCount(layer.id)} to fix</span>
+                            )}
+                          </div>
+                          {/* Root folder, then what the layer holds - enough to leave it collapsed. */}
+                          <span className={cn(`layer-path-display ${layer.path ? '' : 'empty'}`, pathIssue(layer.id, '', layer.path) && 'err')} title={pathIssue(layer.id, '', layer.path)?.replace(/`/g, '')}>
+                            {layer.path ? `${layer.path}/` : 'Set root path…'}
+                            <span className="text-outline">{` · ${plural(layer.groups.length, 'group')} · ${plural(layer.groups.reduce((a, g) => a + g.comps.length, 0), 'component')}`}</span>
+                          </span>
                         </div>
                         <label className="layer-core" onClick={(e) => e.stopPropagation()} title="The core this layer is built for: its macros, data dictionary and compile commands">
                           Core
@@ -900,7 +1025,12 @@ function WizardView({
                             </button>
                           )}
 
-                          {/* Lib paths */}
+                          {/* Lib paths - optional: a link until the layer has one */}
+                          {layer.libPaths.length === 0 ? (
+                            <button onClick={() => { markArchEdited(); patchLayer(layer.id, (l) => ({ ...l, libPaths: [''] })) }} className="add-group-btn text-outline" title="External include paths (-I flags) for this layer.">
+                              <Icon name="add" size={12} /> Lib path <span className="font-normal">(optional)</span>
+                            </button>
+                          ) : (
                           <div className="inc-paths-section">
                             <div className="inc-paths-row">
                               <div className="inc-paths-label" title="External include paths (-I flags) for this layer.">Lib Paths</div>
@@ -923,11 +1053,21 @@ function WizardView({
                               </div>
                             </div>
                           </div>
+                          )}
                         </div>
                       )}
                     </div>
                   ))}
                 </div>
+
+                {lastRemoved && (
+                  <div role="status" className="sticky bottom-3 z-10 flex items-center gap-3 px-4 py-2.5 bg-primary text-white rounded-lg shadow-[0_4px_16px_rgba(4,22,39,.25)]">
+                    <Icon name="delete" size={16} className="opacity-70" />
+                    <span className="flex-1 text-xs">{lastRemoved.label}</span>
+                    <button type="button" onClick={undoRemove} className="font-mono text-caption font-bold uppercase tracking-[.06em] text-[#8ab4ff] hover:text-white">Undo</button>
+                    <button type="button" onClick={() => setLastRemoved(null)} aria-label="Dismiss" className="opacity-70 hover:opacity-100"><Icon name="close" size={15} /></button>
+                  </div>
+                )}
 
                 {/* Add layer inline form */}
                 {addLayerOpen && (
@@ -1068,33 +1208,40 @@ function WizardView({
                   </div>
                 </div>
 
-                {/* Role legend */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
-                    <div className="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center flex-shrink-0">
-                      <Icon name="manage_accounts" size={16} fill className="text-on-primary-container" />
+                {/* What each role may do: on request, not in the way. */}
+                <button type="button" onClick={() => setRolesOpen((o) => !o)} className="flex items-center gap-1 text-caption text-secondary hover:underline">
+                  <Icon name={rolesOpen ? 'expand_less' : 'help'} size={14} />What can each role do?
+                </button>
+                {rolesOpen && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
+                      <div className="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center flex-shrink-0">
+                        <Icon name="manage_accounts" size={16} fill className="text-on-primary-container" />
+                      </div>
+                      <div>
+                        <p className="text-on-surface font-mono text-xs font-semibold">Admin</p>
+                        <p className="text-on-surface-variant text-caption mt-0.5 leading-[1.5]">Creates project, manages config, runs analysis, approves &amp; publishes docs</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-on-surface font-mono text-xs font-semibold">Admin</p>
-                      <p className="text-on-surface-variant text-caption mt-0.5 leading-[1.5]">Creates project, manages config, runs analysis, approves &amp; publishes docs</p>
+                    <div className="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
+                      <div className="w-8 h-8 rounded-lg bg-secondary-container flex items-center justify-center flex-shrink-0">
+                        <Icon name="engineering" size={16} fill className="text-secondary" />
+                      </div>
+                      <div>
+                        <p className="text-on-surface font-mono text-xs font-semibold">Developer</p>
+                        <p className="text-on-surface-variant text-caption mt-0.5 leading-[1.5]">Requests analysis runs, reviews &amp; edits assigned documents</p>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
-                    <div className="w-8 h-8 rounded-lg bg-secondary-container flex items-center justify-center flex-shrink-0">
-                      <Icon name="engineering" size={16} fill className="text-secondary" />
-                    </div>
-                    <div>
-                      <p className="text-on-surface font-mono text-xs font-semibold">Developer</p>
-                      <p className="text-on-surface-variant text-caption mt-0.5 leading-[1.5]">Requests analysis runs, reviews &amp; edits assigned documents</p>
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
             )}
 
             {/* ══ STEP 5 — REVIEW & INITIALIZE ══ */}
             {cur === 5 && (
               <div className="space-y-4">
+                <Readiness items={readiness} onFix={setCur} />
+                <p className="pt-2 font-mono text-label font-bold uppercase tracking-[.08em] text-outline">Details</p>
                 {/* Project & Repository */}
                 <div className="rev-card">
                   <div className="rev-card-head">
@@ -1146,57 +1293,63 @@ function WizardView({
                           : `all on branch ${branch}`}
                     </span>
                   </div>
-                  {layers.length === 0 ? (
-                    <p className="px-4 py-3 font-mono text-caption text-outline">No layers defined.</p>
-                  ) : (
-                    <div className="border-t border-outline-variant">
-                      {layers.map((layer) => (
-                        <div key={layer.id} className="px-4 py-2.5">
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <Icon name="layers" size={14} className="text-secondary" />
-                            <span className="font-mono text-caption font-bold text-on-surface">{layer.name}</span>
-                            {layer.path && <span className="font-mono text-micro text-outline ml-1.5 overflow-hidden text-ellipsis whitespace-nowrap">{layer.path}</span>}
-                          </div>
-                          {layer.libPaths.filter(Boolean).length > 0 && (
-                            <div className="flex items-center flex-wrap gap-1 ml-4 mb-1">
-                              {layer.libPaths.filter(Boolean).map((p, i) => (
-                                <span key={i} className="inline-flex items-center gap-[3px] bg-[#f0faf6] border border-[rgba(0,165,114,.2)] rounded-lg px-[7px] py-0.5 font-mono text-micro text-[#006e45]">
-                                  <Icon name="folder" size={10} className="text-[#00a572]" />{p}
-                                </span>
-                              ))}
+                  <button onClick={() => setReviewTreeOpen((o) => !o)} className="w-full flex items-center gap-1.5 px-4 py-2.5 border-t border-outline-variant text-left font-mono text-caption text-secondary hover:bg-surface-container-low">
+                    <Icon name={reviewTreeOpen ? 'expand_less' : 'expand_more'} size={15} />
+                    {reviewTreeOpen ? 'Hide the layers' : 'Show every layer, group and component'}
+                  </button>
+                  {reviewTreeOpen && (
+                    layers.length === 0 ? (
+                      <p className="px-4 py-3 font-mono text-caption text-outline">No layers defined.</p>
+                    ) : (
+                      <div className="border-t border-outline-variant">
+                        {layers.map((layer) => (
+                          <div key={layer.id} className="px-4 py-2.5">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <Icon name="layers" size={14} className="text-secondary" />
+                              <span className="font-mono text-caption font-bold text-on-surface">{layer.name}</span>
+                              {layer.path && <span className="font-mono text-micro text-outline ml-1.5 overflow-hidden text-ellipsis whitespace-nowrap">{layer.path}</span>}
                             </div>
-                          )}
-                          {layer.groups.length === 0 ? (
-                            <div className="ml-5 font-mono text-label text-outline">No groups defined</div>
-                          ) : layer.groups.map((g) => (
-                            <div key={g.id} className="ml-4 border-l-2 border-surface-container pl-2 mt-1">
-                              <div className="flex items-center gap-[5px] py-[3px]">
-                                <Icon name="folder_open" size={13} className="text-secondary" />
-                                <span className="font-mono text-label font-semibold text-on-surface">{g.name}</span>
-                                <span className="font-mono text-micro text-outline ml-1">{g.comps.length} comp{g.comps.length !== 1 ? 's' : ''}</span>
+                            {layer.libPaths.filter(Boolean).length > 0 && (
+                              <div className="flex items-center flex-wrap gap-1 ml-4 mb-1">
+                                {layer.libPaths.filter(Boolean).map((p, i) => (
+                                  <span key={i} className="inline-flex items-center gap-[3px] bg-[#f0faf6] border border-[rgba(0,165,114,.2)] rounded-lg px-[7px] py-0.5 font-mono text-micro text-[#006e45]">
+                                    <Icon name="folder" size={10} className="text-[#00a572]" />{p}
+                                  </span>
+                                ))}
                               </div>
-                              {g.comps.length === 0 ? (
-                                <div className="ml-[18px] font-mono text-label text-[#b0b3b8] py-0.5">No components</div>
-                              ) : g.comps.map((c) => (
-                                <div key={c.id} className="ml-4 border-l-2 border-surface-container-low pl-2 mt-[3px]">
-                                  <div className="flex items-center gap-[5px] py-0.5">
-                                    <Icon name="folder" size={12} className="text-secondary opacity-75" />
-                                    <span className="font-mono text-label text-on-surface">{c.name}</span>
-                                    {c.files.length > 0 && <span className="font-mono text-micro text-secondary bg-surface-container px-[5px] py-px rounded-[3px] ml-1">{c.files.length} file{c.files.length !== 1 ? 's' : ''}</span>}
-                                  </div>
-                                  {c.files.map((f) => (
-                                    <div key={f} className="ml-[18px] flex items-center gap-1 py-px">
-                                      <Icon name="description" size={11} className="text-[#b0b3b8]" />
-                                      <span className="font-mono text-micro text-on-surface-variant">{f.split('/').pop()}</span>
-                                    </div>
-                                  ))}
+                            )}
+                            {layer.groups.length === 0 ? (
+                              <div className="ml-5 font-mono text-label text-outline">No groups defined</div>
+                            ) : layer.groups.map((g) => (
+                              <div key={g.id} className="ml-4 border-l-2 border-surface-container pl-2 mt-1">
+                                <div className="flex items-center gap-[5px] py-[3px]">
+                                  <Icon name="folder_open" size={13} className="text-secondary" />
+                                  <span className="font-mono text-label font-semibold text-on-surface">{g.name}</span>
+                                  <span className="font-mono text-micro text-outline ml-1">{g.comps.length} comp{g.comps.length !== 1 ? 's' : ''}</span>
                                 </div>
-                              ))}
-                            </div>
-                          ))}
-                        </div>
-                      ))}
-                    </div>
+                                {g.comps.length === 0 ? (
+                                  <div className="ml-[18px] font-mono text-label text-[#b0b3b8] py-0.5">No components</div>
+                                ) : g.comps.map((c) => (
+                                  <div key={c.id} className="ml-4 border-l-2 border-surface-container-low pl-2 mt-[3px]">
+                                    <div className="flex items-center gap-[5px] py-0.5">
+                                      <Icon name="folder" size={12} className="text-secondary opacity-75" />
+                                      <span className="font-mono text-label text-on-surface">{c.name}</span>
+                                      {c.files.length > 0 && <span className="font-mono text-micro text-secondary bg-surface-container px-[5px] py-px rounded-[3px] ml-1">{c.files.length} file{c.files.length !== 1 ? 's' : ''}</span>}
+                                    </div>
+                                    {c.files.map((f) => (
+                                      <div key={f} className="ml-[18px] flex items-center gap-1 py-px">
+                                        <Icon name="description" size={11} className="text-[#b0b3b8]" />
+                                        <span className="font-mono text-micro text-on-surface-variant">{f.split('/').pop()}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    )
                   )}
                 </div>
 
@@ -1240,10 +1393,20 @@ function WizardView({
 
         {/* Action bar */}
         <div className="h-16 flex-shrink-0 bg-white border-t border-outline-variant flex items-center justify-between px-8 gap-4">
-          <div className="flex items-center gap-1.5 text-on-surface-variant">
-            <Icon name="save" size={14} />
-            <span className="font-mono text-caption font-medium">Auto-saved</span>
-          </div>
+          {/* What this step needs - or what still stops it. (Nothing is saved until Initialize.) */}
+          {attempted.has(cur) && issuesFor(cur).length > 0 ? (
+            <div className="flex items-center gap-1.5 text-error min-w-0">
+              <Icon name="error" size={14} fill />
+              <span className="font-mono text-caption font-medium truncate">
+                {issuesFor(cur).length === 1 ? 'One thing' : `${issuesFor(cur).length} things`} to fix in this step
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-on-surface-variant min-w-0">
+              <Icon name="info" size={14} />
+              <span className="font-mono text-caption font-medium truncate">{STEP_HINTS[cur - 1]}</span>
+            </div>
+          )}
           <div className="flex items-center gap-3">
             <button onClick={back} className={cn('flex items-center gap-2 px-5 py-2.5 border border-outline-variant rounded-lg text-sm text-on-surface-variant hover:bg-surface-container transition-colors', cur === 1 && 'invisible')}>
               <Icon name="arrow_back" size={16} />
@@ -1252,7 +1415,7 @@ function WizardView({
             <button onClick={cont} disabled={submitting} className={cn('flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white transition-all active:scale-[.98] disabled:opacity-60', isLast ? 'bg-[#00a572]' : 'bg-secondary')}>
               {isLast
                 ? <>{submitting ? 'Initializing…' : 'Initialize Project'}<Icon name="rocket_launch" size={16} fill /></>
-                : <>Continue<Icon name="arrow_forward" size={16} /></>}
+                : <>{cur === 4 && members.length === 0 ? 'Skip for now' : 'Continue'}<Icon name="arrow_forward" size={16} /></>}
             </button>
           </div>
         </div>

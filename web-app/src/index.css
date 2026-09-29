@@ -187,6 +187,7 @@ textarea.macro-text { min-height: 76px; resize: vertical; }
 /* Architecture tree */
 .layer-block { border: 1px solid #c4c6cd; border-radius: 0.5rem; overflow: hidden; }
 .layer-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #eff4ff; border-bottom: 1px solid #c4c6cd; cursor: pointer; user-select: none; }
+.layer-head:last-child { border-bottom: none; }  /* a collapsed layer is its head alone */
 .layer-path-display { display: block; font-family: "JetBrains Mono", monospace; font-size: 11px; color: #74777d; margin-top: 2px; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .layer-path-display.empty { color: #b0b3b8; }
 .layer-body { padding: 4px 0 8px; }

@@ -112,8 +112,8 @@ export function coreInput(c: Core): CoreInput {
 }
 
 /** The wizard's architecture tree from a config file's layers (`POST /projects/config/preview`),
- *  each layer on the core its config names. Imported components start collapsed: a real config
- *  lists dozens of them. */
+ *  each layer on the core its config names. Imported layers and components start collapsed: a
+ *  real config lists dozens of them, and a collapsed layer still says what it holds. */
 export function draftToLayers(layers: ArchLayer[], newId: () => string, cores: Core[] = []): Layer[] {
   return layers.map((l) => ({
     id: newId(),
@@ -121,7 +121,7 @@ export function draftToLayers(layers: ArchLayer[], newId: () => string, cores: C
     path: l.path ?? '',
     libPaths: [...(l.libPaths ?? [])],
     coreId: coreIdOf(l.core, cores),
-    collapsed: false,
+    collapsed: true,
     groups: l.groups.map((g) => ({
       id: newId(),
       name: g.name,
