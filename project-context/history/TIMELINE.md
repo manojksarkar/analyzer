@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-09-29f | `tools/review_api_test/` tests the whole review feature through the REST API; its first run found a re-export that rebuilt only the first group of a version generated for several | [11](11-2026-09-29e.md) |
 | 2026-09-29e | Every review route gives a slot one shape — `text`, `llmText`, `humanText`, `isOverridden`, `isOrphaned`, `canUndo`, `updatedBy`, `updatedAt` — and every save answers with the slot as it now is; R8 returns each saved node and the rebuilt DOT | [11](11-2026-09-29e.md) |
 | 2026-09-29d | The review of every review & update flow, and its ten fixes: a save writes one row and saves of a version take turns; the regeneration queue is paid where each text is written, and travels to the next version; an orphan is no correction; a 4xx is the caller's fault | [10](10-2026-09-26.md) |
 | 2026-09-29c | R7 and R8 name a flowchart by its function id, `flowchart_id`, in the query and the body -- not a base64 token in the path | [10](10-2026-09-26.md) |
