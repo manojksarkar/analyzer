@@ -141,7 +141,12 @@ test that catches it: [REVIEW_UPDATE_HANDOVER §4](docs/design/REVIEW_UPDATE_HAN
 - **Two writers of `version_output_files`, no third:** `model_store.persist_output_files` and
   `review.rerender.write_output_row` (`test_output_row_writers.py`).
 - **An export can refuse:** `run.py --from-phase 4` stops when a correction is newer than the stored view
-  output (`_refuse_stale_export`; `--force-export`, `analyzer.py reexport --force`).
+  output (`_refuse_stale_export`; `--force-export`, `analyzer.py reexport --force`) — judged per view,
+  per component and per document type (`review/export_guard.py`). Phase 3 records what it built in
+  `_derivations.json` beside its output; keep `run_views._record_derivation` after `run_views(...)`.
+- **A save re-derives the SWE.4 rows** (`review/swe4_rederive.py`) through `test_specs.build`,
+  `test_steps.cfgs_from_entries` and `ut_export.build`. Changing those views? Keep `run` a thin
+  `build` + write, or a save and a run stop agreeing — `test_review_swe4_rederive.py` checks it.
 
 ## Definition of done — every output-rule change
 

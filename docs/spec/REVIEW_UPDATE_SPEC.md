@@ -309,12 +309,15 @@ only the model changes nothing in the document.
 
 ### REQ-AP-02 — Saving an override is one operation
 
-It updates the model **and** re-derives the affected component's view rows. It must not be able to
-half-succeed.
+It updates the model **and** brings the affected component's view rows up to date, in one
+transaction. It must not be able to half-succeed.
 
-`interface_tables.run(model, output_dir, model_dir, config)` is a pure function of the model plus
-config and already scopes to components via `_analyzerAllowedComponents`, so re-deriving one
-component is cheap — no LLM, no parse.
+The SWE.3 rows a save changes are patched in place — the interface-table copy of a description, the
+flowchart's CFG and DOT, the behaviour row — because the host saving a correction may have no output
+tree to run a view in. The SWE.4 rows are **re-derived** from the stored rows through the views' own
+builders, for the saved slot's component
+([REQ-CS-04](#req-cs-04--a-node-label-edit-re-derives-the-components-swe4-specs)): no LLM, no parse,
+no source.
 
 **Verification:** a failure mid-save leaves the model and the view rows both unchanged.
 
@@ -327,15 +330,28 @@ The HTML view renders live from the database per request (`render_document` → 
 
 ### REQ-AP-04 — Export verifies rather than assumes
 
-Before exporting, check that no override is newer than the last derivation. If one is, re-derive
-first or refuse and say so.
+Before exporting, check that no override is newer than the last derivation **of what the export
+prints**. If one is, re-derive first or refuse and say so.
+
+The check is per view, per component and per document type: a correction is judged by the views its
+text reaches (`derive.views_for`), in its own component, and only those the documents being exported
+are read from — SWE.4 from its test specs and UT export, SWE.3 from the views a SWE.3 run built. A
+single "the version was derived" stamp cannot tell a SWE.3 re-derive from a SWE.4 one: with it, a
+label corrected and a SWE.3 re-export later, an export-only run shipped the SWE.4 document with the
+old Test Step and no warning.
+
+What was derived, when, for which components and documents, is recorded by Phase 3 beside its output
+and stored with it; a save that re-derives rows marks the same record. So a stamp never outlives the
+rows it vouches for: a run that overwrote a save's rows overwrote its mark too.
 
 This is what makes the feature reliable rather than merely correct. `analyzer.py reexport
 --from-phase 4` is *"export only"* — it **skips Phase 3**, which is what rebuilds the view rows from
 the model. Without this check it ships the previous text, silently. Moving the data from files into
 the database does **not** fix this: it is still the row Phase 3 wrote last time.
 
-**Verification:** override, then `reexport --from-phase 4`; the DOCX carries the human text.
+**Verification:** override, then `reexport --from-phase 4`; the DOCX carries the human text — or
+the export refuses until a re-derive has put it there. Correct a label, re-export SWE.3 only, and an
+export-only SWE.4 run is not waved through by it.
 
 ### REQ-AP-05 — A correction is applied where the text is produced
 
@@ -460,18 +476,27 @@ flowchart leaves A reading the old wording — two documents from one project de
 step differently, with nothing reporting a problem.
 
 Therefore a node label edit re-derives **every SWE.4 spec in the component**, not only the edited
-function's.
+function's — when it is saved, from the stored rows, and again whenever Phase 3 runs.
 
 Deliberately not "work out which units transcribe this one, transitively". That traversal is
 fiddly, easy to get subtly wrong, and buys nothing here: the SWE.4 spec view calls **no LLM** — it
 derives everything from the CFG — so re-deriving all of a component's specs is cheap and correct by
 construction rather than correct-if-the-traversal-is-right.
 
-Note this affects Dynamic Behaviour specs only. Ordinary per-function test steps transcribe
-nothing, so they were never at risk.
+The cross-unit case is Dynamic Behaviour's alone. A function's own spec is affected too, but only
+by its own flowchart: a decision's step is "Check whether <label>", a return's is
+"Successfully returned <label>" — and that return's label is also the expected return of its case
+in the UT export, which is rebuilt with the specs. A description correction re-derives the same
+rows: a spec carries a copy of its function's description.
+
+The save does it from what is stored: the settings the specs were built with (kept beside them by
+Phase 3), the model as corrected, the stored flowchart graphs with every label correction applied as
+Phase 3 applies them. A version whose SWE.4 output predates those settings is left alone, and the
+export guard keeps calling SWE.4 stale until Phase 3 runs.
 
 **Verification:** correct a node label in unit B where unit A's Dynamic Behaviour transcribes it;
-A's Test Steps show the corrected wording without A being edited.
+A's Test Steps show the corrected wording without A being edited — straight after the save, and
+byte for byte what the next Phase-3 run writes.
 
 ---
 
@@ -719,6 +744,9 @@ happened to be in `output/` on that machine — while the database is what a cor
 (`rerender.write_output_row` writes the row, not the file). An export-only run now restores the
 version's stored text first, so the exporter, the flowchart engine and the SWE.4 views all read
 database content. The files are a materialisation of the database rather than an independent copy.
+A re-derive (`--from-phase 2`/`3`) restores too: it rebuilds only what it runs, and the capture after
+it replaces every stored row with the disk. (Until 2026-09-29 the restore named a function that did
+not exist; the error was caught as "could not restore", so every run exported from disk.)
 
 **Done for the silent divergence.** The storage path used to swallow its own failures
 (`except Exception: pass` — *"best-effort, disk output is intact"*), and the disk being intact was
@@ -726,9 +754,10 @@ exactly what made it dangerous: the document served from the database, or from a
 the previous render while that machine looked correct. The failure is now reported at error level,
 and what landed is verified — text files on disk against rows written.
 
-**Still open:** the three readers still take a path rather than a database handle
-(`export_docx(json_path=…)`, the flowchart engine's `--interface-json`, `test_steps._load_cfgs`).
-Restoring first makes them read the right *content*; rewiring them to read rows directly would let
+**Still open:** two readers still take a path rather than a database handle
+(`export_docx(json_path=…)`, the flowchart engine's `--interface-json`). The SWE.4 builders can
+read stored rows (`test_steps.cfgs_from_entries`), which is how a save re-derives them. Restoring
+first makes the readers read the right *content*; rewiring them to read rows directly would let
 `output/` hold only `.png` and `.docx`, which is what this requirement's first line asks for.
 
 **Verification:** `tests/live/test_output_in_db.py` passes; a capture failure is reported rather

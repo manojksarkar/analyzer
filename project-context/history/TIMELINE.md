@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-09-29 | The export guard asks per view, component and document; a saved correction re-derives the SWE.4 specs; the restore before a run finally runs | [10](10-2026-09-26.md) |
 | 2026-09-28b | A new session now meets the changes the numbered sections do not describe | [10](10-2026-09-26.md) |
 | 2026-09-28 | `PROJECT_CONTEXT.md` is an index now; the content is in `project-context/` | [10](10-2026-09-26.md) |
 | 2026-09-27d | Context files, skills and the merge handover brought up to date for `review_update_v2` — docs and comments only, no behaviour change | [10](10-2026-09-26.md) |

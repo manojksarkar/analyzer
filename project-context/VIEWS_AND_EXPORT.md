@@ -31,7 +31,10 @@ It also calls `get_layer_components(config, resolved)` and passes the result to
 dicts (functions/globals/units/components) to only entities in the same layer,
 so cross-component call edges within the layer stay visible in the views.
 
-Then it calls `views.run_views(filtered_model, output_dir, model_dir, config)`.
+Then it calls `views.run_views(filtered_model, output_dir, model_dir, config)`, and records what
+it built for the export guard: `_record_derivation` writes `_derivations.json` in the output
+directory — the views that ran, their components, the documents each was built for, and when the
+inputs were read (2026-09-29; review handover §4.9).
 
 ### View dispatch — [engine/views/__init__.py](../engine/views/__init__.py)
 
@@ -49,6 +52,11 @@ def run_views(model, output_dir, model_dir, config):
 
 `interfaceTables` is the only view enabled by default; the others must be
 explicitly configured. Setting any view's value to `false` disables it.
+
+Since then (the block above is the original): a doc type's `DOC_TYPE_VIEWS` entry forces its views
+(SWE.4: `flowcharts`, `testSpecs`, `utExport`), `unitHeaders` is on by default too, and the choice
+is its own function — `views_to_run(doc_type, config)` — so the derivation record can say which
+document each view was built for. `run_views` returns the names it ran (2026-09-29).
 
 The four view modules are imported at the bottom of `__init__.py` so their
 `@register("name")` decorators populate `VIEW_REGISTRY`.

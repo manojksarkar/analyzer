@@ -117,6 +117,8 @@ where that content lives now:
 | `phase3_overrides.py` | the two kinds Phase 3 produces, and where their text sits |
 | `redraw.py` | apply a correction to flowchart JSON and rebuild the DOT — **no DB imports** |
 | `rerender.py` | the same, plus the database row and the PNG |
+| `export_guard.py` | whether an export would ship superseded text, per view, component and document type; the derivation records and stamps it reads |
+| `swe4_rederive.py` | a save re-derives the component's SWE.4 specs and UT export from the stored rows (`REQ-CS-04`) |
 
 ### 3.2 Modified — the merge conflict surface
 
@@ -152,7 +154,7 @@ matters** — see §4.5.
 ### 3.3 Changed by the rebase onto develop (after `b10a71b`)
 
 What the follow-up commits change in develop's own code. Each one keeps develop's documented rule
-and is argued in the dated history entries 2026-09-26f → 2026-09-27d
+and is argued in the dated history entries 2026-09-26f → 2026-09-29
 ([project-context/history/](../../project-context/history/)).
 
 | file | change | why |
@@ -169,6 +171,11 @@ and is argued in the dated history entries 2026-09-26f → 2026-09-27d
 | `engine/review/catalog.py`, `resolver.py` | struct rows (`typeKey`, R3 refusal for records no document describes); `shownIn` on every R11 row | develop's struct descriptions made correctable; 470d15c publishes few functions — §8.2 |
 | `analyzer.py` | `reexport` refuses another project's version id at once (`_no_such_version`) | 976ee0f's rule reached only part of the command |
 | `api/routes/jobs.py` | `reference_version_id` resolved inside the project (id, else version name) and stored as the id | the baseline could be another project's version |
+| `engine/views/test_specs.py`, `ut_export.py` | `build(...)` split out of `run(...)`; `run` = `build` + write the file, output unchanged | a save re-derives the SWE.4 rows through the same code, with no output tree (§4.26) |
+| `engine/views/test_steps.py` | `cfgs_from_entries` split out of `load_cfgs`; `attach` / `attach_dynamic` take `cfgs=` | the same, from stored flowchart rows |
+| `engine/views/__init__.py` | `views_to_run(doc_type, config)` split out of `run_views`, which now returns the views it ran | the derivation record says which views ran, and for which document (§4.9) |
+| `engine/run_views.py` | leaves a derivation record (`_derivations.json`) in each output directory; the inputs' read time taken before the model loads | §4.9 |
+| `engine/run.py` | `_restore_output_from_db` calls `dump_output_files_to_dir` (it named a function that never existed) and runs before a re-derive too; the guard is asked about the run's `--doc-type` | §4.28, §4.29 |
 
 ---
 
@@ -245,12 +252,18 @@ original with human prose, leaving nothing to undo to and a training pair that i
 
 → `test_review_override_service.py::test_the_llm_original_survives_a_second_edit`.
 
-### 4.9 Ordinary runs must keep stamping `view_derivations`
+### 4.9 Ordinary runs must keep recording what they derived
 
-`capture_output` records when Phase-3 output was produced. Remove that and the export guard has no
-baseline, so the first correction to any version makes it permanently unexportable.
+Phase 3 leaves a record in each output directory (`_derivations.json`): the views it ran, for which
+components and document types, from inputs read when. `capture_output` replaces the version's
+`view_derivations` rows with what the stored records say, in the transaction that replaces the
+output rows. Remove either end and the export guard has no baseline, so the first correction to any
+version makes it permanently unexportable. Stamp "the whole version" instead — as this feature did
+until 2026-09-29 — and a SWE.3 re-derive waves a stale SWE.4 export through: reproduced, a label
+corrected, the SWE.3 re-export, then an export-only `--doc-type all` shipped the old Test Step.
 
-→ `tests/unit/test_review_export_guard.py::TestTheStamp`.
+→ `tests/unit/test_review_export_guard.py::TestTheRecord`, `::TestDocumentTypes`;
+`test_review_pipeline_wiring.py` for the two call sites.
 
 ### 4.10 A model write from the API must flush
 
@@ -428,6 +441,57 @@ that: the review routes (`_version()`), the CLI `reexport`, and the start-job ba
 
 → `test_render_timeout_stops_the_tree.py::test_a_timeout_does_not_wait_for_a_grandchild_holding_the_pipes`.
 
+### 4.25 A save's stamp lives exactly as long as the rows it rebuilt
+
+A save that re-derives rows stamps them and marks the stored record (`saved`, per component —
+`export_guard.stamp_saved`). The next capture rebuilds the stamps from the records: a run that
+restored the marked record keeps the stamp; a run that overwrote the save's rows overwrote its mark
+with them, and the correction reads as stale again — the truth. Merge stamps at capture instead of
+replacing them, and a correction saved while a run was building is vouched for by rows that no
+longer carry it.
+
+→ `test_review_export_guard.py::TestASaveThatReDerives`.
+
+### 4.26 The save-time SWE.4 re-derive is Phase 3's build, byte for byte
+
+`swe4_rederive` rebuilds one component with `test_specs.build` and merges it into the stored file.
+With nothing corrected the rows must come back unchanged, and after a correction they must equal
+what a Phase-3 run writes. Both were checked on `SampleCppProject`; the unit tests pin a two-component
+document with a Dynamic Behaviour splice.
+
+→ `test_review_swe4_rederive.py::TestNothingChanged`,
+`::TestALabel::test_the_result_is_what_phase_3_would_write`, `::TestTheParts`.
+
+### 4.27 A save reads the model through its own connection
+
+After the save has written, a second connection inside its transaction waits on the save's lock
+(SQLite) or, under a single-connection pool, rolls the save back when it closes — a 200 that stored
+nothing. `swe4_rederive.model_of` uses what the save holds and the save's connection, never the
+repository's.
+
+→ `test_review_swe4_rederive.py::TestTheDeriver::test_the_model_is_read_through_the_saves_connection`,
+`test_review_overrides_api.py::TestASaveReDerivesTheSwe4Specs` (it failed exactly so before the fix).
+
+### 4.28 The restore must actually run
+
+`run.py`'s restore imported `restore_output_files`, which never existed, and then called `_paths()`,
+which `run.py` never defined. Each error was caught as "could not restore", so from 2026-09-19 to
+2026-09-29 every run exported from whatever was on disk, and every test passed — they read the
+source. A correction saved over the API reached an export-only document only through a Phase-3 run.
+
+→ `test_review_output_from_db.py::test_what_it_calls_exists`, `::test_every_name_it_uses_is_defined`,
+`::test_the_stored_row_wins_over_the_disk`.
+
+### 4.29 An export is judged on what its documents print
+
+SWE.4 is read from `testSpecs` and `utExport` (`export_guard.SWE4_VIEWS`), SWE.3 from the views a
+SWE.3 run built — the record's `docTypes`. The SWE.3 exporter embeds the flowcharts only when
+`views.flowcharts` is on (off by default, and then only SWE.4 draws them), so a label correction
+must not hold up such a SWE.3 export, nor a picture being drawn. Without records nobody can say, and
+every view counts.
+
+→ `test_review_export_guard.py::TestWhatSwe3Prints`, `::TestDocumentTypes`.
+
 ---
 
 ## 5. Defects this branch found in existing code
@@ -459,7 +523,7 @@ directories under the bare group name.
 
 ```
 python -m alembic heads                           # exactly one: 0014_users_is_superuser
-python -m pytest tests/unit tests/api tests/e2e   # 3303 passed, 44 skipped on review_update_v2
+python -m pytest tests/unit tests/api tests/e2e   # 3531 passed, 44 skipped on review_update_v2
 ```
 
 The feature has also been run end to end against a **SQLite** database on a machine with no
@@ -492,10 +556,20 @@ all built, including the cascade, the render queue and carry-forward into the ne
 
 Consequences worth knowing:
 
-- **`REQ-PRE-02` is half done.** An export-only run restores its text from the database first, so
-  every reader gets database content — but `export_docx(json_path=…)`, the flowchart engine's
-  `--interface-json` and `test_steps._load_cfgs` still take a path. Rewiring them to read rows
-  directly is what would let `output/` hold only `.png` and `.docx`.
+- **`REQ-PRE-02` is half done.** A run that exports or re-derives restores its text from the
+  database first, so every reader gets database content (§4.28 — true only since 2026-09-29) — but
+  `export_docx(json_path=…)` and the flowchart engine's `--interface-json` still take a path. The
+  SWE.4 builders can already read stored rows (`test_steps.cfgs_from_entries`), which is how a save
+  re-derives them. The restore writes the stored rows over the disk; it does not delete a text file
+  the database no longer has, which the capture would then store again.
+- **The save re-derives SWE.4, not SWE.3.** A SWE.3 row a save changes is patched in place (the
+  interface-table copy, the flowchart JSON, the behaviour row) and not stamped, so the web app's
+  re-export still runs Phase 3 after any correction. A stamp is per (view, component), not per
+  output directory: a component in two documents of one version counts the newest derivation.
+- **A save made while a run is building can be lost.** A run that started before it writes its
+  whole model back at the end of Phase 2 and replaces every output row at capture. The export guard
+  then reports the correction as stale (§4.25) and the next run applies it again from the override
+  table — but between the two the document does not carry it.
 - **Both queues are drained by a run, not a timer.** A pending picture is drawn when a host with
   the output tree captures a version's output; a queued regeneration is rebuilt by Phase 2 or
   Phase 3. Between a correction and the next run the work is *owed and reported* — which is why
