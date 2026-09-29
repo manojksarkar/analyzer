@@ -67,7 +67,8 @@ sizes, or spacing inline — use the token utilities or a `ui/` primitive.
 ### Token cheatsheet (inline value → utility)
 
 - **Font size:** 9→`text-micro`, 10→`text-label`, 11→`text-caption`, 12→`text-xs`, 13→`text-body`,
-  14→`text-sm`, 15→`text-title`, 18→`text-lg`.
+  14→`text-sm`, 15→`text-title`, 18→`text-lg`. A new `--text-*` token goes into `lib/cn.ts` too, or
+  `cn()` takes it for a colour and drops it beside `text-<colour>`.
 - **Colour:** use the semantic `@theme` colours — `text-on-surface`, `text-on-surface-variant`,
   `text-outline`, `text-secondary`, `bg-surface`, `bg-surface-container*`, `border-outline-variant`,
   `bg-amber`. A recurring colour with no token should *become* a token (add to `@theme`); a one-off may

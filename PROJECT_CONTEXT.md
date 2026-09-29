@@ -208,6 +208,33 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-29f (**Run Analysis: any mix of components, and Skip LLM, under Advanced options.** Branch
+> `ui_v2`. Asked: faster development runs; design settled in
+> `docs/ui-mockups/project-detail.html` (Run modal).
+>
+> - **Modal:** opens small (commit, compare, version name). "Advanced options" widens it to a second column:
+>   a component tree (layers open, groups closed, EVERY component ticked), Skip LLM, and Pause (still
+>   disabled - the runner ignores it). Closed, the row names every non-default option ("1 of 25 components ·
+>   Skip LLM"); nothing ticked disables Start. Mounted per open, so every run starts from the defaults.
+> - **Scope:** the engine's `--scope` takes several names of ONE kind (`layer:A,B` | `group:A,B` |
+>   `component:A,B`, any layers). `web-app/src/lib/runScope.ts` `scopeOf` sends the smallest exact form:
+>   whole layers → `layer`, else whole groups → `group`, else components (`Layer1.Lib`); all ticked → no
+>   scope (whole project, as before). Documents are one per component for EVERY scope (`--component-per-docx`
+>   always), so the scope only chooses which components. `JobScope` / `StartJobInput.no_llm` in
+>   `services/api/jobs.ts`; tree = `components/run/ScopeTree.tsx`. No API change (it already took both).
+> - **Verified:** unit tests (`lib/__tests__/runScope.test.ts`, 58 total green), tsc/build clean, lint no new
+>   error; real run on 8010 from the modal with only Lib + Skip LLM → engine log `Scope: component:Layer1.Lib`,
+>   `LLM: OFF (--no-llm)`, done in 38 s, version holds exactly one document (SWE.3 Lib).
+> - **Fixed (app-wide, user: "fix"):** `lib/cn.ts` called `twMerge` without the theme's font sizes, so it took
+>   `text-micro|label|caption|body|title` for COLOURS and, of a size + a `text-<colour>` in one `cn()`, kept only
+>   the last. 46 direct `cn()` sites (static audit) plus every `Text` / badge given a colour className: small
+>   labels rendered at the inherited ~14px (documents tree, tabs, Versions, Team, Compare, project list, wizard
+>   review), and ProjectDetailPage's `FIELD_LABEL` lost its colour. Now `extendTailwindMerge({ extend: { theme:
+>   { text: [...] } } })`; `lib/__tests__/cn.test.ts`. No site mixed a theme size with a standard one, so size vs
+>   size is unchanged. Before/after screenshots of 8 pages: every change moves TOWARD the mockups (Versions
+>   checked against `docs/ui-mockups/versions.html`). A new `--text-*` token must be added there too (ui-dev
+>   skill says so).
+
 > Updated: 2026-09-29e (**The SWE.3 page in the web app reads like the DOCX.** Branch `ui_v2`. Asked: "verify
 > if swe3 is coming in UI properly" → "fix it". Method: per document, `GET .../render` vs the DOCX of the same
 > version (tools/dump_docx.py), heading by heading, + a browser pass (errors, broken images).
