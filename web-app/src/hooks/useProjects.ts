@@ -154,3 +154,16 @@ export function useRequestAccess() {
     onError: (e: Error) => toast.error('Request failed', e.message),
   })
 }
+
+/** Download the project as a config file (never the access token). A plain action, like
+ *  useDownloadDoc; a failure is reported here. */
+export function useDownloadProjectConfig(projectId: string) {
+  return async (projectName: string): Promise<void> => {
+    const base = projectName.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || projectId
+    try {
+      await projectsApi.downloadConfig(projectId, `${base}.config.json`)
+    } catch (e) {
+      toast.error('Download failed', (e as Error).message)
+    }
+  }
+}

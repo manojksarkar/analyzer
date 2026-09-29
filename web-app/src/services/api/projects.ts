@@ -1,6 +1,14 @@
 import { http } from '../../lib/http'
-import type { Project } from '../../types'
-import { mapProject, type ApiProject } from '../mappers'
+import type { ConfigPreview, Project } from '../../types'
+import { mapConfigPreview, mapProject, type ApiConfigPreview, type ApiProject } from '../mappers'
+
+/** A config file to read into the New Project wizard; the repository when one is connected. */
+export interface ConfigPreviewInput {
+  text: string
+  repo_url?: string
+  branch?: string
+  access_token?: string
+}
 
 export interface CreateProjectInput {
   name: string
@@ -45,4 +53,10 @@ export const projectsApi = {
     )
     return r.projects
   },
+  /** Fill the New Project wizard from a config file. Creates nothing. */
+  previewConfig: async (body: ConfigPreviewInput): Promise<ConfigPreview> =>
+    mapConfigPreview(await http.post<ApiConfigPreview>('/projects/config/preview', body)),
+  /** The project as a config file — what `analyzer.py onboard --config` reads. */
+  downloadConfig: (id: string, fileName: string): Promise<void> =>
+    http.download(`/projects/${id}/config`, fileName),
 }

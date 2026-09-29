@@ -1,4 +1,4 @@
-import { repositoriesApi, usersApi } from '../services/api'
+import { projectsApi, repositoriesApi, usersApi } from '../services/api'
 
 /**
  * Imperative repo/user actions for the new-project wizard. These are one-shot
@@ -13,5 +13,6 @@ export function useRepositoryWizard() {
     browse: repositoriesApi.browse,
     upload: repositoriesApi.upload,
     searchUsers: usersApi.search,
+    previewConfig: projectsApi.previewConfig,
   }
 }

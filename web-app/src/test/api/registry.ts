@@ -2,7 +2,7 @@ import { z } from 'zod'
 import {
   ApiSignInSchema, ApiUserSchema, ApiProjectSchema, ApiCommitSchema, ApiVersionSchema,
   ApiDocumentSchema, ApiDocumentDetailSchema, ApiRichDocumentSchema, ApiMemberSchema,
-  ApiJobSchema, ApiFunctionSchema, ApiNotificationSchema,
+  ApiJobSchema, ApiFunctionSchema, ApiNotificationSchema, ApiConfigPreviewSchema,
 } from '../../services/mappers'
 
 /**
@@ -48,6 +48,7 @@ export const Envelopes = {
   // ── projects ──
   projects: z.object({ projects: z.array(ApiProjectSchema) }),
   project: z.object({ project: ApiProjectSchema }),
+  configPreview: ApiConfigPreviewSchema,
   projectSearch: z.object({
     projects: z.array(z.object({ id: z.string(), name: z.string(), client: z.string() })),
   }),

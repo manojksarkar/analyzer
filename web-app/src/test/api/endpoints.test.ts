@@ -207,6 +207,11 @@ describe('API responses', () => {
     await get('GET /projects/search', '/projects/search?q=a', Envelopes.projectSearch, { optional: true })
     await get('GET /notifications', '/notifications', Envelopes.notifications)
     const directory = await get('GET /users/search', '/users/search?q=a', Envelopes.usersSearch, { optional: true })
+    // Without a repository the preview reads only the text: it stores nothing.
+    await call('POST /projects/config/preview', 'POST', '/projects/config/preview', {
+      schema: Envelopes.configPreview,
+      body: { text: '{"project": {"name": "API Test Probe"}, "layers": {"L": {"groups": {"G": {"C": "src"}}}}}' },
+    })
 
     /* ── project-scoped reads ── */
     const projectId = firstId(projects.body, 'projects')
@@ -216,6 +221,7 @@ describe('API responses', () => {
     if (projectId) {
       const p = `/projects/${projectId}`
       await get('GET /projects/:id', p, Envelopes.project)
+      await call('GET …/config', 'GET', `${p}/config`, { binary: true })
       await get('GET …/commits', `${p}/commits`, Envelopes.commits)
       const versions = await get('GET …/versions', `${p}/versions`, Envelopes.versions)
       versionId = firstId(versions.body, 'versions')

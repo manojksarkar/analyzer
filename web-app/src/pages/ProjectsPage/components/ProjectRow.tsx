@@ -1,5 +1,5 @@
 import { Dropdown, DropdownTrigger, DropdownContent, Icon, toast } from '../../../components/ui'
-import { useDeleteProject } from '../../../hooks/useProjects'
+import { useDeleteProject, useDownloadProjectConfig } from '../../../hooks/useProjects'
 import { cn } from '../../../lib/cn'
 import type { Project, TeamMember } from '../../../types'
 
@@ -107,6 +107,7 @@ export function ProjectRow({ project, onNavigate }: { project: Project; onNaviga
   const isAdmin = project.userRole === 'admin'
   const isStale = project.pageState === 'never' || project.pageState === 'stale'
   const deleteProject = useDeleteProject()
+  const downloadConfig = useDownloadProjectConfig(project.id)
 
   const onDelete = () => {
     if (window.confirm(`Delete "${project.name}"? This cannot be undone.`)) {
@@ -114,13 +115,16 @@ export function ProjectRow({ project, onNavigate }: { project: Project; onNaviga
     }
   }
 
+  const configItem = { label: 'Download config', icon: 'download', onClick: () => { void downloadConfig(project.name) } }
   const adminItems = [
     { label: 'Settings', icon: 'settings',     onClick: () => onNavigate(project.id) },
+    configItem,
     { label: 'Archive',  icon: 'archive',      onClick: () => toast.info('Archive', 'Archiving is not available yet.') },
     { label: 'Delete',   icon: 'delete',       variant: 'danger' as const, onClick: onDelete },
   ]
   const devItems = [
     { label: 'View Project', icon: 'open_in_new', onClick: () => onNavigate(project.id) },
+    configItem,
   ]
 
   return (

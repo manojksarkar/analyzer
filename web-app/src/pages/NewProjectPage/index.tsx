@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useCreateProject } from '../hooks/useProjects'
-import { useRepositoryWizard } from '../hooks/useRepositoryWizard'
-import { useAuthStore } from '../store/auth'
-import { Icon, BrandMark, toast } from '../components/ui'
-import { cn } from '../lib/cn'
-import { APP_NAME, APP_TAGLINE } from '../constants/branding'
-import type { CreateProjectInput, RepoEntry, OrgUser } from '../services/api'
+import { useCreateProject } from '../../hooks/useProjects'
+import { useRepositoryWizard } from '../../hooks/useRepositoryWizard'
+import { useAuthStore } from '../../store/auth'
+import { Icon, BrandMark, toast } from '../../components/ui'
+import { cn } from '../../lib/cn'
+import { APP_NAME, APP_TAGLINE } from '../../constants/branding'
+import type { CreateProjectInput, RepoEntry, OrgUser } from '../../services/api'
+import type { ConfigPreview } from '../../types'
+import { ConfigImport } from './components/ConfigImport'
+import { assignmentsOf, draftToLayers, ownerOf, settingsSummary, type Comp, type Group, type Layer, type Member, type Role } from './helpers'
 
 // Rail entries — short title + sub, mirroring the design's step rail.
 const STEPS = [
@@ -28,12 +31,7 @@ const STEP_HEADERS = [
 
 const TREE_CB = 'w-3.5 h-3.5 accent-secondary cursor-pointer flex-shrink-0'
 
-type Role = 'Admin' | 'Developer'
 type TestTone = 'neutral' | 'error' | 'ok'
-interface Member { name?: string; email: string; role: Role }
-interface Comp { id: string; name: string; files: string[]; collapsed: boolean }
-interface Group { id: string; name: string; comps: Comp[]; collapsed: boolean }
-interface Layer { id: string; name: string; path: string; groups: Group[]; libPaths: string[]; collapsed: boolean }
 
 // The source tree comes from the real GET /repositories/browse endpoint
 // (api/routes/repositories.py) as a nested RepoEntry[] — folders carry
@@ -208,6 +206,15 @@ function WizardView({
   // loaders in the Add-Component panel and the folder picker.
   const [repoTreeLoading, setRepoTreeLoading] = useState(false)
 
+  // ── Config import (step 1, optional) — fills every step it can ──
+  const [imported, setImported] = useState<{ text: string; fileName: string; preview: ConfigPreview } | null>(null)
+  const [importBusy, setImportBusy] = useState(false)
+  // The branch the config names, picked once Test Connection lists the branches.
+  const [preferredBranch, setPreferredBranch] = useState('')
+  // True once the user edits the imported architecture: the re-check after Test Connection then
+  // leaves the tree alone and only refreshes the report.
+  const archEdited = useRef(false)
+
   // ── Step 2: build configuration ──
   const [defTab, setDefTab] = useState<'upload' | 'manual'>('upload')
   const [defFileName, setDefFileName] = useState('')
@@ -294,17 +301,79 @@ function WizardView({
         setBranches([]); setBranch(''); setRepoTree([])
         return
       }
-      const initialBranch = res.defaultBranch || res.branches[0] || ''
+      // An imported config's branch wins when the repository has it.
+      const initialBranch = (preferredBranch && res.branches.includes(preferredBranch) ? preferredBranch : '')
+        || res.defaultBranch || res.branches[0] || ''
       setBranches(res.branches)
       setBranch(initialBranch)
       setTestState('connected')
       setTestMsg({ text: res.message, tone: 'ok' })
       // Pre-fetch the source tree for the architecture + folder pickers.
       await loadRepoTree(initialBranch)
+      // An imported config's paths were taken as written: check them against this repository.
+      if (imported && !imported.preview.repositoryChecked) {
+        await checkImportAgainstRepo(imported.text, imported.fileName, initialBranch, !archEdited.current)
+      }
     } catch (e) {
       setTestState('idle')
       setTestMsg({ text: (e as Error).message || 'Connection failed.', tone: 'error' })
       setBranches([]); setBranch(''); setRepoTree([])
+    }
+  }
+
+  /* ── Config import — POST /projects/config/preview fills what it can ── */
+  async function importConfig(file: File) {
+    setImportBusy(true)
+    try {
+      const text = await file.text()
+      const preview = await repo.previewConfig({ text })
+      applyImport(preview, { project: true, layers: true })
+      setImported({ text, fileName: file.name, preview })
+      // Already connected to the repository the config names: check its paths right away.
+      const sameRepo = !preview.draft.repoUrl || preview.draft.repoUrl === repoUrl.trim()
+      if (testState === 'connected' && sameRepo) {
+        const want = preview.draft.branch
+        const ref = want && branches.includes(want) ? want : branch
+        if (ref !== branch) { setBranch(ref); void loadRepoTree(ref) }
+        await checkImportAgainstRepo(text, file.name, ref, true)
+      }
+    } catch (e) {
+      toast.error('Could not read the config', (e as Error).message)
+    } finally {
+      setImportBusy(false)
+    }
+  }
+  async function checkImportAgainstRepo(text: string, fileName: string, ref: string, layersToo: boolean) {
+    try {
+      const preview = await repo.previewConfig({
+        text, repo_url: repoUrl.trim(), branch: ref || undefined, access_token: token.trim() || undefined,
+      })
+      applyImport(preview, { project: false, layers: layersToo })
+      setImported({ text, fileName, preview })
+    } catch (e) {
+      toast.error('Could not check the config against the repository', (e as Error).message)
+    }
+  }
+  function applyImport(preview: ConfigPreview, opts: { project: boolean; layers: boolean }) {
+    const d = preview.draft
+    if (opts.project) {
+      if (d.name) setName(d.name)
+      if (d.repoUrl && d.repoUrl !== repoUrl.trim()) { setRepoUrl(d.repoUrl); repoChanged() }
+      setPreferredBranch(d.branch ?? '')
+      if (d.definitions?.kind === 'typed') { setDefTab('manual'); setDefManual(d.definitions.defines.join('\n')) }
+    }
+    if (opts.layers) {
+      const next = draftToLayers(d.layers, uid)
+      setLayers(next)
+      setFileAssignments(assignmentsOf(next))
+      archEdited.current = false
+    }
+    // Files the config names that were found in the repository — never over one the user chose.
+    if (d.definitions?.kind === 'file' && !defFileId) {
+      setDefTab('upload'); setDefFileName(d.definitions.file.fileName); setDefFileId(d.definitions.file.fileId)
+    }
+    if (d.dataDictionary && !ddFile) {
+      setDdFile({ name: d.dataDictionary.fileName, size: d.dataDictionary.size, id: d.dataDictionary.fileId })
     }
   }
 
@@ -332,6 +401,7 @@ function WizardView({
   function confirmAddLayer() {
     const nm = newLayerName.trim().toUpperCase().replace(/\s+/g, '_')
     if (!nm) return
+    archEdited.current = true
     setLayers((prev) => [...prev, { id: uid(), name: nm, path: newLayerPath.trim(), groups: [], libPaths: [], collapsed: false }])
     setNewLayerName(''); setNewLayerPath(''); setAddLayerOpen(false)
   }
@@ -340,6 +410,7 @@ function WizardView({
   function confirmGroup() {
     const v = inlineVal.trim()
     if (!v || !inlineAdd) return
+    archEdited.current = true
     patchLayer(inlineAdd.parentId, (l) => ({ ...l, groups: [...l.groups, { id: uid(), name: v, comps: [], collapsed: false }] }))
     setInlineAdd(null); setInlineVal('')
   }
@@ -347,14 +418,17 @@ function WizardView({
     setFileAssignments((prev) => { const next = { ...prev }; files.forEach((f) => delete next[f]); return next })
   }
   function removeGroup(layerId: string, g: Group) {
+    archEdited.current = true
     freeFiles(g.comps.flatMap((c) => c.files))
     patchLayer(layerId, (l) => ({ ...l, groups: l.groups.filter((x) => x.id !== g.id) }))
   }
   function removeLayer(layer: Layer) {
+    archEdited.current = true
     freeFiles(layer.groups.flatMap((g) => g.comps.flatMap((c) => c.files)))
     setLayers((prev) => prev.filter((l) => l.id !== layer.id))
   }
   function removeComp(layerId: string, groupId: string, comp: Comp) {
+    archEdited.current = true
     freeFiles(comp.files)
     patchLayer(layerId, (l) => ({ ...l, groups: l.groups.map((g) => (g.id === groupId ? { ...g, comps: g.comps.filter((c) => c.id !== comp.id) } : g)) }))
   }
@@ -377,7 +451,7 @@ function WizardView({
     setSelectedFiles((prev) => { const next = new Set(prev); next.has(f) ? next.delete(f) : next.add(f); return next })
   }
   function toggleFolder(node: RepoEntry) {
-    const files = descendantFiles(node).filter((f) => !fileAssignments[f])
+    const files = descendantFiles(node).filter((f) => !ownerOf(f, fileAssignments))
     const allSel = files.length > 0 && files.every((f) => selectedFiles.has(f))
     setSelectedFiles((prev) => { const next = new Set(prev); files.forEach((f) => (allSel ? next.delete(f) : next.add(f))); return next })
     if (!allSel) setTreeOpen((prev) => ({ ...prev, [node.path]: true }))
@@ -385,6 +459,7 @@ function WizardView({
   function confirmAddComponent() {
     const nm = compName.trim()
     if (!nm || !compPanel) return
+    archEdited.current = true
     const files = [...selectedFiles]
     setFileAssignments((prev) => { const next = { ...prev }; files.forEach((f) => (next[f] = nm)); return next })
     patchLayer(compPanel.layerId, (l) => ({ ...l, groups: l.groups.map((g) => (g.id === compPanel.groupId ? { ...g, comps: [...g.comps, { id: uid(), name: nm, files, collapsed: false }] } : g)) }))
@@ -405,6 +480,7 @@ function WizardView({
   }
   function confirmFolderPicker() {
     if (!fpSelected || !fpTarget) return
+    if (fpTarget.kind === 'lib-path') archEdited.current = true
     if (fpTarget.kind === 'new-layer-path') setNewLayerPath(fpSelected)
     else patchLayer(fpTarget.layerId, (l) => ({ ...l, libPaths: l.libPaths.map((x, i) => (i === fpTarget.index ? fpSelected : x)) }))
     setFpTarget(null)
@@ -472,6 +548,7 @@ function WizardView({
         default_branch: branch || undefined,
         access_token: token.trim() || undefined,
         build_config: {
+          ...(imported?.preview.draft.settings ?? {}),
           preprocessor_definitions: defTab === 'upload'
             ? { mode: 'upload', file_name: defFileName || null, file_id: defFileId || null }
             : { mode: 'manual', defines: defManual.split('\n').map((s) => s.trim()).filter(Boolean) },
@@ -507,6 +584,9 @@ function WizardView({
             <StepHeader title={STEP_HEADERS[cur - 1].title} sub={STEP_HEADERS[cur - 1].sub} />
 
             {/* ══ STEP 1 — PROJECT & REPOSITORY ══ */}
+            {cur === 1 && (
+              <ConfigImport fileName={imported?.fileName} preview={imported?.preview} busy={importBusy} onPick={(f) => { void importConfig(f) }} />
+            )}
             {cur === 1 && (
               <div className="card space-y-4">
                 <div>
@@ -551,7 +631,14 @@ function WizardView({
                   <div>
                     <div className="h-px bg-surface-container-low mb-4" />
                     <div className="lbl">Branch <span className="req">*</span></div>
-                    <select className={`inp ${errs.branch ? 'err' : ''}`} value={branch} onChange={(e) => { const b = e.target.value; setBranch(b); setErrs((p) => ({ ...p, branch: false })); if (b) loadRepoTree(b) }}>
+                    <select className={`inp ${errs.branch ? 'err' : ''}`} value={branch} onChange={(e) => {
+                      const b = e.target.value; setBranch(b); setErrs((p) => ({ ...p, branch: false }))
+                      if (b) {
+                        void loadRepoTree(b)
+                        // Paths differ between branches: check an imported config against this one.
+                        if (imported) void checkImportAgainstRepo(imported.text, imported.fileName, b, !archEdited.current)
+                      }
+                    }}>
                       <option value="">Select a branch…</option>
                       {branches.map((b) => <option key={b} value={b}>{b}</option>)}
                     </select>
@@ -591,6 +678,9 @@ function WizardView({
                         <p className="text-on-surface-variant text-xs">Supported: <span className="font-mono text-caption">.csv, .json</span> · toolchain macro dumps included</p>
                       </div>
                       <input ref={defInputRef} type="file" accept=".csv,.json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadDef(f) }} />
+                      {!defFileName && imported?.preview.expectedUploads.definitions && (
+                        <p className="mt-2 text-caption text-[#b45309]">From the config: upload <code className="font-mono">{imported.preview.expectedUploads.definitions}</code></p>
+                      )}
                       {defFileName && (
                         <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-surface-container-low border border-outline-variant rounded-lg">
                           <Icon name="description" size={18} className="text-secondary" />
@@ -644,6 +734,9 @@ function WizardView({
                     <p className="text-on-surface-variant text-xs">Supported: <span className="font-mono text-caption">.csv, .xlsx</span> · Optional</p>
                   </div>
                   <input ref={ddInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadDd(f) }} />
+                  {!ddFile && imported?.preview.expectedUploads.dataDictionary && (
+                    <p className="mt-2 text-caption text-[#b45309]">From the config: upload <code className="font-mono">{imported.preview.expectedUploads.dataDictionary}</code></p>
+                  )}
                   {ddFile && (
                     <div className="mt-3 flex items-center gap-3 px-3 py-2.5 bg-surface-container-low border border-[rgba(0,165,114,.3)] rounded-xl">
                       <Icon name="description" size={20} fill className="text-[#00a572]" />
@@ -766,16 +859,16 @@ function WizardView({
                                 {layer.libPaths.map((p, idx) => (
                                   <div key={idx} className="ext-path-row">
                                     <Icon name="folder_open" size={13} className="text-[#00a572] flex-shrink-0" />
-                                    <input className="ext-path-input" value={p} placeholder="/path/to/include" onChange={(e) => patchLayer(layer.id, (l) => ({ ...l, libPaths: l.libPaths.map((x, i) => i === idx ? e.target.value : x) }))} />
+                                    <input className="ext-path-input" value={p} placeholder="/path/to/include" onChange={(e) => { archEdited.current = true; patchLayer(layer.id, (l) => ({ ...l, libPaths: l.libPaths.map((x, i) => i === idx ? e.target.value : x) })) }} />
                                     <button type="button" className="ext-browse-btn" onClick={() => openFolderPicker({ kind: 'lib-path', layerId: layer.id, index: idx })}>
                                       <Icon name="folder_open" size={11} />BROWSE
                                     </button>
-                                    <button onClick={() => patchLayer(layer.id, (l) => ({ ...l, libPaths: l.libPaths.filter((_, i) => i !== idx) }))} className="flex items-center bg-transparent border-none cursor-pointer p-0 text-outline">
+                                    <button onClick={() => { archEdited.current = true; patchLayer(layer.id, (l) => ({ ...l, libPaths: l.libPaths.filter((_, i) => i !== idx) })) }} className="flex items-center bg-transparent border-none cursor-pointer p-0 text-outline">
                                       <Icon name="close" size={13} className="leading-none" />
                                     </button>
                                   </div>
                                 ))}
-                                <button onClick={() => patchLayer(layer.id, (l) => ({ ...l, libPaths: [...l.libPaths, ''] }))} className="inc-add-btn">
+                                <button onClick={() => { archEdited.current = true; patchLayer(layer.id, (l) => ({ ...l, libPaths: [...l.libPaths, ''] })) }} className="inc-add-btn">
                                   <Icon name="add" size={12} className="align-middle" /> Add path
                                 </button>
                               </div>
@@ -1009,6 +1102,12 @@ function WizardView({
                       <span className="font-mono text-caption font-medium text-on-surface">{ddFile?.name || 'Not uploaded'}</span>
                     </div>
                   </div>
+                  {imported && settingsSummary(imported.preview.draft.settings) && (
+                    <div className="px-4 py-3 border-t border-surface-container-low flex items-start justify-between gap-3">
+                      <span className="font-mono text-caption font-semibold text-on-surface-variant flex-shrink-0">From {imported.fileName}</span>
+                      <span className="font-mono text-caption font-medium text-on-surface text-right">{settingsSummary(imported.preview.draft.settings)}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Architecture */}
@@ -1202,7 +1301,7 @@ function WizardView({
   /* Recursive file-tree node for the Add-Component panel. */
   function renderTreeNode(node: RepoEntry) {
     if (node.type === 'file') {
-      const owner = fileAssignments[node.path]
+      const owner = ownerOf(node.path, fileAssignments)
       const assigned = !!owner
       return (
         <div key={node.path} className={`sidebar-file-row ${assigned ? 'assigned' : ''}`} onClick={() => !assigned && toggleFile(node.path)}>
@@ -1215,7 +1314,7 @@ function WizardView({
     }
     const children = node.children ?? []
     const open = !!treeOpen[node.path]
-    const files = descendantFiles(node).filter((f) => !fileAssignments[f])
+    const files = descendantFiles(node).filter((f) => !ownerOf(f, fileAssignments))
     const sel = files.filter((f) => selectedFiles.has(f)).length
     const checked = files.length > 0 && sel === files.length
     const indeterminate = sel > 0 && sel < files.length

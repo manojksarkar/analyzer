@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useProject, useDocuments, useTeam, useCommits, useVersions } from '../hooks/useProjects'
+import { useProject, useDocuments, useTeam, useCommits, useVersions, useDownloadProjectConfig } from '../hooks/useProjects'
 import { useDownloadDoc, useSelfAssign } from '../hooks/useDocumentMutations'
 import { useCurrentJob, useStartJob, useCancelJob, useJobEvents, useJobFunctions } from '../hooks/useJobs'
 import { useProjectViewState } from '../hooks/useProjectViewState'
@@ -84,14 +84,24 @@ function ConfigOverview({ project, team, teamLoading }: { project: Project; team
   const compCount = layers.reduce((a, l) => a + l.groups.reduce((b, g) => b + g.components.length, 0), 0)
   const defs = project.buildConfig.definitions
   const plural = (n: number, w: string) => `${n} ${w}${n !== 1 ? 's' : ''}`
+  const downloadConfig = useDownloadProjectConfig(project.id)
   return (
     <div className="flex gap-6 items-stretch">
       {/* Left — configuration + architecture */}
       <div className="flex-1 min-w-0 flex flex-col gap-4">
         <div className="bg-white border border-outline-variant rounded-xl overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-outline-variant">
-            <Text as="h2" variant="heading" className="text-on-surface">Project Configuration</Text>
-            <Text as="p" variant="caption" className="font-mono mt-0.5">Captured at setup · analysis not run yet</Text>
+          <div className="px-5 py-3.5 border-b border-outline-variant flex items-start justify-between gap-3">
+            <div>
+              <Text as="h2" variant="heading" className="text-on-surface">Project Configuration</Text>
+              <Text as="p" variant="caption" className="font-mono mt-0.5">Captured at setup · analysis not run yet</Text>
+            </div>
+            <button
+              onClick={() => { void downloadConfig(project.name) }}
+              title="The project as a config file — the command line and the New Project wizard read it"
+              className="flex items-center gap-1 px-3 py-1.5 border border-outline-variant rounded-lg hover:bg-surface-container transition-colors text-secondary font-mono text-caption flex-shrink-0"
+            >
+              <Icon name="download" size={14} />Download config
+            </button>
           </div>
           <div className="divide-y divide-outline-variant">
             <InfoRow label="Repository" mono value={project.repoPath || '—'} />

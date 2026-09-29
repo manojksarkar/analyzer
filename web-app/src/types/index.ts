@@ -48,6 +48,30 @@ export interface ProjectBuildConfig {
   dataDictionary?: string
 }
 
+/** A config file read into the New Project wizard (`POST /projects/config/preview`). */
+export type ConfigReportLevel = 'filled' | 'check' | 'skipped'
+export interface ConfigReportItem { level: ConfigReportLevel; text: string }
+/** A build-configuration file stored as an upload. */
+export interface UploadedFile { fileId: string; fileName: string; size: number }
+export interface ConfigDraft {
+  name: string | null
+  repoUrl: string | null
+  branch: string | null
+  layers: ArchLayer[]
+  /** A definitions file found in the repository, or `project.defines` typed into the file. */
+  definitions: { kind: 'file'; file: UploadedFile } | { kind: 'typed'; defines: string[] } | null
+  dataDictionary: UploadedFile | null
+  /** `clang` / `views` / `docx` sections, carried into the project's build config as they are. */
+  settings: Record<string, unknown>
+}
+export interface ConfigPreview {
+  draft: ConfigDraft
+  /** Files the config names that are not in the repository: the user uploads them in step 2. */
+  expectedUploads: { definitions: string | null; dataDictionary: string | null }
+  report: ConfigReportItem[]
+  repositoryChecked: boolean
+}
+
 export interface Project {
   id: string
   name: string
