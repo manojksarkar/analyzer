@@ -255,7 +255,7 @@
 >   Paths is a "+ Lib path (optional)" link.
 > - **Step 5:** `components/Readiness.tsx` first - error (blocks) / warn (would miss: config files not
 >   uploaded, cores without macros, layers without a core) / ok, each with "Fix in step N"; details below,
->   the layer tree folded. The mockup (`docs/ui-mockups/projects-empty.html`) does NOT show this pass yet.
+>   the layer tree folded. The mockup (`docs/ui-mockups/projects-empty.html`) shows the same pass.
 
 > Updated: 2026-09-29e (**The SWE.3 page in the web app reads like the DOCX.** Branch `ui_v2`. Asked: "verify
 > if swe3 is coming in UI properly" → "fix it". Method: per document, `GET .../render` vs the DOCX of the same
