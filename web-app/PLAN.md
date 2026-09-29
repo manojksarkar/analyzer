@@ -47,6 +47,8 @@ refresh — on PostgreSQL, admin and developer roles.
   every other component as removed. Carry the rest forward from the baseline, or compare only the scope?
 - **Tags** — tagging a commit makes an empty draft version that no run fills; a run of that commit needs a
   different name. Should a run adopt the tag?
+- **Excel data dictionaries** — the upload accepts `.xlsx`/`.xls` (a test keeps that deliberately), but the
+  runner hands the engine a `.csv` and the engine reads CSV only. Convert on upload, or accept CSV only?
 - **Run options** — expose `no_llm`, `mode` (full/auto) and a data dictionary in the modal? The API takes all
   three; with the LLM on, a first run of the sample project takes ~2 h on a local Ollama.
 

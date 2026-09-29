@@ -240,6 +240,17 @@
 >   `draft` read "Approved"; a failed download was silent, and downloads did not refresh an expired token;
 >   Compare counted "10 changed of 3" (removed documents missing from All).
 >
+> - **Later the same night:** the wizard's data dictionary never reached a run — nothing passed its
+>   `file_id` to a job, and `_upload_bytes` read a `data` key the (on-disk) upload record never has — now a
+>   job without `data_dict_id` uses `build_config.data_dictionary.file_id`, and the bytes come from disk
+>   (verified: the parser "merged 4 entries" from a wizard upload). Three routes acted on an id without
+>   checking it belonged to the path's project (the admin check is on the path): cancel-invite deleted
+>   ANY membership row (other projects' admins included), bulk visibility flipped any project's
+>   functions, resolving an access request of another project added its requester to yours — all
+>   scoped now (cancel-invite also only to `pending` rows; a resolved request is 409). Creating a
+>   project with an unknown team email 500'd after the project row was written — validated first now;
+>   a person listed twice is added once. The developer's My Documents Open/Download were dead buttons.
+>
 > **Found, not fixed** — decisions or backend work, listed in `web-app/PLAN.md` "Remaining": function hiding is
 > three disconnected stores (`job_functions` / `entity_versions.is_visible` / the exporter's `hidden`); nothing
 > creates an account and a pending invite never activates; a scoped run's version holds only its scope, so
@@ -251,7 +262,8 @@
 > `workspaces/p*` folders (131 MB) from past runs, left alone.
 >
 > **Tests:** new `tests/api/test_{unfinished_run_frees_its_version,team_invite,server_error_reaches_the_browser,
-> export_all_names,delete_project_cleans_up}.py`, `tests/unit/test_runner_progress_counter.py`,
+> export_all_names,delete_project_cleans_up,data_dictionary_reaches_the_run,cross_project_access,
+> create_project_team}.py`, `tests/unit/test_runner_progress_counter.py`,
 > `web-app/src/services/mappers/__tests__/version.test.ts`; ported `test_api_generation_command.py`,
 > `test_runner_never_hangs.py`, `test_start_job_needs_architecture.py`. **Trap:** in `tests/api` an
 > un-overridden `get_db()` is the REAL database of `config.local.json` — never `app.dependency_overrides.clear()`
