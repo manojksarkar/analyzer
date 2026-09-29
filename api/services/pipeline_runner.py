@@ -1058,13 +1058,19 @@ def _build_cmd(
         cmd += ["--to-phase", str(to_phase)]
     # Scope -> run.py selection flags (mutually exclusive with --selected-layer). A
     # first-class scope wins over layer_filter; project scope selects nothing (full).
+    #
+    # One flag PER NAME: run.py takes each of these repeatedly, as `--scope group:A,B` does
+    # for a generation. Passing only the first name re-exported a version generated for
+    # several groups as if it had one -- the other groups' views were never re-derived, so
+    # their corrections never reached the Word file (found by tools/review_api_test).
     scope = getattr(job, "scope", None)
     stype = (scope.get("type") if isinstance(scope, dict) else None) or "project"
     names = (scope.get("names") if isinstance(scope, dict) else None) or []
-    if stype == "group" and names:
-        cmd += ["--selected-group", str(names[0])]
-    elif stype == "component" and names:
-        cmd += ["--selected-component", str(names[0])]
+    flag = {"group": "--selected-group", "component": "--selected-component",
+            "layer": "--selected-layer"}.get(stype)
+    if flag and names:
+        for name in names:
+            cmd += [flag, str(name)]
     elif job.layer_filter:
         cmd += ["--selected-layer", job.layer_filter]
     # Generate one DOCX per component (the default), not one per group. This is
