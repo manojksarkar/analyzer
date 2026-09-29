@@ -106,8 +106,14 @@ cd web-app
 npm run dev
 ```
 
-Open http://localhost:5173 and sign in. The app finds the API at `http://localhost:8000/api/v1`; for
-another address, set `VITE_API_URL` in `web-app/.env` (see `web-app/.env.example`).
+Open http://localhost:5173 and sign in with the full email address — `admin@aspice.dev` / `admin`.
+The demo users (`alice@aspice.dev` / `secret`, …) exist only in a database set up with `--demo`. The app
+finds the API at `http://localhost:8000/api/v1`; for another address, set `VITE_API_URL` in
+`web-app/.env` (see `web-app/.env.example`).
+
+The project list shows only projects you are a member of. A project created in the web app makes you
+its admin; a project onboarded with `analyzer.py onboard` has no members, so it does not appear, and
+develop has no command to add one yet (`review_update_v2` adds `analyzer.py grant`).
 
 Then: **New Project** (the wizard) → **Run Analysis** on the Overview page → the documents appear under
 **Documents** when the run completes. A run with the LLM on takes as long as the LLM needs — the
