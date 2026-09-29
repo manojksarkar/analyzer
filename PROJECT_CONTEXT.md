@@ -30,24 +30,25 @@ newer entry and the code win.
 
 ## Current state
 
-> **⭐ IN FLIGHT — branch `review_update_v2`, PR to `develop` (Review & Update: correcting LLM text
+> **⭐ IN FLIGHT — branch `review_update_v3`, PR to `develop` (Review & Update: correcting LLM text
 > in a document).** `review_update_v1` squash-merged onto `develop` 8628b2d (`b10a71b`) + follow-up
-> commits; `review_update_v1` kept unchanged. Suites pass on SQLite; **the PostgreSQL run is next**.
+> commits = `review_update_v2`, rebased onto `develop` `5542736` on 2026-09-29 = `review_update_v3`;
+> v1 and v2 kept unchanged. Suites pass on SQLite; **the PostgreSQL run is next**.
 > - **Merging or reviewing it? Read [docs/design/REVIEW_UPDATE_HANDOVER.md](docs/design/REVIEW_UPDATE_HANDOVER.md) first.**
 >   Migration chain, the merge conflict surface file by file (§3.3: what the rebase changed in
 >   develop's code), the invariants that break silently with the test that catches each, and
->   **§8: five decisions waiting on the develop owner** (BACKLOG `RU-1`…`RU-5`).
+>   **§8: six decisions waiting on the develop owner** (BACKLOG `RU-1`…`RU-6`).
 > - Contract: [docs/spec/REVIEW_UPDATE_SPEC.md](docs/spec/REVIEW_UPDATE_SPEC.md) (`REQ-` ids) ·
 >   how: [docs/design/REVIEW_UPDATE_DESIGN.md](docs/design/REVIEW_UPDATE_DESIGN.md) ·
 >   HTTP: [docs/spec/REVIEW_UPDATE_API_SPEC.md](docs/spec/REVIEW_UPDATE_API_SPEC.md).
 > - Code lives in `engine/review/`; the rules for engine code that touches it are in the `engine-dev`
 >   skill §8. Reasoning for every decision is in the dated history ([project-context/history/](project-context/history/)): the feature 2026-09-16 →
 >   2026-09-20, the rebase onto develop 2026-09-26f → 2026-09-27d, the export guard per document
->   and the save-time SWE.4 re-derive 2026-09-29.
+>   and the save-time SWE.4 re-derive 2026-09-29, the rebase onto `5542736` 2026-09-29b.
 
-- **The PR is not opened yet** (2026-09-28). `develop` is the integration branch: work branches open
-  their PR into it, and `main` has not moved since 2026-07-02. `review_update_v2` was cut from
-  `develop` at `8628b2d` (2026-09-25).
+- **The PR is not opened yet** (2026-09-29). `develop` is the integration branch: work branches open
+  their PR into it, and `main` has not moved since 2026-07-02. `review_update_v3` sits on
+  `develop` `5542736` (2026-09-26); `review_update_v2` was cut at `8628b2d` (2026-09-25).
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
 - The status boards that used to head this file (2026-07-20, 2026-08-14) are kept, unchanged, in

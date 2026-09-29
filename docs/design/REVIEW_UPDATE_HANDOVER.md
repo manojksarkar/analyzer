@@ -1,4 +1,4 @@
-# Review & Update — handover for merging `review_update_v2` into `develop`
+# Review & Update — handover for merging `review_update_v3` into `develop`
 
 For whoever reviews and merges this branch. It says **what changed, what it touches, what must not
 be broken, how to check, and what is waiting on a decision** — it does not restate the feature. For
@@ -9,15 +9,18 @@ that:
 - **How** → [REVIEW_UPDATE_DESIGN](REVIEW_UPDATE_DESIGN.md)
 - **Chronology and the reasoning behind each decision** → the dated entries in
   [project-context/history/](../../project-context/history/): the feature in `2026-09-16` through
-  `2026-09-20`, the rebase onto develop in `2026-09-26f` through `2026-09-27d`
+  `2026-09-20`, the rebase onto develop in `2026-09-26f` through `2026-09-27d`, the rebase onto
+  `5542736` in `2026-09-29b`
 
-Branch: `review_update_v2` = `review_update_v1` squash-merged onto `origin/develop` at `8628b2d`
-(commit `b10a71b`), then separate follow-up commits: fixes the rebase review found, develop's new
+Branch: `review_update_v3` = `review_update_v2` rebased onto `origin/develop` `5542736` on 2026-09-29
+(develop's six commits; no code conflicts — §3.3). `review_update_v2` = `review_update_v1`
+squash-merged onto `origin/develop` at `8628b2d`
+(commit `b10a71b`; `e2b59c7` on v3), then separate follow-up commits: fixes the rebase review found, develop's new
 LLM text (struct/class/union descriptions) made correctable, and docs — `git log
-origin/develop..review_update_v2`. `review_update_v1` is kept unchanged. State: **the feature is
+origin/develop..review_update_v3`. `review_update_v1` and `review_update_v2` are kept unchanged. State: **the feature is
 functionally complete** (build-order steps 1–8 wired into the pipeline, step 9 done for the export
 path with three path-taking readers left, §7); every suite passes on SQLite; the PostgreSQL run is
-still to do. **Five decisions wait on the develop owner — §8.**
+still to do. **Six decisions wait on the develop owner — §8.**
 
 ---
 
@@ -46,7 +49,7 @@ This branch adds **six** migrations on top of `0008`:
                       └─ 0014_users_is_superuser   users.is_superuser
 ```
 
-`develop` is still at `0008` (checked at `8628b2d`), so the chain is linear: `alembic heads` prints
+`develop` is still at `0008` (checked at `5542736`), so the chain is linear: `alembic heads` prints
 `0014_users_is_superuser (head)`. **If `develop` adds its own `0009` before this merges, there will
 be two heads** and `alembic upgrade head` will refuse. The fix is to re-point this branch's `0009`
 at the new head and renumber — all six migrations are additive (new tables, new columns) and touch
@@ -81,10 +84,10 @@ built it complete. Do not read that as "column migrations are fine".
 On `review_update_v1`, nine commits before `5a792ed` are unrelated engine defect fixes and test
 infrastructure from the preceding review (the NUL-in-description crash, the `model_repo` flush
 defect, the interface-id collision `15df7c5`, `tools/audit_project.py`, `tests/live/`). In
-`review_update_v2` they are inside the one squash commit `b10a71b`; to reason about them apart,
+`review_update_v3` they are inside the one squash commit `e2b59c7` (`b10a71b` on v2); to reason about them apart,
 read them on `review_update_v1`. The interface-id change is output-visible — §8.1.
 
-The follow-up commits on `review_update_v2` also fix develop defects the rebase found — §5.
+The follow-up commits on `review_update_v3` also fix develop defects the rebase found — §5.
 
 ### 2.3 `PROJECT_CONTEXT.md` is an index on this branch
 
@@ -151,7 +154,7 @@ The `flowcharts.py` and `behaviour_diagram.py` hooks are each ~3 lines at a name
 conflict there is usually resolved by re-inserting the call at the same place. **Where it goes
 matters** — see §4.5.
 
-### 3.3 Changed by the rebase onto develop (after `b10a71b`)
+### 3.3 Changed by the rebase onto develop (after the squash commit — `e2b59c7` on v3, `b10a71b` on v2)
 
 What the follow-up commits change in develop's own code. Each one keeps develop's documented rule
 and is argued in the dated history entries 2026-09-26f → 2026-09-29
@@ -176,6 +179,13 @@ and is argued in the dated history entries 2026-09-26f → 2026-09-29
 | `engine/views/__init__.py` | `views_to_run(doc_type, config)` split out of `run_views`, which now returns the views it ran | the derivation record says which views ran, and for which document (§4.9) |
 | `engine/run_views.py` | leaves a derivation record (`_derivations.json`) in each output directory; the inputs' read time taken before the model loads | §4.9 |
 | `engine/run.py` | `_restore_output_from_db` calls `dump_output_files_to_dir` (it named a function that never existed) and runs before a re-derive too; the guard is asked about the run's `--doc-type` | §4.28, §4.29 |
+
+
+**Rebased again onto `5542736` (2026-09-29).** develop's six commits changed no file this branch
+changed except `PROJECT_CONTEXT.md` (see `2026-09-29b`): `engine/views/unit_headers.py` (develop:
+`_declarations_only`, `_code_only`, `_read_decl_snippet`; this branch: `_struct_description`,
+`build_rows`) and `engine/model_deriver.py` (develop: `_enrich_behaviour_names` skips a leading
+`this`) merged by themselves.
 
 ---
 
@@ -523,7 +533,7 @@ directories under the bare group name.
 
 ```
 python -m alembic heads                           # exactly one: 0014_users_is_superuser
-python -m pytest tests/unit tests/api tests/e2e   # 3531 passed, 44 skipped on review_update_v2
+python -m pytest tests/unit tests/api tests/e2e   # 3626 passed, 80 skipped on review_update_v3
 ```
 
 The feature has also been run end to end against a **SQLite** database on a machine with no
@@ -591,7 +601,7 @@ The web app has no review screen yet (`web-app/PLAN.md`).
 ## 8. Waiting on the develop owner
 
 Things this branch met in develop's area and did not settle alone. None blocks the merge; where
-the branch had to pick, the pick is reversible. Tracked as `RU-1`…`RU-5` in
+the branch had to pick, the pick is reversible. Tracked as `RU-1`…`RU-6` in
 [BACKLOG](../BACKLOG.md).
 
 ### 8.1 Interface ids of units whose ids start the same — `RU-1`
@@ -658,3 +668,21 @@ unchanged.
 - **Agree:** nothing to do.
 - **Disagree:** the text has to stay stored for a correction to reach the document; talk before
   moving it back.
+
+### 8.6 doccheck's pair check reads the behaviour bullets a reviewer can rewrite — `RU-6`
+
+develop's doccheck v2 (`66f7f97`) pairs a SWE.3 document with its SWE.4 one and finds each call of a
+Dynamic Behaviour row by the words `A calls B` at the start of a Behaviour Description bullet
+(`tools/doccheck/pairing.py` `_ARROW_RE`). That bullet is `behaviourDescription` text: the LLM writes
+the whole forward-call bullet (`llm_call_description`, asked for "A calls B to …"), and R6 lets a
+reviewer replace the list with any wording. "Primes the pump" in place of "start calls doThing to
+prime the pump" drops the arrow from the pair check, which then reports a false P1: "the
+specification calls doThing, which the design draws no arrow for". An LLM that does not follow its
+prompt does the same.
+
+- **Keep the call at the front (this branch's suggestion):** R6 refuses a list whose bullets do not
+  start as the stored ones do — "A calls B", "B returns to A" — so a reviewer corrects the wording
+  after them. One check in `apply_behaviour_override`, a 422 naming the bullet.
+- **Leave it:** a corrected row can show as a P1 in a pair report; say so in the doccheck README.
+- **Change doccheck:** read the arrows from something a correction cannot touch. The document holds
+  only the picture, so this needs a new field in the page or the DOCX.
