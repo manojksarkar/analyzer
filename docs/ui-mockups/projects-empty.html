@@ -185,6 +185,7 @@
   /* ── Layer / architecture ── */
   .layer-block { border: 1px solid #c4c6cd; border-radius: 0.5rem; overflow: hidden; }
   .layer-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #eff4ff; border-bottom: 1px solid #c4c6cd; cursor: pointer; user-select: none; }
+  .layer-block.collapsed .layer-head { border-bottom: none; }   /* a collapsed layer is its head alone */
   .layer-path-display { display: block; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #74777d; margin-top: 2px; cursor: pointer; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .layer-path-display:hover { color: #0058be; }
   .layer-path-display.empty { color: #b0b3b8; }
@@ -402,30 +403,6 @@
           <p class="text-body-md text-on-surface-variant">Name the project and connect your source repository.</p>
         </div>
 
-        <!-- Start from a config file - what `analyzer.py onboard --config` reads. It fills every step
-             it can: the project, the cores (step 2) and each layer with its core (step 3). The access
-             token is never read from it. Simulated here (importConfig); the app posts the file to
-             POST /projects/config/preview and re-checks it against the repository on Test Connection. -->
-        <div class="card space-y-3">
-          <div class="flex items-center gap-3">
-            <div class="card-icon bg-primary-container flex-shrink-0">
-              <span class="material-symbols-outlined text-on-primary-container" style="font-size:17px;">settings_suggest</span>
-            </div>
-            <div class="flex-1 min-w-0">
-              <h3 class="text-headline-sm text-on-surface" style="font-size:14px;">Start from a config file <span class="text-on-surface-variant" style="font-weight:400;">(optional)</span></h3>
-              <p class="text-body-sm text-on-surface-variant" style="font-size:11px;margin-top:2px;">The config <span style="font-family:'JetBrains Mono';">analyzer.py onboard --config</span> reads. It fills every step it can, the cores included; the access token is never read from it.</p>
-            </div>
-            <button onclick="document.getElementById('import-file').click()"
-                    class="flex items-center gap-1.5 px-4 py-2 border border-outline-variant rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors flex-shrink-0"
-                    style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#44474c;">
-              <span class="material-symbols-outlined" style="font-size:15px;">upload_file</span>
-              <span id="import-btn-label">Import config</span>
-            </button>
-            <input type="file" id="import-file" accept=".json,.jsonc" class="hidden" onchange="importConfig(this)">
-          </div>
-          <div id="import-report" class="hidden border-t border-outline-variant pt-3"></div>
-        </div>
-
         <div class="card space-y-4">
           <div>
             <div class="lbl">Project Name <span class="req">*</span></div>
@@ -439,6 +416,11 @@
                    oninput="this.classList.remove('err'); repoChanged();">
           </div>
 
+          <!-- Only a private repository needs a token: a link until asked for. -->
+          <button type="button" id="token-link" onclick="openToken()" class="flex items-center gap-1 text-secondary hover:underline" style="font-size:11px;">
+            <span class="material-symbols-outlined" style="font-size:13px;">lock</span>Private repository? Add an access token
+          </button>
+          <div id="token-field" class="hidden">
           <div>
             <div class="lbl">
               Access Token
@@ -452,6 +434,7 @@
                 <span class="material-symbols-outlined" id="token-eye" style="font-size:17px;">visibility_off</span>
               </button>
             </div>
+          </div>
           </div>
 
           <!-- Test connection row -->
@@ -472,6 +455,26 @@
             <select class="inp" id="s1-branch" oninput="this.classList.remove('err')">
               <option value="">Select a branch…</option>
             </select>
+          </div>
+        </div>
+
+        <!-- Start from a config file (optional) - what `analyzer.py onboard --config` reads. One row:
+             before an import a dashed invitation; after it the file, what it filled and how much
+             needs the user (and in which step), with the full report in a popup. The name and the
+             repository are filled only when empty. Simulated here (importConfig); the app posts the
+             file to POST /projects/config/preview and re-checks it against the repository. -->
+        <div id="import-row"></div>
+        <input type="file" id="import-file" accept=".json,.jsonc" class="hidden" onchange="importConfig(this)">
+        <div id="import-modal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(4,22,39,.4);align-items:center;justify-content:center;" onclick="if (event.target === this) closeImportModal()">
+          <div style="width:100%;max-width:640px;background:#fff;border-radius:1rem;padding:24px;box-shadow:0 8px 40px rgba(4,22,39,.18);">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px;">
+              <div>
+                <p id="import-modal-title" style="font-size:16px;font-weight:600;color:#0b1c30;"></p>
+                <p style="font-size:12px;color:#44474c;margin-top:2px;">Items that need your attention are dealt with in the step named beside them.</p>
+              </div>
+              <button onclick="closeImportModal()" style="background:none;border:none;cursor:pointer;color:#44474c;padding:4px;"><span class="material-symbols-outlined" style="font-size:20px;">close</span></button>
+            </div>
+            <div id="import-modal-body" style="max-height:60vh;overflow-y:auto;display:grid;gap:18px;"></div>
           </div>
         </div>
       </div><!-- /step-1 -->
@@ -570,6 +573,13 @@
           <span class="material-symbols-outlined text-secondary flex-shrink-0" style="font-size:18px;">info</span>
           <p class="text-body-sm text-on-surface-variant">Layer root path is scanned by Clang. Groups define logical modules. Components map to physical source folders.</p>
         </div>
+        <!-- One click removes a whole layer or group: it can be undone for 10 s. -->
+        <div id="undo-bar" role="status" style="display:none;position:sticky;bottom:12px;z-index:10;align-items:center;gap:12px;padding:10px 16px;background:#041627;color:#fff;border-radius:.5rem;box-shadow:0 4px 16px rgba(4,22,39,.25);">
+          <span class="material-symbols-outlined" style="font-size:16px;opacity:.7;">delete</span>
+          <span class="undo-label" style="flex:1;font-size:12px;"></span>
+          <button onclick="undoRemove()" style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#8ab4ff;background:none;border:none;cursor:pointer;">Undo</button>
+          <button onclick="LAST_REMOVED = null; renderUndo();" aria-label="Dismiss" style="background:none;border:none;color:#fff;opacity:.7;cursor:pointer;"><span class="material-symbols-outlined" style="font-size:15px;">close</span></button>
+        </div>
       </div><!-- /step-3 -->
 
 
@@ -651,8 +661,11 @@
           </div>
         </div>
 
-        <!-- Role legend -->
-        <div class="grid grid-cols-2 gap-3">
+        <!-- What each role may do: on request, not in the way. -->
+        <button type="button" onclick="toggleRoles(this)" class="flex items-center gap-1 text-secondary hover:underline" style="font-size:11px;">
+          <span class="material-symbols-outlined" style="font-size:14px;">help</span><span>What can each role do?</span>
+        </button>
+        <div id="role-legend" class="grid grid-cols-2 gap-3" style="display:none;">
           <div class="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
             <div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center flex-shrink-0">
               <span class="material-symbols-outlined text-on-primary-container sym-fill" style="font-size:16px;">manage_accounts</span>
@@ -682,6 +695,10 @@
           <h2 class="text-headline-md text-on-surface mb-1">Review & Initialize</h2>
           <p class="text-body-md text-on-surface-variant">Confirm every setting before the first analysis run.</p>
         </div>
+
+        <!-- Is the project ready: what must be fixed (blocks), what it would miss (warns) - then the details. -->
+        <div id="r-ready"></div>
+        <p style="padding-top:8px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#74777d;">Details</p>
 
         <!-- Project Basics -->
         <div class="rev-card">
@@ -720,7 +737,10 @@
             <button onclick="goToStep(3)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
           </div>
           <div class="rev-row"><span>Layers</span><span id="r-layers">—</span></div>
-          <div id="r-arch-tree" class="border-t border-outline-variant divide-y divide-outline-variant"></div>
+          <button type="button" onclick="toggleReviewTree(this)" class="w-full flex items-center gap-1.5 text-secondary hover:bg-surface-container-low" style="padding:10px 16px;border-top:1px solid #c4c6cd;font-family:'JetBrains Mono',monospace;font-size:11px;text-align:left;">
+            <span class="material-symbols-outlined" style="font-size:15px;">expand_more</span><span>Show every layer, group and component</span>
+          </button>
+          <div id="r-arch-tree" class="border-t border-outline-variant divide-y divide-outline-variant" style="display:none;"></div>
         </div>
 
         <!-- Team -->
@@ -743,12 +763,8 @@
 
     <!-- ACTION BAR -->
     <div class="h-16 flex-shrink-0 bg-white border-t border-outline-variant flex items-center justify-between px-8 gap-4">
-      <div class="flex items-center gap-3 text-on-surface-variant">
-        <div class="flex items-center gap-1.5">
-          <span class="material-symbols-outlined" style="font-size:14px;">save</span>
-          <span class="font-label-sm text-label-sm text-on-surface-variant">Auto-saved</span>
-        </div>
-      </div>
+      <!-- What this step needs, or what still stops it. (Nothing is saved until Initialize.) -->
+      <div id="step-hint" class="flex items-center gap-1.5 text-on-surface-variant" style="min-width:0;"></div>
       <div class="flex items-center gap-3">
         <button id="back-btn" onclick="doBack()"
                 class="flex items-center gap-2 px-5 py-2.5 border border-outline-variant rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors invisible">
@@ -879,9 +895,19 @@ var STEPS = [
   { title: 'Project & Repository', sub: 'Name, source path' },
   { title: 'Cores',                sub: 'Macros & dictionary per core' },
   { title: 'Architecture',         sub: 'Layers & groups' },
-  { title: 'Team & Access',        sub: 'Invite developers' },
+  { title: 'Team & Access',        sub: 'Optional · add people later' },
   { title: 'Review & Initialize',  sub: 'Confirm & create project' },
 ];
+// The action bar's note for each step: what is required, and what can be left out.
+var STEP_HINTS = [
+  'Name, repository and branch are required',
+  'Optional - a layer with no core is parsed without macros',
+  'At least one component is required',
+  'Optional - people can be added later from Team',
+  'Nothing is created until you initialize',
+];
+// Steps where Continue was tried: their problems show inside the step from then on.
+var attempted = new Set();
 
 // ════════════════════════════════════════
 // View switching
@@ -1020,6 +1046,7 @@ function goToStep(n) {
 
   renderRail();
   updateBar();
+  renderStepState();
   var scroll = document.getElementById('form-scroll');
   if (scroll) scroll.scrollTop = 0;
 }
@@ -1051,13 +1078,16 @@ function renderRail() {
     var icon = cls === 'done'
       ? '<span class="material-symbols-outlined sym-fill" style="font-size:14px;">check</span>' : n;
     var titleColor = n === cur ? '#0058be' : done.has(n) ? '#0b1c30' : '#44474c';
-    var subColor   = n === cur ? '#0058be' : '#74777d';
+    var bad = n <= 3 && (attempted.has(n) || done.has(n)) && issuesFor(n).length > 0;
+    var subColor   = bad ? '#ba1a1a' : n === cur ? '#0058be' : '#74777d';
     var clickable  = (n < cur || done.has(n)) ? 'cursor-pointer' : '';
     return '<div class="step-li ' + clickable + '" onclick="railClick(' + n + ')">'
-      + '<div class="step-dot ' + cls + '">' + icon + '</div>'
+      + '<div class="step-dot ' + cls + '">' + icon
+      + (bad ? '<span style="position:absolute;top:-2px;right:-2px;width:10px;height:10px;border-radius:50%;background:#ba1a1a;border:2px solid #fff;"></span>' : '')
+      + '</div>'
       + '<div style="padding-top:3px;">'
       + '<p class="font-label-md text-label-md" style="color:' + titleColor + ';font-weight:' + (n===cur?'600':'500') + ';line-height:1.2;">' + s.title + '</p>'
-      + '<p class="font-label-sm text-label-sm" style="color:' + subColor + ';margin-top:2px;">' + s.sub + '</p>'
+      + '<p class="font-label-sm text-label-sm" style="color:' + subColor + ';margin-top:2px;">' + (bad ? 'Needs a fix' : s.sub) + '</p>'
       + '</div></div>';
   }).join('');
 }
@@ -1073,24 +1103,85 @@ function updateBar() {
 // ════════════════════════════════════════
 // Validation
 // ════════════════════════════════════════
+// What stops each step, worked out when asked. It shows inside the step once Continue was tried
+// there (not in a toast that is gone before it is read), and marks the step in the rail.
+function issuesFor(n) {
+  var out = [];
+  if (n === 1) {
+    var repo = document.getElementById('s1-repo').value.trim();
+    var connected = !document.getElementById('branch-field').classList.contains('hidden');
+    if (!document.getElementById('s1-name').value.trim()) out.push('Give the project a name');
+    if (!repo) out.push('Enter the repository URL');
+    if (repo && !connected) out.push('Test the connection to load the branches');
+    if (connected && !document.getElementById('s1-branch').value) out.push('Pick a branch');
+  }
+  if (n === 2) {
+    var seen = {};
+    CORES.forEach(function(c, i) {
+      var nm = (c.name || '').trim().toLowerCase();
+      if (!nm) out.push('Core ' + (i + 1) + ' has no name');
+      else if (seen[nm]) out.push('Two cores are called ' + c.name.trim());
+      seen[nm] = true;
+    });
+  }
+  if (n === 3 && !document.querySelector('#arch-tree .tree-comp-block')) out.push('No component yet - a run needs at least one');
+  return out;
+}
+
 function validate(n) {
   if (n === 1) {
-    var name = document.getElementById('s1-name');
-    if (!name.value.trim()) { name.classList.add('err'); name.focus(); return false; }
-    var repo = document.getElementById('s1-repo');
-    if (!repo.value.trim()) { repo.classList.add('err'); repo.focus(); return false; }
-    var branchField = document.getElementById('branch-field');
-    if (branchField.classList.contains('hidden')) {
+    var name = document.getElementById('s1-name'), repo = document.getElementById('s1-repo');
+    name.classList.toggle('err', !name.value.trim());
+    repo.classList.toggle('err', !repo.value.trim());
+    if (repo.value.trim() && document.getElementById('branch-field').classList.contains('hidden')) {
       var st = document.getElementById('test-conn-status');
       st.style.color = '#ba1a1a';
       st.textContent = 'Test the connection first to load branches.';
-      document.getElementById('test-conn-btn').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      return false;
     }
-    var branch = document.getElementById('s1-branch');
-    if (!branch.value) { branch.classList.add('err'); branch.focus(); return false; }
   }
-  return true;
+  // The last step re-checks every step before it and takes the user to the first that needs a fix.
+  var bad = (n === 5 ? [1, 2, 3] : [n]).filter(function(k) { return issuesFor(k).length; })[0];
+  if (!bad) return true;
+  attempted.add(bad);
+  if (bad !== cur) goToStep(bad); else { renderStepState(); renderRail(); }
+  var scroll = document.getElementById('form-scroll');
+  if (scroll) scroll.scrollTop = 0;
+  return false;
+}
+
+// Live, as in the app: a step's problems follow what the user types.
+function refreshStepState() { if (attempted.size) { renderStepState(); renderRail(); } }
+document.addEventListener('input', refreshStepState);
+document.addEventListener('change', refreshStepState);
+
+// The problems banner inside the current step, the action bar's note, and step 4's button.
+function renderStepState() {
+  var step = document.getElementById('step-' + cur);
+  if (!step) return;
+  var box = step.querySelector('.step-issues');
+  if (!box) {
+    box = document.createElement('div');
+    box.className = 'step-issues';
+    step.insertBefore(box, step.children[1]);
+  }
+  var items = attempted.has(cur) ? issuesFor(cur) : [];
+  var many = (items.length === 1 ? 'One thing' : items.length + ' things');
+  box.innerHTML = !items.length ? '' : '<div role="alert" style="padding:14px;background:#ffdad6;border:1px solid #ba1a1a;border-radius:.75rem;">'
+    + '<p style="display:flex;align-items:center;gap:8px;font-family:\'JetBrains Mono\',monospace;font-size:12px;font-weight:600;color:#410002;">'
+    + '<span class="material-symbols-outlined sym-fill" style="font-size:15px;color:#ba1a1a;">error</span>' + many + ' to fix before you continue</p>'
+    + '<ul style="margin:8px 0 0 24px;list-style:disc;display:grid;gap:4px;">'
+    + items.map(function(t) { return '<li style="font-size:12px;color:#410002;line-height:1.45;">' + escHtml(t) + '</li>'; }).join('')
+    + '</ul></div>';
+  var hint = document.getElementById('step-hint');
+  hint.innerHTML = items.length
+    ? '<span class="material-symbols-outlined sym-fill" style="font-size:14px;color:#ba1a1a;">error</span>'
+      + '<span class="font-label-sm text-label-sm" style="color:#ba1a1a;">' + many + ' to fix in this step</span>'
+    : '<span class="material-symbols-outlined" style="font-size:14px;">info</span>'
+      + '<span class="font-label-sm text-label-sm text-on-surface-variant" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + STEP_HINTS[cur - 1] + '</span>';
+  if (cur === 4) {
+    document.getElementById('continue-btn').innerHTML = (members.length ? 'Continue' : 'Skip for now')
+      + ' <span class="material-symbols-outlined" style="font-size:16px;">arrow_forward</span>';
+  }
 }
 
 // ════════════════════════════════════════
@@ -1190,6 +1281,23 @@ function coreRow(label, help, optional, control) {
     + '<div class="min-w-0">' + control + '</div></div>';
 }
 
+// A core's optional inputs stay out of the way until they have a file, a config asks for one, or
+// the user adds one.
+var OPENED_INPUTS = {};
+function showsInput(c, kind) { return !!c[kind] || !!(c.expected || {})[kind] || !!OPENED_INPUTS[c.id + ':' + kind]; }
+function openInput(id, kind) { OPENED_INPUTS[id + ':' + kind] = true; renderCores(); }
+function optionalLinks(c) {
+  var links = [['ddFile', 'Data dictionary'], ['ccFile', 'Compile commands']].filter(function(k) { return !showsInput(c, k[0]); });
+  if (!links.length) return '';
+  return '<div style="display:flex;align-items:center;gap:16px;padding:10px 16px;border-top:1px solid #eff4ff;">'
+    + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#74777d;">Optional</span>'
+    + links.map(function(k) {
+        return '<button class="switch-link" style="margin-top:0;display:flex;align-items:center;gap:3px;" onclick="openInput(\'' + c.id + '\',\'' + k[0] + '\')">'
+          + '<span class="material-symbols-outlined" style="font-size:13px;">add</span>' + k[1] + '</button>';
+      }).join('')
+    + '</div>';
+}
+
 function renderCores() {
   var list = document.getElementById('cores-list');
   if (!list) return;
@@ -1219,8 +1327,9 @@ function renderCores() {
       +   '<span class="material-symbols-outlined" style="font-size:18px;">delete</span></button>'
       + '</div>'
       + coreRow('Macros', 'The <code>-D</code> set for this build', false, macrosControl(c))
-      + coreRow('Data dictionary', 'Signal names, units, ranges', true, fileControl(c, 'ddFile', '.csv', '.csv', 'menu_book'))
-      + coreRow('Compile commands', 'Include paths from the build', true, fileControl(c, 'ccFile', '.json', 'compile_commands.json', 'terminal'))
+      + (showsInput(c, 'ddFile') ? coreRow('Data dictionary', 'Signal names, units, ranges', true, fileControl(c, 'ddFile', '.csv', '.csv', 'menu_book')) : '')
+      + (showsInput(c, 'ccFile') ? coreRow('Compile commands', 'Include paths from the build', true, fileControl(c, 'ccFile', '.json', 'compile_commands.json', 'terminal')) : '')
+      + optionalLinks(c)
       + '</div>';
   }).join('');
 }
@@ -1249,6 +1358,7 @@ function refreshLayerCoreSelects() {
 // does and reports what it filled, what needs the user, and what it skipped. Here the sample
 // project's config stands in for whatever file is picked: two cores, three layers.
 var IMPORTED = null;          // the imported file's name
+var IMPORT_KEPT = [];         // what the config named but the user's own value was kept for
 var IMPORT_CHECKED = false;   // checked against the connected repository
 var IMPORT_CHECKING = false;
 
@@ -1283,9 +1393,13 @@ function importConfig(inp) {
   inp.value = '';
   if (!f) return;
   IMPORTED = f.name;
-  document.getElementById('s1-name').value = SAMPLE_IMPORT.name;
-  document.getElementById('s1-repo').value = SAMPLE_IMPORT.repo;
-  repoChanged();                                  // a new repository: connect again
+  // The name and the repository are filled only when empty: what the user typed wins.
+  IMPORT_KEPT = [];
+  var nameEl = document.getElementById('s1-name'), repoEl = document.getElementById('s1-repo');
+  if (!nameEl.value.trim()) nameEl.value = SAMPLE_IMPORT.name;
+  else if (nameEl.value.trim() !== SAMPLE_IMPORT.name) IMPORT_KEPT.push('project name');
+  if (!repoEl.value.trim()) { repoEl.value = SAMPLE_IMPORT.repo; repoChanged(); }   // a new repository: connect again
+  else if (repoEl.value.trim() !== SAMPLE_IMPORT.repo) IMPORT_KEPT.push('repository');
   // Step 2: one card per core. Their files are read from the repository once it is connected.
   CORES = []; _coreSeq = 0;
   SAMPLE_IMPORT.cores.forEach(function(c) { addCore(c.name); });
@@ -1308,10 +1422,12 @@ function importConfig(inp) {
       });
       groups.appendChild(grp);
     });
+    collapseLayer(block);                          // a real config lists dozens of components
     document.getElementById('arch-tree').appendChild(block);
   });
-  document.getElementById('import-btn-label').textContent = 'Import another';
   renderImportReport();
+  // Already connected: check the config against that repository - the one the project uses.
+  if (!document.getElementById('branch-field').classList.contains('hidden')) checkImportAgainstRepo();
 }
 
 // Test Connection found the repository: check the import against the branch.
@@ -1363,26 +1479,79 @@ function codeText(t) {
   }).join('');
 }
 
-var IMPORT_LEVEL = { filled: ['check_circle', '#00a572'], check: ['error', '#b45309'], skipped: ['block', '#74777d'] };
-function renderImportReport() {
-  var box = document.getElementById('import-report');
-  if (!IMPORTED) { box.classList.add('hidden'); return; }
-  var items = importItems();
-  var n = function(level) { return items.filter(function(i) { return i[0] === level; }).length; };
-  var branch = document.getElementById('s1-branch').value;
-  var state = IMPORT_CHECKING ? ' · checking the paths against branch ' + escHtml(branch || 'main') + '…'
-    : IMPORT_CHECKED ? '' : ' · paths are checked after Test Connection';
-  box.innerHTML = '<p style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#44474c;margin-bottom:8px;">'
-    + '<span style="color:#0b1c30;font-weight:600;">' + escHtml(IMPORTED) + '</span>'
-    + ' · ' + n('filled') + ' filled · ' + n('check') + ' to check · ' + n('skipped') + ' not used' + state + '</p>'
-    + '<ul style="display:grid;gap:6px;">' + items.map(function(i) {
-        var lv = IMPORT_LEVEL[i[0]];
-        return '<li style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#0b1c30;">'
-          + '<span class="material-symbols-outlined sym-fill" style="font-size:14px;color:' + lv[1] + ';flex-shrink:0;margin-top:1px;">' + lv[0] + '</span>'
-          + '<span style="line-height:1.45;">' + codeText(i[1]) + '</span></li>';
-      }).join('') + '</ul>';
-  box.classList.remove('hidden');
+var IMPORT_LEVEL = {
+  check:   ['error',        '#b45309', 'Needs your attention'],
+  filled:  ['check_circle', '#00a572', 'Filled in'],
+  skipped: ['block',        '#74777d', 'Not used'],
+};
+// Where the wizard deals with what a report item is about.
+function importWhere(t) {
+  if (/^Project/.test(t)) return 'Step 1';
+  if (/^Core|cores'/.test(t)) return 'Step 2 · Cores';
+  if (/^Architecture/.test(t)) return 'Step 3 · Architecture';
+  if (/^`clang|^Document/.test(t)) return 'Step 5 · Review';
+  return '';
 }
+var MONO = 'font-family:\'JetBrains Mono\',monospace;';
+function importBtn(label, icon, onclick, primary) {
+  return '<button type="button" onclick="' + onclick + '" style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:.5rem;background:#fff;cursor:pointer;flex-shrink:0;'
+    + MONO + 'font-size:11px;font-weight:600;border:1px solid ' + (primary ? '#0058be;color:#0058be;' : '#c4c6cd;color:#44474c;') + '">'
+    + '<span class="material-symbols-outlined" style="font-size:14px;">' + icon + '</span>' + label + '</button>';
+}
+// Step 1's import: one row - an invitation before an import, a summary after it.
+function renderImportReport() {
+  var row = document.getElementById('import-row');
+  if (!IMPORTED) {
+    row.innerHTML = '<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border:1px dashed #c4c6cd;border-radius:.75rem;background:#fff;">'
+      + '<span class="material-symbols-outlined text-secondary" style="font-size:18px;flex-shrink:0;">settings_suggest</span>'
+      + '<div style="flex:1;min-width:0;"><p style="font-size:14px;color:#0b1c30;">Have a config file? <span style="color:#44474c;">Optional</span></p>'
+      + '<p style="font-size:11px;color:#44474c;margin-top:2px;">Fills the cores and the architecture from the config <span style="' + MONO + '">analyzer.py onboard --config</span> reads. The access token is never read from it.</p></div>'
+      + importBtn('Import config', 'upload_file', "document.getElementById('import-file').click()", true)
+      + '</div>';
+    return;
+  }
+  var items = importItems();
+  var of = function(level) { return items.filter(function(i) { return i[0] === level; }); };
+  var where = {};
+  of('check').forEach(function(i) { var w = (importWhere(i[1]) || 'Other').split(' · ').pop(); where[w] = (where[w] || 0) + 1; });
+  var whereText = Object.keys(where).map(function(w) { return where[w] + ' in ' + w; }).join(', ');
+  var branch = document.getElementById('s1-branch').value;
+  var state = IMPORT_CHECKING ? '<span style="color:#44474c;">checking paths on ' + escHtml(branch || 'main') + '…</span>'
+    : IMPORT_CHECKED ? '' : '<span style="color:#44474c;">paths are checked after Test Connection</span>';
+  var n = of('check').length;
+  row.innerHTML = '<div style="padding:12px 16px;border:1px solid #c4c6cd;border-radius:.75rem;background:#fff;">'
+    + '<div style="display:flex;align-items:center;gap:12px;">'
+    + '<span class="material-symbols-outlined text-secondary" style="font-size:18px;flex-shrink:0;">description</span>'
+    + '<div style="flex:1;min-width:0;">'
+    + '<p style="' + MONO + 'font-size:12px;font-weight:600;color:#0b1c30;">' + escHtml(IMPORTED) + '</p>'
+    + '<p style="display:flex;flex-wrap:wrap;gap:2px 12px;margin-top:2px;font-size:11px;">'
+    + '<span style="color:#00a572;">✓ ' + of('filled').length + ' filled</span>'
+    + (n ? '<span style="color:#b45309;">⚠ ' + n + ' need' + (n === 1 ? 's' : '') + ' attention' + (whereText ? ' (' + whereText + ')' : '') + '</span>' : '')
+    + (of('skipped').length ? '<span style="color:#74777d;">' + of('skipped').length + ' not used</span>' : '')
+    + state + '</p></div>'
+    + importBtn('View details', 'list_alt', 'openImportModal()', false)
+    + importBtn('Replace', 'swap_horiz', "document.getElementById('import-file').click()", false)
+    + '</div>'
+    + (IMPORT_KEPT.length ? '<p style="margin:8px 0 0 30px;font-size:11px;color:#44474c;">Kept your ' + IMPORT_KEPT.join(' and ') + '; the config\'s were not used.</p>' : '')
+    + '</div>';
+  // The popup: what needs attention first, then what was filled, then what was not used.
+  document.getElementById('import-modal-title').textContent = 'What ' + IMPORTED + ' filled in';
+  document.getElementById('import-modal-body').innerHTML = ['check', 'filled', 'skipped'].map(function(level) {
+    var list = of(level);
+    if (!list.length) return '';
+    var lv = IMPORT_LEVEL[level];
+    return '<section><p style="margin-bottom:8px;' + MONO + 'font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#44474c;">' + lv[2] + ' · ' + list.length + '</p>'
+      + '<ul style="display:grid;gap:8px;">' + list.map(function(i) {
+          return '<li style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#0b1c30;">'
+            + '<span class="material-symbols-outlined sym-fill" style="font-size:14px;color:' + lv[1] + ';flex-shrink:0;margin-top:1px;">' + lv[0] + '</span>'
+            + '<span style="flex:1;line-height:1.45;">' + codeText(i[1]) + '</span>'
+            + '<span style="flex-shrink:0;' + MONO + 'font-size:9px;color:#74777d;white-space:nowrap;margin-top:1px;">' + importWhere(i[1]) + '</span></li>';
+        }).join('') + '</ul></section>';
+  }).join('');
+}
+function openImportModal()  { document.getElementById('import-modal').style.display = 'flex'; }
+function closeImportModal() { document.getElementById('import-modal').style.display = 'none'; }
+renderImportReport();
 
 addCore('Core1');
 
@@ -1395,10 +1564,7 @@ function toggleLayer(head) {
     body.className = 'layer-body';
     body.innerHTML = '<div class="groups-container"></div>'
       + '<button onclick="addGroup(this)" class="add-group-btn"><span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Group</button>'
-      + '<div class="inc-paths-section"><div class="inc-paths-row"><div class="inc-paths-label" title="External include paths for this layer">Lib Paths</div>'
-      + '<div class="inc-paths-content"><div class="ext-paths-list"></div>'
-      + '<button onclick="addExtPath(this)" class="inc-add-btn"><span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle;">add</span> Add path</button>'
-      + '</div></div></div>';
+      + libPathLink();
     block.appendChild(body);
     icon.textContent = 'keyboard_arrow_down';
     return;
@@ -1406,7 +1572,68 @@ function toggleLayer(head) {
   var open = icon.textContent.trim() === 'keyboard_arrow_down';
   body.style.display = open ? 'none' : '';
   icon.textContent = open ? 'keyboard_arrow_right' : 'keyboard_arrow_down';
+  block.classList.toggle('collapsed', open);
 }
+function collapseLayer(block) {
+  var body = block.querySelector('.layer-body');
+  if (body) body.style.display = 'none';
+  block.querySelector('.layer-head .material-symbols-outlined').textContent = 'keyboard_arrow_right';
+  block.classList.add('collapsed');
+}
+
+// Lib paths are optional: a link until the layer has one.
+function libPathLink() {
+  return '<button onclick="openLibPaths(this)" class="add-group-btn" style="color:#74777d;" title="External include paths (-I flags) for this layer.">'
+    + '<span class="material-symbols-outlined" style="font-size:12px;">add</span> Lib path <span style="font-weight:400;">(optional)</span></button>';
+}
+function openLibPaths(btn) {
+  var sec = document.createElement('div');
+  sec.className = 'inc-paths-section';
+  sec.innerHTML = '<div class="inc-paths-row"><div class="inc-paths-label" title="External include paths (-I flags) for this layer.">Lib Paths</div>'
+    + '<div class="inc-paths-content"><div class="ext-paths-list"></div>'
+    + '<button onclick="addExtPath(this)" class="inc-add-btn"><span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle;">add</span> Add path</button>'
+    + '</div></div>';
+  btn.replaceWith(sec);
+  addExtPath(sec.querySelector('.inc-add-btn'));
+}
+
+// A layer's head says what it holds, so it can stay collapsed.
+function refreshLayerSummaries() {
+  document.querySelectorAll('#arch-tree .layer-block').forEach(function(b) {
+    var g = b.querySelectorAll('.tree-group').length, c = b.querySelectorAll('.tree-comp-block').length;
+    var t = '· ' + g + ' group' + (g !== 1 ? 's' : '') + ' · ' + c + ' component' + (c !== 1 ? 's' : '');
+    var s = b.querySelector('.layer-summary');
+    if (s && s.textContent !== t) s.textContent = t;      // unchanged text: no new mutation
+  });
+}
+new MutationObserver(refreshLayerSummaries).observe(document.getElementById('arch-tree'), { childList: true, subtree: true });
+
+// One click removes a whole layer or group: keep it, so it can be undone for a while.
+var LAST_REMOVED = null, _undoTimer = null;
+function removeWithUndo(el, label, assignments) {
+  LAST_REMOVED = { el: el, parent: el.parentNode, next: el.nextSibling, label: label,
+                   assignments: assignments || Object.assign({}, fileAssignments) };
+  el.remove();
+  renderUndo();
+  clearTimeout(_undoTimer);
+  _undoTimer = setTimeout(function() { LAST_REMOVED = null; renderUndo(); }, 10000);
+}
+function undoRemove() {
+  if (!LAST_REMOVED) return;
+  LAST_REMOVED.parent.insertBefore(LAST_REMOVED.el, LAST_REMOVED.next);
+  fileAssignments = LAST_REMOVED.assignments;
+  var empty = document.getElementById('arch-empty');
+  if (empty) empty.style.display = 'none';
+  LAST_REMOVED = null;
+  renderUndo();
+}
+function renderUndo() {
+  var bar = document.getElementById('undo-bar');
+  if (!LAST_REMOVED) { bar.style.display = 'none'; return; }
+  bar.querySelector('.undo-label').textContent = LAST_REMOVED.label;
+  bar.style.display = 'flex';
+}
+function plural(n, w) { return n + ' ' + w + (n !== 1 ? 's' : ''); }
 
 function addGroup(btn) {
   var block    = btn.closest('.layer-block');
@@ -1453,7 +1680,9 @@ function confirmAddGroup(btn) {
 }
 
 function removeGroup(btn) {
-  btn.closest('.tree-group').remove();
+  var g = btn.closest('.tree-group');
+  var name = ((g.querySelector('.tree-group-row .flex-1') || {}).textContent || 'group').trim();
+  removeWithUndo(g, 'Removed group ' + name + ' (' + plural(g.querySelectorAll('.tree-comp-block').length, 'component') + ')');
 }
 
 var _compTarget = null;
@@ -1556,11 +1785,12 @@ function confirmAddComponent() {
 
 function removeComponent(btn) {
   var block = btn.closest('.tree-comp-block');
+  var before = Object.assign({}, fileAssignments);
   // Unregister all files owned by this component
   block.querySelectorAll('.file-row[data-filename]').forEach(function(row) {
     delete fileAssignments[row.dataset.filename];
   });
-  block.remove();
+  removeWithUndo(block, 'Removed component ' + (block.dataset.compName || ''), before);
 }
 
 function toggleCompFiles(btn) {
@@ -1648,7 +1878,9 @@ function cancelAddLayer() {
   document.getElementById('new-layer-path').value = '';
 }
 function removeLayer(btn) {
-  btn.closest('.layer-block').remove();
+  var b = btn.closest('.layer-block');
+  var name = (b.querySelector('.layer-head .font-bold') || {}).textContent || 'layer';
+  removeWithUndo(b, 'Removed layer ' + name + ' (' + plural(b.querySelectorAll('.tree-comp-block').length, 'component') + ')');
   if (!document.querySelector('#arch-tree .layer-block')) {
     var empty = document.getElementById('arch-empty');
     if (empty) empty.style.display = '';
@@ -1662,7 +1894,10 @@ function layerEl(name, path, coreId) {
     + '<span class="material-symbols-outlined" style="font-size:15px;color:#44474c;">keyboard_arrow_down</span>'
     + '<div class="flex-1 min-w-0">'
     + '<div class="font-label-md font-bold text-on-surface" style="font-size:13px;line-height:1.3;">' + escHtml(name) + '</div>'
+    + '<div style="display:flex;align-items:baseline;gap:6px;min-width:0;">'
     + '<span class="layer-path-display' + (path ? '' : ' empty') + '" onclick="event.stopPropagation();startEditPath(this)">' + (path ? escHtml(path) : 'Set root path…') + '</span>'
+    + '<span class="layer-summary" style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#74777d;white-space:nowrap;"></span>'
+    + '</div>'
     + '</div>'
     + '<label class="layer-core" onclick="event.stopPropagation()">Core'
     + '<select class="layer-core-select">' + coreOptions(coreId) + '</select></label>'
@@ -1671,11 +1906,7 @@ function layerEl(name, path, coreId) {
     + '<div class="layer-body">'
     + '<div class="groups-container"></div>'
     + '<button onclick="addGroup(this)" class="add-group-btn"><span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Group</button>'
-    + '<div class="inc-paths-section"><div class="inc-paths-row">'
-    + '<div class="inc-paths-label" title="External include paths (-I flags) specific to this layer.">Lib Paths</div>'
-    + '<div class="inc-paths-content"><div class="ext-paths-list"></div>'
-    + '<button onclick="addExtPath(this)" class="inc-add-btn"><span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle;">add</span> Add path</button>'
-    + '</div></div></div>'
+    + libPathLink()
     + '</div>';
   return block;
 }
@@ -1902,6 +2133,7 @@ function nameInitials(m) {
 }
 
 function renderMemberList() {
+  if (cur === 4) setTimeout(renderStepState, 0);
   var list = document.getElementById('member-list');
   if (!members.length) { list.innerHTML = ''; return; }
   list.innerHTML = members.map(function(m) {
@@ -1962,7 +2194,60 @@ function rTeamRow(name, email, role, pending, isYou) {
     + '</div>';
 }
 
+// Step 5, first: is the project ready - `error` blocks creating it, `warn` is what it would miss.
+function renderReadiness(items) {
+  var errors = items.filter(function(i) { return i[0] === 'error'; }).length;
+  var warns  = items.filter(function(i) { return i[0] === 'warn'; }).length;
+  var LOOK = { ok: ['check_circle', '#00a572'], warn: ['error', '#b45309'], error: ['cancel', '#ba1a1a'] };
+  var MONO = 'font-family:\'JetBrains Mono\',monospace;';
+  document.getElementById('r-ready').innerHTML = '<div style="border:1px solid ' + (errors ? '#ba1a1a' : '#c4c6cd') + ';border-radius:.75rem;background:#fff;overflow:hidden;">'
+    + '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #c4c6cd;background:' + (errors ? '#ffdad6' : '#f0fff9') + ';">'
+    + '<span class="material-symbols-outlined sym-fill" style="font-size:18px;color:' + (errors ? '#ba1a1a' : '#00a572') + ';">' + (errors ? 'block' : 'rocket_launch') + '</span>'
+    + '<div><p style="font-size:14px;font-weight:600;color:' + (errors ? '#410002' : '#0b1c30') + ';">'
+    + (errors ? (errors === 1 ? 'One thing' : errors + ' things') + ' to fix before the project can be created' : 'Ready to create') + '</p>'
+    + (warns ? '<p style="font-size:11px;color:#44474c;margin-top:2px;">' + (warns === 1 ? 'One thing' : warns + ' things') + ' it would miss - fine to create now and fix later.</p>' : '')
+    + '</div></div>'
+    + items.map(function(i) {
+        var lk = LOOK[i[0]];
+        return '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 16px;border-top:1px solid #eff4ff;">'
+          + '<span class="material-symbols-outlined sym-fill" style="font-size:16px;color:' + lk[1] + ';flex-shrink:0;margin-top:1px;">' + lk[0] + '</span>'
+          + '<div style="flex:1;min-width:0;"><p style="font-size:12px;color:#0b1c30;">' + escHtml(i[1]) + '</p>'
+          + (i[2] ? '<p style="font-size:11px;color:#44474c;margin-top:2px;">' + codeText(i[2]) + '</p>' : '') + '</div>'
+          + (i[3] && i[0] !== 'ok' ? '<button onclick="goToStep(' + i[3] + ')" style="flex-shrink:0;background:none;border:none;cursor:pointer;' + MONO + 'font-size:11px;font-weight:600;color:#0058be;">Fix in step ' + i[3] + '</button>' : '')
+          + '</div>';
+      }).join('')
+    + '</div>';
+}
+
 function populateReview() {
+  // ── Readiness ──
+  var ready = [];
+  var s1 = issuesFor(1), s2 = issuesFor(2), s3 = issuesFor(3);
+  var nLayers = document.querySelectorAll('#arch-tree .layer-block').length;
+  var nComps = document.querySelectorAll('#arch-tree .tree-comp-block').length;
+  ready.push(s1.length ? ['error', 'Project and repository', s1.join(' · '), 1]
+    : ['ok', 'Repository connected · branch ' + (document.getElementById('s1-branch').value || 'main')]);
+  ready.push(s3.length ? ['error', 'Architecture', s3.join(' · '), 3] : ['ok', plural(nLayers, 'layer') + ', ' + plural(nComps, 'component')]);
+  ready.push(s2.length ? ['error', 'Cores', s2.join(' · '), 2]
+    : CORES.length ? ['ok', plural(CORES.length, 'core') + ': ' + CORES.map(function(c) { return c.name; }).join(', ')]
+      : ['warn', 'No cores', 'Every layer is parsed without macros or a data dictionary.', 2]);
+  var pending = [], pendingMacros = {};
+  CORES.forEach(function(c) {
+    var e = c.expected || {};
+    ['macroFile', 'ddFile', 'ccFile'].forEach(function(k) {
+      if (e[k] && !c[k]) { pending.push(c.name + ': ' + e[k]); if (k === 'macroFile') pendingMacros[c.id] = true; }
+    });
+  });
+  if (pending.length) ready.push(['warn', plural(pending.length, 'file') + ' the config names ' + (pending.length === 1 ? 'is' : 'are') + ' not uploaded', pending.join(' · '), 2]);
+  var noMacros = CORES.filter(function(c) {
+    return !pendingMacros[c.id] && (c.macroMode === 'manual' ? !c.macroText.trim() : !c.macroFile);
+  }).map(function(c) { return c.name; });
+  if (noMacros.length) ready.push(['warn', noMacros.join(', ') + ': no macros', 'Its layers parse without their -D flags, so #if branches may be read the wrong way.', 2]);
+  var noCore = CORES.length ? layersUsing('') : [];
+  if (noCore.length) ready.push(['warn', noCore.join(', ') + ': no core', 'Parsed without macros or a data dictionary.', 3]);
+  ready.push(['ok', members.length ? 'You and ' + plural(members.length, 'member') : 'Just you - people can be added later from Team']);
+  renderReadiness(ready);
+
   // ── Project & Repository ──
   document.getElementById('r-name').textContent   = document.getElementById('s1-name').value || '—';
   document.getElementById('r-repo').textContent   = document.getElementById('s1-repo').value || '—';
@@ -2129,6 +2414,25 @@ function initProject() {
   }, 900);
 }
 
+function openToken() {
+  document.getElementById('token-link').classList.add('hidden');
+  document.getElementById('token-field').classList.remove('hidden');
+  document.getElementById('s1-token').focus();
+}
+function toggleRoles(btn) {
+  var l = document.getElementById('role-legend');
+  var open = l.style.display === 'none';
+  l.style.display = open ? '' : 'none';
+  btn.querySelector('.material-symbols-outlined').textContent = open ? 'expand_less' : 'help';
+}
+function toggleReviewTree(btn) {
+  var t = document.getElementById('r-arch-tree');
+  var open = t.style.display === 'none';
+  t.style.display = open ? '' : 'none';
+  btn.querySelector('.material-symbols-outlined').textContent = open ? 'expand_less' : 'expand_more';
+  btn.querySelector('span:last-child').textContent = open ? 'Hide the layers' : 'Show every layer, group and component';
+}
+
 function toggleToken() {
   var inp  = document.getElementById('s1-token');
   var icon = document.getElementById('token-eye');
@@ -2178,6 +2482,7 @@ function testConnection() {
     sel.value = branches.includes('main') ? 'main' : '';
 
     document.getElementById('branch-field').classList.remove('hidden');
+    refreshStepState();
     statusEl.style.color = '#00a572';
     statusEl.innerHTML = '<span style="vertical-align:middle;font-size:14px;margin-right:3px;" class="material-symbols-outlined sym-fill">check_circle</span> Connected · ' + branches.length + ' branches found';
     if (IMPORTED && !IMPORT_CHECKED) checkImportAgainstRepo();   // the imported config, against this branch
