@@ -482,6 +482,8 @@ class FlowchartApplied(NamedTuple):
     #: and so reported False on every API save: the API has no output tree, the PNG was never
     #: produced, and the export blocked on a job the caller had just been told was not pending.
     render_pending: bool = False
+    #: `{node_id: label}` as the picture carried it before this save, for each node saved.
+    previous: Dict[str, str] = {}
 
 
 def apply_flowchart_overrides(conn,
@@ -600,7 +602,8 @@ def apply_flowchart_overrides(conn,
     return FlowchartApplied(version_id=version_id, flowchart_id=flowchart_id, slot_shape=shape,
                             applied=applied, first_edits=first_edits, redrawn=redrawn,
                             render_pending=bool(render_jobs) and not drew_inline,
-                            views_derived=views, render_jobs=render_jobs)
+                            views_derived=views, render_jobs=render_jobs,
+                            previous={n: current.get(n, "") for n in applied})
 
 
 # ---------------------------------------------------------------------------
@@ -613,6 +616,8 @@ class BehaviourApplied(NamedTuple):
     llm_text: str
     first_edit: bool
     views_derived: Sequence[str]
+    #: The row's bullets before this save, one per line -- what the document printed.
+    previous_text: str = ""
 
 
 def apply_behaviour_override(conn,
@@ -663,6 +668,7 @@ def apply_behaviour_override(conn,
         raise SlotUnknown("no behaviour row for %s called by %s in version %s"
                           % (function_id, external_caller_id, version_id))
     rel_path, content, row = found
+    previous = p3.join_bullets(row.get("behaviorDescription"))
 
     first = _upsert_override(conn, version_id, slot.BEHAVIOUR_DESCRIPTION, key,
                              human_text=text,
@@ -684,7 +690,7 @@ def apply_behaviour_override(conn,
     return BehaviourApplied(version_id=version_id, slot_key=key,
                             bullets=p3.split_bullets(text),
                             llm_text=(stored.llm_text or "") if stored else "",
-                            first_edit=first, views_derived=views)
+                            first_edit=first, views_derived=views, previous_text=previous)
 
 
 def _flowchart_entry(content: str, flowchart_id: str) -> Dict[str, Any]:
