@@ -106,6 +106,15 @@ def _connection():
         raise HTTPException(status_code=503, detail=str(exc))
 
 
+def _swe4_deriver(cx, models):
+    """`derive=` for a save: the saved component's SWE.4 specs, and the UT export built from
+    them, re-derived from the stored rows in this transaction (`REQ-CS-04`) -- when the version
+    has SWE.4 output. One query of row paths when it has none, which is every version the web app
+    generates. See `review.swe4_rederive`."""
+    from review.swe4_rederive import make_save_deriver
+    return make_save_deriver(cx, models)
+
+
 def _as_http(exc: Exception) -> HTTPException:
     """An `OverrideError` carries the status the API should return, so the mapping is one line
     rather than a table here that could drift from the service's own view of it."""
@@ -396,7 +405,8 @@ def update_slot(
             models = svc.ModelAccess(version_id=version_id, project_id=project_id)
             out = svc.apply_override(cx, version_id, body.slot_kind.value,
                                      _key(body.slot_kind.value, body.slot_key), body.text,
-                                     models=models, user_id=current_user.id)
+                                     models=models, user_id=current_user.id,
+                                     derive=_swe4_deriver(cx, models))
         except Exception as exc:
             raise _as_http(exc)
     return {"slotKind": out.slot_kind, "slotKey": out.slot_key, "humanText": out.human_text,
@@ -435,8 +445,11 @@ def update_flowchart_labels(
     svc = _service()
     with _connection().begin() as cx:
         try:
+            # Read only if the version has SWE.4 specs to re-derive: a label is not a model field.
+            models = svc.ModelAccess(version_id=version_id, project_id=project_id)
             out = svc.apply_flowchart_overrides(cx, version_id, flowchart_id, dict(body.labels),
-                                                user_id=current_user.id)
+                                                user_id=current_user.id,
+                                                derive=_swe4_deriver(cx, models))
         except Exception as exc:
             raise _as_http(exc)
     return {"flowchartId": out.flowchart_id, "applied": list(out.applied),
@@ -493,10 +506,9 @@ def undo_slot(
     svc = _service()
     with _connection().begin() as cx:
         try:
-            svc.undo_override(cx, version_id, slot_kind.value, key,
-                              models=svc.ModelAccess(version_id=version_id,
-                                                     project_id=project_id),
-                              user_id=current_user.id)
+            models = svc.ModelAccess(version_id=version_id, project_id=project_id)
+            svc.undo_override(cx, version_id, slot_kind.value, key, models=models,
+                              user_id=current_user.id, derive=_swe4_deriver(cx, models))
             row = svc.get_override(cx, version_id, slot_kind.value, key)
             payload = _row(row) if row else None
         except Exception as exc:

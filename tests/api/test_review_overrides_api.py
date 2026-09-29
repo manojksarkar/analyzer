@@ -254,6 +254,110 @@ class TestFlowchartLabels:
         assert r.status_code == 404
 
 
+class TestASaveReDerivesTheSwe4Specs:
+    """REQ-CS-04 over HTTP. A version with SWE.4 output -- one generated from the CLI -- has the
+    saved component's specs and UT export rebuilt from the stored rows, in the save's request.
+    `review_db` has none, which is every web-app version: there the save re-derives nothing and
+    `viewsDerived` stays empty (the tests above)."""
+
+    CFG = {"entry": "n0", "exits": ["n4"],
+           "nodes": [{"id": i, "type": t, "label": lab, "rawCode": raw, "line": 1, "endLine": 1}
+                     for i, t, lab, raw in (
+                         ("n0", "START", "Start: doThing", ""),
+                         ("n1", "DECISION", "Check: ready?", "if (ready)"),
+                         ("n2", "RETURN", "Return 1", "return 1;"),
+                         ("n3", "RETURN", "Return 0", "return 0;"),
+                         ("n4", "END", "End", ""))],
+           "edges": [{"source": a, "target": b, "label": lab} for a, b, lab in (
+               ("n0", "n1", None), ("n1", "n2", "Yes"), ("n1", "n3", "No"),
+               ("n2", "n4", None), ("n3", "n4", None))]}
+
+    @pytest.fixture
+    def swe4_db(self, review_db):
+        from sqlalchemy import update
+        from core import model_store
+        from review import export_guard as g
+        from views import ut_export
+        from views.test_specs import build
+        from views.test_steps import cfgs_from_entries
+
+        fn = {"qualifiedName": "ns::doThing", "visibility": "public", "returnType": "int",
+              "location": {"file": "Core.cpp", "line": 1}, "parameters": [], "callsIds": [],
+              "calledByIds": [], "interfaceId": "IF_CORE_01", "description": "Does the thing."}
+        units = {"Sample-Core|Core": {"name": "Core", "fileName": "Core.cpp",
+                                      "functionIds": [FID]}}
+        components = {"Sample-Core": {"units": ["Sample-Core|Core"]}}
+        entry = {"name": "ns::doThing", "functionKey": FID, "cfg": self.CFG,
+                 "flowchart": "digraph G { generated }"}
+        context = {"allowedComponents": ["Sample-Core"], "layerComponents": None,
+                   "views": {"functionTestSpecs": True, "dynamicBehaviourSpecs": True},
+                   "layers": {}}
+        config = {"views": context["views"], "layers": {},
+                  "_analyzerAllowedComponents": ["Sample-Core"]}
+        specs = build({"functions": {FID: fn}, "globalVariables": {}, "units": units,
+                       "components": components, "dataDictionary": {}},
+                      config, cfgs_from_entries([[entry]]), verbose=False)
+        at = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+        with review_db.begin() as cx:
+            model_store.clear_version(cx, VERSION)
+            model_store.persist_model(cx, PROJECT, VERSION, functions={FID: fn}, globals={},
+                                      datadict={}, edges={"typeUsers": {}, "macroUsers": {}},
+                                      hashes={}, units=units, components=components,
+                                      summaries={})
+            cx.execute(update(s.version_output_files)
+                       .where(s.version_output_files.c.rel_path == "Sample/flowcharts/Core.json")
+                       .values(content=json.dumps([entry])))
+            for path, content in {
+                    "Sample/test_specs.json": json.dumps(specs, indent=2),
+                    "Sample/ut_export.json": json.dumps(ut_export.build(specs, {}, config),
+                                                        indent=2),
+                    "Sample/_derivations.json": g.record_text({"views": {
+                        view: {"at": at.isoformat(), "components": ["sample-core"],
+                               "context": context}
+                        for view in ("testSpecs", "utExport")}})}.items():
+                cx.execute(insert(s.version_output_files).values(
+                    version_id=VERSION, rel_path=path, content=content, group_name="Sample"))
+        return review_db
+
+    @staticmethod
+    def _spec(db):
+        with db.connect() as cx:
+            doc = json.loads(cx.execute(
+                select(s.version_output_files.c.content)
+                .where(s.version_output_files.c.rel_path == "Sample/test_specs.json")).scalar())
+        return doc["Sample-Core|Core"]["functions"][0]
+
+    def test_the_fixture_transcribes_the_decision(self, swe4_db):
+        assert "Check whether ready." in [st["text"] for st in self._spec(swe4_db)["testSteps"]]
+
+    def test_a_label_save_rebuilds_the_test_steps(self, client, swe4_db, auth_header):
+        r = client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
+                       json={"labels": {"n1": "Check: the device is ready?"}})
+        assert r.status_code == 200, r.text
+        assert r.json()["viewsDerived"] == ["testSpecs", "utExport"]
+        steps = [st["text"] for st in self._spec(swe4_db)["testSteps"]]
+        assert "Check whether the device is ready." in steps
+
+    def test_a_description_save_rebuilds_the_copy_in_the_spec(self, client, swe4_db,
+                                                              auth_header):
+        r = client.put(BASE + "/overrides/slot", headers=auth_header,
+                       json={"slot_kind": "description", "slot_key": FID,
+                             "text": "Reports whether the device is ready."})
+        assert r.status_code == 200, r.text
+        assert r.json()["viewsDerived"] == ["testSpecs", "utExport"]
+        assert self._spec(swe4_db)["description"] == "Reports whether the device is ready."
+
+    def test_an_undo_rebuilds_them_too(self, client, swe4_db, auth_header):
+        client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
+                   json={"labels": {"n1": "Check: the device is ready?"}})
+        from review import slot
+        r = client.delete(BASE + "/overrides/slot", headers=auth_header,
+                          params={"slot_kind": "nodeLabel",
+                                  "slot_key": slot.for_node(FID, "n1")})
+        assert r.status_code == 200, r.text
+        assert "Check whether ready." in [st["text"] for st in self._spec(swe4_db)["testSteps"]]
+
+
 class TestBehaviourRow:
     def test_the_bullet_list_round_trips(self, client, review_db, auth_header):
         r = client.put(BASE + "/overrides/behaviour", headers=auth_header,
