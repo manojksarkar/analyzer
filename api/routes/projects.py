@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Any, Optional
 
@@ -114,6 +114,17 @@ def create_project(
     db: InMemoryDatabase = Depends(get_db),
 ):
     now = datetime.now(UTC)
+    # Every team member needs an account, checked BEFORE anything is written: a membership row
+    # references users.id, and an unknown address (stored as "pending_<email>") failed that
+    # foreign key after the project row existed -- a 500 that left a half-created project.
+    unknown = [e for e in ((t.get("email") or "").strip() for t in body.team)
+               if e and not db.users.get_by_email(e)]
+    if unknown:
+        raise HTTPException(status_code=404, detail={
+            "code": "USER_NOT_FOUND",
+            "message": f"No user account uses {', '.join(unknown)}. Only people who already have "
+                       f"an account can be added to a project.",
+            "status": 404})
     # Stash the repo access token inside build_config; _project_view never echoes
     # build_config, so the token is not exposed in any API response.
     build_config = dict(body.build_config)
@@ -150,15 +161,20 @@ def create_project(
         user_id=current_user.id, role="admin", status="active",
         invited_by=current_user.id, invited_at=now, joined_at=now,
     ))
-    # Add selected developers as active members
+    # Add selected developers as active members -- once each: (project, user) is unique, so the
+    # creator listing themselves, or one person listed twice, was a 500 on the second row.
+    added = {current_user.id}
     for invite in body.team:
         email = (invite.get("email") or "").strip()
         if not email:
             continue
         user = db.users.get_by_email(email)
+        if user.id in added:
+            continue
+        added.add(user.id)
         db.members.add_member(ProjectMember(
             id=f"m{uuid.uuid4().hex[:8]}", project_id=project.id,
-            user_id=user.id if user else f"pending_{email}",
+            user_id=user.id,
             role=invite.get("role", "developer"),
             status="active", invited_by=current_user.id,
             invited_at=now, joined_at=now,
