@@ -208,9 +208,48 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-29e (**The SWE.3 page in the web app reads like the DOCX.** Branch `ui_v2`. Asked: "verify
+> if swe3 is coming in UI properly" → "fix it". Method: per document, `GET .../render` vs the DOCX of the same
+> version (tools/dump_docx.py), heading by heading, + a browser pass (errors, broken images).
+>
+> - **Matched already:** section structure, every image (byte-identical to the DOCX media), flowchart tables
+>   (functions, parts, Risk/Capacity/Input/Output Name), interface rows other than below.
+> - **Fixed in `api/services/doc_render.py`** (the render mirrors `engine/docx_exporter.py`):
+>   Introduction read `engine/config/config.json` (gone since the defaults became `config.defaults.json`) →
+>   Purpose/Scope were placeholders; now `render_config(version)` = `versions.resolved_config`, else
+>   defaults + local. Component heading + Component/Unit table said `Layer1.Lib` → `display_name` (`Lib`).
+>   Interface Data Type dropped parameter names (`int; int`) → `type name` (`_param_type_label`). Appendix
+>   number repeated in the title. A unit with no interface: header-only table (was "NA"). Flowchart
+>   Requirements line: description, else the function name (was "-").
+> - **Unit description** (Component/Unit table): with AI on, the DOCX's text is an LLM summary made ONLY at
+>   export (`get_unit_description`), so the page guessed from the functions. `_add_component_unit_table`
+>   now returns what it wrote; `export_docx` writes `output/<group>/unit_descriptions.json` (captured +
+>   persisted to `version_output_files` like every view file); the render reads it, falling back to the
+>   exporter's own join (trimmed with `...`). Versions made before this keep the fallback until re-run or
+>   re-exported.
+> - **Fixed after (user: "fix 1"):** `llm.abbreviationsPath` / `llm.domainContextPath` in config.defaults.json
+>   said `config/abbreviations.txt` / `config/domain.txt`; a relative path is read from the REPO root
+>   (`core/paths.project_root`) and both files live in `engine/config/` → the DOCX's 1.3 Terms was always the
+>   placeholder AND no description prompt carried the 3.14 domain brief (silently: a missing file = none).
+>   Now `engine/config/...`. The readers did not agree on the root either: DOCX/SWE.4 exporters + unit headers
+>   used the repo root, `model_deriver` (behaviour names) used `engine/` (so IT found the old path), and the
+>   description prompts (`llm_enrichment`, 4 sites) used the analyzed C++ repo's `base_path` (never found).
+>   All now use `llm_enrichment.analyzer_root()` = `core.paths.project_root`, like the domain brief and the
+>   web page. `tests/unit/test_config_default_paths.py` checks every relative file the defaults name and
+>   that every reader gets the same abbreviations. Same bug, NOT fixed: `llm.fewShotExamplesDir`
+>   (`few_shot_examples`) is joined to `base_path` (the C++ repo) while the examples are in
+>   `engine/few_shot_examples/` → description prompts have never had few-shot examples. NB the description cache (`llm_descriptions`) keys on source + callee hashes, not the prompt, so
+>   already-cached functions keep their un-anchored text until `llm.cacheVersion` is bumped (not done).
+>   A user's own config that copied the old paths needs the same change.
+> - **Open (not changed):** Flowchart "Part 1 of 2" slicing cuts a
+>   3-node chart through a box — in the DOCX too (engine flowchart). The review panel's section list
+>   (Introduction/Interfaces/Static/Dynamic) is not the document's.
+> - Tests: `tests/api/test_swe3_render_matches_docx.py`, `tests/unit/test_docx_unit_descriptions.py`.
+>   A full AI run on SampleCppProject is slow on this box (~15 s per function in phase 2).
+
 > Updated: 2026-09-29d (**Onboarding is per core, as the engine is: a project has cores (macros, data
-> dictionary, compile commands each) and every layer picks one.** Branch `ui_v2`, **UNCOMMITTED** (user:
-> "dont commit anything"). Design reference: `docs/ui-mockups/projects-empty.html` step 2/3/5.
+> dictionary, compile commands each) and every layer picks one.** Branch `ui_v2`, committed `7e1e0c7`,
+> `623d2ec`, `b85111b`. Design reference: `docs/ui-mockups/projects-empty.html` step 2/3/5.
 >
 > - **Model.** `build_config.cores = [{name, macros: {mode: upload, file_id, file_name} | {mode: manual,
 >   defines} | null, data_dictionary: {file_id, file_name} | null, compile_commands: {...} | null}]`;
@@ -5386,7 +5425,8 @@ and other calls are untouched):
 
 - **Domain anchoring (root-cause fix).** `load_domain_context(project_root,
   config)` reads a free-text brief from `config.llm.domainContextPath` (default
-  `config/domain.txt`; `#` lines are comments) and `_call_llm` **appends it to
+  `engine/config/domain.txt` — was `config/domain.txt`, which never resolved, until 2026-09-29;
+  `#` lines are comments) and `_call_llm` **appends it to
   the `system` message** — so the model is told the codebase's real domain and
   stops inventing unrelated vocabulary. The brief is memoized per path
   (`_get_domain_context`, project root resolved via `core.paths`) so the file is
