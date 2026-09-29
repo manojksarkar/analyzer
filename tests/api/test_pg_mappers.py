@@ -64,3 +64,18 @@ def test_renamed_columns_exist_in_schema():
     assert "version" in s.versions.c and "tag" not in s.versions.c
     assert "component" in s.documents.c and "group" not in s.documents.c
     assert "ord" in s.document_sections.c and "order" not in s.document_sections.c
+
+
+def test_version_warnings_come_from_the_run_report_and_are_never_written():
+    """The engine writes `versions.run_report`; the API only reads its warnings. Writing them
+    back from a Version read before the run finished would erase what the run reported."""
+    row = to_row(Version(id="v1", project_id="p1", tag="v1", commit_sha="abc", branch="main",
+                         description="", status="in_review", docs_count=3, created_by="u1",
+                         created_at=datetime.now(UTC), warnings=["stale"]))
+    assert "warnings" not in row and "run_report" not in row
+    row["run_report"] = {"status": "complete",
+                         "warnings": ["Layer1 / G / Ghost: `Layer1/Gone` is not in the checkout"]}
+    assert from_row(Version, row).warnings == ["Layer1 / G / Ghost: `Layer1/Gone` is not in the checkout"]
+    for report in (None, {}, {"warnings": None}, "not json"):
+        row["run_report"] = report
+        assert from_row(Version, row).warnings == []

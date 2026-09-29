@@ -116,6 +116,10 @@ class Version:
     base_path: Optional[str] = None
     project_name: Optional[str] = None
     parse_fingerprint: Optional[str] = None
+    # What the run that made this version warned about - a component path the checkout did not
+    # have, a dictionary it ran without. READ-ONLY: it comes from `versions.run_report`, which
+    # only the engine writes, so the API never writes it back (api/db/postgres/mappers.py).
+    warnings: list = field(default_factory=list)
 
 
 @dataclass

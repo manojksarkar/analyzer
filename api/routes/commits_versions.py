@@ -291,4 +291,6 @@ def _version_dict(v: Version) -> dict:
         "decision": getattr(v, "decision", None),
         "regenerated": getattr(v, "regenerated", None),
         "reused": getattr(v, "reused", None),
+        # What the run warned about (engine manifest, `versions.run_report.warnings`).
+        "warnings": list(getattr(v, "warnings", None) or []),
     }

@@ -33,11 +33,20 @@ _RENAMES: dict[type, dict[str, str]] = {
 }
 
 
+# Fields read from the database but never written by the API. `Version.warnings` is derived
+# from `versions.run_report`, the manifest only the engine writes: writing it back from an
+# object read before the run finished would erase what the run reported.
+_READ_ONLY: dict[type, set] = {Version: {"warnings"}}
+
+
 def to_row(obj: Any) -> dict:
     """A dataclass -> a dict of column values (only the domain's own fields)."""
     renames = _RENAMES.get(type(obj), {})
+    skip = _READ_ONLY.get(type(obj), set())
     row: dict[str, Any] = {}
     for f in dataclasses.fields(obj):
+        if f.name in skip:
+            continue
         val = getattr(obj, f.name)
         if f.name == "phases" and val is not None:            # AnalysisJob
             val = [dataclasses.asdict(p) for p in val]
@@ -58,4 +67,8 @@ def from_row(cls: Type, row: Any) -> Any:
         if f.name == "phases" and val is not None:            # AnalysisJob
             val = [AnalysisPhase(**p) for p in val]
         kwargs[f.name] = val
+    if cls is Version:
+        report = mapping.get("run_report")
+        warns = report.get("warnings") if isinstance(report, dict) else None
+        kwargs["warnings"] = [str(w) for w in warns] if isinstance(warns, list) else []
     return cls(**kwargs)

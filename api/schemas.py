@@ -182,6 +182,8 @@ class VersionView(BaseModel):
     docs_count: int
     created_by: str
     created_at: str
+    # What the run that made the version warned about (`versions.run_report.warnings`).
+    warnings: List[str] = []
 
 
 class VersionResponse(BaseModel):
