@@ -208,6 +208,35 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-29d (**Onboarding is per core, as the engine is: a project has cores (macros, data
+> dictionary, compile commands each) and every layer picks one.** Branch `ui_v2`, **UNCOMMITTED** (user:
+> "dont commit anything"). Design reference: `docs/ui-mockups/projects-empty.html` step 2/3/5.
+>
+> - **Model.** `build_config.cores = [{name, macros: {mode: upload, file_id, file_name} | {mode: manual,
+>   defines} | null, data_dictionary: {file_id, file_name} | null, compile_commands: {...} | null}]`;
+>   `architecture_layers[i].core = name | null`. `api/services/project_cores.py` reads it
+>   (`project_cores`), refuses bad ones at `POST /projects` (`core_problems`: no name, a name used twice
+>   case aside, a layer naming a core the project lacks - exact name, as `engine/core/config.validate_cores`
+>   -, a dictionary that is not .csv, compile commands not .json) and labels it for the view (`describe`).
+> - **Old projects:** `preprocessor_definitions` + `data_dictionary` read as ONE core `Core1` that every
+>   layer uses. No migration (JSON columns).
+> - **Run:** `pipeline_runner._write_project_config` writes `cfg.cores.<name>` (absolute upload paths; typed
+>   macros to `workspace/cores/<name>/macros.json`) and `layers.<L>.cores = [core]`; no `clang.macrosFile`
+>   any more. A job no longer defaults `data_dict_id` to the project's dictionary (it reaches the run
+>   through its core - the default would add a second, project-wide copy).
+> - **Uploads:** new kind `compile_commands` (.json, 100 MB limit). **Config import/export** reads and writes
+>   every core (`project.defines` may be `{core: [..]}`; a plain list = Core1); `compileCommands` as
+>   `{file, rootPrefix}` is read, `rootPrefix` skipped (worked out at run time).
+> - **Web:** wizard step 2 = `NewProjectPage/components/CoresStep.tsx` (one card per core; `Core` model and
+>   `followBranch`/`coreProblems`/`coreInput` in `helpers.ts`; layers point at a core by id, so a rename keeps
+>   them). Step 3: a Core select per layer + in Add Layer. Review: Cores card. Overview: per-core rows and each
+>   layer's core. `ProjectView` gains `cores` + `layer_cores`.
+> - **Verified:** pytest (core/import/dictionary suites 59 pass; full unit+api 3184 pass, 9 fail - all
+>   `test_doccheck_swe4.py` longdecl, untouched); web build/unit tests green, lint no new errors; browser
+>   run on 8010/5180: import a two-core config → hints per core, upload a dictionary, empty name refused,
+>   layers on their cores, create, Overview lists both cores.
+> - **Later (user):** a single-component run scope in the Run modal (the API already takes `type: component`).
+
 > Updated: 2026-09-29c (**Every component path is checked, from the wizard to the run, and a run stops
 > BEFORE the parse on a component that gets no file.** Branch `ui_v2`, local commits only. Asked by the
 > user: "without github url or project path how are we verifying everything?? … do everything, think
