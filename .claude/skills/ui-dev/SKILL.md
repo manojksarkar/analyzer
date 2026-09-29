@@ -142,10 +142,15 @@ Rules the spec's tests cannot enforce on the client:
 - **A flowchart is named by R11's `flowchartId`** — `flowchart_id` in R7's query and R8's body. It is
   not a node's `slotKey` (that is the flowchart id, a separator and the node id); the server
   answers 400 if one is sent.
-- **`text` is what the document prints.** `isOverridden` means a correction is in force; an orphaned one
-  (`isOrphaned`) is not, and its `humanText` is not on the page.
+- **One shape for a slot, from every route** (API spec §5 `Slot`): `text` is what the document
+  prints; `isOverridden` means a correction is in force; an orphaned one (`isOrphaned`) is not, and
+  its `humanText` is not on the page; `llmText` is what the LLM wrote. Render a slot from these
+  names whichever call returned it. **Offer Undo exactly where `canUndo` is `true`.**
 - **`shownIn: []` means no document prints that text** (in this scope the function is not published).
   Say so next to the field rather than hide it.
-- **After a save, refetch** — nothing is pushed. Before offering an export, read R9: `stale` or
-  `pendingRenders` means the Word file does not match the corrections yet.
+- **A save answers with the slot as it now is** (R8: each saved node, and the rebuilt `dot`) — show
+  that; no refetch is needed for the edited item. Nothing is pushed, so another reviewer's saves
+  appear on the next read; two saves of one slot: the later wins, and its `previousText` says what
+  it replaced. Before offering an export, read R9: `stale` or `pendingRenders` means the Word file
+  does not match the corrections yet.
 - **Draw flowcharts from their DOT**, not as Mermaid (the in-app view is not ported yet — `engine-flowchart`).

@@ -634,7 +634,9 @@ With each slot's id, current text, and whether it is overridden.
 
 ### REQ-API-02 — Read one slot's current text
 
-So the UI can confirm an update landed.
+So the UI can confirm an update landed, or open an editor on one slot. **Any** slot of the version
+can be read, corrected or not; the answer says which. A slot nobody has corrected is not "not
+found".
 
 A flowchart is also **read** by its id — every node label with its current text and its LLM
 original — so the editor can open with one request, matching the one request it saves with
@@ -642,7 +644,8 @@ original — so the editor can open with one request, matching the one request i
 ones is its own choice; the rendered *document* carries no marker
 ([REQ-API-06](#req-api-06--corrected-text-is-not-highlighted)).
 
-**Verification:** after an update, the read returns the new text.
+**Verification:** after an update, the read returns the new text; reading a slot nobody corrected
+returns its LLM text, marked as not corrected.
 
 ### REQ-API-03 — Update one slot, except a flowchart's labels
 
@@ -684,9 +687,14 @@ It reads as ordinary document text. A user may re-edit any slot any number of ti
 Two people editing the same slot: the later write is kept. No edit lock and no conflict error
 between reviewers: saves of one version take their turn for the moment each takes
 ([REQ-AP-02](#req-ap-02--saving-an-override-is-one-operation)), and the later one wins. The one
-refusal is a save that meets a run regenerating the version.
+refusal is a save that meets a run regenerating the version. Confirmed with the user on
+2026-09-29: whoever saves last wins, silently — no "someone changed this since you opened it"
+check. The later save's answer says what it replaced
+([REQ-API-09](#req-api-09--a-slot-has-one-shape-in-every-answer)'s `previousText`), so that reviewer
+can see whose words they overwrote.
 
-**Verification:** two updates in sequence leave the second.
+**Verification:** two updates in sequence leave the second, and the second's answer carries the
+first's text as what it replaced.
 
 ### REQ-API-08 — A flowchart is saved in one call
 
@@ -710,6 +718,34 @@ Three rules:
 
 **Verification:** a five-label call writes five rows, re-renders once, and leaves every other
 label untouched; the same call with one bad node writes nothing.
+
+### REQ-API-09 — A slot has one shape in every answer
+
+Every response that returns a slot's text returns it with the **same fields, meaning the same
+thing**, whatever the kind and whatever the call — a list of corrections, one slot, a save, an
+undo, a flowchart's nodes, the catalogue. A client then reads one set of names for a description, a
+node label and a behaviour row alike:
+
+| field | means |
+|---|---|
+| `text` | what the document prints now |
+| `llmText` | what the LLM wrote: the original a correction replaced, else the same as `text`; empty only when the LLM wrote nothing |
+| `humanText` | the reviewer's words; none when never corrected |
+| `isOverridden` | the document prints `humanText` |
+| `isOrphaned` | a correction exists, but its code changed, so it is not printed |
+| `canUndo` | an undo would change the text |
+| `updatedBy`, `updatedAt` | the last save of the correction |
+
+A save or an undo answers with the slot **as it now is**, plus what it did: the text it replaced,
+whether it started a correction, the views it re-derived and what it queued for regeneration. A
+flowchart save answers with each saved node that way.
+
+Found testing the API (2026-09-29): a flowchart save returned node ids and no text, one read
+returned `text` and another did not, a slot save returned `previousText` and no `isOverridden`, and
+`llmText` meant "empty until corrected" in one answer and "the LLM's words" in the next.
+
+**Verification:** the same slot read through every route that returns it carries the same values
+for these fields; a flowchart save's answer shows each saved node's new text.
 
 ---
 

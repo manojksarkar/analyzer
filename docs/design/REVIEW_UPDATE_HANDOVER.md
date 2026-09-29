@@ -10,7 +10,8 @@ that:
 - **Chronology and the reasoning behind each decision** → the dated entries in
   [project-context/history/](../../project-context/history/): the feature in `2026-09-16` through
   `2026-09-20`, the rebase onto develop in `2026-09-26f` through `2026-09-27d`, the rebase onto
-  `5542736` in `2026-09-29b`, the full-feature review and its ten fixes in `2026-09-29d`
+  `5542736` in `2026-09-29b`, the full-feature review and its ten fixes in `2026-09-29d`, one
+  response shape for a slot in `2026-09-29e`
 
 Branch: `review_update_v3` = `review_update_v2` rebased onto `origin/develop` `5542736` on 2026-09-29
 (develop's six commits; no code conflicts — §3.3). `review_update_v2` = `review_update_v1`
@@ -550,6 +551,19 @@ does not recognise with a 500 that names only the exception type. A 400 with the
 before — tells the client to fix a request that was fine and hands it internal detail.
 
 → `test_review_overrides_api.py::TestAnErrorSaysWhoseFaultItIs`.
+
+### 4.33 A slot has one shape in every response
+
+`catalog.slot_view` builds every slot a route returns — R1, R2, R3, R4, R6, R11, and each node of R7
+and R8 — so a client reads one set of names (`text`, `llmText`, `humanText`, `isOverridden`,
+`isOrphaned`, `canUndo`, `updatedBy`, `updatedAt`) whatever the kind. A route that builds its own
+dict drifts: R8 once returned node ids with no text, and `llmText` meant two things in two answers.
+`text` comes from `catalog.texts_in_force`, never from the override row (an orphan's row is not what
+is printed).
+
+→ `test_review_overrides_api.py::TestEveryRouteGivesASlotInOneShape` (the same slot, read back
+through R1, R2, R7 and R11, equals what R3, R6 and R8 answered); `test_review_catalog.py::TestOneShapeForASlot`,
+`::TestReadingAnySlot`.
 
 ---
 
