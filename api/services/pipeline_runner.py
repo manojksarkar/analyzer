@@ -292,11 +292,16 @@ def _materialise_data_dictionary(db: Any, job: Any) -> Optional[Path]:
 
 
 def _upload_bytes(upload_id: str) -> Optional[bytes]:
-    """The uploaded bytes, if this process still holds them (they are in memory only)."""
+    """The uploaded bytes, read from where the upload route stores them.
+
+    Uploads live on disk (`routes/repositories.py`, `_upload_dir`); `_UPLOADS` holds only their
+    metadata. This used to read a `data` key that is never set, so every data dictionary was
+    reported to have "no content on this node" and the run went on without it.
+    """
     try:
-        from ..routes.repositories import _UPLOADS
-        rec = _UPLOADS.get(upload_id) or {}
-        return rec.get("data")
+        from ..routes.repositories import resolve_upload
+        path = resolve_upload(upload_id)
+        return path.read_bytes() if path is not None else None
     except Exception:
         return None
 

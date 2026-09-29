@@ -144,6 +144,13 @@ def start_job(
         if base is None:
             raise not_found("Version", f"'{ref}' in project '{project_id}'")
         reference_version_id = base.id
+    # The data dictionary uploaded in the New Project wizard is the project's
+    # (`build_config.data_dictionary.file_id`); a job that names none uses it. Nothing passed it
+    # on, so no run started from the web app ever read the dictionary a user had uploaded.
+    data_dict_id = (body.data_dict_id or "").strip() or None
+    if data_dict_id is None:
+        dd = (project.build_config or {}).get("data_dictionary")
+        data_dict_id = (dd.get("file_id") if isinstance(dd, dict) else None) or None
     # Prevent duplicate active jobs
     existing = db.jobs.get_current(project_id)
     if existing and existing.status in ("queued", "running", "paused"):
@@ -177,7 +184,7 @@ def start_job(
         started_at=now, completed_at=None, error_message=None,
         branch=branch, version_tag=version_name,
         mode=(body.mode or "auto"),
-        scope=body.scope, no_llm=bool(body.no_llm), data_dict_id=body.data_dict_id,
+        scope=body.scope, no_llm=bool(body.no_llm), data_dict_id=data_dict_id,
         narrowed_parse=bool(body.narrowed_parse),
     )
     # Reserve the version row (status 'draft') BEFORE inserting the job: analysis_jobs.version_id
