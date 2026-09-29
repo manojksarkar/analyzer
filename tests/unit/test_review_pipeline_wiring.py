@@ -132,6 +132,9 @@ class TestEveryPieceHasACaller:
         "export_guard.record_derivation": ("engine/run_views.py", "record_derivation"),
         "export_guard.stamp_recorded_derivations": ("engine/incremental/store.py",
                                                     "stamp_recorded_derivations"),
+        # A save re-derives the component's SWE.4 specs from the stored rows (REQ-CS-04).
+        "swe4_rederive.make_save_deriver": ("api/routes/text_overrides.py",
+                                            "make_save_deriver"),
         "cascade.enqueue": ("engine/review/override_service.py", "_cascade.enqueue"),
         "render_queue.enqueue": ("engine/review/override_service.py", "render_queue.enqueue"),
         "render_queue.run_pending": ("engine/incremental/store.py", "run_pending"),
