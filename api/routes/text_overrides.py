@@ -19,6 +19,7 @@ read from the key — each route is told its kind, or is one kind (R6, R7, R8).
 """
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from typing import Any, Dict, List, Optional
@@ -37,6 +38,7 @@ if _ENGINE_DIR not in sys.path:
     sys.path.insert(0, _ENGINE_DIR)
 
 router = APIRouter(tags=["review"])
+_log = logging.getLogger(__name__)
 
 
 def _slot_kind_enum():
@@ -121,9 +123,41 @@ def _swe4_deriver(cx, models):
 
 
 def _as_http(exc: Exception) -> HTTPException:
-    """An `OverrideError` carries the status the API should return, so the mapping is one line
-    rather than a table here that could drift from the service's own view of it."""
-    return HTTPException(status_code=getattr(exc, "status", 400), detail=str(exc))
+    """The HTTP answer for what a review call raised.
+
+    A refusal the service chose carries its own status (`OverrideError`, `catalog.NotScoped`),
+    so that mapping is one line rather than a table here that could drift from the service's own
+    view of it. An `HTTPException` raised inside the block -- `_key` rejecting a malformed key --
+    passes through as it is. A key the service could not take apart is the caller's mistake
+    (400); stored output that cannot be read, or a save that lost the race for its slot, is a
+    conflict (409).
+
+    Anything else is a fault on this side, not the caller's: a 500 that says so, with the detail
+    in the server log. Answering it as a 400, as this used to, told the client to fix a request
+    that was fine -- and handed it an internal message (a SQL error, a Python `KeyError`) as the
+    reason.
+    """
+    from sqlalchemy.exc import IntegrityError
+    from review import catalog, slot as slot_mod
+    from review.override_service import OverrideError
+    from review.redraw import RedrawError
+
+    if isinstance(exc, HTTPException):
+        return exc
+    if isinstance(exc, (OverrideError, catalog.NotScoped)):
+        return HTTPException(status_code=exc.status, detail=str(exc))
+    if isinstance(exc, slot_mod.SlotKeyError):
+        return HTTPException(status_code=400, detail=str(exc))
+    if isinstance(exc, RedrawError):
+        return HTTPException(status_code=409, detail=str(exc))
+    if isinstance(exc, IntegrityError):
+        return HTTPException(status_code=409, detail=(
+            "another save of this text finished first; nothing was saved -- reload it and "
+            "save again"))
+    _log.exception("review route failed")
+    return HTTPException(status_code=500, detail=(
+        "the request failed because of an error on the server (%s); nothing was changed, and "
+        "the server log has the detail" % type(exc).__name__))
 
 
 def _key(slot_kind: str, slot_key: str) -> str:

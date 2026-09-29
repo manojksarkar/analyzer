@@ -154,6 +154,54 @@ class TestFindingTheRow:
             content=json.dumps([{"functionKey": "Comp|UnitQ|q|"}]), group_name="Sample"))
         assert rerender.find_flowchart_row(conn, "v1", "Comp|UnitQ|q|") is None
 
+    def test_an_id_spelled_otherwise_in_the_file_is_still_found(self, conn):
+        """The content prefilter looks for the id as `json.dumps` writes it. A file written with
+        `ensure_ascii=False` spells a non-ASCII id differently; the full search still finds it
+        rather than answering "no such flowchart"."""
+        fid = "Comp|UnitB|ns::grüßen|"
+        conn.execute(sa.insert(s.version_output_files).values(
+            version_id="v1", rel_path="Sample/flowcharts/UnitB.json", group_name="Sample",
+            content=json.dumps([{"name": "grüßen", "functionKey": fid, "cfg": _cfg("n0")}],
+                               ensure_ascii=False)))
+        rel, unit, _content = rerender.find_flowchart_row(conn, "v1", fid)
+        assert (rel, unit) == ("Sample/flowcharts/UnitB.json", "UnitB")
+
+
+class TestReadingOneKindOfOutput:
+    """`output_rows`: the database picks the files, by path -- not Python, after fetching the
+    whole output tree of the version for every save and every listing."""
+
+    def _add(self, conn, rel, content="{}"):
+        conn.execute(sa.insert(s.version_output_files).values(
+            version_id="v1", rel_path=rel, content=content, group_name="Sample"))
+
+    def test_each_kind_gets_only_its_own_files(self, conn):
+        self._add(conn, "Sample/flowcharts/_summary.json", "[]")
+        self._add(conn, "Sample/interface_tables.json")
+        self._add(conn, "Sample/behaviour_diagrams/_behaviour_pngs.json")
+        self._add(conn, "Sample/flowcharts/UnitA.dot", "digraph G {}")
+        self._add(conn, "Sample/test_specs.json")
+        paths = {w: [r.rel_path for r in rerender.output_rows(conn, "v1", w)]
+                 for w in (rerender.FLOWCHARTS, rerender.INTERFACE_TABLES,
+                           rerender.BEHAVIOUR_MANIFEST)}
+        assert paths == {
+            rerender.FLOWCHARTS: [REL],
+            rerender.INTERFACE_TABLES: ["Sample/interface_tables.json"],
+            rerender.BEHAVIOUR_MANIFEST: ["Sample/behaviour_diagrams/_behaviour_pngs.json"]}
+
+    def test_it_can_narrow_to_the_files_that_mention_an_entity(self, conn):
+        self._add(conn, "Sample/flowcharts/UnitZ.json",
+                  json.dumps([{"functionKey": "Comp|UnitZ|z|", "cfg": _cfg("n0")}]))
+        got = rerender.output_rows(conn, "v1", rerender.FLOWCHARTS, mentioning="Comp|UnitZ|z|")
+        assert [r.rel_path for r in got] == ["Sample/flowcharts/UnitZ.json"]
+
+    def test_a_wildcard_character_in_what_is_asked_is_literal(self, conn):
+        """`_` and `%` are LIKE wildcards; an id containing one must match only itself."""
+        self._add(conn, "Sample/flowcharts/UnitZ.json",
+                  json.dumps([{"functionKey": "Comp|UnitZ|aXb|"}]))
+        assert rerender.output_rows(conn, "v1", rerender.FLOWCHARTS,
+                                    mentioning="Comp|UnitZ|a_b|") == []
+
 
 class TestTheWholeRedraw:
     def test_the_stored_row_is_updated(self, conn):

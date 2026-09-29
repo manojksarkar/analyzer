@@ -132,6 +132,38 @@ class NotEditableHere(OverrideError):
     status = 501
 
 
+class VersionBusy(OverrideError):
+    """The version's model was replaced while the save was writing it -- a run is regenerating
+    this version. Nothing was saved; save again once the run has finished."""
+    status = 409
+
+
+def _begin():
+    """A transaction of its own, for a caller that did not hand one in."""
+    from core.db import get_engine
+    return get_engine().begin()
+
+
+def _serialize_saves(conn, version_id: str) -> None:
+    """One save at a time per version (PostgreSQL; SQLite serialises writers by itself).
+
+    A save reads before it writes -- the current text, whether the slot has an override row, the
+    history's last sequence number, the stored rows the SWE.4 re-derive rebuilds -- so two saves
+    on one version at the same moment could each act on what the other was changing: two first
+    edits of one slot both inserting (a unique violation), two history rows with one sequence
+    number, a re-derived spec without the other save's label. A transaction-scoped advisory lock
+    on the version makes the second save wait for the first. It is released at commit or
+    rollback, and taking it again in the same transaction -- undo calls a save -- costs nothing.
+    """
+    if getattr(getattr(conn, "dialect", None), "name", "") != "postgresql":
+        return
+    import hashlib
+    from sqlalchemy import text as _sql
+    key = int.from_bytes(hashlib.sha256(("review:" + version_id).encode("utf-8")).digest()[:8],
+                         "big", signed=True)
+    conn.execute(_sql("SELECT pg_advisory_xact_lock(:k)"), {"k": key})
+
+
 class Applied(NamedTuple):
     version_id: str
     slot_kind: str
@@ -163,12 +195,18 @@ class ModelAccess:
     #: Loaded on demand. `description` may land in either of the first two.
     ARTIFACTS = ("functions", "globalVariables", "units", "dataDictionary")
 
+    #: How `save` writes one field of each artifact: the entity kinds of its `entity_versions`
+    #: row, or None for `units`, whose description is a column of `model_units`.
+    _ONE_ROW = {"functions": ("function",), "globalVariables": ("global",),
+                "dataDictionary": ("type", "macro"), "units": None}
+
     def __init__(self, artifacts: Optional[Dict[str, Any]] = None, repo: Any = None,
                  version_id: Optional[str] = None, project_id: Optional[str] = None):
         self._repo = repo
         self._loaded: Dict[str, Any] = dict(artifacts or {})
         self._explicit = artifacts is not None
         self._dirty: set = set()
+        self._dirty_fields: set = set()
         self._version_id = version_id
         self._project_id = project_id
 
@@ -210,28 +248,61 @@ class ModelAccess:
             return self._loaded[name]
         return {} if self._explicit else None
 
-    def mark_dirty(self, name: str) -> None:
-        self._dirty.add(name)
+    def mark_dirty(self, name: str, entry_key: Optional[str] = None,
+                   field: Optional[str] = None) -> None:
+        """Record what changed: one field of one entry (what a correction changes), or -- with
+        no entry -- a whole artifact."""
+        if entry_key is not None and field is not None:
+            self._dirty_fields.add((name, entry_key, field))
+        else:
+            self._dirty.add(name)
 
     def save(self, conn=None) -> Sequence[str]:
-        """Write back only what changed, and **flush**. Returns the artifact names written.
+        """Write back only what changed. Returns the artifact names written.
 
-        The flush is not optional. `DbRepository.write` only buffers — the row does not move
-        until `flush`, so a save without one reports success and stores nothing, which is the
-        exact shape of failure this whole feature exists to remove.
+        **One row per changed field** (`model_store.set_entity_field`, `set_unit_description`).
+        This used to hand the whole artifact to the repository and flush it, which runs
+        `clear_version` and `persist_model` over the entire version from a snapshot read before
+        this transaction: every function, global, type, edge and hash row rewritten for one
+        sentence, and two saves at once -- or a save beside a Phase-2 run -- putting back
+        whatever the other had just changed. A row that is gone (`ModelRowMissing`) fails the
+        save rather than reporting a correction that stored nothing.
 
         `conn` is passed through so the model write joins the caller's transaction and lands
         with the override row or not at all (`REQ-AP-02`).
         """
-        written = sorted(self._dirty)
+        written = sorted(self._dirty | {artifact for artifact, _k, _f in self._dirty_fields})
         if not self._explicit:
-            repo = self._repository()
-            for name in written:
-                repo.write(name, self._loaded[name])
-            if written:
+            fields = sorted(self._dirty_fields)
+            vid = (self._version_id or getattr(self._repository(), "version_id", None)
+                   if fields else None)
+            if fields and vid:
+                self._write_rows(conn, vid, fields)
+            elif fields:
+                # A file-backed repository has no rows to update: the whole artifact, as before.
+                self._dirty.update(artifact for artifact, _k, _f in fields)
+            if self._dirty:
+                # Whole artifacts: a file-backed repository's, or a caller's that marked one.
+                repo = self._repository()
+                for name in sorted(self._dirty):
+                    repo.write(name, self._loaded[name])
                 repo.flush(conn)
         self._dirty.clear()
+        self._dirty_fields.clear()
         return written
+
+    def _write_rows(self, conn, version_id: str, fields) -> None:
+        import contextlib
+        from core import model_store
+        opened = contextlib.nullcontext(conn) if conn is not None else _begin()
+        with opened as cx:
+            for artifact, key, field in fields:
+                value = ((self._loaded.get(artifact) or {}).get(key) or {}).get(field)
+                if artifact == "units":
+                    model_store.set_unit_description(cx, version_id, key, value)
+                else:
+                    model_store.set_entity_field(cx, version_id, key, field, value,
+                                                 self._ONE_ROW.get(artifact) or (artifact,))
 
 
 # ---------------------------------------------------------------------------
@@ -271,6 +342,9 @@ def apply_override(conn,
     if slot_kind not in slot.ALL_KINDS:
         raise SlotUnknown("unknown slot kind %r" % slot_kind)
 
+    # Before anything is read: everything below reads, then writes.
+    _serialize_saves(conn, version_id)
+
     models = models if models is not None else ModelAccess()
     model = models.as_model()
 
@@ -289,21 +363,32 @@ def apply_override(conn,
         raise OverrideError("history depth must be at least 1; got %r" % history_depth)
 
     existing = conn.execute(
-        select(s.text_overrides.c.llm_text, s.text_overrides.c.human_text)
+        select(s.text_overrides.c.llm_text, s.text_overrides.c.human_text,
+               s.text_overrides.c.is_orphaned)
         .where(s.text_overrides.c.version_id == version_id,
                s.text_overrides.c.slot_kind == slot_kind,
                s.text_overrides.c.slot_key == slot_key)).first()
 
-    first_edit = existing is None
-    # Captured once. On a later edit the model holds the HUMAN's previous text, so reading it
-    # again would destroy the original and leave a human-vs-human "correction" (REQ-ST-03).
+    # A first edit is one on a slot with no correction -- or with only an ORPHANED one. That was
+    # written for code that has since changed and is not applied: the model holds the fresh LLM
+    # text for the new code, and that text is this slot's original now. Keeping the orphan's
+    # llm_text would make an undo restore a sentence about code that no longer exists.
+    first_edit = existing is None or bool(existing.is_orphaned)
+    # Captured once per original. On a later edit the model holds the HUMAN's previous text, so
+    # reading it again would destroy the original and leave a human-vs-human "correction"
+    # (REQ-ST-03).
     llm_text = current if first_edit else existing.llm_text
     previous_text = current if first_edit else (existing.human_text or "")
 
     # --- the model ---------------------------------------------------------
+    # One row: the field this slot names, nothing else (`ModelAccess.save`).
     resolver.write_text(model, slot_kind, slot_key, text)
-    models.mark_dirty(location.artifact)
-    artifacts_written = models.save(conn)
+    models.mark_dirty(location.artifact, location.entry_key, location.field)
+    try:
+        artifacts_written = models.save(conn)
+    except LookupError as exc:                  # model_store.ModelRowMissing
+        raise VersionBusy("%s. A run is regenerating version %s; nothing was saved -- save "
+                          "again once it has finished." % (exc, version_id)) from None
 
     # --- the override row --------------------------------------------------
     # REQ-TD-02. Which model and prompt version produced the text being corrected -- without
@@ -316,13 +401,12 @@ def apply_override(conn,
            "llm_cache_version": (llm_cache_version if llm_cache_version is not None
                                  else settings.llm_cache_version)}
 
-    if first_edit:
+    if existing is None:
         conn.execute(insert(s.text_overrides).values(
             version_id=version_id, slot_kind=slot_kind, slot_key=slot_key, **row))
     else:
-        # llm_text is in the values deliberately: it is `existing.llm_text` here, so the write
-        # is a no-op on it. Leaving the column out would be equally correct today and would
-        # stop being correct the moment someone re-read `current` above.
+        # llm_text is in the values deliberately: for a live correction it is
+        # `existing.llm_text`, a no-op; for an orphan it is the current text, its new original.
         conn.execute(update(s.text_overrides)
                      .where(s.text_overrides.c.version_id == version_id,
                             s.text_overrides.c.slot_kind == slot_kind,
@@ -356,6 +440,10 @@ def apply_override(conn,
                                     artifact=location.artifact)
     _cascade.enqueue(conn, version_id, queued, source_kind=slot_kind, source_key=slot_key,
                      user_id=user_id, now=stamp)
+    # And the slot just written owes nothing: a human's text is never regenerated over
+    # (REQ-CS-03), so an entry queued for it earlier would only pay for an LLM call whose answer
+    # Phase 2 then replaces with this text.
+    _cascade.clear(conn, version_id, slot_kind, slot_key)
 
     # --- the views ---------------------------------------------------------
     views = list(derive(version_id=version_id, slot_kind=slot_kind, location=location) or ()) \
@@ -427,6 +515,7 @@ def apply_flowchart_overrides(conn,
     if not labels:
         raise OverrideError("no labels to apply")
 
+    _serialize_saves(conn, version_id)
     stamp = now or datetime.datetime.now(datetime.timezone.utc)
     settings = version_settings(conn, version_id)
     depth = settings.history_depth if history_depth is None else int(history_depth)
@@ -557,6 +646,7 @@ def apply_behaviour_override(conn,
     if not text:
         raise EmptyText("a behaviour description may not be empty")
 
+    _serialize_saves(conn, version_id)
     stamp = now or datetime.datetime.now(datetime.timezone.utc)
     settings = version_settings(conn, version_id)
     depth = settings.history_depth if history_depth is None else int(history_depth)
@@ -582,6 +672,9 @@ def apply_behaviour_override(conn,
                     user_id, stamp, depth)
 
     rerender.write_behaviour_row(conn, version_id, rel_path, content, key, text)
+    # The row a human just wrote owes no regeneration (REQ-CS-03) -- see apply_override.
+    from review import cascade as _cascade
+    _cascade.clear(conn, version_id, slot.BEHAVIOUR_DESCRIPTION, key)
 
     views = list(derive(version_id=version_id, slot_kind=slot.BEHAVIOUR_DESCRIPTION,
                         slot_key=key) or ()) if derive else []
@@ -612,10 +705,12 @@ def _upsert_override(conn, version_id, slot_kind, slot_key, *, human_text, llm_f
 
     `llm_fallback` is used as `llm_text` only on that first edit. On a later one the row already
     holds the original and it is left alone — re-reading the current text would replace the LLM's
-    words with the human's previous words (`REQ-ST-03`).
+    words with the human's previous words (`REQ-ST-03`). A row that is ORPHANED counts as no
+    correction: it was written for code that has since changed, and the current text -- fresh
+    LLM text, as an orphan is never applied -- is the slot's original now (see `apply_override`).
     """
     existing = conn.execute(
-        select(s.text_overrides.c.llm_text)
+        select(s.text_overrides.c.llm_text, s.text_overrides.c.is_orphaned)
         .where(s.text_overrides.c.version_id == version_id,
                s.text_overrides.c.slot_kind == slot_kind,
                s.text_overrides.c.slot_key == slot_key)).first()
@@ -629,12 +724,14 @@ def _upsert_override(conn, version_id, slot_kind, slot_key, *, human_text, llm_f
             version_id=version_id, slot_kind=slot_kind, slot_key=slot_key,
             llm_text=llm_fallback, **values))
         return True
+    if existing.is_orphaned:
+        values["llm_text"] = llm_fallback
     conn.execute(update(s.text_overrides)
                  .where(s.text_overrides.c.version_id == version_id,
                         s.text_overrides.c.slot_kind == slot_kind,
                         s.text_overrides.c.slot_key == slot_key)
                  .values(**values))
-    return False
+    return bool(existing.is_orphaned)
 
 
 # ---------------------------------------------------------------------------
@@ -722,10 +819,20 @@ def undo_override(conn, version_id: str, slot_kind: str, slot_key: str, *,
     text. Deleting the row instead would destroy the user's work and the edit history to express
     "there was nothing here", which is worth an explicit error rather than a silent guess.
     """
+    _serialize_saves(conn, version_id)
     row = get_override(conn, version_id, slot_kind, slot_key)
     if row is None:
         raise NothingToUndo("%s %r has no override in version %s"
                             % (slot_kind, slot_key, version_id))
+    if row.is_orphaned:
+        # Its `llm_text` is the original of code that has since changed. Restoring it would put a
+        # sentence about code that no longer exists into the document; and the document already
+        # shows the LLM's text for the current code, as an orphan is never applied.
+        raise NothingToUndo(
+            "%s %r in version %s is orphaned: it was written for code that has since changed, "
+            "so it is not applied and the document already shows the LLM's text for the "
+            "current code. There is nothing to undo; a new edit starts a new correction."
+            % (slot_kind, slot_key, version_id))
     original = (row.llm_text or "").strip()
     if not original:
         raise NothingToUndo(

@@ -33,6 +33,7 @@ from typing import Any, Dict, List, NamedTuple, Optional, Set
 from sqlalchemy import or_, select
 
 from review import phase3_overrides as p3, resolver, slot
+from review.export_guard import component_id
 from api.db.postgres import schema as s
 
 
@@ -209,7 +210,7 @@ def _model_backed(conn, version_id, kind, models, unit, component, limit, offset
             comp, un = _scope_of(entity_key)
             if unit and un != unit:
                 continue
-            if component and comp != component:
+            if component and component_id(comp) != component:
                 continue
             key = (slot.for_unit(entity_key) if kind == slot.UNIT_DESCRIPTION
                    else slot.for_entity(kind, entity_key))
@@ -296,7 +297,8 @@ def _structs(conn, version_id, models, unit, component, limit, offset) -> Page:
         where = shown.get(type_name) or []
         scopes = [_scope_of(u) for u in where]
         if unit or component:
-            if not any((not unit or un == unit) and (not component or comp == component)
+            if not any((not unit or un == unit)
+                       and (not component or component_id(comp) == component)
                        for comp, un in scopes):
                 continue
         comp, un = scopes[0] if scopes else (None, None)
@@ -332,18 +334,13 @@ def _flowcharts(conn, version_id, unit, component, limit, offset) -> Page:
             continue
         per_flowchart[fid] = per_flowchart.get(fid, 0) + 1
 
-    rows = conn.execute(
-        select(s.version_output_files.c.rel_path, s.version_output_files.c.content)
-        .where(s.version_output_files.c.version_id == version_id)).fetchall()
+    from review import rerender
+    rows = rerender.output_rows(conn, version_id, rerender.FLOWCHARTS)
     # A flowchart is printed in the flowchart table of a function the interface table lists.
     listed = _placement(conn, version_id).listed
 
     items = []
     for r in rows:
-        if "/flowcharts/" not in r.rel_path or not r.rel_path.endswith(".json"):
-            continue
-        if r.rel_path.endswith("_summary.json"):
-            continue
         try:
             entries = json.loads(r.content or "[]")
         except ValueError:
@@ -355,7 +352,7 @@ def _flowcharts(conn, version_id, unit, component, limit, offset) -> Page:
             comp, un = _scope_of(fid)
             if unit and un != unit:
                 continue
-            if component and comp != component:
+            if component and component_id(comp) != component:
                 continue
             nodes = ((e.get("cfg") or {}).get("nodes") or [])
             items.append({
@@ -379,16 +376,12 @@ def _behaviour_rows(conn, version_id, unit, component, limit, offset) -> Page:
     into, and addressed by the same two entity keys — never by the `externalUnitFunction` display
     label, which two different callers can share (`REQ-ID-01`).
     """
+    from review import rerender
     kind = slot.BEHAVIOUR_DESCRIPTION
     done = _overridden(conn, version_id, kind)
-    rows = conn.execute(
-        select(s.version_output_files.c.rel_path, s.version_output_files.c.content)
-        .where(s.version_output_files.c.version_id == version_id)).fetchall()
 
     items = []
-    for r in rows:
-        if not r.rel_path.endswith("_behaviour_pngs.json"):
-            continue
+    for r in rerender.output_rows(conn, version_id, rerender.BEHAVIOUR_MANIFEST):
         try:
             payload = json.loads(r.content or "{}")
         except ValueError:
@@ -402,7 +395,7 @@ def _behaviour_rows(conn, version_id, unit, component, limit, offset) -> Page:
                 continue
             if unit and un != unit:
                 continue
-            if component and comp != component:
+            if component and component_id(comp) != component:
                 continue
             key = slot.for_behaviour_row(fid, caller)
             ov = done.get(key)
@@ -449,6 +442,11 @@ def list_slots(conn, version_id: str, slot_kind: str, *, models=None,
     if slot_kind not in slot.ALL_KINDS:
         raise slot.SlotKeyError(
             "unknown slot kind %r; expected one of %s" % (slot_kind, ", ".join(slot.ALL_KINDS)))
+
+    # One spelling for the filter. A key spells a component with hyphens (`Layer1.My-Sample`), the
+    # config and the CLI with spaces (`Layer1.My Sample`); both name the same component, and the
+    # second one used to match nothing -- an empty list, read as "no slots here".
+    component = component_id(component) if component else None
 
     if slot_kind == slot.NODE_LABEL:
         return _flowcharts(conn, version_id, unit, component, limit, offset)

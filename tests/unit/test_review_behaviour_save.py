@@ -161,6 +161,17 @@ class TestTheOriginalAndTheHistory:
         with pytest.raises(svc.SlotUnknown):
             svc.apply_behaviour_override(conn, "v1", FID, "Comp|UnitZ|gone|", ["x"])
 
+    def test_a_save_clears_the_rows_own_queue_entry(self, conn):
+        """REQ-CS-03: a row a human has written is never regenerated over, so an entry queued
+        for it before the correction would only be paid by throwing its answer away."""
+        from review import cascade
+        mine, other = slot.for_behaviour_row(FID, ADD), slot.for_behaviour_row(FID, MUL)
+        cascade.enqueue(conn, "v1", [
+            cascade.Dependent(slot.BEHAVIOUR_DESCRIPTION, mine, "a description changed"),
+            cascade.Dependent(slot.BEHAVIOUR_DESCRIPTION, other, "a description changed")])
+        svc.apply_behaviour_override(conn, "v1", FID, ADD, ["Written by a human"])
+        assert [r.slot_key for r in cascade.pending(conn, "v1")] == [other]
+
 
 class TestNoPictureIsRendered:
     def test_the_kind_declares_it_renders_nothing(self):

@@ -77,21 +77,39 @@ def write_output_row(conn, version_id: str, rel_path: str, content: str) -> None
             group_name=rel_path.split("/", 1)[0] if "/" in rel_path else None))
 
 
-def find_flowchart_row(conn, version_id: str, flowchart_id: str):
-    """`(rel_path, unit_name, content)` for the unit file holding `flowchart_id`, or None.
+#: The stored output files the review code reads, by what their path ends with or contains.
+FLOWCHARTS = "flowcharts"
+INTERFACE_TABLES = "interface_tables.json"
+BEHAVIOUR_MANIFEST = "_behaviour_pngs.json"
 
-    Searched rather than computed: the row's path carries a group directory and a unit stem that
-    the flowchart id does not contain, and guessing either would fail silently on any project
-    whose naming does not match the guess.
+
+def output_rows(conn, version_id: str, which: str, *, mentioning: Optional[str] = None):
+    """`(rel_path, content)` of one kind of stored output file in a version: `FLOWCHARTS` (each
+    unit's flowchart JSON, not `_summary.json`), `INTERFACE_TABLES` or `BEHAVIOUR_MANIFEST`.
+
+    Chosen by the DATABASE, by path. A version stores every output file of every group -- the
+    flowchart JSON alone is megabytes -- and fetching all of it to keep one kind, as each caller
+    here used to, moved the whole output tree across the wire for every save and every listing.
+    `mentioning` narrows further to the rows whose text contains that string, for a caller
+    looking for one entity's row.
     """
-    rows = conn.execute(
-        select(s.version_output_files.c.rel_path, s.version_output_files.c.content)
-        .where(s.version_output_files.c.version_id == version_id)).fetchall()
+    vof = s.version_output_files
+    q = select(vof.c.rel_path, vof.c.content).where(vof.c.version_id == version_id)
+    if which == FLOWCHARTS:
+        q = q.where(vof.c.rel_path.contains("/flowcharts/", autoescape=True),
+                    vof.c.rel_path.endswith(".json", autoescape=True))
+    else:
+        q = q.where(vof.c.rel_path.endswith(which, autoescape=True))
+    if mentioning:
+        q = q.where(vof.c.content.contains(mentioning, autoescape=True))
+    rows = conn.execute(q.order_by(vof.c.rel_path)).fetchall()
+    if which == FLOWCHARTS:
+        rows = [r for r in rows if r.rel_path.rsplit("/", 1)[-1] != "_summary.json"]
+    return rows
+
+
+def _flowchart_row_in(rows, flowchart_id: str):
     for r in rows:
-        if "/flowcharts/" not in r.rel_path or not r.rel_path.endswith(".json"):
-            continue
-        if r.rel_path.rsplit("/", 1)[-1] == "_summary.json":
-            continue
         try:
             entries = json.loads(r.content or "[]")
         except ValueError:
@@ -102,6 +120,24 @@ def find_flowchart_row(conn, version_id: str, flowchart_id: str):
             unit_name = r.rel_path.rsplit("/", 1)[-1][:-len(".json")]
             return r.rel_path, unit_name, r.content
     return None
+
+
+def find_flowchart_row(conn, version_id: str, flowchart_id: str):
+    """`(rel_path, unit_name, content)` for the unit file holding `flowchart_id`, or None.
+
+    Searched rather than computed: the row's path carries a group directory and a unit stem that
+    the flowchart id does not contain, and guessing either would fail silently on any project
+    whose naming does not match the guess.
+
+    Asked first for the files whose text contains the id as JSON writes it -- one or two rows,
+    not the version's every flowchart. A writer that spelled it differently (non-ASCII escaped
+    one way or the other) finds nothing there, so the whole set is searched before answering
+    "no such flowchart".
+    """
+    spelled = json.dumps(flowchart_id)[1:-1]
+    found = _flowchart_row_in(
+        output_rows(conn, version_id, FLOWCHARTS, mentioning=spelled), flowchart_id)
+    return found or _flowchart_row_in(output_rows(conn, version_id, FLOWCHARTS), flowchart_id)
 
 
 # ---------------------------------------------------------------------------
@@ -126,12 +162,7 @@ def patch_interface_tables(conn, version_id: str, entity_key: str, description: 
     overlap, so every match is patched, not the first. Returns how many entries changed.
     """
     patched = 0
-    rows = conn.execute(
-        select(s.version_output_files.c.rel_path, s.version_output_files.c.content)
-        .where(s.version_output_files.c.version_id == version_id)).fetchall()
-    for r in rows:
-        if not r.rel_path.endswith("interface_tables.json"):
-            continue
+    for r in output_rows(conn, version_id, INTERFACE_TABLES):
         try:
             tables = json.loads(r.content or "{}")
         except ValueError:
@@ -170,12 +201,7 @@ def find_behaviour_row(conn, version_id: str, function_id: str, external_caller_
     """
     from review import phase3_overrides as p3
 
-    rows = conn.execute(
-        select(s.version_output_files.c.rel_path, s.version_output_files.c.content)
-        .where(s.version_output_files.c.version_id == version_id)).fetchall()
-    for r in rows:
-        if not r.rel_path.endswith("_behaviour_pngs.json"):
-            continue
+    for r in output_rows(conn, version_id, BEHAVIOUR_MANIFEST):
         try:
             payload = json.loads(r.content or "{}")
         except ValueError:
