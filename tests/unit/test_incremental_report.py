@@ -143,7 +143,7 @@ class TestEmitRunSummary:
     def test_a_missing_dictionary_stops_the_run_and_says_why(self, monkeypatch, tmp_path):
         cfg = {"cores": {"Core1": {"dataDictionary": "gone.csv"}},
                "layers": {"Layer1": {"cores": ["Core1"]}}}
-        stop, text = self._run(monkeypatch, tmp_path, cfg)
+        (stop, _), text = self._run(monkeypatch, tmp_path, cfg)
         assert stop == ["Layer1: dataDictionary file not found: gone.csv "
                         "(from cores.Core1.dataDictionary)"]
         assert "STOPPING BEFORE THE PARSE" in text
@@ -151,9 +151,10 @@ class TestEmitRunSummary:
     def test_a_misspelled_key_warns_but_does_not_stop(self, monkeypatch, tmp_path):
         cfg = {"cores": {"Core1": {"datadictionary": "dd.csv"}},
                "layers": {"Layer1": {"cores": ["Core1"]}}}
-        stop, text = self._run(monkeypatch, tmp_path, cfg)
+        (stop, warns), text = self._run(monkeypatch, tmp_path, cfg)
         assert stop == []
         assert "Layer1: none" in text and "did you mean 'dataDictionary'" in text
+        assert any("did you mean 'dataDictionary'" in w for w in warns), "the manifest keeps it"
 
     def test_views_follow_the_pipeline_rule(self, monkeypatch, tmp_path):
         """No key: off, except interfaceTables and unitHeaders. Any value but False: on."""
@@ -169,6 +170,47 @@ class TestEmitRunSummary:
         _, text = self._run(monkeypatch, tmp_path, {"layers": {}}, data_dict_id="dd7",
                             data_dict_path=str(tmp_path / "dd7.csv"))
         assert "--data-dict dd7: no file at" in text and "WITHOUT" in text
+
+    def _checkout(self, root, *files):
+        for f in files:
+            (root / f).parent.mkdir(parents=True, exist_ok=True)
+            (root / f).write_text("", encoding="utf-8")
+        return str(root)
+
+    def test_a_component_path_the_checkout_lacks_warns_and_the_run_goes_on(self, monkeypatch,
+                                                                           tmp_path):
+        co = self._checkout(tmp_path / "co", "Layer1/Core/a.cpp")
+        cfg = {"layers": {"Layer1": {"path": "Layer1",
+                                     "groups": {"G": {"Core": "Core", "Ghost": "Gone"}}}}}
+        (stop, warns), text = self._run(monkeypatch, tmp_path, cfg, checkout=co)
+        assert stop == []
+        assert "Layer1 / G / Ghost: `Layer1/Gone` is not in the checkout" in warns
+        assert "WARNINGS" in text and "Layer1 / G / Ghost gets no source file" in text
+
+    def test_an_empty_component_the_run_renders_stops_it_before_the_parse(self, monkeypatch,
+                                                                         tmp_path):
+        # Phase 3 used to stop this run on the component - after the whole parse.
+        co = self._checkout(tmp_path / "co", "Layer1/Core/a.cpp")
+        cfg = {"layers": {"Layer1": {"path": "Layer1",
+                                     "groups": {"G": {"Core": "Core", "Ghost": "Gone"}}}}}
+        (stop, warns), text = self._run(monkeypatch, tmp_path, cfg, checkout=co,
+                                        scope={"type": "project"})
+        assert stop == ["Layer1 / G / Ghost gets no source file: Phase 3 would stop the run on it "
+                        "after the whole parse. Fix its path, or take it out"]
+        assert "Layer1 / G / Ghost: `Layer1/Gone` is not in the checkout" in warns
+        assert "STOPPING BEFORE THE PARSE" in text
+
+    def test_a_checkout_with_no_component_file_stops_the_run(self, monkeypatch, tmp_path):
+        co = self._checkout(tmp_path / "co", "Elsewhere/a.cpp")
+        cfg = {"layers": {"Layer1": {"path": "Layer1", "groups": {"G": {"Core": "Core"}}}}}
+        (stop, _), text = self._run(monkeypatch, tmp_path, cfg, checkout=co)
+        assert len(stop) == 1 and stop[0].startswith("None of the 1 components has a source file")
+        assert "STOPPING BEFORE THE PARSE" in text
+
+    def test_without_a_checkout_no_path_is_checked(self, monkeypatch, tmp_path):
+        cfg = {"layers": {"Layer1": {"path": "Layer1", "groups": {"G": {"Core": "Gone"}}}}}
+        (stop, warns), _ = self._run(monkeypatch, tmp_path, cfg)
+        assert stop == [] and warns == []
 
 
 class TestSummaryViewsMatchThePipeline:

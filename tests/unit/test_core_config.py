@@ -14,6 +14,7 @@ from core.config import (
     layer_source, layer_sources, layer_source_origin, core_config_warnings,
     missing_layer_inputs,
 )
+from core.component_files import component_path_problems
 
 
 def _cfg(**overrides):
@@ -337,3 +338,136 @@ class TestInputsTheRunWouldIgnore:
         f.write_text("x", encoding="utf-8")
         cfg = {"layers": {"Layer1": {"dataDictionary": str(f)}}}
         assert missing_layer_inputs(cfg, "/nowhere", "dataDictionary") == []
+
+
+class TestComponentPathsTheParseWouldMiss:
+    """Phase 1 skips a component folder that is not there without a word, so a mistyped, moved
+    or wrongly-cased path stopped the run hours later, in Phase 3. The run summary now names
+    each one before the parse - with the parser's own rule (core.component_files)."""
+
+    @staticmethod
+    def _tree(root, *files):
+        for f in files:
+            p = root / f
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("", encoding="utf-8")
+
+    @staticmethod
+    def _cfg(groups, path="Layer1"):
+        return {"layers": {"Layer1": {"path": path, "groups": groups}}}
+
+    def test_a_config_the_checkout_matches_is_quiet(self, tmp_path):
+        self._tree(tmp_path, "Layer1/Core/a.cpp", "Layer1/Util/u.h", "Layer1/Main.cpp")
+        cfg = self._cfg({"G": {"Core": "Core", "Util": ["Util"], "App": "Main.cpp"}})
+        assert component_path_problems(cfg, str(tmp_path)) == ([], [])
+
+    def test_a_path_the_checkout_lacks_is_named_and_its_empty_component_stops_the_run(self, tmp_path):
+        # Reproduced: a component with no file is not in the model, and Phase 3 stopped the run
+        # on it AFTER the whole parse, blaming the scope. Now the run stops before the parse.
+        self._tree(tmp_path, "Layer1/Core/a.cpp")
+        warns, errors = component_path_problems(
+            self._cfg({"G": {"Core": "Core", "Ghost": "Nowhere"}}), str(tmp_path))
+        assert warns == ["Layer1 / G / Ghost: `Layer1/Nowhere` is not in the checkout"]
+        assert errors == ["Layer1 / G / Ghost gets no source file: Phase 3 would stop the run on "
+                          "it after the whole parse. Fix its path, or take it out"]
+
+    def test_a_path_of_a_component_with_other_files_only_warns(self, tmp_path):
+        self._tree(tmp_path, "Layer1/Core/a.cpp")
+        warns, errors = component_path_problems(
+            self._cfg({"G": {"Core": ["Core", "Gone"]}}), str(tmp_path))
+        assert warns == ["Layer1 / G / Core: `Layer1/Gone` is not in the checkout"]
+        assert errors == []
+
+    @pytest.mark.parametrize("scope, stops", [
+        (None, True),                                               # project: renders all
+        ({"type": "project"}, True),
+        ({"type": "group", "names": ["Layer1.G"]}, True),
+        ({"type": "group", "names": ["Layer1.Other"]}, False),
+        ({"type": "group", "names": ["G"]}, True),                  # a bare name, as typed
+        ({"type": "component", "names": ["Ghost"]}, True),
+        ({"type": "component", "names": ["Layer1.Ghost"]}, True),
+        ({"type": "component", "names": ["Layer1.Core"]}, False),
+        ({"type": "layer", "names": ["Layer1"]}, False),             # no document is rendered
+    ])
+    def test_only_a_component_the_run_renders_stops_it(self, tmp_path, scope, stops):
+        self._tree(tmp_path, "Layer1/Core/a.cpp", "Layer1/Other/b.cpp")
+        cfg = {"layers": {"Layer1": {"path": "Layer1", "groups": {
+            "G": {"Core": "Core", "Ghost": "Nowhere"}, "Other": {"Else": "Other"}}}}}
+        warns, errors = component_path_problems(cfg, str(tmp_path), scope=scope)
+        assert bool(errors) is stops
+        if not stops:
+            assert "Layer1 / G / Ghost gets no source file: a run that renders it stops in Phase 3" in warns
+
+    def test_a_folder_in_another_case_is_named_on_every_file_system(self, tmp_path):
+        self._tree(tmp_path, "Layer1/Core/a.cpp")
+        warns, _ = component_path_problems(self._cfg({"G": {"Core": "core"}}), str(tmp_path))
+        if os.path.isdir(tmp_path / "Layer1" / "core"):     # Windows: found here, not on Linux
+            assert warns == ["Layer1 / G / Core: `Layer1/core` is spelled `Layer1/Core` in the "
+                             "checkout - found here, but missed on a case-sensitive file system "
+                             "(Linux)"]
+        else:
+            assert warns[0] == ("Layer1 / G / Core: `Layer1/core` is not in the checkout - "
+                                "it has `Layer1/Core`")
+
+    def test_a_file_named_in_another_case_is_found_everywhere(self, tmp_path):
+        # The parser matches a file entry in any case, on every file system.
+        self._tree(tmp_path, "Layer1/Core/Main.cpp")
+        cfg = self._cfg({"G": {"Core": "core/main.CPP"}})
+        assert component_path_problems(cfg, str(tmp_path)) == ([], [])
+
+    def test_what_the_parse_does_not_read_is_named(self, tmp_path):
+        self._tree(tmp_path, "Layer1/Core/a.cpp", "Layer1/Legacy/old.c", "Layer1/x.c",
+                   "Layer1/Stubs/emulator.cpp", "Layer1/notes.txt")
+        cfg = self._cfg({"G": {"Core": "Core", "Legacy": "Legacy", "C": "x.c",
+                               "Emu": "Stubs/emulator.cpp", "Notes": "notes.txt"}})
+        warns, errors = component_path_problems(cfg, str(tmp_path))
+        assert "Layer1 / G / Legacy: `Layer1/Legacy` has no file the parse reads" in warns[0]
+        assert "Layer1 / G / C: `Layer1/x.c` is a .c file, which the parse does not read" in warns
+        assert ("Layer1 / G / Emu: `Layer1/Stubs/emulator.cpp` is skipped by excludeNamePatterns "
+                "(emul)") in warns
+        assert any(w.startswith("Layer1 / G / Notes: `Layer1/notes.txt` is a file the parse "
+                                "does not read") for w in warns)
+        # none of the four gets a file the parse reads, so each would stop the run in Phase 3
+        assert [e.split(" gets ")[0] for e in errors] == [
+            "Layer1 / G / Legacy", "Layer1 / G / C", "Layer1 / G / Emu", "Layer1 / G / Notes"]
+
+    def test_files_a_component_listed_before_took_are_named(self, tmp_path):
+        self._tree(tmp_path, "Layer1/Core/a.cpp")
+        warns, errors = component_path_problems(
+            self._cfg({"G": {"First": "Core", "Second": "Core/a.cpp"}}), str(tmp_path))
+        assert warns == []
+        assert errors == ["Layer1 / G / Second gets no source file (its files belong to "
+                          "Layer1 / G / First, listed before it): Phase 3 would stop the run on "
+                          "it after the whole parse. Fix its path, or take it out"]
+
+    def test_a_whole_layer_component_takes_the_layer(self, tmp_path):
+        self._tree(tmp_path, "Layer1/a.cpp", "Layer1/sub/b.h")
+        assert component_path_problems(self._cfg({"G": {"All": ""}}), str(tmp_path)) == ([], [])
+
+    def test_no_component_with_a_file_stops_the_run(self, tmp_path):
+        self._tree(tmp_path, "Other/a.cpp")
+        _, errors = component_path_problems(self._cfg({"G": {"Core": "Core"}}), str(tmp_path))
+        assert errors[0].startswith("None of the 1 components has a source file"), "first: the likely cause"
+        _, errors = component_path_problems(self._cfg({"G": {"Core": "Core"}}), str(tmp_path),
+                                            scope={"type": "layer", "names": ["Layer1"]})
+        assert len(errors) == 1, "even a run that renders nothing has nothing to parse"
+
+    def test_nothing_is_checked_without_components_or_a_checkout(self, tmp_path):
+        assert component_path_problems({"layers": {}}, str(tmp_path)) == ([], [])
+        assert component_path_problems(self._cfg({"G": {"Core": "Core"}}),
+                                       str(tmp_path / "gone")) == ([], [])
+
+    def test_a_long_report_is_cut(self, tmp_path):
+        self._tree(tmp_path, "Layer1/Core/a.cpp")
+        groups = {"G": {"Core": "Core", **{f"C{i}": f"Missing{i}" for i in range(30)}}}
+        warns, errors = component_path_problems(self._cfg(groups), str(tmp_path))
+        assert len(warns) == 30 and len(errors) == 30               # one path, one component each
+        warns, _ = component_path_problems(self._cfg(groups), str(tmp_path),
+                                           scope={"type": "layer", "names": ["Layer1"]})
+        assert len(warns) == 41 and warns[-1] == "... and 20 more"
+
+    def test_the_parser_reads_its_rule_from_the_same_module(self):
+        with open(os.path.join(PROJECT_ROOT, "engine", "parser.py"), encoding="utf-8") as f:
+            src = f.read()
+        assert "from core.component_files import" in src
+        assert "def _build_file_component_map" not in src, "a second copy would drift"

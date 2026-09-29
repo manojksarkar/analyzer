@@ -327,13 +327,19 @@ def emit_run_summary(*, project_id: str, version_id: str, branch: str, commit: s
                      scope: Optional[Dict[str, Any]], doc_type: str, cfg: Dict[str, Any],
                      no_llm: bool, data_dict_id: Optional[str], data_dict_path: Optional[str],
                      baseline: str, config_path: Optional[str], project_root: str,
-                     warnings: Optional[List[str]] = None,
-                     logger_name: str = "incremental") -> List[str]:
-    """Log the run summary. Returns the problems that must stop the run before it parses.
+                     warnings: Optional[List[str]] = None, checkout: Optional[str] = None,
+                     logger_name: str = "incremental") -> Tuple[List[str], List[str]]:
+    """Log the run summary. Returns `(errors, warnings)`: the problems that must stop the run
+    before it parses, and the ones it runs with - which the manifest keeps, so they outlive the
+    console (`versions.run_report.warnings`, shown by the web app).
 
-    A configured dictionary that does not exist is one: the parser merges dictionaries at the
-    END of Phase 1 and aborts there, so the run failed only after the whole parse.
+    A configured dictionary that does not exist is an error: the parser merges dictionaries at
+    the END of Phase 1 and aborts there, so the run failed only after the whole parse. So is a
+    component this run renders that gets no source file from the `checkout`: Phase 3 stopped
+    the run on it after the whole parse, blaming the scope. A path the checkout lacks, of a
+    component that still has other files, is a warning: the parser skips it without a word.
     """
+    from core.component_files import component_path_problems
     from core.config import (core_config_warnings, layer_source_origin, load_llm_config,
                              missing_layer_inputs)
 
@@ -368,6 +374,10 @@ def emit_run_summary(*, project_id: str, version_id: str, branch: str, commit: s
         warns.append(f"--data-dict {data_dict_id}: no file at {proj[1]} - "
                      "the run continues WITHOUT the project-wide dictionary")
     errors = missing_layer_inputs(cfg, project_root, "dataDictionary")
+    path_warns, path_errors = (component_path_problems(cfg, checkout, scope=scope)
+                               if checkout else ([], []))
+    warns += path_warns
+    errors += path_errors
 
     lines = build_run_summary({
         "projectId": project_id, "versionId": version_id, "versionName": _version_name(version_id),
@@ -378,4 +388,4 @@ def emit_run_summary(*, project_id: str, version_id: str, branch: str, commit: s
         "warnings": warns, "errors": errors,
     })
     emit_report(lines, write_file=False, logger_name=logger_name)
-    return errors
+    return errors, warns

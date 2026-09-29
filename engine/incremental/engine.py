@@ -671,18 +671,19 @@ def generate_incremental(project_id: str, branch: str, commit: str,
 
     # What this run is about to do, BEFORE the parse - see generate_full. A decision "full"
     # never reaches here: it delegated above and generate_full prints its own.
-    _stop = emit_run_summary(
+    _stop, _run_warnings = emit_run_summary(
         project_id=project_id, version_id=version_id, branch=branch, commit=target,
         scope=scope, doc_type=doc_type, cfg=cfg, no_llm=no_llm, data_dict_id=data_dict_id,
         data_dict_path=ws.datadict_path(data_dict_id) if data_dict_id else None,
         baseline=(f"{base_vid} @ {str(base_commit)[:10]} - incremental, "
                   f"{decision.get('changedFiles')} changed file(s)"),
-        config_path=config_path or vcfg_path, project_root=project_root, warnings=decision["warnings"])
+        config_path=config_path or vcfg_path, project_root=project_root, warnings=decision["warnings"],
+        checkout=repo_dir)
     if _stop:
         store.write_manifest(version_id, _manifest(
             version_id, branch, target, scope, data_dict_id,
             decision="incremental", regenerated=0, reused=0, status="failed",
-            warnings=decision["warnings"] + _stop))
+            warnings=_stop + _run_warnings))
         raise AnalyzerRunFailed("stopped before the parse: " + "; ".join(_stop), 2)
 
     # PHASE-SPLIT (M3.2) — produce the blank-skeleton model in model/ (Phase 1). This gives
@@ -934,7 +935,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     manifest = _manifest(version_id, branch, target, scope, data_dict_id,
                          decision="incremental", regenerated=len(regen_impact),
                          reused=len(plan["reused"]) + len(index_reused),
-                         status="complete", warnings=decision["warnings"])
+                         status="complete", warnings=_run_warnings)
     manifest["baselineVersionId"] = base_vid
     manifest["baselineCommit"] = decision["chosenBaseCommit"]
     manifest["documents"] = documents
