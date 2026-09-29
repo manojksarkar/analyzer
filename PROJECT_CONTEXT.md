@@ -45,7 +45,7 @@ newer entry and the code win.
 >   skill §8. Reasoning for every decision is in the dated history ([project-context/history/](project-context/history/)): the feature 2026-09-16 →
 >   2026-09-20, the rebase onto develop 2026-09-26f → 2026-09-27d, the export guard per document
 >   and the save-time SWE.4 re-derive 2026-09-29, the rebase onto `5542736` 2026-09-29b, the
->   full-feature review and its ten fixes 2026-09-29d.
+>   full-feature review and its ten fixes 2026-09-29d, one response shape for a slot 2026-09-29e.
 
 - **The PR is not opened yet** (2026-09-29). `develop` is the integration branch: work branches open
   their PR into it, and `main` has not moved since 2026-07-02. `review_update_v3` sits on
@@ -175,7 +175,8 @@ so neighbouring files can overlap by a few days — search the date tag.
 | File | Entries |
 |---|---|
 | [TIMELINE.md](project-context/history/TIMELINE.md) | **every dated change in one line, newest first — start here** |
-| [10-2026-09-26.md](project-context/history/10-2026-09-26.md) | from 2026-09-26e — **the newest: new entries go at the top**; at its end, develop's 2026-09-25 … 2026-09-26 (merged 2026-09-29) |
+| [11-2026-09-29e.md](project-context/history/11-2026-09-29e.md) | from 2026-09-29e — **the newest: new entries go at the top** |
+| [10-2026-09-26.md](project-context/history/10-2026-09-26.md) | 2026-09-26e … 2026-09-29d; at its end, develop's 2026-09-25 … 2026-09-26 (merged 2026-09-29) |
 | [09-2026-09-24.md](project-context/history/09-2026-09-24.md) | 2026-09-24 … 2026-09-26d (17 entries) |
 | [08-2026-09-21.md](project-context/history/08-2026-09-21.md) | 2026-09-21 … 2026-09-23f (15 entries) |
 | [07-2026-09-18.md](project-context/history/07-2026-09-18.md) | 2026-09-18b … 2026-09-21 (16 entries) |

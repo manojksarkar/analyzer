@@ -104,7 +104,7 @@ are node labels), and a correction is stored under (version, kind, key). Sending
 | # | Method | Path | Purpose |
 |---|---|---|---|
 | **R1** | GET | `/projects/{projectId}/versions/{versionId}/overrides` | The corrections in a version (an overlay — see §6) |
-| **R2** | GET | `/projects/{projectId}/versions/{versionId}/overrides/slot` | One slot's correction |
+| **R2** | GET | `/projects/{projectId}/versions/{versionId}/overrides/slot` | One slot — its text, and its correction if it has one |
 | **R3** | PUT | `/projects/{projectId}/versions/{versionId}/overrides/slot` | Correct one slot |
 | **R4** | DELETE | `/projects/{projectId}/versions/{versionId}/overrides/slot` | Undo — restore the LLM original |
 | **R5** | GET | `/projects/{projectId}/versions/{versionId}/overrides/history` | The retained edits of one slot |
@@ -137,7 +137,9 @@ generated with `analyzer.py` has the id you gave it, so there the two are the sa
 
 The endpoints from a screen's point of view. Each path below is under `/api/v1/projects/{projectId}`;
 each R-number's full contract is in §6–§15a. Every call sends `Authorization: Bearer <token>`.
-Nothing is pushed: **after a save, refetch** what the screen shows.
+**Every route gives a slot the same fields** (§5 `Slot`), so one piece of UI code renders a slot
+whichever call returned it. A save answers with the slot as it now is, so the edited item needs no
+second request. Nothing is pushed, though: what *other* reviewers save appears on the next read.
 
 **Which versions.** R1–R11 work on any version. The document page (`/documents/{docId}/render`) and
 the re-export button need a job row and document rows, which only a run started from the web app
@@ -162,8 +164,8 @@ A project onboarded with `analyzer.py onboard` cannot be run from the web app ei
 |---|---|---|
 | 1 | R11 `GET /versions/{versionId}/slots?slot_kind=<kind>&unit=<unit>` | the editable items, each with `slotKey`, `label` and current `text` |
 | 2 | R3 `PUT /versions/{versionId}/overrides/slot` with `{"slot_kind", "slot_key", "text"}` | save |
-| 3 | — | when `queuedForRegeneration` is not empty, say which other texts the next run rewrites |
-| 4 | R11 again, then R9 | show the saved text; update the banner |
+| 3 | — | show the answer: it is the item as it now is (`text`, `humanText`, `canUndo` …). When `queuedForRegeneration` is not empty, say which other texts the next run rewrites |
+| 4 | R9 | update the banner |
 
 For `structDescription` the same `unit=` filter returns the structs, classes and unions that unit's
 **unit header table** shows; match a row on the page by `label` (the type name). The corrected text
@@ -174,8 +176,8 @@ reaches the page and the Word file with the next re-export (§14).
 | step | call | why |
 |---|---|---|
 | 1 | R11 `GET /versions/{versionId}/slots?slot_kind=behaviourDescription&unit=<unit>` | rows with `bullets`, `functionId`, `externalCallerId` and `slotKey` |
-| 2 | R6 `PUT /versions/{versionId}/overrides/behaviour` with `{"function_id", "external_caller_id", "bullets"}` | save the **whole** list; both ids copied from step 1 |
-| 3 | R11 again, then R9 | |
+| 2 | R6 `PUT /versions/{versionId}/overrides/behaviour` with `{"function_id", "external_caller_id", "bullets"}` | save the **whole** list; both ids copied from step 1. The answer is the row as it now is |
+| 3 | R9 | update the banner |
 
 ### Flow 4 — correct flowchart labels
 
@@ -184,13 +186,13 @@ reaches the page and the Word file with the next re-export (§14).
 | 1 | R11 `GET /versions/{versionId}/slots?slot_kind=nodeLabel&unit=<unit>` | one row per flowchart, with its `flowchartId`. Coming from the page, match the flowchart by `functionName` within its unit — the page carries no tokens (§17) |
 | 2 | R7 `GET /versions/{versionId}/flowcharts/labels?flowchart_id=<flowchartId>` | every node's `nodeId`, `text` and `slotKey`, and the diagram as `dot`. Draw the diagram; list the labels for editing |
 | 3 | R8 `PUT /versions/{versionId}/flowcharts/labels` with `{"flowchart_id": "<flowchartId>", "labels": {"<nodeId>": "<text>"}}` | **only the labels that changed**, all in one call |
-| 4 | R7 again | redraw from `dot`: the correction shows at once. `renderPending: true` is about the PNG in the Word file only |
+| 4 | — | the answer carries each saved node as it now is (`labels`) and the rebuilt diagram (`dot`): redraw from it, and the correction shows at once. `renderPending: true` is about the PNG in the Word file only |
 
 ### Flow 5 — undo and history, any kind
 
 | call | notes |
 |---|---|
-| R4 `DELETE /versions/{versionId}/overrides/slot?slot_kind=…&slot_key=…` | back to the LLM's text. A flowchart label is undone per node, with that node's `slotKey` from R7; a behaviour row with the `slotKey` from R11. Disable Undo when `llmText` is `null` |
+| R4 `DELETE /versions/{versionId}/overrides/slot?slot_kind=…&slot_key=…` | back to the LLM's text. A flowchart label is undone per node, with that node's `slotKey` from R7; a behaviour row with the `slotKey` from R11. Offer Undo exactly where the slot says `canUndo: true`. The answer is the slot as it now is (for a node label, with the rebuilt `dot`) |
 | R5 `GET /versions/{versionId}/overrides/history?slot_kind=…&slot_key=…` | every edit of that one slot, oldest first |
 
 ### Flow 6 — put the corrections into the Word file
@@ -218,10 +220,10 @@ The page payload and R7 both carry the flowchart as **Graphviz DOT, read from th
 | where | field |
 |---|---|
 | page: `flowchart_table.flowcharts[]` | `mermaid` — a legacy name; the content is DOT, not Mermaid |
-| R7 | `dot` |
+| R7, R8, and R4 on a node label | `dot` |
 
-R8 rebuilds that DOT in the same request that saves a label, so **draw the DOT and a reload shows the
-corrected flowchart at once**. The PNG (`image_url`) is a file on disk that only the next re-export
+R8 rebuilds that DOT in the same request that saves a label, and answers with it (`dot`), so **draw
+the DOT and the corrected flowchart shows at once** — after the save and after a reload. The PNG (`image_url`) is a file on disk that only the next re-export
 redraws, so a page that shows the PNG shows the old label until then. Keep the PNG as the fallback.
 
 Draw it with **`@viz-js/viz`**: Graphviz compiled to WebAssembly, and the library the pipeline itself
@@ -301,36 +303,74 @@ never missing.
 
 ## 5. Shared objects
 
-### `Override`
+### `Slot`
 
-Returned by R1 (in a list), R2 (bare) and R4 (nested). One slot's current state.
+**One slot, in the same shape from every route** (`REQ-API-09`): R1 (in a list), R2 (bare), R3, R4
+and R6 (with what the save did, below), R7 and R8 (each node), R11 (each row, with listing fields).
+Read these names whatever the kind or the route.
 
 | field | type | notes |
 |---|---|---|
 | `slotKind` | string | one of §1 |
-| `slotKey` | string | send this back verbatim; never build it |
-| `llmText` | string \| null | the LLM's original, captured on the **first** edit and never rewritten (`REQ-ST-03`) — except that an edit over an **orphaned** correction starts a new one, and captures the current text. `null` when the slot was empty before the first correction — which is why undo can fail with 409 |
-| `humanText` | string | the reviewer's words. In force unless `isOrphaned` — see R11 for the three states |
-| `isOrphaned` | boolean | the slot stopped resolving (entity renamed or deleted). The record is **kept** (`REQ-ID-03`) and is **not** applied to the document. Show it greyed rather than hiding it |
-| `updatedBy` | string \| null | user id |
-| `updatedAt` | string \| null | ISO-8601 UTC |
+| `slotKey` | string | send this back verbatim; never build one (§2) |
+| `text` | string | **what the document prints now**, read from where the document reads it. `""` when the slot is empty — or when it is no longer in this version and only an orphaned correction remains |
+| `llmText` | string \| null | **what the LLM wrote** for this slot: the original that a correction in force replaced; otherwise the same as `text`. `null` only when the LLM wrote nothing — the slot was empty before its first correction |
+| `humanText` | string \| null | the reviewer's words; `null` when never corrected. An orphan keeps its words here |
+| `isOverridden` | boolean | a correction is **in force**: the document prints `humanText` |
+| `isOrphaned` | boolean | a correction exists but was written for code that has since changed, so it is **not** printed. The record is **kept** (`REQ-ID-03`) — show it greyed, as "your correction no longer applies", never as current wording |
+| `canUndo` | boolean | R4 would change the text: a correction in force, an original to go back to, and the two differ. **Show Undo exactly when this is `true`** |
+| `updatedBy` | string \| null | who last saved the correction (user id); `null` when none |
+| `updatedAt` | string \| null | when, ISO-8601 UTC |
+
+The states a slot can be in:
+
+| state | `text` | `llmText` | `humanText` | `isOverridden` | `isOrphaned` | `canUndo` |
+|---|---|---|---|---|---|---|
+| never corrected | the LLM's | = `text` | `null` | `false` | `false` | `false` |
+| corrected | the human's | the original | the human's | `true` | `false` | `true` |
+| undone (R4) | the LLM's | the original | = `llmText` | `true` | `false` | `false` |
+| orphaned | the LLM's, fresh for the new code | = `text` | the human's, for the old code | `false` | `true` | `false` |
+
+An undone slot keeps its record (`REQ-API-04`), so it still appears in R1. An edit over an orphan
+starts a new correction (`firstEdit: true`) whose original is the orphan's `text`.
+
+**Where the key has parts, the slot carries them** — so nothing is ever taken apart on the client:
+
+| kind | also carries |
+|---|---|
+| `nodeLabel` | `flowchartId`, `nodeId` |
+| `behaviourDescription` | `functionId`, `externalCallerId` (what R6 takes), and `bullets` — `text` split into its lines, one bullet per line. The text fields hold the bullets joined by `\n` |
 
 ```json
 {
   "slotKind": "description",
   "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void",
+  "text": "Initialises the GPIO driver and clears pending interrupts.",
   "llmText": "Initializes the module.",
   "humanText": "Initialises the GPIO driver and clears pending interrupts.",
+  "isOverridden": true,
   "isOrphaned": false,
+  "canUndo": true,
   "updatedBy": "u-17",
   "updatedAt": "2026-09-18T09:14:22Z"
 }
 ```
 
+### What a save did
+
+R3, R4 and R6 answer with the `Slot` **plus** these four; R8 with the four on **each** saved node:
+
+| field | type | notes |
+|---|---|---|
+| `previousText` | string \| null | what the document printed **before** this save; `null` when it printed nothing. Two reviewers saving the same slot: the later save wins (`REQ-API-07`), and its `previousText` is the earlier one's words — show it as "you replaced …" |
+| `firstEdit` | boolean | the save **started** a correction — none was in force (no correction, or only an orphaned one) |
+| `viewsDerived` | string[] | the SWE.4 views this request re-derived — see R3. `[]` when none |
+| `queuedForRegeneration` | `QueuedSlot[]` | what this save made out of date (`REQ-CS-01`). Always present: `[]` for the kinds that cascade to nothing (node labels, behaviour rows, names, unit and struct descriptions) |
+
 ### `QueuedSlot`
 
 What a correction invalidated — text that was generated **from** the text just replaced
-(`REQ-CS-01`). Appears in R3's response and, with more detail, in R10.
+(`REQ-CS-01`). Appears in every save's answer and, with more detail, in R10.
 
 | field | type | notes |
 |---|---|---|
@@ -360,7 +400,7 @@ corrected returns an empty list.
 
 | field | type | notes |
 |---|---|---|
-| `overrides` | `Override[]` | §5 |
+| `overrides` | `Slot[]` | §5 — every slot with a correction, orphans included, newest first |
 | `total` | integer | matching rows **before** paging, honouring `slot_kind` |
 | `limit` | integer | echoed |
 | `offset` | integer | echoed |
@@ -371,9 +411,12 @@ corrected returns an empty list.
     {
       "slotKind": "description",
       "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void",
+      "text": "Initialises the GPIO driver and clears pending interrupts.",
       "llmText": "Initializes the module.",
       "humanText": "Initialises the GPIO driver and clears pending interrupts.",
+      "isOverridden": true,
       "isOrphaned": false,
+      "canUndo": true,
       "updatedBy": "u-17",
       "updatedAt": "2026-09-18T09:14:22Z"
     }
@@ -405,13 +448,17 @@ GET /api/v1/projects/ftl-a1b2c3/versions/v-7/overrides/slot
     ?slot_kind=description&slot_key=Gpio%7CGpioDrv%7CGpio_Init%7Cvoid
 ```
 
-**Response 200** — a bare `Override` (§5), not wrapped.
+Any slot of the version, **corrected or not** (`REQ-API-02`): use it to open an editor on one slot,
+or to confirm a save landed.
+
+**Response 200** — a bare `Slot` (§5), not wrapped. A slot nobody corrected answers with
+`isOverridden: false` and `humanText: null` — until 2026-09-29 that was a 404.
 
 **Errors**
 
 | code | when |
 |---|---|
-| 404 | `{"detail": "no override on that slot"}` — the slot has never been corrected. Expected, not an error condition: fall back to the LLM text you already have |
+| 404 | the slot is not in this version and has no correction — take the key from R11, or from R7 for a node label |
 | 400 | malformed `slot_key` for the kind — e.g. a flowchart id given for `nodeLabel`. `detail` says what the key should be and where to copy it from (§2) |
 | 401 / 403 / 503 | see §16 |
 
@@ -439,25 +486,22 @@ For the five model-backed kinds. `nodeLabel` → R8, `behaviourDescription` → 
 }
 ```
 
-**Response 200**
-
-| field | type | notes |
-|---|---|---|
-| `slotKind` | string | |
-| `slotKey` | string | |
-| `humanText` | string | what is now in force |
-| `llmText` | string \| null | the original, unchanged by this call |
-| `previousText` | string \| null | what this call replaced. `null` on the first edit |
-| `firstEdit` | boolean | true when this slot had no correction in force before — none, or only an orphaned one |
-| `viewsDerived` | string[] | the SWE.4 views this save re-derived — see the note below. `[]` for a version with no SWE.4 output, which is every web-app version |
-| `queuedForRegeneration` | `QueuedSlot[]` | see below |
+**Response 200** — the `Slot` as it now is, and what the save did (§5): `previousText`,
+`firstEdit`, `viewsDerived` (the SWE.4 views this save re-derived — see the note below; `[]` for a
+version with no SWE.4 output, which is every web-app version), `queuedForRegeneration`.
 
 ```json
 {
   "slotKind": "description",
   "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void",
-  "humanText": "Initialises the GPIO driver and clears pending interrupts.",
+  "text": "Initialises the GPIO driver and clears pending interrupts.",
   "llmText": "Initializes the module.",
+  "humanText": "Initialises the GPIO driver and clears pending interrupts.",
+  "isOverridden": true,
+  "isOrphaned": false,
+  "canUndo": true,
+  "updatedBy": "u-17",
+  "updatedAt": "2026-09-18T09:14:22Z",
   "previousText": "Initializes the module.",
   "firstEdit": true,
   "viewsDerived": [],
@@ -500,29 +544,30 @@ Restores the LLM's original wording (`REQ-API-04`).
 
 **Undo is an ordinary edit whose text happens to be the original**, so **the record survives** with
 both texts and its full history. It is not a delete, and the slot still appears in R1 afterwards —
-with `humanText` equal to `llmText`.
+with `humanText` equal to `llmText`, and `canUndo: false`.
 
 **Query parameters** — identical to R2: `slot_kind`, `slot_key`, both required.
 
-**Response 200**
-
-| field | type | notes |
-|---|---|---|
-| `undone` | boolean | always `true` on 200 |
-| `override` | `Override` \| null | the record as it now stands |
+**Response 200** — like a save: the `Slot` as it now is, and what the undo did (§5); `previousText`
+is the correction it took back. For a `nodeLabel` also `renderPending`, `renderJobs` and the
+rebuilt `dot`, as R8.
 
 ```json
 {
-  "undone": true,
-  "override": {
-    "slotKind": "description",
-    "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void",
-    "llmText": "Initializes the module.",
-    "humanText": "Initializes the module.",
-    "isOrphaned": false,
-    "updatedBy": "u-17",
-    "updatedAt": "2026-09-18T10:02:41Z"
-  }
+  "slotKind": "description",
+  "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void",
+  "text": "Initializes the module.",
+  "llmText": "Initializes the module.",
+  "humanText": "Initializes the module.",
+  "isOverridden": true,
+  "isOrphaned": false,
+  "canUndo": false,
+  "updatedBy": "u-17",
+  "updatedAt": "2026-09-18T10:02:41Z",
+  "previousText": "Initialises the GPIO driver and clears pending interrupts.",
+  "firstEdit": false,
+  "viewsDerived": [],
+  "queuedForRegeneration": []
 }
 ```
 
@@ -530,11 +575,13 @@ with `humanText` equal to `llmText`.
 
 | code | when |
 |---|---|
-| 409 | no original to restore — the slot was empty before the first correction, so `llmText` is `null`. Disable the undo control when `llmText` is `null` rather than letting the reviewer discover this |
-| 409 | the correction is **orphaned** (`isOrphaned: true`): it was written for code that has since changed, it is not applied, and the document already shows the LLM's text for the current code — there is nothing to undo. Disable the undo control on an orphan too; a new edit (R3, R6, R8) starts a new correction |
+| 409 | no original to restore — the slot was empty before the first correction, so `llmText` is `null` |
+| 409 | the correction is **orphaned** (`isOrphaned: true`): it was written for code that has since changed, it is not applied, and the document already shows the LLM's text for the current code — there is nothing to undo; a new edit (R3, R6, R8) starts a new correction |
 | 404 | the slot does not resolve in this version |
 | 400 | malformed `slot_key` for the kind (§2) |
 | 401 / 403 / 500 / 503 | see §16 |
+
+Both 409s are what `canUndo: false` already says: show Undo only where it is `true`.
 
 **R4 undoes every kind**, not just the ones R3 saves: a `nodeLabel` (one node at a time — take its
 `slotKey` from R7; the flowchart is redrawn as for R8) and a `behaviourDescription` (the whole bullet
@@ -611,26 +658,33 @@ The row is a **list** of bullets, one per call arrow, edited as one block (`REQ-
 land on the wrong row (`REQ-ID-01`). Copy both from the row R11 returns: `functionId` and
 `externalCallerId`.
 
-**Response 200**
-
-| field | type | notes |
-|---|---|---|
-| `slotKey` | string | the composite key the server built |
-| `bullets` | string[] | as stored, each collapsed to one line |
-| `llmText` | string \| null | the original list, newline-joined |
-| `firstEdit` | boolean | |
-| `viewsDerived` | string[] | always `[]`: the behaviour row is patched in place, and no SWE.4 view prints this text |
+**Response 200** — the row as a `Slot` (§5), with `functionId`, `externalCallerId` and
+`bullets` (as stored, each collapsed to one line; the text fields hold them joined by `\n`), and
+what the save did. `viewsDerived` is always `[]` (the row is patched in place, and no SWE.4 view
+prints this text), and so is `queuedForRegeneration`.
 
 ```json
 {
+  "slotKind": "behaviourDescription",
   "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void\u0001Layer1.App|AppMain|App_Start|void",
+  "text": "App_Start calls Gpio_Init to bring the port up\nGpio_Init returns the port state",
+  "llmText": "App_Start calls Gpio_Init\nGpio_Init returns",
+  "humanText": "App_Start calls Gpio_Init to bring the port up\nGpio_Init returns the port state",
+  "isOverridden": true,
+  "isOrphaned": false,
+  "canUndo": true,
+  "updatedBy": "u-17",
+  "updatedAt": "2026-09-18T10:05:12Z",
+  "functionId": "Layer2.Gpio|GpioDrv|Gpio_Init|void",
+  "externalCallerId": "Layer1.App|AppMain|App_Start|void",
   "bullets": [
     "App_Start calls Gpio_Init to bring the port up",
     "Gpio_Init returns the port state"
   ],
-  "llmText": "App_Start calls Gpio_Init\nGpio_Init returns",
+  "previousText": "App_Start calls Gpio_Init\nGpio_Init returns",
   "firstEdit": true,
-  "viewsDerived": []
+  "viewsDerived": [],
+  "queuedForRegeneration": []
 }
 ```
 
@@ -667,29 +721,31 @@ A flowchart **is one function's control-flow graph**, so it is named by that fun
 |---|---|---|
 | `flowchartId` | string | the flowchart id, as sent |
 | `functionName` | string \| null | display name, e.g. `Gpio_Init` |
-| `labels` | object[] | **every** node, in graph order — corrected or not |
+| `labels` | `Slot[]` | **every** node, in graph order — corrected or not; each a `Slot` (§5) with its `flowchartId` and `nodeId` |
 | `graphAvailable` | boolean | `false` when the stored output carries no graph; `labels` is then `[]` |
 | `note` | string | present only when `graphAvailable` is `false`, saying why |
 | `dot` | string | the flowchart as **Graphviz DOT**, read from the database — draw it (§3a, *Drawing a flowchart*). R8 rebuilds it in the same request, so after a save it already carries the new labels; the PNG does not. `""` when none is stored |
 | `labels[].nodeId` | string | e.g. `n7`. Use as the key in R8 |
 | `labels[].slotKey` | string | **this node's slot key** — send it to R4 (undo) or R5 (history). Never assemble one yourself (§2) |
 | `labels[].text` | string | **what the picture carries now** — the stored label |
-| `labels[].humanText` | string \| null | the reviewer's words, whenever a correction exists — even an orphaned one |
-| `labels[].llmText` | string \| null | the captured original. `null` until the node is first corrected |
-| `labels[].isOverridden` | boolean | a correction is **in force** on this node. `false` for an orphan |
-| `labels[].isOrphaned` | boolean | a correction exists but no longer applies (§5) |
+| `labels[]` … | | and the rest of the `Slot` fields — `llmText`, `humanText`, `isOverridden`, `isOrphaned`, `canUndo`, `updatedBy`, `updatedAt` (§5) |
 
 ```json
 {
   "flowchartId": "Layer2.Gpio|GpioDrv|Gpio_Init|void",
   "functionName": "Gpio_Init",
   "labels": [
-    { "nodeId": "n0", "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void\u0001n0",
-      "text": "Start", "humanText": null, "llmText": null,
-      "isOverridden": false, "isOrphaned": false },
-    { "nodeId": "n7", "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void\u0001n7",
-      "text": "Check the write-protect flag", "humanText": "Check the write-protect flag",
-      "llmText": "Check flag", "isOverridden": true, "isOrphaned": false }
+    { "slotKind": "nodeLabel", "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void\u0001n0",
+      "flowchartId": "Layer2.Gpio|GpioDrv|Gpio_Init|void", "nodeId": "n0",
+      "text": "Start", "llmText": "Start", "humanText": null,
+      "isOverridden": false, "isOrphaned": false, "canUndo": false,
+      "updatedBy": null, "updatedAt": null },
+    { "slotKind": "nodeLabel", "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void\u0001n7",
+      "flowchartId": "Layer2.Gpio|GpioDrv|Gpio_Init|void", "nodeId": "n7",
+      "text": "Check the write-protect flag", "llmText": "Check flag",
+      "humanText": "Check the write-protect flag",
+      "isOverridden": true, "isOrphaned": false, "canUndo": true,
+      "updatedBy": "u-17", "updatedAt": "2026-09-18T10:02:41Z" }
   ],
   "graphAvailable": true,
   "dot": "digraph G {\n  rankdir=TB;\n  …\n  n7 [shape=box, label=\"Check the write-protect flag\"];\n  …\n}"
@@ -744,37 +800,50 @@ Three rules (`REQ-API-08`):
 | field | type | notes |
 |---|---|---|
 | `flowchartId` | string | the flowchart id, as sent |
-| `applied` | string[] | node ids written |
-| `firstEdits` | string[] | the subset that had no correction before |
-| `slotShape` | string \| null | sha256 hex (64 chars) of the graph these labels were written against — see below |
+| `labels` | object[] | **each saved node as it now is**, in request order: a `Slot` (§5, with `flowchartId` and `nodeId`) and what the save did to it — `previousText`, `firstEdit`, `viewsDerived`, `queuedForRegeneration` |
+| `viewsDerived` | string[] | `["testSpecs", "utExport"]` when the version has SWE.4 output: a label is a Test Step ("Check whether <label>"), and a return's label the expected return of a UT case, so the component's specs are re-derived in this request — see §8. `[]` otherwise |
+| `queuedForRegeneration` | `QueuedSlot[]` | always `[]`: a node label is built from the source, and nothing is built from it (`REQ-CS-01`) |
 | `renderPending` | boolean | `true` while the picture is **owed** |
 | `renderJobs` | integer[] | job ids raised by this call |
-| `viewsDerived` | string[] | `["testSpecs", "utExport"]` when the version has SWE.4 output: a label is a Test Step ("Check whether <label>"), and a return's label the expected return of a UT case, so the component's specs are re-derived in this request — see §8. `[]` otherwise |
+| `dot` | string | the flowchart's Graphviz DOT, rebuilt by this call — draw it (§3a) and the correction shows at once |
 
 ```json
 {
   "flowchartId": "Layer2.Gpio|GpioDrv|Gpio_Init|void",
-  "applied": ["n7", "n9"],
-  "firstEdits": ["n9"],
-  "slotShape": "8d08d2a38307c1a44778f12cdb76fd1cb4af0d23dcfa1b25fd7698374f005819",
+  "labels": [
+    { "slotKind": "nodeLabel", "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void\u0001n7",
+      "flowchartId": "Layer2.Gpio|GpioDrv|Gpio_Init|void", "nodeId": "n7",
+      "text": "Check the write-protect flag", "llmText": "Check flag",
+      "humanText": "Check the write-protect flag",
+      "isOverridden": true, "isOrphaned": false, "canUndo": true,
+      "updatedBy": "u-17", "updatedAt": "2026-09-18T10:02:41Z",
+      "previousText": "Check flag", "firstEdit": true,
+      "viewsDerived": [], "queuedForRegeneration": [] }
+  ],
+  "viewsDerived": [],
+  "queuedForRegeneration": [],
   "renderPending": true,
   "renderJobs": [412],
-  "viewsDerived": []
+  "dot": "digraph G {\n  …\n  n7 [shape=box, label=\"Check the write-protect flag\"];\n  …\n}"
 }
 ```
+
+Until 2026-09-29 this answered only `applied` and `firstEdits` — node ids, with no text — and
+`slotShape`, an internal fingerprint of the graph that no client needs.
 
 **`renderPending`** — the text is corrected everywhere it is read from the database immediately, but
 the **picture** may not be. It is `true` whenever a render job was raised and **not finished inside
 this call**, which on a host with no output tree is always. Note that the stored JSON and DOT *are*
 rebuilt either way: "the graph was rebuilt" and "the image was drawn" are different facts, and this
 flag reports the second. It always agrees with R9's `pendingRenders`. A picture not drawn here stays
-pending, and the next run or re-export on a host with the tree draws it. **A UI that draws R7's `dot`
+pending, and the next run or re-export on a host with the tree draws it. **A UI that draws the `dot`
 shows the corrected flowchart straight after the save** — this flag is only about the PNG the Word
 file carries. Either way the export consults the same rows, so a document cannot go out
 carrying new text and an old image (`REQ-IM-02`) — R9 reports it as `pendingRenders`.
 
-**`slotShape`** identifies the graph the correction was written against, so the same text is not
-reused later against a renumbered one. Node ids are **positions**, not identities. Opaque to the UI.
+The server still records, with each label, which graph it was written against, so the same text
+is not reused later against a renumbered one: node ids are **positions**, not identities
+(`REQ-ID-02`). Nothing a client sends or reads.
 
 Each label is stored as **its own record** with its own original and history, even though the API is
 per flowchart. The two granularities are deliberately different (`REQ-ST-07`) — which is why R2, R4
@@ -983,33 +1052,31 @@ response instead of dug out of stored view output.
 **Response 200** — `{"slotKind", "slots", "total", "limit", "offset"}`. `total` is the count
 **before** paging.
 
-A row, for the six per-slot kinds:
+A row, for the six per-slot kinds: a `Slot` (§5) — **send its `slotKey` to R2–R6 verbatim** — and
+where it is listed:
 
 | field | type | notes |
 |---|---|---|
-| `slotKind` | string | |
-| `slotKey` | string | **send this to R2–R6 verbatim** |
 | `label` | string | a display name — the function, unit or type |
 | `component` / `unit` | string \| null | for `structDescription`: the first unit that shows it, or `null` when no document of this version does |
 | `shownIn` | string[] | **every kind**: the unit keys (`Layer1.Cross\|Dispatch`) whose SWE.3 document prints this text, read from the version's stored views. `[]` = no document of this version shows it — the save works and nobody will see it. `description`: the units whose interface table lists the function or global. `behaviourInputName` / `behaviourOutputName`: those units where the function's flowchart was drawn, plus the units whose Dynamic Behaviour rows show it. `unitDescription`: the unit, when it has a section. `structDescription`: the units whose unit header table shows it. `behaviourDescription`: its own unit. A hidden function is shown nowhere |
 | `kindOfType` | string | `structDescription` only: `struct`, `class` or `union` |
-| `text` | string | **what the document prints now**, read from where the document reads it. May be `""` — a slot can be legitimately empty and is still editable |
-| `humanText` | string \| null | the reviewer's words whenever a correction exists, orphaned or not |
-| `llmText` | string \| null | the captured original; `null` until the first edit |
-| `isOverridden` | boolean | a correction is **in force**. `false` for an orphan |
-| `isOrphaned` | boolean | a correction exists but no longer applies |
-| `bullets` | string[] | `behaviourDescription` only, in place of `text` |
-| `functionId` / `externalCallerId` | string | `behaviourDescription` only: the two ids R6 takes |
+| `artifact` | string | where a model-backed slot lives: `functions`, `globalVariables`, `units` or `dataDictionary` |
+
+`text` may be `""` — a slot can be legitimately empty and is still editable. A behaviour row
+carries `functionId` and `externalCallerId` (the two ids R6 takes) and `bullets`, like every
+`behaviourDescription` slot (§5).
 
 ```json
 {
   "slotKind": "description",
   "slots": [
     { "slotKind": "description", "slotKey": "Layer1.Sample-Core|Core|coreAdd|int,int",
+      "text": "Adds two integers.", "llmText": "Adds two integers.", "humanText": null,
+      "isOverridden": false, "isOrphaned": false, "canUndo": false,
+      "updatedBy": null, "updatedAt": null,
       "label": "coreAdd", "component": "Layer1.Sample-Core", "unit": "Core",
-      "shownIn": ["Layer1.Sample-Core|Core"],
-      "text": "Adds two integers.", "llmText": null,
-      "isOverridden": false, "isOrphaned": false }
+      "artifact": "functions", "shownIn": ["Layer1.Sample-Core|Core"] }
   ],
   "total": 158, "limit": 200, "offset": 0
 }
@@ -1040,24 +1107,18 @@ data-dictionary key, so it names no unit; `shownIn` says where the description i
 from the version's stored unit header rows, and `unit` / `component` filter on it:
 
 ```json
-{ "slotKind": "structDescription", "slotKey": "AddOperation", "label": "AddOperation",
-  "kindOfType": "class", "component": "Layer1.Cross", "unit": "Dispatch",
-  "shownIn": ["Layer1.Cross|Dispatch"], "artifact": "dataDictionary",
-  "text": "Adds two operands.", "llmText": null, "isOverridden": false, "isOrphaned": false }
+{ "slotKind": "structDescription", "slotKey": "AddOperation",
+  "text": "Adds two operands.", "llmText": "Adds two operands.", "humanText": null,
+  "isOverridden": false, "isOrphaned": false, "canUndo": false,
+  "updatedBy": null, "updatedAt": null,
+  "label": "AddOperation", "kindOfType": "class", "component": "Layer1.Cross", "unit": "Dispatch",
+  "shownIn": ["Layer1.Cross|Dispatch"], "artifact": "dataDictionary" }
 ```
 
-**`text`, `humanText` and the two flags, together.** For a live correction `text` and
-`humanText` are the same sentence — the save wrote it into the model. They differ in exactly one
-case: an **orphan**, which is kept (`REQ-ID-03`) but never applied. Its function's code changed, so
-the document prints fresh LLM text while the row still holds words written for the old code:
-
-| state | `text` | `humanText` | `isOverridden` | `isOrphaned` |
-|---|---|---|---|---|
-| never corrected | the LLM's | `null` | `false` | `false` |
-| corrected | the human's | the human's | `true` | `false` |
-| orphaned | the LLM's (fresh) | the human's (stale) | `false` | `true` |
-
-Show an orphan's `humanText` as "your correction no longer applies", never as current wording.
+**`text`, `humanText` and the flags** follow §5's states table. For a live correction `text` and
+`humanText` are the same sentence — the save wrote it into the model. They differ for an
+**orphan**, which is kept (`REQ-ID-03`) but never applied: its function's code changed, so the
+document prints fresh LLM text while the row still holds words written for the old code.
 
 **The text here is the text a save replaces.** It is read through the same resolver
 `PUT …/overrides/slot` writes through, so the listing and the write cannot disagree about which
@@ -1095,8 +1156,11 @@ request again later, or report it.
 
 Two people editing the same slot: **last write wins**, no edit lock and no conflict response
 (`REQ-API-07`). Saves of one version are taken one at a time on the server — each is milliseconds —
-so a second save waits rather than failing. Sending only changed labels (§13) is what keeps that true
-*per slot* when a whole flowchart is saved at once.
+so a second save waits rather than failing, and then applies on top of the first: both answer 200,
+the document prints the later text, the history holds both, and the later answer's `previousText`
+is the earlier reviewer's words. The earlier reviewer's screen shows their own text until it reads
+the slot again — nothing is pushed. Sending only changed labels (§13) is what keeps that true *per
+slot* when a whole flowchart is saved at once.
 
 ---
 

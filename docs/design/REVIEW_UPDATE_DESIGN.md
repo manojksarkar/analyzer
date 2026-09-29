@@ -848,6 +848,19 @@ deleting the row instead would destroy the user's work to express "there was not
 when the correction is orphaned, since it is not applied and the document already shows the LLM's
 text for the current code (§4).
 
+**One shape for a slot** (`REQ-API-09`). Every route that returns a slot's text builds it with
+`catalog.slot_view` — `text`, `llmText`, `humanText`, `isOverridden`, `isOrphaned`, `canUndo`,
+`updatedBy`, `updatedAt`, and the parts of a composite key (`flowchartId`/`nodeId`,
+`functionId`/`externalCallerId`/`bullets`). `text` is read from where the document reads it
+(`catalog.texts_in_force`: the model through the resolver, the stored flowchart, the stored
+behaviour manifest), never from the override row. A save or undo answers with the slot read back
+inside its own transaction, plus `previousText`, `firstEdit`, `viewsDerived` and
+`queuedForRegeneration`; R8 answers each saved node that way, with the rebuilt DOT. Before it, each
+route had its own subset: R8 returned node ids only, R2 had no `text`, R3 no `isOverridden`, R6 no
+`humanText` — and `llmText` was null until a first edit in R7 and R11 but filled in R3. `canUndo` is
+decided once, here, so a client carries no copy of the rule. **R2 reads any slot**, corrected or
+not; 404 means only "not in this version".
+
 **`GET .../overrides` is an overlay, not a slot enumeration.** `REQ-API-01` asks for the
 document's slots with their text; a version has ~57,000, so the endpoint returns only the
 corrected ones and the UI merges them by `slotKey` into the document it already fetched.
@@ -859,7 +872,7 @@ Router `api/routes/text_overrides.py`, following the conventions in
 | method | path | requirement |
 |---|---|---|
 | `GET` | `…/versions/{vid}/slots` | `REQ-API-01` — list with current text + `isOverridden`; filter by unit/component/kind, paginated |
-| `GET` | `…/versions/{vid}/overrides/slot?slot_kind=&slot_key=` | `REQ-API-02` |
+| `GET` | `…/versions/{vid}/overrides/slot?slot_kind=&slot_key=` | `REQ-API-02` — any slot, corrected or not |
 | `PUT` | `…/versions/{vid}/overrides/slot` | `REQ-API-03` — one slot per call, the text kinds; kind and key in the body |
 | `DELETE` | `…/versions/{vid}/overrides/slot?slot_kind=&slot_key=` | `REQ-API-04` — undo, restores `llm_text`, keeps the record |
 | `GET` | `…/versions/{vid}/flowcharts/labels?flowchart_id=` | `REQ-API-02` — every node label of one flowchart |
@@ -922,7 +935,8 @@ Rejections, from `override_service`: `EmptyText` → 422, `SlotUnknown` → 404 
 `NoStoredGraph` and `VersionBusy` → 409, `NotEditableHere` → 501 until the model-home item in
 [Open items](#open-items) is resolved; anything unexpected → 500 (§11).
 
-The response carries `renderPending` so the UI can show that an image is still being produced.
+The response carries each saved node as a slot (`REQ-API-09`), the rebuilt DOT, and
+`renderPending` so the UI can show that the PNG is still being produced.
 
 ---
 
@@ -1089,6 +1103,7 @@ in September.
 | `REQ-AP-02` | a failure mid-save leaves model and views both unchanged |
 | `REQ-AP-02` | a save does not put back another save's change; a model replaced under a save → 409, nothing stored |
 | `REQ-CS-01` | a queued function is not answered from the cache; a SWE.4-only run retires no behaviour entry; the queue travels to the next version |
+| `REQ-API-09` | the same slot read through R1, R2, R7 and R11 equals what R3, R6 and R8 answered |
 | `REQ-ST-03` / `REQ-API-04` | an edit over an orphan is a first edit; undoing an orphan → 409 |
 
 **Each test must fail without its fix.** Every defect this codebase shipped in September passed code
