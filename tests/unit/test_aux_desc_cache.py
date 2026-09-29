@@ -95,3 +95,27 @@ def test_rich_enrichment_early_exit(monkeypatch):
                    "callsIds": ["A|U|f|"], "location": {}},
     }
     assert le.enrich_functions_rich(funcs, "/tmp", _CFG, knowledge=None) == {}
+
+
+def test_rich_enrichment_regenerate_does_not_answer_from_the_cache(monkeypatch):
+    """REQ-CS-01. A reviewer corrected a description this function was written from; the
+    regeneration queue asks for it again. The cache key is the source plus the callees' SOURCE
+    hashes, which a corrected description does not move -- so a cache hit hands back the very
+    wording the queue exists to replace. `regenerate` names the functions that must not be
+    answered from it, in either pass."""
+    monkeypatch.setattr(le, "llm_provider_reachable", lambda config: True)
+    monkeypatch.setattr(le, "load_llm_config", lambda config: {
+        "provider": "openai", "defaultModel": "m", "cacheVersion": 1})
+    monkeypatch.setattr(le, "extract_source", lambda base, loc: "int f() { return 1; }")
+    monkeypatch.setattr(EntityCache, "get", lambda self, entity, h: "Stale, from the cache.")
+    monkeypatch.setattr(le, "get_rich_description", lambda *a, **k: "Fresh, pass one.")
+    monkeypatch.setattr(le, "_get_refined_description", lambda *a, **k: "Fresh, pass two.")
+
+    def funcs():
+        return {"A|U|f|": {"qualifiedName": "f", "description": "", "callsIds": [],
+                           "location": {"file": "f.cpp", "line": 1}}}
+
+    assert le.enrich_functions_rich(funcs(), "/tmp", _CFG)["A|U|f|"]["description"] == \
+        "Stale, from the cache."
+    assert le.enrich_functions_rich(funcs(), "/tmp", _CFG, regenerate={"A|U|f|"})[
+        "A|U|f|"]["description"] == "Fresh, pass two."

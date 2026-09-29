@@ -548,7 +548,9 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
 
 
 def _carry_review_overrides(baseline_version_id: str, target_version_id: str) -> None:
-    """Copy the baseline's reviewer corrections onto this version (`REQ-VR-01`).
+    """Copy the baseline's reviewer corrections onto this version (`REQ-VR-01`), and the
+    regenerations the baseline still owes (`REQ-CS-01`) -- its stale text is what the
+    carry-forward above just copied.
 
     Never fatal. A generation that has already paid for the parse and the LLM must not be lost
     because corrections could not be copied; the run reports it and the corrections stay on the
@@ -561,11 +563,11 @@ def _carry_review_overrides(baseline_version_id: str, target_version_id: str) ->
         from review.carry_forward import carry_overrides
         with get_engine().begin() as cx:
             out = carry_overrides(cx, baseline_version_id, target_version_id)
-        if out.carried or out.orphaned:
+        if out.carried or out.orphaned or out.queued:
             from core.logging_setup import get_logger
             get_logger("incremental").info(
-                "review: carried %d correction(s) from %s; %d no longer apply",
-                out.carried, baseline_version_id, out.orphaned)
+                "review: carried %d correction(s) from %s; %d no longer apply; %d regeneration(s) "
+                "still owed", out.carried, baseline_version_id, out.orphaned, out.queued)
     except Exception as exc:                       # noqa: BLE001 - see docstring
         from core.logging_setup import get_logger
         get_logger("incremental").warning(

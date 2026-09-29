@@ -129,10 +129,12 @@ class TestNeverTheReasonARunDies:
 
 
 class TestRunPyWrapsThePhases:
-    def test_the_phase_loop_runs_inside_the_guard_from_phase_3(self):
-        """run.py is what BOTH re-export front doors spawn; the guard has to be there."""
+    def test_the_phase_loop_runs_inside_the_guard_from_phase_2(self):
+        """run.py is what BOTH re-export front doors spawn; the guard has to be there -- from
+        Phase 2, because `reexport --from-phase 2` is what pays a correction's regeneration
+        queue, and it too left the version at 'exporting'."""
         src = open(os.path.join(PROJECT_ROOT, "engine", "run.py"), encoding="utf-8").read()
-        guard = src.index("with finished_status_kept(from_phase >= 3):")
+        guard = src.index("with finished_status_kept(from_phase >= 2):")
         loop = src.index("runner.run(plan.phases", guard)
         between = src[guard:loop]
         assert "for plan in plans:" in between and between.count("\n") <= 4

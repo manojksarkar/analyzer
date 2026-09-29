@@ -320,8 +320,8 @@ def _write_pipeline_status(vid: str, status: Optional[str]) -> None:
 def finished_status_kept(active: bool, *, version_id: Optional[str] = None):
     """Leave a FINISHED version's ``pipeline_status`` as it was, whatever the phases report.
 
-    For a run that re-renders a version without rebuilding its model -- a re-export, Phase 3
-    or 4 alone. `PhaseRunner` marks each phase it starts ('viewing', 'exporting'), which is
+    For a run that rebuilds a finished version from Phase 2 on -- a re-derive or a re-export.
+    `PhaseRunner` marks each phase it starts ('deriving', 'viewing', 'exporting'), which is
     right for a generation: its last step, `write_manifest`, closes the lifecycle at
     'complete'. A re-export has no such step, so the version stayed at 'exporting' for good --
     and `pg_stores.list_versions` accepts only NULL or 'complete' as a baseline. The next
@@ -330,9 +330,11 @@ def finished_status_kept(active: bool, *, version_id: Optional[str] = None):
     path. A correction is always followed by a re-export, so that was every reviewed version.
 
     The phases still report while they run, so a watcher sees progress; the status is put
-    back when the run ends, whether it succeeded or not -- the model was never touched, so the
-    version is exactly as finished as it was. Only a finished status is put back: one still
-    in progress means a generation owns this run, and its own last step closes it.
+    back when the run ends, whether it succeeded or not. The parse was never touched, and a
+    phase that fails publishes nothing it half-built (the model is buffered until the phase
+    returns), so the version is as finished as it was. Only a finished status is put back: one
+    still in progress means a generation owns this run -- the incremental engine runs its own
+    `--from-phase 2` -- and its own last step closes it.
     """
     vid = version_id or os.environ.get("ANALYZER_VERSION_ID", "").strip()
     found, before = _read_pipeline_status(vid) if (active and vid) else (False, None)

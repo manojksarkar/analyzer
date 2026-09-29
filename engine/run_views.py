@@ -220,21 +220,53 @@ def _with_text_overrides(config):
         return config
 
 
-def _retire_behaviour_regenerations() -> None:
-    """Clear queued behaviour-row regenerations, now that the views have rebuilt them.
+def _rebuilt_behaviour_rows(output_dir) -> list:
+    """The slot keys of the behaviour rows this run wrote into its manifest."""
+    from review import phase3_overrides as p3, slot
+    path = os.path.join(output_dir, "behaviour_diagrams", "_behaviour_pngs.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            payload = json.load(f)
+    except (OSError, ValueError):
+        return []
+    out = []
+    for _c, _u, row in p3.behaviour_rows((payload or {}).get("_docxRows")):
+        fid, caller = row.get("currentFunctionId"), row.get("externalCallerId")
+        if fid and caller:
+            try:
+                out.append(slot.for_behaviour_row(fid, caller))
+            except slot.SlotKeyError:
+                continue
+    return out
+
+
+def _retire_behaviour_regenerations(output_dir, ran, model, config) -> None:
+    """Clear the queued behaviour-row regenerations this run paid (`REQ-CS-01`).
+
+    Only when the behaviour view ran, and only for the rows it covered: the rows it wrote, and the
+    rows of the components it ran over that it no longer writes (`cascade.clear_behaviour_entries`).
+    A SWE.4-only run, a run with the view switched off and a run over another component rebuild
+    no behaviour row, and must not report one as rebuilt.
 
     Never fatal: the views have already run and their output is written; failing the phase here
     would throw that away over bookkeeping.
     """
     try:
+        if "behaviourDiagram" not in (ran or ()):
+            return
         from core.run_context import version_id as _vid
         from core.db import get_engine, is_database_configured
         vid = _vid()
         if not (vid and is_database_configured()):
             return
+        # Not narrowed by --selected-unit: that re-renders only some images, and the view still
+        # writes every row of its components (views/behaviour_diagram.py).
+        from core.model_io import COMPONENTS
+        allowed = config.get("_analyzerAllowedComponents")
+        components = list(allowed) if allowed else list((model.get(COMPONENTS) or {}).keys())
         from review.cascade import clear_behaviour_entries
         with get_engine().begin() as cx:
-            n = clear_behaviour_entries(cx, vid)
+            n = clear_behaviour_entries(cx, vid, _rebuilt_behaviour_rows(output_dir), components)
         if n:
             print("[run_views] retired %d regenerated behaviour description(s)" % n)
     except Exception as exc:                       # noqa: BLE001 - see docstring
@@ -431,8 +463,9 @@ def main():
 
     # REQ-CS-01's other half. A queued behaviour description has no model field to blank, so
     # Phase 2 cannot pay that debt -- but the behaviour view rebuilds every row it writes, so
-    # running it IS the regeneration. Retired here, where it actually happened.
-    _retire_behaviour_regenerations()
+    # running it IS the regeneration. Retired here, where it actually happened, and only for the
+    # rows this run covered.
+    _retire_behaviour_regenerations(output_dir, ran, model, config)
 
 
 if __name__ == "__main__":
