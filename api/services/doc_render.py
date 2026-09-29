@@ -206,8 +206,11 @@ def _load_model_json(model_dir: Path, name: str) -> dict:
 
 
 def _load_config() -> dict:
+    """The engine's own config, for a render with no version config to go by: the defaults the
+    engine starts from, then the machine's overrides. (`config.json` was the defaults' old name;
+    reading only it and the local file left the Introduction as placeholders.)"""
     cfg: dict = {}
-    for fname in ("config.json", "config.local.json"):
+    for fname in ("config.defaults.json", "config.json", "config.local.json"):
         p = _REPO_ROOT / "engine" / "config" / fname
         if not p.exists():
             continue
@@ -469,7 +472,21 @@ def _flatten_toc(sections: list[dict]) -> list[dict]:
 
 # ── interfaces table (8-column, mirrors docx_exporter) ───────────────────────
 
-def _interfaces_table_8col(ifaces: list) -> Optional[dict]:
+def _cell_trim(s: str, max_len: int) -> str:
+    """docx_exporter's cell trim: cut to `max_len` with a trailing `...`."""
+    s = (s or "").strip()
+    return s if len(s) <= max_len else s[: max_len - 3] + "..."
+
+
+def _param_type_label(p: dict) -> str:
+    """A parameter as `type name` (docx_exporter._param_type_label); type only with no name."""
+    t, n = (p.get("type", "") or "").strip(), (p.get("name", "") or "").strip()
+    return f"{t} {n}".strip() if n else t
+
+
+def _interfaces_table_8col(ifaces: list) -> dict:
+    """The unit interface table - with only its header row when the unit has no interface, as
+    the DOCX prints it."""
     rows: list[list[str]] = []
     for iface in ifaces:
         iface_type = iface.get("type", "") or "-"
@@ -478,7 +495,7 @@ def _interfaces_table_8col(ifaces: list) -> Optional[dict]:
             data_range = iface.get("range", "") or "NA"
         else:
             params = iface.get("parameters", []) or []
-            param_types = "; ".join(p.get("type", "") for p in params) if params else "VOID"
+            param_types = "; ".join(_param_type_label(p) for p in params) if params else "VOID"
             param_ranges = "; ".join(p.get("range", "") for p in params) if params else "NA"
             ret = (iface.get("returnType") or "").strip()
             if ret:
@@ -503,8 +520,6 @@ def _interfaces_table_8col(ifaces: list) -> Optional[dict]:
             str(iface.get("sourceDest") or "-"),
             iface_type,
         ])
-    if not rows:
-        return None
     return {
         "headers": ["Interface ID", "Interface Name", "Information", "Data Type",
                     "Data Range", "Direction(In/Out)", "Source/Destination", "Interface Type"],
@@ -559,10 +574,16 @@ def build_intro_section(config: dict, abbreviations: dict,
     ])
 
 
-def intro_section_from_config(components: list[str], project_name: str) -> dict:
-    """Build the Introduction section from the repo config + abbreviations file —
+def render_config(version: Any = None) -> dict:
+    """The config a document is rendered with: the one its version ran with
+    (`versions.resolved_config` - what the DOCX was exported with), else the engine's."""
+    return getattr(version, "resolved_config", None) or _load_config()
+
+
+def intro_section_from_config(components: list[str], project_name: str, version: Any = None) -> dict:
+    """Build the Introduction section from the version's config + abbreviations file —
     for callers (fallback renders) that don't already have them loaded."""
-    config = _load_config()
+    config = render_config(version)
     return build_intro_section(config, _load_abbreviations(config), components, project_name)
 
 
@@ -614,9 +635,11 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
     meta_data = _load("metadata")
     project_name = meta_data.get("projectName") or project.name
 
-    # Load config + abbreviations
-    config = _load_config()
+    # Load config + abbreviations: the version's own, as the DOCX was exported with
+    config = render_config(version)
     abbreviations = _load_abbreviations(config)
+    # Each unit's one-line summary, as the DOCX exporter wrote it (an LLM summary when AI is on).
+    unit_descriptions: dict = _view_json(output_reader, group_dir, "unit_descriptions.json") or {}
 
     # Load flowcharts + behavior diagrams
     flowcharts_dir = group_dir / "flowcharts"
@@ -645,7 +668,9 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
     # ── 2+. Per component ────────────────────────────────────────────────────
     for comp_idx, comp in enumerate(sorted_comps):
         n = comp_idx + 2
-        comp_display = comp.replace("-", " ")
+        # The bare component name, as the DOCX heads it; `comp` stays qualified wherever it is a key.
+        from core.config import display_name
+        comp_display = display_name(comp).replace("-", " ")
         unit_keys = sorted(comps[comp])
 
         # Build (unit_key, display_name, interfaces) triples
@@ -700,7 +725,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                 if d not in seen_descs:
                     seen_descs.add(d)
                     all_descs.append(d)
-            desc = "; ".join(all_descs)[:120] if all_descs else "N/A"
+            desc = str(unit_descriptions.get(uk) or "").strip() or _cell_trim("; ".join(all_descs), 120) or "N/A"
             comp_unit_rows.append([comp_display, uname, desc, "N/A"])
 
         if comp_unit_rows:
@@ -742,14 +767,9 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                 unit_children.append(_sec(f"{uk}-header", f"{unit_sec_num}.1", "unit header", 4,
                                           type="richtext", content="NA"))
 
-            # N.1.U.2 unit interface (8-column)
-            iface_table = _interfaces_table_8col(ifaces)
-            if iface_table:
-                unit_children.append(_sec(f"{uk}-iface", f"{unit_sec_num}.2", "unit interface", 4,
-                                          type="table", table=iface_table))
-            else:
-                unit_children.append(_sec(f"{uk}-iface", f"{unit_sec_num}.2", "unit interface", 4,
-                                          type="richtext", content="NA"))
+            # N.1.U.2 unit interface (8-column; header only when the unit has none, as in the DOCX)
+            unit_children.append(_sec(f"{uk}-iface", f"{unit_sec_num}.2", "unit interface", 4,
+                                      type="table", table=_interfaces_table_8col(ifaces)))
 
             # N.1.U.3+ per function (functions only, starting at index 3)
             iface_idx = 3
@@ -849,11 +869,14 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                 sec_title = f"{uname}-{func_display}"
 
                 if flowchart_entries:
+                    # The Requirements cell opens with the description, else the function's
+                    # name (docx_exporter._add_flowchart_table).
+                    requirement = (iface.get("description") or "").strip() or func_display or "-"
                     unit_children.append(_sec(
                         sec_id, f"{unit_sec_num}.{iface_idx}", sec_title, 4,
-                        type="flowchart_table", content=description,
+                        type="flowchart_table", content=requirement,
                         flowchart_table={
-                            "description": description,
+                            "description": requirement,
                             "flowcharts": flowchart_entries,
                             "risk": "Medium",
                             "capacity": "Common",
@@ -962,9 +985,10 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
     ))
 
     # ── Appendix A ────────────────────────────────────────────────────────────
+    # Number + title read "Appendix A. Design Guideline", the DOCX heading.
     sections.append(_sec(
-        "appendix-a", "Appendix A",
-        "Appendix A. Design Guideline", 1,
+        "appendix-a", "Appendix A.",
+        "Design Guideline", 1,
         type="richtext", content="[Design guidelines.]",
     ))
 
