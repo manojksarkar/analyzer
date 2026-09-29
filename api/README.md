@@ -184,10 +184,12 @@ All endpoints except `/auth/signin` and `/auth/refresh` require
 |---|---|---|
 | GET | `/projects` | List projects for current user |
 | POST | `/projects` | Create project |
+| POST | `/projects/config/preview` | Fill the New Project wizard from a config file (creates nothing) |
 | GET | `/projects/search` | Search discoverable projects |
 | GET | `/projects/:id` | Project detail + KPIs |
 | PATCH | `/projects/:id` | Update project (admin) |
 | DELETE | `/projects/:id` | Delete project (admin) |
+| GET | `/projects/:id/config` | The project as a config file, for `analyzer.py onboard --config` (member; never the token) |
 | POST | `/projects/:id/access-requests` | Request access |
 | GET | `/projects/:id/access-requests` | List pending requests (admin) |
 | PATCH | `/projects/:id/access-requests/:reqId` | Approve / deny request (admin) |

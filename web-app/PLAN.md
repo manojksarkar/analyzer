@@ -14,7 +14,8 @@ Documents (+ inspector, review tracker), Compare (rich diff), Versions, Team. Te
 **Verified end to end on the real pipeline (2026-09-29, branch `ui_v2`):** wizard → project; Run Analysis →
 real run with live progress → 13 documents; inspector (all 71 diagram PNGs load), DOCX download, Download All
 ZIP; a layer/group-scoped run; Compare across two versions; claim, approve, invite, sign-out, silent token
-refresh — on PostgreSQL, admin and developer roles.
+refresh — on PostgreSQL, admin and developer roles. Also that night: a command-line config file imports into
+the wizard, and a project downloads as one; download → import → download round-trips.
 
 ## Real-API cutover
 
@@ -42,6 +43,9 @@ refresh — on PostgreSQL, admin and developer roles.
   Settings page (build config and data dictionary cannot change after creation); SSO; forgot password.
 - **Runs** — a job left `running` by an API restart stays so until cancelled (no stale-job sweep; a sweep is
   unsafe with more than one API process).
+- **Config import** — a project holds one definitions file and one data dictionary, so a config whose layers
+  use different cores imports the first core's files only; `cores.<name>.compileCommands` has no field in
+  the wizard (include folders go in per layer as Lib Paths).
 
 ## Remaining — decisions
 

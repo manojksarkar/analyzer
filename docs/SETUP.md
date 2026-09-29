@@ -120,6 +120,11 @@ Then: **New Project** (the wizard) → **Run Analysis** on the Overview page →
 **Documents** when the run completes. A run with the LLM on takes as long as the LLM needs — the
 sample project took about 2 hours on a local Ollama the first time, minutes once its answers were cached.
 
+A project described by a command-line config file can start from it: **Import config** at the top of the
+wizard fills in what the file allows and lists what it could not (the access token is always typed, never
+read from a file). The other way, **Download config** (a project's ⋮ menu, or its Overview) writes the
+project out for `analyzer.py onboard --config`.
+
 ## 7. Run from the command line
 
 The same pipeline without the web app — `onboard` a project, then `generate` versions:

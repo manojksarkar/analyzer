@@ -208,6 +208,57 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-29b (**A config file in and out of the web app: Import config in the New Project wizard,
+> Download config on a project.** Branch `ui_v2`, local commits only. The user asked to onboard from the
+> config file the CLI reads, and decided: the access token stays OUT of files (typed in step 1; a
+> `token`/`accessToken`/… key in the file is reported and never used); one core's files for now; download too.
+>
+> - **Format:** the engine's own config, read as JSONC with the engine's helpers, plus an optional `project`
+>   block `{name, repository, branch, defines}` that the engine ignores.
+> - **API** — `api/services/project_config.py`, routes in `api/routes/projects.py`:
+>   `POST /projects/config/preview {text, repo_url?, branch?, access_token?}` →
+>   `{draft, expected_uploads, report: [{level: filled|check|skipped, text}], repository_checked}`. It creates
+>   nothing except uploads: a definitions or data-dictionary file found in the repository is stored through
+>   `repositories.store_upload`, which was factored out of `upload_file`. With `repo_url` it reuses the wizard's
+>   cached blobless clone (`repo_git._clone_or_reuse`) and lists it (`git_cli.list_tree`). New
+>   `git_cli.read_file` runs `git -c remote.origin.url=<auth url> show <ref>:<path>`, so the token never lands
+>   in the clone's config. Text limit 2 MB. `GET /projects/{id}/config` (any member, via
+>   `require_project_member`) returns `<name>.config.json`: layers from `_convert_layers` (the run's own
+>   conversion), `cores.Core1` naming the uploaded files, `clang`/`views`/`docx` from `build_config`, and a
+>   comment header. Never the token.
+> - **Preview rules:**
+>   - Paths: layer path + component path = the repo-root path the wizard uses.
+>   - Checked against the repository, a path matches case-insensitively and takes the repository's
+>     spelling; a path that is not there is left out and named.
+>   - A component none of whose paths exists is left out, and so is a group that leaves empty. Before this,
+>     the husk was kept with no files, and `_convert_layers` then used the component NAME as its path.
+>   - A machine path (absolute, `C:\`, UNC) is never looked up; it becomes an expected upload that step 2
+>     names, and each such report line says why.
+>   - Dropped: `clang.llvmLibPath/clangIncludePath/macrosFile` (the server uses its own); `llm`/`ui`/`db`
+>     (server sections); `compileCommands` (the wizard has no field).
+>   - `project.defines` becomes typed definitions, unless a definitions file is also named.
+> - **UI** — `pages/NewProjectPage/` (the page became a folder in `575871a`):
+>   - `components/ConfigImport.tsx`: the Import button and the report.
+>   - `helpers.ts`: `draftToLayers`, `assignmentsOf`, `settingsSummary`, and `ownerOf`, which knows folder
+>     prefixes so an imported folder's files are not offered to another component.
+>   - `index.tsx`: import → preview without the repository → fill steps 1–3. The user's own uploads are
+>     never replaced. Test Connection or a branch change re-checks against the repository, without
+>     replacing an architecture the user edited (`archEdited`). On submit the imported settings go into
+>     `build_config`, whose `clang`/`views`/`docx` the runner applies (`_write_project_config`).
+>   - **Download config**: `useDownloadProjectConfig`, in the Projects row ⋮ menu and the Overview config
+>     panel.
+> - **Verified** in a headless browser on `analyzer_ui`:
+>   - A CLI-style import created a project. The wrong-case path took the repository's spelling, the missing
+>     component was left out, the machine-path file showed as a step-2 hint, and the Review step showed the
+>     settings.
+>   - Download config works from both places.
+>   - Download → import → download round-trips: the second file equals the first, minus the empty component.
+> - **Tests:** `tests/api/test_config_import_export.py` (26),
+>   `web-app/src/services/mappers/__tests__/projectConfig.test.ts`,
+>   `web-app/src/pages/NewProjectPage/__tests__/helpers.test.ts`.
+> - **Merging with review_update_v2:** that branch also edits `api/routes/projects.py` (`_project_view`,
+>   `list_projects` — other hunks) and keeps `_convert_layers` as it is.)
+
 > Updated: 2026-09-29 (**The web app works end to end on develop again — branch `ui_v2`, cut from develop
 > `5542736`; local commits only, NOT pushed, NOT merged (user reviews first).** Verified in a headless browser
 > (puppeteer) against the real API on PostgreSQL — scratch database `analyzer_ui` on the local cluster, the API
