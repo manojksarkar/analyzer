@@ -10,7 +10,7 @@ that:
 - **Chronology and the reasoning behind each decision** → the dated entries in
   [project-context/history/](../../project-context/history/): the feature in `2026-09-16` through
   `2026-09-20`, the rebase onto develop in `2026-09-26f` through `2026-09-27d`, the rebase onto
-  `5542736` in `2026-09-29b`
+  `5542736` in `2026-09-29b`, the full-feature review and its ten fixes in `2026-09-29d`
 
 Branch: `review_update_v3` = `review_update_v2` rebased onto `origin/develop` `5542736` on 2026-09-29
 (develop's six commits; no code conflicts — §3.3). `review_update_v2` = `review_update_v1`
@@ -142,8 +142,10 @@ Everything else is new files. These are the ones a merge can actually collide on
 | `engine/docx_exporter.py` | both LLM description calls **removed**; reads stored values | **medium** |
 | `engine/incremental/store.py` | `capture_output` also stamps `view_derivations` (the export guard's baseline) | low |
 | `engine/incremental/engine.py` | `_carry_review_overrides`, called beside `carry_forward_globals` | low |
-| `engine/run_views.py` | `_with_text_overrides` before `run_views(...)`, `_retire_behaviour_regenerations` after | **medium** — two lines at named points |
-| `engine/model_deriver.py` | `_take_regeneration_queue` before the enrichment, `_retire_regeneration_queue` after | **medium** |
+| `engine/run_views.py` | `_with_text_overrides` before `run_views(...)`, `_retire_behaviour_regenerations(output_dir, ran, model, config)` after | **medium** — two lines at named points |
+| `engine/model_deriver.py` | `_take_regeneration_queue` before the enrichment, `_retire_regeneration_queue` after — each twice: descriptions (with `regenerate=`), then unit descriptions around `_enrich_unit_and_struct_descriptions` | **medium** |
+| `engine/llm_enrichment.py` | `enrich_functions_rich(..., regenerate=None)` — the named functions skip the cache lookup in both passes | **medium** — develop's LLM file; default unchanged |
+| `engine/core/model_store.py` | + `set_entity_field`, `set_unit_description`, `ModelRowMissing` — one-row writes a save uses | low — additive |
 | `analyzer.py` | `reexport` refuses a stale `--from-phase 4`; new `--force` | low |
 | `engine/run.py` | `_restore_output_from_db` before the phases, for `--from-phase 4` | low |
 | `engine/core/model_repo.py` | `flush(conn=None)` — joins a caller's transaction | low — additive, default unchanged |
@@ -255,12 +257,15 @@ input is never trimmed); do not copy it here.
 
 → `tests/unit/test_review_slot.py::TestTheSeparatorIsNotWhitespace`.
 
-### 4.8 `llm_text` is captured once and never re-read
+### 4.8 `llm_text` is captured once per correction and never re-read
 
 By the second edit the model holds the *human's* previous text. Re-reading it would replace the LLM
 original with human prose, leaving nothing to undo to and a training pair that is human-vs-human.
+The one exception is an **orphan**: it is never applied, so the slot holds fresh LLM text for the new
+code, and an edit there is a first edit that captures it. Undoing an orphan itself is refused (409).
 
-→ `test_review_override_service.py::test_the_llm_original_survives_a_second_edit`.
+→ `test_review_override_service.py::test_the_llm_original_survives_a_second_edit`,
+`::TestAnOrphanedCorrection`; `test_review_flowchart_save.py::test_an_orphaned_label_starts_a_new_correction`.
 
 ### 4.9 Ordinary runs must keep recording what they derived
 
@@ -275,14 +280,20 @@ corrected, the SWE.3 re-export, then an export-only `--doc-type all` shipped the
 → `tests/unit/test_review_export_guard.py::TestTheRecord`, `::TestDocumentTypes`;
 `test_review_pipeline_wiring.py` for the two call sites.
 
-### 4.10 A model write from the API must flush
+### 4.10 A model write from the API must reach its one row, in the request's transaction
 
-`ModelAccess.save()` calls `DbRepository.flush()`. `write()` only **buffers** — without the flush a
-correction returns 200 and stores nothing. The flush is handed the request's connection so the
-model write and the override row land in one transaction (`REQ-AP-02`).
+`ModelAccess.save()` writes the corrected field of the one entity it names
+(`model_store.set_entity_field`, `set_unit_description`) through the request's connection, so the
+model write and the override row land in one transaction (`REQ-AP-02`). It used to hand the whole
+artifact to `DbRepository.flush()`, which rewrites the version's model from a snapshot read before
+the save — two saves at once put back each other's change. A row that is gone (a run replaced the
+model) fails the save with 409 rather than returning 200 for a correction stored nowhere. Every
+save of a version takes `_serialize_saves` first (PostgreSQL advisory lock), so two saves never
+act on what the other is changing.
 
-→ `tests/api/test_review_overrides_api.py::TestUpdatingASlot::test_the_model_really_moved` is the
-only test that catches this; reverting the flush leaves every other HTTP test green.
+→ `tests/api/test_review_overrides_api.py::TestUpdatingASlot::test_the_model_really_moved`;
+`test_review_override_service.py::TestASaveWritesOneRow`, `::TestOneSaveAtATime`;
+`test_review_overrides_api.py::TestAnErrorSaysWhoseFaultItIs::test_a_model_replaced_under_the_save_is_a_409_and_saves_nothing`.
 
 ### 4.11 The API spec and the router must agree
 
@@ -327,9 +338,11 @@ bug a real two-version run found.
 ### 4.14 A blank description is a request, never an outcome
 
 `cascade.blank_queued_text` empties a description **only** to ask for a rewrite — the enrichment
-skips anything already filled in, so emptying the slot IS the instruction. If the rewrite then does
-not happen (LLM unreachable, `--no-llm`, descriptions off), `clear_rewritten` must put the previous
-wording **back** and leave the entry queued.
+skips anything already filled in, so emptying the slot asks for it, and `regenerate=` keeps the
+description cache from answering with the stale wording (its key moves with the source, not with a
+corrected description). If the rewrite then does not happen (LLM unreachable, `--no-llm`,
+descriptions off), `clear_rewritten` must put the previous wording **back** and leave the entry
+queued.
 
 Delete that restore and one unreachable LLM turns a readable description into an empty cell in the
 document — worse than the wording the correction superseded. The obligation alone is not enough:
@@ -434,9 +447,12 @@ Dynamic Behaviour correction on every generation.
 
 ### 4.22 A re-export leaves a finished version finished
 
-`finished_status_kept` wraps `run.py`'s phase loop when it starts at Phase 3 or later. Without it the
+`finished_status_kept` wraps `run.py`'s phase loop when it starts at Phase 2 or later. Without it the
 version's `pipeline_status` is left at `exporting`; `list_versions` then no longer offers it as a
-baseline, and the next version starts without its corrections.
+baseline, and the next version starts without its corrections. Only a run with
+`ANALYZER_VERSION_ID` writes the status (an API job); the API re-exports from Phase 3 or 4 today, so
+the Phase-2 half is a guard for the day it re-derives — the incremental engine's own `--from-phase 2`
+starts from a status still in progress, which is never put back.
 
 → `test_reexport_keeps_the_baseline.py::TestAFinishedVersionStaysFinished`, `::TestRunPyWrapsThePhases`.
 
@@ -505,6 +521,35 @@ must not hold up such a SWE.3 export, nor a picture being drawn. Without records
 every view counts.
 
 → `test_review_export_guard.py::TestWhatSwe3Prints`, `::TestDocumentTypes`.
+
+### 4.30 Each queue step pays only what it rewrote
+
+Phase 2 takes the regeneration queue twice, each time with only its own kind and the artifact that
+kind lives in: descriptions before the function enrichment, unit descriptions around
+`_enrich_unit_and_struct_descriptions` with the units just built. Taken at once with `units: {}`,
+every unit entry read as "gone" and was retired unpaid. Phase 3 retires a behaviour entry only when
+the `behaviourDiagram` view ran, and only for the rows it covered (the manifest on disk, the run's
+components): a SWE.4-only run retired every one of them before. A save removes its own slot's entry.
+
+→ `test_review_queue_consumers.py::TestEachStepTakesOnlyItsOwnKinds`, `::TestPhase3PaysTheRest`,
+`::TestPhase3RetiresOnlyWhenTheBehaviourViewRan`, `::TestTheConsumersAreWiredIn`;
+`test_aux_desc_cache.py::test_rich_enrichment_regenerate_does_not_answer_from_the_cache`.
+
+### 4.31 The queue travels with the text
+
+`carry_overrides` copies the baseline's still-owed entries after the rows (`carry_queue`). The new
+version starts from the baseline's text, stale wording included; without the entries it reads that
+text as current and never asks again.
+
+→ `test_review_carry_forward.py::TestTheRegenerationQueueTravels`.
+
+### 4.32 A 4xx is the caller's fault
+
+`_as_http` keeps a refusal's own status, passes an `HTTPException` through, and answers anything it
+does not recognise with a 500 that names only the exception type. A 400 with the exception text — as
+before — tells the client to fix a request that was fine and hands it internal detail.
+
+→ `test_review_overrides_api.py::TestAnErrorSaysWhoseFaultItIs`.
 
 ---
 
@@ -583,7 +628,10 @@ Consequences worth knowing:
 - **A save made while a run is building can be lost.** A run that started before it writes its
   whole model back at the end of Phase 2 and replaces every output row at capture. The export guard
   then reports the correction as stale (§4.25) and the next run applies it again from the override
-  table — but between the two the document does not carry it.
+  table — but between the two the document does not carry it. (A save no longer does this to anyone
+  else: it writes one row, saves of a version take turns, and a save that finds its row replaced by
+  a run fails with 409 — §4.10. Coordinating a save with a *run* would need the run to take the
+  same lock for the length of Phase 2; not done.)
 - **Both queues are drained by a run, not a timer.** A pending picture is drawn when a host with
   the output tree captures a version's output; a queued regeneration is rebuilt by Phase 2 or
   Phase 3. Between a correction and the next run the work is *owed and reported* — which is why

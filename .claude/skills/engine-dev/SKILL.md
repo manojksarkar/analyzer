@@ -133,7 +133,11 @@ test that catches it: [REVIEW_UPDATE_HANDOVER §4](docs/design/REVIEW_UPDATE_HAN
   corrections go back there — "Phase 3 applies before it draws" below.)
 - **Corrections go back on last.** `_reapply_corrections` is Phase 2's final text step: an enrichment
   step added after it overwrites the reviewers' words. Enrichment skips text that is already filled in,
-  so a blank is how the regeneration queue asks for a rewrite (`review/cascade.py`).
+  so a blank is how the regeneration queue asks for a rewrite (`review/cascade.py`) — and
+  `regenerate=` is how it stops the description cache answering with the stale wording. A new
+  generator of text the cascade can queue takes both, or its queue entries are paid by a cache hit.
+- **A save writes one model row** (`model_store.set_entity_field`, `set_unit_description`), never the
+  version's model: a repository flush from a save rewrote everything from a stale snapshot.
 - **Which records get a description is ONE rule** — `utils.has_own_header_row` / `is_described_record`
   / `described_record_keys`, shared by the unit header view, Phase 2 and the review routes.
 - **Phase 3 applies before it draws:** `flowcharts._apply_text_overrides` after the incremental merge and

@@ -228,7 +228,14 @@ The LLM's original and the human's replacement. Without the original there is no
 ([REQ-API-04](#req-api-04--undo-restores-the-llm-original)) and no training pair
 ([REQ-TD-01](#req-td-01--corrections-are-stored-as-pairs)).
 
-**Verification:** the original is readable after any number of edits.
+The original is captured **once per correction**, on its first edit; later edits keep it. A slot whose
+only correction is **orphaned** ([REQ-ID-03](#req-id-03--rename-and-delete-orphan-an-override-and-it-is-kept))
+has no correction in force: the orphan is not applied, so the slot holds fresh LLM text for the new
+code. A new edit there starts a new correction, and that text is its original — keeping the orphan's
+would make an undo restore a sentence about code that no longer exists.
+
+**Verification:** the original is readable after any number of edits; an edit over an orphaned
+correction records the slot's current text as the original and clears the orphan flag.
 
 ### REQ-ST-04 — History is bounded and configurable
 
@@ -321,7 +328,16 @@ builders, for the saved slot's component
 ([REQ-CS-04](#req-cs-04--a-node-label-edit-re-derives-the-components-swe4-specs)): no LLM, no parse,
 no source.
 
-**Verification:** a failure mid-save leaves the model and the view rows both unchanged.
+**A save writes only what it changes**: the corrected field of the one model row that holds it, not
+the version's model. Rewriting the whole model to change one sentence would, beside a second save or
+a Phase-2 run of the same version, put back whatever the other had just changed. Saves of one version
+take their turn, one at a time. A save whose model row was replaced while it was writing — a run is
+regenerating the version — fails with a conflict and stores nothing; the reviewer saves again once
+the run has finished.
+
+**Verification:** a failure mid-save leaves the model and the view rows both unchanged. Two saves
+to two functions of one version, both started from the same model, both land. A save whose model
+row a run replaced is refused (409) and stores nothing.
 
 ### REQ-AP-03 — The UI shows it on the next page load
 
@@ -442,8 +458,26 @@ Not recording them at all is not an option — the description cache is keyed on
 *source* plus its dependency hashes, and correcting a *description* changes neither, so a later run
 would hit the cache and the dependent would keep its stale wording for ever.
 
+**The debt is paid where each text is written**, and only there:
+
+| queued | paid by |
+|---|---|
+| function description | Phase 2's description step — told to write it afresh, **not to answer from the cache**: the cache key moves with the source, not with a corrected description, so a cache hit would hand back the very wording the queue exists to replace |
+| unit description | Phase 2's unit-description step |
+| behaviour description | the behaviour view, for the rows it builds — not by a run that did not build them (a SWE.4-only run, the view switched off, another component) |
+
+An entry leaves the queue when its slot carries new text, or no longer exists. One a run could not pay
+— no LLM, descriptions switched off — stays owed, and the slot keeps its previous wording until then.
+
+**The queue travels with the text.** A new version generated from a baseline starts from the
+baseline's text, stale wording included, so it inherits the baseline's still-owed entries for what it
+still contains — unless a correction is in force there
+([REQ-CS-03](#req-cs-03--a-regenerated-slot-does-not-overwrite-its-own-override)).
+
 **Verification:** editing a function description queues its unit description and its direct
-callers' descriptions for regeneration, and leaves node labels untouched.
+callers' descriptions for regeneration, and leaves node labels untouched. A queued function is not
+answered from the cache. A run with no LLM retires nothing; a SWE.4-only run retires no behaviour
+entry; a version generated from a baseline with entries owes them too.
 
 "Regenerates" here means *new LLM text*. It is separate from **re-derivation**, which rebuilds view
 output from text that already exists and never calls an LLM — see
@@ -462,9 +496,11 @@ regeneration picks up the rest naturally.
 ### REQ-CS-03 — A regenerated slot does not overwrite its own override
 
 If a cascade would regenerate a slot that already has a human override, the override wins and is not
-replaced.
+replaced. A slot that was queued before a human corrected it leaves the queue with the correction —
+regenerating it would pay for text the correction then replaces.
 
-**Verification:** override B, then edit A; B keeps the human text.
+**Verification:** override B, then edit A; B keeps the human text. Edit A, then override B; B is no
+longer queued.
 
 ### REQ-CS-04 — A node label edit re-derives the component's SWE.4 specs
 
@@ -518,13 +554,17 @@ The carry-forward copies from the baseline's stored **model** (`engine.py:130`
 `tg["description"] = bg["description"]`), and cross-version reuse copies from another version's model
 (`engine.py:163`). Neither reads `llm_description_cache`.
 
-The cache is **not written to** by this feature. Writing human text there would destroy the LLM
-original, leak across versions (the cache has no `version_id` — it is keyed
+The cache is **never given human text** by this feature. Writing human text there would destroy the
+LLM original, leak across versions (the cache has no `version_id` — it is keyed
 `project_id, namespace, cache_version, entity_id, content_hash`), and make model output
-indistinguishable from human text in the training data.
+indistinguishable from human text in the training data. A save touches no cache row.
+
+A regeneration the queue asks for ([REQ-CS-01](#req-cs-01--what-regenerates-when-a-slot-is-edited))
+is an ordinary LLM call that skips the cache lookup: its answer is LLM text, and it is cached like any
+other, in place of the stale entry.
 
 **Verification:** after an override, `llm_description_cache` is unchanged; v4 still shows the human
-text.
+text. A regenerated description's cache entry holds the LLM's new text, never the human's.
 
 ### REQ-VR-03 — A full regeneration uses fresh LLM text, and keeps the overrides
 
@@ -620,7 +660,12 @@ This changes the **API** only. Storage stays one row per label
 
 ### REQ-API-04 — Undo restores the LLM original
 
+An **orphaned** correction has nothing to undo: it is not applied, and the document already shows
+the LLM's text for the current code. Undoing one is refused with a conflict that says so, and the row
+is kept ([REQ-ID-03](#req-id-03--rename-and-delete-orphan-an-override-and-it-is-kept)).
+
 **Verification:** after undo, the document shows the LLM's text and the override record survives.
+Undoing an orphaned correction is refused (409) and changes nothing.
 
 ### REQ-API-05 — Permissions
 
@@ -636,7 +681,10 @@ It reads as ordinary document text. A user may re-edit any slot any number of ti
 
 ### REQ-API-07 — Last write wins
 
-Two people editing the same slot: the later write is kept. No locking, no conflict error.
+Two people editing the same slot: the later write is kept. No edit lock and no conflict error
+between reviewers: saves of one version take their turn for the moment each takes
+([REQ-AP-02](#req-ap-02--saving-an-override-is-one-operation)), and the later one wins. The one
+refusal is a save that meets a run regenerating the version.
 
 **Verification:** two updates in sequence leave the second.
 
