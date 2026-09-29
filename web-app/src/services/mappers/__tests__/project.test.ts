@@ -52,6 +52,22 @@ describe('mapProject', () => {
     expect(p.architectureLayers[0].groups[1].components[0]).toEqual({ name: 'C1', files: ['a.cpp'] })
   })
 
+  it('maps the cores and puts each layer on its core', () => {
+    const p = mapProject({
+      ...base,
+      architecture_layers: [{ name: 'L1', groups: [] }, { name: 'L2', groups: [] }],
+      cores: [{ name: 'Core1', macros: '2 typed', data_dictionary: 'dd.csv', compile_commands: null, layers: ['L1'] }],
+      layer_cores: { L1: 'Core1', L2: null },
+    })
+    expect(p.buildConfig.cores).toEqual([
+      { name: 'Core1', macros: '2 typed', dataDictionary: 'dd.csv', compileCommands: null, layers: ['L1'] }])
+    expect(p.architectureLayers.map((l) => l.core)).toEqual(['Core1', null])
+  })
+
+  it('reads a project the API sends no cores for as having none', () => {
+    expect(mapProject(base).buildConfig.cores).toEqual([])
+  })
+
   it('the test DTO satisfies the contract schema (keeps the schema honest)', () => {
     expect(ApiProjectSchema.safeParse(base).success).toBe(true)
   })

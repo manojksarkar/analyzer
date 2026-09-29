@@ -22,6 +22,9 @@ export interface RepoUpload {
   kind: string
 }
 
+/** What a build-configuration upload is: a core's macros, data dictionary or compile commands. */
+export type UploadKind = 'preprocessor_definitions' | 'data_dictionary' | 'compile_commands'
+
 export const repositoriesApi = {
   testConnection: async (body: {
     repo_url: string
@@ -61,7 +64,7 @@ export const repositoriesApi = {
   },
   upload: async (
     file: File,
-    kind: 'preprocessor_definitions' | 'data_dictionary',
+    kind: UploadKind,
   ): Promise<RepoUpload> => {
     const form = new FormData()
     form.append('file', file)

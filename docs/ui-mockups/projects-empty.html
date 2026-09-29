@@ -126,6 +126,43 @@
   .drop-zone:hover, .drop-zone.dragover { border-color: #0058be; background: #eff4ff; }
   .drop-zone.has-file { border-style: solid; border-color: #00a572; background: #f0fff9; }
 
+  /* ── Step 2: cores - one settings card per core ── */
+  .core-card { background: #fff; border: 1px solid #c4c6cd; border-radius: 0.75rem; overflow: hidden; }
+  .core-card-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #f8f9ff; border-bottom: 1px solid #e5eeff; }
+  .core-chip-icon { width: 32px; height: 32px; border-radius: 0.5rem; background: #1a2b3c; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .core-name { width: 100%; max-width: 240px; padding: 0 6px; margin-left: -6px; font: 600 14px/22px 'Inter', sans-serif; color: #0b1c30; background: transparent; border: 1px solid transparent; border-radius: 0.25rem; }
+  .core-name:hover { border-color: #c4c6cd; background: #fff; }
+  .core-name:focus { outline: none; border-color: #0058be; background: #fff; box-shadow: 0 0 0 3px rgba(0,88,190,.10); }
+  .core-uses { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 3px; font: 500 10px/16px 'JetBrains Mono', monospace; color: #74777d; }
+  .core-uses .layer-tag { padding: 0 6px; border-radius: 3px; background: #e5eeff; color: #0058be; font-weight: 600; }
+  .core-uses.none { color: #b45309; }
+  .core-row { display: grid; grid-template-columns: 172px minmax(0, 1fr); gap: 16px; align-items: start; padding: 14px 16px; }
+  .core-row + .core-row { border-top: 1px solid #eff4ff; }
+  .core-row-label { font: 600 12px/18px 'JetBrains Mono', monospace; color: #0b1c30; }
+  .core-row-help { margin-top: 2px; font: 400 11px/15px 'Inter', sans-serif; color: #74777d; }
+  .core-row-help code { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; }
+  .core-row-help .opt { font-weight: 600; color: #44474c; }
+  .wanted-note { margin-top: 6px; font: 400 11px/15px 'Inter', sans-serif; color: #8a5300; }
+  .upload-btn { width: 100%; min-height: 40px; display: flex; align-items: center; gap: 10px; padding: 8px 12px; text-align: left; background: #f8f9ff; border: 1.5px dashed #c4c6cd; border-radius: 0.5rem; cursor: pointer; transition: border-color .15s, background .15s; }
+  .upload-btn:hover, .upload-btn.dragover { border-color: #0058be; background: #eff4ff; }
+  .upload-btn .t { font: 500 12px/16px 'Inter', sans-serif; color: #0b1c30; }
+  .upload-btn .s { margin-left: auto; white-space: nowrap; font: 400 11px/14px 'JetBrains Mono', monospace; color: #74777d; }
+  .upload-btn.wanted { border-color: #e5b25d; background: #fffaf0; }
+  .upload-btn.wanted .t { color: #8a5300; }
+  .file-pill { min-height: 40px; display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 12px; background: #f0fff9; border: 1px solid rgba(0,165,114,.35); border-radius: 0.5rem; }
+  .file-pill .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 12px/16px 'JetBrains Mono', monospace; color: #0b1c30; }
+  .file-pill .z { white-space: nowrap; font: 400 11px/14px 'JetBrains Mono', monospace; color: #74777d; }
+  .pill-btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: #74777d; background: none; border: none; border-radius: 0.25rem; cursor: pointer; }
+  .pill-btn:hover { background: #e5eeff; color: #0058be; }
+  .pill-btn.del:hover { background: #ffdad6; color: #ba1a1a; }
+  .switch-link { margin-top: 6px; padding: 0; font: 500 11px/14px 'Inter', sans-serif; color: #0058be; background: none; border: none; cursor: pointer; }
+  .switch-link:hover { text-decoration: underline; }
+  .macro-text { min-height: 76px; resize: vertical; }
+
+  /* ── Step 3: a layer's core ── */
+  .layer-core { display: flex; align-items: center; gap: 6px; flex-shrink: 0; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #74777d; }
+  .layer-core-select { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: #0058be; background-color: #fff; background-size: 1.1em 1.1em; background-position: right 4px center; border: 1px solid #c4c6cd; border-radius: 0.25rem; padding: 3px 24px 3px 6px; cursor: pointer; }
+
   /* ── Step rail ── */
   .step-li { position: relative; display: flex; gap: 14px; padding-bottom: 28px; }
   .step-li:last-child { padding-bottom: 0; }
@@ -365,6 +402,30 @@
           <p class="text-body-md text-on-surface-variant">Name the project and connect your source repository.</p>
         </div>
 
+        <!-- Start from a config file - what `analyzer.py onboard --config` reads. It fills every step
+             it can: the project, the cores (step 2) and each layer with its core (step 3). The access
+             token is never read from it. Simulated here (importConfig); the app posts the file to
+             POST /projects/config/preview and re-checks it against the repository on Test Connection. -->
+        <div class="card space-y-3">
+          <div class="flex items-center gap-3">
+            <div class="card-icon bg-primary-container flex-shrink-0">
+              <span class="material-symbols-outlined text-on-primary-container" style="font-size:17px;">settings_suggest</span>
+            </div>
+            <div class="flex-1 min-w-0">
+              <h3 class="text-headline-sm text-on-surface" style="font-size:14px;">Start from a config file <span class="text-on-surface-variant" style="font-weight:400;">(optional)</span></h3>
+              <p class="text-body-sm text-on-surface-variant" style="font-size:11px;margin-top:2px;">The config <span style="font-family:'JetBrains Mono';">analyzer.py onboard --config</span> reads. It fills every step it can, the cores included; the access token is never read from it.</p>
+            </div>
+            <button onclick="document.getElementById('import-file').click()"
+                    class="flex items-center gap-1.5 px-4 py-2 border border-outline-variant rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors flex-shrink-0"
+                    style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#44474c;">
+              <span class="material-symbols-outlined" style="font-size:15px;">upload_file</span>
+              <span id="import-btn-label">Import config</span>
+            </button>
+            <input type="file" id="import-file" accept=".json,.jsonc" class="hidden" onchange="importConfig(this)">
+          </div>
+          <div id="import-report" class="hidden border-t border-outline-variant pt-3"></div>
+        </div>
+
         <div class="card space-y-4">
           <div>
             <div class="lbl">Project Name <span class="req">*</span></div>
@@ -416,104 +477,33 @@
       </div><!-- /step-1 -->
 
 
-      <!-- ══ STEP 2 — BUILD CONFIGURATION ══ -->
+      <!-- ══ STEP 2 — CORES ══ -->
+      <!-- One core = one build of the firmware: its macros (-D set), data dictionary and compile
+           commands - what the engine reads as cores.<Core>. Every layer picks its core in step 3
+           (layers.<Layer>.cores), so its files parse with that core's macros and include paths.
+           The cards are drawn by renderCores(). -->
       <div id="step-2" class="hidden max-w-2xl mx-auto px-6 py-6 space-y-4">
         <div class="pb-4 border-b border-outline-variant">
-          <h2 class="text-headline-md text-on-surface mb-1">Build Configuration</h2>
-          <p class="text-body-md text-on-surface-variant">Preprocessor definitions and optional data dictionary.</p>
+          <h2 class="text-headline-md text-on-surface mb-1">Cores</h2>
+          <p class="text-body-md text-on-surface-variant">A core is one build of the firmware, with its own macros, data dictionary and compile commands. Each layer picks its core in the next step.</p>
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
-
-          <!-- Preprocessor Definitions -->
-          <div class="card">
-            <div class="card-head">
-              <div class="card-head-l">
-                <div class="card-icon bg-primary-container">
-                  <span class="material-symbols-outlined text-on-primary-container" style="font-size:17px;">data_object</span>
-                </div>
-                <div>
-                  <h3 class="text-headline-sm text-on-surface" style="font-size:14px;">Preprocessor Definitions</h3>
-                </div>
-              </div>
-              <button class="hbtn" style="width:22px;height:22px;" title="Macro definitions passed as -D flags to Clang. Upload a Makefile or CSV, or enter them manually."><span class="material-symbols-outlined" style="font-size:13px;">help</span></button>
-            </div>
-
-            <div id="def-upload-tab">
-              <div class="drop-zone" id="def-drop-zone"
-                   onclick="document.getElementById('def-file').click()"
-                   ondragover="event.preventDefault();this.classList.add('dragover');"
-                   ondragleave="this.classList.remove('dragover');"
-                   ondrop="defFileDrop(event);">
-                <span class="material-symbols-outlined text-on-surface-variant mb-2" style="font-size:28px;display:block;">upload_file</span>
-                <p class="font-label-md text-label-md text-on-surface mb-1">Drop Makefile or CSV here</p>
-                <p class="text-body-sm text-on-surface-variant">Supported: <span style="font-family:'JetBrains Mono';font-size:11px;">Makefile, .csv, .mk</span></p>
-              </div>
-              <input type="file" id="def-file" accept=".csv,.mk,Makefile,makefile" class="hidden" onchange="defFileChosen(this)">
-              <div id="def-file-chip" class="hidden mt-3 flex items-center gap-2 px-3 py-2 bg-surface-container-low border border-outline-variant rounded-lg">
-                <span class="material-symbols-outlined text-secondary" style="font-size:18px;">description</span>
-                <span class="font-label-md text-label-md text-on-surface flex-1" id="def-file-name" style="font-size:12px;"></span>
-                <button onclick="clearDefFile()" class="text-on-surface-variant hover:text-error transition-colors">
-                  <span class="material-symbols-outlined" style="font-size:16px;">close</span>
-                </button>
-              </div>
-            </div>
-
-            <div id="def-manual-tab" class="hidden">
-              <div class="lbl mb-2" style="margin-top:0;">One definition per line — KEY or KEY=VALUE</div>
-              <textarea class="inp mono" id="def-manual-textarea" rows="5" placeholder="DEBUG=1&#10;PLATFORM=QNX&#10;ASPICE_LEVEL_2&#10;MAX_INPUTS=64"></textarea>
-            </div>
-
-            <div class="flex gap-2 mt-4 pt-3 border-t border-outline-variant">
-              <button class="tab-btn on" id="tab-upload" onclick="switchDefTab('upload')">
-                <span class="material-symbols-outlined" style="font-size:13px;vertical-align:middle;margin-right:3px;">upload_file</span>Upload
-              </button>
-              <button class="tab-btn" id="tab-manual" onclick="switchDefTab('manual')">
-                <span class="material-symbols-outlined" style="font-size:13px;vertical-align:middle;margin-right:3px;">edit_note</span>Manual
-              </button>
-            </div>
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-secondary" style="font-size:17px;">memory</span>
+            <span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-[.08em]">Cores <span id="cores-count"></span></span>
           </div>
+          <button onclick="addCore()"
+                  class="flex items-center gap-1.5 px-3 py-1.5 text-secondary border border-outline-variant rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors">
+            <span class="material-symbols-outlined" style="font-size:15px;">add</span> Add Core
+          </button>
+        </div>
 
-          <!-- Data Dictionary -->
-          <div class="card">
-            <div class="card-head">
-              <div class="card-head-l">
-                <div class="card-icon" style="background:#00311f;">
-                  <span class="material-symbols-outlined" style="font-size:17px;color:#6ffbbe;">menu_book</span>
-                </div>
-                <div>
-                  <h3 class="text-headline-sm text-on-surface" style="font-size:14px;">Data Dictionary</h3>
-                  <p class="text-body-sm text-on-surface-variant" style="font-size:11px;margin-top:2px;">Signal names, units, ranges</p>
-                </div>
-              </div>
-            </div>
+        <div id="cores-list" class="space-y-3"></div>
 
-            <div class="drop-zone" id="dd-zone"
-                 onclick="document.getElementById('dd-file').click()"
-                 ondragover="event.preventDefault();this.classList.add('dragover');"
-                 ondragleave="this.classList.remove('dragover');"
-                 ondrop="ddFileDrop(event);">
-              <span class="material-symbols-outlined text-on-surface-variant mb-2" style="font-size:28px;display:block;">cloud_upload</span>
-              <p class="font-label-md text-label-md text-on-surface mb-1">Drop CSV or Excel here</p>
-              <p class="text-body-sm text-on-surface-variant">Supported: <span style="font-family:'JetBrains Mono';font-size:11px;">.csv, .xlsx</span> · Optional</p>
-            </div>
-            <input type="file" id="dd-file" accept=".csv,.xlsx,.xls" class="hidden" onchange="ddFileChosen(this)">
-            <div id="dd-chip" class="hidden mt-3 flex items-center gap-3 px-3 py-2.5 bg-surface-container-low border rounded-xl" style="border-color:rgba(0,165,114,.3);">
-              <span class="material-symbols-outlined sym-fill" style="font-size:20px;color:#00a572;">description</span>
-              <div class="flex-1 min-w-0">
-                <div class="font-label-md text-label-md text-on-surface" id="dd-file-name" style="font-size:12px;"></div>
-                <div class="font-label-sm text-label-sm text-on-surface-variant" id="dd-file-meta"></div>
-              </div>
-              <button onclick="clearDdFile()" class="text-on-surface-variant hover:text-error transition-colors p-1">
-                <span class="material-symbols-outlined" style="font-size:18px;">close</span>
-              </button>
-            </div>
-
-            <p class="text-body-sm text-on-surface-variant mt-3" style="font-size:11px;">
-              Skipping is fine — you can upload a data dictionary later from Project Settings.
-            </p>
-          </div>
-
+        <div class="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
+          <span class="material-symbols-outlined text-secondary flex-shrink-0" style="font-size:18px;">info</span>
+          <p class="text-body-sm text-on-surface-variant">Layers built the same way share a core. A layer with no core is parsed without macros or a data dictionary. Paths inside a compile_commands.json come from the build machine and are mapped onto the repository automatically.</p>
         </div>
       </div><!-- /step-2 -->
 
@@ -564,6 +554,11 @@
                 BROWSE
               </button>
             </div>
+          </div>
+          <div>
+            <div class="lbl" style="margin-bottom:4px;">Core</div>
+            <select class="inp mono" id="new-layer-core"></select>
+            <p class="text-body-sm text-on-surface-variant" style="font-size:11px;margin-top:4px;">Its files parse with this core's macros and include paths, and take its data dictionary.</p>
           </div>
           <div class="flex gap-2 pt-1">
             <button onclick="confirmAddLayer()" class="px-4 py-2 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md hover:bg-secondary-container transition-colors">Add Layer</button>
@@ -703,31 +698,16 @@
           <div class="rev-row"><span>Access Token</span><span id="r-token">—</span></div>
         </div>
 
-        <!-- Build Configuration -->
+        <!-- Cores -->
         <div class="rev-card">
           <div class="rev-card-head">
             <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">data_object</span>
-              <span class="font-label-md text-label-md text-on-surface" style="font-weight:600;">Build Configuration</span>
+              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">memory</span>
+              <span class="font-label-md text-label-md text-on-surface" style="font-weight:600;">Cores</span>
             </div>
             <button onclick="goToStep(2)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
           </div>
-          <div style="padding:10px 16px;border-bottom:1px solid #eff4ff;">
-            <button id="r-defines-toggle" onclick="toggleDefinesExpand()"
-                    style="width:100%;display:flex;align-items:center;gap:6px;background:none;border:none;cursor:pointer;padding:0;text-align:left;">
-              <span class="material-symbols-outlined" id="r-defines-arrow" style="font-size:15px;color:#74777d;flex-shrink:0;">keyboard_arrow_right</span>
-              <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#44474c;flex:1;">Preprocessor Definitions</span>
-              <span id="r-defines-count" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#74777d;margin-right:6px;"></span>
-              <span id="r-defines-mode" style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:3px;background:#e5eeff;color:#0058be;">—</span>
-            </button>
-            <div id="r-defines-detail" style="display:none;margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:11px;"></div>
-          </div>
-          <div style="padding:12px 16px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;">
-              <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#44474c;">Data Dictionary</span>
-              <span id="r-dict" style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;color:#0b1c30;">—</span>
-            </div>
-          </div>
+          <div id="r-cores"></div>
         </div>
 
         <!-- Architecture -->
@@ -897,7 +877,7 @@ var done = new Set();
 
 var STEPS = [
   { title: 'Project & Repository', sub: 'Name, source path' },
-  { title: 'Build Configuration',  sub: 'Defines & data dictionary' },
+  { title: 'Cores',                sub: 'Macros & dictionary per core' },
   { title: 'Architecture',         sub: 'Layers & groups' },
   { title: 'Team & Access',        sub: 'Invite developers' },
   { title: 'Review & Initialize',  sub: 'Confirm & create project' },
@@ -1018,6 +998,8 @@ function goToStep(n) {
     if (el) el.classList.toggle('hidden', i !== n);
   }
   cur = n;
+  if (n === 2) renderCores();              // 'Used by' follows the layers
+  if (n === 3) refreshLayerCoreSelects();  // the pickers follow the cores
   if (n === 5) populateReview();
 
   document.getElementById('step-counter-text').textContent = 'Step ' + n + ' of 5';
@@ -1112,52 +1094,298 @@ function validate(n) {
 }
 
 // ════════════════════════════════════════
-// Step 3: Build config helpers
+// Step 2: Cores
 // ════════════════════════════════════════
-function switchDefTab(tab) {
-  document.getElementById('def-upload-tab').classList.toggle('hidden', tab !== 'upload');
-  document.getElementById('def-manual-tab').classList.toggle('hidden', tab !== 'manual');
-  document.getElementById('tab-upload').classList.toggle('on', tab === 'upload');
-  document.getElementById('tab-manual').classList.toggle('on', tab === 'manual');
+// One core = one build: macros (a file, or typed -D lines), a data dictionary (CSV) and an
+// optional compile_commands.json. Each layer names its core in step 3.
+var CORES = [];
+var _coreSeq = 0;
+
+function addCore(name) {
+  _coreSeq++;
+  CORES.push({ id: 'core' + _coreSeq, name: name || ('Core' + _coreSeq), macroMode: 'upload',
+               macroFile: null, macroText: '', ddFile: null, ccFile: null });
+  renderCores();
+  refreshLayerCoreSelects();
+}
+function coreById(id) { return CORES.filter(function(c) { return c.id === id; })[0]; }
+function removeCore(id) {
+  CORES = CORES.filter(function(c) { return c.id !== id; });
+  renderCores();
+  refreshLayerCoreSelects();
+}
+function renameCore(id, input) {
+  var c = coreById(id);
+  if (!c) return;
+  c.name = input.value.trim() || c.name;
+  input.value = c.name;
+  refreshLayerCoreSelects();
+}
+function setMacroMode(id, mode) { var c = coreById(id); if (c) { c.macroMode = mode; renderCores(); } }
+function setMacroText(id, ta)   { var c = coreById(id); if (c) c.macroText = ta.value; }
+function setCoreFile(id, kind, f) {
+  var c = coreById(id);
+  if (c && f) { c[kind] = { name: f.name, size: f.size }; renderCores(); }
+}
+function coreFileChosen(id, kind, inp) { setCoreFile(id, kind, inp.files && inp.files[0]); }
+function coreFileDrop(e, id, kind) {
+  e.preventDefault(); e.currentTarget.classList.remove('dragover');
+  setCoreFile(id, kind, e.dataTransfer.files[0]);
+}
+function clearCoreFile(id, kind) { var c = coreById(id); if (c) { c[kind] = null; renderCores(); } }
+
+// The names of the layers (step 3) whose core is `coreId` ('' = no core).
+function layersUsing(coreId) {
+  return Array.from(document.querySelectorAll('#arch-tree .layer-block')).filter(function(b) {
+    var sel = b.querySelector('.layer-core-select');
+    return (sel ? sel.value : '') === coreId;
+  }).map(function(b) { return (b.querySelector('.layer-head .font-bold') || {}).textContent || '—'; });
 }
 
-function defFileDrop(e) {
-  e.preventDefault(); e.currentTarget.classList.remove('dragover');
-  if (e.dataTransfer.files[0]) showDefFile(e.dataTransfer.files[0]);
-}
-function defFileChosen(inp) { if (inp.files[0]) showDefFile(inp.files[0]); }
-function showDefFile(f) {
-  document.getElementById('def-drop-zone').classList.add('has-file');
-  document.getElementById('def-file-name').textContent = f.name;
-  document.getElementById('def-file-chip').classList.remove('hidden');
-}
-function clearDefFile() {
-  document.getElementById('def-drop-zone').classList.remove('has-file');
-  document.getElementById('def-file-chip').classList.add('hidden');
-  document.getElementById('def-file').value = '';
-  document.getElementById('def-file-name').textContent = '';
+// One control per input: an upload button, or - once there is a file - a pill with its name,
+// size, Replace and Remove. A file an imported config names but the repository lacks asks for
+// itself by name (amber).
+function fileControl(c, kind, accept, types, icon) {
+  var f = c[kind];
+  var exp = (c.expected || {})[kind];
+  var input = '<input type="file" class="hidden" id="' + c.id + '-' + kind + '" accept="' + accept + '"'
+    + ' onchange="coreFileChosen(\'' + c.id + '\',\'' + kind + '\',this)">';
+  var pick = 'document.getElementById(\'' + c.id + '-' + kind + '\').click()';
+  if (f) {
+    return '<div class="file-pill">'
+      + '<span class="material-symbols-outlined sym-fill" style="font-size:18px;color:#00a572;">' + icon + '</span>'
+      + '<span class="n" title="' + escHtml(f.name) + '">' + escHtml(f.name) + '</span>'
+      + '<span class="z">' + (f.size / 1024).toFixed(1) + ' KB</span>'
+      + '<button class="pill-btn" onclick="' + pick + '" title="Replace"><span class="material-symbols-outlined" style="font-size:17px;">swap_horiz</span></button>'
+      + '<button class="pill-btn del" onclick="clearCoreFile(\'' + c.id + '\',\'' + kind + '\')" title="Remove"><span class="material-symbols-outlined" style="font-size:17px;">close</span></button>'
+      + '</div>' + input;
+  }
+  return '<button class="upload-btn' + (exp ? ' wanted' : '') + '" onclick="' + pick + '"'
+    + ' ondragover="event.preventDefault();this.classList.add(\'dragover\');" ondragleave="this.classList.remove(\'dragover\');"'
+    + ' ondrop="coreFileDrop(event,\'' + c.id + '\',\'' + kind + '\')">'
+    + '<span class="material-symbols-outlined" style="font-size:18px;color:' + (exp ? '#b45309' : '#74777d') + ';">upload_file</span>'
+    + '<span class="t">' + (exp ? 'Upload <b>' + escHtml(exp) + '</b>' : 'Choose a file or drop it here') + '</span>'
+    + (exp ? '' : '<span class="s">' + types + '</span>')
+    + '</button>'
+    + (exp ? '<div class="wanted-note">The imported config names it; the repository does not have it.</div>' : '')
+    + input;
 }
 
-function ddFileDrop(e) {
-  e.preventDefault(); e.currentTarget.classList.remove('dragover');
-  if (e.dataTransfer.files[0]) showDdFile(e.dataTransfer.files[0]);
+function macrosControl(c) {
+  if (c.macroMode === 'manual') {
+    return '<textarea class="inp mono macro-text" rows="3" placeholder="_CONFIG_CMCORE=1&#10;PLATFORM=QNX" oninput="setMacroText(\'' + c.id + '\',this)">'
+      + escHtml(c.macroText) + '</textarea>'
+      + '<div class="flex items-center justify-between gap-3">'
+      + '<span class="core-row-help" style="margin-top:6px;">One per line: KEY or KEY=VALUE</span>'
+      + '<button class="switch-link" onclick="setMacroMode(\'' + c.id + '\',\'upload\')">Upload a file instead</button></div>';
+  }
+  return fileControl(c, 'macroFile', '.json,.csv', '.json · .csv', 'data_object')
+    + '<button class="switch-link" onclick="setMacroMode(\'' + c.id + '\',\'manual\')">Type them instead</button>';
 }
-function ddFileChosen(inp) { if (inp.files[0]) showDdFile(inp.files[0]); }
-function showDdFile(f) {
-  document.getElementById('dd-zone').classList.add('has-file');
-  document.getElementById('dd-file-name').textContent = f.name;
-  document.getElementById('dd-file-meta').textContent = (f.size / 1024).toFixed(1) + ' KB';
-  document.getElementById('dd-chip').classList.remove('hidden');
+
+function coreRow(label, help, optional, control) {
+  return '<div class="core-row"><div>'
+    + '<div class="core-row-label">' + label + '</div>'
+    + '<div class="core-row-help">' + (optional ? '<span class="opt">Optional</span> · ' : '') + help + '</div></div>'
+    + '<div class="min-w-0">' + control + '</div></div>';
 }
-function clearDdFile() {
-  document.getElementById('dd-zone').classList.remove('has-file');
-  document.getElementById('dd-chip').classList.add('hidden');
-  document.getElementById('dd-file').value = '';
+
+function renderCores() {
+  var list = document.getElementById('cores-list');
+  if (!list) return;
+  var count = document.getElementById('cores-count');
+  if (count) count.textContent = CORES.length ? '· ' + CORES.length : '';
+  if (!CORES.length) {
+    list.innerHTML = '<div class="flex flex-col items-center justify-center py-10 text-center">'
+      + '<span class="material-symbols-outlined text-on-surface-variant mb-3" style="font-size:36px;opacity:.35;">memory</span>'
+      + '<p class="font-label-md text-label-md text-on-surface-variant" style="font-size:12px;">No cores.</p>'
+      + '<p class="text-body-sm text-on-surface-variant mt-1" style="font-size:12px;">Every layer is parsed without macros or a data dictionary. Click <strong>Add Core</strong> to add one.</p></div>';
+    return;
+  }
+  list.innerHTML = CORES.map(function(c) {
+    var used = layersUsing(c.id);
+    return '<div class="core-card">'
+      + '<div class="core-card-head">'
+      +   '<div class="core-chip-icon"><span class="material-symbols-outlined" style="font-size:17px;color:#8192a7;">memory</span></div>'
+      +   '<div class="flex-1 min-w-0">'
+      +     '<input class="core-name" value="' + escHtml(c.name) + '" onchange="renameCore(\'' + c.id + '\',this)" aria-label="Core name" title="Rename the core">'
+      +     '<div class="core-uses' + (used.length ? '' : ' none') + '">'
+      +       (used.length
+                ? 'Used by ' + used.map(function(l) { return '<span class="layer-tag">' + escHtml(l) + '</span>'; }).join('')
+                : 'No layer uses it yet · pick it for a layer in step 3')
+      +     '</div>'
+      +   '</div>'
+      +   '<button onclick="removeCore(\'' + c.id + '\')" class="pill-btn del" title="Remove the core">'
+      +   '<span class="material-symbols-outlined" style="font-size:18px;">delete</span></button>'
+      + '</div>'
+      + coreRow('Macros', 'The <code>-D</code> set for this build', false, macrosControl(c))
+      + coreRow('Data dictionary', 'Signal names, units, ranges', true, fileControl(c, 'ddFile', '.csv', '.csv', 'menu_book'))
+      + coreRow('Compile commands', 'Include paths from the build', true, fileControl(c, 'ccFile', '.json', 'compile_commands.json', 'terminal'))
+      + '</div>';
+  }).join('');
+}
+
+// Every layer's Core picker (step 3): the cores as they are now, each layer keeping its choice.
+function coreOptions(selected) {
+  return '<option value="">No core</option>' + CORES.map(function(c) {
+    return '<option value="' + c.id + '"' + (c.id === selected ? ' selected' : '') + '>' + escHtml(c.name) + '</option>';
+  }).join('');
+}
+function refreshLayerCoreSelects() {
+  document.querySelectorAll('.layer-core-select').forEach(function(sel) {
+    sel.innerHTML = coreOptions(coreById(sel.value) ? sel.value : '');
+  });
+  var add = document.getElementById('new-layer-core');
+  if (add) add.innerHTML = coreOptions(coreById(add.value) ? add.value : (CORES[0] ? CORES[0].id : ''));
 }
 
 // ════════════════════════════════════════
 // Step 4: Architecture helpers
 // ════════════════════════════════════════
+// ════════════════════════════════════════
+// Step 1: Import config (simulated)
+// ════════════════════════════════════════
+// The app posts the file to POST /projects/config/preview, which reads it the way the engine
+// does and reports what it filled, what needs the user, and what it skipped. Here the sample
+// project's config stands in for whatever file is picked: two cores, three layers.
+var IMPORTED = null;          // the imported file's name
+var IMPORT_CHECKED = false;   // checked against the connected repository
+var IMPORT_CHECKING = false;
+
+var SAMPLE_IMPORT = {
+  name: 'Brake ECU', repo: 'https://github.com/org/brake-ecu.git',
+  cores: [
+    { name: 'Core1', macros: 'macros.core1.json', dd: 'data_dictionary.core1.csv', cc: 'compile_commands.core1.json' },
+    { name: 'Core2', macros: 'macros.core2.json', dd: 'data_dictionary.core2.csv', cc: null },
+  ],
+  layers: [
+    { name: 'Layer1', path: 'Layer1', core: 'Core1', groups: [
+      { name: 'My Sample', components: [
+        { name: 'Sample Core', files: ['Layer1/Sample/Core'] },
+        { name: 'Lib',         files: ['Layer1/Sample/Lib'] },
+        { name: 'Util',        files: ['Layer1/Sample/Util'] } ] },
+      { name: 'Support', components: [
+        { name: 'Math', files: ['Layer1/Math'] },
+        { name: 'App',  files: ['Layer1/App/Main.cpp'] } ] } ] },
+    { name: 'Layer2', path: 'Layer2', core: 'Core2', groups: [
+      { name: 'Platform', components: [
+        { name: 'Gpio', files: ['Layer2/Platform/Gpio'] },
+        { name: 'Uart', files: ['Layer2/Platform/Uart'] },
+        { name: 'Spi',  files: ['Layer2/Platform/Spi'] } ] } ] },
+    { name: 'Layer3', path: 'Layer3', core: null, groups: [
+      { name: 'Diag', components: [
+        { name: 'Diag', files: ['Layer3/Diag'] } ] } ] },
+  ],
+};
+
+function importConfig(inp) {
+  var f = inp.files && inp.files[0];
+  inp.value = '';
+  if (!f) return;
+  IMPORTED = f.name;
+  document.getElementById('s1-name').value = SAMPLE_IMPORT.name;
+  document.getElementById('s1-repo').value = SAMPLE_IMPORT.repo;
+  repoChanged();                                  // a new repository: connect again
+  // Step 2: one card per core. Their files are read from the repository once it is connected.
+  CORES = []; _coreSeq = 0;
+  SAMPLE_IMPORT.cores.forEach(function(c) { addCore(c.name); });
+  // Step 3: every layer with its core, groups and components - the whole layer configuration
+  document.querySelectorAll('#arch-tree .layer-block').forEach(function(b) { b.remove(); });
+  fileAssignments = {};
+  var empty = document.getElementById('arch-empty');
+  if (empty) empty.style.display = 'none';
+  SAMPLE_IMPORT.layers.forEach(function(l) {
+    var core = CORES.filter(function(c) { return c.name === l.core; })[0];
+    var block = layerEl(l.name, l.path, core ? core.id : '');
+    var groups = block.querySelector('.groups-container');
+    (l.groups || []).forEach(function(g) {
+      var grp = groupEl(g.name);
+      var children = grp.querySelector('.tree-children');
+      var addBtn = children.querySelector('.add-group-btn');
+      g.components.forEach(function(c) {
+        c.files.forEach(function(f) { fileAssignments[f] = c.name; });
+        children.insertBefore(componentEl(c.name, c.files, true), addBtn);
+      });
+      groups.appendChild(grp);
+    });
+    document.getElementById('arch-tree').appendChild(block);
+  });
+  document.getElementById('import-btn-label').textContent = 'Import another';
+  renderImportReport();
+}
+
+// Test Connection found the repository: check the import against the branch.
+function checkImportAgainstRepo() {
+  IMPORT_CHECKING = true;
+  renderImportReport();
+  setTimeout(function() {
+    IMPORT_CHECKING = false;
+    IMPORT_CHECKED = true;
+    SAMPLE_IMPORT.cores.forEach(function(sc) {
+      var c = CORES.filter(function(x) { return x.name === sc.name; })[0];
+      if (!c) return;
+      // Found in the repository: read in as uploads - never over a file the user chose.
+      if (!c.macroFile && c.macroMode === 'upload') c.macroFile = { name: sc.macros, size: 1260 };
+      if (!c.ddFile) c.ddFile = { name: sc.dd, size: 3480 };
+      // Not in the repository: step 2 asks for it.
+      c.expected = sc.cc ? { ccFile: sc.cc } : {};
+    });
+    renderCores();
+    renderImportReport();
+  }, 900);
+}
+
+function importCounts() {
+  var layers = SAMPLE_IMPORT.layers, groups = 0, comps = 0;
+  layers.forEach(function(l) { (l.groups || []).forEach(function(g) { groups++; comps += g.components.length; }); });
+  return layers.length + ' layers, ' + groups + ' groups, ' + comps + ' components';
+}
+
+function importItems() {
+  var items = [['filled', 'Project: name, repository.']];
+  if (!IMPORT_CHECKED) {
+    items.push(['filled', 'Cores: `Core1`, `Core2` (step 2).']);
+    items.push(['filled', 'Architecture: ' + importCounts() + ', each layer with its core: Layer1 → Core1, Layer2 → Core2, Layer3 → no core.']);
+    items.push(['check', 'The cores\' files and every path are checked against the repository once it is connected (Test Connection).']);
+  } else {
+    items.push(['filled', 'Core1: `macros.core1.json` and `data_dictionary.core1.csv`, read from the repository.']);
+    items.push(['check', 'Core1: upload `compile_commands.core1.json` in step 2. The repository has no file `build/compile_commands.core1.json`.']);
+    items.push(['filled', 'Core2: `macros.core2.json` and `data_dictionary.core2.csv`, read from the repository.']);
+    items.push(['filled', 'Architecture: ' + importCounts() + ', each layer with its core. Every path is on branch `' + (document.getElementById('s1-branch').value || 'main') + '`.']);
+  }
+  items.push(['skipped', '`clang.llvmLibPath`: a path on the machine that wrote the file. The server uses its own.']);
+  return items;
+}
+
+function codeText(t) {
+  return escHtml(t).split('`').map(function(p, i) {
+    return i % 2 ? '<code style="font-family:\'JetBrains Mono\',monospace;font-size:11px;background:#eff4ff;padding:0 4px;border-radius:3px;">' + p + '</code>' : p;
+  }).join('');
+}
+
+var IMPORT_LEVEL = { filled: ['check_circle', '#00a572'], check: ['error', '#b45309'], skipped: ['block', '#74777d'] };
+function renderImportReport() {
+  var box = document.getElementById('import-report');
+  if (!IMPORTED) { box.classList.add('hidden'); return; }
+  var items = importItems();
+  var n = function(level) { return items.filter(function(i) { return i[0] === level; }).length; };
+  var branch = document.getElementById('s1-branch').value;
+  var state = IMPORT_CHECKING ? ' · checking the paths against branch ' + escHtml(branch || 'main') + '…'
+    : IMPORT_CHECKED ? '' : ' · paths are checked after Test Connection';
+  box.innerHTML = '<p style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#44474c;margin-bottom:8px;">'
+    + '<span style="color:#0b1c30;font-weight:600;">' + escHtml(IMPORTED) + '</span>'
+    + ' · ' + n('filled') + ' filled · ' + n('check') + ' to check · ' + n('skipped') + ' not used' + state + '</p>'
+    + '<ul style="display:grid;gap:6px;">' + items.map(function(i) {
+        var lv = IMPORT_LEVEL[i[0]];
+        return '<li style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#0b1c30;">'
+          + '<span class="material-symbols-outlined sym-fill" style="font-size:14px;color:' + lv[1] + ';flex-shrink:0;margin-top:1px;">' + lv[0] + '</span>'
+          + '<span style="line-height:1.45;">' + codeText(i[1]) + '</span></li>';
+      }).join('') + '</ul>';
+  box.classList.remove('hidden');
+}
+
+addCore('Core1');
+
 function toggleLayer(head) {
   var block = head.closest('.layer-block');
   var icon  = head.querySelector('.material-symbols-outlined');
@@ -1200,11 +1428,8 @@ function addGroup(btn) {
   };
 }
 
-function confirmAddGroup(btn) {
-  var row  = btn.closest('.inline-add-row');
-  var name = row.querySelector('.inline-add-input').value.trim();
-  if (!name) { row.querySelector('.inline-add-input').focus(); return; }
-  var container = row.closest('.groups-container');
+// A group: its row (toggle, name, remove) and its components, with an Add Component button.
+function groupEl(name) {
   var grp = document.createElement('div');
   grp.className = 'tree-group';
   grp.innerHTML = '<div class="tree-group-row">'
@@ -1217,7 +1442,14 @@ function confirmAddGroup(btn) {
     + '<button onclick="addComponent(this)" class="add-group-btn" style="padding-left:20px;">'
     + '<span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Component</button>'
     + '</div>';
-  row.replaceWith(grp);
+  return grp;
+}
+
+function confirmAddGroup(btn) {
+  var row  = btn.closest('.inline-add-row');
+  var name = row.querySelector('.inline-add-input').value.trim();
+  if (!name) { row.querySelector('.inline-add-input').focus(); return; }
+  row.replaceWith(groupEl(name));
 }
 
 function removeGroup(btn) {
@@ -1275,6 +1507,32 @@ function closeCompSidebar() {
   _compTarget = null;
 }
 
+// A component: its row (toggle, name, remove) and its files or folders. An imported config lists
+// dozens of components, so those start collapsed.
+function componentEl(name, files, collapsed) {
+  var open = files.length > 0 && !collapsed;
+  var block = document.createElement('div');
+  block.className = 'tree-comp-block';
+  block.dataset.compName = name;
+  block.innerHTML = '<div class="tree-comp-row">'
+    + '<button onclick="toggleCompFiles(this)" class="tree-toggle">'
+    + '<span class="material-symbols-outlined" style="font-size:13px;">' + (open ? 'keyboard_arrow_down' : 'keyboard_arrow_right') + '</span></button>'
+    + '<span class="material-symbols-outlined text-secondary" style="font-size:13px;opacity:.6;">folder</span>'
+    + '<span class="font-label-md text-on-surface flex-1" style="font-size:13px;">' + escHtml(name) + '</span>'
+    + (collapsed && files.length ? '<span class="font-label-sm text-label-sm text-on-surface-variant" style="margin-right:4px;">' + files.length + (files.length === 1 ? ' path' : ' paths') + '</span>' : '')
+    + '<button onclick="removeComponent(this)" class="p-1 text-on-surface-variant hover:text-error transition-colors">'
+    + '<span class="material-symbols-outlined" style="font-size:13px;">close</span></button>'
+    + '</div>'
+    + '<div class="comp-files' + (open ? '' : ' hidden') + '">'
+    + files.map(function(f) {
+        return '<div class="file-row" data-filename="' + escHtml(f) + '">'
+          + '<span class="material-symbols-outlined" style="font-size:12px;color:#b0b3b8;">' + (/\.[a-z]+$/i.test(f) ? 'description' : 'folder') + '</span>'
+          + escHtml(f) + '</div>';
+      }).join('')
+    + '</div>';
+  return block;
+}
+
 function confirmAddComponent() {
   var name = document.getElementById('sidebar-comp-name').value.trim();
   if (!name) { document.getElementById('sidebar-comp-name').focus(); return; }
@@ -1287,25 +1545,7 @@ function confirmAddComponent() {
   // Register file assignments
   files.forEach(function(f) { fileAssignments[f] = name; });
 
-  var hasFiles = files.length > 0;
-  var block = document.createElement('div');
-  block.className = 'tree-comp-block';
-  block.dataset.compName = name;
-  block.innerHTML = '<div class="tree-comp-row">'
-    + '<button onclick="toggleCompFiles(this)" class="tree-toggle">'
-    + '<span class="material-symbols-outlined" style="font-size:13px;">' + (hasFiles ? 'keyboard_arrow_down' : 'keyboard_arrow_right') + '</span></button>'
-    + '<span class="material-symbols-outlined text-secondary" style="font-size:13px;opacity:.6;">folder</span>'
-    + '<span class="font-label-md text-on-surface flex-1" style="font-size:13px;">' + escHtml(name) + '</span>'
-    + '<button onclick="removeComponent(this)" class="p-1 text-on-surface-variant hover:text-error transition-colors">'
-    + '<span class="material-symbols-outlined" style="font-size:13px;">close</span></button>'
-    + '</div>'
-    + '<div class="comp-files' + (hasFiles ? '' : ' hidden') + '">'
-    + files.map(function(f) {
-        return '<div class="file-row" data-filename="' + escHtml(f) + '">'
-          + '<span class="material-symbols-outlined" style="font-size:12px;color:#b0b3b8;">description</span>'
-          + escHtml(f) + '</div>';
-      }).join('')
-    + '</div>';
+  var block = componentEl(name, files, false);
   if (_compTarget) {
     var addBtn = _compTarget.querySelector('.add-group-btn');
     if (addBtn) _compTarget.insertBefore(block, addBtn);
@@ -1398,6 +1638,7 @@ function toggleTreeGroup(btn) {
 }
 
 function showAddLayer() {
+  refreshLayerCoreSelects();
   document.getElementById('add-layer-row').classList.remove('hidden');
   document.getElementById('new-layer-name').focus();
 }
@@ -1413,13 +1654,8 @@ function removeLayer(btn) {
     if (empty) empty.style.display = '';
   }
 }
-function confirmAddLayer() {
-  var name = document.getElementById('new-layer-name').value.trim().toUpperCase().replace(/\s+/g,'_');
-  var path = document.getElementById('new-layer-path').value.trim();
-  if (!name) { document.getElementById('new-layer-name').focus(); return; }
-  var tree  = document.getElementById('arch-tree');
-  var empty = document.getElementById('arch-empty');
-  if (empty) empty.style.display = 'none';
+// A layer: its head (name, root path, core, remove) and body (groups, lib paths).
+function layerEl(name, path, coreId) {
   var block = document.createElement('div');
   block.className = 'layer-block';
   block.innerHTML = '<div class="layer-head" onclick="toggleLayer(this)">'
@@ -1428,6 +1664,8 @@ function confirmAddLayer() {
     + '<div class="font-label-md font-bold text-on-surface" style="font-size:13px;line-height:1.3;">' + escHtml(name) + '</div>'
     + '<span class="layer-path-display' + (path ? '' : ' empty') + '" onclick="event.stopPropagation();startEditPath(this)">' + (path ? escHtml(path) : 'Set root path…') + '</span>'
     + '</div>'
+    + '<label class="layer-core" onclick="event.stopPropagation()">Core'
+    + '<select class="layer-core-select">' + coreOptions(coreId) + '</select></label>'
     + '<button onclick="event.stopPropagation();removeLayer(this);" class="p-1 text-on-surface-variant hover:text-error transition-colors"><span class="material-symbols-outlined" style="font-size:15px;">close</span></button>'
     + '</div>'
     + '<div class="layer-body">'
@@ -1439,7 +1677,17 @@ function confirmAddLayer() {
     + '<button onclick="addExtPath(this)" class="inc-add-btn"><span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle;">add</span> Add path</button>'
     + '</div></div></div>'
     + '</div>';
-  tree.appendChild(block);
+  return block;
+}
+
+function confirmAddLayer() {
+  var name = document.getElementById('new-layer-name').value.trim().toUpperCase().replace(/\s+/g,'_');
+  var path = document.getElementById('new-layer-path').value.trim();
+  var coreId = document.getElementById('new-layer-core').value;
+  if (!name) { document.getElementById('new-layer-name').focus(); return; }
+  var empty = document.getElementById('arch-empty');
+  if (empty) empty.style.display = 'none';
+  document.getElementById('arch-tree').appendChild(layerEl(name, path, coreId));
   cancelAddLayer();
 }
 
@@ -1694,14 +1942,6 @@ function escHtml(s) {
 // ════════════════════════════════════════
 // Step 6: Review
 // ════════════════════════════════════════
-function toggleDefinesExpand() {
-  var detail = document.getElementById('r-defines-detail');
-  var arrow  = document.getElementById('r-defines-arrow');
-  var open   = detail.style.display !== 'none';
-  detail.style.display = open ? 'none' : '';
-  arrow.textContent = open ? 'keyboard_arrow_right' : 'keyboard_arrow_down';
-}
-
 function rTeamRow(name, email, role, pending, isYou) {
   var displayName = name || email;
   var initials = displayName.split(' ').map(function(w) { return w[0] || ''; }).join('').substring(0, 2).toUpperCase();
@@ -1730,42 +1970,29 @@ function populateReview() {
   var tok = document.getElementById('s1-token').value;
   document.getElementById('r-token').textContent  = tok ? '••••••••' : 'Not set';
 
-  // ── Build Configuration ──
-  var isUpload  = document.getElementById('tab-upload').classList.contains('on');
-  var modeEl    = document.getElementById('r-defines-mode');
-  var detailEl  = document.getElementById('r-defines-detail');
-  var countEl   = document.getElementById('r-defines-count');
-  // reset expand state each time review is opened
-  detailEl.style.display = 'none';
-  document.getElementById('r-defines-arrow').textContent = 'keyboard_arrow_right';
-
-  if (isUpload) {
-    var fname = document.getElementById('def-file-name').textContent.trim();
-    modeEl.textContent = 'Upload';
-    countEl.textContent = fname ? '' : 'No file';
-    detailEl.innerHTML = fname
-      ? '<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:#eff4ff;border:1px solid #c4c6cd;border-radius:6px;">'
-        + '<span class="material-symbols-outlined text-secondary" style="font-size:14px;">description</span>'
-        + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#0b1c30;">' + escHtml(fname) + '</span>'
-        + '</div>'
-      : '<span style="color:#74777d;font-size:11px;">No file selected</span>';
-  } else {
-    modeEl.textContent = 'Manual';
-    var ta    = document.getElementById('def-manual-textarea');
-    var lines = ta ? ta.value.split('\n').map(function(l) { return l.trim(); }).filter(Boolean) : [];
-    countEl.textContent = lines.length ? lines.length + ' definition' + (lines.length !== 1 ? 's' : '') : 'empty';
-    detailEl.innerHTML = lines.length
-      ? lines.map(function(l) {
-          return '<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f0f2f8;">'
-            + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#0058be;font-weight:700;flex-shrink:0;">#</span>'
-            + '<code style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#0b1c30;">' + escHtml(l) + '</code>'
-            + '</div>';
-        }).join('')
-      : '<span style="color:#74777d;font-size:11px;">No definitions entered</span>';
+  // ── Cores ──
+  var mono = 'font-family:\'JetBrains Mono\',monospace;';
+  var coreRows = CORES.map(function(c) {
+    var typed = c.macroText.split('\n').map(function(l) { return l.trim(); }).filter(Boolean).length;
+    var macros = c.macroMode === 'manual' ? typed + ' typed' : (c.macroFile ? c.macroFile.name : 'no macros');
+    var used = layersUsing(c.id);
+    return '<div style="padding:10px 16px;border-bottom:1px solid #eff4ff;">'
+      + '<div style="display:flex;align-items:center;gap:6px;">'
+      + '<span class="material-symbols-outlined text-secondary" style="font-size:14px;">memory</span>'
+      + '<span style="' + mono + 'font-size:11px;font-weight:700;color:#0b1c30;">' + escHtml(c.name) + '</span>'
+      + '<span style="margin-left:auto;' + mono + 'font-size:10px;color:' + (used.length ? '#44474c' : '#b45309') + ';">'
+      + (used.length ? 'used by ' + used.map(escHtml).join(', ') : 'no layer uses it') + '</span></div>'
+      + '<div style="margin:4px 0 0 20px;' + mono + 'font-size:10px;color:#74777d;">'
+      + escHtml(macros) + ' · ' + escHtml(c.ddFile ? c.ddFile.name : 'no dictionary') + ' · '
+      + escHtml(c.ccFile ? c.ccFile.name : 'no compile commands') + '</div></div>';
+  }).join('');
+  var noCore = layersUsing('');
+  if (noCore.length) {
+    coreRows += '<div style="padding:10px 16px;' + mono + 'font-size:10px;color:#74777d;">No core: '
+      + noCore.map(escHtml).join(', ') + '</div>';
   }
-
-  var ddName = document.getElementById('dd-file-name').textContent.trim();
-  document.getElementById('r-dict').textContent = ddName || 'Not uploaded';
+  document.getElementById('r-cores').innerHTML = coreRows
+    || '<div style="padding:12px 16px;' + mono + 'font-size:11px;color:#74777d;">No cores</div>';
 
   // ── Architecture ──
   var layers = document.querySelectorAll('#arch-tree .layer-block');
@@ -1781,6 +2008,8 @@ function populateReview() {
     var pathEl = block.querySelector('.layer-path-display');
     var lPath  = (pathEl && !pathEl.classList.contains('empty')) ? pathEl.textContent.trim() : null;
     var groups = block.querySelectorAll('.tree-group');
+    var coreSel = block.querySelector('.layer-core-select');
+    var core    = coreSel ? coreById(coreSel.value) : null;
 
     rows += '<div style="padding:10px 16px;">';
     // Layer row
@@ -1788,6 +2017,8 @@ function populateReview() {
       + '<span class="material-symbols-outlined text-secondary" style="font-size:14px;">layers</span>'
       + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;color:#0b1c30;">' + escHtml(lName) + '</span>'
       + (lPath ? '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#74777d;margin-left:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escHtml(lPath) + '</span>' : '')
+      + '<span style="margin-left:auto;font-family:\'JetBrains Mono\',monospace;font-size:9px;font-weight:600;padding:2px 7px;border-radius:3px;'
+      + (core ? 'background:#e5eeff;color:#0058be;">' + escHtml(core.name) : 'background:#f3f4f6;color:#74777d;">no core') + '</span>'
       + '</div>';
 
     // Lib paths for this layer
@@ -1915,6 +2146,8 @@ function repoChanged() {
   statusEl.style.color = '';
   document.getElementById('branch-field').classList.add('hidden');
   document.getElementById('s1-branch').innerHTML = '<option value="">Select a branch…</option>';
+  // An import checked against the old repository is not checked against this one.
+  if (typeof IMPORTED !== 'undefined' && IMPORTED) { IMPORT_CHECKED = false; IMPORT_CHECKING = false; renderImportReport(); }
 }
 
 function testConnection() {
@@ -1947,6 +2180,7 @@ function testConnection() {
     document.getElementById('branch-field').classList.remove('hidden');
     statusEl.style.color = '#00a572';
     statusEl.innerHTML = '<span style="vertical-align:middle;font-size:14px;margin-right:3px;" class="material-symbols-outlined sym-fill">check_circle</span> Connected · ' + branches.length + ' branches found';
+    if (IMPORTED && !IMPORT_CHECKED) checkImportAgainstRepo();   // the imported config, against this branch
   }, 1200);
 }
 

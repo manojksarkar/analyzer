@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { assignmentsOf, draftToLayers, indexTree, ownerOf, pathProblems, settingsSummary } from '../helpers'
+import {
+  assignmentsOf, coreInput, coreProblems, draftToCores, draftToLayers, fitsCoreFile, followBranch, indexTree, newCore,
+  nextCoreName, ownerOf, pathProblems, settingsSummary,
+} from '../helpers'
+import type { DraftCore } from '../../../types'
 
 describe('draftToLayers', () => {
   it('builds the wizard tree with fresh ids and imported components collapsed', () => {
@@ -10,6 +14,66 @@ describe('draftToLayers', () => {
     }], () => `id${++n}`)
     expect(layers[0].id).toBe('id1')
     expect(layers[0].groups[0].comps[0]).toEqual({ id: 'id3', name: 'Core', files: ['Layer1/Sample/Core'], collapsed: true })
+  })
+})
+
+describe('cores', () => {
+  const file = (fileId: string, fileName = `${fileId}.json`) => ({ fileId, fileName, size: 2 })
+  const draft = (over: Partial<DraftCore> = {}): DraftCore =>
+    ({ name: 'Core1', macros: null, dataDictionary: null, compileCommands: null, ...over })
+
+  it('reads a config\'s cores, and each layer takes the core its config names', () => {
+    let n = 0
+    const newId = () => `c${++n}`
+    const cores = draftToCores([
+      draft({ macros: { kind: 'file', file: file('m') } }),
+      draft({ name: 'Core2', macros: { kind: 'typed', defines: ['A=1', 'B'] } }),
+    ], newId)
+    expect(cores.map((c) => [c.name, c.macroMode, c.macroFile?.fileId ?? null, c.macroText, c.from])).toEqual([
+      ['Core1', 'file', 'm', '', 'Core1'], ['Core2', 'typed', null, 'A=1\nB', 'Core2']])
+    // a renamed core keeps its layers: the config's name is `from`
+    cores[1].name = 'Renamed'
+    const layers = draftToLayers([
+      { name: 'L1', groups: [], core: 'Core2' }, { name: 'L2', groups: [], core: null }, { name: 'L3', groups: [], core: 'Nope' },
+    ], newId, cores)
+    expect(layers.map((l) => l.coreId)).toEqual([cores[1].id, null, null])
+  })
+
+  it('lets the files the import filled in follow the branch, and never touches the user\'s', () => {
+    const imported = { ...newCore('c1', 'Core1'), from: 'Core1', macroFile: file('m-main'), dataDictionary: file('mine', 'dd.csv') }
+    const was = draft({ macros: { kind: 'file', file: file('m-main') }, dataDictionary: file('dd-main', 'dd.csv') })
+    const now = draft({ macros: null, compileCommands: file('cc-dev') })
+    const next = followBranch(imported, was, now)
+    expect(next.macroFile).toBeNull()                     // the import's: this branch has none
+    expect(next.dataDictionary?.fileId).toBe('mine')      // the user's own
+    expect(next.compileCommands?.fileId).toBe('cc-dev')   // this branch's
+  })
+
+  it('names a core with no name, and two cores with one name', () => {
+    expect(coreProblems([newCore('a', 'Core1'), newCore('b', ' core1 '), newCore('c', ' ')]))
+      .toEqual(['Two cores are called core1', 'Core 3 has no name'])
+    expect(coreProblems([newCore('a', 'Core1'), newCore('b', 'Core2')])).toEqual([])
+  })
+
+  it('picks the first free CoreN', () => {
+    expect(nextCoreName([newCore('a', 'Core1'), newCore('b', 'core3')])).toBe('Core2')
+    expect(nextCoreName([])).toBe('Core1')
+  })
+
+  it('sends typed macros only when typing is chosen', () => {
+    const c = { ...newCore('a', ' Core1 '), macroFile: file('m'), macroText: 'A=1\n\n B ', dataDictionary: file('d', 'dd.csv') }
+    expect(coreInput(c)).toEqual({
+      name: 'Core1', macros: { mode: 'upload', file_id: 'm', file_name: 'm.json' },
+      data_dictionary: { file_id: 'd', file_name: 'dd.csv' }, compile_commands: null })
+    expect(coreInput({ ...c, macroMode: 'typed' }).macros).toEqual({ mode: 'manual', defines: ['A=1', 'B'] })
+    expect(coreInput({ ...c, macroMode: 'typed', macroText: ' ' }).macros).toBeNull()
+  })
+
+  it('takes only the files the engine reads for each input', () => {
+    expect(fitsCoreFile('dataDictionary', 'DD.CSV')).toBe(true)
+    expect(fitsCoreFile('dataDictionary', 'dd.xlsx')).toBe(false)
+    expect(fitsCoreFile('compileCommands', 'compile_commands.json')).toBe(true)
+    expect(fitsCoreFile('macroFile', 'macros.txt')).toBe(false)
   })
 })
 
@@ -60,7 +124,7 @@ describe('pathProblems', () => {
     { type: 'folder', name: 'include', path: 'include', children: [] },
   ])
   const layer = (path: string, comps: { name: string; files: string[] }[], libPaths: string[] = []) => ({
-    id: 'L', name: 'Layer1', path, libPaths, collapsed: false,
+    id: 'L', name: 'Layer1', path, libPaths, coreId: null, collapsed: false,
     groups: [{ id: 'G', name: 'G', collapsed: false, comps: comps.map((c, i) => ({ id: `c${i}`, collapsed: true, ...c })) }],
   })
   const texts = (layers: ReturnType<typeof layer>[]) => pathProblems(layers, tree, 'main').map((p) => p.text)

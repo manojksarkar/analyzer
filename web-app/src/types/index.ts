@@ -40,12 +40,24 @@ export interface TeamMember {
 /** Architecture captured during project setup (layers → groups → components). */
 export interface ArchComponent { name: string; files?: string[] }
 export interface ArchGroup { name: string; components: ArchComponent[] }
-export interface ArchLayer { name: string; path?: string; libPaths?: string[]; groups: ArchGroup[] }
+/** `core`: the core the layer is built for - its files parse with that core's macros and
+ *  include paths, and take its data dictionary. */
+export interface ArchLayer { name: string; path?: string; libPaths?: string[]; groups: ArchGroup[]; core?: string | null }
+
+/** One of the project's cores - one build of the firmware - as the overview shows it: its
+ *  inputs' file names (`N typed` for typed macros) and the layers built for it. A project from
+ *  before cores reads as one core, Core1, that every layer uses. */
+export interface ProjectCore {
+  name: string
+  macros: string | null
+  dataDictionary: string | null
+  compileCommands: string | null
+  layers: string[]
+}
 
 /** Build configuration summary surfaced on the overview (token-free). */
 export interface ProjectBuildConfig {
-  definitions?: { mode: string; count: number; fileName?: string }
-  dataDictionary?: string
+  cores: ProjectCore[]
 }
 
 /** A config file read into the New Project wizard (`POST /projects/config/preview`). */
@@ -56,21 +68,30 @@ export type ConfigReportTopic = 'project' | 'architecture' | 'files' | 'settings
 export interface ConfigReportItem { level: ConfigReportLevel; text: string; topic: ConfigReportTopic }
 /** A build-configuration file stored as an upload. */
 export interface UploadedFile { fileId: string; fileName: string; size: number }
+/** A core as a config file describes it: its macros (a file found in the repository, or
+ *  `project.defines` typed into the file), its data dictionary and its compile commands. */
+export interface DraftCore {
+  name: string
+  macros: { kind: 'file'; file: UploadedFile } | { kind: 'typed'; defines: string[] } | null
+  dataDictionary: UploadedFile | null
+  compileCommands: UploadedFile | null
+}
+/** A core's three inputs. */
+export interface CoreInputs<T> { macros: T; dataDictionary: T; compileCommands: T }
 export interface ConfigDraft {
   name: string | null
   repoUrl: string | null
   branch: string | null
+  /** Each layer with its core (`core`, by name). */
   layers: ArchLayer[]
-  /** A definitions file found in the repository, or `project.defines` typed into the file. */
-  definitions: { kind: 'file'; file: UploadedFile } | { kind: 'typed'; defines: string[] } | null
-  dataDictionary: UploadedFile | null
+  cores: DraftCore[]
   /** `clang` / `views` / `docx` sections, carried into the project's build config as they are. */
   settings: Record<string, unknown>
 }
 export interface ConfigPreview {
   draft: ConfigDraft
-  /** Files the config names that are not in the repository: the user uploads them in step 2. */
-  expectedUploads: { definitions: string | null; dataDictionary: string | null }
+  /** Per core: the files the config names that are not in the repository - step 2 asks for them. */
+  expectedUploads: Record<string, CoreInputs<string | null>>
   report: ConfigReportItem[]
   repositoryChecked: boolean
 }

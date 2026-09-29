@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type {
   Project, TeamMember, PageState, UserRole,
-  ArchLayer, ArchGroup, ArchComponent, ProjectBuildConfig,
+  ArchLayer, ArchGroup, ArchComponent,
 } from '../../types'
 import { formatDate, avatarPalette } from '../../lib/format'
 
@@ -12,6 +12,12 @@ export const ApiProjectSchema = z.object({
   repo_url: z.string(), default_branch: z.string().optional(),
   build_config: z.record(z.string(), z.unknown()).optional(),
   architecture_layers: z.array(z.unknown()), created_at: z.string(), updated_at: z.string(),
+  // The project's cores and each layer's core; a project from before cores reads as one core.
+  cores: z.array(z.object({
+    name: z.string(), macros: z.string().nullable(), data_dictionary: z.string().nullable(),
+    compile_commands: z.string().nullable(), layers: z.array(z.string()),
+  })).optional(),
+  layer_cores: z.record(z.string(), z.string().nullable()).optional(),
 })
 export type ApiProject = z.infer<typeof ApiProjectSchema>
 
@@ -55,8 +61,13 @@ export function mapProject(p: ApiProject): Project {
     // GET /projects exposes only team_count (no member array). Render generic
     // placeholder avatars so the stack/overflow still works. See INTEGRATION_NOTES.
     team: placeholderTeam(p.team_count, p.id),
-    architectureLayers: mapArchitecture(p.architecture_layers),
-    buildConfig: mapBuildConfig(p.build_config),
+    architectureLayers: mapArchitecture(p.architecture_layers, p.layer_cores ?? {}),
+    buildConfig: {
+      cores: (p.cores ?? []).map((c) => ({
+        name: c.name, macros: c.macros, dataDictionary: c.data_dictionary,
+        compileCommands: c.compile_commands, layers: c.layers,
+      })),
+    },
     userRole: (p.my_role as UserRole) ?? 'developer',
     pageState: projectPageState(p.status),
   }
@@ -67,7 +78,7 @@ export function mapProject(p: ApiProject): Project {
  * projects store `groups` as a string array; wizard-created projects store
  * `groups: [{name, components:[{name, files}]}]`. Both are handled.
  */
-function mapArchitecture(raw: unknown): ArchLayer[] {
+function mapArchitecture(raw: unknown, layerCores: Record<string, string | null>): ArchLayer[] {
   if (!Array.isArray(raw)) return []
   const str = (v: unknown, fallback: string) => (typeof v === 'string' && v ? v : fallback)
   return raw.map((l): ArchLayer => {
@@ -87,38 +98,15 @@ function mapArchitecture(raw: unknown): ArchLayer[] {
       })
       return { name: str(grp.name, 'Group'), components }
     })
+    const name = str(layer.name, 'Layer')
     return {
-      name: str(layer.name, 'Layer'),
+      name,
       path: typeof layer.path === 'string' && layer.path ? layer.path : undefined,
       libPaths: Array.isArray(layer.lib_paths) ? layer.lib_paths.map(String) : undefined,
       groups,
+      core: layerCores[name.trim()] ?? null,
     }
   })
-}
-
-/** Summarise the (token-free) build config for the overview, defensively. */
-function mapBuildConfig(raw: unknown): ProjectBuildConfig {
-  const cfg = (raw ?? {}) as Record<string, unknown>
-  const out: ProjectBuildConfig = {}
-  const defs = cfg.preprocessor_definitions as Record<string, unknown> | undefined
-  if (defs && typeof defs === 'object') {
-    const mode = typeof defs.mode === 'string' ? defs.mode : 'manual'
-    if (mode === 'manual') {
-      const list = Array.isArray(defs.defines) ? defs.defines : []
-      out.definitions = { mode, count: list.length }
-    } else {
-      out.definitions = {
-        mode,
-        count: 0,
-        fileName: typeof defs.file_name === 'string' ? defs.file_name : undefined,
-      }
-    }
-  }
-  const dd = cfg.data_dictionary as Record<string, unknown> | undefined
-  if (dd && typeof dd === 'object' && typeof dd.file_name === 'string') {
-    out.dataDictionary = dd.file_name
-  }
-  return out
 }
 
 function placeholderTeam(count: number, seed: string): TeamMember[] {

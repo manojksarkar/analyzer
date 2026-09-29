@@ -82,7 +82,7 @@ function ConfigOverview({ project, team, teamLoading }: { project: Project; team
   const layers = project.architectureLayers
   const groupCount = layers.reduce((a, l) => a + l.groups.length, 0)
   const compCount = layers.reduce((a, l) => a + l.groups.reduce((b, g) => b + g.components.length, 0), 0)
-  const defs = project.buildConfig.definitions
+  const cores = project.buildConfig.cores
   const plural = (n: number, w: string) => `${n} ${w}${n !== 1 ? 's' : ''}`
   const downloadConfig = useDownloadProjectConfig(project.id)
   return (
@@ -108,13 +108,27 @@ function ConfigOverview({ project, team, teamLoading }: { project: Project; team
             <InfoRow label="Branch" mono value={project.defaultBranch || '—'} />
             <InfoRow label="Standard" value={project.standard || '—'} />
             {project.client && <InfoRow label="Client" value={project.client} />}
-            {defs && (
-              <InfoRow
-                label="Defines"
-                value={defs.mode === 'manual' ? `${plural(defs.count, 'definition')} (manual)` : `${defs.fileName ?? 'file'} (upload)`}
-              />
-            )}
-            {project.buildConfig.dataDictionary && <InfoRow label="Data dictionary" mono value={project.buildConfig.dataDictionary} />}
+            <InfoRow
+              label="Cores"
+              value={cores.length ? (
+                <div className="space-y-1.5">
+                  {cores.map((c) => (
+                    <div key={c.name}>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Icon name="memory" size={14} className="text-secondary" />
+                        <span className="font-mono text-xs font-semibold">{c.name}</span>
+                        <span className={cn('font-mono text-label', c.layers.length ? 'text-on-surface-variant' : 'text-[#b45309]')}>
+                          {c.layers.length ? `used by ${c.layers.join(', ')}` : 'no layer uses it'}
+                        </span>
+                      </div>
+                      <div className="ml-5 text-on-surface-variant font-mono text-label">
+                        {[c.macros ?? 'no macros', c.dataDictionary ?? 'no dictionary', c.compileCommands ?? 'no compile commands'].join(' · ')}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : 'None: every layer is parsed without macros or a data dictionary'}
+            />
           </div>
         </div>
 
@@ -135,6 +149,11 @@ function ConfigOverview({ project, team, teamLoading }: { project: Project; team
                     <Icon name="layers" size={15} className="text-secondary" />
                     <span className="text-on-surface font-mono text-xs font-bold">{layer.name}</span>
                     {layer.path && <span className="text-on-surface-variant font-mono text-label">{layer.path}</span>}
+                    {layer.core && (
+                      <span className="ml-auto flex items-center gap-1 text-secondary font-mono text-label" title="The core this layer is built for">
+                        <Icon name="memory" size={12} />{layer.core}
+                      </span>
+                    )}
                   </div>
                   {layer.groups.length === 0 ? (
                     <p className="text-on-surface-variant ml-[23px] mt-0.5 font-mono text-caption">No groups</p>

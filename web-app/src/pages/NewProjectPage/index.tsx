@@ -9,12 +9,17 @@ import { APP_NAME, APP_TAGLINE } from '../../constants/branding'
 import type { CreateProjectInput, RepoEntry, OrgUser } from '../../services/api'
 import type { ConfigPreview } from '../../types'
 import { ConfigImport } from './components/ConfigImport'
-import { assignmentsOf, draftToLayers, indexTree, ownerOf, pathProblems, settingsSummary, type Comp, type Group, type Layer, type Member, type Role } from './helpers'
+import { CoresReview, CoresStep } from './components/CoresStep'
+import {
+  assignmentsOf, CORE_FILES, coreInput, coreProblems, draftToCores, draftToLayers, fitsCoreFile, followBranch, indexTree,
+  newCore, nextCoreName, ownerOf, pathProblems, settingsSummary,
+  type Comp, type Core, type CoreFile, type Group, type Layer, type Member, type Role,
+} from './helpers'
 
 // Rail entries — short title + sub, mirroring the design's step rail.
 const STEPS = [
   { title: 'Project & Repository', sub: 'Name, source path' },
-  { title: 'Build Configuration',  sub: 'Defines & data dictionary' },
+  { title: 'Cores',                sub: 'Macros & dictionary per core' },
   { title: 'Architecture',         sub: 'Layers & groups' },
   { title: 'Team & Access',        sub: 'Add developers' },
   { title: 'Review & Initialize',  sub: 'Confirm & create project' },
@@ -23,7 +28,7 @@ const STEPS = [
 // Per-step content header (longer description shown above the form fields).
 const STEP_HEADERS = [
   { title: 'Project & Repository', sub: 'Name the project and connect your source repository.' },
-  { title: 'Build Configuration',  sub: 'Preprocessor definitions and optional data dictionary.' },
+  { title: 'Cores',                sub: 'A core is one build of the firmware, with its own macros, data dictionary and compile commands. Each layer picks its core in the next step.' },
   { title: 'Architecture Mapping', sub: 'Map layers and groups. Components are discovered automatically from source folders.' },
   { title: 'Team & Access',        sub: 'Add team members and assign their role. More members can be added later from Project Settings.' },
   { title: 'Review & Initialize',  sub: 'Confirm every setting before the first analysis run.' },
@@ -227,20 +232,25 @@ function WizardView({
   const [archChanged, setArchChanged] = useState(false)
   function markArchEdited(edited = true) { archEdited.current = edited; setArchChanged(edited) }
 
-  // ── Step 2: build configuration ──
-  const [defTab, setDefTab] = useState<'upload' | 'manual'>('upload')
-  const [defFileName, setDefFileName] = useState('')
-  const [defFileId, setDefFileId] = useState('')
-  const [defManual, setDefManual] = useState('')
-  const [ddFile, setDdFile] = useState<{ name: string; size: number; id: string } | null>(null)
-  const defInputRef = useRef<HTMLInputElement>(null)
-  const ddInputRef = useRef<HTMLInputElement>(null)
+  // ── Step 2: cores ──
+  // One to start with: most projects are one build. `coresRef` is always the latest list, so an
+  // import's layers find the cores the same import just made (state lags a render behind).
+  const [cores, setCoresState] = useState<Core[]>(() => [newCore(uid(), 'Core1')])
+  const coresRef = useRef(cores)
+  function updateCores(fn: (prev: Core[]) => Core[]) {
+    const next = fn(coresRef.current)
+    coresRef.current = next
+    setCoresState(next)
+  }
+  // `coreId:slot` of every core file being uploaded.
+  const [uploading, setUploading] = useState<Set<string>>(new Set())
 
   // ── Step 3: architecture ──
   const [layers, setLayers] = useState<Layer[]>([])
   const [addLayerOpen, setAddLayerOpen] = useState(false)
   const [newLayerName, setNewLayerName] = useState('')
   const [newLayerPath, setNewLayerPath] = useState('')
+  const [newLayerCore, setNewLayerCore] = useState('')
   const [inlineAdd, setInlineAdd] = useState<{ parentId: string } | null>(null)
   const [inlineVal, setInlineVal] = useState('')
   // Add-Component right panel
@@ -265,14 +275,10 @@ function WizardView({
   const [searchResults, setSearchResults] = useState<OrgUser[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
 
-  // ── Step 5: review ──
-  const [definesExpanded, setDefinesExpanded] = useState(false)
-
   // Reset scroll to top on step change, and report active step up to the top bar.
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 })
     onStepChange(cur)
-    if (cur === 5) setDefinesExpanded(false)
   }, [cur, onStepChange])
 
   /* ── Step 1 helpers ── */
@@ -391,59 +397,70 @@ function WizardView({
       if (d.name) setName(d.name)
       if (d.repoUrl && d.repoUrl !== repoUrl.trim()) { setRepoUrl(d.repoUrl); repoChanged() }
       setPreferredBranch(d.branch ?? '')
-      if (d.definitions?.kind === 'typed') { setDefTab('manual'); setDefManual(d.definitions.defines.join('\n')) }
+      // The config's cores replace the wizard's: its layers name them.
+      updateCores(() => draftToCores(d.cores, uid))
+    } else {
+      // Files the config names, found in the repository, follow the branch (helpers.followBranch):
+      // what this import filled in is replaced or taken back; a file the user chose stays.
+      const was = new Map((prev?.draft.cores ?? []).map((c) => [c.name, c]))
+      const now = new Map(d.cores.map((c) => [c.name, c]))
+      updateCores((cs) => cs.map((c) => (c.from ? followBranch(c, was.get(c.from), now.get(c.from)) : c)))
     }
     if (opts.layers) {
-      const next = draftToLayers(d.layers, uid)
+      const next = draftToLayers(d.layers, uid, coresRef.current)
       setLayers(next)
       setFileAssignments(assignmentsOf(next))
       markArchEdited(false)
     }
-    // Files the config names, found in the repository. They follow the branch: a file this import
-    // filled in is replaced by this branch's copy, or taken back when the branch has none. A file
-    // the user chose is never touched.
-    const prevDef = prev?.draft.definitions
-    const defFromImport = !!defFileId && prevDef?.kind === 'file' && prevDef.file.fileId === defFileId
-    if (d.definitions?.kind === 'file' && (!defFileId || defFromImport)) {
-      setDefTab('upload'); setDefFileName(d.definitions.file.fileName); setDefFileId(d.definitions.file.fileId)
-    } else if (defFromImport) {
-      setDefFileName(''); setDefFileId('')
-    }
-    const prevDd = prev?.draft.dataDictionary
-    const ddFromImport = !!ddFile && !!prevDd && prevDd.fileId === ddFile.id
-    if (d.dataDictionary && (!ddFile || ddFromImport)) {
-      setDdFile({ name: d.dataDictionary.fileName, size: d.dataDictionary.size, id: d.dataDictionary.fileId })
-    } else if (ddFromImport) {
-      setDdFile(null)
-    }
   }
 
-  /* ── Step 2 helpers — upload build-config files to /repositories/uploads ── */
-  async function uploadDef(f: File) {
-    setDefFileName(f.name)
-    try {
-      const u = await repo.upload(f, 'preprocessor_definitions')
-      setDefFileId(u.id)
-    } catch (e) {
-      setDefFileName(''); setDefFileId('')
-      toast.error('Upload failed', (e as Error).message)
+  /* ── Step 2 helpers — cores; their files upload to /repositories/uploads ── */
+  const patchCore = (id: string, patch: Partial<Core>) =>
+    updateCores((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)))
+  function addCore() {
+    const c = newCore(uid(), nextCoreName(coresRef.current))
+    updateCores((cs) => [...cs, c])
+  }
+  function removeCore(id: string) {
+    updateCores((cs) => cs.filter((c) => c.id !== id))
+    if (layers.some((l) => l.coreId === id)) {
+      markArchEdited()
+      setLayers((prev) => prev.map((l) => (l.coreId === id ? { ...l, coreId: null } : l)))
     }
   }
-  async function uploadDd(f: File) {
+  async function uploadCoreFile(coreId: string, slot: CoreFile, f: File) {
+    const spec = CORE_FILES[slot]
+    if (!fitsCoreFile(slot, f.name)) {
+      toast.error('This file cannot be used', `${f.name}: ${spec.need}.`)
+      return
+    }
+    const key = `${coreId}:${slot}`
+    setUploading((p) => new Set(p).add(key))
     try {
-      const u = await repo.upload(f, 'data_dictionary')
-      setDdFile({ name: u.fileName, size: u.size, id: u.id })
+      const u = await repo.upload(f, spec.kind)
+      patchCore(coreId, { [slot]: { fileId: u.id, fileName: u.fileName, size: u.size } })
     } catch (e) {
       toast.error('Upload failed', (e as Error).message)
+    } finally {
+      setUploading((p) => { const next = new Set(p); next.delete(key); return next })
     }
   }
+  // What an imported config names for a core that the repository does not have (by the core's
+  // name in the config, so a rename keeps it).
+  const wantedFor = (c: Core) => (c.from ? imported?.preview.expectedUploads[c.from] : undefined)
+  const coreName = (id: string | null) => cores.find((c) => c.id === id)?.name.trim() || null
 
   /* ── Step 3 helpers ── */
+  function openAddLayer() {
+    setNewLayerCore(cores[0]?.id ?? '')
+    setAddLayerOpen(true)
+  }
   function confirmAddLayer() {
     const nm = newLayerName.trim().toUpperCase().replace(/\s+/g, '_')
     if (!nm) return
     markArchEdited()
-    setLayers((prev) => [...prev, { id: uid(), name: nm, path: newLayerPath.trim(), groups: [], libPaths: [], collapsed: false }])
+    const coreId = cores.some((c) => c.id === newLayerCore) ? newLayerCore : null
+    setLayers((prev) => [...prev, { id: uid(), name: nm, path: newLayerPath.trim(), groups: [], libPaths: [], coreId, collapsed: false }])
     setNewLayerName(''); setNewLayerPath(''); setAddLayerOpen(false)
   }
   const patchLayer = (id: string, fn: (l: Layer) => Layer) =>
@@ -587,6 +604,18 @@ function WizardView({
       if (!branch) { setErrs({ branch: true }); return false }
       setErrs({})
     }
+    if (n === 2 || n === 5) {
+      if (uploading.size) {
+        toast.info('Still uploading', 'Wait for the core files to finish uploading.')
+        return false
+      }
+      const bad = coreProblems(cores)
+      if (bad.length) {
+        toast.error(bad.length === 1 ? 'One thing to fix' : `${bad.length} things to fix`, bad.join('. '))
+        if (n === 5) setCur(2)
+        return false
+      }
+    }
     if (n === 3 || n === 5) {
       if (repoTreeLoading) {
         toast.info('Still reading the repository', `Checking the paths against branch ${branch}. Try again in a moment.`)
@@ -622,14 +651,12 @@ function WizardView({
         access_token: token.trim() || undefined,
         build_config: {
           ...(imported?.preview.draft.settings ?? {}),
-          preprocessor_definitions: defTab === 'upload'
-            ? { mode: 'upload', file_name: defFileName || null, file_id: defFileId || null }
-            : { mode: 'manual', defines: defManual.split('\n').map((s) => s.trim()).filter(Boolean) },
-          data_dictionary: ddFile ? { file_name: ddFile.name, file_id: ddFile.id } : null,
+          cores: cores.map(coreInput),
         },
         architecture_layers: layers.map((l) => ({
           name: l.name,
           path: l.path,
+          core: coreName(l.coreId),
           lib_paths: l.libPaths.map((p) => p.trim()).filter(Boolean),
           groups: l.groups.map((g) => ({
             name: g.name,
@@ -724,112 +751,11 @@ function WizardView({
               </div>
             )}
 
-            {/* ══ STEP 2 — BUILD CONFIGURATION ══ */}
+            {/* ══ STEP 2 — CORES ══ */}
             {cur === 2 && (
-              <div className="grid grid-cols-2 gap-4">
-                {/* Preprocessor Definitions */}
-                <div className="card">
-                  <div className="card-head">
-                    <div className="card-head-l">
-                      <div className="card-icon bg-primary-container">
-                        <Icon name="data_object" size={17} className="text-on-primary-container" />
-                      </div>
-                      <h3 className="text-on-surface font-sans text-sm font-semibold">Preprocessor Definitions</h3>
-                    </div>
-                    <button className="flex items-center justify-center rounded-full bg-surface-container-low border border-outline-variant text-on-surface-variant w-[22px] h-[22px]" title="Macro definitions passed as -D flags to Clang.">
-                      <Icon name="help" size={13} />
-                    </button>
-                  </div>
-
-                  {defTab === 'upload' ? (
-                    <>
-                      <div
-                        className={`drop-zone ${defFileName ? 'has-file' : ''}`}
-                        onClick={() => defInputRef.current?.click()}
-                        onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover') }}
-                        onDragLeave={(e) => e.currentTarget.classList.remove('dragover')}
-                        onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); const f = e.dataTransfer.files[0]; if (f) uploadDef(f) }}
-                      >
-                        <Icon name="upload_file" size={28} className="text-on-surface-variant mb-2 block" />
-                        <p className="text-on-surface mb-1 font-mono text-xs font-medium">Drop CSV or JSON here</p>
-                        <p className="text-on-surface-variant text-xs">Supported: <span className="font-mono text-caption">.csv, .json</span> · toolchain macro dumps included</p>
-                      </div>
-                      <input ref={defInputRef} type="file" accept=".csv,.json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadDef(f) }} />
-                      {!defFileName && imported?.preview.expectedUploads.definitions && (
-                        <p className="mt-2 text-caption text-[#b45309]">From the config: upload <code className="font-mono">{imported.preview.expectedUploads.definitions}</code></p>
-                      )}
-                      {defFileName && (
-                        <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-surface-container-low border border-outline-variant rounded-lg">
-                          <Icon name="description" size={18} className="text-secondary" />
-                          <span className="text-on-surface flex-1 font-mono text-xs">{defFileName}</span>
-                          <button onClick={() => { setDefFileName(''); setDefFileId(''); if (defInputRef.current) defInputRef.current.value = '' }} className="text-on-surface-variant hover:text-error transition-colors">
-                            <Icon name="close" size={16} />
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <div className="lbl mb-2 mt-0">One definition per line — KEY or KEY=VALUE</div>
-                      <textarea className="inp mono" rows={5} value={defManual} onChange={(e) => setDefManual(e.target.value)} placeholder={'DEBUG=1\nPLATFORM=QNX\nASPICE_LEVEL_2\nMAX_INPUTS=64'} />
-                    </>
-                  )}
-
-                  <div className="flex gap-2 mt-4 pt-3 border-t border-outline-variant">
-                    <button className={`tab-btn ${defTab === 'upload' ? 'on' : ''}`} onClick={() => setDefTab('upload')}>
-                      <Icon name="upload_file" size={13} className="align-middle mr-[3px]" />Upload
-                    </button>
-                    <button className={`tab-btn ${defTab === 'manual' ? 'on' : ''}`} onClick={() => setDefTab('manual')}>
-                      <Icon name="edit_note" size={13} className="align-middle mr-[3px]" />Manual
-                    </button>
-                  </div>
-                </div>
-
-                {/* Data Dictionary */}
-                <div className="card">
-                  <div className="card-head">
-                    <div className="card-head-l">
-                      <div className="card-icon bg-tertiary-container">
-                        <Icon name="menu_book" size={17} className="text-tertiary-fixed" />
-                      </div>
-                      <div>
-                        <h3 className="text-on-surface font-sans text-sm font-semibold">Data Dictionary</h3>
-                        <p className="text-on-surface-variant text-caption mt-0.5">Signal names, units, ranges</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div
-                    className={`drop-zone ${ddFile ? 'has-file' : ''}`}
-                    onClick={() => ddInputRef.current?.click()}
-                    onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover') }}
-                    onDragLeave={(e) => e.currentTarget.classList.remove('dragover')}
-                    onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); const f = e.dataTransfer.files[0]; if (f) uploadDd(f) }}
-                  >
-                    <Icon name="cloud_upload" size={28} className="text-on-surface-variant mb-2 block" />
-                    <p className="text-on-surface mb-1 font-mono text-xs font-medium">Drop CSV or Excel here</p>
-                    <p className="text-on-surface-variant text-xs">Supported: <span className="font-mono text-caption">.csv, .xlsx</span> · Optional</p>
-                  </div>
-                  <input ref={ddInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadDd(f) }} />
-                  {!ddFile && imported?.preview.expectedUploads.dataDictionary && (
-                    <p className="mt-2 text-caption text-[#b45309]">From the config: upload <code className="font-mono">{imported.preview.expectedUploads.dataDictionary}</code></p>
-                  )}
-                  {ddFile && (
-                    <div className="mt-3 flex items-center gap-3 px-3 py-2.5 bg-surface-container-low border border-[rgba(0,165,114,.3)] rounded-xl">
-                      <Icon name="description" size={20} fill className="text-[#00a572]" />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-on-surface font-mono text-xs">{ddFile.name}</div>
-                        <div className="text-on-surface-variant font-mono text-caption">{(ddFile.size / 1024).toFixed(1)} KB</div>
-                      </div>
-                      <button onClick={() => { setDdFile(null); if (ddInputRef.current) ddInputRef.current.value = '' }} className="text-on-surface-variant hover:text-error transition-colors p-1">
-                        <Icon name="close" size={18} />
-                      </button>
-                    </div>
-                  )}
-
-                  <p className="text-on-surface-variant mt-3 text-caption">Skipping is fine — you can upload a data dictionary later from Project Settings.</p>
-                </div>
-              </div>
+              <CoresStep cores={cores} layers={layers} wanted={wantedFor} uploading={uploading}
+                onAdd={addCore} onRemove={removeCore} onChange={patchCore}
+                onPick={(id, slot, f) => { void uploadCoreFile(id, slot, f) }} />
             )}
 
             {/* ══ STEP 3 — ARCHITECTURE ══ */}
@@ -840,7 +766,7 @@ function WizardView({
                     <Icon name="account_tree" size={17} className="text-secondary" />
                     <span className="text-on-surface-variant uppercase font-mono text-xs font-medium tracking-[.08em]">Project Architecture</span>
                   </div>
-                  <button onClick={() => setAddLayerOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-secondary border border-outline-variant rounded-lg hover:bg-surface-container-low transition-colors font-mono text-xs font-medium">
+                  <button onClick={openAddLayer} className="flex items-center gap-1.5 px-3 py-1.5 text-secondary border border-outline-variant rounded-lg hover:bg-surface-container-low transition-colors font-mono text-xs font-medium">
                     <Icon name="add" size={15} /> Add Layer
                   </button>
                 </div>
@@ -892,6 +818,13 @@ function WizardView({
                           <div className="text-on-surface font-mono text-body font-bold leading-[1.3]">{layer.name}</div>
                           <span className={cn(`layer-path-display ${layer.path ? '' : 'empty'}`, pathIssue(layer.id, '', layer.path) && 'err')} title={pathIssue(layer.id, '', layer.path)?.replace(/`/g, '')}>{layer.path || 'Set root path…'}</span>
                         </div>
+                        <label className="layer-core" onClick={(e) => e.stopPropagation()} title="The core this layer is built for: its macros, data dictionary and compile commands">
+                          Core
+                          <select className="layer-core-select" value={layer.coreId ?? ''} onChange={(e) => { markArchEdited(); patchLayer(layer.id, (l) => ({ ...l, coreId: e.target.value || null })) }}>
+                            <option value="">No core</option>
+                            {cores.map((c) => <option key={c.id} value={c.id}>{c.name.trim() || 'Unnamed core'}</option>)}
+                          </select>
+                        </label>
                         <button onClick={(e) => { e.stopPropagation(); removeLayer(layer) }} className="p-1 text-on-surface-variant hover:text-error transition-colors">
                           <Icon name="close" size={15} />
                         </button>
@@ -1011,6 +944,13 @@ function WizardView({
                           <Icon name="folder_open" size={16} /> Select Folder
                         </button>
                       </div>
+                    </div>
+                    <div>
+                      <div className="lbl mb-1">Core</div>
+                      <select className="inp mono" value={newLayerCore} onChange={(e) => setNewLayerCore(e.target.value)}>
+                        <option value="">No core</option>
+                        {cores.map((c) => <option key={c.id} value={c.id}>{c.name.trim() || 'Unnamed core'}</option>)}
+                      </select>
                     </div>
                     <div className="flex gap-2 pt-1">
                       <button onClick={confirmAddLayer} className="px-4 py-2 bg-secondary text-on-secondary rounded-lg hover:bg-secondary-container transition-colors font-mono text-xs font-medium">Add Layer</button>
@@ -1170,54 +1110,16 @@ function WizardView({
                   <div className="rev-row"><span>Access Token</span><span>{token ? '••••••••' : 'Not set'}</span></div>
                 </div>
 
-                {/* Build Configuration */}
+                {/* Cores */}
                 <div className="rev-card">
                   <div className="rev-card-head">
                     <div className="flex items-center gap-2">
-                      <Icon name="data_object" size={15} className="text-on-surface-variant" />
-                      <span className="text-on-surface font-mono text-xs font-semibold">Build Configuration</span>
+                      <Icon name="memory" size={15} className="text-on-surface-variant" />
+                      <span className="text-on-surface font-mono text-xs font-semibold">Cores</span>
                     </div>
                     <button onClick={() => setCur(2)} className="text-secondary hover:underline font-mono text-caption">Edit</button>
                   </div>
-                  {(() => {
-                    const manualLines = defManual.split('\n').map((l) => l.trim()).filter(Boolean)
-                    const count = defTab === 'upload' ? (defFileName ? '' : 'No file') : (manualLines.length ? `${manualLines.length} definition${manualLines.length !== 1 ? 's' : ''}` : 'empty')
-                    return (
-                      <div className="px-4 py-2.5 border-b border-surface-container-low">
-                        <button onClick={() => setDefinesExpanded((v) => !v)} className="w-full flex items-center gap-1.5 bg-transparent border-none cursor-pointer p-0 text-left">
-                          <Icon name={definesExpanded ? 'keyboard_arrow_down' : 'keyboard_arrow_right'} size={15} className="text-outline flex-shrink-0" />
-                          <span className="font-mono text-caption font-semibold text-on-surface-variant flex-1">Preprocessor Definitions</span>
-                          <span className="font-mono text-label text-outline mr-1.5">{count}</span>
-                          <span className="font-mono text-micro font-bold uppercase tracking-[.06em] px-[7px] py-0.5 rounded-[3px] bg-surface-container text-secondary">{defTab === 'upload' ? 'Upload' : 'Manual'}</span>
-                        </button>
-                        {definesExpanded && (
-                          <div className="mt-2 font-mono text-caption">
-                            {defTab === 'upload' ? (
-                              defFileName ? (
-                                <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-surface-container-low border border-outline-variant rounded-md">
-                                  <Icon name="description" size={14} className="text-secondary" />
-                                  <span className="text-on-surface">{defFileName}</span>
-                                </div>
-                              ) : <span className="text-outline">No file selected</span>
-                            ) : (
-                              manualLines.length ? manualLines.map((l, i) => (
-                                <div key={i} className="flex items-center gap-1.5 py-1 border-b border-[#f0f2f8]">
-                                  <span className="text-secondary font-bold flex-shrink-0">#</span>
-                                  <code className="text-on-surface">{l}</code>
-                                </div>
-                              )) : <span className="text-outline">No definitions entered</span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })()}
-                  <div className="px-4 py-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-caption font-semibold text-on-surface-variant">Data Dictionary</span>
-                      <span className="font-mono text-caption font-medium text-on-surface">{ddFile?.name || 'Not uploaded'}</span>
-                    </div>
-                  </div>
+                  <CoresReview cores={cores} layers={layers} />
                   {imported && settingsSummary(imported.preview.draft.settings) && (
                     <div className="px-4 py-3 border-t border-surface-container-low flex items-start justify-between gap-3">
                       <span className="font-mono text-caption font-semibold text-on-surface-variant flex-shrink-0">From {imported.fileName}</span>

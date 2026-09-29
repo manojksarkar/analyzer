@@ -1,20 +1,126 @@
-import type { RepoEntry } from '../../services/api'
-import type { ArchLayer } from '../../types'
+import type { CoreInput, RepoEntry, UploadKind } from '../../services/api'
+import type { ArchLayer, DraftCore, UploadedFile } from '../../types'
 
 export type Role = 'Admin' | 'Developer'
 export interface Member { name?: string; email: string; role: Role }
 export interface Comp { id: string; name: string; files: string[]; collapsed: boolean }
 export interface Group { id: string; name: string; comps: Comp[]; collapsed: boolean }
-export interface Layer { id: string; name: string; path: string; groups: Group[]; libPaths: string[]; collapsed: boolean }
+/** `coreId`: the core the layer is built for (a `Core.id`, so renaming the core keeps it). */
+export interface Layer { id: string; name: string; path: string; groups: Group[]; libPaths: string[]; coreId: string | null; collapsed: boolean }
 
-/** The wizard's architecture tree from a config file's layers (`POST /projects/config/preview`).
- *  Imported components start collapsed: a real config lists dozens of them. */
-export function draftToLayers(layers: ArchLayer[], newId: () => string): Layer[] {
+/** A core: one build of the firmware - its macros (a file, or typed -D lines), data dictionary
+ *  and compile commands. `from` is its name in an imported config, which keeps the config's
+ *  hints and the branch's files with it after a rename. */
+export interface Core {
+  id: string
+  name: string
+  macroMode: 'file' | 'typed'
+  macroFile: UploadedFile | null
+  macroText: string
+  dataDictionary: UploadedFile | null
+  compileCommands: UploadedFile | null
+  from?: string
+}
+export type CoreFile = 'macroFile' | 'dataDictionary' | 'compileCommands'
+
+/** Each of a core's files: its upload kind, the extensions the engine reads it from (a data
+ *  dictionary is CSV only), and why another file is refused. */
+export const CORE_FILES: Record<CoreFile, { kind: UploadKind; exts: string[]; accept: string; types: string; need: string }> = {
+  macroFile:       { kind: 'preprocessor_definitions', exts: ['.json', '.csv'], accept: '.json,.csv', types: '.json · .csv', need: 'macros are read from a .json or .csv file' },
+  dataDictionary:  { kind: 'data_dictionary', exts: ['.csv'], accept: '.csv', types: '.csv', need: 'the data dictionary must be a .csv file' },
+  compileCommands: { kind: 'compile_commands', exts: ['.json'], accept: '.json', types: 'compile_commands.json', need: 'compile commands must be a compile_commands.json' },
+}
+export const fitsCoreFile = (slot: CoreFile, fileName: string) =>
+  CORE_FILES[slot].exts.some((x) => fileName.toLowerCase().endsWith(x))
+
+export const newCore = (id: string, name: string): Core => ({
+  id, name, macroMode: 'file', macroFile: null, macroText: '', dataDictionary: null, compileCommands: null,
+})
+
+/** The first `CoreN` no core is called. */
+export function nextCoreName(cores: Core[]): string {
+  const taken = new Set(cores.map((c) => c.name.trim().toLowerCase()))
+  let n = 1
+  while (taken.has(`core${n}`)) n++
+  return `Core${n}`
+}
+
+/** Typed macros: one per line, blank lines dropped. */
+export const typedDefines = (text: string) => text.split('\n').map((s) => s.trim()).filter(Boolean)
+
+/** The wizard's cores from a config file's (`POST /projects/config/preview`). */
+export function draftToCores(cores: DraftCore[], newId: () => string): Core[] {
+  return cores.map((c) => ({
+    id: newId(),
+    name: c.name,
+    macroMode: c.macros?.kind === 'typed' ? 'typed' : 'file',
+    macroFile: c.macros?.kind === 'file' ? c.macros.file : null,
+    macroText: c.macros?.kind === 'typed' ? c.macros.defines.join('\n') : '',
+    dataDictionary: c.dataDictionary,
+    compileCommands: c.compileCommands,
+    from: c.name,
+  }))
+}
+
+/** A core's files once an imported config is read again for another branch: a file the import
+ *  filled in is replaced by this branch's copy, or taken back when the branch has none; a file
+ *  the user chose is never touched. `was` / `now`: the core as the two reads describe it. */
+export function followBranch(c: Core, was: DraftCore | undefined, now: DraftCore | undefined): Core {
+  const pick = (mine: UploadedFile | null, before?: UploadedFile | null, after?: UploadedFile | null) =>
+    !mine || (before && mine.fileId === before.fileId) ? after ?? null : mine
+  const macroOf = (d?: DraftCore) => (d?.macros?.kind === 'file' ? d.macros.file : null)
+  return {
+    ...c,
+    macroFile: pick(c.macroFile, macroOf(was), macroOf(now)),
+    dataDictionary: pick(c.dataDictionary, was?.dataDictionary, now?.dataDictionary),
+    compileCommands: pick(c.compileCommands, was?.compileCommands, now?.compileCommands),
+  }
+}
+
+/** A config's core name → the wizard core it became: by `from`, then by name. */
+export function coreIdOf(name: string | null | undefined, cores: Core[]): string | null {
+  if (!name) return null
+  return (cores.find((c) => c.from === name) ?? cores.find((c) => c.name.trim() === name))?.id ?? null
+}
+
+/** What stops the cores being used, one message each - the API refuses the project on the same
+ *  (api/services/project_cores.core_problems). */
+export function coreProblems(cores: Core[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  cores.forEach((c, i) => {
+    const name = c.name.trim()
+    if (!name) { out.push(`Core ${i + 1} has no name`); return }
+    if (seen.has(name.toLowerCase())) out.push(`Two cores are called ${name}`)
+    seen.add(name.toLowerCase())
+  })
+  return out
+}
+
+/** A core as the API stores it: typed macros only when typing is chosen, a file otherwise. */
+export function coreInput(c: Core): CoreInput {
+  const defines = typedDefines(c.macroText)
+  const ref = (f: UploadedFile | null) => (f ? { file_id: f.fileId, file_name: f.fileName } : null)
+  return {
+    name: c.name.trim(),
+    macros: c.macroMode === 'typed'
+      ? (defines.length ? { mode: 'manual', defines } : null)
+      : c.macroFile ? { mode: 'upload', ...ref(c.macroFile)! } : null,
+    data_dictionary: ref(c.dataDictionary),
+    compile_commands: ref(c.compileCommands),
+  }
+}
+
+/** The wizard's architecture tree from a config file's layers (`POST /projects/config/preview`),
+ *  each layer on the core its config names. Imported components start collapsed: a real config
+ *  lists dozens of them. */
+export function draftToLayers(layers: ArchLayer[], newId: () => string, cores: Core[] = []): Layer[] {
   return layers.map((l) => ({
     id: newId(),
     name: l.name,
     path: l.path ?? '',
     libPaths: [...(l.libPaths ?? [])],
+    coreId: coreIdOf(l.core, cores),
     collapsed: false,
     groups: l.groups.map((g) => ({
       id: newId(),

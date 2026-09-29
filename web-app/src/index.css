@@ -139,6 +139,44 @@ select.inp { appearance: auto; }
 .drop-zone:hover, .drop-zone.dragover { border-color: #0058be; background: #eff4ff; }
 .drop-zone.has-file { border-style: solid; border-color: #00a572; background: #f0fff9; }
 
+/* Cores (step 2) - one settings card per core */
+.core-card { background: #fff; border: 1px solid #c4c6cd; border-radius: 0.75rem; overflow: hidden; }
+.core-card-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #f8f9ff; border-bottom: 1px solid #e5eeff; }
+.core-chip-icon { width: 32px; height: 32px; border-radius: 0.5rem; background: #1a2b3c; color: #8192a7; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.core-name { width: 100%; max-width: 240px; padding: 0 6px; margin-left: -6px; font: 600 14px/22px "Inter", sans-serif; color: #0b1c30; background: transparent; border: 1px solid transparent; border-radius: 0.25rem; }
+.core-name:hover { border-color: #c4c6cd; background: #fff; }
+.core-name:focus { outline: none; border-color: #0058be; background: #fff; box-shadow: 0 0 0 3px rgba(0,88,190,.10); }
+.core-name.err { border-color: #ba1a1a; background: #fff; }
+.core-uses { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 3px; font: 500 10px/16px "JetBrains Mono", monospace; color: #74777d; }
+.core-uses .layer-tag { padding: 0 6px; border-radius: 3px; background: #e5eeff; color: #0058be; font-weight: 600; }
+.core-uses.none { color: #b45309; }
+.core-row { display: grid; grid-template-columns: 172px minmax(0, 1fr); gap: 16px; align-items: start; padding: 14px 16px; }
+.core-row + .core-row { border-top: 1px solid #eff4ff; }
+.core-row-label { font: 600 12px/18px "JetBrains Mono", monospace; color: #0b1c30; }
+.core-row-help { margin-top: 2px; font: 400 11px/15px "Inter", sans-serif; color: #74777d; }
+.core-row-help code { font-family: "JetBrains Mono", monospace; font-size: 10.5px; }
+.core-row-help .opt { font-weight: 600; color: #44474c; }
+.wanted-note { margin-top: 6px; font: 400 11px/15px "Inter", sans-serif; color: #8a5300; }
+.upload-btn { width: 100%; min-height: 40px; display: flex; align-items: center; gap: 10px; padding: 8px 12px; text-align: left; color: #74777d; background: #f8f9ff; border: 1.5px dashed #c4c6cd; border-radius: 0.5rem; cursor: pointer; transition: border-color .15s, background .15s; }
+.upload-btn:hover, .upload-btn.dragover { border-color: #0058be; background: #eff4ff; }
+.upload-btn:disabled { cursor: progress; opacity: .7; }
+.upload-btn .t { font: 500 12px/16px "Inter", sans-serif; color: #0b1c30; }
+.upload-btn .s { margin-left: auto; white-space: nowrap; font: 400 11px/14px "JetBrains Mono", monospace; color: #74777d; }
+.upload-btn.wanted { color: #b45309; border-color: #e5b25d; background: #fffaf0; }
+.upload-btn.wanted .t { color: #8a5300; }
+.file-pill { min-height: 40px; display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 12px; background: #f0fff9; border: 1px solid rgba(0,165,114,.35); border-radius: 0.5rem; }
+.file-pill .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 12px/16px "JetBrains Mono", monospace; color: #0b1c30; }
+.file-pill .z { white-space: nowrap; font: 400 11px/14px "JetBrains Mono", monospace; color: #74777d; }
+.pill-btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: #74777d; background: none; border: none; border-radius: 0.25rem; cursor: pointer; }
+.pill-btn:hover { background: #e5eeff; color: #0058be; }
+.pill-btn.del:hover { background: #ffdad6; color: #ba1a1a; }
+.switch-link { margin-top: 6px; padding: 0; font: 500 11px/14px "Inter", sans-serif; color: #0058be; background: none; border: none; cursor: pointer; }
+.switch-link:hover { text-decoration: underline; }
+textarea.macro-text { min-height: 76px; resize: vertical; }
+/* A layer's core (step 3) */
+.layer-core { display: flex; align-items: center; gap: 6px; flex-shrink: 0; font-family: "JetBrains Mono", monospace; font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #74777d; }
+.layer-core-select { font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: #0058be; background-color: #fff; border: 1px solid #c4c6cd; border-radius: 0.25rem; padding: 3px 6px; cursor: pointer; }
+
 .rev-card { background: #fff; border: 1px solid #c4c6cd; border-radius: 0.75rem; overflow: hidden; }
 .rev-card-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: #f8f9ff; border-bottom: 1px solid #eff4ff; }
 .rev-row { display: flex; justify-content: space-between; gap: 8px; padding: 9px 16px; border-bottom: 1px solid #eff4ff; font-size: 12px; }

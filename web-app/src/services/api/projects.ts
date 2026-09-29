@@ -10,6 +10,14 @@ export interface ConfigPreviewInput {
   access_token?: string
 }
 
+/** One core of a new project, as the API stores it (api/services/project_cores.py). */
+export interface CoreInput {
+  name: string
+  macros: { mode: 'upload'; file_id: string; file_name: string } | { mode: 'manual'; defines: string[] } | null
+  data_dictionary: { file_id: string; file_name: string } | null
+  compile_commands: { file_id: string; file_name: string } | null
+}
+
 export interface CreateProjectInput {
   name: string
   client: string
@@ -18,7 +26,9 @@ export interface CreateProjectInput {
   repo_provider?: string
   default_branch?: string
   access_token?: string
+  /** `cores`: each core's macros, data dictionary and compile commands (see CoreInput). */
   build_config?: Record<string, unknown>
+  /** Each layer names its core: `{ ..., core: 'Core1' | null }`. */
   architecture_layers?: unknown[]
   team?: { email: string; role: string }[]
 }
