@@ -309,7 +309,7 @@ Returned by R1 (in a list), R2 (bare) and R4 (nested). One slot's current state.
 |---|---|---|
 | `slotKind` | string | one of §1 |
 | `slotKey` | string | send this back verbatim; never build it |
-| `llmText` | string \| null | the LLM's original, captured on the **first** edit and never rewritten (`REQ-ST-03`). `null` when the slot was empty before the first correction — which is why undo can fail with 409 |
+| `llmText` | string \| null | the LLM's original, captured on the **first** edit and never rewritten (`REQ-ST-03`) — except that an edit over an **orphaned** correction starts a new one, and captures the current text. `null` when the slot was empty before the first correction — which is why undo can fail with 409 |
 | `humanText` | string | the reviewer's words. In force unless `isOrphaned` — see R11 for the three states |
 | `isOrphaned` | boolean | the slot stopped resolving (entity renamed or deleted). The record is **kept** (`REQ-ID-03`) and is **not** applied to the document. Show it greyed rather than hiding it |
 | `updatedBy` | string \| null | user id |
@@ -448,7 +448,7 @@ For the five model-backed kinds. `nodeLabel` → R8, `behaviourDescription` → 
 | `humanText` | string | what is now in force |
 | `llmText` | string \| null | the original, unchanged by this call |
 | `previousText` | string \| null | what this call replaced. `null` on the first edit |
-| `firstEdit` | boolean | true when this slot had no correction before |
+| `firstEdit` | boolean | true when this slot had no correction in force before — none, or only an orphaned one |
 | `viewsDerived` | string[] | the SWE.4 views this save re-derived — see the note below. `[]` for a version with no SWE.4 output, which is every web-app version |
 | `queuedForRegeneration` | `QueuedSlot[]` | see below |
 
@@ -485,9 +485,10 @@ touch, on the next run. An unannounced change reads as a bug.
 | code | when |
 |---|---|
 | 404 | the slot does not resolve in this version |
+| 409 | a run is regenerating this version and replaced the model while the save was writing it. Nothing was saved — save again once the run has finished |
 | 422 | empty or whitespace-only `text`; or a `snake_case` field is missing |
 | 501 | `slot_kind` is `nodeLabel` or `behaviourDescription` — use R8 / R6 |
-| 401 / 403 / 503 | see §16 |
+| 401 / 403 / 500 / 503 | see §16 |
 
 ---
 
@@ -530,9 +531,10 @@ with `humanText` equal to `llmText`.
 | code | when |
 |---|---|
 | 409 | no original to restore — the slot was empty before the first correction, so `llmText` is `null`. Disable the undo control when `llmText` is `null` rather than letting the reviewer discover this |
+| 409 | the correction is **orphaned** (`isOrphaned: true`): it was written for code that has since changed, it is not applied, and the document already shows the LLM's text for the current code — there is nothing to undo. Disable the undo control on an orphan too; a new edit (R3, R6, R8) starts a new correction |
 | 404 | the slot does not resolve in this version |
 | 400 | malformed `slot_key` for the kind (§2) |
-| 401 / 403 / 503 | see §16 |
+| 401 / 403 / 500 / 503 | see §16 |
 
 **R4 undoes every kind**, not just the ones R3 saves: a `nodeLabel` (one node at a time — take its
 `slotKey` from R7; the flowchart is redrawn as for R8) and a `behaviourDescription` (the whole bullet
@@ -640,8 +642,9 @@ the callee's name — so there is nothing to redraw and no render job.
 | code | when |
 |---|---|
 | 404 | no such behaviour row in this version (wrong `function_id` or `external_caller_id`) |
+| 409 | the stored behaviour output cannot be read — re-derive the version |
 | 422 | `bullets` empty, or a bullet that is blank |
-| 401 / 403 / 503 | see §16 |
+| 401 / 403 / 500 / 503 | see §16 |
 
 ---
 
@@ -785,7 +788,7 @@ and R5 still work on a single `nodeLabel` slot key.
 | 404 | the flowchart, or a node id named in `labels`, does not exist — `detail` names it |
 | 409 | the flowchart has no stored graph (see R7). Re-derive the version first |
 | 422 | a label is empty or whitespace-only; or `flowchart_id` or `labels` missing |
-| 401 / 403 / 503 | see §16 |
+| 401 / 403 / 500 / 503 | see §16 |
 
 ---
 
@@ -947,8 +950,15 @@ hashes, and correcting a *description* changes neither, so the next run would hi
 caller would keep its stale wording for ever.
 
 A slot a human has already corrected never appears here (`REQ-CS-03`) — their text is not
-regenerated over. The cascade is **one level** (`REQ-CS-02`): a caller's own callers are not
-invalidated, because a transitive cascade is unbounded in a deep call graph.
+regenerated over — and correcting a slot that is listed here takes it off the list. The cascade is
+**one level** (`REQ-CS-02`): a caller's own callers are not invalidated, because a transitive cascade
+is unbounded in a deep call graph.
+
+**When an entry leaves the list.** A description or unit description when a run's Phase 2 wrote it
+afresh; a behaviour row when a run's behaviour view rebuilt it — not a SWE.4-only run, and not a run
+over another component. A run with no LLM, or with descriptions switched off, pays nothing: the
+entries stay, and the slots keep their previous wording until a run with an LLM rewrites them. A
+version generated from this one owes the same entries for what it still contains.
 
 ---
 
@@ -966,7 +976,7 @@ response instead of dug out of stored view output.
 |---|---|---|---|---|
 | `slot_kind` | string | **yes** | — | one of §1 |
 | `unit` | string | no | — | narrow to one unit, by its name (`Core`). For `structDescription`: the records that unit's header table shows (see `shownIn`) |
-| `component` | string | no | — | narrow to one component, by its **layer-qualified id** (`Layer1.Sample-Core`) — the same string as a document's `group` in `GET /documents`. For `structDescription`, as for `unit` |
+| `component` | string | no | — | narrow to one component, by its **layer-qualified id** (`Layer1.Sample-Core`) — the same string as a document's `group` in `GET /documents`. The config's spelling (`Layer1.Sample Core`) and any letter case find the same component. For `structDescription`, as for `unit` |
 | `limit` | integer | no | `200` | 1–1000 |
 | `offset` | integer | no | `0` | ≥ 0 |
 
@@ -1074,14 +1084,19 @@ Error bodies are `{"detail": "…"}`, except 401 (an object, §4) and 422 from s
 | 401 | missing, malformed or non-access Bearer token |
 | 403 | not a member of the project |
 | 404 | a version that is not one of the project's (every endpoint; a tag sent instead of the id is answered with the id — §3), or an unknown slot, flowchart, or node named in a flowchart save |
-| 409 | undo with no LLM original to restore |
+| 409 | undo with no LLM original to restore, or of an orphaned correction; a flowchart with no stored graph; stored output that cannot be read; a save that met a run regenerating the version (nothing saved — save again once it has finished) |
 | 422 | empty or whitespace-only text (`REQ-ST-06`); or a request body/query field missing — **check `snake_case` first** (§4) |
+| 500 | a fault on the server, not in the request. `detail` names only the kind of error; the server log has the rest. Nothing was changed |
 | 501 | a slot kind with no save path on that endpoint (`nodeLabel`, `behaviourDescription` on R3) |
 | 503 | no database configured — corrections live nowhere else, so the write is refused rather than dropped |
 
-Two people editing the same slot: **last write wins**, no locking and no conflict response
-(`REQ-API-07`). Sending only changed labels (§13) is what keeps that true *per slot* when a whole
-flowchart is saved at once.
+A **4xx is always about the request**: fix it before sending it again. A 500 is not — send the same
+request again later, or report it.
+
+Two people editing the same slot: **last write wins**, no edit lock and no conflict response
+(`REQ-API-07`). Saves of one version are taken one at a time on the server — each is milliseconds —
+so a second save waits rather than failing. Sending only changed labels (§13) is what keeps that true
+*per slot* when a whole flowchart is saved at once.
 
 ---
 

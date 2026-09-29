@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-09-29d | The review of every review & update flow, and its ten fixes: a save writes one row and saves of a version take turns; the regeneration queue is paid where each text is written, and travels to the next version; an orphan is no correction; a 4xx is the caller's fault | [10](10-2026-09-26.md) |
 | 2026-09-29c | R7 and R8 name a flowchart by its function id, `flowchart_id`, in the query and the body -- not a base64 token in the path | [10](10-2026-09-26.md) |
 | 2026-09-29b | Rebased onto develop `5542736` as branch `review_update_v3`: develop's six commits bring no new LLM text; one thing to decide — doccheck's pair check reads the behaviour bullets a reviewer can rewrite (RU-6) | [10](10-2026-09-26.md) |
 | 2026-09-29 | The export guard asks per view, component and document; a saved correction re-derives the SWE.4 specs; the restore before a run finally runs | [10](10-2026-09-26.md) |

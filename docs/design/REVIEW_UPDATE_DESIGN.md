@@ -15,6 +15,7 @@ mechanism it hangs off, so a future change can find what it is touching.
 - [3. Slot addressing](#3-slot-addressing)
 - [4. Writing an override](#4-writing-an-override)
   - [4.1 A whole flowchart in one call](#41-a-whole-flowchart-in-one-call)
+  - [4.2 One row, one save at a time](#42-one-row-one-save-at-a-time)
 - [5. Re-deriving the views](#5-re-deriving-the-views)
   - [5.1 Text that Phase 3 produces](#51-text-that-phase-3-produces)
   - [5.2 Applying a correction without running Phase 3](#52-applying-a-correction-without-running-phase-3)
@@ -201,17 +202,18 @@ apply_override(version_id, slot_kind, slot_key, human_text, user_id):
   reject if it does not resolve (404)
 
   BEGIN
+    wait for any other save of this version            §4.2  (one at a time)
     read the current model value
-    if no override exists yet:
-        llm_text = the current model value             REQ-ST-03  (captured once)
+    if no correction is in force -- no row, or only an ORPHANED one:
+        llm_text = the current model value             REQ-ST-03  (captured once per correction)
     if slot_kind is nodeLabel:
         slot_shape = hash of this CFG's node-id list   REQ-ID-02  (refreshed every edit:
                                                        it describes the graph the text was
                                                        last written against, not the first)
-    write human_text into the model
-    upsert text_overrides
+    write human_text into the model: that field, one row   §4.2
+    upsert text_overrides (not orphaned)
     append text_override_history, trim to N            REQ-ST-04
-    cascade: regenerate dependents                     §6
+    cascade: queue the dependents, drop this slot's own entry   §6, REQ-CS-03
     re-derive affected views                           §5
     stamp view_derivations
   COMMIT
@@ -221,6 +223,13 @@ apply_override(version_id, slot_kind, slot_key, human_text, user_id):
 
 Everything through `COMMIT` is one transaction (`REQ-AP-02`) — a half-applied override, where the
 model moved and the views did not, is exactly the failure this feature exists to avoid.
+
+**An orphan is no correction.** It was written for code that has since changed, and it is never
+applied, so the model holds fresh LLM text for the new code — that text is the slot's original now.
+An edit over an orphan is therefore a *first* edit: `llm_text` is re-captured and the orphan flag
+cleared, in `apply_override` and in `_upsert_override` (node labels, behaviour rows) alike. Keeping the
+orphan's `llm_text` made an undo put back a sentence about code that no longer exists; and undo of
+an orphan itself is refused (`NothingToUndo`, 409) — there is nothing of its own to restore.
 
 **Five kinds, not seven.** `nodeLabel` and `behaviourDescription` have no model field to resolve
 to — see [Open items](#open-items). `override_service` refuses them with `NotEditableHere` rather
@@ -281,9 +290,34 @@ writer: it goes through `write_output_row`, already named as the one non-view wr
 Only `description` needs it. Unit and struct descriptions and the behaviour names are read from the
 model directly (`docx_exporter._load_model_json`), so they were never stale.
 
-**Writing to the model** goes through the existing repository gateway
-([core/model_repo.py](../../engine/core/model_repo.py)) so the write lands wherever the run's model
-lives. Nothing here opens `entity_versions` directly.
+### 4.2 One row, one save at a time
+
+**A save writes one row.** `ModelAccess.save` updates the corrected field of the one entity it
+names — `model_store.set_entity_field` re-hashes that entity's payload, stores it as a new content
+blob and re-points its one `entity_versions` row; a unit description is one `model_units` column
+(`set_unit_description`). Both join the save's transaction.
+
+It used to go through the repository gateway ([core/model_repo.py](../../engine/core/model_repo.py)),
+whose flush runs `clear_version` and `persist_model` over the whole version: every function, global,
+type, edge and hash row rewritten for one sentence, **from a snapshot read before the save's
+transaction**. Two saves at once — or a save beside a Phase-2 run of the same version — each put
+back what the other had just changed. The gateway is still the path for a file-backed repository,
+which has no rows to update.
+
+**A row that is gone fails the save.** The update names its row; if a run replaced the version's
+model between the save's read and its write, nothing matches, `ModelRowMissing` is raised, and the
+save becomes `VersionBusy` (409, "save again once the run has finished") with nothing stored —
+rather than a 200 for a correction that landed nowhere.
+
+**One save per version at a time.** A save reads before it writes — the current text, whether the
+slot has a row, the history's last sequence number, the stored rows the SWE.4 re-derive rebuilds — so
+two saves of one version at once could each act on what the other was changing: two first edits of
+one slot both inserting, two history rows with one number, a re-derived spec without the other's
+label. `_serialize_saves` takes `pg_advisory_xact_lock` on a key derived from the version id, before
+the first read, in `apply_override`, `apply_flowchart_overrides`, `apply_behaviour_override` and
+`undo_override`. It is released at commit or rollback; taking it again in one transaction (undo calls
+a save) costs nothing. SQLite serialises writers by itself. Saves of different versions never wait
+on each other.
 
 ---
 
@@ -480,21 +514,38 @@ the pipeline uses — `get_description`, `get_unit_description`, `CallDescriptio
 wording stays consistent with a normal run.
 
 **A dependent that already has its own override is skipped** (`REQ-CS-03`). The human's text is never
-replaced by a regeneration.
+replaced by a regeneration. For the same reason a save removes **its own** slot's entry: a slot
+queued before a human corrected it would otherwise be regenerated, and the answer thrown away by
+`_reapply_corrections`.
 
 ### 6.1 Paying the debt
 
-The queue is drained in **two places**, because its kinds live in different phases:
+The queue is drained in **three places** — where each kind's text is written, each taking only its
+own kind, with the artifact that kind lives in:
 
 | kind | where | how |
 |---|---|---|
-| `description`, `unitDescription` | Phase 2, `model_deriver._take_regeneration_queue` | blank the stale text; the enrichment rewrites it |
-| `behaviourDescription` | Phase 3, `run_views._retire_behaviour_regenerations` | the behaviour view rebuilds every row it writes, so running it IS the regeneration |
+| `description` | Phase 2, `_enrich_from_llm`: `_take_regeneration_queue(functions + globals, (DESCRIPTION,))` | blank the stale text, and pass the functions as `regenerate` |
+| `unitDescription` | Phase 2, around `_enrich_unit_and_struct_descriptions`, with the units just built | Phase 2 builds units afresh; an entry is retired only when its unit came back described |
+| `behaviourDescription` | Phase 3, `run_views._retire_behaviour_regenerations` | only when the `behaviourDiagram` view ran, and only for the rows it covered |
 
-**No force-regenerate switch exists, and none is needed.** `_enrich_from_llm` already documents
-that function descriptions "skip when already present (the engine carries them forward)", so
-removing the stale text *is* the instruction to generate it again. Adding a second way to say that
-would be two expressions for one fact.
+**Blanking is not enough on its own, and was once thought to be.** The enrichment skips a function
+that already has text, so a blank asks for it — but it then consults the description cache, keyed on
+the function's source and its callees' **source** hashes (`EntityCache.compute_hash`). A corrected
+description moves neither, so the lookup hit and handed back the very wording the queue existed to
+replace; the entry retired itself on that text. `enrich_functions_rich(regenerate=…)` names the
+functions that must not be answered from the cache, in either pass. The fresh text is cached as usual
+and replaces the stale entry: LLM text, never human text (`REQ-VR-02`).
+
+**Each step takes its own kinds.** Taken all at once with `units: {}`, every unit entry read as "that
+slot no longer exists" and was retired before any unit was described — paid by luck when the LLM
+answered a moment later, lost when it did not.
+
+**A behaviour row is paid by the run that built it.** `clear_behaviour_entries(rebuilt, components)`
+retires an entry whose row the run wrote (the keys in the manifest on disk), or whose function is in
+the run's components but has no row any more (the call is gone). A run without the view — SWE.4 only,
+`views.behaviourDiagram` off — or over other components retires nothing. Clearing every behaviour
+entry after every Phase 3, as it once did, reported rows as rebuilt that no run had touched.
 
 **Only what came back is retired.** An entry whose slot is still empty after the enrichment means
 the regeneration did not happen — the LLM was unreachable, or `llm.descriptions` is off — and
@@ -723,6 +774,14 @@ not" — rather than a silent disappearance.
 **A correction already made against the target wins.** It is newer than anything the baseline can
 offer, so carry-forward leaves it alone.
 
+**The regeneration queue travels too** (`carry_queue`, called by `carry_overrides` after the rows).
+The new version starts from the baseline's text — `carry_forward_descriptions` copies an unchanged
+function's description across — so a stale description the baseline never rewrote arrived as the new
+version's own text, and the entry that said it was owed stayed behind on the baseline. An entry is
+copied when what it names is still there (the function, the unit, or both ends of the call, judged
+as for a behaviour correction), the new version does not queue it already, and no correction is in
+force there for that slot — including one copied by the same call. `Carried.queued` counts them.
+
 `overrides_for_config` then builds what a Phase-3 run feeds to
 [§5.1](#51-text-that-phase-3-produces)'s `from_config`. Only the two Phase-3 kinds appear in it: the
 other five live in the model, and Phase 3 derives from the model — putting them in both places
@@ -785,7 +844,9 @@ separate state. The row survives with both texts and its history, re-applying it
 Phase-3 run writes the LLM's own words back (a no-op), and `REQ-TD-01`'s rule that a training
 export skips pairs whose texts are equal already excludes it. Refused with 409 when the slot
 was empty before the first correction, since `REQ-ST-06` forbids writing empty text and
-deleting the row instead would destroy the user's work to express "there was nothing here".
+deleting the row instead would destroy the user's work to express "there was nothing here" — and
+when the correction is orphaned, since it is not applied and the document already shows the LLM's
+text for the current code (§4).
 
 **`GET .../overrides` is an overlay, not a slot enumeration.** `REQ-API-01` asks for the
 document's slots with their text; a version has ~57,000, so the endpoint returns only the
@@ -809,7 +870,28 @@ A key never goes in a path segment — it contains `|`, `:`, `,`, `*`, spaces an
 
 Pagination on the list is not optional: a version has roughly **57,000 slots**.
 
-`PUT` is last-write-wins (`REQ-API-07`) — no version token, no conflict response.
+`PUT` is last-write-wins (`REQ-API-07`) — no version token and no conflict between reviewers: saves
+of one version wait their turn (§4.2). The one conflict is a save whose model row a run replaced
+(`VersionBusy`, 409).
+
+**Errors say whose fault they are** (`_as_http`). A refusal the service chose keeps its own status —
+`OverrideError.status`, `catalog.NotScoped`; an `HTTPException` raised inside the handler (a
+malformed key) passes through unchanged; a key the service could not take apart is 400; stored output
+that cannot be read (`RedrawError`) and a lost race for a slot (`IntegrityError`) are 409. Anything
+else is a **500** that names only the exception type, with the detail in the server log. It used to
+be a 400 carrying the exception text — telling the client to fix a request that was fine, and handing
+it a SQL error or a `KeyError` as the reason.
+
+**R11's component filter takes either spelling.** A key spells a component with hyphens
+(`Layer1.My-Sample`), the config and the CLI with spaces (`Layer1.My Sample`); both are compared in
+`export_guard.component_id` form. The spaced one used to match nothing — an empty list, read as "no
+slots here".
+
+**The review code reads one kind of stored file at a time, chosen by the database.**
+`rerender.output_rows(version, FLOWCHARTS | INTERFACE_TABLES | BEHAVIOUR_MANIFEST)` filters by path in
+SQL; every save, listing, cascade and carry used to fetch the whole output tree of the version and
+discard most of it in Python. `find_flowchart_row` also asks for the rows whose text contains the
+id, and searches the rest only when that finds nothing.
 
 ### 11.1 The flowchart endpoint
 
@@ -837,7 +919,8 @@ names itself in the response. This is `REQ-AP-02` at flowchart scope: the re-ren
 against a partial edit.
 
 Rejections, from `override_service`: `EmptyText` → 422, `SlotUnknown` → 404 (naming the node),
-`NotEditableHere` → 501 until the model-home item in [Open items](#open-items) is resolved.
+`NoStoredGraph` and `VersionBusy` → 409, `NotEditableHere` → 501 until the model-home item in
+[Open items](#open-items) is resolved; anything unexpected → 500 (§11).
 
 The response carries `renderPending` so the UI can show that an image is still being produced.
 
@@ -916,13 +999,13 @@ its own — and every one is **non-fatal**.
 
 | phase | what | where | why there |
 |---|---|---|---|
-| 2 | `carry_overrides` | `incremental/engine.py::_carry_review_overrides`, beside `carry_forward_globals` | the two belong together: one moves the words, the other the record of who wrote them |
-| 2 | `blank_queued_text` | `model_deriver.py::_take_regeneration_queue`, before the enrichment | the enrichment skips anything already filled in, so emptying a slot IS "write this again" |
-| 2 | `clear_rewritten` | `model_deriver.py::_retire_regeneration_queue`, after the enrichment | only text that actually came back retires the debt — and text that did not is **put back** (§13.2) |
+| 2 | `carry_overrides` | `incremental/engine.py::_carry_review_overrides`, beside `carry_forward_globals` | the two belong together: one moves the words, the other the record of who wrote them — and the regenerations still owed on them (`carry_queue`) |
+| 2 | `blank_queued_text` | `model_deriver.py::_take_regeneration_queue`, twice: before the description enrichment (with `regenerate=`), before the unit descriptions | the enrichment skips anything already filled in, so emptying a slot asks for it; `regenerate` stops the cache answering (§6.1) |
+| 2 | `clear_rewritten` | `model_deriver.py::_retire_regeneration_queue`, after each of the two | only text that actually came back retires the debt — and text that did not is **put back** (§13.2) |
 | 3 | `config_with_overrides` | `run_views.py::_with_text_overrides`, immediately before `run_views(...)` | the RUNNER attaches them, so a view stays a pure function of `(model, config)` and never opens a database |
 | 3 | `from_config` + `redraw` | `views/flowcharts.py::_apply_text_overrides`, after the incremental merge and before `render_dot_cached` | applied later, the JSON would carry the human's words and the picture the LLM's |
 | 3 | `from_config` + `apply_to_docx_rows` | `views/behaviour_diagram.py::_apply_text_overrides` | the behaviour view rebuilds every row it writes, so this is where that text exists |
-| 3 | `clear_behaviour_entries` | `run_views.py::_retire_behaviour_regenerations` | running the view IS the regeneration, so retire where it happened |
+| 3 | `clear_behaviour_entries` | `run_views.py::_retire_behaviour_regenerations(output_dir, ran, model, config)` | running the view IS the regeneration — for the rows it wrote, when it ran (§6.1) |
 | 4 | `assert_exportable` | `run.py::_refuse_stale_export` **and** `analyzer.py::cmd_reexport` | see §13.3 — one is the guarantee, the other is a fast failure |
 | 3 | `record_derivation` | `run_views.py::_record_derivation`, after `run_views(...)` | only Phase 3 knows which views it ran, for which components and documents |
 | capture | `stamp_recorded_derivations` + `run_pending` | `incremental/store.py::capture_output` | the one point Phase-3 output reaches the database, and a host that has the output tree |
@@ -934,10 +1017,10 @@ catches broadly, logs, and continues; the obligation stays in the database for t
 
 ### 13.2 A blank is a request, not a decision
 
-`blank_queued_text` empties a description **only** to ask for a rewrite — there is no
-force-regenerate flag, and the enrichment skips anything already filled in. So an empty slot at the
-end of Phase 2 does not mean anybody decided the text should go. It means the request went
-unanswered: the LLM was unreachable, or descriptions are switched off.
+`blank_queued_text` empties a description **only** to ask for a rewrite — the enrichment skips
+anything already filled in (and `regenerate` keeps it from answering from its cache, §6.1). So an
+empty slot at the end of Phase 2 does not mean anybody decided the text should go. It means the
+request went unanswered: the LLM was unreachable, or descriptions are switched off.
 
 `clear_rewritten` therefore does two things, not one. It retires the entries whose text came back,
 **and restores the previous wording of those that did not**, leaving them queued. Without the
@@ -1004,6 +1087,9 @@ in September.
 | `REQ-ID-03` | rename → override kept and flagged, not deleted |
 | `REQ-IM-02` | edit a label, export immediately → exported image carries the new label |
 | `REQ-AP-02` | a failure mid-save leaves model and views both unchanged |
+| `REQ-AP-02` | a save does not put back another save's change; a model replaced under a save → 409, nothing stored |
+| `REQ-CS-01` | a queued function is not answered from the cache; a SWE.4-only run retires no behaviour entry; the queue travels to the next version |
+| `REQ-ST-03` / `REQ-API-04` | an edit over an orphan is a first edit; undoing an orphan → 409 |
 
 **Each test must fail without its fix.** Every defect this codebase shipped in September passed code
 review and was caught only by measurement; a test that cannot fail proves nothing.
@@ -1023,10 +1109,17 @@ reads the copy, so updating the model alone changes nothing in the document.
 pays derivation cost on every page load. Deriving on write pays it once per edit, and edits are rare
 (most of ~57,000 slots are never touched).
 
-**The LLM cache is never written.** It has no `version_id` (keyed `project_id, namespace,
+**The LLM cache is never given human text.** It has no `version_id` (keyed `project_id, namespace,
 cache_version, entity_id, content_hash`), so human text there would leak into every version,
 contradicting `REQ-ST-02`. It would also destroy the LLM original and make model output
-indistinguishable from human text in the training data.
+indistinguishable from human text in the training data. A queued regeneration skips the lookup and
+caches its answer like any LLM call (§6.1) — that is LLM text replacing stale LLM text.
+
+**A save writes one row, and saves of a version take turns.** Rewriting the version's model for one
+sentence was simple and wrong under concurrency (§4.2). Optimistic versioning (a version token on
+every slot, a 409 for the loser) was the alternative, and was rejected: `REQ-API-07` promises
+reviewers last-write-wins with no conflict error, and a save is milliseconds, so waiting is invisible
+where a conflict would not be.
 
 **Positional node ids, gated on the node list.** `n0, n1, n2…` are positions, not identities. An
 earlier draft of this design said `source_hash` alone was enough because "unchanged source produces

@@ -44,7 +44,8 @@ newer entry and the code win.
 > - Code lives in `engine/review/`; the rules for engine code that touches it are in the `engine-dev`
 >   skill §8. Reasoning for every decision is in the dated history ([project-context/history/](project-context/history/)): the feature 2026-09-16 →
 >   2026-09-20, the rebase onto develop 2026-09-26f → 2026-09-27d, the export guard per document
->   and the save-time SWE.4 re-derive 2026-09-29, the rebase onto `5542736` 2026-09-29b.
+>   and the save-time SWE.4 re-derive 2026-09-29, the rebase onto `5542736` 2026-09-29b, the
+>   full-feature review and its ten fixes 2026-09-29d.
 
 - **The PR is not opened yet** (2026-09-29). `develop` is the integration branch: work branches open
   their PR into it, and `main` has not moved since 2026-07-02. `review_update_v3` sits on
