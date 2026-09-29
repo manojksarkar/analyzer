@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useProject, useDocuments, useTeam, useCommits, useVersions, useDownloadProjectConfig } from '../hooks/useProjects'
 import { useDownloadDoc, useSelfAssign } from '../hooks/useDocumentMutations'
+import { docxFileName } from '../lib/docTree'
 import { useCurrentJob, useStartJob, useCancelJob, useJobEvents, useJobFunctions } from '../hooks/useJobs'
 import { useProjectViewState } from '../hooks/useProjectViewState'
 import { CodeText, DashboardSkeleton, Icon, RoleBadge, Text } from '../components/ui'
@@ -524,6 +525,7 @@ type SelfAssign = { mutate: (id: string) => void; isPending: boolean }
 
 const PROCESSES: { key: string; label: string }[] = [
   { key: 'SWE.3', label: 'Detailed Design' },
+  { key: 'SWE.4', label: 'Unit Test Specification' },
   { key: 'SYS.1', label: 'Req. Elicitation' },
   { key: 'SYS.2', label: 'System Architecture' },
   { key: 'SWE.1', label: 'SW Requirements' },
@@ -821,7 +823,7 @@ function DevDocsCard({ documents, meName, go, projectId }: { documents: Document
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-1">
                     <button onClick={(e) => { e.stopPropagation(); open(doc) }} title="Open" className="flex items-center justify-center w-7 h-7 border border-[#e2e3e8] rounded-md bg-white text-outline cursor-pointer"><Icon name="open_in_new" size={14} /></button>
-                    <button onClick={(e) => { e.stopPropagation(); void downloadDoc(doc.id, `software_detailed_design_${doc.group ?? doc.name}`) }} title="Download" className="flex items-center justify-center w-7 h-7 border border-[#e2e3e8] rounded-md bg-white text-outline cursor-pointer"><Icon name="download" size={14} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); void downloadDoc(doc.id, docxFileName(doc)) }} title="Download" className="flex items-center justify-center w-7 h-7 border border-[#e2e3e8] rounded-md bg-white text-outline cursor-pointer"><Icon name="download" size={14} /></button>
                   </div>
                 </td>
               </tr>

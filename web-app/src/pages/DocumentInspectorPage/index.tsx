@@ -1,17 +1,18 @@
 import { useState, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useDocument, useDocuments, useDocumentRender, useTeam, useProject } from '../hooks/useProjects'
-import { useProjectViewState } from '../hooks/useProjectViewState'
+import { useDocument, useDocuments, useDocumentRender, useTeam, useProject } from '../../hooks/useProjects'
+import { useProjectViewState } from '../../hooks/useProjectViewState'
 import {
   useApproveDoc, useSelfAssign, useAssignReviewers, useDownloadDoc,
-} from '../hooks/useDocumentMutations'
-import { useAuthStore } from '../store/auth'
-import { useUIStore } from '../store/ui'
-import { DocTreePanel } from '../components/shell/DocTreePanel'
-import { groupDocsByProcess, buildAssigneeOptions } from '../lib/docTree'
-import { Card, Icon, Skeleton, Text } from '../components/ui'
-import { cn } from '../lib/cn'
-import type { DocSection, SectionReviewState, RichSection, RichTable, DocMeta, TeamMember, FlowchartTableData, BehaviorTableData } from '../types'
+} from '../../hooks/useDocumentMutations'
+import { useAuthStore } from '../../store/auth'
+import { useUIStore } from '../../store/ui'
+import { DocTreePanel } from '../../components/shell/DocTreePanel'
+import { groupDocsByProcess, buildAssigneeOptions, docxFileName } from '../../lib/docTree'
+import { Card, Icon, Skeleton, Text } from '../../components/ui'
+import { cn } from '../../lib/cn'
+import type { DocSection, SectionReviewState, RichSection, RichTable, DocMeta, TeamMember, FlowchartTableData, BehaviorTableData } from '../../types'
+import { Swe4Body, Swe4Strip } from './components/Swe4Reader'
 
 /* review_state → outline/tracker icon */
 const SECTION_STATE: Record<SectionReviewState, { icon: string; cls: string }> = {
@@ -99,6 +100,9 @@ export function DocumentInspectorPage() {
 
   const inReview = doc.status === 'in_review'
   const isUnchanged = doc.status === 'unchanged' || doc.status === 'draft'
+  const isSwe4 = doc.process === 'SWE.4'
+  // The outline stops at units for SWE.4 (as the mockup): a line per test spec would bury it.
+  const outline = (rich?.toc ?? []).filter((t) => !isSwe4 || t.level <= 3)
   const refLabel = viewVersion?.tag ?? selectedCommit?.shortSha ?? doc.version
   const assignedToMe = !!meName && doc.assignee === meName
   const members = (team ?? []).filter((m) => !m.pending)
@@ -144,7 +148,7 @@ export function DocumentInspectorPage() {
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                   <button
-                    onClick={() => downloadDoc(doc.id, `software_detailed_design_${rich?.cover.group ?? doc.name}`)}
+                    onClick={() => downloadDoc(doc.id, docxFileName(doc))}
                     className="flex items-center gap-1.5 px-3 py-2 bg-secondary hover:bg-secondary-container text-white rounded-lg transition-colors font-mono text-caption font-medium"
                   >
                     <Icon name="download" size={15} />
@@ -164,10 +168,11 @@ export function DocumentInspectorPage() {
               </div>
             </div>
 
-            {/* Meta banner — pipeline/model availability + counts */}
-            {rich && <MetaBanner meta={rich.meta} />}
+            {/* Meta banner — pipeline/model availability + counts (SWE.4: its test counts) */}
+            {rich && (isSwe4 && rich.testSummary ? <Swe4Strip summary={rich.testSummary} /> : <MetaBanner meta={rich.meta} />)}
 
             {/* Sections */}
+            {rich && isSwe4 ? <Swe4Body sections={rich.sections} /> : (
             <div className="px-8 py-10 space-y-12">
               {!rich ? (
                 <div className="space-y-4">
@@ -184,6 +189,7 @@ export function DocumentInspectorPage() {
                 rich.sections.map((s) => <RichSectionView key={s.id} section={s} />)
               )}
             </div>
+            )}
           </div>
         </div>
       </main>
@@ -234,13 +240,14 @@ export function DocumentInspectorPage() {
           />
         ) : (
           <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
-            {(rich?.toc ?? []).map((t) => (
+            {outline.map((t) => (
               <button
                 key={t.id}
                 onClick={() => scrollToSection(t.id)}
                 className={cn(
                   'w-full flex items-baseline gap-1.5 text-left px-2 py-1.5 rounded-lg text-body text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors',
-                  t.level > 1 && 'pl-5',
+                  t.level === 2 && 'pl-5',
+                  t.level > 2 && 'pl-8',
                 )}
               >
                 <span className="font-mono text-label text-outline flex-shrink-0">{t.number}</span>

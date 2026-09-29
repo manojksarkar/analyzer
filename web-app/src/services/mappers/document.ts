@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type {
   Document, DocStats, DocStatus, DocumentDetail, SectionReviewState,
   RichDocument, RichSection, RichSectionType, TocEntry, DocCover, DocMeta,
-  FlowchartTableData, BehaviorTableData,
+  FlowchartTableData, BehaviorTableData, TestSpecData, TestSummary,
 } from '../../types'
 import { formatShortDate, avatarPalette } from '../../lib/format'
 import { API_BASE_URL } from '../../lib/http'
@@ -109,6 +109,29 @@ const ApiBehaviorTableSchema = z.object({
 })
 type ApiBehaviorTable = z.infer<typeof ApiBehaviorTableSchema>
 
+const ApiTestSpecSchema = z.object({
+  test_case_id: z.string(),
+  generation_method: z.string(),
+  return_type: z.string(),
+  equipment: z.string(),
+  platform: z.string(),
+  priority: z.string(),
+  environment: z.string(),
+  precondition: z.object({
+    mocks: z.array(z.string()), parameters: z.array(z.string()), globals: z.array(z.string()),
+  }),
+  inputs: z.array(z.string()),
+  steps: z.array(z.object({ number: z.string(), text: z.string() })),
+  expected: z.array(z.object({ text: z.string(), steps: z.array(z.string()) })),
+  expected_note: z.string().nullable(),
+})
+type ApiTestSpec = z.infer<typeof ApiTestSpecSchema>
+
+const ApiTestSummarySchema = z.object({
+  units: z.number(), function_specs: z.number(), dynamic_specs: z.number(), mocks: z.number(),
+  equipment: z.string(), platform: z.string(),
+})
+
 // Recursive section — the type is hand-declared and the schema is built with
 // `z.lazy` so it can reference itself (zod can't infer a self-referential type).
 interface ApiRichSection {
@@ -118,6 +141,7 @@ interface ApiRichSection {
   children: ApiRichSection[]
   flowchart_table?: ApiFlowchartTable | null
   behavior_table?: ApiBehaviorTable | null
+  test_spec?: ApiTestSpec | null
 }
 const ApiRichSectionSchema: z.ZodType<ApiRichSection> = z.lazy(() =>
   z.object({
@@ -129,6 +153,7 @@ const ApiRichSectionSchema: z.ZodType<ApiRichSection> = z.lazy(() =>
     children: z.array(ApiRichSectionSchema),
     flowchart_table: ApiFlowchartTableSchema.nullable().optional(),
     behavior_table: ApiBehaviorTableSchema.nullable().optional(),
+    test_spec: ApiTestSpecSchema.nullable().optional(),
   }),
 )
 
@@ -147,8 +172,26 @@ export const ApiRichDocumentSchema = z.object({
     source: z.string(), layers: z.array(z.string()), components: z.array(z.string()),
     units_total: z.number(), functions_total: z.number(), globals_total: z.number(),
   }),
+  test_summary: ApiTestSummarySchema.nullable().optional(),
 })
 export type ApiRichDocument = z.infer<typeof ApiRichDocumentSchema>
+
+function mapTestSpec(t: ApiTestSpec): TestSpecData {
+  return {
+    testCaseId: t.test_case_id,
+    generationMethod: t.generation_method,
+    returnType: t.return_type,
+    equipment: t.equipment,
+    platform: t.platform,
+    priority: t.priority,
+    environment: t.environment,
+    precondition: t.precondition,
+    inputs: t.inputs,
+    steps: t.steps,
+    expected: t.expected,
+    expectedNote: t.expected_note,
+  }
+}
 
 function mapRichSection(s: ApiRichSection): RichSection {
   let flowchartTable: FlowchartTableData | null = null
@@ -194,6 +237,7 @@ function mapRichSection(s: ApiRichSection): RichSection {
     children: (s.children ?? []).map(mapRichSection),
     flowchartTable,
     behaviorTable,
+    testSpec: s.test_spec ? mapTestSpec(s.test_spec) : null,
   }
 }
 
@@ -252,7 +296,16 @@ export function mapRichDocument(d: ApiRichDocument): RichDocument {
     functionsTotal: d.meta.functions_total ?? 0,
     globalsTotal: d.meta.globals_total ?? 0,
   }
-  return { cover, toc, sections: (d.sections ?? []).map(mapRichSection), meta }
+  const ts = d.test_summary
+  const testSummary: TestSummary | null = ts ? {
+    units: ts.units,
+    functionSpecs: ts.function_specs,
+    dynamicSpecs: ts.dynamic_specs,
+    mocks: ts.mocks,
+    equipment: ts.equipment,
+    platform: ts.platform,
+  } : null
+  return { cover, toc, sections: (d.sections ?? []).map(mapRichSection), meta, testSummary }
 }
 
 export function mapDocStats(s: Record<string, number>): DocStats {

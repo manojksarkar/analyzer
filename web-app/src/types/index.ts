@@ -183,7 +183,36 @@ export interface DocumentDetail extends Document {
 
 /* ── Rich render payload (GET …/documents/{id}/render) — the DOCX-like view ── */
 
-export type RichSectionType = 'richtext' | 'table' | 'diagram' | 'flowchart_table' | 'behavior_table'
+export type RichSectionType = 'richtext' | 'table' | 'diagram' | 'flowchart_table' | 'behavior_table' | 'test_spec'
+
+/** One SWE.4 test spec (a function, or a Dynamic Behaviour interaction): the DOCX's Table A + B. */
+export interface TestSpecData {
+  testCaseId: string
+  generationMethod: string
+  returnType: string
+  equipment: string
+  platform: string
+  priority: string
+  environment: string
+  precondition: { mocks: string[]; parameters: string[]; globals: string[] }
+  inputs: string[]
+  /** Numbered as the control flow nests: "2", "2.a", "2.b.1". Empty when no CFG. */
+  steps: { number: string; text: string }[]
+  /** Each expected result with the step(s) that produce it. */
+  expected: { text: string; steps: string[] }[]
+  /** What the DOCX prints when there is nothing to assert. */
+  expectedNote: string | null
+}
+
+/** Counts the SWE.4 page shows under its title. */
+export interface TestSummary {
+  units: number
+  functionSpecs: number
+  dynamicSpecs: number
+  mocks: number
+  equipment: string
+  platform: string
+}
 
 export interface RichTable {
   headers: string[]
@@ -230,6 +259,7 @@ export interface RichSection {
   children: RichSection[]
   flowchartTable?: FlowchartTableData | null
   behaviorTable?: BehaviorTableData | null
+  testSpec?: TestSpecData | null
 }
 
 export interface DocCover {
@@ -267,6 +297,8 @@ export interface RichDocument {
   toc: TocEntry[]
   sections: RichSection[]
   meta: DocMeta
+  /** SWE.4 only. */
+  testSummary?: TestSummary | null
 }
 
 /** KPI counts for a project's documents (mapped from GET …/documents/stats). */

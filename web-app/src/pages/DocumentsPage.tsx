@@ -8,11 +8,11 @@ import { useAuthStore } from '../store/auth'
 import { Card, Icon, TableSkeleton, Text, toast } from '../components/ui'
 import { ProcessBadge } from '../components/ui/Badge'
 import { DocTreePanel } from '../components/shell/DocTreePanel'
-import { groupDocsByProcess, buildAssigneeOptions } from '../lib/docTree'
+import { groupDocsByProcess, buildAssigneeOptions, docxFileName } from '../lib/docTree'
 import { cn } from '../lib/cn'
 import type { DocStatus, Document } from '../types'
 
-const PROCESSES = ['All', 'SYS.1', 'SYS.2', 'SWE.1', 'SWE.2', 'SWE.3']
+const PROCESSES = ['All', 'SYS.1', 'SYS.2', 'SWE.1', 'SWE.2', 'SWE.3', 'SWE.4']
 
 /* status → {label, icon, badge classes} (matches design .badge-*) */
 const STATUS_BADGE: Record<string, { label: string; icon: string; cls: string }> = {
@@ -142,7 +142,7 @@ export function DocumentsPage() {
   async function downloadSelected() {
     const docs = filtered.filter((d) => selected.has(d.id))
     // One at a time; a failure is reported by the hook and the rest still download.
-    for (const d of docs) await downloadDoc(d.id, d.name)
+    for (const d of docs) await downloadDoc(d.id, docxFileName(d))
   }
 
   // Download is available to everyone; Assign/Approve are admin-only (design).
@@ -427,7 +427,7 @@ export function DocumentsPage() {
                       onToggle={() => toggle(doc.id)}
                       onOpen={() => navigate(`/projects/${projectId}/documents/${doc.id}`)}
                       onCompare={() => navigate(`/projects/${projectId}/compare`)}
-                      onDownload={() => downloadDoc(doc.id, doc.name)}
+                      onDownload={() => downloadDoc(doc.id, docxFileName(doc))}
                       onAssign={() => toast.info('Assign reviewer', 'Open a document to assign reviewers.')}
                       onAssignToMe={() => selfAssign.mutate(doc.id)}
                     />
