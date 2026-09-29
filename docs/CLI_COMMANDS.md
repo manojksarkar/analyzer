@@ -373,6 +373,14 @@ what you meant, stop with Ctrl+C. The summary also warns about a misspelled core
 there. If a configured dictionary file does not exist, the run stops right there. Without this
 check it stopped only at the end of the parse.
 
+The summary also checks every component path against the checkout, with the parser's own rule:
+a path that is not there, a folder spelled in another case (found on Windows, missed on Linux),
+a folder with no `.cpp`/`.h` file, a `.c` file (not parsed). A path of a component that still has
+other files is a warning. A component the run renders that gets **no** file stops the run before
+the parse, naming the component. Without this check the parse ran to the end and Phase 3 then
+stopped on that component with a message about re-export scopes. A `layer:` scope renders no
+document, so there it is only a warning.
+
 **Regenerating a commit that already has a version** — always name the baseline:
 
 ```
@@ -871,6 +879,7 @@ live *outside* your tree, like a third-party SDK.
 | `WorkspaceNotFound: no workspace for project 'x'` | `python analyzer.py onboard` — the directory, config and rows all come from there. |
 | `this run needs the database but there is no versions row for '<pid>.vX'` | Reserve it (the message prints the exact command), or add `--create-version`. |
 | `STOPPING BEFORE THE PARSE - ... dataDictionary file not found: <path>` | Fix the path in `cores.<core>.dataDictionary` (the message names the key). Relative paths resolve from the repo root. |
+| `STOPPING BEFORE THE PARSE - <Layer> / <Group> / <Component> gets no source file` | The warnings above it name the path. Fix it in `layers.<layer>.groups` (component paths are relative to the layer's `path`), or take the component out. `None of the N components has a source file` means the checkout, branch or config is the wrong one. |
 | `<pid> has no config yet, and no --config was given` | Pass `--config <your.json>`, or `--use-defaults` for the sample tree. |
 | `ALREADY EXISTS and differs from --config` | The project already has a config. `--force-config` replaces it. |
 | `--config not found: <path>` | The path does not resolve. Nothing was created; fix it and re-run. |

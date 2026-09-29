@@ -208,6 +208,120 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-29c (**Every component path is checked, from the wizard to the run, and a run stops
+> BEFORE the parse on a component that gets no file.** Branch `ui_v2`, local commits only. Asked by the
+> user: "without github url or project path how are we verifying everything?? … do everything, think
+> holistically".
+>
+> - **Found by a real run, the reason for all of it.** A component whose path matches nothing does NOT
+>   come out as an empty document:
+>   - Phase 1 skips the folder without a word (`if not os.path.isdir(abs_dir): continue`), so the
+>     component never enters the model.
+>   - Phase 3 then stops the WHOLE run on it, after the full parse, with a message about re-export
+>     scopes (`run_views._assert_components_in_model`; `--component-per-docx` names every component,
+>     for every scope).
+>   - The same rule has more silent cases:
+>     - A folder in another case: `isdir` is case-sensitive on Linux. An explicit FILE entry matches
+>       in any case everywhere, because the keys are lowercased.
+>     - A `.c` file: mapped, never parsed. `_collect_source_files` takes only .cpp/.cc/.cxx and
+>       .h/.hpp/.hxx.
+>     - A file hit by `excludeNamePatterns` (default `emul`).
+>     - Files a component listed earlier took: the first one wins.
+> - **Engine: the rule in one place.** New `engine/core/component_files.py` holds `SOURCE_EXTS`,
+>   `TU_EXTS`/`HEADER_EXTS`, `build_file_component_map`, `merge_group_components` and
+>   `exclude_name_patterns`, moved verbatim out of `parser.py`, which imports them under the old names.
+>   Parity was proven in memory against git HEAD: on the full sample (8 groups, 28 components, 215 files)
+>   the maps are identical, and so are the edge cases.
+> - **Engine: the check.** `component_path_problems(cfg, checkout, scope=)` returns (warnings, errors)
+>   under that same rule.
+>   - `report.emit_run_summary(checkout=repo_dir)` now returns `(errors, warnings)`. The errors join the
+>     STOPPING block.
+>   - The warnings print, and go into the manifest of a complete run (`versions.run_report.warnings`).
+>     That was `[]` for a full run, and only the baseline decision's warnings for an incremental one.
+>   - **Error:** a component this run renders gets no file. `_rendered`: project scope → every component;
+>     group → those groups'; component → the named ones; `layer:` → none, since it renders no document.
+>     "None of the N components has a source file" comes first.
+>   - **Warning:** a path of a component that still has other files; an empty component the run does
+>     not render.
+>   - At most 40 messages, then "… and N more".
+> - **API: the wizard's tree was a stale snapshot.** `repo_git._clone_or_reuse` froze a cached clone at
+>   its first clone, and browse and the preview read `HEAD`.
+>   - Now `browse(refresh=True)` (route `?refresh=true`) and the preview fetch the branch tip first, and
+>     read `refs/remotes/origin/<ref>` (`repo_git.tree_ref`, `git_cli.has_ref`).
+>   - `git_cli.fetch` goes through `origin`, with `-c remote.origin.url=<auth>`, so a blobless clone
+>     stays blobless. Fetching the bare URL downloaded the new commits' file contents; a test proves it.
+>   - A blobless clone fetched under 60 s ago counts as current (`_FRESH_SECONDS`): one fetch per Test
+>     Connection, not two.
+>   - A per-folder lock serialises clone and fetch. Two requests for a branch not cloned yet both ran
+>     `git clone` into the same folder, and the second failed.
+> - **API: the import preview.** Report items carry a `topic` (project / architecture / files /
+>   settings / repository / other). A layer path takes the repository's spelling. A layer whose path is
+>   not a folder there is left out whole; before, it was only reported.
+> - **API: the runner.**
+>   - `_component_paths_from_files` keeps a whole-layer selection as `""`. It used to drop it, and
+>     `_convert_layers` then used the component NAME as the path: a CLI config's `"All": ""` came back
+>     broken.
+>   - `_write_project_config` drops the defaults' sample `cores` when the project's own layers replace
+>     theirs. Every web run used to warn "cores.Core1 is listed by no layer".
+>   - A job the engine stopped before the parse fails with `Stopped before the parse: <reason>` as its
+>     first line (`_failure_message`), not "run.py exited with code 2".
+> - **API: version warnings.** `Version.warnings` is read-only: `mappers.from_row` fills it from
+>   `run_report`, and `to_row` never writes it, since an object read before the run finished would
+>   erase the engine's report. `GET …/versions` returns it.
+> - **Web app: the check.** `NewProjectPage/helpers.ts` `pathProblems(layers, indexTree(tree), branch)`
+>   flags:
+>   - a layer folder that is missing or empty;
+>   - a component path not on the branch, or outside its layer's folder;
+>   - a component with no files;
+>   - a relative lib path that is missing;
+>   - a project with no component at all.
+> - **Web app: where it shows.**
+>   - Step 3 shows the check's state: reading / cannot read / N problems / every path on branch X. It
+>     marks each bad path (`.err` modifier in `index.css`).
+>   - Continue from step 3 and Initialize both refuse while anything is wrong, or while the tree is not
+>     loaded for the selected branch.
+>   - Review shows "Paths: all on branch X".
+>   - Overview: `RunWarningsBanner` shows the viewed version's `warnings`.
+>   - `CodeText` (backticked text shown as code) is now a `ui/` primitive.
+> - **Web app: how it stays correct.**
+>   - Tree loads use `refresh`; the newest request wins (`treeSeq`); the branch loaded and a failed load
+>     are tracked (`repoTreeFor`, `repoTreeFailed`).
+>   - Changing the repository URL or token un-checks an imported config.
+>   - Re-checks are sequenced (`checkSeq`); on a branch change the check runs after the tree load.
+>   - Once the architecture is edited (`markArchEdited`), a re-check keeps it and its `architecture`
+>     report lines, and the import panel says so.
+>   - Files the import filled follow the branch; files the user chose are never replaced.
+>   - The import panel shows "checking the paths…" while a check runs.
+> - **Verified** on the 8010/5180 test servers (scratch database `analyzer_ui`):
+>   - A project created through the API with one real and one missing component: before, it failed
+>     after ~90 s in Phase 3, blaming the scope. Now it stops in 10 s, and the headline names the
+>     component.
+>   - A component with one missing path out of two: complete in 35–50 s, 1 document, and the warning
+>     on the Overview.
+>   - Browser (puppeteer, `pathcheck.cjs`):
+>     1. Import, then connect: "checking…", then the checked report.
+>     2. A URL change un-checks the import; reconnecting re-checks it.
+>     3. Step 3: "Every path is on branch main".
+>     4. A missing lib path is marked and Continue refuses, with the reason; removing it clears.
+>     5. An edited architecture survives a switch to `feature1`: the note shows, and the check runs
+>        against feature1.
+>     6. Review: "Paths: all on branch main".
+> - **Tests.**
+>   - Unit: `test_core_config.py::TestComponentPathsTheParseWouldMiss` (with a scope matrix);
+>     `test_incremental_report.py::TestEmitRunSummary` (+4).
+>   - API: `tests/api/test_wizard_reads_the_branch_tip.py` (real git: staleness, stays blobless,
+>     freshness window, tree ref); `test_config_import_export.py` (+3); `test_pg_mappers.py` (+1);
+>     `test_convert_layers.py` (whole layer); `test_project_config.py` (+1);
+>     `test_runner_progress_counter.py` (+2).
+>   - Web: `helpers.test.ts` (+5); the two mapper tests (+2).
+> - **Not done: the whole-sample before/after of the documents.** The parser change is a verbatim move,
+>   proven identical in memory, and the rest only reads the checkout and prints.
+> - **Remaining** (`web-app/PLAN.md`): nothing can edit a project's architecture after creation. So a
+>   folder moved in the repository later stops every run of that project, naming the folder, until a
+>   Settings page exists.
+> - **Merging with review_update_v2:** that branch changes `engine/incremental/engine.py` and
+>   `api/models/domain.py` in other hunks.)
+
 > Updated: 2026-09-29b (**A config file in and out of the web app: Import config in the New Project wizard,
 > Download config on a project.** Branch `ui_v2`, local commits only. The user asked to onboard from the
 > config file the CLI reads, and decided: the access token stays OUT of files (typed in step 1; a

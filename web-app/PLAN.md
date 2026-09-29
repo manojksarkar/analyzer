@@ -43,6 +43,10 @@ the wizard, and a project downloads as one; download → import → download rou
   Settings page (build config and data dictionary cannot change after creation); SSO; forgot password.
 - **Runs** — a job left `running` by an API restart stays so until cancelled (no stale-job sweep; a sweep is
   unsafe with more than one API process).
+- **Architecture after creation** — nothing can change it (no Settings page). Every path is checked when
+  the project is created, and a run stops before the parse on a component that gets no file; so a folder
+  moved in the repository later stops every run of the project, naming it, until the architecture can
+  be edited.
 - **Config import** — a project holds one definitions file and one data dictionary, so a config whose layers
   use different cores imports the first core's files only; `cores.<name>.compileCommands` has no field in
   the wizard (include folders go in per layer as Lib Paths).

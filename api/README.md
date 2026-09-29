@@ -198,17 +198,16 @@ All endpoints except `/auth/signin` and `/auth/refresh` require
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/repositories/validate` | Validate repo URL + credentials |
-| GET | `/repositories/refs` | List branches and tags |
-| GET | `/repositories/commits` | List commits on a branch |
-| POST | `/repositories/upload` | Upload data dictionary (`.csv`/`.xlsx`) or macros (`.csv`/`.json`) |
+| POST | `/repositories/test-connection` | Reach the repository; list its branches |
+| GET | `/repositories/browse` | The branch's file tree (cached blobless clone); `refresh=true` first fetches the branch's current tip — the tree the wizard checks every path against |
+| POST | `/repositories/uploads` | Upload data dictionary (`.csv`/`.xlsx`) or macros (`.csv`/`.json`) |
 
 ### Commits & Versions
 
 | Method | Path | Description |
 |---|---|---|
 | GET | `/projects/:id/commits` | Paginated commit list |
-| GET | `/projects/:id/versions` | All tagged versions |
+| GET | `/projects/:id/versions` | All tagged versions, each with its run's `warnings` (read from `versions.run_report`) |
 | POST | `/projects/:id/versions` | Tag a commit as a version (admin) |
 | GET | `/projects/:id/versions/:versionId` | Version detail |
 | PATCH | `/projects/:id/versions/:versionId` | Approve / update version (admin) |
