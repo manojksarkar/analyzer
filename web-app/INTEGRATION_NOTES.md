@@ -2,12 +2,12 @@
 
 The app calls a FastAPI backend over `VITE_API_URL`; wire-format differences are handled in the
 boundary mappers ([src/services/mappers/](src/services/mappers/)). That backend is the **real API** in
-repo-root [`../api`](../api) (PostgreSQL, or SQLite for local runs), which runs the real pipeline. The
-**mock** in [`../tools/mock-api`](../tools/mock-api) is the older stand-in. The web-app picks its
-backend solely via `VITE_API_URL` (see **Real-API swap readiness** below). Server-side detail for the
-wizard endpoints (`repositories/*`, `users/search`, `access_token` on `POST /projects`), written for the
-mock and mirrored by `api/`:
-[tools/mock-api/api/PROJECT_CONTEXT.md](../tools/mock-api/api/PROJECT_CONTEXT.md) §12.
+repo-root [`../api`](../api) (PostgreSQL, or SQLite for local runs), which runs the real pipeline. (The
+mock backend this app was first built against is no longer in the repo; only fragments remain under
+`tools/mock-api`.) The web-app picks its backend solely via `VITE_API_URL` (see **Real-API swap
+readiness** below). The wizard endpoints (`repositories/*`, `users/search`, `access_token` on
+`POST /projects`) live in [api/routes/repositories.py](../api/routes/repositories.py),
+[api/routes/users.py](../api/routes/users.py) and [api/routes/projects.py](../api/routes/projects.py).
 
 **Build-config file uploads (macros / data dictionary):** the wizard uploads each file (multipart) to
 `POST /repositories/uploads` and sends `{file_name, file_id}` in `build_config` — no other frontend work.
@@ -24,7 +24,6 @@ data dictionary as CSV only, although the upload also accepts `.xlsx`/`.xls` (se
   projects), then `uvicorn api.main:app --port 8000`. It uses the `db` section of
   `engine/config/config.local.json`, or `DATABASE_URL` when set — point `DATABASE_URL` at a scratch
   database to exercise writes without touching real data.
-- Mock backend (no database, no pipeline): `cd ../tools/mock-api && uvicorn api.main:app --reload --port 8000`.
 - Demo login: `alice@aspice.dev` / `secret` (admin on the demo projects). A fresh database also gets
   `admin@aspice.dev` / `admin`.
 
@@ -69,13 +68,13 @@ also asserts the two tokenless requirements below — the SSE route and the asse
    *(Authenticated binary endpoints — DOCX `…/download`, `…/export-all` — are fine: they go through a
    `fetch` + Bearer + blob in [http.ts](src/lib/http.ts#L153), not an `<img>`/`EventSource`.)*
 
-**Endpoints the app depends on** (the real API must implement these paths/shapes — the mock is the
+**Endpoints the app depends on** (the real API must implement these paths/shapes — the `api/` routes are the
 executable reference): `auth/{signin,refresh,signout,me}`; `projects` (list/get/create/update/delete,
 `access-requests`); `repositories/{test-connection,browse,uploads}` + `users/search` (wizard);
 `projects/{id}/{commits,versions,documents,members,members/pending,members/invite,jobs,compare,functions,notifications}`;
 document actions (`approve`, `approve-all`, `submit-review`, `request-changes`, `assignments[/self]`,
 `sections/{key}`, `download`, `export-all`, `render`); `notifications/{id}/read` + `read-all`.
-Snake_case in/out; per-project role via `my_role`. Full shapes: the mock routes + the mappers in
+Snake_case in/out; per-project role via `my_role`. Full shapes: the `api/` routes + the mappers in
 [src/services/mappers/](src/services/mappers/).
 
 **Features limited by a missing endpoint (the API would need to add one first):** Overview **Last

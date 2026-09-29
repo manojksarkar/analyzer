@@ -1,28 +1,38 @@
 # C++ Codebase Analyzer
 
-Parse C++ source → model/ (Phase 1–2) → output/ (Phase 3 views) → **software_detailed_design.docx** (Phase 4).
+C++ source → a model of every function, global and type, stored in a database (PostgreSQL, or
+SQLite locally) → ASPICE documents per component: **SWE.3 Software Detailed Design** and **SWE.4 Unit
+Test Specification** (DOCX).
 
 ## Quick start
 
-The `SampleCppProject/` test fixture lives directly in this repo, so a plain clone has
-everything:
+Installation, dependencies, configuration and every command: **[docs/SETUP.md](docs/SETUP.md)**. In short:
 
-```bash
-python engine/run.py SampleCppProject
+```
+pip install -r requirements.txt
+npm install
+python analyzer.py setup
+python analyzer.py doctor
 ```
 
-Config: [engine/config/config.json](engine/config/config.json) (override with `config.local.json`).
+Then either the web app — `python -m uvicorn api.main:app --port 8000`, and `npm run dev` in
+[web-app/](web-app/) — or the command line, [docs/CLI_COMMANDS.md](docs/CLI_COMMANDS.md).
+
+Config: [engine/config/config.defaults.json](engine/config/config.defaults.json), overridden by
+`engine/config/config.local.json` (machine settings and secrets; template
+[config.local.json.example](engine/config/config.local.json.example)).
 
 ## Web UI
 
 The web client is [web-app/](web-app/) (React + Vite) talking to the FastAPI backend in
-[api/](api/) — see each folder's README to run them. (The legacy Streamlit `ui/` was
-removed when the web app landed.)
+[api/](api/), which runs the real pipeline. (The legacy Streamlit `ui/` was removed when the web app
+landed.)
 
 ## Documentation
 
 Deep engineering context (agent-facing, start here): **[PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)**.
 
+- **Install and run** — [SETUP.md](docs/SETUP.md) (dependencies, config, database, web app, tests) · [CLI_COMMANDS.md](docs/CLI_COMMANDS.md) (every `analyzer.py` command)
 - **Architecture** — [DESIGN.md](docs/design/DESIGN.md) (model format, config, logic flow, DOCX export)
 - **Database** — [DB_SCHEMA.md](docs/design/DB_SCHEMA.md) (ER diagrams + debugging query cookbook) · [zoomable viewer](docs/design/schema-atlas.html) (offline HTML, pan/zoom diagrams)
 - **Planning** (leadership) — [ROADMAP](docs/planning/ROADMAP.md) · [doc-gen method](docs/planning/DOC_GENERATION_PLAYBOOK.md) · plans: [SWE.4](docs/planning/SWE4_PLAN.md) / [SWE.2](docs/planning/SWE2_PLAN.md) / [SYS.2](docs/planning/SYS2_PLAN.md) · [backlog](docs/BACKLOG.md)
