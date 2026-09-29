@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useProject, useDocuments, useTeam, useCommits, useVersions } from '../hooks/useProjects'
-import { useSelfAssign } from '../hooks/useDocumentMutations'
+import { useDownloadDoc, useSelfAssign } from '../hooks/useDocumentMutations'
 import { useCurrentJob, useStartJob, useCancelJob, useJobEvents, useJobFunctions } from '../hooks/useJobs'
 import { useProjectViewState } from '../hooks/useProjectViewState'
 import { DashboardSkeleton, Icon, RoleBadge, Text } from '../components/ui'
@@ -694,6 +694,8 @@ function AdminDocsCard({ documents, go, projectId }: { documents: Document[]; go
 
 function DevDocsCard({ documents, meName, go, projectId }: { documents: Document[]; meName: string; go: Nav; projectId: string }) {
   const myDocs = documents.filter((d) => d.assignee && d.assignee === meName)
+  const downloadDoc = useDownloadDoc(projectId)
+  const open = (doc: Document) => go(`/projects/${projectId}/documents/${doc.id}`)
   return (
     <div className="bg-white border border-outline-variant rounded-xl overflow-hidden">
       <div className="px-5 py-3.5 border-b border-outline-variant flex items-center justify-between">
@@ -720,7 +722,7 @@ function DevDocsCard({ documents, meName, go, projectId }: { documents: Document
           </thead>
           <tbody>
             {myDocs.map((doc) => (
-              <tr key={doc.id} className="border-b border-outline-variant last:border-0 hover:bg-surface-container-low transition-colors cursor-pointer" onClick={() => go(`/projects/${projectId}/documents`)}>
+              <tr key={doc.id} className="border-b border-outline-variant last:border-0 hover:bg-surface-container-low transition-colors cursor-pointer" onClick={() => open(doc)}>
                 <td className="px-5 py-[13px]">
                   <div className="text-body font-medium text-on-surface leading-[1.3]">{doc.name}</div>
                   <div className="text-caption text-outline mt-0.5">{doc.subtitle ?? doc.process}</div>
@@ -730,8 +732,8 @@ function DevDocsCard({ documents, meName, go, projectId }: { documents: Document
                 <td className="px-4 py-[13px] font-mono text-caption text-on-surface-variant">{doc.due ?? '—'}</td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-1">
-                    <button onClick={(e) => e.stopPropagation()} title="Open" className="flex items-center justify-center w-7 h-7 border border-[#e2e3e8] rounded-md bg-white text-outline cursor-pointer"><Icon name="open_in_new" size={14} /></button>
-                    <button onClick={(e) => e.stopPropagation()} title="Download" className="flex items-center justify-center w-7 h-7 border border-[#e2e3e8] rounded-md bg-white text-outline cursor-pointer"><Icon name="download" size={14} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); open(doc) }} title="Open" className="flex items-center justify-center w-7 h-7 border border-[#e2e3e8] rounded-md bg-white text-outline cursor-pointer"><Icon name="open_in_new" size={14} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); void downloadDoc(doc.id, `software_detailed_design_${doc.group ?? doc.name}`) }} title="Download" className="flex items-center justify-center w-7 h-7 border border-[#e2e3e8] rounded-md bg-white text-outline cursor-pointer"><Icon name="download" size={14} /></button>
                   </div>
                 </td>
               </tr>
