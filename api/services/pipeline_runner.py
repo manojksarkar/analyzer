@@ -757,6 +757,10 @@ def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = F
     layers = _convert_layers(project.architecture_layers or [])
     if layers:
         cfg["layers"] = layers
+        # The defaults' `cores` belong to their own (sample) layers, which these replace. A web
+        # project names no core - its definitions reach Clang as clang.macrosFile - so every run
+        # warned "cores.Core1 is listed by no layer", and the web app shows a run's warnings.
+        cfg.pop("cores", None)
     from core.config import validate_layer_names
     name_problems = (_duplicate_wizard_names(project.architecture_layers or [])
                      + validate_layer_names({"layers": layers}))
@@ -958,10 +962,13 @@ def _component_paths_from_files(files: list, layer_path: str) -> list:
     directory, which over-selects and degenerates to the layer root whenever the
     selection spans sibling directories.
 
-    An entry equal to the layer path itself (a whole-layer selection) is dropped,
-    since there is nothing meaningful to scope below the layer. An entry that is
-    not under the layer is kept as-is (defensive; the wizard only picks within the
-    layer). Duplicates are removed.
+    An entry equal to the layer path itself (a whole-layer selection) becomes ``""``,
+    the config's own spelling of "the whole layer" (``core.config._resolve_layer_paths``).
+    It used to be dropped, and ``_convert_layers`` then fell back to the component NAME
+    as its path: a config whose component took its whole layer came back from the web
+    app pointing at a folder that does not exist, and the run stopped on it. An
+    entry that is not under the layer is kept as-is (defensive; the wizard only picks
+    within the layer). Duplicates are removed.
 
     Both the ``str`` (single path) and ``list`` (multiple paths) result forms are
     accepted downstream by ``core.config._resolve_layer_paths`` and
@@ -976,10 +983,10 @@ def _component_paths_from_files(files: list, layer_path: str) -> list:
         if not p:
             continue
         if layer_norm and p == layer_norm:
-            continue
-        if prefix and p.startswith(prefix):
+            p = ""                              # the whole layer
+        elif prefix and p.startswith(prefix):
             p = p[len(prefix):]
-        if p and p not in seen:
+        if p not in seen:                       # "" only for the whole layer
             seen.add(p)
             out.append(p)
     return out
@@ -1275,7 +1282,7 @@ def _execute_subprocess(
     if rc != 0:
         tail = "\n".join(recent_lines[-20:])
         _append_log(job_id, f"Job failed with code {rc}")
-        _mark_failed(db, job_id, f"run.py exited with code {rc}.\n{tail}")
+        _mark_failed(db, job_id, _failure_message(rc, recent_lines, tail))
         return False
 
     # Mark the final phase done
@@ -1315,6 +1322,33 @@ def _detect_phase(line: str, current_phase: int) -> int:
     """
     n = _marker_phase(line)
     return n if n > current_phase else current_phase
+
+
+def _stop_reasons(lines: list) -> list:
+    """What the engine said it must stop for, before the parse - the `STOPPING BEFORE THE PARSE`
+    block of its run summary (engine/incremental/report.py) - or [] when it did not stop there."""
+    out: list = []
+    inside = False
+    for raw in lines:
+        msg = _strip_log_prefix(raw)
+        if msg.startswith("STOPPING BEFORE THE PARSE"):
+            inside, out = True, []
+        elif inside:
+            if not msg.startswith("- "):
+                break                               # the rule that closes the block
+            out.append(msg[2:])
+    return out
+
+
+def _failure_message(rc: int, lines: list, tail: str) -> str:
+    """The job's error: the engine's own reasons first when it stopped before the parse - the
+    web app shows the first line as the headline, and "run.py exited with code 2" said nothing
+    about a component path the checkout does not have."""
+    reasons = _stop_reasons(lines)
+    if not reasons:
+        return f"run.py exited with code {rc}.\n{tail}"
+    more = "".join(f"- {r}\n" for r in reasons[1:])
+    return f"Stopped before the parse: {reasons[0]}\n{more}\n{tail}"
 
 
 def _strip_log_prefix(line: str) -> str:

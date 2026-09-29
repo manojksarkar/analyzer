@@ -61,3 +61,26 @@ class TestItemCounter:
         _feed(job, line, 100.0)
         assert job.phase_pct == 0
         assert job.eta_seconds == 240
+
+
+class TestAStopBeforeTheParseLeadsTheError:
+    """The web app shows a failed job's first line as its headline."""
+
+    LINES = [
+        "[13:00:01] INFO incremental:   WARNINGS",
+        "[13:00:01] INFO incremental:     - Layer1 / G / Ghost: `Layer1/Gone` is not in the checkout",
+        "[13:00:01] INFO incremental:   STOPPING BEFORE THE PARSE - fix these first:",
+        "[13:00:01] INFO incremental:     - Layer1 / G / Ghost gets no source file: Phase 3 would stop",
+        "[13:00:01] INFO incremental:     - Layer1 / G / Other gets no source file: Phase 3 would stop",
+        "[13:00:01] INFO incremental: ================================================================",
+        "stopped before the parse: ...",
+    ]
+
+    def test_the_engines_reasons_come_first(self):
+        msg = pr._failure_message(2, self.LINES, "TAIL")
+        assert msg.splitlines()[0] == ("Stopped before the parse: Layer1 / G / Ghost gets no source "
+                                       "file: Phase 3 would stop")
+        assert "- Layer1 / G / Other gets no source file" in msg and msg.endswith("TAIL")
+
+    def test_any_other_failure_keeps_its_exit_code(self):
+        assert pr._failure_message(1, ["[13:00:01] ERROR x: boom"], "TAIL") == "run.py exited with code 1.\nTAIL"
