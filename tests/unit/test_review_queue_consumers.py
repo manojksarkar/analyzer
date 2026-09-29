@@ -4,10 +4,11 @@ Recording what a correction invalidated was step 6; drawing the picture it chang
 Both left an obligation in a table, and an obligation nobody collects is a slow lie -- the document
 stays stale while the queue says somebody will deal with it.
 
-The regeneration queue is paid in **two places**, because its two kinds live in different phases:
+The regeneration queue is paid in **three places**, where each kind's text is written:
 
-    description / unitDescription   Phase 2 -- blank the text, and the enrichment rewrites it
-    behaviourDescription            Phase 3 -- the behaviour view rebuilds every row it writes
+    description            Phase 2, function enrichment -- blank the text, bypass the cache
+    unitDescription        Phase 2, unit descriptions   -- taken with the units it lives in
+    behaviourDescription   Phase 3 -- the behaviour view rebuilds the rows it writes
 
 The render queue is paid where the output tree is, which is the host capturing the run's output.
 """
@@ -132,15 +133,128 @@ class TestRetiringOnlyWhatCameBack:
         assert cascade.pending(conn, "v1") == []
 
 
-class TestPhase3PaysTheRest:
-    def test_behaviour_entries_are_retired_after_the_views_run(self, conn):
-        """The behaviour view rebuilds every row it writes, so running it IS the regeneration."""
-        _queue(conn, slot.BEHAVIOUR_DESCRIPTION, slot.for_behaviour_row(FN, CALLER))
+class TestEachStepTakesOnlyItsOwnKinds:
+    """Phase 2 takes the queue twice -- the descriptions before it describes functions, the unit
+    descriptions before it describes units -- each with the artifact its kind lives in.
+
+    It used to take everything at once with `units: {}`: every queued unit description then read
+    as "that slot no longer exists" and was retired before any unit was described. With the LLM
+    reachable the unit happened to be rewritten a moment later anyway; with it down, the debt was
+    gone and nothing had paid it."""
+
+    def test_the_description_step_leaves_a_unit_entry_queued(self, conn):
+        _queue(conn, slot.UNIT_DESCRIPTION, slot.for_unit(UNIT))
         _queue(conn, slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, FN))
-        assert cascade.clear_behaviour_entries(conn, "v1") == 1
+        model = _model()
+        desc_model = {"functions": model["functions"],
+                      "globalVariables": model["globalVariables"]}
+        taken = cascade.blank_queued_text(conn, "v1", desc_model, kinds=(slot.DESCRIPTION,))
+        assert [b.row.slot_kind for b in taken] == [slot.DESCRIPTION]
+        cascade.clear_rewritten(conn, "v1", taken, desc_model)
+        assert {r.slot_kind for r in cascade.pending(conn, "v1")} == {
+            slot.DESCRIPTION, slot.UNIT_DESCRIPTION}, "the unit entry is the unit step's"
+
+    def test_without_kinds_a_model_lacking_units_loses_the_entry(self, conn):
+        """The failure the `kinds` filter exists for, kept as a test so it stays understood."""
+        _queue(conn, slot.UNIT_DESCRIPTION, slot.for_unit(UNIT))
+        desc_model = {"functions": {}, "globalVariables": {}}
+        taken = cascade.blank_queued_text(conn, "v1", desc_model)
+        cascade.clear_rewritten(conn, "v1", taken, desc_model)
+        assert cascade.pending(conn, "v1") == []
+
+    def test_the_unit_step_retires_a_unit_that_was_described(self, conn):
+        _queue(conn, slot.UNIT_DESCRIPTION, slot.for_unit(UNIT))
+        model = _model()
+        model["units"][UNIT].pop("description")          # Phase 2 builds units afresh
+        taken = cascade.blank_queued_text(conn, "v1", model, kinds=(slot.UNIT_DESCRIPTION,))
+        model["units"][UNIT]["description"] = "Described from the corrected functions."
+        assert cascade.clear_rewritten(conn, "v1", taken, model) == (1, 0)
+        assert cascade.pending(conn, "v1") == []
+
+    def test_the_unit_step_keeps_a_unit_that_was_not(self, conn):
+        """The LLM was down: the unit has no text, and the debt is still owed."""
+        _queue(conn, slot.UNIT_DESCRIPTION, slot.for_unit(UNIT))
+        model = _model()
+        model["units"][UNIT].pop("description")
+        taken = cascade.blank_queued_text(conn, "v1", model, kinds=(slot.UNIT_DESCRIPTION,))
+        cascade.clear_rewritten(conn, "v1", taken, model)
+        assert len(cascade.pending(conn, "v1")) == 1
+
+
+class TestPhase3PaysTheRest:
+    """The behaviour view rebuilds every row it writes, so running it IS the regeneration -- for
+    the rows it covered, and no others. It used to retire every queued behaviour row after every
+    Phase 3: a SWE.4-only run, or a run over another component, then reported rows as rebuilt
+    that it never touched."""
+
+    KEY = slot.for_behaviour_row(FN, CALLER)
+
+    def test_a_rebuilt_row_is_retired_and_a_description_is_not(self, conn):
+        _queue(conn, slot.BEHAVIOUR_DESCRIPTION, self.KEY)
+        _queue(conn, slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, FN))
+        assert cascade.clear_behaviour_entries(conn, "v1", [self.KEY], ["Comp"]) == 1
         left = cascade.pending(conn, "v1")
         assert [r.slot_kind for r in left] == [slot.DESCRIPTION], (
             "a description is Phase 2's debt and must not be retired by Phase 3")
+
+    def test_a_row_of_another_component_is_kept(self, conn):
+        _queue(conn, slot.BEHAVIOUR_DESCRIPTION, self.KEY)
+        assert cascade.clear_behaviour_entries(conn, "v1", [], ["Other"]) == 0
+        assert len(cascade.pending(conn, "v1")) == 1
+
+    def test_a_row_the_run_covered_but_no_longer_writes_is_retired(self, conn):
+        """The call is gone from the diagrams: nothing is owed for it."""
+        _queue(conn, slot.BEHAVIOUR_DESCRIPTION, self.KEY)
+        assert cascade.clear_behaviour_entries(conn, "v1", [], ["Comp"]) == 1
+
+    def test_the_scope_is_compared_in_one_spelling(self, conn):
+        """Config spells a component with spaces, a key with hyphens."""
+        fn = "Layer1.My-Sample|UnitA|ns::f|void"
+        _queue(conn, slot.BEHAVIOUR_DESCRIPTION, slot.for_behaviour_row(fn, CALLER))
+        assert cascade.clear_behaviour_entries(conn, "v1", [], ["Layer1.My Sample"]) == 1
+
+
+class TestPhase3RetiresOnlyWhenTheBehaviourViewRan:
+    """`run_views._retire_behaviour_regenerations`, against a real manifest on disk."""
+
+    KEY = slot.for_behaviour_row(FN, CALLER)
+
+    @pytest.fixture
+    def retire(self, conn, monkeypatch, tmp_path):
+        import contextlib
+        import run_views
+        from core import db as coredb, run_context
+
+        class _Engine:
+            def begin(self):
+                return contextlib.nullcontext(conn)
+
+        monkeypatch.setattr(run_context, "_VERSION_ID", "v1")
+        monkeypatch.setattr(coredb, "is_database_configured", lambda: True)
+        monkeypatch.setattr(coredb, "get_engine", lambda: _Engine())
+        out = tmp_path / "out"
+        (out / "behaviour_diagrams").mkdir(parents=True)
+        (out / "behaviour_diagrams" / "_behaviour_pngs.json").write_text(json.dumps(
+            {"_docxRows": {"Comp": {"UnitA": [
+                {"currentFunctionId": FN, "externalCallerId": CALLER,
+                 "behaviorDescription": ["start calls caller"]}]}}}), encoding="utf-8")
+        _queue(conn, slot.BEHAVIOUR_DESCRIPTION, self.KEY)
+
+        def _run(ran, components=("Comp",)):
+            run_views._retire_behaviour_regenerations(
+                str(out), ran, {"components": {c: {} for c in components}}, {})
+            return len(cascade.pending(conn, "v1"))
+        return _run
+
+    def test_a_run_without_the_behaviour_view_retires_nothing(self, retire):
+        assert retire(["testSpecs", "utExport"]) == 1
+
+    def test_the_rows_the_view_wrote_are_retired(self, retire):
+        assert retire(["interfaceTables", "behaviourDiagram"]) == 0
+
+    def test_a_row_it_wrote_is_retired_whatever_the_scope(self, retire):
+        """A caller's row can sit in another component's manifest; written is written."""
+        assert retire(["behaviourDiagram"], components=("Other",)) == 0
 
 
 class TestTheConsumersAreWiredIn:
@@ -157,17 +271,24 @@ class TestTheConsumersAreWiredIn:
     CASES = {
         "Phase 2 blanks queued descriptions":
             ("engine/model_deriver.py",
-             "_queued = _take_regeneration_queue(functions_data, global_variables_data)",
-             "def _take_regeneration_queue(functions_data: dict, global_variables_data: dict):"),
+             "_queued = _take_regeneration_queue(_desc_model, (DESCRIPTION,))",
+             "def _take_regeneration_queue(model: dict, kinds):"),
         "Phase 2 retires what came back":
             ("engine/model_deriver.py",
-             "_retire_regeneration_queue(_queued, functions_data, global_variables_data)",
-             "def _retire_regeneration_queue(queued, functions_data: dict, "
-             "global_variables_data: dict) -> None:"),
+             "_retire_regeneration_queue(_queued, _desc_model)",
+             "def _retire_regeneration_queue(queued, model: dict) -> None:"),
+        "Phase 2 takes queued unit descriptions":
+            ("engine/model_deriver.py",
+             "_queued_units = (_take_regeneration_queue(_unit_model, (UNIT_DESCRIPTION,))",
+             "def _take_regeneration_queue(model: dict, kinds):"),
+        "Phase 2 retires the units that came back":
+            ("engine/model_deriver.py",
+             "_retire_regeneration_queue(_queued_units, _unit_model)",
+             "def _retire_regeneration_queue(queued, model: dict) -> None:"),
         "Phase 3 retires behaviour rows":
             ("engine/run_views.py",
-             "_retire_behaviour_regenerations()",
-             "def _retire_behaviour_regenerations() -> None:"),
+             "_retire_behaviour_regenerations(output_dir, ran, model, config)",
+             "def _retire_behaviour_regenerations(output_dir, ran, model, config) -> None:"),
         "output capture draws pending pictures":
             ("engine/incremental/store.py",
              "_draw_pending_pictures(self.engine, version_id, os.path.join(",
@@ -206,6 +327,23 @@ class TestTheConsumersAreWiredIn:
         src = self._src("engine/model_deriver.py")
         call = self._matcher(self.CASES["Phase 2 retires what came back"][1]).search(src)
         assert call and call.start() > src.index("desc = enrich_functions_rich(")
+
+    def test_the_enrichment_is_told_not_to_answer_from_its_cache(self):
+        """The cache key is the source and the callees' SOURCE hashes; a corrected description
+        moves neither, so a cache hit hands back the very wording the queue exists to replace."""
+        src = self._src("engine/model_deriver.py")
+        call = src[src.index("desc = enrich_functions_rich("):]
+        assert "regenerate=_regenerate)" in call[:call.index("\n\n")]
+
+    def test_units_are_taken_around_the_unit_descriptions(self):
+        """Before them, so the entries are held; after them, so only a unit that came back with
+        text is retired -- and both before the corrections go back on."""
+        src = self._src("engine/model_deriver.py")
+        take = self._matcher(self.CASES["Phase 2 takes queued unit descriptions"][1]).search(src)
+        give = self._matcher(self.CASES["Phase 2 retires the units that came back"][1]).search(src)
+        step = src.index("_n_units, _n_structs = _enrich_unit_and_struct_descriptions(")
+        again = src.index("_corrected = _reapply_corrections(")
+        assert take and give and take.start() < step < give.start() < again
 
     def test_behaviour_entries_are_retired_after_the_views(self):
         src = self._src("engine/run_views.py")

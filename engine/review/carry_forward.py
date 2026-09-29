@@ -29,6 +29,13 @@ So a node override carries only when the function's `source_hash` is unchanged *
 `slot_shape` still matches the target's graph (`REQ-ID-02`). This is the first consumer of that
 column: it has been written and guarded since the schema landed, and nothing read it until now.
 
+## The regeneration queue travels too
+
+The baseline's still-owed regenerations (`REQ-CS-01`) are copied with the rows (`carry_queue`).
+The new version starts from the baseline's text -- a function whose code did not change gets its
+description copied across -- so a stale description the baseline never rewrote arrives as the new
+version's text, and only the queue says it is owed.
+
 ## Nothing is ever dropped
 
 A slot that no longer resolves is carried **orphaned**, not deleted (`REQ-ID-03`). It is the user's
@@ -60,6 +67,8 @@ class Carried(NamedTuple):
     #: (slot_kind, slot_key, why) for everything that did not carry — a reviewer whose
     #: correction stopped applying is owed a reason, not a silent disappearance.
     reasons: tuple = ()
+    #: regeneration-queue entries copied to the new version (`carry_queue`).
+    queued: int = 0
 
 
 class _Target:
@@ -118,15 +127,9 @@ class _Target:
     def shapes(self) -> Dict[str, str]:
         """`{flowchart_id: cfg_shape}` for this version's stored flowcharts."""
         if self._shapes is None:
+            from review import rerender
             self._shapes = {}
-            for r in self._conn.execute(
-                    select(s.version_output_files.c.rel_path,
-                           s.version_output_files.c.content)
-                    .where(s.version_output_files.c.version_id == self._v)).fetchall():
-                if "/flowcharts/" not in r.rel_path or not r.rel_path.endswith(".json"):
-                    continue
-                if r.rel_path.rsplit("/", 1)[-1] == "_summary.json":
-                    continue
+            for r in rerender.output_rows(self._conn, self._v, rerender.FLOWCHARTS):
                 try:
                     entries = json.loads(r.content or "[]")
                 except ValueError:
@@ -154,15 +157,10 @@ class _Target:
     @property
     def behaviour_keys(self) -> Set[str]:
         if self._behaviour is None:
-            from review import phase3_overrides as p3
+            from review import phase3_overrides as p3, rerender
             self._behaviour = set()
             self._behaviour_derived = False
-            for r in self._conn.execute(
-                    select(s.version_output_files.c.rel_path,
-                           s.version_output_files.c.content)
-                    .where(s.version_output_files.c.version_id == self._v)).fetchall():
-                if not r.rel_path.endswith("_behaviour_pngs.json"):
-                    continue
+            for r in rerender.output_rows(self._conn, self._v, rerender.BEHAVIOUR_MANIFEST):
                 self._behaviour_derived = True
                 try:
                     payload = json.loads(r.content or "{}")
@@ -291,17 +289,27 @@ def carry_overrides(conn, baseline_version_id: str, target_version_id: str, *,
     if not baseline_version_id or baseline_version_id == target_version_id:
         return Carried(0, 0, ())
 
+    target = _Target(conn, target_version_id)
+    baseline = _Target(conn, baseline_version_id)      # lazy: only what a row needs is read
+    carried, orphaned, reasons = _carry_rows(conn, baseline_version_id, target_version_id,
+                                             target, baseline, now)
+    # After the rows: a slot that now carries a correction in force on the new version is not
+    # queued there (REQ-CS-03), and that includes the corrections copied just above.
+    queued = carry_queue(conn, baseline_version_id, target_version_id, target=target, now=now)
+    return Carried(carried, orphaned, tuple(reasons), queued)
+
+
+def _carry_rows(conn, baseline_version_id: str, target_version_id: str, target: "_Target",
+                baseline: "_Target", now: Optional[datetime.datetime]):
+    """The override rows of `carry_overrides`. Returns (carried, orphaned, reasons)."""
     src = conn.execute(select(s.text_overrides)
                        .where(s.text_overrides.c.version_id == baseline_version_id)).fetchall()
     if not src:
-        return Carried(0, 0, ())
+        return 0, 0, []
 
     existing = {(r.slot_kind, r.slot_key) for r in conn.execute(
         select(s.text_overrides.c.slot_kind, s.text_overrides.c.slot_key)
         .where(s.text_overrides.c.version_id == target_version_id)).fetchall()}
-
-    target = _Target(conn, target_version_id)
-    baseline = _Target(conn, baseline_version_id)      # lazy: only what a row needs is read
     stamp = now or datetime.datetime.now(datetime.timezone.utc)
 
     carried = orphaned = 0
@@ -337,7 +345,75 @@ def carry_overrides(conn, baseline_version_id: str, target_version_id: str, *,
             reasons.append((row.slot_kind, row.slot_key, why or "orphaned in the baseline"))
         else:
             carried += 1
-    return Carried(carried, orphaned, tuple(reasons))
+    return carried, orphaned, reasons
+
+
+def _queue_entry_applies(kind: str, key: str, target: "_Target") -> bool:
+    """Whether a baseline queue entry still names something in the new version."""
+    try:
+        parts = slot.parse(kind, key)
+    except slot.SlotKeyError:
+        return False
+    if kind == slot.UNIT_DESCRIPTION:
+        return parts["unit_key"] in target.units
+    if kind == slot.BEHAVIOUR_DESCRIPTION:
+        if target.behaviour_derived:
+            return key in target.behaviour_keys
+        return (parts["function_id"] in target.hashes
+                and parts["external_caller_id"] in target.hashes)
+    if kind == slot.DESCRIPTION:
+        return parts["entity_key"] in target.hashes
+    # The cascade queues nothing else (`cascade.dependents_of`).
+    return False
+
+
+def carry_queue(conn, baseline_version_id: str, target_version_id: str, *,
+                target: Optional["_Target"] = None,
+                now: Optional[datetime.datetime] = None) -> int:
+    """Copy the baseline's still-owed regenerations onto the new version (`REQ-CS-01`). Returns
+    how many.
+
+    The new version starts from the baseline's text: a function whose code did not change gets
+    the baseline's description copied onto it (`incremental.engine.carry_forward_descriptions`)
+    -- the stale wording a correction queued for a rewrite, if its run never paid the debt. The
+    queue belongs to the baseline version, so without this the new version reads that text as
+    current and never asks again.
+
+    An entry is copied when what it names is still there -- the function, the unit, or the call
+    (both ends, the way `_still_applies` judges a behaviour correction) -- and the new version
+    neither queues it already nor holds a correction in force for that slot (`REQ-CS-03`: a
+    human's text is never regenerated over). An entry for something that is gone is left behind:
+    there is nothing left to rewrite.
+    """
+    from review import cascade
+
+    if not baseline_version_id or baseline_version_id == target_version_id:
+        return 0
+    src = cascade.pending(conn, baseline_version_id)
+    if not src:
+        return 0
+    target = target or _Target(conn, target_version_id)
+    queued = {(r.slot_kind, r.slot_key) for r in cascade.pending(conn, target_version_id)}
+    human = {(r.slot_kind, r.slot_key) for r in conn.execute(
+        select(s.text_overrides.c.slot_kind, s.text_overrides.c.slot_key)
+        .where(s.text_overrides.c.version_id == target_version_id,
+               s.text_overrides.c.is_orphaned.is_(False))).fetchall()}
+    stamp = now or datetime.datetime.now(datetime.timezone.utc)
+    n = 0
+    for row in src:
+        pair = (row.slot_kind, row.slot_key)
+        if pair in queued or pair in human:
+            continue
+        if not _queue_entry_applies(row.slot_kind, row.slot_key, target):
+            continue
+        conn.execute(insert(s.regeneration_queue).values(
+            version_id=target_version_id, slot_kind=row.slot_kind, slot_key=row.slot_key,
+            reason=row.reason, source_slot_kind=row.source_slot_kind,
+            source_slot_key=row.source_slot_key, requested_by=row.requested_by,
+            requested_at=row.requested_at or stamp))
+        queued.add(pair)
+        n += 1
+    return n
 
 
 def apply_live_corrections(conn, version_id: str, model: Dict[str, Any]) -> Dict[str, int]:

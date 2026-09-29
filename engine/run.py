@@ -1061,13 +1061,16 @@ _refuse_stale_export(from_phase, force_export)
 
 runner = PhaseRunner(project_root=SCRIPT_DIR)
 total_time = 0.0
-# From Phase 3 on, this run re-renders a version whose model it does not touch -- a re-export,
-# from either front door. The phases mark their progress on the version row as they go, and
-# nothing after them would close it again: without this a finished version was left at
+# From Phase 2 on, this run rebuilds a version that already has its parse -- a re-derive or a
+# re-export, from either front door. The phases mark their progress on the version row as they
+# go, and nothing after them would close it again: without this a finished version was left at
 # 'exporting', refused as a baseline, and the next version silently ran FULL -- dropping every
-# carried correction with it. See `finished_status_kept`.
+# carried correction with it. `reexport --from-phase 2`, the command that pays a correction's
+# regeneration queue, did exactly that. A generation's own `--from-phase 2` (the incremental
+# engine) starts from a status still in progress, which is never put back. See
+# `finished_status_kept`.
 from core.db import finished_status_kept
-with finished_status_kept(from_phase >= 3):
+with finished_status_kept(from_phase >= 2):
     for plan in plans:
         log(plan.label, component="run")
         total_time += runner.run(plan.phases, from_phase=plan.runner_from_phase)

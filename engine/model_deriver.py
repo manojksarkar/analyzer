@@ -648,8 +648,14 @@ def _review_conn_and_version():
     return None, None
 
 
-def _take_regeneration_queue(functions_data: dict, global_variables_data: dict):
-    """Blank the text of queued slots so the enrichment below rewrites them (`REQ-CS-01`).
+def _take_regeneration_queue(model: dict, kinds):
+    """Blank the text of the queued slots of `kinds`, so the enrichment that follows rewrites them
+    (`REQ-CS-01`).
+
+    `model` holds the artifacts those kinds live in -- the functions and globals for a
+    description, the units for a unit description. Taken once per enrichment step, each with its
+    own kinds: an entry read against a model that lacks its artifact looks like a slot that no
+    longer exists, and is retired without being rewritten.
 
     Never fatal: a phase that has already paid for the parse must not be lost because the queue
     could not be read. The entries simply stay queued for the next run.
@@ -659,10 +665,8 @@ def _take_regeneration_queue(functions_data: dict, global_variables_data: dict):
         return []
     try:
         from review.cascade import blank_queued_text
-        model = {"functions": functions_data, "globalVariables": global_variables_data,
-                 "units": {}, "dataDictionary": {}}
         with eng.connect() as cx:
-            queued = blank_queued_text(cx, vid, model)
+            queued = blank_queued_text(cx, vid, model, kinds=kinds)
         if queued:
             from core.logging_setup import get_logger
             get_logger("model_deriver").info(
@@ -674,12 +678,13 @@ def _take_regeneration_queue(functions_data: dict, global_variables_data: dict):
         return []
 
 
-def _retire_regeneration_queue(queued, functions_data: dict, global_variables_data: dict) -> None:
+def _retire_regeneration_queue(queued, model: dict) -> None:
     """Clear the entries whose text actually came back, and restore the text of those that did not.
 
     The restore matters more than the bookkeeping. `blank_queued_text` emptied those descriptions
     only to ask for a rewrite; if the rewrite did not happen the model must go back to what it
-    was, or this phase publishes an empty description where there was a readable one.
+    was, or this phase publishes an empty description where there was a readable one. `model` is
+    the one `_take_regeneration_queue` was handed.
     """
     if not queued:
         return
@@ -688,8 +693,6 @@ def _retire_regeneration_queue(queued, functions_data: dict, global_variables_da
         return
     try:
         from review.cascade import clear_rewritten
-        model = {"functions": functions_data, "globalVariables": global_variables_data,
-                 "units": {}, "dataDictionary": {}}
         with eng.begin() as cx:
             out = clear_rewritten(cx, vid, queued, model)
         if out.restored:
@@ -780,13 +783,20 @@ def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data
 
     # REQ-CS-01. A correction to one description leaves the text generated FROM it describing
     # wording the human has already rejected. Those dependents were recorded when the correction
-    # was saved; this is where the debt is paid. Blanking their text is the whole instruction --
-    # the enrichment below skips a function whose description is already present, so removing it
-    # IS "generate this again".
-    _queued = _take_regeneration_queue(functions_data, global_variables_data)
+    # was saved; this is where the debt is paid. Blanking their text is how the enrichment below is
+    # told to write it -- it skips a function whose description is already present -- and
+    # `regenerate` is how it is told not to answer from its cache: the cache key is the source and
+    # the callees' SOURCE hashes, which a corrected description does not move, so a cache hit
+    # would hand back the very wording the queue exists to replace. Unit descriptions are taken
+    # later, with the units, where they are written (`_enrich_unit_and_struct_descriptions`).
+    from review.slot import DESCRIPTION
+    _desc_model = {"functions": functions_data, "globalVariables": global_variables_data}
+    _queued = _take_regeneration_queue(_desc_model, (DESCRIPTION,))
+    _regenerate = {q.row.slot_key for q in _queued if q.row.slot_key in functions_data}
 
     # Rich enrichment path — budget-aware with degradation ladder
-    desc = enrich_functions_rich(functions_data, base_path, config, knowledge=knowledge)
+    desc = enrich_functions_rich(functions_data, base_path, config, knowledge=knowledge,
+                                 regenerate=_regenerate)
     for key, f in functions_data.items():
         if desc.get(key, {}).get("description"):
             f["description"] = desc[key]["description"]
@@ -812,7 +822,7 @@ def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data
     # Retire only what actually came back with text. An entry whose slot is still empty means the
     # regeneration did not happen -- the LLM was unreachable, or descriptions are off -- and
     # dropping it would turn "still owed" into "done".
-    _retire_regeneration_queue(_queued, functions_data, global_variables_data)
+    _retire_regeneration_queue(_queued, _desc_model)
 
 
 def _readable_label(name: str) -> str:
@@ -1583,8 +1593,18 @@ def main():
     # and stored -- the unit description is built FROM the function and global descriptions,
     # so it has to come after they are enriched. Storing them is what lets the HTML view show
     # them at all and stops every export re-paying for the same LLM calls.
+    #
+    # REQ-CS-01 for a unit: a queued unit description is rewritten by this step, from the function
+    # descriptions a correction changed, so its entry is taken and retired around it -- kept
+    # queued when no text came back (descriptions off, the LLM unreachable).
+    from review.slot import UNIT_DESCRIPTION
+    _unit_model = {"functions": functions_data, "globalVariables": global_variables_data,
+                   "units": units_data, "dataDictionary": data_dict}
+    _queued_units = (_take_regeneration_queue(_unit_model, (UNIT_DESCRIPTION,))
+                     if (config.get("llm") or {}).get("descriptions", True) else [])
     _n_units, _n_structs = _enrich_unit_and_struct_descriptions(
         units_data, functions_data, global_variables_data, data_dict, config)
+    _retire_regeneration_queue(_queued_units, _unit_model)
 
     # Last text step: the reviewers' corrections go back over whatever the steps above rebuilt.
     _corrected = _reapply_corrections(functions_data, global_variables_data, units_data, data_dict)

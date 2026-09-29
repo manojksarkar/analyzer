@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 
 from api.db.postgres import schema as s
 from core import model_store
-from review import carry_forward as cf, slot
+from review import carry_forward as cf, cascade, slot
 
 FID = "Comp|UnitA|ns::doThing|void"
 CALLER = "App|AppMain|ns::start|void"
@@ -295,6 +295,83 @@ class TestTheTargetWins:
         row = conn.execute(sa.select(s.text_overrides)
                            .where(s.text_overrides.c.version_id == "v4")).first()
         assert row.human_text == "Made against v4."
+
+
+class TestTheRegenerationQueueTravels:
+    """`REQ-CS-01` across versions. The new version starts from the baseline's text -- a function
+    whose code did not change gets its description copied across -- so a stale description the
+    baseline never rewrote arrived as the new version's own text, and the queue that said it was
+    owed stayed behind on the baseline. Nothing ever asked for it again."""
+
+    DESC = slot.for_entity(slot.DESCRIPTION, FID)
+
+    def _queue(self, conn, vid, kind, key):
+        cascade.enqueue(conn, vid, [cascade.Dependent(kind, key, "a callee was corrected")],
+                        source_kind=slot.DESCRIPTION, source_key="Comp|UnitA|ns::callee|void",
+                        now=NOW)
+
+    def _pending(self, conn, vid):
+        return {(r.slot_kind, r.slot_key) for r in cascade.pending(conn, vid)}
+
+    def test_a_queued_description_is_carried(self, conn):
+        self._queue(conn, "v3", slot.DESCRIPTION, self.DESC)
+        _seed_version(conn, "v4")
+        out = cf.carry_overrides(conn, "v3", "v4")
+        assert out.queued == 1
+        assert self._pending(conn, "v4") == {(slot.DESCRIPTION, self.DESC)}
+        row = cascade.pending(conn, "v4")[0]
+        assert (row.reason, row.source_slot_key) == ("a callee was corrected",
+                                                     "Comp|UnitA|ns::callee|void")
+
+    def test_it_travels_even_when_the_baseline_has_no_corrections(self, conn):
+        """The correction that queued it may have been undone since; the stale text was not."""
+        self._queue(conn, "v3", slot.DESCRIPTION, self.DESC)
+        _seed_version(conn, "v4")
+        assert cf.carry_overrides(conn, "v3", "v4") == cf.Carried(0, 0, (), 1)
+
+    def test_a_unit_and_a_behaviour_row_are_carried(self, conn):
+        """Before Phase 3 a new version has no behaviour rows; the call is judged by its two
+        ends, as a behaviour correction is."""
+        _seed_version(conn, "b1", functions=(FID, CALLER), hashes={FID: "h1", CALLER: "h1"})
+        key = slot.for_behaviour_row(FID, CALLER)
+        self._queue(conn, "b1", slot.UNIT_DESCRIPTION, slot.for_unit(UNIT))
+        self._queue(conn, "b1", slot.BEHAVIOUR_DESCRIPTION, key)
+        _seed_version(conn, "t1", functions=(FID, CALLER), hashes={FID: "h1", CALLER: "h1"},
+                      behaviour=False)
+        assert cf.carry_overrides(conn, "b1", "t1").queued == 2
+        assert self._pending(conn, "t1") == {(slot.UNIT_DESCRIPTION, slot.for_unit(UNIT)),
+                                            (slot.BEHAVIOUR_DESCRIPTION, key)}
+
+    def test_an_entry_for_something_gone_stays_behind(self, conn):
+        self._queue(conn, "v3", slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION,
+                                                                  "Comp|UnitA|ns::gone|void"))
+        _seed_version(conn, "v4")
+        assert cf.carry_overrides(conn, "v3", "v4").queued == 0
+        assert self._pending(conn, "v4") == set()
+
+    def test_a_slot_with_a_correction_in_force_is_not_queued(self, conn):
+        """REQ-CS-03 -- including a correction carried by this very call."""
+        _override(conn, "v3", slot.DESCRIPTION, self.DESC)
+        self._queue(conn, "v3", slot.DESCRIPTION, self.DESC)
+        _seed_version(conn, "v4")
+        out = cf.carry_overrides(conn, "v3", "v4")
+        assert (out.carried, out.queued) == (1, 0)
+
+    def test_an_orphaned_correction_does_not_block_it(self, conn):
+        """The new code gets fresh LLM text; the orphan is not applied, so nothing human is in
+        the way."""
+        _override(conn, "v3", slot.DESCRIPTION, self.DESC)
+        self._queue(conn, "v3", slot.DESCRIPTION, self.DESC)
+        _seed_version(conn, "v4", source_hash="h2")
+        out = cf.carry_overrides(conn, "v3", "v4")
+        assert (out.orphaned, out.queued) == (1, 1)
+
+    def test_an_entry_already_queued_is_not_duplicated(self, conn):
+        self._queue(conn, "v3", slot.DESCRIPTION, self.DESC)
+        _seed_version(conn, "v4")
+        self._queue(conn, "v4", slot.DESCRIPTION, self.DESC)
+        assert cf.carry_overrides(conn, "v3", "v4").queued == 0
+        assert len(cascade.pending(conn, "v4")) == 1
 
 
 class TestWhatPhase3Receives:
