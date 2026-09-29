@@ -120,18 +120,31 @@ async def upload_file(
     Returns a reference (``id`` + ``file_name``) that the wizard stores in the
     project's ``build_config`` and that the pipeline can later resolve.
     """
+    data = await file.read()
+    try:
+        return store_upload(data, file.filename or "upload", kind, current_user.id,
+                            content_type=file.content_type)
+    except ValueError as exc:
+        raise bad_request(str(exc))
+
+
+def store_upload(data: bytes, file_name: str, kind: str, uploaded_by: str,
+                 content_type: Optional[str] = None) -> dict:
+    """Validate and store a build-configuration file; return its upload record.
+
+    The one place an upload is created -- the upload route, and the config import when it finds
+    a file the config names in the repository -- so both are checked the same way. Raises
+    ValueError with a user-facing reason."""
     if kind not in _ALLOWED_KINDS:
-        raise bad_request(f"Unknown upload kind '{kind}'.")
-    file_name = file.filename or "upload"
+        raise ValueError(f"Unknown upload kind '{kind}'.")
     allowed_exts = _ALLOWED_EXTS[kind]
     if Path(file_name).suffix.lower() not in allowed_exts:
-        raise bad_request(
+        raise ValueError(
             f"'{file_name}' is not a supported {kind.replace('_', ' ')} file. "
             f"Expected: {', '.join(sorted(allowed_exts))}."
         )
-    data = await file.read()
     if len(data) > _MAX_UPLOAD_BYTES:
-        raise bad_request("File exceeds the 5 MB upload limit.")
+        raise ValueError("File exceeds the 5 MB upload limit.")
 
     upload_id = f"up_{uuid.uuid4().hex[:12]}"
     # On disk, not in memory: the wizard stores the id in build_config and a job
@@ -143,16 +156,16 @@ async def upload_file(
     _UPLOADS[upload_id] = {
         "id": upload_id,
         "file_name": file_name,
-        "content_type": file.content_type,
+        "content_type": content_type,
         "size": len(data),
         "kind": kind,
-        "uploaded_by": current_user.id,
+        "uploaded_by": uploaded_by,
         "path": str(stored_path),
     }
     return {
         "id": upload_id,
-        "file_name": file.filename or "upload",
+        "file_name": file_name,
         "size": len(data),
-        "content_type": file.content_type,
+        "content_type": content_type,
         "kind": kind,
     }

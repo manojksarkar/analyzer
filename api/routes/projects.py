@@ -1,9 +1,10 @@
 """Projects routes — /api/v1/projects/*"""
 from __future__ import annotations
+import re
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from typing import Any, Optional
 
@@ -11,7 +12,7 @@ from ..db.session import get_db
 from ..db.in_memory import InMemoryDatabase
 from ..middleware.auth import get_current_user, require_project_admin, require_project_member
 from ..models.domain import User, Project, ProjectMember, AccessRequest
-from ..services.errors import not_found, forbidden, conflict
+from ..services.errors import bad_request, not_found, forbidden, conflict
 from ..schemas import (
     ProjectResponse, ProjectListResponse, ProjectSearchResponse,
     AccessRequestResponse, AccessRequestListResponse,
@@ -97,6 +98,52 @@ def list_projects(
     return {"projects": [_project_view(p, db, current_user.id) for p in projects]}
 
 
+class ConfigPreviewRequest(BaseModel):
+    text: str                                   # the config file's contents
+    repo_url: Optional[str] = None              # when the wizard has connected the repository
+    branch: Optional[str] = None
+    access_token: Optional[str] = None
+
+
+@router.post("/config/preview")
+def preview_config(
+    body: ConfigPreviewRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Read a config file and fill the New Project wizard from it: `{draft, expected_uploads,
+    report, repository_checked}`. With a repository, every path is checked against it, and a
+    definitions or data-dictionary file the config names is read from it as an upload. Nothing
+    else is written; the project is created by `POST /projects` as before."""
+    from ..services import git_cli, project_config, repo_git
+    from .repositories import store_upload
+    if len(body.text or "") > 2 * 1024 * 1024:
+        raise bad_request("The config file is larger than 2 MB.")
+    try:
+        cfg = project_config.parse(body.text)
+    except project_config.ConfigError as exc:
+        raise bad_request(str(exc))
+
+    tree = read_file = None
+    note = None
+    url = (body.repo_url or "").strip()
+    if url:
+        try:
+            repo_dir = str(repo_git._clone_or_reuse(url, (body.branch or "").strip() or None,
+                                                    body.access_token, blobless=True))
+            tree = git_cli.list_tree(repo_dir, "HEAD")
+            creds = repo_git._creds(body.access_token)
+            read_file = lambda path: git_cli.read_file(repo_dir, path, url, *creds)  # noqa: E731
+        except git_cli.GitError as exc:
+            note = (f"The repository could not be read ({repo_git._friendly(str(exc))}), so "
+                    f"paths were not checked.")
+    result = project_config.preview(
+        cfg, tree_nodes=tree, read_file=read_file,
+        store_file=lambda data, name, kind: store_upload(data, name, kind, current_user.id))
+    if note:
+        result["report"].insert(0, {"level": "check", "text": note})
+    return result
+
+
 @router.get("/search", responses={200: {"model": ProjectSearchResponse}})
 def search_projects(
     q: str = Query(""),
@@ -180,6 +227,24 @@ def create_project(
             invited_at=now, joined_at=now,
         ))
     return {"project": _project_view(project, db, current_user.id)}
+
+
+@router.get("/{project_id}/config")
+def download_config(
+    project_id: str,
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """The project as a config file -- what `analyzer.py onboard --config` reads and the New
+    Project wizard imports. Never the access token."""
+    from ..services import project_config
+    project = db.projects.get(project_id)
+    if not project:
+        raise not_found("Project", project_id)
+    require_project_member(project_id, current_user, db)
+    name = re.sub(r"[^A-Za-z0-9._-]+", "-", project.name or "").strip("-") or project_id
+    return Response(project_config.to_config_text(project), media_type="application/json",
+                    headers={"Content-Disposition": f'attachment; filename="{name}.config.json"'})
 
 
 @router.get("/{project_id}", responses={200: {"model": ProjectResponse}})
