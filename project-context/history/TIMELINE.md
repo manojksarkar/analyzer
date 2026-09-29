@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-09-29c | R7 and R8 name a flowchart by its function id, `flowchart_id`, in the query and the body -- not a base64 token in the path | [10](10-2026-09-26.md) |
 | 2026-09-29b | Rebased onto develop `5542736` as branch `review_update_v3`: develop's six commits bring no new LLM text; one thing to decide — doccheck's pair check reads the behaviour bullets a reviewer can rewrite (RU-6) | [10](10-2026-09-26.md) |
 | 2026-09-29 | The export guard asks per view, component and document; a saved correction re-derives the SWE.4 specs; the restore before a run finally runs | [10](10-2026-09-26.md) |
 | 2026-09-28b | A new session now meets the changes the numbered sections do not describe | [10](10-2026-09-26.md) |

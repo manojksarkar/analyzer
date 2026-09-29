@@ -13,8 +13,9 @@ nor commits, so the handler owns the unit of work: an edit either lands with its
 does not land at all (`REQ-AP-02`).
 
 Keys travel in the **body or a query parameter, never in a path segment** — a slot key contains
-`|`, `:`, `,`, `*`, spaces and a 0x01 separator. The flowchart routes are the exception and use
-`slot.encode()`'s base64url form, which has no character needing escaping.
+`|`, `:`, `,`, `*`, spaces and a 0x01 separator. Flowcharts too: R7 and R8 take the flowchart's
+function id as `flowchart_id`, in the query and the body. Which kind of text a key names is never
+read from the key — each route is told its kind, or is one kind (R6, R7, R8).
 """
 from __future__ import annotations
 
@@ -67,6 +68,9 @@ class UpdateSlotRequest(BaseModel):
 
 
 class UpdateFlowchartRequest(BaseModel):
+    flowchart_id: str = Field(
+        ..., description="the flowchart's function id — `flowchartId` from R11 or R7; never "
+                         "built by hand")
     labels: Dict[str, str] = Field(
         ..., description="{nodeId: new text} — ONLY the labels the reviewer changed. "
                          "Node ids come from R7's `labels[].nodeId`.")
@@ -74,7 +78,8 @@ class UpdateFlowchartRequest(BaseModel):
     # Without this Swagger renders a Dict[str, str] as {"additionalProp1": "string", ...},
     # which reads as three required fields with meaningless names.
     model_config = {"json_schema_extra": {"examples": [
-        {"labels": {"N2": "Verify the checksum", "N5": "Retry the write"}}]}}
+        {"flowchart_id": "Layer1.Lib|Lib|libAbs|int",
+         "labels": {"N2": "Verify the checksum", "N5": "Retry the write"}}]}}
 
 
 class UpdateBehaviourRequest(BaseModel):
@@ -132,6 +137,16 @@ def _key(slot_kind: str, slot_key: str) -> str:
     from review import slot as slot_mod
     try:
         return slot_mod.from_request(slot_kind, slot_key)
+    except slot_mod.SlotKeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+def _flowchart_id(value: str) -> str:
+    """The flowchart id the caller sent, or 400 naming the mistake -- above all one node's key
+    sent for the whole flowchart. See `slot.flowchart_id_from_request`."""
+    from review import slot as slot_mod
+    try:
+        return slot_mod.flowchart_id_from_request(value)
     except slot_mod.SlotKeyError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -258,7 +273,7 @@ def list_slots(
     (`REQ-ID-01`), can be read from a response instead of dug out of stored view output.
 
     `nodeLabel` is listed per FLOWCHART, not per node: a version has ~42,000 node labels, and a
-    flowchart is one function's graph. Each row carries the token R7 takes.
+    flowchart is one function's graph. Each row carries the `flowchartId` R7 and R8 take.
 
     `structDescription` lists the structs, classes and unions whose description the unit header
     table can show. The key names the type, not a unit, so each row says where it is shown
@@ -306,12 +321,13 @@ def get_slot(
 
 
 @router.get(
-    "/projects/{project_id}/versions/{version_id}/flowcharts/{flowchart_token}/labels",
+    "/projects/{project_id}/versions/{version_id}/flowcharts/labels",
     summary="R7 - read a flowchart's labels")
 def get_flowchart_labels(
     project_id: str,
     version_id: str,
-    flowchart_token: str,
+    flowchart_id: str = Query(..., description="the flowchart's function id — `flowchartId` "
+                                                "from R11; never built by hand"),
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
@@ -319,11 +335,8 @@ def get_flowchart_labels(
     request and saves with one."""
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
+    flowchart_id = _flowchart_id(flowchart_id)
     from review import rerender, slot as slot_mod
-    try:
-        flowchart_id = slot_mod.decode(flowchart_token)
-    except Exception as exc:
-        raise _as_http(exc)
 
     import json
     from review.catalog import _state
@@ -361,7 +374,7 @@ def get_flowchart_labels(
     # `cfg` has only been stored since 2026-09-01, so a version generated before that has the
     # picture and the DOT but not the graph -- and its labels cannot be corrected until it is
     # re-derived. Say which it is rather than leaving the caller to guess.
-    body = {"flowchartId": flowchart_id, "flowchartToken": flowchart_token,
+    body = {"flowchartId": flowchart_id,
             "functionName": entry.get("name"), "labels": labels,
             "graphAvailable": bool(labels),
             # The Graphviz DOT, read from the DATABASE -- rebuilt by R8 in the same request that
@@ -419,12 +432,11 @@ def update_slot(
 
 
 @router.put(
-    "/projects/{project_id}/versions/{version_id}/flowcharts/{flowchart_token}/labels",
+    "/projects/{project_id}/versions/{version_id}/flowcharts/labels",
     summary="R8 - correct a flowchart, in one call")
 def update_flowchart_labels(
     project_id: str,
     version_id: str,
-    flowchart_token: str,
     body: UpdateFlowchartRequest,
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
@@ -436,11 +448,7 @@ def update_flowchart_labels(
     """
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
-    from review import slot as slot_mod
-    try:
-        flowchart_id = slot_mod.decode(flowchart_token)
-    except Exception as exc:
-        raise _as_http(exc)
+    flowchart_id = _flowchart_id(body.flowchart_id)
 
     svc = _service()
     with _connection().begin() as cx:

@@ -187,8 +187,10 @@ function's `entity_key` — no new identifier, per [REQ-ID-01](#req-id-01--reuse
 A node label's slot key stays `entity_key` + `node_id`, so the flowchart id is the first part of
 every label key it contains. One id, read two ways; not two ids to keep in step.
 
-Where a URL path segment is needed, the id is base64url-encoded — an `entity_key` contains `|`,
-`:`, `,`, `*` and spaces.
+The id travels in a query parameter or a request body, never in a URL path segment — an
+`entity_key` contains `|`, `:`, `,`, `*` and spaces. It is the same string as the key of that
+function's `description`; which kind of text a request means comes from the request (`slot_kind`,
+or the route), never from the id, and a correction is stored under (version, kind, key).
 
 **Verification:** every node label key in a flowchart yields that flowchart's id, and the id
 resolves to exactly one function.

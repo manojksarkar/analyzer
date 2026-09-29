@@ -239,16 +239,17 @@ class TestTheDocumentedContractExists:
 
 
 class TestKeysStayOutOfPaths:
-    def test_no_route_puts_a_raw_slot_key_in_the_path(self):
-        """A slot key contains `|`, `:`, `,`, `*`, spaces and a 0x01 separator. The flowchart
-        routes use the base64url token instead, whose alphabet needs no escaping."""
+    def test_no_route_puts_a_key_in_the_path(self):
+        """A slot key contains `|`, `:`, `,`, `*`, spaces and a 0x01 separator, and a flowchart id
+        is a function id. Both travel in the query or the body; the path holds the project and
+        the version only."""
         from api.main import app
         review = [r.path for r in app.routes
-                  if "/overrides" in r.path or "/flowcharts/" in r.path]
-        assert review
+                  if "/overrides" in r.path or "/flowcharts/" in r.path or r.path.endswith("/slots")]
+        assert any("/flowcharts/" in p for p in review)
         for path in review:
             for param in re.findall(r"\{(\w+)\}", path):
-                assert param in ("project_id", "version_id", "flowchart_token"), (
+                assert param in ("project_id", "version_id"), (
                     "%s puts %r in a path segment" % (path, param))
 
 

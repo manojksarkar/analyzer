@@ -21,7 +21,8 @@ disagreement impossible rather than unlikely.
 ## Volume
 
 A version holds roughly 57,000 slots and ~42,000 of them are flowchart node labels, so `nodeLabel`
-is listed **per flowchart** rather than per node — one row per function, with the token `R7` takes.
+is listed **per flowchart** rather than per node — one row per function, with the `flowchartId`
+`R7` and `R8` take.
 Everything else is paginated, and may be narrowed by unit or component.
 """
 from __future__ import annotations
@@ -318,7 +319,7 @@ def _flowcharts(conn, version_id, unit, component, limit, offset) -> Page:
 
     A version has ~42,000 node labels; one row each would be hundreds of pages of something
     nobody reads linearly. A flowchart is one function's graph, so this lists the functions that
-    have one — with the token `R7` takes, which returns that flowchart's nodes.
+    have one — with the `flowchartId` `R7` takes, which returns that flowchart's nodes.
     """
     done = _overridden(conn, version_id, slot.NODE_LABEL)
     per_flowchart: Dict[str, int] = {}
@@ -360,7 +361,6 @@ def _flowcharts(conn, version_id, unit, component, limit, offset) -> Page:
             items.append({
                 "slotKind": slot.NODE_LABEL,
                 "flowchartId": fid,
-                "flowchartToken": slot.encode(fid),
                 "functionName": e.get("name"),
                 "component": comp,
                 "unit": un,

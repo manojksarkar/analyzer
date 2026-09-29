@@ -93,9 +93,18 @@ def _key(kind, entity=FID):
     return slot.for_entity(kind, entity)
 
 
-def _token():
-    from review import slot
-    return slot.encode(FID)
+LABELS = "/flowcharts/labels"
+
+
+def _read_labels(client, headers, flowchart_id=FID):
+    """R7: a flowchart is named by its function id, in the query."""
+    return client.get(BASE + LABELS, headers=headers, params={"flowchart_id": flowchart_id})
+
+
+def _save_labels(client, headers, labels, flowchart_id=FID):
+    """R8: the flowchart id travels in the body, beside the labels."""
+    return client.put(BASE + LABELS, headers=headers,
+                      json={"flowchart_id": flowchart_id, "labels": labels})
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +212,7 @@ class TestTheOverlayList:
 
 class TestFlowchartLabels:
     def test_the_labels_come_back(self, client, review_db, auth_header):
-        r = client.get(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header)
+        r = _read_labels(client, auth_header)
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["flowchartId"] == FID
@@ -211,47 +220,41 @@ class TestFlowchartLabels:
         assert all(l["isOverridden"] is False for l in body["labels"])
 
     def test_a_save_applies_and_shows_up(self, client, review_db, auth_header):
-        r = client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
-                       json={"labels": {"n1": "Check the write-protect flag"}})
+        r = _save_labels(client, auth_header, {"n1": "Check the write-protect flag"})
         assert r.status_code == 200, r.text
         assert r.json()["applied"] == ["n1"]
         assert r.json()["slotShape"]
 
-        body = client.get(BASE + "/flowcharts/%s/labels" % _token(),
-                          headers=auth_header).json()
+        body = _read_labels(client, auth_header).json()
         n1 = next(l for l in body["labels"] if l["nodeId"] == "n1")
         assert n1["text"] == "Check the write-protect flag"
         assert n1["isOverridden"] is True
         assert n1["llmText"] == "llm n1"
 
     def test_several_labels_in_one_call(self, client, review_db, auth_header):
-        r = client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
-                       json={"labels": {"n0": "Begin", "n2": "Finish"}})
+        r = _save_labels(client, auth_header, {"n0": "Begin", "n2": "Finish"})
         assert r.status_code == 200
         assert sorted(r.json()["applied"]) == ["n0", "n2"]
 
     def test_a_node_that_does_not_exist_fails_the_whole_call(self, client, review_db,
                                                              auth_header):
-        r = client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
-                       json={"labels": {"n1": "Good", "n99": "Nowhere"}})
+        r = _save_labels(client, auth_header, {"n1": "Good", "n99": "Nowhere"})
         assert r.status_code == 404
         assert "n99" in r.json()["detail"]
         assert client.get(BASE + "/overrides", headers=auth_header).json()["total"] == 0
 
     def test_empty_label_text_is_422(self, client, review_db, auth_header):
-        r = client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
-                       json={"labels": {"n1": "  "}})
+        r = _save_labels(client, auth_header, {"n1": "  "})
         assert r.status_code == 422
 
-    def test_a_malformed_token_is_not_a_500(self, client, review_db, auth_header):
-        r = client.get(BASE + "/flowcharts/!!!not-base64!!!/labels", headers=auth_header)
-        assert r.status_code in (400, 404)
+    def test_the_flowchart_id_is_required(self, client, review_db, auth_header):
+        assert client.get(BASE + LABELS, headers=auth_header).status_code == 422
+        assert client.put(BASE + LABELS, headers=auth_header,
+                          json={"labels": {"n1": "x"}}).status_code == 422
 
     def test_an_unknown_flowchart_is_404(self, client, review_db, auth_header):
-        from review import slot
-        r = client.get(BASE + "/flowcharts/%s/labels" % slot.encode("No|Such|fn|"),
-                       headers=auth_header)
-        assert r.status_code == 404
+        assert _read_labels(client, auth_header, "No|Such|fn|").status_code == 404
+        assert _save_labels(client, auth_header, {"n1": "x"}, "No|Such|fn|").status_code == 404
 
 
 class TestASaveReDerivesTheSwe4Specs:
@@ -331,8 +334,7 @@ class TestASaveReDerivesTheSwe4Specs:
         assert "Check whether ready." in [st["text"] for st in self._spec(swe4_db)["testSteps"]]
 
     def test_a_label_save_rebuilds_the_test_steps(self, client, swe4_db, auth_header):
-        r = client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
-                       json={"labels": {"n1": "Check: the device is ready?"}})
+        r = _save_labels(client, auth_header, {"n1": "Check: the device is ready?"})
         assert r.status_code == 200, r.text
         assert r.json()["viewsDerived"] == ["testSpecs", "utExport"]
         steps = [st["text"] for st in self._spec(swe4_db)["testSteps"]]
@@ -348,8 +350,7 @@ class TestASaveReDerivesTheSwe4Specs:
         assert self._spec(swe4_db)["description"] == "Reports whether the device is ready."
 
     def test_an_undo_rebuilds_them_too(self, client, swe4_db, auth_header):
-        client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
-                   json={"labels": {"n1": "Check: the device is ready?"}})
+        _save_labels(client, auth_header, {"n1": "Check: the device is ready?"})
         from review import slot
         r = client.delete(BASE + "/overrides/slot", headers=auth_header,
                           params={"slot_kind": "nodeLabel",
@@ -447,7 +448,7 @@ class TestTheFlowchartEditorHasWhatItNeeds:
     """
 
     def test_every_node_carries_its_own_slot_key(self, client, review_db, auth_header):
-        r = client.get(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header)
+        r = _read_labels(client, auth_header)
         assert r.status_code == 200, r.text
         labels = r.json()["labels"]
         assert labels, "the fixture must have nodes"
@@ -456,16 +457,15 @@ class TestTheFlowchartEditorHasWhatItNeeds:
 
     def test_the_key_is_the_one_the_server_would_build(self, client, review_db, auth_header):
         from review import slot as slot_mod
-        body = client.get(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header).json()
+        body = _read_labels(client, auth_header).json()
         for n in body["labels"]:
             assert n["slotKey"] == slot_mod.for_node(body["flowchartId"], n["nodeId"])
 
     def test_that_key_works_for_undo_and_history(self, client, review_db, auth_header):
         """The point of returning it. Round-trip it through R8 -> R5 -> R4 untouched."""
-        body = client.get(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header).json()
+        body = _read_labels(client, auth_header).json()
         node = body["labels"][0]
-        assert client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
-                          json={"labels": {node["nodeId"]: "Corrected here."}}).status_code == 200
+        assert _save_labels(client, auth_header, {node["nodeId"]: "Corrected here."}).status_code == 200
 
         h = client.get(BASE + "/overrides/history", headers=auth_header,
                        params={"slot_kind": "nodeLabel", "slot_key": node["slotKey"]})
@@ -485,7 +485,7 @@ class TestTheEditorCanDrawTheCorrectedDiagram:
     LABEL = "WP-flag-checked"      # one token: never wrapped onto two lines in the DOT
 
     def _dot(self, client, auth_header):
-        r = client.get(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header)
+        r = _read_labels(client, auth_header)
         assert r.status_code == 200, r.text
         return r.json()["dot"]
 
@@ -494,8 +494,7 @@ class TestTheEditorCanDrawTheCorrectedDiagram:
 
     def test_a_save_redraws_the_diagram_in_the_same_request(self, client, review_db,
                                                             auth_header):
-        put = client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
-                         json={"labels": {"n1": self.LABEL}})
+        put = _save_labels(client, auth_header, {"n1": self.LABEL})
         assert put.status_code == 200, put.text
         assert put.json()["renderPending"] is True      # the PNG is still the old picture ...
         dot = self._dot(client, auth_header)
@@ -503,10 +502,9 @@ class TestTheEditorCanDrawTheCorrectedDiagram:
         assert dot.lstrip().startswith("digraph")
 
     def test_an_undo_takes_the_correction_back_out(self, client, review_db, auth_header):
-        body = client.get(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header).json()
+        body = _read_labels(client, auth_header).json()
         key = next(n["slotKey"] for n in body["labels"] if n["nodeId"] == "n1")
-        client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
-                   json={"labels": {"n1": self.LABEL}})
+        _save_labels(client, auth_header, {"n1": self.LABEL})
         assert client.delete(BASE + "/overrides/slot", headers=auth_header,
                              params={"slot_kind": "nodeLabel", "slot_key": key}).status_code == 200
         dot = self._dot(client, auth_header)
@@ -519,16 +517,14 @@ class TestRenderPendingTellsTheTruth:
                                                                     auth_header):
         """The API host has no output tree, so the text is corrected and the PNG is not. Saying
         otherwise made the UI show "image up to date" while the export blocked on that job."""
-        r = client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
-                       json={"labels": {"n1": "Check the write-protect flag"}})
+        r = _save_labels(client, auth_header, {"n1": "Check the write-protect flag"})
         assert r.status_code == 200, r.text
         assert r.json()["renderPending"] is True
         assert r.json()["renderJobs"]
 
     def test_it_agrees_with_export_readiness(self, client, review_db, auth_header):
         """Two answers to "is the picture current" that disagree is worse than either alone."""
-        put = client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
-                         json={"labels": {"n1": "Corrected."}}).json()
+        put = _save_labels(client, auth_header, {"n1": "Corrected."}).json()
         ready = client.get(BASE + "/export-readiness", headers=auth_header).json()
         assert put["renderPending"] is (ready["pendingRenders"] > 0)
 
@@ -539,12 +535,11 @@ class TestR7ReportsWhatIsInForce:
     means a correction is IN FORCE. An orphan is kept but not applied, so it is not one."""
 
     def _get(self, client, auth_header, node="n1"):
-        body = client.get(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header).json()
+        body = _read_labels(client, auth_header).json()
         return next(n for n in body["labels"] if n["nodeId"] == node)
 
     def test_a_live_correction_carries_its_human_text(self, client, review_db, auth_header):
-        client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
-                   json={"labels": {"n1": "Check the write-protect flag"}})
+        _save_labels(client, auth_header, {"n1": "Check the write-protect flag"})
         n = self._get(client, auth_header)
         assert n["isOverridden"] is True and n["isOrphaned"] is False
         assert n["text"] == n["humanText"] == "Check the write-protect flag"
@@ -573,8 +568,7 @@ class TestR7SeesEveryCorrectionOnItsOwnFlowchart:
     def test_an_older_correction_survives_a_thousand_newer_ones(self, client, review_db,
                                                               auth_header):
         from review import slot
-        assert client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
-                          json={"labels": {"n1": "The oldest correction."}}).status_code == 200
+        assert _save_labels(client, auth_header, {"n1": "The oldest correction."}).status_code == 200
 
         later = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
         with review_db.begin() as cx:
@@ -585,7 +579,7 @@ class TestR7SeesEveryCorrectionOnItsOwnFlowchart:
                  "updated_by": "u1", "updated_at": later}
                 for i in range(1001)])
 
-        body = client.get(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header).json()
+        body = _read_labels(client, auth_header).json()
         n1 = next(n for n in body["labels"] if n["nodeId"] == "n1")
         assert n1["isOverridden"] is True, (
             "a correction on THIS flowchart was lost behind 1,001 newer ones elsewhere")
@@ -603,13 +597,12 @@ class TestKeysCopiedFromSwaggerWork:
 
     def _shown(self, client, auth_header, node="n1"):
         from review import slot as slot_mod
-        r = client.get(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header)
+        r = _read_labels(client, auth_header)
         real = next(n["slotKey"] for n in r.json()["labels"] if n["nodeId"] == node)
         return real.replace(slot_mod.SEP, slot_mod.ESCAPED_SEP)
 
     def _correct(self, client, auth_header, node="n1"):
-        assert client.put(BASE + "/flowcharts/%s/labels" % _token(), headers=auth_header,
-                          json={"labels": {node: "Corrected in Swagger."}}).status_code == 200
+        assert _save_labels(client, auth_header, {node: "Corrected in Swagger."}).status_code == 200
 
     def test_r2_reads_it(self, client, review_db, auth_header):
         self._correct(client, auth_header)
@@ -628,8 +621,7 @@ class TestKeysCopiedFromSwaggerWork:
         r = client.delete(BASE + "/overrides/slot", headers=auth_header,
                           params={"slot_kind": "nodeLabel", "slot_key": self._shown(client, auth_header)})
         assert r.status_code == 200 and r.json()["undone"] is True
-        labels = client.get(BASE + "/flowcharts/%s/labels" % _token(),
-                            headers=auth_header).json()["labels"]
+        labels = _read_labels(client, auth_header).json()["labels"]
         assert next(n["text"] for n in labels if n["nodeId"] == "n1") == "llm n1"
 
 
@@ -646,14 +638,84 @@ class TestAFlowchartIdIsNotANodeKey:
         assert "flowchart id" in r.json()["detail"] and "R7" in r.json()["detail"]
 
 
+class TestANodeKeyIsNotAFlowchartId:
+    """The same mistake the other way round: one node's key sent where R7 and R8 want the whole
+    flowchart. It carries the separator -- really, or as the `\\u0001` a JSON viewer displays."""
+
+    @pytest.mark.parametrize("sep", ["\x01", "\\u0001"], ids=["real", "displayed"])
+    def test_r7_says_so(self, client, review_db, auth_header, sep):
+        r = _read_labels(client, auth_header, FID + sep + "n1")
+        assert r.status_code == 400, r.text
+        assert "one node's key" in r.json()["detail"] and FID in r.json()["detail"]
+
+    @pytest.mark.parametrize("sep", ["\x01", "\\u0001"], ids=["real", "displayed"])
+    def test_r8_says_so_and_saves_nothing(self, client, review_db, auth_header, sep):
+        r = _save_labels(client, auth_header, {"n1": "x"}, FID + sep + "n1")
+        assert r.status_code == 400, r.text
+        assert "one node's key" in r.json()["detail"]
+        assert client.get(BASE + "/overrides", headers=auth_header).json()["total"] == 0
+
+
+class TestAFlowchartIdTravelsAsItIs:
+    """A flowchart is named by its function id -- no second spelling of it. An id carries what a
+    C++ signature carries: `::`, `+`, `&`, `*`, commas and spaces. A client encodes the query as
+    it encodes any other (R2, R4 and R5 already carry keys that way), and R8's is JSON."""
+
+    OP = "Sample-Core|Core|Vec::operator+=|const Vec &, int *"
+
+    @pytest.fixture
+    def op_db(self, review_db):
+        with review_db.begin() as cx:
+            cx.execute(insert(s.version_output_files).values(
+                version_id=VERSION, rel_path="Sample/flowcharts/Vec.json", group_name="Sample",
+                content=json.dumps([{"name": "Vec::operator+=", "functionKey": self.OP,
+                                     "cfg": _cfg("m0", "m1"),
+                                     "flowchart": "digraph G { generated }"}])))
+        return review_db
+
+    def test_r11_lists_it_as_it_is(self, client, op_db, auth_header):
+        rows = client.get(BASE + "/slots", headers=auth_header,
+                          params={"slot_kind": "nodeLabel"}).json()["slots"]
+        assert self.OP in {r["flowchartId"] for r in rows}
+        assert all("flowchartToken" not in r for r in rows)
+
+    def test_r7_and_r8_take_it(self, client, op_db, auth_header):
+        body = _read_labels(client, auth_header, self.OP).json()
+        assert body["flowchartId"] == self.OP and "flowchartToken" not in body
+        assert _save_labels(client, auth_header, {"m1": "Add the other vector"},
+                            self.OP).status_code == 200
+        m1 = next(n for n in _read_labels(client, auth_header, self.OP).json()["labels"]
+                  if n["nodeId"] == "m1")
+        assert m1["text"] == "Add the other vector" and m1["isOverridden"] is True
+
+    def test_a_query_encoded_by_hand_works(self, client, op_db, auth_header):
+        """What Swagger and a browser send: every reserved character percent-encoded."""
+        from urllib.parse import quote
+        r = client.get(BASE + LABELS + "?flowchart_id=" + quote(self.OP, safe=""),
+                       headers=auth_header)
+        assert r.status_code == 200, r.text
+        assert r.json()["flowchartId"] == self.OP
+
+    def test_undo_and_history_take_the_node_key_r7_returns(self, client, op_db, auth_header):
+        _save_labels(client, auth_header, {"m1": "Add the other vector"}, self.OP)
+        key = next(n["slotKey"] for n in _read_labels(client, auth_header, self.OP).json()["labels"]
+                   if n["nodeId"] == "m1")
+        q = {"slot_kind": "nodeLabel", "slot_key": key}
+        hist = client.get(BASE + "/overrides/history", headers=auth_header, params=q).json()
+        assert [h["humanText"] for h in hist["history"]] == ["Add the other vector"]
+        assert client.delete(BASE + "/overrides/slot", headers=auth_header,
+                             params=q).status_code == 200
+        m1 = next(n for n in _read_labels(client, auth_header, self.OP).json()["labels"]
+                  if n["nodeId"] == "m1")
+        assert m1["text"] == "llm m1"
+
+
 # ---------------------------------------------------------------------------
 # The version in the path must be one of the project's own
 # ---------------------------------------------------------------------------
 def _every_route():
     """(label, method, path-after-the-version, request kwargs) -- R1 to R11, each with a minimal
     request it would otherwise accept."""
-    from review import slot
-    tok = slot.encode(FID)
     q = {"slot_kind": "description", "slot_key": FID}
     return [
         ("R1", "get", "/overrides", {}),
@@ -664,8 +726,8 @@ def _every_route():
         ("R6", "put", "/overrides/behaviour", {"json": {"function_id": FID,
                                                         "external_caller_id": CALLER,
                                                         "bullets": ["x"]}}),
-        ("R7", "get", "/flowcharts/%s/labels" % tok, {}),
-        ("R8", "put", "/flowcharts/%s/labels" % tok, {"json": {"labels": {"n1": "x"}}}),
+        ("R7", "get", LABELS, {"params": {"flowchart_id": FID}}),
+        ("R8", "put", LABELS, {"json": {"flowchart_id": FID, "labels": {"n1": "x"}}}),
         ("R9", "get", "/export-readiness", {}),
         ("R10", "get", "/regeneration-queue", {}),
         ("R11", "get", "/slots", {"params": {"slot_kind": "description"}}),
