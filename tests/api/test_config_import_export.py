@@ -83,6 +83,13 @@ class TestWithoutTheRepository:
         assert self.r["expected_uploads"] == {"definitions": "macros.json", "data_dictionary": "dd.csv"}
         assert self.d["definitions"] is None and self.d["data_dictionary"] is None
 
+    def test_each_file_to_upload_says_why(self):
+        checks = " ".join(_texts(self.r, "check"))
+        # a repository path is looked for once the repository is connected ...
+        assert "`macros.json` is read from the repository once it is connected" in checks
+        # ... a path on the machine that wrote the file never is
+        assert "upload `dd.csv` in step 2 -- `C:\\work\\dd.csv` is a path on the machine" in checks
+
     def test_project_settings_are_kept_and_machine_and_server_ones_are_not(self):
         assert self.d["settings"] == {"clang": {"clangArgs": ["--target=arm-none-eabi"]},
                                       "views": {"flowcharts": True, "behaviourDiagram": False}}
@@ -139,6 +146,13 @@ class TestWithTheRepository:
         assert comps[1]["files"] == ["Layer1/Math/Utils.cpp"]
         assert any("`Layer1/App`" in t for t in _texts(r, "check"))
 
+    def test_a_component_none_of_whose_paths_exists_is_left_out_with_its_group(self):
+        r, _ = self._preview(CONFIG.replace(
+            '"groups": {\n', '"groups": {\n        "Ghost": {"Nowhere": "Does/Not/Exist"},\n', 1))
+        names = [g["name"] for g in r["draft"]["architecture_layers"][0]["groups"]]
+        assert names == ["My Sample"]
+        assert any("Ghost / Nowhere (none of its paths" in t for t in _texts(r, "check"))
+
     def test_a_path_spelled_in_another_case_takes_the_repositorys_spelling(self):
         r, _ = self._preview(CONFIG.replace('"Sample/Core"', '"sample/core"'))
         comps = r["draft"]["architecture_layers"][0]["groups"][0]["components"]
@@ -151,6 +165,18 @@ class TestWithTheRepository:
                                              "file_name": "macros.json", "size": 15}
         # the data dictionary is a Windows path: never looked up in the repository
         assert r["expected_uploads"] == {"definitions": None, "data_dictionary": "dd.csv"}
+
+    def test_a_file_the_repository_does_not_have_is_left_to_upload(self):
+        # a downloaded config names the web app's uploads by file name alone
+        r, stored = self._preview(CONFIG.replace('"cfg/macros.json"', '"macros.json"'))
+        assert stored == [] and r["expected_uploads"]["definitions"] == "macros.json"
+        assert any("upload `macros.json` in step 2 -- the repository has no file `macros.json`" in t
+                   for t in _texts(r, "check"))
+
+    def test_a_file_that_cannot_be_read_says_so(self):
+        r, stored = self._preview(read=lambda p: None)
+        assert stored == [] and r["expected_uploads"]["definitions"] == "macros.json"
+        assert any("could not be used -- reading it failed" in t for t in _texts(r, "check"))
 
     def test_an_unusable_file_is_reported_not_stored(self):
         def refuse(data, name, kind):

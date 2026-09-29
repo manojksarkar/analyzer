@@ -209,6 +209,7 @@ def _read_layers(cfg: dict, draft: dict, tree: Optional[_RepoTree], say) -> None
                 rels = [value] if isinstance(value, str) else (
                     [v for v in value if isinstance(v, str)] if isinstance(value, list) else [])
                 files: list = []
+                absent: list = []
                 for rel in rels:
                     full = _join(lpath, rel)
                     if not full:
@@ -216,12 +217,20 @@ def _read_layers(cfg: dict, draft: dict, tree: Optional[_RepoTree], say) -> None
                     if tree is not None:
                         actual = tree.find(full)
                         if actual is None:
-                            missing.append(f"{lname} / {gname} / {cname}: `{full}`")
+                            absent.append(f"`{full}`")
                             continue
                         full = actual
                     if full not in files:
                         files.append(full)
+                if absent and not files:
+                    # None of its paths exists: a component with no files would only produce an
+                    # empty document, so it is left out rather than kept as a husk.
+                    missing.append(f"{lname} / {gname} / {cname} (none of its paths: {', '.join(absent)})")
+                    continue
+                missing.extend(f"{lname} / {gname} / {cname}: {a}" for a in absent)
                 components.append({"name": str(cname), "files": files})
+            if comps and not components:
+                continue                        # every component left out: so is the group
             n_comps += len(components)
             groups.append({"name": str(gname), "components": components})
         n_groups += len(groups)
@@ -279,9 +288,15 @@ def _read_cores(cfg: dict, draft: dict, expected: dict, tree: Optional[_RepoTree
             say(FILLED, f"{label}: `{name}`, read from the repository.")
         else:
             expected[field] = name
-            where = "" if tree is None else " and it is not in the repository"
-            say(CHECK, f"{label}: upload `{name}` in step 2 -- the config points to a file on "
-                       f"the machine that wrote it{where}.")
+            if _is_machine_path(src):
+                say(CHECK, f"{label}: upload `{name}` in step 2 -- `{src}` is a path on the "
+                           f"machine that wrote the config.")
+            elif tree is None:
+                say(CHECK, f"{label}: `{name}` is read from the repository once it is connected "
+                           f"(Test Connection), or upload it in step 2.")
+            else:
+                say(CHECK, f"{label}: upload `{name}` in step 2 -- the repository has no file "
+                           f"`{_norm(src)}`.")
     if core_source(cfg, core, "compileCommands"):
         say(SKIPPED, f"`cores.{core}.compileCommands` (include paths from compile_commands.json) "
                      f"is not imported: the web app has no field for it yet. Add include folders "
@@ -298,7 +313,7 @@ def _from_repository(src: str, kind: str, tree: Optional[_RepoTree], read_file, 
         return None
     data = read_file(actual)
     if data is None:
-        return None
+        return "reading it failed (a file over 5 MB is not read)."
     try:
         return store_file(data, PurePosixPath(actual).name, kind)
     except ValueError as exc:
