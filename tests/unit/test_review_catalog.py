@@ -362,10 +362,12 @@ class TestFlowchartsAreListedPerGraph:
         assert page.total == 1
         assert page.items[0]["nodeCount"] == 3
 
-    def test_it_carries_the_token_r7_takes(self, conn):
+    def test_it_carries_the_id_r7_takes(self, conn):
+        """The function's id, as it is -- no second spelling of the same fact."""
         self._store(conn)
         row = catalog.list_slots(conn, "v1", slot.NODE_LABEL).items[0]
-        assert slot.decode(row["flowchartToken"]) == row["flowchartId"]
+        assert slot.flowchart_id_from_request(row["flowchartId"]) == row["flowchartId"]
+        assert "flowchartToken" not in row
 
     def test_it_counts_the_corrections_on_that_graph(self, conn):
         self._store(conn)

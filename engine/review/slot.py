@@ -29,11 +29,11 @@ generated display name. Parsing is then exact rather than probabilistic. Not the
 A key contains `|`, `:`, `,`, `*` and spaces, and composites contain a control character.
 **Keys therefore travel in a request body or a query parameter, never in a URL path segment** —
 percent-encoding a path segment that may contain a separator is a routing bug waiting to be
-written. `encode()` / `decode()` below give a URL-safe form for the cases that need one.
+written. A flowchart is no exception: it is addressed by its function's id, `flowchart_id`, the
+same way (`flowchart_id_from_request`).
 """
 from __future__ import annotations
 
-import base64
 import hashlib
 from typing import Dict, Iterable, Tuple
 
@@ -144,7 +144,7 @@ ESCAPED_SEP = "\\u0001"
 
 #: Where a caller gets a key of each composite kind, for the error message.
 _KEY_SOURCE = {
-    NODE_LABEL: "Copy `slotKey` for the node from R7 (GET .../flowcharts/{token}/labels) "
+    NODE_LABEL: "Copy `slotKey` for the node from R7 (GET .../flowcharts/labels?flowchart_id=...) "
                 "or from R1",
     BEHAVIOUR_DESCRIPTION: "Copy `slotKey` from R11 (GET .../slots?slot_kind="
                            "behaviourDescription) or from R1",
@@ -189,6 +189,30 @@ def from_request(kind: str, key: str) -> str:
                    _KEY_SOURCE.get(kind, "Copy it from a response"))) from None
         raise
     return canon
+
+
+def flowchart_id_from_request(value: str) -> str:
+    """A flowchart id as a CALLER sent it -> the id. Raises SlotKeyError when it is not one.
+
+    A flowchart is addressed by its function's id (`REQ-ID-04`): the same string that is the key of
+    that function's `description`, and the first part of each of its node-label keys. Which kind of
+    text is meant is never read from the string. The flowchart routes mean node labels by
+    definition, as R3 is told its kind and R6 is the behaviour row -- and a correction is stored
+    under (version, kind, key), so the same string under two kinds is two rows.
+
+    The one mistake worth naming is the reverse of `from_request`'s: one NODE's key sent for the
+    whole flowchart. It carries the separator, really or as the displayed ``\\u0001``; the
+    flowchart id is the part before it.
+    """
+    fid = (value or "").replace(ESCAPED_SEP, SEP).strip()
+    if not fid:
+        raise SlotKeyError("flowchart_id is empty. It is the flowchart's function id: "
+                           "`flowchartId` in R11 (GET .../slots?slot_kind=nodeLabel) and in R7")
+    if SEP in fid:
+        raise SlotKeyError(
+            "flowchart_id is one node's key -- the flowchart id, the separator U+0001, then the "
+            "node id. A flowchart is addressed by its id alone: %r" % fid.split(SEP, 1)[0])
+    return fid
 
 
 def is_valid(kind: str, key: str) -> bool:
@@ -281,25 +305,3 @@ def shape_matches(stored: str, current: str) -> bool:
     becomes decoration.
     """
     return bool(stored) and bool(current) and stored == current
-
-
-# ---------------------------------------------------------------------------
-# URL-safe form
-# ---------------------------------------------------------------------------
-def encode(key: str) -> str:
-    """`key` as a URL-safe token, for the places one must appear in a path.
-
-    base64url without padding: the alphabet is `[A-Za-z0-9_-]`, so nothing needs escaping and
-    no separator inside the key can be mistaken for a path separator.
-    """
-    raw = base64.urlsafe_b64encode((key or "").encode("utf-8")).decode("ascii")
-    return raw.rstrip("=")
-
-
-def decode(token: str) -> str:
-    """The inverse of `encode`. Raises `SlotKeyError` on anything that is not one."""
-    t = (token or "").strip()
-    try:
-        return base64.urlsafe_b64decode(t + "=" * (-len(t) % 4)).decode("utf-8")
-    except Exception:
-        raise SlotKeyError("not a slot-key token: %r" % token) from None

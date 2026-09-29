@@ -798,11 +798,14 @@ Router `api/routes/text_overrides.py`, following the conventions in
 | method | path | requirement |
 |---|---|---|
 | `GET` | `…/versions/{vid}/slots` | `REQ-API-01` — list with current text + `isOverridden`; filter by unit/component/kind, paginated |
-| `GET` | `…/versions/{vid}/slots/{kind}/{key}` | `REQ-API-02` |
-| `PUT` | `…/versions/{vid}/slots/{kind}/{key}` | `REQ-API-03` — one slot per call, the six text kinds |
-| `DELETE` | `…/versions/{vid}/slots/{kind}/{key}` | `REQ-API-04` — undo, restores `llm_text`, keeps the record |
-| `GET` | `…/versions/{vid}/flowcharts/{fcId}/labels` | `REQ-API-02` — every node label of one flowchart |
-| `PUT` | `…/versions/{vid}/flowcharts/{fcId}/labels` | `REQ-API-08` — the changed labels of one flowchart |
+| `GET` | `…/versions/{vid}/overrides/slot?slot_kind=&slot_key=` | `REQ-API-02` |
+| `PUT` | `…/versions/{vid}/overrides/slot` | `REQ-API-03` — one slot per call, the text kinds; kind and key in the body |
+| `DELETE` | `…/versions/{vid}/overrides/slot?slot_kind=&slot_key=` | `REQ-API-04` — undo, restores `llm_text`, keeps the record |
+| `GET` | `…/versions/{vid}/flowcharts/labels?flowchart_id=` | `REQ-API-02` — every node label of one flowchart |
+| `PUT` | `…/versions/{vid}/flowcharts/labels` | `REQ-API-08` — the changed labels of one flowchart; `flowchart_id` in the body |
+
+The full list, with the R-numbers the code and Swagger use: [REVIEW_UPDATE_API_SPEC §3](../spec/REVIEW_UPDATE_API_SPEC.md#3-endpoint-index).
+A key never goes in a path segment — it contains `|`, `:`, `,`, `*`, spaces and a separator.
 
 Pagination on the list is not optional: a version has roughly **57,000 slots**.
 
@@ -810,12 +813,18 @@ Pagination on the list is not optional: a version has roughly **57,000 slots**.
 
 ### 11.1 The flowchart endpoint
 
-`{fcId}` is the function's `entity_key`, base64url-encoded via `slot.encode()` (`REQ-ID-04`). A raw
-`entity_key` contains `|`, `:`, `,`, `*` and spaces, so it does not go in a path segment unencoded.
+The flowchart is named by its function's `entity_key` (`REQ-ID-04`), as `flowchart_id` — in the
+query for the read, in the body for the save, like every other key. It is the same string as the
+key of that function's `description`, which is no clash: the route says the kind (node labels),
+and a correction is stored under (version, kind, key). Until 2026-09-29 the id went in the path,
+base64url-encoded; that gave one flowchart a second spelling for no gain, and was dropped before
+any client used it. One node's key sent as `flowchart_id` is a 400 naming the id it should have
+been (`slot.flowchart_id_from_request`).
 
 ```http
-PUT …/versions/v3/flowcharts/{fcId}/labels
-{ "labels": { "n7": "Check write-protect flag", "n9": "Increment retry count" } }
+PUT …/versions/v3/flowcharts/labels
+{ "flowchart_id": "Layer1.Lib|Lib|libAbs|int",
+  "labels": { "n7": "Check write-protect flag", "n9": "Increment retry count" } }
 ```
 
 **Only changed labels.** The whole flowchart is not submitted. A stale copy of an untouched label

@@ -139,6 +139,9 @@ Rules the spec's tests cannot enforce on the client:
 - **Never build a slot key.** Take `slotKey` from a read — R7 for a flowchart's nodes, R11 for
   everything else — and send it back unchanged. The page payload carries none: find the item in R11
   (same unit, by `label` or `functionName`).
+- **A flowchart is named by R11's `flowchartId`** — `flowchart_id` in R7's query and R8's body. It is
+  not a node's `slotKey` (that is the flowchart id, a separator and the node id); the server
+  answers 400 if one is sent.
 - **`text` is what the document prints.** `isOverridden` means a correction is in force; an orphaned one
   (`isOrphaned`) is not, and its `humanText` is not on the page.
 - **`shownIn: []` means no document prints that text** (in this scope the function is not published).

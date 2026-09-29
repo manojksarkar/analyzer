@@ -217,19 +217,32 @@ class TestShapeMatches:
         assert not slot.shape_matches(None, None)
 
 
-class TestUrlToken:
-    def test_a_token_is_url_safe(self):
-        token = slot.encode(slot.for_node(ENTITY, "n3"))
-        assert all(c.isalnum() or c in "-_" for c in token), token
-        assert "/" not in token and "|" not in token and "=" not in token
+class TestAFlowchartIdFromACaller:
+    """R7 and R8 take a flowchart by its function id, as every other route takes its key: in the
+    query or the body. Which kind of text is meant is the route's, never the string's."""
 
-    def test_a_token_round_trips(self):
-        key = slot.for_behaviour_row(ENTITY, CALLER)
-        assert slot.decode(slot.encode(key)) == key
+    def test_the_id_comes_back_as_sent(self):
+        assert slot.flowchart_id_from_request(ENTITY) == ENTITY
 
-    def test_rubbish_is_refused(self):
+    def test_it_is_the_same_string_as_the_description_key(self):
+        """Not a clash: a correction is stored under (version, kind, key), and the kind comes
+        from the route."""
+        assert slot.flowchart_id_from_request(ENTITY) == slot.for_entity(slot.DESCRIPTION, ENTITY)
+
+    def test_surrounding_spaces_are_dropped(self):
+        assert slot.flowchart_id_from_request("  %s  " % ENTITY) == ENTITY
+
+    @pytest.mark.parametrize("sent", [slot.for_node(ENTITY, "n3"),
+                                      slot.for_node(ENTITY, "n3").replace(slot.SEP, "\\u0001")])
+    def test_one_nodes_key_is_named_as_such(self, sent):
+        """The reverse of `from_request`'s commonest mistake, in both spellings a caller has."""
+        with pytest.raises(slot.SlotKeyError) as exc:
+            slot.flowchart_id_from_request(sent)
+        assert "one node's key" in str(exc.value) and ENTITY in str(exc.value)
+
+    def test_an_empty_id_is_refused(self):
         with pytest.raises(slot.SlotKeyError):
-            slot.decode("!!! not base64 !!!")
+            slot.flowchart_id_from_request("   ")
 
 
 class TestTheKindListMatchesTheSpec:

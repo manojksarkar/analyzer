@@ -90,8 +90,12 @@ character.
 label addressed by its **flowchart id**: labels are stored per node, so a `nodeLabel` key is the
 flowchart id, the separator, then the node id — take the node's `slotKey` from R7.
 
-The one exception is `{flowchart_token}`, the flowchart id in base64url without padding. Its
-alphabet is `[A-Za-z0-9_-]`, so nothing needs escaping. R7 returns both the id and the token.
+**A flowchart is addressed the same way**, by its function id — `flowchartId` in R11 and R7 — sent
+as `flowchart_id` in R7's query and R8's body. It is the same string as the key of that function's
+`description`, and that is not a clash: which kind of text a key names never comes from the key. It
+comes from `slot_kind` (R2, R3, R4, R5) or from the route itself (R6 is a behaviour row, R7 and R8
+are node labels), and a correction is stored under (version, kind, key). Sending one node's
+`slotKey` where a flowchart id belongs is a 400 that names the flowchart id it should have been.
 
 ---
 
@@ -105,8 +109,8 @@ alphabet is `[A-Za-z0-9_-]`, so nothing needs escaping. R7 returns both the id a
 | **R4** | DELETE | `/projects/{projectId}/versions/{versionId}/overrides/slot` | Undo — restore the LLM original |
 | **R5** | GET | `/projects/{projectId}/versions/{versionId}/overrides/history` | The retained edits of one slot |
 | **R6** | PUT | `/projects/{projectId}/versions/{versionId}/overrides/behaviour` | Correct one Dynamic Behaviour row |
-| **R7** | GET | `/projects/{projectId}/versions/{versionId}/flowcharts/{flowchartToken}/labels` | Every node label of one flowchart |
-| **R8** | PUT | `/projects/{projectId}/versions/{versionId}/flowcharts/{flowchartToken}/labels` | Correct a flowchart, one call |
+| **R7** | GET | `/projects/{projectId}/versions/{versionId}/flowcharts/labels` | Every node label of one flowchart (`?flowchart_id=`) |
+| **R8** | PUT | `/projects/{projectId}/versions/{versionId}/flowcharts/labels` | Correct a flowchart, one call |
 | **R9** | GET | `/projects/{projectId}/versions/{versionId}/export-readiness` | Would exporting now ship stale text? |
 | **R10** | GET | `/projects/{projectId}/versions/{versionId}/regeneration-queue` | Slots needing regeneration because a correction invalidated them |
 | **R11** | GET | `/projects/{projectId}/versions/{versionId}/slots` | What **can** be edited — the slots themselves, with their text and key |
@@ -177,9 +181,9 @@ reaches the page and the Word file with the next re-export (§14).
 
 | step | call | why |
 |---|---|---|
-| 1 | R11 `GET /versions/{versionId}/slots?slot_kind=nodeLabel&unit=<unit>` | one row per flowchart, with its `flowchartToken`. Coming from the page, match the flowchart by `functionName` within its unit — the page carries no tokens (§17) |
-| 2 | R7 `GET /versions/{versionId}/flowcharts/{flowchartToken}/labels` | every node's `nodeId`, `text` and `slotKey`, and the diagram as `dot`. Draw the diagram; list the labels for editing |
-| 3 | R8 `PUT /versions/{versionId}/flowcharts/{flowchartToken}/labels` with `{"labels": {"<nodeId>": "<text>"}}` | **only the labels that changed**, all in one call |
+| 1 | R11 `GET /versions/{versionId}/slots?slot_kind=nodeLabel&unit=<unit>` | one row per flowchart, with its `flowchartId`. Coming from the page, match the flowchart by `functionName` within its unit — the page carries no tokens (§17) |
+| 2 | R7 `GET /versions/{versionId}/flowcharts/labels?flowchart_id=<flowchartId>` | every node's `nodeId`, `text` and `slotKey`, and the diagram as `dot`. Draw the diagram; list the labels for editing |
+| 3 | R8 `PUT /versions/{versionId}/flowcharts/labels` with `{"flowchart_id": "<flowchartId>", "labels": {"<nodeId>": "<text>"}}` | **only the labels that changed**, all in one call |
 | 4 | R7 again | redraw from `dot`: the correction shows at once. `renderPending: true` is about the PNG in the Word file only |
 
 ### Flow 5 — undo and history, any kind
@@ -643,23 +647,22 @@ the callee's name — so there is nothing to redraw and no render job.
 
 ## 12. R7 — read a flowchart's labels
 
-`GET /projects/{projectId}/versions/{versionId}/flowcharts/{flowchartToken}/labels`
+`GET /projects/{projectId}/versions/{versionId}/flowcharts/labels?flowchart_id=<flowchartId>`
 
-A flowchart **is one function's control-flow graph**, so `flowchartToken` is that function's entity
-key in base64url without padding (`REQ-ID-04`). One request opens the editor; one R8 saves it.
+A flowchart **is one function's control-flow graph**, so it is named by that function's entity key
+— `flowchartId` in R11 (`REQ-ID-04`). One request opens the editor; one R8 saves it.
 
-**Path parameters**
+**Query parameters**
 
-| name | type | notes |
-|---|---|---|
-| `flowchartToken` | string | base64url, no padding. e.g. `Layer2.Gpio\|GpioDrv\|Gpio_Init\|void` → `TGF5ZXIyLkdwaW98R3Bpb0RydnxHcGlvX0luaXR8dm9pZA` |
+| name | type | required | notes |
+|---|---|---|---|
+| `flowchart_id` | string | **yes** | the function's id, e.g. `Layer2.Gpio\|GpioDrv\|Gpio_Init\|void`. URL-encoded like any query value: `\|` → `%7C`, a space → `%20`, and a `+` (`operator+`) → `%2B`, which an unencoded query would read as a space |
 
 **Response 200**
 
 | field | type | notes |
 |---|---|---|
-| `flowchartId` | string | the decoded entity key |
-| `flowchartToken` | string | echoed |
+| `flowchartId` | string | the flowchart id, as sent |
 | `functionName` | string \| null | display name, e.g. `Gpio_Init` |
 | `labels` | object[] | **every** node, in graph order — corrected or not |
 | `graphAvailable` | boolean | `false` when the stored output carries no graph; `labels` is then `[]` |
@@ -676,7 +679,6 @@ key in base64url without padding (`REQ-ID-04`). One request opens the editor; on
 ```json
 {
   "flowchartId": "Layer2.Gpio|GpioDrv|Gpio_Init|void",
-  "flowchartToken": "TGF5ZXIyLkdwaW98R3Bpb0RydnxHcGlvX0luaXR8dm9pZA",
   "functionName": "Gpio_Init",
   "labels": [
     { "nodeId": "n0", "slotKey": "Layer2.Gpio|GpioDrv|Gpio_Init|void\u0001n0",
@@ -695,8 +697,9 @@ key in base64url without padding (`REQ-ID-04`). One request opens the editor; on
 
 | code | when |
 |---|---|
-| 400 | `flowchartToken` is not valid base64url |
+| 400 | `flowchart_id` is empty, or is one node's `slotKey` — the flowchart id is the part before the separator, and `detail` names it |
 | 404 | no flowchart stored for that function in this version |
+| 422 | `flowchart_id` missing |
 | 401 / 403 / 503 | see §16 |
 
 **An empty `labels` list is not always an empty flowchart.** `cfg` has only been stored since
@@ -710,16 +713,18 @@ its graph is not, and those are different things to fix.
 
 ## 13. R8 — correct a flowchart, in one call
 
-`PUT /projects/{projectId}/versions/{versionId}/flowcharts/{flowchartToken}/labels`
+`PUT /projects/{projectId}/versions/{versionId}/flowcharts/labels`
 
 **Request body**
 
 | field | type | required | notes |
 |---|---|---|---|
+| `flowchart_id` | string | **yes** | the function's id — `flowchartId` from R11 or R7 |
 | `labels` | object | **yes** | `{nodeId: text}` — **only the labels the reviewer changed** |
 
 ```json
-{ "labels": { "n7": "Check the write-protect flag", "n9": "Increment the retry count" } }
+{ "flowchart_id": "Layer2.Gpio|GpioDrv|Gpio_Init|void",
+  "labels": { "n7": "Check the write-protect flag", "n9": "Increment the retry count" } }
 ```
 
 Three rules (`REQ-API-08`):
@@ -735,7 +740,7 @@ Three rules (`REQ-API-08`):
 
 | field | type | notes |
 |---|---|---|
-| `flowchartId` | string | the decoded entity key |
+| `flowchartId` | string | the flowchart id, as sent |
 | `applied` | string[] | node ids written |
 | `firstEdits` | string[] | the subset that had no correction before |
 | `slotShape` | string \| null | sha256 hex (64 chars) of the graph these labels were written against — see below |
@@ -776,10 +781,10 @@ and R5 still work on a single `nodeLabel` slot key.
 
 | code | when |
 |---|---|
-| 400 | `flowchartToken` is not valid base64url |
+| 400 | `flowchart_id` is empty, or is one node's `slotKey` — `detail` names the flowchart id |
 | 404 | the flowchart, or a node id named in `labels`, does not exist — `detail` names it |
 | 409 | the flowchart has no stored graph (see R7). Re-derive the version first |
-| 422 | a label is empty or whitespace-only |
+| 422 | a label is empty or whitespace-only; or `flowchart_id` or `labels` missing |
 | 401 / 403 / 503 | see §16 |
 
 ---
@@ -1002,12 +1007,11 @@ A row, for the six per-slot kinds:
 
 **`nodeLabel` is listed per FLOWCHART, not per node.** A version holds ~42,000 node labels; one row
 each would be hundreds of pages of something nobody reads linearly. A flowchart is one function's
-graph, so each row carries the token **R7** takes:
+graph, so each row carries the `flowchartId` **R7** and **R8** take:
 
 ```json
 { "slotKind": "nodeLabel",
   "flowchartId": "Layer1.Sample-Core|Core|coreAdd|int,int",
-  "flowchartToken": "TGF5ZXIxLlNhbXBsZS1Db3JlfENvcmV8Y29yZUFkZHxpbnQsaW50",
   "functionName": "coreAdd", "component": "Layer1.Sample-Core", "unit": "Core",
   "nodeCount": 7, "overriddenCount": 1, "shownIn": ["Layer1.Sample-Core|Core"] }
 ```
@@ -1066,7 +1070,7 @@ Error bodies are `{"detail": "…"}`, except 401 (an object, §4) and 422 from s
 
 | Code | When |
 |---|---|
-| 400 | malformed slot key or flowchart token |
+| 400 | malformed slot key, or one node's key sent as a flowchart id (R7, R8) |
 | 401 | missing, malformed or non-access Bearer token |
 | 403 | not a member of the project |
 | 404 | a version that is not one of the project's (every endpoint; a tag sent instead of the id is answered with the id — §3), or an unknown slot, flowchart, or node named in a flowchart save |

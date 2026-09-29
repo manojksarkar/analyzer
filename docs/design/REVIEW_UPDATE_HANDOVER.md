@@ -377,8 +377,12 @@ A node's slot key is `flowchartId + U+0001 + nodeId`, and `REQ-ID-01` says a key
 server and **never** by hand. R7 is what a flowchart editor opens with, so if R7 does not return
 each node's `slotKey`, undo and history on a single label are impossible without breaking that
 rule. The same test applies to any field added later: if the UI must send it, a read must supply it.
+The flowchart itself is named by R11's `flowchartId`, sent back as `flowchart_id` — in R7's query and
+R8's body, like every other key (2026-09-29c; a base64 token in the path gave the one id a second
+spelling). A node's `slotKey` sent there is a 400 that names the flowchart id.
 
-→ `test_review_overrides_api.py::TestTheFlowchartEditorHasWhatItNeeds`.
+→ `test_review_overrides_api.py::TestTheFlowchartEditorHasWhatItNeeds`,
+`::TestANodeKeyIsNotAFlowchartId`, `::TestAFlowchartIdTravelsAsItIs`.
 
 ### 4.18 `text` is what the document prints — never the override row
 
