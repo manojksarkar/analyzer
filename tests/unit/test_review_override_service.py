@@ -21,7 +21,7 @@ sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 
 from api.db.postgres import schema as s
-from review import derive, override_service as svc, resolver, slot
+from review import cascade, derive, override_service as svc, resolver, slot
 
 FID = "Comp|UnitA|GCM_SetGcStartTime|PUINT32"
 GID = "Comp|UnitA|gRetryCount"
@@ -405,6 +405,177 @@ class TestTheViewMapping:
         scoped = derive.scoped_config(cfg, "Comp")
         assert scoped["_analyzerAllowedComponents"] == ["Comp"]
         assert "_analyzerAllowedComponents" not in cfg
+
+
+class TestAnOrphanedCorrection:
+    """An orphan was written for code that has since changed. It is kept (REQ-ID-03) but never
+    applied, so the model holds the fresh LLM text for the new code -- and THAT is the slot's
+    original now. A new edit starts a new correction; an undo has nothing of its own to restore."""
+
+    KEY = slot.for_entity(slot.DESCRIPTION, FID)
+
+    def _orphan(self, conn):
+        conn.execute(sa.insert(s.text_overrides).values(
+            version_id="v1", slot_kind=slot.DESCRIPTION, slot_key=self.KEY,
+            llm_text="Written for the old code.", human_text="Corrected for the old code.",
+            is_orphaned=True, updated_at=datetime.datetime.now(datetime.timezone.utc)))
+
+    def test_a_new_edit_is_a_first_edit_against_the_current_text(self, conn):
+        self._orphan(conn)
+        out = _apply(conn, svc.ModelAccess(artifacts=_model()), slot.DESCRIPTION, self.KEY,
+                     "Corrected for the new code.")
+        assert out.first_edit and out.previous_text == "Sets the time."
+        row = svc.get_override(conn, "v1", slot.DESCRIPTION, self.KEY)
+        assert row.llm_text == "Sets the time."             # not the old code's original
+        assert row.human_text == "Corrected for the new code."
+        assert not row.is_orphaned
+
+    def test_undo_after_it_restores_the_current_llm_text(self, conn):
+        """Keeping the orphan's `llm_text` would restore a sentence about code that is gone."""
+        self._orphan(conn)
+        m = svc.ModelAccess(artifacts=_model())
+        _apply(conn, m, slot.DESCRIPTION, self.KEY, "Corrected for the new code.")
+        svc.undo_override(conn, "v1", slot.DESCRIPTION, self.KEY, models=m)
+        assert m.artifact("functions")[FID]["description"] == "Sets the time."
+
+    def test_undoing_the_orphan_itself_is_refused(self, conn):
+        self._orphan(conn)
+        m = svc.ModelAccess(artifacts=_model())
+        with pytest.raises(svc.NothingToUndo, match="orphaned") as exc:
+            svc.undo_override(conn, "v1", slot.DESCRIPTION, self.KEY, models=m)
+        assert exc.value.status == 409
+        assert m.artifact("functions")[FID]["description"] == "Sets the time."
+
+
+class TestTheSavedSlotOwesNothing:
+    """REQ-CS-03. A regeneration queued for a slot before a human corrected it would pay for an
+    LLM call whose answer the correction then replaces."""
+
+    def test_a_save_clears_its_own_queue_entry(self, conn):
+        key = slot.for_entity(slot.DESCRIPTION, FID)
+        cascade.enqueue(conn, "v1", [cascade.Dependent(slot.DESCRIPTION, key, "a callee")])
+        _apply(conn, svc.ModelAccess(artifacts=_model()), slot.DESCRIPTION, key, "Human words.")
+        assert (slot.DESCRIPTION, key) not in {(r.slot_kind, r.slot_key)
+                                               for r in cascade.pending(conn, "v1")}
+
+    def test_what_it_invalidates_is_still_queued(self, conn):
+        """Its own entry goes; the unit it feeds is queued as before."""
+        key = slot.for_entity(slot.DESCRIPTION, FID)
+        _apply(conn, svc.ModelAccess(artifacts=_model()), slot.DESCRIPTION, key, "Human words.")
+        assert (slot.UNIT_DESCRIPTION, slot.for_unit(UNIT)) in {
+            (r.slot_kind, r.slot_key) for r in cascade.pending(conn, "v1")}
+
+
+class TestOneSaveAtATime:
+    """`_serialize_saves`: a transaction-scoped advisory lock per version on PostgreSQL."""
+
+    class _Conn:
+        def __init__(self, dialect):
+            self.dialect = type("D", (), {"name": dialect})()
+            self.calls = []
+
+        def execute(self, stmt, params=None):
+            self.calls.append((str(stmt), params))
+
+    def test_postgres_takes_a_lock_per_version(self):
+        a, b = self._Conn("postgresql"), self._Conn("postgresql")
+        svc._serialize_saves(a, "ver-1")
+        svc._serialize_saves(b, "ver-1")
+        (sql, params), = a.calls
+        assert "pg_advisory_xact_lock" in sql
+        assert b.calls == a.calls, "one version, one lock"
+        assert -2 ** 63 <= params["k"] < 2 ** 63
+        c = self._Conn("postgresql")
+        svc._serialize_saves(c, "ver-2")
+        assert c.calls[0][1] != params, "another version does not wait on this one"
+
+    def test_sqlite_needs_none(self, conn):
+        spy = self._Conn("sqlite")
+        svc._serialize_saves(spy, "v1")
+        assert spy.calls == []
+
+
+class TestASaveWritesOneRow:
+    """`ModelAccess.save` against a stored model: the one field of the one entity, nothing else.
+
+    It used to hand the whole artifact to the repository, whose flush runs `clear_version` and
+    `persist_model` over the entire version -- from a snapshot read before the save's transaction.
+    Two saves at once, or a save beside a Phase-2 run, then put back whatever the other had just
+    changed. Here the snapshot is read, ANOTHER save changes a different function, and this save
+    must not undo it."""
+
+    OTHER = "Comp|UnitA|GCM_Other|void"
+
+    @pytest.fixture
+    def engine(self, monkeypatch):
+        from sqlalchemy.pool import StaticPool
+        from core import db as coredb, model_store
+        eng = sa.create_engine("sqlite://", connect_args={"check_same_thread": False},
+                               poolclass=StaticPool)
+        s.metadata.create_all(eng)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        with eng.begin() as cx:
+            cx.execute(sa.insert(s.projects).values(id="p", name="p", created_at=now))
+            cx.execute(sa.insert(s.versions).values(id="v1", project_id="p", version="v1",
+                                                    created_at=now))
+            model_store.persist_model(
+                cx, "p", "v1",
+                functions={FID: {"qualifiedName": "ns::GCM_SetGcStartTime",
+                                 "description": "Sets the time."},
+                           self.OTHER: {"qualifiedName": "ns::GCM_Other",
+                                        "description": "Does the other thing."}},
+                globals={}, datadict={}, edges={"typeUsers": {}, "macroUsers": {}},
+                hashes={FID: "h1", self.OTHER: "h2"},
+                units={UNIT: {"name": "UnitA", "path": "a", "fileName": "a.cpp",
+                              "includedHeaders": [], "description": "Manages GC."}},
+                components={}, summaries={})
+        monkeypatch.setattr(coredb, "get_engine", lambda *a, **k: eng)
+        return eng
+
+    def _functions(self, eng):
+        from core import model_store
+        with eng.connect() as cx:
+            return model_store.load_functions(cx, "v1")
+
+    def test_a_save_does_not_put_back_what_another_changed(self, engine):
+        from core import model_store
+        m = svc.ModelAccess(version_id="v1", project_id="p")
+        m.artifact("functions")                       # the snapshot, before either save
+        with engine.begin() as cx:                    # another save, on another function
+            model_store.set_entity_field(cx, "v1", self.OTHER, "description",
+                                         "Another reviewer's words.", ("function",))
+        with engine.begin() as cx:
+            out = svc.apply_override(cx, "v1", slot.DESCRIPTION,
+                                     slot.for_entity(slot.DESCRIPTION, FID), "This save's words.",
+                                     models=m)
+        assert list(out.artifacts_written) == ["functions"]
+        fns = self._functions(engine)
+        assert fns[FID]["description"] == "This save's words."
+        assert fns[self.OTHER]["description"] == "Another reviewer's words."
+
+    def test_a_unit_description_is_one_column(self, engine):
+        from core import model_store
+        with engine.begin() as cx:
+            svc.apply_override(cx, "v1", slot.UNIT_DESCRIPTION, slot.for_unit(UNIT), "Runs GC.",
+                               models=svc.ModelAccess(version_id="v1", project_id="p"))
+        with engine.connect() as cx:
+            assert model_store.load_units(cx, "v1")[UNIT]["description"] == "Runs GC."
+
+    def test_a_model_replaced_under_the_save_is_409_and_saves_nothing(self, engine):
+        """A run regenerating the version replaced the row the save read: the save must fail,
+        not report a correction that stored nothing."""
+        m = svc.ModelAccess(version_id="v1", project_id="p")
+        m.artifact("functions")
+        with engine.begin() as cx:
+            cx.execute(sa.delete(s.entity_versions).where(s.entity_versions.c.version_id == "v1"))
+        with pytest.raises(svc.VersionBusy) as exc:
+            with engine.begin() as cx:
+                svc.apply_override(cx, "v1", slot.DESCRIPTION,
+                                   slot.for_entity(slot.DESCRIPTION, FID), "Lost words.", models=m)
+        assert exc.value.status == 409
+        with engine.connect() as cx:
+            assert svc.get_override(cx, "v1", slot.DESCRIPTION,
+                                    slot.for_entity(slot.DESCRIPTION, FID)) is None
 
 
 class TestModelAccess:

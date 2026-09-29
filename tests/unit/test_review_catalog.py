@@ -321,6 +321,23 @@ class TestNarrowing:
         assert catalog.list_slots(conn, "v1", slot.DESCRIPTION, models=models,
                                   component="Nope").total == 0
 
+    @pytest.mark.parametrize("asked", ["Layer1.My Sample", "layer1.my-sample",
+                                       "Layer1.My-Sample"])
+    def test_a_component_is_matched_however_it_is_spelled(self, conn, asked):
+        """A key spells a component with hyphens, the config and the CLI with spaces. The
+        spaced spelling used to match nothing -- an empty list, read as "no slots here"."""
+        fn = "Layer1.My-Sample|Core|ns::f|void"
+        m = svc.ModelAccess(artifacts={"functions": {fn: {"name": "f", "description": "F."}},
+                                       "globalVariables": {}, "units": {},
+                                       "dataDictionary": {}})
+        page = catalog.list_slots(conn, "v1", slot.DESCRIPTION, models=m, component=asked)
+        assert _keys(page) == [fn]
+        conn.execute(sa.insert(s.version_output_files).values(
+            version_id="v1", rel_path="G/flowcharts/Core.json", group_name="G",
+            content=json.dumps([{"name": "f", "functionKey": fn,
+                                 "cfg": {"nodes": [{"id": "n0"}], "edges": []}}])))
+        assert catalog.list_slots(conn, "v1", slot.NODE_LABEL, component=asked).total == 1
+
     def test_a_struct_filter_nothing_can_answer_is_refused_not_ignored(self, conn, models):
         """No stored unit header rows at all: nothing says where a struct is shown. A filter
         that silently does nothing is worse than one that is rejected -- the caller reads the

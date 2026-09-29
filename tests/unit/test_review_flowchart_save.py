@@ -166,6 +166,21 @@ class TestHistory:
         assert set(first.first_edits) == {"n0", "n1"}
         assert set(second.first_edits) == {"n2"}
 
+    def test_an_orphaned_label_starts_a_new_correction(self, conn):
+        """The orphan was written for a graph that has since changed and is never applied, so
+        the stored label is fresh LLM text -- the slot's original now. Keeping the orphan's
+        `llm_text` would make an undo put back a label for a statement that is gone."""
+        key = slot.for_node(FID, "n1")
+        conn.execute(sa.insert(s.text_overrides).values(
+            version_id="v1", slot_kind=slot.NODE_LABEL, slot_key=key,
+            llm_text="label of the old graph", human_text="corrected, old graph",
+            is_orphaned=True, updated_at=datetime.datetime.now(datetime.timezone.utc)))
+        out = _save(conn, {"n1": "corrected, new graph"})
+        assert set(out.first_edits) == {"n1"}
+        row = svc.get_override(conn, "v1", slot.NODE_LABEL, key)
+        assert (row.llm_text, row.human_text) == ("llm n1", "corrected, new graph")
+        assert not row.is_orphaned
+
 
 class TestDerivation:
     def test_one_derivation_for_the_whole_call(self, conn):

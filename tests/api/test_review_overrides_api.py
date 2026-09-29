@@ -899,3 +899,92 @@ class TestR11SaysWhereATextIsShown:
         assert row["shownIn"] == ["Sample-Core|Core"]
         flow = self._slots(client, auth_header, "nodeLabel")[0]
         assert flow["shownIn"] == ["Sample-Core|Core"]
+
+
+class TestAnErrorSaysWhoseFaultItIs:
+    """`_as_http`. A refusal the service chose keeps its own status; everything else was a 400,
+    which told the client to fix a request that was fine -- and handed it an internal message
+    (a SQL error, a Python `KeyError`) as the reason."""
+
+    def _put(self, client, auth_header, key=FID, text="Words."):
+        return client.put(BASE + "/overrides/slot", headers=auth_header,
+                          json={"slot_kind": "description", "slot_key": key, "text": text})
+
+    def test_an_unexpected_error_is_a_500_that_leaks_nothing(self, client, review_db,
+                                                             auth_header, monkeypatch):
+        from review import override_service
+
+        def _boom(*a, **k):
+            raise KeyError("internal_detail_nobody_outside_should_see")
+        monkeypatch.setattr(override_service, "apply_override", _boom)
+        r = self._put(client, auth_header)
+        assert r.status_code == 500
+        assert "internal_detail" not in r.text
+        assert "server log" in r.json()["detail"]
+
+    def test_a_malformed_key_keeps_its_own_400(self, client, review_db, auth_header):
+        """Raised by the route itself, inside the block: passed through, not re-wrapped as
+        "400: 400: ..."."""
+        r = self._put(client, auth_header, key="one\x01two")
+        assert r.status_code == 400
+        assert not r.json()["detail"].startswith("400")
+
+    def test_a_lost_race_for_the_slot_is_a_409(self, client, review_db, auth_header,
+                                               monkeypatch):
+        from sqlalchemy.exc import IntegrityError
+        from review import override_service
+
+        def _race(*a, **k):
+            raise IntegrityError("INSERT INTO text_overrides", {}, Exception("UNIQUE"))
+        monkeypatch.setattr(override_service, "apply_override", _race)
+        r = self._put(client, auth_header)
+        assert r.status_code == 409 and "save again" in r.json()["detail"]
+
+    def test_a_model_replaced_under_the_save_is_a_409_and_saves_nothing(
+            self, client, review_db, auth_header, monkeypatch):
+        """A run regenerating the version replaced the row between the save's read and its
+        write. The one-row write finds nothing to update and says so."""
+        from core import model_store
+
+        def _gone(*a, **k):
+            raise model_store.ModelRowMissing("replaced while it was being written")
+        monkeypatch.setattr(model_store, "set_entity_field", _gone)
+        r = self._put(client, auth_header)
+        assert r.status_code == 409 and "regenerating" in r.json()["detail"]
+        got = client.get(BASE + "/overrides/slot", headers=auth_header,
+                         params={"slot_kind": "description", "slot_key": FID})
+        assert got.status_code == 404, "nothing was saved"
+
+
+class TestAnOrphanOverHttp:
+    def test_undoing_it_is_a_409_that_says_why(self, client, review_db, auth_header):
+        with review_db.begin() as cx:
+            cx.execute(insert(s.text_overrides).values(
+                version_id=VERSION, slot_kind="description", slot_key=FID,
+                llm_text="About the old code.", human_text="Corrected, old code.",
+                is_orphaned=True, updated_at=datetime.datetime.now(datetime.timezone.utc)))
+        r = client.delete(BASE + "/overrides/slot", headers=auth_header,
+                          params={"slot_kind": "description", "slot_key": FID})
+        assert r.status_code == 409 and "orphaned" in r.json()["detail"]
+
+    def test_a_new_edit_is_a_first_edit(self, client, review_db, auth_header):
+        with review_db.begin() as cx:
+            cx.execute(insert(s.text_overrides).values(
+                version_id=VERSION, slot_kind="description", slot_key=FID,
+                llm_text="About the old code.", human_text="Corrected, old code.",
+                is_orphaned=True, updated_at=datetime.datetime.now(datetime.timezone.utc)))
+        r = client.put(BASE + "/overrides/slot", headers=auth_header,
+                       json={"slot_kind": "description", "slot_key": FID,
+                             "text": "Corrected, new code."})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["firstEdit"] is True and body["llmText"] == "Does the thing."
+
+
+class TestR11MatchesAComponentHoweverItIsSpelled:
+    @pytest.mark.parametrize("asked", ["Sample Core", "Sample-Core", "sample-core"])
+    def test_the_config_spelling_finds_it(self, client, review_db, auth_header, asked):
+        r = client.get(BASE + "/slots", headers=auth_header,
+                       params={"slot_kind": "description", "component": asked})
+        assert r.status_code == 200, r.text
+        assert [x["slotKey"] for x in r.json()["slots"]] == [FID]
