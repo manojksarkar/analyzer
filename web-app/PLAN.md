@@ -34,8 +34,10 @@ refresh — on PostgreSQL, admin and developer roles.
   detection (the API never sets `stale`).
 - **Run modal** — pause after Phase 1 (disabled: the runner ignores it).
 - **Documents** — reviewer batch/assign picker; per-section review endpoint.
-- **Accounts** — nothing creates a user (no sign-up, no admin create), and a pending invite never becomes
-  active (no accept flow).
+- **Accounts** — nothing creates a user (no sign-up, no admin create), nothing changes a password (the
+  default `admin@aspice.dev` / `admin` stays as it is), and a pending invite never becomes active (no
+  accept flow). Projects onboarded with the CLI have no members, so they never show in the web app
+  (`review_update_v2` adds `analyzer.py grant`).
 - **Projects / shell** — project discovery/search ("Request Access"); Archive; Profile, Help; a project
   Settings page (build config and data dictionary cannot change after creation); SSO; forgot password.
 - **Runs** — a job left `running` by an API restart stays so until cancelled (no stale-job sweep; a sweep is

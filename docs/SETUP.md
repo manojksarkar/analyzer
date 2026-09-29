@@ -97,7 +97,8 @@ python -m uvicorn api.main:app --port 8000
 ```
 
 It prints which database it is using. On a database with no users it creates `admin@aspice.dev` /
-`admin` — change that password after the first sign-in.
+`admin`. Nothing can change a password yet (no endpoint, page or command), so do not expose this
+server beyond your machine or a trusted network.
 
 **Web app** (port 5173):
 

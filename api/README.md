@@ -23,7 +23,8 @@ python -m uvicorn api.main:app --port 8000
 The database comes from `DATABASE_URL`, else the `db` section of
 `engine/config/config.local.json`; the server prints which one at start-up. With neither, it runs an
 in-memory test backend that keeps nothing across a restart. A database with no users gets
-`admin@aspice.dev` / `admin` at start-up — change it after the first sign-in.
+`admin@aspice.dev` / `admin` at start-up. Nothing can change a password yet (no endpoint), so keep
+this server off untrusted networks.
 
 | URL | Description |
 |---|---|
