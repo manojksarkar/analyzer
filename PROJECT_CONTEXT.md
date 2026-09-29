@@ -42,7 +42,8 @@ newer entry and the code win.
 >   HTTP: [docs/spec/REVIEW_UPDATE_API_SPEC.md](docs/spec/REVIEW_UPDATE_API_SPEC.md).
 > - Code lives in `engine/review/`; the rules for engine code that touches it are in the `engine-dev`
 >   skill §8. Reasoning for every decision is in the dated history ([project-context/history/](project-context/history/)): the feature 2026-09-16 →
->   2026-09-20, the rebase onto develop 2026-09-26f → 2026-09-27d.
+>   2026-09-20, the rebase onto develop 2026-09-26f → 2026-09-27d, the export guard per document
+>   and the save-time SWE.4 re-derive 2026-09-29.
 
 - **The PR is not opened yet** (2026-09-28). `develop` is the integration branch: work branches open
   their PR into it, and `main` has not moved since 2026-07-02. `review_update_v2` was cut from
@@ -122,7 +123,7 @@ The big shifts since most of §1–§24 were written. Each names its dated entry
   superuser who reaches every project (2026-09-22, 2026-09-22b); web-app runs go through
   `analyzer.py generate` (2026-09-26); a sign-in lasts a working day (2026-09-26b); a re-export is a job
   of its own (2026-09-26d).
-- **Review & update** — reviewers correct LLM-written text (2026-09-16 → 2026-09-27d); see
+- **Review & update** — reviewers correct LLM-written text (2026-09-16 → 2026-09-29); see
   [Current state](#current-state).
 - **Tools.** `tools/doccheck/` compares two generated documents by content (2026-09-22);
   `tools/audit_project.py` audits what a project stored (2026-09-05c).
@@ -138,7 +139,7 @@ The big shifts since most of §1–§24 were written. Each names its dated entry
 | work on incremental runs, baselines, reuse, the narrowed parse | [INCREMENTAL.md](project-context/INCREMENTAL.md); skill `engine-flowchart` |
 | work on the database or storage | [docs/design/DB_SCHEMA.md](docs/design/DB_SCHEMA.md), [PRODUCTION_REDESIGN.md](project-context/PRODUCTION_REDESIGN.md), [docs/production-redesign/](docs/production-redesign/) 07–10 |
 | work on the API or the web app | [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md), [api/PROJECT_CONTEXT.md](api/PROJECT_CONTEXT.md), [web-app/PROJECT_CONTEXT.md](web-app/PROJECT_CONTEXT.md); skill `ui-dev` |
-| work on review & update | [docs/design/REVIEW_UPDATE_HANDOVER.md](docs/design/REVIEW_UPDATE_HANDOVER.md); skill `engine-dev` §8; the history 2026-09-16 → 2026-09-27d |
+| work on review & update | [docs/design/REVIEW_UPDATE_HANDOVER.md](docs/design/REVIEW_UPDATE_HANDOVER.md); skill `engine-dev` §8; the history 2026-09-16 → 2026-09-29 |
 | debug a failure that "cannot happen" | [RISKS_DECISIONS_LESSONS.md](project-context/RISKS_DECISIONS_LESSONS.md) — known risks, decisions, past mistakes |
 | find out why something is the way it is | the [history](#history) — search the date or a keyword |
 

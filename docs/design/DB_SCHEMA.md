@@ -236,15 +236,19 @@ erDiagram
     }
     view_derivations {
         string version_id PK
-        string view_name PK "PIPELINE_ALL = one whole Phase-3 run"
-        string group_name PK
+        string view_name PK "a view: interfaceTables, testSpecs"
+        string group_name PK "the component it was derived for"
         string derived_at
     }
 ```
 
-An export refuses to ship old wording (`engine/review/export_guard.py`): the version is
-**stale** when its newest `text_overrides.updated_at` is later than its oldest
-`view_derivations.derived_at`.
+An export refuses to ship old wording (`engine/review/export_guard.py`): it is **stale** when a
+correction is newer than the derivation, **for the correction's own component**, of a view its text
+reaches and the exported document prints. `view_derivations` holds one row per (version, view,
+component) — `group_name` is the component, in `layer1.sample-core` form — and is rebuilt at every
+capture from the `_derivations.json` records Phase 3 stores with its output (a save that re-derives
+SWE.4 rows marks those records too). Rows with `view_name = '*'`, written before 2026-09-29, are
+ignored.
 
 ---
 
@@ -459,9 +463,14 @@ SELECT slot_kind, slot_key, is_orphaned, updated_by, updated_at,
 FROM text_overrides WHERE version_id = 'f1'
 ORDER BY slot_kind, slot_key;
 
--- Would an export ship old wording? It would when the first time is later than the second
-SELECT (SELECT max(updated_at) FROM text_overrides   WHERE version_id = 'f1') AS newest_correction,
-       (SELECT min(derived_at) FROM view_derivations WHERE version_id = 'f1') AS oldest_derivation;
+-- Would an export ship old wording? When each view was last derived, per component. A
+-- correction newer than its own component's row, for a view its text reaches and the exported
+-- document prints, is stale -- engine/review/export_guard.py decides which views those are
+SELECT view_name, group_name AS component, derived_at
+FROM view_derivations WHERE version_id = 'f1'
+ORDER BY group_name, view_name;
+SELECT slot_kind, slot_key, updated_at FROM text_overrides WHERE version_id = 'f1'
+ORDER BY updated_at DESC;
 ```
 
 ### Integrity spot-checks

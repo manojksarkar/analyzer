@@ -694,8 +694,8 @@ erDiagram
     }
     view_derivations {
         string version_id PK
-        string view_name PK "PIPELINE_ALL = one whole Phase-3 run"
-        string group_name PK
+        string view_name PK "a view: interfaceTables, testSpecs"
+        string group_name PK "the component it was derived for"
         string derived_at
     }
 </pre>
@@ -703,9 +703,13 @@ erDiagram
           </div>
         </div>
         <p class="hint">
-          An export refuses to ship old wording (<code>engine/review/export_guard.py</code>): the
-          version is <b>stale</b> when its newest <code>text_overrides.updated_at</code> is later
-          than its oldest <code>view_derivations.derived_at</code>.
+          An export refuses to ship old wording (<code>engine/review/export_guard.py</code>): it
+          is <b>stale</b> when a correction is newer than the derivation, <b>for the correction's own
+          component</b>, of a view its text reaches and the exported document prints.
+          <code>view_derivations</code> holds one row per (version, view, component) &mdash;
+          <code>group_name</code> is the component &mdash; rebuilt at every capture from the
+          <code>_derivations.json</code> records Phase 3 stores with its output. Rows with
+          <code>view_name = '*'</code>, written before 2026-09-29, are ignored.
         </p>
       </section>
 
@@ -1031,9 +1035,14 @@ SELECT slot_kind, slot_key, is_orphaned, updated_by, updated_at,
 FROM text_overrides WHERE version_id = 'f1'
 ORDER BY slot_kind, slot_key;
 
--- Would an export ship old wording? It would when the first time is later than the second
-SELECT (SELECT max(updated_at) FROM text_overrides   WHERE version_id = 'f1') AS newest_correction,
-       (SELECT min(derived_at) FROM view_derivations WHERE version_id = 'f1') AS oldest_derivation;</pre>
+-- Would an export ship old wording? When each view was last derived, per component. A
+-- correction newer than its own component's row, for a view its text reaches and the exported
+-- document prints, is stale -- engine/review/export_guard.py decides which views those are
+SELECT view_name, group_name AS component, derived_at
+FROM view_derivations WHERE version_id = 'f1'
+ORDER BY group_name, view_name;
+SELECT slot_kind, slot_key, updated_at FROM text_overrides WHERE version_id = 'f1'
+ORDER BY updated_at DESC;</pre>
         </div>
       </section>
 
