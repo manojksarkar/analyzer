@@ -201,8 +201,11 @@ class IFunctionRepository(ABC):
 
     @abstractmethod
     def bulk_update_visibility(
-        self, function_ids: list[str], is_visible: bool
-    ) -> None: ...
+        self, function_ids: list[str], is_visible: bool, project_id: Optional[str] = None
+    ) -> int:
+        """Set visibility on those of `function_ids` that belong to `project_id` (all of them when
+        it is None); returns how many were updated."""
+        ...
 
 
 class ICompareRepository(ABC):

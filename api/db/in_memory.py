@@ -437,7 +437,9 @@ class _InMemMemberRepo(IProjectMemberRepository):
         return [copy.deepcopy(m) for m in self._project_members(project_id) if m.status == "pending"]
 
     def cancel_invite(self, project_id, invite_id):
-        self._store.pop(invite_id, None)
+        m = self._store.get(invite_id)
+        if m is not None and m.project_id == project_id and m.status == "pending":
+            self._store.pop(invite_id, None)
 
 
 class _InMemAccessReqRepo(IAccessRequestRepository):
@@ -641,12 +643,15 @@ class _InMemFunctionRepo(IFunctionRepository):
                     fns[i] = function
         return copy.deepcopy(function)
 
-    def bulk_update_visibility(self, function_ids, is_visible):
+    def bulk_update_visibility(self, function_ids, is_visible, project_id=None):
+        n = 0
         for fid in function_ids:
             f = self._by_id.get(fid)
-            if f:
+            if f and (project_id is None or f.project_id == project_id):
                 f.is_visible = is_visible
                 self.update(f)
+                n += 1
+        return n
 
     def load_from_pipeline(self, pipeline_functions: dict[str, list[Function]]) -> None:
         """Add/replace functions for the given job_ids (additive — preserves other jobs)."""

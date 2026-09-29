@@ -146,7 +146,12 @@ class _MemberRepo(_Base, IProjectMemberRepository):
                          ProjectMember)
 
     def cancel_invite(self, project_id, invite_id):
-        self._exec(delete(s.project_members).where(s.project_members.c.id == invite_id))
+        # Scoped to the project and to a PENDING row: the route's admin check is on the project in
+        # the path, and deleting by id alone let an admin of one project delete any membership of
+        # any other -- active members and admins included.
+        m = s.project_members
+        self._exec(delete(m).where((m.c.id == invite_id) & (m.c.project_id == project_id)
+                                   & (m.c.status == "pending")))
 
 
 class _AccessReqRepo(_Base, IAccessRequestRepository):
@@ -316,9 +321,14 @@ class _FunctionRepo(_Base, IFunctionRepository):
         self._exec(update(s.job_functions).where(s.job_functions.c.id == function.id).values(**row))
         return function
 
-    def bulk_update_visibility(self, function_ids, is_visible):
+    def bulk_update_visibility(self, function_ids, is_visible, project_id=None):
+        # Scoped to the project in the route's path when given: by id alone, an admin of one
+        # project could flip the visibility of another project's functions.
         jf = s.job_functions
-        self._exec(update(jf).where(jf.c.id.in_(function_ids)).values(is_visible=is_visible))
+        where = jf.c.id.in_(function_ids)
+        if project_id is not None:
+            where = where & (jf.c.project_id == project_id)
+        return self._exec(update(jf).where(where).values(is_visible=is_visible)).rowcount
 
     def load_from_pipeline(self, pipeline_functions: dict) -> None:
         """Replace each job's functions (additive across jobs) — matches InMemoryDatabase."""

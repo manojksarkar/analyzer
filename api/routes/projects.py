@@ -319,8 +319,14 @@ def resolve_access_request(
 ):
     require_project_admin(project_id, current_user, db)
     req = db.access_reqs.get(req_id)
-    if not req:
+    # The request must be for THIS project: the admin check is on the project in the path, so a
+    # request for another project was resolved by someone who does not administer it -- and on
+    # approval its requester was added to the path's project instead.
+    if not req or req.project_id != project_id:
         raise not_found("AccessRequest", req_id)
+    if req.status != "pending":
+        # Approving twice added the membership twice: a 500 on the (project, user) unique key.
+        raise conflict("ACCESS_REQUEST_RESOLVED", f"Access request {req_id} is already {req.status}.")
     now = datetime.now(UTC)
     req.status = "approved" if body.action == "approve" else "denied"
     req.resolved_by = current_user.id

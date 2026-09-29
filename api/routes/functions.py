@@ -48,5 +48,7 @@ def bulk_update_visibility(
     db: InMemoryDatabase = Depends(get_db),
 ):
     require_project_admin(project_id, current_user, db)
-    db.functions.bulk_update_visibility(body.function_ids, body.is_visible)
-    return {"updated_count": len(body.function_ids)}
+    # Only this project's functions: the admin check is on the project in the path.
+    updated = db.functions.bulk_update_visibility(body.function_ids, body.is_visible,
+                                                  project_id=project_id)
+    return {"updated_count": updated}
