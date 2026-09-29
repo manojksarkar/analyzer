@@ -235,6 +235,28 @@
 >   checked against `docs/ui-mockups/versions.html`). A new `--text-*` token must be added there too (ui-dev
 >   skill says so).
 
+> Updated: 2026-09-29f (**New Project wizard: onboarding UX pass** - web only, `NewProjectPage/`. Asked: "act as a
+> ui/ux designer ... update the overall onboarding experience; think what is required, what can be skipped,
+> what can be in a popup". Rule: required stays prominent, optional folds to a link, detail goes to a popup.
+>
+> - **Step 1:** import card BELOW the repository card, one row; the report is a count summary ("6 need
+>   attention (4 in Architecture, 2 in Cores)") + **View details** popup (`Modal`, grouped by level, each item
+>   tagged with its step). The import fills name/repository ONLY when empty ("Kept your project name");
+>   paths are checked against the CONNECTED repository whatever the config names. Access token behind a link.
+> - **Honest state:** the false "Auto-saved" is gone (nothing is saved before Initialize); the footer says what
+>   the step requires/allows. `issuesFor(step)` is the one live list of what blocks a step: shown inside the
+>   step (`StepIssues`) once Continue was tried, counted in the footer, and marked on the rail ("Needs a fix").
+>   Continue on the last step jumps to the first step with a problem. Team is "Optional" (button "Skip for
+>   now" with no members; role cards behind "What can each role do?").
+> - **Step 2:** a core's data dictionary / compile commands rows show only with a file, a config hint, or on
+>   "+ Data dictionary / + Compile commands".
+> - **Step 3:** imported layers start collapsed (`draftToLayers`), a head says `root/ · N groups · N components`
+>   + a red "N to fix" badge; removing a layer/group/component offers **Undo** (10 s, sticky bar); empty Lib
+>   Paths is a "+ Lib path (optional)" link.
+> - **Step 5:** `components/Readiness.tsx` first - error (blocks) / warn (would miss: config files not
+>   uploaded, cores without macros, layers without a core) / ok, each with "Fix in step N"; details below,
+>   the layer tree folded. The mockup (`docs/ui-mockups/projects-empty.html`) does NOT show this pass yet.
+
 > Updated: 2026-09-29e (**The SWE.3 page in the web app reads like the DOCX.** Branch `ui_v2`. Asked: "verify
 > if swe3 is coming in UI properly" → "fix it". Method: per document, `GET .../render` vs the DOCX of the same
 > version (tools/dump_docx.py), heading by heading, + a browser pass (errors, broken images).
