@@ -28,17 +28,19 @@ def _doc_type_view_selection(doc_type):
     return set(required), False
 
 
-def run_views(model, output_dir, model_dir, config, doc_type=DOC_TYPE_SWE3):
-    """Run the views a doc type needs.
+def views_to_run(doc_type, config):
+    """The views a doc type needs, in registry order -- the ones `run_views` runs.
 
-    model = {functions, globalVariables, units, components, dataDictionary}.
     For swe3 (and all) this is the config-enabled set (unchanged behaviour);
     doc types with an explicit DOC_TYPE_VIEWS entry run exactly those views,
-    bypassing config gating.
+    bypassing config gating. Split out of `run_views` so the export guard's record
+    can say which document each view was built for, by the same rule
+    (`run_views._record_derivation`).
     """
     views_cfg = (config or {}).get("views", {})
     forced_views, use_config_defaults = _doc_type_view_selection(doc_type)
-    for view_name, run_fn in VIEW_REGISTRY.items():
+    selected = []
+    for view_name in VIEW_REGISTRY:
         if view_name in forced_views:
             enabled = True
         elif not use_config_defaults:
@@ -54,8 +56,24 @@ def run_views(model, output_dir, model_dir, config, doc_type=DOC_TYPE_SWE3):
             else:
                 enabled = False if val is False else True
         if enabled:
-            with timed(view_name):
-                run_fn(model, output_dir, model_dir, config)
+            selected.append(view_name)
+    return selected
+
+
+def run_views(model, output_dir, model_dir, config, doc_type=DOC_TYPE_SWE3):
+    """Run the views a doc type needs (`views_to_run`).
+
+    model = {functions, globalVariables, units, components, dataDictionary}.
+
+    Returns the names of the views that ran, in order -- what the export guard's
+    derivation record says this phase rebuilt (`review.export_guard.record_derivation`).
+    """
+    ran = []
+    for view_name in views_to_run(doc_type, config):
+        with timed(view_name):
+            VIEW_REGISTRY[view_name](model, output_dir, model_dir, config)
+        ran.append(view_name)
+    return ran
 
 
 # Import view components so they register themselves

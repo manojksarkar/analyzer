@@ -632,6 +632,30 @@ def _build_test_specs(units_data, functions_data, global_variables_data,
 
 @register("testSpecs")
 def run(model, output_dir, model_dir, config):
+    from .dynamic_specs import DYNAMIC_KEY
+    from .test_steps import load_cfgs
+    test_specs = build(model, config, load_cfgs(output_dir), output_dir=output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+    out_path = os.path.join(output_dir, "test_specs.json")
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(test_specs, f, indent=2)
+    _reserved = ("unitNames", DYNAMIC_KEY)
+    dynamic = test_specs.get(DYNAMIC_KEY) or {}
+    spec_count = sum(len(v.get("functions", [])) for k, v in test_specs.items()
+                     if k not in _reserved)
+    unit_count = len([k for k in test_specs if k not in _reserved])
+    dyn_count = sum(len(v) for v in dynamic.values())
+    log("%s (%d units, %d function specs, %d dynamic behaviour specs)"
+        % (out_path, unit_count, spec_count, dyn_count), component="testSpecs")
+
+
+def build(model, config, cfgs, *, output_dir=None, verbose=True):
+    """The whole `test_specs.json` payload, from the model, the config and the flowchart graphs.
+
+    `run` without the file: split out so a correction saved from a host with no output tree can
+    re-derive the specs from the stored rows (`review.swe4_rederive`) through the very same code.
+    `cfgs` is `{functionKey: cfg}` (`test_steps.load_cfgs` or `cfgs_from_entries`).
+    """
     allowed_components = {m.lower() for m in (config.get("_analyzerAllowedComponents") or [])}
     # Which SWE.4 spec kinds this run emits. Two independent switches rather than
     # one mode flag, so "function specs only" is expressible too. The flowchart
@@ -657,8 +681,8 @@ def run(model, output_dir, model_dir, config):
     # Test Steps + the per-return Expected entries come from the flowchart
     # engine's CFG (Phase 3 runs `flowcharts` before `testSpecs` for swe4).
     from .test_steps import attach as _attach_steps
-    filled = _attach_steps(test_specs, output_dir) if want_function_specs else 0
-    if filled:
+    filled = _attach_steps(test_specs, output_dir, cfgs) if want_function_specs else 0
+    if filled and verbose:
         log("transcribed control flow into steps for %d function(s)" % filled,
             component="testSpecs")
 
@@ -685,19 +709,8 @@ def run(model, output_dir, model_dir, config):
         unit_names = {uk: u.get("name", uk.split(KEY_SEP)[-1] if KEY_SEP in uk else uk)
                       for uk, u in units_data.items()}
         dyn_filled = _attach_dynamic(dynamic, output_dir, model.get("functions", {}),
-                                     unit_of, unit_names)
-        if dyn_filled:
+                                     unit_of, unit_names, cfgs)
+        if dyn_filled and verbose:
             log("transcribed %d interaction(s) with unit attribution" % dyn_filled,
                 component="testSpecs")
-
-    os.makedirs(output_dir, exist_ok=True)
-    out_path = os.path.join(output_dir, "test_specs.json")
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(test_specs, f, indent=2)
-    _reserved = ("unitNames", DYNAMIC_KEY)
-    spec_count = sum(len(v.get("functions", [])) for k, v in test_specs.items()
-                     if k not in _reserved)
-    unit_count = len([k for k in test_specs if k not in _reserved])
-    dyn_count = sum(len(v) for v in dynamic.values())
-    log("%s (%d units, %d function specs, %d dynamic behaviour specs)"
-        % (out_path, unit_count, spec_count, dyn_count), component="testSpecs")
+    return test_specs
