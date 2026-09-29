@@ -2,7 +2,8 @@ import { http } from '../../lib/http'
 import type { AnalysisJob, JobFunctions, JobStatus } from '../../types'
 import { mapJob, mapJobFunctions, type ApiJob, type ApiFunction } from '../mappers'
 
-/** What a run analyses. `names` are layer names, or layer-qualified group ids (`Layer1.My Sample`). */
+/** What a run analyses: `names` of ONE kind - layer names, or layer-qualified group or component
+ *  ids (`Layer1.My Sample`, `Layer1.Lib`). Several may be named, from different layers. */
 export interface JobScope {
   type: 'project' | 'layer' | 'group' | 'component'
   names: string[]
@@ -15,6 +16,8 @@ export interface StartJobInput {
   pause_after_phase1?: boolean
   /** Narrows the run. The server's generation command reads `scope`, not `layer_filter`. */
   scope?: JobScope
+  /** Skip the LLM steps (the engine's `--no-llm`): faster, for checking structure, not wording. */
+  no_llm?: boolean
 }
 
 export const jobsApi = {

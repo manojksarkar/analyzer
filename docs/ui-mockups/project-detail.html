@@ -88,8 +88,50 @@
   .toast-in  { animation: slideInRight .3s ease forwards; }
   .toast-out { animation: slideOutRight .3s ease forwards; }
 
-  .adv-body { overflow:hidden; max-height:0; transition:max-height .25s ease; }
-  .adv-body.open { max-height:120px; }
+  /* Run modal: small by default; "Advanced options" (.adv-open) widens it to a second column.
+     Header and footer stay put, no taller than the window; the left column scrolls if it must,
+     on the right only the component tree scrolls. */
+  .run-modal-card { display:flex; flex-direction:column; max-width:468px; max-height:calc(100vh - 32px); }
+  .run-modal-card.adv-open { max-width:880px; }
+  .run-modal-card > * { flex-shrink:0; }
+  .run-modal-card > .run-modal-body { flex:1 1 auto; min-height:0; display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr); border-top:1px solid #eff4ff; }
+  .run-modal-card.adv-open > .run-modal-body { height:580px; grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+  .run-col-left { min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:20px 24px; }
+  .run-col-right { display:none; min-height:0; flex-direction:column; padding:20px 24px; background:#f8f9ff; border-left:1px solid #e5eeff; }
+  .run-modal-card.adv-open .run-col-right { display:flex; }
+  .adv-toggle { width:100%; display:flex; align-items:center; gap:8px; padding:9px 10px 9px 12px; color:#44474c; background:#fff; border:1px solid #c4c6cd; border-radius:0.5rem; cursor:pointer; text-align:left; }
+  .adv-toggle:hover { border-color:#0058be; color:#0058be; }
+  .run-modal-card.adv-open .adv-toggle { border-color:#0058be; background:#f4f8ff; color:#0058be; }
+  .adv-toggle .t { flex-shrink:0; font:600 12px/18px 'JetBrains Mono',monospace; }
+  .adv-summary { margin-left:auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0 6px; border-radius:3px; font:600 10px/16px 'JetBrains Mono',monospace; background:#eff4ff; color:#74777d; }
+  .adv-summary.set { background:#e5eeff; color:#0058be; }
+  .adv-summary.err { background:#ffdad6; color:#ba1a1a; }
+  .adv-opts { flex-shrink:0; display:flex; flex-direction:column; gap:12px; margin-top:14px; padding-top:14px; border-top:1px solid #e5eeff; }
+
+  /* The component tree: layers open, groups closed; a group opens to its components. */
+  .scope-list { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:4px; background:#fff; border:1px solid #c4c6cd; border-radius:0.5rem; }
+  .scope-count { padding:0 6px; border-radius:3px; font:600 10px/16px 'JetBrains Mono',monospace; background:#eff4ff; color:#74777d; }
+  .scope-count.part { background:#e5eeff; color:#0058be; }
+  .scope-count.none { background:#ffdad6; color:#ba1a1a; }
+  .scope-link { padding:0; font:500 11px/16px 'Inter',sans-serif; color:#0058be; background:none; border:none; cursor:pointer; }
+  .scope-link:hover { text-decoration:underline; }
+  .scope-link:disabled { color:#b0b3b8; cursor:default; text-decoration:none; }
+  .sc-cb { width:14px; height:14px; margin:0 2px; flex-shrink:0; accent-color:#0058be; pointer-events:none; }
+  .sc-row { display:flex; align-items:center; gap:4px; min-height:28px; padding:2px 8px 2px 4px; border-radius:0.25rem; cursor:pointer; }
+  .sc-row:hover { background:#eff4ff; }
+  .sc-row.off { cursor:default; opacity:.5; }
+  .sc-row.off:hover { background:none; }
+  .sc-tog { width:18px; height:18px; flex-shrink:0; display:flex; align-items:center; justify-content:center; color:#74777d; background:none; border:none; border-radius:2px; cursor:pointer; }
+  .sc-tog:hover { background:#dce9ff; color:#0058be; }
+  .sc-tog.none { visibility:hidden; }
+  .sc-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:500 12px/18px 'JetBrains Mono',monospace; color:#0b1c30; }
+  .sc-row.layer .sc-name { font-weight:700; }
+  .sc-count.part { color:#0058be; font-weight:600; }
+  .sc-count { flex-shrink:0; font:400 10px/14px 'JetBrains Mono',monospace; color:#74777d; }
+  .sc-kids { margin-left:13px; padding-left:6px; border-left:1px solid #dde1e8; }
+  .scope-hint { margin-top:8px; font:400 11px/15px 'Inter',sans-serif; color:#74777d; }
+  .scope-hint.err { color:#ba1a1a; }
+  .scope-hint b { font-family:'JetBrains Mono',monospace; font-weight:600; color:#44474c; }
   .fn-panel { position:fixed;top:0;right:0;height:100vh;width:70%;max-width:860px;background:white;border-left:1px solid #c4c6cd;z-index:60;transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column; }
   .fn-panel.open { transform:translateX(0); }
   .fn-backdrop { position:fixed;inset:0;background:rgba(4,22,39,.35);z-index:59;opacity:0;pointer-events:none;transition:opacity .3s ease; }
@@ -681,8 +723,14 @@
 </div>
 
 <!-- ══════════════ MODAL: RUN CONFIG ══════════════ -->
+<!-- Opens small, with what every run needs: the commit, a version to compare against, the version
+     name. "Advanced options" widens it to a second column: which components to analyze (a tree,
+     every component ticked by default - a run makes one document per component whatever its
+     scope, so the scope only says WHICH), Skip LLM and Pause after Phase 1. Closed, the toggle
+     still names every option that is not its default, so a narrowed run is never hidden.
+     Every open starts from the defaults. No taller than the window. -->
 <div id="run-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(4,22,39,.55);">
-  <div class="bg-white rounded-2xl w-full mx-4" style="max-width:468px;box-shadow:0 24px 64px rgba(4,22,39,.28);">
+  <div id="run-modal-card" class="run-modal-card bg-white rounded-2xl w-full mx-4" style="box-shadow:0 24px 64px rgba(4,22,39,.28);">
 
     <!-- Header -->
     <div class="px-6 pt-6 pb-5 flex items-start justify-between">
@@ -695,91 +743,107 @@
       </button>
     </div>
 
-    <!-- Source card -->
-    <div class="mx-6 mb-5 rounded-xl border border-outline-variant overflow-hidden">
-      <!-- Branch row -->
-      <div class="flex items-center gap-2.5 px-4 py-2.5 bg-surface-container-low border-b border-outline-variant">
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:14px;">alt_route</span>
-        <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:11px;">Branch</span>
-        <span id="run-modal-branch" style="font-family:'JetBrains Mono';font-size:12px;font-weight:700;color:#0b1c30;"></span>
-        <span class="ml-auto font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;opacity:.5;letter-spacing:.04em;">FIXED</span>
-      </div>
-      <!-- Commit row -->
-      <div class="px-4 py-3">
-        <label class="font-label-sm text-label-sm text-on-surface-variant block mb-2" style="font-size:11px;">Commit</label>
-        <select id="run-modal-commit"
-          class="w-full rounded-lg px-3 py-2 text-on-surface bg-white cursor-pointer focus:outline-none border border-outline-variant"
-          style="font-family:'JetBrains Mono';font-size:12px;"
-          onfocus="this.style.borderColor='#0058be'" onblur="this.style.borderColor='#c4c6cd'">
-        </select>
-      </div>
-    </div>
+    <div class="run-modal-body">
 
-    <div class="px-6 space-y-4 pb-5">
-
-      <!-- Compare against -->
-      <div>
-        <div class="flex items-center justify-between mb-2">
-          <label class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:11px;">Compare against</label>
-          <span style="font-size:10px;color:#c4c6cd;font-family:'JetBrains Mono';">OPTIONAL</span>
-        </div>
-        <select id="run-modal-reference"
-          class="w-full border border-outline-variant rounded-lg px-3 py-2 text-on-surface bg-white cursor-pointer focus:outline-none"
-          style="font-family:'JetBrains Mono';font-size:12px;"
-          onfocus="this.style.borderColor='#0058be'" onblur="this.style.borderColor='#c4c6cd'">
-          <option value="">— None —</option>
-        </select>
-        <p class="font-label-sm text-label-sm text-on-surface-variant mt-1.5" style="font-size:11px;">Enables diff view between this run and the selected version.</p>
-      </div>
-
-      <!-- Version name -->
-      <div>
-        <label class="font-label-sm text-label-sm text-on-surface-variant block mb-2" style="font-size:11px;">Version name</label>
-        <div class="relative">
-          <span class="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant" style="font-size:15px;">sell</span>
-          <input id="run-modal-new-version" type="text" placeholder="e.g. v1.3.0" autocomplete="off" spellcheck="false"
-            class="w-full border border-outline-variant rounded-lg pl-9 pr-3 py-2.5 bg-white focus:outline-none"
-            style="font-family:'JetBrains Mono';font-size:13px;font-weight:700;color:#0058be;letter-spacing:.03em;box-sizing:border-box;"
-            onfocus="this.style.borderColor='#0058be';this.style.background='#f4f8ff'"
-            onblur="this.style.borderColor='#c4c6cd';this.style.background='white'">
-        </div>
-      </div>
-
-      <!-- Pause checkbox -->
-      <label class="flex items-start gap-3 cursor-pointer group">
-        <input type="checkbox" id="pause-phase1" class="mt-0.5 rounded border-outline-variant text-secondary flex-shrink-0" style="width:15px;height:15px;">
-        <div>
-          <span class="font-label-sm text-label-sm text-on-surface group-hover:text-secondary transition-colors" style="font-size:12px;">Pause after Phase 1 to review function visibility</span>
-          <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" style="font-size:11px;">Lets you hide functions before diagrams and DOCX are generated.</p>
-        </div>
-      </label>
-
-      <!-- Advanced (collapsible) -->
-      <div>
-        <button onclick="toggleAdv()" class="flex items-center gap-2 w-full text-left py-0.5 group">
-          <span id="adv-ch" class="material-symbols-outlined transition-transform duration-200 text-on-surface-variant" style="font-size:14px;">chevron_right</span>
-          <span class="font-label-sm text-label-sm text-on-surface-variant group-hover:text-on-surface transition-colors" style="font-size:11px;letter-spacing:.05em;text-transform:uppercase;">Advanced</span>
-          <div class="flex-1 h-px bg-outline-variant ml-1"></div>
-        </button>
-        <div id="adv-body" class="adv-body">
-          <div class="pt-3 pl-5">
-            <label class="font-label-sm text-label-sm text-on-surface-variant block mb-2" style="font-size:11px;">Layer / Group</label>
-            <select class="w-full border border-outline-variant rounded-lg px-3 py-2 text-on-surface bg-white cursor-pointer focus:outline-none"
+      <!-- The run -->
+      <div class="run-col-left space-y-4">
+        <!-- Source card -->
+        <div class="rounded-xl border border-outline-variant overflow-hidden">
+          <!-- Branch row -->
+          <div class="flex items-center gap-2.5 px-4 py-2.5 bg-surface-container-low border-b border-outline-variant">
+            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:14px;">alt_route</span>
+            <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:11px;">Branch</span>
+            <span id="run-modal-branch" style="font-family:'JetBrains Mono';font-size:12px;font-weight:700;color:#0b1c30;"></span>
+            <span class="ml-auto font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;opacity:.5;letter-spacing:.04em;">FIXED</span>
+          </div>
+          <!-- Commit row -->
+          <div class="px-4 py-3">
+            <label class="font-label-sm text-label-sm text-on-surface-variant block mb-2" style="font-size:11px;">Commit</label>
+            <select id="run-modal-commit"
+              class="w-full rounded-lg px-3 py-2 text-on-surface bg-white cursor-pointer focus:outline-none border border-outline-variant"
               style="font-family:'JetBrains Mono';font-size:12px;"
               onfocus="this.style.borderColor='#0058be'" onblur="this.style.borderColor='#c4c6cd'">
-              <option>All layers (default)</option>
-              <option>Layer1 — Sample</option>
-              <option>Layer1 — Full</option>
-              <option>Layer2 — Platform</option>
             </select>
           </div>
         </div>
+
+        <!-- Compare against -->
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <label class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:11px;">Compare against</label>
+            <span style="font-size:10px;color:#c4c6cd;font-family:'JetBrains Mono';">OPTIONAL</span>
+          </div>
+          <select id="run-modal-reference"
+            class="w-full border border-outline-variant rounded-lg px-3 py-2 text-on-surface bg-white cursor-pointer focus:outline-none"
+            style="font-family:'JetBrains Mono';font-size:12px;"
+            onfocus="this.style.borderColor='#0058be'" onblur="this.style.borderColor='#c4c6cd'">
+            <option value="">— None —</option>
+          </select>
+          <p class="font-label-sm text-label-sm text-on-surface-variant mt-1.5" style="font-size:11px;">Enables diff view between this run and the selected version.</p>
+        </div>
+
+        <!-- Version name -->
+        <div>
+          <label class="font-label-sm text-label-sm text-on-surface-variant block mb-2" style="font-size:11px;">Version name</label>
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant" style="font-size:15px;">sell</span>
+            <input id="run-modal-new-version" type="text" placeholder="e.g. v1.3.0" autocomplete="off" spellcheck="false"
+              class="w-full border border-outline-variant rounded-lg pl-9 pr-3 py-2.5 bg-white focus:outline-none"
+              style="font-family:'JetBrains Mono';font-size:13px;font-weight:700;color:#0058be;letter-spacing:.03em;box-sizing:border-box;"
+              onfocus="this.style.borderColor='#0058be';this.style.background='#f4f8ff'"
+              onblur="this.style.borderColor='#c4c6cd';this.style.background='white'">
+          </div>
+        </div>
+
+        <!-- Advanced options: opens the second column; names what is not the default -->
+        <button type="button" id="adv-toggle" class="adv-toggle" onclick="toggleRunAdv()">
+          <span class="material-symbols-outlined" style="font-size:16px;">tune</span>
+          <span class="t">Advanced options</span>
+          <span id="adv-summary" class="adv-summary">Defaults</span>
+          <span id="adv-ch" class="material-symbols-outlined" style="font-size:18px;">chevron_right</span>
+        </button>
+
+        <!-- Warning -->
+        <div class="flex items-center gap-2.5 rounded-xl px-4 py-3" style="background:#f0f4ff;border:1px solid #c7d8ff;">
+          <span class="material-symbols-outlined flex-shrink-0" style="font-size:15px;color:#0058be;">schedule</span>
+          <p class="font-label-sm text-label-sm" style="color:#0b2e6b;font-size:11px;">Analysis runs server-side and can take <strong>several hours</strong> — safe to navigate away.</p>
+        </div>
       </div>
 
-      <!-- Warning -->
-      <div class="flex items-center gap-2.5 rounded-xl px-4 py-3" style="background:#f0f4ff;border:1px solid #c7d8ff;">
-        <span class="material-symbols-outlined flex-shrink-0" style="font-size:15px;color:#0058be;">schedule</span>
-        <p class="font-label-sm text-label-sm" style="color:#0b2e6b;font-size:11px;">Analysis runs server-side and can take <strong>several hours</strong> — safe to navigate away.</p>
+      <!-- Advanced: shown only when opened -->
+      <div class="run-col-right">
+        <!-- The components to analyze (drawn by renderScope()). Layers start open, groups
+             closed; the ticks go out as ONE kind - see scopeOf(). -->
+        <div class="flex items-center gap-2 mb-2">
+          <span class="material-symbols-outlined text-secondary" style="font-size:16px;">account_tree</span>
+          <label class="font-label-sm text-label-sm text-on-surface" style="font-size:12px;font-weight:600;">Components</label>
+          <span id="scope-count" class="scope-count">28 of 28</span>
+          <span class="flex-1"></span>
+          <button type="button" id="scope-all" class="scope-link" onclick="tickAllScope()">All</button>
+          <span class="text-outline" style="font-size:11px;">·</span>
+          <button type="button" id="scope-none" class="scope-link" onclick="clearScope()">None</button>
+        </div>
+        <div id="scope-list" class="scope-list"></div>
+        <p id="scope-hint" class="scope-hint"></p>
+
+        <div class="adv-opts">
+          <!-- Skip LLM: the job's no_llm -->
+          <label class="flex items-start gap-3 cursor-pointer group">
+            <input type="checkbox" id="skip-llm" onchange="showAdvSummary()" class="mt-0.5 rounded border-outline-variant text-secondary flex-shrink-0" style="width:15px;height:15px;">
+            <div>
+              <span class="font-label-sm text-label-sm text-on-surface group-hover:text-secondary transition-colors" style="font-size:12px;">Skip LLM</span>
+              <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" style="font-size:11px;">Faster: the LLM steps are skipped. Use it to check structure, not wording.</p>
+            </div>
+          </label>
+          <!-- Pause checkbox -->
+          <label class="flex items-start gap-3 cursor-pointer group">
+            <input type="checkbox" id="pause-phase1" onchange="showAdvSummary()" class="mt-0.5 rounded border-outline-variant text-secondary flex-shrink-0" style="width:15px;height:15px;">
+            <div>
+              <span class="font-label-sm text-label-sm text-on-surface group-hover:text-secondary transition-colors" style="font-size:12px;">Pause after Phase 1 to review function visibility</span>
+              <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" style="font-size:11px;">Lets you hide functions before diagrams and DOCX are generated.</p>
+            </div>
+          </label>
+        </div>
       </div>
 
     </div>
@@ -787,7 +851,7 @@
     <!-- Footer -->
     <div class="px-6 py-4 border-t border-outline-variant flex items-center justify-between">
       <button onclick="closeRunModal()" class="px-4 py-2 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container rounded-lg transition-colors text-sm">Cancel</button>
-      <button onclick="startGeneration()"
+      <button id="run-start" onclick="startGeneration()"
         class="flex items-center gap-2 px-5 py-2.5 bg-secondary text-on-secondary rounded-xl transition-colors"
         style="font-family:'JetBrains Mono';font-size:12px;font-weight:700;letter-spacing:.04em;"
         onmouseover="this.style.background='#0049a3'" onmouseout="this.style.background='#0058be'">
@@ -1878,11 +1942,206 @@ document.addEventListener('click', e => {
 
 
 
-// ── Advanced toggle ──
-function toggleAdv() {
-  const open = document.getElementById('adv-body').classList.toggle('open');
-  document.getElementById('adv-ch').style.transform = open ? 'rotate(90deg)' : '';
+// ── Run scope: the whole project, or any mix of layers, groups and components ──
+// The CLI's --scope names several things of ONE kind: `layer:A,B`, `group:A,B` or
+// `component:A,B` (analyzer.py _parse_scope; they may sit in different layers). A ticked layer
+// or group is just all of its components, so the tree lets the user tick any mix, and scopeOf()
+// sends the smallest form that says exactly those ticks: whole layers as `layer`, else whole
+// groups as `group`, else the components. Nothing ticked - or everything - is the whole project.
+// Every scope still gives one document per component. The tree starts with EVERY component
+// ticked - today's default run - and the user unticks to narrow it.
+// The sample project's architecture; the app reads it from the project (architectureLayers).
+const SCOPE_TREE = [
+  { name: 'Layer1', groups: [
+    { name: 'My Sample', comps: ['Sample Core', 'Lib', 'Util'] },
+    { name: 'Full',      comps: ['Iface', 'Cross'] },
+    { name: 'Support',   comps: ['Math', 'App', 'Outer'] },
+    { name: 'Access',    comps: ['Access'] },
+    { name: 'Signal',    comps: ['Signal'] },
+    { name: 'Diag',      comps: ['Diag'] },
+  ]},
+  { name: 'Layer2', groups: [
+    { name: 'My Sample', comps: ['Sample Core', 'Lib'] },
+    { name: 'Platform',  comps: ['Gpio', 'Uart', 'Spi', 'I2c', 'Adc', 'Display', 'Storage', 'Network',
+                                 'Logger', 'Config', 'EventBus', 'Timer', 'Protocol', 'Scheduler', 'Cache'] },
+  ]},
+  { name: 'Layer3', groups: [] },
+];
+const scopeTicked = new Set();   // component keys: 'Layer1/My Sample/Lib' - all of them to start
+const scopeOpen = {};            // node key -> open; layers open unless closed, groups closed unless opened
+const escS = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+const isOpen = (key, byDefault) => (key in scopeOpen ? scopeOpen[key] : byDefault);
+const compKeys = (l, g) => g.comps.map((c) => l.name + '/' + g.name + '/' + c);
+const layerKeys = (l) => l.groups.flatMap((g) => compKeys(l, g));
+const allKeys = () => SCOPE_TREE.flatMap(layerKeys);
+const tickState = (keys) => {
+  const n = keys.filter((k) => scopeTicked.has(k)).length;
+  return n === 0 ? 'none' : n === keys.length ? 'all' : 'some';
+};
+
+// What the job sends: {type, names}, names as the engine ids them (`Layer1.My Sample`, `Layer1.Lib`).
+function scopeOf() {
+  const all = allKeys();
+  if (!scopeTicked.size || scopeTicked.size === all.length) return { type: 'project', names: [] };
+  const layers = SCOPE_TREE.filter((l) => tickState(layerKeys(l)) !== 'none' && layerKeys(l).length);
+  if (layers.every((l) => tickState(layerKeys(l)) === 'all')) {
+    return { type: 'layer', names: layers.map((l) => l.name) };
+  }
+  const groups = SCOPE_TREE.flatMap((l) => l.groups
+    .filter((g) => g.comps.length && tickState(compKeys(l, g)) !== 'none').map((g) => ({ l, g })));
+  if (groups.every(({ l, g }) => tickState(compKeys(l, g)) === 'all')) {
+    return { type: 'group', names: groups.map(({ l, g }) => l.name + '.' + g.name) };
+  }
+  return { type: 'component', names: all.filter((k) => scopeTicked.has(k)).map((k) => { const p = k.split('/'); return p[0] + '.' + p[2]; }) };
 }
+
+function keysUnder(kind, key) {
+  if (kind === 'project') return allKeys();
+  if (kind === 'component') return [key];
+  const [ln, gn] = key.split('/');
+  const l = SCOPE_TREE.find((x) => x.name === ln);
+  return kind === 'layer' ? layerKeys(l) : compKeys(l, l.groups.find((g) => g.name === gn));
+}
+
+function scopeRow(kind, key, name, count, state, hasKids, open, icon, disabled) {
+  const tog = hasKids
+    ? '<button class="sc-tog" onclick="event.stopPropagation();toggleScopeNode(\'' + escS(key) + '\',' + (kind === 'layer') + ')">'
+      + '<span class="material-symbols-outlined" style="font-size:15px;">' + (open ? 'keyboard_arrow_down' : 'keyboard_arrow_right') + '</span></button>'
+    : '<span class="sc-tog none"></span>';
+  const box = '<input type="checkbox" class="sc-cb" tabindex="-1"' + (state === 'all' ? ' checked' : '')
+      + (state === 'some' ? ' data-some="1"' : '') + (disabled ? ' disabled' : '') + '>';
+  const sel = false;   // ticked is the default: the checkbox says it, no highlight
+  const click = 'tickScope(\'' + kind + '\',\'' + escS(key) + '\')';
+  return '<div class="sc-row ' + kind + (sel ? ' sel' : '') + (disabled ? ' off' : '') + '"'
+    + (disabled ? '' : ' onclick="' + click + '"') + '>'
+    + tog + box
+    + '<span class="material-symbols-outlined ' + (kind === 'component' ? 'text-on-surface-variant' : 'text-secondary') + '" style="font-size:15px;">' + icon + '</span>'
+    + '<span class="sc-name">' + escS(name) + '</span>'
+    + '<span class="sc-count' + (state === 'some' ? ' part' : '') + '">' + count + '</span>'
+    + '</div>';
+}
+
+function renderScope() {
+  const all = allKeys();
+  let html = scopeRow('project', '', 'All components', plural(all.length, 'component'), tickState(all), false, false, 'select_all', false);
+  SCOPE_TREE.forEach((l) => {
+    const keys = layerKeys(l);
+    const st = tickState(keys);
+    const lOpen = isOpen(l.name, true);
+    const lCount = !keys.length ? 'no components'
+      : st === 'some' ? keys.filter((k) => scopeTicked.has(k)).length + ' of ' + plural(keys.length, 'component')
+        : plural(l.groups.length, 'group');
+    html += scopeRow('layer', l.name, l.name, lCount, st, l.groups.length > 0, lOpen, 'layers', !keys.length);
+    if (!lOpen || !l.groups.length) return;
+    html += '<div class="sc-kids">';
+    l.groups.forEach((g) => {
+      const gKey = l.name + '/' + g.name;
+      const gKeys = compKeys(l, g);
+      const gst = tickState(gKeys);
+      const gOpen = isOpen(gKey, false);
+      const gCount = gst === 'some' ? gKeys.filter((k) => scopeTicked.has(k)).length + ' of ' + g.comps.length
+        : plural(g.comps.length, 'component');
+      html += scopeRow('group', gKey, g.name, gCount, gst, g.comps.length > 0, gOpen, gOpen ? 'folder_open' : 'folder', !g.comps.length);
+      if (!gOpen) return;
+      html += '<div class="sc-kids">';
+      g.comps.forEach((c) => {
+        const k = gKey + '/' + c;
+        html += scopeRow('component', k, c, '', scopeTicked.has(k) ? 'all' : 'none', false, false, 'deployed_code', false);
+      });
+      html += '</div>';
+    });
+    html += '</div>';
+  });
+  const list = document.getElementById('scope-list');
+  list.innerHTML = html;
+  list.querySelectorAll('[data-some]').forEach((el) => { el.indeterminate = true; });
+}
+
+function tickScope(kind, key) {
+  const keys = keysUnder(kind, key);
+  const on = tickState(keys) !== 'all';
+  keys.forEach((k) => (on ? scopeTicked.add(k) : scopeTicked.delete(k)));
+  renderScope();
+  showScope();
+}
+function tickAllScope() {
+  allKeys().forEach((k) => scopeTicked.add(k));
+  renderScope();
+  showScope();
+}
+function clearScope() {
+  scopeTicked.clear();
+  renderScope();
+  showScope();
+}
+function toggleScopeNode(key, isLayer) {
+  scopeOpen[key] = !isOpen(key, isLayer);
+  renderScope();
+}
+
+// The count, the hint under the tree and the Start button say what the run will cover.
+function showScope() {
+  const sc = scopeOf();
+  const total = allKeys().length;
+  const n = scopeTicked.size;
+  const count = document.getElementById('scope-count');
+  count.textContent = n + ' of ' + total;
+  count.className = 'scope-count' + (n === 0 ? ' none' : n < total ? ' part' : '');
+  document.getElementById('scope-all').disabled = n === total;
+  document.getElementById('scope-none').disabled = n === 0;
+  // What the version will hold: a narrower run makes a version with only those documents.
+  const hint = document.getElementById('scope-hint');
+  hint.className = 'scope-hint' + (n === 0 ? ' err' : '');
+  if (n === 0) {
+    hint.textContent = 'Tick at least one component to run.';
+  } else if (sc.type === 'project') {
+    hint.innerHTML = 'All <b>' + total + '</b> components are analyzed; one document each.';
+  } else {
+    const shown = sc.names.map((x) => x.slice(x.indexOf('.') + 1));
+    const one = sc.names.length === 1;
+    const what = one ? '<b>' + escS(shown[0]) + '</b>' : '<b>' + plural(sc.names.length, sc.type) + '</b>';
+    hint.innerHTML = 'Only ' + what + (one ? ' is' : ' are') + ' analyzed; this version holds '
+      + (n === 1 ? 'its one document.' : (one ? 'its ' : 'their ') + n + ' documents.');
+  }
+  const start = document.getElementById('run-start');
+  start.disabled = n === 0;
+  start.style.opacity = n === 0 ? '.45' : '';
+  start.style.cursor = n === 0 ? 'not-allowed' : '';
+  showAdvSummary();
+}
+
+// ── Advanced options: the second column ──
+function toggleRunAdv(open) {
+  const card = document.getElementById('run-modal-card');
+  const on = open === undefined ? !card.classList.contains('adv-open') : open;
+  card.classList.toggle('adv-open', on);
+  document.getElementById('adv-ch').textContent = on ? 'chevron_left' : 'chevron_right';
+}
+// On the toggle, every option that is not its default - a narrowed run is never hidden.
+function showAdvSummary() {
+  const n = scopeTicked.size, total = allKeys().length;
+  const parts = [];
+  if (n < total) parts.push(n + ' of ' + total + ' components');
+  if (document.getElementById('skip-llm').checked) parts.push('Skip LLM');
+  if (document.getElementById('pause-phase1').checked) parts.push('Pause after Phase 1');
+  const el = document.getElementById('adv-summary');
+  el.textContent = parts.length ? parts.join(' · ') : 'Defaults';
+  el.title = el.textContent;
+  el.className = 'adv-summary' + (n === 0 ? ' err' : parts.length ? ' set' : '');
+}
+// Every open starts from the defaults: all components, LLM on, no pause, Advanced closed.
+function resetRunOptions() {
+  allKeys().forEach((k) => scopeTicked.add(k));
+  document.getElementById('skip-llm').checked = false;
+  document.getElementById('pause-phase1').checked = false;
+  toggleRunAdv(false);
+  renderScope();
+  showScope();
+}
+allKeys().forEach((k) => scopeTicked.add(k));
+renderScope();
+showScope();
 
 // ── Function Visibility ──
 const FUNCTION_TREE = [
@@ -2233,6 +2492,7 @@ function openRunConfig() {
   });
 
   document.getElementById('run-modal-new-version').value = suggestNextVersion();
+  resetRunOptions();
   document.getElementById('run-modal').classList.remove('hidden');
 }
 function closeRunModal() { document.getElementById('run-modal').classList.add('hidden'); }
