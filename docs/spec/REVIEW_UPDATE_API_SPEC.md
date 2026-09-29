@@ -287,6 +287,10 @@ rather than typing one — Swagger URL-encodes it for you.
 | `api_create_project.sample_full.example.json` + `api_start_job.sample_full.example.json` | group `Full`, the shipped defaults | every kind but `behaviourDescription`. Only `opsAdd`/`opsSub` are published in this scope, so most function slots show `shownIn: []` |
 | `api_create_project.sample_behaviour.example.json` + `api_start_job.sample_behaviour.example.json` | group `Layer1.My Sample`, one behaviour diagram per external caller (`views.sequenceDiagrams.filterMode: all_callers`) | `behaviourDescription` (R6): 18 rows. The default filter draws none on the sample |
 
+**To run the whole contract against a server** — onboard, generate, every correction, every
+read, undo, the mistakes, the re-export and the Word file — use `tools/review_api_test/` (its
+README). It takes these two bodies from its config and every id from the server's answers.
+
 A missing or non-access token is **401**
 (`{"detail": {"code": "UNAUTHENTICATED", "message": "…", "status": 401}}`).
 

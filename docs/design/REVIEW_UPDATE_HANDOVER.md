@@ -132,7 +132,7 @@ Everything else is new files. These are the ones a merge can actually collide on
 |---|---|---|
 | `api/db/postgres/schema.py` | +3 tables, +`slot_shape`, +`model_units.description`, all three in `PER_VERSION_TABLES` | low — additive |
 | `engine/run.py` | +`_refuse_stale_export`, +`--force-export` (allowlist, parse branch, help) | low — one call beside `_restore_output_from_db` |
-| `api/services/pipeline_runner.py` | +`_reexport_from_phase`; the re-export's `from_phase` is now computed, not 4; the source checkout is resolved by `source_checkout`, and the disk-only `model/` check is gone | **medium** — same function as any re-export change |
+| `api/services/pipeline_runner.py` | +`_reexport_from_phase`; the re-export's `from_phase` is now computed, not 4; the source checkout is resolved by `source_checkout`, and the disk-only `model/` check is gone; `_build_cmd` passes **every** name of the scope (`--selected-group` per group, likewise component and layer) — it passed only the first, so re-exporting a version generated for two groups rebuilt one | **medium** — same function as any re-export change |
 | `engine/incremental/source_checkout.py` | new: find a version's checkout (expected folder, `base_path`, short-SHA folder) or clone that one commit | low — additive |
 | `engine/incremental/clone.py` | `_do_checkout` fetches the exact commit when it is outside the 50-commit shallow window | **medium** — `generate` uses it too; only the failure path changed |
 | `engine/views/flowcharts.py` | `_apply_text_overrides()` + one call between the incremental merge and the PNG render | **medium** — that function is large and often edited |
@@ -596,7 +596,17 @@ directories under the bare group name.
 
 ```
 python -m alembic heads                           # exactly one: 0014_users_is_superuser
-python -m pytest tests/unit tests/api tests/e2e   # 3626 passed, 80 skipped on review_update_v3
+python -m pytest tests/unit tests/api tests/e2e   # 3733 passed, 80 skipped on review_update_v3
+```
+
+**The whole feature through the REST API**, against a running server — the check to repeat on
+PostgreSQL: `tools/review_api_test/` onboards a project, generates a version, corrects every kind,
+reads everything back through every route, edits again, saves one slot twice at once, undoes, tries
+a client's mistakes, re-exports and opens the Word file, then generates the next version and checks
+the corrections carried. Only the two request bodies come from its config; see its README.
+
+```
+python tools/review_api_test/review_api_test.py --config tools/review_api_test/config.json
 ```
 
 The feature has also been run end to end against a **SQLite** database on a machine with no
