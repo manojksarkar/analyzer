@@ -48,7 +48,8 @@ export function Sidebar() {
               <h1 className="text-primary font-bold tracking-tight whitespace-nowrap font-sans text-xl leading-[1.2]">
                 {APP_NAME}
               </h1>
-              <p className="text-on-surface-variant uppercase whitespace-nowrap mt-0.5 font-mono text-caption font-medium tracking-[0.08em]">
+              {/* 10px / 0.04em fits the rail: at 11px / 0.08em it was cut to "CRAFTED FROM COI". */}
+              <p className="text-on-surface-variant uppercase whitespace-nowrap mt-0.5 font-mono text-label font-medium tracking-[0.04em]">
                 {APP_TAGLINE}
               </p>
             </div>
