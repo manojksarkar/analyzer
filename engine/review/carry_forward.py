@@ -49,9 +49,9 @@ import datetime
 import json
 import os
 import sys
-from typing import Any, Dict, NamedTuple, Optional, Set
+from typing import Any, Dict, Iterable, List, Mapping, NamedTuple, Optional, Set
 
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 
 from review import slot
 
@@ -416,6 +416,74 @@ def carry_queue(conn, baseline_version_id: str, target_version_id: str, *,
     return n
 
 
+def stored_shapes(conn, version_id: str) -> Dict[str, Set[str]]:
+    """`{flowchart_id: {cfg_shape, ...}}` for this version's stored flowcharts -- a set, as a
+    flowchart can be stored in more than one directory (a SWE.3 and a SWE.4 group). An entry with
+    no stored graph has no shape and is left out."""
+    from review import rerender
+    out: Dict[str, Set[str]] = {}
+    for r in rerender.output_rows(conn, version_id, rerender.FLOWCHARTS):
+        try:
+            entries = json.loads(r.content or "[]")
+        except ValueError:
+            continue
+        for e in entries if isinstance(entries, list) else ():
+            if not isinstance(e, dict) or not e.get("functionKey"):
+                continue
+            try:
+                out.setdefault(e["functionKey"], set()).add(slot.shape_of_cfg(e.get("cfg") or {}))
+            except slot.SlotKeyError:
+                continue
+    return out
+
+
+def orphan_misplaced_labels(conn, version_id: str, *,
+                            graphs: Optional[Mapping[str, Iterable[str]]] = None) -> List[str]:
+    """Mark orphaned the node-label corrections written for a graph this version does not have.
+    Returns their slot keys.
+
+    `REQ-ID-02`, row by row. A node id is a position, so a correction fits only the graph its own
+    `slot_shape` was taken from, and Phase 3 drops one that does not (`phase3_overrides`). Dropped
+    is not enough: the row still read as a correction in force -- `isOverridden`, `canUndo` -- and
+    an undo wrote its `llm_text`, the LLM's label for whatever node held that id in the OLD graph,
+    onto the new one. Orphaned, it is kept and never applied (`REQ-ID-03`), and an edit there
+    starts a new correction.
+
+    Called where the version's graph is in hand: after a capture (`incremental/store.py`), and by
+    a flowchart save for its own flowchart, which passes `graphs` -- `{flowchart_id: shapes}` --
+    so nothing is read again. Without it, every stored flowchart of the version is read.
+
+    A correction is misplaced when its shape is none of its flowchart's stored shapes. One with no
+    shape -- written before shapes were recorded -- or on a flowchart this version does not store
+    is left alone: there is nothing to judge it by.
+    """
+    rows = conn.execute(
+        select(s.text_overrides.c.slot_key, s.text_overrides.c.slot_shape)
+        .where(s.text_overrides.c.version_id == version_id,
+               s.text_overrides.c.slot_kind == slot.NODE_LABEL,
+               s.text_overrides.c.is_orphaned.is_(False),
+               s.text_overrides.c.slot_shape.isnot(None))).fetchall()
+    if not rows:
+        return []
+    held = ({fid: set(shapes) for fid, shapes in graphs.items()} if graphs is not None
+            else stored_shapes(conn, version_id))
+    misplaced = []
+    for r in rows:
+        try:
+            fid = slot.parse(slot.NODE_LABEL, r.slot_key)["entity_key"]
+        except slot.SlotKeyError:
+            continue
+        if held.get(fid) and r.slot_shape not in held[fid]:
+            misplaced.append(r.slot_key)
+    for i in range(0, len(misplaced), 500):        # SQLite caps bound parameters
+        conn.execute(update(s.text_overrides)
+                     .where(s.text_overrides.c.version_id == version_id,
+                            s.text_overrides.c.slot_kind == slot.NODE_LABEL,
+                            s.text_overrides.c.slot_key.in_(misplaced[i:i + 500]))
+                     .values(is_orphaned=True))
+    return misplaced
+
+
 def apply_live_corrections(conn, version_id: str, model: Dict[str, Any]) -> Dict[str, int]:
     """Write this version's corrections that are in force back into `model`, which Phase 2 has
     just rebuilt. Returns `{artifact: count}` for what it changed.
@@ -463,6 +531,7 @@ def overrides_for_config(conn, version_id: str) -> Dict[str, Dict]:
     reads (`REQ-AP-05`):
 
         {"nodeLabel":            {flowchart_id: {node_id: text}},
+         "nodeLabelShapes":      {flowchart_id: {node_id: slot_shape}},
          "behaviourDescription": {slot_key: text}}
 
     Built here rather than in the caller so there is one place that knows the shape. The two kinds

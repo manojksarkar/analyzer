@@ -756,7 +756,9 @@ Fresh LLM text is correct there (`REQ-VR-01`).
 
 The `slot_shape` half of the `nodeLabel` condition is what stops a correction landing on the wrong
 node when the source is byte-identical but the builder or `cfgSimplification` renumbered the graph
-(`REQ-ID-02`). Since every override on a flowchart stores the same shape, they pass or fail together.
+(`REQ-ID-02`). Each row carries the shape of the graph its **own** text was written for and is judged
+on its own: rows on one flowchart can differ — one carried from a version numbered differently, one
+saved after the renumbering.
 
 Built as `engine/review/carry_forward.py`. Three things it does that the pseudocode above does not
 say:
@@ -822,19 +824,30 @@ byte-identical but the builder or `cfgSimplification` renumbered the graph. Node
 
 The check has to happen against the graph the text is about to be written into, and there is exactly
 one moment where that graph exists: `phase3_overrides.apply_to_flowchart_json`, immediately before
-the label is replaced. A correction whose shape disagrees with the CFG in hand is **dropped** — the
-LLM's label stays, and nothing is written to the wrong node.
+the label is replaced. It is made **per row** (`labels_that_fit`): a correction whose own shape
+disagrees with the CFG in hand is **dropped** — the LLM's label stays, and nothing is written to the
+wrong node — and the flowchart's other corrections still land. Until 2026-09-30 it was one shape per
+flowchart, the last row read, so row order decided whether the old text landed on the renumbered
+box or the new correction was dropped with it.
+
+**A dropped row is then marked orphaned** (`carry_forward.orphan_misplaced_labels`) wherever the
+version's graph is in hand: after every capture (`incremental/store.py`, its own transaction, never
+fatal), and by a flowchart save for its own flowchart, before it writes. Left live, it read as a
+correction in force — `isOverridden`, `canUndo` — while the document printed the LLM's label, and an
+undo wrote its `llm_text`, the old graph's label for that node id, onto the box that now holds the
+id. An undo also checks the row against the stored graph first and refuses (409) when it does not
+fit, for a row that no capture or save has judged yet.
 
 Carry-forward makes the weaker version of the same check, against the baseline's graph, for one
 reason only: to mark a genuinely stale correction as orphaned *in the record*, so a reviewer is told
 their correction stopped applying rather than finding it silently absent. It cannot make the strong
 check, and it does not pretend to.
 
-| | carry-forward (Phase 2) | `apply_to_flowchart_json` (Phase 3) |
-|---|---|---|
-| graph available | the baseline's | the one being written |
-| a mismatch means | mark the row orphaned, with a reason | drop the correction, keep the LLM text |
-| catches a builder change between the two versions | no | **yes** |
+| | carry-forward (Phase 2) | `apply_to_flowchart_json` (Phase 3) | the capture, a save |
+|---|---|---|---|
+| graph available | the baseline's | the one being written | the one stored |
+| a mismatch means | mark the row orphaned, with a reason | drop that row's label, keep the LLM text | mark the row orphaned |
+| catches a builder change between the two versions | no | **yes** | **yes** |
 
 ---
 

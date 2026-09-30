@@ -176,14 +176,14 @@ class TestTheShapeIsCheckedWhereTheTextLands:
 
     def test_a_matching_shape_applies(self):
         entries = self._entries("n0", "n1")
-        shapes = {FID: slot.cfg_shape(["n0", "n1"])}
+        shapes = {FID: {"n1": slot.cfg_shape(["n0", "n1"])}}
         assert p3.apply_to_flowchart_json(entries, {FID: {"n1": "Corrected"}}, shapes) == [FID]
 
     def test_a_renumbered_graph_is_refused(self):
         """Same node id, different graph -- a builder change between the two versions. Applying
         would put the right sentence on whatever now occupies n1."""
         entries = self._entries("n0", "n1", "n2")
-        shapes = {FID: slot.cfg_shape(["n0", "n1"])}          # written against a 2-node graph
+        shapes = {FID: {"n1": slot.cfg_shape(["n0", "n1"])}}  # written against a 2-node graph
         assert p3.apply_to_flowchart_json(entries, {FID: {"n1": "Corrected"}}, shapes) == []
         labels = {n["id"]: n["label"] for n in entries[0]["cfg"]["nodes"]}
         assert labels["n1"] == "llm n1", "the LLM's label must survive untouched"
@@ -197,9 +197,51 @@ class TestTheShapeIsCheckedWhereTheTextLands:
     def test_reading_the_shapes_off_the_rows(self):
         rows = [_Row(slot.NODE_LABEL, slot.for_node(FID, "n1"), "text")]
         rows[0].slot_shape = "abc123"
-        assert p3.shapes_by_flowchart(rows) == {FID: "abc123"}
+        assert p3.shapes_by_flowchart(rows) == {FID: {"n1": "abc123"}}
 
     def test_an_orphaned_row_contributes_no_shape(self):
         rows = [_Row(slot.NODE_LABEL, slot.for_node(FID, "n1"), "text", orphaned=True)]
         rows[0].slot_shape = "abc123"
         assert p3.shapes_by_flowchart(rows) == {}
+
+
+class TestEachRowIsJudgedOnItsOwn:
+    """REQ-ID-02 per ROW. Rows on one flowchart can claim different graphs: a correction carried
+    from a version whose builder numbered the nodes differently keeps that version's shape, and a
+    node corrected afterwards gets the new one. One shape per flowchart -- the last row read --
+    made the row ORDER decide: either the old text landed on the renumbered box, or the new
+    correction was dropped with it."""
+
+    OLD = slot.cfg_shape(["n0", "n1"])                 # the numbering the carried row was written for
+    NEW = slot.cfg_shape(["n0", "n1", "n2"])           # the graph Phase 3 is writing
+
+    def _rows(self, order):
+        carried = _Row(slot.NODE_LABEL, slot.for_node(FID, "n1"), "Written for the old n1")
+        carried.slot_shape = self.OLD
+        saved = _Row(slot.NODE_LABEL, slot.for_node(FID, "n2"), "Written for this n2")
+        saved.slot_shape = self.NEW
+        return [carried, saved] if order == "carried first" else [saved, carried]
+
+    @pytest.mark.parametrize("order", ["carried first", "saved first"])
+    def test_only_the_row_written_for_this_graph_lands(self, order):
+        rows = self._rows(order)
+        entries = [{"name": "ns::doThing", "functionKey": FID, "cfg": _cfg("n0", "n1", "n2")}]
+        changed = p3.apply_to_flowchart_json(entries, p3.labels_by_flowchart(rows),
+                                             p3.shapes_by_flowchart(rows))
+        assert changed == [FID]
+        assert {n["id"]: n["label"] for n in entries[0]["cfg"]["nodes"]} == {
+            "n0": "llm n0", "n1": "llm n1", "n2": "Written for this n2"}
+
+    @pytest.mark.parametrize("order", ["carried first", "saved first"])
+    def test_every_row_keeps_its_own_claim(self, order):
+        assert p3.shapes_by_flowchart(self._rows(order)) == {FID: {"n1": self.OLD,
+                                                                   "n2": self.NEW}}
+
+    def test_what_fits(self):
+        cfg = _cfg("n0", "n1", "n2")
+        labels = {"n0": "no claim", "n1": "old", "n2": "new"}
+        assert p3.labels_that_fit(labels, {"n1": self.OLD, "n2": self.NEW}, cfg) == {
+            "n0": "no claim", "n2": "new"}
+        assert p3.labels_that_fit(labels, {}, cfg) == labels, "no claims, nothing to check"
+        assert p3.labels_that_fit({"n1": "x"}, {"n1": self.NEW}, {"nodes": []}) == {}, (
+            "a graph with no nodes fits no claim")

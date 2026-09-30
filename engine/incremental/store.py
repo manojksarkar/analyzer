@@ -116,6 +116,34 @@ def _draw_pending_pictures(engine, version_id: str, output_dir: str) -> None:
         get_logger("incremental").warning("review: could not draw pending pictures: %s", exc)
 
 
+def _orphan_misplaced_labels(engine, version_id: str) -> None:
+    """Orphan the node-label corrections that do not fit the flowcharts just stored (REQ-ID-02).
+
+    Phase 3 applies a label only when its own row's `slot_shape` fits the graph it writes into,
+    and drops one that does not -- a correction carried from a version whose builder numbered the
+    nodes differently. The row must not go on claiming to be in force (`isOverridden`, `canUndo`,
+    an undo writing the old graph's label onto the new one), and this is the moment the graph
+    that decides it reaches the database: `carry_forward.orphan_misplaced_labels`.
+
+    Its own transaction, after the capture's, and never fatal: a failure leaves the rows as they
+    were, and Phase 3 goes on dropping them.
+    """
+    from core.logging_setup import get_logger
+    try:
+        from review.carry_forward import orphan_misplaced_labels
+        with engine.begin() as cx:
+            done = orphan_misplaced_labels(cx, version_id)
+        if done:
+            get_logger("incremental").warning(
+                "review: %d flowchart label correction(s) of version %s were written for an "
+                "earlier numbering of their flowchart's nodes -- kept, marked orphaned, not "
+                "applied: %s", len(done), version_id, ", ".join(sorted(done)[:20]))
+    except Exception as exc:                                 # noqa: BLE001 - see docstring
+        get_logger("incremental").warning(
+            "review: could not check version %s's flowchart label corrections against its new "
+            "flowcharts: %s", version_id, exc)
+
+
 def _stamp_derivation(cx, version_id: str, output_dir: str) -> None:
     """Record what Phase 3 derived, for the export guard (REQ-AP-04).
 
@@ -409,6 +437,8 @@ class PgStore(ArtifactStore):
                 "database still holds the previous render -- readers that use it (the API, the "
                 "HTML view, another node) will serve stale output until this is re-run.",
                 version_id, exc)
+        # REQ-ID-02. The flowcharts just stored decide which label corrections still fit.
+        _orphan_misplaced_labels(self.engine, version_id)
         # REQ-IM-02. A correction saved where no output tree existed left its picture owed. This
         # host has one, and has just written this version's output into it, so it is the right
         # place to pay that debt -- and the export blocks until it is paid.
