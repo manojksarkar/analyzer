@@ -267,6 +267,72 @@ def render_dot_cached(project_root: str, dot: str, png_path: str, *,
     return ok
 
 
+# Flowchart pictures for the web reader: DOT -> SVG, many charts per Node process
+# (engine/config/render_svg.mjs, viz-js, no browser). A typical flowchart takes about a
+# millisecond; a PNG above costs a headless browser per chart (~12 s), which is why PNGs are
+# Word's alone and gated by views.flowcharts while SVGs are drawn on every run. The size
+# limit, the box count and the content key live in core.flowchart_svg, which the web render
+# (api/services/doc_render.py) imports too.
+from core.flowchart_svg import (  # noqa: E402,F401
+    FLOWCHART_SVG_MAX_BOXES, count_dot_boxes, svg_content_key, svg_file_key,
+)
+
+
+def render_dot_svgs(project_root: str, jobs, *, batch: int = 200) -> dict:
+    """Draw [(dot, svg_path), ...] with engine/config/render_svg.mjs, `batch` charts per Node
+    process. Returns {svg_path: reason} for every chart NOT drawn -- {} means all were.
+
+    Never raises. A chart counts as drawn only if its file now carries its content key, so a
+    process that dies half way reports the rest as failed instead of leaving them unnoticed.
+    """
+    import json
+    import subprocess
+    import tempfile
+    jobs = [(dot, os.path.abspath(p)) for dot, p in jobs]
+    script = os.path.join(project_root, "engine", "config", "render_svg.mjs")
+    if not os.path.isfile(script):
+        return {p: f"renderer not found: {script}" for _, p in jobs}
+
+    failed: dict = {}
+    for start in range(0, len(jobs), max(1, batch)):
+        chunk = jobs[start:start + max(1, batch)]
+        payload = [{"dot": dot, "svg": p, "key": svg_content_key(dot)} for dot, p in chunk]
+        # The system temp dir, not the flowcharts dir: every *.json there is read as a
+        # unit's flowcharts, and a killed run would leave this one behind.
+        fd, jobs_path = tempfile.mkstemp(prefix="svg_jobs_", suffix=".json")
+        reported: dict = {}
+        why = ""
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(payload, f)
+            cmd = ["node", script, jobs_path]
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                                   errors="replace", timeout=60 + 5 * len(chunk),
+                                   check=False, shell=(os_type == "Windows"), cwd=project_root)
+                lines = [ln for ln in (r.stdout or "").splitlines() if ln.strip()]
+                try:
+                    summary = json.loads(lines[-1]) if lines else {}
+                except ValueError:
+                    summary = {}
+                reported = {e.get("svg"): e.get("error") or "draw failed"
+                            for e in (summary.get("failed") or []) if isinstance(e, dict)}
+                if r.returncode != 0:
+                    tail = " | ".join((r.stderr or "").strip().splitlines()[-5:])
+                    why = f"render_svg.mjs exited with code {r.returncode}: {tail}".strip()
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+                why = f"render_svg.mjs could not run: {type(exc).__name__}: {exc}"
+        finally:
+            try:
+                os.remove(jobs_path)
+            except OSError:
+                pass
+        for item, (dot, p) in zip(payload, chunk):
+            if svg_file_key(p) != item["key"]:
+                failed[p] = reported.get(p) or why or "not drawn"
+    return failed
+
+
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
