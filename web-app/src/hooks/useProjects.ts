@@ -17,6 +17,16 @@ export const projectKeys = {
     ['projects', id, 'documents', 'detail', docId] as const,
   documentRender: (id: string, docId: string) =>
     ['projects', id, 'documents', 'render', docId] as const,
+  /** Every rendered document of the project: a label save changes SWE.3 and SWE.4 renders. */
+  documentRenders: (id: string) => ['projects', id, 'documents', 'render'] as const,
+  /** Review & update, per version (its own prefix, so no document or version refetch wipes it). */
+  review: (id: string, vid: string) => ['projects', id, 'review', vid] as const,
+  exportReadiness: (id: string, vid: string) => ['projects', id, 'review', vid, 'readiness'] as const,
+  overrides: (id: string, vid: string) => ['projects', id, 'review', vid, 'overrides'] as const,
+  slotHistory: (id: string, vid: string, kind: string, key: string) =>
+    ['projects', id, 'review', vid, 'history', kind, key] as const,
+  flowchartLabels: (id: string, vid: string, flowchartId: string) =>
+    ['projects', id, 'review', vid, 'labels', flowchartId] as const,
   docStats: (id: string, versionId?: string) =>
     ['projects', id, 'documents', 'stats', versionId ?? 'all'] as const,
   team: (id: string) => ['projects', id, 'team'] as const,

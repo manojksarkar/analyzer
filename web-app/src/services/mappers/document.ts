@@ -6,6 +6,7 @@ import type {
 } from '../../types'
 import { formatShortDate, avatarPalette } from '../../lib/format'
 import { API_BASE_URL } from '../../lib/http'
+import { ApiSlotSchema, mapSlotOrNull, type ApiSlot } from './review'
 
 export const ApiAssigneeSchema = z.object({
   user_id: z.string(), name: z.string(), initials: z.string(),
@@ -94,8 +95,15 @@ const ApiFlowchartSchema = z.object({
   width: z.number().nullable().optional(),
   height: z.number().nullable().optional(),
   boxes: z.number().optional(),
+  source_hash: z.string().nullable().optional(),
+  // Review & update: the chart's id for the label editor, and whether it has labels to edit.
+  flowchart_id: z.string().nullable().optional(),
+  editable: z.boolean().optional(),
 })
 type ApiFlowchart = z.infer<typeof ApiFlowchartSchema>
+
+// A correctable text's slot (review & update); an older API sends none.
+const ApiSlotRefSchema = ApiSlotSchema.nullable().optional()
 
 const ApiFlowchartTableSchema = z.object({
   description: z.string(),
@@ -104,6 +112,9 @@ const ApiFlowchartTableSchema = z.object({
   capacity: z.string(),
   input_name: z.string(),
   output_name: z.string(),
+  description_slot: ApiSlotRefSchema,
+  input_name_slot: ApiSlotRefSchema,
+  output_name_slot: ApiSlotRefSchema,
 })
 type ApiFlowchartTable = z.infer<typeof ApiFlowchartTableSchema>
 
@@ -114,6 +125,9 @@ const ApiBehaviorTableSchema = z.object({
   input_name: z.string(),
   output_name: z.string(),
   diagram_url: z.string().nullable().optional(),
+  description_slot: ApiSlotRefSchema,
+  input_name_slot: ApiSlotRefSchema,
+  output_name_slot: ApiSlotRefSchema,
 })
 type ApiBehaviorTable = z.infer<typeof ApiBehaviorTableSchema>
 
@@ -144,24 +158,30 @@ const ApiTestSummarySchema = z.object({
 // `z.lazy` so it can reference itself (zod can't infer a self-referential type).
 interface ApiRichSection {
   id: string; number: string; title: string; level: number; type: string
-  content: string | null; table: { headers: string[]; rows: string[][] } | null
+  content: string | null
+  table: { headers: string[]; rows: string[][]; cell_slots?: (ApiSlot | null)[][] | null } | null
   image_url?: string | null; mermaid?: string | null
   children: ApiRichSection[]
   flowchart_table?: ApiFlowchartTable | null
   behavior_table?: ApiBehaviorTable | null
   test_spec?: ApiTestSpec | null
+  content_slot?: ApiSlot | null
 }
 const ApiRichSectionSchema: z.ZodType<ApiRichSection> = z.lazy(() =>
   z.object({
     id: z.string(), number: z.string(), title: z.string(), level: z.number(), type: z.string(),
     content: z.string().nullable(),
-    table: z.object({ headers: z.array(z.string()), rows: z.array(z.array(z.string())) }).nullable(),
+    table: z.object({
+      headers: z.array(z.string()), rows: z.array(z.array(z.string())),
+      cell_slots: z.array(z.array(ApiSlotSchema.nullable())).nullable().optional(),
+    }).nullable(),
     image_url: z.string().nullable().optional(),
     mermaid: z.string().nullable().optional(),
     children: z.array(ApiRichSectionSchema),
     flowchart_table: ApiFlowchartTableSchema.nullable().optional(),
     behavior_table: ApiBehaviorTableSchema.nullable().optional(),
     test_spec: ApiTestSpecSchema.nullable().optional(),
+    content_slot: ApiSlotSchema.nullable().optional(),
   }),
 )
 
@@ -202,7 +222,7 @@ function mapTestSpec(t: ApiTestSpec): TestSpecData {
 }
 
 export function mapFlowchart(fc: ApiFlowchart): FlowchartEntry {
-  const imageUrl = resolveAssetUrl(fc.image_url)
+  const imageUrl = withVersion(resolveAssetUrl(fc.image_url), fc.source_hash)
   return {
     label: fc.label ?? '',
     status: fc.status === 'too_large' ? 'too_large' : imageUrl ? 'drawn' : 'missing',
@@ -210,7 +230,17 @@ export function mapFlowchart(fc: ApiFlowchart): FlowchartEntry {
     width: fc.width ?? null,
     height: fc.height ?? null,
     boxes: fc.boxes ?? 0,
+    flowchartId: fc.flowchart_id ?? null,
+    editable: !!(fc.flowchart_id && fc.editable),
   }
+}
+
+/** The SVG's URL changes with its drawing: a corrected label is redrawn under the same file
+ *  name, and an `<img>` keeps the picture it has for an unchanged `src`. Added after
+ *  `resolveAssetUrl` so it stays a query parameter of its own in either asset-URL shape. */
+function withVersion(url: string | null, sourceHash: string | null | undefined): string | null {
+  if (!url || !sourceHash) return url
+  return `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(sourceHash)}`
 }
 
 function mapRichSection(s: ApiRichSection): RichSection {
@@ -224,6 +254,9 @@ function mapRichSection(s: ApiRichSection): RichSection {
       capacity: ft.capacity,
       inputName: ft.input_name,
       outputName: ft.output_name,
+      descriptionSlot: mapSlotOrNull(ft.description_slot),
+      inputNameSlot: mapSlotOrNull(ft.input_name_slot),
+      outputNameSlot: mapSlotOrNull(ft.output_name_slot),
     }
   }
 
@@ -237,6 +270,9 @@ function mapRichSection(s: ApiRichSection): RichSection {
       inputName: bt.input_name,
       outputName: bt.output_name,
       diagramUrl: resolveAssetUrl(bt.diagram_url),
+      descriptionSlot: mapSlotOrNull(bt.description_slot),
+      inputNameSlot: mapSlotOrNull(bt.input_name_slot),
+      outputNameSlot: mapSlotOrNull(bt.output_name_slot),
     }
   }
 
@@ -247,13 +283,20 @@ function mapRichSection(s: ApiRichSection): RichSection {
     level: s.level,
     type: (s.type as RichSectionType) ?? 'richtext',
     content: s.content,
-    table: s.table,
+    table: s.table ? {
+      headers: s.table.headers,
+      rows: s.table.rows,
+      ...(s.table.cell_slots
+        ? { cellSlots: s.table.cell_slots.map((row) => row.map((c) => mapSlotOrNull(c))) }
+        : {}),
+    } : null,
     imageUrl: resolveAssetUrl(s.image_url),
     mermaid: s.mermaid ?? null,
     children: (s.children ?? []).map(mapRichSection),
     flowchartTable,
     behaviorTable,
     testSpec: s.test_spec ? mapTestSpec(s.test_spec) : null,
+    contentSlot: mapSlotOrNull(s.content_slot),
   }
 }
 

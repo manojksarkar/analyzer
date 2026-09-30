@@ -246,6 +246,14 @@ describe('API responses', () => {
         sectionKey = pickStr(detail.body, 'document', 'sections', 0, 'key')
         const render = await get('GET …/documents/:id/render', `${p}/documents/${docId}/render`, Envelopes.documentRender)
         sampleAssetRef = findFirstImageUrl(render.body)
+        const docVersion = pickStr(detail.body, 'document', 'version_id')
+        if (docVersion) {
+          // Review & update reads (R9, R1): a version with no database answers 503, so optional.
+          await get('GET …/versions/:vid/export-readiness', `${p}/versions/${docVersion}/export-readiness`,
+            Envelopes.exportReadiness, { optional: true })
+          await get('GET …/versions/:vid/overrides', `${p}/versions/${docVersion}/overrides`,
+            Envelopes.overrides, { optional: true })
+        }
         await call('GET …/documents/:id/download', 'GET', `${p}/documents/${docId}/download`, { binary: true, optional: true })
       }
 

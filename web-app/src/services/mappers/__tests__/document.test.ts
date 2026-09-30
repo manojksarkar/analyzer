@@ -83,8 +83,20 @@ describe('mapFlowchart (one flowchart SVG in a function table)', () => {
     expect(fc).toEqual({
       label: 'int add(int a)', status: 'drawn',
       imageUrl: `${API_BASE_URL}/projects/p1/documents/d1/assets/flowcharts/Math_add.svg`,
-      width: 400, height: 200, boxes: 7,
+      width: 400, height: 200, boxes: 7, flowchartId: null, editable: false,
     })
+  })
+  it('names the chart for the label editor, and versions its URL by its drawing', () => {
+    const fc = mapFlowchart({
+      label: 'f()', status: 'drawn', image_url: 'projects/p1/documents/d1/assets/flowcharts/U_f.svg',
+      source_hash: 'abc123', flowchart_id: 'C|U|f|', editable: true,
+    })
+    expect(fc.flowchartId).toBe('C|U|f|')
+    expect(fc.editable).toBe(true)
+    expect(fc.imageUrl).toBe(`${API_BASE_URL}/projects/p1/documents/d1/assets/flowcharts/U_f.svg?v=abc123`)
+  })
+  it('is not editable without an id', () => {
+    expect(mapFlowchart({ label: 'f()', image_url: 'x.svg', editable: true }).editable).toBe(false)
   })
   it('keeps too_large with no image', () => {
     const fc = mapFlowchart({ label: 'f()', status: 'too_large', image_url: null, boxes: 612 })

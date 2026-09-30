@@ -218,9 +218,85 @@ export interface TestSummary {
   platform: string
 }
 
+/* ── Review & update: texts a reviewer can correct ── */
+
+export type SlotKind =
+  | 'description' | 'behaviourInputName' | 'behaviourOutputName' | 'behaviourDescription'
+  | 'unitDescription' | 'structDescription' | 'nodeLabel'
+
+/** One correctable text, in the shape every review route returns it (API spec §5 `Slot`), and
+ *  the render payload carries beside each text. The key is the server's: send it back as is. */
+export interface Slot {
+  kind: SlotKind
+  key: string
+  /** What the document prints for this slot now ('' when empty: the page shows a stand-in). */
+  text: string
+  /** The LLM's wording (the original a correction replaced); null when the LLM wrote nothing. */
+  llmText: string | null
+  /** The reviewer's words; null when never corrected. */
+  humanText: string | null
+  /** A correction is in force (the document prints `humanText`). */
+  isOverridden: boolean
+  /** A correction exists but its code changed: kept, not printed. */
+  isOrphaned: boolean
+  /** Undo would change the text. Offer Undo exactly when true. */
+  canUndo: boolean
+  /** A user id. */
+  updatedBy: string | null
+  updatedAt: string | null
+  /** Behaviour rows: the bullets of `text`, and the row's two function ids. */
+  bullets?: string[]
+  functionId?: string
+  externalCallerId?: string
+  /** Node labels: the flowchart and the node. */
+  flowchartId?: string
+  nodeId?: string
+}
+
+/** A save's answer: the slot as it now is, plus what it replaced and what it queued. */
+export interface SlotSaveResult extends Slot {
+  previousText: string | null
+  firstEdit: boolean
+  queuedForRegeneration: { slotKind: string; slotKey: string }[]
+}
+
+export interface SlotHistoryEntry {
+  seq: number
+  humanText: string
+  updatedBy: string | null
+  updatedAt: string | null
+}
+
+/** R7: one flowchart's node labels. */
+export interface FlowchartLabels {
+  flowchartId: string
+  functionName: string
+  labels: Slot[]
+  graphAvailable: boolean
+  note: string | null
+}
+
+/** R9: whether the version's Word files have every correction, and its latest re-export. */
+export interface ExportReadiness {
+  stale: boolean
+  explanation: string | null
+  overrideCount: number
+  pendingRenders: number
+  failedRenders: number
+  reexport: {
+    jobId: string
+    status: string
+    startedAt: string | null
+    completedAt: string | null
+    errorMessage: string | null
+  } | null
+}
+
 export interface RichTable {
   headers: string[]
   rows: string[][]
+  /** Per cell: the slot of a correctable cell, else null (same shape as `rows`). */
+  cellSlots?: (Slot | null)[][]
 }
 
 /** Whether a flowchart has a picture: `too_large` is over the engine's box limit, `missing`
@@ -239,6 +315,10 @@ export interface FlowchartEntry {
   height: number | null
   /** Boxes in the chart (0 when the API did not say). */
   boxes: number
+  /** The chart's id for the label editor (R7/R8); null for an older render. */
+  flowchartId: string | null
+  /** It has a stored graph whose labels a reviewer can correct. */
+  editable: boolean
 }
 
 export interface FlowchartTableData {
@@ -248,6 +328,9 @@ export interface FlowchartTableData {
   capacity: string
   inputName: string
   outputName: string
+  descriptionSlot: Slot | null
+  inputNameSlot: Slot | null
+  outputNameSlot: Slot | null
 }
 
 export interface BehaviorTableData {
@@ -257,6 +340,9 @@ export interface BehaviorTableData {
   inputName: string
   outputName: string
   diagramUrl: string | null
+  descriptionSlot: Slot | null
+  inputNameSlot: Slot | null
+  outputNameSlot: Slot | null
 }
 
 /** One node of the rendered document tree (sections nest via `children`). */
@@ -276,6 +362,8 @@ export interface RichSection {
   flowchartTable?: FlowchartTableData | null
   behaviorTable?: BehaviorTableData | null
   testSpec?: TestSpecData | null
+  /** A function section without a flowchart: the slot of its `content` (its description). */
+  contentSlot?: Slot | null
 }
 
 export interface DocCover {

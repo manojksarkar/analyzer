@@ -184,6 +184,8 @@ export const http = {
     request<T>('POST', path, { body, params }),
   patch: <T>(path: string, body?: unknown, params?: QueryParams) =>
     request<T>('PATCH', path, { body, params }),
+  put: <T>(path: string, body?: unknown, params?: QueryParams) =>
+    request<T>('PUT', path, { body, params }),
   del: <T>(path: string, params?: QueryParams) => request<T>('DELETE', path, { params }),
   upload,
   download,

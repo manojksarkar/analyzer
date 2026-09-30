@@ -3,6 +3,7 @@ import {
   ApiSignInSchema, ApiUserSchema, ApiProjectSchema, ApiCommitSchema, ApiVersionSchema,
   ApiDocumentSchema, ApiDocumentDetailSchema, ApiRichDocumentSchema, ApiMemberSchema,
   ApiJobSchema, ApiFunctionSchema, ApiNotificationSchema, ApiConfigPreviewSchema,
+  ApiExportReadinessSchema, ApiOverridesSchema,
 } from '../../services/mappers'
 
 /**
@@ -63,6 +64,10 @@ export const Envelopes = {
   docStats: z.object({ stats: z.record(z.string(), z.number()) }),
   document: z.object({ document: ApiDocumentDetailSchema }),
   documentRender: z.object({ document: ApiRichDocumentSchema }),
+
+  // ── review & update (read only here: the suite never writes a correction) ──
+  exportReadiness: ApiExportReadinessSchema,
+  overrides: ApiOverridesSchema,
   approvedCount: z.object({ approved_count: z.number() }),
   downloadUrl: z.object({ download_url: z.string() }),
 
