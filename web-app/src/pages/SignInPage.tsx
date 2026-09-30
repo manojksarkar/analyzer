@@ -18,8 +18,8 @@ type FormValues = z.infer<typeof schema>
 
 const FEATURES = ['ASPICE Ready', 'End-to-End Traceability', 'Enterprise Security']
 
-const INPUT_CLS = 'w-full h-11 px-3 bg-white border border-outline-variant rounded-2xl font-sans text-sm text-on-surface outline-none focus:border-secondary focus:shadow-[0_0_0_3px_rgba(0,88,190,0.12)]'
-const LABEL_CLS = 'block font-mono text-caption font-semibold tracking-[0.08em] uppercase text-on-surface-variant mb-1.5'
+const INPUT_CLS = 'w-full h-11 px-3 bg-white border border-outline-variant rounded-xl font-sans text-sm text-on-surface placeholder:text-outline outline-none focus:border-secondary focus:shadow-[0_0_0_3px_rgba(0,88,190,0.12)]'
+const LABEL_CLS = 'block font-mono text-caption font-medium tracking-[0.08em] uppercase text-on-surface-variant mb-1.5'
 
 /** Turn any sign-in failure into a clear, user-facing message. */
 function signInErrorMessage(err: unknown): string {

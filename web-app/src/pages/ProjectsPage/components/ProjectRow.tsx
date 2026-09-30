@@ -19,7 +19,8 @@ function AvatarStack({ members, max = 3 }: { members: TeamMember[]; max?: number
           style={{ background: m.avatarColor, color: m.avatarTextColor, zIndex: visible.length - i, marginLeft: i > 0 ? -8 : 0 }}
           aria-hidden
         >
-          {m.initials}
+          {/* The list payload has only a member count, so no initials: a glyph, not a blank disc. */}
+          {m.initials || <Icon name="person" size={12} />}
         </div>
       ))}
       {overflow > 0 && (

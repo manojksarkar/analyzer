@@ -1408,13 +1408,13 @@ function WizardView({
             </div>
           )}
           <div className="flex items-center gap-3">
-            <button onClick={back} className={cn('flex items-center gap-2 px-5 py-2.5 border border-outline-variant rounded-lg text-sm text-on-surface-variant hover:bg-surface-container transition-colors', cur === 1 && 'invisible')}>
+            <button onClick={back} className={cn('flex items-center gap-2 px-5 py-2.5 border border-outline-variant rounded-lg font-mono text-xs font-medium tracking-[0.02em] text-on-surface-variant hover:bg-surface-container transition-colors', cur === 1 && 'invisible')}>
               <Icon name="arrow_back" size={16} />
               Back
             </button>
-            <button onClick={cont} disabled={submitting} className={cn('flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white transition-all active:scale-[.98] disabled:opacity-60', isLast ? 'bg-[#00a572]' : 'bg-secondary')}>
+            <button onClick={cont} disabled={submitting} className={cn('flex items-center gap-2 px-6 py-2.5 rounded-lg font-mono text-xs font-medium tracking-[0.02em] text-white transition-all active:scale-[.98] disabled:opacity-60', isLast ? 'bg-on-tertiary-container' : 'bg-secondary')}>
               {isLast
-                ? <>{submitting ? 'Initializing…' : 'Initialize Project'}<Icon name="rocket_launch" size={16} fill /></>
+                ? <><Icon name="rocket_launch" size={16} fill />{submitting ? 'Initializing…' : 'Initialize Project'}</>
                 : <>{cur === 4 && members.length === 0 ? 'Skip for now' : 'Continue'}<Icon name="arrow_forward" size={16} /></>}
             </button>
           </div>
