@@ -245,9 +245,10 @@
 >   PATH but failed to run", exit 2) and a whole-project parse on the 5 s DB connect timeout
 >   (`DATABASE_CONNECT_TIMEOUT=30` fixes it for that process). A whole-project LLM run on local Ollama took ~7.5 h
 >   (272 functions; flowchart node labels 20 s–2 min per function). Most sample components publish no function
->   (per-unit publication), so their interface tables and SWE.4 specs are empty. OPEN: at `9d4dd0f` B v1.1
->   (incremental on `3ee7fe0`) publishes no Math function while A (full) publishes `multiply` - a full B run
->   ("v1.1-full") decides incremental miss vs config.
+>   (per-unit publication), so their interface tables and SWE.4 specs are empty. **Incremental miss confirmed
+>   (BACKLOG IN-6):** at `9d4dd0f`, B v1.1 (incremental on `3ee7fe0`) publishes no Math function; B v1.1-full
+>   and A (both full) publish `multiply` (new in Utils.cpp, called from UNCHANGED App/Main.cpp). Math's SWE.3 +
+>   SWE.4 differ between the two B versions; every other document is identical.
 > - **Test data (DB `analyzer_ui`)**: 4 projects by admin, team bob/carol/dave/eve, reviews in every state -
 >   All components (A, LLM, 50 docs), Two cores (B, v1.0 approved / v1.1 / v1.1-full), Partial scopes (C, v0.1 +
 >   v0.2), Imported config (D, made in the wizard from A's downloaded config). Servers: 8010 runs jobs (its code
