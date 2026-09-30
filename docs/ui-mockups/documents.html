@@ -198,6 +198,137 @@
   .proj-status-chip .s-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
   @keyframes pulse-dot { 0%,100%{opacity:1;} 50%{opacity:.3;} }
   .s-dot-pulse { animation:pulse-dot 1.1s ease-in-out infinite; }
+
+  /* ── SWE.3 reader tables, as the DOCX draws them ── */
+  .doc-h1 { font: 600 22px/30px Inter; color: #041627; margin-bottom: 14px; }
+  .doc-h2 { font: 600 16px/22px Inter; color: #0b1c30; margin: 26px 0 10px; }
+  .doc-h3 { font: 600 14px/20px Inter; color: #0b1c30; margin: 26px 0 8px; }
+  .doc-h4 { font: 600 12px/18px Inter; color: #44474c; margin: 18px 0 6px; }
+  .doc-p  { font-size: 13px; line-height: 1.6; color: #0b1c30; }
+  .doc-cap { font: 500 11px 'JetBrains Mono'; color: #74777d; margin: 16px 0 6px; }
+  .doc-fig { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 22px; border: 1px solid #c4c6cd; border-radius: 8px; background: #f8f9ff; color: #74777d; font: 500 11px 'JetBrains Mono'; }
+  table.dt { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.dt th { background: #e5eeff; color: #44474c; font-weight: 600; text-align: left; padding: 7px 9px; border: 1px solid #c4c6cd; }
+  table.dt td { padding: 7px 9px; border: 1px solid #c4c6cd; vertical-align: top; color: #0b1c30; }
+  table.dt td.k { background: #e5eeff; color: #44474c; font-weight: 600; width: 140px; }
+  table.dt .mono { font-family: 'JetBrains Mono'; font-size: 11px; }
+  table.dt-8 th, table.dt-8 td { font-size: 11px; padding: 6px 7px; }
+
+  /* ── Review & update: edit mode (mockup; PR #70 routes R1–R9) ── */
+  .ed { display: block; border-radius: 3px; outline: 1px solid transparent; outline-offset: 2px; transition: outline-color .1s, background .1s; }
+  .ed.corrected::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #0058be; margin-right: 6px; vertical-align: 2px; }
+  .ed-list.corrected::before { display: none; }
+  .ed-list.corrected { box-shadow: inset 2px 0 0 #0058be; padding-left: 8px; }
+  .ed-list > div::before { content: '• '; }
+  body.editing .ed { outline: 1px dashed #8aa4d6; cursor: text; background: #fbfcff; }
+  body.editing .ed:hover { outline: 1px solid #0058be; background: #eff4ff; }
+  body.editing .ed:focus { outline: 2px solid #0058be; background: #fff; }
+  body.editing.locked .ed { outline-color: #c4c6cd; cursor: not-allowed; background: transparent; }
+  .ed-meta { display: none; margin-top: 5px; font: 500 10px/14px 'JetBrains Mono'; color: #74777d; }
+  body.editing .ed-meta:not(:empty) { display: block; }
+  .ed-meta a { color: #0058be; cursor: pointer; }
+  .ed-meta a:hover { text-decoration: underline; }
+  .ed-meta .ok { color: #00a572; font-weight: 600; }
+  .ed-meta .err { color: #ba1a1a; font-weight: 600; }
+  .ed-hist { margin-top: 6px; border: 1px solid #c4c6cd; border-radius: 6px; background: #f8f9ff; padding: 6px 8px; font-size: 11px; }
+  body:not(.editing) .ed-hist { display: none; }
+  .ed-hist .h { font: 600 10px 'JetBrains Mono'; color: #44474c; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+  .ed-hist .r { display: grid; grid-template-columns: 150px 1fr; gap: 8px; padding: 3px 0; border-top: 1px solid #e5eeff; }
+  .ed-hist .w { font: 500 10px 'JetBrains Mono'; color: #74777d; }
+  .edit-bar { display: none; position: sticky; top: 0; z-index: 15; align-items: center; gap: 10px; padding: 8px 24px; background: #eff4ff; border-bottom: 1px solid #b9cdf5; }
+  body.editing .edit-bar { display: flex; }
+  kbd { font: 500 10px 'JetBrains Mono'; border: 1px solid #c4c6cd; border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; background: #fff; }
+  .ready-banner { display: none; align-items: center; gap: 10px; padding: 10px 14px; margin-bottom: 14px; border-radius: 10px; border: 1px solid #fcd34d; background: #fffbeb; }
+  .ready-banner.show { display: flex; }
+  .ready-banner.ok { border-color: #86efac; background: #f0fdf9; }
+  .reexport-btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 6px; background: #b45309; color: #fff; font: 600 10px 'JetBrains Mono'; white-space: nowrap; }
+  .fc-wrap { margin-top: 10px; border: 1px solid #c4c6cd; border-radius: 8px; overflow: hidden; }
+  .fc-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: #f8f9ff; border-bottom: 1px solid #c4c6cd; }
+  .fc-sig { font: 500 11px 'JetBrains Mono'; color: #44474c; }
+  .fc-edit { display: none; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid #0058be; color: #0058be; border-radius: 6px; font: 600 10px 'JetBrains Mono'; background: #fff; }
+  .fc-edit:hover { background: #eff4ff; }
+  body.editing .fc-edit { display: inline-flex; }
+  body.editing.locked .fc-edit { opacity: .4; pointer-events: none; }
+  .fc-pic { display: flex; justify-content: center; padding: 12px; background: #fff; }
+  .fcs .shape { fill: #fff; stroke: #44474c; stroke-width: 1.2; }
+  .fcs .shape.term { fill: #e5eeff; }
+  .fcs .nd.hl .shape { stroke: #0058be; stroke-width: 2.4; fill: #eff4ff; }
+  .fcs text { font-family: Inter, sans-serif; font-size: 11px; fill: #0b1c30; }
+  .fcs .elab { font-size: 10px; fill: #74777d; }
+  .fcs .edge { stroke: #74777d; stroke-width: 1.2; fill: none; }
+  .fcs .badge { fill: #041627; }
+  .fcs .badge-t { fill: #fff; font-size: 9px; font-weight: 600; }
+  .fc-modal { position: fixed; inset: 0; z-index: 300; background: rgba(4,22,39,.45); display: flex; align-items: center; justify-content: center; }
+  .fc-modal.hidden { display: none; }
+  .fc-dialog { width: min(980px, 94vw); max-height: 90vh; background: #fff; border-radius: 12px; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(4,22,39,.3); overflow: hidden; }
+  .fc-body { display: grid; grid-template-columns: 1fr 380px; min-height: 0; flex: 1; }
+  .fc-body .pic { overflow: auto; background: #f8f9ff; display: flex; justify-content: center; align-items: flex-start; padding: 16px; border-right: 1px solid #c4c6cd; }
+  .fc-rows { overflow-y: auto; padding: 12px 16px; }
+  .fc-hint { font-size: 11px; color: #44474c; margin-bottom: 6px; }
+  .fc-row { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid #eef1f6; }
+  .fc-num { flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: #041627; color: #fff; font: 600 10px/20px 'JetBrains Mono'; text-align: center; }
+  .fc-row textarea { width: 100%; resize: vertical; min-height: 40px; border: 1px solid #c4c6cd; border-radius: 6px; padding: 6px 8px; font-size: 12px; font-family: Inter; }
+  .fc-row textarea:focus { outline: 2px solid #0058be; border-color: #0058be; }
+  .fc-row.changed textarea { border-color: #0058be; background: #eff4ff; }
+  .fc-row .fc-fixed { font-size: 12px; color: #44474c; padding-top: 1px; }
+  .fc-row .note { font: 500 10px 'JetBrains Mono'; color: #74777d; margin-top: 3px; }
+  .fc-row .note a { color: #0058be; cursor: pointer; }
+  .fc-foot-note { font-size: 11px; color: #44474c; }
+  .btn-ghost { font: 600 11px 'JetBrains Mono'; padding: 7px 14px; border: 1px solid #c4c6cd; border-radius: 6px; color: #44474c; background: #fff; }
+  .btn-primary { font: 600 11px 'JetBrains Mono'; padding: 7px 14px; border-radius: 6px; color: #fff; background: #0058be; }
+  .btn-primary:disabled { background: #c4c6cd; cursor: not-allowed; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; transition: all .2s; background: #041627; color: #fff; border-radius: 10px; padding: 10px 16px; max-width: 580px; z-index: 400; font-size: 12px; box-shadow: 0 8px 30px rgba(4,22,39,.35); }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .toast .sub { color: #c9d6ea; font-size: 11px; margin-top: 2px; }
+
+  /* ── Right panel: Outline · Review · Corrections ── */
+  .rp-tabs { display: flex; border-bottom: 1px solid #c4c6cd; flex-shrink: 0; padding: 0 6px; }
+  .rp-tab { padding: 11px 8px 9px; font: 600 11px 'JetBrains Mono'; color: #74777d; border-bottom: 2px solid transparent; margin-bottom: -1px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .rp-tab:hover { color: #0b1c30; }
+  .rp-tab.active { color: #0058be; border-bottom-color: #0058be; }
+  .rp-count { font-size: 10px; background: #e5eeff; color: #0058be; border-radius: 9px; padding: 0 6px; }
+  .rp-search { display: flex; align-items: center; gap: 6px; border: 1px solid #c4c6cd; border-radius: 8px; padding: 5px 8px; background: #fff; }
+  .rp-search:focus-within { border-color: #0058be; }
+  .rp-search input { flex: 1; outline: none; font: 12px Inter; background: transparent; min-width: 0; }
+  .rp-search .material-symbols-outlined { font-size: 15px; color: #74777d; }
+  .rp-hint { font: 500 10px 'JetBrains Mono'; color: #74777d; margin-top: 6px; }
+  .ol-row { display: flex; align-items: baseline; gap: 6px; padding: 4px 8px; border-radius: 4px; font-size: 12px; color: #44474c; cursor: pointer; min-width: 0; }
+  .ol-row:hover { background: #eff4ff; color: #0b1c30; }
+  .ol-row.active { background: #eff4ff; color: #0058be; font-weight: 600; }
+  .ol-row.d1 { padding-left: 18px; }
+  .ol-row.d2 { padding-left: 30px; }
+  .ol-row.d3 { padding-left: 52px; font-size: 11.5px; }
+  .ol-unit { display: flex; align-items: center; padding-left: 12px; }
+  .ol-unit .ol-row { flex: 1; padding-left: 2px; }
+  .ol-chev { width: 18px; height: 18px; flex-shrink: 0; color: #74777d; display: flex; align-items: center; justify-content: center; border-radius: 3px; }
+  .ol-chev:hover { background: #e5eeff; color: #0058be; }
+  .ol-chev .material-symbols-outlined { font-size: 16px; }
+  .ol-num { font: 500 10px 'JetBrains Mono'; color: #74777d; flex-shrink: 0; }
+  .ol-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+  .ol-badge { font: 600 10px 'JetBrains Mono'; color: #0058be; flex-shrink: 0; }
+  .ol-row mark, .rp-mark { background: #fef3c7; color: inherit; border-radius: 2px; }
+  .corr-item { display: block; width: 100%; text-align: left; border: 1px solid #c4c6cd; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; background: #fff; }
+  button.corr-item:hover { border-color: #0058be; background: #f8f9ff; }
+  .corr-top { display: flex; justify-content: space-between; gap: 6px; align-items: baseline; }
+  .corr-kind { font: 600 10px 'JetBrains Mono'; color: #0058be; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+  .corr-where { font: 500 10px 'JetBrains Mono'; color: #44474c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .corr-text { font-size: 12px; color: #0b1c30; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .corr-by { font: 500 10px 'JetBrains Mono'; color: #74777d; margin-top: 4px; }
+  .corr-item.orphan { background: #f3f4f6; border-style: dashed; }
+  .corr-item.orphan .corr-kind, .corr-item.orphan .corr-text { color: #74777d; }
+  .corr-sec { font: 600 10px 'JetBrains Mono'; text-transform: uppercase; letter-spacing: .06em; color: #44474c; margin: 14px 0 6px; }
+  @keyframes jump-flash { 0% { background: #fde68a; } 100% { background: transparent; } }
+  .jump-flash { animation: jump-flash 1.8s ease-out; }
+  .doc-muted { font-size: 12px; color: #74777d; font-style: italic; }
+  /* a jump (outline, corrections) lands below the sticky Editing bar, not under it */
+  #view-doc [id], #view-doc .ed { scroll-margin-top: 64px; }
+  /* the document list folds away while a document is open */
+  .tree-rail { width: 32px; flex-shrink: 0; background: #fff; border-right: 1px solid #c4c6cd; display: none; flex-direction: column; align-items: center; padding-top: 8px; }
+  .tree-rail button { display: flex; flex-direction: column; align-items: center; gap: 8px; color: #44474c; padding: 6px 0; width: 100%; }
+  .tree-rail button:hover { color: #0058be; background: #eff4ff; }
+  .tree-rail .vt { writing-mode: vertical-rl; font: 600 10px 'JetBrains Mono'; letter-spacing: .1em; text-transform: uppercase; }
+  .tree-fold { color: #74777d; border-radius: 4px; padding: 2px; display: flex; }
+  .tree-fold:hover { color: #0058be; background: #eff4ff; }
 </style>
 </head>
 
@@ -414,6 +545,12 @@
 
     <!-- Right CTAs -->
     <div class="flex items-center gap-1.5">
+      <!-- Edit: turns the SWE.3 document into edit mode (review & update) -->
+      <button id="cta-edit" onclick="toggleEdit()" class="items-center gap-1.5 px-3 py-1.5 border border-secondary text-secondary hover:bg-surface-container-low rounded-lg transition-colors"
+              style="display:none;font-family:'JetBrains Mono';font-size:11px;font-weight:500;letter-spacing:.02em;">
+        <span class="material-symbols-outlined" id="cta-edit-icon" style="font-size:15px;">edit</span>
+        <span id="cta-edit-label">Edit</span>
+      </button>
       <button id="cta-download" class="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-white rounded-lg transition-colors"
               style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;letter-spacing:.02em;">
         <span class="material-symbols-outlined" style="font-size:15px;">download</span>
@@ -428,8 +565,11 @@
     <!-- DOCUMENT TREE -->
     <aside id="doc-tree-panel" class="w-60 flex-shrink-0 bg-white border-r border-outline-variant flex flex-col overflow-hidden" style="display:none;">
       <!-- Panel header -->
-      <div class="px-3 py-2.5 border-b border-outline-variant flex-shrink-0">
+      <div class="px-3 py-2.5 border-b border-outline-variant flex-shrink-0 flex items-center justify-between">
         <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em] block">Documents</span>
+        <button id="tree-fold" class="tree-fold" onclick="foldDocTree(true)" title="Hide the document list" aria-label="Hide the document list" style="display:none;">
+          <span class="material-symbols-outlined" style="font-size:18px;">left_panel_close</span>
+        </button>
       </div>
       <!-- Assignee filter -->
       <div class="px-3 py-2 border-b border-outline-variant flex-shrink-0 relative" id="list-assignee-wrap">
@@ -453,6 +593,13 @@
       </div>
       <!-- Tree -->
       <div class="flex-1 overflow-y-auto py-2" id="component-tree"></div>
+    </aside>
+    <!-- The document list, folded: a document opens with it out of the way, as the reader needs the width -->
+    <aside id="tree-rail" class="tree-rail">
+      <button onclick="foldDocTree(false)" title="Show the document list" aria-label="Show the document list">
+        <span class="material-symbols-outlined" style="font-size:18px;">left_panel_open</span>
+        <span class="vt">Documents</span>
+      </button>
     </aside>
 
     <!-- CANVAS + RIGHT PANELS -->
@@ -627,8 +774,28 @@
         </div>
 
         <!-- DOC VIEW (hidden until a doc is selected) -->
+        <!-- SWE.3 reader, section for section as its DOCX (api/services/doc_render.py). Every text the
+             LLM wrote is an .ed with a data-slot: Edit turns them into boxes, each saved on its own when
+             it loses focus (review & update, PR #70). Text from the code stays plain. -->
         <div id="view-doc" style="display:none;">
-        <div class="max-w-3xl mx-auto px-6 py-8">
+
+        <!-- Edit mode bar -->
+        <div id="edit-bar" class="edit-bar">
+          <span class="material-symbols-outlined" style="font-size:18px;color:#0058be;">edit_note</span>
+          <p class="flex-1" id="edit-bar-text" style="font-size:12px;color:#0b1c30;"></p>
+        </div>
+
+        <div class="max-w-4xl mx-auto px-6 py-6">
+
+          <!-- Export readiness (R9): corrections the Word file does not have yet -->
+          <div id="ready-banner" class="ready-banner" role="status">
+            <span class="material-symbols-outlined" id="ready-icon" style="font-size:18px;color:#b45309;">warning</span>
+            <p class="flex-1 min-w-0" id="ready-text" style="font-size:12px;color:#92400e;"></p>
+            <button id="reexport-btn" onclick="startReexport()" class="reexport-btn">
+              <span class="material-symbols-outlined" style="font-size:13px;">sync</span>Re-export
+            </button>
+          </div>
+
           <div class="bg-white rounded-xl border border-outline-variant overflow-hidden"
                style="box-shadow:0 1px 4px rgba(4,22,39,.06);">
 
@@ -642,119 +809,115 @@
             </div>
 
             <!-- Sections -->
-            <div class="px-12 py-10 space-y-14">
+            <div class="px-12 py-10">
 
               <!-- 1. Introduction -->
-              <section id="s-intro" class="transition-all duration-200">
-                <h2 class="font-headline-md text-headline-md text-primary mb-4">1. Introduction</h2>
-                <p class="text-body-lg text-on-surface leading-relaxed mb-3">
-                  The <strong>Brake Controller</strong> unit implements the core logic for the Electronic Braking System (EBS).
-                  It processes wheel speed sensor data and driver brake requests to modulate hydraulic valve actuators
-                  via high-frequency PWM signals.
-                </p>
-                <p class="text-body-lg text-on-surface leading-relaxed">
-                  This unit is allocated to the
-                  <code class="font-label-md text-label-md bg-surface-container px-1.5 py-0.5 rounded text-secondary">APP_LAYER / Chassis_Mgmt</code>
-                  group and interfaces with the HAL layer through standardised driver abstractions.
-                  The unit executes within a 5 ms cyclic task context under the AUTOSAR OS.
-                </p>
+              <section id="s-intro">
+                <h2 class="doc-h1">1. Introduction</h2>
+                <h3 class="doc-h2">1.1 Purpose</h3>
+                <p class="doc-p">This document describes the detailed design of the software units of the
+                  <b>Brake Controller</b> component: their static structure, their interfaces and their dynamic behaviour.</p>
+                <h3 class="doc-h2">1.2 Scope</h3>
+                <p class="doc-p">The units of the Brake Controller component, as built from commit
+                  <code class="mono" style="font-family:'JetBrains Mono';font-size:11px;">9e2b881</code>.</p>
               </section>
 
-              <!-- 2. Interfaces -->
-              <section id="s-interfaces" class="transition-all duration-200">
-                <h2 class="font-headline-md text-headline-md text-primary mb-4">2. Interfaces</h2>
-                <p class="text-body-md text-on-surface-variant mb-5">Input and output interfaces as derived from the SWE.2 Software Architecture.</p>
-                <div class="overflow-hidden border border-outline-variant rounded-lg">
-                  <table class="w-full text-left" style="font-size:13px;">
-                    <thead class="bg-surface-container text-on-surface-variant">
-                      <tr>
-                        <th class="px-4 py-3 border-b border-outline-variant font-semibold">Interface ID</th>
-                        <th class="px-4 py-3 border-b border-outline-variant font-semibold">Dir</th>
-                        <th class="px-4 py-3 border-b border-outline-variant font-semibold">Type</th>
-                        <th class="px-4 py-3 border-b border-outline-variant font-semibold">Description</th>
-                      </tr>
-                    </thead>
-                    <tbody class="text-on-surface">
-                      <tr class="border-b border-outline-variant/60 hover:bg-surface-container-low">
-                        <td class="px-4 py-3 font-label-md text-label-md text-secondary">IF_BrakeReq</td>
-                        <td class="px-4 py-3 text-on-surface-variant">Input</td>
-                        <td class="px-4 py-3 font-label-sm text-label-sm text-on-surface-variant">float32</td>
-                        <td class="px-4 py-3 text-on-surface-variant">Target deceleration from VCU [m/s²]</td>
-                      </tr>
-                      <tr class="border-b border-outline-variant/60 hover:bg-surface-container-low">
-                        <td class="px-4 py-3 font-label-md text-label-md text-secondary">IF_WheelSpeed[4]</td>
-                        <td class="px-4 py-3 text-on-surface-variant">Input</td>
-                        <td class="px-4 py-3 font-label-sm text-label-sm text-on-surface-variant">uint16[4]</td>
-                        <td class="px-4 py-3 text-on-surface-variant">Raw encoder pulse counts per wheel</td>
-                      </tr>
-                      <tr class="border-b border-outline-variant/60 hover:bg-surface-container-low">
-                        <td class="px-4 py-3 font-label-md text-label-md text-secondary">IF_Pressure_Est</td>
-                        <td class="px-4 py-3 text-on-surface-variant">Input</td>
-                        <td class="px-4 py-3 font-label-sm text-label-sm text-on-surface-variant">float32</td>
-                        <td class="px-4 py-3 text-on-surface-variant">Estimated hydraulic line pressure [bar]</td>
-                      </tr>
-                      <tr class="border-b border-outline-variant/60 hover:bg-surface-container-low">
-                        <td class="px-4 py-3 font-label-md text-label-md text-secondary">IF_ValveCmd</td>
-                        <td class="px-4 py-3 text-on-surface-variant">Output</td>
-                        <td class="px-4 py-3 font-label-sm text-label-sm text-on-surface-variant">uint8[4]</td>
-                        <td class="px-4 py-3 text-on-surface-variant">PWM duty cycle for solenoid valves [0–100%]</td>
-                      </tr>
-                      <tr class="hover:bg-surface-container-low">
-                        <td class="px-4 py-3 font-label-md text-label-md text-secondary">IF_DiagStatus</td>
-                        <td class="px-4 py-3 text-on-surface-variant">Output</td>
-                        <td class="px-4 py-3 font-label-sm text-label-sm text-on-surface-variant">uint32</td>
-                        <td class="px-4 py-3 text-on-surface-variant">Bitmask of active diagnostic trouble codes</td>
-                      </tr>
+              <!-- 2. Component -->
+              <section id="s-comp" class="mt-12">
+                <h2 class="doc-h1">2. Brake Controller</h2>
+
+                <h3 class="doc-h2" id="s-static">2.1 Static Design</h3>
+                <div class="doc-fig">
+                  <span class="material-symbols-outlined" style="font-size:36px;color:#c4c6cd;">schema</span>
+                  Component diagram — Brake Controller
+                </div>
+                <p class="doc-cap">Component/Unit Table</p>
+                <table class="dt">
+                  <thead><tr><th style="width:130px;">Component</th><th style="width:110px;">Unit</th><th>Description</th><th style="width:60px;">Note</th></tr></thead>
+                  <tbody>
+                    <tr><td rowspan="6">Brake Controller</td><td>BrakeCtrl</td>
+                        <td><div class="ed" data-slot="u:ctrl"></div></td><td>N/A</td></tr>
+                    <tr><td>BrakeDiag</td>
+                        <td><div class="ed" data-slot="u:diag"></div></td><td>N/A</td></tr>
+                    <tr><td>SlipEstimator</td><td><div class="ed" data-slot="u:slip"></div></td><td>N/A</td></tr>
+                    <tr><td>AbsCore</td><td><div class="ed" data-slot="u:abs"></div></td><td>N/A</td></tr>
+                    <tr><td>PressureModel</td><td><div class="ed" data-slot="u:press"></div></td><td>N/A</td></tr>
+                    <tr><td>ValveIf</td><td><div class="ed" data-slot="u:valve"></div></td><td>N/A</td></tr>
+                  </tbody>
+                </table>
+
+                <h4 class="doc-h3" id="s-unit">2.1.1 BrakeCtrl</h4>
+                <p class="doc-h4">2.1.1.1 unit header</p>
+                <table class="dt">
+                  <thead><tr><th style="width:52%;">global variables / typedef / enum / define</th><th>information</th></tr></thead>
+                  <tbody>
+                    <tr><td class="mono">#define BRAKE_MAX_DECEL 12.0f</td><td>Largest deceleration the controller accepts [m/s²]</td></tr>
+                    <tr><td class="mono">typedef struct { uint16 speed[4]; float32 slip; } WheelState;</td>
+                        <td><div class="ed" data-slot="s:wheel"></div></td></tr>
+                    <tr><td class="mono">static float32 s_request;</td><td>N/A</td></tr>
+                  </tbody>
+                </table>
+
+                <p class="doc-h4">2.1.1.2 unit interface</p>
+                <div class="overflow-x-auto">
+                  <table class="dt dt-8">
+                    <thead><tr>
+                      <th>Interface ID</th><th>Interface Name</th><th style="min-width:210px;">Information</th><th>Data Type</th>
+                      <th>Data Range</th><th>Direction(In/Out)</th><th>Source/Destination</th><th>Interface Type</th>
+                    </tr></thead>
+                    <tbody>
+                      <tr><td class="mono">IF_BRK_01</td><td>BrakeCtrl_Run</td><td><div class="ed" data-slot="d:run"></div></td>
+                          <td class="mono">void</td><td>-</td><td>In</td><td>Scheduler</td><td>Function</td></tr>
+                      <tr><td class="mono">IF_BRK_02</td><td>BrakeCtrl_SetRequest</td><td><div class="ed" data-slot="d:set"></div></td>
+                          <td class="mono">float32</td><td>0 ~ 12</td><td>In</td><td>VCU</td><td>Function</td></tr>
+                      <tr><td class="mono">IF_BRK_03</td><td>g_valveCmd</td><td><div class="ed" data-slot="d:valve"></div></td>
+                          <td class="mono">uint8[4]</td><td>0 ~ 100</td><td>Out</td><td>PWM Driver</td><td>Global Variable</td></tr>
                     </tbody>
                   </table>
                 </div>
-              </section>
 
-              <!-- 3. Static Design -->
-              <section id="s-static" class="transition-all duration-200">
-                <h2 class="font-headline-md text-headline-md text-primary mb-4">3. Static Design</h2>
-                <p class="text-body-md text-on-surface-variant mb-5">Include dependencies and internal module structure derived from Clang AST analysis.</p>
-                <div class="bg-surface-container-low border border-outline-variant rounded-lg flex flex-col items-center justify-center text-center py-14 gap-3">
-                  <span class="material-symbols-outlined text-outline-variant" style="font-size:44px;">schema</span>
-                  <div>
-                    <p class="font-label-md text-label-md text-on-surface-variant">Include dependency diagram</p>
-                    <p class="font-label-sm text-label-sm text-outline mt-1">Generated from Clang AST</p>
-                  </div>
-                </div>
-              </section>
+                <p class="doc-h4" id="s-fn">2.1.1.3 BrakeCtrl-BrakeCtrl_Run</p>
+                <table class="dt">
+                  <tbody>
+                    <tr><td class="k">Requirements</td>
+                        <td>
+                          <div class="ed" data-slot="d:run"></div>
+                          <div class="fc-wrap">
+                            <div class="fc-head">
+                              <span class="fc-sig">void BrakeCtrl_Run(void)</span>
+                              <button class="fc-edit" onclick="openFlowchartEditor()">
+                                <span class="material-symbols-outlined" style="font-size:13px;">account_tree</span>Edit flowchart
+                              </button>
+                            </div>
+                            <div class="fc-pic" id="doc-fc"></div>
+                          </div>
+                        </td></tr>
+                    <tr><td class="k">Risk</td><td>Medium</td></tr>
+                    <tr><td class="k">Capacity(Density)</td><td>Common</td></tr>
+                    <tr><td class="k">Input Name</td><td><div class="ed" data-slot="i:run"></div></td></tr>
+                    <tr><td class="k">Output Name</td><td><div class="ed" data-slot="o:run"></div></td></tr>
+                  </tbody>
+                </table>
 
-              <!-- 4. Dynamic Design -->
-              <section id="s-dynamic" class="transition-all duration-200">
-                <h2 class="font-headline-md text-headline-md text-primary mb-6">4. Dynamic Design</h2>
-                <div class="space-y-10">
-                  <div>
-                    <h3 class="font-headline-sm text-headline-sm text-on-surface mb-3" id="s-cfg">4.1 Control Flow Graphs</h3>
-                    <p class="text-body-md text-on-surface-variant mb-4">
-                      Per-function CFGs derived from Clang AST — covering
-                      <code class="font-label-md text-label-md bg-surface-container px-1.5 py-0.5 rounded">BrakeCtrl_Run</code>,
-                      <code class="font-label-md text-label-md bg-surface-container px-1.5 py-0.5 rounded">BrakeCtrl_Init</code>,
-                      <code class="font-label-md text-label-md bg-surface-container px-1.5 py-0.5 rounded">BrakeCtrl_Diag</code>.
-                    </p>
-                    <div class="bg-surface-container-low border border-outline-variant rounded-lg flex flex-col items-center justify-center text-center py-12 gap-3">
-                      <span class="material-symbols-outlined text-outline-variant" style="font-size:44px;">account_tree</span>
-                      <div>
-                        <p class="font-label-md text-label-md text-on-surface-variant">Control flow graphs</p>
-                        <p class="font-label-sm text-label-sm text-outline mt-1">3 functions · 42 nodes</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div>
-                    <h3 class="font-headline-sm text-headline-sm text-on-surface mb-3" id="s-state">4.2 State Machine</h3>
-                    <p class="text-body-md text-on-surface-variant mb-4">Unit lifecycle states and transitions. Critical timing path: sensor input → valve actuation ≤ 12 ms.</p>
-                    <div class="bg-surface-container-low border border-outline-variant rounded-lg flex flex-col items-center justify-center text-center py-12 gap-3">
-                      <span class="material-symbols-outlined text-outline-variant" style="font-size:44px;">alt_route</span>
-                      <div>
-                        <p class="font-label-md text-label-md text-on-surface-variant">State machine diagram</p>
-                        <p class="font-label-sm text-label-sm text-outline mt-1">INIT → STANDBY → ACTIVE → FAULT</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <p class="doc-h4" id="s-f-BrakeCtrl_SetRequest">2.1.1.4 BrakeCtrl-BrakeCtrl_SetRequest</p>
+                <div class="ed doc-p" data-slot="d:set"></div>
+
+                <!-- 2.1.2 … 2.1.6: drawn by buildExtraUnits() -->
+                <div id="extra-units"></div>
+
+                <h3 class="doc-h2" id="s-dynamic">2.2 Dynamic Behaviour</h3>
+                <p class="doc-h4" id="s-dyn-1">2.2.1 BrakeCtrl - BrakeCtrl_Run (Scheduler_Task5ms)</p>
+                <table class="dt">
+                  <tbody>
+                    <tr><td class="k">Requirements</td>
+                        <td><p style="font-weight:600;margin-bottom:4px;">Behavior Description</p>
+                            <div class="ed ed-list" data-slot="b:run"></div></td></tr>
+                    <tr><td class="k">Risk</td><td>Medium</td></tr>
+                    <tr><td class="k">Capacity</td><td>Common</td></tr>
+                    <tr><td class="k">Input Name</td><td><div class="ed" data-slot="i:run"></div></td></tr>
+                    <tr><td class="k">Output Name</td><td><div class="ed" data-slot="o:run"></div></td></tr>
+                  </tbody>
+                </table>
               </section>
 
             </div>
@@ -782,24 +945,31 @@
         </div><!-- /view-swe4 -->
       </main>
 
-      <!-- OUTLINE / TRACKER PANEL -->
-      <aside class="w-44 flex-shrink-0 bg-white border-l border-outline-variant flex flex-col overflow-hidden transition-all duration-300" id="outline-panel">
-        <div class="px-3 py-3 border-b border-outline-variant flex-shrink-0 flex items-center justify-between">
-          <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em]" id="panel-title">On this page</span>
+      <!-- RIGHT PANEL: Outline · Review · Corrections. Outline is always there: a firmware document
+           has hundreds of functions, and the reviewer needs it most while reviewing. -->
+      <aside class="flex-shrink-0 bg-white border-l border-outline-variant flex flex-col overflow-hidden" style="width:248px;" id="outline-panel">
+        <div class="rp-tabs" role="tablist">
+          <button class="rp-tab active" data-tab="outline" role="tab" onclick="setPanelTab('outline')">Outline</button>
+          <button class="rp-tab" data-tab="review" role="tab" id="rp-tab-review" onclick="setPanelTab('review')">Review</button>
+          <button class="rp-tab" data-tab="corr" role="tab" id="rp-tab-corr" onclick="setPanelTab('corr')">Corrections <span class="rp-count" id="corr-count">0</span></button>
         </div>
 
-        <!-- Normal outline -->
-        <nav class="flex-1 overflow-y-auto py-2 px-2 space-y-0.5" id="outline-nav">
-          <a href="#s-intro"      class="outline-link block px-2 py-1.5 rounded text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors" data-target="s-intro">1. Introduction</a>
-          <a href="#s-interfaces" class="outline-link block px-2 py-1.5 rounded text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors" data-target="s-interfaces">2. Interfaces</a>
-          <a href="#s-static"     class="outline-link block px-2 py-1.5 rounded text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors" data-target="s-static">3. Static Design</a>
-          <a href="#s-dynamic"    class="outline-link block px-2 py-1.5 rounded text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors" data-target="s-dynamic">4. Dynamic Design</a>
-          <a href="#s-cfg"        class="outline-link block px-2 py-1.5 pl-5 rounded text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors" data-target="s-cfg">4.1 CFG</a>
-          <a href="#s-state"      class="outline-link block px-2 py-1.5 pl-5 rounded text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors" data-target="s-state">4.2 State Machine</a>
-        </nav>
+        <!-- Outline tab -->
+        <div id="rp-outline" class="flex-1 flex flex-col min-h-0">
+          <div class="px-3 pt-3 pb-2 flex-shrink-0" id="outline-search-wrap">
+            <div class="rp-search">
+              <span class="material-symbols-outlined">search</span>
+              <input id="outline-search" type="text" placeholder="Find a unit or function…" oninput="setOutlineQuery(this.value)" aria-label="Find a unit or function">
+            </div>
+            <p class="rp-hint" id="outline-hint"></p>
+          </div>
+          <nav class="flex-1 overflow-y-auto pb-3 px-2" id="outline-nav"></nav>
+          <!-- Outline of a SWE.4 document (drawn by renderSwe4) -->
+          <nav class="flex-1 overflow-y-auto py-2 px-2 space-y-0.5" id="outline-nav-swe4" style="display:none;"></nav>
+        </div>
 
-        <!-- Outline of a SWE.4 document (drawn by renderSwe4) -->
-        <nav class="flex-1 overflow-y-auto py-2 px-2 space-y-0.5" id="outline-nav-swe4" style="display:none;"></nav>
+        <!-- Corrections tab (R1: this version's corrections, orphans included) -->
+        <div id="rp-corr" class="flex-1 overflow-y-auto px-3 py-3" style="display:none;"></div>
 
         <!-- Review tracker (Admin, shown when version is in_review) -->
         <div class="hidden flex-1 overflow-y-auto py-3 px-3 space-y-4" id="review-tracker">
@@ -1002,6 +1172,37 @@
     </div><!-- /canvas area -->
   </div><!-- /content area -->
 </div><!-- /app-main -->
+
+<!-- ══ FLOWCHART LABEL EDITOR (review & update mockup): R7 lists one flowchart's labels, R8 saves the
+     changed ones together. No close on a backdrop click: that would lose typed labels. ══ -->
+<div id="fc-modal" class="fc-modal hidden">
+  <div class="fc-dialog" role="dialog" aria-modal="true" aria-labelledby="fc-modal-title">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-outline-variant">
+      <div>
+        <p class="font-label-md text-label-md text-on-surface" id="fc-modal-title">Edit flowchart — BrakeCtrl_Run</p>
+        <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" style="font-family:'JetBrains Mono';">void BrakeCtrl_Run(void)</p>
+      </div>
+      <button onclick="closeFlowchartEditor()" class="p-1 hover:bg-surface-container rounded-lg" aria-label="Close">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">close</span>
+      </button>
+    </div>
+    <div class="fc-body">
+      <div class="pic" id="fc-modal-pic"></div>
+      <div class="fc-rows">
+        <p class="fc-hint">Box labels, numbered as in the picture. The shape and the arrows come from the code and stay as they are.</p>
+        <div id="fc-rows"></div>
+      </div>
+    </div>
+    <div class="flex items-center justify-between gap-4 px-5 py-3 border-t border-outline-variant">
+      <p class="fc-foot-note" id="fc-foot-note">Saves the changed labels together. The picture is redrawn, and the SWE.4 test steps built from these labels update too.</p>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <button onclick="closeFlowchartEditor()" class="btn-ghost">Cancel</button>
+        <button onclick="saveFlowchart()" class="btn-primary" id="fc-save" disabled>Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="toast" class="toast" role="status"><p id="toast-title"></p><p class="sub" id="toast-sub"></p></div>
 
 <!-- ══════════════ SCRIPTS ══════════════ -->
 <script>
@@ -1580,6 +1781,7 @@ function showListState() {
   document.getElementById('breadcrumb-doc-sep').style.display = 'none';
   document.getElementById('breadcrumb-doc').style.display     = 'none';
   document.getElementById('cta-download-label').textContent   = 'Download All';
+  hideEditing();
   document.getElementById('list-version-label').textContent   = activeVersion;
   renderDocList();
   renderTree();
@@ -1598,6 +1800,9 @@ function showDocState(v) {
   document.getElementById('state-generating').classList.add('hidden');
   document.getElementById('outline-panel').style.display = '';
   document.getElementById('cta-download-label').textContent = 'Download DOCX';
+  // Edit is SWE.3's: SWE.4 is derived (its test steps follow the flowchart labels).
+  document.getElementById('cta-edit').style.display = swe4 ? 'none' : 'inline-flex';
+  if (swe4) toggleEdit(false);
 
   const crumb = activeDoc ? `${activeProcess} — ${activeDoc}` : `${activeProcess} — ${docTree.find(d => d.process === activeProcess)?.label}`;
   document.getElementById('breadcrumb-doc-sep').style.display = '';
@@ -1605,11 +1810,15 @@ function showDocState(v) {
   document.getElementById('breadcrumb-doc').textContent       = crumb;
 
   const isInReview = v.docStatus === 'in_review';
-  document.getElementById('outline-nav').style.display    = isInReview || swe4 ? 'none' : '';
-  document.getElementById('outline-nav-swe4').style.display = isInReview || !swe4 ? 'none' : '';
-  document.getElementById('review-tracker').style.display = isInReview ? 'block' : 'none';
-  document.getElementById('panel-title').textContent      = isInReview ? 'Review Status' : 'On this page';
-  document.getElementById('outline-panel').style.width    = isInReview ? '176px' : '';
+  // Right panel: Outline always; Review while the version is in review; Corrections on SWE.3.
+  document.getElementById('outline-nav').style.display         = swe4 ? 'none' : '';
+  document.getElementById('outline-nav-swe4').style.display    = swe4 ? '' : 'none';
+  document.getElementById('outline-search-wrap').style.display = swe4 ? 'none' : '';
+  document.getElementById('rp-tab-review').style.display       = isInReview ? '' : 'none';
+  document.getElementById('rp-tab-corr').style.display         = swe4 ? 'none' : '';
+  if ((panelTab === 'review' && !isInReview) || (panelTab === 'corr' && swe4)) panelTab = 'outline';
+  setPanelTab(panelTab);
+  foldDocTree();
   document.getElementById('compare-wrap-sub').style.display = isInReview ? '' : 'none';
 }
 
@@ -1628,6 +1837,7 @@ function showEmptyState(v) {
   document.getElementById('breadcrumb-doc-sep').style.display = 'none';
   document.getElementById('breadcrumb-doc').style.display     = 'none';
   document.getElementById('cta-download-label').textContent   = 'Download All';
+  hideEditing();
 }
 
 function currentVersionObj() {
@@ -1749,10 +1959,8 @@ function sendForReview() {
 function markComplete() {
   const cur = COMMITS.find(x => x.current);
   if (cur) cur.status = 'approved';
-  document.getElementById('review-tracker').style.display = 'none';
-  document.getElementById('outline-nav').style.display    = '';
-  document.getElementById('panel-title').textContent      = 'On this page';
-  document.getElementById('outline-panel').style.width    = '';
+  document.getElementById('rp-tab-review').style.display = 'none';
+  setPanelTab('outline');
 }
 
 
@@ -1801,6 +2009,7 @@ function applyRole(role) {
   }
   renderDocList();
   renderTree();
+  paintReady();
 }
 
 function toggleDevShowAll() {
@@ -2177,28 +2386,610 @@ function renderSwe4(component) {
         onclick="event.preventDefault();document.getElementById('${id}').scrollIntoView({behavior:'smooth',block:'start'})">${s4esc(label)}</a>`).join('');
 }
 
-// ── Scroll spy ────────────────────────────────────────────────────────────────
-const sections     = ['s-intro', 's-interfaces', 's-static', 's-dynamic', 's-cfg', 's-state'];
-const outlineLinks = document.querySelectorAll('.outline-link');
-const canvasEl     = document.getElementById('canvas');
+// ── Review & update: edit mode ───────────────────────────────────────────────
+// A mockup of the planned feature (review-update-ui-plan). Each LLM-written text is a "slot" of
+// PR #70. It saves on its own when its box loses focus (R3; R6 for the bullet list), Undo is R4 and
+// History R5. A save changes the page, not the Word file: the banner counts what a re-export still
+// has to write (R9). A flowchart's labels are edited together in their own dialog (R7 → R8).
+let editing = false, reexporting = false, justExported = false, pending = 1;
+const SLOTS = {
+  'u:ctrl':  { kind: 'unitDescription', llm: 'Computes the valve commands from the brake request and the wheel speeds.' },
+  'u:diag':  { kind: 'unitDescription', llm: 'Monitors the brake sensors and reports diagnostic trouble codes.' },
+  'u:slip':  { kind: 'unitDescription', llm: 'Estimates the vehicle reference speed and the slip of each wheel.' },
+  'u:abs':   { kind: 'unitDescription', llm: 'Decides the pressure phase of each wheel channel while ABS is active.' },
+  'u:press': { kind: 'unitDescription', llm: 'Models the hydraulic line pressure from the valve and pump commands.' },
+  'u:valve': { kind: 'unitDescription', llm: 'Drives the four solenoid valves through the PWM driver.' },
+  's:wheel': { kind: 'structDescription', llm: 'Holds wheel speed values.' },
+  'd:run':   { kind: 'description', cascade: 'the unit description of BrakeCtrl and the description of 1 caller, Scheduler_Task5ms',
+               llm: 'Runs one brake control cycle: reads the wheel speeds, decides whether ABS must intervene and writes the valve commands.' },
+  'd:set':   { kind: 'description', cascade: 'the unit description of BrakeCtrl',
+               llm: 'Sets the brake request value.',
+               text: 'Stores the driver\u2019s target deceleration [m/s\u00b2] for the next control cycle; values above 12 are clamped.',
+               corrected: true, by: 'Alice Chen', at: '29 Sep 16:40',
+               history: [{ by: 'Alice Chen', at: '29 Sep 16:40',
+                           text: 'Stores the driver\u2019s target deceleration [m/s\u00b2] for the next control cycle; values above 12 are clamped.' }] },
+  'd:valve': { kind: 'description', cascade: 'the unit description of BrakeCtrl', llm: 'PWM duty cycle for the four solenoid valves [0\u2013100 %].' },
+  'i:run':   { kind: 'behaviourInputName', llm: 'Brake request and wheel speeds' },
+  'o:run':   { kind: 'behaviourOutputName', llm: 'Valve duty cycles' },
+  'b:run':   { kind: 'behaviourDescription', list: true,
+               llm: ['Scheduler_Task5ms calls BrakeCtrl_Run every 5 ms.', 'BrakeCtrl_Run reads the wheel speeds and writes g_valveCmd.'] },
+};
+const MAX_LEN = 2000;          // the API has no limit yet (RF-10), so the page sets one
 
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function me() { return ROLES[currentRole].name; }
+function stamp() {
+  const d = new Date();
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) + ' ' +
+         d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+function short(v) { const s = Array.isArray(v) ? v.join(' / ') : v; return s.length > 70 ? s.slice(0, 67) + '…' : s; }
+function sameText(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+
+function initSlots() {
+  Object.entries(SLOT_WHERE).forEach(([id, [unit, where]]) => Object.assign(SLOTS[id], { unit, where }));
+  Object.values(SLOTS).forEach(s => {
+    if (!('text' in s)) s.text = s.list ? [...s.llm] : s.llm;
+    s.history = s.history || [];
+    s.corrected = !!s.corrected;
+  });
+  document.querySelectorAll('.ed').forEach(el => {
+    const next = el.nextElementSibling;
+    if (!(next && next.classList.contains('ed-meta'))) el.insertAdjacentHTML('afterend', '<div class="ed-meta"></div>');
+  });
+  Object.keys(SLOTS).forEach(paintSlot);
+  slotsReady = true;
+}
+
+function metaHtml(id) {
+  const s = SLOTS[id];
+  const copies = document.querySelectorAll(`.ed[data-slot="${id}"]`).length;
+  const where = copies > 1 ? ` · shown in ${copies} places` : '';
+  const hist = `<a onclick="toggleHist(this,'${id}')">History</a>`;
+  if (s.state === 'saving') return 'Saving…';
+  if (s.state === 'error') return `<span class="err">${esc(s.err)}</span>`;
+  const saved = s.state === 'saved' ? '<span class="ok">✓ Saved</span> · ' : '';
+  if (s.corrected) return `${saved}Corrected by ${esc(s.by)} · ${esc(s.at)} · <a onclick="undoSlot('${id}')">Undo</a> · ${hist}${where}`;
+  if (s.history.length) return `${saved}The LLM's text again · ${hist}${where}`;
+  return saved ? saved.replace(/ · $/, '') + where : (where ? where.slice(3) : '');
+}
+
+function paintSlot(id) {
+  const s = SLOTS[id];
+  document.querySelectorAll(`.ed[data-slot="${id}"]`).forEach(el => {
+    if (document.activeElement !== el) {
+      if (s.list) el.innerHTML = s.text.map(x => `<div>${esc(x)}</div>`).join('');
+      else el.textContent = s.text;
+    }
+    el.classList.toggle('corrected', s.corrected);
+    el.title = s.corrected ? `Corrected by ${s.by}, ${s.at}. The LLM wrote: ${short(s.llm)}` : '';
+    const meta = el.nextElementSibling;
+    if (meta && meta.classList.contains('ed-meta')) meta.innerHTML = metaHtml(id);
+  });
+}
+
+function readEd(el) {
+  if (el.classList.contains('ed-list'))
+    return el.innerText.split('\n').map(x => x.replace(/^•\s*/, '').trim()).filter(Boolean);
+  return el.innerText.replace(/\s+/g, ' ').trim();
+}
+
+function flash(id, state, err) {
+  const s = SLOTS[id];
+  s.state = state; s.err = err; paintSlot(id);
+  setTimeout(() => { if (s.state === state) { s.state = null; paintSlot(id); } }, 2600);
+}
+
+function commitEd(el) {
+  const id = el.dataset.slot, s = SLOTS[id];
+  if (el._cancel) { el._cancel = false; paintSlot(id); return; }
+  const now = readEd(el);
+  if (sameText(now, s.text)) { paintSlot(id); return; }
+  if (!now.length) {
+    paintSlot(id);
+    return flash(id, 'error', s.list ? 'Keep at least one bullet. Nothing was saved.' : 'A text can\u2019t be empty. Nothing was saved.');
+  }
+  if ((Array.isArray(now) ? now.join(' ') : now).length > MAX_LEN) {
+    paintSlot(id);
+    return flash(id, 'error', `Keep it under ${MAX_LEN} characters. Nothing was saved.`);
+  }
+  const prev = s.text;
+  s.text = now; s.corrected = true; s.by = me(); s.at = stamp(); s.seq = ++saveSeq;
+  s.history.push({ by: s.by, at: s.at, text: now });
+  s.state = 'saving'; paintSlot(id);
+  pending += 1; paintReady();
+  setTimeout(() => {
+    flash(id, 'saved');
+    toast('Saved.', `You replaced: \u201c${esc(short(prev))}\u201d` +
+          (s.cascade ? `<br>The next run rewrites what depends on it: ${esc(s.cascade)}.` : ''));
+  }, 450);
+}
+
+function undoSlot(id) {
+  const s = SLOTS[id];
+  s.text = s.list ? [...s.llm] : s.llm;
+  s.corrected = false;
+  s.history.push({ by: me(), at: stamp(), text: s.text, undo: true });
+  pending += 1; paintReady();
+  flash(id, 'saved');
+  toast('Back to the text the LLM wrote.', 'History keeps your correction.');
+}
+
+function toggleHist(a, id) {
+  const meta = a.closest('.ed-meta'), next = meta.nextElementSibling;
+  if (next && next.classList.contains('ed-hist')) { next.remove(); return; }
+  const s = SLOTS[id], fmt = v => Array.isArray(v) ? v.map(esc).join('<br>') : esc(v);
+  let h = `<div class="ed-hist"><p class="h">History, oldest first</p>` +
+          `<div class="r"><span class="w">LLM</span><span>${fmt(s.llm)}</span></div>`;
+  s.history.forEach(e => {
+    h += `<div class="r"><span class="w">${esc(e.by)} · ${esc(e.at)}${e.undo ? ' · undo' : ''}</span><span>${fmt(e.text)}</span></div>`;
+  });
+  meta.insertAdjacentHTML('afterend', h + '</div>');
+}
+
+function setEditable() {
+  document.querySelectorAll('.ed').forEach(el => { el.contentEditable = editing && !reexporting ? 'true' : 'false'; });
+  document.body.classList.toggle('locked', reexporting);
+  document.getElementById('edit-bar-text').innerHTML = reexporting
+    ? '<b>Editing is paused</b> while the Word files are rebuilt. It comes back when the re-export ends.'
+    : '<b>Editing.</b> Click an outlined text to correct it. It saves when you leave the box; <kbd>Esc</kbd> cancels. ' +
+      'Text that comes from the code stays as it is. Flowcharts: <b>Edit flowchart</b> on each one.';
+}
+
+function toggleEdit(on) {
+  editing = on === undefined ? !editing : on;
+  document.body.classList.toggle('editing', editing);
+  if (!editing) {
+    if (document.activeElement && document.activeElement.classList.contains('ed')) document.activeElement.blur();
+    document.querySelectorAll('.ed-hist').forEach(h => h.remove());
+  }
+  setEditable();
+  const b = document.getElementById('cta-edit');
+  document.getElementById('cta-edit-label').textContent = editing ? 'Done' : 'Edit';
+  document.getElementById('cta-edit-icon').textContent = editing ? 'check' : 'edit';
+  b.style.background = editing ? '#0058be' : '';
+  b.style.color = editing ? '#fff' : '';
+  refreshPanels();
+}
+function hideEditing() {
+  document.getElementById('cta-edit').style.display = 'none';
+  toggleEdit(false);
+  foldDocTree();
+}
+
+document.addEventListener('keydown', e => {
+  const el = e.target.closest && e.target.closest('.ed');
+  if (el && editing) {
+    if (e.key === 'Escape') { el._cancel = true; el.blur(); }
+    else if (e.key === 'Enter' && !el.classList.contains('ed-list')) { e.preventDefault(); el.blur(); }
+    return;
+  }
+  if (e.key === 'Escape' && !document.getElementById('fc-modal').classList.contains('hidden')) closeFlowchartEditor();
+});
+document.addEventListener('focusout', e => {
+  const el = e.target.closest && e.target.closest('.ed');
+  if (el && editing && !reexporting) commitEd(el);
+});
+document.addEventListener('paste', e => {
+  const el = e.target.closest && e.target.closest('.ed');
+  if (!el || !editing) return;
+  e.preventDefault();
+  document.execCommand('insertText', false, (e.clipboardData || window.clipboardData).getData('text/plain'));
+});
+
+// ── Export readiness banner + re-export (R9, POST …/versions/{vid}/reexport) ─
+function paintReady() {
+  const b = document.getElementById('ready-banner'), txt = document.getElementById('ready-text');
+  const icon = document.getElementById('ready-icon'), btn = document.getElementById('reexport-btn');
+  if (!b) return;
+  refreshPanels();
+  btn.style.display = 'none';
+  if (reexporting) {
+    b.className = 'ready-banner show';
+    icon.textContent = 'autorenew'; icon.className = 'material-symbols-outlined spin-slow'; icon.style.color = '#b45309';
+    txt.innerHTML = `<b>Re-exporting…</b> ${reexporting}`;
+    return;
+  }
+  icon.className = 'material-symbols-outlined';
+  if (justExported) {
+    b.className = 'ready-banner show ok';
+    icon.textContent = 'check_circle'; icon.style.color = '#00a572';
+    txt.style.color = '#065f46';
+    txt.innerHTML = '<b>The Word files are up to date</b> (SWE.3 and SWE.4 of Brake Controller).';
+    return;
+  }
+  txt.style.color = '#92400e';
+  if (!pending) { b.className = 'ready-banner'; return; }
+  b.className = 'ready-banner show';
+  icon.textContent = 'warning'; icon.style.color = '#b45309';
+  const n = pending === 1 ? '1 correction is' : `${pending} corrections are`;
+  txt.innerHTML = `<b>${n} not in the Word file yet.</b> The page shows ${pending === 1 ? 'it' : 'them'}; ` +
+    'Download still gives the old text until the Word files are re-exported.' +
+    (currentRole === 'admin' ? '' : ' An admin can re-export.');
+  if (currentRole === 'admin') btn.style.display = '';
+}
+
+function startReexport() {
+  const steps = ['Phase 3 of 4: re-deriving the views with the corrections.',
+                 'Phase 4 of 4: writing the SWE.3 and SWE.4 Word files.'];
+  reexporting = steps[0]; setEditable(); paintReady();
+  setTimeout(() => { reexporting = steps[1]; paintReady(); }, 1400);
+  setTimeout(() => {
+    reexporting = false; pending = 0; justExported = true;
+    setEditable(); paintReady();
+    toast('Re-export finished.', 'Download now gives the corrected Word files.');
+    setTimeout(() => { justExported = false; paintReady(); }, 3500);
+  }, 2800);
+}
+
+let toastTimer = null;
+function toast(title, sub) {
+  const el = document.getElementById('toast');
+  document.getElementById('toast-title').innerHTML = `<b>${title}</b>`;
+  document.getElementById('toast-sub').innerHTML = sub || '';
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 4200);
+}
+
+// ── Flowchart label editor (R7 → R8; Undo of one label = R4) ─────────────────
+const FC = {
+  name: 'BrakeCtrl_Run',
+  order: ['n1', 'n2', 'n3', 'n4', 'n5', 'n6', 'n7'],
+  nodes: {
+    n1: { shape: 'term', x: 180, y: 24,  label: 'Start', fixed: true },
+    n2: { shape: 'box',  x: 180, y: 90,  w: 250, llm: 'Read the wheel speeds and the brake request' },
+    n3: { shape: 'dia',  x: 180, y: 180, w: 200, llm: 'Is any wheel slipping?' },
+    n4: { shape: 'box',  x: 70,  y: 282, w: 130, llm: 'Reduce the pressure on the slipping wheel' },
+    n5: { shape: 'box',  x: 290, y: 282, w: 130, llm: 'Apply the requested deceleration' },
+    n6: { shape: 'box',  x: 180, y: 368, w: 250, llm: 'Write the valve commands' },
+    n7: { shape: 'term', x: 180, y: 436, label: 'End', fixed: true },
+  },
+  edges: [['n1', 'n2'], ['n2', 'n3'], ['n3', 'n4', 'yes'], ['n3', 'n5', 'no'], ['n4', 'n6'], ['n5', 'n6'], ['n6', 'n7']],
+};
+Object.values(FC.nodes).forEach(n => { if (!n.fixed) n.label = n.llm; });
+let fcDraft = null;
+
+function wrapLabel(text, maxChars, maxLines) {
+  const lines = []; let cur = '';
+  String(text).split(/\s+/).filter(Boolean).forEach(w => {
+    if (cur && (cur + ' ' + w).length > maxChars) { lines.push(cur); cur = w; } else cur = cur ? cur + ' ' + w : w;
+  });
+  if (cur) lines.push(cur);
+  if (lines.length > maxLines) { lines.length = maxLines; lines[maxLines - 1] = lines[maxLines - 1].slice(0, maxChars - 1) + '…'; }
+  return lines;
+}
+
+function drawFlowchart(hostId, numbered) {
+  const host = document.getElementById(hostId);
+  if (!host) return;
+  const N = FC.nodes, mk = hostId + '-arrow', H_BOX = 48, H_DIA = 36, R_Y = 15;
+  const top = n => n.y - (n.shape === 'term' ? R_Y : n.shape === 'dia' ? H_DIA : H_BOX / 2);
+  const bottom = n => n.y + (n.shape === 'term' ? R_Y : n.shape === 'dia' ? H_DIA : H_BOX / 2);
+  let s = `<svg class="fcs" viewBox="0 0 360 462" width="360" height="462" xmlns="http://www.w3.org/2000/svg">` +
+          `<defs><marker id="${mk}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">` +
+          `<path d="M0,0 L10,5 L0,10 z" fill="#74777d"/></marker></defs>`;
+  FC.edges.forEach(([a, b, lab]) => {
+    const A = N[a], B = N[b];
+    let d;
+    if (A.shape === 'dia' && lab) {
+      const x1 = B.x < A.x ? A.x - A.w / 2 : A.x + A.w / 2;
+      d = `M${x1},${A.y} L${B.x},${A.y} L${B.x},${top(B)}`;
+      s += `<text class="elab" x="${B.x}" y="${A.y - 6}" text-anchor="middle">${lab}</text>`;
+    } else if (A.x === B.x) {
+      d = `M${A.x},${bottom(A)} L${B.x},${top(B)}`;
+    } else {
+      const my = (bottom(A) + top(B)) / 2;
+      d = `M${A.x},${bottom(A)} L${A.x},${my} L${B.x},${my} L${B.x},${top(B)}`;
+    }
+    s += `<path class="edge" d="${d}" marker-end="url(#${mk})"/>`;
+  });
+  FC.order.forEach((id, i) => {
+    const n = N[id];
+    let shape, lines, left, tp;
+    if (n.shape === 'term') {
+      shape = `<ellipse class="shape term" cx="${n.x}" cy="${n.y}" rx="36" ry="${R_Y}"/>`;
+      lines = [n.label]; left = n.x - 36; tp = n.y - R_Y;
+    } else if (n.shape === 'dia') {
+      const hw = n.w / 2;
+      shape = `<polygon class="shape" points="${n.x},${n.y - H_DIA} ${n.x + hw},${n.y} ${n.x},${n.y + H_DIA} ${n.x - hw},${n.y}"/>`;
+      lines = wrapLabel(n.label, Math.floor(n.w * 0.55 / 6), 2); left = n.x - hw + 40; tp = n.y - H_DIA + 6;
+    } else {
+      shape = `<rect class="shape" x="${n.x - n.w / 2}" y="${n.y - H_BOX / 2}" width="${n.w}" height="${H_BOX}" rx="4"/>`;
+      lines = wrapLabel(n.label, Math.floor((n.w - 14) / 6), 3); left = n.x - n.w / 2; tp = n.y - H_BOX / 2;
+    }
+    const y0 = n.y - (lines.length - 1) * 13 / 2 + 4;
+    const text = lines.map((l, k) => `<text x="${n.x}" y="${y0 + k * 13}" text-anchor="middle">${esc(l)}</text>`).join('');
+    const badge = numbered ? `<circle class="badge" cx="${left + 2}" cy="${tp + 2}" r="8"/>` +
+                             `<text class="badge-t" x="${left + 2}" y="${tp + 5}" text-anchor="middle">${i + 1}</text>` : '';
+    s += `<g class="nd" data-node="${id}">${shape}${text}${badge}</g>`;
+  });
+  host.innerHTML = s + '</svg>';
+}
+
+function fcChanged() {
+  return FC.order.filter(id => !FC.nodes[id].fixed && fcDraft[id].trim() !== FC.nodes[id].label);
+}
+function fcFooter() {
+  const ch = fcChanged(), empty = FC.order.some(id => !FC.nodes[id].fixed && !fcDraft[id].trim());
+  const btn = document.getElementById('fc-save');
+  btn.disabled = !ch.length || empty;
+  btn.textContent = ch.length ? `Save ${ch.length} label${ch.length > 1 ? 's' : ''}` : 'Save';
+  document.getElementById('fc-foot-note').innerHTML = empty
+    ? '<span style="color:#ba1a1a;font-weight:600;">A label can\u2019t be empty.</span>'
+    : 'Saves the changed labels together. The picture is redrawn, and the SWE.4 test steps built from these labels update too.';
+}
+function renderFcRows() {
+  const ch = fcChanged();
+  document.getElementById('fc-rows').innerHTML = FC.order.map((id, i) => {
+    const n = FC.nodes[id];
+    if (n.fixed) return `<div class="fc-row"><span class="fc-num">${i + 1}</span><div class="flex-1">` +
+                        `<p class="fc-fixed">${esc(n.label)}</p><p class="note">from the code, not editable</p></div></div>`;
+    const note = n.corrected ? `corrected by ${esc(n.by)} · <a onclick="fcUndo('${id}')">Undo</a>` : 'written by the LLM';
+    return `<div class="fc-row${ch.includes(id) ? ' changed' : ''}" data-node="${id}"><span class="fc-num">${i + 1}</span>` +
+           `<div class="flex-1"><textarea rows="2" maxlength="${MAX_LEN}" data-node="${id}" oninput="fcInput(this)" ` +
+           `onfocus="fcFocus('${id}')" onblur="fcFocus(null)">${esc(fcDraft[id])}</textarea><p class="note">${note}</p></div></div>`;
+  }).join('');
+  fcFooter();
+}
+function fcInput(ta) {
+  fcDraft[ta.dataset.node] = ta.value;
+  ta.closest('.fc-row').classList.toggle('changed', ta.value.trim() !== FC.nodes[ta.dataset.node].label);
+  fcFooter();
+}
+function fcFocus(id) {
+  document.querySelectorAll('#fc-modal-pic .nd').forEach(g => g.classList.toggle('hl', g.dataset.node === id));
+}
+function openFlowchartEditor() {
+  if (reexporting) return;
+  fcDraft = {};
+  FC.order.forEach(id => { if (!FC.nodes[id].fixed) fcDraft[id] = FC.nodes[id].label; });
+  drawFlowchart('fc-modal-pic', true);
+  renderFcRows();
+  document.getElementById('fc-modal').classList.remove('hidden');
+}
+function closeFlowchartEditor(force) {
+  const n = fcDraft ? fcChanged().length : 0;
+  if (!force && n && !confirm(`Discard ${n} changed label${n > 1 ? 's' : ''}?`)) return;
+  document.getElementById('fc-modal').classList.add('hidden');
+  fcDraft = null;
+}
+function saveFlowchart() {
+  const ch = fcChanged();
+  if (!ch.length) return;
+  const btn = document.getElementById('fc-save');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  setTimeout(() => {
+    ch.forEach(id => {
+      const n = FC.nodes[id];
+      n.label = fcDraft[id].replace(/\s+/g, ' ').trim(); n.corrected = true; n.by = me(); n.at = stamp(); n.seq = ++saveSeq;
+    });
+    pending += ch.length;
+    drawFlowchart('doc-fc', false);
+    closeFlowchartEditor(true);
+    paintReady();
+    toast(`Saved ${ch.length} label${ch.length > 1 ? 's' : ''}.`,
+          'The picture is redrawn. The SWE.4 test steps built from these labels are updated too.');
+  }, 500);
+}
+function fcUndo(id) {
+  const n = FC.nodes[id];
+  n.label = n.llm; n.corrected = false; fcDraft[id] = n.llm;
+  pending += 1;
+  drawFlowchart('doc-fc', false); drawFlowchart('fc-modal-pic', true);
+  renderFcRows(); paintReady();
+  toast('Label back to the text the LLM wrote.');
+}
+
+// ── Right panel: tabs ────────────────────────────────────────────────────────
+let panelTab = 'outline';
+function setPanelTab(tab) {
+  panelTab = tab;
+  document.querySelectorAll('.rp-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === tab);
+    b.setAttribute('aria-selected', b.dataset.tab === tab ? 'true' : 'false');
+  });
+  document.getElementById('rp-outline').style.display     = tab === 'outline' ? 'flex' : 'none';
+  document.getElementById('review-tracker').style.display = tab === 'review' ? 'block' : 'none';
+  document.getElementById('rp-corr').style.display        = tab === 'corr' ? 'block' : 'none';
+}
+
+// ── The document list folds away while a document is open ────────────────────
+let treeFolded = true;
+function foldDocTree(fold) {
+  if (fold !== undefined) treeFolded = fold;
+  const inDoc = canvasState === 'doc';
+  if (inDoc) document.getElementById('doc-tree-panel').style.display = treeFolded ? 'none' : '';
+  document.getElementById('tree-rail').style.display = inDoc && treeFolded ? 'flex' : 'none';
+  document.getElementById('tree-fold').style.display = inDoc && !treeFolded ? '' : 'none';
+}
+
+// ── Units: BrakeCtrl is drawn in full; the rest stand in for a large document ─
+let slotsReady = false, saveSeq = 0;
+const SLOT_WHERE = {
+  'u:ctrl': ['BrakeCtrl', 'unit BrakeCtrl'], 'u:diag': ['BrakeDiag', 'unit BrakeDiag'],
+  'u:slip': ['SlipEstimator', 'unit SlipEstimator'], 'u:abs': ['AbsCore', 'unit AbsCore'],
+  'u:press': ['PressureModel', 'unit PressureModel'], 'u:valve': ['ValveIf', 'unit ValveIf'],
+  's:wheel': ['BrakeCtrl', 'WheelState'], 'd:run': ['BrakeCtrl', 'BrakeCtrl_Run'],
+  'd:set': ['BrakeCtrl', 'BrakeCtrl_SetRequest'], 'd:valve': ['BrakeCtrl', 'g_valveCmd'],
+  'i:run': ['BrakeCtrl', 'BrakeCtrl_Run'], 'o:run': ['BrakeCtrl', 'BrakeCtrl_Run'],
+  'b:run': ['BrakeCtrl', 'BrakeCtrl_Run \u2190 Scheduler_Task5ms'],
+};
+const UNITS = [{ name: 'BrakeCtrl', id: 's-unit', num: '2.1.1',
+                 fns: [['BrakeCtrl_Run', 's-fn'], ['BrakeCtrl_SetRequest', 's-f-BrakeCtrl_SetRequest']] }];
+const EXTRA_UNITS = [
+  ['BrakeDiag', [['BrakeDiag_Init', 'Clears the diagnostic counters and the stored trouble codes.'],
+                 ['BrakeDiag_CheckWheelSensor', 'Checks that each wheel speed signal is within its plausible range.'],
+                 ['BrakeDiag_CheckPressureSensor', 'Compares the pressure sensor reading with the estimated line pressure.'],
+                 ['BrakeDiag_ReportDtc', 'Sets a diagnostic trouble code and records the cycle it was first seen.'],
+                 ['BrakeDiag_GetStatus', 'Returns the bitmask of active diagnostic trouble codes.']]],
+  ['SlipEstimator', [['Slip_Init', 'Resets the vehicle reference speed and the slip values.'],
+                     ['Slip_UpdateReference', 'Estimates the vehicle reference speed from the four wheel speeds.'],
+                     ['Slip_Compute', 'Computes the slip ratio of each wheel against the reference speed.'],
+                     ['Slip_IsWheelLocked', 'Tells whether a wheel\u2019s slip is above the lock threshold.'],
+                     ['Slip_GetMax', 'Returns the largest slip ratio of the four wheels.']]],
+  ['AbsCore', [['Abs_Init', 'Puts every wheel channel in the pressure build-up phase.'],
+               ['Abs_Run', 'Runs one ABS cycle: picks the phase of each wheel channel and its valve command.'],
+               ['Abs_SelectPhase', 'Chooses build-up, hold or release for one wheel from its slip and deceleration.'],
+               ['Abs_HoldPressure', 'Keeps the inlet and outlet valves of a wheel closed.'],
+               ['Abs_ReleasePressure', 'Opens the outlet valve of a wheel to lower its pressure.'],
+               ['Abs_IsActive', 'Tells whether ABS is controlling any wheel.']]],
+  ['PressureModel', [['Press_Init', 'Sets the modelled line pressure to zero.'],
+                     ['Press_Estimate', 'Estimates the line pressure from the valve commands and the pump state.'],
+                     ['Press_Limit', 'Limits a pressure request to the range the hydraulics allow.'],
+                     ['Press_GetEstimate', 'Returns the last estimated line pressure [bar].']]],
+  ['ValveIf', [['Valve_Init', 'Closes every valve and starts the PWM channels at 0 %.'],
+               ['Valve_SetDuty', 'Writes the duty cycle of one solenoid valve [0\u2013100 %].'],
+               ['Valve_SetAll', 'Writes the duty cycles of all four valves in one call.'],
+               ['Valve_Shutdown', 'Closes every valve after a fault.']]],
+];
+function buildExtraUnits() {
+  let h = '';
+  EXTRA_UNITS.forEach(([unit, fns], i) => {
+    const num = `2.1.${i + 2}`, uid = `s-u-${unit}`, entry = { name: unit, id: uid, num, fns: [] };
+    h += `<h4 class="doc-h3" id="${uid}">${num} ${unit}</h4>` +
+         `<p class="doc-h4">${num}.1 unit header</p><p class="doc-muted">The globals, types and defines of ${unit}, as in 2.1.1.1.</p>` +
+         `<p class="doc-h4">${num}.2 unit interface</p><p class="doc-muted">The 8-column interface table of ${unit}, as in 2.1.1.2.</p>`;
+    fns.forEach(([fn, desc], k) => {
+      const id = `s-f-${fn}`;
+      SLOTS[`d:${fn}`] = { kind: 'description', llm: desc, cascade: `the unit description of ${unit}` };
+      SLOT_WHERE[`d:${fn}`] = [unit, fn];
+      h += `<p class="doc-h4" id="${id}">${num}.${k + 3} ${unit}-${fn}</p><div class="ed doc-p" data-slot="d:${fn}"></div>`;
+      entry.fns.push([fn, id]);
+    });
+    UNITS.push(entry);
+  });
+  document.getElementById('extra-units').innerHTML = h;
+}
+
+// ── Outline tab: units collapse, search filters, the current place is marked ─
+const OUTLINE_TOP = [['s-intro', '1', 'Introduction', 0], ['s-comp', '2', 'Brake Controller', 0],
+                     ['s-static', '2.1', 'Static Design', 1]];
+const OUTLINE_END = [['s-dynamic', '2.2', 'Dynamic Behaviour', 1],
+                     ['s-dyn-1', '2.2.1', 'BrakeCtrl_Run (Scheduler_Task5ms)', 2]];
+let outlineQuery = '', activeOutlineId = 's-intro';
+const expandedUnits = new Set();
+
+function unitCorrections(name) {
+  let n = Object.values(SLOTS).filter(s => s.corrected && s.unit === name).length;
+  if (name === 'BrakeCtrl') n += FC.order.filter(id => FC.nodes[id].corrected).length;
+  return n;
+}
+function markMatch(text, q) {
+  if (!q) return esc(text);
+  const i = text.toLowerCase().indexOf(q);
+  if (i < 0) return esc(text);
+  return esc(text.slice(0, i)) + '<mark>' + esc(text.slice(i, i + q.length)) + '</mark>' + esc(text.slice(i + q.length));
+}
+function renderOutline() {
+  const nav = document.getElementById('outline-nav');
+  if (!nav) return;
+  const q = outlineQuery.trim().toLowerCase();
+  const row = (id, num, label, depth) =>
+    `<a class="ol-row d${depth}${id === activeOutlineId ? ' active' : ''}" data-target="${id}">` +
+    `${num ? `<span class="ol-num">${num}</span>` : ''}<span class="ol-label">${label}</span></a>`;
+  let h = '', hits = 0;
+  if (!q) OUTLINE_TOP.forEach(([id, num, label, d]) => { h += row(id, num, esc(label), d); });
+  UNITS.forEach(u => {
+    const unitHit = !!q && u.name.toLowerCase().includes(q);
+    const fnHits = q ? u.fns.filter(([fn]) => fn.toLowerCase().includes(q)) : u.fns;
+    if (q && !unitHit && !fnHits.length) return;
+    const open = q ? true : expandedUnits.has(u.name);
+    const n = editing ? unitCorrections(u.name) : 0;
+    h += `<div class="ol-unit"><button class="ol-chev" onclick="toggleUnit('${u.name}')" aria-label="${open ? 'Fold' : 'Open'} ${u.name}">` +
+         `<span class="material-symbols-outlined">${open ? 'expand_more' : 'chevron_right'}</span></button>` +
+         `<a class="ol-row${u.id === activeOutlineId ? ' active' : ''}" data-target="${u.id}"><span class="ol-num">${u.num}</span>` +
+         `<span class="ol-label">${markMatch(u.name, q)}</span>` +
+         `${n ? `<span class="ol-badge" title="${n} correction${n > 1 ? 's' : ''} in this unit">\u25cf ${n}</span>` : ''}</a></div>`;
+    if (open) (q && !fnHits.length ? u.fns : fnHits).forEach(([fn, id]) => { hits++; h += row(id, '', markMatch(fn, q), 3); });
+  });
+  if (!q) OUTLINE_END.forEach(([id, num, label, d]) => { h += row(id, num, esc(label), d); });
+  const total = UNITS.reduce((a, u) => a + u.fns.length, 0);
+  nav.innerHTML = h || `<p class="rp-hint px-2">No unit or function matches \u201c${esc(outlineQuery)}\u201d.</p>`;
+  document.getElementById('outline-hint').innerHTML = q
+    ? `${hits} function${hits === 1 ? '' : 's'} found`
+    : `${UNITS.length} units \u00b7 ${total} functions${editing ? ' \u00b7 \u25cf = corrections' : ''}`;
+}
+function toggleUnit(name) {
+  expandedUnits.has(name) ? expandedUnits.delete(name) : expandedUnits.add(name);
+  renderOutline();
+}
+function setOutlineQuery(v) { outlineQuery = v; renderOutline(); }
+
+// ── Corrections tab ──────────────────────────────────────────────────────────
+const KIND_LABEL = { description: 'Description', unitDescription: 'Unit description', structDescription: 'Struct description',
+                     behaviourInputName: 'Input name', behaviourOutputName: 'Output name', behaviourDescription: 'Behaviour' };
+const ORPHANS = [{ kind: 'Description', where: 'BrakeCtrl_LegacyPump', by: 'Alice Chen', at: '12 Sep 10:05',
+                   text: 'Keeps the valve table of the 2019 pump for the old ECU variant.' }];
+function renderCorrections() {
+  const host = document.getElementById('rp-corr');
+  if (!host) return;
+  const items = [];
+  Object.entries(SLOTS).forEach(([id, s]) => {
+    if (s.corrected) items.push({ seq: s.seq || 0, kind: KIND_LABEL[s.kind], where: s.where, by: s.by, at: s.at,
+                                  text: s.list ? s.text.join(' / ') : s.text, sel: `.ed[data-slot="${id}"]` });
+  });
+  FC.order.forEach((nid, i) => {
+    const n = FC.nodes[nid];
+    if (n.corrected) items.push({ seq: n.seq || 0, kind: 'Flowchart label', where: `BrakeCtrl_Run \u00b7 box ${i + 1}`,
+                                  by: n.by, at: n.at, text: n.label, sel: '#doc-fc' });
+  });
+  items.sort((a, b) => b.seq - a.seq);
+  document.getElementById('corr-count').textContent = items.length;
+  const card = it => `<button class="corr-item" data-sel="${esc(it.sel)}" onclick="jumpTo(this.dataset.sel)">` +
+    `<div class="corr-top"><span class="corr-kind">${it.kind}</span><span class="corr-where">${esc(it.where)}</span></div>` +
+    `<p class="corr-text">${esc(it.text)}</p><p class="corr-by">${esc(it.by)} \u00b7 ${esc(it.at)}</p></button>`;
+  host.innerHTML =
+    '<p class="rp-hint" style="margin:0 0 8px;">This document\u2019s corrections, newest first. Click one to go to it.</p>' +
+    (items.length ? items.map(card).join('') : '<p class="rp-hint">No corrections yet.</p>') +
+    `<p class="corr-sec">No longer applies (${ORPHANS.length})</p>` +
+    ORPHANS.map(o => `<div class="corr-item orphan"><div class="corr-top"><span class="corr-kind">${o.kind}</span>` +
+      `<span class="corr-where">${esc(o.where)}</span></div><p class="corr-text">${esc(o.text)}</p>` +
+      `<p class="corr-by">The code changed, so it is kept but not printed. ${esc(o.by)} \u00b7 ${esc(o.at)}</p></div>`).join('');
+}
+function jumpTo(sel) {
+  const el = document.querySelector(sel);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.remove('jump-flash'); void el.offsetWidth; el.classList.add('jump-flash');
+}
+function refreshPanels() {
+  if (!slotsReady) return;
+  renderOutline();
+  renderCorrections();
+}
+
+// ── Scroll spy: the outline marks where you are ──────────────────────────────
+const canvasEl = document.getElementById('canvas');
+function outlineOrder() {
+  return [...OUTLINE_TOP.map(r => r[0]), ...UNITS.flatMap(u => [u.id, ...u.fns.map(f => f[1])]), ...OUTLINE_END.map(r => r[0])];
+}
 function setActiveOutline(id) {
-  outlineLinks.forEach(l => l.classList.toggle('active', l.dataset.target === id));
+  activeOutlineId = id;
+  const u = UNITS.find(x => x.id === id || x.fns.some(f => f[1] === id));
+  if (u && !outlineQuery && !expandedUnits.has(u.name)) { expandedUnits.add(u.name); renderOutline(); }
+  document.querySelectorAll('#outline-nav .ol-row').forEach(a => a.classList.toggle('active', a.dataset.target === id));
+  const act = document.querySelector('#outline-nav .ol-row.active');
+  if (act) act.scrollIntoView({ block: 'nearest' });
 }
 canvasEl.addEventListener('scroll', () => {
-  let cur = sections[0];
-  sections.forEach(id => {
+  if (canvasState !== 'doc' || activeProcess === 'SWE.4') return;
+  const top0 = canvasEl.getBoundingClientRect().top;
+  let cur = OUTLINE_TOP[0][0];
+  for (const id of outlineOrder()) {
     const el = document.getElementById(id);
-    if (el && el.getBoundingClientRect().top - canvasEl.getBoundingClientRect().top < 120) cur = id;
-  });
-  setActiveOutline(cur);
+    if (el && el.getBoundingClientRect().top - top0 < 120) cur = id;
+  }
+  if (cur !== activeOutlineId) setActiveOutline(cur);
 }, { passive: true });
-outlineLinks.forEach(link => {
-  link.addEventListener('click', e => {
-    e.preventDefault();
-    const t = document.getElementById(link.dataset.target);
-    if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
+document.getElementById('outline-nav').addEventListener('click', e => {
+  const a = e.target.closest('.ol-row');
+  if (!a) return;
+  e.preventDefault();
+  const el = document.getElementById(a.dataset.target);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
 // ── Outside click ─────────────────────────────────────────────────────────────
@@ -2224,6 +3015,9 @@ document.addEventListener('click', e => {
 // ── Init ──────────────────────────────────────────────────────────────────────
 selectCommit((COMMITS.find(x => x.current) || COMMITS[0]).sha);
 setActiveOutline('s-intro');
+buildExtraUnits(); initSlots(); setEditable(); drawFlowchart('doc-fc', false); paintReady();
+// documents.html#edit opens a SWE.3 document straight in edit mode (review & update mockup).
+if (location.hash === '#edit') { selectDoc('SWE.3', 'Brake Controller'); toggleEdit(true); }
 </script>
 </body>
 </html>
