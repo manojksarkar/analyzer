@@ -1038,14 +1038,21 @@ export function ProjectDetailPage() {
   const { data: project } = useProject(projectId ?? '')
   // pageState + the version to view come from the Subbar selection (shared store).
   const { pageState, isLoading, viewVersion, viewVersionId, selectedCommit } = useProjectViewState(projectId ?? '')
-  const { data: documents, isLoading: documentsLoading } = useDocuments(projectId ?? '', viewVersionId ? { versionId: viewVersionId } : undefined)
+  const { data: versions } = useVersions(projectId ?? '')
+  // While a run is going, the Overview still shows the last finished version under the run card
+  // (the picked one, when it is finished). It used to hide every document until the run ended.
+  const running = pageState === 'running'
+  const doneVersion = running
+    ? (viewVersion && viewVersion.status !== 'draft' ? viewVersion : versions?.find((v) => v.status !== 'draft'))
+    : undefined
+  const contentVersionId = running ? doneVersion?.id : viewVersionId
+  const { data: documents, isLoading: documentsLoading } = useDocuments(projectId ?? '', contentVersionId ? { versionId: contentVersionId } : undefined)
   const { data: team, isLoading: teamLoading } = useTeam(projectId ?? '')
   const { data: commits, isLoading: commitsLoading } = useCommits(projectId ?? '')
   const { data: job } = useCurrentJob(projectId ?? '')
   const selfAssign = useSelfAssign(projectId ?? '')
   const startJob = useStartJob(projectId ?? '')
   const cancelJob = useCancelJob(projectId ?? '')
-  const { data: versions } = useVersions(projectId ?? '')
   const [runOpen, setRunOpen] = useState(false)
   useJobEvents(projectId ?? '', job?.id, job?.status)
 
@@ -1057,7 +1064,7 @@ export function ProjectDetailPage() {
   const startAnalysis = (body: StartJobInput) =>
     startJob.mutate(body, { onSuccess: () => setRunOpen(false) })
 
-  const showContent = ['in_review', 'complete', 'stale'].includes(pageState)
+  const showContent = ['in_review', 'complete', 'stale'].includes(pageState) || (running && !!doneVersion)
 
   return (
     <div className="flex-1 overflow-y-auto bg-background">
@@ -1261,6 +1268,13 @@ export function ProjectDetailPage() {
         )}
 
         {/* ══ GENERATED CONTENT — KPI strip + docs + sidebar (matches project-detail.html) ══ */}
+        {running && doneVersion && project && (
+          <p className="mb-3 flex items-center gap-1.5 font-mono text-caption text-on-surface-variant">
+            <Icon name="history" size={14} />
+            Showing <span className="text-on-surface font-semibold">{doneVersion.tag}</span>
+            {job?.versionTag ? <> while <span className="text-secondary">{job.versionTag}</span> is being generated</> : null}
+          </p>
+        )}
         {showContent && project && (
           documentsLoading && !documents ? (
             <DashboardSkeleton />
