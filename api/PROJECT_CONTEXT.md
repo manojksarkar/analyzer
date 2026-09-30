@@ -11,18 +11,18 @@
 > store is historical. Current state → root [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md) §6 + its
 > 2026-08-13 entry; next work → [docs/production-redesign/09](../docs/production-redesign/09-post-migration-consolidation-plan.md).
 >
-> **⚠ 2026-09-27 — review & update** (branch `review_update_v3` — `review_update_v2` rebased onto develop `5542736` on 2026-09-29 — PR to `develop`). New router
+> **⚠ 2026-09-27 — review & update** (on `develop` since PR #70). New router
 > `routes/text_overrides.py`, R1–R11 under `/projects/{projectId}/versions/{versionId}/…`: list, read,
 > correct, undo and history of one slot; a Dynamic Behaviour row; a flowchart's labels; export
 > readiness; the regeneration queue; what can be edited (`slots`, each with `shownIn`). Contract:
-> [docs/spec/REVIEW_UPDATE_API_SPEC.md](../docs/spec/REVIEW_UPDATE_API_SPEC.md). Also on that branch:
+> [docs/spec/REVIEW_UPDATE_API_SPEC.md](../docs/spec/REVIEW_UPDATE_API_SPEC.md). Also with it:
 > a re-export is a job of its own, addressed by version (`POST /projects/{pid}/versions/{vid}/reexport`);
 > `POST /projects/{pid}/jobs` refuses a project with no architecture (409 `NO_ARCHITECTURE`) and resolves
 > `reference_version_id` inside the project; `users.is_superuser` lets a user act
 > on every project — nobody, the seeded `admin@aspice.dev` included, until
 > `tools/grant_access.py --set-superuser` makes them one; `tools/grant_access.py` adds the `project_members` row a CLI-onboarded project
-> lacks; a sign-in lasts 8 h (`auth.accessTokenMinutes` in `engine/config/config.local.json`). Merge
-> notes: [docs/design/REVIEW_UPDATE_HANDOVER.md](../docs/design/REVIEW_UPDATE_HANDOVER.md).
+> lacks; a sign-in lasts 8 h (`auth.accessTokenMinutes` in `engine/config/config.local.json`). What it
+> changed and the invariants to keep: [docs/design/REVIEW_UPDATE_HANDOVER.md](../docs/design/REVIEW_UPDATE_HANDOVER.md).
 >
 > **Contract safety-net:** the web-app's `npm run test:api` suite validates this server's
 > live responses against the zod schemas the UI expects (~46 endpoints). Run it against

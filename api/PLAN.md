@@ -14,7 +14,7 @@
 | **M2 — real functions / render / assets / download / export-all** (live `output/`, fixtures now only a no-run fallback) | ✅ Done |
 | **M3 — real compare** (incremental engine over two real version snapshots) | ✅ Done |
 | **M4 — persistence, config, docs, tests** | ◐ Partial — remaining below |
-| **M5 — review & update** (`routes/text_overrides.py`, R1–R11: correct the LLM's text in a document — [contract](../docs/spec/REVIEW_UPDATE_API_SPEC.md)) | ◐ Built on `review_update_v3`, PR to `develop`; PostgreSQL run pending — remaining below |
+| **M5 — review & update** (`routes/text_overrides.py`, R1–R11: correct the LLM's text in a document — [contract](../docs/spec/REVIEW_UPDATE_API_SPEC.md)) | ◐ On `develop` since PR #70 — remaining below |
 
 ## Remaining (M5)
 

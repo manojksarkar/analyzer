@@ -73,8 +73,8 @@
 | VW-8 | Pre-parse summary: the views on/off for the doc type, and what is built only because another view needs it | enhance | open | incremental/report.py |
 | VW-9 | `config.defaults.json` ships the development profile (`flowcharts`, `behaviourDiagram` off) and every project inherits it. Open: complete or fast as the shipped default | enhance | open | config.defaults.json |
 
-## Review & update — waiting on the develop owner (branch `review_update_v3`)
-> Points the branch met in develop's area and did not settle alone. None blocks the merge; where the branch had to pick, the pick is reversible. **Status** `decide` = waits on the develop owner's answer. Detail and what to do either way: [REVIEW_UPDATE_HANDOVER §8](design/REVIEW_UPDATE_HANDOVER.md#8-waiting-on-the-develop-owner).
+## Review & update — waiting on the develop owner
+> Points the feature's work met in develop's area and did not settle alone. None blocked the merge (PR #70); where it had to pick, the pick is reversible. **Status** `decide` = waits on the develop owner's answer. Detail and what to do either way: [REVIEW_UPDATE_HANDOVER §8](design/REVIEW_UPDATE_HANDOVER.md#8-waiting-on-the-develop-owner).
 
 | ID | Item | Type | Status | Ref |
 |---|---|---|---|---|
