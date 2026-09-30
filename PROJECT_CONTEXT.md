@@ -100,7 +100,8 @@
 >   `views/flowcharts.py` calls it instead of `mmdc` and now guards on `node` availability. **Scope =
 >   PNG/DOCX pipeline only** — behaviour/unit diagrams still use Mermaid (`render_mermaid_cached`/`mmdc`
 >   untouched); the **web-app still renders the `mermaid` string client-side, so its in-app flowchart
->   view is NOT yet ported to DOT** (open follow-up). Verified e2e via the engine CLI on `SampleCppProject`
+>   view is NOT yet ported to DOT** (open follow-up — **done 2026-09-30b**: server-drawn SVGs, see that
+>   dated note). Verified e2e via the engine CLI on `SampleCppProject`
 >   (`--no-llm`): 123 ✓ / 1 ✗ (pre-existing `_SOME_FUNCTION` cursor-resolve failure in `VoidAsVar.cpp`),
 >   JSON carries `digraph`, PNGs render with Return/End at the bottom and no crossings.
 >   **Reproducibility fixes (same day):** `package.json` now declares `@viz-js/viz` + `puppeteer` as real
@@ -207,6 +208,56 @@
 >   `edgeRouting:ORTHOGONAL`) are not yet applied → **pending**.
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
+
+> Updated: 2026-09-30b (**Flowcharts in the web app are server-drawn SVGs.** Branch `ui_v2`, UNCOMMITTED. Asked:
+> the SWE.3 reader showed a flowchart's DOT text, not a picture; the target project has **500+ flowcharts in
+> ONE document** and some DOTs are huge. User approved the design, then "do everything".
+>
+> - **Why DOT showed:** the DOT (`<group>/flowcharts/<unit>.json`) is built on every run (SWE.4 Test Steps need
+>   the CFG); `views.flowcharts` (default false) only gates the PNGs; `doc_render` found no PNG and sent the DOT
+>   in `mermaid`; the reader printed it. PNG = one headless browser per chart, **~11-13 s each regardless of
+>   size** (measured), 89 min on the 45-function sample.
+> - **Measured, viz-js 3.28 in node (same V8/WASM as a browser), synthetic CFGs in dot_builder's style:** 100
+>   nodes 0.07 s, 250 0.4 s, 500 2 s, 750 14-22 s, 1,000 57-110 s and 1 of 3 **aborted the WASM** (assertion in
+>   `gv_list_get_`). 500 nodes ≈ 10,700 × 37,000 px. Every real chart on this box ≤ 53 nodes, < 20 ms. → drawing
+>   in the browser rejected; draw once per run on the server.
+> - **Engine:** `engine/config/render_svg.mjs` — many DOTs → SVG in ONE node process, no browser; writes
+>   `<!-- dot-key: sha256 -->` into each file; new viz instance after any failure. `utils.render_dot_svgs` (200
+>   charts/process; a chart counts as drawn only if its file carries its key). `views/flowcharts.
+>   write_flowchart_svgs(project_root, out_dir)` runs on **every** run, after the Node check and before the PNG
+>   gate: redraws only when the key differs; skips > `FLOWCHART_SVG_MAX_BOXES` (500) and deletes its old SVG;
+>   deletes SVGs no chart owns or that failed. Carry-forward + orphan prune include `.svg`. Shared with the API:
+>   `engine/core/flowchart_svg.py` (`svg_file_name` = the PNG name with .svg, `count_dot_boxes`, the limit,
+>   `svg_content_key`/`svg_file_key`, `svg_size_px` = the `<svg>` tag's pt × 4/3). `.svg` was already in
+>   `model_store._OUTPUT_TEXT_EXTS`, so run SVGs are stored in `version_output_files` too (API serves from disk).
+> - **API:** `doc_render._find_flowchart` → which unit/function spelling matched → exact file name (the old
+>   `_safe_fn` stems missed operators/destructors). `_flowchart_entry` → ONE entry per chart `{label, status:
+>   drawn|too_large|missing, image_url (SVG), width, height (CSS px), boxes, source_hash}`; **no DOT**; an SVG
+>   whose key ≠ the DOT's is `missing`, never shown. PNG-slice resolution removed from the render (DOCX keeps
+>   its own). Asset route: `.svg` → `image/svg+xml` + CSP `default-src 'none'` + nosniff. `schemas.
+>   RenderFlowchart(Table)` documented. Compare: flowchart blocks carry `source_hash`, `_diagram_source` =
+>   mermaid or hash, so a changed flowchart still diffs as changed.
+> - **Web:** `FlowchartEntry {label, status, imageUrl, width, height, boxes}` (no mermaid); `mapFlowchart` reads
+>   an OLD API's `{image_url, mermaid}` as drawn/missing (a not-restarted API shows "not drawn", never DOT).
+>   `DocumentInspectorPage/components/FlowchartFigure.tsx`: `<img loading=lazy width height>` (space reserved),
+>   max-h 480, click → full-screen `Modal` viewer (drag / wheel pan, Ctrl+wheel zoom at cursor, + − 0 keys,
+>   Fit, 100%; opens on the whole chart, or at 100% top-centre when fitting would go below 50%). Math pure in
+>   `DocumentInspectorPage/helpers.ts`. Notes: "Too large to draw (N boxes)", "Flowchart not drawn for this run".
+> - **Backfill:** `tools/render_flowchart_pngs.py --project ID | --all [--png]` draws every version already on
+>   disk — no parse/generate/export. Ran `--all`: 16 projects, 172 dirs, **1,942 SVGs, 0 failed**.
+> - **Tests:** `tests/unit/test_flowchart_svgs.py` (needs node + viz-js; skips otherwise),
+>   `tests/api/test_flowchart_pictures.py`, web `mappers/__tests__/document.test.ts` (mapFlowchart),
+>   `DocumentInspectorPage/__tests__/{helpers,FlowchartFigure}`. Web: build clean, 80/80 unit, lint adds nothing.
+>   Real data (`analyzer_ui`, admin's 4 projects): 110 SWE.3 docs → 69 flowcharts, **all `drawn`, no DOT in any
+>   payload**; headless-browser check on "SampleCpp - All components" / Math (`docfe331911`). Re-export (Phase
+>   3+) of `e2e-sample.e2ev1`: the run drew its 50 SVGs itself; A/B re-export with the SVG step idle vs
+>   drawing all 50 → every output, all 6 DOCX (text + images) included, **identical**.
+> - **Servers (user, 2026-09-30: "stop all ui and apis, then start only one"):** stopped Vite 5173/5180/5181/5182
+>   and APIs 8000/8010/8011 (8010 was the job runner; the one `running` job in `analyzer_ui` is seeded `job1`
+>   from 2026-06-22, not a live run). ONE pair now, started from this session: **API 8000 → `analyzer_ui`**
+>   (launcher sets `DATABASE_URL`) + **web 5173**.
+> - **Open:** PNGs still cost a browser per chart (one shared browser would cut it); SVGs served from disk only;
+>   charts over 500 boxes need a collapsible view (the CFG is in the JSON); the SWE.3 outline lists every function.)
 
 > Updated: 2026-09-30 (**SWE.4 in the web app, end to end; overnight test projects; round-1 UI review fixes.**
 > Branch `ui_v2`, local commits `bf65efc`..`c1c7fb7`, NOT pushed. Design = `docs/ui-mockups/documents.html`

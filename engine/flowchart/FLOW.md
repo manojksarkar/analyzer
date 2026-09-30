@@ -330,11 +330,17 @@ flowcharts.run(model, output_dir, model_dir, config)
   subprocess.run(cmd)  → launches flowchart_engine.py as a child process
   if returncode != 0 → log error, return
 
-  if config.views.flowcharts.renderPng:
+  write_flowchart_svgs(repo, output/flowcharts/)      # EVERY run — the web reader's pictures
+      → ONE `node engine/config/render_svg.mjs` for all charts (viz-js DOT→SVG, no browser)
+      → <unit_func>.svg carrying <!-- dot-key -->; redrawn only when its DOT changed;
+        > FLOWCHART_SVG_MAX_BOXES (500) not drawn; SVGs no chart owns are removed
+      logs: "SVG: N drawn, M up to date, …"
+
+  if config.views.flowcharts:                          # PNGs are the DOCX's only
       for each .json in output/flowcharts/:
           for each {name, flowchart} entry:   # flowchart = DOT script
               render_dot_cached(repo, dot, <unit_func>.png)
-                  → engine/config/render_dot.mjs (viz-js DOT→SVG → puppeteer PNG)
+                  → engine/config/render_dot.mjs (viz-js DOT→SVG → puppeteer PNG, ~12 s/chart)
                   → content-addressed .dot_cache reuse
       logs: "N PNGs rendered"
 ```
@@ -912,8 +918,13 @@ output/flowcharts/<stem>.json
     read by:    flowcharts.run() for PNG rendering
                 docx_exporter.py for DOCX assembly
 
+output/flowcharts/<stem>_<func>.svg
+    drawn by:   views/flowcharts.write_flowchart_svgs → render_svg.mjs (every run)
+    read by:    api doc_render (web reader, via the asset route); also stored in Postgres
+                (version_output_files) like the other text outputs
+
 output/flowcharts/<stem>_<func>.png
-    rendered by: render_dot.mjs (viz-js DOT→SVG → puppeteer PNG)
+    rendered by: render_dot.mjs (viz-js DOT→SVG → puppeteer PNG), only with views.flowcharts
     read by:    docx_exporter.py
 
 output/flowcharts/_summary.json
