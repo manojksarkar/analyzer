@@ -209,6 +209,67 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-30c (**`start-app` — one command that starts the API + web app cleanly.** Branch `ui_v2`,
+> `66faa10` (+ this docs commit), pushed. Asked (office): "old UI is coming, I have all the new changes in code" → a script that
+> starts both and rules out every old-UI / old-API cause. Files: `tools/start_app.py`, `start-app.cmd`
+> (repo root; prefers `.venv\Scripts\python.exe`, skips the MS-Store `python` stub; a .cmd because office
+> boxes block .ps1), `.gitattributes` (`*.cmd`/`*.bat` eol=crlf — cmd.exe misreads `goto` labels in LF-only
+> batch files; this box has autocrlf=true, the office may not), `tests/unit/test_start_app.py` (21, green),
+> docs/SETUP.md §6/§9, README quick start.
+>
+> - **Modes:** default = checks → stop what holds the ports → `npm install` if needed → uvicorn → wait
+>   `/health` → Vite → wait `/` → verify → stream logs (`api |`/`web |`) until Ctrl+C / Ctrl+Break /
+>   SIGTERM (all stop both trees). `--detach` (hidden console `NEW_PROCESS_GROUP|NO_WINDOW|BREAKAWAY_FROM_JOB`,
+>   logs to file, `NO_COLOR=1` for Vite), `--status`, `--stop` (`--stop-others` = this app's servers on
+>   other ports/folders too), `--check`, `--lan`/`--public-host` (bind 0.0.0.0, VITE_API_URL = LAN IP — a
+>   `localhost` API URL on another machine's browser hits THAT machine), `--prod` (fresh `vite build` +
+>   `vite preview`, never an old dist; no tsc), `--reload` (`--reload-dir api --reload-dir engine`, warns it
+>   kills running analyses), `--pull` (`--ff-only`), `--database-url`, `--allow-memory-db`, `-y`.
+>   State `logs/start-app/state.json` (pids, ports, commit, DB); `--stop` ports = CLI ports, else state's,
+>   else 8000/5173; `clear_state(own_pids)` so a replaced run never deletes the newer run's state.
+> - **Checks (each a found trap):** branch/commit/behind-upstream in ONE `git status --porcelain=v2
+>   --branch` + one `git log` (each git call ≈0.9 s on this box; 7 calls were 6 s); untracked files;
+>   **file-beside-moved-folder shadow** — `pages/NewProjectPage.tsx` (moved to a folder 2026-09-29, `575871a`)
+>   or `DocumentInspectorPage.tsx` (2026-09-30, `f7e9656`) left by a copy-over is loaded INSTEAD of
+>   `X/index.tsx` (Vite/TS try extensions before a folder index) → the old wizard with no Import config; moved
+>   aside to `logs/start-app/stale-files/<ts>/` when git says the loaded side is untracked and the other
+>   tracked (Python: a leftover package dir beats a module); Python ≥3.12 + API packages; **bcrypt ≥5 FAIL**
+>   (passlib 1.7 can't hash → every sign-in 500), 4.x warn; `import api` resolves to THIS folder; a repo
+>   `.venv` not in use; Node vs the installed Vite's `engines.node`; `web-app/node_modules` vs
+>   `package-lock.json` per package **including this platform's `optional` native binaries**
+>   (`@rolldown/binding-win32-x64-msvc`, tailwind oxide, lightningcss — missing when node_modules was copied
+>   from another OS/arch); root `@viz-js/viz`/mermaid-cli (warn: runs can't draw); `VITE_API_URL` in the
+>   shell / `.env*` (warn — the tool's own value wins: Vite never overwrites an env var already set);
+>   `dist/` older than `src/`; DB via `core.db` (API_DB_BACKEND=memory or nothing configured = FAIL — the
+>   in-memory seed looks like "a different app"); reachability (`_unreachable_help`); missing DB → runs
+>   `analyzer.py setup`; **schema vs `schema.py` metadata** (loaded by file path — importing via `api.db`
+>   builds the API's DB object): missing tables → `setup` automatically, missing columns → FAIL with the
+>   `ALTER TABLE` lines (setup never adds columns); project/user/version counts (0 projects = "API on another
+>   DB?"); **queued/running jobs** → confirm before stopping an API (a restart kills them — `pipeline_runner`
+>   Popen children); if none runs them they block Run Analysis forever — the fix is Cancel Job, whose
+>   `job_alive` path already releases the draft (no DB write in the tool). Ports: every listener on ANY
+>   address — **Vite on this box binds `::1` only**, so an old one on `::1:5173` + a new one on
+>   `127.0.0.1:5173` coexist and `localhost` reaches the old; the tool binds 127.0.0.1 explicitly and
+>   stops any `api`/`web` process on the port (ANY folder — named "ANOTHER folder"); other node/python →
+>   FAIL unless `-y`; pid 4 = HTTP.sys; Windows excluded ranges (netsh) via a bind test. Kind detection
+>   matches the program (`/vite/bin/vite`, `api.main:app`), not a mention (a bash cmdline with
+>   `VITE_API_URL` was misread as Vite). **After start:** `/health`; the API log has no "NO DATABASE
+>   CONFIGURED"/"UNREACHABLE"; every listener on each port is in the started process tree; the dev-served
+>   `/src/lib/http.ts` carries the expected API URL (`import.meta.env = {…}` is injected only when
+>   VITE_API_URL is set; else the code's `?? "http://localhost:8000/api/v1"` fallback — `served_api_url`
+>   reads both). `--lan` with a host NAME: Vite 6+ answers 403 "Blocked request. This host is not
+>   allowed" to an unknown Host header (IPs pass) → the tool sets `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`
+>   (Vite reads ONE host from it; preview inherits `server.allowedHosts`) — proven 403 → 200 — and fetches
+>   the web app at the public URL after start.
+> - **Also fixed while building:** children get `PYTHONIOENCODING=utf-8` (the API prints `✓`; into a cp1252
+>   pipe that raised inside the startup check's `try` and read as "DATABASE UNREACHABLE"); the schema check
+>   used a NullPool engine → the inspector opened a connection per table (~0.5 s each, 20 s) → pooled.
+>   Whole `--check` ≈ 6 s; a start ≈ 18 s.
+> - **Verified on this box** (the user's own 8000/5173 left alone — tests on 8091/5191, 8092/5192): detached
+>   start/status/stop; an old Vite on `::1:5192` detected, stopped, replaced on 127.0.0.1, Ctrl+Break stops
+>   both and frees the ports; `--check` FAILs for API_DB_BACKEND=memory, an unreachable DSN (timeout help),
+>   HTTP.sys on 5357, same ports; warns for a shell VITE_API_URL. NOT verified on the office box.)
+
 > Updated: 2026-09-30b (**Flowcharts in the web app are server-drawn SVGs.** Branch `ui_v2`, commits
 > `e6156e8`..`83612ca` (+ `c23ad36`, the SWE.4 mockup left uncommitted from the day before), pushed. Asked:
 > the SWE.3 reader showed a flowchart's DOT text, not a picture; the target project has **500+ flowcharts in

@@ -88,7 +88,19 @@ python analyzer.py check-llm
 
 ## 6. Run the web app
 
-Two terminals, both started from the repo root.
+**One command**, from the repo root:
+
+```
+start-app                      (Windows; elsewhere: python tools/start_app.py)
+```
+
+It checks the code, tools, web-app settings and the database. It then stops any old server on the two
+ports and starts the API and the web app, and confirms that each port answers with the server it just
+started and that the web app calls that API. Ctrl+C stops both. `start-app --status` shows what runs now
+(folder, commit, database, the API the web app calls). `--stop` stops them. `--lan` lets other machines
+open it, and `--help` lists the rest. Logs: `logs/start-app/`.
+
+**By hand**, in two terminals, both started from the repo root:
 
 **API** (port 8000):
 
@@ -154,4 +166,5 @@ only the app's start-up reaches the configured one (it adds `admin@aspice.dev` i
 | A run fails straight away | the red banner on the Overview page shows the error; `python analyzer.py doctor` |
 | A run sits in Phase 2 for a long time | the LLM (§3, §5) — the progress bar shows how far it is |
 | The web app says "Failed to fetch" | is the API running, and on the address the web app expects (§6) |
-| Port 8000 or 5173 is in use | `--port <n>` for the API; `npm run dev -- --port <n>` for the web app, with `VITE_API_URL` to match |
+| Port 8000 or 5173 is in use | `start-app --api-port <n> --web-port <n>`; by hand, `--port <n>` for the API and `npm run dev -- --port <n>` for the web app, with `VITE_API_URL` to match |
+| The browser shows the old UI, or the old API answers, after a `git pull` | `start-app --status` names what runs on the ports: its folder, commit and database, and the API the web app calls. `start-app` restarts both cleanly. A folder copied over an older one keeps files the new code deleted, and `start-app` moves those aside |

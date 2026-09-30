@@ -15,8 +15,9 @@ python analyzer.py setup
 python analyzer.py doctor
 ```
 
-Then either the web app — `python -m uvicorn api.main:app --port 8000`, and `npm run dev` in
-[web-app/](web-app/) — or the command line, [docs/CLI_COMMANDS.md](docs/CLI_COMMANDS.md).
+Then either the web app — `start-app` (Windows) or `python tools/start_app.py`, which checks for old
+servers and stale code, then starts the API and [web-app/](web-app/) — or the command line,
+[docs/CLI_COMMANDS.md](docs/CLI_COMMANDS.md).
 
 Config: [engine/config/config.defaults.json](engine/config/config.defaults.json), overridden by
 `engine/config/config.local.json` (machine settings and secrets; template
