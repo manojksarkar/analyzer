@@ -1102,7 +1102,7 @@ export function ProjectDetailPage() {
               <div>
                 <Text as="h3" variant="heading" className="text-on-surface">No documents generated yet</Text>
                 <p className="text-on-surface-variant mt-2 font-mono text-caption max-w-[340px]">
-                  Run analysis on <strong>{shownCommit ? `${shownCommit.branch} @ ${shownCommit.shortSha}` : 'the latest commit'}</strong> to generate ASPICE-compliant documents for all 5 processes.
+                  Run analysis on <strong>{shownCommit ? `${shownCommit.branch} @ ${shownCommit.shortSha}` : 'the latest commit'}</strong> to generate each component's Detailed Design (SWE.3) and Unit Test Specification (SWE.4).
                 </p>
               </div>
               <button
