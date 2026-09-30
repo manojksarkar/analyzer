@@ -169,28 +169,6 @@ def fetch(
         raise GitError(f"git fetch failed (exit {proc.returncode}): {msg}")
 
 
-def read_file(
-    repo_dir: str, path: str, clone_url: str = "", username: str = "", token: str = "",
-    ref: str = "HEAD", max_bytes: int = 5 * 1024 * 1024,
-) -> Optional[bytes]:
-    """The bytes of ``path`` at ``ref``, or None when it is not there (or too big).
-
-    The wizard's clones are blobless, so file contents are fetched from the remote on demand,
-    through ``origin`` -- which holds the credential-free URL. For a private repository the
-    credentialed URL is supplied for this one command (``-c remote.origin.url=...``), so the
-    token is never written into the clone's config."""
-    args = ["-C", repo_dir]
-    if clone_url and (username or token):
-        args += ["-c", f"remote.origin.url={_auth_url(clone_url, username, token)}"]
-    env = dict(os.environ)
-    env["GIT_TERMINAL_PROMPT"] = "0"
-    proc = subprocess.run([_git_exe(), *args, "show", f"{ref}:{path}"],
-                          capture_output=True, env=env, shell=False)
-    if proc.returncode != 0 or len(proc.stdout) > max_bytes:
-        return None
-    return proc.stdout
-
-
 def has_ref(repo_dir: str, ref: str) -> bool:
     """Whether ``ref`` names a commit in the clone."""
     return _run(["-C", repo_dir, "rev-parse", "--verify", "--quiet",

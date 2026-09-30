@@ -9,12 +9,12 @@ import { APP_NAME, APP_TAGLINE } from '../../constants/branding'
 import type { CreateProjectInput, RepoEntry, OrgUser } from '../../services/api'
 import type { ConfigPreview } from '../../types'
 import { ConfigImport } from './components/ConfigImport'
-import { CoresReview, CoresStep } from './components/CoresStep'
+import { CoresReview, CoresStep, type FolderResult } from './components/CoresStep'
 import { Readiness, type ReadinessItem } from './components/Readiness'
 import {
-  assignmentsOf, CORE_FILES, coreInput, coreProblems, draftToCores, draftToLayers, fitsCoreFile, followBranch, indexTree,
-  newCore, nextCoreName, ownerOf, pathProblems, settingsSummary, typedDefines,
-  type Comp, type Core, type CoreFile, type Group, type Layer, type Member, type Role,
+  assignmentsOf, baseName, CORE_FILES, coreInput, coreProblems, draftToCores, draftToLayers, fitsCoreFile, indexTree,
+  matchFolder, newCore, nextCoreName, openWants, ownerOf, pathProblems, settingsSummary, typedDefines,
+  type Comp, type Core, type CoreFile, type Group, type Layer, type Member, type Role, type WantedFile,
 } from './helpers'
 
 // Rail entries — short title + sub, mirroring the design's step rail.
@@ -287,6 +287,9 @@ function WizardView({
   }
   // `coreId:slot` of every core file being uploaded.
   const [uploading, setUploading] = useState<Set<string>>(new Set())
+  // What the last folder pick filled in, and whether its uploads are still running.
+  const [folderResult, setFolderResult] = useState<FolderResult | null>(null)
+  const [folderBusy, setFolderBusy] = useState(false)
 
   // ── Step 3: architecture ──
   const [layers, setLayers] = useState<Layer[]>([])
@@ -433,7 +436,7 @@ function WizardView({
         text: imp.text, repo_url: repoUrl.trim(), branch: ref || undefined, access_token: token.trim() || undefined,
       })
       if (seq !== checkSeq.current) return                   // the user has moved on
-      applyImport(preview, { project: false, layers: layersToo }, imp.preview)
+      applyImport(preview, { project: false, layers: layersToo })
       // The architecture is the user's now: keep what the import said about it, take the rest.
       const report = layersToo ? preview.report : [
         ...imp.preview.report.filter((i) => i.topic === 'architecture'),
@@ -446,7 +449,7 @@ function WizardView({
       if (seq === checkSeq.current) setImportChecking(false)
     }
   }
-  function applyImport(preview: ConfigPreview, opts: { project: boolean; layers: boolean }, prev?: ConfigPreview) {
+  function applyImport(preview: ConfigPreview, opts: { project: boolean; layers: boolean }) {
     const d = preview.draft
     if (opts.project) {
       // A config fills the name and repository only when they are empty: what the user typed wins.
@@ -461,14 +464,10 @@ function WizardView({
       }
       setImportKept(keptNow)
       setPreferredBranch(d.branch ?? '')
-      // The config's cores replace the wizard's: its layers name them.
+      // The config's cores replace the wizard's: its layers name them. Their files are the user's
+      // own, never the repository's, so a re-check against a branch leaves the cores alone.
       updateCores(() => draftToCores(d.cores, uid))
-    } else {
-      // Files the config names, found in the repository, follow the branch (helpers.followBranch):
-      // what this import filled in is replaced or taken back; a file the user chose stays.
-      const was = new Map((prev?.draft.cores ?? []).map((c) => [c.name, c]))
-      const now = new Map(d.cores.map((c) => [c.name, c]))
-      updateCores((cs) => cs.map((c) => (c.from ? followBranch(c, was.get(c.from), now.get(c.from)) : c)))
+      setFolderResult(null)
     }
     if (opts.layers) {
       const next = draftToLayers(d.layers, uid, coresRef.current)
@@ -492,26 +491,50 @@ function WizardView({
       setLayers((prev) => prev.map((l) => (l.coreId === id ? { ...l, coreId: null } : l)))
     }
   }
-  async function uploadCoreFile(coreId: string, slot: CoreFile, f: File) {
-    const spec = CORE_FILES[slot]
-    if (!fitsCoreFile(slot, f.name)) {
+  // Uploads `f` once and gives it to every one of `slots` (all of one kind); how many it filled.
+  async function uploadCoreFile(slots: { coreId: string; slot: CoreFile }[], f: File): Promise<number> {
+    const spec = CORE_FILES[slots[0].slot]
+    if (!fitsCoreFile(slots[0].slot, f.name)) {
       toast.error('This file cannot be used', `${f.name}: ${spec.need}.`)
-      return
+      return 0
     }
-    const key = `${coreId}:${slot}`
-    setUploading((p) => new Set(p).add(key))
+    const keys = slots.map((s) => `${s.coreId}:${s.slot}`)
+    setUploading((p) => new Set([...p, ...keys]))
     try {
       const u = await repo.upload(f, spec.kind)
-      patchCore(coreId, { [slot]: { fileId: u.id, fileName: u.fileName, size: u.size } })
+      for (const s of slots) patchCore(s.coreId, { [s.slot]: { fileId: u.id, fileName: u.fileName, size: u.size } })
+      return slots.length
     } catch (e) {
-      toast.error('Upload failed', (e as Error).message)
+      toast.error('Upload failed', `${f.name}: ${(e as Error).message}`)
+      return 0
     } finally {
-      setUploading((p) => { const next = new Set(p); next.delete(key); return next })
+      setUploading((p) => new Set([...p].filter((k) => !keys.includes(k))))
     }
   }
-  // What an imported config names for a core that the repository does not have (by the core's
-  // name in the config, so a rename keeps it).
+  // The paths an imported config names for a core's files (by the core's name in the config, so
+  // a rename keeps them).
   const wantedFor = (c: Core) => (c.from ? imported?.preview.expectedUploads[c.from] : undefined)
+  const openFiles = cores.flatMap((c) => openWants(c, wantedFor(c)))
+  // A picked folder fills every file the config names that it holds (helpers.matchFolder); only
+  // those are uploaded, each once however many cores share it.
+  async function fillFromFolder(files: File[]) {
+    const picked = files.map((file) => ({ path: file.webkitRelativePath || file.name, file }))
+    const m = matchFolder(coresRef.current.flatMap((c) => openWants(c, wantedFor(c))), picked)
+    const uploads = new Map<string, { file: File; slots: WantedFile[] }>()
+    for (const { want, file } of m.found) {
+      const key = `${file.path}|${want.slot}`
+      uploads.set(key, { file: file.file, slots: [...(uploads.get(key)?.slots ?? []), want] })
+    }
+    const label = (w: WantedFile) => `${coresRef.current.find((c) => c.id === w.coreId)?.name.trim() ?? '?'}: ${baseName(w.path)}`
+    setFolderBusy(true)
+    try {
+      const added = (await Promise.all([...uploads.values()].map((u) => uploadCoreFile(u.slots, u.file))))
+        .reduce((a, n) => a + n, 0)
+      setFolderResult({ folder: picked[0].path.split('/')[0], added, missing: m.missing.map(label), unsure: m.unsure.map(label) })
+    } finally {
+      setFolderBusy(false)
+    }
+  }
   const coreName = (id: string | null) => cores.find((c) => c.id === id)?.name.trim() || null
 
   /* ── Step 3 helpers ── */
@@ -759,15 +782,8 @@ function WizardView({
       : cores.length ? { state: 'ok', title: `${plural(cores.length, 'core')}: ${cores.map((c) => c.name.trim()).join(', ')}` }
         : { state: 'warn', title: 'No cores', detail: 'Every layer is parsed without macros or a data dictionary.', fix: 2 })
     // Files an imported config names that were never uploaded, per core.
-    const pending = cores.map((c) => {
-      const w = wantedFor(c)
-      const files = !w ? [] : [
-        c.macroMode === 'file' && !c.macroFile && w.macros,
-        !c.dataDictionary && w.dataDictionary,
-        !c.compileCommands && w.compileCommands,
-      ].filter((f): f is string => !!f)
-      return { core: c, files }
-    }).filter((x) => x.files.length)
+    const pending = cores.map((c) => ({ core: c, files: openWants(c, wantedFor(c)).map((w) => baseName(w.path)) }))
+      .filter((x) => x.files.length)
     if (pending.length) {
       const n = pending.reduce((a, x) => a + x.files.length, 0)
       out.push({ state: 'warn', title: `${plural(n, 'file')} the config names ${n === 1 ? 'is' : 'are'} not uploaded`,
@@ -802,6 +818,12 @@ function WizardView({
             {attempted.has(cur) && cur !== 3 && <StepIssues items={issuesFor(cur)} />}
 
             {/* ══ STEP 1 — PROJECT & REPOSITORY ══ */}
+            {/* Config import comes first: it fills the fields below it (name, repository, branch), and
+                everything after. Test Connection and a branch change check its paths against the branch. */}
+            {cur === 1 && (
+              <ConfigImport fileName={imported?.fileName} preview={imported?.preview} busy={importBusy} onPick={(f) => { void importConfig(f) }} archChanged={archChanged} branch={branch} kept={importKept}
+                checking={importChecking || (!!imported && !imported.preview.repositoryChecked && (testState === 'connecting' || repoTreeLoading))} />
+            )}
             {cur === 1 && (
               <div className="card space-y-4">
                 <div>
@@ -882,17 +904,13 @@ function WizardView({
                 )}
               </div>
             )}
-            {/* Config import sits below the repository: once connected, the config is checked against it right away. */}
-            {cur === 1 && (
-              <ConfigImport fileName={imported?.fileName} preview={imported?.preview} busy={importBusy} onPick={(f) => { void importConfig(f) }} archChanged={archChanged} branch={branch} kept={importKept}
-                checking={importChecking || (!!imported && !imported.preview.repositoryChecked && (testState === 'connecting' || repoTreeLoading))} />
-            )}
-
             {/* ══ STEP 2 — CORES ══ */}
             {cur === 2 && (
               <CoresStep cores={cores} layers={layers} wanted={wantedFor} uploading={uploading}
+                openFiles={openFiles.length} folder={folderResult} folderBusy={folderBusy}
                 onAdd={addCore} onRemove={removeCore} onChange={patchCore}
-                onPick={(id, slot, f) => { void uploadCoreFile(id, slot, f) }} />
+                onPick={(id, slot, f) => { void uploadCoreFile([{ coreId: id, slot }], f) }}
+                onFolder={(fs) => { void fillFromFolder(fs) }} />
             )}
 
             {/* ══ STEP 3 — ARCHITECTURE ══ */}

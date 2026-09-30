@@ -90,7 +90,8 @@ export interface ConfigDraft {
 }
 export interface ConfigPreview {
   draft: ConfigDraft
-  /** Per core: the files the config names that are not in the repository - step 2 asks for them. */
+  /** Per core: the path the config names for each of its files, as written ('/' separators). The
+   *  files are the user's own inputs: step 2 asks for each by name, and a picked folder fills them. */
   expectedUploads: Record<string, CoreInputs<string | null>>
   report: ConfigReportItem[]
   repositoryChecked: boolean

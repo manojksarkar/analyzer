@@ -31,8 +31,9 @@ function ReportList({ items }: { items: ConfigReportItem[] }) {
   )
 }
 
-/** Step 1's optional "start from a config file": one compact row. After an import it says what
- *  was filled and how much needs the user - and where - with the full report in a popup. */
+/** Step 1's optional "start from a config file", above the fields it fills: one compact row.
+ *  After an import it says what was filled and how much needs the user - and where - with the
+ *  full report in a popup. */
 export function ConfigImport({ fileName, preview, busy, onPick, archChanged, branch, checking, kept }: {
   fileName?: string
   preview?: ConfigPreview
@@ -77,7 +78,7 @@ export function ConfigImport({ fileName, preview, busy, onPick, archChanged, bra
         <div className="flex-1 min-w-0">
           <p className="text-sm text-on-surface">Have a config file? <span className="text-on-surface-variant">Optional</span></p>
           <p className="text-caption text-on-surface-variant mt-0.5">
-            Fills the cores and the architecture from the config <code className="font-mono">analyzer.py onboard --config</code> reads. The access token is never read from it.
+            Fills the project, repository, cores and architecture from the config <code className="font-mono">analyzer.py onboard --config</code> reads. The access token is never read from it: type it below.
           </p>
         </div>
         {button(busy ? 'Reading…' : 'Import config', busy ? 'progress_activity' : 'upload_file', () => inputRef.current?.click(), true)}

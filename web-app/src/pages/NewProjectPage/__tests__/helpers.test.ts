@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  assignmentsOf, coreInput, coreProblems, draftToCores, draftToLayers, fitsCoreFile, followBranch, indexTree, newCore,
-  nextCoreName, ownerOf, pathProblems, settingsSummary,
+  assignmentsOf, baseName, coreInput, coreProblems, draftToCores, draftToLayers, fitsCoreFile, indexTree, matchFolder,
+  newCore, nextCoreName, openWants, ownerOf, pathProblems, settingsSummary, type WantedFile,
 } from '../helpers'
 import type { DraftCore } from '../../../types'
 
@@ -14,6 +14,68 @@ describe('draftToLayers', () => {
     }], () => `id${++n}`)
     expect(layers[0].id).toBe('id1')
     expect(layers[0].groups[0].comps[0]).toEqual({ id: 'id3', name: 'Core', files: ['Layer1/Sample/Core'], collapsed: true })
+  })
+})
+
+describe('matchFolder', () => {
+  const want = (coreId: string, path: string, slot: WantedFile['slot'] = 'macroFile'): WantedFile => ({ coreId, slot, path })
+  const picked = (...paths: string[]) => paths.map((path) => ({ path }))
+
+  it('tells same-named files apart by the folders at the end of the config\'s path', () => {
+    const m = matchFolder(
+      [want('c1', 'D:/fw-inputs/core1/macros.json'), want('c2', '/home/u/fw-inputs/core2/macros.json')],
+      picked('fw-inputs/core1/macros.json', 'fw-inputs/core2/macros.json', 'fw-inputs/notes.txt'))
+    expect(m.found.map((f) => [f.want.coreId, f.file.path])).toEqual([
+      ['c1', 'fw-inputs/core1/macros.json'], ['c2', 'fw-inputs/core2/macros.json']])
+    expect([m.missing, m.unsure]).toEqual([[], []])
+  })
+
+  it('prefers the longer match over a stray copy, case aside', () => {
+    const m = matchFolder([want('c1', 'C:\\Inputs\\Core1\\DD.csv', 'dataDictionary')],
+      picked('inputs/old/core1/dd.csv', 'inputs/core1/dd.csv'))
+    expect(m.found[0].file.path).toBe('inputs/core1/dd.csv')
+  })
+
+  it('never guesses a tie, and names a file the folder does not have', () => {
+    // a downloaded config names files by name alone
+    const m = matchFolder([want('c1', 'macros.json'), want('c1', 'cc.json', 'compileCommands')],
+      picked('in/core1/macros.json', 'in/core2/macros.json'))
+    expect(m.found).toEqual([])
+    expect(m.unsure.map((w) => w.path)).toEqual(['macros.json'])
+    expect(m.missing.map((w) => w.path)).toEqual(['cc.json'])
+  })
+
+  it('never takes another core\'s file for a folder the pick does not have', () => {
+    const cc = want('c3', 'D:/in/core3/compile_commands.json', 'compileCommands')
+    for (const pick of [picked('in/core1/compile_commands.json', 'in/core2/compile_commands.json'),
+      picked('in/core1/compile_commands.json')]) {
+      const m = matchFolder([cc], pick)
+      expect([m.found, m.unsure, m.missing]).toEqual([[], [], [cc]])
+    }
+  })
+
+  it('takes a copy of the inputs under another folder name, or a flat one', () => {
+    const cc = want('c3', '/home/u/in/core3/compile_commands.json', 'compileCommands')
+    expect(matchFolder([cc], picked('in-copy/core1/compile_commands.json', 'in-copy/core3/compile_commands.json'))
+      .found.map((f) => f.file.path)).toEqual(['in-copy/core3/compile_commands.json'])
+    expect(matchFolder([cc], picked('flat/compile_commands.json')).found).toHaveLength(1)
+  })
+
+  it('fills only the core whose folder was picked', () => {
+    const m = matchFolder([want('c1', 'D:/in/core1/macros.json'), want('c2', 'D:/in/core2/macros.json')],
+      picked('core1/macros.json'))
+    expect(m.found.map((f) => f.want.coreId)).toEqual(['c1'])
+    expect(m.missing.map((w) => w.coreId)).toEqual(['c2'])
+    // a flat folder that two cores' paths fit equally well is not guessed
+    const flat = matchFolder([want('c1', 'D:/in/core1/macros.json'), want('c2', 'D:/in/core2/macros.json')],
+      picked('flat/macros.json'))
+    expect(flat.unsure.map((w) => w.coreId)).toEqual(['c1', 'c2'])
+  })
+
+  it('lets one file fill every core that names it', () => {
+    const m = matchFolder([want('c1', 'D:/shared/dd.csv', 'dataDictionary'), want('c2', 'D:/shared/dd.csv', 'dataDictionary')],
+      picked('shared/dd.csv'))
+    expect(m.found.map((f) => f.want.coreId)).toEqual(['c1', 'c2'])
   })
 })
 
@@ -39,14 +101,13 @@ describe('cores', () => {
     expect(layers.map((l) => l.coreId)).toEqual([cores[1].id, null, null])
   })
 
-  it('lets the files the import filled in follow the branch, and never touches the user\'s', () => {
-    const imported = { ...newCore('c1', 'Core1'), from: 'Core1', macroFile: file('m-main'), dataDictionary: file('mine', 'dd.csv') }
-    const was = draft({ macros: { kind: 'file', file: file('m-main') }, dataDictionary: file('dd-main', 'dd.csv') })
-    const now = draft({ macros: null, compileCommands: file('cc-dev') })
-    const next = followBranch(imported, was, now)
-    expect(next.macroFile).toBeNull()                     // the import's: this branch has none
-    expect(next.dataDictionary?.fileId).toBe('mine')      // the user's own
-    expect(next.compileCommands?.fileId).toBe('cc-dev')   // this branch's
+  it('asks only for the files a core still lacks - macros only while they are a file', () => {
+    const want = { macros: 'D:/in/core1/macros.json', dataDictionary: 'D:/in/core1/dd.csv', compileCommands: null }
+    const c = { ...newCore('c1', 'Core1'), dataDictionary: file('mine', 'dd.csv') }
+    expect(openWants(c, want)).toEqual([{ coreId: 'c1', slot: 'macroFile', path: 'D:/in/core1/macros.json' }])
+    expect(openWants({ ...c, macroMode: 'typed' }, want)).toEqual([])
+    expect(openWants(c, undefined)).toEqual([])
+    expect(baseName('C:\\work\\dd.csv')).toBe('dd.csv')
   })
 
   it('names a core with no name, and two cores with one name', () => {

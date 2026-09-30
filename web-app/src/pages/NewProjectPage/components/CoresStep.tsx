@@ -1,15 +1,73 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Icon } from '../../../components/ui'
 import { cn } from '../../../lib/cn'
 import type { CoreInputs, UploadedFile } from '../../../types'
-import { CORE_FILES, typedDefines, type Core, type CoreFile, type Layer } from '../helpers'
+import { baseName, CORE_FILES, typedDefines, type Core, type CoreFile, type Layer } from '../helpers'
 
-/** A file an imported config names that the repository does not have, per core input. */
+/** The path an imported config names for each of a core's files. */
 type Wanted = CoreInputs<string | null> | undefined
 
+/** What the last folder pick filled: the folder's name, how many files it added, and the files
+ *  it did not have (`missing`) or held more than one candidate for (`unsure`), as `Core: name`. */
+export interface FolderResult { folder: string; added: number; missing: string[]; unsure: string[] }
+
+/** Above the cores, while an imported config still names files: one folder pick fills every one
+ *  it holds. Only those files are sent; the rest of the folder stays on the user's machine. */
+function FolderFill({ open, result, busy, onPick }: {
+  open: number
+  result: FolderResult | null
+  busy: boolean
+  onPick: (files: File[]) => void
+}) {
+  const input = useRef<HTMLInputElement>(null)
+  // Not in React's input attributes: set on the element itself.
+  useEffect(() => { input.current?.setAttribute('webkitdirectory', '') }, [])
+  const left = [...(result?.missing ?? []), ...(result?.unsure ?? [])]
+  return (
+    <div className="p-3.5 border border-dashed border-outline-variant rounded-xl bg-white">
+      <div className="flex items-center gap-3">
+        <Icon name="folder_open" size={18} className="text-secondary flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-on-surface">
+            {!open ? 'Every file the config names is here'
+              : result ? `${open} file${open === 1 ? '' : 's'} the config names ${open === 1 ? 'is' : 'are'} still missing`
+                : `The config names ${open} file${open === 1 ? '' : 's'} for these cores`}
+          </p>
+          <p className="text-caption text-on-surface-variant mt-0.5">
+            Pick the folder that holds them: each is matched by its name and path, and only those files are sent.
+          </p>
+        </div>
+        {open > 0 && (
+          <button type="button" disabled={busy} onClick={() => input.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-secondary text-secondary rounded-lg hover:bg-surface-container-low transition-colors flex-shrink-0 disabled:opacity-60 font-mono text-caption font-semibold">
+            <Icon name={busy ? 'progress_activity' : 'drive_folder_upload'} size={14} className={cn(busy && 'animate-spin')} />
+            {busy ? 'Uploading…' : 'Choose folder'}
+          </button>
+        )}
+        <input ref={input} type="file" multiple className="hidden"
+          onChange={(e) => { const fs = [...(e.target.files ?? [])]; e.target.value = ''; if (fs.length) onPick(fs) }} />
+      </div>
+      {result && !busy && (
+        <div className="mt-2 ml-[30px] space-y-0.5 text-caption">
+          <p className="flex items-center gap-1 text-[#00a572]">
+            <Icon name="check_circle" size={13} fill />
+            <span><b className="font-mono">{result.folder}</b>: {result.added} file{result.added === 1 ? '' : 's'} added</span>
+          </p>
+          {result.missing.length > 0 && (
+            <p className="text-[#b45309]">Not in it: {result.missing.join(', ')}</p>
+          )}
+          {result.unsure.length > 0 && (
+            <p className="text-[#b45309]">More than one file fits, so none was taken: {result.unsure.join(', ')}</p>
+          )}
+          {left.length > 0 && <p className="text-on-surface-variant">Upload {left.length === 1 ? 'it' : 'them'} below.</p>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** One input's control: an upload button, or - once there is a file - a pill with its name,
- *  size, Replace and Remove. A file an imported config names but the repository lacks asks for
- *  itself by name. */
+ *  size, Replace and Remove. A file an imported config names asks for itself by name. */
 function FileControl({ slot, file, want, icon, busy, onPick, onClear }: {
   slot: CoreFile
   file: UploadedFile | null
@@ -53,10 +111,10 @@ function FileControl({ slot, file, want, icon, busy, onPick, onClear }: {
         onDragLeave={() => setOver(false)}
         onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f) onPick(f) }}>
         <Icon name={busy ? 'progress_activity' : 'upload_file'} size={18} className={cn(busy && 'animate-spin')} />
-        <span className="t">{busy ? 'Uploading…' : want ? <>Upload <b>{want}</b></> : 'Choose a file or drop it here'}</span>
+        <span className="t" title={want ?? undefined}>{busy ? 'Uploading…' : want ? <>Upload <b>{baseName(want)}</b></> : 'Choose a file or drop it here'}</span>
         {!want && !busy && <span className="s">{spec.types}</span>}
       </button>
-      {want && !busy && <div className="wanted-note">The imported config names it; the repository does not have it.</div>}
+      {want && !busy && <div className="wanted-note">The imported config names it: pick its folder above, or upload it here.</div>}
       {picker}
     </>
   )
@@ -84,16 +142,22 @@ function nameIssue(c: Core, cores: Core[]): string | undefined {
 
 /** Step 2: the project's cores. A core is one build of the firmware - its macros, data dictionary
  *  and compile commands (the engine's `cores.<Core>`); each layer picks its core in step 3. */
-export function CoresStep({ cores, layers, wanted, uploading, onAdd, onRemove, onChange, onPick }: {
+export function CoresStep({ cores, layers, wanted, openFiles, folder, folderBusy, uploading, onAdd, onRemove, onChange, onPick, onFolder }: {
   cores: Core[]
   layers: Layer[]
   wanted: (c: Core) => Wanted
+  /** How many files an imported config names that no core has yet. */
+  openFiles: number
+  /** The last folder pick's result; null before one, or when there was no config to fill from. */
+  folder: FolderResult | null
+  folderBusy: boolean
   /** `coreId:slot` of every upload in flight. */
   uploading: Set<string>
   onAdd: () => void
   onRemove: (id: string) => void
   onChange: (id: string, patch: Partial<Core>) => void
   onPick: (id: string, slot: CoreFile, f: File) => void
+  onFolder: (files: File[]) => void
 }) {
   const file = (c: Core, slot: CoreFile, icon: string, want?: string | null) => (
     <FileControl slot={slot} file={c[slot]} want={want} icon={icon} busy={uploading.has(`${c.id}:${slot}`)}
@@ -118,6 +182,8 @@ export function CoresStep({ cores, layers, wanted, uploading, onAdd, onRemove, o
           <Icon name="add" size={15} /> Add Core
         </button>
       </div>
+
+      {(openFiles > 0 || folder) && <FolderFill open={openFiles} result={folder} busy={folderBusy} onPick={onFolder} />}
 
       {cores.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-10 text-center">

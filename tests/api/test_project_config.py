@@ -164,3 +164,16 @@ def test_the_defaults_sample_cores_do_not_reach_a_web_project(tmp_path, monkeypa
     _, analysis_cfg = pr._write_project_config(project, tmp_path / "ws")
     assert "cores" not in analysis_cfg
     assert list(analysis_cfg["layers"]) == ["L1"]
+
+
+def test_the_defaults_sample_project_block_does_not_reach_a_web_project(tmp_path, monkeypatch):
+    # It names the sample (for the wizard's Import config); a version's stored config would
+    # otherwise say every project is SampleCppProject.
+    cfg_dir = tmp_path / "engine" / "config"
+    _write_json(cfg_dir / "config.defaults.json", {
+        "project": {"name": "SampleCppProject", "repository": "https://example.invalid/s.git"},
+        "llm": {"provider": "ollama"}})
+    monkeypatch.setattr(pr, "get_settings", lambda: SimpleNamespace(repo_root=tmp_path))
+    out_path, analysis_cfg = pr._write_project_config(_project(), tmp_path / "ws")
+    assert "project" not in analysis_cfg
+    assert "project" not in json.loads(out_path.read_text(encoding="utf-8"))

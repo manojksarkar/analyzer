@@ -60,6 +60,9 @@ def _resolve_config(user_path):
     cfg = _load_defaults()
     if user_path:
         user = _load_jsonc(user_path)
+        # `project` (name, repository, branch) names ONE project: the user's file's, or none -
+        # never the defaults', which name the sample and would reach the wizard on an import.
+        cfg.pop("project", None)
         _deep_merge(cfg, user)
         # `layers` is REPLACED, never merged. A deep merge keeps every layer, group and
         # component of the SAMPLE tree the user's file does not mention — which is exactly how
@@ -71,10 +74,11 @@ def _resolve_config(user_path):
         try:
             over = _load_jsonc(local)
             # The engine reaches Postgres through its own config, and a workspace file is no
-            # place for the password. `layers` are the project's identity, not a machine
-            # setting, so a local override must not silently replace what --config just set.
+            # place for the password. `layers` and `project` are the project's identity, not a
+            # machine setting, so a local override must not silently replace what --config set.
             over.pop("db", None)
             over.pop("layers", None)
+            over.pop("project", None)
             _deep_merge(cfg, over)
         except Exception:
             pass                         # best-effort, as in the API

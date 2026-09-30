@@ -13,6 +13,20 @@
   // =========================================================================
 
   // -------------------------------------------------------------------------
+  // project - read ONLY by the web app's Import config (New Project wizard,
+  // step 1): it fills the project name, repository and branch. The engine
+  // ignores it, and a web run drops the defaults' block (it names the sample,
+  // not the project being run - api/services/pipeline_runner.py). Optional
+  // "defines": {"<Core>": ["NAME=VALUE", ...]} gives a core typed definitions.
+  // The access token is never read from a file: type it in step 1.
+  // -------------------------------------------------------------------------
+  "project": {
+    "name": "SampleCppProject",
+    "repository": "https://github.com/vishal9359/SampleCppProject",
+    "branch": "main"
+  },
+
+  // -------------------------------------------------------------------------
   // clang - how libclang is loaded and what every parse is told.
   // -------------------------------------------------------------------------
   "clang": {

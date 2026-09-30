@@ -17,6 +17,10 @@ what only the web app needs; the engine ignores it:
 `defines` holds each core's typed definitions (the engine reads macros from files only). A plain
 list - written before cores - is the one core `Core1` that every layer uses.
 
+A core's files (macros, data dictionary, compile commands) are the user's own inputs, never part of
+the repository, so their paths are not looked up anywhere: step 2 asks for each file, and a folder
+picked there fills every one it holds.
+
 An access token is never read from a file: config files get shared and committed.
 """
 from __future__ import annotations
@@ -24,10 +28,9 @@ from __future__ import annotations
 import datetime
 import json
 import os
-import re
 import sys
 from pathlib import PurePosixPath
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 FILLED, CHECK, SKIPPED = "filled", "check", "skipped"
 
@@ -112,22 +115,16 @@ class _RepoTree:
         return self._folded.get(path.casefold())
 
 
-def _is_machine_path(path: str) -> bool:
-    return os.path.isabs(path) or bool(re.match(r"^[A-Za-z]:[\\/]", path)) or path.startswith("\\\\")
-
-
-def preview(cfg: dict, *, tree_nodes: Optional[list] = None,
-            read_file: Optional[Callable[[str], Optional[bytes]]] = None,
-            store_file: Optional[Callable[[bytes, str, str], dict]] = None) -> dict:
+def preview(cfg: dict, *, tree_nodes: Optional[list] = None) -> dict:
     """Fill the wizard from `cfg` as far as it goes.
 
-    With `tree_nodes` (the repository's tree, as `git_cli.list_tree` returns it) every path is
-    checked against the repository, and a definitions or data-dictionary file the config names is
-    read from it (`read_file`) and stored as an upload (`store_file`). Without them the paths are
-    taken as written, and the files are left for the user to upload.
+    With `tree_nodes` (the repository's tree, as `git_cli.list_tree` returns it) every layer and
+    component path is checked against the repository; without it they are taken as written.
 
-    Returns `{draft, expected_uploads, report, repository_checked}`; each report item is
-    `{level: filled | check | skipped, text, topic}`. The topic - project, architecture, files,
+    Returns `{draft, expected_uploads, report, repository_checked}`. `expected_uploads` holds, per
+    core, the path the config names for each of its files, as written ('/' separators): step 2
+    asks for the file by its name, and matches a picked folder on the path's end. Each report item
+    is `{level: filled | check | skipped, text, topic}`. The topic - project, architecture, files,
     settings, other - says which part of the wizard an item is about: once the user has changed
     the architecture, the wizard keeps its architecture items and takes the rest from a new check.
     """
@@ -146,7 +143,7 @@ def preview(cfg: dict, *, tree_nodes: Optional[list] = None,
         say(SKIPPED, _TOKEN_MESSAGE, "project")
     _read_layers(cfg, draft, tree, lambda level, text: say(level, text, "architecture"))
     files = lambda level, text: say(level, text, "files")  # noqa: E731
-    _read_cores(cfg, draft, expected, tree, read_file, store_file, files)
+    _read_cores(cfg, draft, expected, files)
     _apply_defines(defines, draft, expected, files)
     _read_settings(cfg, draft, lambda level, text: say(level, text, "settings"))
     for key in cfg:
@@ -258,15 +255,13 @@ def _read_layers(cfg: dict, draft: dict, tree: Optional[_RepoTree], say) -> None
         say(CHECK, f"Not in the repository, so left out -- {m}.")
 
 
-_CORE_INPUTS = (("macros", "preprocessor_definitions", "macros"),
-                ("dataDictionary", "data_dictionary", "data_dictionary"),
-                ("compileCommands", "compile_commands", "compile_commands"))
+_CORE_INPUTS = (("macros", "macros"), ("dataDictionary", "data_dictionary"),
+                ("compileCommands", "compile_commands"))
 
 
-def _read_cores(cfg: dict, draft: dict, expected: dict, tree: Optional[_RepoTree],
-                read_file, store_file, say) -> None:
-    """Every core the config declares: its macros, data dictionary and compile commands, read
-    from the repository when it has them - else left for step 2, by name."""
+def _read_cores(cfg: dict, draft: dict, expected: dict, say) -> None:
+    """Every core the config declares, and the path it names for each of the core's files -
+    macros, data dictionary, compile commands - which step 2 asks for."""
     _engine()
     from core.config import validate_cores
     for problem in validate_cores(cfg):
@@ -288,47 +283,18 @@ def _read_cores(cfg: dict, draft: dict, expected: dict, tree: Optional[_RepoTree
             continue
         core = {"name": name, "macros": None, "data_dictionary": None, "compile_commands": None}
         want = {"macros": None, "data_dictionary": None, "compile_commands": None}
-        found: list = []
-        later: list = []            # to be read once the repository is connected
-        missing: list = []          # the repository does not have them
-        machine: list = []          # absolute paths on the machine that wrote the file
-        for key, kind, field in _CORE_INPUTS:
+        for key, field in _CORE_INPUTS:
             spec = ccfg.get(key)
             src = (spec.get("file") or spec.get("path")) if isinstance(spec, dict) else spec
             if isinstance(spec, dict) and spec.get("rootPrefix"):
                 say(SKIPPED, f"`cores.{name}.{key}.rootPrefix` is not used: the prefix is worked "
                              f"out from the repository.")
-            if not isinstance(src, str) or not src.strip():
-                continue
-            src = src.strip()
-            fname = PurePosixPath(src.replace("\\", "/")).name
-            upload = _from_repository(src, kind, tree, read_file, store_file)
-            if isinstance(upload, dict):
-                entry = {"file_id": upload["id"], "file_name": upload["file_name"],
-                         "size": upload["size"]}
-                core[field] = {"mode": "upload", **entry} if field == "macros" else entry
-                found.append(f"`{fname}`")
-                continue
-            want[field] = fname
-            if isinstance(upload, str):                    # there, but not a usable file
-                say(CHECK, f"{name}: `{fname}` is in the repository but could not be used -- "
-                           f"{upload}")
-            elif _is_machine_path(src):
-                machine.append(f"`{fname}`")
-            elif tree is None:
-                later.append(f"`{fname}`")
-            else:
-                missing.append(f"`{fname}`")
-        if found:
-            say(FILLED, f"{name}: {', '.join(found)}, read from the repository.")
-        if later:
-            say(CHECK, f"{name}: {', '.join(later)} - read from the repository once it is "
-                       f"connected (Test Connection), or upload in step 2.")
-        if missing:
-            say(CHECK, f"{name}: upload {', '.join(missing)} in step 2 - not in the repository.")
-        if machine:
-            say(CHECK, f"{name}: upload {', '.join(machine)} in step 2 - paths on the machine "
-                       f"that wrote the config.")
+            if isinstance(src, str) and src.strip():
+                want[field] = src.strip().replace("\\", "/")
+        named = [f"`{PurePosixPath(p).name}`" for p in want.values() if p]
+        if named:
+            say(CHECK, f"{name}: {', '.join(named)} - pick the folder that holds "
+                       f"{'them' if len(named) > 1 else 'it'} in step 2, or upload each file there.")
         if name not in used:
             say(CHECK, f"{name}: no layer uses it (`layers.<name>.cores`) -- pick it for a layer "
                        f"in step 3.")
@@ -376,23 +342,6 @@ def _apply_defines(defines: Any, draft: dict, expected: dict, say) -> None:
         elif clean(lines):
             core["macros"] = {"mode": "manual", "defines": clean(lines)}
             say(FILLED, f"{name}: {len(clean(lines))} typed definitions (`project.defines`).")
-
-
-def _from_repository(src: str, kind: str, tree: Optional[_RepoTree], read_file, store_file):
-    """The file at `src` in the repository, stored as an upload: its record, an error message
-    when it cannot be used, or None when it is not there to read."""
-    if tree is None or read_file is None or store_file is None or _is_machine_path(src):
-        return None
-    actual = tree.find(_norm(src))
-    if actual is None or actual not in tree.files:
-        return None
-    data = read_file(actual)
-    if data is None:
-        return "reading it failed (a file over 100 MB is not read)."
-    try:
-        return store_file(data, PurePosixPath(actual).name, kind)
-    except ValueError as exc:
-        return str(exc)
 
 
 def _read_settings(cfg: dict, draft: dict, say) -> None:
@@ -480,8 +429,9 @@ def to_config_text(project: Any, today: Optional[datetime.date] = None) -> str:
         "`project` is read only by the web app. The access token is not included.",
     ]
     if files:
-        header.append("`cores` names the files uploaded in the web app: put them next to this "
-                      "file, or fix the paths, before using it from the command line.")
+        header.append("`cores` names the files uploaded in the web app by file name. For the "
+                      "command line, write each one's path (absolute, or relative to the analyzer "
+                      "folder); to import this file again, pick their folder in step 2.")
     if typed:
         header.append("`project.defines` holds each core's typed definitions; the command line "
                       "reads macros from a file (`cores.<Core>.macros`).")

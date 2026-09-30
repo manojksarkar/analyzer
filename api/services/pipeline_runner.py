@@ -742,6 +742,9 @@ def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = F
     from core.config import _deep_merge
     base_path = get_settings().repo_root / "engine" / "config" / "config.defaults.json"
     cfg = _load_base_config(base_path)
+    # The defaults' `project` block names the sample project, for the wizard's Import config; the
+    # engine ignores it, and left in, every version's stored config would carry the sample's name.
+    cfg.pop("project", None)
 
     # Apply explicit section overrides from build_config (per-project, from onboarding)
     bc = project.build_config or {}

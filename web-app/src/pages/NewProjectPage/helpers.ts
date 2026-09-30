@@ -1,5 +1,5 @@
 import type { CoreInput, RepoEntry, UploadKind } from '../../services/api'
-import type { ArchLayer, DraftCore, UploadedFile } from '../../types'
+import type { ArchLayer, CoreInputs, DraftCore, UploadedFile } from '../../types'
 
 export type Role = 'Admin' | 'Developer'
 export interface Member { name?: string; email: string; role: Role }
@@ -9,8 +9,8 @@ export interface Group { id: string; name: string; comps: Comp[]; collapsed: boo
 export interface Layer { id: string; name: string; path: string; groups: Group[]; libPaths: string[]; coreId: string | null; collapsed: boolean }
 
 /** A core: one build of the firmware - its macros (a file, or typed -D lines), data dictionary
- *  and compile commands. `from` is its name in an imported config, which keeps the config's
- *  hints and the branch's files with it after a rename. */
+ *  and compile commands. `from` is its name in an imported config, which keeps the files the
+ *  config names with it after a rename. */
 export interface Core {
   id: string
   name: string
@@ -62,19 +62,71 @@ export function draftToCores(cores: DraftCore[], newId: () => string): Core[] {
   }))
 }
 
-/** A core's files once an imported config is read again for another branch: a file the import
- *  filled in is replaced by this branch's copy, or taken back when the branch has none; a file
- *  the user chose is never touched. `was` / `now`: the core as the two reads describe it. */
-export function followBranch(c: Core, was: DraftCore | undefined, now: DraftCore | undefined): Core {
-  const pick = (mine: UploadedFile | null, before?: UploadedFile | null, after?: UploadedFile | null) =>
-    !mine || (before && mine.fileId === before.fileId) ? after ?? null : mine
-  const macroOf = (d?: DraftCore) => (d?.macros?.kind === 'file' ? d.macros.file : null)
-  return {
-    ...c,
-    macroFile: pick(c.macroFile, macroOf(was), macroOf(now)),
-    dataDictionary: pick(c.dataDictionary, was?.dataDictionary, now?.dataDictionary),
-    compileCommands: pick(c.compileCommands, was?.compileCommands, now?.compileCommands),
+/** The last part of a path, `\` or `/` separated. */
+export const baseName = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path
+
+/** A core file an imported config names and the core does not have yet: the core, the slot, and
+ *  the path as the config writes it. */
+export interface WantedFile { coreId: string; slot: CoreFile; path: string }
+
+/** The files `want` (the config's paths for core `c`) still asks for: every slot with a path and
+ *  no file - macros only while they are a file, not typed. */
+export function openWants(c: Core, want: CoreInputs<string | null> | undefined): WantedFile[] {
+  if (!want) return []
+  const slots: [CoreFile, string | null, boolean][] = [
+    ['macroFile', want.macros, c.macroMode === 'file' && !c.macroFile],
+    ['dataDictionary', want.dataDictionary, !c.dataDictionary],
+    ['compileCommands', want.compileCommands, !c.compileCommands],
+  ]
+  return slots.filter(([, path, open]) => path && open).map(([slot, path]) => ({ coreId: c.id, slot, path: path! }))
+}
+
+const segments = (p: string) => p.split(/[\\/]/).filter((s) => s && s !== '.').map((s) => s.toLowerCase())
+
+/** How many path parts, counted from the end, two paths share - 1 is the file name alone. */
+function sharedTail(a: string[], b: string[]): number {
+  let n = 0
+  while (n < a.length && n < b.length && a[a.length - 1 - n] === b[b.length - 1 - n]) n++
+  return n
+}
+
+/** Each wanted file's match among the files of a picked folder (`path`: the file's path in the
+ *  pick, the picked folder's own name first). The config's paths are on the machine that wrote
+ *  it, so only their end can be compared, case aside:
+ *  - A file fits when its name and every folder below the picked one end the config's path; the
+ *    picked folder's own name may differ (a copy of the inputs). `D:/in/core1/macros.json` fits
+ *    `in/core1/macros.json` and `copy/core1/macros.json`, not `in/old/core1/macros.json`. A bare
+ *    file name in the config (a downloaded config) fits that name anywhere.
+ *  - A file fills only the path that fits it best: picking `core1` alone fills Core1's
+ *    `macros.json`, never Core2's. The same path named by several cores shares one file.
+ *  Nothing is guessed: no fitting file is `missing`, several - or one that two different paths
+ *  fit equally well - is `unsure`. */
+export function matchFolder<T extends { path: string }>(wanted: WantedFile[], picked: T[]) {
+  const files = picked.map((file) => ({ file, parts: segments(file.path) }))
+  const fits = wanted.map((want) => {
+    const parts = segments(want.path)
+    const scored = files.map((f) => ({ f, n: sharedTail(parts, f.parts) }))
+      .filter(({ f, n }) => n > 0 && (parts.length === 1 || n >= f.parts.length - 1))
+    const best = Math.max(0, ...scored.map((s) => s.n))
+    return { want, key: parts.join('/'), best, hits: scored.filter((s) => s.n === best) }
+  })
+  // How well the best path fits each file, and which paths fit it that well.
+  const top = new Map<(typeof files)[number], { n: number; keys: Set<string> }>()
+  for (const x of fits) {
+    for (const h of x.hits) {
+      const t = top.get(h.f)
+      if (!t || h.n > t.n) top.set(h.f, { n: h.n, keys: new Set([x.key]) })
+      else if (h.n === t.n) t.keys.add(x.key)
+    }
   }
+  const out = { found: [] as { want: WantedFile; file: T }[], missing: [] as WantedFile[], unsure: [] as WantedFile[] }
+  for (const x of fits) {
+    const hits = x.hits.filter((h) => top.get(h.f)!.n === h.n)       // a better path took the rest
+    if (!hits.length) out.missing.push(x.want)
+    else if (hits.length > 1 || top.get(hits[0].f)!.keys.size > 1) out.unsure.push(x.want)
+    else out.found.push({ want: x.want, file: hits[0].f.file })
+  }
+  return out
 }
 
 /** A config's core name → the wizard core it became: by `from`, then by name. */

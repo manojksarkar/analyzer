@@ -38,7 +38,7 @@ export const ApiConfigPreviewSchema = z.object({
     cores: z.array(ApiDraftCoreSchema),
     settings: z.record(z.string(), z.unknown()),
   }),
-  /** Per core: the files the config names that the repository does not have. */
+  /** Per core: the path the config names for each of its files, as written. */
   expected_uploads: z.record(z.string(), ApiCoreInputsSchema),
   report: z.array(z.object({
     level: z.enum(['filled', 'check', 'skipped']),

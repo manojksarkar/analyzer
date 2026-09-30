@@ -125,11 +125,10 @@ def preview_config(
     current_user: User = Depends(get_current_user),
 ):
     """Read a config file and fill the New Project wizard from it: `{draft, expected_uploads,
-    report, repository_checked}`. With a repository, every path is checked against it, and a
-    definitions or data-dictionary file the config names is read from it as an upload. Nothing
-    else is written; the project is created by `POST /projects` as before."""
+    report, repository_checked}`. With a repository, every layer and component path is checked
+    against it. A core's files are the user's own inputs, never read from the repository: step 2
+    asks for them. Nothing is written; the project is created by `POST /projects` as before."""
     from ..services import git_cli, project_config, repo_git
-    from .repositories import store_upload
     if len(body.text or "") > 2 * 1024 * 1024:
         raise bad_request("The config file is larger than 2 MB.")
     try:
@@ -137,7 +136,7 @@ def preview_config(
     except project_config.ConfigError as exc:
         raise bad_request(str(exc))
 
-    tree = read_file = None
+    tree = None
     note = None
     url = (body.repo_url or "").strip()
     if url:
@@ -146,18 +145,11 @@ def preview_config(
             branch = (body.branch or "").strip() or None
             clone = repo_git._clone_or_reuse(url, branch, body.access_token, blobless=True,
                                              refresh=True)
-            repo_dir, tip = str(clone), repo_git.tree_ref(clone, branch)
-            tree = git_cli.list_tree(repo_dir, tip)
-            creds = repo_git._creds(body.access_token)
-            # up to 100 MB: a core's compile_commands.json lists every translation unit
-            read_file = lambda path: git_cli.read_file(repo_dir, path, url, *creds, ref=tip,  # noqa: E731
-                                                       max_bytes=100 * 1024 * 1024)
+            tree = git_cli.list_tree(str(clone), repo_git.tree_ref(clone, branch))
         except git_cli.GitError as exc:
             note = (f"The repository could not be read ({repo_git._friendly(str(exc))}), so "
                     f"paths were not checked.")
-    result = project_config.preview(
-        cfg, tree_nodes=tree, read_file=read_file,
-        store_file=lambda data, name, kind: store_upload(data, name, kind, current_user.id))
+    result = project_config.preview(cfg, tree_nodes=tree)
     if note:
         result["report"].insert(0, {"level": "check", "text": note, "topic": "repository"})
     return result

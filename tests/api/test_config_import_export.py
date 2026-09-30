@@ -79,21 +79,18 @@ class TestWithoutTheRepository:
             ("Both", ["Layer1/Math/Utils.cpp", "Layer1/App"])]
         assert "Paths are checked" in " ".join(_texts(self.r, "check"))
 
-    def test_each_cores_files_are_asked_for_by_name(self):
+    def test_each_cores_files_are_asked_for_with_the_path_the_config_names(self):
         assert self.d["cores"] == [{"name": "Core1", "macros": None, "data_dictionary": None,
                                     "compile_commands": None}]
+        # as written, '/' separators: step 2 matches a picked folder on the path's end
         assert self.r["expected_uploads"] == {"Core1": {
-            "macros": "macros.json", "data_dictionary": "dd.csv",
-            "compile_commands": "compile_commands.json"}}
+            "macros": "cfg/macros.json", "data_dictionary": "C:/work/dd.csv",
+            "compile_commands": "build/compile_commands.json"}}
         assert self.d["architecture_layers"][0]["core"] == "Core1"
 
-    def test_each_file_to_upload_says_why(self):
-        checks = " ".join(_texts(self.r, "check"))
-        # a repository path is looked for once the repository is connected ...
-        assert ("Core1: `macros.json`, `compile_commands.json` - read from the repository once "
-                "it is connected") in checks
-        # ... a path on the machine that wrote the file never is
-        assert "Core1: upload `dd.csv` in step 2 - paths on the machine" in checks
+    def test_the_files_are_asked_for_by_name_in_step_two(self):
+        assert ("Core1: `macros.json`, `dd.csv`, `compile_commands.json` - pick the folder that "
+                "holds them in step 2, or upload each file there.") in _texts(self.r, "check")
 
     def test_project_settings_are_kept_and_machine_and_server_ones_are_not(self):
         assert self.d["settings"] == {"clang": {"clangArgs": ["--target=arm-none-eabi"]},
@@ -135,7 +132,7 @@ class TestCores:
         r = pc.preview(pc.parse(
             '{"layers": {"A": {"cores": ["C1"], "groups": {}}}, "cores": {"C1": {"compileCommands":'
             ' {"file": "build/compile_commands.json", "rootPrefix": "D:/work"}}}}'))
-        assert r["expected_uploads"]["C1"]["compile_commands"] == "compile_commands.json"
+        assert r["expected_uploads"]["C1"]["compile_commands"] == "build/compile_commands.json"
         assert any("rootPrefix` is not used" in t for t in _texts(r, "skipped"))
 
     def test_a_plain_defines_list_is_core1_for_every_layer(self):
@@ -161,73 +158,33 @@ class TestCores:
 
 
 class TestWithTheRepository:
-    def _preview(self, text=CONFIG, read=None):
-        stored = []
-        r = pc.preview(
-            pc.parse(text), tree_nodes=TREE,
-            read_file=read or (lambda p: b'["FROM_REPO=1"]' if p == "cfg/macros.json" else None),
-            store_file=lambda data, name, kind: stored.append((name, kind, data))
-            or {"id": "up_1", "file_name": name, "size": len(data)})
-        return r, stored
+    def _preview(self, text=CONFIG):
+        return pc.preview(pc.parse(text), tree_nodes=TREE)
 
     def test_paths_not_in_the_repository_are_left_out_and_named(self):
-        r, _ = self._preview()
+        r = self._preview()
         comps = r["draft"]["architecture_layers"][0]["groups"][0]["components"]
         assert comps[1]["files"] == ["Layer1/Math/Utils.cpp"]
         assert any("`Layer1/App`" in t for t in _texts(r, "check"))
 
     def test_a_component_none_of_whose_paths_exists_is_left_out_with_its_group(self):
-        r, _ = self._preview(CONFIG.replace(
+        r = self._preview(CONFIG.replace(
             '"groups": {\n', '"groups": {\n        "Ghost": {"Nowhere": "Does/Not/Exist"},\n', 1))
         names = [g["name"] for g in r["draft"]["architecture_layers"][0]["groups"]]
         assert names == ["My Sample"]
         assert any("Ghost / Nowhere (none of its paths" in t for t in _texts(r, "check"))
 
     def test_a_path_spelled_in_another_case_takes_the_repositorys_spelling(self):
-        r, _ = self._preview(CONFIG.replace('"Sample/Core"', '"sample/core"'))
+        r = self._preview(CONFIG.replace('"Sample/Core"', '"sample/core"'))
         comps = r["draft"]["architecture_layers"][0]["groups"][0]["components"]
         assert comps[0]["files"] == ["Layer1/Sample/Core"]
 
-    def test_a_macros_file_in_the_repository_is_read_as_an_upload(self):
-        r, stored = self._preview()
-        assert stored == [("macros.json", "preprocessor_definitions", b'["FROM_REPO=1"]')]
-        assert r["draft"]["cores"][0]["macros"] == {"mode": "upload", "file_id": "up_1",
-                                                    "file_name": "macros.json", "size": 15}
-        # the data dictionary is a Windows path: never looked up in the repository
-        assert r["expected_uploads"]["Core1"] == {"macros": None, "data_dictionary": "dd.csv",
-                                                  "compile_commands": "compile_commands.json"}
-
-    def test_compile_commands_in_the_repository_are_read_too(self):
-        tree = TREE + [{"type": "folder", "name": "build", "path": "build", "children": [
-            {"type": "file", "name": "compile_commands.json", "path": "build/compile_commands.json"}]}]
-        stored = []
-        r = pc.preview(pc.parse(CONFIG), tree_nodes=tree,
-                       read_file=lambda p: b"[]" if p == "build/compile_commands.json" else None,
-                       store_file=lambda data, name, kind: stored.append((name, kind))
-                       or {"id": "up_cc", "file_name": name, "size": len(data)})
-        assert ("compile_commands.json", "compile_commands") in stored
-        assert r["draft"]["cores"][0]["compile_commands"] == {
-            "file_id": "up_cc", "file_name": "compile_commands.json", "size": 2}
-
-    def test_a_file_the_repository_does_not_have_is_left_to_upload(self):
-        # a downloaded config names the web app's uploads by file name alone
-        r, stored = self._preview(CONFIG.replace('"cfg/macros.json"', '"macros.json"'))
-        assert stored == [] and r["expected_uploads"]["Core1"]["macros"] == "macros.json"
-        assert any("Core1: upload `macros.json`, `compile_commands.json` in step 2 - not in the "
-                   "repository" in t for t in _texts(r, "check"))
-
-    def test_a_file_that_cannot_be_read_says_so(self):
-        r, stored = self._preview(read=lambda p: None)
-        assert stored == [] and r["expected_uploads"]["Core1"]["macros"] == "macros.json"
-        assert any("could not be used -- reading it failed" in t for t in _texts(r, "check"))
-
-    def test_an_unusable_file_is_reported_not_stored(self):
-        def refuse(data, name, kind):
-            raise ValueError("'macros.json' is not a supported file.")
-        r = pc.preview(pc.parse(CONFIG), tree_nodes=TREE, read_file=lambda p: b"x", store_file=refuse)
+    def test_core_files_are_never_taken_from_the_repository(self):
+        # `cfg/macros.json` IS in the tree: a core's files are the user's inputs all the same
+        r = self._preview()
         assert r["draft"]["cores"][0]["macros"] is None
-        assert r["expected_uploads"]["Core1"]["macros"] == "macros.json"
-        assert any("could not be used" in t for t in _texts(r, "check"))
+        assert r["expected_uploads"]["Core1"]["macros"] == "cfg/macros.json"
+        assert r["expected_uploads"] == pc.preview(pc.parse(CONFIG))["expected_uploads"]
 
 
 class TestRoutes:
@@ -275,6 +232,7 @@ class TestRoutes:
         expected_layers["LAYER1"]["cores"] = ["Core1"]
         assert cfg["layers"] == expected_layers
         assert cfg["cores"] == {"Core1": {"macros": "macros.json", "dataDictionary": "dd.csv"}}
+        assert "pick their folder in step 2" in r.text
 
         # ...and it imports back into the same wizard
         back = pc.preview(cfg)["draft"]
@@ -334,8 +292,7 @@ class TestTheWizardKnowsWhatEachItemIsAbout:
 
 class TestLayerPaths:
     def _preview(self, text):
-        return pc.preview(pc.parse(text), tree_nodes=TREE, read_file=lambda p: None,
-                          store_file=lambda *a: {"id": "x", "file_name": "x", "size": 0})
+        return pc.preview(pc.parse(text), tree_nodes=TREE)
 
     def test_a_layer_path_in_another_case_takes_the_repositorys_spelling(self):
         r = self._preview(CONFIG.replace('"path": "Layer1"', '"path": "layer1"'))

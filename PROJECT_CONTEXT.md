@@ -209,6 +209,47 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-30f (**Config import: core files are user inputs, filled from ONE folder pick in step 2;
+> Import config moved to the top of step 1.** Branch `integrate/ui-v5`, uncommitted. Decided with the user:
+> layer paths stay relative to the C++ repo; a core's files (macros / dataDictionary / compileCommands) are
+> the user's own inputs, NEVER in the C++ repo, so their config paths (relative = analyzer folder on the CLI,
+> or absolute - often the user's SERVER path) can never be resolved by the web server. Only the path's end is
+> usable. Rejected: resolving core paths against the C++ repo; a server-readable shared folder; merging
+> defaults+local on import; a folder-only pick that guesses the config (a folder like `engine/config` holds
+> several config-like JSONs, and macros/compile commands are JSON too). The token stays out of the config.
+> - **API** (`api/services/project_config.py`): `preview(cfg, tree_nodes=)` no longer takes
+>   `read_file`/`store_file`; `_read_cores` never looks in the repository (`_from_repository`,
+>   `_is_machine_path` removed; `git_cli.read_file` removed - its only caller). `expected_uploads[core][field]`
+>   = the path AS WRITTEN ('/' separators), was the bare file name. One CHECK line per core: "`a`, `b` - pick
+>   the folder that holds them in step 2, or upload each file there." Download header now says: CLI → write
+>   each path (absolute, or relative to the analyzer folder); re-import → pick their folder in step 2.
+> - **Web** (`pages/NewProjectPage/`): `ConfigImport` renders ABOVE the step-1 card (it fills name, repo,
+>   branch). Step 2 `CoresStep` → `FolderFill` bar (`<input webkitdirectory>` set via ref) while any imported
+>   slot is empty; `index.tsx fillFromFolder` → `helpers.matchFolder` → `uploadCoreFile(slots, file)` (one
+>   upload per file+slot kind, shared by every core naming the same path). `followBranch` deleted (core files
+>   never come from the repo, so a re-check leaves cores alone). `openWants` / `baseName` shared by step 2 and
+>   Review's "not uploaded" row.
+> - **matchFolder rule** (safety over convenience - a wrong macros file silently changes the parse): a picked
+>   file fits when its name AND every folder below the picked one end the config's path; the picked folder's
+>   own name may differ (a copied `inputs-copy/`). A bare config name fits anywhere. A file fills only the
+>   path(s) that fit it best (picking `core1/` fills Core1 only, never Core2's same-named file). Several
+>   fitting files, or one file two different paths fit equally → `unsure`; none → `missing`; never guessed.
+> - **`project` block in `engine/config/config.defaults.json`** (+ documented in `.example`): SampleCppProject,
+>   `https://github.com/vishal9359/SampleCppProject`, `main` - importing the defaults fills step 1 too. The
+>   engine ignores it. It must never leak as ANOTHER project's identity: `pipeline_runner._write_project_config`
+>   pops it (a version's `resolved_config` would say SampleCppProject), and `tools/new_project._resolve_config`
+>   takes `project` only from the user's `--config` (popped before the merge; `config.local.json`'s popped too),
+>   keeping the sample's only for `--use-defaults`. Tests: `test_project_config.py` +1,
+>   `test_new_project_config.py` +1.
+> - Chrome sends a folder-picked file's path in the folder as its multipart name, so the upload record's
+>   `file_name` is e.g. `fw-inputs/core1/macros.json` (disk keeps the base name, `store_upload`).
+> - **Verified:** API `test_config_import_export.py` 29 pass; web build clean, vitest 84 pass (+matchFolder
+>   suite), lint adds nothing (the 2 errors in `index.tsx` are pre-existing). Browser (puppeteer, test servers
+>   8010/5180, DB `analyzer_ui`, public SampleCppProject): 3 cores, same names per core + a shared `dd.csv` +
+>   stray `old/core1/macros.json` + `notes.txt` → one folder pick: 8 of 9 filled, Core1 took `core1/` not the
+>   stray, `dd.csv` uploaded once for two cores, Core3's absent compile commands → "Not in it"; picking only
+>   `core1/` filled Core1 and nothing else.)
+
 > Updated: 2026-09-30e (**Web app CSS lowered for old browsers.** Branch `ui_v2`. Office OFFLINE server only:
 > sign-in's left ArtiFex panel missing (`hidden lg:flex`, `SignInPage.tsx`) + empty Projects page unstyled;
 > online server fine. Cause: its browser is older than Chrome/Edge 112 (no CSS nesting). The Vite dev server

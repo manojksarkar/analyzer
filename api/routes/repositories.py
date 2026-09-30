@@ -138,9 +138,9 @@ def store_upload(data: bytes, file_name: str, kind: str, uploaded_by: str,
                  content_type: Optional[str] = None) -> dict:
     """Validate and store a build-configuration file; return its upload record.
 
-    The one place an upload is created -- the upload route, and the config import when it finds
-    a file the config names in the repository -- so both are checked the same way. Raises
-    ValueError with a user-facing reason."""
+    The one place an upload is created and checked. `file_name` may carry folders (a browser
+    sends a file picked with its folder by its path in that folder): the record keeps it, the
+    disk only its last part. Raises ValueError with a user-facing reason."""
     if kind not in _ALLOWED_KINDS:
         raise ValueError(f"Unknown upload kind '{kind}'.")
     allowed_exts = _ALLOWED_EXTS[kind]
