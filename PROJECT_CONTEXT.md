@@ -209,7 +209,8 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
-> Updated: 2026-09-30b (**Flowcharts in the web app are server-drawn SVGs.** Branch `ui_v2`, UNCOMMITTED. Asked:
+> Updated: 2026-09-30b (**Flowcharts in the web app are server-drawn SVGs.** Branch `ui_v2`, commits
+> `e6156e8`..`83612ca` (+ `c23ad36`, the SWE.4 mockup left uncommitted from the day before), pushed. Asked:
 > the SWE.3 reader showed a flowchart's DOT text, not a picture; the target project has **500+ flowcharts in
 > ONE document** and some DOTs are huge. User approved the design, then "do everything".
 >
