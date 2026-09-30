@@ -5,6 +5,7 @@ import {
   usePendingMembers, useInviteMember, useUpdateMemberRole, useRemoveMember, useCancelInvite,
 } from '../hooks/useTeamMutations'
 import { Card, Icon, Skeleton, Text } from '../components/ui'
+import { SubbarCta } from '../components/shell/SubbarCta'
 import { cn } from '../lib/cn'
 import type { TeamMember, UserRole } from '../types'
 
@@ -103,16 +104,19 @@ export function TeamPage() {
                 {active.length} member{active.length !== 1 ? 's' : ''}{pendingCount > 0 ? ` · ${pendingCount} pending` : ''} · {project?.name ?? '…'}
               </Text>
             </div>
-            {isAdmin && (
+          </div>
+          {/* The page's Subbar action (mockup), as Documents' Download All and Overview's Run Analysis. */}
+          {isAdmin && (
+            <SubbarCta>
               <button
                 onClick={() => setInviteOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-white rounded-lg transition-colors font-mono text-caption font-medium tracking-[0.02em]"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors font-mono text-caption font-bold tracking-[0.04em]"
               >
-                <Icon name="person_add" size={15} />
-                Invite
+                <Icon name="person_add" size={14} />
+                INVITE
               </button>
-            )}
-          </div>
+            </SubbarCta>
+          )}
 
           <div className="overflow-x-auto">
             {isLoading ? (
@@ -124,7 +128,7 @@ export function TeamPage() {
                     <th className="text-left px-5 py-3 text-on-surface-variant uppercase font-mono text-caption font-medium tracking-[0.07em]">Member</th>
                     <th className="text-left px-4 py-3 text-on-surface-variant uppercase font-mono text-caption font-medium tracking-[0.07em] w-[120px]">Role</th>
                     <th className="text-left px-4 py-3 text-on-surface-variant uppercase font-mono text-caption font-medium tracking-[0.07em] w-[130px]">Last Active</th>
-                    <th className="px-4 py-3 w-[120px]" />
+                    <th className="text-left px-4 py-3 text-on-surface-variant uppercase font-mono text-caption font-medium tracking-[0.07em] w-[120px]">{isAdmin ? 'Actions' : ''}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -214,7 +218,7 @@ export function TeamPage() {
           <div>
             {ACCESS.map((a, i) => (
               <div key={a.role} className={cn('flex items-start gap-3 px-5 py-3', i < ACCESS.length - 1 && 'border-b border-[#f3f4f6]')}>
-                <span className="flex-shrink-0 mt-px"><RolePill role={a.role} /></span>
+                <span className="flex flex-shrink-0 mt-px"><RolePill role={a.role} /></span>
                 <Text as="p" variant="caption" className="font-mono leading-relaxed">{a.perms}</Text>
               </div>
             ))}
