@@ -6,7 +6,7 @@ import { Subbar, StatusBadge } from './Subbar'
 import { SubbarCtaProvider } from './SubbarCta'
 import { ErrorBoundary } from '../ErrorBoundary'
 import { Skeleton } from '../ui'
-import { useProject, useVersions, useCommits } from '../../hooks/useProjects'
+import { useProject, useVersions, useCommits, useDocument } from '../../hooks/useProjects'
 import { useProjectViewState } from '../../hooks/useProjectViewState'
 
 interface ProjectLayoutProps {
@@ -28,9 +28,12 @@ function PageSkeleton() {
 }
 
 export function ProjectLayout({ breadcrumbLabel, breadcrumbParentLabel, breadcrumbParentTo }: ProjectLayoutProps) {
-  const { projectId } = useParams<{ projectId: string }>()
+  const { projectId, docId } = useParams<{ projectId: string; docId?: string }>()
 
   const { data: project } = useProject(projectId ?? '')
+  // A document page's last crumb names the document (mockup: "SWE.3 — Brake Controller");
+  // shared with the page's own query, so no second request.
+  const { data: doc } = useDocument(projectId ?? '', docId ?? '')
   const { data: versions } = useVersions(projectId ?? '')
   const { data: commits } = useCommits(projectId ?? '')
   const latestVersion = versions?.[0]
@@ -43,15 +46,14 @@ export function ProjectLayout({ breadcrumbLabel, breadcrumbParentLabel, breadcru
   // The Subbar's action slot, filled by the page through <SubbarCta>.
   const [ctaSlot, setCtaSlot] = useState<HTMLDivElement | null>(null)
 
-  const breadcrumbs = breadcrumbParentLabel
-    ? [
-        { label: breadcrumbParentLabel, to: breadcrumbParentTo?.replace(':projectId', projectId ?? '') },
-        { label: breadcrumbLabel },
-      ]
-    : [
-        { label: project?.name ?? '…', to: `/projects/${projectId}/overview` },
-        { label: breadcrumbLabel },
-      ]
+  // The project always leads (it was dropped whenever a page had a parent crumb).
+  const breadcrumbs = [
+    { label: project?.name ?? '…', to: `/projects/${projectId}/overview` },
+    ...(breadcrumbParentLabel
+      ? [{ label: breadcrumbParentLabel, to: breadcrumbParentTo?.replace(':projectId', projectId ?? '') }]
+      : []),
+    { label: doc ? `${doc.process} — ${doc.name}` : breadcrumbLabel },
+  ]
 
   return (
     <div className="h-screen flex overflow-hidden">

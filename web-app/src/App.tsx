@@ -139,11 +139,7 @@ export default function App() {
                 path="/projects/:projectId/compare"
                 element={
                   <ProtectedRoute>
-                    <ProjectLayout
-                      breadcrumbLabel="Compare"
-                      breadcrumbParentLabel="Documents"
-                      breadcrumbParentTo="/projects/:projectId/documents"
-                    />
+                    <ProjectLayout breadcrumbLabel="Compare" />
                   </ProtectedRoute>
                 }
               >
