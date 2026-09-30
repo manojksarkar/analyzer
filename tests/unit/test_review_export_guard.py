@@ -51,10 +51,10 @@ def conn():
         yield cx
 
 
-def _override(conn, when, key="Comp|UnitA|f|", kind="description"):
+def _override(conn, when, key="Comp|UnitA|f|", kind="description", orphaned=False):
     conn.execute(sa.insert(s.text_overrides).values(
         version_id="v1", slot_kind=kind, slot_key=key,
-        llm_text="llm", human_text="human", is_orphaned=False, updated_at=when))
+        llm_text="llm", human_text="human", is_orphaned=orphaned, updated_at=when))
 
 
 def _derived(conn, when, views=DESCRIPTION_VIEWS, component="Comp"):
@@ -105,6 +105,44 @@ class TestAbsenceOfEvidence:
         _override(conn, T1)
         assert g.staleness(conn, "v1").is_stale
         _derived(conn, T2)
+        assert not g.staleness(conn, "v1").is_stale
+
+
+class TestAnOrphanIsNotACorrection:
+    """An orphan was written for code that has since changed. It is never applied, so no
+    document prints it and no view is behind it: only corrections in force are asked about.
+    Counting orphans made a version whose component was renamed stale for ever -- no derivation
+    of any view is ever recorded for a component that no longer exists."""
+
+    def test_an_orphan_alone_is_not_stale(self, conn):
+        _override(conn, T1, key="Gone|UnitA|f|", orphaned=True)
+        st = g.staleness(conn, "v1")
+        assert not st.is_stale, st.reason
+        assert st.override_count == 0
+
+    def test_an_orphan_newer_than_the_derivation_is_not_stale(self, conn):
+        _derived(conn, T0)
+        _override(conn, T1, orphaned=True)
+        assert not g.staleness(conn, "v1").is_stale
+
+    def test_beside_a_live_correction_only_the_live_one_decides(self, conn):
+        _derived(conn, T1)
+        _override(conn, T0)
+        _override(conn, T2, key="Gone|UnitB|g|", orphaned=True)
+        st = g.staleness(conn, "v1")
+        assert not st.is_stale, st.reason
+        assert st.override_count == 1
+        assert st.newest_override_at == T0, "the orphan's time is not a correction's"
+
+        _override(conn, T3, key="Comp|UnitA|h|")
+        st = g.staleness(conn, "v1")
+        assert st.is_stale and "newer than the derived output" in st.reason
+        assert st.override_count == 2
+
+    def test_an_unplaceable_orphan_does_not_block(self, conn):
+        """A row this build cannot place is stale when it is in force; an orphan is not read."""
+        _derived(conn, T1)
+        _override(conn, T0, key="Comp|UnitA|f|", kind="nodeLabel", orphaned=True)  # no node
         assert not g.staleness(conn, "v1").is_stale
 
 

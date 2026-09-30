@@ -242,10 +242,16 @@ def staleness(conn, version_id: str, doc_types=None) -> Staleness:
     """
     from review.derive import component_of, views_for
 
+    # The corrections IN FORCE. An orphan was written for code that has since changed: it is
+    # never applied, so no document prints it and no view is behind it (REQ-ID-03). Asking about
+    # it anyway made a version whose only corrections were orphans stale for ever -- "no
+    # derivation of this view for that component was ever recorded" when the component is gone --
+    # and a re-export could not clear that.
     rows = conn.execute(
         select(s.text_overrides.c.slot_kind, s.text_overrides.c.slot_key,
                s.text_overrides.c.updated_at)
-        .where(s.text_overrides.c.version_id == version_id)).fetchall()
+        .where(s.text_overrides.c.version_id == version_id,
+               s.text_overrides.c.is_orphaned.is_(False))).fetchall()
     if not rows:
         # Nobody has corrected anything, which is every project today. Nothing to be stale
         # against, and the guard costs one indexed lookup.

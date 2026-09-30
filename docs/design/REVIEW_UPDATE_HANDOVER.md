@@ -284,8 +284,12 @@ version makes it permanently unexportable. Stamp "the whole version" instead —
 until 2026-09-29 — and a SWE.3 re-derive waves a stale SWE.4 export through: reproduced, a label
 corrected, the SWE.3 re-export, then an export-only `--doc-type all` shipped the old Test Step.
 
-→ `tests/unit/test_review_export_guard.py::TestTheRecord`, `::TestDocumentTypes`;
-`test_review_pipeline_wiring.py` for the two call sites.
+The guard asks only about corrections **in force**. An orphan is never printed; ask about it and a
+version whose only corrections are orphans — a component renamed — is unexportable for ever, since
+nothing records a derivation for a component that no longer exists.
+
+→ `tests/unit/test_review_export_guard.py::TestTheRecord`, `::TestDocumentTypes`,
+`::TestAnOrphanIsNotACorrection`; `test_review_pipeline_wiring.py` for the two call sites.
 
 ### 4.10 A model write from the API must reach its one row, in the request's transaction
 
