@@ -230,6 +230,30 @@ signin.html → projects.html (no sidebar)
        └─ Team      → team.html (220px)
 ```
 
+
+### Review & update in the web app (2026-10-01)
+
+The document reader corrects the LLM's wording in place. **Edit** (Subbar, SWE.3 only; any member)
+turns each correctable text into a box that saves on leaving it; **Edit flowchart** corrects one
+chart's box labels together; a banner says when the Word files lack the latest corrections, with
+**Re-export** for admins. Editing pauses while a run or a re-export is going.
+
+- **API** — `api/services/doc_render.py` puts each text's slot in the render payload (`_Slots`,
+  `load_overrides`: one query for the version's corrections): `table.cell_slots`,
+  `flowchart_table.*_slot`, `behavior_table.*_slot`, `content_slot`, and `flowcharts[].flowchart_id` /
+  `editable`. A record row of the unit header shows the model's `structDescription`, which a save
+  writes, instead of Phase 3's copy (stale until a re-export). Tests: `tests/api/test_render_carries_slots.py`.
+- **Web** — `pages/DocumentInspectorPage/` is a folder now: `components/Sections.tsx` (the section
+  views, memoised), `SlotText.tsx` (one text: read mark, editor, Undo, History), `FlowchartLabelDialog.tsx`,
+  `ReviewBars.tsx` (R9 banner + Re-export, the Editing bar), `RightPanel.tsx` + `OutlineTab.tsx` +
+  `CorrectionsTab.tsx` (+ the moved `ReviewTracker.tsx`), `TreeRail.tsx`; `outline.ts` (pure, tested),
+  `editContext.ts`, `useScrollSpy.ts`. Data: `services/api/review.ts`, `services/mappers/review.ts`,
+  `hooks/useReview.ts`; `projectKeys.review(…)` keys live under their own prefix. A save reads the
+  render again; the flowchart `<img>` URL carries `?v=<source_hash>` (added in the mapper, after
+  `resolveAssetUrl`) so a redrawn SVG reloads.
+- **Rules** — the `ui-dev` skill §6; the contract's page section is REVIEW_UPDATE_API_SPEC §3a.
+- **Mockup** — `docs/ui-mockups/documents.html` (open with `#edit`).
+
 ---
 
 _End of file._

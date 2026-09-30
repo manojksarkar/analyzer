@@ -20,8 +20,8 @@ Start context (read as needed, don't duplicate here):
 - **API wiring, wire-format mappers, per-page gaps** → [web-app/INTEGRATION_NOTES.md](web-app/INTEGRATION_NOTES.md).
 - **Testing (unit + live-API contract suite)** → [web-app/TESTING.md](web-app/TESTING.md).
 - **Review & update (reviewers correct LLM text)** → the HTTP contract
-  [docs/spec/REVIEW_UPDATE_API_SPEC.md](docs/spec/REVIEW_UPDATE_API_SPEC.md) — backend built, no screen yet
-  (§6 below).
+  [docs/spec/REVIEW_UPDATE_API_SPEC.md](docs/spec/REVIEW_UPDATE_API_SPEC.md); the screen is the
+  document reader's edit mode (§6 below).
 
 ## 1. Structure (layered)
 
@@ -131,18 +131,21 @@ value. Spot-check against the mock in [docs/ui-mockups/](docs/ui-mockups/).
 
 Short, prefixed (`feat:`, `fix:`, `docs:`, `refactor:`). No "Claude" mentions, no co-author trailer.
 
-## 6. Review & update screens (backend built, no screen yet)
+## 6. Review & update (reviewers correct LLM text)
 
-A reviewer corrects the LLM's wording in a generated document. Build against
-[REVIEW_UPDATE_API_SPEC](docs/spec/REVIEW_UPDATE_API_SPEC.md) — §3a lists the calls per screen, in order.
-Rules the spec's tests cannot enforce on the client:
+A reviewer corrects the LLM's wording in a generated document: **Edit** (Subbar) turns the SWE.3
+reader into edit mode — `pages/DocumentInspectorPage/` (`components/SlotText.tsx` per text,
+`FlowchartLabelDialog.tsx` per chart, `ReviewBars.tsx` for the R9 banner + Re-export, the right
+panel's Outline/Corrections tabs). Data: `services/api/review.ts`, `services/mappers/review.ts`,
+`hooks/useReview.ts`. Contract: [REVIEW_UPDATE_API_SPEC](docs/spec/REVIEW_UPDATE_API_SPEC.md) — §3a
+lists the calls per screen. Rules the spec's tests cannot enforce on the client:
 
-- **Never build a slot key.** Take `slotKey` from a read — R7 for a flowchart's nodes, R11 for
-  everything else — and send it back unchanged. The page payload carries none: find the item in R11
-  (same unit, by `label` or `functionName`).
-- **A flowchart is named by R11's `flowchartId`** — `flowchart_id` in R7's query and R8's body. It is
-  not a node's `slotKey` (that is the flowchart id, a separator and the node id); the server
-  answers 400 if one is sent.
+- **Never build a slot key.** Take it from a read — the render payload carries each text's `Slot`
+  (`cell_slots`, `*_slot`, `content_slot`), R7 each flowchart node's, R11 any — and send it back
+  unchanged.
+- **A flowchart is named by its `flowchart_id`** (render payload, R11 `flowchartId`) — in R7's query
+  and R8's body. It is not a node's `slotKey` (that is the flowchart id, a separator and the node
+  id); the server answers 400 if one is sent.
 - **One shape for a slot, from every route** (API spec §5 `Slot`): `text` is what the document
   prints; `isOverridden` means a correction is in force; an orphaned one (`isOrphaned`) is not, and
   its `humanText` is not on the page; `llmText` is what the LLM wrote. Render a slot from these
@@ -154,4 +157,7 @@ Rules the spec's tests cannot enforce on the client:
   appear on the next read; two saves of one slot: the later wins, and its `previousText` says what
   it replaced. Before offering an export, read R9: `stale` or `pendingRenders` means the Word file
   does not match the corrections yet.
-- **Draw flowcharts from their DOT**, not as Mermaid (the in-app view is not ported yet — `engine-flowchart`).
+- **A slot's `text` is its own, not always what the page prints**: an empty slot shows a stand-in
+  ("X input", the interface descriptions' join). Edit the slot's text; show the stand-in as a hint.
+- **Flowcharts are server-drawn SVGs**, redrawn by the label save itself; the mapper adds
+  `?v=<source_hash>` so the `<img>` reloads. A save changes the page, not the Word file (R9).

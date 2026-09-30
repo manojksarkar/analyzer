@@ -156,15 +156,32 @@ A project onboarded with `analyzer.py onboard` cannot be run from the web app ei
 | step | call | why |
 |---|---|---|
 | 1 | `GET /documents?version_id={versionId}` | the version's documents, one per component; `documents[].id` is the `docId` |
-| 2 | `GET /documents/{docId}/render` | the page. Draw its flowcharts from their DOT — see *Drawing a flowchart* below |
+| 2 | `GET /documents/{docId}/render` | the page. **Every text a reviewer can correct carries its `Slot`** (see *The page carries each text's slot* below) — its key and state, so no R11 lookup is needed from the page |
 | 3 | R9 `GET /versions/{versionId}/export-readiness` | the banner: `stale: true` means corrections are not in the Word file yet |
 | 4 | R1 `GET /versions/{versionId}/overrides` | optional: mark corrected items. Fetch once, index by `slotKey` |
+
+### The page carries each text's slot
+
+`GET /documents/{docId}/render` (SWE.3) puts a `Slot` (§5, camelCase as every review route) beside
+each text a reviewer can correct, built by the server — the client still never builds a key:
+
+| where in the page payload | slot kind |
+|---|---|
+| `table.cell_slots[row][col]` — same shape as `table.rows`, `null` for a cell that is not correctable | Component/Unit table: `unitDescription`; unit header: `structDescription` (a record row); unit interface "Information": `description` |
+| `flowchart_table.description_slot`, `.input_name_slot`, `.output_name_slot` | `description`, `behaviourInputName`, `behaviourOutputName` |
+| `content_slot` on a function section without a flowchart | `description` |
+| `behavior_table.description_slot` (with `bullets`, `functionId`, `externalCallerId`), `.input_name_slot`, `.output_name_slot` | `behaviourDescription` (R6), the two names |
+| `flowchart_table.flowcharts[].flowchart_id`, `.editable` | the `flowchart_id` R7/R8 take; `editable` = the chart has a stored graph |
+
+The slot's `text` is its own text: where it is empty the page prints a stand-in (the interface
+descriptions' join, "X input", "-"), which is not the slot's. The web app's reader edits these in
+place (`web-app/src/pages/DocumentInspectorPage/`).
 
 ### Flow 2 — correct a text: `description`, `behaviourInputName`, `behaviourOutputName`, `unitDescription`, `structDescription`
 
 | step | call | why |
 |---|---|---|
-| 1 | R11 `GET /versions/{versionId}/slots?slot_kind=<kind>&unit=<unit>` | the editable items, each with `slotKey`, `label` and current `text` |
+| 1 | the page's slot, or R11 `GET /versions/{versionId}/slots?slot_kind=<kind>&unit=<unit>` | the editable items, each with `slotKey`, `label` and current `text` |
 | 2 | R3 `PUT /versions/{versionId}/overrides/slot` with `{"slot_kind", "slot_key", "text"}` | save |
 | 3 | — | show the answer: it is the item as it now is (`text`, `humanText`, `canUndo` …). When `queuedForRegeneration` is not empty, say which other texts the next run rewrites |
 | 4 | R9 | update the banner |
@@ -177,7 +194,7 @@ reaches the page and the Word file with the next re-export (§14).
 
 | step | call | why |
 |---|---|---|
-| 1 | R11 `GET /versions/{versionId}/slots?slot_kind=behaviourDescription&unit=<unit>` | rows with `bullets`, `functionId`, `externalCallerId` and `slotKey` |
+| 1 | the page's `behavior_table.description_slot`, or R11 `GET /versions/{versionId}/slots?slot_kind=behaviourDescription&unit=<unit>` | rows with `bullets`, `functionId`, `externalCallerId` and `slotKey` |
 | 2 | R6 `PUT /versions/{versionId}/overrides/behaviour` with `{"function_id", "external_caller_id", "bullets"}` | save the **whole** list; both ids copied from step 1. The answer is the row as it now is |
 | 3 | R9 | update the banner |
 
@@ -185,7 +202,7 @@ reaches the page and the Word file with the next re-export (§14).
 
 | step | call | why |
 |---|---|---|
-| 1 | R11 `GET /versions/{versionId}/slots?slot_kind=nodeLabel&unit=<unit>` | one row per flowchart, with its `flowchartId`. Coming from the page, match the flowchart by `functionName` within its unit — the page carries no tokens (§17) |
+| 1 | the page's `flowcharts[].flowchart_id`, or R11 `GET /versions/{versionId}/slots?slot_kind=nodeLabel&unit=<unit>` | one row per flowchart, with its `flowchartId` |
 | 2 | R7 `GET /versions/{versionId}/flowcharts/labels?flowchart_id=<flowchartId>` | every node's `nodeId`, `text` and `slotKey`, and the diagram as `dot`. Draw the diagram; list the labels for editing |
 | 3 | R8 `PUT /versions/{versionId}/flowcharts/labels` with `{"flowchart_id": "<flowchartId>", "labels": {"<nodeId>": "<text>"}}` | **only the labels that changed**, all in one call |
 | 4 | — | the answer carries each saved node as it now is (`labels`) and the rebuilt diagram (`dot`): redraw from it, and the correction shows at once. `renderPending: true` is about the PNG in the Word file only |
@@ -1189,8 +1206,6 @@ Honest gaps, so the UI does not plan around something that is not there.
 - **A corrected flowchart's PNG is redrawn by the next run or re-export**, not by the save — R8
   over HTTP has no output tree to draw into, so `renderPending` is `true`. Its DOT is rebuilt by the
   save: draw that (§3a) and the page is current at once.
-- **The page payload carries no slot keys**, so "edit this sentence" on the page means finding the
-  item in R11 (same unit, by `label` or `functionName`) and using its `slotKey`.
 
 ---
 

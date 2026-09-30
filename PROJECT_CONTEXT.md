@@ -53,8 +53,9 @@ newer entry and the code win.
   since 2026-07-02.
 - **The web app** (`web-app/` + `api/`) is built on branch `integrate/ui-v5`, which merged develop —
   review & update included — on 2026-09-30g. Its own history before that merge, 2026-09-29 …
-  2026-09-30f, is [history file 12](project-context/history/12-2026-09-29-web-app.md). Review & update
-  has no screen yet: `web-app/PLAN.md` "Remaining".
+  2026-09-30f, is [history file 12](project-context/history/12-2026-09-29-web-app.md). Review & update's
+  screen is the document reader's **edit mode** (2026-10-01; [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md)
+  "Review & update in the web app").
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
 - The status boards that used to head this file (2026-07-20, 2026-08-14) are kept, unchanged, in

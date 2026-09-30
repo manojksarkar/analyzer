@@ -6,6 +6,12 @@
 > the detail. **A new dated entry needs its line here** — `tests/unit/test_project_context_fits.py`
 > fails until it has one.
 
+## 2026-10
+
+| Date | Change | File |
+|---|---|---|
+| 2026-10-01 | Review & update has a screen: the document reader's edit mode | [11](11-2026-09-29e.md) |
+
 ## 2026-09
 
 | Date | Change | File |

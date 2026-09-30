@@ -64,12 +64,11 @@ the wizard, and a project downloads as one; download → import → download rou
 
 ## Remaining — backend exists, no screen yet
 
-- [ ] **Review & update** — correct the LLM's wording in a document (descriptions, unit and struct
-      descriptions, behaviour names, Dynamic Behaviour bullets, flowchart labels), undo, history, and an
-      export-readiness banner. API: [REVIEW_UPDATE_API_SPEC](../docs/spec/REVIEW_UPDATE_API_SPEC.md) — §3a
-      lists the calls per screen. Rules: the `ui-dev` skill §6.
-- [ ] **Flowcharts from DOT** — the in-app flowchart view still renders the stored string as Mermaid; the
-      engine has written Graphviz DOT since 2026-07-27. Needed by the flowchart label editor too.
+- [ ] **Review & update, what the reader's edit mode does not do yet** (the screen itself is built,
+      2026-10-01): Compare's section **Edit** still writes `document_sections` (only the fallback page
+      reads it) — move it onto corrections; orphaned corrections are listed but cannot be deleted (no
+      endpoint); R9 answers per version, not per document; SWE.4 is read-only (its test steps follow
+      the flowchart labels).
 
 ## Remaining — frontend-only work
 
