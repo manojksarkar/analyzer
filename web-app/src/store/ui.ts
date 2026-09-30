@@ -18,6 +18,9 @@ interface UIState {
   /** Document Inspector's right Review-status / outline panel collapse state. */
   inspectorPanelCollapsed: boolean
   toggleInspectorPanel: () => void
+  /** Document Inspector: the left document list folded to a rail (the reader needs the width). */
+  docTreeFolded: boolean
+  setDocTreeFolded: (v: boolean) => void
   /** Per-project picker selection (drives the detail view). In-memory only. */
   selectedRef: Record<string, Selection>
   setSelectedRef: (projectId: string, sel: Selection) => void
@@ -31,6 +34,8 @@ export const useUIStore = create<UIState>()(
       setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
       inspectorPanelCollapsed: false,
       toggleInspectorPanel: () => set((s) => ({ inspectorPanelCollapsed: !s.inspectorPanelCollapsed })),
+      docTreeFolded: true,
+      setDocTreeFolded: (v) => set({ docTreeFolded: v }),
       selectedRef: {},
       setSelectedRef: (projectId, sel) =>
         set((s) => ({ selectedRef: { ...s.selectedRef, [projectId]: sel } })),
@@ -41,6 +46,7 @@ export const useUIStore = create<UIState>()(
       partialize: (s) => ({
         sidebarCollapsed: s.sidebarCollapsed,
         inspectorPanelCollapsed: s.inspectorPanelCollapsed,
+        docTreeFolded: s.docTreeFolded,
       }),
     }
   )

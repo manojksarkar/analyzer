@@ -6,7 +6,7 @@ import type { FlowchartEntry } from '../../../types'
 
 const drawn: FlowchartEntry = {
   label: 'int add(int a, int b)', status: 'drawn', imageUrl: 'http://api/x/Math_add.svg',
-  width: 400, height: 200, boxes: 7,
+  width: 400, height: 200, boxes: 7, flowchartId: null, editable: false,
 }
 
 describe('FlowchartFigure', () => {

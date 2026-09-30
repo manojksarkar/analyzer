@@ -12,7 +12,7 @@ import type { Document } from '../../types'
  * when a process spans more than one layer its docs are sub-grouped by layer.
  */
 export function DocTreePanel({
-  groups, assigneeOptions, effectiveAssignee, meName, isDeveloper, activeDocId, onPickAssignee, onOpenDoc,
+  groups, assigneeOptions, effectiveAssignee, meName, isDeveloper, activeDocId, onPickAssignee, onOpenDoc, onFold,
 }: {
   groups: { process: string; docs: Document[] }[]
   assigneeOptions: string[]
@@ -22,6 +22,8 @@ export function DocTreePanel({
   activeDocId?: string
   onPickAssignee: (name: string) => void
   onOpenDoc: (doc: Document) => void
+  /** Shows a button that folds the panel away (the Inspector, where the reader needs the width). */
+  onFold?: () => void
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [open, setOpen] = useState(false)
@@ -71,8 +73,19 @@ export function DocTreePanel({
   return (
     <aside className="w-60 flex-shrink-0 bg-white border-r border-outline-variant flex flex-col">
       {/* Panel header */}
-      <div className="px-3 py-2.5 border-b border-outline-variant flex-shrink-0">
+      <div className="px-3 py-2.5 border-b border-outline-variant flex-shrink-0 flex items-center justify-between">
         <Text variant="label" className="block text-on-surface-variant tracking-[0.1em]">Documents</Text>
+        {onFold && (
+          <button
+            type="button"
+            onClick={onFold}
+            title="Hide the document list"
+            aria-label="Hide the document list"
+            className="p-0.5 -my-1 rounded text-outline hover:text-secondary hover:bg-surface-container-low"
+          >
+            <Icon name="left_panel_close" size={18} />
+          </button>
+        )}
       </div>
 
       {/* Assignee filter */}
