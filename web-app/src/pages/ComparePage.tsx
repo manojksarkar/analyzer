@@ -205,7 +205,8 @@ function SectionBody({ content }: { content: string }) {
 }
 
 /* ─── Left document tree (Diff / All) ─── */
-interface TreeRow { id: string; name: string; diffType: DiffType; changed: boolean }
+// `process` tells a component's two documents apart: its SWE.3 and SWE.4 share its name.
+interface TreeRow { id: string; name: string; process?: string; diffType: DiffType; changed: boolean }
 
 function DocTree({ rows, mode, setMode, activeId, onSelect, changedCount, total, loading }: {
   rows: TreeRow[]; mode: TreeMode; setMode: (m: TreeMode) => void
@@ -242,6 +243,7 @@ function DocTree({ rows, mode, setMode, activeId, onSelect, changedCount, total,
               >
                 <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', isActive ? 'bg-secondary' : d.changed ? DIFF_BADGE[d.diffType].dot : 'bg-outline-variant')} aria-hidden />
                 <span className={cn('truncate', !d.changed && !isActive && 'opacity-40')}>{d.name}</span>
+                {d.process && <span className={cn('ml-auto flex-shrink-0 text-label text-outline', !d.changed && !isActive && 'opacity-40')}>{d.process}</span>}
               </button>
             )
           })
@@ -391,14 +393,14 @@ export function ComparePage() {
   // "10 changed of 3" when ten documents were removed and three kept.
   const removedRows: TreeRow[] = useMemo(() => (compareDocs?.documents ?? [])
     .filter((d) => d.diffType === 'removed')
-    .map((d) => ({ id: d.documentId, name: d.name, diffType: d.diffType, changed: true })), [compareDocs])
+    .map((d) => ({ id: d.documentId, name: d.name, process: d.process, diffType: d.diffType, changed: true })), [compareDocs])
   const treeRows: TreeRow[] = useMemo(() => {
     if (treeMode === 'diff') {
-      return (compareDocs?.documents ?? []).map((d) => ({ id: d.documentId, name: d.name, diffType: d.diffType, changed: true }))
+      return (compareDocs?.documents ?? []).map((d) => ({ id: d.documentId, name: d.name, process: d.process, diffType: d.diffType, changed: true }))
     }
     return [
       ...(allDocs ?? []).map((d) => ({
-        id: d.id, name: d.name,
+        id: d.id, name: d.name, process: d.process,
         diffType: changedById.get(d.id)?.diffType ?? 'unchanged',
         changed: changedSet.has(d.id),
       })),
@@ -449,11 +451,21 @@ export function ComparePage() {
               <div className="w-16 h-16 rounded-2xl bg-surface-container flex items-center justify-center mx-auto mb-5">
                 <Icon name="difference" size={32} className="text-on-surface-variant" />
               </div>
-              <h2 className="text-on-surface font-semibold text-lg mb-2">Select a document to compare</h2>
+              {/* Nothing changed (or nothing to compare against) says so; it pointed at "a
+                  changed document below" with nothing below. */}
+              <h2 className="text-on-surface font-semibold text-lg mb-2">
+                {!baselineRef ? 'Nothing to compare yet'
+                  : compareDocs && compareDocs.documents.length === 0 ? 'No changes between these versions'
+                    : 'Select a document to compare'}
+              </h2>
               <p className="text-on-surface-variant text-xs mb-1">
                 Reference <span className="font-mono text-outline">{baselineShort}</span> → Current <span className="font-mono text-on-tertiary-container">{currentBranch} @ {currentShort}</span>
               </p>
-              <p className="text-outline text-xs mb-8">Pick a document from the left panel, or a changed document below.</p>
+              <p className="text-outline text-xs mb-8">
+                {!baselineRef ? 'This project has one version. Run analysis on another commit to compare the two.'
+                  : compareDocs && compareDocs.documents.length === 0 ? 'Every document is the same in both. Pick one on the left to read it.'
+                    : 'Pick a document from the left panel, or a changed document below.'}
+              </p>
               <div className="text-left space-y-2">
                 {(compareDocs?.documents ?? []).map((d) => (
                   <button
@@ -463,6 +475,7 @@ export function ComparePage() {
                   >
                     <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', DIFF_BADGE[d.diffType].dot)} aria-hidden />
                     <span className="text-on-surface text-sm flex-1 truncate">{d.name}</span>
+                    <span className="font-mono text-label text-outline flex-shrink-0">{d.process}</span>
                     <span className={cn('px-1.5 py-0.5 rounded font-mono text-caption', DIFF_BADGE[d.diffType].cls)}>{DIFF_BADGE[d.diffType].label}</span>
                   </button>
                 ))}
