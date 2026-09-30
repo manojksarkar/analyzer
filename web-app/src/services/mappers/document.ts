@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type {
   Document, DocStats, DocStatus, DocumentDetail, SectionReviewState,
   RichDocument, RichSection, RichSectionType, TocEntry, DocCover, DocMeta,
-  FlowchartTableData, BehaviorTableData, TestSpecData, TestSummary,
+  FlowchartEntry, FlowchartTableData, BehaviorTableData, TestSpecData, TestSummary,
 } from '../../types'
 import { formatShortDate, avatarPalette } from '../../lib/format'
 import { API_BASE_URL } from '../../lib/http'
@@ -84,11 +84,18 @@ export function mapDocumentDetail(
 
 /* ── Rich render payload ── */
 
+// One flowchart's SVG, or why there is none. The DOT is not sent (a document can hold 500+).
+// `status` is a plain string so an unknown one degrades to "missing" rather than failing the
+// whole document's parse; an API from before SVGs sends none of these but `image_url`.
 const ApiFlowchartSchema = z.object({
-  image_url: z.string().nullable().optional(),
-  mermaid: z.string().nullable().optional(),
   label: z.string(),
+  status: z.string().optional(),
+  image_url: z.string().nullable().optional(),
+  width: z.number().nullable().optional(),
+  height: z.number().nullable().optional(),
+  boxes: z.number().optional(),
 })
+type ApiFlowchart = z.infer<typeof ApiFlowchartSchema>
 
 const ApiFlowchartTableSchema = z.object({
   description: z.string(),
@@ -194,17 +201,25 @@ function mapTestSpec(t: ApiTestSpec): TestSpecData {
   }
 }
 
+export function mapFlowchart(fc: ApiFlowchart): FlowchartEntry {
+  const imageUrl = resolveAssetUrl(fc.image_url)
+  return {
+    label: fc.label ?? '',
+    status: fc.status === 'too_large' ? 'too_large' : imageUrl ? 'drawn' : 'missing',
+    imageUrl: fc.status === 'too_large' ? null : imageUrl,
+    width: fc.width ?? null,
+    height: fc.height ?? null,
+    boxes: fc.boxes ?? 0,
+  }
+}
+
 function mapRichSection(s: ApiRichSection): RichSection {
   let flowchartTable: FlowchartTableData | null = null
   if (s.flowchart_table) {
     const ft = s.flowchart_table
     flowchartTable = {
       description: ft.description,
-      flowcharts: (ft.flowcharts ?? []).map((fc) => ({
-        imageUrl: resolveAssetUrl(fc.image_url),
-        mermaid: fc.mermaid ?? null,
-        label: fc.label ?? '',
-      })),
+      flowcharts: (ft.flowcharts ?? []).map(mapFlowchart),
       risk: ft.risk,
       capacity: ft.capacity,
       inputName: ft.input_name,

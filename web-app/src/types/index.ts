@@ -222,10 +222,22 @@ export interface RichTable {
   rows: string[][]
 }
 
+/** Whether a flowchart has a picture: `too_large` is over the engine's box limit, `missing`
+ *  was not drawn for this run (an older run, or drawing failed). */
+export type FlowchartStatus = 'drawn' | 'too_large' | 'missing'
+
+/** One flowchart in a function's table: an SVG the engine draws on every run. */
 export interface FlowchartEntry {
-  imageUrl: string | null
-  mermaid: string | null
+  /** The function's signature. */
   label: string
+  status: FlowchartStatus
+  /** The SVG, when drawn. */
+  imageUrl: string | null
+  /** Natural size in CSS px, when known: the page reserves it before the image loads. */
+  width: number | null
+  height: number | null
+  /** Boxes in the chart (0 when the API did not say). */
+  boxes: number
 }
 
 export interface FlowchartTableData {

@@ -1,0 +1,43 @@
+import { describe, expect, it } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { FlowchartFigure } from '../components/FlowchartFigure'
+import type { FlowchartEntry } from '../../../types'
+
+const drawn: FlowchartEntry = {
+  label: 'int add(int a, int b)', status: 'drawn', imageUrl: 'http://api/x/Math_add.svg',
+  width: 400, height: 200, boxes: 7,
+}
+
+describe('FlowchartFigure', () => {
+  it('shows a drawn chart as a lazy image in space reserved from its size', () => {
+    render(<FlowchartFigure chart={drawn} />)
+    const img = screen.getByRole('img', { name: 'Flowchart of int add(int a, int b)' })
+    expect(img).toHaveAttribute('src', 'http://api/x/Math_add.svg')
+    expect(img).toHaveAttribute('loading', 'lazy')
+    expect(img).toHaveAttribute('width', '400')
+    expect(img).toHaveAttribute('height', '200')
+  })
+
+  it('opens the chart full screen', async () => {
+    render(<FlowchartFigure chart={drawn} />)
+    await userEvent.click(screen.getByRole('button', { name: /open the flowchart of int add/i }))
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveTextContent('int add(int a, int b)')
+    expect(dialog).toHaveTextContent('7 boxes')
+    expect(screen.getByRole('button', { name: 'Zoom in' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Fit' })).toBeInTheDocument()
+  })
+
+  it('says a chart over the limit is too large, with no image', () => {
+    render(<FlowchartFigure chart={{ ...drawn, status: 'too_large', imageUrl: null, boxes: 612 }} />)
+    expect(screen.getByText('Too large to draw (612 boxes)')).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: /flowchart of/i })).toBeNull()
+  })
+
+  it('says a chart without a picture was not drawn for this run -- never shows its source', () => {
+    render(<FlowchartFigure chart={{ ...drawn, status: 'missing', imageUrl: null }} />)
+    expect(screen.getByText('Flowchart not drawn for this run')).toBeInTheDocument()
+    expect(screen.queryByText(/digraph/)).toBeNull()
+  })
+})

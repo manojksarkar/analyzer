@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { API_BASE_URL } from '../../../lib/http'
 import {
-  ApiDocumentDetailSchema, mapDocument, mapDocumentDetail, resolveAssetUrl,
+  ApiDocumentDetailSchema, ApiRichDocumentSchema, mapDocument, mapDocumentDetail, mapFlowchart, resolveAssetUrl,
   type ApiDocumentDetail,
 } from '../document'
 
@@ -71,5 +71,46 @@ describe('ApiDocumentDetailSchema', () => {
       created_at: '2026-06-01T00:00:00Z', updated_at: '2026-06-01T00:00:00Z',
     }
     expect(ApiDocumentDetailSchema.safeParse(noSections).success).toBe(true)
+  })
+})
+
+describe('mapFlowchart (one flowchart SVG in a function table)', () => {
+  it('maps a drawn chart: its SVG under the API base, its size and box count', () => {
+    const fc = mapFlowchart({
+      label: 'int add(int a)', status: 'drawn', image_url: 'projects/p1/documents/d1/assets/flowcharts/Math_add.svg',
+      width: 400, height: 200, boxes: 7,
+    })
+    expect(fc).toEqual({
+      label: 'int add(int a)', status: 'drawn',
+      imageUrl: `${API_BASE_URL}/projects/p1/documents/d1/assets/flowcharts/Math_add.svg`,
+      width: 400, height: 200, boxes: 7,
+    })
+  })
+  it('keeps too_large with no image', () => {
+    const fc = mapFlowchart({ label: 'f()', status: 'too_large', image_url: null, boxes: 612 })
+    expect(fc.status).toBe('too_large')
+    expect(fc.imageUrl).toBeNull()
+    expect(fc.boxes).toBe(612)
+  })
+  it('is missing when there is no picture, whatever the status says', () => {
+    expect(mapFlowchart({ label: 'f()', status: 'drawn', image_url: null }).status).toBe('missing')
+    expect(mapFlowchart({ label: 'f()', status: 'something-new' }).status).toBe('missing')
+  })
+  it('reads an API from before SVGs: a picture is drawn, the DOT is ignored', () => {
+    const old = ApiRichDocumentSchema.shape.sections.element
+    const section = old.parse({
+      id: 's', number: '1', title: 'T', level: 4, type: 'flowchart_table', content: null, table: null,
+      children: [],
+      flowchart_table: {
+        description: 'd', risk: 'r', capacity: 'c', input_name: 'i', output_name: 'o',
+        flowcharts: [
+          { label: 'a()', image_url: 'x/a.png', mermaid: null },
+          { label: 'b()', image_url: null, mermaid: 'digraph G { N1; }' },
+        ],
+      },
+    })
+    const flowcharts = section.flowchart_table!.flowcharts.map(mapFlowchart)
+    expect(flowcharts.map((f) => f.status)).toEqual(['drawn', 'missing'])
+    expect(flowcharts[0]).toMatchObject({ width: null, height: null, boxes: 0 })
   })
 })

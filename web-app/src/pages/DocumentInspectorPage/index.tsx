@@ -13,6 +13,7 @@ import { Card, Icon, Skeleton, Text } from '../../components/ui'
 import { cn } from '../../lib/cn'
 import type { DocSection, SectionReviewState, RichSection, RichTable, DocMeta, TeamMember, FlowchartTableData, BehaviorTableData } from '../../types'
 import { Swe4Body, Swe4Strip } from './components/Swe4Reader'
+import { FlowchartFigure } from './components/FlowchartFigure'
 
 /* review_state → outline/tracker icon */
 const SECTION_STATE: Record<SectionReviewState, { icon: string; cls: string }> = {
@@ -370,7 +371,7 @@ function DiagramView({ section }: { section: RichSection }) {
   )
 }
 
-/* ── Flowchart table (5-row layout mirroring docx_exporter flowchart table) ── */
+/* ── Flowchart table (5-row layout mirroring docx_exporter flowchart table); each flowchart is an SVG ── */
 function FlowchartTableView({ data }: { data: FlowchartTableData }) {
   return (
     <div className="overflow-x-auto border border-outline-variant rounded-lg">
@@ -383,11 +384,7 @@ function FlowchartTableView({ data }: { data: FlowchartTableData }) {
               {data.flowcharts.map((fc, i) => (
                 <div key={i} className={i > 0 ? 'mt-4' : ''}>
                   {fc.label && <p className="font-mono text-caption text-on-surface-variant mb-1">{fc.label}</p>}
-                  {fc.imageUrl ? (
-                    <img src={fc.imageUrl} alt={fc.label} loading="lazy" className="block max-h-[400px] object-contain" />
-                  ) : fc.mermaid ? (
-                    <pre className="bg-surface-container-low border border-outline-variant rounded p-2 font-mono text-label overflow-x-auto whitespace-pre">{fc.mermaid}</pre>
-                  ) : null}
+                  <FlowchartFigure chart={fc} />
                 </div>
               ))}
             </td>
