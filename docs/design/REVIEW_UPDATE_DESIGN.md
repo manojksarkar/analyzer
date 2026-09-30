@@ -638,7 +638,7 @@ Before Phase 4 runs — in `cmd_reexport` and in the API's export path — for t
 exported:
 
 ```
-for every correction in this version:
+for every correction in force in this version (orphans are never printed, so never asked about):
     for every view its text reaches (derive.views_for) that those documents print:
         that view's derivation for the correction's component is older  =>  stale
 OR a picture is still being drawn, and a document being exported embeds flowcharts
@@ -687,6 +687,11 @@ Merging at capture instead of replacing would vouch for rows that no longer carr
 
 **Absence of evidence counts as stale.** Corrections with no derivation row at all is not proof of
 freshness. A guard that reads "no data" as "fine" is the guard that does not guard.
+
+**An orphan is not asked about.** It is never applied (`REQ-ID-03`), so no view is behind it. Until
+2026-09-30 the guard read every row: a version whose only corrections were orphans — a component
+renamed, say — was stale for ever, because no derivation is ever recorded for a component that no
+longer exists, and no re-export could clear it.
 
 Without this guard an export-only run ships the previous text, silently. Moving output into the
 database does not fix it: it is still the row Phase 3 wrote last time.
