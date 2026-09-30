@@ -21,6 +21,7 @@ When no live output exists for a group, the caller (routes/documents.py)
 falls back to a synthesised payload built from stored section bodies.
 """
 from __future__ import annotations
+import hashlib
 import json
 import re as _re
 from pathlib import Path
@@ -355,66 +356,50 @@ def _load_flowcharts_from_dir(flowcharts_dir: Path) -> dict:
     return result
 
 
-def _resolve_flowchart_pngs(group_dir: Path, base_stems: list[str]) -> list[tuple[str, str]]:
-    """Return per-image [(rel_png_path, part_label)] for the first base stem that resolves.
+def _flowchart_svg():
+    """engine/core/flowchart_svg: the file name, box count and size limit the engine draws
+    flowchart SVGs by -- one definition, so the web render never disagrees with the files."""
+    import sys
+    eng = str(_REPO_ROOT / "engine")
+    if eng not in sys.path:
+        sys.path.insert(0, eng)
+    from core import flowchart_svg
+    return flowchart_svg
 
-    Mirrors src/docx_exporter.py::_resolve_flowchart_pngs: sliced parts produced by
-    views/flowcharts.py ({stem}_part_K_of_N.png, sorted by K) take precedence over the
-    single {stem}.png (the original is deleted once slicing happens). Returned paths are
-    relative to group_dir (e.g. "flowcharts/<name>"). ``part_label`` is "Part K of N" for
-    a slice and "" for a single image. Empty list when nothing resolves.
+
+def _find_flowchart(flowcharts_map: dict, unit_keys: tuple, func_keys: tuple):
+    """(dot, unit_key, func_key) for the first unit/function spelling the map has, else None.
+    Which spelling matched names the picture: the engine calls it <unit_key>_<func_key>.svg."""
+    for func_key in func_keys:
+        for unit_key in unit_keys:
+            dot = (flowcharts_map.get(unit_key) or {}).get(func_key) if unit_key and func_key else None
+            if dot:
+                return dot, unit_key, func_key
+    return None
+
+
+def _flowchart_entry(group_dir: Path, found: tuple, label: str, asset_base: str) -> dict:
+    """One flowchart in a function's table: its SVG, drawn by views/flowcharts on every run.
+
+    The DOT itself is not sent -- a document can hold 500+ of them, some huge. The reader gets
+    what it needs before the image loads: the size to reserve, the box count, and, with no
+    picture, why not ("too_large" over the engine's limit, else "missing": not drawn for this
+    run, or drawn from another DOT). ``source_hash`` lets Compare see a flowchart change.
     """
-    fdir = group_dir / "flowcharts"
-    if not fdir.is_dir():
-        return []
-    try:
-        names = [p.name for p in fdir.iterdir()]
-    except OSError:
-        return []
-    for stem in base_stems:
-        if not stem:
-            continue
-        part_re = _re.compile(
-            r"^" + _re.escape(stem) + r"_part_(\d+)_of_(\d+)\.png$", _re.IGNORECASE
-        )
-        parts: list[tuple[int, int, str]] = []
-        for name in names:
-            m = part_re.match(name)
-            if m:
-                parts.append((int(m.group(1)), int(m.group(2)), name))
-        if parts:
-            parts.sort(key=lambda t: t[0])
-            return [(f"flowcharts/{p[2]}", f"Part {p[0]} of {p[1]}") for p in parts]
-        single = f"{stem}.png"
-        if (fdir / single).is_file():
-            return [(f"flowcharts/{single}", "")]
-    return []
-
-
-def _flowchart_entries(group_dir: Path, base_stems: list[str], mermaid: str,
-                       label: str, asset_base: str) -> list[dict]:
-    """Build one flowchart-table entry per resolved PNG (slice-aware).
-
-    Mirrors src/docx_exporter.py::_append_flowchart_entries. The first entry carries the
-    full ``label`` (plus " - Part K of N" when sliced) and the mermaid text; continuation
-    slices carry "(continued - Part K of N)" and no mermaid. When no PNG resolves, returns
-    a single entry with image_url=None so the frontend's mermaid fallback still renders.
-    """
-    resolved = _resolve_flowchart_pngs(group_dir, base_stems)
-    if not resolved:
-        return [{"image_url": None, "mermaid": mermaid, "label": label}]
-    entries: list[dict] = []
-    for k, (rel, part_label) in enumerate(resolved):
-        if part_label:
-            combined = f"{label} - {part_label}" if k == 0 else f"(continued - {part_label})"
-        else:
-            combined = label
-        entries.append({
-            "image_url": f"{asset_base}/{rel}",
-            "mermaid": mermaid if k == 0 else None,
-            "label": combined,
-        })
-    return entries
+    dot, unit_key, func_key = found
+    fs = _flowchart_svg()
+    boxes = fs.count_dot_boxes(dot)
+    entry = {"label": label, "boxes": boxes, "image_url": None, "width": None, "height": None,
+             "source_hash": hashlib.sha256(dot.encode("utf-8")).hexdigest()[:16]}
+    if boxes > fs.FLOWCHART_SVG_MAX_BOXES:
+        return {**entry, "status": "too_large"}
+    name = fs.svg_file_name(unit_key, func_key)
+    path = group_dir / "flowcharts" / name
+    size = fs.svg_size_px(path) if fs.svg_file_key(path) == fs.svg_content_key(dot) else None
+    if not size:
+        return {**entry, "status": "missing"}
+    return {**entry, "status": "drawn", "image_url": f"{asset_base}/flowcharts/{name}",
+            "width": size[0], "height": size[1]}
 
 
 def _load_behavior_diagrams(group_dir: Path, output_reader=None) -> dict:
@@ -793,29 +778,19 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                 # qualifiedName (flowchart/output/writer.py), so try that FIRST — looking up by
                 # short name alone meant class methods never resolved and silently rendered
                 # without a flowchart here, unlike the DOCX.
-                fc_mermaid = (
-                    flowcharts_map.get(unit_prefix, {}).get(func_qn)
-                    or flowcharts_map.get(unit_name_fc, {}).get(func_qn)
-                    or flowcharts_map.get(unit_prefix, {}).get(func_name)
-                    or flowcharts_map.get(unit_name_fc, {}).get(func_name)
-                )
+                found = _find_flowchart(flowcharts_map, (unit_prefix, unit_name_fc),
+                                        (func_qn, func_name))
                 flowchart_entries: list[dict] = []
 
-                if fc_mermaid:
-                    safe_qn = _safe_fn(func_qn)
-                    safe = _safe_fn(func_name)
+                if found:
                     params = iface.get("parameters") or []
                     params_str = ", ".join(
                         f"{p.get('type', '')} {p.get('name', '')}".strip() for p in params
                     )
                     ret = iface.get("returnType", "") or ""
                     signature = f"{ret} {func_display}({params_str})".strip()
-                    flowchart_entries.extend(_flowchart_entries(
-                        group_dir,
-                        [f"{unit_prefix}_{safe_qn}", f"{unit_name_fc}_{safe_qn}",
-                         f"{unit_prefix}_{safe}", f"{unit_name_fc}_{safe}"],
-                        fc_mermaid, signature, asset_base,
-                    ))
+                    flowchart_entries.append(
+                        _flowchart_entry(group_dir, found, signature, asset_base))
 
                 # Private callee flowcharts (mirrors docx_exporter)
                 fid = iface.get("functionId")
@@ -835,30 +810,20 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                         c_unit_key = KEY_SEP.join(callee_parts[:2]) if len(callee_parts) >= 2 else ""
                         c_prefix = c_unit_key.replace(KEY_SEP, "_").replace(" ", "_")
                         c_unit_name = callee_parts[1] if len(callee_parts) > 1 else ""
-                        callee_fc = (
-                            flowcharts_map.get(c_prefix, {}).get(callee_qn)
-                            or flowcharts_map.get(c_unit_name, {}).get(callee_qn)
-                            or flowcharts_map.get(c_prefix, {}).get(callee_fn)
-                            or flowcharts_map.get(c_unit_name, {}).get(callee_fn)
-                        )
-                        if not callee_fc:
+                        callee_found = _find_flowchart(flowcharts_map, (c_prefix, c_unit_name),
+                                                       (callee_qn, callee_fn))
+                        if not callee_found:
                             continue
                         rendered_private_fids.add(callee_fid)
                         callee_display = scoped_name(callee_qn, callee.get("className", ""))
-                        csafe_qn = _safe_fn(callee_qn)
-                        csafe = _safe_fn(callee_fn)
                         callee_params = callee.get("params") or callee.get("parameters") or []
                         cparams_str = ", ".join(
                             f"{p.get('type', '')} {p.get('name', '')}".strip()
                             for p in callee_params
                         )
                         callee_sig = f"{callee.get('returnType', '')} {callee_display}({cparams_str})".strip()
-                        flowchart_entries.extend(_flowchart_entries(
-                            group_dir,
-                            [f"{c_prefix}_{csafe_qn}", f"{c_unit_name}_{csafe_qn}",
-                             f"{c_prefix}_{csafe}", f"{c_unit_name}_{csafe}"],
-                            callee_fc, callee_sig, asset_base,
-                        ))
+                        flowchart_entries.append(
+                            _flowchart_entry(group_dir, callee_found, callee_sig, asset_base))
 
                 # Input / output names (mirrors docx_exporter)
                 fn_data = (functions_data.get(fid) or {}) if fid else {}

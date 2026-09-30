@@ -133,9 +133,12 @@ def _section_blocks(sec: dict) -> list[dict]:
         if ft.get("description"):
             blocks.append({"kind": "text", "text": str(ft["description"])})
         for fc in ft.get("flowcharts") or []:
+            # The render carries a flowchart's picture, not its DOT (a document can hold 500+),
+            # so the DOT's hash is what tells a changed flowchart from an unchanged one.
             blocks.append({"kind": "diagram",
                            "image_url": fc.get("image_url"),
-                           "mermaid": fc.get("mermaid"),
+                           "mermaid": None,
+                           "source_hash": fc.get("source_hash"),
                            "caption": fc.get("label")})
         for label, key in _KV_FIELDS:
             blocks.append({"kind": "keyvalue", "label": label,
@@ -173,8 +176,13 @@ def _block_fingerprint(blocks: list[dict]) -> str:
         elif k == "table":
             parts.append("B:" + repr(b["headers"]) + repr(b["rows"]))
         elif k == "diagram":
-            parts.append("D:" + (b.get("mermaid") or "") + "|" + (b.get("caption") or ""))
+            parts.append("D:" + _diagram_source(b) + "|" + (b.get("caption") or ""))
     return "\n".join(parts)
+
+
+def _diagram_source(block: dict) -> str:
+    """What a diagram is drawn from: its mermaid text, or a flowchart's DOT hash."""
+    return block.get("mermaid") or block.get("source_hash") or ""
 
 
 # ---------------------------------------------------------------------------
@@ -300,7 +308,7 @@ def _diff_block_pair(cur: Optional[dict], base: Optional[dict]) -> tuple[Optiona
     if k == "table":
         return _diff_table(cur, base)
     if k == "diagram":
-        changed = (cur.get("mermaid") or "") != (base.get("mermaid") or "")
+        changed = _diagram_source(cur) != _diagram_source(base)
         return ({"kind": "diagram", "image_url": cur.get("image_url"),
                  "mermaid": cur.get("mermaid"), "caption": cur.get("caption"),
                  "changed": changed},

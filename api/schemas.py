@@ -391,17 +391,38 @@ class TocEntry(BaseModel):
     level: int
 
 
+class RenderFlowchart(BaseModel):
+    """One flowchart picture (an SVG) in a function's table. The DOT is not sent."""
+    label: str                             # the function's signature
+    status: str                            # "drawn" | "too_large" | "missing"
+    image_url: Optional[str] = None        # asset path of the SVG, when drawn
+    width: Optional[int] = None            # CSS px, when drawn
+    height: Optional[int] = None
+    boxes: int                             # nodes in the chart
+    source_hash: str                       # short hash of the DOT (Compare's change check)
+
+
+class RenderFlowchartTable(BaseModel):
+    description: str
+    flowcharts: List[RenderFlowchart]
+    risk: str
+    capacity: str
+    input_name: str
+    output_name: str
+
+
 class RenderSection(BaseModel):
     id: str
     number: str
     title: str
     level: int
-    type: str                              # "richtext" | "table" | "diagram"
+    type: str                              # "richtext" | "table" | "diagram" | "flowchart_table" | …
     content: Optional[str] = None
     table: Optional[TableData] = None
     # Present only on fixture-backed ("pipeline") diagram sections:
     image_url: Optional[str] = None
     mermaid: Optional[str] = None
+    flowchart_table: Optional[RenderFlowchartTable] = None
     children: List["RenderSection"] = []
 
 

@@ -336,7 +336,7 @@ def document_asset(
     asset_path: str,
     db: InMemoryDatabase = Depends(get_db),
 ):
-    """Stream a diagram file (PNG/MMD) from the document's live pipeline output.
+    """Stream a diagram file (PNG/SVG/MMD) from the document's live pipeline output.
 
     Intentionally unauthenticated so ``<img>`` tags can load diagrams directly."""
     doc = db.documents.get(doc_id)
@@ -347,6 +347,14 @@ def document_asset(
     target = doc_render.resolve_asset(doc.group, asset_path, out_root)
     if target is None:
         raise not_found("Asset", asset_path)
+    if target.suffix.lower() == ".svg":
+        # Named explicitly: an <img> shows an SVG only as image/svg+xml, and the guess comes
+        # from the OS registry on Windows. And an SVG is a document too: opened on its own tab
+        # it could run script from this origin. Graphviz writes none; the policy keeps it so.
+        return FileResponse(target, media_type="image/svg+xml", headers={
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+            "X-Content-Type-Options": "nosniff",
+        })
     return FileResponse(target)
 
 
