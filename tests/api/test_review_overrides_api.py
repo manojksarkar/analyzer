@@ -400,6 +400,63 @@ class TestBehaviourRow:
         assert r.status_code == 422
 
 
+class TestANulCharacterIsRefused:
+    """PostgreSQL cannot store U+0000 in text or JSONB: a save carrying one died there as a 500.
+    SQLite -- every test here -- stored it, and the model and the DOCX carried it. Each save
+    refuses it at the request, with a 422 whose `loc` names the field, and stores nothing."""
+
+    CASES = {
+        "r3 text": ("/overrides/slot", {"slot_kind": "description", "slot_key": FID,
+                                        "text": "Starts the pump\u0000."}, ["body", "text"]),
+        "r3 key": ("/overrides/slot", {"slot_kind": "description", "slot_key": FID + "\u0000",
+                                       "text": "Words."}, ["body", "slot_key"]),
+        "r6 bullet": ("/overrides/behaviour",
+                      {"function_id": FID, "external_caller_id": CALLER,
+                       "bullets": ["start calls doThing", "\u0000"]}, ["body", "bullets", 1]),
+        "r6 function": ("/overrides/behaviour",
+                        {"function_id": FID + "\u0000", "external_caller_id": CALLER,
+                         "bullets": ["x"]}, ["body", "function_id"]),
+        "r6 caller": ("/overrides/behaviour",
+                      {"function_id": FID, "external_caller_id": "\u0000" + CALLER,
+                       "bullets": ["x"]}, ["body", "external_caller_id"]),
+        "r8 label": (LABELS, {"flowchart_id": FID, "labels": {"n1": "Check\u0000 it"}},
+                     ["body", "labels", "n1"]),
+        "r8 node id": (LABELS, {"flowchart_id": FID, "labels": {"n1\u0000": "Check it"}},
+                       ["body", "labels", "n1\u0000", "[key]"]),
+        "r8 flowchart": (LABELS, {"flowchart_id": FID + "\u0000", "labels": {"n1": "Check it"}},
+                         ["body", "flowchart_id"]),
+    }
+
+    @staticmethod
+    def _stored(engine):
+        from core import model_store
+        with engine.connect() as cx:
+            return (cx.execute(select(s.text_overrides.c.slot_key)).fetchall(),
+                    model_store.load_functions(cx, VERSION),
+                    sorted(cx.execute(select(s.version_output_files.c.rel_path,
+                                             s.version_output_files.c.content)).fetchall()))
+
+    @pytest.mark.parametrize("case", sorted(CASES))
+    def test_it_is_422_naming_the_field_and_nothing_is_stored(self, client, review_db,
+                                                              auth_header, case):
+        path, body, loc = self.CASES[case]
+        before = self._stored(review_db)
+        r = client.put(BASE + path, headers=auth_header, json=body)
+        assert r.status_code == 422, r.text
+        assert [e["loc"] for e in r.json()["detail"]] == [loc]
+        assert "NUL" in r.json()["detail"][0]["msg"]
+        after = self._stored(review_db)
+        assert after == before
+        assert after[0] == [], "a text_overrides row was written"
+
+    def test_the_same_save_without_it_lands(self, client, review_db, auth_header):
+        """The refusal is the character, not the field: the case above minus the NUL saves."""
+        r = client.put(BASE + "/overrides/slot", headers=auth_header,
+                       json={"slot_kind": "description", "slot_key": FID,
+                             "text": "Starts the pump."})
+        assert r.status_code == 200, r.text
+
+
 class TestUndoAndHistory:
     def test_undo_restores_the_original_and_keeps_the_record(self, client, review_db,
                                                              auth_header):

@@ -22,10 +22,10 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
 
 from ..db.in_memory import InMemoryDatabase
 from ..db.session import get_db
@@ -62,18 +62,34 @@ SlotKind = _slot_kind_enum()
 # ---------------------------------------------------------------------------
 # bodies
 # ---------------------------------------------------------------------------
+def _no_nul(value: str) -> str:
+    """Refuse U+0000 in anything a save stores.
+
+    PostgreSQL cannot store it in text or JSONB, so a save carrying one died there as a 500. SQLite
+    stores it, so on SQLite -- every unit test -- it reached the model and the DOCX. Refused here,
+    before anything is written, as a 422 whose `loc` names the field.
+    """
+    if "\x00" in value:
+        raise ValueError("must not contain the NUL character (\\u0000)")
+    return value
+
+
+#: Every text, label, bullet and id a save (R3, R6, R8) takes.
+NoNulStr = Annotated[str, AfterValidator(_no_nul)]
+
+
 class UpdateSlotRequest(BaseModel):
     slot_kind: SlotKind = Field(
         ..., description="which kind of text this is. nodeLabel -> R8, behaviourDescription -> R6")
-    slot_key: str = Field(..., description="from review.slot; never built by hand")
-    text: str
+    slot_key: NoNulStr = Field(..., description="from review.slot; never built by hand")
+    text: NoNulStr
 
 
 class UpdateFlowchartRequest(BaseModel):
-    flowchart_id: str = Field(
+    flowchart_id: NoNulStr = Field(
         ..., description="the flowchart's function id — `flowchartId` from R11 or R7; never "
                          "built by hand")
-    labels: Dict[str, str] = Field(
+    labels: Dict[NoNulStr, NoNulStr] = Field(
         ..., description="{nodeId: new text} — ONLY the labels the reviewer changed. "
                          "Node ids come from R7's `labels[].nodeId`.")
 
@@ -85,9 +101,9 @@ class UpdateFlowchartRequest(BaseModel):
 
 
 class UpdateBehaviourRequest(BaseModel):
-    function_id: str
-    external_caller_id: str
-    bullets: List[str]
+    function_id: NoNulStr
+    external_caller_id: NoNulStr
+    bullets: List[NoNulStr]
 
 
 # ---------------------------------------------------------------------------
