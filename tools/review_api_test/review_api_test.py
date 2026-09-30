@@ -889,6 +889,30 @@ class ReviewApiTest:
         for name, method, path, kwargs, code in cases:
             r = self.api.call(method, self.V(path), **kwargs)
             self.c.check(name, r.status_code == code, (r.status_code, short(r.text)))
+
+        # A NUL character: PostgreSQL cannot store one in text or JSONB, so a save carrying it
+        # was a 500 there -- and SQLite stored it. Each save refuses it (422) and stores nothing.
+        nul = []
+        if text_t:
+            nul.append(("R3 with a NUL character in the text", text_t, "/overrides/slot",
+                        {"slot_kind": text_t["kind"], "slot_key": text_t["key"],
+                         "text": "API test %s NUL \u0000 here" % self.marker}))
+        if beh_t:
+            nul.append(("R6 with a NUL character in a bullet", beh_t, "/overrides/behaviour",
+                        {"function_id": beh_t["functionId"],
+                         "external_caller_id": beh_t["externalCallerId"],
+                         "bullets": ["API test %s NUL \u0000 here" % self.marker]}))
+        if node_t:
+            nul.append(("R8 with a NUL character in a label", node_t, "/flowcharts/labels",
+                        {"flowchart_id": node_t["flowchartId"],
+                         "labels": {node_t["nodeId"]: "%sNUL\u0000" % self.marker}}))
+        for name, t, path, body in nul:
+            before = body_of(self.read(t))
+            r = self.api.call("PUT", self.V(path), json=body)
+            after = body_of(self.read(t))
+            self.c.check(name + " is 422 and saves nothing",
+                         r.status_code == 422 and after == before, (r.status_code, short(r.text)))
+
         r = self.api.call("GET", "/projects/%s/versions/verNOSUCH/overrides" % self.pid)
         self.c.check("a version that is not the project's is 404", r.status_code == 404,
                      (r.status_code, short(r.text)))
