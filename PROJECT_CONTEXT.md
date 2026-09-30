@@ -208,6 +208,51 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-30 (**SWE.4 in the web app, end to end; overnight test projects; round-1 UI review fixes.**
+> Branch `ui_v2`, local commits `bf65efc`..`c1c7fb7`, NOT pushed. Design = `docs/ui-mockups/documents.html`
+> (SWE.4 list/tree/reader). User decisions 2026-09-30: Table A shown as ROWS (the DOCX keeps columns); EVERY run
+> makes SWE.4 too (no checkbox).
+>
+> - **Runner** (`api/services/pipeline_runner.py`): `_generate_cmd` always passes `--doc-type all`.
+>   `_make_documents` registers, per component dir, SWE.3 "Detailed Design" and SWE.4 "Unit Test Specification",
+>   each only when its DOCX exists. `_make_sections`: SWE.4 gets 3 review sections keyed `intro` / `test_spec` /
+>   `metrics` = the render's section ids (tracker jumps). `doc_render.find_docx(group, root, process)` +
+>   `DOCX_PREFIX`; download sends the file's own name (a component's two docs share `doc.name`).
+> - **Render** (`api/services/swe4_render.py`, routed from `render_document` when `doc.process == "SWE.4"`): same
+>   `{cover, toc, sections, meta}` + `test_summary`, chapter for chapter as `engine/swe4_exporter.py`. A spec is a
+>   section of type `test_spec` carrying `test_spec` (structured: precondition lists, inputs, nested steps,
+>   expected results with their step numbers, `expected_note`) AND `table` (Table A's 6 + Table B's 8 DOCX cell
+>   texts). Reads `<group>/test_specs.json` through `OutputReader` (Postgres first). Cell texts reimplemented, held
+>   to the exporter by `tests/api/test_swe4_render_matches_docx.py` (exports a DOCX, compares headings + cells).
+> - **Compare**: `compare_engine._docs_by_group(..., process)` (keyed by group ALONE, SWE.4 silently replaced
+>   SWE.3); `_swe4_changes` compares normalised `test_specs.json`; DB fallback keyed `(process, group)`;
+>   `compare_render._version_render` builds SWE.4 via swe4_render; a `test_spec` section diffs as its table.
+>   `tests/api/test_compare_swe4.py`.
+> - **Web**: `lib/docTree.ts` `DOC_PROCESSES` + `PROCESS_TITLES` + `docxFileName()` (download names = engine file
+>   names). `DocumentInspectorPage/` is a folder; `components/Swe4Reader.tsx` (strip, flat headings, Table A rows,
+>   nested steps, result→step chips with hover highlight, Table B grid, a note when chapter 2 is empty).
+>   `Document.versionId` added: the reader's rail/labels follow the DOCUMENT's version, not the Subbar pick.
+>   Mapper test `services/mappers/__tests__/swe4.test.ts`.
+> - **Round-1 review fixes** (UI/UX/PM agents vs `docs/ui-mockups/`): documents table fixed layout (rows wrapped;
+>   actions col), "Generating documents" state, tree process titles, review tracker wraps, SWE.3/SWE.4 body 14px,
+>   sidebar tagline fits, queued run looks queued, Subbar chip spinner for a draft version, Versions pills +
+>   "Running", Compare process per row + "nothing to compare"/"no changes" states, breadcrumbs lead with the
+>   project and name the document, Overview keeps the last finished version's dashboard under a running run, Team
+>   Invite in the Subbar. Not done: empty Projects page hero layout; project list payload has no member initials.
+> - **Found (not changed):** `job_max_concurrency` default is **2** (`api/services/settings.py`), not the 1 the
+>   2026-08-14 status says; the model dir is per version (`workspaces/<pid>/versions/<ver>/model`), so parallel
+>   runs are safe for the model but overload this box: a run died at start on the doctor preflight ("node: found on
+>   PATH but failed to run", exit 2) and a whole-project parse on the 5 s DB connect timeout
+>   (`DATABASE_CONNECT_TIMEOUT=30` fixes it for that process). A whole-project LLM run on local Ollama took ~7.5 h
+>   (272 functions; flowchart node labels 20 s–2 min per function). Most sample components publish no function
+>   (per-unit publication), so their interface tables and SWE.4 specs are empty. OPEN: at `9d4dd0f` B v1.1
+>   (incremental on `3ee7fe0`) publishes no Math function while A (full) publishes `multiply` - a full B run
+>   ("v1.1-full") decides incremental miss vs config.
+> - **Test data (DB `analyzer_ui`)**: 4 projects by admin, team bob/carol/dave/eve, reviews in every state -
+>   All components (A, LLM, 50 docs), Two cores (B, v1.0 approved / v1.1 / v1.1-full), Partial scopes (C, v0.1 +
+>   v0.2), Imported config (D, made in the wizard from A's downloaded config). Servers: 8010 runs jobs (its code
+>   predates the SWE.4 render until restarted); 8011 current code; web 5180/5181 → 8011.)
+
 > Updated: 2026-09-29f (**Run Analysis: any mix of components, and Skip LLM, under Advanced options.** Branch
 > `ui_v2`. Asked: faster development runs; design settled in
 > `docs/ui-mockups/project-detail.html` (Run modal).

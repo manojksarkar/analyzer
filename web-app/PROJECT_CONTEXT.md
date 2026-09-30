@@ -119,7 +119,9 @@ All pages are designed as HTML mockups in `docs/ui-mockups/`. Build in React in 
 2. **Sign-in** — `signin.html`
 3. **Projects list** — `projects.html` + empty state / onboarding wizard (`projects-empty.html`)
 4. **Project detail / overview** — `project-detail.html` (covers KPIs, generation progress, run analysis, function visibility)
-5. **Documents** — `documents.html` (list view, filters, batch actions, edit modal)
+5. **Documents** — `documents.html` (list view, filters, batch actions, edit modal). Two readers: SWE.3 (rich
+   sections) and SWE.4 (`pages/DocumentInspectorPage/components/Swe4Reader.tsx`, `view-swe4` in the mockup; every
+   run makes both documents per component — root `PROJECT_CONTEXT.md` 2026-09-30)
 6. **Compare** — `compare.html` (split diff, review controls)
 7. **Versions** — `versions.html`
 8. **Team** — `team.html`
@@ -130,7 +132,7 @@ All pages are designed as HTML mockups in `docs/ui-mockups/`. Build in React in 
 
 | Decision | Status |
 |---|---|
-| Product name | TBD |
+| Product name | ArtiFex (locked) |
 | Versioning model | TBD — design for git-commit-tied first |
 | "Build Configuration" as final name | Proposed, not confirmed |
 | "Preprocessor Definitions" as final name | Proposed, not confirmed |
