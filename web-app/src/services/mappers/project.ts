@@ -11,7 +11,8 @@ export const ApiProjectSchema = z.object({
   doc_counts: z.record(z.string(), z.number()), team_count: z.number(), my_role: z.string().nullable(),
   repo_url: z.string(), default_branch: z.string().optional(),
   build_config: z.record(z.string(), z.unknown()).optional(),
-  architecture_layers: z.array(z.unknown()), created_at: z.string(), updated_at: z.string(),
+  // null for a project `analyzer.py onboard` wrote: the CLI records no created/updated time.
+  architecture_layers: z.array(z.unknown()), created_at: z.string().nullable(), updated_at: z.string().nullable(),
   // The project's cores and each layer's core; a project from before cores reads as one core.
   cores: z.array(z.object({
     name: z.string(), macros: z.string().nullable(), data_dictionary: z.string().nullable(),
