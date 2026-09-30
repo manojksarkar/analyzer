@@ -223,6 +223,24 @@
 > lowered (older → whole app unstyled). Caveat: lightningcss transformer = no PostCSS (none configured today;
 > a future PostCSS plugin would be silently ignored). Vitest unaffected (own `vitest.config.ts`, `css: false`).)
 
+> Updated: 2026-09-30d (**`tools/copy_changes.py` — copy this repo's changes into the office project,
+> deletions included.** Branch `integrate/ui-v5`, pushed. The real cause of "old UI at the office": the office
+> runs a DIFFERENT project folder, synced by `git diff --name-only <c> | xargs -I{} cp --parents {} <dst>` —
+> which never deletes, so the two pages moved into folders (`NewProjectPage.tsx`, `DocumentInspectorPage.tsx`
+> — the only 2 code deletions on `ui_v2` since develop `5542736`) stayed and Vite loaded them. The script:
+> `git diff --no-renames --name-status -z <from> HEAD` (a move = D + A); deletes first (then empty dirs,
+> `__pycache__`-only counts as empty), then copies (`shutil.copy` — fresh mtime); refuses files with
+> uncommitted changes unless `--uncommitted`; backs up everything overwritten/deleted to
+> `<dst>/.copy-changes-backup/<ts>/`; records `to` in `<dst>/.copy-changes.json` = next run's `--from`;
+> refuses a target with none of the diff's top-level dirs (`--force`); on EVERY run (also "nothing
+> changed") moves an old file that hides a folder to the backup when THIS repo no longer has it (reuses
+> `start_app.find_web_shadows`/`find_py_shadows`); prints next steps (npm install / pip / setup / restart)
+> from what changed. Verified: an archive of `575871a^` copied to HEAD is `diff -r`-identical to an archive
+> of HEAD; the office state (all new files + the 2 old pages, range empty) → both moved aside. NOTE:
+> `start-app`'s shadow advice is git-based and is WRONG in a copied-into git repo (old file tracked there,
+> new folder untracked → it says delete the folder); user chose not to change start-app — copy_changes
+> removes the cause.)
+
 > Updated: 2026-09-30c (**`start-app` — one command that starts the API + web app cleanly.** Branch `ui_v2`,
 > `66faa10` (+ this docs commit), pushed. Asked (office): "old UI is coming, I have all the new changes in code" → a script that
 > starts both and rules out every old-UI / old-API cause. Files: `tools/start_app.py`, `start-app.cmd`
