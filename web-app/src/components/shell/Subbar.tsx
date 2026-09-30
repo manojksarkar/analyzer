@@ -181,7 +181,12 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
         aria-haspopup="true"
         aria-expanded={open}
       >
-        <Icon name={chipHasVersion ? 'sell' : 'alt_route'} size={13} fill={chipHasVersion} className="text-on-tertiary-container flex-shrink-0" />
+        {activeVersion?.status === 'draft' ? (
+          // Still being generated: a spinner, not the green tag of a finished version (mockup).
+          <span className="animate-spin w-[11px] h-[11px] rounded-full border-[1.5px] border-secondary border-t-transparent flex-shrink-0" aria-label="Generating" />
+        ) : (
+          <Icon name={chipHasVersion ? 'sell' : 'alt_route'} size={13} fill={chipHasVersion} className="text-on-tertiary-container flex-shrink-0" />
+        )}
         <span className="text-on-surface font-semibold">{chipVersionTag ?? `${chipBranch} @ ${chipSha}`}</span>
         <Icon name="expand_more" size={13} className={cn('text-on-surface-variant flex-shrink-0 transition-transform', open && 'rotate-180')} />
       </button>

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useProject, useVersions, useCommits } from '../hooks/useProjects'
 import { useCreateVersion } from '../hooks/useVersionMutations'
+import { useCurrentJob } from '../hooks/useJobs'
 import { Card, Icon, Skeleton, Text, toast } from '../components/ui'
 import { cn } from '../lib/cn'
 import { useUIStore } from '../store/ui'
@@ -15,24 +16,35 @@ function accentColor(s: VersionStatus): string {
   return '#c4c6cd'
 }
 
-function StatusPill({ status }: { status: VersionStatus }) {
+// Mockup pill: 9px uppercase, as the CURRENT pill beside it.
+const PILL = 'inline-flex items-center gap-[3px] px-[7px] py-0 rounded-full font-mono text-micro font-bold uppercase tracking-[0.04em] border'
+
+function StatusPill({ status, running }: { status: VersionStatus; running?: boolean }) {
+  if (status === 'draft' && running) {
+    // The run that fills this version is going now: not "Not Run".
+    return (
+      <span className={cn(PILL, 'bg-surface-container text-secondary border-[#bfcfff]')}>
+        <span className="animate-spin inline-block w-[7px] h-[7px] rounded-full border border-secondary border-t-transparent" aria-hidden />Running
+      </span>
+    )
+  }
   if (status === 'draft') {
     // Reserved for a run that has not finished, or tagged without one: no documents yet.
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-mono text-label font-bold bg-[#f3f4f6] text-outline border border-[#e2e3e8]">
+      <span className={cn(PILL, 'bg-[#f3f4f6] text-outline border-[#e2e3e8]')}>
         <span className="inline-block w-1 h-1 rounded-full bg-outline" aria-hidden />Not Run
       </span>
     )
   }
   if (status === 'in_review') {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-mono text-label font-bold bg-[#fff8e6] text-[#b45309] border border-amber">
+      <span className={cn(PILL, 'bg-[#fff8e6] text-[#b45309] border-amber')}>
         <span className="inline-block w-1 h-1 rounded-full bg-amber" aria-hidden />In Review
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-mono text-label font-bold bg-[#f0fdf9] text-[#00a572] border border-[#86efac]">
+    <span className={cn(PILL, 'bg-[#f0fdf9] text-[#00a572] border-[#86efac]')}>
       <span className="inline-block w-1 h-1 rounded-full bg-[#00a572]" aria-hidden />Approved
     </span>
   )
@@ -46,6 +58,8 @@ export function VersionsPage() {
   const { data: project } = useProject(projectId ?? '')
   const { data: versions, isLoading: versionsLoading } = useVersions(projectId ?? '')
   const { data: commits, isLoading: commitsLoading } = useCommits(projectId ?? '')
+  const { data: job } = useCurrentJob(projectId ?? '')
+  const runningVersionId = job && ['queued', 'running', 'paused'].includes(job.status) ? job.versionId : null
 
   const isAdmin = project?.userRole === 'admin'
   const createVersion = useCreateVersion(projectId ?? '')
@@ -131,6 +145,7 @@ export function VersionsPage() {
             ) : (
               filtered.map((v, i, arr) => (
                 <VersionRow key={v.tag} v={v} isCurrent={i === 0 && filter === 'all'} last={i === arr.length - 1}
+                  running={!!v.id && v.id === runningVersionId}
                   onView={() => openVersion(v, 'documents')}
                   onCompare={() => openVersion(v, 'compare')} />
               ))
@@ -160,12 +175,12 @@ export function VersionsPage() {
                     {i < arr.length - 1 && <div className="w-0.5 flex-1 min-h-2.5 bg-[#e2e3e8] mt-[3px]" aria-hidden />}
                   </div>
                   <div className={cn('flex-1 min-w-0 pl-2.5 py-2.5', i < arr.length - 1 && 'border-b border-[#f3f4f6]')}>
-                    <div className="flex items-center gap-2.5 mb-1">
-                      <span className="font-mono text-label font-medium bg-[#f3f4f6] text-on-surface-variant px-1.5 py-px rounded-lg">{c.shortSha}</span>
-                      <Text variant="caption" className="text-outline">{c.relativeTime}</Text>
+                    {/* Mockup: SHA chip + one truncated line of message, then "author · time". */}
+                    <div className="flex items-center gap-2.5 mb-1 min-w-0">
+                      <span className="font-mono text-label font-medium bg-[#f3f4f6] text-on-surface-variant px-1.5 py-px rounded flex-shrink-0">{c.shortSha}</span>
+                      <Text as="p" variant="body" className="text-xs text-on-surface truncate" title={c.message}>{c.message}</Text>
                     </div>
-                    <Text as="p" variant="body" className="text-on-surface leading-[1.4]">{c.message}</Text>
-                    <Text as="p" variant="caption" className="text-outline mt-0.5">{c.author}</Text>
+                    <Text as="p" variant="caption" className="text-outline">{c.author} · {c.relativeTime}</Text>
                   </div>
                 </button>
               ))
@@ -178,9 +193,10 @@ export function VersionsPage() {
 }
 
 /* ── Single version row ── */
-function VersionRow({ v, isCurrent, onView, onCompare }: { v: Version; isCurrent: boolean; last: boolean; onView: () => void; onCompare: () => void }) {
+function VersionRow({ v, isCurrent, last, running, onView, onCompare }: { v: Version; isCurrent: boolean; last: boolean; running: boolean; onView: () => void; onCompare: () => void }) {
   return (
-    <div className="flex transition-colors hover:bg-[#f8f9ff] border-b border-outline-variant">
+    // The last row has no bottom border: the card's own edge closes it (it was doubled).
+    <div className={cn('flex transition-colors hover:bg-[#f8f9ff]', !last && 'border-b border-outline-variant')}>
       {/* dynamic status accent bar */}
       {/* eslint-disable-next-line no-restricted-syntax -- accent colour is data-driven */}
       <div className="w-1 flex-shrink-0" style={{ background: accentColor(v.status) }} aria-hidden />
@@ -189,14 +205,14 @@ function VersionRow({ v, isCurrent, onView, onCompare }: { v: Version; isCurrent
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
               <Text variant="title" className="font-mono font-bold text-on-surface">{v.tag}</Text>
-              <StatusPill status={v.status} />
+              <StatusPill status={v.status} running={running} />
               {isCurrent && (
                 <span className="uppercase font-mono text-micro font-bold bg-surface-container text-secondary border border-[#bfcfff] px-1.5 rounded-full tracking-[0.04em]">current</span>
               )}
             </div>
             <Text as="p" variant="body" className="text-on-surface-variant mb-2.5 leading-[1.5]">{v.description}</Text>
             <div className="flex items-center gap-2.5 flex-wrap">
-              <span className="font-mono text-label font-medium bg-[#f3f4f6] text-on-surface-variant px-1.5 py-px rounded-lg">{v.shortSha}</span>
+              <span className="font-mono text-label font-medium bg-[#f3f4f6] text-on-surface-variant px-1.5 py-px rounded">{v.shortSha}</span>
               <Text variant="caption" className="text-outline">{v.docsCount} docs</Text>
               <Text variant="caption" className="text-outline">·</Text>
               <Text variant="caption" className="text-outline">{v.date}</Text>
