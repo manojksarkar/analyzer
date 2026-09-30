@@ -15,10 +15,11 @@ Open it in a browser: VS Code's Markdown preview renders Mermaid at a fixed size
 ## Contents
 
 - [Connect](#connect)
-- [Five table groups](#five-table-groups)
+- [Six table groups](#six-table-groups)
 - [ER — model core](#er--model-core-the-one-that-matters-for-debugging)
 - [ER — runs, versions, documents](#er--runs-versions-documents)
 - [ER — access & inputs](#er--access--inputs)
+- [ER — review & update](#er--review--update)
 - [Conventions you need before querying](#conventions-you-need-before-querying)
 - [Query cookbook](#query-cookbook)
 - [Tables nothing writes](#tables-nothing-writes)
@@ -42,7 +43,7 @@ PGPASSWORD=analyzer "C:/Users/User/pgsql/bin/psql.exe" -h 127.0.0.1 -U analyzer 
 
 ---
 
-## Five table groups
+## Six table groups
 
 | Group | Tables | What it holds |
 |---|---|---|
@@ -51,6 +52,7 @@ PGPASSWORD=analyzer "C:/Users/User/pgsql/bin/psql.exe" -h 127.0.0.1 -U analyzer 
 | **Reuse / LLM** | `reuse_index` · `llm_description_cache` · `llm_call_stats` | Incremental reuse + LLM accounting |
 | **Documents** | `documents` · `document_sections` · `document_assignments` · `compare_results` · `document_diffs` · `job_functions` | The web app's document layer |
 | **Access** | `users` · `project_members` · `access_requests` · `notifications` · `data_dictionaries` · `data_dictionary_entries` | RBAC and project inputs |
+| **Review** | `text_overrides` · `text_override_history` · `regeneration_queue` · `render_jobs` · `view_derivations` | Reviewers' corrections to LLM-written text, and the work a correction queues |
 
 ---
 
@@ -178,6 +180,76 @@ erDiagram
 ```
 
 `organizations` was dropped (D-8) — `projects.org_id` is a plain free-text tenant tag, not a FK.
+`users.is_superuser` marks a user who may act on every project without a `project_members` row
+(migration 0014). It is `false` for everyone, the seeded `admin@aspice.dev` login included, until set
+on purpose: `python tools/grant_access.py --set-superuser --email <address>`.
+
+## ER — review & update
+
+A reviewer's correction replaces one LLM-written text — a **slot** — in one version.
+`slot_key` is built by `engine/review/slot.py` and nothing else; `human_text` is what the
+document prints. The model is patched in the same transaction, and the next version carries
+the row forward (`is_orphaned` once the text's entity is gone). The unit description a
+`unitDescription` slot corrects is `model_units.description`, which Phase 2 writes.
+Specs: [REVIEW_UPDATE_SPEC](../spec/REVIEW_UPDATE_SPEC.md) ·
+[REVIEW_UPDATE_API_SPEC](../spec/REVIEW_UPDATE_API_SPEC.md).
+
+```mermaid
+erDiagram
+    versions ||--o{ text_overrides        : "one row per corrected text"
+    versions ||--o{ text_override_history : "every save, capped per slot"
+    versions ||--o{ regeneration_queue    : "texts built FROM a corrected one"
+    versions ||--o{ render_jobs           : "flowchart pictures to redraw"
+    versions ||--o{ view_derivations      : "when Phase-3 output was last derived"
+
+    text_overrides {
+        string version_id PK
+        string slot_kind PK "description|unitDescription|structDescription|nodeLabel|..."
+        string slot_key PK "built by review/slot.py only"
+        text   llm_text "what the LLM wrote"
+        text   human_text "what the document prints"
+        bool   is_orphaned "carried forward, entity gone"
+        string updated_by
+        string updated_at
+    }
+    text_override_history {
+        bigint history_id PK
+        string version_id FK
+        string slot_kind
+        string slot_key
+        text   human_text
+        int    seq "per slot, drives the cap"
+    }
+    regeneration_queue {
+        string version_id PK
+        string slot_kind PK
+        string slot_key PK
+        string reason
+        string source_slot_kind "the correction that queued it"
+        string source_slot_key
+    }
+    render_jobs {
+        bigint job_id PK
+        string version_id FK
+        string flowchart_id
+        string png_name
+        string status
+    }
+    view_derivations {
+        string version_id PK
+        string view_name PK "a view: interfaceTables, testSpecs"
+        string group_name PK "the component it was derived for"
+        string derived_at
+    }
+```
+
+An export refuses to ship old wording (`engine/review/export_guard.py`): it is **stale** when a
+correction is newer than the derivation, **for the correction's own component**, of a view its text
+reaches and the exported document prints. `view_derivations` holds one row per (version, view,
+component) — `group_name` is the component, in `layer1.sample-core` form — and is rebuilt at every
+capture from the `_derivations.json` records Phase 3 stores with its output (a save that re-derives
+SWE.4 rows marks those records too). Rows with `view_name = '*'`, written before 2026-09-29, are
+ignored.
 
 ---
 
@@ -380,6 +452,26 @@ SELECT name, pg_size_pretty(length(payload::text)::bigint) FROM parse_snapshots
 WHERE version_id = 'f1' ORDER BY length(payload::text) DESC;
 -- names: functions.json, globalVariables.json, edges.json, hashes.json, dataDictionary.json,
 --        entity_files.json, func_keys.json, override_pairs.json, address_taken.json, metadata.json
+```
+
+### Review — what a reviewer corrected
+
+```sql
+-- Every correction on a version: what the LLM wrote, what the document prints, and whether
+-- its text still exists in this version (is_orphaned: carried forward, entity gone)
+SELECT slot_kind, slot_key, is_orphaned, updated_by, updated_at,
+       substr(llm_text, 1, 60) AS llm, substr(human_text, 1, 60) AS human
+FROM text_overrides WHERE version_id = 'f1'
+ORDER BY slot_kind, slot_key;
+
+-- Would an export ship old wording? When each view was last derived, per component. A
+-- correction newer than its own component's row, for a view its text reaches and the exported
+-- document prints, is stale -- engine/review/export_guard.py decides which views those are
+SELECT view_name, group_name AS component, derived_at
+FROM view_derivations WHERE version_id = 'f1'
+ORDER BY group_name, view_name;
+SELECT slot_kind, slot_key, updated_at FROM text_overrides WHERE version_id = 'f1'
+ORDER BY updated_at DESC;
 ```
 
 ### Integrity spot-checks

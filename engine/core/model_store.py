@@ -26,7 +26,7 @@ import os
 import sys
 from typing import Any, Dict, Optional
 
-from sqlalchemy import delete, func, insert, select
+from sqlalchemy import delete, func, insert, select, update
 
 from core.db_util import insert_chunked, insert_ignore, scrub_nulls
 
@@ -503,10 +503,64 @@ def load_hashes(conn, version_id) -> Dict[str, str]:
 def persist_units(conn, version_id, units):
     rows = [{"version_id": version_id, "unit_key": uk, "component": _split_key(uk)[0],
              "name": u.get("name"), "path": u.get("path"), "file_name": u.get("fileName"),
-             "included_headers": u.get("includedHeaders")}
+             "included_headers": u.get("includedHeaders"),
+             "description": u.get("description")}
             for uk, u in units.items()]
     if rows:
         conn.execute(insert(s.model_units), rows)
+
+
+class ModelRowMissing(LookupError):
+    """A one-row update found no row to update: the entity is not in the version any more, or a
+    run replaced the version's model while the caller was writing."""
+
+
+#: entity kind -> the `content_blobs.kind` its payload is stored under (see persist_*).
+_BLOB_KIND = {"function": "function", "global": "global", "type": "type", "macro": "type"}
+
+
+def set_entity_field(conn, version_id, entity_key, field, value, kinds) -> None:
+    """Set ONE payload field of ONE entity in one version -- a function, a global or a data-
+    dictionary entry -- and nothing else. Raises `ModelRowMissing` when there is no such row.
+
+    What a reviewer's correction writes. The alternative, a repository flush, runs `clear_version`
+    and `persist_model` over the whole version: every function, global, type, edge and hash row
+    rewritten for one sentence, from a snapshot read before this transaction -- so two saves at
+    once, or a save beside a Phase-2 run, put back whatever the other had just changed. Here the
+    payload is re-hashed and stored as a new content blob, and the one `entity_versions` row is
+    re-pointed at it; the old blob stays, as blobs are shared and content-addressed.
+    """
+    ev, ent, cb = s.entity_versions, s.entities, s.content_blobs
+    kinds = (kinds,) if isinstance(kinds, str) else tuple(kinds)
+    row = conn.execute(
+        select(ev.c.entity_id, ent.c.kind, cb.c.payload)
+        .select_from(ev.join(ent, ent.c.entity_id == ev.c.entity_id)
+                     .outerjoin(cb, cb.c.content_hash == ev.c.content_hash))
+        .where(ev.c.version_id == version_id, ent.c.entity_key == entity_key,
+               ent.c.kind.in_(kinds))).first()
+    if row is None or row.payload is None:
+        raise ModelRowMissing("%s %r is not in version %s" % ("/".join(kinds), entity_key,
+                                                               version_id))
+    payload = dict(row.payload)
+    payload[field] = value
+    ch = _content_hash(payload)
+    _insert_blobs(conn, {ch: (_BLOB_KIND.get(row.kind, row.kind), payload)})
+    done = conn.execute(update(ev).where(ev.c.version_id == version_id,
+                                         ev.c.entity_id == row.entity_id)
+                        .values(content_hash=ch)).rowcount
+    if done != 1:
+        raise ModelRowMissing("%r in version %s was replaced while it was being written"
+                              % (entity_key, version_id))
+
+
+def set_unit_description(conn, version_id, unit_key, value) -> None:
+    """Set one unit's stored description, and nothing else. Raises `ModelRowMissing` when the
+    unit is not in the version. See `set_entity_field` for why this is one row."""
+    mu = s.model_units
+    done = conn.execute(update(mu).where(mu.c.version_id == version_id, mu.c.unit_key == unit_key)
+                        .values(description=value)).rowcount
+    if done != 1:
+        raise ModelRowMissing("unit %r is not in version %s" % (unit_key, version_id))
 
 
 def _unit_of(fid: str) -> Optional[str]:
@@ -526,7 +580,8 @@ def load_units(conn, version_id) -> Dict[str, dict]:
         units[r.unit_key] = {"name": r.name, "path": r.path, "fileName": r.file_name,
                              "functionIds": [], "globalVariableIds": [],
                              "callerUnits": [], "calleesUnits": [],
-                             "includedHeaders": r.included_headers or []}
+                             "includedHeaders": r.included_headers or [],
+                             "description": r.description or ""}
     # functionIds / globalVariableIds: entities that live in each unit
     ev, ent = s.entity_versions, s.entities
     for r in conn.execute(select(ent.c.entity_key, ent.c.kind, ev.c.component, ev.c.unit)

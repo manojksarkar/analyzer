@@ -370,10 +370,11 @@
   <div class="cols">
     <nav class="toc">
       <div class="group">Maps</div>
-      <a href="#groups">Five table groups</a>
+      <a href="#groups">Six table groups</a>
       <a href="#er-model">ER · model core</a>
       <a href="#er-runs">ER · runs &amp; documents</a>
       <a href="#er-access">ER · access &amp; inputs</a>
+      <a href="#er-review">ER · review &amp; update</a>
       <div class="group">Before you query</div>
       <a href="#connect">Connect</a>
       <a href="#conventions">Conventions</a>
@@ -387,6 +388,7 @@
       <a href="#reuse">Reuse not happening</a>
       <a href="#llm">LLM spend</a>
       <a href="#output">Phase-3 output</a>
+      <a href="#review">Review corrections</a>
       <a href="#integrity">Integrity checks</a>
       <div class="group">Traps</div>
       <a href="#empty">Tables nothing writes</a>
@@ -396,8 +398,8 @@
     <main>
 
       <section id="groups">
-        <h2>Five table groups</h2>
-        <p class="lede">Thirty-odd tables, but they sort into five jobs. Only the first group
+        <h2>Six table groups</h2>
+        <p class="lede">Thirty-odd tables, but they sort into six jobs. Only the first group
           matters for most debugging.</p>
         <div class="tablewrap">
           <table>
@@ -429,6 +431,11 @@
                 <td><b>Access</b></td>
                 <td><code>users</code> <code>project_members</code> <code>access_requests</code> <code>notifications</code> <code>data_dictionaries</code> <code>data_dictionary_entries</code></td>
                 <td>RBAC and project inputs</td>
+              </tr>
+              <tr>
+                <td><b>Review</b></td>
+                <td><code>text_overrides</code> <code>text_override_history</code> <code>regeneration_queue</code> <code>render_jobs</code> <code>view_derivations</code></td>
+                <td>Reviewers' corrections to LLM-written text, and the work a correction queues</td>
               </tr>
             </tbody>
           </table>
@@ -616,7 +623,93 @@ erDiagram
         </div>
         <p class="hint">
           <code>organizations</code> was dropped (D-8) — <code>projects.org_id</code> is a plain
-          free-text tenant tag, not a FK.
+          free-text tenant tag, not a FK. <code>users.is_superuser</code> marks the operator
+          account, which may act on every project without a <code>project_members</code> row
+          (migration 0014).
+        </p>
+      </section>
+
+      <section id="er-review">
+        <h2>ER — review &amp; update</h2>
+        <p class="lede">
+          A reviewer's correction replaces one LLM-written text — a <b>slot</b> — in one version.
+          <code>slot_key</code> is built by <code>engine/review/slot.py</code> and nothing else;
+          <code>human_text</code> is what the document prints. The model is patched in the same
+          transaction, and the next version carries the row forward (<code>is_orphaned</code> once
+          the text's entity is gone). The unit description a <code>unitDescription</code> slot
+          corrects is <code>model_units.description</code>, which Phase 2 writes.
+        </p>
+        <div class="diagram" data-diagram>
+          <div class="diagram-bar">
+            <span class="name">review · update</span>
+            <span class="spacer"></span>
+            <button class="zbtn" data-zoom="out" aria-label="Zoom out">−</button>
+            <span class="zlevel" data-zlevel>100%</span>
+            <button class="zbtn" data-zoom="in" aria-label="Zoom in">+</button>
+            <button class="zbtn" data-zoom="fit">Fit</button>
+            <button class="zbtn" data-zoom="reset">1:1</button>
+          </div>
+          <div class="viewport" data-viewport style="height:560px">
+            <div class="stage" data-stage>
+<pre class="mermaid">
+erDiagram
+    versions ||--o{ text_overrides        : "one row per corrected text"
+    versions ||--o{ text_override_history : "every save, capped per slot"
+    versions ||--o{ regeneration_queue    : "texts built FROM a corrected one"
+    versions ||--o{ render_jobs           : "flowchart pictures to redraw"
+    versions ||--o{ view_derivations      : "when Phase-3 output was last derived"
+
+    text_overrides {
+        string version_id PK
+        string slot_kind PK "description|unitDescription|structDescription|nodeLabel|..."
+        string slot_key PK "built by review/slot.py only"
+        text   llm_text "what the LLM wrote"
+        text   human_text "what the document prints"
+        bool   is_orphaned "carried forward, entity gone"
+        string updated_by
+        string updated_at
+    }
+    text_override_history {
+        bigint history_id PK
+        string version_id FK
+        string slot_kind
+        string slot_key
+        text   human_text
+        int    seq "per slot, drives the cap"
+    }
+    regeneration_queue {
+        string version_id PK
+        string slot_kind PK
+        string slot_key PK
+        string reason
+        string source_slot_kind "the correction that queued it"
+        string source_slot_key
+    }
+    render_jobs {
+        bigint job_id PK
+        string version_id FK
+        string flowchart_id
+        string png_name
+        string status
+    }
+    view_derivations {
+        string version_id PK
+        string view_name PK "a view: interfaceTables, testSpecs"
+        string group_name PK "the component it was derived for"
+        string derived_at
+    }
+</pre>
+            </div>
+          </div>
+        </div>
+        <p class="hint">
+          An export refuses to ship old wording (<code>engine/review/export_guard.py</code>): it
+          is <b>stale</b> when a correction is newer than the derivation, <b>for the correction's own
+          component</b>, of a view its text reaches and the exported document prints.
+          <code>view_derivations</code> holds one row per (version, view, component) &mdash;
+          <code>group_name</code> is the component &mdash; rebuilt at every capture from the
+          <code>_derivations.json</code> records Phase 3 stores with its output. Rows with
+          <code>view_name = '*'</code>, written before 2026-09-29, are ignored.
         </p>
       </section>
 
@@ -928,6 +1021,28 @@ WHERE version_id = 'f1' AND rel_path = 'Layer1.Diag/interface_tables.json';</pre
 WHERE version_id = 'f1' ORDER BY length(payload::text) DESC;
 -- names: functions.json, globalVariables.json, edges.json, hashes.json, dataDictionary.json,
 --        entity_files.json, func_keys.json, override_pairs.json, address_taken.json, metadata.json</pre>
+        </div>
+      </section>
+
+      <section id="review">
+        <h3>Review — what a reviewer corrected</h3>
+        <div class="sqlblock">
+          <div class="sqlhead"><span class="cap">every correction on a version, then: would an export ship old wording?</span><button class="copy">copy</button></div>
+<pre class="sql">-- Every correction on a version: what the LLM wrote, what the document prints, and whether
+-- its text still exists in this version (is_orphaned: carried forward, entity gone)
+SELECT slot_kind, slot_key, is_orphaned, updated_by, updated_at,
+       substr(llm_text, 1, 60) AS llm, substr(human_text, 1, 60) AS human
+FROM text_overrides WHERE version_id = 'f1'
+ORDER BY slot_kind, slot_key;
+
+-- Would an export ship old wording? When each view was last derived, per component. A
+-- correction newer than its own component's row, for a view its text reaches and the exported
+-- document prints, is stale -- engine/review/export_guard.py decides which views those are
+SELECT view_name, group_name AS component, derived_at
+FROM view_derivations WHERE version_id = 'f1'
+ORDER BY group_name, view_name;
+SELECT slot_kind, slot_key, updated_at FROM text_overrides WHERE version_id = 'f1'
+ORDER BY updated_at DESC;</pre>
         </div>
       </section>
 

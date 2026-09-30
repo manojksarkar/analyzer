@@ -1,0 +1,88 @@
+{
+  "_readme": "Copy to config.json (or any name, then --config) and edit. The two request bodies are sent as they are, except for these placeholders the script fills in: {timestamp}, {projectId}, {versionId}, {versionTag}. Keys starting with _ are comments. See README.md.",
+
+  "server": {
+    "base_url": "http://localhost:8000",
+    "email": "admin@aspice.dev",
+    "password": "admin",
+    "_database": "postgresql or sqlite -- the server's database. With sqlite, two saves at the same moment are only reported (WARN): SQLite has no per-version save lock.",
+    "database": "postgresql",
+    "request_timeout_seconds": 300,
+    "verify_tls": true
+  },
+
+  "onboard": {
+    "_project_id": "Leave empty to create a new project from create_project. Set it to test an existing project.",
+    "project_id": "",
+    "_create_project": "The body of POST /api/v1/projects -- what the web app's New Project wizard sends. repo_url must be a git repository the SERVER can clone: a URL (with access_token if private) or a path on the server's machine. For the sample, run: python tools/review_api_test/review_api_test.py --make-sample-repo C:/work/sample-repo",
+    "create_project": {
+      "name": "Review API test {timestamp}",
+      "client": "internal",
+      "compliance_standard": "ASPICE_L2",
+      "repo_url": "C:/work/sample-repo",
+      "repo_provider": "github",
+      "default_branch": "main",
+      "access_token": null,
+      "build_config": {
+        "views": {
+          "flowcharts": true,
+          "behaviourDiagram": true,
+          "sequenceDiagrams": { "filterMode": "all_callers" }
+        }
+      },
+      "architecture_layers": [
+        {
+          "name": "Layer1", "path": "Layer1",
+          "groups": [
+            { "name": "My Sample", "components": [
+                { "name": "Sample Core", "files": ["Layer1/Sample/Core"] },
+                { "name": "Lib",         "files": ["Layer1/Sample/Lib"] },
+                { "name": "Util",        "files": ["Layer1/Sample/Util"] } ] },
+            { "name": "Full", "components": [
+                { "name": "Iface", "files": ["Layer1/Direction", "Layer1/Types", "Layer1/Flow"] },
+                { "name": "Cross", "files": ["Layer1/Hub", "Layer1/Poly"] } ] },
+            { "name": "Support", "components": [
+                { "name": "Math",  "files": ["Layer1/Math"] },
+                { "name": "App",   "files": ["Layer1/App"] },
+                { "name": "Outer", "files": ["Layer1/Outer/Inner"] } ] },
+            { "name": "Access", "components": [ { "name": "Access", "files": ["Layer1/Access"] } ] },
+            { "name": "Signal", "components": [ { "name": "Signal", "files": ["Layer1/Signal"] } ] },
+            { "name": "Diag",   "components": [ { "name": "Diag",   "files": ["Layer1/Diag"] } ] }
+          ]
+        }
+      ],
+      "team": []
+    }
+  },
+
+  "generate": {
+    "_version_id": "Leave empty to generate a version with start_job. Set it (with onboard.project_id) to test an existing version -- the corrections this test makes stay on it.",
+    "version_id": "",
+    "_start_job": "The body of POST /api/v1/projects/{projectId}/jobs. commit_sha 'latest' = the newest commit the server lists for the project. version_tag must be new in the project, hence {timestamp}. no_llm true runs in minutes; the LLM wording is then empty for most slots, which the test handles.",
+    "start_job": {
+      "commit_sha": "latest",
+      "version_tag": "api-test-{timestamp}",
+      "mode": "full",
+      "no_llm": true,
+      "scope": { "type": "group", "names": ["Layer1.My Sample", "Layer1.Full"] }
+    },
+    "branch": "main",
+    "poll_seconds": 5,
+    "timeout_minutes": 60
+  },
+
+  "test": {
+    "_kinds": "The slot kinds to correct. All seven by default.",
+    "kinds": ["description", "behaviourInputName", "behaviourOutputName", "unitDescription",
+              "structDescription", "behaviourDescription", "nodeLabel"],
+    "slots_per_kind": 2,
+    "concurrent_saves": true,
+    "negative_checks": true,
+    "check_page": true,
+    "reexport": true,
+    "check_word": true,
+    "_carry_forward": "Generates one more version from the tested one (same commit) and checks every correction is carried into it.",
+    "carry_forward": true,
+    "report_file": "review_api_test_report.json"
+  }
+}

@@ -194,3 +194,48 @@ def log_stderr_tail(label: str, tail: Sequence[str], *, logger=None) -> None:
     for line in tail:
         lg.error("  %s", line)
     lg.error("---- end %s stderr ----", label)
+
+
+def stop_tree(proc) -> None:
+    """Kill `proc` and every process beneath it. Best-effort: never raises."""
+    try:
+        if psutil is not None:
+            for child in psutil.Process(proc.pid).children(recursive=True):
+                try:
+                    child.kill()
+                except Exception:
+                    pass
+        elif sys.platform == "win32":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                           capture_output=True, shell=True)
+    except Exception:
+        pass
+    try:
+        proc.kill()
+    except Exception:
+        pass
+
+
+def run_capture(cmd, *, timeout: float, shell: bool = False) -> subprocess.CompletedProcess:
+    """`subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, shell=shell)` --
+    except that a timeout stops the whole process TREE, so the timeout is the timeout.
+
+    `subprocess.run` answers a timeout by killing the one process it started and then reading its
+    pipes to the end. Through the shell on Windows that process is `cmd.exe`, and the Node and
+    Chromium beneath it hold the pipes open, so the read waits for THEM: a unit diagram whose
+    render hung, with a 60-second timeout, held its phase for an hour. Here the tree is stopped
+    first. Everything else is `subprocess.run`'s: same result object, and `TimeoutExpired` raised
+    the same way, so a caller's handling does not change.
+    """
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            shell=shell)
+    try:
+        out, err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        stop_tree(proc)
+        try:
+            proc.communicate(timeout=10)      # collect what was written; the pipes are closing
+        except Exception:
+            pass
+        raise subprocess.TimeoutExpired(cmd, timeout) from None
+    return subprocess.CompletedProcess(cmd, proc.returncode, out, err)

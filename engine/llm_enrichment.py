@@ -1076,6 +1076,7 @@ def enrich_functions_rich(
     base_path: str,
     config: dict,
     knowledge=None,
+    regenerate=None,
 ) -> dict:
     """Budget-aware function description enrichment with optional two-pass.
 
@@ -1094,6 +1095,12 @@ def enrich_functions_rich(
         Top-level config dict.
     knowledge : ProjectKnowledge, optional
         If provided, used to build repo map, callee/caller/types context.
+    regenerate : set, optional
+        Function ids whose cached description must not be reused: a reviewer corrected a
+        description they were written from (the review regeneration queue, REQ-CS-01). The
+        cache key is the source plus the callees' SOURCE hashes, which a corrected description
+        does not move -- so without this the stale text comes straight back. The fresh text is
+        cached as usual and replaces the stale entry.
 
     Returns
     -------
@@ -1144,6 +1151,7 @@ def enrich_functions_rich(
     # of the same project hits rows the first one wrote — and so does a second NODE, which a
     # per-checkout directory could never do.
     from core.run_context import project_id as _project_id
+    regenerate = set(regenerate or ())
     cache_version = int(llm_cfg.get("cacheVersion", 1))
     entity_cache = EntityCache(_project_id() or "", "llm_descriptions",
                                cache_version=cache_version)
@@ -1190,7 +1198,7 @@ def enrich_functions_rich(
             source + "|pass1|" + (qn or ""),
             dependency_hashes=callee_hashes,
         )
-        cached = entity_cache.get(qn or key, cache_hash)
+        cached = None if key in regenerate else entity_cache.get(qn or key, cache_hash)
         if cached:
             result[key] = {"description": cached}
             progress.step(label=short_name(qn) or "?")
@@ -1266,7 +1274,7 @@ def enrich_functions_rich(
                 source + "|pass2|" + (qn or "") + "|" + (prior or ""),
                 dependency_hashes=caller_hashes + [source_hashes.get(key, "")],
             )
-            cached = entity_cache.get(qn or key, pass2_hash)
+            cached = None if key in regenerate else entity_cache.get(qn or key, pass2_hash)
             if cached:
                 result[key] = {"description": cached}
                 progress2.step(label=short_name(qn) or "?")

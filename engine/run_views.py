@@ -118,8 +118,9 @@ def _resolve_units(model: dict, requested: list, allowed_components=None,
 
     `strict` is what separates the two callers, and conflating them was the bug:
 
-      * run.py validates ONCE against the whole run's scope, before Phase 1. A unit outside
-        that scope will produce nothing anywhere, so it is an error — strict=True.
+      * run.py validates ONCE against the whole run's scope, at startup -- and only when the
+        stored model is the one Phase 3 will use (`group_planner.unit_check_can_run_early`).
+        A unit outside that scope will produce nothing anywhere, so it is an error — strict=True.
       * Phase 3 runs once PER COMPONENT when documents are per component (the normal case).
         `--selected-unit Utils` reaches the App invocation as well as the Math one, and there
         the unit is not unknown, merely elsewhere — strict=False, narrow to nothing, say so.
@@ -191,6 +192,144 @@ def _load_model():
         raise SystemExit(1)
 
 
+
+def _with_text_overrides(config):
+    """`config` plus this version's reviewer corrections (`REQ-AP-05`).
+
+    Returns `config` unchanged when there is no version id (a standalone run) or no database --
+    both are ordinary, and neither is a reason to fail a phase that has already paid for the
+    parse and the enrichment. A correction that cannot be loaded is logged, not raised: losing a
+    whole generation over it would cost far more than the correction is worth.
+    """
+    try:
+        from core.run_context import version_id as _vid
+        from core.db import get_engine, is_database_configured
+        vid = _vid()
+        if not (vid and is_database_configured()):
+            return config
+        from review.carry_forward import config_with_overrides
+        with get_engine().connect() as cx:
+            out = config_with_overrides(cx, vid, config)
+        from review.phase3_overrides import CONFIG_KEY
+        n = sum(len(v) for v in (out.get(CONFIG_KEY) or {}).values())
+        if n:
+            print("[run_views] applying %d reviewer correction(s) to this run" % n)
+        return out
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        print("[run_views] could not load text overrides: %s" % exc)
+        return config
+
+
+def _rebuilt_behaviour_rows(output_dir) -> list:
+    """The slot keys of the behaviour rows this run wrote into its manifest."""
+    from review import phase3_overrides as p3, slot
+    path = os.path.join(output_dir, "behaviour_diagrams", "_behaviour_pngs.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            payload = json.load(f)
+    except (OSError, ValueError):
+        return []
+    out = []
+    for _c, _u, row in p3.behaviour_rows((payload or {}).get("_docxRows")):
+        fid, caller = row.get("currentFunctionId"), row.get("externalCallerId")
+        if fid and caller:
+            try:
+                out.append(slot.for_behaviour_row(fid, caller))
+            except slot.SlotKeyError:
+                continue
+    return out
+
+
+def _retire_behaviour_regenerations(output_dir, ran, model, config) -> None:
+    """Clear the queued behaviour-row regenerations this run paid (`REQ-CS-01`).
+
+    Only when the behaviour view ran, and only for the rows it covered: the rows it wrote, and the
+    rows of the components it ran over that it no longer writes (`cascade.clear_behaviour_entries`).
+    A SWE.4-only run, a run with the view switched off and a run over another component rebuild
+    no behaviour row, and must not report one as rebuilt.
+
+    Never fatal: the views have already run and their output is written; failing the phase here
+    would throw that away over bookkeeping.
+    """
+    try:
+        if "behaviourDiagram" not in (ran or ()):
+            return
+        from core.run_context import version_id as _vid
+        from core.db import get_engine, is_database_configured
+        vid = _vid()
+        if not (vid and is_database_configured()):
+            return
+        # Not narrowed by --selected-unit: that re-renders only some images, and the view still
+        # writes every row of its components (views/behaviour_diagram.py).
+        from core.model_io import COMPONENTS
+        allowed = config.get("_analyzerAllowedComponents")
+        components = list(allowed) if allowed else list((model.get(COMPONENTS) or {}).keys())
+        from review.cascade import clear_behaviour_entries
+        with get_engine().begin() as cx:
+            n = clear_behaviour_entries(cx, vid, _rebuilt_behaviour_rows(output_dir), components)
+        if n:
+            print("[run_views] retired %d regenerated behaviour description(s)" % n)
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        print("[run_views] could not retire behaviour regenerations: %s" % exc)
+
+
+def _layers_by_name(config) -> dict:
+    """`layers` reduced to what the SWE.4 views read from it -- which components each group of
+    each layer holds (`test_specs._layer_components`). Paths and file names stay out: they are
+    machine-specific, and the record they would travel in is stored with the output."""
+    out = {}
+    for lname, lcfg in ((config or {}).get("layers") or {}).items():
+        if not isinstance(lcfg, dict):
+            continue
+        groups = {gname: {c: {} for c in grp}
+                  for gname, grp in (lcfg.get("groups") or {}).items() if isinstance(grp, dict)}
+        out[lname] = {"groups": groups}
+    return out
+
+
+def _record_derivation(output_dir, ran, model, config, read_at, layer_filter,
+                       doc_type=None) -> None:
+    """Leave the export guard its record of what this run rebuilt (`REQ-AP-04`).
+
+    The record is turned into `view_derivations` rows when the output is captured, in the same
+    transaction as the rows themselves -- so it is written only for a versioned run with a
+    database, which is the only kind that is captured. Not for a run narrowed to some units
+    (`--selected-unit`): it rebuilt part of a component, and a stamp for the whole component would
+    vouch for text it never touched. Never fatal -- the views are built; a missing record only
+    makes the guard more cautious.
+    """
+    try:
+        from core.run_context import version_id as _vid
+        from core.db import is_database_configured
+        if not ran or not (_vid() and is_database_configured()):
+            return
+        if config.get("_analyzerSelectedUnits"):
+            print("[run_views] --selected-unit narrowed this run; not recorded as a derivation")
+            return
+        from core.model_io import COMPONENTS
+        allowed = config.get("_analyzerAllowedComponents")
+        components = list(allowed) if allowed else list((model.get(COMPONENTS) or {}).keys())
+        # What the SWE.4 views were built with, so a save can re-derive them exactly as this run
+        # did (review.swe4_rederive) -- a version generated from the CLI stores no config of its
+        # own anywhere else.
+        context = {"allowedComponents": sorted(allowed) if allowed else None,
+                   "layerComponents": sorted(layer_filter) if layer_filter else None,
+                   "views": (config.get("views") or {}),
+                   "layers": _layers_by_name(config)}
+        # Which document each view was built for -- by the rule that chose to build it. One
+        # `--doc-type all` run builds the flowcharts for SWE.4 alone when `views.flowcharts` is
+        # off, and the SWE.3 exporter then prints none (`export_guard._swe3_built`).
+        from views import views_to_run
+        from views.registry import concrete_doc_types
+        types = concrete_doc_types(doc_type or "swe3")
+        built_for = {v: [t for t in types if v in views_to_run(t, config)] for v in ran}
+        from review.export_guard import record_derivation
+        record_derivation(output_dir, ran, components, read_at, context=context,
+                          doc_types=built_for)
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        print("[run_views] could not record this derivation: %s" % exc)
+
+
 def main():
     args = sys.argv[1:]        # path flags already applied at import
 
@@ -236,10 +375,16 @@ def main():
     from core.config import app_config
     from views import run_views
 
+    # REQ-AP-04. This run's derivation is stamped with the moment it READ its inputs: taken before
+    # the model is loaded, so a correction saved after it -- into the model or the override table
+    # -- is newer than the stamp and still reads as stale.
+    import datetime as _dt
+    read_at = _dt.datetime.now(_dt.timezone.utc)
     model = _load_model()
     config = app_config()
     config = dict(config)  # make a copy so we can modify it
     model_dir = _p.model_dir
+    layer_filter = None    # the components the model is narrowed to, for the derivation record
     # Apply filter mode override from command line
     if filter_mode_override:
         if "views" not in config:
@@ -277,6 +422,7 @@ def main():
             layer_comps = get_layer_components(config, resolved)
             if layer_comps:
                 model = _filter_model_to_components(model, layer_comps)
+                layer_filter = layer_comps
     elif selected_components:
         from core.config import get_component_layer_name, get_layer_flat_groups
         config = dict(config)
@@ -293,6 +439,7 @@ def main():
                     layer_comps.update(g.keys())
         if layer_comps:
             model = _filter_model_to_components(model, layer_comps)
+            layer_filter = layer_comps
     if selected_units:
         selected_units = _resolve_units(
             model, selected_units, config.get("_analyzerAllowedComponents"), strict=False)
@@ -302,7 +449,23 @@ def main():
         # would print `narrowed to unit(s): __none__`, which reads like a bug.
         if selected_units != ["__none__"]:
             print(f"[run_views] narrowed to unit(s): {', '.join(selected_units)}")
-    run_views(model, output_dir, model_dir, config, doc_type=doc_type)
+    # REQ-AP-05. The two Phase-3 kinds -- node labels and behaviour descriptions -- have no
+    # model field, so their corrections are an INPUT to this phase. Attached HERE, in the
+    # runner, rather than inside a view: a view stays a pure function of (model, config) and
+    # never opens a database of its own.
+    config = _with_text_overrides(config)
+
+    ran = run_views(model, output_dir, model_dir, config, doc_type=doc_type) or []
+
+    # REQ-AP-04. What this run rebuilt -- which views, for which components, from corrections read
+    # when -- for the export guard. See review.export_guard.
+    _record_derivation(output_dir, ran, model, config, read_at, layer_filter, doc_type)
+
+    # REQ-CS-01's other half. A queued behaviour description has no model field to blank, so
+    # Phase 2 cannot pay that debt -- but the behaviour view rebuilds every row it writes, so
+    # running it IS the regeneration. Retired here, where it actually happened, and only for the
+    # rows this run covered.
+    _retire_behaviour_regenerations(output_dir, ran, model, config)
 
 
 if __name__ == "__main__":

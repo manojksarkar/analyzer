@@ -54,6 +54,36 @@ class TestReexportRunsInPlace:
         assert "--model-root" in cmd and cmd[cmd.index("--model-root") + 1] == "/ver/model"
         assert "--output-root" in cmd and cmd[cmd.index("--output-root") + 1] == "/ver/output"
 
+    @staticmethod
+    def _cmd(scope, layer_filter=None):
+        import sys
+        sys.path.insert(0, ROOT)
+        from api.services.pipeline_runner import _build_cmd
+        job = type("J", (), {"scope": scope, "layer_filter": layer_filter, "no_llm": False,
+                             "data_dict_id": None, "project_id": "p1"})()
+        return _build_cmd(job, "/checkout", "/cfg.json", from_phase=3, use_model=True)
+
+    @staticmethod
+    def _values(cmd, flag):
+        return [cmd[i + 1] for i, a in enumerate(cmd) if a == flag]
+
+    @pytest.mark.parametrize("stype,flag", [("group", "--selected-group"),
+                                            ("component", "--selected-component"),
+                                            ("layer", "--selected-layer")])
+    def test_every_name_of_the_scope_is_re_derived(self, stype, flag):
+        """A re-export copies the generation's scope. A version generated for two groups was
+        re-exported for the first alone: the second group's views were never re-derived, and
+        its corrections never reached the Word file."""
+        cmd = self._cmd({"type": stype, "names": ["Layer1.My Sample", "Layer1.Full"]})
+        assert self._values(cmd, flag) == ["Layer1.My Sample", "Layer1.Full"]
+
+    def test_a_project_scope_selects_nothing(self):
+        cmd = self._cmd({"type": "project"}, layer_filter=None)
+        assert not any(a.startswith("--selected-") for a in cmd)
+
+    def test_the_legacy_layer_filter_still_applies_without_a_scope(self):
+        assert self._values(self._cmd(None, layer_filter="Layer2"), "--selected-layer") ==             ["Layer2"]
+
     def test_flags_are_omitted_when_not_given(self):
         """Generation calls _build_cmd without them; that path must be unchanged."""
         import sys

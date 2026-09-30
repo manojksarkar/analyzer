@@ -1,0 +1,10 @@
+{
+  "server": {
+    "base_url": "http://<server>:8000",
+    "email": "you@company.com",
+    "password": "your-password",
+    "database": "postgresql"
+  },
+  "onboard":  { "project_id": "p1a2b3c4d" },
+  "generate": { "version_id": "ver5e6f7a8b" }
+}

@@ -62,6 +62,15 @@ the wizard, and a project downloads as one; download → import → download rou
 - **Run options** — expose `no_llm`, `mode` (full/auto) and a data dictionary in the modal? The API takes all
   three; with the LLM on, a first run of the sample project takes ~2 h on a local Ollama.
 
+## Remaining — backend exists, no screen yet
+
+- [ ] **Review & update** — correct the LLM's wording in a document (descriptions, unit and struct
+      descriptions, behaviour names, Dynamic Behaviour bullets, flowchart labels), undo, history, and an
+      export-readiness banner. API: [REVIEW_UPDATE_API_SPEC](../docs/spec/REVIEW_UPDATE_API_SPEC.md) — §3a
+      lists the calls per screen. Rules: the `ui-dev` skill §6.
+- [ ] **Flowcharts from DOT** — the in-app flowchart view still renders the stored string as Mermaid; the
+      engine has written Graphviz DOT since 2026-07-27. Needed by the flowchart label editor too.
+
 ## Remaining — frontend-only work
 
 - [ ] Clear lint debt (8 errors): set-state-in-effect in `NewProjectPage` and `ProjectDetailPage`,

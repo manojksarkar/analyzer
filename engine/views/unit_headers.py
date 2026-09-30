@@ -23,7 +23,7 @@ from .registry import register
 from core.model_io import read_model_file
 from core.paths import paths as _paths
 from docx_common import load_abbreviations
-from utils import log, KEY_SEP
+from utils import log, KEY_SEP, RECORD_KINDS, has_own_header_row
 
 NA = "N/A"
 
@@ -72,27 +72,21 @@ def _strip_comments(text: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _struct_description(type_name: str, fields: list, config, abbreviations,
-                       label: str = "Structure") -> str:
+def _struct_description(type_name: str, entry: dict, label: str = "Structure") -> str:
     """One-line description for the information column of a struct/class/union row.
 
-    A record type has no value to print, so the cell carries meaning instead: the LLM's
-    sentence when descriptions are on and the provider answers, else the name-derived
-    fallback. Shared with the `typedef struct` path, so one type reads the same however it
-    was declared.
+    A record type has no value to print, so the cell carries meaning instead: the description
+    STORED on the type's data-dictionary entry, else the name-derived fallback. Shared with the
+    `typedef struct` path, so one type reads the same however it was declared.
+
+    Read, not generated (REQ-PRE-01). Phase 2 generates it and stores it on the entry, which is
+    also where a reviewer's correction lands (`structDescription`). Asked for here, while the view
+    ran (101e3f0), the sentence lived only in this view's output and was written afresh from the
+    LLM cache on every run: a correction had no model field to live in, and the next render would
+    have put the LLM's words back.
     """
-    info = _struct_info_from_name(type_name, label)
-    if not config:
-        return info
-    try:
-        from llm_enrichment import get_struct_description, llm_provider_reachable
-        if llm_provider_reachable(config) and config.get("llm", {}).get("descriptions", True):
-            llm_desc = get_struct_description(type_name, fields or [], config, abbreviations or {})
-            if llm_desc:
-                return llm_desc
-    except ImportError:
-        pass
-    return info
+    stored = str((entry or {}).get("description") or "").strip()
+    return stored or _struct_info_from_name(type_name, label)
 
 
 _ACCESS_LABEL_RE = re.compile(r"^(public|protected|private)" + chr(92) + "s*:")
@@ -448,6 +442,12 @@ def build_rows(
 
     - Column 1: full declaration as in code
     - Column 2: value (initializer / underlying type / enumerator values)
+    - `typeKey`, not a column, on EVERY row: when column 2 is a record's description (a
+      struct/class/union row, or a typedef row naming one), the data-dictionary key of that
+      record -- the `structDescription` slot key a reviewer corrects it by; `None` when column 2
+      is a value. The review routes read it to tell which unit shows which description, and
+      its presence on every row is how they tell this output from output derived before it
+      existed. The exporter and the page ignore it.
 
     Besides declarations defined in the unit's own files, also lists symbols declared
     in an *orphan header* (a header with no same-name source): exactly the ``lent`` set,
@@ -520,7 +520,7 @@ def build_rows(
         info = rhs or g.get("value") or NA
         if (decl or "").strip() in ("", "-"):
             decl = g.get("qualifiedName") or g.get("name") or str(gid) or NA
-        rows.append({"declaration": decl or NA, "information": info})
+        rows.append({"declaration": decl or NA, "information": info, "typeKey": None})
 
     # typedef, enum, define: match by unit file(s)
     # Track (file, line) already emitted for typedefs so that multiple aliases
@@ -546,8 +546,10 @@ def build_rows(
         if t.get("nestedIn"):
             continue
         # An anonymous record reaches us as the body of a `typedef ... {...} S;`, whose own
-        # entry emits the full declaration from the same line.
-        if kind in ("struct", "class", "union") and (t.get("name") or "") in ("", "(anonymous)"):
+        # entry emits the full declaration from the same line. The rule is shared
+        # (`utils.has_own_header_row`) with Phase 2 and the review routes, which decide from it
+        # which record descriptions exist to be generated and corrected.
+        if kind in RECORD_KINDS and not has_own_header_row(t):
             continue
         is_own = type_file in unit_paths_set
         # Anything else is listed only when it comes from an orphan header and this unit
@@ -572,10 +574,13 @@ def build_rows(
             info = macro_value or NA
             if (decl or "").strip() in ("", "-"):
                 decl = macro_name or NA
-            rows.append({"declaration": decl or NA, "information": info})
+            rows.append({"declaration": decl or NA, "information": info, "typeKey": None})
             continue
 
         decl = _read_decl_snippet(abs_file, line, kind=kind)
+        # The record whose stored description fills `information` -- its `structDescription`
+        # slot key. Only for the rows that print one; see `build_rows`' docstring.
+        type_key = None
 
         if kind == "typedef":
             # If the snippet didn't start with "typedef" or "using", this entry is an alias
@@ -600,14 +605,14 @@ def build_rows(
                         parts.append(f"{n}={v}" if v is not None else n)
                 info = ", ".join(parts) if parts else NA
 
-            elif isinstance(enum_ent, dict) and enum_ent.get("kind") in ("struct", "class", "union"):
-                # typedef struct: description from name + fields (on the go, no store)
+            elif isinstance(enum_ent, dict) and enum_ent.get("kind") in RECORD_KINDS:
+                # typedef struct: the underlying record's stored description (REQ-PRE-01)
                 info = _struct_description(
                     t.get("name") or underlying or _type_name,
-                    enum_ent.get("fields") or [],
-                    config, abbreviations,
+                    enum_ent,
                     _RECORD_LABEL.get(enum_ent.get("kind"), "Structure"),
                 )
+                type_key = underlying
             else:
                 info = NA
         elif kind == "enum":
@@ -619,20 +624,20 @@ def build_rows(
                 if n:
                     parts.append(f"{n}={v}" if v is not None else n)
             info = ", ".join(parts) if parts else NA
-        elif kind in ("struct", "class", "union"):
+        elif kind in RECORD_KINDS:
             # The declaration as written, members and method SIGNATURES included -- only an
             # inline body is reduced to its declaration (client, 2026-09-23).
             decl = _declarations_only(decl)
             info = _struct_description(
-                t.get("name") or _type_name, t.get("fields") or [], config, abbreviations,
-                _RECORD_LABEL.get(kind, "Structure"),
+                t.get("name") or _type_name, t, _RECORD_LABEL.get(kind, "Structure"),
             )
+            type_key = _type_name
         else:
             info = NA
 
         if (decl or "").strip() in ("", "-"):
             decl = t.get("name") or _type_name or NA
-        rows.append({"declaration": decl or NA, "information": info})
+        rows.append({"declaration": decl or NA, "information": info, "typeKey": type_key})
 
     # Strip comments from both columns — a comment is never part of a declaration
     # or a value (string/char literals are preserved). Done before dedup so rows
@@ -779,7 +784,8 @@ def run(model, output_dir, model_dir, config):
     used_names = _unit_used_names(functions_data, globals_data, base_path)
     lent_by_unit = _lent_by_unit(model, data_dict, globals_data, macro_users, type_users,
                                  source_unit_paths, used_names, global_users)
-    # Only the typedef->struct description uses these, and only when the LLM is on.
+    # Kept for build_rows' signature. Record descriptions are READ from the stored entry now
+    # (see _struct_description), so nothing here asks the LLM.
     abbreviations = load_abbreviations(_paths().project_root, config)
 
     allowed = {c.lower() for c in (config.get("_analyzerAllowedComponents") or [])}

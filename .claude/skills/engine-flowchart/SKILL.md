@@ -17,14 +17,17 @@ You own two `engine/` subsystems (same engineer):
 
 > TL;DR: **the CFG is deterministic; the LLM only writes node *labels*** · the flowchart engine runs as a
 > **standalone subprocess with its own `LlmClient` + `EngineConfig`** (not `engine/llm_enrichment.py`) ·
-> **only the DOT string is persisted** — the structured `ControlFlowGraph` is rebuilt on demand ·
-> incremental = **full parse, selective *work*** (reuse unchanged descriptions/outputs).
+> **persisted: the DOT string + a lossy serialized CFG** — the full `ControlFlowGraph` is rebuilt on
+> demand · node labels are **reviewer-correctable** · incremental = **full parse, selective *work***
+> (reuse unchanged descriptions/outputs; carry reviewer corrections).
 
 Start context (read as needed, don't duplicate here):
 - **Flowchart deep dive** → [engine/flowchart/README.md](engine/flowchart/README.md) + the end-to-end trace
   [engine/flowchart/FLOW.md](engine/flowchart/FLOW.md).
 - **Incremental design** → [docs/production-redesign/04-incremental-changes-implementation.md](docs/production-redesign/04-incremental-changes-implementation.md).
-- **How these plug into the pipeline / everything else** → root [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md), and `engine-dev`.
+- **How these plug into the pipeline / everything else** → root [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) (the
+  index; the flowchart engine is §13 in [VIEWS_AND_EXPORT.md](project-context/VIEWS_AND_EXPORT.md), incremental
+  is §23 in [INCREMENTAL.md](project-context/INCREMENTAL.md)), and `engine-dev`.
 
 ## 1. Flowchart engine (`engine/flowchart/`)
 
@@ -49,16 +52,25 @@ Start context (read as needed, don't duplicate here):
   identifiers) so wide nodes grow down not out, uses **default curved splines** (no `splines=ortho`), and
   anchors Return/End at the bottom via `constraint=false` back-edges + invisible push-down edges. `goto` is
   a real node with a deferred edge to its target label (not a jump to exit).
-- **Only the DOT string is persisted** (`[{functionKey, name, flowchart}]`; the `FlowchartResult`
-  field is still named `mermaid_script` for schema compat but now holds DOT) — the structured
-  `ControlFlowGraph` is discarded. **Re-materialize it via `CFGBuilder`** when you need branch structure
-  (what SWE.4's deferred pass and `tools/swe4-derivation-spike/` do).
+- **Persisted: the DOT string and a serialized CFG** (`[{functionKey, name, flowchart, cfg}]`; the
+  `FlowchartResult` field is still named `mermaid_script` for schema compat but holds DOT). `cfg` is
+  `serialize_cfg(cfg)` (since 3355930) — what SWE.4's Test Steps read and what review redraws from. It
+  is **lossy** (`label or raw_code` collapse into one field; no line numbers, no qualified name), so
+  **re-materialize via `CFGBuilder`** when you need the full graph (what SWE.4's deferred pass and
+  `tools/swe4-derivation-spike/` do).
 - **Own LLM stack:** a standalone `LlmClient` (Ollama + OpenAI formats) + `EngineConfig` dataclass, fed the
   `config.llm` settings via CLI flags. Don't reach into `engine/llm_enrichment.py` or the main `config.json`
   from here.
 - **Determinism is tested without the LLM** — CFG + topological-sort invariants and CFG-node-type-count ==
   DOT-shape-count checks (see the README **Testing** section). Debug prompts with `FLOWCHART_TRACE=1`.
 - ASSERT macros are pre-scanned so they don't become DECISION nodes.
+- **Node labels are reviewer-correctable** (`nodeLabel` slots: flowchart id + node id; engine-dev §8).
+  Phase 3 puts corrections back before rendering (`views/flowcharts._apply_text_overrides`). A correction
+  made later is redrawn from the stored `cfg` through `models.cfg_for_rendering` → `build_dot`
+  (`engine/review/redraw.py`), so `cfg_for_rendering` must keep restoring every field `build_dot` reads.
+  A node id is a *position*: a builder change that renumbers nodes makes `slot_shape` (a hash of the
+  node-id list) disagree, and the correction is dropped (Phase 3) or orphaned (carry-forward) instead of
+  landing on the wrong box — REQ-ID-02, HANDOVER §4.13.
 
 ## 2. Incremental engine (`engine/incremental/`)
 
@@ -76,6 +88,10 @@ Start context (read as needed, don't duplicate here):
   `generate_incremental` does the I/O. Modules include `git_ops`, `hashing`, `fingerprint`, `affected`
   (affected TUs), `parse_merge` (narrowed-parse merge + cross-TU edge re-resolve from baseline `FUNC_KEYS`),
   `baseline`, `stores` (workspace / version / hash / edge stores + `ReuseIndex`), `report`.
+- **Reviewer corrections travel with the version.** Once the baseline is chosen,
+  `_carry_review_overrides(base_vid, version_id)` copies its `text_overrides` onto the new version
+  (`engine/review/carry_forward.py`) and orphans any whose entity changed. Keep that call — dropping it
+  in a merge fails only `test_review_pipeline_wiring.py` (HANDOVER §4.4).
 
 ## 3. Boundaries
 
@@ -91,7 +107,11 @@ Start context (read as needed, don't duplicate here):
 
 ## Before you finish
 - Structure change? The **CFG stays deterministic** — the LLM only labels; the CFG/topo + shape-count checks still pass (no LLM needed).
-- Persisted only the DOT string? (the structured CFG is rebuilt on demand, never stored.)
+- Changed what `serialize_cfg` writes or what `build_dot` reads? `cfg_for_rendering` must still rebuild the
+  same picture (`tests/unit/test_cfg_for_rendering.py` compares the two DOT strings).
 - Incremental change? Pure planners unit-tested; reuse/impact accounted; the version4 model files stay consistent.
-- Meaningful change? Update PROJECT_CONTEXT.md + the flowchart README/FLOW.md — pair with `docs-maintainer`.
+- CFG builder change that renumbers nodes? Label corrections on those flowcharts orphan by design — say so
+  in PROJECT_CONTEXT, and run `pytest tests/unit/test_review_*.py`.
+- Meaningful change? Update the project context (`project-context/`: topic file + dated history entry) + the
+  flowchart README/FLOW.md — pair with `docs-maintainer`.
 - Touching the model schema, doc-gen, or the main LLM/config? That's `engine-dev`.

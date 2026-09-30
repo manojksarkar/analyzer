@@ -102,6 +102,65 @@ class TestEmptyIsNotMissing:
         with pytest.raises(ModelFileMissing):
             read_model_file(GLOBALS)
 
+    # --- the same rule for the PRESENCE check ------------------------------------------------
+    #
+    # `read` above was fixed; `missing` was not, so the two answered differently for one
+    # artifact. `--use-model` asks `missing`, and refused a finished model of a scope with no
+    # globals: "the model is missing from the database: globalVariables". Found on a Platform-
+    # scoped version (156 functions, 0 globals) whose every `reexport` was blocked.
+
+    def _finished_model_without_globals(self, db):
+        from core.model_io import write_model_file, FUNCTIONS, GLOBALS, UNITS as U, \
+            COMPONENTS, HASHES as H
+        repo = _repo(db)
+        write_model_file(FUNCTIONS, FUNCS)
+        write_model_file(H, HASHES)
+        write_model_file(GLOBALS, {})
+        write_model_file(U, UNITS)
+        write_model_file(COMPONENTS, {"App": {"name": "App"}})
+        repo.flush()
+        model_repo.set_repository(model_repo.DbRepository(VID, PID))   # a fresh process
+
+    def test_the_presence_check_agrees_with_read(self, db):
+        from core.model_io import model_files_present, read_model_file, GLOBALS
+        self._finished_model_without_globals(db)
+        assert read_model_file(GLOBALS) == {}
+        assert model_files_present(GLOBALS) == [], (
+            "read says the empty globals artifact is there; the presence check must agree")
+
+    def test_use_model_accepts_a_finished_model_with_no_globals(self, db):
+        """Exactly the set run.py's `--use-model` check asks for."""
+        from core.model_io import model_files_present, FUNCTIONS, GLOBALS, UNITS as U, COMPONENTS
+        self._finished_model_without_globals(db)
+        assert model_files_present(FUNCTIONS, GLOBALS, U, COMPONENTS) == []
+
+    def test_units_still_missing_after_a_failed_phase_2(self, db):
+        """THE LINE THIS FIX MUST NOT CROSS. Phase 1 persisted a model, Phase 2 never derived
+        units. `_model_exists()` is true, so a blanket copy of `read`'s rule would call units
+        present -- and `--use-model` would resume into empty documents. Units are not
+        MAY_BE_EMPTY: their emptiness is a fact about the run, not the source."""
+        from core.model_io import model_files_present, write_model_file, FUNCTIONS, \
+            UNITS as U, COMPONENTS, HASHES as H
+        repo = _repo(db)
+        write_model_file(FUNCTIONS, FUNCS)            # Phase 1 ran
+        write_model_file(H, HASHES)
+        repo.flush()
+        model_repo.set_repository(model_repo.DbRepository(VID, PID))
+        assert set(model_files_present(U, COMPONENTS)) == {U, COMPONENTS}
+
+    def test_globals_still_missing_when_nothing_was_ever_parsed(self, db):
+        """No model at all: an empty globals artifact is then evidence of nothing, and must not
+        be waved through."""
+        from core.model_io import model_files_present, GLOBALS
+        _repo(db)
+        assert model_files_present(GLOBALS) == [GLOBALS]
+
+    def test_only_source_facts_may_be_empty(self):
+        """If this set grows, each addition needs the same argument: its emptiness describes
+        the code being documented, never a phase that did not run."""
+        assert model_repo.MAY_BE_EMPTY == frozenset({"globalVariables", "dataDictionary"})
+        assert not model_repo.MAY_BE_EMPTY & {"units", "components", "functions"}
+
 
 class TestDatabaseBacking:
     def test_write_then_read_through_model_io(self, db):

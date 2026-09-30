@@ -19,7 +19,8 @@ units/components** (one diagram per external caller), plus the LLM call-descript
 > renders PNG via `mmdc` · **not** the behaviour-*name* derivation (that's `engine-dev`).
 
 Start context (read as needed, don't duplicate here):
-- **Deep detail / how it plugs into the pipeline** → root [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md), and `engine-dev`.
+- **Deep detail / how it plugs into the pipeline** → root [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) (the index;
+  Phase 3 views are §12 in [VIEWS_AND_EXPORT.md](project-context/VIEWS_AND_EXPORT.md)), and `engine-dev`.
 - The package is self-describing — start at [generator.py](engine/behaviour_diagram/generator.py) and the
   view [views/behaviour_diagram.py](engine/views/behaviour_diagram.py).
 
@@ -44,9 +45,18 @@ Start context (read as needed, don't duplicate here):
 - Per non-private function with **external callers** (external = different component, or outside the selected
   group), it generates the `.mmd`(s), renders each to **PNG via `mmdc`** (`--scale 2`,
   `engine/config/puppeteer-config.json`), and writes `output/<group>/behaviour_diagrams/_behaviour_pngs.json`
-  → `_docxRows` (component → unit → `[{currentFunctionName, externalUnitFunction, pngPath, behaviorDescription}]`).
+  → `_docxRows` (component → unit → `[{currentFunctionName, currentFunctionId, currentFunctionDisplay,
+  externalUnitFunction, externalCallerId, pngPath, behaviorDescription}]`).
 - **Consumers:** `docx_exporter` embeds the PNGs + descriptions in the §2.N **Dynamic Behaviour** section;
   **SWE.4** reads the same rows for its Dynamic Behaviour specs.
+- **Which callers get a diagram:** `views.sequenceDiagrams.filterMode`, default `skip_within_unit` when the
+  key is absent (`generator._get_filter_mode`). On `SampleCppProject` the default draws **no** row;
+  `all_callers` draws 18 for `Layer1.My Sample` (`engine/config/api_*.sample_behaviour.example.json`).
+- **Reviewer corrections** (`behaviourDescription` slots, engine-dev §8) are put back before the
+  manifest write (`_apply_text_overrides`). A row is addressed by `(currentFunctionId, externalCallerId)` —
+  **never** `externalUnitFunction`, a display label two callers can share — so every row keeps
+  `externalCallerId`. `CallDescriptionGenerator` collapses each description onto one line (`_one_line`):
+  a row's bullets are stored joined by newline, so a newline inside one would split it in two.
 
 ## 3. Boundaries
 
@@ -59,5 +69,8 @@ Start context (read as needed, don't duplicate here):
 ## Before you finish
 - New behaviour-diagram logic? Still **one diagram per external caller**, private functions skipped, PNG via `mmdc`.
 - Description change? It flows through `CallDescriptionGenerator` (this package's LLM path), not the main enrichment.
-- Meaningful change? Update PROJECT_CONTEXT.md — pair with `docs-maintainer`.
+- Changed a row's fields or how its description is built? A reviewer's correction must still land —
+  `pytest tests/unit/test_review_behaviour_save.py tests/unit/test_review_phase3_overrides.py`.
+- Meaningful change? Update the project context (`project-context/`: topic file + dated history entry) — pair
+  with `docs-maintainer`.
 - Touching behaviour-*name* derivation, the model schema, or the DOCX exporter? That's `engine-dev`.

@@ -74,6 +74,39 @@
 | VW-8 | Pre-parse summary: the views on/off for the doc type, and what is built only because another view needs it | enhance | open | incremental/report.py |
 | VW-9 | `config.defaults.json` ships the development profile (`flowcharts`, `behaviourDiagram` off) and every project inherits it. Open: complete or fast as the shipped default | enhance | open | config.defaults.json |
 
+## Review & update — waiting on the develop owner
+> Points the feature's work met in develop's area and did not settle alone. None blocked the merge (PR #70); where it had to pick, the pick is reversible. **Status** `decide` = waits on the develop owner's answer. Detail and what to do either way: [REVIEW_UPDATE_HANDOVER §8](design/REVIEW_UPDATE_HANDOVER.md#8-waiting-on-the-develop-owner).
+
+| ID | Item | Type | Status | Ref |
+|---|---|---|---|---|
+| RU-1 | Units whose interface ids start the same (`Map`, `Map2` in one group) share one count so no id is printed twice (`15df7c5`) — SWE3_WIKI says `<NN>` counts within the unit, SWE3_SPEC REQ-IT-04 says the id is unique. Keep → add a `Map`/`Map2` fixture; revert → accept duplicate ids. No id changes on the sample (229/229) | issue | decide | model_deriver.py `_iface_scope_key`, SWE3_WIKI Interface ID |
+| RU-2 | In a group or layer run a function called only from another layer reads as private (470d15c; S3-7's trap), so most description corrections save and print nowhere — 25 of 229 printed on the sample. R11 `shownIn` says where each text is printed. Confirm the rule is meant | issue | decide | SWE3_WIKI Public vs. private, review/catalog.py |
+| RU-3 | With `views.behaviourDiagram` on, the default `views.sequenceDiagrams.filterMode` (`skip_within_unit`, absent from config.defaults.json) draws no Dynamic Behaviour row on the sample; `all_callers` draws 18. Related: VW-9 | enhance | decide | behaviour_diagram/generator.py, api_*.sample_behaviour.example.json |
+| RU-4 | mmdc hung once for 61 min on the unit diagram of `Layer1.Diag\|ArmIntrinsics`; drew normally next run. A timeout now stops the whole process tree (`3e52f41`; `5cfc286` on v2), so a hang costs 60 s and one picture. Cause unknown | issue | open | utils.py `_run_mmdc`, core/subprocess_util.py |
+| RU-5 | Unit and struct/class/union descriptions are generated in Phase 2 and stored (REQ-PRE-01), not in the exporter / unit header view; same prompts and fallbacks; one text per record (a typedef row reads its record's). Confirm | debt | decide | model_deriver.py `_enrich_unit_and_struct_descriptions`, views/unit_headers.py |
+| RU-6 | doccheck v2's pair check (`66f7f97`) finds a SWE.3 call by the words "A calls B" in a Behaviour Description bullet, which the LLM writes and R6 lets a reviewer rewrite freely — a reworded bullet gives a false P1 "the specification calls X, which the design draws no arrow for". Keep the call at the front (R6 checks it) / leave it / change doccheck | issue | decide | tools/doccheck/pairing.py `_ARROW_RE`, review/override_service.py `apply_behaviour_override` |
+
+## Review & update — follow-ups from the PR #70 review
+> Found reviewing PR #70 at `9b1f3c9` and left out of it on purpose; each becomes its own ticket. `RF-n` is the review's `Fn`. Line numbers are at `9b1f3c9`: where the code has moved, find it by the symbol.
+
+| ID | Item | Type | Status | Ref |
+|---|---|---|---|---|
+| RF-1 | A failure to load the corrections is swallowed, but the derivation record is still written: the LLM text is exported while R9 says up to date | issue | open | engine/run_views.py:196-220, engine/model_deriver.py:708-741 |
+| RF-2 | Flowchart pictures with `views.flowcharts` on: at most 50 renders per capture; an incremental Phase 3 copies the baseline PNG for unchanged functions; `_draw_pending_pictures` runs after the DOCX is built and the job is marked done; `render_jobs` are not carried to the next version | issue | open | review/render_queue.py:115, incremental/store.py:107, views/flowcharts.py:1488-1531 |
+| RF-3 | Cross-version reuse copies human text as if it were LLM text (v1 corrected, v2 orphaned, v3 reverted) -- breaks HANDOVER §4.8 | issue | open | incremental/engine.py:77, 137-175 |
+| RF-4 | `setup` does not stamp `alembic_version`, so a later `alembic upgrade head` fails with DuplicateColumn; the "blocked" hint points at that same failing command | issue | open | tools/db_setup.py:167-200 |
+| RF-5 | A save uses two pooled connections, so the lock holder can time out when the pool is full; it loads all four model artifacts for one field; `patch_interface_tables` parses every file | perf | open | review/override_service.py:236, 241, 349, review/rerender.py:165 |
+| RF-6 | Re-exporting a version made before the merge loses its LLM unit and struct descriptions: nothing backfills them | issue | open | docx_exporter.py:819, views/unit_headers.py:75-89 |
+| RF-7 | Phase 2 generates unit and struct descriptions for SWE.4-only runs, for `unitHeaders: false`, and for header-only units | perf | open | model_deriver.py:1223-1290 |
+| RF-8 | Upgrade-order release note: without 0009 every generate fails; an API started before 0014 answers 500 on sign-in | debt | open | core/model_store.py:507, 584, api/middleware/auth.py |
+| RF-9 | Internal error text leaks: R5, R7, R9 and R10 are not wrapped in `_as_http`; `_version()` / `_connection()` sit outside the `try`; `_connection()` puts `str(exc)` in its 503 | issue | open | api/routes/text_overrides.py:113, 440-452, 639-641, 663-667, 693-698 |
+| RF-10 | No size limit on correction text: a 5 MB `text` was accepted | issue | open | api/routes/text_overrides.py:65-90 |
+| RF-11 | Docs volume and duplication: drop `docs/REVIEW_UPDATE_REQUIREMENTS.md`, fold HANDOVER into the PR description and BACKLOG, trim DESIGN and API_SPEC | debt | open | docs/ |
+| RF-12 | `with TestClient(app)` runs the app's startup on the configured database, and the test accepts 401 as a pass | issue | open | tests/unit/test_review_api_contract.py:436 |
+| RF-13 | `test_render_timeout_stops_the_tree.py` is racy under load; `test_runner_never_hangs.py` needs the `slow` marker | issue | open | tests/unit/test_render_timeout_stops_the_tree.py:48, tests/unit/test_runner_never_hangs.py |
+| RF-14 | About 80 source-text grep checks break on renames elsewhere -- AST or behaviour tests would hold up better; `test_project_context_fits.py` belongs in a docs-lint step, not the unit suite | debt | open | tests/ |
+| RF-15 | Nits: `render_queue` uses no `begin_nested()` per job on PG; `set_entity_field` has no `project_id` filter; `schema.py` server defaults differ from 0010 for `is_orphaned` and `group_name`; 2 redundant indexes; `DB_SCHEMA.md` ER diagram errors; `clone.py` lacks `--end-of-options` and a hex check on `commit_sha`; `grant_access --all` defaults to admin and has an undefined `reviewer` role; `cascade._drop_overridden` counts orphans; `rerender` patches only the first copy; `carry_forward` keeps a stale `llm_text`; wrong docstring in `incremental/engine.py`; `_stamp_derivation` shares the capture transaction; `onboard --owner <unknown>` exits 2; `--sqlite` setup skips the column repair | debt | open | review/render_queue.py, api/db/postgres/schema.py, clone.py:199, review/carry_forward.py:324, incremental/engine.py:550-557, tools/grant_access.py |
+
 ## SWE.2 — architecture
 | ID | Item | Type | Status | Ref |
 |---|---|---|---|---|

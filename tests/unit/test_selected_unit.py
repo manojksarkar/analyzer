@@ -190,3 +190,93 @@ def test_a_near_miss_gets_a_suggestion(capsys):
 def test_one_bad_name_fails_the_whole_run(capsys):
     with pytest.raises(SystemExit):
         run_views._resolve_units(MODEL, ["Core", "Bogus"], IN_GROUP)
+
+
+
+# --- when run.py may check the unit, before any phase runs ----------------
+
+from core.group_planner import unit_check_can_run_early  # noqa: E402
+
+
+class TestWhenTheEarlyCheckMayRun:
+    """`--selected-unit` is consumed by Phase 3 alone, so run.py may validate it at startup only
+    when the units it would read ARE the units Phase 3 will use.
+
+    `generate` starts run.py twice -- Phase 1 alone, then Phases 2-4 -- passing the flag to both.
+    The check used to run whenever a units model existed, so on a version left with units by an
+    earlier attempt, the Phase-1 process exited with "Units in scope: (none)" before parsing
+    anything: blaming the unit name for a model that was about to be replaced. Reproduced on a
+    real run, same message, same traceback lines as the report.
+    """
+
+    # (from_phase, to_phase, use_model)  ->  may check early?
+    CASES = [
+        ((1, 1, False), False, "generate, process A: Phase 1 only -- Phase 3 never runs here"),
+        ((2, None, False), False, "generate, process B: Phase 2 rebuilds the units first"),
+        ((1, None, False), False, "a plain full run: Phases 1-2 rebuild the model"),
+        ((1, 2, False), False, "parse + derive only: Phase 3 never runs"),
+        ((3, None, False), True, "reexport --from-phase 3: the stored model is final"),
+        ((3, None, True), True, "reexport --from-phase 3 with --use-model"),
+        ((1, None, True), True, "--use-model: Phases 1-2 are skipped, the model is final"),
+        ((4, None, True), False, "export only: Phase 3 does not run, the flag is unused"),
+        ((3, 3, False), True, "exactly Phase 3"),
+        ((3, 2, False), False, "an empty range: nothing runs"),
+    ]
+
+    @pytest.mark.parametrize("args,expected,why", CASES, ids=[c[2] for c in CASES])
+    def test_the_decision(self, args, expected, why):
+        assert unit_check_can_run_early(*args) is expected, why
+
+    def test_it_is_never_true_when_the_model_is_about_to_be_rebuilt(self):
+        """THE BUG, stated as a property rather than as one case."""
+        for from_phase in (1, 2):
+            for to_phase in (None, 1, 2, 3, 4):
+                assert not unit_check_can_run_early(from_phase, to_phase, use_model=False)
+
+    def test_it_is_never_true_when_phase_3_does_not_run(self):
+        """The flag is consumed by Phase 3 alone; a process without Phase 3 has nothing to check."""
+        for to_phase in (1, 2):
+            for use_model in (False, True):
+                assert not unit_check_can_run_early(1, to_phase, use_model)
+        assert not unit_check_can_run_early(4, None, True)
+
+
+class TestRunPyUsesTheDecision:
+    """run.py cannot be imported in a test -- it runs on import -- so its wiring is read."""
+
+    SRC = open(os.path.join(os.path.dirname(ENGINE), "engine", "run.py"), encoding="utf-8").read()
+
+    def test_the_startup_check_is_gated(self):
+        import re
+        assert re.search(r"^if selected_units_arg and not _unit_check_early\(from_phase, "
+                         r"to_phase, use_model\):", self.SRC, re.M), (
+            "run.py validates --selected-unit at startup without asking whether the stored "
+            "units are the ones Phase 3 will use")
+
+    def test_the_matcher_cannot_match_a_definition(self):
+        """A wiring test whose matcher also matches a `def` line passes however the code
+        behaves -- a mistake made twice already on this branch."""
+        import re
+        pat = re.compile(r"^if selected_units_arg and not _unit_check_early\(", re.M)
+        assert not pat.search("def unit_check_can_run_early(from_phase, to_phase, use_model):")
+
+    def test_the_gate_comes_before_the_stored_units_are_read(self):
+        """Gating AFTER the read would still check against the leftover model."""
+        gate = self.SRC.index("if selected_units_arg and not _unit_check_early(")
+        read = self.SRC.index("_units_data = _rmf(UNITS")
+        assert gate < read
+
+    def test_run_views_is_not_imported_at_the_top_of_run_py(self):
+        """run_views rewrites sys.argv and snapshots paths on import. It is imported only in the
+        branch that resolves units against a stored model, as it always was."""
+        import re
+        assert not re.search(r"^import run_views", self.SRC, re.M)
+
+    def test_a_run_without_the_flag_says_nothing_about_it(self):
+        """The old `else` was paired with `if selected_units_arg:`, so every run WITHOUT the
+        flag announced "--selected-unit will be validated in Phase 3"."""
+        import re
+        block = self.SRC[self.SRC.index("from core.group_planner import unit_check_can_run_early"):
+                         self.SRC.index("plans = plan_runs(")]
+        assert not re.search(r"^else:", block, re.M), (
+            "a top-level else after the --selected-unit block logs on runs that have no flag")

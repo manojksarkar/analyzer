@@ -68,6 +68,99 @@ def _same_dir(a: str, b: str) -> bool:
     return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 
 
+def _verify_output_capture(version_id: str, output_dir: str, stored: int) -> None:
+    """Check that what is on disk actually reached the database (`REQ-PRE-02`).
+
+    `persist_output_files` returning a count is not proof: it counts rows it *offered*, and a
+    partial write, a filtered file or an encoding it could not read would each leave the two
+    stores disagreeing. The cheap check is the one that matters -- how many text files exist,
+    against how many rows were written.
+
+    Reported, never raised. The run has its documents; the point is that a divergence is
+    something somebody is TOLD about rather than something they discover from a stale document
+    weeks later.
+    """
+    from core.model_store import _OUTPUT_TEXT_EXTS
+
+    if not os.path.isdir(output_dir):
+        return
+    on_disk = sum(1 for root, _d, files in os.walk(output_dir) for f in files
+                  if f.lower().endswith(_OUTPUT_TEXT_EXTS))
+    if on_disk != stored:
+        from core.logging_setup import get_logger
+        get_logger("incremental").warning(
+            "output capture stored %d row(s) for version %s but %d text file(s) are on disk. "
+            "The database and the disk disagree; readers that use the database will serve the "
+            "difference.", stored, version_id, on_disk)
+
+
+def _draw_pending_pictures(engine, version_id: str, output_dir: str) -> None:
+    """Render the flowchart pictures this version is still waiting on (`REQ-IM-02`).
+
+    Never fatal. The documents are already rendered and captured by the time this runs; failing
+    here would throw away a completed generation over an image that can be drawn later, and the
+    export guard reports the outstanding jobs either way.
+    """
+    try:
+        from review.render_queue import run_pending
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        with engine.begin() as cx:
+            done = run_pending(cx, version_id, output_dir=output_dir,
+                               project_root=project_root)
+        if done:
+            from core.logging_setup import get_logger
+            get_logger("incremental").info("review: drew %d corrected flowchart picture(s)",
+                                           len(done))
+    except Exception as exc:                                 # noqa: BLE001 - see docstring
+        from core.logging_setup import get_logger
+        get_logger("incremental").warning("review: could not draw pending pictures: %s", exc)
+
+
+def _orphan_misplaced_labels(engine, version_id: str) -> None:
+    """Orphan the node-label corrections that do not fit the flowcharts just stored (REQ-ID-02).
+
+    Phase 3 applies a label only when its own row's `slot_shape` fits the graph it writes into,
+    and drops one that does not -- a correction carried from a version whose builder numbered the
+    nodes differently. The row must not go on claiming to be in force (`isOverridden`, `canUndo`,
+    an undo writing the old graph's label onto the new one), and this is the moment the graph
+    that decides it reaches the database: `carry_forward.orphan_misplaced_labels`.
+
+    Its own transaction, after the capture's, and never fatal: a failure leaves the rows as they
+    were, and Phase 3 goes on dropping them.
+    """
+    from core.logging_setup import get_logger
+    try:
+        from review.carry_forward import orphan_misplaced_labels
+        with engine.begin() as cx:
+            done = orphan_misplaced_labels(cx, version_id)
+        if done:
+            get_logger("incremental").warning(
+                "review: %d flowchart label correction(s) of version %s were written for an "
+                "earlier numbering of their flowchart's nodes -- kept, marked orphaned, not "
+                "applied: %s", len(done), version_id, ", ".join(sorted(done)[:20]))
+    except Exception as exc:                                 # noqa: BLE001 - see docstring
+        get_logger("incremental").warning(
+            "review: could not check version %s's flowchart label corrections against its new "
+            "flowcharts: %s", version_id, exc)
+
+
+def _stamp_derivation(cx, version_id: str, output_dir: str) -> None:
+    """Record what Phase 3 derived, for the export guard (REQ-AP-04).
+
+    From the records Phase 3 left in the output directories (`export_guard.DERIVATION_RECORD`):
+    which views each run rebuilt, for which components, from corrections read when. They REPLACE
+    the version's stamps, as the files just replaced its output rows. Not a stamp for "now" --
+    that claimed a derivation for every view of every group whatever Phase 3 had done, including
+    nothing at all on an export-only run.
+
+    Kept out of `persist_output_files` on purpose: that function's job is the rows, and the guard
+    is a separate fact about when they were produced. Imported inside the call so `engine/review/`
+    is not a load-time dependency of the store.
+    """
+    from review.export_guard import stamp_recorded_derivations
+    stamp_recorded_derivations(cx, version_id, output_dir)
+
+
 class ArtifactStore(ABC):
     """Version-keyed artifact storage. `proj_root` (workspaces/<pid>) is set by subclasses and
     backs the shared file-area methods (config / manifest / output) below."""
@@ -155,29 +248,6 @@ class ArtifactStore(ABC):
         """Persist the structured model (functions/globals/datadict/edges/hashes/units/
         components/summaries) for `version_id` from a generated model/ dir. Idempotent."""
 
-    @abstractmethod
-    def read_model_parts(self, version_id: str, names) -> Dict[str, Any]:
-        """Just the named parts of a model — {"functions", "globals", "hashes", "edges", ...}.
-
-        `read_model` fetches all eight, three of them expensive joins over entity_versions +
-        entities + content_blobs. Every orchestrator caller wants three or four, and the
-        baseline reads used to be separate calls that each opened their OWN connection — the
-        per-entity-connection cost doc 09 B5a warns about, one level up.
-        """
-        out: Dict[str, Any] = {}
-        for n in names:
-            if n == "functions":
-                out[n] = self.read_functions(version_id)
-            elif n == "globals":
-                out[n] = self.read_globals(version_id)
-            elif n == "hashes":
-                out[n] = self.read_hashes(version_id)
-            elif n == "edges":
-                out[n] = self.read_edges(version_id)
-            else:
-                out[n] = (self.read_model(version_id) or {}).get(n) or {}
-        return out
-
     def read_model(self, version_id: str) -> Dict[str, Any]:
         """{functions, globals, datadict, edges, units, components, summaries, hashes}."""
 
@@ -195,7 +265,17 @@ class ArtifactStore(ABC):
         return 0
 
     def read_model_parts(self, version_id: str, names) -> Dict[str, Any]:
-        """ONE connection, only the loaders asked for."""
+        """Just the named parts of a model — {"functions", "globals", "hashes", "edges", ...}, on
+        ONE connection, with only the loaders asked for.
+
+        `read_model` fetches all eight, three of them expensive joins over entity_versions +
+        entities + content_blobs. Every orchestrator caller wants three or four, and the
+        baseline reads used to be separate calls that each opened their OWN connection — the
+        per-entity-connection cost doc 09 B5a warns about, one level up.
+
+        (This class used to define the method twice: an abstract per-part version above this
+        one, which Python discarded in favour of this, so it never ran.)
+        """
         from incremental import model_store as _ms
         loaders = {"functions": _ms.load_functions, "globals": _ms.load_globals,
                    "hashes": _ms.load_hashes, "edges": _ms.load_edges,
@@ -335,9 +415,35 @@ class PgStore(ArtifactStore):
         try:
             from incremental.model_store import persist_output_files
             with self.engine.begin() as cx:
-                persist_output_files(cx, version_id, output_dir)
-        except Exception:                                    # best-effort: disk output is intact
-            pass
+                stored = persist_output_files(cx, version_id, output_dir)
+                # REQ-AP-04's baseline: when this version's output was last derived. Recorded
+                # here because this is the one point Phase-3 output reaches the database, so
+                # every ordinary run has a baseline -- not only versions somebody corrected --
+                # and in the same transaction, so the stamps always describe the rows stored.
+                _stamp_derivation(cx, version_id, output_dir)
+            _verify_output_capture(version_id, output_dir, stored)
+        except Exception as exc:
+            # NOT swallowed. This used to be `except Exception: pass` under the note
+            # "best-effort: disk output is intact" -- and the disk IS intact, which is exactly
+            # what made it dangerous. The document served from the database, or from any other
+            # node, silently kept the PREVIOUS render while this machine looked correct.
+            #
+            # Still not fatal: the run has produced its documents and they are on disk. But a
+            # divergence between the two stores is now something somebody is told about rather
+            # than something they discover (REQ-PRE-02).
+            from core.logging_setup import get_logger
+            get_logger("incremental").error(
+                "output capture FAILED for version %s: %s. The documents are on disk, but the "
+                "database still holds the previous render -- readers that use it (the API, the "
+                "HTML view, another node) will serve stale output until this is re-run.",
+                version_id, exc)
+        # REQ-ID-02. The flowcharts just stored decide which label corrections still fit.
+        _orphan_misplaced_labels(self.engine, version_id)
+        # REQ-IM-02. A correction saved where no output tree existed left its picture owed. This
+        # host has one, and has just written this version's output into it, so it is the right
+        # place to pay that debt -- and the export blocks until it is paid.
+        _draw_pending_pictures(self.engine, version_id, os.path.join(
+            self.artifact_dir(version_id), "output"))
         return captured
 
     def write_run_metadata(self, version_id: str, meta: Dict[str, Any]) -> None:

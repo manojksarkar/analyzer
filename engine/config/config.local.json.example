@@ -15,6 +15,13 @@
     "database": "analyzer"
   },
 
+  // How long a sign-in to the API lasts, in minutes (default 480, a working day). After it, every
+  // request answers 401 "Signature has expired" and Swagger needs a fresh token; the web app
+  // renews by itself. Read by the API server at start-up — restart it after a change.
+  "auth": {
+    "accessTokenMinutes": 480
+  },
+
   // LLM endpoint + credentials. Keep these here (gitignored), NOT in tracked config.defaults.json.
   // Deep-merged over config.defaults.json's `llm`, so list ONLY the keys you want to override — e.g. the
   // gateway URL and the auth-header token; provider/model/timeouts stay as set in config.json.

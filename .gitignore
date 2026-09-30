@@ -67,3 +67,7 @@ dist/
 
 # LLM prompt-parity corpora (docs/production-redesign/07 §2)
 .parity/
+
+# tools/review_api_test -- your own config holds a password (and maybe a repo token); the report is per run
+tools/review_api_test/config.json
+review_api_test_report.json

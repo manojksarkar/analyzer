@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from sqlalchemy import (
     JSON, BigInteger, Boolean, Column, Date, DateTime, Float, ForeignKey, Index,
-    Integer, MetaData, String, Table, Text, UniqueConstraint,
+    Integer, MetaData, String, Table, Text, UniqueConstraint, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -57,6 +57,15 @@ users = Table(
     Column("avatar_url", String),
     Column("hashed_password", String, nullable=False),
     _ts("created_at", nullable=False),
+    # A user who may act on EVERY project without a `project_members` row.
+    #
+    # Access is otherwise per project, and that is still the model -- this is a deliberate
+    # exception for the operator account, not a second one. It lives on the user rather than
+    # being a hard-coded email so it is data: testable, greppable, and changeable without a
+    # deploy. `server_default` matters as much as the default: the column is added to databases
+    # that already have rows, and a NOT NULL column with no default cannot be.
+    Column("is_superuser", Boolean, nullable=False,
+           default=False, server_default=text("false")),
 )
 
 projects = Table(
@@ -329,6 +338,10 @@ model_units = Table(
     Column("path", String),
     Column("file_name", String),
     Column("included_headers", _JSONB),   # parser-specific (direct includes) - not derivable
+    # LLM-written, generated in Phase 2 (REQ-PRE-01). It used to be produced inside the
+    # DOCX exporter and discarded, so the HTML view could not show it and every export
+    # re-paid for the LLM call.
+    Column("description", Text),
     UniqueConstraint("version_id", "unit_key", name="pk_model_units"),
     # function/global/caller/callee lists DROPPED (D-13) — derived from entity_versions / model_edges
 )
@@ -600,10 +613,140 @@ One row per file rather than one blob per version: `functions.json` alone reache
 a large project, and a reader that only wants `hashes.json` should not pull it."""
 
 
+# ---------------------------------------------------------------------------
+# Review & Update — a reviewer's corrections to LLM-written text
+# (docs/spec/REVIEW_UPDATE_SPEC.md · docs/design/REVIEW_UPDATE_DESIGN.md)
+# ---------------------------------------------------------------------------
+text_overrides = Table(
+    "text_overrides", metadata,
+    # The CURRENT state of one slot. Read on every page render, so it is a single indexed
+    # lookup and never "the newest row in history" -- read cost must not grow with how often
+    # someone edited (REQ-ST-05).
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("slot_kind", String, nullable=False),        # review.slot.ALL_KINDS
+    Column("slot_key", String, nullable=False),         # review.slot.make() -- nothing else builds one
+    # BOTH texts. The original is what undo restores (REQ-API-04) and the "wrong" half of the
+    # training pair (REQ-TD-01); a correction without it teaches nothing. Captured once, on the
+    # first override, and never rewritten.
+    Column("llm_text", Text),
+    Column("human_text", Text, nullable=False),
+    # Set when the slot stops resolving -- a renamed or deleted entity. The row is KEPT
+    # (REQ-ID-03): it is the user's work, it is training data, and a rename may be reverted.
+    Column("is_orphaned", Boolean, nullable=False, default=False),
+    Column("updated_by", String),
+    _ts("updated_at", nullable=False),
+    # Provenance, so a correction can still be interpreted after a prompt change (REQ-TD-02).
+    Column("llm_model", String),
+    Column("llm_cache_version", Integer),
+    Column("llm_context", _JSONB),
+    # nodeLabel only: a hash of the flowchart's node-id list at the moment the text was
+    # written (REQ-ID-02). Node ids are POSITIONS -- identical source renumbers when the CFG
+    # builder changes or when cfgSimplification merges nodes past its 15-node threshold, so
+    # `source_hash unchanged` alone would carry a correction onto a different node in silence.
+    # The flowchart label cache already stores the node-id set for exactly this reason
+    # (flowchart_engine._apply_cached_labels). Null for every other kind.
+    #
+    # Its own column, not a key inside llm_context: the node list is not what the LLM was
+    # shown, and one column meaning two things by kind is how the interface-id collision began.
+    Column("slot_shape", String),
+    UniqueConstraint("version_id", "slot_kind", "slot_key", name="pk_text_overrides"),
+    Index("ix_text_overrides_version_kind", "version_id", "slot_kind"),
+    # The export guard asks "is any override newer than the last derivation" (REQ-AP-04).
+    Index("ix_text_overrides_updated", "version_id", "updated_at"),
+)
+
+text_override_history = Table(
+    "text_override_history", metadata,
+    # Append-only, one row per human edit. Trimmed to the newest N per slot
+    # (llm.overrideHistoryDepth). `llm_text` deliberately lives on text_overrides and NOT here,
+    # which is what makes "the original is never evicted" structural rather than a rule someone
+    # has to remember (REQ-ST-04).
+    Column("history_id", _BIGID, primary_key=True, autoincrement=True),
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("slot_kind", String, nullable=False),
+    Column("slot_key", String, nullable=False),
+    Column("human_text", Text, nullable=False),
+    Column("updated_by", String),
+    _ts("updated_at", nullable=False),
+    Column("seq", Integer, nullable=False),             # monotonic per slot; drives the N-cap
+    Index("ix_override_history_slot", "version_id", "slot_kind", "slot_key", "seq"),
+)
+
+render_jobs = Table(
+    "render_jobs", metadata,
+    # A picture that must be redrawn because a reviewer corrected a label in it (REQ-IM-01).
+    #
+    # A row rather than "just render it in the request" for one reason above all: the EXPORT has
+    # to be able to ask whether a picture is still being produced (REQ-IM-02). Without a durable
+    # answer, an export a second after an edit ships the new text everywhere and the old picture --
+    # the same split-origin failure that once left a stored graph and a document image coming from
+    # different versions.
+    #
+    # It also lets the render happen where the resources are. Rendering needs an output tree and
+    # Graphviz, and the host that saves a correction is not guaranteed to have either.
+    Column("job_id", _BIGID, primary_key=True, autoincrement=True),
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("flowchart_id", String, nullable=False),
+    Column("png_name", String),
+    # pending -> done | failed. `pending` is what blocks an export.
+    Column("status", String, nullable=False),
+    Column("error", Text),
+    Column("requested_by", String),
+    _ts("requested_at", nullable=False),
+    _ts("finished_at"),
+    # Not unique on (version, flowchart): a second correction while the first render is still
+    # pending is a second job. Collapsing them would let a render that started before the second
+    # edit satisfy it, and the picture would be one edit behind with nothing pending to say so.
+    Index("ix_render_jobs_pending", "version_id", "status"),
+)
+
+regeneration_queue = Table(
+    "regeneration_queue", metadata,
+    # Slots whose LLM text was built FROM text a human has since corrected, and which therefore
+    # need regenerating (REQ-CS-01). Recorded rather than regenerated on the spot for two
+    # reasons, both measured rather than assumed:
+    #
+    #   * `get_description` needs the function's SOURCE, and the source is not in the model --
+    #     it is in the git checkout. An API host is not guaranteed to have one.
+    #   * regenerating is an LLM call. A text correction must not take minutes.
+    #
+    # And it cannot simply be skipped: the description cache is keyed on the callee's SOURCE plus
+    # its dependency hashes (llm_core.cache.compute_hash), and correcting a DESCRIPTION changes
+    # neither. So the next run would hit the cache and the caller would keep its stale wording for
+    # ever. The queue is what makes the regeneration eventually happen.
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("slot_kind", String, nullable=False),
+    Column("slot_key", String, nullable=False),
+    # Which correction caused this, so a reviewer can be told why their edit changed something
+    # they did not touch, and so a stale entry can be explained rather than guessed at.
+    Column("reason", String),
+    Column("source_slot_kind", String),
+    Column("source_slot_key", String),
+    Column("requested_by", String),
+    _ts("requested_at", nullable=False),
+    # One pending entry per slot: two corrections that both invalidate the same caller need it
+    # regenerated once, not twice.
+    UniqueConstraint("version_id", "slot_kind", "slot_key", name="pk_regeneration_queue"),
+    Index("ix_regeneration_queue_version", "version_id"),
+)
+
+view_derivations = Table(
+    "view_derivations", metadata,
+    # When each view was last derived from the model. The export guard's other input: an
+    # override newer than the oldest derivation means the rendered views are stale, and
+    # `reexport --from-phase 4` would otherwise ship the previous text silently (REQ-AP-04).
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("view_name", String, nullable=False),        # views.registry.VIEW_REGISTRY key
+    Column("group_name", String, nullable=False, default=""),   # "" = the whole version
+    _ts("derived_at", nullable=False),
+    UniqueConstraint("version_id", "view_name", "group_name", name="pk_view_derivations"),
+)
+
 # retention/delete path and asserted in tests so a new per-version table can't be
 # added without a delete story.
 PER_VERSION_TABLES = frozenset({
     "entity_versions", "model_units", "model_components", "model_summaries",
     "model_edges", "tu_includes", "view_interface_tables", "view_behaviour_rows",
     "model_unit_diagrams", "model_flowcharts", "documents", "parse_snapshots", "knowledge_base", "incremental_plans",
+    "text_overrides", "text_override_history", "view_derivations", "regeneration_queue", "render_jobs",
 })
