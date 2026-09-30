@@ -149,6 +149,43 @@
   .pill-swe1 { background: #f0fdf9; color: #00a572; }
   .pill-sys1 { background: #faf5ff; color: #7c3aed; }
   .pill-sys2 { background: #fff7ed; color: #c2410c; }
+  .pill-swe4 { background: #e0f5f1; color: #00796b; }
+
+  /* SWE.4 reader - mirrors the DOCX (engine/swe4_exporter.py): per function, Table A (the test
+     content) and Table B (the metadata). Table A is the DOCX's six columns turned into six rows, so
+     the long Test Steps column gets the page's width. */
+  .s4-h3 { font: 600 17px/24px 'Inter', sans-serif; color: #0b1c30; margin: 28px 0 4px; }
+  .s4-h4 { font: 600 15px/22px 'Inter', sans-serif; color: #0b1c30; margin: 22px 0 4px; }
+  .s4-num { font: 600 12px/18px 'JetBrains Mono', monospace; color: #74777d; margin-right: 6px; }
+  .s4-spec { margin-top: 26px; scroll-margin-top: 16px; }
+  .s4-spec-h { display: flex; align-items: baseline; gap: 2px; margin-bottom: 10px; font: 600 14px/20px 'Inter', sans-serif; color: #0b1c30; }
+  .s4-box { border: 1px solid #c4c6cd; border-radius: 0.5rem; overflow: hidden; }
+  .s4-a { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .s4-a th { width: 148px; text-align: left; vertical-align: top; padding: 10px 12px; background: #f8f9ff; border-right: 1px solid #e5eeff; border-bottom: 1px solid #e5eeff; font: 600 11px/17px 'JetBrains Mono', monospace; color: #44474c; }
+  .s4-a td { vertical-align: top; padding: 9px 14px; border-bottom: 1px solid #e5eeff; color: #0b1c30; line-height: 1.55; }
+  .s4-a tr:last-child th, .s4-a tr:last-child td { border-bottom: none; }
+  .s4-a code, .s4-b code { font: 500 11.5px 'JetBrains Mono', monospace; background: #eff4ff; padding: 0 4px; border-radius: 3px; }
+  .s4-list { margin: 0; padding: 0; list-style: none; }
+  .s4-list li { display: flex; gap: 6px; }
+  .s4-list .n { flex-shrink: 0; min-width: 18px; font: 500 11.5px/19px 'JetBrains Mono', monospace; color: #74777d; }
+  .s4-muted { color: #74777d; font-style: italic; }
+  .s4-step { display: flex; gap: 8px; padding: 1px 6px; margin-left: -6px; border-radius: 0.25rem; transition: background .12s; }
+  .s4-step .n { flex-shrink: 0; font: 600 11.5px/19px 'JetBrains Mono', monospace; color: #0058be; }
+  .s4-step.hl { background: #fff1c7; }
+  .s4-kids { margin-left: 10px; padding-left: 12px; border-left: 1px solid #dde1e8; }
+  .s4-ref { display: inline-flex; margin-left: 3px; padding: 0 5px; border-radius: 3px; background: #e5eeff; color: #0058be; font: 600 10.5px/17px 'JetBrains Mono', monospace; cursor: default; }
+  .s4-ref:hover { background: #0058be; color: #fff; }
+  /* Table B: the DOCX's vertical form, one field per row */
+  .s4-b { display: grid; grid-template-columns: 200px minmax(0,1fr); margin-top: 10px; font-size: 12px; }
+  .s4-b > div { padding: 5px 12px; border-bottom: 1px solid #e5eeff; }
+  .s4-b > div:nth-last-child(-n+2) { border-bottom: none; }
+  .s4-b .k { background: #f8f9ff; border-right: 1px solid #e5eeff; font: 600 11px/17px 'JetBrains Mono', monospace; color: #44474c; }
+  .s4-b .v { color: #0b1c30; overflow-wrap: anywhere; }
+  .s4-b .v.dash { color: #b0b3b8; }
+  .s4-strip { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 10px 48px; background: #f8f9ff; border-bottom: 1px solid #c4c6cd; font: 500 11px/16px 'JetBrains Mono', monospace; color: #44474c; }
+  .s4-strip b { color: #0b1c30; }
+  .outline-link.sub { padding-left: 20px; }
+  .outline-link.sub2 { padding-left: 32px; }
   .doc-checkbox { accent-color: #0058be; width: 15px; height: 15px; cursor: pointer; }
   .doc-row.row-selected { background: #eff4ff; }
   @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
@@ -496,6 +533,7 @@
                 <button class="proc-tab" data-filter="SWE.1" onclick="setListFilter(this, 'SWE.1')">SWE.1</button>
                 <button class="proc-tab" data-filter="SWE.2" onclick="setListFilter(this, 'SWE.2')">SWE.2</button>
                 <button class="proc-tab" data-filter="SWE.3" onclick="setListFilter(this, 'SWE.3')">SWE.3</button>
+                <button class="proc-tab" data-filter="SWE.4" onclick="setListFilter(this, 'SWE.4')">SWE.4</button>
               </div>
             </div>
 
@@ -723,6 +761,25 @@
           </div>
         </div>
         </div><!-- /view-doc -->
+
+        <!-- ══ SWE.4 reader: the Unit Test Specification, section for section as its DOCX
+             (engine/swe4_exporter.py). Drawn by renderSwe4() from the version's test specs. ══ -->
+        <div id="view-swe4" style="display:none;">
+        <div class="max-w-3xl mx-auto px-6 py-8">
+          <div class="bg-white rounded-xl border border-outline-variant overflow-hidden"
+               style="box-shadow:0 1px 4px rgba(4,22,39,.06);">
+            <div class="px-12 pt-10 pb-8 border-b border-outline-variant">
+              <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em] mb-2">
+                SWE.4 · <span style="font-family:'JetBrains Mono';" id="swe4-commit">9e2b881</span>
+              </p>
+              <h1 class="font-display-lg text-display-lg text-primary" id="swe4-title">Signal</h1>
+              <p class="text-body-md text-on-surface-variant mt-1">Software Unit Test Specification</p>
+            </div>
+            <div class="s4-strip" id="swe4-strip"></div>
+            <div class="px-12 py-10" id="swe4-body"></div>
+          </div>
+        </div>
+        </div><!-- /view-swe4 -->
       </main>
 
       <!-- OUTLINE / TRACKER PANEL -->
@@ -740,6 +797,9 @@
           <a href="#s-cfg"        class="outline-link block px-2 py-1.5 pl-5 rounded text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors" data-target="s-cfg">4.1 CFG</a>
           <a href="#s-state"      class="outline-link block px-2 py-1.5 pl-5 rounded text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors" data-target="s-state">4.2 State Machine</a>
         </nav>
+
+        <!-- Outline of a SWE.4 document (drawn by renderSwe4) -->
+        <nav class="flex-1 overflow-y-auto py-2 px-2 space-y-0.5" id="outline-nav-swe4" style="display:none;"></nav>
 
         <!-- Review tracker (Admin, shown when version is in_review) -->
         <div class="hidden flex-1 overflow-y-auto py-3 px-3 space-y-4" id="review-tracker">
@@ -976,8 +1036,15 @@ const allDocs = [
   { process: 'SWE.3', name: 'PWM Driver',                 subtitle: 'Detailed Design',       assignee: 'Carol Singh', initials: 'CS', ac: '#fff7ed', atc: '#c2410c', status: 'review',   version: 'v1.2.0', due: 'Jul 01' },
 ];
 
+// SWE.4: one Unit Test Specification per component, next to its Detailed Design (the same run
+// makes both). Its review is its own.
+allDocs.push(...allDocs.filter((d) => d.process === 'SWE.3').map((d, i) => ({
+  ...d, process: 'SWE.4', subtitle: 'Unit Test Specification',
+  status: ['review', 'unchanged', 'review', 'approved'][i % 4],
+})));
+
 function pillClass(p) {
-  return { 'SWE.3': 'pill-swe3', 'SWE.2': 'pill-swe2', 'SWE.1': 'pill-swe1', 'SYS.1': 'pill-sys1', 'SYS.2': 'pill-sys2' }[p] || '';
+  return { 'SWE.4': 'pill-swe4', 'SWE.3': 'pill-swe3', 'SWE.2': 'pill-swe2', 'SWE.1': 'pill-swe1', 'SYS.1': 'pill-sys1', 'SYS.2': 'pill-sys2' }[p] || '';
 }
 
 function statusBadge(s) {
@@ -1395,6 +1462,7 @@ function selectCommit(sha) {
     document.getElementById('view-not-run').style.display    = '';
     document.getElementById('view-list').style.display       = 'none';
     document.getElementById('view-doc').style.display        = 'none';
+    document.getElementById('view-swe4').style.display = 'none';
     document.getElementById('doc-tree-panel').style.display  = 'none';
     document.getElementById('state-empty').classList.add('hidden');
     document.getElementById('state-generating').classList.add('hidden');
@@ -1472,6 +1540,7 @@ function applyProjectStatus(status) {
     document.getElementById('view-not-run').style.display = '';
     document.getElementById('view-list').style.display    = 'none';
     document.getElementById('view-doc').style.display     = 'none';
+    document.getElementById('view-swe4').style.display = 'none';
     document.getElementById('doc-tree-panel').style.display = 'none';
     document.getElementById('state-empty').classList.add('hidden');
     document.getElementById('state-generating').classList.add('hidden');
@@ -1484,6 +1553,7 @@ function applyProjectStatus(status) {
   } else if (status === 'running') {
     document.getElementById('view-not-run').style.display = 'none';
     document.getElementById('view-doc').style.display     = 'none';
+    document.getElementById('view-swe4').style.display = 'none';
     document.getElementById('doc-tree-panel').style.display = 'none';
     startGeneration();
   } else {
@@ -1502,6 +1572,7 @@ function showListState() {
   document.getElementById('view-list').style.display    = '';
   document.getElementById('view-not-run').style.display = 'none';
   document.getElementById('view-doc').style.display     = 'none';
+  document.getElementById('view-swe4').style.display = 'none';
   document.getElementById('doc-tree-panel').style.display = '';
   document.getElementById('state-empty').classList.add('hidden');
   document.getElementById('state-generating').classList.add('hidden');
@@ -1518,7 +1589,10 @@ function showDocState(v) {
   canvasState = 'doc';
   document.getElementById('view-list').style.display    = 'none';
   document.getElementById('view-not-run').style.display = 'none';
-  document.getElementById('view-doc').style.display     = '';
+  const swe4 = activeProcess === 'SWE.4';
+  document.getElementById('view-doc').style.display     = swe4 ? 'none' : '';
+  document.getElementById('view-swe4').style.display    = swe4 ? '' : 'none';
+  if (swe4) renderSwe4(activeDoc);
   document.getElementById('doc-tree-panel').style.display = '';
   document.getElementById('state-empty').classList.add('hidden');
   document.getElementById('state-generating').classList.add('hidden');
@@ -1531,7 +1605,8 @@ function showDocState(v) {
   document.getElementById('breadcrumb-doc').textContent       = crumb;
 
   const isInReview = v.docStatus === 'in_review';
-  document.getElementById('outline-nav').style.display    = isInReview ? 'none' : '';
+  document.getElementById('outline-nav').style.display    = isInReview || swe4 ? 'none' : '';
+  document.getElementById('outline-nav-swe4').style.display = isInReview || !swe4 ? 'none' : '';
   document.getElementById('review-tracker').style.display = isInReview ? 'block' : 'none';
   document.getElementById('panel-title').textContent      = isInReview ? 'Review Status' : 'On this page';
   document.getElementById('outline-panel').style.width    = isInReview ? '176px' : '';
@@ -1543,6 +1618,7 @@ function showEmptyState(v) {
   document.getElementById('view-list').style.display    = 'none';
   document.getElementById('view-not-run').style.display = 'none';
   document.getElementById('view-doc').style.display     = 'none';
+  document.getElementById('view-swe4').style.display = 'none';
   document.getElementById('doc-tree-panel').style.display = 'none';
   document.getElementById('state-empty').classList.remove('hidden');
   document.getElementById('state-generating').classList.add('hidden');
@@ -1804,11 +1880,13 @@ const docTree = [
     ]
   },
 ];
+// SWE.4: the same components as SWE.3 - a run that makes one makes the other.
+docTree.push({ ...docTree.find((d) => d.process === 'SWE.3'), process: 'SWE.4', label: 'Unit Test Specification' });
 
 let activeProcess    = null;
 let activeDoc        = null;
-let swe3Expanded     = true;
-const expandedLayers = new Set(['APP_LAYER']);
+const expandedProcs  = new Set(['SWE.3', 'SWE.4']);   // multi-document processes open in the tree
+const expandedLayers = new Set(['SWE.3/APP_LAYER', 'SWE.4/APP_LAYER']);
 const expandedGroups = new Set(['Chassis_Mgmt']);
 
 function selectDoc(process, doc) {
@@ -1856,7 +1934,7 @@ function renderTree() {
       }
 
       const forceExpand = q && Object.keys(matchingDocs).length > 0;
-      const expanded = forceExpand || swe3Expanded;
+      const expanded = forceExpand || expandedProcs.has(process);
 
       const hRow = document.createElement('div');
       hRow.className = 'flex items-center gap-1.5 px-3 py-2 cursor-pointer hover:bg-surface-container-low transition-colors select-none';
@@ -1864,7 +1942,7 @@ function renderTree() {
         <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" style="font-size:14px;transform:rotate(${expanded?90:0}deg)">chevron_right</span>
         <span class="font-label-md text-label-md text-on-surface" style="font-size:11px;font-weight:600;">${process}</span>
         <span class="font-label-sm text-label-sm text-on-surface-variant truncate" style="font-size:10px;">${label}</span>`;
-      hRow.onclick = () => { swe3Expanded = !swe3Expanded; renderTree(); };
+      hRow.onclick = () => { expandedProcs.has(process) ? expandedProcs.delete(process) : expandedProcs.add(process); renderTree(); };
       el.appendChild(hRow);
 
       if (!expanded) return;
@@ -1882,14 +1960,14 @@ function renderTree() {
           if (docsToShow.length === 0) return;
         }
 
-        const layerExp = q ? true : expandedLayers.has(layer);
+        const layerExp = q ? true : expandedLayers.has(process + '/' + layer);
         const lRow = document.createElement('div');
         lRow.className = 'flex items-center gap-1 cursor-pointer hover:bg-surface-container-low transition-colors select-none';
         lRow.style.cssText = 'padding: 4px 12px 4px 20px;';
         lRow.innerHTML = `
           <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" style="font-size:13px;transform:rotate(${layerExp?90:0}deg)">chevron_right</span>
           <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em]" style="font-size:10px;">${layer}</span>`;
-        lRow.onclick = () => { layerExp ? expandedLayers.delete(layer) : expandedLayers.add(layer); renderTree(); };
+        lRow.onclick = () => { const k = process + '/' + layer; layerExp ? expandedLayers.delete(k) : expandedLayers.add(k); renderTree(); };
         el.appendChild(lRow);
 
         if (!layerExp) return;
@@ -1921,6 +1999,182 @@ function renderTree() {
       el.appendChild(sRow);
     }
   });
+}
+
+// ── SWE.4 reader ─────────────────────────────────────────────────────────────
+// What the version's test specs (output/<component>/test_specs.json) hold for one component - here
+// the sample project's Signal: two units, three function specs, one Dynamic Behaviour spec. The app
+// builds the same from the API; the page mirrors engine/swe4_exporter.py section for section.
+const SWE4_CFG = { equipment: 'Emulator', platform: 'VectorCAST', priority: 'Medium', environment: 'Emulator' };
+const SWE4_SAMPLE = {
+  terms: [['CFG', 'Control flow graph'], ['DUT', 'Device under test'], ['TC', 'Test case']],
+  units: [
+    { name: 'Signal', specs: [
+      { name: 'SignalProcessor::reset', tc: 'TC_IF_LAYER1_SIGNAL_SIGNAL_01', returnType: 'void',
+        pre: {}, input: [],
+        steps: [['1', 'Issue function reset with input VOID.'], ['2', 'Initialize signal processor level to 0.']],
+        expected: [] },
+      { name: 'SignalProcessor::normalize', tc: 'TC_IF_LAYER1_SIGNAL_SIGNAL_02', returnType: 'int',
+        pre: { params: ['int sample'] }, input: ['int sample[-0x80000000-0x7FFFFFFF]'],
+        steps: [['1', 'Issue function normalize with inputs sample.'],
+                ['2', 'Check whether sample is less than zero.'],
+                ['2.a', 'True: Return an under-range value of 0.'],
+                ['2.b', 'False:'],
+                ['2.b.1', 'Check whether sample is greater than 255.'],
+                ['2.b.1.a', 'True: Return out-of-range value of 255.'],
+                ['2.b.1.b', 'False: Return the clamped sample value.']],
+        expected: [['Successfully returned an under-range value of 0 [0]', ['2.a']],
+                   ['Successfully returned out-of-range value of 255 [255]', ['2.b.1.a']],
+                   ['Successfully returned the clamped sample value [sample]', ['2.b.1.b']]] },
+    ]},
+    { name: 'SignalDriver', specs: [
+      { name: 'acquireAndNormalize', tc: 'TC_IF_LAYER1_SIGNAL_SIGNALDRIVER_01', returnType: 'int',
+        pre: { mocks: ['normalize()'], params: ['int raw'] },
+        input: ['int raw[-0x80000000-0x7FFFFFFF]', 'int normalize()[-0x80000000-0x7FFFFFFF]'],
+        steps: [['1', 'Issue function acquireAndNormalize with inputs raw.'],
+                ['2', 'Initialize SignalProcessor and reset it.'],
+                ['3', 'Expect mock function normalize(); return the normalized value.']],
+        expected: [['Successfully called mock functions normalize()', []],
+                   ['Successfully returned normalized value from SignalProcessor::normalize [sp.normalize(raw)]', ['3']]] },
+    ]},
+  ],
+  dynamic: [
+    { unit: 'SignalDriver', name: 'acquireAndNormalize', entry: 'Hub - hubCompute', tc: 'TC_IF_LAYER1_SIGNAL_SIGNALDRIVER_01_DYN', returnType: 'int',
+      pre: { params: ['int raw'] }, input: ['int raw[-0x80000000-0x7FFFFFFF]'],
+      steps: [['1', 'Issue function acquireAndNormalize with inputs raw.'],
+              ['2', 'Initialize SignalProcessor and reset it.'],
+              ['3', 'SignalDriver calls Signal.SignalProcessor::normalize; return the normalized value.'],
+              ['3.a', 'Check whether sample is less than zero.'],
+              ['3.a.1', 'True: Return an under-range value of 0.'],
+              ['3.a.2', 'False:'],
+              ['3.a.2.a', 'Check whether sample is greater than 255.'],
+              ['3.a.2.a.1', 'True: Return out-of-range value of 255.'],
+              ['3.a.2.a.2', 'False: Return the clamped sample value.']],
+      calls: [['Successfully called Signal.SignalProcessor::normalize', ['3']]],
+      expected: [['Successfully returned an under-range value of 0 [0]', ['3.a.1']],
+                 ['Successfully returned out-of-range value of 255 [255]', ['3.a.2.a.1']],
+                 ['Successfully returned the clamped sample value [sample]', ['3.a.2.a.2']]] },
+  ],
+};
+
+const s4esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// `name()`, `type name[range]` and the like read as code, as the DOCX sets them apart.
+const s4code = (t) => s4esc(t).replace(/(\b[\w:.]+\(\)|\b(?:u?int\d*_t|int|char|bool|float|double|void)\*? [\w.\[\]-]+(?:\[[^\]]*\])?)/g, '<code>$1</code>');
+const s4list = (items) => items.length
+  ? '<ol class="s4-list">' + items.map((t, i) => `<li><span class="n">${i + 1})</span><span>${t}</span></li>`).join('') + '</ol>'
+  : '';
+
+// Test Steps: nested as the control flow is; each level indents under its parent step.
+function s4steps(steps, id) {
+  if (!steps.length) return '<span class="s4-muted">Not available (no control-flow graph for this function)</span>';
+  const out = [];
+  let depth = 0;
+  steps.forEach(([num, text]) => {
+    const d = num.split('.').length - 1;
+    while (depth < d) { out.push('<div class="s4-kids">'); depth++; }
+    while (depth > d) { out.push('</div>'); depth--; }
+    out.push(`<div class="s4-step" data-spec="${id}" data-step="${num}"><span class="n">${num})</span><span>${s4code(text)}</span></div>`);
+  });
+  while (depth-- > 0) out.push('</div>');
+  return out.join('');
+}
+
+// Expected Results: mocks first, then the calls and returns, each naming its step(s).
+function s4expected(spec, id) {
+  const refs = (nums) => nums.length ? ' in step' + (nums.length > 1 ? 's' : '') + nums.map((n) =>
+    `<span class="s4-ref" data-spec="${id}" data-ref="${n}" onmouseenter="s4hl(this,true)" onmouseleave="s4hl(this,false)">${n}</span>`).join('') : '';
+  const items = [...(spec.calls || []), ...spec.expected].map(([t, nums]) => s4code(t) + refs(nums));
+  if (items.length) return s4list(items);
+  return spec.returnType && spec.returnType !== 'void'
+    ? `<span class="s4-muted">Not available (no control-flow graph attributed the ${s4esc(spec.returnType)} return of this function)</span>`
+    : 'No return value; no global side effects';
+}
+function s4hl(el, on) {
+  document.querySelectorAll(`.s4-step[data-spec="${el.dataset.spec}"][data-step="${el.dataset.ref}"]`)
+    .forEach((s) => s.classList.toggle('hl', on));
+}
+
+function s4precondition(pre) {
+  const items = [];
+  if ((pre.mocks || []).length) items.push('Mock functions: ' + pre.mocks.map(s4code).join(', '));
+  if ((pre.params || []).length) items.push('Parameters: ' + pre.params.map(s4code).join(', '));
+  if ((pre.globals || []).length) items.push('Globals: ' + pre.globals.map(s4code).join(', '));
+  return items.length ? s4list(items) : 'None';
+}
+
+// One spec: its heading, Table A (six rows), Table B (the eight metadata fields).
+function s4spec(num, heading, spec) {
+  const id = num.replace(/\./g, '-');
+  const meta = [['Test Case ID', spec.tc], ['Alias Test ID', '-'], ['Priority', SWE4_CFG.priority], ['Risk', '-'],
+                ['Test Method', '-'], ['Test Environment', SWE4_CFG.environment],
+                ['Test Case Generation Method', 'Analysis of Requirements'], ['Linked Work Items', '-']];
+  return `<div class="s4-spec" id="s4-${id}">
+    <div class="s4-spec-h"><span class="s4-num">${num}</span>${s4esc(heading)}</div>
+    <div class="s4-box"><table class="s4-a">
+      <tr><th>Eval. Equipment Name</th><td>${SWE4_CFG.equipment}</td></tr>
+      <tr><th>Precondition</th><td>${s4precondition(spec.pre)}</td></tr>
+      <tr><th>Input</th><td>${spec.input.length ? s4list(spec.input.map(s4code)) : 'VOID'}</td></tr>
+      <tr><th>Test Steps</th><td>${s4steps(spec.steps, id)}</td></tr>
+      <tr><th>Expected Results</th><td>${s4expected(spec, id)}</td></tr>
+      <tr><th>Test Platform</th><td>${SWE4_CFG.platform}</td></tr>
+    </table></div>
+    <div class="s4-box s4-b">${meta.map(([k, v]) => `<div class="k">${k}</div><div class="v${v === '-' ? ' dash' : ''}">${s4esc(v)}</div>`).join('')}</div>
+  </div>`;
+}
+
+function renderSwe4(component) {
+  const d = SWE4_SAMPLE;
+  const comp = component || 'Signal';
+  document.getElementById('swe4-title').textContent = comp;
+  document.getElementById('swe4-commit').textContent = document.getElementById('doc-header-commit').textContent;
+  const nSpecs = d.units.reduce((a, u) => a + u.specs.length, 0);
+  const nMocks = new Set(d.units.flatMap((u) => u.specs.flatMap((s) => s.pre.mocks || []))).size;
+  document.getElementById('swe4-strip').innerHTML =
+    `<span><b>${d.units.length}</b> units</span><span><b>${nSpecs}</b> function specs</span>` +
+    `<span><b>${d.dynamic.length}</b> dynamic behaviour spec${d.dynamic.length === 1 ? '' : 's'}</span>` +
+    `<span><b>${nMocks}</b> mock${nMocks === 1 ? '' : 's'}</span><span>${SWE4_CFG.equipment} · ${SWE4_CFG.platform}</span>`;
+
+  const nav = [['s4-intro', '1 Introduction', ''], ['s4-spec', '2 Unit Test Specification', ''], ['s4-2-1', `2.1 ${comp}`, 'sub']];
+  let html = `
+    <section id="s4-intro">
+      <h2 class="font-headline-md text-headline-md text-primary mb-4">1 Introduction</h2>
+      <h3 class="s4-h4" style="margin-top:0">1.1 Purpose</h3>
+      <p class="text-body-md text-on-surface leading-relaxed">This document specifies the unit tests of the VCU Engine Firmware: for every function of the detailed design (SWE.3), what is mocked, which inputs are varied over which ranges, the steps that follow its control flow and the results each step must produce.</p>
+      <h3 class="s4-h4">1.2 Scope</h3>
+      <p class="text-body-md text-on-surface leading-relaxed">This document covers the unit tests of the following component:</p>
+      <p class="text-body-md text-on-surface">• ${s4esc(comp)}</p>
+      <h3 class="s4-h4">1.3 Terms, Abbreviations and Definitions</h3>
+      <div class="s4-box" style="margin-top:8px"><table class="s4-a"><tr><th>Term</th><td style="font:600 11px/17px 'JetBrains Mono';color:#44474c;background:#f8f9ff">Description</td></tr>
+        ${d.terms.map(([t, v]) => `<tr><th style="font-weight:500;color:#0b1c30;background:#fff">${t}</th><td>${v}</td></tr>`).join('')}</table></div>
+    </section>
+    <section id="s4-spec" style="margin-top:56px">
+      <h2 class="font-headline-md text-headline-md text-primary mb-2">2 Software Unit Test Specification</h2>
+      <h3 class="s4-h3" id="s4-2-1"><span class="s4-num">2.1</span>${s4esc(comp)}</h3>`;
+  d.units.forEach((u, ui) => {
+    const un = `2.1.${ui + 1}`;
+    html += `<h4 class="s4-h4" id="s4-${un.replace(/\./g, '-')}"><span class="s4-num">${un}</span>${s4esc(u.name)}</h4>`;
+    nav.push([`s4-${un.replace(/\./g, '-')}`, `${un} ${u.name}`, 'sub2']);
+    u.specs.forEach((sp, fi) => { html += s4spec(`${un}.${fi + 1}`, `${u.name}-${sp.name}`, sp); });
+  });
+  if (d.dynamic.length) {
+    const dn = `2.1.${d.units.length + 1}`;
+    html += `<h4 class="s4-h4" id="s4-${dn.replace(/\./g, '-')}"><span class="s4-num">${dn}</span>Dynamic Behaviour</h4>`;
+    nav.push([`s4-${dn.replace(/\./g, '-')}`, `${dn} Dynamic Behaviour`, 'sub2']);
+    d.dynamic.forEach((sp, i) => { html += s4spec(`${dn}.${i + 1}`, `${sp.unit} - ${sp.name} (${sp.entry})`, sp); });
+  }
+  html += `</section>
+    <section id="s4-metric" style="margin-top:56px">
+      <h2 class="font-headline-md text-headline-md text-primary mb-3">3 Code Metric, Coding Rule, Test Coverage</h2>
+      <p class="text-body-md s4-muted">[Code metrics, coding-rule compliance, and test-coverage results.]</p>
+    </section>
+    <section id="s4-appendix" style="margin-top:56px">
+      <h2 class="font-headline-md text-headline-md text-primary">Appendix A. Reference</h2>
+    </section>`;
+  nav.push(['s4-metric', '3 Code Metric, Coding Rule, Test Coverage', ''], ['s4-appendix', 'Appendix A. Reference', '']);
+  document.getElementById('swe4-body').innerHTML = html;
+  document.getElementById('outline-nav-swe4').innerHTML = nav.map(([id, label, cls]) =>
+    `<a href="#${id}" class="outline-link ${cls} block px-2 py-1.5 rounded text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors"
+        onclick="event.preventDefault();document.getElementById('${id}').scrollIntoView({behavior:'smooth',block:'start'})">${s4esc(label)}</a>`).join('');
 }
 
 // ── Scroll spy ────────────────────────────────────────────────────────────────
