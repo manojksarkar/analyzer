@@ -23,6 +23,7 @@ falls back to a synthesised payload built from stored section bodies.
 from __future__ import annotations
 import hashlib
 import json
+import logging
 import re as _re
 from pathlib import Path
 from typing import Any, Optional
@@ -30,6 +31,7 @@ from typing import Any, Optional
 from .settings import get_settings as _get_settings
 _REPO_ROOT = _get_settings().repo_root
 OUTPUT_ROOT = _REPO_ROOT / "output"
+_log = logging.getLogger(__name__)
 
 KEY_SEP = "|"
 _INCLUDE_GUARD_RE = _re.compile(r"^_*[A-Z][A-Z0-9_]*(?:_H|_HPP)_*$")
@@ -294,12 +296,26 @@ def _view_json(output_reader, group_dir: Path, rel_name: str):
     return None
 
 
-def _load_flowcharts(flowcharts_dir: Path, output_reader=None, group_dir: Path = None) -> dict:
+def _flowchart_id(ids: Optional[dict], stem: str, item: dict) -> None:
+    """Record which flowchart a picture is, for the page's label editor: `functionKey` is the
+    `flowchart_id` R7/R8 take, and only an entry with a stored graph (`cfg`) has labels to edit.
+    Written under the same stem and name as the DOT, so the two agree about overloads."""
+    if ids is None:
+        return
+    name = (item.get("name") or "").strip()
+    if name:
+        ids.setdefault(stem, {})[name] = {"flowchart_id": item.get("functionKey") or None,
+                                          "editable": bool(item.get("cfg"))}
+
+
+def _load_flowcharts(flowcharts_dir: Path, output_reader=None, group_dir: Path = None,
+                     ids: Optional[dict] = None) -> dict:
     """{unit_prefix: {func_name: flowchart_str}} — Postgres first, then disk (doc 09, C0).
 
     Unlike the other two view artifacts this is a DIRECTORY of per-unit files, so there is no
     single path to ask for: the units are discovered from the reader's file list, then read
     individually. Falls back to the directory scan when the store has none for this group.
+    ``ids``, when given, is filled with each chart's `flowchart_id` (`_flowchart_id`).
     """
     if output_reader is not None and group_dir is not None:
         prefix = f"{group_dir.name}/flowcharts/"
@@ -327,12 +343,13 @@ def _load_flowcharts(flowcharts_dir: Path, output_reader=None, group_dir: Path =
                     flowchart = (item.get("flowchart") or "").strip()
                     if name and flowchart:
                         result[stem][name] = flowchart
+                        _flowchart_id(ids, stem, item)
             if result:
                 return result
-    return _load_flowcharts_from_dir(flowcharts_dir)
+    return _load_flowcharts_from_dir(flowcharts_dir, ids)
 
 
-def _load_flowcharts_from_dir(flowcharts_dir: Path) -> dict:
+def _load_flowcharts_from_dir(flowcharts_dir: Path, ids: Optional[dict] = None) -> dict:
     """Return {unit_prefix: {func_name: mermaid_str}}."""
     result: dict = {}
     if not flowcharts_dir.is_dir():
@@ -351,6 +368,7 @@ def _load_flowcharts_from_dir(flowcharts_dir: Path) -> dict:
                 flowchart = (item.get("flowchart") or "").strip()
                 if name and flowchart:
                     result[stem][name] = flowchart
+                    _flowchart_id(ids, stem, item)
         except Exception:
             pass
     return result
@@ -378,19 +396,25 @@ def _find_flowchart(flowcharts_map: dict, unit_keys: tuple, func_keys: tuple):
     return None
 
 
-def _flowchart_entry(group_dir: Path, found: tuple, label: str, asset_base: str) -> dict:
+def _flowchart_entry(group_dir: Path, found: tuple, label: str, asset_base: str,
+                     ids: Optional[dict] = None) -> dict:
     """One flowchart in a function's table: its SVG, drawn by views/flowcharts on every run.
 
     The DOT itself is not sent -- a document can hold 500+ of them, some huge. The reader gets
     what it needs before the image loads: the size to reserve, the box count, and, with no
     picture, why not ("too_large" over the engine's limit, else "missing": not drawn for this
     run, or drawn from another DOT). ``source_hash`` lets Compare see a flowchart change.
+    ``flowchart_id`` names the chart to the review routes (R7/R8), and ``editable`` says it
+    has a stored graph whose labels a reviewer can correct.
     """
     dot, unit_key, func_key = found
     fs = _flowchart_svg()
     boxes = fs.count_dot_boxes(dot)
+    ident = ((ids or {}).get(unit_key) or {}).get(func_key) or {}
     entry = {"label": label, "boxes": boxes, "image_url": None, "width": None, "height": None,
-             "source_hash": hashlib.sha256(dot.encode("utf-8")).hexdigest()[:16]}
+             "source_hash": hashlib.sha256(dot.encode("utf-8")).hexdigest()[:16],
+             "flowchart_id": ident.get("flowchart_id"),
+             "editable": bool(ident.get("flowchart_id") and ident.get("editable"))}
     if boxes > fs.FLOWCHART_SVG_MAX_BOXES:
         return {**entry, "status": "too_large"}
     name = fs.svg_file_name(unit_key, func_key)
@@ -414,6 +438,90 @@ def _load_behavior_diagrams(group_dir: Path, output_reader=None) -> dict:
         return json.loads(p.read_text(encoding="utf-8")).get("_docxRows", {})
     except Exception:
         return {}
+
+
+# ── review & update: the texts a reviewer can correct ────────────────────────
+
+def _engine_on_path() -> None:
+    import sys
+    eng = str(_REPO_ROOT / "engine")
+    if eng not in sys.path:
+        sys.path.insert(0, eng)
+
+
+def load_overrides(version: Any) -> dict:
+    """{(slot_kind, slot_key): row} of the version's corrections, orphans included.
+
+    One query (`review.override_service.overrides_for_version`), so the page can say which of
+    its texts a reviewer corrected without a lookup per text (REQ-ST-05). Best effort: {} with
+    no database or when the read fails -- every text then reads as the LLM's, which is what the
+    page showed before corrections existed.
+    """
+    vid = getattr(version, "id", None)
+    if not vid:
+        return {}
+    try:
+        _engine_on_path()
+        from core.db import get_engine, is_database_configured
+        if not is_database_configured():
+            return {}
+        from review.override_service import overrides_for_version
+        with get_engine().connect() as cx:
+            return {(r.slot_kind, r.slot_key): r for r in overrides_for_version(cx, vid)}
+    except Exception as exc:                                       # noqa: BLE001 - see docstring
+        _log.warning("render: could not read the corrections of %s: %s", vid, exc)
+        return {}
+
+
+class _Slots:
+    """The `slot` a page text carries, so the web reader can correct it in place.
+
+    Its address comes from `review.slot` -- the server builds every key, the client only sends
+    one back (REQ-ID-01) -- and its state from `review.catalog.slot_view`, the one shape every
+    review route returns a slot in (camelCase, as those routes answer). ``text`` is the slot's
+    own text, which is not always what the page prints: a cell falls back to a stand-in
+    (the interface descriptions' join, "X input", "-") where the slot is empty.
+    ``None`` for a text whose key cannot be built -- an empty part, or no review package.
+    """
+
+    def __init__(self, rows: dict):
+        self._rows = rows
+        try:
+            _engine_on_path()
+            from review import slot as slot_mod
+            from review.catalog import slot_view
+            from review.phase3_overrides import join_bullets
+            self._slot, self._view, self._join = slot_mod, slot_view, join_bullets
+        except Exception as exc:                                   # noqa: BLE001
+            _log.warning("render: review package unavailable, no slots on the page: %s", exc)
+            self._slot = None
+
+    def _make(self, kind: str, build, text: Optional[str]) -> Optional[dict]:
+        if self._slot is None:
+            return None
+        try:
+            key = build()
+        except Exception:                                          # noqa: BLE001 - SlotKeyError
+            return None
+        text = (text or "").strip()
+        return self._view(kind, key, "" if text in ("-", "N/A") else text,
+                          self._rows.get((kind, key)))
+
+    def entity(self, kind: str, entity_key: Optional[str], text: Optional[str]) -> Optional[dict]:
+        """description, behaviourInputName, behaviourOutputName, structDescription."""
+        return self._make(kind, lambda: self._slot.for_entity(kind, entity_key or ""), text)
+
+    def unit(self, unit_key: str, text: Optional[str]) -> Optional[dict]:
+        return self._make("unitDescription", lambda: self._slot.for_unit(unit_key), text)
+
+    def behaviour(self, function_id: Optional[str], caller_id: Optional[str],
+                  bullets: list) -> Optional[dict]:
+        """A Dynamic Behaviour row's bullets, one slot for the whole list (R6)."""
+        if self._slot is None:
+            return None
+        return self._make("behaviourDescription",
+                          lambda: self._slot.for_behaviour_row(function_id or "", caller_id or ""),
+                          self._join(bullets))
 
 
 # ── section helpers ───────────────────────────────────────────────────────────
@@ -476,11 +584,18 @@ def _param_type_label(p: dict) -> str:
     return f"{t} {n}".strip() if n else t
 
 
-def _interfaces_table_8col(ifaces: list) -> dict:
+def _interfaces_table_8col(ifaces: list, slots: Optional[_Slots] = None) -> dict:
     """The unit interface table - with only its header row when the unit has no interface, as
-    the DOCX prints it."""
+    the DOCX prints it. With ``slots``, ``cell_slots`` says which cell is a correctable text:
+    the Information column, each function's or global's `description`."""
     rows: list[list[str]] = []
+    cell_slots: list[list] = []
     for iface in ifaces:
+        if slots is not None:
+            entity = iface.get("functionId") or iface.get("globalId")
+            cell_slots.append([None, None, slots.entity("description", entity,
+                                                        iface.get("description")),
+                               None, None, None, None, None])
         iface_type = iface.get("type", "") or "-"
         if "variableType" in iface:
             data_type = iface.get("variableType", "") or "-"
@@ -512,11 +627,14 @@ def _interfaces_table_8col(ifaces: list) -> dict:
             str(iface.get("sourceDest") or "-"),
             iface_type,
         ])
-    return {
+    table = {
         "headers": ["Interface ID", "Interface Name", "Information", "Data Type",
                     "Data Range", "Direction(In/Out)", "Source/Destination", "Interface Type"],
         "rows": rows,
     }
+    if slots is not None:
+        table["cell_slots"] = cell_slots
+    return table
 
 
 # ── Introduction builder (Purpose / Scope / Terms — mirrors docx_exporter) ────
@@ -585,8 +703,14 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                  *, model_root: Optional[Path] = None,
                  asset_base: Optional[str] = None,
                  model_reader: Optional[Any] = None,
-                 output_reader: Optional[Any] = None) -> dict:
+                 output_reader: Optional[Any] = None,
+                 overrides: Optional[dict] = None) -> dict:
     """Build a rich {cover, toc, sections, meta} payload mirroring the DOCX structure.
+
+    Every text a reviewer can correct carries its `slot` (`_Slots`): ``cell_slots`` beside a
+    table's ``rows``, ``*_slot`` in a function's or behaviour row's table, ``content_slot`` on a
+    function section without a flowchart. ``overrides`` is `load_overrides`' result, read here
+    when not given.
 
     ``model_root`` overrides where model/*.json is read from (defaults to the live
     ``model/`` dir); ``asset_base`` overrides the URL prefix used for diagram assets
@@ -635,8 +759,10 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
 
     # Load flowcharts + behavior diagrams
     flowcharts_dir = group_dir / "flowcharts"
-    flowcharts_map = _load_flowcharts(flowcharts_dir, output_reader, group_dir)
+    flowchart_ids: dict = {}
+    flowcharts_map = _load_flowcharts(flowcharts_dir, output_reader, group_dir, flowchart_ids)
     behavior_rows = _load_behavior_diagrams(group_dir, output_reader)
+    slots = _Slots(load_overrides(version) if overrides is None else overrides)
 
     # Hidden functions
     hidden_fids: set = {fid for fid, f in functions_data.items() if f.get("hidden", False)}
@@ -698,6 +824,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
 
         # Component / Unit / Description / Note summary table (unnumbered)
         comp_unit_rows: list[list[str]] = []
+        comp_unit_slots: list[list] = []
         for uk, uname, ifaces in unit_rows:
             fn_items: list[tuple] = []
             gv_items: list[tuple] = []
@@ -732,13 +859,14 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                 desc = (str(unit_descriptions.get(uk) or "").strip()
                         or _cell_trim("; ".join(all_descs), 120) or "N/A")
             comp_unit_rows.append([comp_display, uname, desc, "N/A"])
+            comp_unit_slots.append([None, None, slots.unit(uk, stored), None])
 
         if comp_unit_rows:
             static_children.append(_sec(
                 f"{comp}-unit-table", "", "Component/Unit Table", 2,
                 type="table",
                 table={"headers": ["Component", "Unit", "Description", "Note"],
-                       "rows": comp_unit_rows},
+                       "rows": comp_unit_rows, "cell_slots": comp_unit_slots},
             ))
 
         # ── Per unit subsections ─────────────────────────────────────────────
@@ -761,10 +889,26 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
             unit_info = units_data.get(uk) or {}
             header_rows = unit_headers.get(uk) or []
             if header_rows:
+                hdr_rows: list[list[str]] = []
+                hdr_slots: list[list] = []
+                for r in header_rows:
+                    info = r.get("information", "N/A")
+                    type_key = r.get("typeKey")
+                    struct_slot = None
+                    if type_key:
+                        # A record's description (`structDescription`): read from the model,
+                        # where a save writes it. The row's copy is Phase 3's, so it showed the
+                        # old text until a re-export; its name-derived stand-in stays when the
+                        # model has none.
+                        stored_struct = str((dd_data.get(type_key) or {}).get("description")
+                                            or "").strip()
+                        info = stored_struct or info
+                        struct_slot = slots.entity("structDescription", type_key, stored_struct)
+                    hdr_rows.append([r.get("declaration", "N/A"), info])
+                    hdr_slots.append([None, struct_slot])
                 hdr_table = {
                     "headers": ["global variables / typedef / enum / define", "information"],
-                    "rows": [[r.get("declaration", "N/A"), r.get("information", "N/A")]
-                             for r in header_rows],
+                    "rows": hdr_rows, "cell_slots": hdr_slots,
                 }
                 unit_children.append(_sec(f"{uk}-header", f"{unit_sec_num}.1", "unit header", 4,
                                           type="table", table=hdr_table))
@@ -774,7 +918,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
 
             # N.1.U.2 unit interface (8-column; header only when the unit has none, as in the DOCX)
             unit_children.append(_sec(f"{uk}-iface", f"{unit_sec_num}.2", "unit interface", 4,
-                                      type="table", table=_interfaces_table_8col(ifaces)))
+                                      type="table", table=_interfaces_table_8col(ifaces, slots)))
 
             # N.1.U.3+ per function (functions only, starting at index 3)
             iface_idx = 3
@@ -803,7 +947,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                     ret = iface.get("returnType", "") or ""
                     signature = f"{ret} {func_display}({params_str})".strip()
                     flowchart_entries.append(
-                        _flowchart_entry(group_dir, found, signature, asset_base))
+                        _flowchart_entry(group_dir, found, signature, asset_base, flowchart_ids))
 
                 # Private callee flowcharts (mirrors docx_exporter)
                 fid = iface.get("functionId")
@@ -836,7 +980,8 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                         )
                         callee_sig = f"{callee.get('returnType', '')} {callee_display}({cparams_str})".strip()
                         flowchart_entries.append(
-                            _flowchart_entry(group_dir, callee_found, callee_sig, asset_base))
+                            _flowchart_entry(group_dir, callee_found, callee_sig, asset_base,
+                                             flowchart_ids))
 
                 # Input / output names (mirrors docx_exporter)
                 fn_data = (functions_data.get(fid) or {}) if fid else {}
@@ -852,6 +997,10 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                 description = iface.get("description", "") or "-"
                 sec_id = f"{uk}-fn-{_safe_fn(func_qn)}"
                 sec_title = f"{uname}-{func_display}"
+                # The function's correctable texts: the same `description` slot as its
+                # interface-table row, and its two behaviour names (read from the model, not
+                # the "X input" stand-ins above).
+                description_slot = slots.entity("description", fid, iface.get("description"))
 
                 if flowchart_entries:
                     # The Requirements cell opens with the description, else the function's
@@ -867,13 +1016,20 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                             "capacity": "Common",
                             "input_name": input_name,
                             "output_name": output_name,
+                            "description_slot": description_slot,
+                            "input_name_slot": slots.entity(
+                                "behaviourInputName", fid, fn_data.get("behaviourInputName")),
+                            "output_name_slot": slots.entity(
+                                "behaviourOutputName", fid, fn_data.get("behaviourOutputName")),
                         },
                     ))
                 else:
-                    unit_children.append(_sec(
+                    fn_sec = _sec(
                         sec_id, f"{unit_sec_num}.{iface_idx}", sec_title, 4,
                         type="richtext", content=description,
-                    ))
+                    )
+                    fn_sec["content_slot"] = description_slot
+                    unit_children.append(fn_sec)
                 iface_idx += 1
 
             static_children.append(_sec(
@@ -905,6 +1061,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                 input_label = ""
                 output_label = ""
                 _beh_f = functions_data.get(current_fid) if current_fid else None
+                beh_fid = current_fid if _beh_f is not None else None
                 if _beh_f is None:
                     for fid, f in functions_data.items():
                         fp = fid.split(KEY_SEP)
@@ -914,6 +1071,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                         if (qn.split("::")[-1] if qn else "") != current_fn:
                             continue
                         _beh_f = f
+                        beh_fid = fid
                         break
                 if _beh_f is not None:
                     input_label = (_beh_f.get("behaviourInputName") or "").strip()
@@ -937,16 +1095,26 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                     except (ValueError, TypeError):
                         pass
 
+                bullets = _as_description_list(row.get("behaviorDescription"))
+                beh_names = _beh_f or {}
                 dyn_children.append(_sec(
                     f"{comp}-dyn-{dyn_idx}", f"{n}.2.{dyn_idx}", subheader, 3,
                     type="behavior_table", content=None,
                     behavior_table={
-                        "description_list": _as_description_list(row.get("behaviorDescription")),
+                        "description_list": bullets,
                         "risk": "Medium",
                         "capacity": "Common",
                         "input_name": input_label,
                         "output_name": output_label,
                         "diagram_url": diagram_url,
+                        # The row is addressed by both functions (`for_behaviour_row`); a row
+                        # from before `externalCallerId` has no slot, as R11 skips it too.
+                        "description_slot": slots.behaviour(
+                            current_fid, row.get("externalCallerId"), bullets),
+                        "input_name_slot": slots.entity(
+                            "behaviourInputName", beh_fid, beh_names.get("behaviourInputName")),
+                        "output_name_slot": slots.entity(
+                            "behaviourOutputName", beh_fid, beh_names.get("behaviourOutputName")),
                     },
                 ))
                 dyn_idx += 1
