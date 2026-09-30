@@ -235,6 +235,14 @@ function WizardView({
   const [tokenOpen, setTokenOpen] = useState(false)
   const [branch, setBranch] = useState('')
   const [branches, setBranches] = useState<string[]>([])
+  // Filters the branch list - a repository can have hundreds. The picked branch always stays listed.
+  const [branchQuery, setBranchQuery] = useState('')
+  const shownBranches = useMemo(() => {
+    const q = branchQuery.trim().toLowerCase()
+    if (!q) return branches
+    const hits = branches.filter((b) => b.toLowerCase().includes(q))
+    return branch && !hits.includes(branch) ? [branch, ...hits] : hits
+  }, [branches, branchQuery, branch])
   const [testState, setTestState] = useState<'idle' | 'connecting' | 'connected'>('idle')
   const [testMsg, setTestMsg] = useState<{ text: string; tone: TestTone } | null>(null)
   const [errs, setErrs] = useState<{ name?: boolean; repo?: boolean; branch?: boolean }>({})
@@ -332,6 +340,7 @@ function WizardView({
     setTestMsg(null)
     setBranches([])
     setBranch('')
+    setBranchQuery('')
     setRepoTree([])
     treeSeq.current++; checkSeq.current++                  // drop answers about the old one
     setRepoTreeFor(''); setRepoTreeFailed(false); setImportChecking(false)
@@ -377,6 +386,7 @@ function WizardView({
       const initialBranch = (preferredBranch && res.branches.includes(preferredBranch) ? preferredBranch : '')
         || res.defaultBranch || res.branches[0] || ''
       setBranches(res.branches)
+      setBranchQuery('')
       setBranch(initialBranch)
       setTestState('connected')
       setTestMsg({ text: res.message, tone: 'ok' })
@@ -843,6 +853,17 @@ function WizardView({
                   <div>
                     <div className="h-px bg-surface-container-low mb-4" />
                     <div className="lbl">Branch <span className="req">*</span></div>
+                    {branches.length > 10 && (
+                      <>
+                        <input className="inp mb-1.5" type="search" placeholder="Search branches…" value={branchQuery}
+                          onChange={(e) => setBranchQuery(e.target.value)} aria-label="Search branches" />
+                        {branchQuery.trim() && (
+                          <div className="text-on-surface-variant font-mono text-caption mb-1.5">
+                            {shownBranches.length} of {branches.length} branches
+                          </div>
+                        )}
+                      </>
+                    )}
                     <select className={`inp ${errs.branch ? 'err' : ''}`} value={branch} onChange={(e) => {
                       const b = e.target.value; setBranch(b); setErrs((p) => ({ ...p, branch: false }))
                       if (b) {
@@ -855,7 +876,7 @@ function WizardView({
                       }
                     }}>
                       <option value="">Select a branch…</option>
-                      {branches.map((b) => <option key={b} value={b}>{b}</option>)}
+                      {shownBranches.map((b) => <option key={b} value={b}>{b}</option>)}
                     </select>
                   </div>
                 )}
