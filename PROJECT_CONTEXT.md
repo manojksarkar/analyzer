@@ -34,7 +34,7 @@ newer entry and the code win.
 > `review_update_v3` (`review_update_v1` squashed onto `develop`, follow-up commits, rebased onto
 > `5542736`); the three branches are kept as records.
 > - **Still open:** six decisions waiting on the develop owner — BACKLOG `RU-1`…`RU-6`, HANDOVER §8 —
->   and the follow-ups from the PR #70 review, in BACKLOG.
+>   and the follow-ups from the PR #70 review, BACKLOG `RF-1`…`RF-15`.
 > - **Changing it? Read [docs/design/REVIEW_UPDATE_HANDOVER.md](docs/design/REVIEW_UPDATE_HANDOVER.md) first.**
 >   Migration chain, what it changed in develop's code, file by file (§3.3), and the invariants that
 >   break silently with the test that catches each (§4).
@@ -46,7 +46,8 @@ newer entry and the code win.
 >   2026-09-20, the rebase onto develop 2026-09-26f → 2026-09-27d, the export guard per document
 >   and the save-time SWE.4 re-derive 2026-09-29, the rebase onto `5542736` 2026-09-29b, the
 >   full-feature review and its ten fixes 2026-09-29d, one response shape for a slot 2026-09-29e,
->   the REST API test tool (`tools/review_api_test/`) and the multi-group re-export fix 2026-09-29f.
+>   the REST API test tool (`tools/review_api_test/`) and the multi-group re-export fix 2026-09-29f,
+>   the PR #70 review's seven fixes and the PostgreSQL run 2026-09-30.
 
 - `develop` is the integration branch: work branches open their PR into it, and `main` has not moved
   since 2026-07-02.
