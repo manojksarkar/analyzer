@@ -323,7 +323,7 @@ Read these names whatever the kind or the route.
 | `llmText` | string \| null | **what the LLM wrote** for this slot: the original that a correction in force replaced; otherwise the same as `text`. `null` only when the LLM wrote nothing — the slot was empty before its first correction |
 | `humanText` | string \| null | the reviewer's words; `null` when never corrected. An orphan keeps its words here |
 | `isOverridden` | boolean | a correction is **in force**: the document prints `humanText` |
-| `isOrphaned` | boolean | a correction exists but was written for code that has since changed, so it is **not** printed. The record is **kept** (`REQ-ID-03`) — show it greyed, as "your correction no longer applies", never as current wording |
+| `isOrphaned` | boolean | a correction exists but was written for code that has since changed — for a node label, also for an earlier numbering of its flowchart's nodes — so it is **not** printed. The record is **kept** (`REQ-ID-03`) — show it greyed, as "your correction no longer applies", never as current wording |
 | `canUndo` | boolean | R4 would change the text: a correction in force, an original to go back to, and the two differ. **Show Undo exactly when this is `true`** |
 | `updatedBy` | string \| null | who last saved the correction (user id); `null` when none |
 | `updatedAt` | string \| null | when, ISO-8601 UTC |
@@ -582,7 +582,7 @@ rebuilt `dot`, as R8.
 | code | when |
 |---|---|
 | 409 | no original to restore — the slot was empty before the first correction, so `llmText` is `null` |
-| 409 | the correction is **orphaned** (`isOrphaned: true`): it was written for code that has since changed, it is not applied, and the document already shows the LLM's text for the current code — there is nothing to undo; a new edit (R3, R6, R8) starts a new correction |
+| 409 | the correction is **orphaned** (`isOrphaned: true`), or is a node label written for an earlier numbering of its flowchart's nodes: it was written for code that has since changed, it is not applied, and the document already shows the LLM's text for the current code — there is nothing to undo; a new edit (R3, R6, R8) starts a new correction |
 | 404 | the slot does not resolve in this version |
 | 400 | malformed `slot_key` for the kind (§2) |
 | 401 / 403 / 500 / 503 | see §16 |

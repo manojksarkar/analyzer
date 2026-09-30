@@ -182,6 +182,73 @@ class TestHistory:
         assert not row.is_orphaned
 
 
+class TestACorrectionWrittenForAnotherNumbering:
+    """A node-label row whose shape is not this graph's -- carried from a version whose builder
+    numbered the nodes differently. Phase 3 drops it; a save on its flowchart holds the graph, so
+    it orphans it there, and an undo refuses rather than write the old graph's LLM label onto the
+    box that now holds its id (REQ-ID-02)."""
+
+    OLD = slot.cfg_shape(["n0", "n1"])
+
+    def _carried(self, conn, node, fid=FID, shape=None):
+        conn.execute(sa.insert(s.text_overrides).values(
+            version_id="v1", slot_kind=slot.NODE_LABEL, slot_key=slot.for_node(fid, node),
+            llm_text="the old graph's llm " + node, human_text="Written for the old " + node,
+            is_orphaned=False, slot_shape=shape or self.OLD,
+            updated_at=datetime.datetime.now(datetime.timezone.utc)))
+
+    def _row(self, conn, node, fid=FID):
+        return svc.get_override(conn, "v1", slot.NODE_LABEL, slot.for_node(fid, node))
+
+    def _stored(self, conn):
+        return conn.execute(sa.select(s.version_output_files.c.content)).scalar()
+
+    def test_a_save_on_its_flowchart_orphans_it(self, conn):
+        self._carried(conn, "n1")
+        _save(conn, {"n2": "Written for this n2"})
+        assert self._row(conn, "n1").is_orphaned
+        assert not self._row(conn, "n2").is_orphaned
+
+    def test_then_it_reads_as_no_correction_in_force(self, conn):
+        from review import catalog
+        self._carried(conn, "n1")
+        _save(conn, {"n2": "Written for this n2"})
+        view = catalog.slot_view(slot.NODE_LABEL, slot.for_node(FID, "n1"), "llm n1",
+                                 self._row(conn, "n1"))
+        assert (view["isOverridden"], view["canUndo"], view["isOrphaned"]) == (False, False,
+                                                                                True)
+
+    def test_other_flowcharts_are_not_judged_by_this_graph(self, conn):
+        self._carried(conn, "n1", fid=OTHER, shape=slot.cfg_shape(["n0", "n1"]))
+        _save(conn, {"n2": "x"})
+        assert not self._row(conn, "n1", fid=OTHER).is_orphaned
+
+    def test_saving_that_node_starts_a_new_correction(self, conn):
+        """Its original is THIS graph's LLM label, not the old graph's."""
+        self._carried(conn, "n1")
+        out = _save(conn, {"n1": "Written for this n1"})
+        assert "n1" in out.first_edits
+        row = self._row(conn, "n1")
+        assert (row.llm_text, row.slot_shape, bool(row.is_orphaned)) == (
+            "llm n1", slot.cfg_shape(NODES), False)
+
+    def test_undoing_it_does_not_touch_the_new_graph(self, conn):
+        self._carried(conn, "n1")
+        before = self._stored(conn)
+        with pytest.raises(svc.NothingToUndo) as exc:
+            svc.undo_override(conn, "v1", slot.NODE_LABEL, slot.for_node(FID, "n1"))
+        assert "numbering" in str(exc.value)
+        assert self._stored(conn) == before
+        assert conn.execute(sa.select(sa.func.count())
+                            .select_from(s.text_override_history)).scalar() == 0
+
+    def test_a_correction_written_for_this_graph_still_undoes(self, conn):
+        _save(conn, {"n1": "Mine"})
+        svc.undo_override(conn, "v1", slot.NODE_LABEL, slot.for_node(FID, "n1"))
+        cfg = next(e for e in json.loads(self._stored(conn)) if e["functionKey"] == FID)["cfg"]
+        assert {n["id"]: n["label"] for n in cfg["nodes"]}["n1"] == "llm n1"
+
+
 class TestDerivation:
     def test_one_derivation_for_the_whole_call(self, conn):
         calls = []

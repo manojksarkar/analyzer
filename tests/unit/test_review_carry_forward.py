@@ -424,7 +424,75 @@ class TestWhatPhase3Receives:
                   shape=shape)
         payload = cf.overrides_for_config(conn, "v3")
         assert payload["nodeLabel"] == {FID: {"n1": "Node text."}}
-        assert payload["nodeLabelShapes"] == {FID: shape}
+        assert payload["nodeLabelShapes"] == {FID: {"n1": shape}}
+
+
+class TestAMisplacedLabelIsOrphaned:
+    """`orphan_misplaced_labels`: a node-label correction whose own shape is not the graph this
+    version stores is kept, orphaned and never applied (REQ-ID-02, REQ-ID-03). Left live, it read
+    as a correction in force -- `isOverridden`, `canUndo` -- while Phase 3 dropped it, and an undo
+    wrote the old graph's LLM label onto whatever node now holds its id."""
+
+    OLD = slot.cfg_shape(["n0", "n1"])
+    NEW = slot.cfg_shape(["n0", "n1", "n2"])          # v3's stored graph (`_seed_version`)
+
+    def _flags(self, conn):
+        return {(r.slot_key): bool(r.is_orphaned) for r in conn.execute(
+            sa.select(s.text_overrides).where(s.text_overrides.c.version_id == "v3"))}
+
+    def test_only_the_row_for_another_graph(self, conn):
+        other = "Comp|UnitA|ns::gone|void"
+        _override(conn, "v3", slot.NODE_LABEL, slot.for_node(FID, "n1"), shape=self.OLD)
+        _override(conn, "v3", slot.NODE_LABEL, slot.for_node(FID, "n2"), shape=self.NEW)
+        _override(conn, "v3", slot.NODE_LABEL, slot.for_node(FID, "n0"))       # no claim
+        _override(conn, "v3", slot.NODE_LABEL, slot.for_node(other, "n1"),     # not stored
+                  shape=self.OLD)
+        done = cf.orphan_misplaced_labels(conn, "v3")
+        assert done == [slot.for_node(FID, "n1")]
+        assert self._flags(conn) == {slot.for_node(FID, "n1"): True,
+                                     slot.for_node(FID, "n2"): False,
+                                     slot.for_node(FID, "n0"): False,
+                                     slot.for_node(other, "n1"): False}
+
+    def test_the_graph_in_hand_decides_when_given(self, conn):
+        _override(conn, "v3", slot.NODE_LABEL, slot.for_node(FID, "n1"), shape=self.NEW)
+        assert cf.orphan_misplaced_labels(conn, "v3", graphs={FID: {self.OLD}}) == [
+            slot.for_node(FID, "n1")]
+
+    def test_nothing_to_judge_costs_nothing(self, conn):
+        assert cf.orphan_misplaced_labels(conn, "v3") == []
+
+
+class TestTheCaptureOrphansWhatNoLongerFits:
+    """Where the stored graph reaches the database: `PgStore.capture_output`, after every Phase 3.
+    A row carried from a version numbered differently was dropped by that Phase 3; from here on
+    it reads as what it is."""
+
+    def test_a_carried_row_for_the_old_numbering(self, tmp_path):
+        from sqlalchemy.pool import StaticPool
+        from incremental.store import PgStore
+        eng = sa.create_engine("sqlite://", connect_args={"check_same_thread": False},
+                               poolclass=StaticPool)
+        s.metadata.create_all(eng)
+        carried, saved = slot.for_node(FID, "n1"), slot.for_node(FID, "n2")
+        with eng.begin() as cx:
+            cx.execute(sa.insert(s.projects).values(id="p", name="p", created_at=NOW))
+            cx.execute(sa.insert(s.versions).values(id="v4", project_id="p", version="v4",
+                                                    created_at=NOW))
+            _override(cx, "v4", slot.NODE_LABEL, carried, shape=slot.cfg_shape(["n0", "n1"]))
+            _override(cx, "v4", slot.NODE_LABEL, saved,
+                      shape=slot.cfg_shape(["n0", "n1", "n2"]))
+        fc_dir = tmp_path / "output" / "Sample" / "flowcharts"
+        fc_dir.mkdir(parents=True)
+        (fc_dir / "UnitA.json").write_text(json.dumps([
+            {"name": "ns::doThing", "functionKey": FID, "cfg": _cfg("n0", "n1", "n2"),
+             "flowchart": "digraph G {}"}]), encoding="utf-8")
+        PgStore("p", eng, workspaces_root=str(tmp_path / "ws")).capture_output(
+            "v4", str(tmp_path / "output"))
+        with eng.connect() as cx:
+            flags = {r.slot_key: bool(r.is_orphaned)
+                     for r in cx.execute(sa.select(s.text_overrides))}
+        assert flags == {carried: True, saved: False}
 
 
 # ---------------------------------------------------------------------------------------------

@@ -330,7 +330,14 @@ flowchart's node-id list — is what catches that, and it has to be checked agai
 is about to be written into.
 
 That graph exists in exactly one place: `phase3_overrides.apply_to_flowchart_json`, immediately
-before the label is replaced. A mismatch there **drops** the correction and leaves the LLM's label.
+before the label is replaced. A mismatch there **drops** the correction and leaves the LLM's label —
+checked **per row**, since rows on one flowchart can claim different graphs (one carried from a
+version numbered differently, one saved after). One shape per flowchart made the row order decide.
+
+The dropped row is then **orphaned** where the stored graph is in hand — after every capture
+(`incremental/store.py::_orphan_misplaced_labels`) and in a flowchart save, before it writes — and
+an undo refuses one that does not fit. Left live, it read as in force (`isOverridden`, `canUndo`) and
+an undo wrote the old graph's LLM label onto the box that now holds its node id.
 
 Carry-forward runs in Phase 2, *before* Phase 3 has produced the new version's flowcharts, so it
 cannot make that check — it compares against the baseline's graph, and a mismatch marks the row
@@ -342,7 +349,10 @@ The shape **is** copied onto the carried row (orphans excepted). Nulling it make
 generation see "no claim"; `shape_matches` refuses a missing claim, so the correction would orphan
 itself one version later.
 
-→ `test_review_phase3_overrides.py::TestTheShapeIsCheckedWhereTheTextLands` and
+→ `test_review_phase3_overrides.py::TestTheShapeIsCheckedWhereTheTextLands`,
+`::TestEachRowIsJudgedOnItsOwn`; `test_review_carry_forward.py::TestAMisplacedLabelIsOrphaned`,
+`::TestTheCaptureOrphansWhatNoLongerFits`,
+`test_review_flowchart_save.py::TestACorrectionWrittenForAnotherNumbering`; and
 `test_review_carry_forward.py::test_a_target_with_no_flowchart_yet_still_carries`, which pins the
 bug a real two-version run found.
 

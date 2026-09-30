@@ -552,9 +552,17 @@ def apply_flowchart_overrides(conn,
     if missing:
         raise SlotUnknown("%s has no node(s) %s" % (flowchart_id, ", ".join(missing)))
 
-    # Read once, stamped onto every row of this flowchart, so they cannot disagree about which
+    # Read once, stamped onto every row this call writes, so they cannot disagree about which
     # graph they were written against (REQ-ID-02).
     shape = slot.cfg_shape(current.keys())
+
+    # And the graph is in hand, so the flowchart's other corrections are judged against it: one
+    # written for another graph -- carried from a version whose builder numbered the nodes
+    # differently -- is orphaned rather than left claiming to be in force. Before the writes
+    # below, so a node saved here over such a row starts a new correction, with the LLM's label
+    # for THIS graph as its original.
+    from review.carry_forward import orphan_misplaced_labels
+    orphan_misplaced_labels(conn, version_id, graphs={flowchart_id: {shape}})
 
     applied, first_edits = [], []
     for node_id, text in labels.items():
@@ -850,6 +858,14 @@ def undo_override(conn, version_id: str, slot_kind: str, slot_key: str, *,
 
     if slot_kind == slot.NODE_LABEL:
         parts = slot.parse(slot.NODE_LABEL, slot_key)
+        if not _fits_the_stored_graph(conn, version_id, parts["entity_key"], row.slot_shape):
+            # REQ-ID-02. Its `llm_text` is the LLM's label for the node that held this id in
+            # the graph the correction was written for; here that id is another box.
+            raise NothingToUndo(
+                "%s %r in version %s was written for an earlier numbering of its flowchart's "
+                "nodes, so it is not applied and the document already shows the LLM's label for "
+                "the current graph. There is nothing to undo; a new edit starts a new "
+                "correction." % (slot_kind, slot_key, version_id))
         return apply_flowchart_overrides(
             conn, version_id, parts["entity_key"], {parts["node_id"]: original},
             output_dir=output_dir, project_root=project_root, **common)
@@ -863,6 +879,24 @@ def undo_override(conn, version_id: str, slot_kind: str, slot_key: str, *,
 
     return apply_override(conn, version_id, slot_kind, slot_key, original,
                           models=models, **common)
+
+
+def _fits_the_stored_graph(conn, version_id: str, flowchart_id: str,
+                           claimed: Optional[str]) -> bool:
+    """Whether a node-label correction claiming `claimed` fits the flowchart this version
+    stores. No claim, or no stored graph to hold it against, is not a misfit here: the save
+    that follows reports a missing graph itself."""
+    if not claimed:
+        return True
+    from review import rerender
+    found = rerender.find_flowchart_row(conn, version_id, flowchart_id)
+    if not found:
+        return True
+    try:
+        return slot.shape_matches(
+            claimed, slot.shape_of_cfg(_flowchart_entry(found[2], flowchart_id).get("cfg")))
+    except (SlotUnknown, slot.SlotKeyError):
+        return True
 
 
 def list_overrides(conn, version_id: str, *, slot_kind: Optional[str] = None,
