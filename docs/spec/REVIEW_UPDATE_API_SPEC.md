@@ -128,7 +128,9 @@ generated with `analyzer.py` has the id you gave it, so there the two are the sa
 > nothing on a project you were not added to, and every endpoint here answers
 > `403 "Project membership required."`. `POST /api/v1/projects` adds its creator; CLI onboarding
 > adds every **superuser** (`users.is_superuser`), and a superuser reaches every project whether
-> or not a row exists. To add someone else:
+> or not a row exists. Nobody is a superuser until made one —
+> `python tools/grant_access.py --set-superuser --email <address>` — and the seeded
+> `admin@aspice.dev` login is an ordinary user. To add someone else:
 > `python analyzer.py grant --project-id <p> --email <them>`.
 
 ---

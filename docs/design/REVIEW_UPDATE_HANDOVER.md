@@ -56,6 +56,12 @@ be two heads** and `alembic upgrade head` will refuse. The fix is to re-point th
 at the new head and renumber — all six migrations are additive (new tables, new columns) and touch
 nothing existing, so they can sit anywhere after `0008`.
 
+`0014` only adds the column, `false` for everyone. Nobody is promoted — not the seeded
+`admin@aspice.dev` login, whose password is published — and a superuser is made on purpose:
+`python tools/grant_access.py --set-superuser --email <address>`. A database that ran an earlier
+build of `0014` has that login promoted; take it back with
+`--unset-superuser --email admin@aspice.dev`.
+
 Check with:
 
 ```

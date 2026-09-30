@@ -181,10 +181,108 @@ class TestOnboardingKeepsTheDataHonest:
         assert '"--superusers"' in body, (
             "onboarding no longer puts the operator on the new project's team list")
 
-    def test_setup_promotes_and_backfills(self):
+    def test_setup_backfills_the_superusers_memberships(self):
         src = open(os.path.join(PROJECT_ROOT, "tools", "db_setup.py"), encoding="utf-8").read()
-        assert "is_superuser" in src and "project_members" in src, (
-            "setup no longer repairs a database that predates the flag")
+        assert "WHERE u.is_superuser" in src and "project_members" in src, (
+            "setup no longer puts every superuser on every project's team list")
+
+
+def _sqlite_url(tmp_path, name):
+    return "sqlite:///" + str(tmp_path / name).replace("\\", "/")
+
+
+def _admin_flag(eng):
+    with eng.connect() as cx:
+        return cx.execute(sa.text("SELECT is_superuser FROM users "
+                                  "WHERE email = 'admin@aspice.dev'")).scalar()
+
+
+class TestNobodyIsASuperuserUnlessMadeOne:
+    """The seeded login `admin@aspice.dev` / `admin` is an ORDINARY user.
+
+    Its password is published, it is re-created on startup when deleted, and the JWT secret's
+    default makes a token for it forgeable -- so promoting it made every project reachable by
+    anyone who knew that. Three places did it: migration 0014, the startup seed and
+    `analyzer.py setup`. Now `tools/grant_access.py --set-superuser` is the only way.
+    """
+
+    def test_a_fresh_databases_seeded_login_is_ordinary(self, tmp_path):
+        from api.main import _ensure_default_admin
+        eng = sa.create_engine(_sqlite_url(tmp_path, "fresh.db"))
+        db = SqlDatabase(eng, create_schema=True)
+        _ensure_default_admin(db)
+        assert db.users.get_by_email("admin@aspice.dev").is_superuser is False
+        assert _admin_flag(eng) in (0, False)
+
+    def test_migration_0014_promotes_nobody(self, tmp_path):
+        """0013 -> 0014 on a database that has the seeded login: the column lands, false."""
+        import importlib.util
+        from alembic.migration import MigrationContext
+        from alembic.operations import Operations
+        eng = sa.create_engine(_sqlite_url(tmp_path, "at0013.db"))
+        before = sa.MetaData()
+        sa.Table("users", before, *[col._copy() for col in s.users.columns
+                                    if col.name != "is_superuser"])
+        before.create_all(eng)
+        with eng.begin() as cx:
+            cx.execute(sa.text("INSERT INTO users (id, email, name, hashed_password, created_at) "
+                               "VALUES ('admin', 'admin@aspice.dev', 'A', 'x', '2026-01-01')"))
+        path = os.path.join(PROJECT_ROOT, "alembic", "versions", "0014_users_is_superuser.py")
+        spec = importlib.util.spec_from_file_location("m0014", path)
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+        with eng.begin() as cx:
+            with Operations.context(MigrationContext.configure(cx)):
+                migration.upgrade()
+        assert _admin_flag(eng) in (0, False)
+
+    def test_setup_promotes_nobody(self, tmp_path, monkeypatch):
+        """`analyzer.py setup` on a database with no superuser used to promote the seeded login."""
+        import db_setup
+        url = _sqlite_url(tmp_path, "setup.db")
+        eng = sa.create_engine(url)
+        s.metadata.create_all(eng)
+        with eng.begin() as cx:
+            cx.execute(sa.insert(s.users), {"id": "admin", "email": "admin@aspice.dev",
+                                            "name": "A", "hashed_password": "x",
+                                            "created_at": NOW, "is_superuser": False})
+        monkeypatch.setenv("DATABASE_URL", url)
+        monkeypatch.setattr(sys, "argv", ["db_setup.py"])
+        assert db_setup.main() == 0
+        assert _admin_flag(eng) in (0, False)
+
+    def test_the_command_makes_one_and_access_follows(self, client, db, orphan_project,
+                                                      monkeypatch):
+        """`tools/grant_access.py --set-superuser`: the flag, then every project -- and
+        `--unset-superuser` takes it away again."""
+        import grant_access
+        import core.db as core_db
+        eng = _engine_of(db)
+        monkeypatch.setattr(core_db, "require_database", lambda *a, **k: None)
+        monkeypatch.setattr(core_db, "get_engine", lambda *a, **k: eng)
+        monkeypatch.setattr(core_db, "database_url", lambda *a, **k: "sqlite://")
+        tok = client.post("/api/v1/auth/signin",
+                          json={"email": "bob@aspice.dev", "password": "secret"})
+        if tok.status_code != 200:
+            pytest.skip("no bob in this seed")
+        h = {"Authorization": "Bearer " + tok.json()["access_token"]}
+        assert client.get(f"/api/v1/projects/{orphan_project}", headers=h).status_code == 403
+        assert grant_access.main(["--set-superuser", "--email", "bob@aspice.dev"]) == 0
+        try:
+            assert db.users.get_by_email("bob@aspice.dev").is_superuser is True
+            assert client.get(f"/api/v1/projects/{orphan_project}",
+                              headers=h).status_code == 200
+            listed = [p["id"] for p in client.get("/api/v1/projects",
+                                                  headers=h).json()["projects"]]
+            assert orphan_project in listed
+        finally:
+            assert grant_access.main(["--unset-superuser", "--email", "bob@aspice.dev"]) == 0
+        assert client.get(f"/api/v1/projects/{orphan_project}", headers=h).status_code == 403
+
+    def test_the_command_needs_an_email(self):
+        import grant_access
+        with pytest.raises(SystemExit):
+            grant_access.main(["--set-superuser"])
 
 
 

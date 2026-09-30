@@ -222,19 +222,12 @@ def main() -> int:
         if m:
             print(f"repaired {m} project row(s) with no updated_at -> created_at")
 
-        # The operator account. `is_superuser` arrives as `false` for every existing row, so a
-        # database that has been in use would come back from this upgrade with NOBODY able to
-        # reach a project -- the column would be there and mean nothing.
+        # Nobody is made a superuser here. `is_superuser` arrives `false` for every row and is
+        # set on purpose only (`tools/grant_access.py --set-superuser`): this used to promote the
+        # seeded admin@aspice.dev / admin login whenever no superuser existed, and that login's
+        # password is published.
         #
-        # Only when there is no superuser at all: once somebody has chosen who the operators
-        # are, re-running setup must not quietly add another.
-        if not cx.execute(text("SELECT 1 FROM users WHERE is_superuser")).first():
-            k = cx.execute(text("UPDATE users SET is_superuser = %s WHERE email = 'admin@aspice.dev'"
-                                % ("true" if is_pg else "1"))).rowcount
-            if k:
-                print("promoted admin@aspice.dev to superuser (access to every project)")
-
-        # And give every superuser a membership row on every project. Access does not DEPEND on
+        # Every superuser gets a membership row on every project. Access does not DEPEND on
         # these -- `require_project_member` lets a superuser through without one, which is what
         # makes it reliable -- but the team list and `my_role` are read from them, so without
         # this the operator appears on no team and the UI greys out controls the API honours.

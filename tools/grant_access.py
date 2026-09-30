@@ -12,10 +12,18 @@ HTTP**: `GET /projects` lists only what you are a member of, so it comes back `[
 
     403  {"code": "FORBIDDEN", "message": "Project membership required."}
 
-Being "the admin" does not help, and that is not a bug in the check. There is no global role in
-this system at all — `User` has no role field. `admin@aspice.dev` is a seeded LOGIN, not a
-superuser. Authorisation is per project, via this table, and a project nobody was added to has
-nobody who can read it.
+Being "the admin" does not help, and that is not a bug in the check. Authorisation is per project,
+via this table, and a project nobody was added to has nobody who can read it. `admin@aspice.dev`
+is a seeded LOGIN, not a superuser.
+
+The one exception is `users.is_superuser`: a superuser reaches every project, member or not. Nobody
+is one unless made one here, on purpose:
+
+    python tools/grant_access.py --set-superuser   --email ops@company.com
+    python tools/grant_access.py --unset-superuser --email admin@aspice.dev
+
+Never the seeded login automatically: its password is published, it is re-created when deleted,
+and the JWT secret's default makes a token for it forgeable.
 
 `GET /projects/search` works on those projects because it does not filter by membership, which is
 how they are findable at all while this row is missing.
@@ -62,11 +70,49 @@ def grant(cx, project_id: str, user_id: str, role: str = "admin",
     return "updated"
 
 
+def set_superuser(email: str, value: bool) -> int:
+    """Set or unset `users.is_superuser` for one user. The only way it is ever set."""
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    import sqlalchemy as sa
+    from api.db.postgres import schema as s
+    from core.db import database_url, get_engine, require_database, _redact, DatabaseUnavailable
+
+    try:
+        require_database()
+    except DatabaseUnavailable as exc:
+        print(exc)
+        print("\nRun `python analyzer.py setup` first.")
+        return 2
+    print(f"database : {_redact(database_url())}")
+    with get_engine().begin() as cx:
+        done = cx.execute(sa.update(s.users).where(s.users.c.email == email)
+                          .values(is_superuser=value)).rowcount
+        if not done:
+            print(f"\nNo user with email {email!r}.")
+            print("  Users that exist: %s" % ", ".join(
+                r.email for r in cx.execute(sa.select(s.users.c.email).limit(20))) or "(none)")
+            return 2
+    if value:
+        print(f"\n{email} is a superuser now: it reaches every project, member or not.")
+        print("  `python analyzer.py setup` also puts it on every project's team list.")
+    else:
+        print(f"\n{email} is an ordinary user now: it reaches the projects it is a member of.")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         prog="grant_access.py",
-        description="Give a user access to a CLI-onboarded project so the API will serve it.")
-    ap.add_argument("--project-id", required=True)
+        description="Give a user access to a CLI-onboarded project so the API will serve it; or "
+                    "make a user a superuser, or stop them being one.")
+    ap.add_argument("--project-id", help="the project (not needed with --set/--unset-superuser)")
+    ap.add_argument("--set-superuser", action="store_true",
+                    help="make --email a superuser: it reaches EVERY project, member or not")
+    ap.add_argument("--unset-superuser", action="store_true",
+                    help="make --email an ordinary user again")
     ap.add_argument("--email", help="the user to add (default: every user, when --all is given)")
     ap.add_argument("--all", action="store_true",
                     help="add EVERY user in the database. For a single-team internal instance "
@@ -77,6 +123,14 @@ def main(argv=None) -> int:
     ap.add_argument("--role", default="admin", choices=ROLES)
     args = ap.parse_args(argv)
 
+    if args.set_superuser or args.unset_superuser:
+        if args.set_superuser and args.unset_superuser:
+            ap.error("--set-superuser and --unset-superuser cannot both be given")
+        if not args.email:
+            ap.error("--set-superuser / --unset-superuser need --email <address>")
+        return set_superuser(args.email, bool(args.set_superuser))
+    if not args.project_id:
+        ap.error("--project-id is required")
     if not (args.email or args.all or args.superusers):
         ap.error("pass --email <address>, --superusers, or --all")
 

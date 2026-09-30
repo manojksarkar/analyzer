@@ -138,9 +138,10 @@ def _grant_after_onboard(a) -> int:
 def cmd_grant(a) -> int:
     """Give a user access to a project, so the API will serve it.
 
-    Authorisation here is per project, via `project_members`. There is no global admin role —
-    `User` has no role field at all — so a project nobody was added to has nobody who can read
-    it over HTTP, whichever account you sign in with.
+    Authorisation here is per project, via `project_members`, so a project nobody was added to has
+    nobody who can read it over HTTP, whichever account you sign in with. The one exception is a
+    superuser (`users.is_superuser`), who reaches every project -- and nobody is one unless made
+    one on purpose: `python tools/grant_access.py --set-superuser --email <address>`.
     """
     argv = ["--project-id", a.project_id, "--role", a.role]
     argv += ["--all"] if a.all else ["--email", a.email]
