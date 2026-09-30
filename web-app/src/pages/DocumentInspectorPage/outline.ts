@@ -178,6 +178,32 @@ export function slotWhere(s: Slot): string {
   return name
 }
 
+/** A flowchart's boxes in the order its arrows run, from the DOT (`N1 -> N3;`): breadth first
+ *  from the boxes nothing points to. Ids the DOT does not order go last. */
+export function flowOrder(dot: string): Map<string, number> {
+  const next = new Map<string, string[]>()
+  const nodes: string[] = []
+  const seen = new Set<string>()
+  const add = (id: string) => { if (!seen.has(id)) { seen.add(id); nodes.push(id) } }
+  const into = new Set<string>()
+  for (const m of dot.matchAll(/^\s*"?([\w.]+)"?\s*\[/gm)) add(m[1])
+  for (const m of dot.matchAll(/"?([\w.]+)"?\s*->\s*"?([\w.]+)"?/g)) {
+    add(m[1]); add(m[2])
+    next.set(m[1], [...(next.get(m[1]) ?? []), m[2]])
+    into.add(m[2])
+  }
+  const order = new Map<string, number>()
+  const queue = nodes.filter((n) => !into.has(n))
+  while (queue.length) {
+    const n = queue.shift() as string
+    if (order.has(n)) continue
+    order.set(n, order.size)
+    queue.push(...(next.get(n) ?? []))
+  }
+  for (const n of nodes) if (!order.has(n)) order.set(n, order.size)
+  return order
+}
+
 export const SLOT_KIND_LABEL: Record<string, string> = {
   description: 'Description',
   behaviourInputName: 'Input name',

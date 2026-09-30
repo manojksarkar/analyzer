@@ -274,6 +274,8 @@ export interface FlowchartLabels {
   labels: Slot[]
   graphAvailable: boolean
   note: string | null
+  /** The chart as Graphviz DOT: its arrows give the boxes their order. */
+  dot: string
 }
 
 /** R9: whether the version's Word files have every correction, and its latest re-export. */

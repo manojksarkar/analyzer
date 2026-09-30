@@ -25,8 +25,14 @@ export function SlotText({ slot, display, bullets, className }: Props) {
   if (!slot || !edit?.editing) {
     return (
       <div data-slot-key={slot?.key} className={cn('whitespace-pre-line', className)}>
-        {slot?.isOverridden && <CorrectedMark slot={slot} edit={edit} />}
-        {bullets ? <BulletList items={bullets} /> : display}
+        {bullets ? (
+          <BulletList items={bullets} mark={slot?.isOverridden ? <CorrectedMark slot={slot} edit={edit} /> : null} />
+        ) : (
+          <>
+            {slot?.isOverridden && <CorrectedMark slot={slot} edit={edit} />}
+            {display}
+          </>
+        )}
       </div>
     )
   }
@@ -43,9 +49,10 @@ export function SlotText({ slot, display, bullets, className }: Props) {
   )
 }
 
-function BulletList({ items }: { items: string[] }) {
-  if (!items.length) return <span className="text-on-surface-variant">-</span>
-  return <>{items.map((b, i) => <p key={i}>• {b}</p>)}</>
+/** A behaviour row's bullets; the corrected mark, when there is one, leads the first line. */
+function BulletList({ items, mark }: { items: string[]; mark: React.ReactNode }) {
+  if (!items.length) return <span className="text-on-surface-variant">{mark}-</span>
+  return <>{items.map((b, i) => <p key={i}>{i === 0 && mark}• {b}</p>)}</>
 }
 
 function CorrectedMark({ slot, edit }: { slot: Slot; edit: EditApi | null }) {
@@ -199,9 +206,9 @@ function SlotHistory({ slot, edit }: { slot: Slot; edit: EditApi }) {
 
 function HistoryRow({ who, text }: { who: string; text: string }) {
   return (
-    <div className="grid grid-cols-[140px_1fr] gap-2 py-1 border-t border-surface-container first:border-t-0">
-      <span className="font-mono text-label text-outline">{who}</span>
-      <span className="text-on-surface whitespace-pre-line">{text}</span>
+    <div className="py-1 border-t border-surface-container first:border-t-0">
+      <p className="font-mono text-label text-outline">{who}</p>
+      <p className="text-on-surface whitespace-pre-line">{text}</p>
     </div>
   )
 }

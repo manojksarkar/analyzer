@@ -5,6 +5,7 @@ import { formatShortDate } from '../../../lib/format'
 import { useFlowchartLabels, useSaveFlowchartLabels, useUndoSlot } from '../../../hooks/useReview'
 import type { FlowchartEntry, Slot } from '../../../types'
 import { MAX_TEXT } from '../editContext'
+import { flowOrder } from '../outline'
 
 /* One flowchart's box labels, corrected together (R7 reads them, R8 saves the changed ones all
    or nothing). The chart's shape and arrows come from the code and stay as they are; the server
@@ -32,7 +33,10 @@ export function FlowchartLabelDialog({
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [focused, setFocused] = useState<string | null>(null)
 
-  const labels = [...(data?.labels ?? [])].sort((a, b) => nodeNumber(a) - nodeNumber(b))
+  // In the order the arrows run, as the picture reads; by node number where the DOT says nothing.
+  const order = flowOrder(data?.dot ?? '')
+  const rank = (s: Slot) => order.get(s.nodeId ?? '') ?? order.size + nodeNumber(s)
+  const labels = [...(data?.labels ?? [])].sort((a, b) => rank(a) - rank(b) || nodeNumber(a) - nodeNumber(b))
   const valueOf = (s: Slot) => draft[s.nodeId ?? ''] ?? s.text
   const changed = labels.filter((s) => valueOf(s).trim() !== s.text.trim())
   const empty = labels.some((s) => !valueOf(s).trim())
@@ -101,7 +105,7 @@ export function FlowchartLabelDialog({
                           <>· <button type="button" onClick={() => undo.mutate(s)} className="text-secondary hover:underline">Undo</button></>
                         )}
                       </>
-                    ) : <span>written by the LLM</span>}
+                    ) : <span>generated</span>}
                     {isChanged && <span className="text-secondary font-semibold">· changed</span>}
                   </p>
                 </div>

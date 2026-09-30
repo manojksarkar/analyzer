@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { RichSection, Slot } from '../../../types'
 import {
-  ancestorsOf, buildOutline, defaultExpanded, docCorrections, filterOutline, outlineIds, slotWhere,
+  ancestorsOf, buildOutline, defaultExpanded, docCorrections, filterOutline, flowOrder, outlineIds, slotWhere,
   unitCorrectionCounts,
 } from '../outline'
 
@@ -92,5 +92,24 @@ describe('corrections of this document', () => {
     expect(slotWhere(slot('description', `${U}|libAdd|int`))).toBe('libAdd')
     expect(slotWhere(slot('unitDescription', U))).toBe('unit Lib')
     expect(slotWhere(slot('nodeLabel', `${U}|libAdd|int\u0001n3`, { nodeId: 'n3' }))).toBe('libAdd · box n3')
+  })
+})
+
+describe('flowOrder (a flowchart’s boxes as its arrows run)', () => {
+  it('follows the arrows, not the node numbers', () => {
+    const dot = [
+      'digraph G {',
+      '  N1 [shape=ellipse, label="Start"];',
+      '  N2 [shape=ellipse, label="End"];',
+      '  N3 [shape=box, label="Return x"];',
+      '  N1 -> N3;',
+      '  N3 -> N2;',
+      '}',
+    ].join('\n')
+    const o = flowOrder(dot)
+    expect([...o.entries()].sort((a, b) => a[1] - b[1]).map((e) => e[0])).toEqual(['N1', 'N3', 'N2'])
+  })
+  it('is empty without a DOT', () => {
+    expect(flowOrder('').size).toBe(0)
   })
 })

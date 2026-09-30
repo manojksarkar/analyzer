@@ -98,7 +98,8 @@ export function OutlineTab({
           aria-label="Find a unit or function"
         />
         <Text as="p" variant="caption" className="font-mono mt-1.5">
-          {searching ? `${hits} found` : `${units.u} units · ${units.f} functions${counts ? ' · ● corrections' : ''}`}
+          {searching ? `${hits} found`
+            : `${units.u} unit${units.u === 1 ? '' : 's'} · ${units.f} function${units.f === 1 ? '' : 's'}${counts ? ' · ● corrections' : ''}`}
         </Text>
       </div>
       <nav ref={listRef} className="flex-1 overflow-y-auto pb-3 px-1.5">

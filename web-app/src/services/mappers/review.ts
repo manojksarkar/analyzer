@@ -50,6 +50,7 @@ export const ApiFlowchartLabelsSchema = z.object({
   labels: z.array(ApiSlotSchema),
   graphAvailable: z.boolean(),
   note: z.string().nullable().optional(),
+  dot: z.string().optional(),
 })
 export type ApiFlowchartLabels = z.infer<typeof ApiFlowchartLabelsSchema>
 
@@ -125,6 +126,7 @@ export function mapFlowchartLabels(r: ApiFlowchartLabels): FlowchartLabels {
     labels: r.labels.map(mapSlot),
     graphAvailable: r.graphAvailable,
     note: r.note ?? null,
+    dot: r.dot ?? '',
   }
 }
 

@@ -34,8 +34,8 @@ export function RightPanel({
     )
   }
   return (
-    <aside className="w-60 flex-shrink-0 bg-white border-l border-outline-variant flex flex-col overflow-hidden">
-      <div className="flex items-center border-b border-outline-variant flex-shrink-0 pl-1.5 pr-1">
+    <aside className="w-64 flex-shrink-0 bg-white border-l border-outline-variant flex flex-col overflow-hidden">
+      <div className="flex items-center border-b border-outline-variant flex-shrink-0 pl-1 pr-0.5">
         <div role="tablist" className="flex flex-1 min-w-0">
           {tabs.map((t) => (
             <button
@@ -44,7 +44,7 @@ export function RightPanel({
               aria-selected={active === t.id}
               onClick={() => onTab(t.id)}
               className={cn(
-                'flex items-center gap-1 px-2 pt-3 pb-2.5 -mb-px border-b-2 font-mono text-caption font-semibold whitespace-nowrap transition-colors',
+                'flex items-center gap-1 px-1.5 pt-3 pb-2.5 -mb-px border-b-2 font-mono text-caption font-semibold whitespace-nowrap transition-colors',
                 active === t.id ? 'border-secondary text-secondary' : 'border-transparent text-outline hover:text-on-surface',
               )}
             >
