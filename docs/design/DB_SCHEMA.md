@@ -180,8 +180,9 @@ erDiagram
 ```
 
 `organizations` was dropped (D-8) — `projects.org_id` is a plain free-text tenant tag, not a FK.
-`users.is_superuser` marks the operator account, which may act on every project without a
-`project_members` row (migration 0014).
+`users.is_superuser` marks a user who may act on every project without a `project_members` row
+(migration 0014). It is `false` for everyone, the seeded `admin@aspice.dev` login included, until set
+on purpose: `python tools/grant_access.py --set-superuser --email <address>`.
 
 ## ER — review & update
 

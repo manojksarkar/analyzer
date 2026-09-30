@@ -48,7 +48,13 @@ app = FastAPI(
 def _ensure_default_admin(db) -> None:
     """Guarantee a login exists: create ``admin@aspice.dev`` / ``admin`` when that user is absent,
     so a brand-new database (e.g. a freshly created remote Postgres) is never left with no way to
-    sign in. Idempotent — a no-op once the user exists. Change the password after first login."""
+    sign in. Idempotent — a no-op once the user exists. Change the password after first login.
+
+    An ORDINARY user: it reaches the projects it is a member of -- every project it creates -- and
+    no others. Not a superuser: its password is published here, it comes back when deleted, and
+    the JWT secret's default makes a token for it forgeable, so making it reach every project
+    would make every project reachable by anyone. A superuser is made on purpose, with
+    `tools/grant_access.py --set-superuser --email <address>`."""
     import datetime
     import sys
     try:
@@ -59,10 +65,7 @@ def _ensure_default_admin(db) -> None:
         db.users.create(User(
             id="admin", email="admin@aspice.dev", name="Administrator", initials="AD",
             avatar_url=None, hashed_password=hash_password("admin"),
-            created_at=datetime.datetime.now(datetime.timezone.utc),
-            # The operator account. Without this a brand-new database has a login that can
-            # sign in and see nothing, because every project route is membership-gated.
-            is_superuser=True))
+            created_at=datetime.datetime.now(datetime.timezone.utc)))
         print("[api] created default admin — sign in: admin@aspice.dev / admin", file=sys.stderr)
     except Exception as exc:                                  # noqa: BLE001
         print(f"[api] could not ensure default admin: {type(exc).__name__}: {exc}", file=sys.stderr)

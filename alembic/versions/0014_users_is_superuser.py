@@ -11,6 +11,13 @@ the database, and changeable without a deploy.
 `server_default` is not decoration. This column is added to databases that already have user rows,
 and a NOT NULL column with no default cannot be added to a table that is not empty.
 
+**Nobody is promoted here.** The column arrives `false` for every user and is set on purpose only,
+with `python tools/grant_access.py --set-superuser --email <address>`. This migration used to
+promote the seeded `admin@aspice.dev` / `admin` login -- a published password, re-created on
+startup when deleted, under a JWT secret whose default makes a token for it forgeable -- which
+turned the one login everybody knows into a key to every project. A database that ran that earlier
+0014 keeps the flag until it is taken away: `--unset-superuser --email admin@aspice.dev`.
+
 Revision ID: 0014_users_is_superuser
 Revises: 0013_render_jobs
 """
@@ -22,17 +29,9 @@ down_revision = "0013_render_jobs"
 branch_labels = None
 depends_on = None
 
-#: The account `api.main._ensure_default_admin` guarantees exists on every database.
-DEFAULT_ADMIN = "admin@aspice.dev"
-
-
 def upgrade() -> None:
     op.add_column("users", sa.Column("is_superuser", sa.Boolean(), nullable=False,
                                      server_default=sa.text("false")))
-    # Promote the default operator account, if this database has one. Without this the column
-    # lands and nothing changes, which looks exactly like the migration not having run.
-    op.execute(sa.text("UPDATE users SET is_superuser = true WHERE email = '%s'"
-                       % DEFAULT_ADMIN))
 
 
 def downgrade() -> None:

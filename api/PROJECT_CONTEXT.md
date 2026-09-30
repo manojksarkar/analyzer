@@ -18,8 +18,9 @@
 > [docs/spec/REVIEW_UPDATE_API_SPEC.md](../docs/spec/REVIEW_UPDATE_API_SPEC.md). Also on that branch:
 > a re-export is a job of its own, addressed by version (`POST /projects/{pid}/versions/{vid}/reexport`);
 > `POST /projects/{pid}/jobs` refuses a project with no architecture (409 `NO_ARCHITECTURE`) and resolves
-> `reference_version_id` inside the project; `users.is_superuser` marks the operator account, which acts
-> on every project; `tools/grant_access.py` adds the `project_members` row a CLI-onboarded project
+> `reference_version_id` inside the project; `users.is_superuser` lets a user act
+> on every project — nobody, the seeded `admin@aspice.dev` included, until
+> `tools/grant_access.py --set-superuser` makes them one; `tools/grant_access.py` adds the `project_members` row a CLI-onboarded project
 > lacks; a sign-in lasts 8 h (`auth.accessTokenMinutes` in `engine/config/config.local.json`). Merge
 > notes: [docs/design/REVIEW_UPDATE_HANDOVER.md](../docs/design/REVIEW_UPDATE_HANDOVER.md).
 >
