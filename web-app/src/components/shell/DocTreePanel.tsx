@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Icon, Text } from '../ui'
 import { cn } from '../../lib/cn'
+import { PROCESS_TITLES } from '../../lib/docTree'
 import type { Document } from '../../types'
 
 /**
@@ -58,7 +59,7 @@ export function DocTreePanel({
         className={cn(
           'w-full flex items-center gap-1.5 py-[5px] pr-2.5 transition-colors text-left font-mono text-caption',
           pad,
-          active ? 'bg-surface-container text-secondary font-medium' : 'text-on-surface-variant hover:bg-surface-container-low',
+          active ? 'bg-surface-container text-secondary font-medium border-l-2 border-secondary' : 'text-on-surface-variant hover:bg-surface-container-low',
         )}
       >
         <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', active ? 'bg-secondary' : 'bg-outline-variant')} aria-hidden />
@@ -168,8 +169,8 @@ export function DocTreePanel({
                   className="w-full flex items-center gap-1.5 px-3 py-2 hover:bg-surface-container-low transition-colors select-none"
                 >
                   <Icon name="chevron_right" size={14} className={cn('text-on-surface-variant transition-transform', isOpen && 'rotate-90')} />
-                  <span className="font-mono text-caption font-semibold text-on-surface">{g.process}</span>
-                  <span className="ml-auto font-mono text-label text-on-surface-variant">{g.docs.length}</span>
+                  <span className="font-mono text-caption font-semibold text-on-surface flex-shrink-0">{g.process}</span>
+                  <span className="font-mono text-label text-on-surface-variant truncate">{PROCESS_TITLES[g.process] ?? ''}</span>
                 </button>
                 {isOpen && (multiLayer
                   ? layers.map((layer) => {
@@ -183,8 +184,7 @@ export function DocTreePanel({
                             className="w-full flex items-center gap-1.5 pl-7 pr-3 py-1.5 hover:bg-surface-container-low transition-colors select-none"
                           >
                             <Icon name="chevron_right" size={12} className={cn('text-on-surface-variant transition-transform', layerOpen && 'rotate-90')} />
-                            <span className="font-mono text-label font-medium text-on-surface-variant truncate">{layer}</span>
-                            <span className="ml-auto font-mono text-label text-on-surface-variant">{docs.length}</span>
+                            <span className="font-mono text-label text-on-surface-variant uppercase tracking-[0.08em] truncate">{layer}</span>
                           </button>
                           {layerOpen && docs.map((d) => renderDocRow(d, 'pl-11'))}
                         </div>

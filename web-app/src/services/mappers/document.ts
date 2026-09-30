@@ -45,6 +45,7 @@ export function mapDocument(d: ApiDocument, versionTagById?: Record<string, stri
     process: d.process,
     status: d.status as DocStatus,
     version: versionTagById?.[d.version_id] ?? d.version_id,
+    versionId: d.version_id,
     updatedAt: formatShortDate(d.updated_at) ?? '',
     subtitle: d.subtitle || undefined,
     layer: d.layer || undefined,

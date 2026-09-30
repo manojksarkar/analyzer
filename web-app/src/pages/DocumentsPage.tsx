@@ -187,6 +187,36 @@ export function DocumentsPage() {
     )
   }
 
+  // ── RUNNING state: the picked version is still being generated (mockup: "Generating document") ──
+  if (pageState === 'running' && !isLoading && all.length === 0) {
+    return (
+      <div className="flex-1 overflow-y-auto bg-surface-container-low">
+        <div className="p-6">
+          <Card className="overflow-hidden">
+            <div className="py-20 flex flex-col items-center text-center gap-5">
+              <div className="w-16 h-16 rounded-2xl bg-surface-container-low border border-outline-variant flex items-center justify-center">
+                <Icon name="autorenew" size={32} className="text-secondary animate-spin" />
+              </div>
+              <div>
+                <Text as="p" variant="heading" className="text-on-surface mb-1">Generating documents</Text>
+                <Text as="p" variant="caption" className="font-mono mt-1">
+                  <span className="text-secondary">{viewVersion?.tag}</span> is being generated. Its documents appear here when the run completes.
+                </Text>
+              </div>
+              <button
+                onClick={goOverview}
+                className="flex items-center gap-2 px-5 py-2.5 border border-outline-variant bg-white hover:bg-surface-container text-on-surface rounded-xl font-mono text-caption transition-colors"
+              >
+                <Icon name="monitoring" size={16} />
+                View progress
+              </button>
+            </div>
+          </Card>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex-1 flex overflow-hidden min-h-0">
       {/* The page's Subbar action (mockup: "Download All") — every DOCX of the viewed version. */}
@@ -195,7 +225,7 @@ export function DocumentsPage() {
           <button
             onClick={() => downloadAll.mutate({ versionId: viewVersion.id!, fileName: `${project?.name ?? pid}-${viewVersion.tag}.zip` })}
             disabled={downloadAll.isPending}
-            className="flex items-center gap-1.5 px-3 py-1.5 border border-outline-variant bg-white hover:bg-surface-container rounded-lg transition-colors text-on-surface font-mono text-caption font-bold tracking-[0.04em] disabled:opacity-60"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container rounded-lg transition-colors text-on-secondary font-mono text-caption font-bold tracking-[0.04em] disabled:opacity-60"
           >
             <Icon name="download" size={14} />
             {downloadAll.isPending ? 'PREPARING…' : 'DOWNLOAD ALL'}
@@ -389,7 +419,7 @@ export function DocumentsPage() {
             {isLoading ? (
               <TableSkeleton rows={8} cols={8} />
             ) : (
-              <table className="w-full">
+              <table className="w-full table-fixed">
                 <thead>
                   <tr className="bg-surface-container-low border-b border-outline-variant">
                     <th className="px-4 py-3 w-10">
@@ -402,10 +432,13 @@ export function DocumentsPage() {
                         className="accent-secondary w-[15px] h-[15px] cursor-pointer"
                       />
                     </th>
-                    {[['Document', undefined], ['Process', 100], ['Version', 90], ['Assignee', 155], ['Status', 110], ['Due Date', 100], ['', 90]].map(([h, w], i) => (
+                    {/* Fixed layout: the actions column holds five icon buttons (~150px). Declared at
+                        90 it took its width anyway, squeezed the Document column, and every row
+                        wrapped to two lines. */}
+                    {[['Document', undefined], ['Process', 80], ['Version', 120], ['Assignee', 140], ['Status', 110], ['Due Date', 90], ['', 150]].map(([h, w], i) => (
                       <th
                         key={i}
-                        className="text-left px-4 py-3 text-on-surface-variant uppercase font-mono text-caption font-medium tracking-[0.07em]"
+                        className="text-left px-4 py-3 text-on-surface-variant uppercase font-mono text-caption font-medium tracking-[0.07em] whitespace-nowrap"
                         // eslint-disable-next-line no-restricted-syntax -- per-column layout width from the header config
                         style={{ width: w as number | undefined }}
                       >
@@ -442,7 +475,7 @@ export function DocumentsPage() {
                   <Icon name="search_off" size={24} className="text-on-surface-variant" />
                 </div>
                 <div>
-                  <p className="text-on-surface font-medium text-sm">No documents found</p>
+                  <Text as="p" variant="heading" className="text-on-surface">No documents found</Text>
                   <Text as="p" variant="caption" className="font-mono mt-1">
                     Try a different process, status, or search term.
                   </Text>
@@ -496,14 +529,16 @@ function DocRow({
           <div className="w-8 h-8 rounded-lg bg-surface-container-low border border-outline-variant flex items-center justify-center flex-shrink-0">
             <Icon name="article" size={15} className="text-on-surface-variant" />
           </div>
-          <div>
-            <p className="text-on-surface hover:text-secondary transition-colors font-mono text-body font-medium">{doc.name}</p>
-            <Text as="p" variant="caption" className="font-mono mt-0.5">{doc.subtitle}</Text>
+          <div className="min-w-0">
+            <p className="text-on-surface hover:text-secondary transition-colors font-mono text-body font-medium truncate">{doc.name}</p>
+            <Text as="p" variant="caption" className="font-mono mt-0.5 whitespace-nowrap truncate">{doc.subtitle}</Text>
           </div>
         </div>
       </td>
       <td className="px-4 py-3.5"><ProcessBadge process={doc.process} /></td>
-      <td className="px-4 py-3.5 font-mono text-caption text-on-surface-variant">{versionLabel}</td>
+      <td className="px-4 py-3.5 font-mono text-caption text-on-surface-variant">
+        <span className="block whitespace-nowrap truncate max-w-[120px]" title={versionLabel}>{versionLabel}</span>
+      </td>
       <td className="px-4 py-3.5">
         {doc.assignee ? (
           <div className="flex items-center gap-2">

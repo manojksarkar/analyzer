@@ -3,6 +3,16 @@ import type { Document } from '../types'
 /** Process column order shared by the documents list + the tree rail. */
 export const DOC_PROCESSES = ['SYS.1', 'SYS.2', 'SWE.1', 'SWE.2', 'SWE.3', 'SWE.4'] as const
 
+/** Each process's document, as the tree names it (docs/ui-mockups/documents.html). */
+export const PROCESS_TITLES: Record<string, string> = {
+  'SYS.1': 'System Requirements Spec',
+  'SYS.2': 'System Test Spec',
+  'SWE.1': 'SW Requirements Spec',
+  'SWE.2': 'Software Architecture Spec',
+  'SWE.3': 'Detailed Design',
+  'SWE.4': 'Unit Test Specification',
+}
+
 /* The DOCX a process's exporter writes for a component (engine group_planner). */
 const DOCX_PREFIX: Record<string, string> = {
   'SWE.3': 'software_detailed_design',

@@ -150,7 +150,10 @@ export interface Document {
   process: string
   status: DocStatus
   assignee?: string
+  /** Display label: the version's tag when known, else its id. */
   version: string
+  /** The version the document belongs to (its id), whatever the Subbar shows. */
+  versionId?: string
   updatedAt: string
   subtitle?: string
   layer?: string

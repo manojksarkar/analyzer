@@ -34,9 +34,11 @@ export function DocumentInspectorPage() {
   const { data: rich } = useDocumentRender(pid, docId ?? '')
   const { data: team } = useTeam(pid)
   const { viewVersion, selectedCommit } = useProjectViewState(pid)
-  // The left rail lists every doc in the displayed version (same source as the
-  // Documents page) so you can jump between documents without going back.
-  const { data: railDocs } = useDocuments(pid, viewVersion?.id ? { versionId: viewVersion.id } : undefined)
+  // The left rail lists every doc of THIS document's version, so you can jump between documents
+  // without going back. Not the Subbar's: while a newer run is going, the Subbar shows that
+  // run's draft, which has no documents, and the rail said "No documents" beside an open one.
+  const railVersionId = doc?.versionId ?? viewVersion?.id
+  const { data: railDocs } = useDocuments(pid, railVersionId ? { versionId: railVersionId } : undefined)
 
   const approveDoc = useApproveDoc(pid)
   const selfAssign = useSelfAssign(pid)
@@ -103,7 +105,8 @@ export function DocumentInspectorPage() {
   const isSwe4 = doc.process === 'SWE.4'
   // The outline stops at units for SWE.4 (as the mockup): a line per test spec would bury it.
   const outline = (rich?.toc ?? []).filter((t) => !isSwe4 || t.level <= 3)
-  const refLabel = viewVersion?.tag ?? selectedCommit?.shortSha ?? doc.version
+  // The document's own version (its cover says the same), not the Subbar's pick.
+  const refLabel = rich?.cover.version ?? doc.version
   const assignedToMe = !!meName && doc.assignee === meName
   const members = (team ?? []).filter((m) => !m.pending)
 
@@ -286,8 +289,8 @@ function MetaBanner({ meta }: { meta: DocMeta }) {
     ['Layers', meta.layers.length],
   ]
   return (
-    <div className="px-8 py-3 border-b border-outline-variant bg-surface-container-low flex flex-wrap items-center gap-x-5 gap-y-1.5">
-      <span className="flex items-center gap-1.5 font-mono text-label uppercase tracking-[0.06em] text-on-surface-variant">
+    <div className="px-8 py-2.5 border-b border-outline-variant bg-surface flex flex-wrap items-center gap-x-[18px] gap-y-1.5">
+      <span className="flex items-center gap-1.5 font-mono text-caption uppercase tracking-[0.06em] text-on-surface-variant">
         <Icon
           name={meta.source === 'pipeline' ? 'bolt' : 'dataset'}
           size={13}
@@ -296,7 +299,7 @@ function MetaBanner({ meta }: { meta: DocMeta }) {
         Source: {meta.source}
       </span>
       {stats.map(([label, value]) => (
-        <span key={label} className="font-mono text-label text-on-surface-variant">
+        <span key={label} className="font-mono text-caption text-on-surface-variant">
           <span className="text-on-surface font-semibold">{value}</span> {label}
         </span>
       ))}
@@ -477,7 +480,7 @@ function RichSectionView({ section, depth = 0 }: { section: RichSection; depth?:
       ) : section.type === 'behavior_table' && section.behaviorTable ? (
         <BehaviorTableView data={section.behaviorTable} />
       ) : section.content ? (
-        <p className="text-[15px] text-on-surface leading-relaxed whitespace-pre-line">{section.content}</p>
+        <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">{section.content}</p>
       ) : null}
       {section.children.length > 0 && (
         <div className="mt-8 space-y-8 pl-4 border-l border-outline-variant">
@@ -514,10 +517,17 @@ function ReviewTracker({
       <div>
         <Text variant="label" className="block text-on-surface-variant tracking-[0.08em] mb-2">Reviewer</Text>
         <div className="flex items-center gap-2 mb-2">
-          <div className="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0">
-            <span className="font-bold text-on-secondary-container font-sans text-micro">{reviewerInitials ?? '—'}</span>
-          </div>
-          <span className="font-mono text-caption text-on-surface truncate">{reviewer ?? 'Unassigned'}</span>
+          {reviewer ? (
+            <div className="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0">
+              <span className="font-bold text-on-secondary-container font-sans text-micro">{reviewerInitials}</span>
+            </div>
+          ) : (
+            // An empty seat, not a filled blue "—" that read like a remove button.
+            <div className="w-7 h-7 rounded-full border border-dashed border-outline-variant bg-white flex items-center justify-center flex-shrink-0">
+              <Icon name="person" size={14} className="text-outline" />
+            </div>
+          )}
+          <span className={cn('font-mono text-caption truncate', reviewer ? 'text-on-surface' : 'text-outline')}>{reviewer ?? 'Unassigned'}</span>
         </div>
         <div className="flex items-center justify-between mb-1">
           <Text variant="caption" className="font-mono">Progress</Text>
@@ -540,10 +550,12 @@ function ReviewTracker({
               <button
                 key={s.key}
                 onClick={() => onJump(s.key)}
-                className="w-full flex items-center gap-1.5 text-left hover:bg-surface-container-low rounded transition-colors px-1 py-0.5"
+                title={s.title}
+                className="w-full flex items-start gap-1.5 text-left hover:bg-surface-container-low rounded transition-colors px-1 py-0.5"
               >
-                <Icon name={st.icon} size={12} className={st.cls} />
-                <span className="font-mono text-label text-on-surface-variant truncate">{s.title}</span>
+                <Icon name={st.icon} size={12} className={cn('mt-0.5 flex-shrink-0', st.cls)} />
+                {/* Wraps: SWE.4's chapter titles are long and were cut to "2. Unit Test Specifica…". */}
+                <span className="font-mono text-label text-on-surface-variant leading-snug [overflow-wrap:anywhere]">{s.title}</span>
               </button>
             )
           })}

@@ -48,11 +48,11 @@ function Swe4Section({ section }: { section: RichSection }) {
       {section.type === 'table' && section.table ? (
         <TermsTable table={section.table} />
       ) : section.content ? (
-        <p className="text-body text-on-surface leading-relaxed whitespace-pre-line">{section.content}</p>
+        <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">{section.content}</p>
       ) : null}
       {section.id === 'test_spec' && section.children.length === 0 && (
         // The DOCX prints the bare heading; say why, so an empty chapter does not read as a failure.
-        <p className="text-body text-outline italic">
+        <p className="text-sm text-outline italic">
           No test specification. A spec is written for each function of a .cpp unit that another
           unit calls, and this component has none.
         </p>
@@ -76,7 +76,7 @@ function TermsTable({ table }: { table: RichTable }) {
         <tbody>
           {table.rows.map((r, i) => (
             <tr key={i} className="border-b border-surface-container last:border-0">
-              {r.map((c, j) => <td key={j} className={cn('px-3 py-2 align-top text-on-surface', j === 0 && 'font-medium w-40')}>{c}</td>)}
+              {r.map((c, j) => <td key={j} className={cn('px-3 py-2 align-top text-on-surface', j === 0 && 'font-mono text-caption font-medium w-40')}>{c}</td>)}
             </tr>
           ))}
         </tbody>
@@ -101,7 +101,7 @@ function SpecCard({ section, spec }: { section: RichSection; spec: TestSpecData 
         <span className="font-mono text-xs text-outline mr-1.5">{section.number}</span>
         {section.title}
       </div>
-      {section.content && <p className="text-body text-on-surface-variant leading-relaxed mb-2.5">{section.content}</p>}
+      {section.content && <p className="text-sm text-on-surface-variant leading-relaxed mb-2.5">{section.content}</p>}
       <div className="border border-outline-variant rounded-xl overflow-hidden">
         <table className="w-full border-collapse text-[12.5px]">
           <tbody>
