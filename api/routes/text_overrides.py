@@ -132,8 +132,9 @@ def _connection():
 def _swe4_deriver(cx, models):
     """`derive=` for a save: the saved component's SWE.4 specs, and the UT export built from
     them, re-derived from the stored rows in this transaction (`REQ-CS-04`) -- when the version
-    has SWE.4 output. One query of row paths when it has none, which is every version the web app
-    generates. See `review.swe4_rederive`."""
+    has SWE.4 output, as every web run since `--doc-type all` has. One query of row paths when it
+    has none (a version made before that, or a CLI run of SWE.3 alone). See
+    `review.swe4_rederive`."""
     from review.swe4_rederive import make_save_deriver
     return make_save_deriver(cx, models)
 
@@ -704,13 +705,17 @@ def export_readiness(
     """`REQ-AP-04`. Whether exporting now would ship text a correction has already replaced, so
     the UI can say so before someone downloads a document that is quietly out of date.
 
-    About the documents the web app exports -- SWE.3. A SWE.4 document of a CLI-generated version
-    is exported from the CLI, which asks its own question (`analyzer.py reexport`)."""
+    About the documents the web app exports -- SWE.3, and SWE.4 when the version has it
+    (`pipeline_runner.export_doc_type`, the re-export's own question). A SWE.4 document of a
+    CLI-generated version is exported from the CLI, which asks its own question
+    (`analyzer.py reexport`)."""
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
     from review.export_guard import staleness
+    from ..services.pipeline_runner import export_doc_type
+    doc_type = export_doc_type(db, project_id, version_id)
     with _connection().connect() as cx:
-        st = staleness(cx, version_id, "swe3")
+        st = staleness(cx, version_id, doc_type)
         reexport = _latest_reexport(cx, version_id)
     return {"stale": st.is_stale, "reason": st.reason, "explanation": st.explain(),
             # The version's latest re-export job, or null. How a page that was reloaded -- or

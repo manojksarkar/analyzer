@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-09-30h | A re-export writes every document the version has, and R9 asks about all of them | [11](11-2026-09-29e.md) |
 | 2026-09-30g | `integrate/ui-v5` merged develop — PR #70's review & update is on the web app's branch; the branch's 13 dated entries moved whole into file 12 | [11](11-2026-09-29e.md) |
 | 2026-09-30f | Config import: core files are user inputs, filled from ONE folder pick in step 2; Import config moved to the top of step 1 | [12](12-2026-09-29-web-app.md) |
 | 2026-09-30e | Web app CSS lowered for old browsers | [12](12-2026-09-29-web-app.md) |

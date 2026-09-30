@@ -494,7 +494,8 @@ For the five model-backed kinds. `nodeLabel` → R8, `behaviourDescription` → 
 
 **Response 200** — the `Slot` as it now is, and what the save did (§5): `previousText`,
 `firstEdit`, `viewsDerived` (the SWE.4 views this save re-derived — see the note below; `[]` for a
-version with no SWE.4 output, which is every web-app version), `queuedForRegeneration`.
+version with no SWE.4 output — a web-app version from before web runs wrote SWE.4 too, or a CLI run
+of SWE.3 alone), `queuedForRegeneration`.
 
 ```json
 {
@@ -519,7 +520,8 @@ version with no SWE.4 output, which is every web-app version), `queuedForRegener
 ```
 
 **`viewsDerived` names only views this request rebuilt.** A `description` correction reaches the
-SWE.4 test spec that copies it, so on a version with SWE.4 output — one generated from the CLI — the
+SWE.4 test spec that copies it, so on a version with SWE.4 output — every web run since it writes
+SWE.4 beside SWE.3 (`--doc-type all`), or a CLI run that asked for it — the
 save re-derives the component's specs and the UT export built from them, from the stored rows
 (`REQ-CS-04`), and returns `["testSpecs", "utExport"]`. Those views are then stamped as derived, and
 only those: the SWE.3 rows a save changes are patched in place, not re-derived, so R9 keeps
@@ -872,10 +874,12 @@ and R5 still work on a single `nodeLabel` slot key.
 `GET /projects/{projectId}/versions/{versionId}/export-readiness`
 
 Whether exporting now would ship text a correction has already replaced (`REQ-AP-04`). **Call it
-before offering a download.** It asks about the SWE.3 document — the one the web app exports — so
-only the views SWE.3 prints count: a label on a flowchart SWE.3 does not embed (`views.flowcharts`
-off, the default) does not make it stale. A SWE.4 document of a CLI-generated version is exported
-from the CLI, which asks its own question (`analyzer.py reexport --doc-type swe4`).
+before offering a download.** It asks about the documents a re-export writes: SWE.3, and SWE.4
+when the version has SWE.4 documents (`pipeline_runner.export_doc_type` — every web run writes both).
+Only the views those documents print count: on a version with SWE.3 alone, a label on a flowchart
+SWE.3 does not embed (`views.flowcharts` off, the default) does not make it stale. A SWE.4 document
+of a CLI-generated version is exported from the CLI, which asks its own question
+(`analyzer.py reexport --doc-type swe4`).
 
 No parameters.
 

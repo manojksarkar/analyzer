@@ -1114,9 +1114,13 @@ def _build_cmd(
     model_root=None,
     output_root=None,
     version_id=None,
+    doc_type: Optional[str] = None,
 ) -> list[str]:
     cmd = [sys.executable, str(get_settings().repo_root / "engine" / "run.py")]
     cmd += ["--config", str(config_path)]
+    # Which documents Phase 4 writes (`export_doc_type`): run.py's default is swe3 alone.
+    if doc_type:
+        cmd += ["--doc-type", doc_type]
     # Run against THIS version's own model/ and output/ instead of the shared <repo>/model
     # and <repo>/output (doc 09, B1 + C11b). Without these the caller has to stage the
     # version's trees into the repo root first — which means rmtree-ing a directory another
@@ -2017,7 +2021,25 @@ def _capture_reexport_output(db: Any, job: Any, adir) -> None:
         _log.warning("re-export: could not persist rendered output for %s: %s", version_id, exc)
 
 
-def _reexport_from_phase(version_id: Optional[str]) -> int:
+def export_doc_type(db: Any, project_id: str, version_id: Optional[str]) -> str:
+    """What exporting this version writes: `all` when a run made its SWE.4 documents, else `swe3`.
+
+    A web run makes both (`--doc-type all`, `_generate_cmd`). A version generated before that
+    has SWE.3 alone, and asking run.py for SWE.4 there would export specs that were never built.
+    The re-export (`_do_reexport`) and R9 (`text_overrides.export_readiness`) ask the same
+    question, so this answers both.
+    """
+    if not version_id:
+        return "swe3"
+    try:
+        _docs, total = db.documents.list_for_project(project_id, version_id=version_id,
+                                                     process="SWE.4", per_page=1)
+    except Exception:                                  # noqa: BLE001 - SWE.3 alone, as before
+        return "swe3"
+    return "all" if total else "swe3"
+
+
+def _reexport_from_phase(version_id: Optional[str], doc_type: str = "swe3") -> int:
     """4 normally; 3 when a reviewer's correction is newer than the last derivation.
 
     `REQ-AP-04` says an export must verify rather than assume. The CLI answers by refusing and
@@ -2046,10 +2068,10 @@ def _reexport_from_phase(version_id: Optional[str]) -> int:
             return 4
         from review.export_guard import staleness                  # type: ignore[import]
         with get_engine().connect() as cx:
-            # Asked about SWE.3 only: this re-export runs run.py with no --doc-type, so SWE.3 is
-            # all it writes. SWE.4 specs it does not rebuild are not its question -- and its
-            # derivation, recorded per view, cannot vouch for them either.
-            st = staleness(cx, version_id, "swe3")
+            # Asked about what this re-export writes (`export_doc_type`): SWE.3, and SWE.4 when
+            # the version has it -- a node-label correction re-derives the SWE.4 specs at save
+            # time, so that document is behind as well.
+            st = staleness(cx, version_id, doc_type)
     except Exception as exc:                                       # noqa: BLE001 - see docstring
         _log.warning("re-export: could not check whether %s is up to date (%s); "
                      "exporting without re-deriving", version_id, exc)
@@ -2137,7 +2159,11 @@ def _do_reexport(db: Any, job_id: str) -> bool:
     #
     # Phase 3 is exactly that remedy: it rebuilds the view rows from the model with the
     # corrections applied, and draws the flowchart pictures that were owed on the way through.
-    from_phase = _reexport_from_phase(getattr(job, "version_id", None))
+    #
+    # Both documents of a version that has both: a web run writes SWE.4 beside SWE.3, and a
+    # re-export that rewrote only SWE.3 left the SWE.4 Word file with the old labels.
+    doc_type = export_doc_type(db, job.project_id, getattr(job, "version_id", None))
+    from_phase = _reexport_from_phase(getattr(job, "version_id", None), doc_type)
 
     arch_layers = project.architecture_layers or []
     # The model is rows, so Phase 4 needs the version id to find it. This used to ASK whether
@@ -2147,7 +2173,7 @@ def _do_reexport(db: Any, job_id: str) -> bool:
     cmd = _build_cmd(job, cdir, config_path, from_phase=from_phase, use_model=True,
                      arch_layers=arch_layers,
                      model_root=adir / "model", output_root=adir / "output",
-                     version_id=getattr(job, "version_id", None))
+                     version_id=getattr(job, "version_id", None), doc_type=doc_type)
     if from_phase > 3:
         # Nothing to re-derive: say so on the job rather than leave phase 3 "pending" for ever.
         job = db.jobs.get(job_id)

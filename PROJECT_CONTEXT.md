@@ -136,7 +136,7 @@ The big shifts since most of §1–§24 were written. Each names its dated entry
   goes in and out of the wizard (2026-09-29b, 2026-09-29d, 2026-09-30f); the SWE.3 page reads like the
   DOCX (2026-09-29e); a web run makes SWE.4 too (2026-09-30); flowcharts are server-drawn SVGs
   (2026-09-30b); `start-app` (2026-09-30c). A re-export writes every document the version has
-  (2026-09-30g).
+  (2026-09-30h).
 - **Review & update** — reviewers correct LLM-written text (2026-09-16 → 2026-09-29); see
   [Current state](#current-state).
 - **Tools.** `tools/doccheck/` compares two generated documents by content (2026-09-22), on five levels

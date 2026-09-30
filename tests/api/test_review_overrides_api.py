@@ -505,6 +505,20 @@ class TestExportReadiness:
         assert body["stale"] is True
         assert body["overrideCount"] == 1
 
+    def test_it_asks_about_every_document_the_version_has(self, client, review_db, auth_header,
+                                                           monkeypatch):
+        """A web run writes SWE.4 beside SWE.3, so R9 asks what the re-export writes
+        (`pipeline_runner.export_doc_type`), not SWE.3 alone."""
+        import review.export_guard as guard
+        from api.services import pipeline_runner
+        asked, real = [], guard.staleness
+        monkeypatch.setattr(pipeline_runner, "export_doc_type", lambda db, pid, vid: "all")
+        monkeypatch.setattr(guard, "staleness", lambda cx, vid, doc_types=None: (
+            asked.append(doc_types) or real(cx, vid, doc_types)))
+        r = client.get(BASE + "/export-readiness", headers=auth_header)
+        assert r.status_code == 200
+        assert asked == ["all"]
+
 
 class TestNoDatabase:
     def test_a_write_is_refused_rather_than_dropped(self, client, auth_header, monkeypatch):
