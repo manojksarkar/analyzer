@@ -145,3 +145,10 @@ class TestAssetRoute:
     def test_png_is_served_as_before(self, monkeypatch, tmp_path):
         resp = self._serve(monkeypatch, tmp_path, "U_f.png")
         assert "content-security-policy" not in resp.headers
+
+    def test_the_browser_asks_again_for_an_svg(self, monkeypatch, tmp_path):
+        """A label correction redraws the SVG under the same name (R8), so a cached copy would
+        show the old labels; `no-cache` makes the browser revalidate (FileResponse sends the
+        ETag and Last-Modified to revalidate against)."""
+        resp = self._serve(monkeypatch, tmp_path, "U_f.svg")
+        assert resp.headers["cache-control"] == "no-cache"

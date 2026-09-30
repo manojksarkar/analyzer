@@ -351,9 +351,12 @@ def document_asset(
         # Named explicitly: an <img> shows an SVG only as image/svg+xml, and the guess comes
         # from the OS registry on Windows. And an SVG is a document too: opened on its own tab
         # it could run script from this origin. Graphviz writes none; the policy keeps it so.
+        # no-cache: a label correction redraws the file under the same name, so the browser
+        # must ask again (the ETag answers 304 when nothing changed) instead of showing its copy.
         return FileResponse(target, media_type="image/svg+xml", headers={
             "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
             "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-cache",
         })
     return FileResponse(target)
 

@@ -969,7 +969,7 @@ the UI must refetch after a save:
 | `description` | next page load — the stored interface table is patched | after re-export |
 | `behaviourInputName`, `behaviourOutputName` | next page load — read from the model | after re-export |
 | `behaviourDescription` | next page load — the stored behaviour row is written | after re-export |
-| `nodeLabel` | next page load **when the UI draws the DOT** (§3a, *Drawing a flowchart*): the payload's DOT is read from the database, and R8 rebuilt it. The PNG (`image_url`) changes only after the owed render (next re-export), so a page that shows the PNG shows the old label until then. Today's web-app does, and prints the DOT as text only when no PNG exists | after re-export |
+| `nodeLabel` | next page load. The web page draws each flowchart as an SVG on the server (`image_url`, no DOT in the payload); R8, and R4 of a label, redraw that chart's SVG once the save has committed (`review.rerender.draw_web_svgs`), and the asset is served `no-cache`. Best effort: with no output tree or no Node on the API host the chart reads "not drawn" until the next re-export. The Word PNG still waits for the owed render | after re-export |
 | `unitDescription` | next page load — the Component/Unit table reads the stored description from the model, as the Word file does | after re-export |
 | `structDescription` | **after re-export** — the unit header table on the page is the Phase-3 view's output (`unit_headers.json`), and the re-export rebuilds it | after re-export |
 

@@ -78,6 +78,21 @@ def norm(text) -> str:
     return " ".join((text or "").split())
 
 
+def _svg_urls(node) -> list[str]:
+    """Every `image_url` in a render payload that names an SVG -- its flowchart pictures."""
+    found: list[str] = []
+    if isinstance(node, dict):
+        url = node.get("image_url")
+        if isinstance(url, str) and url.split("?", 1)[0].lower().endswith(".svg"):
+            found.append(url)
+        for value in node.values():
+            found.extend(_svg_urls(value))
+    elif isinstance(node, list):
+        for value in node:
+            found.extend(_svg_urls(value))
+    return found
+
+
 _PLACEHOLDER = re.compile(r"\{(timestamp|projectId|versionId|versionTag)\}")
 
 
@@ -436,11 +451,21 @@ class ReviewApiTest:
 
     # ---- what the documents show --------------------------------------------------------------
     def page_text(self) -> str:
+        """What the document pages show: their JSON, and the flowchart pictures they point at.
+
+        A page whose flowcharts are drawn on the server links each one as an SVG (`image_url`)
+        instead of carrying its DOT, so a node label is in the picture, not in the JSON."""
         parts = []
         for d in self.documents():
             r = self.api.call("GET", self.P("/documents/%s/render" % d["id"]))
-            if r.status_code == 200:
-                parts.append(json.dumps(r.json(), ensure_ascii=False))
+            if r.status_code != 200:
+                continue
+            body = r.json()
+            parts.append(json.dumps(body, ensure_ascii=False))
+            for url in _svg_urls(body):
+                pic = self.api.call("GET", "/" + url.lstrip("/"))
+                if pic.status_code == 200:
+                    parts.append(pic.text)
         return norm(" ".join(parts))
 
     def check_page(self, kinds, when):

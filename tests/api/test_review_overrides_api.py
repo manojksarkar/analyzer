@@ -275,6 +275,53 @@ class TestFlowchartLabels:
         assert _save_labels(client, auth_header, {"n1": "x"}, "No|Such|fn|").status_code == 404
 
 
+class TestALabelSaveRedrawsTheWebPicture:
+    """The web page shows a flowchart only when its SVG was drawn from the stored DOT, so R8 and a
+    label's R4 redraw it once the save has committed (`review.rerender.draw_web_svgs`)."""
+
+    @pytest.fixture
+    def redraws(self, monkeypatch, tmp_path):
+        import review.rerender as rerender
+        from api.services import doc_render
+        calls = []
+        monkeypatch.setattr(doc_render, "commit_output_root", lambda *_a, **_k: tmp_path)
+        monkeypatch.setattr(rerender, "draw_web_svgs", lambda _cx, vid, fid, out, _root: (
+            calls.append((vid, fid, out)) or {}))
+        return calls
+
+    def test_r8_redraws_the_corrected_chart(self, client, review_db, auth_header, redraws,
+                                            tmp_path):
+        assert _save_labels(client, auth_header, {"n1": "Checked."}).status_code == 200
+        assert redraws == [(VERSION, FID, str(tmp_path))]
+
+    def test_undoing_a_label_redraws_it_too(self, client, review_db, auth_header, redraws):
+        _save_labels(client, auth_header, {"n1": "Checked."})
+        n1 = next(l for l in _read_labels(client, auth_header).json()["labels"]
+                  if l["nodeId"] == "n1")
+        r = client.delete(BASE + "/overrides/slot", headers=auth_header,
+                          params={"slot_kind": "nodeLabel", "slot_key": n1["slotKey"]})
+        assert r.status_code == 200, r.text
+        assert [fid for _vid, fid, _out in redraws] == [FID, FID]
+
+    def test_a_refused_save_draws_nothing(self, client, review_db, auth_header, redraws):
+        assert _save_labels(client, auth_header, {"n99": "Nowhere"}).status_code == 404
+        assert redraws == []
+
+    def test_a_picture_that_cannot_be_drawn_does_not_fail_the_save(
+            self, client, review_db, auth_header, monkeypatch, tmp_path):
+        """The correction is stored either way; the next re-export draws the picture."""
+        import review.rerender as rerender
+        from api.services import doc_render
+        monkeypatch.setattr(doc_render, "commit_output_root", lambda *_a, **_k: tmp_path)
+
+        def no_node(*_a, **_k):
+            raise RuntimeError("node not found")
+        monkeypatch.setattr(rerender, "draw_web_svgs", no_node)
+        r = _save_labels(client, auth_header, {"n1": "Checked."})
+        assert r.status_code == 200, r.text
+        assert r.json()["labels"][0]["text"] == "Checked."
+
+
 class TestASaveReDerivesTheSwe4Specs:
     """REQ-CS-04 over HTTP. A version with SWE.4 output -- one generated from the CLI -- has the
     saved component's specs and UT export rebuilt from the stored rows, in the save's request.

@@ -287,6 +287,27 @@ def _saved(res, slot_kind: str, slot_key: str) -> Dict[str, Any]:
             "queuedForRegeneration": [{"slotKind": k, "slotKey": v} for k, v in queued]}
 
 
+def _draw_web_svgs(db, project_id: str, version_id: str, flowchart_id: str) -> None:
+    """The web page's SVG of a flowchart a save just rebuilt (`review.rerender.draw_web_svgs`).
+
+    After the save's commit, and best effort: the correction is stored either way, and a
+    re-export draws the picture when this cannot -- no output tree on this host, or no Node."""
+    try:
+        from ..services.doc_render import commit_output_root
+        from ..services.settings import get_settings
+        from review.rerender import draw_web_svgs
+        version = db.versions.get(version_id)
+        out_root = commit_output_root(project_id, getattr(version, "commit_sha", None), version_id)
+        if out_root is None:
+            return
+        with _connection().connect() as cx:
+            draw_web_svgs(cx, version_id, flowchart_id, str(out_root),
+                          str(get_settings().repo_root))
+    except Exception as exc:                                       # noqa: BLE001 - see docstring
+        _log.warning("could not redraw the web picture of %s in %s: %s",
+                     flowchart_id, version_id, exc)
+
+
 def _flowchart_entry(cx, version_id: str, flowchart_id: str):
     """The stored flowchart entry of `flowchart_id` -- its CFG and its DOT -- or None."""
     import json
@@ -559,6 +580,8 @@ def update_flowchart_labels(
             nodes = _node_slots(cx, version_id, out.flowchart_id, entry, list(out.applied))
         except Exception as exc:
             raise _as_http(exc)
+    # The web page's picture, from the DOT the save just committed.
+    _draw_web_svgs(db, project_id, version_id, out.flowchart_id)
     return {"flowchartId": out.flowchart_id,
             "labels": [{**n, **_saved(out, n["slotKind"], n["slotKey"])} for n in nodes],
             "viewsDerived": list(out.views_derived),
@@ -632,6 +655,7 @@ def undo_slot(
             raise _as_http(exc)
     body = {**now, **_saved(out, kind, key)}
     if kind == slot_mod.NODE_LABEL:
+        _draw_web_svgs(db, project_id, version_id, now["flowchartId"])
         body.update({"renderPending": out.render_pending, "renderJobs": list(out.render_jobs),
                      "dot": (entry or {}).get("flowchart") or ""})
     return body
