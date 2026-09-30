@@ -36,7 +36,7 @@ These render placeholder/no-op today because no endpoint exists yet (full per-pa
 - [ ] **Review & update** — correct the LLM's wording in a document (descriptions, unit and struct
       descriptions, behaviour names, Dynamic Behaviour bullets, flowchart labels), undo, history, and an
       export-readiness banner. API: [REVIEW_UPDATE_API_SPEC](../docs/spec/REVIEW_UPDATE_API_SPEC.md) — §3a
-      lists the calls per screen (on branch `review_update_v3` until it merges). Rules: the `ui-dev` skill §6.
+      lists the calls per screen. Rules: the `ui-dev` skill §6.
 - [ ] **Flowcharts from DOT** — the in-app flowchart view still renders the stored string as Mermaid; the
       engine has written Graphviz DOT since 2026-07-27. Needed by the flowchart label editor too.
 

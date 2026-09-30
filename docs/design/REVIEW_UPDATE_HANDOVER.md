@@ -1,8 +1,8 @@
-# Review & Update — handover for merging `review_update_v3` into `develop`
+# Review & Update — merge handover (PR #70 into `develop`)
 
-For whoever reviews and merges this branch. It says **what changed, what it touches, what must not
-be broken, how to check, and what is waiting on a decision** — it does not restate the feature. For
-that:
+Written for the review and merge of PR #70, and kept for whoever changes this code next. It says
+**what changed, what it touches, what must not be broken, how to check, and what is waiting on a
+decision** — it does not restate the feature. For that:
 
 - **What and why** → [REVIEW_UPDATE_SPEC](../spec/REVIEW_UPDATE_SPEC.md) (`REQ-` ids)
 - **The HTTP contract** → [REVIEW_UPDATE_API_SPEC](../spec/REVIEW_UPDATE_API_SPEC.md)
@@ -13,15 +13,15 @@ that:
   `5542736` in `2026-09-29b`, the full-feature review and its ten fixes in `2026-09-29d`, one
   response shape for a slot in `2026-09-29e`
 
-Branch: `review_update_v3` = `review_update_v2` rebased onto `origin/develop` `5542736` on 2026-09-29
-(develop's six commits; no code conflicts — §3.3). `review_update_v2` = `review_update_v1`
-squash-merged onto `origin/develop` at `8628b2d`
-(commit `b10a71b`; `e2b59c7` on v3), then separate follow-up commits: fixes the rebase review found, develop's new
-LLM text (struct/class/union descriptions) made correctable, and docs — `git log
-origin/develop..review_update_v3`. `review_update_v1` and `review_update_v2` are kept unchanged. State: **the feature is
-functionally complete** (build-order steps 1–8 wired into the pipeline, step 9 done for the export
-path with three path-taking readers left, §7); every suite passes on SQLite; the PostgreSQL run is
-still to do. **Six decisions wait on the develop owner — §8.**
+Merged from `review_update_v3` = `review_update_v2` rebased onto `origin/develop` `5542736` on
+2026-09-29 (develop's six commits; no code conflicts — §3.3). `review_update_v2` = `review_update_v1`
+squash-merged onto `origin/develop` at `8628b2d` (commit `b10a71b`; `e2b59c7` on v3), then separate
+follow-up commits: fixes the rebase review found, develop's new LLM text (struct/class/union
+descriptions) made correctable, the fixes from the PR #70 review, and docs. The three branches are
+kept unchanged, as records. State at the merge: **the feature is functionally complete** (build-order
+steps 1–8 wired into the pipeline, step 9 done for the export path with three path-taking readers
+left, §7); every suite passes on SQLite, and the PostgreSQL run of `tools/review_api_test/` is the
+merge gate (§6). **Six decisions wait on the develop owner — §8.**
 
 ---
 
@@ -50,11 +50,10 @@ This branch adds **six** migrations on top of `0008`:
                       └─ 0014_users_is_superuser   users.is_superuser
 ```
 
-`develop` is still at `0008` (checked at `5542736`), so the chain is linear: `alembic heads` prints
-`0014_users_is_superuser (head)`. **If `develop` adds its own `0009` before this merges, there will
-be two heads** and `alembic upgrade head` will refuse. The fix is to re-point this branch's `0009`
-at the new head and renumber — all six migrations are additive (new tables, new columns) and touch
-nothing existing, so they can sit anywhere after `0008`.
+The chain is linear: `alembic heads` prints `0014_users_is_superuser (head)`. **A branch cut from
+`develop` before PR #70 that adds its own `0009` gets two heads**, and `alembic upgrade head` refuses:
+re-point that branch's migration at `0014` and renumber it. All six migrations here are additive (new
+tables, new columns) and touch nothing existing.
 
 `0014` only adds the column, `false` for everyone. Nobody is promoted — not the seeded
 `admin@aspice.dev` login, whose password is published — and a superuser is made on purpose:
@@ -94,23 +93,23 @@ defect, the interface-id collision `15df7c5`, `tools/audit_project.py`, `tests/l
 `review_update_v3` they are inside the one squash commit `e2b59c7` (`b10a71b` on v2); to reason about them apart,
 read them on `review_update_v1`. The interface-id change is output-visible — §8.1.
 
-The follow-up commits on `review_update_v3` also fix develop defects the rebase found — §5.
+The follow-up commits in PR #70 also fix develop defects the rebase found — §5.
 
-### 2.3 `PROJECT_CONTEXT.md` is an index on this branch
+### 2.3 `PROJECT_CONTEXT.md` is an index
 
-On 2026-09-28 this branch split the single 8,991-line `PROJECT_CONTEXT.md` into an index plus
+On 2026-09-28 the single 8,991-line `PROJECT_CONTEXT.md` was split into an index plus
 `project-context/` (topic files and the dated history), because a new session read only its first
-2,000 lines. `develop` still has the single file, so if `develop` edits it before this merges, git
-reports a conflict in `PROJECT_CONTEXT.md`. Keep this branch's index, and move `develop`'s changes to
-where that content lives now:
+2,000 lines. A branch cut from `develop` before PR #70 still has the single file, so an edit it makes
+there conflicts in `PROJECT_CONTEXT.md` when it merges. Keep the index, and move the branch's changes
+to where that content lives now:
 
 - a new `> Updated:` entry → the top of the newest file in `project-context/history/`, plus its line
   at the top of `project-context/history/TIMELINE.md`;
 - an edit to a numbered section (`## N.`) → the topic file that holds §N (the table in the index);
 - an edit to a status block at the top → the index's *Current state*.
 
-`git diff 8628b2d origin/develop -- PROJECT_CONTEXT.md` lists what `develop` changed;
-`tests/unit/test_project_context_fits.py` then checks the sizes and the index's links.
+`git diff $(git merge-base origin/develop <branch>) <branch> -- PROJECT_CONTEXT.md` lists what the
+branch changed; `tests/unit/test_project_context_fits.py` then checks the sizes and the index's links.
 
 ---
 
@@ -616,7 +615,7 @@ directories under the bare group name.
 
 ```
 python -m alembic heads                           # exactly one: 0014_users_is_superuser
-python -m pytest tests/unit tests/api tests/e2e   # 3733 passed, 80 skipped on review_update_v3
+python -m pytest tests/unit tests/api tests/e2e   # 3777 passed, 83 skipped (PR #70, 2026-09-30)
 ```
 
 **The whole feature through the REST API**, against a running server — the check to repeat on
@@ -696,8 +695,8 @@ The web app has no review screen yet (`web-app/PLAN.md`).
 
 ## 8. Waiting on the develop owner
 
-Things this branch met in develop's area and did not settle alone. None blocks the merge; where
-the branch had to pick, the pick is reversible. Tracked as `RU-1`…`RU-6` in
+Things the feature's work met in develop's area and did not settle alone. None blocked the merge;
+where it had to pick, the pick is reversible. Tracked as `RU-1`…`RU-6` in
 [BACKLOG](../BACKLOG.md).
 
 ### 8.1 Interface ids of units whose ids start the same — `RU-1`

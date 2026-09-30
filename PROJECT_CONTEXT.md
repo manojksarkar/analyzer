@@ -30,14 +30,14 @@ newer entry and the code win.
 
 ## Current state
 
-> **⭐ IN FLIGHT — branch `review_update_v3`, PR to `develop` (Review & Update: correcting LLM text
-> in a document).** `review_update_v1` squash-merged onto `develop` 8628b2d (`b10a71b`) + follow-up
-> commits = `review_update_v2`, rebased onto `develop` `5542736` on 2026-09-29 = `review_update_v3`;
-> v1 and v2 kept unchanged. Suites pass on SQLite; **the PostgreSQL run is next**.
-> - **Merging or reviewing it? Read [docs/design/REVIEW_UPDATE_HANDOVER.md](docs/design/REVIEW_UPDATE_HANDOVER.md) first.**
->   Migration chain, the merge conflict surface file by file (§3.3: what the rebase changed in
->   develop's code), the invariants that break silently with the test that catches each, and
->   **§8: six decisions waiting on the develop owner** (BACKLOG `RU-1`…`RU-6`).
+> **⭐ Review & Update — on `develop` since PR #70 (correcting LLM text in a document).** Merged from
+> `review_update_v3` (`review_update_v1` squashed onto `develop`, follow-up commits, rebased onto
+> `5542736`); the three branches are kept as records.
+> - **Still open:** six decisions waiting on the develop owner — BACKLOG `RU-1`…`RU-6`, HANDOVER §8 —
+>   and the follow-ups from the PR #70 review, in BACKLOG.
+> - **Changing it? Read [docs/design/REVIEW_UPDATE_HANDOVER.md](docs/design/REVIEW_UPDATE_HANDOVER.md) first.**
+>   Migration chain, what it changed in develop's code, file by file (§3.3), and the invariants that
+>   break silently with the test that catches each (§4).
 > - Contract: [docs/spec/REVIEW_UPDATE_SPEC.md](docs/spec/REVIEW_UPDATE_SPEC.md) (`REQ-` ids) ·
 >   how: [docs/design/REVIEW_UPDATE_DESIGN.md](docs/design/REVIEW_UPDATE_DESIGN.md) ·
 >   HTTP: [docs/spec/REVIEW_UPDATE_API_SPEC.md](docs/spec/REVIEW_UPDATE_API_SPEC.md).
@@ -48,9 +48,8 @@ newer entry and the code win.
 >   full-feature review and its ten fixes 2026-09-29d, one response shape for a slot 2026-09-29e,
 >   the REST API test tool (`tools/review_api_test/`) and the multi-group re-export fix 2026-09-29f.
 
-- **The PR is not opened yet** (2026-09-29). `develop` is the integration branch: work branches open
-  their PR into it, and `main` has not moved since 2026-07-02. `review_update_v3` sits on
-  `develop` `5542736` (2026-09-26); `review_update_v2` was cut at `8628b2d` (2026-09-25).
+- `develop` is the integration branch: work branches open their PR into it, and `main` has not moved
+  since 2026-07-02.
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
 - The status boards that used to head this file (2026-07-20, 2026-08-14) are kept, unchanged, in
@@ -223,11 +222,11 @@ so neighbouring files can overlap by a few days — search the date tag.
 - **Links** in `project-context/` are relative to their own folder: `../engine/…`, and `../../docs/…`
   from `history/`.
 - **The split (2026-09-28) was checked by a script.** Each of the single file's 8,991 lines is in exactly
-  one place — here (title, audience note, the IN FLIGHT block), a topic file or a history file — in its
+  one place — here (title, audience note, the review & update block of Current state), a topic file or a history file — in its
   original order. Nothing else changed except: link paths, rewritten for the new folders (same targets);
   4 links to headings, pointed at the file that now holds the heading (1 of them was broken and now
   works); the 15 lines over 2,000 characters, wrapped at sentence ends (same words, same rendering); and
-  one phrase in the IN FLIGHT block, "the dated entries below", which now names the history folder.
+  one phrase in that block, "the dated entries below", which now names the history folder.
   Rebased onto develop `5542736` (2026-09-29), develop's three newer entries (2026-09-25 … 2026-09-26)
   close history 10, as 09 had no room, and its two section edits are in ARCHITECTURE §2 and
   PARSE_AND_DERIVE §10; a script checked that none of the 195 lines develop added was lost.

@@ -1,7 +1,7 @@
 # Review & Update Spec — correcting LLM text in a generated document
 
 Update this doc first when changing review/update logic, then code + tests.
-Design: [REVIEW_UPDATE_DESIGN](../design/REVIEW_UPDATE_DESIGN.md) · Branch: `review_update_v1`
+Design: [REVIEW_UPDATE_DESIGN](../design/REVIEW_UPDATE_DESIGN.md) · On `develop` since PR #70
 
 A reviewer reads the generated document in the UI. Where the LLM's wording is wrong, they correct
 it. The correction is saved, shows immediately in the UI, appears in the exported DOCX, and carries
