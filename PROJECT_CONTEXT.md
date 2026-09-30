@@ -209,6 +209,20 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-30e (**Web app CSS lowered for old browsers.** Branch `ui_v2`. Office OFFLINE server only:
+> sign-in's left ArtiFex panel missing (`hidden lg:flex`, `SignInPage.tsx`) + empty Projects page unstyled;
+> online server fine. Cause: its browser is older than Chrome/Edge 112 (no CSS nesting). The Vite dev server
+> (what `start-app` runs) sends Tailwind v4's CSS NESTED — `.lg\:flex { @media (width >= 64rem) {…} }`,
+> `&:hover {…}`, `color-mix()` — and such browsers drop those rules (`hidden` still applies → panel never
+> shows). No network cause: `dist/` + src make zero external requests. Fix `web-app/vite.config.ts`:
+> `css.transformer: 'lightningcss'` + `css.lightningcss.targets` {chrome/edge 99, firefox 97, safari 15.4}
+> lowers the DEV CSS; `build.cssTarget` (same floor) is ALSO needed — the `css` block alone leaves
+> `npm run build` output un-lowered (verified). Result: no nesting, `@media (min-width:64rem)`, every
+> `color-mix` behind `@supports` with a hex fallback; build JS identical bar hashes, CSS +1.3 KB; modern
+> browsers unchanged. Confirmed by the user on the offline machine. Hard floor Chrome 99: `@layer` can't be
+> lowered (older → whole app unstyled). Caveat: lightningcss transformer = no PostCSS (none configured today;
+> a future PostCSS plugin would be silently ignored). Vitest unaffected (own `vitest.config.ts`, `css: false`).)
+
 > Updated: 2026-09-30c (**`start-app` — one command that starts the API + web app cleanly.** Branch `ui_v2`,
 > `66faa10` (+ this docs commit), pushed. Asked (office): "old UI is coming, I have all the new changes in code" → a script that
 > starts both and rules out every old-UI / old-API cause. Files: `tools/start_app.py`, `start-app.cmd`
@@ -7953,7 +7967,7 @@ The Vite + React + TS app under `frontend/app/` ports every design HTML to a rou
 - **Shared shell**: the four project-scoped routes render inside `ProjectLayout` → `Sidebar` + `Topbar` + `Subbar` + `<Outlet>`.
 - **Data**: `@tanstack/react-query` hooks (`useProject` / `useDocuments` / `useTeam` / `useVersions` / `useCommits`) over mock data in `src/data/mock.ts` (5 projects, 15 documents, 9 team members incl. 1 pending, 3 versions, untagged commits).
 - **State**: Zustand `ui` store holds `roleView` (Admin/Dev toggle in the Topbar — drives admin-vs-developer page content) + `sidebarCollapsed`; `auth` store (persisted) gates `ProtectedRoute`. Page state (never / running / in_review / complete / stale) is driven per-project by `project.pageState`, **not** a dev toolbar.
-- **Tailwind v4** (`@import "tailwindcss"` + `@theme {}`, no config file). The design HTML uses the Tailwind **v3** CDN, so its named type-scale classes (e.g. `text-body-md`, `font-label-sm`) are not portable — ported with explicit inline styles / v4 utilities. Verify production builds with `npm run build` (`tsc -b` catches `Record<DocStatus,…>` exhaustiveness errors that `tsc --noEmit` misses).
+- **Tailwind v4** (`@import "tailwindcss"` + `@theme {}`, no config file). The design HTML uses the Tailwind **v3** CDN, so its named type-scale classes (e.g. `text-body-md`, `font-label-sm`) are not portable — ported with explicit inline styles / v4 utilities. Verify production builds with `npm run build` (`tsc -b` catches `Record<DocStatus,…>` exhaustiveness errors that `tsc --noEmit` misses). **Browser floor = Chrome/Edge 99, Firefox 97, Safari 15.4**: `vite.config.ts` lowers Tailwind v4's nested CSS / range media queries / `color-mix()` via `css.transformer: 'lightningcss'` + `css.lightningcss.targets` (dev server) and `build.cssTarget` (build) — both needed (2026-09-30e entry).
 
 ### Shell rules
 
