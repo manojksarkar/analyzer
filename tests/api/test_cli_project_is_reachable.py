@@ -96,6 +96,52 @@ class TestTheSymptom:
         assert r.json()["detail"]["message"] == "Project membership required."
 
 
+class TestNoApiTestReachesTheConfiguredDatabase:
+    """The review routes open `core.db.get_engine()` -- `DATABASE_URL` or the `db` section of
+    `config.local.json` -- not the API's `get_db`. `test_the_routes_answer` below, and its twin in
+    `test_superuser_access.py`, called one without patching it: a 503 on a clean checkout, the
+    real database on a machine with a `db` section. `tests/api/conftest.py` now hands every API
+    test its own engine."""
+
+    SUFFIX = "/versions/v1/overrides"
+
+    def _granted(self, db, cli_project):
+        uid = _uid(db)
+        with _engine_of(db).begin() as cx:
+            grant(cx, cli_project, uid)
+
+    def test_a_clean_checkout_answers_from_the_tests_database(self, client, auth_header,
+                                                             cli_project, db, monkeypatch):
+        """No `DATABASE_URL`, no `db` section: the route used to answer 503."""
+        import core.db as core_db
+        self._granted(db, cli_project)
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.setattr(core_db, "_db_section", lambda: {})
+        r = client.get(f"/api/v1/projects/{cli_project}{self.SUFFIX}", headers=auth_header)
+        assert r.status_code == 404 and "no version" in r.text, r.text
+
+    def test_a_configured_database_is_never_opened(self, client, auth_header, cli_project, db,
+                                                   monkeypatch, tmp_path):
+        """A machine whose `db` section names a database holding exactly this project and
+        version: the route used to read it and answer 200. It must not even open it."""
+        import core.db as core_db
+        self._granted(db, cli_project)
+        configured = "sqlite:///" + str(tmp_path / "configured.db").replace("\\", "/")
+        eng = sa.create_engine(configured)
+        s.metadata.create_all(eng)
+        with eng.begin() as cx:
+            cx.execute(sa.insert(s.projects), {"id": cli_project, "name": cli_project,
+                                               "created_at": NOW})
+            cx.execute(sa.insert(s.versions), {"id": "v1", "project_id": cli_project,
+                                               "version": "v1", "created_at": NOW})
+        eng.dispose()
+        monkeypatch.setattr(core_db, "_db_section", lambda: {"url": configured})
+        monkeypatch.setattr(core_db, "_ENGINE", None)
+        r = client.get(f"/api/v1/projects/{cli_project}{self.SUFFIX}", headers=auth_header)
+        assert r.status_code == 404 and "no version" in r.text, r.text
+        assert core_db._ENGINE is None, "the configured database was opened"
+
+
 class TestGrantFixesIt:
     def test_the_project_is_listed_afterwards(self, client, auth_header, cli_project, db):
         uid = _uid(db)
