@@ -32,7 +32,7 @@ AUTH=(-H "Authorization: Bearer $TOKEN")
 ```bash
 curl -s "${AUTH[@]}" -X POST "$BASE/projects" -H "Content-Type: application/json" -d '{
   "name":"SampleCpp","client":"demo","compliance_standard":"ASPICE",
-  "repo_url":"https://github.com/vishal9359/SampleCppProject.git","default_branch":"main",
+  "repo_url":"<repository URL>","default_branch":"main",
   "build_config":{}, "architecture_layers":[ /* layers/groups/components */ ]
 }'
 PID=<projectId from the response>      # e.g. p1a2b3c4

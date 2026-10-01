@@ -99,7 +99,7 @@
       },
       "team_count": 4,
       "my_role": "admin",
-      "repo_url": "https://github.com/vishal9359/SampleCppProject",
+      "repo_url": "https://example.invalid/SampleCppProject.git",
       "default_branch": "main",
       "build_config": {
         "preprocessor_definitions": {
@@ -478,7 +478,7 @@
       },
       "team_count": 1,
       "my_role": "admin",
-      "repo_url": "https://github.com/vishal9359/SampleCppProject",
+      "repo_url": "https://example.invalid/SampleCppProject.git",
       "default_branch": "main",
       "build_config": {
         "preprocessor_definitions": {

@@ -1,7 +1,7 @@
 {
   "project": {
     "name": "SampleCppProject",
-    "repository": "https://github.com/vishal9359/SampleCppProject",
+    "repository": "",
     "branch": "main"
   },
   "clang": {

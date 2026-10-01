@@ -101,7 +101,7 @@ workspaces/<projectId>/
   project's `layers`, repo ref, `currentDataDictId`), `repo/` (a real **full** clone via
   `git_service.clone_repo`, public/no-creds), and `datadict/dd-001.csv` (seeded from
   `engine/config/data_dictionary.csv`). Leaves `cache/`+`versions/` to the incremental engine. Default fixture =
-  `projectId=samplecpp`, repo `github.com/vishal9359/SampleCppProject` (branches `main` + `feature1/2/3`,
+  `projectId=samplecpp`, a separate SampleCppProject test repo (branches `main` + `feature1/2/3`,
   topology purpose-built for nearest/far/divergent-ancestor tests — see the repo's `README.md`). `workspaces/`
   is gitignored (data). (Both this seed script and `engine/git_service.py` were later removed.)
 - **M1 — version-producing FULL gen + substrate** — *in progress.*
