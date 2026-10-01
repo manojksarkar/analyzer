@@ -251,6 +251,30 @@ def main() -> int:
         print(f"repaired {n} version row(s) stranded mid-phase -> 'complete' "
               f"(they are baseline-eligible again; reuse will work on the next run)")
 
+    # 4. LLM unit and struct descriptions of versions made before Phase 2 stored them (BACKLOG
+    # RF-6; idempotent). A re-export of such a version printed fallback text where the LLM's
+    # wording had been; the wording is in its own earlier output (review/backfill.py).
+    from review.backfill import backfill
+    with eng.connect() as cx:
+        version_ids = [r[0] for r in cx.execute(text("SELECT id FROM versions"))]
+    filled = {"units": 0, "structs": 0}
+    touched = 0
+    for vid in version_ids:
+        try:
+            with eng.begin() as cx:                 # one version per transaction
+                got = backfill(cx, vid)
+        except Exception as exc:                    # noqa: BLE001 - report, carry on
+            print(f"  !! could not backfill the descriptions of version {vid}: "
+                  f"{type(exc).__name__}: {exc}")
+            continue
+        if got["units"] or got["structs"]:
+            touched += 1
+            filled["units"] += got["units"]
+            filled["structs"] += got["structs"]
+    if touched:
+        print(f"stored {filled['units']} unit and {filled['structs']} struct description(s) of "
+              f"{touched} version(s) made before Phase 2 stored them (from their earlier output)")
+
     print("\nOK - now run:  python tools\\verify_db_sync.py")
     return 0
 
