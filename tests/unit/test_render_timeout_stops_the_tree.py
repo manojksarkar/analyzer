@@ -51,3 +51,47 @@ def test_a_timeout_does_not_wait_for_a_grandchild_holding_the_pipes(tmp_path):
         time.sleep(0.2)
     alive = psutil.pid_exists(pid) and psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
     assert not alive, "the grandchild outlived the timeout"
+
+
+# --- the behaviour view's own mmdc call (views/behaviour_diagram._render_png) ---------------------
+
+def _behaviour_view():
+    from views import behaviour_diagram
+    return behaviour_diagram
+
+
+def test_the_behaviour_view_renders_through_run_capture(monkeypatch):
+    """Its mmdc call went through `subprocess.run`, which on a timeout left Chromium running."""
+    import core.subprocess_util as su
+    calls = []
+    monkeypatch.setattr(su, "run_capture", lambda cmd, *, timeout, shell=False: (
+        calls.append(timeout) or subprocess.CompletedProcess(cmd, 0, "", "")))
+    assert _behaviour_view()._render_png(["mmdc", "-i", "a.mmd"]).returncode == 0
+    assert calls == [60]
+
+
+def test_a_timed_out_diagram_is_tried_again_longer(monkeypatch):
+    """Under load the first try timed out on a diagram that drew fine, and the row shipped with
+    no picture (2026-09-30)."""
+    import core.subprocess_util as su
+    calls = []
+
+    def first_times_out(cmd, *, timeout, shell=False):
+        calls.append(timeout)
+        if len(calls) == 1:
+            raise subprocess.TimeoutExpired(cmd, timeout)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+    monkeypatch.setattr(su, "run_capture", first_times_out)
+    assert _behaviour_view()._render_png(["mmdc"]).returncode == 0
+    assert calls == [60, 180]
+
+
+def test_a_diagram_that_never_draws_still_raises(monkeypatch):
+    """The caller logs "mmdc timed out" and ships the row without a picture, as before."""
+    import core.subprocess_util as su
+
+    def always(cmd, *, timeout, shell=False):
+        raise subprocess.TimeoutExpired(cmd, timeout)
+    monkeypatch.setattr(su, "run_capture", always)
+    with pytest.raises(subprocess.TimeoutExpired):
+        _behaviour_view()._render_png(["mmdc"])

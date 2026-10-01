@@ -164,3 +164,42 @@ class TestIncrementalCarriesSvgs:
         _prune_orphan_flowcharts(str(out), {"Kept"})
         assert not (out / "Gone_f.svg").exists()
         assert (out / "Kept_f.svg").exists()
+
+
+class TestNodeAvailable:
+    """A slow `node --version` used to count as "Node is not installed": under load one
+    component's check timed out and it shipped with no flowchart at all (2026-09-30)."""
+
+    @staticmethod
+    def _fc():
+        import views.flowcharts as fc
+        return fc
+
+    def test_node_on_path_needs_no_probe(self, monkeypatch):
+        fc = self._fc()
+        monkeypatch.setattr(fc.shutil, "which", lambda name: "C:/node/node.exe")
+        monkeypatch.setattr(fc.subprocess, "run", lambda *a, **k: pytest.fail("probed"))
+        assert fc._node_available(PROJECT_ROOT) is True
+
+    def test_a_slow_probe_means_node_is_there(self, monkeypatch):
+        import subprocess
+        fc = self._fc()
+        monkeypatch.setattr(fc.shutil, "which", lambda name: None)
+
+        def slow(cmd, **kw):
+            raise subprocess.TimeoutExpired(cmd, kw.get("timeout"))
+        monkeypatch.setattr(fc.subprocess, "run", slow)
+        assert fc._node_available(PROJECT_ROOT) is True
+
+    def test_no_node_is_no_node(self, monkeypatch):
+        import subprocess
+        fc = self._fc()
+        monkeypatch.setattr(fc.shutil, "which", lambda name: None)
+        monkeypatch.setattr(fc.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(
+            cmd, 1, b"", b"'node' is not recognized"))
+        assert fc._node_available(PROJECT_ROOT) is False
+
+        def missing(cmd, **kw):
+            raise FileNotFoundError(cmd[0])
+        monkeypatch.setattr(fc.subprocess, "run", missing)
+        assert fc._node_available(PROJECT_ROOT) is False

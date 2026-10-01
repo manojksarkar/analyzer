@@ -1008,6 +1008,26 @@ def clang_args_file(output_dir_abs: str) -> str:
     """
     return os.path.join(output_dir_abs, ".flowcharts_clang_args.txt")
 
+def _node_available(project_root) -> bool:
+    """Whether Node is installed -- asked of PATH first, so a busy machine cannot say "no".
+
+    It used to be `node --version` with a 10 s timeout, and a timeout counted as "not found":
+    under load (a test suite and two pipelines at once, 2026-09-30) one component's check timed
+    out and the component shipped with no flowchart at all, SVG or PNG. Now PATH answers; the
+    probe runs only when PATH does not, and a probe that STARTED but was slow means Node is there.
+    """
+    if shutil.which("node"):
+        return True
+    try:
+        probe = subprocess.run(["node", "--version"], capture_output=True, timeout=60,
+                               cwd=project_root, shell=(os_type == "Windows"))
+        return probe.returncode == 0
+    except subprocess.TimeoutExpired:
+        return True                     # it started: slow, not missing
+    except (OSError, FileNotFoundError):
+        return False
+
+
 def _flowchart_items(out_dir):
     """Every (unit, function, DOT) in out_dir's per-unit JSON (<unit>.json)."""
     items = []
@@ -1559,19 +1579,7 @@ def run(model, output_dir, model_dir, config):
     # Flowcharts are rendered with Graphviz (viz-js -> SVG -> puppeteer PNG),
     # which runs under Node.  Bail out early with a clear message if Node is
     # unavailable rather than failing once per function below.
-    try:
-        node_check = subprocess.run(
-            ["node", "--version"],
-            capture_output=True,
-            timeout=10,
-            cwd=project_root,
-            shell=(os_type == "Windows"),
-        )
-        node_ok = node_check.returncode == 0
-    except (subprocess.TimeoutExpired, OSError, FileNotFoundError):
-        node_ok = False
-
-    if not node_ok:
+    if not _node_available(project_root):
         log(
             "node not found — cannot render Graphviz flowcharts. Install Node.js.",
             component="flowcharts",

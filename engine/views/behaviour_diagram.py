@@ -37,6 +37,30 @@ def _project_root() -> str:
     return paths().project_root
 
 
+#: Seconds for one mmdc render, then for the one retry. A sequence diagram draws in seconds, but
+#: under load Chromium's start alone can use most of a minute: the first try timed out on a diagram
+#: that drew fine on the next run, and the row shipped with no picture (2026-09-30).
+_MMDC_TIMEOUTS = (60, 180)
+
+
+def _render_png(run_cmd) -> subprocess.CompletedProcess:
+    """Run mmdc for one diagram; a timeout is retried once, longer, then raised.
+
+    Through `core.subprocess_util.run_capture`, which stops the whole process TREE at a timeout:
+    `subprocess.run` through the shell killed only cmd.exe and left the Chromium beneath it
+    running (BACKLOG RU-4 is the same hang in `utils._run_mmdc`).
+    """
+    from core.subprocess_util import run_capture
+    for attempt, timeout in enumerate(_MMDC_TIMEOUTS, start=1):
+        try:
+            return run_capture(run_cmd, timeout=timeout, shell=(os_type == "Windows"))
+        except subprocess.TimeoutExpired:
+            if attempt == len(_MMDC_TIMEOUTS):
+                raise
+            log("mmdc timed out after %ds; trying again with %ds" % (timeout, _MMDC_TIMEOUTS[attempt]),
+                component="behaviourDiagram", err=True)
+    raise AssertionError("unreachable")
+
 
 @register("behaviourDiagram")
 def run(model, output_dir, model_dir, config):
@@ -185,10 +209,7 @@ def run(model, output_dir, model_dir, config):
                 else:
                     run_cmd = run_cmd_base + ["-i", mmd_path, "-o", png, "-s", "2"]
                     try:
-                        if os_type == "Windows":
-                            r2 = subprocess.run(run_cmd, capture_output=True, text=True, timeout=60, check=False, shell=True)
-                        else:
-                            r2 = subprocess.run(run_cmd, capture_output=True, text=True, timeout=60, check=False)
+                        r2 = _render_png(run_cmd)
                         if r2.returncode == 0 and os.path.isfile(png):
                             png_path = png
                         elif r2.returncode != 0 and idx == 0:
