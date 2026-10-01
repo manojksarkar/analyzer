@@ -8,6 +8,8 @@ page listed it, and its name could not be used for the retry.
 """
 import datetime
 import uuid
+
+import pytest
 from unittest.mock import patch
 
 from api.models.domain import AnalysisJob, AnalysisPhase, Project, ProjectMember, Version
@@ -116,3 +118,103 @@ class TestAnUnfinishedRunFreesItsVersion:
         assert r.status_code == 200, r.text
         assert db.versions.get(vid) is None
         assert db.jobs.get(job.id).status == "cancelled"
+
+
+class TestAJobAStoppedServerLeftRunning:
+    """At start-up every job still marked queued, running or paused belongs to a server that
+    stopped mid-run: no thread of the new process runs it (`fail_interrupted_jobs`). It used to say
+    "running" for ever, and every new run of its project was refused as JOB_ALREADY_RUNNING."""
+
+    def test_it_is_failed_with_the_reason_and_frees_its_draft(self, db, monkeypatch):
+        project = _project(db)
+        job = _job(db, project, "v9.0.0")
+        vid = job.version_id
+        assert job.id in [j.id for j in db.jobs.list_active()]
+        # Every other job in this session's database is left as it is.
+        monkeypatch.setattr(pr, "job_alive", lambda job_id: job_id != job.id)
+
+        assert pr.fail_interrupted_jobs(db) == 1
+
+        failed = db.jobs.get(job.id)
+        assert failed.status == "failed" and failed.error_message == pr.INTERRUPTED_MESSAGE
+        assert failed.completed_at is not None
+        assert db.versions.get(vid) is None, "the draft is freed, as a cancel of a dead job does"
+        assert job.id not in [j.id for j in db.jobs.list_active()]
+
+    def test_a_job_this_process_runs_is_left_alone(self, db, monkeypatch):
+        project = _project(db)
+        job = _job(db, project, "v9.1.0")
+        monkeypatch.setattr(pr, "job_alive", lambda job_id: True)
+        assert pr.fail_interrupted_jobs(db) == 0
+        assert db.jobs.get(job.id).status == "running"
+
+    def test_a_reexport_left_running_keeps_its_version(self, db, monkeypatch):
+        """A re-export runs on a finished version; failing it must not delete the version."""
+        project = _project(db)
+        job = _job(db, project, "v9.2.0")
+        version = db.versions.get(job.version_id)
+        version.status = "in_review"
+        db.versions.update(version)
+        monkeypatch.setattr(pr, "job_alive", lambda job_id: job_id != job.id)
+
+        pr.fail_interrupted_jobs(db)
+
+        assert db.jobs.get(job.id).status == "failed"
+        assert db.versions.get(job.version_id) is not None
+
+    def test_the_api_does_it_at_start_up(self):
+        import inspect
+        from api import main
+        assert "_fail_interrupted_jobs(_db)" in inspect.getsource(main._db_startup_check)
+
+
+class TestOnlyTheOnlyServerSweeps:
+    """A second API server on the same database runs jobs of its own; failing them would delete
+    the draft versions it is still generating. Start-up sweeps only when this process holds the
+    runner lock (`claim_job_runner`), which PostgreSQL frees when a server ends, however it ends."""
+
+    class _Conn:
+        def __init__(self, got):
+            self.got, self.closed, self.sql = got, False, []
+
+        def execute(self, stmt, params=None):
+            self.sql.append((str(stmt), params))
+            return type("R", (), {"scalar": lambda _self: self.got})()
+
+        def commit(self):
+            pass
+
+        def close(self):
+            self.closed = True
+
+    def _engine(self, got):
+        conn = self._Conn(got)
+        engine = type("E", (), {"dialect": type("D", (), {"name": "postgresql"})(),
+                                "connect": lambda _self: conn})()
+        return engine, conn
+
+    def test_the_only_server_takes_the_lock_and_keeps_it(self, monkeypatch):
+        monkeypatch.setattr(pr, "_runner_conn", None)
+        engine, conn = self._engine(True)
+        assert pr.claim_job_runner(engine) is True
+        assert "pg_try_advisory_lock" in conn.sql[0][0] and not conn.closed
+        assert pr._runner_conn is conn, "held for the life of the process"
+
+    def test_a_second_server_does_not_sweep(self, monkeypatch):
+        monkeypatch.setattr(pr, "_runner_conn", None)
+        engine, conn = self._engine(False)
+        assert pr.claim_job_runner(engine) is False
+        assert conn.closed and pr._runner_conn is None
+
+    def test_start_up_leaves_the_jobs_alone_then(self, monkeypatch):
+        from api import main
+        engine, _conn = self._engine(False)
+        monkeypatch.setattr(pr, "_runner_conn", None)
+        monkeypatch.setattr(pr, "fail_interrupted_jobs", lambda db: pytest.fail("swept"))
+        main._fail_interrupted_jobs(type("Db", (), {"_engine": engine})())
+
+    def test_sqlite_serves_one_process(self, monkeypatch):
+        monkeypatch.setattr(pr, "_runner_conn", None)
+        engine = type("E", (), {"dialect": type("D", (), {"name": "sqlite"})()})()
+        assert pr.claim_job_runner(engine) is True
+

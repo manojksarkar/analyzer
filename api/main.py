@@ -71,6 +71,26 @@ def _ensure_default_admin(db) -> None:
         print(f"[api] could not ensure default admin: {type(exc).__name__}: {exc}", file=sys.stderr)
 
 
+def _fail_interrupted_jobs(db) -> None:
+    """Jobs a stopped server left queued or running, failed with what happened
+    (`pipeline_runner.fail_interrupted_jobs`). Never stops the start-up."""
+    import sys
+    try:
+        from .services import pipeline_runner
+        engine = getattr(db, "_engine", None)
+        if engine is not None and not pipeline_runner.claim_job_runner(engine):
+            print("[api] another API server runs jobs on this database: none of its jobs is "
+                  "touched, and none left by a stopped server is cleared", file=sys.stderr)
+            return
+        n = pipeline_runner.fail_interrupted_jobs(db)
+        if n:
+            print(f"[api] {n} job(s) left running by a stopped server: marked failed "
+                  f"(interrupted)", file=sys.stderr)
+    except Exception as exc:                                  # noqa: BLE001
+        print(f"[api] could not check for interrupted jobs: {type(exc).__name__}: {exc}",
+              file=sys.stderr)
+
+
 @app.on_event("startup")
 async def _db_startup_check() -> None:
     """When the SQL backend is active, log which database the API is bound to (password
@@ -103,6 +123,7 @@ async def _db_startup_check() -> None:
             cx.execute(text("SELECT 1"))
         print("[api] database reachable ✓", file=sys.stderr)
         _ensure_default_admin(_db)          # never leave a fresh DB with no way to sign in
+        _fail_interrupted_jobs(_db)         # no job says "running" with nothing running it
     except Exception as exc:                                  # noqa: BLE001
         print(f"[api] *** DATABASE UNREACHABLE *** {type(exc).__name__}: {exc}\n"
               f"      The API is bound to {_redact(dsn)} (source: {src}). If that is 'localhost'\n"

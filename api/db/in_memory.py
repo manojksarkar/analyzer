@@ -19,7 +19,7 @@ import uuid
 from ..models.domain import (
     User, Project, ProjectMember, Version, Commit, AnalysisJob,
     AnalysisPhase, Document, DocumentSection, DocumentAssignment,
-    Function, CompareResult, DocumentDiff, Notification, AccessRequest, REEXPORT_MODE,
+    Function, CompareResult, DocumentDiff, Notification, AccessRequest, REEXPORT_MODE, ACTIVE_JOB_STATUSES,
 )
 from ..repositories.interfaces import (
     IUserRepository, IProjectRepository, IProjectMemberRepository,
@@ -541,6 +541,10 @@ class _InMemJobRepo(IAnalysisJobRepository):
     def list_for_version(self, version_id):
         jobs = [j for j in self._store.values() if j.version_id == version_id]
         return [copy.deepcopy(j) for j in sorted(jobs, key=lambda j: j.started_at, reverse=True)]
+
+    def list_active(self):
+        jobs = [j for j in self._store.values() if j.status in ACTIVE_JOB_STATUSES]
+        return [copy.deepcopy(j) for j in sorted(jobs, key=lambda j: j.started_at)]
 
     def update(self, job):
         self._store[job.id] = job

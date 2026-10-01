@@ -493,6 +493,73 @@ def _release_draft_version(db: Any, job: Any) -> None:
                      job.id, vid, type(exc).__name__, exc)
 
 
+#: What a job a stopped server left behind says, on the job and in the Overview's banner.
+INTERRUPTED_MESSAGE = ("Interrupted: the API server stopped while this ran, so it never "
+                       "finished. Start it again.")
+
+#: The advisory lock an API process holds while it runs jobs (`claim_job_runner`): the two-key
+#: form, whose key space is not the one-key form's that a review save locks a version with.
+_RUNNER_LOCK = (0x41524658, 1)          # "ARFX"
+_runner_conn = None                     # the connection holding it, open for the process's life
+
+
+def claim_job_runner(engine: Any) -> bool:
+    """Whether this process is the only API server running jobs on its database.
+
+    Takes the session-level advisory lock `_RUNNER_LOCK` on a connection kept open for the life
+    of the process; PostgreSQL releases it when the process ends, however it ends. True when no
+    other server holds it -- then every job the database calls active was left by a server that
+    stopped (`fail_interrupted_jobs`). False when another server runs on this database: its jobs
+    are alive there, and failing them would delete the draft versions it is still generating.
+    That is why `web-app/PLAN.md` once ruled a stale-job sweep out. A database without advisory
+    locks (SQLite: local runs and tests) serves one process by construction.
+    """
+    global _runner_conn
+    if _runner_conn is not None:
+        return True
+    if getattr(getattr(engine, "dialect", None), "name", "") != "postgresql":
+        return True
+    from sqlalchemy import text
+    conn = engine.connect()
+    try:
+        got = bool(conn.execute(text("SELECT pg_try_advisory_lock(:a, :b)"),
+                                {"a": _RUNNER_LOCK[0], "b": _RUNNER_LOCK[1]}).scalar())
+        conn.commit()                   # a session lock outlives the transaction
+    except Exception:
+        conn.close()
+        raise
+    if not got:
+        conn.close()
+        return False
+    _runner_conn = conn
+    return True
+
+
+def fail_interrupted_jobs(db: Any) -> int:
+    """At start-up: fail every job a stopped server left queued, running or paused.
+
+    A job runs on a thread of the API process that started it (`job_alive`), and a process that
+    has just started runs none -- so, when no other server runs on the database
+    (`claim_job_runner`, which the caller asks first), a job the database still calls active
+    belongs to a server that stopped mid-run, and no thread will ever finish it. Left alone it
+    said "running" for ever: the Overview showed it, and every new run of its project was refused
+    as JOB_ALREADY_RUNNING until someone pressed Cancel Job (2026-09-30: two such jobs, one from
+    June). Each is marked failed with what happened, and its unfinished draft version is freed,
+    as a cancel of a dead job does. Returns how many.
+    """
+    failed = 0
+    for job in db.jobs.list_active():
+        if job_alive(job.id):
+            continue
+        job.status = "failed"
+        job.error_message = INTERRUPTED_MESSAGE
+        job.completed_at = _now()
+        db.jobs.update(job)
+        _release_draft_version(db, job)
+        failed += 1
+    return failed
+
+
 # ---------------------------------------------------------------------------
 # Main thread entry
 # ---------------------------------------------------------------------------

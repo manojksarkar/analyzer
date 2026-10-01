@@ -152,6 +152,9 @@ class AnalysisPhase:
 #: It is never a project's "current" job, which stays its latest generation.
 REEXPORT_MODE = "reexport"
 
+#: A job in one of these is still going -- or was, when a server stopped under it.
+ACTIVE_JOB_STATUSES = ("queued", "running", "paused")
+
 
 @dataclass
 class AnalysisJob:

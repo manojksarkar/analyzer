@@ -21,7 +21,7 @@ from sqlalchemy import and_, delete, func, insert, select, update
 from ...models.domain import (
     User, Project, ProjectMember, AccessRequest, Version, Commit, AnalysisJob,
     Document, DocumentSection, DocumentAssignment, Function, CompareResult,
-    DocumentDiff, Notification, REEXPORT_MODE,
+    DocumentDiff, Notification, REEXPORT_MODE, ACTIVE_JOB_STATUSES,
 )
 from ...repositories.interfaces import (
     IUserRepository, IProjectRepository, IProjectMemberRepository,
@@ -234,6 +234,11 @@ class _JobRepo(_Base, IAnalysisJobRepository):
         j = s.analysis_jobs
         return self._all(select(j).where(j.c.version_id == version_id)
                          .order_by(j.c.started_at.desc()), AnalysisJob)
+
+    def list_active(self):
+        j = s.analysis_jobs
+        return self._all(select(j).where(j.c.status.in_(ACTIVE_JOB_STATUSES))
+                         .order_by(j.c.started_at), AnalysisJob)
 
     def update(self, job):
         self._put(s.analysis_jobs, ["id"], to_row(job)); return job

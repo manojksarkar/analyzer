@@ -148,6 +148,10 @@ class IAnalysisJobRepository(ABC):
         """Every job for a version, newest first: its generation, and any re-exports."""
 
     @abstractmethod
+    def list_active(self) -> list[AnalysisJob]:
+        """Every job, of every project, still marked queued, running or paused."""
+
+    @abstractmethod
     def update(self, job: AnalysisJob) -> AnalysisJob: ...
 
 
