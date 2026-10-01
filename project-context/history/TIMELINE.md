@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-01b | Three things the 2026-09-30g merge checks found, fixed: pictures lost under load, jobs that said "running" for ever, and old versions' descriptions lost on re-export | [11](11-2026-09-29e.md) |
 | 2026-10-01 | Review & update has a screen: the document reader's edit mode | [11](11-2026-09-29e.md) |
 
 ## 2026-09

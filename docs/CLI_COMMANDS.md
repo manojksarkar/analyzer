@@ -261,6 +261,11 @@ python analyzer.py setup --demo
 
 `--demo` also seeds demo users and projects, for a fresh database you want to click around in.
 
+Safe to run again after every pull, and needed whenever one brings a migration: it adds what the
+schema lacks, repairs rows earlier code left wrong, and stores the LLM unit and struct descriptions of
+versions generated before Phase 2 stored them, from their own earlier output, so a re-export keeps
+that wording. `alembic upgrade head` cannot build a fresh database; do not mix the two.
+
 ### `onboard`
 
 Every flag it takes, in one line:
