@@ -50,6 +50,12 @@ copy engine\config\config.local.json.example engine\config\config.local.json
   `clang.clangIncludePath` here.
 - **Chrome** — `engine/config/puppeteer-config.json` names the Chrome executable; edit
   `executablePath` if yours is elsewhere.
+- **Mermaid in docker** — when the `minlag/mermaid-cli` image is loaded and a test drawing in it
+  works, the unit, component and behaviour diagrams are drawn in it (it brings its own Chromium);
+  otherwise local mmdc draws them, as before. Nothing is pulled: on an offline server, `docker save`
+  the image where there is network and `docker load -i` it here. The user running the analyzer
+  must be able to run `docker` without sudo. `python analyzer.py doctor` passes with either the
+  image or a local mmdc; the run log says which one drew (`mermaid diagrams: …`).
 
 ## 4. Database
 

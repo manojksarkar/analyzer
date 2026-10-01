@@ -19,7 +19,7 @@ if str(_src) not in sys.path:
 from .registry import register
 
 from behaviour_diagram import SequenceDiagramGenerator
-from utils import log, mmdc_path, scoped_name, KEY_SEP, os_type
+from utils import log, mmdc_command, scoped_name, KEY_SEP, os_type
 
 
 def _project_root() -> str:
@@ -90,13 +90,6 @@ def run(model, output_dir, model_dir, config):
                                    model.get("functions") or {}, config)
 
     render_png = True
-    mmdc = mmdc_path(project_root)
-    puppeteer = os.path.join(project_root, "engine", "config", "puppeteer-config.json")
-    if not os.path.isabs(puppeteer):
-        puppeteer = os.path.join(project_root, puppeteer)
-    run_cmd_base = [mmdc, "--scale", "2"]
-    if os.path.isfile(puppeteer):
-        run_cmd_base.extend(["-p", puppeteer])
 
     docx_rows = {}  # component -> unit -> [ {externalUnitFunction, pngPath} ]
     rowed_mmd = set()          # .mmd files this run recorded a row for
@@ -207,7 +200,7 @@ def run(model, output_dir, model_dir, config):
                 if _reuse:
                     png_path = png
                 else:
-                    run_cmd = run_cmd_base + ["-i", mmd_path, "-o", png, "-s", "2"]
+                    run_cmd = mmdc_command(project_root, mmd_path, png, scale=2)
                     try:
                         r2 = _render_png(run_cmd)
                         if r2.returncode == 0 and os.path.isfile(png):
