@@ -122,7 +122,10 @@ def main() -> int:
     from sqlalchemy import create_engine, text
 
     is_pg = raw.startswith("postgres")
-    ca = {"connect_timeout": 5} if is_pg else {}
+    # The engine's own setting (DATABASE_CONNECT_TIMEOUT, default 5 s): a fixed 5 here made setup
+    # the one command that could not be given longer on a slow machine.
+    from core.db import CONNECT_TIMEOUT_SEC
+    ca = {"connect_timeout": CONNECT_TIMEOUT_SEC} if is_pg else {}
 
     # Build the engines BEFORE importing api.* / schema (a defensive ordering: an engine
     # resolves and caches its dialect at creation, so create_all() below is unaffected by
