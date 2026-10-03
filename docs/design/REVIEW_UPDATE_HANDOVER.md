@@ -637,7 +637,7 @@ anything in `engine/review/`, repeat it: the unit suite passed throughout, and d
 After the rebase the same was repeated on develop's code: a `layer:Layer1` web job (11 documents in
 75 s), every kind corrected and carried into an incremental v2, the CLI re-derive
 (`reexport --from-phase 2`), two CLI projects that both have a `v1`, and the Dynamic Behaviour rows
-from `engine/config/api_*.sample_behaviour.example.json` (18 rows). **Not yet run on PostgreSQL.**
+from `engine/config/api_*.sample_behaviour.example.json` (18 rows then). **Not yet run on PostgreSQL.**
 
 The review tests specifically:
 
@@ -726,13 +726,15 @@ ones a document prints (`[]` = none), read from the stored output (§4.20).
 - **The rule changes** (e.g. publish by the whole model): only `model_deriver` changes;
   `shownIn` follows by itself.
 
-### 8.3 The default behaviour filter draws no Dynamic Behaviour on the sample — `RU-3`
+### 8.3 The default behaviour filter draws little Dynamic Behaviour — `RU-3`
 
 The shipped profile has `views.behaviourDiagram` off (develop's VW-9). With it on,
 `views.sequenceDiagrams.filterMode` is still absent from `config.defaults.json`, so
-`generator._get_filter_mode` uses `skip_within_unit` — which draws no row on `SampleCppProject`;
-`all_callers` draws 18 for `Layer1.My Sample`. The branch changes no default: to exercise
-`behaviourDescription` corrections it ships `engine/config/api_*.sample_behaviour.example.json`.
+`generator._get_filter_mode` uses `skip_within_unit`: a row only for a function called from another
+component that calls into another unit of its own. Until 2026-10-03 nothing on `SampleCppProject`
+qualified; the fixture's `CoreGateway` (`SampleCppProject/Layer1/Sample/Core/CoreGateway.h`) now gives 2 rows in the "Sample Core" document, under
+a component or a group scope. `all_callers` draws one row per external caller
+(`engine/config/api_*.sample_behaviour.example.json`). No default is changed.
 
 - **Default as meant:** nothing to do.
 - **Change it:** set `views.sequenceDiagrams.filterMode` in `config.defaults.json` (with VW-9's

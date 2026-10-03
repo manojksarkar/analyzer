@@ -44,7 +44,8 @@ python tools/review_api_test/review_api_test.py --make-sample-repo C:/work/sampl
 ```
 
 It prints the path to put in `onboard.create_project.repo_url`. `config.example.json` is already set
-up for the sample: groups `My Sample` (Dynamic Behaviour rows — `filterMode: all_callers`) and
+up for the sample: groups `My Sample` (Dynamic Behaviour rows — `filterMode: all_callers`; the
+default filter gives the 2 rows of Sample Core's `CoreGateway`) and
 `Full` (struct, class and union descriptions), so all seven kinds get corrected.
 
 ### Re-running on something that exists

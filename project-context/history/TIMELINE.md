@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-03 | The sample has Dynamic Behaviour under the default filter: Sample Core gains two units, CoreGateway and CoreStats, and Lib calls in | [11](11-2026-09-29e.md) |
 | 2026-09-30 | The PR #70 review: the seven must-fix items fixed, the whole review feature passes on PostgreSQL, and fifteen follow-ups are BACKLOG RF-1…RF-15 | [11](11-2026-09-29e.md) |
 | 2026-09-29f | `tools/review_api_test/` tests the whole review feature through the REST API; its first run found a re-export that rebuilt only the first group of a version generated for several | [11](11-2026-09-29e.md) |
 | 2026-09-29e | Every review route gives a slot one shape — `text`, `llmText`, `humanText`, `isOverridden`, `isOrphaned`, `canUndo`, `updatedBy`, `updatedAt` — and every save answers with the slot as it now is; R8 returns each saved node and the rebuilt DOT | [11](11-2026-09-29e.md) |

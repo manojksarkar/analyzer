@@ -146,6 +146,10 @@ SampleCppProject/
     Poly/     Dispatch.cpp/.h          — virtual dispatch / polymorphism
     Sample/
       Core/   Core.cpp/.h              — Sample group, Core component
+              CoreGateway.cpp/.h, CoreStats.cpp/.h — the component's 2nd and 3rd units:
+                                         Lib calls CoreGateway, which calls CoreStats, so
+                                         the DEFAULT behaviour filter draws 2 Dynamic
+                                         Behaviour rows in "Sample Core" (2026-10-03)
       Lib/    Lib.cpp/.h               — Sample group, Lib component
       Util/   Util.cpp/.h              — Sample group, Util component
     Types/    PointRect.cpp/.h, Types.cpp/.h — struct + union types, enum/typedef
