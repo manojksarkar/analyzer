@@ -32,9 +32,15 @@ interface RequestOptions {
   skipAuth?: boolean
 }
 
+/** One of FastAPI's request-validation problems (a 422's `detail` list). */
+interface ValidationIssue {
+  loc?: (string | number)[]
+  msg?: string
+}
+
 interface ErrorEnvelope {
   error?: { code?: string; message?: string; status?: number }
-  detail?: { code?: string; message?: string; status?: number } | string
+  detail?: { code?: string; message?: string; status?: number } | string | ValidationIssue[]
 }
 
 /** Error thrown for any non-2xx response. Carries status + backend code. */
@@ -55,6 +61,25 @@ export function isNotFound(e: unknown): boolean {
   return e instanceof ApiError && e.status === 404
 }
 
+/** A failure worth one more try: the network (no answer) or the server (5xx). A 4xx answer —
+ *  401, 403, 404, 409, 422 — is the same the second time; retrying only delayed the error page. */
+export function isRetryable(e: unknown): boolean {
+  return !(e instanceof ApiError) || e.status >= 500
+}
+
+/** A 422's validation problems as one readable line: the first one's field and message
+ *  (`tag: Field required`), and how many more. FastAPI sends them as a `detail` list, which the
+ *  envelope parsing dropped — the page said only "Unprocessable Entity". */
+function validationMessage(detail: ValidationIssue[]): string | undefined {
+  const first = detail.find((d) => typeof d?.msg === 'string')
+  if (!first?.msg) return undefined
+  // `loc` starts with where the value was sent (body, query, path): the rest names the field.
+  const where = new Set(['body', 'query', 'path', 'header', 'cookie'])
+  const field = (first.loc ?? []).filter((p, i) => !(i === 0 && where.has(String(p)))).join('.')
+  const more = detail.length > 1 ? ` (and ${detail.length - 1} more)` : ''
+  return `${field ? `${field}: ` : ''}${first.msg}${more}`
+}
+
 function buildUrl(path: string, params?: QueryParams): string {
   const url = new URL(API_BASE_URL + path)
   if (params) {
@@ -73,9 +98,11 @@ async function parseError(res: Response): Promise<ApiError> {
   let code: string | undefined
   try {
     const body = (await res.json()) as ErrorEnvelope
-    const env = body.error ?? (typeof body.detail === 'object' ? body.detail : undefined)
+    const detail = body.detail
+    const env = body.error ?? (detail && typeof detail === 'object' && !Array.isArray(detail) ? detail : undefined)
     if (env?.message) message = env.message
-    else if (typeof body.detail === 'string') message = body.detail
+    else if (typeof detail === 'string') message = detail
+    else if (Array.isArray(detail)) message = validationMessage(detail) ?? message
     code = env?.code
   } catch {
     /* non-JSON body — keep the status-derived message */

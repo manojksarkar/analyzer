@@ -72,6 +72,8 @@ export function ProjectDetailPage() {
 
   // Role is per-project (API's my_role → project.userRole).
   const isAdmin = project?.userRole === 'admin'
+  // Why Run / Re-run is disabled, on hover: it gave no reason.
+  const runDisabledWhy = project && !isAdmin ? 'Only a project admin can run analysis.' : undefined
 
   // The commit shown in the empty/run states: the picker selection, else latest.
   const shownCommit = selectedCommit ?? commits?.[0]
@@ -129,6 +131,7 @@ export function ProjectDetailPage() {
               <button
                 onClick={() => setRunOpen(true)}
                 disabled={!isAdmin}
+                title={runDisabledWhy}
                 className="flex items-center gap-2 px-5 py-2.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-xl transition-colors disabled:opacity-60 font-mono text-xs font-bold tracking-[0.04em]"
               >
                 <Icon name="play_circle" size={16} fill />
@@ -273,6 +276,7 @@ export function ProjectDetailPage() {
             <button
               onClick={() => setRunOpen(true)}
               disabled={!isAdmin}
+              title={runDisabledWhy}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors flex-shrink-0 disabled:opacity-60 font-mono text-caption font-bold tracking-[0.04em]"
             >
               <Icon name="play_circle" size={14} fill />
@@ -290,7 +294,8 @@ export function ProjectDetailPage() {
           </p>
         )}
         {showContent && project && (
-          documentsLoading && !documents ? (
+          // No version yet (the versions still load): the documents wait for one, so that is loading too.
+          (documentsLoading || (!contentVersionId && isLoading)) && !documents ? (
             <DashboardSkeleton />
           ) : (
             <GeneratedContent

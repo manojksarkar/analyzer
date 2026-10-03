@@ -44,14 +44,16 @@ export function DocumentsPage() {
   const { data: commits } = useCommits(pid)
   const { data: team } = useTeam(pid)
   // The displayed version/state follows the Subbar picker (shared via the UI store).
-  const { pageState, viewVersion, selectedCommit } = useProjectViewState(pid)
+  const { pageState, viewVersion, selectedCommit, isLoading: viewLoading } = useProjectViewState(pid)
   // Scope documents to the picked version so switching versions in the Subbar
   // refetches the right set (default = latest version).
   const documentsQuery = useDocuments(
     pid,
     viewVersion?.id ? { versionId: viewVersion.id } : undefined,
   )
-  const { data: documents, isLoading } = documentsQuery
+  const { data: documents } = documentsQuery
+  // The documents wait for a version: while the versions load, that is loading too.
+  const isLoading = documentsQuery.isLoading || (!viewVersion && viewLoading)
   // The project, its versions (which say what state the page is in) and the documents: a failed
   // read of any is shown as one, with Retry — not as "No documents yet" or "No documents found".
   const failed = failedLoad(projectQuery, versionsQuery, documentsQuery)

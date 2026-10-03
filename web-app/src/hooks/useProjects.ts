@@ -75,9 +75,11 @@ export function useVersions(projectId: string) {
   return useQuery({ queryKey: projectKeys.versions(projectId), queryFn: () => versionsApi.list(projectId), enabled: !!projectId })
 }
 
-/** Every document that matches `filters` — all pages: the lists, KPIs, approval bar and bulk
- *  approve count them (the API answers at most 100 a page). A caller that names `page` or
- *  `perPage` gets that one page. */
+/** Every document of ONE version that matches `filters` — all pages: the lists, KPIs, approval bar
+ *  and bulk approve count them (the API answers at most 100 a page). Nothing is read until
+ *  `filters.versionId` is known: the pages pass no filters while the versions load, and the
+ *  unscoped read was every version's documents, all pages, thrown away a moment later. A caller
+ *  that names `page` or `perPage` gets that one page, version or not. */
 export function useDocuments(projectId: string, filters?: DocumentFilters) {
   const onePage = filters?.page !== undefined || filters?.perPage !== undefined
   return useQuery({
@@ -85,7 +87,7 @@ export function useDocuments(projectId: string, filters?: DocumentFilters) {
     queryFn: () => onePage
       ? documentsApi.list(projectId, filters)
       : documentsApi.listAll(projectId, filters),
-    enabled: !!projectId,
+    enabled: !!projectId && (onePage || !!filters?.versionId),
   })
 }
 
@@ -117,10 +119,12 @@ export function useTeam(projectId: string) {
   return useQuery({ queryKey: projectKeys.team(projectId), queryFn: () => teamApi.list(projectId), enabled: !!projectId })
 }
 
+/** Every commit the project has stored, all pages: the Run modal and the Subbar pick from them,
+ *  and the first page alone (20) hid the older ones (the API has no commit search). */
 export function useCommits(projectId: string) {
   return useQuery({
     queryKey: projectKeys.commits(projectId),
-    queryFn: () => commitsApi.list(projectId),
+    queryFn: () => commitsApi.listAll(projectId),
     enabled: !!projectId,
     select: (d) => d.commits,
   })
@@ -131,7 +135,7 @@ export function useCommits(projectId: string) {
 export function useCommitsLastSync(projectId: string) {
   return useQuery({
     queryKey: projectKeys.commits(projectId),
-    queryFn: () => commitsApi.list(projectId),
+    queryFn: () => commitsApi.listAll(projectId),
     enabled: !!projectId,
     select: (d) => d.lastSyncedAt,
   })

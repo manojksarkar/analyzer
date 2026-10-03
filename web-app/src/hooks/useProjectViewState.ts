@@ -2,8 +2,17 @@ import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useProject, useVersions, useCommits, projectKeys } from './useProjects'
 import { useCurrentJob } from './useJobs'
-import { useUIStore } from '../store/ui'
+import { useUIStore, type Selection } from '../store/ui'
+import { liveSelection } from '../lib/selection'
 import type { PageState, Version, Commit } from '../types'
+
+/** The Subbar's pick for the project; one naming a version that is gone counts as none
+ *  (lib/selection `liveSelection`). Shared by the view state and the picker itself. */
+export function usePickerSelection(projectId: string): Selection | undefined {
+  const { data: versions } = useVersions(projectId)
+  const selection = useUIStore((s) => (projectId ? s.selectedRef[projectId] : undefined))
+  return liveSelection(selection, versions)
+}
 
 /**
  * Resolves the project's *displayed* state from the Subbar's commit/version
@@ -11,7 +20,8 @@ import type { PageState, Version, Commit } from '../types'
  * status badge react to the picker.
  *
  *  - No selection → latest version (default), state from the project.
- *  - A version selected → that version's state + its docs.
+ *  - A version selected → that version's state + its docs. A version that is gone (a cancelled
+ *    run's draft) is no selection → the default.
  *  - A commit selected → that commit's state (e.g. a "Not Run" commit → the
  *    empty view); if the commit is tagged, its version's docs.
  *  - An active job always wins (→ "running").
@@ -30,7 +40,7 @@ export function useProjectViewState(projectId: string): {
   const { data: versions, isLoading: versionsLoading } = useVersions(projectId)
   const { data: commits, isLoading: commitsLoading } = useCommits(projectId)
   const { data: job, isLoading: jobLoading } = useCurrentJob(projectId)
-  const selection = useUIStore((s) => (projectId ? s.selectedRef[projectId] : undefined))
+  const selection = usePickerSelection(projectId)
 
   // First-load only (isLoading, not isFetching) so background refetches don't
   // re-trigger skeletons. Consumers gate their empty states on this so the

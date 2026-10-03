@@ -126,7 +126,7 @@ export function ComparePage() {
         rows={treeRows} mode={treeMode} setMode={setTreeMode}
         activeId={activeDocId} onSelect={selectDoc}
         changedCount={changedCount} total={totalCount}
-        loading={treeMode === 'diff' ? docsLoading && !compareDocs : allDocsLoading && !allDocs}
+        loading={treeMode === 'diff' ? docsLoading && !compareDocs : (allDocsLoading || versionsQuery.isLoading) && !allDocs}
         failed={treeFailed}
       />
 

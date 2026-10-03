@@ -4,6 +4,10 @@ import { Button } from './ui'
 interface Props {
   children: ReactNode
   fallback?: ReactNode
+  /** When it changes, a caught error is cleared — the page's location, so moving away from a
+   *  crashed page shows the next one. A `key` would do it too, but would also remount every
+   *  healthy page on each navigation (a document switch lost the reader's state). */
+  resetKey?: unknown
 }
 
 interface State {
@@ -20,6 +24,10 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('[ErrorBoundary]', error, info)
+  }
+
+  componentDidUpdate(prev: Props) {
+    if (this.state.hasError && !Object.is(prev.resetKey, this.props.resetKey)) this.reset()
   }
 
   reset = () => this.setState({ hasError: false, error: null })

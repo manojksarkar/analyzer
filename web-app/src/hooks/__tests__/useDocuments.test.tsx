@@ -62,7 +62,7 @@ describe('useDocuments', () => {
 
   it('reads one page when there are 100 or fewer', async () => {
     const asked = serve(57)
-    const { result } = renderHook(() => useDocuments('p1'), { wrapper: wrapper() })
+    const { result } = renderHook(() => useDocuments('p1', { versionId: 'ver1' }), { wrapper: wrapper() })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data).toHaveLength(57)
     expect(asked).toHaveLength(1)
@@ -70,10 +70,25 @@ describe('useDocuments', () => {
 
   it('reads on until a short page when the API does not say the total', async () => {
     const asked = serve(230, { withTotal: false })
-    const { result } = renderHook(() => useDocuments('p1'), { wrapper: wrapper() })
+    const { result } = renderHook(() => useDocuments('p1', { versionId: 'ver1' }), { wrapper: wrapper() })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data).toHaveLength(230)
     expect(asked.map((a) => a.page)).toEqual([1, 2, 3])
+  })
+
+  it('reads nothing until a version is known: the unscoped read was every version, all pages', async () => {
+    const asked = serve(240)
+    const { result, rerender } = renderHook(
+      ({ versionId }: { versionId?: string }) => useDocuments('p1', versionId ? { versionId } : undefined),
+      { wrapper: wrapper(), initialProps: {} as { versionId?: string } })
+    // A moment for a request to go out, if one would.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(asked).toEqual([])
+    expect(result.current.data).toBeUndefined()
+    expect(result.current.fetchStatus).toBe('idle')
+    rerender({ versionId: 'ver1' })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(asked.every((a) => a.versionId === 'ver1')).toBe(true)
   })
 
   it('a caller that names a page gets that page', async () => {

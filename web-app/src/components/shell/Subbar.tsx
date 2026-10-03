@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useVersions, useCommits, useCommitsLastSync, useProjects } from '../../hooks/useProjects'
+import { usePickerSelection } from '../../hooks/useProjectViewState'
 import { useUIStore, type Selection } from '../../store/ui'
 import { Icon, Skeleton, StatusBadge } from '../ui'
 import { cn } from '../../lib/cn'
@@ -122,8 +123,9 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
   const wrapRef = useRef<HTMLDivElement>(null)
 
   // Selection is shared via the UI store so the detail page + status badge react
-  // to it; default to the layout-supplied latest version / commit.
-  const selection = useUIStore((s) => (projectId ? s.selectedRef[projectId] : undefined))
+  // to it; default to the layout-supplied latest version / commit (also when the
+  // picked version is gone, e.g. a cancelled run's draft).
+  const selection = usePickerSelection(projectId ?? '')
   const setSelectedRef = useUIStore((s) => s.setSelectedRef)
 
   // Close on outside click

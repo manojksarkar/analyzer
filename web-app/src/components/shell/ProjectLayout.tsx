@@ -1,5 +1,5 @@
 import { Suspense, useState } from 'react'
-import { Outlet, useParams } from 'react-router-dom'
+import { Outlet, useLocation, useParams } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { Subbar, VersionStatusChip } from './Subbar'
@@ -29,6 +29,7 @@ function PageSkeleton() {
 
 export function ProjectLayout({ breadcrumbLabel, breadcrumbParentLabel, breadcrumbParentTo }: ProjectLayoutProps) {
   const { projectId, docId } = useParams<{ projectId: string; docId?: string }>()
+  const { pathname } = useLocation()
 
   const { data: project } = useProject(projectId ?? '')
   // A document page's last crumb names the document (mockup: "SWE.3 — Brake Controller");
@@ -74,7 +75,9 @@ export function ProjectLayout({ breadcrumbLabel, breadcrumbParentLabel, breadcru
           ctaSlotRef={setCtaSlot}
         />
         <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-          <ErrorBoundary>
+          {/* The layout outlives navigation between a project's pages: without the reset, one
+              crash kept the error screen on every page after it. */}
+          <ErrorBoundary resetKey={pathname}>
             <Suspense fallback={<PageSkeleton />}>
               <SubbarCtaProvider slot={ctaSlot}>
                 <Outlet />
