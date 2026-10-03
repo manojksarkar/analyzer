@@ -140,7 +140,9 @@ def test_interaction_specs_are_read_as_interactions_not_as_a_unit(label, docx_pa
     assert not [u for c in doc.of_kind("component") for u in c.of_kind("unit")
                 if u.name.casefold().startswith("dynamic behaviour")]
     oracle = json.load(open(oracle_path, encoding="utf-8"))
-    wanted = len(oracle.get("dynamicSpecs") or [])
+    # `dynamicSpecs` is {component: [spec, ...]} (views/dynamic_specs.py); counting its keys
+    # held only while no component had more than one interaction spec.
+    wanted = sum(len(specs) for specs in (oracle.get("dynamicSpecs") or {}).values())
     got = sum(len(c.of_kind("interaction")) for c in doc.of_kind("component"))
     assert got == wanted, "%s: %d interaction specs read, %d in the model" % (label, got, wanted)
 
