@@ -171,3 +171,27 @@ class TestEveryAdditiveMigrationIsCovered:
         assert column not in _columns(eng, table)
         _add_missing_columns(eng, s.metadata)
         assert column in _columns(eng, table)
+
+
+class TestTheMigrationStamp:
+    """RF-4: setup built the schema without Alembic and stamped nothing, so the next `alembic
+    upgrade head` started from the first migration and failed on a table that already existed.
+    Setup now stamps the head; proved on PostgreSQL 2026-10-04 (stamped, then `upgrade head` a
+    no-op)."""
+
+    def test_the_head_setup_stamps_is_the_newest_migration(self):
+        import glob
+        import re
+        from db_setup import _alembic_head
+        head = _alembic_head()
+        revisions = []
+        for p in glob.glob(os.path.join(PROJECT_ROOT, "alembic", "versions", "*.py")):
+            m = re.search(r'^revision\s*=\s*["\']([^"\']+)', open(p, encoding="utf-8").read(), re.M)
+            if m:
+                revisions.append(m.group(1))
+        assert head in revisions and head == sorted(revisions)[-1]
+
+    def test_setup_stamps_after_the_schema_is_in_place(self):
+        src = open(os.path.join(PROJECT_ROOT, "tools", "db_setup.py"), encoding="utf-8").read()
+        main = src[src.index("def main"):src.index("def _alembic_head")]
+        assert main.index("_add_missing_columns(") < main.index("INSERT INTO alembic_version")

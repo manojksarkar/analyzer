@@ -42,7 +42,13 @@ def run_migrations_online() -> None:
     import sqlalchemy as _sa
     sys.stderr.write(f"[alembic] python     = {sys.executable}\n")
     sys.stderr.write(f"[alembic] sqlalchemy = {_sa.__version__} @ {os.path.dirname(_sa.__file__)}\n")
-    sys.stderr.write(f"[alembic] url        = {_URL}\n")
+    # The password never reaches the console or a log: the same redaction the app uses.
+    try:
+        from core.db import _redact
+        shown = _redact(_URL)
+    except Exception:                                 # noqa: BLE001 - say less, not more
+        shown = _URL.split("@")[-1] if "@" in _URL else _URL
+    sys.stderr.write(f"[alembic] url        = {shown}\n")
     sys.stderr.flush()
     # Pass the DSN as a STRING (not a URL object): on SQLAlchemy 2.0.51 a URL object can
     # fail to resolve postgresql+psycopg (NoSuchModuleError) where the identical string

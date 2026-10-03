@@ -196,7 +196,10 @@ def main() -> int:
         print("schema up to date: no missing columns")
     if blocked:
         print("\n!! These columns are declared NOT NULL with no default, so they cannot be")
-        print("   added to a table that already has rows. Run the migration instead:")
+        print("   added to a table that already has rows. Their migration adds them with a value")
+        print("   for the rows there. A database this setup made has no migration stamp, so stamp")
+        print("   it at the revision before that migration first:")
+        print("       python -m alembic stamp <revision before it>")
         print("       python -m alembic upgrade head")
         for line in blocked:
             print(f"     - {line}")
@@ -292,8 +295,38 @@ def main() -> int:
     if fixed["events"]:
         print(f"review: recorded {fixed['events']} approval(s) made before the review record")
 
+    # 6. stamp the migration head (RF-4). `create_all` builds every table without Alembic, so a
+    # database made or upgraded here had no `alembic_version` -- and the next `alembic upgrade
+    # head` started from the first migration and failed on a table that already exists. Stamped
+    # only now, when the schema is the head's: a later migration then applies on top of it.
+    head = _alembic_head()
+    if head:
+        with eng.begin() as cx:
+            cx.execute(text("CREATE TABLE IF NOT EXISTS alembic_version ("
+                            "version_num VARCHAR(32) NOT NULL, "
+                            "CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num))"))
+            cx.execute(text("DELETE FROM alembic_version"))
+            cx.execute(text("INSERT INTO alembic_version (version_num) VALUES (:v)"), {"v": head})
+        print(f"migrations: stamped at {head} (a later `alembic upgrade head` applies only newer "
+              f"ones)")
+
     print("\nOK - now run:  python tools\\verify_db_sync.py")
     return 0
+
+
+def _alembic_head():
+    """The newest migration's revision (alembic/versions), or None when it cannot be read."""
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cfg = Config(os.path.join(root, "alembic.ini"))
+        cfg.set_main_option("script_location", os.path.join(root, "alembic"))
+        return ScriptDirectory.from_config(cfg).get_current_head()
+    except Exception as exc:                        # noqa: BLE001 - setup still succeeded
+        print(f"note: the migration head could not be read ({type(exc).__name__}: {exc}); "
+              f"`alembic_version` not stamped")
+        return None
 
 
 if __name__ == "__main__":
