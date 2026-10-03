@@ -99,8 +99,8 @@
 | RF-6 | Re-exporting a version made before the merge loses its LLM unit and struct descriptions: nothing backfills them | issue | done 2026-10-01 — `analyzer.py setup` stores them from the version's own earlier output (`review/backfill.py`) | docx_exporter.py:819, views/unit_headers.py:75-89 |
 | RF-7 | Phase 2 generates unit and struct descriptions for SWE.4-only runs, for `unitHeaders: false`, and for header-only units | perf | open | model_deriver.py:1223-1290 |
 | RF-8 | Upgrade-order release note: without 0009 every generate fails; an API started before 0014 answers 500 on sign-in | debt | open | core/model_store.py:507, 584, api/middleware/auth.py |
-| RF-9 | Internal error text leaks: R5, R7, R9 and R10 are not wrapped in `_as_http`; `_version()` / `_connection()` sit outside the `try`; `_connection()` puts `str(exc)` in its 503 | issue | open | api/routes/text_overrides.py:113, 440-452, 639-641, 663-667, 693-698 |
-| RF-10 | No size limit on correction text: a 5 MB `text` was accepted | issue | open | api/routes/text_overrides.py:65-90 |
+| RF-9 | Internal error text leaks: R5, R7, R9 and R10 are not wrapped in `_as_http`; `_version()` / `_connection()` sit outside the `try`; `_connection()` puts `str(exc)` in its 503 | issue | done 2026-10-04 | api/routes/text_overrides.py:113, 440-452, 639-641, 663-667, 693-698 |
+| RF-10 | No size limit on correction text: a 5 MB `text` was accepted | issue | done 2026-10-04 | api/routes/text_overrides.py:65-90 |
 | RF-11 | Docs volume and duplication: drop `docs/REVIEW_UPDATE_REQUIREMENTS.md`, fold HANDOVER into the PR description and BACKLOG, trim DESIGN and API_SPEC | debt | open | docs/ |
 | RF-12 | `with TestClient(app)` runs the app's startup on the configured database, and the test accepts 401 as a pass | issue | open | tests/unit/test_review_api_contract.py:436 |
 | RF-13 | `test_render_timeout_stops_the_tree.py` is racy under load; `test_runner_never_hangs.py` needs the `slow` marker | issue | open | tests/unit/test_render_timeout_stops_the_tree.py:48, tests/unit/test_runner_never_hangs.py |

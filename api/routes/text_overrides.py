@@ -25,7 +25,7 @@ import sys
 from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import AfterValidator, BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field, StringConstraints
 
 from ..db.in_memory import InMemoryDatabase
 from ..db.session import get_db
@@ -75,24 +75,31 @@ def _no_nul(value: str) -> str:
     return value
 
 
-#: Every text, label, bullet and id a save (R3, R6, R8) takes.
-NoNulStr = Annotated[str, AfterValidator(_no_nul)]
+#: Every id a save (R3, R6, R8) takes.
+NoNulStr = Annotated[str, StringConstraints(max_length=2_000), AfterValidator(_no_nul)]
+
+#: The longest text a correction may be. The page caps one at 2,000 characters (web-app
+#: editContext `MAX_TEXT`); this leaves room for that and keeps a document, and the database,
+#: from taking a 5 MB "correction" (RF-10). Longer is a 422 naming the field.
+MAX_TEXT = 10_000
+NoNulText = Annotated[str, StringConstraints(max_length=MAX_TEXT), AfterValidator(_no_nul)]
 
 
 class UpdateSlotRequest(BaseModel):
     slot_kind: SlotKind = Field(
         ..., description="which kind of text this is. nodeLabel -> R8, behaviourDescription -> R6")
     slot_key: NoNulStr = Field(..., description="from review.slot; never built by hand")
-    text: NoNulStr
+    text: NoNulText
 
 
 class UpdateFlowchartRequest(BaseModel):
     flowchart_id: NoNulStr = Field(
         ..., description="the flowchart's function id — `flowchartId` from R11 or R7; never "
                          "built by hand")
-    labels: Dict[NoNulStr, NoNulStr] = Field(
-        ..., description="{nodeId: new text} — ONLY the labels the reviewer changed. "
-                         "Node ids come from R7's `labels[].nodeId`.")
+    labels: Dict[NoNulStr, NoNulText] = Field(
+        ..., max_length=2_000,
+        description="{nodeId: new text} — ONLY the labels the reviewer changed. "
+                    "Node ids come from R7's `labels[].nodeId`.")
 
     # Without this Swagger renders a Dict[str, str] as {"additionalProp1": "string", ...},
     # which reads as three required fields with meaningless names.
@@ -104,7 +111,7 @@ class UpdateFlowchartRequest(BaseModel):
 class UpdateBehaviourRequest(BaseModel):
     function_id: NoNulStr
     external_caller_id: NoNulStr
-    bullets: List[NoNulStr]
+    bullets: List[NoNulText] = Field(..., max_length=500)
 
 
 # ---------------------------------------------------------------------------
@@ -123,11 +130,17 @@ def _connection():
     """
     try:
         from core.db import get_engine, is_database_configured
-        if not is_database_configured():
-            raise RuntimeError("no database is configured")
-        return get_engine()
+        configured = is_database_configured()
+        if configured:
+            return get_engine()
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        # The error's own text (a driver message, a host name) is for the server log, not the
+        # caller (RF-9).
+        _log.error("review: the corrections' database cannot be reached: %s: %s",
+                   type(exc).__name__, exc)
+        raise HTTPException(status_code=503, detail=(
+            "the corrections' database cannot be reached; the server log has the detail"))
+    raise HTTPException(status_code=503, detail="no database is configured")
 
 
 def _swe4_deriver(cx, models):

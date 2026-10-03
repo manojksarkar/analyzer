@@ -166,6 +166,34 @@ class TestUpdatingASlot:
                        json={"slot_kind": "description", "slot_key": FID, "text": "   "})
         assert r.status_code == 422
 
+    def test_a_text_longer_than_a_correction_can_be_is_422(self, client, review_db, auth_header):
+        """A 5 MB "correction" was accepted (RF-10). The page caps one at 2,000 characters."""
+        from api.routes.text_overrides import MAX_TEXT
+        r = client.put(BASE + "/overrides/slot", headers=auth_header,
+                       json={"slot_kind": "description", "slot_key": FID,
+                             "text": "x" * (MAX_TEXT + 1)})
+        assert r.status_code == 422 and "text" in str(r.json())
+        r = client.put(BASE + "/overrides/slot", headers=auth_header,
+                       json={"slot_kind": "description", "slot_key": FID,
+                             "text": "Within the limit. " * 100})
+        assert r.status_code == 200, r.text
+
+    def test_an_unreachable_database_does_not_say_why_to_the_caller(self, monkeypatch):
+        """The driver's own message is for the server log (RF-9)."""
+        import pytest as _pytest
+        from fastapi import HTTPException
+        from api.routes import text_overrides as to
+        import core.db as core_db
+        monkeypatch.setattr(core_db, "is_database_configured", lambda: True)
+
+        def down():
+            raise RuntimeError("connection to server at 10.0.0.5 port 5432 failed: password for "
+                               "user analyzer")
+        monkeypatch.setattr(core_db, "get_engine", down)
+        with _pytest.raises(HTTPException) as exc:
+            to._connection()
+        assert exc.value.status_code == 503 and "10.0.0.5" not in exc.value.detail
+
     def test_an_unknown_slot_is_404(self, client, review_db, auth_header):
         r = client.put(BASE + "/overrides/slot", headers=auth_header,
                        json={"slot_kind": "description", "slot_key": "Nope|Nope|gone|",
