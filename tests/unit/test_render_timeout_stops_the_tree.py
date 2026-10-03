@@ -40,9 +40,11 @@ def test_a_timeout_does_not_wait_for_a_grandchild_holding_the_pipes(tmp_path):
         "open(%r, 'w').write(str(g.pid))\n"
         "time.sleep(120)\n" % str(pidfile), encoding="utf-8")
     t0 = time.monotonic()
+    # 15 s, not 3: on a loaded machine the child had not yet started its grandchild (and written
+    # its pid) when 3 s ran out. Still far below the grandchild's 120 s.
     with pytest.raises(subprocess.TimeoutExpired):
-        run_capture([sys.executable, str(script)], timeout=3, shell=SHELL)
-    assert time.monotonic() - t0 < 40, "waited for the grandchild instead of stopping it"
+        run_capture([sys.executable, str(script)], timeout=15, shell=SHELL)
+    assert time.monotonic() - t0 < 60, "waited for the grandchild instead of stopping it"
 
     psutil = pytest.importorskip("psutil")
     pid = int(pidfile.read_text())

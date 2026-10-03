@@ -295,6 +295,7 @@ def cmd_generate(a) -> int:
     # The phases mark how far they got on the version row (`set_pipeline_status`), which is
     # what `resume` and `progress` read. They find the version here, as under the API.
     os.environ["ANALYZER_VERSION_ID"] = a.version_id
+    _retry_connects_for_run()
     from core.version_run import VersionBusy, writing
     try:
         with writing(a.version_id, command="generate", argv=getattr(a, "_argv", None),
@@ -369,6 +370,16 @@ def _generate(a, name, branch, commit, scope, common, generate_full, generate_in
     return 0
 
 
+def _retry_connects_for_run() -> None:
+    """This process is a run from here on: its database engine, made earlier for the checks,
+    tries a refused or timed-out connection again (core.db.retry_connects)."""
+    try:
+        from core.db import retry_connects_for_run
+        retry_connects_for_run()
+    except Exception:                               # noqa: BLE001 - the run goes on without
+        pass
+
+
 def _register_for_review(project_id: str, version_id: str) -> int:
     """Record the version's documents for review and approval, and open their review; returns
     how many were new. Idempotent: what is recorded already is left alone.
@@ -423,9 +434,9 @@ def cmd_register(a) -> int:
 
 
 
-def _refuse_stale_export(version_id: str, doc_type: str = None) -> int:
+def _refuse_stale_export(version_id: str, doc_type: str = None, *, quiet: bool = False) -> int:
     """0 if this version's `doc_type` documents are safe to export only (REQ-AP-04), 2 if they
-    would ship stale text.
+    would ship stale text (said on stderr unless `quiet`).
 
     Asked about the documents this export writes: a SWE.3 re-derive does not make the SWE.4 specs
     current, and SWE.4 specs a SWE.3 export does not print must not hold it up.
@@ -449,8 +460,9 @@ def _refuse_stale_export(version_id: str, doc_type: str = None) -> int:
             print(f"note: could not check whether the views are up to date ({exc}).",
                   file=sys.stderr)
             return 0
-        print(str(exc), file=sys.stderr)
-        print("\n  Or re-run with --force to export anyway.", file=sys.stderr)
+        if not quiet:
+            print(str(exc), file=sys.stderr)
+            print("\n  Or re-run with --force to export anyway.", file=sys.stderr)
         return 2
     return 0
 
@@ -539,9 +551,17 @@ def _render_version(a, *, scope, command: str, after=None):
     doc_type = a.doc_type or (store.read_manifest(a.version_id) or {}).get("docType") or "swe3"
     forced = bool(getattr(a, "force", False))
     if a.from_phase >= 4 and not forced:
-        rc = _refuse_stale_export(a.version_id, doc_type)
-        if rc:
-            return rc, None
+        if getattr(a, "_views_when_stale", False) \
+                and _refuse_stale_export(a.version_id, doc_type, quiet=True):
+            # `--from-phase auto`: the web app judged "export only" when the job was made; a
+            # correction saved while it waited made that stale. The views are made again
+            # instead of the re-export refused.
+            print("a correction is newer than the views: making them again first (phase 3).")
+            a.from_phase = 3
+        else:
+            rc = _refuse_stale_export(a.version_id, doc_type)
+            if rc:
+                return rc, None
 
     argv = ["--config", cfg, "--version-id", a.version_id, "--project-id", a.project_id,
             "--model-root", os.path.join(adir, "model"),
@@ -577,6 +597,7 @@ def _render_version(a, *, scope, command: str, after=None):
     argv.append(checkout)
 
     os.environ["ANALYZER_VERSION_ID"] = a.version_id      # the phases' progress marks (as generate)
+    _retry_connects_for_run()
     from core.version_run import VersionBusy, writing
     try:
         with writing(a.version_id, command=command, argv=getattr(a, "_argv", None),
@@ -738,6 +759,8 @@ def cmd_reexport(a) -> int:
     """
     a._name = a.version_id
     a.version_id = _version_id_for(a.project_id, a.version_id)       # this project's row, as generate
+    if a.from_phase == "auto":                  # 4, or 3 when a correction is newer (above)
+        a.from_phase, a._views_when_stale = 4, True
     components = getattr(a, "components", None)
     if a.scope and components:
         print("give --components or --scope, not both.", file=sys.stderr)
@@ -1501,9 +1524,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--force", action="store_true",
                    help="export even when a correction is newer than the derived views "
                         "(REQ-AP-04); the document will carry the previous text")
-    s.add_argument("--from-phase", type=int, default=3, choices=(2, 3, 4),
+    s.add_argument("--from-phase", type=lambda v: v if v == "auto" else int(v), default=3,
+                   choices=(2, 3, 4, "auto"),
                    help="2 = re-derive (units, components, summaries) then views + export; "
-                        "3 = views + export (default); 4 = export only")
+                        "3 = views + export (default); 4 = export only; auto = 4, or 3 when a "
+                        "correction is newer than the views (the web app's re-export)")
     s.add_argument("--components", metavar="A,B",
                    help="only these components (each must have been generated; `export` makes "
                         "the others). Default: every component the version has documents for.")

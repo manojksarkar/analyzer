@@ -199,6 +199,24 @@ def test_list_commits(client, auth_header):
     assert "commits" in data
 
 
+def test_commits_of_one_second_page_in_one_order(db):
+    """Author dates are whole seconds, so commits tie; with no tiebreaker a commit on a page
+    boundary came back on two pages and another on none (the web app reads every page)."""
+    import datetime
+    from api.models.domain import Commit
+    when = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+    shas = ["c%039d" % i for i in (5, 1, 4, 2, 3)]
+    for sha in shas:
+        db.commits.upsert(Commit(sha=sha, project_id="p1", branch="main", message="m",
+                                 author_name="a", author_email="a@x", committed_at=when,
+                                 has_version=False, version_id=None, doc_status="never"))
+    total = db.commits.list_for_project("p1", 1, 1000)[1]
+    pages = [c.sha for p in range(1, total + 1) for c in db.commits.list_for_project("p1", p, 1)[0]]
+    assert sorted(pages) == sorted(set(pages)) and set(shas) <= set(pages)
+    tied = [s for s in pages if s in shas]
+    assert tied == sorted(shas)
+
+
 def test_get_version(client, auth_header):
     # Get the first version from the list
     r = client.get("/api/v1/projects/p1/versions", headers=auth_header)

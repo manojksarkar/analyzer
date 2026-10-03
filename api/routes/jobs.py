@@ -294,6 +294,9 @@ def cancel_job(
         pipeline_runner.stop_background_run(job)
         if getattr(job, "mode", None) not in RENDER_MODES:
             pipeline_runner._release_draft_version(db, job)
+            # It may have finished unfollowed: then its version is whole and the job says so.
+            pipeline_runner._finish_if_it_finished(db, job)
+            job = db.jobs.get(job_id) or job
     return {"job": _job_dict(job)}
 
 

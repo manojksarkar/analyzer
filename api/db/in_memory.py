@@ -508,6 +508,7 @@ class _InMemCommitRepo(ICommitRepository):
             copy.deepcopy(c) for c in self._store.values()
             if c.project_id == project_id
         ]
+        items.sort(key=lambda c: c.sha)                     # a tie stays in one order (as SQL)
         items.sort(key=lambda c: c.committed_at, reverse=True)
         total = len(items)
         start = (page - 1) * per_page

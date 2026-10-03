@@ -402,3 +402,99 @@ class TestAfterTheThirdReview:
         vid = job.version_id
         assert pr.delete_version(db, vid, only_draft=True) is True
         assert db.versions.get(vid) is None and db.jobs.get(job.id).version_id is None
+
+
+class TestAfterTheFourthReview:
+    """The late-cancel finish was in `_run` only; a run followed again after a restart, a web
+    resume and a cancel of a run nothing followed left a finished version saying "Generating…"."""
+
+    class _Runs:
+        def __init__(self, exit_code):
+            self.exit_code = exit_code
+
+        def find_job_run(self, root, vid, job_id):
+            return {"run_dir": "runs/" + vid, "pid": 1, "create_time": 1.0}
+
+        def read_exit(self, run_dir):
+            return self.exit_code
+
+    def _finished_version(self, db, tag):
+        project = _project(db)
+        job = _job(db, project, tag)
+        v = db.versions.get(job.version_id)
+        v.status = "in_review"                               # its documents are recorded
+        db.versions.update(v)
+        return project, job
+
+    def test_a_run_followed_again_after_a_restart(self, db, monkeypatch):
+        project, job = self._finished_version(db, "v8.4.0")
+        monkeypatch.setattr(pr, "_frozen_run_module", lambda: self._Runs(0))
+        done = []
+        monkeypatch.setattr(pr, "_complete", lambda d, jid, force=False: done.append((jid, force)))
+
+        def follow(d, jid, run, **kw):
+            j = d.jobs.get(jid)
+            j.status = "cancelled"
+            d.jobs.update(j)
+            return True
+        monkeypatch.setattr(pr, "_follow_detached", follow)
+        pr._refollow(db, job.id, {"pid": 1}, render=False)
+        assert done == [(job.id, True)] and db.versions.get(job.version_id) is not None
+
+    def test_a_web_resume_stopped_half_way_stays_cancelled(self, db, monkeypatch):
+        """Its version had documents before the resume began; the run did not finish."""
+        project, job = self._finished_version(db, "v8.5.0")
+        monkeypatch.setattr(pr, "_frozen_run_module", lambda: self._Runs(None))
+        done = []
+        monkeypatch.setattr(pr, "_complete", lambda d, jid, force=False: done.append((jid, force)))
+
+        def execute(d, jid, cmd, **kw):
+            j = d.jobs.get(jid)
+            j.status = "cancelled"
+            d.jobs.update(j)
+            return False
+        monkeypatch.setattr(pr, "_execute_detached", execute)
+        monkeypatch.setattr(pr, "_engine_db_env", lambda d: {})
+        pr._run_resume(db, job.id, render=False, first_phase=3)
+        assert done == [] and db.jobs.get(job.id).status == "cancelled"
+        assert db.versions.get(job.version_id) is not None
+
+    def test_a_web_resume_that_finished_before_the_cancel(self, db, monkeypatch):
+        project, job = self._finished_version(db, "v8.6.0")
+        monkeypatch.setattr(pr, "_frozen_run_module", lambda: self._Runs(3))
+        done = []
+        monkeypatch.setattr(pr, "_complete", lambda d, jid, force=False: done.append((jid, force)))
+
+        def execute(d, jid, cmd, **kw):
+            j = d.jobs.get(jid)
+            j.status = "cancelled"
+            d.jobs.update(j)
+            return True
+        monkeypatch.setattr(pr, "_execute_detached", execute)
+        monkeypatch.setattr(pr, "_engine_db_env", lambda d: {})
+        pr._run_resume(db, job.id, render=False, first_phase=3)
+        assert done == [(job.id, True)]
+
+    def test_cancelling_a_run_that_finished_unfollowed(self, db, client, auth_header,
+                                                       monkeypatch):
+        project, job = self._finished_version(db, "v8.7.0")
+        TestAfterTheThirdReview()._admin(db, project)
+        monkeypatch.setattr(pr, "_frozen_run_module", lambda: self._Runs(0))
+        monkeypatch.setattr(pr, "stop_background_run", lambda j: False)
+
+        def complete(d, jid, force=False):
+            j = d.jobs.get(jid)
+            j.status = "complete"
+            d.jobs.update(j)
+        monkeypatch.setattr(pr, "_complete", complete)
+        r = client.post(f"/api/v1/projects/{project.id}/jobs/{job.id}/cancel", headers=auth_header)
+        assert r.status_code == 200 and r.json()["job"]["status"] == "complete"
+        assert db.versions.get(job.version_id) is not None
+
+    def test_a_failed_reexport_does_not_say_resume(self, db):
+        """`resume` carries on a generation; a re-export is started again."""
+        project = _project(db)
+        job = _job(db, project, "v8.8.0")
+        assert "analyzer.py resume" in pr._resume_hint(job)
+        job.mode = "reexport"
+        assert "resume" not in pr._resume_hint(job)

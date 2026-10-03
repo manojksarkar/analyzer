@@ -605,6 +605,22 @@ class TestItIsWiredIntoReexport:
         """A guard with no override becomes something people work around by other means."""
         assert '"--force"' in self._source()
 
+    def test_the_web_s_auto_makes_the_views_again_instead_of_refusing(self):
+        """The web app judges "export only" when it makes the job; a correction saved while the
+        job waited made the process refuse (review 2026-10-04). `--from-phase auto` goes back to
+        Phase 3 instead -- only `auto`: a plain `--from-phase 4` still refuses."""
+        import analyzer
+        a = analyzer.build_parser().parse_args(
+            ["reexport", "--project-id", "p", "--version-id", "v", "--from-phase", "auto"])
+        assert a.from_phase == "auto"
+        src = self._source()
+        gate = src[src.index("if a.from_phase >= 4 and not forced:"):]
+        gate = gate[:gate.index("argv = [")]
+        assert (gate.index("_views_when_stale") < gate.index("a.from_phase = 3")
+                < self.CALL.search(gate).start())
+        body = src[src.index("def cmd_reexport("):]
+        assert "a.from_phase, a._views_when_stale = 4, True" in body[:body.index("\ndef ")]
+
 
 class TestTheApiRederivesRatherThanRefusing:
     """The same question, answered differently because the asker is different.

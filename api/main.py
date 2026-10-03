@@ -245,11 +245,33 @@ async def global_exception_handler(request: Request, exc: Exception):
         headers = {"Access-Control-Allow-Origin": origin,
                    "Access-Control-Allow-Credentials": "true",
                    "Vary": "Origin"}
+    status, code, message = 500, "INTERNAL_ERROR", str(exc)
+    if _database_error(exc):
+        # A driver's text names the host, the database, the SQL and its parameters: it is for the
+        # server log -- Starlette logs the traceback after this answer -- not the caller (RF-9).
+        from .services.pipeline_runner import _db_unavailable
+        if _db_unavailable(exc):
+            status, code = 503, "DATABASE_UNAVAILABLE"
+            message = ("The database did not answer. Try again in a minute; "
+                       "the server log has the detail.")
+        else:
+            message = "A database error; the server log has the detail."
     return JSONResponse(
-        status_code=500,
-        content={"error": {"code": "INTERNAL_ERROR", "message": str(exc), "status": 500}},
+        status_code=status,
+        content={"error": {"code": code, "message": message, "status": status}},
         headers=headers,
     )
+
+
+def _database_error(exc: BaseException) -> bool:
+    """An error raised by the database or its driver, wrapped by SQLAlchemy or not."""
+    try:
+        from sqlalchemy import exc as sa_exc
+    except ImportError:                                      # pragma: no cover
+        return False
+    if isinstance(exc, (sa_exc.DBAPIError, sa_exc.TimeoutError, sa_exc.DisconnectionError)):
+        return True
+    return type(exc).__module__.split(".")[0] in ("psycopg", "psycopg2", "sqlite3")
 
 # ---------------------------------------------------------------------------
 # Register routers under /api/v1

@@ -25,7 +25,7 @@ import sys
 from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import AfterValidator, BaseModel, Field, StringConstraints
+from pydantic import AfterValidator, BaseModel, Field, StringConstraints, field_validator
 
 from ..db.in_memory import InMemoryDatabase
 from ..db.session import get_db
@@ -113,6 +113,16 @@ class UpdateBehaviourRequest(BaseModel):
     external_caller_id: NoNulStr
     bullets: List[NoNulText] = Field(..., max_length=500)
 
+    @field_validator("bullets")
+    @classmethod
+    def _one_text_in_all(cls, bullets: List[str]) -> List[str]:
+        """The bullets are ONE cell of the document, printed one per line: the limit on a
+        correction is on all of them together. Per bullet, 500 of 10,000 characters was a
+        5 MB cell (RF-10)."""
+        if sum(len(b) for b in bullets) + max(len(bullets) - 1, 0) > MAX_TEXT:
+            raise ValueError(f"the bullets together must be at most {MAX_TEXT} characters")
+        return bullets
+
 
 # ---------------------------------------------------------------------------
 # plumbing
@@ -185,6 +195,13 @@ def _as_http(exc: Exception) -> HTTPException:
         return HTTPException(status_code=409, detail=(
             "another save of this text finished first; nothing was saved -- reload it and "
             "save again"))
+    from ..services.pipeline_runner import _db_unavailable
+    if _db_unavailable(exc):
+        _log.error("review: the corrections' database did not answer: %s: %s",
+                   type(exc).__name__, exc)
+        return HTTPException(status_code=503, detail=(
+            "the corrections' database cannot be reached; nothing was changed, and the server "
+            "log has the detail"))
     _log.exception("review route failed")
     return HTTPException(status_code=500, detail=(
         "the request failed because of an error on the server (%s); nothing was changed, and "

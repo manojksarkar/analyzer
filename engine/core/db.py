@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import unicodedata
+import weakref
 from contextlib import contextmanager
 from typing import Optional
 
@@ -244,14 +245,22 @@ def _is_connect_error(exc: BaseException) -> bool:
     return any(c.__name__ == "OperationalError" for c in type(exc).__mro__)
 
 
+#: The engines that already try again (`retry_connects`): one listener each, not one per call.
+_RETRYING: "weakref.WeakSet" = weakref.WeakSet()
+
+
 def retry_connects(engine) -> None:
     """Make `engine` try a refused or timed-out connection again (`CONNECT_RETRIES`) instead of
     failing at once. For the phases of a run (`ANALYZER_VERSION_ID` set): one connection attempt
     that timed out on a busy server failed a whole component of a run that lasts days (it has to
-    be made again with `resume`). An interactive command keeps failing fast."""
+    be made again with `resume`). An interactive command keeps failing fast. Once per engine."""
     import sys
     import time
     from sqlalchemy import event
+
+    if engine in _RETRYING:
+        return
+    _RETRYING.add(engine)
 
     @event.listens_for(engine, "do_connect")
     def _connect(dialect, conn_rec, cargs, cparams):
@@ -264,6 +273,14 @@ def retry_connects(engine) -> None:
                 print(f"note: the database did not accept a connection ({type(exc).__name__}); "
                       f"trying again in {wait} s", file=sys.stderr, flush=True)
                 time.sleep(wait)
+
+
+def retry_connects_for_run() -> None:
+    """The shared engine tries again too once a command has become a run (`analyzer.py` sets
+    `ANALYZER_VERSION_ID` after it has already read the database, so its engine was made
+    without). Postgres only; nothing when no engine was made yet -- `get_engine` does it then."""
+    if _ENGINE is not None and _ENGINE.dialect.name == "postgresql":
+        retry_connects(_ENGINE)
 
 
 _FK_PRAGMA_INSTALLED = False

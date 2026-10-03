@@ -198,6 +198,11 @@ class _LockSession:
         self.app = f"analyzer {command} pid {os.getpid()} on {socket.gethostname()}"[:63]
         args = dict(self._KEEPALIVE) if engine.dialect.driver.startswith("psycopg") else {}
         self._engine = create_engine(engine.url, poolclass=NullPool, connect_args=args)
+        if self._engine.dialect.name == "postgresql":
+            # A busy server's refused or timed-out connection is tried again, not the run failed
+            # at its start or its lock left untaken (a heartbeat tries again anyway).
+            from core.db import retry_connects
+            retry_connects(self._engine)
         self._cx = None
         self._held = False
         self._stop = threading.Event()

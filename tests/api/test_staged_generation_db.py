@@ -329,7 +329,7 @@ class TestWebRunLocking:
         pr._run_reexport(sql_db, job.id)
         assert locks == []
         assert seen["cmd"][2:] == ["reexport", "--project-id", "p1", "--version-id", version.id,
-                                   "--from-phase", "4", "--doc-type", "all",
+                                   "--from-phase", "auto", "--doc-type", "all",
                                    "--components", "Layer1.Math,Layer2.Gpio"]
         assert seen["kw"]["phase_start"] == 4
 

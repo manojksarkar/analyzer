@@ -523,7 +523,7 @@ python analyzer.py reexport --project-id myproj --version-id v2 --from-phase 4 -
 
 | Flag | Effect |
 |---|---|
-| `--from-phase` | 2 = re-derive, then views + export; 3 = views + export (default); 4 = export only |
+| `--from-phase` | 2 = re-derive, then views + export; 3 = views + export (default); 4 = export only; `auto` = 4, or 3 when a correction is newer than the views (what the web app's re-export passes) |
 | `--components A,B` | only these components; each must have been generated (`export` makes the others). Default: every component the version has documents for, whichever run made them. |
 | `--scope` | a scope instead of `--components`, unchecked. The model covers the layers the version parsed, so any component of them renders. |
 | `--detach` | in the background, on a frozen copy of the code |
@@ -548,7 +548,8 @@ UT export, SWE.3 on what a SWE.3 run built — so a flowchart label does not hol
 that embeds no flowcharts (`views.flowcharts` off, the default). A correction saved through the web
 app on a version with SWE.4 output re-derives that component's SWE.4 specs at once, so
 `--from-phase 4 --doc-type swe4` right after it is allowed and prints the corrected text.
-`--from-phase 2` and `3` are never refused: they apply every correction on their way through.
+`--from-phase 2` and `3` are never refused: they apply every correction on their way through;
+`--from-phase auto` makes the views again instead of refusing.
 
 It needs the version's commit still checked out, because flowcharts and line numbers are read
 from the source. If the checkout is gone it says so rather than producing an empty document.
@@ -580,7 +581,7 @@ python analyzer.py reexport --project-id myproj --version-id v1 --unit Utils
 ```
 
 `--from-phase 3` is the **default**, so adding it changes nothing — the two commands are
-identical. `reexport` can never re-parse: `--from-phase` accepts only 2, 3 and 4. There is no
+identical. `reexport` can never re-parse: `--from-phase` accepts only 2, 3, 4 and `auto`. There is no
 way for it to "start from the beginning".
 
 **Is it safe for the data?** Yes. Phases 3 and 4 only READ the model — verified by running a

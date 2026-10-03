@@ -194,6 +194,52 @@ class TestUpdatingASlot:
             to._connection()
         assert exc.value.status_code == 503 and "10.0.0.5" not in exc.value.detail
 
+    def test_a_connection_refused_at_connect_does_not_say_why_either(
+            self, review_db, auth_header, monkeypatch):
+        """The engine is made without a connection; the server is reached at `.connect()`,
+        outside `_connection()`'s guard. The driver's text (host, port, user) went to the caller
+        through the 500 handler's `str(exc)` (RF-9, second half)."""
+        from fastapi.testclient import TestClient
+        from sqlalchemy import exc as sa_exc
+        from api.main import app
+        from api.routes import text_overrides as to
+
+        class Down:
+            def connect(self):
+                raise sa_exc.OperationalError(
+                    "SELECT 1", {}, Exception("connection to server at 10.0.0.5 port 5432 "
+                                              "failed: timeout expired"))
+            begin = connect
+
+        monkeypatch.setattr(to, "_connection", lambda: Down())
+        raw = TestClient(app, raise_server_exceptions=False)
+        r = raw.get(BASE + "/overrides/slot", headers=auth_header,
+                    params={"slot_kind": "description", "slot_key": FID})
+        assert r.status_code == 503, r.text
+        assert "10.0.0.5" not in r.text and "SELECT" not in r.text
+        assert r.json()["error"]["code"] == "DATABASE_UNAVAILABLE"
+
+    def test_any_other_database_error_is_a_500_without_its_sql(
+            self, review_db, auth_header, monkeypatch):
+        from fastapi.testclient import TestClient
+        from sqlalchemy import exc as sa_exc
+        from api.main import app
+        from api.routes import text_overrides as to
+
+        class Broken:
+            def connect(self):
+                raise sa_exc.ProgrammingError(
+                    "SELECT secret_column FROM versions", {"id": "ver1"},
+                    Exception("column secret_column does not exist"))
+            begin = connect
+
+        monkeypatch.setattr(to, "_connection", lambda: Broken())
+        raw = TestClient(app, raise_server_exceptions=False)
+        r = raw.get(BASE + "/overrides/slot", headers=auth_header,
+                    params={"slot_kind": "description", "slot_key": FID})
+        assert r.status_code == 500, r.text
+        assert "secret_column" not in r.text
+
     def test_an_unknown_slot_is_404(self, client, review_db, auth_header):
         r = client.put(BASE + "/overrides/slot", headers=auth_header,
                        json={"slot_kind": "description", "slot_key": "Nope|Nope|gone|",
@@ -462,6 +508,19 @@ class TestBehaviourRow:
         assert r.json()["bullets"] == ["start calls doThing to prime the pump",
                                        "doThing returns the pump state"]
         assert r.json()["llmText"] == "start calls doThing"
+
+    def test_the_bullets_together_are_one_text_and_have_its_limit(
+            self, client, review_db, auth_header):
+        """Each bullet within the limit, 500 of them a 5 MB cell (RF-10)."""
+        from api.routes.text_overrides import MAX_TEXT
+        r = client.put(BASE + "/overrides/behaviour", headers=auth_header,
+                       json={"function_id": FID, "external_caller_id": CALLER,
+                             "bullets": ["x" * (MAX_TEXT // 2)] * 3})
+        assert r.status_code == 422 and "bullets" in r.text
+        r = client.put(BASE + "/overrides/behaviour", headers=auth_header,
+                       json={"function_id": FID, "external_caller_id": CALLER,
+                             "bullets": ["x" * 100] * 10})
+        assert r.status_code == 200, r.text
 
     def test_an_unknown_caller_is_404(self, client, review_db, auth_header):
         r = client.put(BASE + "/overrides/behaviour", headers=auth_header,

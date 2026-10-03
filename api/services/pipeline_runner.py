@@ -700,10 +700,17 @@ def _finish_if_it_finished(db: Any, job: Any) -> None:
     """A cancel that came too late: the run had finished and recorded its documents, so its
     version is no longer a draft and was kept. Finalise it as a finished run (`_complete`) --
     left as it was, it said "Generating…" for ever, with no functions registered -- and the job
-    says complete: the run did."""
+    says complete: the run did.
+
+    A background run says whether it finished (its exit code): a resume of a version that had
+    documents already starts out of draft, and stopping it half-way is a cancel, not a finish."""
     vid = getattr(job, "version_id", None)
     v = db.versions.get(vid) if vid else None
     if v is None or getattr(v, "status", None) == "draft":
+        return
+    fr = _frozen_run_module()
+    run = fr.find_job_run(_data_root(), vid, job.id) if fr is not None else None
+    if run is not None and fr.read_exit(run["run_dir"]) not in (0, 3):
         return
     _append_log(job.id, "The run had finished before the cancel; its version is kept.")
     _complete(db, job.id, force=True)
@@ -1833,6 +1840,10 @@ STOPPED_MESSAGE = ("Stopped: the run's process ended before it finished -- the m
 
 
 def _resume_hint(job: Any) -> str:
+    from ..models.domain import REEXPORT_MODE
+    if getattr(job, "mode", None) == REEXPORT_MODE:
+        # The version's documents stand as they were; a re-export is started again, not resumed.
+        return "The version's documents are as they were before this re-export."
     return (f"What the run made is kept. To carry it on from where it stopped, on the server: "
             f"python analyzer.py resume --project-id {job.project_id} --version-id "
             f"{job.version_id} --detach")
@@ -2188,6 +2199,7 @@ def _refollow(db: Any, job_id: str, run: dict, render: bool) -> None:
             job = db.jobs.get(job_id)
             if job is not None and job.status == "cancelled" and not render:
                 _release_draft_version(db, job)
+                _finish_if_it_finished(db, job)
         except Exception as exc:                         # noqa: BLE001 - cleanup only
             _log.warning("job %s: draft cleanup after cancel failed: %s", job_id, exc)
         _cleanup_state(job_id)
@@ -2949,9 +2961,12 @@ def _reexport_detached(db: Any, job_id: str, first_phase: int, doc_type: str) ->
     `_reexport_from_phase`), of `doc_type`. Same answer as `_do_reexport`."""
     job = db.jobs.get(job_id)
     scope = job.scope or {}
+    # Export only was judged when the job was made; a correction saved while it waited for its
+    # turn would make the process refuse. `auto` makes the views again instead.
     cmd = [sys.executable, str(get_settings().repo_root / "analyzer.py"), "reexport",
            "--project-id", job.project_id, "--version-id", job.version_id,
-           "--from-phase", str(first_phase), "--doc-type", doc_type]
+           "--from-phase", "auto" if first_phase >= 4 else str(first_phase),
+           "--doc-type", doc_type]
     names = scope.get("names") or []
     if scope.get("type") == "component" and names:
         cmd += ["--components", ",".join(names)]
@@ -3186,6 +3201,7 @@ def _run_resume(db: Any, job_id: str, render: bool, first_phase: int) -> None:
             job = db.jobs.get(job_id)
             if job is not None and job.status == "cancelled" and not render:
                 _release_draft_version(db, job)
+                _finish_if_it_finished(db, job)
         except Exception as exc:              # noqa: BLE001 - cleanup only
             _log.warning("job %s: draft cleanup after cancel failed: %s", job_id, exc)
         _cleanup_state(job_id)

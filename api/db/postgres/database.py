@@ -203,7 +203,8 @@ class _CommitRepo(_Base, ICommitRepository):
         where = c.c.project_id == project_id
         with self._engine.connect() as cx:
             total = cx.execute(select(func.count()).select_from(c).where(where)).scalar_one()
-            stmt = (select(c).where(where).order_by(c.c.committed_at.desc())
+            # sha breaks a tie: commits of one second came back on two pages, or on none
+            stmt = (select(c).where(where).order_by(c.c.committed_at.desc(), c.c.sha)
                     .limit(per_page).offset((page - 1) * per_page))
             items = [from_row(Commit, r) for r in cx.execute(stmt)]
         return items, total

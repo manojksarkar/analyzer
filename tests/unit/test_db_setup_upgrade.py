@@ -194,4 +194,38 @@ class TestTheMigrationStamp:
     def test_setup_stamps_after_the_schema_is_in_place(self):
         src = open(os.path.join(PROJECT_ROOT, "tools", "db_setup.py"), encoding="utf-8").read()
         main = src[src.index("def main"):src.index("def _alembic_head")]
-        assert main.index("_add_missing_columns(") < main.index("INSERT INTO alembic_version")
+        assert main.index("_add_missing_columns(") < main.index("_stamp_head(eng)")
+
+    def _stamped(self, tmp_path, version):
+        eng = sa.create_engine(f"sqlite:///{tmp_path / 'db.sqlite'}")
+        if version is not None:
+            with eng.begin() as cx:
+                cx.execute(sa.text("CREATE TABLE alembic_version (version_num VARCHAR(32) "
+                                   "NOT NULL PRIMARY KEY)"))
+                if version:
+                    cx.execute(sa.text("INSERT INTO alembic_version VALUES (:v)"), {"v": version})
+        from db_setup import _stamp_head
+        said = _stamp_head(eng)
+        with eng.connect() as cx:
+            return said, [r[0] for r in cx.execute(sa.text("SELECT version_num FROM "
+                                                           "alembic_version"))]
+
+    def test_a_database_with_no_stamp_is_stamped_at_the_head(self, tmp_path):
+        from db_setup import _alembic_head
+        assert self._stamped(tmp_path, None)[1] == [_alembic_head()]
+        (tmp_path / "empty").mkdir()
+        assert self._stamped(tmp_path / "empty", "")[1] == [_alembic_head()]
+
+    def test_an_older_revision_of_this_checkout_is_moved_to_the_head(self, tmp_path):
+        from db_setup import _alembic_head
+        assert self._stamped(tmp_path, "0010_text_overrides")[1] == [_alembic_head()]
+
+    def test_a_newer_branch_s_revision_is_left_as_it_is(self, tmp_path):
+        """Several branches share a database. Stamping over a revision this checkout does not
+        have made Alembic apply that branch's migration again (review 2026-10-04)."""
+        said, stamp = self._stamped(tmp_path, "0017_from_another_branch")
+        assert stamp == ["0017_from_another_branch"] and "left as it is" in said
+
+    def test_a_revision_before_the_foreign_key_migration_is_left_as_it_is(self, tmp_path):
+        said, stamp = self._stamped(tmp_path, "0004_kb_and_plans")
+        assert stamp == ["0004_kb_and_plans"] and "left as it is" in said

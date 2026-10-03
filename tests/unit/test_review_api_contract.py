@@ -433,8 +433,10 @@ class TestSwaggerOffersTheValidSlotKinds:
         """422 naming the allowed values, rather than a 404 from deep in the service."""
         from fastapi.testclient import TestClient
         from api.main import app
-        with TestClient(app) as c:
-            r = c.get("/api/v1/projects/p1/versions/v1/overrides?slot_kind=notAKind")
+        # Not entered as a context manager: that runs the API's start-up, whose job sweep acts
+        # on the database config.local.json names -- a real one on a developer's machine.
+        c = TestClient(app)
+        r = c.get("/api/v1/projects/p1/versions/v1/overrides?slot_kind=notAKind")
         assert r.status_code in (401, 422), r.status_code
 
 
