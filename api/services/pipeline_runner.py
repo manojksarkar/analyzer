@@ -38,7 +38,7 @@ from types import SimpleNamespace
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional, Set
+from typing import Any, List, Optional, Set, Tuple
 
 from ..models.domain import (Version, Document, AnalysisJob, AnalysisPhase, REEXPORT_MODE,
                              EXPORT_MODE, RENDER_MODES)
@@ -579,6 +579,82 @@ def delete_version(db: Any, version_id: str, *, only_draft: bool = False) -> boo
             s.compare_results.c.baseline_version_id == version_id)))
         cx.execute(sa.delete(s.versions).where(cond))
     return True
+
+
+SCOPE_TYPES = ("project", "layer", "group", "component")
+
+
+def scope_problem(arch_layers: Any, scope: Any) -> Optional[Tuple[str, List[str]]]:
+    """Why a job's `scope` cannot run against this architecture, or None when it can.
+
+    Returns `(message, candidates)`: `candidates` are the names to choose from -- the matches of
+    an ambiguous name, or every valid one when the name matches nothing.
+
+    Resolved exactly as the engine will resolve it: over the `layers` this job's config is written
+    from (`_convert_layers`), with the engine's own resolvers (`core.config.resolve_group_id`,
+    `resolve_component_id`; a layer by its exact name, as `group_planner.plan_runs` takes it).
+    Asked when the job is requested, before a version tag is reserved: the run used to accept it
+    and stop in Phase 1 -- `Group 'My Sample' is ambiguous - 2 layers use that name` -- after the
+    tag was taken.
+    """
+    if scope is None:
+        return None
+    if not isinstance(scope, dict):
+        return ("scope must be an object: {\"type\": \"project|layer|group|component\", "
+                "\"names\": [...]}", [])
+    stype = scope.get("type") or "project"
+    if stype not in SCOPE_TYPES:
+        return ("scope type %r is not one of %s" % (stype, ", ".join(SCOPE_TYPES)),
+                list(SCOPE_TYPES))
+    names = scope.get("names") or []
+    if stype == "project" or not names:
+        return None
+    if not isinstance(names, list) or not all(isinstance(n, str) and n.strip() for n in names):
+        return ("scope names must be a list of non-empty strings", [])
+
+    from core.config import (ambiguous_group_message, get_flat_groups, resolve_component_id,
+                             resolve_group_id)
+    layers = _convert_layers(arch_layers or [])
+    groups = get_flat_groups({"layers": layers})
+    components = [c for comps in groups.values() if isinstance(comps, dict) for c in comps]
+
+    for name in names:
+        name = name.strip()
+        if stype == "layer":
+            if name not in layers:
+                return ("No layer %r in this project. Layers: %s" % (name, ", ".join(layers)),
+                        list(layers))
+            continue
+        if stype == "group":
+            resolved, candidates = resolve_group_id(groups, name)
+            if resolved:
+                continue
+            if candidates:
+                return ambiguous_group_message(name, candidates), candidates
+            hint = _other_kind_hint(name, components, "component")
+            return ("No group %r in this project.%s Groups: %s"
+                    % (name, hint, ", ".join(groups)), list(groups))
+        resolved, candidates = resolve_component_id(components, name)
+        if resolved:
+            continue
+        if candidates:
+            return ("Component %r is ambiguous - %d layers use that name: %s. Qualify it with "
+                    "the layer (e.g. %r), or select the layer instead."
+                    % (name, len(candidates), ", ".join(candidates), candidates[0]), candidates)
+        hint = _other_kind_hint(name, list(groups), "group")
+        return ("No component %r in this project.%s Components: %s"
+                % (name, hint, ", ".join(components)), components)
+    return None
+
+
+def _other_kind_hint(name: str, others: List[str], kind: str) -> str:
+    """A sentence telling the caller `name` is a `kind` (a group asked for as a component, or the
+    reverse), or "" when it is not one either. Matched by the same rule as a component."""
+    from core.config import resolve_component_id
+    resolved, candidates = resolve_component_id(others, name)
+    if resolved or candidates:
+        return " %r is a %s: use {\"type\": \"%s\"}." % (name, kind, kind)
+    return ""
 
 
 #: What a job a stopped server left behind says, on the job and in the Overview's banner.

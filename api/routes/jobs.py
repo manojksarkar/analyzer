@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import AsyncIterator, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from ..db.session import get_db
@@ -39,9 +39,16 @@ class StartJobRequest(BaseModel):
     # (mirrors the standalone /generate decision); "full" = force a full generation.
     # An explicit reference_version_id still wins under "auto".
     mode: str = "auto"
-    # {"type": "project|group|component", "names": [...]} — maps to run.py's
-    # --selected-group / --selected-component (mutually exclusive with layer_filter).
-    scope: Optional[dict] = None
+    # {"type": "project|layer|group|component", "names": [...]} — maps to run.py's
+    # --selected-layer / --selected-group / --selected-component (mutually exclusive with
+    # layer_filter). Checked against the project's architecture before anything is reserved.
+    scope: Optional[dict] = Field(
+        None, description=(
+            '{"type": "project|layer|group|component", "names": [...]}. Name a group or a '
+            'component by its LAYER-QUALIFIED id, "Layer1.My Sample" / "Layer1.Sample Core": '
+            'a bare name that two layers both use is ambiguous, and is refused with 400 '
+            'INVALID_SCOPE naming the candidates. A layer by its name, "Layer1". Omit for the '
+            'whole project.'))
     no_llm: bool = False                       # disable LLM descriptions/behaviour/summaries
     data_dict_id: Optional[str] = None         # resolved to workspaces/<pid>/datadict/<id>.csv
     # M4.4 opt-in: in an incremental run, re-parse only the affected TUs and merge into the
@@ -133,6 +140,14 @@ def start_job(
     if (body.mode or "").strip() == REEXPORT_MODE:
         raise bad_request("A re-export is started with POST "
                           "/projects/{project_id}/versions/{version_id}/reexport, not as a new job.")
+    # The scope, resolved now as the run will resolve it -- an unknown or ambiguous name used to
+    # be accepted and to stop the run in Phase 1, after the version tag had been taken.
+    problem = pipeline_runner.scope_problem(project.architecture_layers, body.scope)
+    if problem:
+        message, candidates = problem
+        raise HTTPException(status_code=400, detail={
+            "code": "INVALID_SCOPE", "message": message, "status": 400,
+            "candidates": candidates})
     if db.versions.get_by_tag(project_id, version_name):
         raise conflict("VERSION_EXISTS",
                        f"Version '{version_name}' already exists in this project.")
