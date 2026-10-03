@@ -304,8 +304,26 @@ rather than typing one — Swagger URL-encodes it for you.
 
 | pair | runs | use it to try |
 |---|---|---|
-| `api_create_project.sample_full.example.json` + `api_start_job.sample_full.example.json` | group `Full`, the shipped defaults | every kind but `behaviourDescription`. Only `opsAdd`/`opsSub` are published in this scope, so most function slots show `shownIn: []` |
-| `api_create_project.sample_behaviour.example.json` + `api_start_job.sample_behaviour.example.json` | group `Layer1.My Sample`, one behaviour diagram per external caller (`views.sequenceDiagrams.filterMode: all_callers`) | `behaviourDescription` (R6): one row per external caller. With the default filter the sample still has 2 rows to correct, in the "Sample Core" document (the `CoreGateway` fixture) |
+| `api_create_project.sample_full.example.json` + `api_start_job.sample_full.example.json` | group `Layer1.Full`, the shipped defaults | every kind but `behaviourDescription`. Only `opsAdd`/`opsSub` are published in this scope, so most function slots show `shownIn: []` |
+| `api_create_project.sample_full.example.json` + `api_start_job.sample_core.example.json` | component `Layer1.Sample Core`, the shipped defaults | `behaviourDescription` (R6) under the default filter: the 2 rows of the `CoreGateway` fixture |
+| `api_create_project.sample_behaviour.example.json` + `api_start_job.sample_behaviour.example.json` | group `Layer1.My Sample`, one behaviour diagram per external caller (`views.sequenceDiagrams.filterMode: all_callers`) | `behaviourDescription` (R6): one row per external caller |
+
+**A job's `scope` names groups and components by their LAYER-QUALIFIED id** —
+`{"type": "group", "names": ["Layer1.My Sample"]}`, `{"type": "component", "names": ["Layer1.Sample
+Core"]}`; a layer by its name, `{"type": "layer", "names": ["Layer1"]}`. The sample's two layers both
+have a group `My Sample` with a component `Sample Core`, so the bare names are ambiguous. `POST
+/projects/{projectId}/jobs` checks the scope against the project's layers, with the engine's own
+resolver, before it reserves anything; a name it cannot place is **400**, and nothing is created:
+
+```json
+{ "detail": { "code": "INVALID_SCOPE", "status": 400,
+              "message": "Group 'My Sample' is ambiguous - 2 layers use that name: Layer1.My Sample, Layer2.My Sample. Qualify it with the layer (e.g. 'Layer1.My Sample'), or select the layer instead.",
+              "candidates": ["Layer1.My Sample", "Layer2.My Sample"] } }
+```
+
+`candidates` is the matches of an ambiguous name, or every valid name when it matches none. A
+version tag is taken only by a job that is running or finished: a failed or cancelled job gives
+its tag back.
 
 **To run the whole contract against a server** — onboard, generate, every correction, every
 read, undo, the mistakes, the re-export and the Word file — use `tools/review_api_test/` (its
