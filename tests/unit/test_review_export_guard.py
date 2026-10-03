@@ -694,3 +694,33 @@ class TestTheApiRederivesRatherThanRefusing:
 
         monkeypatch.setattr(core_db, "is_database_configured", _boom)
         assert pr._reexport_from_phase("v1") == 4
+
+
+class TestCorrectionsThatCouldNotBeLoaded:
+    """RF-1: Phase 3 could not load the corrections, built the views with the LLM's text, and
+    recorded the derivation anyway -- the guard then called the version up to date."""
+
+    def test_the_views_built_without_them_lose_their_stamp(self, tmp_path):
+        import datetime
+        from review import export_guard as eg
+        at = datetime.datetime(2026, 10, 4, tzinfo=datetime.timezone.utc)
+        eg.record_derivation(str(tmp_path), ["interfaceTables", "flowcharts"], ["Layer1.Lib"], at)
+        eg.forget_derivation(str(tmp_path), ["flowcharts"])
+        rec = eg.read_record(str(tmp_path / eg.DERIVATION_RECORD))
+        assert list(rec["views"]) == ["interfaceTables"]
+
+    def test_phase_3_does_not_vouch_for_views_built_without_them(self, tmp_path, monkeypatch):
+        import datetime
+        import core.db as cdb
+        import core.run_context as rc
+        import review.export_guard as eg
+        import run_views
+        calls = []
+        monkeypatch.setattr(run_views, "_OVERRIDES_UNAVAILABLE", True)
+        monkeypatch.setattr(eg, "record_derivation", lambda *a, **k: calls.append("record"))
+        monkeypatch.setattr(eg, "forget_derivation", lambda d, v: calls.append(("forget", list(v))))
+        monkeypatch.setattr(rc, "version_id", lambda: "v1")
+        monkeypatch.setattr(cdb, "is_database_configured", lambda: True)
+        run_views._record_derivation(str(tmp_path), ["flowcharts"], {}, {},
+                                     datetime.datetime.now(datetime.timezone.utc), None)
+        assert calls == [("forget", ["flowcharts"])]

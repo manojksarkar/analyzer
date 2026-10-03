@@ -511,6 +511,21 @@ def record_derivation(output_dir: str, views: Iterable[str], components: Iterabl
     return path
 
 
+def forget_derivation(output_dir: str, views: Iterable[str]) -> None:
+    """Drop `views` from the derivation record in `output_dir`: this run rebuilt them WITHOUT the
+    reviewers' corrections, which could not be loaded. No stamp may vouch for them then -- with
+    none, the guard calls them stale and asks for a re-derive, where a stamp would have let the
+    LLM's text ship as up to date (RF-1). Other views keep what earlier runs recorded."""
+    path = os.path.join(output_dir, DERIVATION_RECORD)
+    record = read_record(path)
+    if not record:
+        return
+    entries = {v: e for v, e in (record.get("views") or {}).items() if v not in set(views)}
+    record["views"] = dict(sorted(entries.items()))
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(record_text(record))
+
+
 def read_record(path_or_text) -> Optional[dict]:
     """A derivation record from a file path or its JSON text; None when absent or unreadable."""
     try:

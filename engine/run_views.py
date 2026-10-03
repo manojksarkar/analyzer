@@ -193,6 +193,11 @@ def _load_model():
 
 
 
+#: Set when this run could not load the reviewers' corrections (`_with_text_overrides`): its
+#: views are built without them, so it must not vouch for them (`_record_derivation`).
+_OVERRIDES_UNAVAILABLE = False
+
+
 def _with_text_overrides(config):
     """`config` plus this version's reviewer corrections (`REQ-AP-05`).
 
@@ -216,7 +221,11 @@ def _with_text_overrides(config):
             print("[run_views] applying %d reviewer correction(s) to this run" % n)
         return out
     except Exception as exc:                       # noqa: BLE001 - see docstring
-        print("[run_views] could not load text overrides: %s" % exc)
+        global _OVERRIDES_UNAVAILABLE
+        _OVERRIDES_UNAVAILABLE = True
+        print("[run_views] WARNING: could not load the reviewers' corrections (%s): these views "
+              "are built without them, and are left marked stale so that an export re-derives "
+              "them first" % exc)
         return config
 
 
@@ -302,6 +311,12 @@ def _record_derivation(output_dir, ran, model, config, read_at, layer_filter,
         from core.run_context import version_id as _vid
         from core.db import is_database_configured
         if not ran or not (_vid() and is_database_configured()):
+            return
+        if _OVERRIDES_UNAVAILABLE:
+            # Built without the corrections: no stamp for these views, so the export guard asks
+            # for a re-derive instead of calling the LLM's text up to date (RF-1).
+            from review.export_guard import forget_derivation
+            forget_derivation(output_dir, ran)
             return
         if config.get("_analyzerSelectedUnits"):
             print("[run_views] --selected-unit narrowed this run; not recorded as a derivation")
