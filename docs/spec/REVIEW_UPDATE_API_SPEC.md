@@ -305,7 +305,7 @@ rather than typing one — Swagger URL-encodes it for you.
 | pair | runs | use it to try |
 |---|---|---|
 | `api_create_project.sample_full.example.json` + `api_start_job.sample_full.example.json` | group `Full`, the shipped defaults | every kind but `behaviourDescription`. Only `opsAdd`/`opsSub` are published in this scope, so most function slots show `shownIn: []` |
-| `api_create_project.sample_behaviour.example.json` + `api_start_job.sample_behaviour.example.json` | group `Layer1.My Sample`, one behaviour diagram per external caller (`views.sequenceDiagrams.filterMode: all_callers`) | `behaviourDescription` (R6): 18 rows. The default filter draws none on the sample |
+| `api_create_project.sample_behaviour.example.json` + `api_start_job.sample_behaviour.example.json` | group `Layer1.My Sample`, one behaviour diagram per external caller (`views.sequenceDiagrams.filterMode: all_callers`) | `behaviourDescription` (R6): one row per external caller. With the default filter the sample still has 2 rows to correct, in the "Sample Core" document (the `CoreGateway` fixture) |
 
 **To run the whole contract against a server** — onboard, generate, every correction, every
 read, undo, the mistakes, the re-export and the Word file — use `tools/review_api_test/` (its

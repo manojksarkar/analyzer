@@ -50,8 +50,15 @@ Start context (read as needed, don't duplicate here):
 - **Consumers:** `docx_exporter` embeds the PNGs + descriptions in the §2.N **Dynamic Behaviour** section;
   **SWE.4** reads the same rows for its Dynamic Behaviour specs.
 - **Which callers get a diagram:** `views.sequenceDiagrams.filterMode`, default `skip_within_unit` when the
-  key is absent (`generator._get_filter_mode`). On `SampleCppProject` the default draws **no** row;
-  `all_callers` draws 18 for `Layer1.My Sample` (`engine/config/api_*.sample_behaviour.example.json`).
+  key is absent (`generator._get_filter_mode`): a row needs a caller in another component AND a call
+  into another unit of the function's own component. On `SampleCppProject` the default draws exactly
+  two rows, both in the "Sample Core" document — `CoreGateway`'s functions, each called from Lib and
+  calling `CoreStats` (`SampleCppProject/Layer1/Sample/Core/CoreGateway.h`; pinned by `tests/e2e/test_docx.py::
+  test_the_default_filter_draws_the_gateway_rows_and_nothing_else`). `all_callers` draws one row per
+  external caller (`engine/config/api_*.sample_behaviour.example.json`).
+- **Known defect (S3-11):** the view pairs the generator's diagrams with the function's DIRECT external
+  callers by position, while the generator also counts callers of callers. A function with an indirect
+  external caller gets a row labelled with one caller and drawn for another (`all_callers` only).
 - **Reviewer corrections** (`behaviourDescription` slots, engine-dev §8) are put back before the
   manifest write (`_apply_text_overrides`). A row is addressed by `(currentFunctionId, externalCallerId)` —
   **never** `externalUnitFunction`, a display label two callers can share — so every row keeps
