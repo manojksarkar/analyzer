@@ -355,3 +355,50 @@ class TestDiscardingAStoppedRun:
         r = client.delete(f"/api/v1/projects/{project.id}/versions/{base.version_id}",
                           headers=auth_header)
         assert r.status_code == 409 and r.json()["detail"]["code"] == "VERSION_IS_BASELINE"
+
+
+class TestAfterTheThirdReview:
+    def _admin(self, db, project):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        db.members.add_member(ProjectMember(
+            id="m" + uuid.uuid4().hex[:8], project_id=project.id, user_id="u1", role="admin",
+            status="active", invited_by="u1", invited_at=now, joined_at=now))
+
+    def test_no_version_is_deleted_while_any_run_of_its_project_is_at_work(self, db, client,
+                                                                          auth_header):
+        """A run records its baseline only at its end: until then nothing says which version it
+        builds on, and deleting that one failed the run at its very end."""
+        project = _project(db)
+        self._admin(db, project)
+        old = _job(db, project, "v8.0.0")
+        old.status = "complete"
+        db.jobs.update(old)
+        _job(db, project, "v8.1.0")                          # running, perhaps on v8.0.0
+        r = client.delete(f"/api/v1/projects/{project.id}/versions/{old.version_id}",
+                          headers=auth_header)
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "RUN_ACTIVE"
+        assert db.versions.get(old.version_id) is not None
+
+    def test_a_cancel_that_came_after_the_run_finished_keeps_the_version_whole(self, db,
+                                                                               monkeypatch):
+        """The run recorded its documents (the version left draft) before the cancel landed: the
+        version is kept -- and finalised, not left saying "Generating…"."""
+        project = _project(db)
+        job = _job(db, project, "v8.2.0")
+        v = db.versions.get(job.version_id)
+        v.status = "in_review"                               # its documents were recorded
+        db.versions.update(v)
+        job.status = "cancelled"
+        db.jobs.update(job)
+        done = []
+        monkeypatch.setattr(pr, "_complete", lambda d, jid, force=False: done.append((jid, force)))
+        with patch.object(pr, "_inner_run"):
+            pr._run(db, job.id)
+        assert done == [(job.id, True)] and db.versions.get(job.version_id) is not None
+
+    def test_a_cancelled_draft_goes_with_its_job_detached_in_one_step(self, db):
+        project = _project(db)
+        job = _job(db, project, "v8.3.0")
+        vid = job.version_id
+        assert pr.delete_version(db, vid, only_draft=True) is True
+        assert db.versions.get(vid) is None and db.jobs.get(job.id).version_id is None

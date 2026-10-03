@@ -222,26 +222,29 @@ def delete_version(
     if busy:
         raise conflict("VERSION_BUSY", f"Version '{version.tag or version_id}' is being written by "
                                        f"{busy}. Stop that run first.")
-    jobs = db.jobs.list_for_version(version_id)
-    if any(j.status in ("queued", "running", "paused") for j in jobs):
-        raise conflict("RUN_ACTIVE", f"A job is at work on version '{version.tag or version_id}'. "
-                                     f"Cancel it first.")
-    if any(getattr(v, "baseline_version_id", None) == version_id
-           for v in db.versions.list_for_project(project_id)):
+    # Any run of the project, not only this version's: a run being generated reads its baseline
+    # -- named by its job, or picked by the engine -- and records it only at its end, so the
+    # version may be that baseline without anything saying so yet. Deleting it would take the
+    # model and reuse rows the run reads, and fail the run at its very end.
+    project_versions = db.versions.list_for_project(project_id)
+    if any(j.status in ("queued", "running", "paused")
+           for v in project_versions for j in db.jobs.list_for_version(v.id)) \
+            or (db.jobs.get_current(project_id) is not None
+                and db.jobs.get_current(project_id).status in ("queued", "running", "paused")):
+        raise conflict("RUN_ACTIVE", "A run of this project is at work and may build on this "
+                                     "version. Delete it once the run has ended.")
+    busy = [v for v in project_versions if v.id != version_id
+            and pipeline_runner.version_writer_busy(db, v.id)]
+    if busy:
+        raise conflict("RUN_ACTIVE", "A run of this project is writing version "
+                                     f"'{busy[0].tag or busy[0].id}' and may build on this one. "
+                                     f"Delete it once that run has ended.")
+    if any(getattr(v, "baseline_version_id", None) == version_id for v in project_versions):
         raise conflict("VERSION_IS_BASELINE", f"Version '{version.tag or version_id}' is the "
                                               f"baseline of a later version, which reuses its work.")
-    for job in jobs:                         # the job's record stays; it no longer points here
-        job.version_id = None
-        db.jobs.update(job)
-    engine = getattr(db, "_engine", None)
-    if engine is not None:
-        from sqlalchemy import delete, or_
-        from ..db.postgres import schema as s
-        with engine.begin() as cx:
-            cx.execute(delete(s.compare_results).where(or_(
-                s.compare_results.c.current_version_id == version_id,
-                s.compare_results.c.baseline_version_id == version_id)))
-    db.versions.delete(version_id)
+    # Its jobs stay, naming no version; the jobs, its cached comparisons and the version itself
+    # go in one transaction (pipeline_runner.delete_version).
+    pipeline_runner.delete_version(db, version_id)
 
 
 # ---------------------------------------------------------------------------

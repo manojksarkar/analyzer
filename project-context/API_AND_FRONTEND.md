@@ -189,7 +189,7 @@ The Vite + React + TS app under `frontend/app/` ports every design HTML to a rou
 | `projects-empty.html` | `ProjectsEmptyPage.tsx` | `/projects/new` |
 | `project-detail.html` | `ProjectDetailPage.tsx` | `/projects/:projectId/overview` (index) |
 | `documents.html` | `DocumentsPage.tsx` | `/projects/:projectId/documents` |
-| `compare.html` | `ComparePage.tsx` | `/projects/:projectId/compare` |
+| `compare.html` | `ComparePage/` (by version id since 2026-10-04) | `/projects/:projectId/compare` |
 | `versions.html` | `VersionsPage.tsx` | `/projects/:projectId/versions` |
 | `team.html` | `TeamPage/` | `/projects/:projectId/team` |
 

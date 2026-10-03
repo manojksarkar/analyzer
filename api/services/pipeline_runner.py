@@ -504,13 +504,46 @@ def _release_draft_version(db: Any, job: Any) -> None:
     v = db.versions.get(vid)
     if v is None or getattr(v, "status", None) != "draft":
         return
-    job.version_id = None
-    db.jobs.update(job)
     try:
-        db.versions.delete(vid)
+        if delete_version(db, vid, only_draft=True):
+            job.version_id = None
     except Exception as exc:                                  # noqa: BLE001 - logged, not fatal
         _log.warning("job %s: could not delete its unfinished draft version %s: %s: %s",
                      job.id, vid, type(exc).__name__, exc)
+
+
+def delete_version(db: Any, version_id: str, *, only_draft: bool = False) -> bool:
+    """Delete a version, and first what points at it without ON DELETE CASCADE -- its jobs'
+    `version_id` (the jobs stay, naming no version) and cached comparisons -- in ONE transaction.
+    In two, a reader between them saw the job detached while the version was still there (the web
+    app took a cancelled run's draft for gone, and showed it again); and a job created between
+    them made the delete fail on its foreign key. `only_draft`: only while it is still a draft.
+    True when it was deleted."""
+    eng = getattr(db, "_engine", None)
+    if eng is None:                       # the in-memory backend: one process, no transactions
+        v = db.versions.get(version_id)
+        if v is None or (only_draft and getattr(v, "status", None) != "draft"):
+            return False
+        for j in db.jobs.list_for_version(version_id):
+            j.version_id = None
+            db.jobs.update(j)
+        db.versions.delete(version_id)
+        return True
+    import sqlalchemy as sa
+    from ..db.postgres import schema as s
+    cond = s.versions.c.id == version_id
+    if only_draft:
+        cond = cond & (s.versions.c.status == "draft")
+    with eng.begin() as cx:
+        if cx.execute(sa.select(s.versions.c.id).where(cond).with_for_update()).first() is None:
+            return False
+        cx.execute(sa.update(s.analysis_jobs).where(s.analysis_jobs.c.version_id == version_id)
+                   .values(version_id=None))
+        cx.execute(sa.delete(s.compare_results).where(sa.or_(
+            s.compare_results.c.current_version_id == version_id,
+            s.compare_results.c.baseline_version_id == version_id)))
+        cx.execute(sa.delete(s.versions).where(cond))
+    return True
 
 
 #: What a job a stopped server left behind says, on the job and in the Overview's banner.
@@ -657,9 +690,23 @@ def _run(db: Any, job_id: str) -> None:
             job = db.jobs.get(job_id)
             if job is not None and job.status == "cancelled":
                 _release_draft_version(db, job)
+                _finish_if_it_finished(db, job)
         except Exception as exc:                              # noqa: BLE001 - cleanup only
             _log.warning("job %s: draft cleanup after cancel failed: %s", job_id, exc)
         _cleanup_state(job_id)
+
+
+def _finish_if_it_finished(db: Any, job: Any) -> None:
+    """A cancel that came too late: the run had finished and recorded its documents, so its
+    version is no longer a draft and was kept. Finalise it as a finished run (`_complete`) --
+    left as it was, it said "Generating…" for ever, with no functions registered -- and the job
+    says complete: the run did."""
+    vid = getattr(job, "version_id", None)
+    v = db.versions.get(vid) if vid else None
+    if v is None or getattr(v, "status", None) == "draft":
+        return
+    _append_log(job.id, "The run had finished before the cancel; its version is kept.")
+    _complete(db, job.id, force=True)
 
 
 def _inner_run(db: Any, job_id: str) -> None:
@@ -2395,7 +2442,7 @@ def _complete(db: Any, job_id: str, *, force: bool = False) -> None:
     """Finalise a finished run's job and version. `force`: a failed job too -- a version a
     `resume` from the command line finished (analyzer._finish_web_job)."""
     job = db.jobs.get(job_id)
-    if not job or job.status == "cancelled" or (job.status == "failed" and not force):
+    if not job or (job.status in ("cancelled", "failed") and not force):
         return
 
     now = _now()
