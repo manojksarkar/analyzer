@@ -57,6 +57,14 @@
       "typeKey": null
     }
   ],
+  "Layer1.Sample-Core|CoreGateway": [],
+  "Layer1.Sample-Core|CoreStats": [
+    {
+      "declaration": "#define STATS_MAX_TOTAL 100000",
+      "information": "100000",
+      "typeKey": null
+    }
+  ],
   "Layer1.Util|Util": [
     {
       "declaration": "#define UTIL_LIMIT (32)",

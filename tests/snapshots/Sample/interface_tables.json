@@ -636,6 +636,169 @@
     ],
     "name": "Core"
   },
+  "Layer1.Sample-Core|CoreGateway": {
+    "entries": [
+      {
+        "calleesUnits": [
+          "Layer1.Sample-Core|CoreStats"
+        ],
+        "callerUnits": [
+          "Layer1.Lib|Lib"
+        ],
+        "direction": "Out",
+        "functionId": "Layer1.Sample-Core|CoreGateway|gatewayRecordSample|int,int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_COREGATEWAY_01",
+        "interfaceName": "gatewayRecordSample",
+        "location": {
+          "endLine": 6,
+          "file": "Layer1/Sample/Core/CoreGateway",
+          "line": 4
+        },
+        "name": "gatewayRecordSample",
+        "parameters": [
+          {
+            "name": "total",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "sample",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "gatewayRecordSample",
+        "reason": "Out: returns a value (int).",
+        "returnRange": "-0x80000000-0x7FFFFFFF",
+        "returnType": "int",
+        "sourceDest": "Lib/Lib",
+        "type": "Function",
+        "unitKey": "Layer1.Sample-Core|CoreGateway",
+        "unitName": "CoreGateway"
+      },
+      {
+        "calleesUnits": [
+          "Layer1.Sample-Core|CoreStats"
+        ],
+        "callerUnits": [
+          "Layer1.Lib|Lib"
+        ],
+        "direction": "Out",
+        "functionId": "Layer1.Sample-Core|CoreGateway|gatewayMean|int,int,int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_COREGATEWAY_02",
+        "interfaceName": "gatewayMean",
+        "location": {
+          "endLine": 11,
+          "file": "Layer1/Sample/Core/CoreGateway",
+          "line": 8
+        },
+        "name": "gatewayMean",
+        "parameters": [
+          {
+            "name": "total",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "count",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "lastSample",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "gatewayMean",
+        "reason": "Out: returns a value (int).",
+        "returnRange": "-0x80000000-0x7FFFFFFF",
+        "returnType": "int",
+        "sourceDest": "Lib/Lib",
+        "type": "Function",
+        "unitKey": "Layer1.Sample-Core|CoreGateway",
+        "unitName": "CoreGateway"
+      }
+    ],
+    "name": "CoreGateway"
+  },
+  "Layer1.Sample-Core|CoreStats": {
+    "entries": [
+      {
+        "calleesUnits": [],
+        "callerUnits": [
+          "Layer1.Sample-Core|CoreGateway"
+        ],
+        "direction": "Out",
+        "functionId": "Layer1.Sample-Core|CoreStats|statsAccumulate|int,int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORESTATS_01",
+        "interfaceName": "statsAccumulate",
+        "location": {
+          "endLine": 14,
+          "file": "Layer1/Sample/Core/CoreStats",
+          "line": 6
+        },
+        "name": "statsAccumulate",
+        "parameters": [
+          {
+            "name": "total",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "sample",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "statsAccumulate",
+        "reason": "Out: returns a value (int).",
+        "returnRange": "-0x80000000-0x7FFFFFFF",
+        "returnType": "int",
+        "sourceDest": "Sample-Core/CoreGateway",
+        "type": "Function",
+        "unitKey": "Layer1.Sample-Core|CoreStats",
+        "unitName": "CoreStats"
+      },
+      {
+        "calleesUnits": [],
+        "callerUnits": [
+          "Layer1.Sample-Core|CoreGateway"
+        ],
+        "direction": "Out",
+        "functionId": "Layer1.Sample-Core|CoreStats|statsAverage|int,int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORESTATS_02",
+        "interfaceName": "statsAverage",
+        "location": {
+          "endLine": 21,
+          "file": "Layer1/Sample/Core/CoreStats",
+          "line": 16
+        },
+        "name": "statsAverage",
+        "parameters": [
+          {
+            "name": "total",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "count",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "statsAverage",
+        "reason": "Out: returns a value (int).",
+        "returnRange": "-0x80000000-0x7FFFFFFF",
+        "returnType": "int",
+        "sourceDest": "Sample-Core/CoreGateway",
+        "type": "Function",
+        "unitKey": "Layer1.Sample-Core|CoreStats",
+        "unitName": "CoreStats"
+      }
+    ],
+    "name": "CoreStats"
+  },
   "Layer1.Util|Util": {
     "entries": [
       {
@@ -890,6 +1053,8 @@
   "unitNames": {
     "Layer1.Lib|Lib": "Lib",
     "Layer1.Sample-Core|Core": "Core",
+    "Layer1.Sample-Core|CoreGateway": "CoreGateway",
+    "Layer1.Sample-Core|CoreStats": "CoreStats",
     "Layer1.Util|Util": "Util"
   }
 }
