@@ -2794,6 +2794,14 @@ def _do_reexport(db: Any, job_id: str) -> bool:
     if not project:
         _mark_failed(db, job_id, f"Project {job.project_id} not found.")
         return False
+    if _detach_enabled(db):
+        # In the background, as `analyzer.py reexport`: it restores the source, takes the
+        # version's writer lock, and stores and records what it makes. Re-exporting every
+        # document of a large version takes hours, and as a child of this server it died with
+        # every restart.
+        doc_type = export_doc_type(db, job.project_id, job.version_id)
+        return _reexport_detached(db, job_id, _reexport_from_phase(job.version_id, doc_type),
+                                  doc_type)
 
     root = get_settings().repo_root
     version_id = getattr(job, "version_id", None)
@@ -2886,6 +2894,30 @@ def _do_reexport(db: Any, job_id: str) -> bool:
     # have had no effect. capture_output also re-collects the .docx into documents/.
     _capture_reexport_output(db, job, adir)
     return True
+
+
+def _reexport_detached(db: Any, job_id: str, first_phase: int, doc_type: str) -> bool:
+    """A web re-export as `analyzer.py reexport --detach`, followed like a run: the documents of
+    the job's scope, from `first_phase` (3 when a correction is newer than the views, else 4 --
+    `_reexport_from_phase`), of `doc_type`. Same answer as `_do_reexport`."""
+    job = db.jobs.get(job_id)
+    scope = job.scope or {}
+    cmd = [sys.executable, str(get_settings().repo_root / "analyzer.py"), "reexport",
+           "--project-id", job.project_id, "--version-id", job.version_id,
+           "--from-phase", str(first_phase), "--doc-type", doc_type]
+    names = scope.get("names") or []
+    if scope.get("type") == "component" and names:
+        cmd += ["--components", ",".join(names)]
+    elif scope.get("type") not in (None, "project"):
+        cmd += ["--scope", _scope_to_cli(scope)]
+    if first_phase > 3:
+        # Nothing to re-derive: say so on the job rather than leave phase 3 "pending" for ever.
+        for p in job.phases:
+            if p.number < first_phase and p.status == "pending":
+                p.status = "skipped"
+        db.jobs.update(job)
+    return _execute_detached(db, job_id, cmd, phase_start=first_phase,
+                             extra_env=_engine_db_env(db))
 
 
 def _reexport_scope(db: Any, version: Any, generation_scope: Optional[dict]) -> Optional[dict]:
@@ -2988,9 +3020,11 @@ def _run_export(db: Any, job_id: str) -> None:
 
 
 def _complete_render(db: Any, job_id: str) -> None:
-    """The end of an export (or resume) job: complete, saying what it made."""
+    """The end of an export, resume or re-export job: complete, saying what it made."""
     _complete_reexport(db, job_id)
     done = db.jobs.get(job_id)
+    if getattr(done, "mode", None) == REEXPORT_MODE:
+        return                                           # "Re-exported", as _complete_reexport says
     names = (done.scope or {}).get("names") or []
     done.activity_detail = (f"Generated {len(names)} component(s)" if names
                             else "Resumed: the version is complete")
@@ -3123,10 +3157,15 @@ def _run_reexport(db: Any, job_id: str) -> None:
         job.status = "running"
         job.current_activity = "Preparing re-export…"
         db.jobs.update(job)
-        with _version_writer(db, job.version_id, "web reexport"):
+        # In the background the re-export's own process takes the version's writer lock, as a web
+        # run's generate does: holding it here as well would refuse that process.
+        import contextlib
+        writer = (contextlib.nullcontext() if _detach_enabled(db)
+                  else _version_writer(db, job.version_id, "web reexport"))
+        with writer:
             if _do_reexport(db, job_id) and not _is_cancelled(db, job_id):
                 _register_missing_documents(db, job_id)
-                _complete_reexport(db, job_id)
+                _when_db_answers(job_id, "finishing the job", _complete_reexport, db, job_id)
     except Exception as exc:                  # noqa: BLE001 - recorded on the job, not lost
         _mark_failed(db, job_id, f"Re-export error: {exc}")
     finally:

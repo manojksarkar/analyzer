@@ -285,10 +285,13 @@ class TestWebRunLocking:
         assert calls == []
 
     def test_a_web_reexport_holds_it_itself(self, sql_db, version, monkeypatch):
-        """A re-export runs the engine directly, so the API process is the writer."""
+        """A re-export that runs the engine as a child of the API (background runs off): the API
+        process is the writer."""
         import contextlib
         import dataclasses
         from api.services import pipeline_runner as pr
+        from api.services.settings import get_settings
+        monkeypatch.setattr(get_settings(), "job_detach", False)
         calls = []
 
         def writer(db, vid, command):
@@ -304,6 +307,31 @@ class TestWebRunLocking:
         sql_db.jobs.create(job)
         pr._run_reexport(sql_db, job.id)
         assert calls == [(version.id, "web reexport")]
+
+
+    def test_a_background_reexport_leaves_the_lock_to_its_own_process(self, sql_db, version,
+                                                                       monkeypatch):
+        """In the background the re-export is `analyzer.py reexport`, which takes the lock: the
+        API holding it as well would refuse it, as it once refused every web run."""
+        import dataclasses
+        from api.services import pipeline_runner as pr
+        locks, seen = [], {}
+        monkeypatch.setattr(pr, "_version_writer", lambda *a: locks.append(a))
+        monkeypatch.setattr(pr, "_reexport_from_phase", lambda vid, doc_type="swe3": 4)
+        monkeypatch.setattr(pr, "export_doc_type", lambda db, pid, vid: "all")
+        monkeypatch.setattr(pr, "_execute_detached",
+                            lambda db, job_id, cmd, **kw: seen.update(cmd=cmd, kw=kw) or False)
+        job = dataclasses.replace(sql_db.jobs.get("job2"), id="jobrx" + uuid.uuid4().hex[:6],
+                                  project_id="p1", version_id=version.id, mode="reexport",
+                                  status="queued",
+                                  scope={"type": "component", "names": ["Layer1.Math", "Layer2.Gpio"]})
+        sql_db.jobs.create(job)
+        pr._run_reexport(sql_db, job.id)
+        assert locks == []
+        assert seen["cmd"][2:] == ["reexport", "--project-id", "p1", "--version-id", version.id,
+                                   "--from-phase", "4", "--doc-type", "all",
+                                   "--components", "Layer1.Math,Layer2.Gpio"]
+        assert seen["kw"]["phase_start"] == 4
 
 
 class TestWebReexportScope:

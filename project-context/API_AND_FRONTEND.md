@@ -339,8 +339,8 @@ generated yet), `reexport` (again), `resume` (after a crash). Human guide:
   `DELETE /versions/{id}` throws a stopped run's kept version away (409 `VERSION_BUSY` / `RUN_ACTIVE` /
   `VERSION_IS_BASELINE`; jobs detached, cached comparisons dropped).
 - **Limits**: each web run freezes ~10 MB of code (about a minute on Windows with the virus scanner; never
-  deleted automatically — removing a copy must not follow its `node_modules` junction); a re-export is still
-  the API's child (`_run_reexport`); the launcher's window between spawning the run and writing `run.json`
+  deleted automatically — removing a copy must not follow its `node_modules` junction); a web re-export runs in the
+  background too since 2026-10-04 (`_reexport_detached`); the launcher's window between spawning the run and writing `run.json`
   (milliseconds) is not covered; an API under systemd with the default `KillMode=control-group`, or in a
   container that restarts, kills its background runs with it (`KillMode=process`).
 
