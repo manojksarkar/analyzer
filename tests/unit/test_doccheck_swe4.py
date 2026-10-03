@@ -74,15 +74,34 @@ def _extracted(path):
 
 
 def _oracle(path):
+    """[(keys, spec)]: the keys a spec's section can be found under -- (unit, name), and for a
+    method (unit, qualifiedName) too. The exporter heads a spec by its qualified name
+    (engine/swe4_exporter.py `_spec_name`) and the extractor keeps a class that is not the
+    unit's own, so `MtxStruct::exposed` in unit Other is found by its qualified name only."""
     data = json.load(open(path, encoding="utf-8"))
-    out = {}
+    out = []
     for key, block in data.items():
         if key in ("unitNames", "dynamicSpecs") or not isinstance(block, dict):
             continue
         unit = normalise_key(block.get("name", ""))
         for fn in block.get("functions", []):
-            out[(unit, normalise_key(fn.get("name", "")))] = fn
-    return out
+            names = (fn.get("qualifiedName") or "", fn.get("name", ""))      # qualified first
+            out.append((list(dict.fromkeys((unit, normalise_key(n)) for n in names if n)), fn))
+    return sorted(out, key=lambda e: e[0][0])
+
+
+def _resolve(got, want):
+    """[(key, spec, its section)]: a spec's section is the first of its keys the document has --
+    None when it has none, "ambiguous" when another spec resolves to the same section: an old
+    document heads two methods of different classes by one bare name (fresh/v1, before
+    2026-09-21b), so which spec that section is cannot be told."""
+    hits = [(keys, fn, next((k for k in keys if k in got), None)) for keys, fn in want]
+    claims = {}
+    for _, _, k in hits:
+        if k is not None:
+            claims[k] = claims.get(k, 0) + 1
+    return [(keys[0], fn, None if k is None else ("ambiguous" if claims[k] > 1 else got[k]))
+            for keys, fn, k in hits]
 
 
 # --- the extractor against the pipeline -------------------------------------
@@ -91,8 +110,9 @@ def _oracle(path):
 def test_every_specified_function_is_read_back_out_of_the_document(label, docx_path, oracle_path):
     got, want = _extracted(docx_path), _oracle(oracle_path)
     problems = []
-    for key, fn in sorted(want.items()):
-        case = got.get(key)
+    for key, fn, case in _resolve(got, want):
+        if case == "ambiguous":
+            continue
         if case is None:
             problems.append("%s/%s is specified but has no section" % key)
             continue
@@ -109,9 +129,8 @@ def test_every_specified_function_is_read_back_out_of_the_document(label, docx_p
 def test_test_steps_keep_their_wording_and_their_nesting(label, docx_path, oracle_path):
     got, want = _extracted(docx_path), _oracle(oracle_path)
     problems = []
-    for key, fn in sorted(want.items()):
-        case = got.get(key)
-        if case is None:
+    for key, fn, case in _resolve(got, want):
+        if case is None or case == "ambiguous":
             continue
         wanted_bodies = [s.get("text", "") for s in fn.get("testSteps", [])]
         wanted_depths = [len(str(s.get("number", "")).split(".")) for s in fn.get("testSteps", [])]
@@ -127,7 +146,8 @@ def test_test_steps_keep_their_wording_and_their_nesting(label, docx_path, oracl
 @pytest.mark.parametrize("label,docx_path,oracle_path", PAIRS, ids=IDS)
 def test_the_document_specifies_no_function_the_model_does_not(label, docx_path, oracle_path):
     got, want = _extracted(docx_path), _oracle(oracle_path)
-    extra = sorted("%s/%s" % k for k in got if k not in want)
+    known = {k for keys, _ in want for k in keys}
+    extra = sorted("%s/%s" % k for k in got if k not in known)
     assert not extra, "%s: sections with no model entry: %s" % (label, extra[:10])
 
 
@@ -140,7 +160,10 @@ def test_interaction_specs_are_read_as_interactions_not_as_a_unit(label, docx_pa
     assert not [u for c in doc.of_kind("component") for u in c.of_kind("unit")
                 if u.name.casefold().startswith("dynamic behaviour")]
     oracle = json.load(open(oracle_path, encoding="utf-8"))
-    wanted = len(oracle.get("dynamicSpecs") or [])
+    # Keyed by component since the dynamic specs were split per component (a list before).
+    dynamic = oracle.get("dynamicSpecs") or []
+    wanted = (sum(len(v or []) for v in dynamic.values()) if isinstance(dynamic, dict)
+              else len(dynamic))
     got = sum(len(c.of_kind("interaction")) for c in doc.of_kind("component"))
     assert got == wanted, "%s: %d interaction specs read, %d in the model" % (label, got, wanted)
 
