@@ -67,14 +67,16 @@ export function useProjectViewState(projectId: string): {
 
   // When a job transitions to a terminal state, refresh project + versions +
   // documents so every page leaves the "running" / empty state automatically.
+  // (`jobs/current` skips a cancelled job — it answers with the run before it — so a cancel
+  // mostly shows up here as that run's status; useCancelJob refetches the project itself.)
   const qc = useQueryClient()
   const jobStatus = job?.status
   useEffect(() => {
-    if (!projectId || (jobStatus !== 'complete' && jobStatus !== 'failed')) return
+    if (!projectId || !jobStatus || !['complete', 'failed', 'cancelled'].includes(jobStatus)) return
     qc.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
     qc.invalidateQueries({ queryKey: projectKeys.versions(projectId) })
     qc.invalidateQueries({ queryKey: projectKeys.commits(projectId) })
-    qc.invalidateQueries({ queryKey: ['projects', projectId, 'documents'] })
+    qc.invalidateQueries({ queryKey: projectKeys.documentsAll(projectId) })
   }, [jobStatus, projectId, qc])
 
   return { pageState, isLoading, viewVersion, viewVersionId: viewVersion?.id, selectedCommit: selCommit, selectedSha }

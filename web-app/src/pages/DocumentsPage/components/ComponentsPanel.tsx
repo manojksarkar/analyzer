@@ -8,7 +8,7 @@ import { relativeTime } from '../../../lib/format'
 import { STATUS_META } from '../../../lib/reviewStatus'
 import type { ComponentState, VersionComponent, VersionJob, VersionRun } from '../../../types'
 import { componentsByLayer, pickable } from '../helpers'
-import { StopRunDialog } from './StopRunDialog'
+import { StopRunDialog } from '../../../components/run/StopRunDialog'
 
 /* Staged generation: every component of the layers the version parsed and the state of its
    documents — generated, being made, waiting, stopped, failed, or not generated yet — with the

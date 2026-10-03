@@ -17,11 +17,17 @@ interface ToastStore {
   dismiss: (id: string) => void
 }
 
+/* A toast's id only has to be unique on this page. `crypto.randomUUID` exists only in a secure
+   context (https or localhost): over plain http it is undefined, and every toast threw — which
+   broke the save and approve handlers that raise one. A counter needs nothing. */
+let toastSeq = 0
+const nextToastId = (): string => `toast-${++toastSeq}`
+
 export const useToastStore = create<ToastStore>((set) => ({
   toasts: [],
   push: (t) =>
     set((s) => ({
-      toasts: [...s.toasts, { ...t, id: crypto.randomUUID() }],
+      toasts: [...s.toasts, { ...t, id: nextToastId() }],
     })),
   dismiss: (id) =>
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),

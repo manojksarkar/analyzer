@@ -541,8 +541,12 @@ export interface AnalysisJob {
   commitSha: string
   shortSha: string
   branch: string
+  /** The version the run makes or adds to. A cancelled generation stops naming it once the
+   *  server has deleted the draft. */
   versionId: string | null
   versionTag: string | null
+  /** `export` / `reexport` add documents to a version; anything else is the version's own run. */
+  mode: string
   startedAt: string | null
   completedAt: string | null
   errorMessage: string | null

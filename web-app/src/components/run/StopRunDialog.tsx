@@ -1,19 +1,21 @@
-import { Button, Icon, Modal, Text } from '../../../components/ui'
-import type { VersionJob } from '../../../types'
+import { Button, Icon, Modal, Text } from '../ui'
+import { addsDocuments } from '../../lib/runScope'
 
-/* Stop the web job at work on a version (POST /jobs/{id}/cancel). What it costs depends on the
-   job: documents being added to the version keep what is finished; the version's own run is
-   removed with everything it made so far. */
+/* Ask before stopping a web job (POST /jobs/{id}/cancel): one click must not throw a run away.
+   What it costs depends on the job: documents being added to a version keep what is finished;
+   a version's own run is removed with everything it made so far. Used by the Overview's Cancel
+   Job and the Components panel's Stop. */
 
-const ADDS_DOCUMENTS = ['export', 'reexport']
-
-export function StopRunDialog({ job, busy, onConfirm, onClose }: {
-  job: VersionJob
+export function StopRunDialog({ job, versionTag, busy, onConfirm, onClose }: {
+  /** The job and its `mode` (`export` / `reexport` add documents; anything else is a generation). */
+  job: { id: string; mode: string }
+  /** The version the run makes, when known. */
+  versionTag?: string | null
   busy: boolean
   onConfirm: () => void
   onClose: () => void
 }) {
-  const adds = ADDS_DOCUMENTS.includes(job.mode)
+  const adds = addsDocuments(job.mode)
   return (
     <Modal open onClose={onClose} title={adds ? 'Stop making these documents?' : 'Cancel this generation?'}
            className="max-w-[440px]">
@@ -29,7 +31,9 @@ export function StopRunDialog({ job, busy, onConfirm, onClose }: {
             what is made, let it finish.
           </p>
         )}
-        <Text as="p" variant="caption" className="font-mono">Job {job.id}</Text>
+        <Text as="p" variant="caption" className="font-mono">
+          Job {job.id}{versionTag ? ` · version ${versionTag}` : ''}
+        </Text>
       </div>
       <div className="flex justify-end gap-2 pt-4 mt-4 -mx-6 px-6 border-t border-outline-variant">
         <Button variant="outline" size="sm" onClick={onClose}>Keep running</Button>

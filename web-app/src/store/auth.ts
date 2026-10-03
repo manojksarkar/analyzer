@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage, type StateStorage } from 'zustand/middleware'
 import { authApi } from '../services/api'
+import { ApiError } from '../lib/http'
+import { queryClient } from '../lib/queryClient'
 import type { AuthUser } from '../types'
 
 const REMEMBER_KEY = 'auth-remember'
@@ -70,9 +72,11 @@ export const useAuthStore = create<AuthState>()(
           // Re-fetch the user; the HTTP client refreshes/clears tokens on 401.
           const user = await authApi.me()
           set({ user, isAuthenticated: true, bootstrapped: true })
-        } catch {
-          // Invalid/expired session — clear it; ProtectedRoute redirects to /signin.
-          set({ user: null, accessToken: null, refreshToken: null, isAuthenticated: false })
+        } catch (e) {
+          // Only the API saying no ends the session (ProtectedRoute then redirects to /signin).
+          // A 500 under load or a network blip says nothing about the token: keep the session
+          // the browser stored, and let the next request try again.
+          if (e instanceof ApiError && (e.status === 401 || e.status === 403)) get().signOut()
           set({ bootstrapped: true })
         }
       },
@@ -82,6 +86,9 @@ export const useAuthStore = create<AuthState>()(
         localStorage.removeItem('auth')
         sessionStorage.removeItem('auth')
         set({ user: null, accessToken: null, refreshToken: null, isAuthenticated: false })
+        // Drop every cached read: the next user to sign in on this tab must not see this one's
+        // projects, documents or reviews.
+        queryClient.clear()
       },
     }),
     {

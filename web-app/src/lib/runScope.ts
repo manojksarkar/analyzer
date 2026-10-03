@@ -61,3 +61,9 @@ export function scopeOf(layers: ArchLayer[], ticked: ReadonlySet<string>): JobSc
     .map((c) => `${l.name}.${c.name}`)))
   return { type: 'component', names: [...new Set(names)] }
 }
+
+/** A job's `mode` that adds documents to an existing version (staged generation, re-export).
+ *  Every other mode is a version's own run: stopping it removes the version (a draft until done). */
+const ADDS_DOCUMENTS_MODES = ['export', 'reexport']
+export const addsDocuments = (mode: string | null | undefined): boolean =>
+  ADDS_DOCUMENTS_MODES.includes(mode ?? '')

@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { jobsApi, functionsApi, type StartJobInput } from '../services/api'
 import { projectKeys } from './useProjects'
 import { toast } from '../components/ui/Toast'
+import { addsDocuments } from '../lib/runScope'
+import type { AnalysisJob } from '../types'
 
 /**
  * Subscribe to a job's SSE stream while it is active and refresh the cached job
@@ -47,12 +49,44 @@ export function useJobFunctions(projectId: string, jobId: string | undefined) {
   })
 }
 
+/** After a job starts, stops or resumes: refetch the whole project — `detail` without `exact` is
+ *  the prefix of every key of the project (job, versions, commits, documents, components). */
 function useJobInvalidate(projectId: string) {
   const qc = useQueryClient()
   return () => {
     qc.invalidateQueries({ queryKey: projectKeys.job(projectId) })
     qc.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
   }
+}
+
+const RELEASE_POLL_MS = 1000
+const RELEASE_POLLS = 20
+
+/**
+ * Cancel a job and, for a version's own run, wait until the server has deleted its draft version.
+ *
+ * The server deletes the draft once the run's process has exited — a moment AFTER the cancel
+ * answers — and the job stops naming the version then (`versionId` null). A refetch before that
+ * brought the deleted draft back as the project's newest version, and nothing refetched it again:
+ * the Overview showed an empty draft instead of the last finished version. So: wait for that
+ * (at most ~20 s), then let the caller refetch. A job that adds documents keeps its version.
+ */
+export async function cancelJobAndWait(
+  projectId: string, jobId: string, pollMs = RELEASE_POLL_MS,
+): Promise<AnalysisJob> {
+  const cancelled = await jobsApi.cancel(projectId, jobId)
+  if (!cancelled.versionId || addsDocuments(cancelled.mode)) return cancelled
+  for (let i = 0; i < RELEASE_POLLS; i++) {
+    let now: AnalysisJob
+    try {
+      now = await jobsApi.get(projectId, jobId)
+    } catch {
+      return cancelled                 // cannot tell: the refetch shows whatever is there
+    }
+    if (!now.versionId) return now
+    await new Promise((resolve) => setTimeout(resolve, pollMs))
+  }
+  return cancelled
 }
 
 export function useStartJob(projectId: string) {
@@ -64,10 +98,11 @@ export function useStartJob(projectId: string) {
   })
 }
 
+/** Stop a job. Ask first (components/run/StopRunDialog): a generation's version goes with it. */
 export function useCancelJob(projectId: string) {
   const invalidate = useJobInvalidate(projectId)
   return useMutation({
-    mutationFn: (jobId: string) => jobsApi.cancel(projectId, jobId),
+    mutationFn: (jobId: string) => cancelJobAndWait(projectId, jobId),
     onSuccess: () => { invalidate(); toast.success('Job cancelled') },
     onError: (e: Error) => toast.error('Cancel failed', e.message),
   })

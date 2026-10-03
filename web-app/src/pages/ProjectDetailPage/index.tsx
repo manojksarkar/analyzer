@@ -5,6 +5,7 @@ import { useCurrentJob, useStartJob, useCancelJob, useJobEvents } from '../../ho
 import { useProjectViewState } from '../../hooks/useProjectViewState'
 import { DashboardSkeleton, Icon, Text } from '../../components/ui'
 import { SubbarCta } from '../../components/shell/SubbarCta'
+import { StopRunDialog } from '../../components/run/StopRunDialog'
 import { cn } from '../../lib/cn'
 import { useAuthStore } from '../../store/auth'
 import type { StartJobInput } from '../../services/api'
@@ -64,6 +65,9 @@ export function ProjectDetailPage() {
   const startJob = useStartJob(projectId ?? '')
   const cancelJob = useCancelJob(projectId ?? '')
   const [runOpen, setRunOpen] = useState(false)
+  // Cancel Job asks first: a generation's version is removed with everything made so far. Held
+  // by job id, so a later run never opens the dialog by itself.
+  const [stopJobId, setStopJobId] = useState<string | null>(null)
   useJobEvents(projectId ?? '', job?.id, job?.status)
 
   // Role is per-project (API's my_role → project.userRole).
@@ -194,7 +198,7 @@ export function ProjectDetailPage() {
                 </div>
                 {isAdmin && (
                   <button
-                    onClick={() => cancelJob.mutate(job.id)}
+                    onClick={() => setStopJobId(job.id)}
                     disabled={cancelJob.isPending}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60 border border-[#4d2020] text-[#ff7070] font-mono text-caption font-medium"
                   >
@@ -309,6 +313,17 @@ export function ProjectDetailPage() {
         )}
 
       </div>
+
+      {/* Only while the run is going: one that ends meanwhile closes the dialog. */}
+      {running && job && stopJobId === job.id && (
+        <StopRunDialog
+          job={job}
+          versionTag={job.versionTag}
+          busy={cancelJob.isPending}
+          onConfirm={() => cancelJob.mutate(job.id, { onSuccess: () => setStopJobId(null) })}
+          onClose={() => setStopJobId(null)}
+        />
+      )}
 
       {runOpen && project && (
         <RunAnalysisModal

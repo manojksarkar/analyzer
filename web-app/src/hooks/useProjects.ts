@@ -75,13 +75,16 @@ export function useVersions(projectId: string) {
   return useQuery({ queryKey: projectKeys.versions(projectId), queryFn: () => versionsApi.list(projectId), enabled: !!projectId })
 }
 
+/** Every document that matches `filters` — all pages: the lists, KPIs, approval bar and bulk
+ *  approve count them (the API answers at most 100 a page). A caller that names `page` or
+ *  `perPage` gets that one page. */
 export function useDocuments(projectId: string, filters?: DocumentFilters) {
-  // Fetch all documents (no visible pagination in the tree/list). API caps per_page at 100;
-  // a caller can still override perPage explicitly.
-  const withAll: DocumentFilters = { perPage: 100, ...filters }
+  const onePage = filters?.page !== undefined || filters?.perPage !== undefined
   return useQuery({
-    queryKey: projectKeys.documents(projectId, withAll),
-    queryFn: () => documentsApi.list(projectId, withAll),
+    queryKey: projectKeys.documents(projectId, filters),
+    queryFn: () => onePage
+      ? documentsApi.list(projectId, filters)
+      : documentsApi.listAll(projectId, filters),
     enabled: !!projectId,
   })
 }
