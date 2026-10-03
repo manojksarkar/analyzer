@@ -25,7 +25,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 import sys as _sys
 _sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import re as _re                                        # noqa: E402
-from tests.e2e_paths import COMPONENTS, docx_for        # noqa: E402
+from tests.e2e_paths import COMPONENTS, MODEL_DIR, docx_for   # noqa: E402
 _sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__)))), "engine"))
 from core.config import LAYER_SEP                       # noqa: E402
@@ -319,15 +319,56 @@ def test_appendix_heading_present(docx):
 # Dynamic Behaviour section
 # ---------------------------------------------------------------------------
 
+#: The fixture that draws Dynamic Behaviour (SampleCppProject/Layer1/Sample/Core/CoreGateway.h):
+#: {function: the one caller in another component}. Each gateway function calls CoreStats, a
+#: second unit of Sample Core -- what the default filter (`skip_within_unit`) asks for.
+GATEWAY_ROWS = {
+    "Layer1.Sample-Core|CoreGateway|gatewayRecordSample|int,int": "Layer1.Lib|Lib|libRecordSample|int,int",
+    "Layer1.Sample-Core|CoreGateway|gatewayMean|int,int,int": "Layer1.Lib|Lib|libMeanOf|int,int,int",
+}
+
+
+def test_the_default_filter_draws_the_gateway_rows_and_nothing_else(tmp_path):
+    """The sample has Dynamic Behaviour to review under the DEFAULT filter -- exactly the two
+    gateway rows, each with its own Lib caller.
+
+    Runs whether or not `views.behaviourDiagram` is on: it asks the generator the view uses,
+    over the model this run built. Before CoreGateway the default filter drew nothing on the
+    sample, so a behaviour correction (R6) could not be tried on it at all.
+    """
+    import json
+    from behaviour_diagram import SequenceDiagramGenerator
+    model = {}
+    for name in ("components", "units", "functions"):
+        with open(os.path.join(MODEL_DIR, name + ".json"), encoding="utf-8") as fh:
+            model[name] = json.load(fh)
+    functions = model["functions"]
+    gen = SequenceDiagramGenerator(model["components"], model["units"], functions, None)
+    assert gen.filter_mode == "skip_within_unit", "the default filter changed"
+    # The functions the view draws for: this run's components, nothing PRIVATE. The model
+    # holds the whole layer -- the callers outside the group are why it does.
+    candidates = [fid for fid, f in functions.items()
+                  if fid.split("|")[0] in COMPONENTS
+                  and (f.get("visibility") or "").lower() != "private"]
+    drawn = {fid for fid in candidates if gen.generate_all_diagrams(fid, str(tmp_path))[0]}
+    assert drawn == set(GATEWAY_ROWS)
+    for fid, caller in GATEWAY_ROWS.items():
+        # One direct caller in another component: the view pairs each diagram with the
+        # function's direct external callers, in order, so a second one would be a second row.
+        external = [c for c in functions[fid].get("calledByIds") or []
+                    if c.split("|")[0] != fid.split("|")[0]]
+        assert external == [caller], fid
+
+
 def test_dynamic_behaviour_sub_headings_for_core(docx, behaviour_diagram_on):
-    """Core is called by external units (App/Main, Cross/Hub) outside the Sample group.
-    The DOCX must contain level-3 headings of the form 'N.2.M Core - <func> (<caller>)'."""
+    """Sample Core's Dynamic Behaviour section: one level-3 heading per gateway row, of the form
+    'N.2.M <unit> - <function> (<caller unit> - <caller>)'."""
     level3 = [p.text.strip() for p in docx.paragraphs if p.style.name == "Heading 3"]
-    behaviour_headings = [h for h in level3 if "Core -" in h and "(" in h]
-    assert behaviour_headings, (
-        "No Dynamic Behaviour sub-headings found for Core "
-        "(expected: Core is called by external App/Main and Cross/Hub)"
-    )
+    for expected in ("CoreGateway - gatewayRecordSample (Lib - libRecordSample)",
+                     "CoreGateway - gatewayMean (Lib - libMeanOf)"):
+        assert any(h.endswith(expected) for h in level3), (
+            "No Dynamic Behaviour sub-heading %r -- the gateway rows of "
+            "SampleCppProject/Layer1/Sample/Core/CoreGateway.h" % expected)
 
 
 def test_behaviour_description_tables_present(docx, behaviour_diagram_on):

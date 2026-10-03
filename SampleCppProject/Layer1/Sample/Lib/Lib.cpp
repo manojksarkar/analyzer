@@ -84,3 +84,18 @@ PUBLIC int libLinearScale(int v, int from_max, int to_max) {
     int scaled = libMultiply(normed, to_max);
     return libMultiply(scaled, sign);
 }
+
+// ── Dynamic Behaviour fixture: callers from another component ────────────────
+// Included here, at the end, so no line above moves. Lib calling into Sample Core's
+// CoreGateway, which calls CoreStats, is what gives the "Sample Core" document its
+// Dynamic Behaviour rows (see Core/CoreGateway.h). Both callers are in Lib: Util stays
+// a leaf that calls nobody.
+#include "../Core/CoreGateway.h"
+
+PUBLIC int libRecordSample(int total, int sample) {
+    return gatewayRecordSample(total, sample);   // Lib -> Sample Core
+}
+
+PUBLIC int libMeanOf(int total, int count, int lastSample) {
+    return gatewayMean(total, count, lastSample);   // Lib -> Sample Core
+}

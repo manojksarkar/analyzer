@@ -71,8 +71,9 @@ def test_flowcharts_are_switched_on():
 # ---------------------------------------------------------------------------
 # The Dynamic Behaviour pair: the "Full" group draws no behaviour row on the sample -- develop's
 # default filter (`skip_within_unit`) wants a call chain across two units of ONE component, and
-# the sample has none that qualifies -- so a behaviour correction (R6) cannot be tried there.
-# This pair runs group Layer1.My Sample with one diagram per external caller: 18 rows.
+# only Sample Core's CoreGateway has one (2 rows, in group Layer1.My Sample) -- so a behaviour
+# correction (R6) cannot be tried there. This pair runs group Layer1.My Sample with one diagram
+# per external caller: the 2 gateway rows and every other external call besides.
 # ---------------------------------------------------------------------------
 BEH_PROJECT = os.path.join(CONFIG_DIR, "api_create_project.sample_behaviour.example.json")
 BEH_JOB = os.path.join(CONFIG_DIR, "api_start_job.sample_behaviour.example.json")

@@ -2051,6 +2051,482 @@
     ],
     "name": "Core"
   },
+  "Layer1.Sample-Core|CoreGateway": {
+    "functions": [
+      {
+        "expected": {
+          "globals": [],
+          "mockFunctions": [
+            "statsAccumulate()"
+          ],
+          "outParameters": [],
+          "returns": [
+            {
+              "expression": "statsAccumulate()",
+              "source": "statsAccumulate(total, sample)",
+              "step": "2",
+              "text": "Successfully returned statsAccumulate() [statsAccumulate(total, sample)]"
+            }
+          ]
+        },
+        "functionId": "Layer1.Sample-Core|CoreGateway|gatewayRecordSample|int,int",
+        "generationMethod": "Analysis of Requirements",
+        "input": {
+          "entries": [
+            {
+              "kind": "parameter",
+              "name": "total",
+              "text": "int total[-0x80000000-0x7FFFFFFF]",
+              "type": "int"
+            },
+            {
+              "kind": "parameter",
+              "name": "sample",
+              "text": "int sample[-0x80000000-0x7FFFFFFF]",
+              "type": "int"
+            },
+            {
+              "kind": "mockReturn",
+              "name": "statsAccumulate()",
+              "text": "int statsAccumulate()[-0x80000000-0x7FFFFFFF]",
+              "type": "int"
+            }
+          ],
+          "isVoid": false
+        },
+        "interfaceId": "IF_LAYER1_MYSAMPLE_COREGATEWAY_01",
+        "location": {
+          "endLine": 6,
+          "file": "Layer1/Sample/Core/CoreGateway.cpp",
+          "line": 4
+        },
+        "name": "gatewayRecordSample",
+        "precondition": {
+          "globals": [],
+          "mockFunctions": [
+            "statsAccumulate()"
+          ],
+          "mocks": [
+            {
+              "declaredIn": "Layer1/Sample/Core/CoreStats.h",
+              "functionId": "Layer1.Sample-Core|CoreStats|statsAccumulate|int,int",
+              "name": "statsAccumulate",
+              "parameters": [
+                {
+                  "name": "total",
+                  "type": "int"
+                },
+                {
+                  "name": "sample",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "statsAccumulate",
+              "returnType": "int"
+            }
+          ],
+          "parameters": [
+            {
+              "name": "total",
+              "text": "int total",
+              "type": "int"
+            },
+            {
+              "name": "sample",
+              "text": "int sample",
+              "type": "int"
+            }
+          ]
+        },
+        "qualifiedName": "gatewayRecordSample",
+        "returnType": "int",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_COREGATEWAY_01",
+        "testSteps": [
+          {
+            "nodeId": "N1",
+            "number": "1",
+            "text": "Issue function gatewayRecordSample with inputs total, sample.",
+            "type": "START"
+          },
+          {
+            "nodeId": "N3",
+            "number": "2",
+            "text": "Expect return value from the return of mock function statsAccumulate() with total, sample inputs.",
+            "type": "RETURN"
+          }
+        ],
+        "unitKey": "Layer1.Sample-Core|CoreGateway",
+        "unitName": "CoreGateway"
+      },
+      {
+        "expected": {
+          "globals": [],
+          "mockFunctions": [
+            "statsAccumulate()",
+            "statsAverage()"
+          ],
+          "outParameters": [],
+          "returns": [
+            {
+              "expression": "statsAverage()",
+              "source": "statsAverage(withLast, count + 1)",
+              "step": "3",
+              "text": "Successfully returned statsAverage() [statsAverage(withLast, count + 1)]"
+            }
+          ]
+        },
+        "functionId": "Layer1.Sample-Core|CoreGateway|gatewayMean|int,int,int",
+        "generationMethod": "Analysis of Requirements",
+        "input": {
+          "entries": [
+            {
+              "kind": "parameter",
+              "name": "total",
+              "text": "int total[-0x80000000-0x7FFFFFFF]",
+              "type": "int"
+            },
+            {
+              "kind": "parameter",
+              "name": "count",
+              "text": "int count[-0x80000000-0x7FFFFFFF]",
+              "type": "int"
+            },
+            {
+              "kind": "parameter",
+              "name": "lastSample",
+              "text": "int lastSample[-0x80000000-0x7FFFFFFF]",
+              "type": "int"
+            },
+            {
+              "kind": "mockReturn",
+              "name": "statsAccumulate()",
+              "text": "int statsAccumulate()[-0x80000000-0x7FFFFFFF]",
+              "type": "int"
+            },
+            {
+              "kind": "mockReturn",
+              "name": "statsAverage()",
+              "text": "int statsAverage()[-0x80000000-0x7FFFFFFF]",
+              "type": "int"
+            }
+          ],
+          "isVoid": false
+        },
+        "interfaceId": "IF_LAYER1_MYSAMPLE_COREGATEWAY_02",
+        "location": {
+          "endLine": 11,
+          "file": "Layer1/Sample/Core/CoreGateway.cpp",
+          "line": 8
+        },
+        "name": "gatewayMean",
+        "precondition": {
+          "globals": [],
+          "mockFunctions": [
+            "statsAccumulate()",
+            "statsAverage()"
+          ],
+          "mocks": [
+            {
+              "declaredIn": "Layer1/Sample/Core/CoreStats.h",
+              "functionId": "Layer1.Sample-Core|CoreStats|statsAccumulate|int,int",
+              "name": "statsAccumulate",
+              "parameters": [
+                {
+                  "name": "total",
+                  "type": "int"
+                },
+                {
+                  "name": "sample",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "statsAccumulate",
+              "returnType": "int"
+            },
+            {
+              "declaredIn": "Layer1/Sample/Core/CoreStats.h",
+              "functionId": "Layer1.Sample-Core|CoreStats|statsAverage|int,int",
+              "name": "statsAverage",
+              "parameters": [
+                {
+                  "name": "total",
+                  "type": "int"
+                },
+                {
+                  "name": "count",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "statsAverage",
+              "returnType": "int"
+            }
+          ],
+          "parameters": [
+            {
+              "name": "total",
+              "text": "int total",
+              "type": "int"
+            },
+            {
+              "name": "count",
+              "text": "int count",
+              "type": "int"
+            },
+            {
+              "name": "lastSample",
+              "text": "int lastSample",
+              "type": "int"
+            }
+          ]
+        },
+        "qualifiedName": "gatewayMean",
+        "returnType": "int",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_COREGATEWAY_02",
+        "testSteps": [
+          {
+            "nodeId": "N1",
+            "number": "1",
+            "text": "Issue function gatewayMean with inputs total, count, lastSample.",
+            "type": "START"
+          },
+          {
+            "nodeId": "N3",
+            "number": "2",
+            "text": "Update withLast by mocking function statsAccumulate().",
+            "type": "ACTION"
+          },
+          {
+            "nodeId": "N4",
+            "number": "3",
+            "text": "Expect return value from the return of mock function statsAverage() with withLast, count + 1 inputs.",
+            "type": "RETURN"
+          }
+        ],
+        "unitKey": "Layer1.Sample-Core|CoreGateway",
+        "unitName": "CoreGateway"
+      }
+    ],
+    "name": "CoreGateway"
+  },
+  "Layer1.Sample-Core|CoreStats": {
+    "functions": [
+      {
+        "expected": {
+          "globals": [],
+          "mockFunctions": [],
+          "outParameters": [],
+          "returns": [
+            {
+              "expression": "total",
+              "source": "total",
+              "step": "2.a",
+              "text": "Successfully returned total"
+            },
+            {
+              "expression": "STATS_MAX_TOTAL",
+              "source": "STATS_MAX_TOTAL",
+              "step": "2.b.1.a",
+              "text": "Successfully returned STATS_MAX_TOTAL"
+            },
+            {
+              "expression": "total + sample",
+              "source": "total + sample",
+              "step": "2.b.1.b",
+              "text": "Successfully returned total + sample"
+            }
+          ]
+        },
+        "functionId": "Layer1.Sample-Core|CoreStats|statsAccumulate|int,int",
+        "generationMethod": "Analysis of Requirements",
+        "input": {
+          "entries": [
+            {
+              "kind": "parameter",
+              "name": "total",
+              "text": "int total[-0x80000000-0x7FFFFFFF]",
+              "type": "int"
+            },
+            {
+              "kind": "parameter",
+              "name": "sample",
+              "text": "int sample[-0x80000000-0x7FFFFFFF]",
+              "type": "int"
+            }
+          ],
+          "isVoid": false
+        },
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORESTATS_01",
+        "location": {
+          "endLine": 14,
+          "file": "Layer1/Sample/Core/CoreStats.cpp",
+          "line": 6
+        },
+        "name": "statsAccumulate",
+        "precondition": {
+          "globals": [],
+          "mockFunctions": [],
+          "mocks": [],
+          "parameters": [
+            {
+              "name": "total",
+              "text": "int total",
+              "type": "int"
+            },
+            {
+              "name": "sample",
+              "text": "int sample",
+              "type": "int"
+            }
+          ]
+        },
+        "qualifiedName": "statsAccumulate",
+        "returnType": "int",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORESTATS_01",
+        "testSteps": [
+          {
+            "nodeId": "N1",
+            "number": "1",
+            "text": "Issue function statsAccumulate with inputs total, sample.",
+            "type": "START"
+          },
+          {
+            "nodeId": "N3",
+            "number": "2",
+            "text": "Check whether sample < 0.",
+            "type": "DECISION"
+          },
+          {
+            "nodeId": "N4",
+            "number": "2.a",
+            "text": "True: Return total.",
+            "type": "RETURN"
+          },
+          {
+            "nodeId": "",
+            "number": "2.b",
+            "text": "False:",
+            "type": "LEG"
+          },
+          {
+            "nodeId": "N5",
+            "number": "2.b.1",
+            "text": "Check whether total > STATS_MAX_TOTAL - sample.",
+            "type": "DECISION"
+          },
+          {
+            "nodeId": "N6",
+            "number": "2.b.1.a",
+            "text": "True: Return STATS_MAX_TOTAL.",
+            "type": "RETURN"
+          },
+          {
+            "nodeId": "N7",
+            "number": "2.b.1.b",
+            "text": "False: Return total + sample.",
+            "type": "RETURN"
+          }
+        ],
+        "unitKey": "Layer1.Sample-Core|CoreStats",
+        "unitName": "CoreStats"
+      },
+      {
+        "expected": {
+          "globals": [],
+          "mockFunctions": [],
+          "outParameters": [],
+          "returns": [
+            {
+              "expression": "0",
+              "source": "0",
+              "step": "2.a",
+              "text": "Successfully returned 0"
+            },
+            {
+              "expression": "total / count",
+              "source": "total / count",
+              "step": "2.b",
+              "text": "Successfully returned total / count"
+            }
+          ]
+        },
+        "functionId": "Layer1.Sample-Core|CoreStats|statsAverage|int,int",
+        "generationMethod": "Analysis of Requirements",
+        "input": {
+          "entries": [
+            {
+              "kind": "parameter",
+              "name": "total",
+              "text": "int total[-0x80000000-0x7FFFFFFF]",
+              "type": "int"
+            },
+            {
+              "kind": "parameter",
+              "name": "count",
+              "text": "int count[-0x80000000-0x7FFFFFFF]",
+              "type": "int"
+            }
+          ],
+          "isVoid": false
+        },
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORESTATS_02",
+        "location": {
+          "endLine": 21,
+          "file": "Layer1/Sample/Core/CoreStats.cpp",
+          "line": 16
+        },
+        "name": "statsAverage",
+        "precondition": {
+          "globals": [],
+          "mockFunctions": [],
+          "mocks": [],
+          "parameters": [
+            {
+              "name": "total",
+              "text": "int total",
+              "type": "int"
+            },
+            {
+              "name": "count",
+              "text": "int count",
+              "type": "int"
+            }
+          ]
+        },
+        "qualifiedName": "statsAverage",
+        "returnType": "int",
+        "testCaseId": "TC_IF_LAYER1_MYSAMPLE_CORESTATS_02",
+        "testSteps": [
+          {
+            "nodeId": "N1",
+            "number": "1",
+            "text": "Issue function statsAverage with inputs total, count.",
+            "type": "START"
+          },
+          {
+            "nodeId": "N3",
+            "number": "2",
+            "text": "Check whether count <= 0.",
+            "type": "DECISION"
+          },
+          {
+            "nodeId": "N4",
+            "number": "2.a",
+            "text": "True: Return 0.",
+            "type": "RETURN"
+          },
+          {
+            "nodeId": "N5",
+            "number": "2.b",
+            "text": "False: Return total / count.",
+            "type": "RETURN"
+          }
+        ],
+        "unitKey": "Layer1.Sample-Core|CoreStats",
+        "unitName": "CoreStats"
+      }
+    ],
+    "name": "CoreStats"
+  },
   "Layer1.Util|Util": {
     "functions": [
       {
@@ -2654,6 +3130,8 @@
   "unitNames": {
     "Layer1.Lib|Lib": "Lib",
     "Layer1.Sample-Core|Core": "Core",
+    "Layer1.Sample-Core|CoreGateway": "CoreGateway",
+    "Layer1.Sample-Core|CoreStats": "CoreStats",
     "Layer1.Util|Util": "Util"
   }
 }
