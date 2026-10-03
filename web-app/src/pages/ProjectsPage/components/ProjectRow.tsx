@@ -118,7 +118,6 @@ export function ProjectRow({ project, onNavigate }: { project: Project; onNaviga
 
   const configItem = { label: 'Download config', icon: 'download', onClick: () => { void downloadConfig(project.name) } }
   const adminItems = [
-    { label: 'Settings', icon: 'settings',     onClick: () => onNavigate(project.id) },
     configItem,
     { label: 'Archive',  icon: 'archive',      onClick: () => toast.info('Archive', 'Archiving is not available yet.') },
     { label: 'Delete',   icon: 'delete',       variant: 'danger' as const, onClick: onDelete },

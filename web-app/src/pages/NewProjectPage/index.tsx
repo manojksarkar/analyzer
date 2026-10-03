@@ -31,7 +31,7 @@ const STEP_HEADERS = [
   { title: 'Project & Repository', sub: 'Name the project and connect your source repository.' },
   { title: 'Cores',                sub: 'A core is one build of the firmware, with its own macros, data dictionary and compile commands. Each layer picks its core in the next step.' },
   { title: 'Architecture Mapping', sub: 'Map layers and groups. Components are discovered automatically from source folders.' },
-  { title: 'Team & Access',        sub: 'Add team members and assign their role. More members can be added later from Project Settings.' },
+  { title: 'Team & Access',        sub: 'Add team members and assign their role. More members can be added later from the Team page.' },
   { title: 'Review & Initialize',  sub: 'Confirm every setting before the first analysis run.' },
 ]
 
@@ -851,8 +851,8 @@ function WizardView({
                     </div>
                   </div>
                 ) : (
-                  <button type="button" onClick={() => setTokenOpen(true)} className="-mt-1 flex items-center gap-1 text-caption text-secondary hover:underline">
-                    <Icon name="lock" size={13} />Private repository? Add an access token
+                  <button type="button" onClick={() => setTokenOpen(true)} className="group -mt-1 flex items-center gap-1 text-caption text-secondary">
+                    <Icon name="lock" size={13} /><span className="group-hover:underline">Private repository? Add an access token</span>
                   </button>
                 )}
 
@@ -1212,7 +1212,7 @@ function WizardView({
                           <div className="flex gap-2">
                             <div className="relative flex-1">
                               <Icon name="search" size={16} className="absolute left-[9px] top-1/2 -translate-y-1/2 text-outline pointer-events-none" />
-                              <input className="inp pl-8" value={search} onChange={(e) => setSearch(e.target.value)} onFocus={() => setSearchOpen(true)} onBlur={() => window.setTimeout(() => setSearchOpen(false), 150)} type="text" autoComplete="off" placeholder="Search by name or email…" />
+                              <input className="inp with-icon" value={search} onChange={(e) => setSearch(e.target.value)} onFocus={() => setSearchOpen(true)} onBlur={() => window.setTimeout(() => setSearchOpen(false), 150)} type="text" autoComplete="off" placeholder="Search by name or email…" />
                             </div>
                             <select className="w-[120px] flex-shrink-0 px-2 border border-outline-variant rounded-lg bg-white text-on-surface outline-none font-mono text-label font-semibold tracking-[.04em]" value={inviteRole} onChange={(e) => setInviteRole(e.target.value as Role)}>
                               <option value="Developer">Developer</option>
@@ -1248,8 +1248,8 @@ function WizardView({
                 </div>
 
                 {/* What each role may do: on request, not in the way. */}
-                <button type="button" onClick={() => setRolesOpen((o) => !o)} className="flex items-center gap-1 text-caption text-secondary hover:underline">
-                  <Icon name={rolesOpen ? 'expand_less' : 'help'} size={14} />What can each role do?
+                <button type="button" onClick={() => setRolesOpen((o) => !o)} className="group flex items-center gap-1 text-caption text-secondary">
+                  <Icon name={rolesOpen ? 'expand_less' : 'help'} size={14} /><span className="group-hover:underline">What can each role do?</span>
                 </button>
                 {rolesOpen && (
                   <div className="grid grid-cols-2 gap-3">

@@ -55,9 +55,6 @@ export function ProjectsPage() {
         {/* Right */}
         <div className="flex items-center gap-0.5">
           <NotificationBell />
-          <button className="p-2 hover:bg-surface-container rounded-lg transition-colors" aria-label="Help">
-            <Icon name="help" size={22} className="text-on-surface-variant" />
-          </button>
 
           <div className="w-px h-5 bg-outline-variant mx-1.5" aria-hidden />
 

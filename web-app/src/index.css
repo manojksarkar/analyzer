@@ -120,6 +120,7 @@ body {
 .inp:focus { border-color: #0058be; box-shadow: 0 0 0 3px rgba(0,88,190,.10); }
 .inp::placeholder { color: #74777d; }
 .inp.mono { font-family: "JetBrains Mono", monospace; font-size: 12px; }
+.inp.with-icon { padding-left: 32px; }   /* room for a leading icon (pl-8 loses to .inp) */
 .inp.err { border-color: #ba1a1a !important; box-shadow: 0 0 0 3px rgba(186,26,26,.10) !important; }
 textarea.inp { resize: none; }
 select.inp { appearance: auto; }

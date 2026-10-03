@@ -118,7 +118,8 @@ export function TeamPage() {
             </SubbarCta>
           )}
 
-          <div className="overflow-x-auto">
+          {/* Room under the last row for its role menu, which opens downwards inside this box. */}
+          <div className="overflow-x-auto pb-16">
             {isLoading ? (
               <div className="p-4 space-y-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10" />)}</div>
             ) : (

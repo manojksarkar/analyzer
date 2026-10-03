@@ -116,24 +116,8 @@ export function Sidebar() {
         </div>
       </nav>
 
-      {/* Settings */}
-      <div className="px-2 pt-2 border-t border-outline-variant flex-shrink-0">
-        <button
-          className={cn(
-            'nav-item w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors',
-            collapsed && 'justify-center px-0',
-          )}
-          title={collapsed ? 'Settings' : undefined}
-        >
-          <Icon name="settings" size={18} className="flex-shrink-0" />
-          {!collapsed && (
-            <span className="font-mono text-xs font-medium">Settings</span>
-          )}
-        </button>
-      </div>
-
-      {/* User info */}
-      <div className="px-2 pb-3 pt-1 flex-shrink-0">
+      {/* User info (Settings is not built yet, so it is not shown: ui-review #36) */}
+      <div className="px-2 pb-3 pt-2 border-t border-outline-variant flex-shrink-0">
         <button
           className={cn(
             'w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-container transition-colors text-left',
