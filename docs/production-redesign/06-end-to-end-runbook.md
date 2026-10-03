@@ -52,13 +52,14 @@ curl -s "${AUTH[@]}" "$BASE/projects/$PID/baseline-preview?commit=<SHA>"
 The Job spawns `generate.py` (mode `full`) or `engine.py` (mode `auto`, picks the nearest
 ancestor as baseline). Same `StartJobRequest` schema the UI uses.
 ```bash
-# First commit → full
+# First commit → full. version_tag is required and new in the project; a group or component
+# is named by its layer-qualified id (a bare name two layers share is 400 INVALID_SCOPE).
 curl -s "${AUTH[@]}" -X POST "$BASE/projects/$PID/jobs" -H "Content-Type: application/json" \
-  -d '{"commit_sha":"<SHA1>","mode":"full","scope":{"type":"group","names":["Support"]}}'
+  -d '{"commit_sha":"<SHA1>","version_tag":"v1","mode":"full","scope":{"type":"group","names":["Layer1.Support"]}}'
 
 # Later commit → auto-incremental (baseline auto-selected; explicit reference_version_id wins)
 curl -s "${AUTH[@]}" -X POST "$BASE/projects/$PID/jobs" -H "Content-Type: application/json" \
-  -d '{"commit_sha":"<SHA2>","mode":"auto","scope":{"type":"group","names":["Support"]},
+  -d '{"commit_sha":"<SHA2>","version_tag":"v2","mode":"auto","scope":{"type":"group","names":["Layer1.Support"]},
        "no_llm":false,"narrowed_parse":false}'
 # -> { "job_id": "...", "status": "queued" }
 ```

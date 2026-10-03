@@ -17,8 +17,11 @@
 > readiness; the regeneration queue; what can be edited (`slots`, each with `shownIn`). Contract:
 > [docs/spec/REVIEW_UPDATE_API_SPEC.md](../docs/spec/REVIEW_UPDATE_API_SPEC.md). Also with it:
 > a re-export is a job of its own, addressed by version (`POST /projects/{pid}/versions/{vid}/reexport`);
-> `POST /projects/{pid}/jobs` refuses a project with no architecture (409 `NO_ARCHITECTURE`) and resolves
-> `reference_version_id` inside the project; `users.is_superuser` lets a user act
+> `POST /projects/{pid}/jobs` refuses a project with no architecture (409 `NO_ARCHITECTURE`), resolves
+> `reference_version_id` inside the project and checks `scope` against the project's layers with the
+> engine's resolvers (400 `INVALID_SCOPE` + `candidates`: groups and components by layer-qualified id);
+> a failed or cancelled job frees its version tag (`pipeline_runner.release_draft_version`), and
+> `DELETE /versions/{vid}` unlinks the version's jobs (409 `JOB_ACTIVE` while one runs); `users.is_superuser` lets a user act
 > on every project — nobody, the seeded `admin@aspice.dev` included, until
 > `tools/grant_access.py --set-superuser` makes them one; `tools/grant_access.py` adds the `project_members` row a CLI-onboarded project
 > lacks; a sign-in lasts 8 h (`auth.accessTokenMinutes` in `engine/config/config.local.json`). What it

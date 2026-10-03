@@ -55,7 +55,7 @@ Two ready configs — copy one to `config.json`, then fill in your server, login
 | file | what it tests |
 |---|---|
 | `config.existing-version.example.json` | **a version you already have** — only `project_id` and `version_id`. Step 13 (the next version) is skipped. The test's corrections stay on that version |
-| `config.existing-project.example.json` | **a new version in a project you already have** — `project_id`, and a `start_job` body. For `scope`, copy what your first job used: `GET /api/v1/projects/{projectId}/jobs/current` → `job.scope` |
+| `config.existing-project.example.json` | **a new version in a project you already have** — `project_id`, and a `start_job` body. For `scope`, copy what your first job used: `GET /api/v1/projects/{projectId}/jobs/current` → `job.scope`. Groups and components by their layer-qualified id (`Layer1.Sample Core`): a bare name two layers share is refused, 400 `INVALID_SCOPE` |
 
 The ids: `GET /api/v1/projects` → `projects[].id` (`p…`); `GET /api/v1/projects/{projectId}/versions`
 → `id` (`ver…` — the id, not the `tag`). Or pass them on the command line instead:
