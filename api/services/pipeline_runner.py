@@ -35,7 +35,7 @@ import uuid
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional, Set
+from typing import Any, List, Optional, Set, Tuple
 
 from ..models.domain import Version, Document, AnalysisJob, AnalysisPhase, REEXPORT_MODE
 from . import git_cli
@@ -443,15 +443,120 @@ def _mark_failed(db: Any, job_id: str, message: str) -> None:
         job.error_message = message[:4000]
         job.completed_at = _now()
         db.jobs.update(job)
-        # drop the reserved (still-draft) version so its name is free for a retry
-        vid = getattr(job, "version_id", None)
-        if vid:
-            v = db.versions.get(vid)
-            if v is not None and getattr(v, "status", None) == "draft":
-                try:
-                    db.versions.delete(vid)
-                except Exception:               # best-effort cleanup
-                    pass
+        release_draft_version(db, job)      # the version tag is free for a retry
+
+
+def release_draft_version(db: Any, job: Any) -> bool:
+    """Free the version tag a job reserved and will never finish: delete its DRAFT version.
+
+    Called when a job fails or is cancelled. The job lets go of the version first:
+    `analysis_jobs.version_id` is a foreign key with no ON DELETE, so deleting a version a job
+    still points at is refused. That refusal used to be swallowed, so every failed job kept its
+    tag, and a retry with the same `version_tag` answered 409 VERSION_EXISTS -- on PostgreSQL and
+    on SQLite alike; only the in-memory test backend, which has no foreign keys, let it through.
+    Everything the engine wrote for the version is deleted with it (the other foreign keys
+    cascade). The tag stays on the job, `version_tag`, as the record of what was attempted.
+
+    A DRAFT only: a re-export's job points at a finished version, which outlives the job.
+    Never raises. Returns whether the draft was deleted.
+    """
+    vid = getattr(job, "version_id", None)
+    if not vid:
+        return False
+    version = db.versions.get(vid)
+    if version is None or getattr(version, "status", None) != "draft":
+        return False
+    job.version_id = None
+    try:
+        db.jobs.update(job)
+        db.versions.delete(vid)
+        return True
+    except Exception as exc:                                  # noqa: BLE001 - see docstring
+        _log.warning("job %s: could not delete its draft version %s, so version '%s' stays "
+                     "taken: %s", getattr(job, "id", "?"), vid,
+                     getattr(job, "version_tag", "?"), exc)
+        job.version_id = vid
+        try:
+            db.jobs.update(job)
+        except Exception:                                     # noqa: BLE001
+            pass
+        return False
+
+
+SCOPE_TYPES = ("project", "layer", "group", "component")
+
+
+def scope_problem(arch_layers: Any, scope: Any) -> Optional[Tuple[str, List[str]]]:
+    """Why a job's `scope` cannot run against this architecture, or None when it can.
+
+    Returns `(message, candidates)`: `candidates` are the names to choose from -- the matches of
+    an ambiguous name, or every valid one when the name matches nothing.
+
+    Resolved exactly as the engine will resolve it: over the `layers` this job's config is written
+    from (`_convert_layers`), with the engine's own resolvers (`core.config.resolve_group_id`,
+    `resolve_component_id`; a layer by its exact name, as `group_planner.plan_runs` takes it).
+    Asked when the job is requested, before a version tag is reserved: the run used to accept it
+    and stop in Phase 1 -- `Group 'My Sample' is ambiguous - 2 layers use that name` -- after the
+    tag was taken.
+    """
+    if scope is None:
+        return None
+    if not isinstance(scope, dict):
+        return ("scope must be an object: {\"type\": \"project|layer|group|component\", "
+                "\"names\": [...]}", [])
+    stype = scope.get("type") or "project"
+    if stype not in SCOPE_TYPES:
+        return ("scope type %r is not one of %s" % (stype, ", ".join(SCOPE_TYPES)),
+                list(SCOPE_TYPES))
+    names = scope.get("names") or []
+    if stype == "project" or not names:
+        return None
+    if not isinstance(names, list) or not all(isinstance(n, str) and n.strip() for n in names):
+        return ("scope names must be a list of non-empty strings", [])
+
+    from core.config import (ambiguous_group_message, get_flat_groups, resolve_component_id,
+                             resolve_group_id)
+    layers = _convert_layers(arch_layers or [])
+    groups = get_flat_groups({"layers": layers})
+    components = [c for comps in groups.values() if isinstance(comps, dict) for c in comps]
+
+    for name in names:
+        name = name.strip()
+        if stype == "layer":
+            if name not in layers:
+                return ("No layer %r in this project. Layers: %s" % (name, ", ".join(layers)),
+                        list(layers))
+            continue
+        if stype == "group":
+            resolved, candidates = resolve_group_id(groups, name)
+            if resolved:
+                continue
+            if candidates:
+                return ambiguous_group_message(name, candidates), candidates
+            hint = _other_kind_hint(name, components, "component")
+            return ("No group %r in this project.%s Groups: %s"
+                    % (name, hint, ", ".join(groups)), list(groups))
+        resolved, candidates = resolve_component_id(components, name)
+        if resolved:
+            continue
+        if candidates:
+            return ("Component %r is ambiguous - %d layers use that name: %s. Qualify it with "
+                    "the layer (e.g. %r), or select the layer instead."
+                    % (name, len(candidates), ", ".join(candidates), candidates[0]), candidates)
+        hint = _other_kind_hint(name, list(groups), "group")
+        return ("No component %r in this project.%s Components: %s"
+                % (name, hint, ", ".join(components)), components)
+    return None
+
+
+def _other_kind_hint(name: str, others: List[str], kind: str) -> str:
+    """A sentence telling the caller `name` is a `kind` (a group asked for as a component, or the
+    reverse), or "" when it is not one either. Matched by the same rule as a component."""
+    from core.config import resolve_component_id
+    resolved, candidates = resolve_component_id(others, name)
+    if resolved or candidates:
+        return " %r is a %s: use {\"type\": \"%s\"}." % (name, kind, kind)
+    return ""
 
 
 # ---------------------------------------------------------------------------

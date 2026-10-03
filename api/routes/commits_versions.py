@@ -206,6 +206,21 @@ def delete_version(
     version = db.versions.get(version_id)
     if not version or version.project_id != project_id:
         raise not_found("Version", version_id)
+    # Every job that produced or re-exported it points at it (`analysis_jobs.version_id`, a
+    # foreign key with no ON DELETE), so the delete was refused for any version a job had made --
+    # an error on PostgreSQL and SQLite, a success only on the in-memory backend. The jobs let go
+    # of it and are kept, with their `version_tag`. Not while one is still at work on it: the run
+    # would go on writing rows for a version that is gone.
+    jobs = db.jobs.list_for_version(version_id)
+    active = [j for j in jobs if j.status in ("queued", "running", "paused")]
+    if active:
+        raise conflict("JOB_ACTIVE",
+                       f"Job {active[0].id} is still working on version '{version_id}'. Cancel it "
+                       f"(POST /projects/{project_id}/jobs/{active[0].id}/cancel) or let it "
+                       f"finish, then delete the version.")
+    for job in jobs:
+        job.version_id = None
+        db.jobs.update(job)
     db.versions.delete(version_id)
 
 
