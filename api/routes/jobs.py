@@ -13,7 +13,7 @@ from sse_starlette.sse import EventSourceResponse
 from ..db.session import get_db
 from ..db.in_memory import InMemoryDatabase
 from ..middleware.auth import get_current_user, require_project_admin, require_project_member
-from ..models.domain import User, AnalysisJob, AnalysisPhase, REEXPORT_MODE, EXPORT_MODE
+from ..models.domain import User, AnalysisJob, AnalysisPhase, REEXPORT_MODE, EXPORT_MODE, RENDER_MODES
 from ..services.errors import not_found, conflict, bad_request
 from ..services import pipeline_runner
 from ..schemas import (
@@ -275,14 +275,25 @@ def cancel_job(
     job = db.jobs.get(job_id)
     if not job or job.project_id != project_id:
         raise not_found("AnalysisJob", job_id)
+    if job.status in ("complete", "failed", "cancelled"):
+        # A page's view of the job can be seconds old: cancelling a run that has just stopped
+        # -- its work kept for `resume` -- would have deleted that work.
+        raise conflict("JOB_FINISHED", f"Job {job_id} has already ended ({job.status}).")
+    job = db.jobs.get(job_id)                 # as it is now: its run may have ended meanwhile
+    if job.status in ("complete", "failed", "cancelled"):
+        raise conflict("JOB_FINISHED", f"Job {job_id} has already ended ({job.status}).")
     job.status = "cancelled"
     job.completed_at = datetime.now(UTC)
     db.jobs.update(job)
     pipeline_runner.cancel_subprocess(job_id)
-    if not pipeline_runner.job_alive(job_id):
-        # Nothing here is running it -- a job left `running` by a server that stopped mid-run --
-        # so no runner thread will delete its unfinished draft version. Do it now.
-        pipeline_runner._release_draft_version(db, job)
+    if not (pipeline_runner.job_alive(job_id) or pipeline_runner._reexport_alive(job_id)):
+        # Nothing here follows it -- a job a stopped server left, not followed again yet -- so
+        # its background run is stopped here, before anything else, or it would go on writing
+        # into a version being removed. Then the unfinished draft goes, as a runner thread does
+        # after a cancel; a re-export's or an export's version is never a draft of its own.
+        pipeline_runner.stop_background_run(job)
+        if getattr(job, "mode", None) not in RENDER_MODES:
+            pipeline_runner._release_draft_version(db, job)
     return {"job": _job_dict(job)}
 
 

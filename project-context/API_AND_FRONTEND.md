@@ -326,6 +326,16 @@ generated yet), `reexport` (again), `resume` (after a crash). Human guide:
   `RUN_ACTIVE` / `NOTHING_TO_RESUME` / `NO_BACKGROUND_RUNS`. `GET …/components` answers `resume_action`
   (`version_components.resume_action` = `staged.resume_plan`'s action, "busy" while a job or a process
   of this machine is at work). **No web button yet** — the user deferred it; the panel prints the command.
+- **Hardened 2026-10-04** (a review): unknown work = keep (`_version_has_work`); DB errors at a run's end
+  are waited out (`_when_db_answers`, 30 s, up to 6 h); `main._watch_jobs` re-checks every 5 min for
+  active jobs nothing follows; cancel refuses ended jobs (`JOB_FINISHED`), stops an unfollowed run first
+  (`stop_background_run`), never releases for exports; a generation job whose dead run left a complete
+  version is done; the web generate runs on the version's own config (`_freeze_version_config`);
+  run.json `create_time` identifies the process; an export waits for the version's own run
+  (`RUN_ACTIVE`); `start_app.kill_tree` skips `runs/.../code/` processes. Round 2: only connection
+  errors are waited out (`_db_unavailable`); the frozen config keeps its typed macros, and `export` /
+  `resume` overlay this machine's current local settings (`analyzer._with_current_secrets`, the run's
+  LLM switches kept); the periodic pass only re-attaches, and only while `runner_still_held`.
 - **Limits**: each web run freezes ~10 MB of code (about a minute on Windows with the virus scanner; never
   deleted automatically — removing a copy must not follow its `node_modules` junction); a re-export is still
   the API's child (`_run_reexport`); the launcher's window between spawning the run and writing `run.json`

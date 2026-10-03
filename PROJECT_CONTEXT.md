@@ -57,13 +57,13 @@ newer entry and the code win.
   screen is the document reader's **edit mode** (2026-10-01; [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md)
   "Review & update in the web app").
 - **Review and approval** (assign a reviewer, submit, approve, request changes, reopen; a version is
-  approved when all its documents are) — built on branch `feat/review-approve`, uncommitted, 2026-10-01d.
+  approved when all its documents are) — built on branch `feat/review-approve` (committed `a55c9c5`, not pushed), 2026-10-01d.
   Backend complete before the office's 4-day generation, so what remains is web work. Contract
   [REVIEW_APPROVE_API_SPEC](docs/spec/REVIEW_APPROVE_API_SPEC.md), design
   [REVIEW_APPROVE_DESIGN](docs/design/REVIEW_APPROVE_DESIGN.md) (its open questions are still open), rules in
   `api/services/review_workflow.py`, recording in `api/services/document_registry.py` (every run, CLI too;
   `analyzer.py register` for older versions); a database upgrades with `analyzer.py setup` (migration 0015).
-- **Staged generation** (2026-10-02, same branch, uncommitted): one model per version, documents per
+- **Staged generation** (2026-10-02, same branch, committed `a55c9c5`): one model per version, documents per
   component by any number of runs (`export`, `reexport`, `resume`), `--detach` for runs that last days, one
   writer per version (migration 0016); web runs go on in the background when the API restarts, and a
   run that dies keeps its version for `resume` (2026-10-02c). For the office's multi-day run — guide

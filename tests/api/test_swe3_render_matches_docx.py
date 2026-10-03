@@ -138,3 +138,27 @@ def test_a_flowcharts_requirements_line_names_the_function_when_it_has_no_descri
 def test_the_appendix_reads_as_the_docx_heading(tmp_path):
     appendix = _render(tmp_path)["sections"][-1]
     assert f"{appendix['number']} {appendix['title']}" == "Appendix A. Design Guideline"
+
+
+class TestTheCounts:
+    def test_globals_are_counted_as_the_view_writes_them(self, tmp_path):
+        """The interface-tables view types a global "Global Variable" (views/interface_tables.py);
+        the page's count looked only for other spellings, so every document said "0 Globals"."""
+        group = tmp_path / "Layer1.Lib"
+        group.mkdir()
+        glob = {"interfaceId": "IF_2", "globalId": "g1", "type": "Global Variable",
+                "interfaceName": "g_count", "name": "g_count", "qualifiedName": "g_count",
+                "unitKey": UNIT, "unitName": "Lib", "location": {}, "variableType": "int",
+                "range": "R", "direction": "In/Out", "reason": "", "sourceDest": "Core/Core",
+                "callerUnits": [], "calleesUnits": []}
+        (group / "interface_tables.json").write_text(json.dumps({
+            "unitNames": {UNIT: "Lib"}, UNIT: {"entries": [ENTRY, glob]}}), encoding="utf-8")
+        now = datetime.datetime(2026, 10, 4, tzinfo=datetime.timezone.utc)
+        doc = SimpleNamespace(id="d1", group="Layer1.Lib", layer="Layer1", subtitle=None,
+                              process="SWE.3", updated_at=now, version_id="v1")
+        project = SimpleNamespace(name="Brake ECU", compliance_standard="ISO_26262")
+        version = SimpleNamespace(id="v1", tag="v1.0.0", resolved_config=None)
+        meta = dr.build_render(doc, project, version, group, "p1",
+                               model_reader=SimpleNamespace(load=lambda name: {}),
+                               output_reader=None)["meta"]
+        assert (meta["functions_total"], meta["globals_total"]) == (1, 1)

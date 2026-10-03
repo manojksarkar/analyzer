@@ -485,6 +485,8 @@ def _render_version(a, *, scope, command: str, after=None):
     # after a --no-llm run and failed after every real one.
     cfg = os.path.join(adir, "config.json")
     own_cfg = os.path.isfile(cfg)
+    if own_cfg:
+        cfg = _with_current_secrets(cfg)
     if not own_cfg:
         # A version that is not THIS project's -- a typo, or another project's id -- is refused
         # here, before the project's own config stands in for its missing one. Checking only
@@ -608,6 +610,47 @@ def _render_version(a, *, scope, command: str, after=None):
     except VersionBusy as exc:
         print(str(exc), file=sys.stderr)
         return 2, None
+
+
+#: A run's own LLM switches (`--no-llm`), which this machine's local config never overrides.
+_RUN_SWITCHES = ("descriptions", "behaviourNames")
+
+
+def _with_current_secrets(cfg_path: str) -> str:
+    """The version's own config with this machine's CURRENT local settings over it (its
+    `config.local.json`, `db` and `auth` aside: the LLM gateway, key, headers, rate limit), as
+    `config.runtime.json` beside it; its path. A version keeps the config its run started with,
+    so that a resume days later runs as it began -- but the credentials are the machine's, and a
+    key rotated meanwhile failed every LLM call of the resumed run. The run's own switches stay.
+    On any error the version's file as it is."""
+    try:
+        import json
+        from core.config import _deep_merge, _strip_json_comments, _strip_trailing_commas
+        root = os.environ.get("ANALYZER_DATA_ROOT") or _ROOT      # the installation, not a frozen copy
+        local_path = os.path.join(root, "engine", "config", "config.local.json")
+        if not os.path.isfile(local_path):
+            local_path = os.path.join(_ROOT, "engine", "config", "config.local.json")
+        if not os.path.isfile(local_path):
+            return cfg_path
+
+        def load(p):
+            with open(p, encoding="utf-8") as fh:
+                return json.loads(_strip_trailing_commas(_strip_json_comments(fh.read())))
+        cfg, local = load(cfg_path), load(local_path)
+        local.pop("db", None)
+        local.pop("auth", None)
+        kept = {k: (cfg.get("llm") or {})[k] for k in _RUN_SWITCHES if k in (cfg.get("llm") or {})}
+        _deep_merge(cfg, local)
+        if kept:
+            cfg.setdefault("llm", {}).update(kept)
+        out = os.path.join(os.path.dirname(cfg_path), "config.runtime.json")
+        with open(out, "w", encoding="utf-8") as fh:
+            json.dump(cfg, fh, indent=2)
+        return out
+    except Exception as exc:                        # noqa: BLE001 -- see docstring
+        print(f"note: this machine's settings could not be laid over the version's config "
+              f"({type(exc).__name__}: {exc}); using it as it is", file=sys.stderr)
+        return cfg_path
 
 
 def _llm_off(cfg_path: str) -> bool:
@@ -777,6 +820,7 @@ def cmd_export(a) -> int:
     print(f"export: {len(todo)} component(s) into {a._name}: {', '.join(todo)}", flush=True)
     a.from_phase = 3
     unfinished = _pipeline_status(a.version_id) not in (None, "complete")
+    closed = []
 
     def _maybe_close(docs):
         # A version whose own run was cut short stays unfinished (never a baseline) until
@@ -793,10 +837,14 @@ def cmd_export(a) -> int:
             return
         from incremental.engine import finish_version
         finish_version(a.project_id, a.version_id, documents=docs)
+        closed.append(True)
         print(f"version {a._name}: complete")
 
     rc, _ = _render_version(a, scope={"type": "component", "names": todo}, command="export",
                             after=_maybe_close)
+    if closed:
+        # A web run's version, stopped and finished here: its web job ends too (draft no more).
+        _finish_web_job(a.project_id, a.version_id)
     return rc
 
 
@@ -843,9 +891,11 @@ def _finish_web_job(project_id: str, version_id: str, db=None) -> None:
         if job is None or job.status != "failed":
             return
         from api.services import pipeline_runner
-        job.status, job.error_message, job.completed_at = "running", None, None
+        # Straight from failed to complete: never "running", which an API's check for jobs
+        # nobody follows would take up and follow again.
+        job.error_message = None
         db.jobs.update(job)
-        pipeline_runner._complete(db, job.id)
+        pipeline_runner._complete(db, job.id, force=True)
         print(f"web app: job {job.id} complete -- version {version.tag or version_id} is out of draft")
     except Exception as exc:                        # noqa: BLE001 -- see docstring
         print(f"note: the web app's job for this version could not be finished "
@@ -886,10 +936,16 @@ def _resume(a) -> int:
                   "recorded. Run the same `generate` again: the LLM work already done comes "
                   "back from the cache.", file=sys.stderr)
             return 2
+        argv = list(plan["argv"])
+        if "--config" in argv[:-1]:
+            # The version's own config, with this machine's current settings (secrets) over it.
+            i = argv.index("--config") + 1
+            if os.path.basename(os.path.dirname(argv[i])) == a.version_id:
+                argv[i] = _with_current_secrets(argv[i])
         print("the parse (Phase 1) did not finish: running the same generate again -- the parse "
               "starts over, the LLM work already done comes back from the cache.\n  "
-              + " ".join(plan["argv"]), flush=True)
-        return main(plan["argv"])
+              + " ".join(argv), flush=True)
+        return main(argv)
 
     from incremental.engine import finish_version
 

@@ -141,8 +141,8 @@ def cancel_subprocess(job_id: str) -> None:
         _stop_tree(proc)
     fr = _frozen_run_module() if run is not None else None
     if fr is not None:
-        threading.Thread(target=fr.stop, args=(run.get("pid"),), daemon=True,
-                         name=f"stop-{job_id}").start()
+        threading.Thread(target=fr.stop, args=(run.get("pid"), run.get("create_time")),
+                         daemon=True, name=f"stop-{job_id}").start()
 
 
 def _stop_tree(proc: subprocess.Popen) -> None:
@@ -322,7 +322,10 @@ def _cleanup_state(job_id: str) -> None:
         _job_resume_events.pop(job_id, None)
         _progress_warned.difference_update({k for k in _progress_warned if k[0] == job_id})
         _step_clocks.pop(job_id, None)
-        _job_threads.pop(job_id, None)
+        # Only this thread's own entry: a job reopened by `start_resume` has a new thread, which
+        # the old one ending must not unregister (the job would look unfollowed).
+        if _job_threads.get(job_id) is threading.current_thread():
+            _job_threads.pop(job_id, None)
         # Keep logs so SSE can drain remaining lines after completion
 
 
@@ -520,6 +523,36 @@ _RUNNER_LOCK = (0x41524658, 1)          # "ARFX"
 _runner_conn = None                     # the connection holding it, open for the process's life
 
 
+def runner_still_held(engine: Any) -> bool:
+    """Whether this process still holds the job-runner lock (`claim_job_runner`). A database
+    restart or a dropped idle connection frees it in silence; then another server may sweep, and
+    two sweeping at once would follow (and fail) each other's jobs. A lost claim is dropped, not
+    taken again: the server that holds it now does the sweeping. True on a database without
+    advisory locks (one process by construction)."""
+    global _runner_conn
+    if getattr(getattr(engine, "dialect", None), "name", "") != "postgresql":
+        return True
+    if _runner_conn is None:
+        return False
+    from sqlalchemy import text
+    try:
+        held = _runner_conn.execute(text(
+            "SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND granted "
+            "AND classid::bigint = :a AND objid::bigint = :b AND pid = pg_backend_pid()"),
+            {"a": _RUNNER_LOCK[0], "b": _RUNNER_LOCK[1]}).first() is not None
+        _runner_conn.commit()
+    except Exception:                                    # noqa: BLE001 - the session is gone
+        held = False
+    if not held:
+        try:
+            _runner_conn.invalidate()
+            _runner_conn.close()
+        except Exception:                                # noqa: BLE001
+            pass
+        _runner_conn = None
+    return held
+
+
 def claim_job_runner(engine: Any) -> bool:
     """Whether this process is the only API server running jobs on its database.
 
@@ -556,7 +589,8 @@ def claim_job_runner(engine: Any) -> bool:
 PROCESS_STARTED = datetime.now(UTC)
 
 
-def fail_interrupted_jobs(db: Any, *, before: Optional[datetime] = None) -> int:
+def fail_interrupted_jobs(db: Any, *, before: Optional[datetime] = None,
+                          reattach_only: bool = False) -> int:
     """At start-up: fail every job a stopped server left queued, running or paused.
 
     A job runs on a thread of the API process that started it (`job_alive`), and a process that
@@ -587,6 +621,10 @@ def fail_interrupted_jobs(db: Any, *, before: Optional[datetime] = None) -> int:
                 continue
         if _reattach_detached(db, job):
             continue
+        if reattach_only:
+            # The periodic pass: only background runs nobody follows. A job with no run.json
+            # may be queued, checking out or starting -- the start-up check decides those.
+            continue
         job.status = "failed"
         job.error_message = INTERRUPTED_MESSAGE
         job.completed_at = _now()
@@ -605,7 +643,13 @@ def _run(db: Any, job_id: str) -> None:
         _init_state(job_id)
         _inner_run(db, job_id)
     except Exception as exc:
-        _mark_failed(db, job_id, f"Runner error: {exc}")
+        # Kept when there is work in it: a database error at the end of a long run must not
+        # delete the version it made. If even this fails, the job stays active with nothing
+        # following it, and the periodic check follows its run again (main._watch_jobs).
+        try:
+            _fail_keeping_work(db, job_id, f"Runner error: {exc}")
+        except Exception as exc2:                             # noqa: BLE001 - see above
+            _log.error("job %s: could not record the runner error (%s)", job_id, exc2)
     finally:
         # A cancelled run's draft goes too -- here, once the subprocess has exited, not in the
         # cancel route while the engine may still be writing rows under that version.
@@ -754,6 +798,7 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
         # creates that file.
         _materialise_data_dictionary(db, job)
     mode = (getattr(job, "mode", "auto") or "auto")
+    config_path = _freeze_version_config(job, config_path)
     cmd = _generate_cmd(job, root, config_path)
     _append_log(job_id, f"Generating ({'full' if mode == 'full' else 'auto'}) via analyzer.py generate…")
 
@@ -761,7 +806,85 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
     # (`_execute_detached`), and a restarted server follows it again.
     ok = _run_engine_command(db, job_id, cmd, phase_start=1, extra_env=_engine_db_env(db))
     if ok:
-        _complete(db, job_id)
+        _when_db_answers(job_id, "finishing the job", _complete, db, job_id)
+
+
+def _freeze_version_config(job: Any, config_path: Path) -> Path:
+    """The version's own copy of the config the run starts with, and its path.
+
+    `export`, `resume` and `reexport` read `<version dir>/config.json` first
+    (analyzer._render_version), else the project's `config.json` -- which every later run
+    rewrites. A run stopped on day 3 and resumed after another run (LLM off, other layers) would
+    have carried on with that run's settings. The paths in the config are absolute, so the copy
+    reads the same files."""
+    vid = getattr(job, "version_id", None)
+    if not vid:
+        return config_path
+    try:
+        vdir = doc_render.workspaces_root() / job.project_id / "versions" / vid
+        vdir.mkdir(parents=True, exist_ok=True)
+        with open(config_path, encoding="utf-8") as fh:
+            cfg = json.loads(_strip_jsonc(fh.read()))
+        # A core's typed macros are a file of the PROJECT (cores/<core>/macros.json), rewritten
+        # by every run: the version keeps its own. (Uploaded files are kept by upload id.)
+        for name, core in (cfg.get("cores") or {}).items():
+            src = core.get("macros") if isinstance(core, dict) else None
+            if src and os.path.isfile(src):
+                dst = vdir / "cores" / re.sub(r"[^A-Za-z0-9._-]+", "_", str(name)) / Path(src).name
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(src, dst)
+                core["macros"] = str(dst)
+        dest = vdir / "config.json"
+        with open(dest, "w", encoding="utf-8") as fh:
+            json.dump(cfg, fh, indent=2)
+        return dest
+    except (OSError, ValueError) as exc:
+        _append_log(getattr(job, "id", ""), f"note: the version's own copy of the config could "
+                                            f"not be written ({exc}); using the project's")
+        return config_path
+
+
+#: Database errors the end of a run waits out rather than turns into a failed job.
+_DB_RETRY_SECONDS = 30.0
+_DB_RETRY_FOR = 6 * 3600.0
+
+
+def _db_unavailable(exc: BaseException) -> bool:
+    """Whether `exc` says the database did not answer (connection refused or lost, pool
+    exhausted) -- what waiting fixes. A constraint violation or a missing column does not go away:
+    those raise at once, or a job would sit "running" for six hours over a bug."""
+    try:
+        from sqlalchemy import exc as sa_exc
+    except ImportError:                                      # pragma: no cover
+        return False
+    if isinstance(exc, (sa_exc.OperationalError, sa_exc.InterfaceError,
+                        sa_exc.DisconnectionError, sa_exc.TimeoutError)):
+        return True
+    return isinstance(exc, sa_exc.DBAPIError) and bool(getattr(exc, "connection_invalidated", False))
+
+
+def _when_db_answers(job_id: str, what: str, fn, *args):
+    """`fn(*args)`, tried again every 30 s while the database does not answer (up to six hours).
+
+    The end of a run -- its outcome judged, the version finalised -- is a handful of writes after
+    days of work. A database restart at that moment raised out of the runner: the job failed
+    ("Runner error") or stayed "running" with nothing following it. The run's outcome is on disk
+    (exit.json), so waiting for the database loses nothing. Other errors raise at once."""
+    end = time.monotonic() + _DB_RETRY_FOR
+    warned = False
+    while True:
+        try:
+            return fn(*args)
+        except Exception as exc:
+            if not _db_unavailable(exc) or time.monotonic() >= end:
+                raise
+            if not warned:
+                warned = True
+                _log.warning("job %s: %s: the database did not answer (%s); trying again every "
+                             "%.0f s", job_id, what, type(exc).__name__, _DB_RETRY_SECONDS)
+                _append_log(job_id, f"The database did not answer while {what}; trying again "
+                                    f"every {_DB_RETRY_SECONDS:.0f} s.")
+            time.sleep(_DB_RETRY_SECONDS)
 
 
 def _generate_cmd(job: Any, root: Path, config_path: Path) -> list[str]:
@@ -1736,8 +1859,13 @@ def _launch_detached(cmd: list, env: dict) -> dict:
     if proc.returncode != 0 or not pid or not log:
         raise _LaunchFailed(text.strip() or f"the launcher exited with code {proc.returncode}")
     log_path = log.group(1)
-    return {"pid": int(pid.group(1)), "log_path": log_path,
-            "run_dir": os.path.dirname(log_path)}
+    run = {"pid": int(pid.group(1)), "log_path": log_path, "run_dir": os.path.dirname(log_path)}
+    try:                                    # run.json has the process's start time (identity)
+        with open(os.path.join(run["run_dir"], "run.json"), encoding="utf-8") as fh:
+            run["create_time"] = json.load(fh).get("create_time")
+    except (OSError, ValueError):
+        pass
+    return run
 
 
 class _LogFollower:
@@ -1787,17 +1915,20 @@ def _execute_detached(db: Any, job_id: str, cmd: list, phase_start: int = 1,
     except _LaunchFailed as exc:
         for line in str(exc).splitlines()[-40:]:
             _append_log(job_id, line)
-        _mark_failed(db, job_id, f"The run could not be started:\n{str(exc)[-3000:]}")
+        # Kept when there is work in it: a resume of a stopped run that cannot start (the
+        # version busy for a moment, the code copy failing) must not delete days of work.
+        _fail_keeping_work(db, job_id, f"The run could not be started:\n{str(exc)[-3000:]}")
         return False
     _append_log(job_id, f"Background run: process {run['pid']}, log {run['log_path']}")
     return _follow_detached(db, job_id, run, phase_start=phase_start)
 
 
-def _wait_gone(fr: Any, pid: Optional[int], seconds: float = 30.0) -> None:
+def _wait_gone(fr: Any, pid: Optional[int], seconds: float = 30.0,
+               create_time: Optional[float] = None) -> None:
     """A run writes its exit code just before it exits: wait for the process to be gone, so the
     last lines it wrote are in the log."""
     end = time.monotonic() + seconds
-    while fr.process_alive(pid) and time.monotonic() < end:
+    while fr.process_alive(pid, create_time) and time.monotonic() < end:
         time.sleep(0.25)
 
 
@@ -1818,7 +1949,7 @@ def _follow_detached(db: Any, job_id: str, run: dict, *, phase_start: int,
     eng = getattr(db, "_engine", None)
     job = db.jobs.get(job_id)
     vid = getattr(job, "version_id", None) if job else None
-    pid = run.get("pid")
+    pid, born = run.get("pid"), run.get("create_time")
     run_dir = run.get("run_dir") or os.path.dirname(run["log_path"])
     with _LOCK:
         _job_runs[job_id] = run
@@ -1832,17 +1963,17 @@ def _follow_detached(db: Any, job_id: str, run: dict, *, phase_start: int,
         while True:
             for line in log.read():
                 if tracker.feed(line):
-                    fr.stop(pid)
+                    fr.stop(pid, born)
                     return False
             now = time.monotonic()
             if now >= next_cancel_check:
                 if _progress(job_id, _is_cancelled, db, job_id):
-                    fr.stop(pid)
+                    fr.stop(pid, born)
                     return False
                 next_cancel_check = now + _CANCEL_CHECK_SECONDS
             rc = fr.read_exit(run_dir)
             if rc is None:
-                alive = fr.process_alive(pid)
+                alive = fr.process_alive(pid, born)
                 if alive:
                     time.sleep(DETACHED_POLL_SECONDS)
                     continue
@@ -1855,7 +1986,7 @@ def _follow_detached(db: Any, job_id: str, run: dict, *, phase_start: int,
                     continue
                 rc = fr.read_exit(run_dir)          # it may have ended between the two looks
             else:
-                _wait_gone(fr, pid)
+                _wait_gone(fr, pid, create_time=born)
             for line in log.flush():
                 tracker.feed(line)
             break
@@ -1863,23 +1994,62 @@ def _follow_detached(db: Any, job_id: str, run: dict, *, phase_start: int,
         with _LOCK:
             _job_runs.pop(job_id, None)
 
-    if _is_cancelled(db, job_id):
+    def conclude() -> bool:
+        if _is_cancelled(db, job_id):
+            return False
+        code = rc
+        if (code is None and getattr(job, "mode", None) not in RENDER_MODES
+                and _version_completed(db, vid)):
+            # The version's own run: its process is gone with no exit code, yet the version is
+            # complete -- a `resume` from the command line finished it while this run's record
+            # still said running. (An export's version may have been complete before it started,
+            # so for an export this says nothing.)
+            _append_log(job_id, "The version was completed by another run (a resume).")
+            code = 0
+        if code in (0, 3):
+            if code == 3:
+                _append_log(job_id, "Some components' documents failed (see above); the others "
+                                    "were made. Their state is on the Documents page's Components "
+                                    "panel.")
+            tracker.finish()
+            return True
+        if code is None:
+            _append_log(job_id, "The run's process ended before it finished.")
+            _fail_keeping_work(db, job_id, STOPPED_MESSAGE)
+        else:
+            tail = "\n".join(tracker.recent_lines[-20:])
+            _append_log(job_id, f"Job failed with code {code}")
+            _fail_keeping_work(db, job_id, _failure_message(code, tracker.recent_lines, tail))
         return False
-    if rc in (0, 3):
-        if rc == 3:
-            _append_log(job_id, "Some components' documents failed (see above); the others "
-                                "were made. Their state is on the Documents page's Components "
-                                "panel.")
-        tracker.finish()
-        return True
-    if rc is None:
-        _append_log(job_id, "The run's process ended before it finished.")
-        _fail_keeping_work(db, job_id, STOPPED_MESSAGE)
-    else:
-        tail = "\n".join(tracker.recent_lines[-20:])
-        _append_log(job_id, f"Job failed with code {rc}")
-        _fail_keeping_work(db, job_id, _failure_message(rc, tracker.recent_lines, tail))
-    return False
+
+    return _when_db_answers(job_id, "recording the run's end", conclude)
+
+
+def _version_completed(db: Any, version_id: Optional[str]) -> bool:
+    """Whether the version's pipeline is complete (`versions.pipeline_status`)."""
+    eng = getattr(db, "_engine", None)
+    if eng is None or not version_id:
+        return False
+    import sqlalchemy as sa
+    from ..db.postgres import schema as s
+    with eng.connect() as cx:
+        return cx.execute(sa.select(s.versions.c.pipeline_status)
+                          .where(s.versions.c.id == version_id)).scalar() == "complete"
+
+
+def stop_background_run(job: Any) -> bool:
+    """Stop the background run of `job` that no thread of this server follows (a server that
+    stopped mid-run, before its run is followed again) -- before its version is removed, so the
+    run does not go on writing into a deleted version. True when one was stopped."""
+    fr = _frozen_run_module()
+    vid = getattr(job, "version_id", None)
+    if fr is None or not vid:
+        return False
+    run = fr.find_job_run(_data_root(), vid, job.id)
+    if not run or fr.process_alive(run.get("pid"), run.get("create_time")) is False:
+        return False
+    fr.stop(run.get("pid"), run.get("create_time"))
+    return True
 
 
 def _version_has_work(db: Any, version_id: Optional[str]) -> bool:
@@ -1898,8 +2068,10 @@ def _version_has_work(db: Any, version_id: Optional[str]) -> bool:
             status = cx.execute(sa.select(s.versions.c.pipeline_status)
                                 .where(s.versions.c.id == version_id)).scalar()
         return status in ("deriving", "viewing", "exporting", "complete")
-    except Exception:                                    # noqa: BLE001 - then as before
-        return False
+    except Exception:                                    # noqa: BLE001 - see below
+        # Cannot tell (the database did not answer): keep the version. Deleting a draft that
+        # holds days of work is the one mistake that cannot be undone; keeping an empty one is.
+        return True
 
 
 def _fail_keeping_work(db: Any, job_id: str, message: str) -> None:
@@ -1958,10 +2130,8 @@ def _refollow(db: Any, job_id: str, run: dict, render: bool) -> None:
         phase = getattr(job, "phase", None) or (3 if render else 1)
         if _follow_detached(db, job_id, run, phase_start=phase, replay=True) \
                 and not _is_cancelled(db, job_id):
-            if render:
-                _complete_render(db, job_id)
-            else:
-                _complete(db, job_id)
+            _when_db_answers(job_id, "finishing the job",
+                             _complete_render if render else _complete, db, job_id)
     except Exception as exc:                             # noqa: BLE001 - recorded on the job
         _fail_keeping_work(db, job_id, f"Runner error: {exc}")
     finally:
@@ -2221,9 +2391,11 @@ def _read_engine_manifest(project_id: str, commit_sha: str,
 # backend — so the API-side sync was always a redundant second write of data already stored.
 
 
-def _complete(db: Any, job_id: str) -> None:
+def _complete(db: Any, job_id: str, *, force: bool = False) -> None:
+    """Finalise a finished run's job and version. `force`: a failed job too -- a version a
+    `resume` from the command line finished (analyzer._finish_web_job)."""
     job = db.jobs.get(job_id)
-    if not job or job.status in ("cancelled", "failed"):
+    if not job or job.status == "cancelled" or (job.status == "failed" and not force):
         return
 
     now = _now()
@@ -2757,6 +2929,16 @@ def start_export(db: Any, version: Any, components: list) -> AnalysisJob:
                 409, "EXPORT_RUNNING",
                 f"Version '{version.id}' is already being rendered by job {running.id}. Follow "
                 f"that job, then add these.", running.id)
+        # The version's own run, alive in this server: on SQLite there is no lock to say so, and
+        # a resumed run holds none for the moment before it starts. Whichever stored last would
+        # replace the other's documents.
+        own = next((j for j in jobs if j.status in ("queued", "running", "paused")
+                    and job_alive(j.id)), None)
+        if own is not None:
+            raise ReexportRefused(
+                409, "RUN_ACTIVE",
+                f"Job {own.id} is at work on version '{version.id}'. Follow that job, then add "
+                f"these.", own.id)
         generation = next((j for j in jobs if getattr(j, "mode", None) not in RENDER_MODES), None)
         job = AnalysisJob(
             id=f"job{uuid.uuid4().hex[:8]}", project_id=version.project_id,
@@ -2796,7 +2978,7 @@ def _run_export(db: Any, job_id: str) -> None:
         # In the background when it can be: making 33 components' documents takes a day too.
         if (_run_engine_command(db, job_id, cmd, phase_start=3, extra_env=_engine_db_env(db))
                 and not _is_cancelled(db, job_id)):
-            _complete_render(db, job_id)
+            _when_db_answers(job_id, "finishing the job", _complete_render, db, job_id)
     except Exception as exc:                  # noqa: BLE001 - recorded on the job, not lost
         _fail_keeping_work(db, job_id, f"Export error: {exc}")
     finally:
@@ -2866,6 +3048,9 @@ def start_resume(db: Any, version: Any) -> AnalysisJob:
             job.status = "queued"
             job.error_message = None
             job.completed_at = None
+            # Started again: the checks for unfollowed jobs leave a job alone for its first
+            # minutes, and they read this (and "the project's run" is the newest).
+            job.started_at = _now()
             job.current_activity = "Resuming…"
             for p in job.phases:
                 if p.number >= first and p.status != "done":
@@ -2911,10 +3096,8 @@ def _run_resume(db: Any, job_id: str, render: bool, first_phase: int) -> None:
         if (_execute_detached(db, job_id, cmd, phase_start=first_phase,
                               extra_env=_engine_db_env(db))
                 and not _is_cancelled(db, job_id)):
-            if render:
-                _complete_render(db, job_id)
-            else:
-                _complete(db, job_id)
+            _when_db_answers(job_id, "finishing the job",
+                             _complete_render if render else _complete, db, job_id)
     except Exception as exc:                  # noqa: BLE001 - recorded on the job, not lost
         _fail_keeping_work(db, job_id, f"Resume error: {exc}")
     finally:

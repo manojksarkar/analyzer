@@ -100,6 +100,37 @@ def _fail_interrupted_jobs(db) -> bool:
         return False
 
 
+#: Seconds between two looks for active jobs that nothing follows any more.
+JOB_WATCH_SECONDS = 300.0
+
+
+def _watch_jobs(db, stop=None) -> None:
+    """After start-up, every five minutes: a job left active with nothing following it -- its
+    thread died on an error it could not record (the database down at the end of a run) -- is
+    followed again (a background run) or failed, as at start-up. Only by the server that runs
+    jobs on this database, and never a job started in the last two minutes: it may be between
+    its row and its thread."""
+    import datetime as _dt
+    import sys
+    import threading
+
+    stop = stop or threading.Event()          # set by a test to end the thread
+
+    def loop() -> None:
+        from .services import pipeline_runner
+        while not stop.wait(JOB_WATCH_SECONDS):
+            try:
+                engine = getattr(db, "_engine", None)
+                if engine is not None and not pipeline_runner.runner_still_held(engine):
+                    continue
+                pipeline_runner.fail_interrupted_jobs(
+                    db, before=pipeline_runner._now() - _dt.timedelta(seconds=120),
+                    reattach_only=True)
+            except Exception as exc:                          # noqa: BLE001 - next round
+                print(f"[api] job watch: {type(exc).__name__}: {exc}", file=sys.stderr)
+    threading.Thread(target=loop, daemon=True, name="job-watch").start()
+
+
 def _sweep_until_done(db) -> None:
     """Try the start-up check again, in the background, until it runs. A run in the background
     is followed again only by that check: one missed try -- a database slow to answer while the
@@ -152,9 +183,11 @@ async def _db_startup_check() -> None:
               f"      The API is bound to {_redact(dsn)} (source: {src}). If that is 'localhost'\n"
               f"      but you meant a remote server, set DATABASE_URL before starting uvicorn, or\n"
               f"      add a `db` section to engine/config/config.local.json.", file=sys.stderr)
-    # No job says "running" with nothing running or following it -- tried again until it runs.
+    # No job says "running" with nothing running or following it -- tried again until it runs,
+    # then looked for again every few minutes.
     if not _fail_interrupted_jobs(_db):
         _sweep_until_done(_db)
+    _watch_jobs(_db)
 
 # ---------------------------------------------------------------------------
 # Self-hosted API docs — Swagger UI / ReDoc assets are served from api/static/

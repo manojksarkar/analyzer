@@ -1158,8 +1158,10 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
         for e in (itf.get(uk, {}) or {}).get("entries", []) or []
     ]
     functions_total = sum(1 for e in all_entries if e.get("type") == "Function")
+    # The interface-tables view writes a global's type as "Global Variable" (views/
+    # interface_tables.py); counting only the other spellings showed "0 Globals" on every document.
     globals_total = sum(1 for e in all_entries
-                        if e.get("type") in ("Variable", "Global", "GlobalVariable"))
+                        if e.get("type") in ("Global Variable", "Variable", "Global", "GlobalVariable"))
 
     cover = {
         "project_name": project_name,

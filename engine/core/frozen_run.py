@@ -139,7 +139,8 @@ def detach(argv: List[str], *, code_root: str, data_root: str, workspaces_dir: s
                     code_dir=code, database_url=database_url,
                     exit_path=os.path.join(dest, EXIT_FILE))
     pid = spawn(code, argv, log_path, env)
-    info = {"pid": pid, "argv": argv, "code_dir": code, "log_path": log_path, "run_dir": dest,
+    info = {"pid": pid, "create_time": _create_time(pid),
+            "argv": argv, "code_dir": code, "log_path": log_path, "run_dir": dest,
             "started_at": datetime.datetime.now().isoformat(timespec="seconds"),
             # The web job that started it, when one did: how an API that restarted finds the
             # run it was following (`find_job_run`).
@@ -200,10 +201,20 @@ def find_job_run(data_root: str, version_key: str, job_id: str) -> Optional[Dict
     return None
 
 
-def process_alive(pid: Optional[int]) -> Optional[bool]:
-    """True while `pid` is an analyzer process, False when it is not, None when this cannot be
-    told (no psutil). The command line is checked so that a process id the system has given to
-    another program since is not taken for the run."""
+def _create_time(pid: Optional[int]) -> Optional[float]:
+    """When process `pid` started (seconds since the epoch), or None when this cannot be told."""
+    try:
+        import psutil
+        return psutil.Process(int(pid)).create_time()
+    except Exception:                             # noqa: BLE001 - no psutil, or it is gone
+        return None
+
+
+def process_alive(pid: Optional[int], create_time: Optional[float] = None) -> Optional[bool]:
+    """True while `pid` is the run's process, False when it is not, None when this cannot be told
+    (no psutil, or no access to it -- then the version's lock decides). The process must have
+    started when the run did (`create_time`, from run.json) and run analyzer.py: after a reboot
+    the system gives its id to other programs, another run's among them."""
     if not pid:
         return False
     try:
@@ -214,19 +225,26 @@ def process_alive(pid: Optional[int]) -> Optional[bool]:
         p = psutil.Process(int(pid))
         if p.status() == psutil.STATUS_ZOMBIE:
             return False
+        if create_time is not None and abs(p.create_time() - float(create_time)) > 2.0:
+            return False
         try:
             return any("analyzer.py" in part for part in p.cmdline())
         except psutil.AccessDenied:
-            return True
+            return None
     except psutil.NoSuchProcess:
         return False
     except psutil.Error:
         return None
 
 
-def stop(pid: Optional[int]) -> None:
-    """Stop a background run and every process it started (its phases)."""
-    if not process_alive(pid):
+def stop(pid: Optional[int], create_time: Optional[float] = None) -> None:
+    """Stop a background run and every process it started (its phases) -- only a process known to
+    be the run: `process_alive` says so, or it cannot read the command line (no access) but the
+    start time matches. After a reboot the run's id may belong to anything; killing that tree is
+    worse than leaving a run to finish."""
+    alive = process_alive(pid, create_time)
+    if not (alive is True or (alive is None and create_time is not None
+                              and _create_time(pid) is not None)):
         return
     try:
         import psutil

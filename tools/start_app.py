@@ -474,10 +474,22 @@ def app_servers() -> list[dict]:
     return out
 
 
+def _background_run(q) -> bool:
+    """A run started with `--detach` (a web run, a long CLI run): it lives in a frozen copy of the
+    code under runs/ and must outlive a server restart. psutil finds a process's children by
+    parent id, and Windows reuses ids: a run whose launcher's id the server's child took since
+    would count as the server's grandchild."""
+    try:
+        cmd = " ".join(q.cmdline()).replace("\\", "/").lower()
+    except psutil.Error:
+        return False
+    return "/runs/" in cmd and "/code/" in cmd
+
+
 def kill_tree(pid: int) -> None:
     try:
         p = psutil.Process(pid)
-        procs = p.children(recursive=True) + [p]
+        procs = [q for q in p.children(recursive=True) if not _background_run(q)] + [p]
     except psutil.Error:
         return
     for q in procs:

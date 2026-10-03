@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-04 | Background runs hardened after a review: a database blip at a run's end no longer deletes its work or leaves the job unfollowed; cancel, export and a recycled process id are safe; each version keeps its own config. Small API fixes: Globals count, the draft no longer takes over the project view, projects sorted, the last admin stays | [11](11-2026-09-29e.md) |
 | 2026-10-02c | A web run goes on when the API restarts: it runs in the background like `--detach`, the API follows it and follows it again after a restart; a run that dies keeps its version for `resume` | [11](11-2026-09-29e.md) |
 | 2026-10-02b | `analyzer.py generate` makes SWE.3 and SWE.4 by default (`--doc-type all`), like a web run | [11](11-2026-09-29e.md) |
 | 2026-10-02 | Staged generation: one model per version, documents per component, any number of runs; a long run survives the API and code changes; one writer per version; `resume` after a crash | [11](11-2026-09-29e.md) |

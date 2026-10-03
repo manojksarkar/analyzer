@@ -68,12 +68,15 @@ def _is_superuser(db, user_id: str) -> bool:
 
 def _project_view(project: Project, db: InMemoryDatabase, user_id: str) -> dict:
     member = db.members.get_member(project.id, user_id)
-    versions = db.versions.list_for_project(project.id)
-    latest = max(versions, key=lambda v: v.created_at, default=None)
-    docs, total = db.documents.list_for_project(project.id)
-    # Scope the dashboard doc counts to the version actually on display (latest),
-    # not the sum across every run. latest is None for a project with no versions.
-    stats = db.documents.get_stats(project.id, version_id=latest.id if latest else None)
+    # The version on display: the newest that is not a draft being generated. A run's draft
+    # (days, for a long run) has no documents yet, so the counts and the current version read
+    # 0 and the draft's name for the whole run. None for a project with no finished version.
+    from ..services.review_workflow import latest_version
+    latest = latest_version(db, project.id)
+    # Scope the dashboard doc counts to that version, not the sum across every run. With no
+    # finished version there is nothing to count: a version id no document has gives zeros in
+    # the usual shape (None would count every document, the running draft's too).
+    stats = db.documents.get_stats(project.id, version_id=latest.id if latest else "-")
     job = db.jobs.get_current(project.id)
     return {
         "id": project.id,
@@ -133,7 +136,18 @@ def list_projects(
     # projects having vanished.
     projects = (db.projects.list_all() if getattr(current_user, "is_superuser", False)
                 else db.projects.list_for_user(current_user.id))
+    # Most recently changed first, and the same order on every load: the database answered in
+    # its own order, so rows swapped places between refreshes.
+    projects = sorted(projects, key=lambda p: (_when(p.updated_at or p.created_at), p.id),
+                      reverse=True)
     return {"projects": [_project_view(p, db, current_user.id) for p in projects]}
+
+
+def _when(dt) -> datetime:
+    """A row's time as an aware UTC datetime (SQLite hands it back naive), or the epoch."""
+    if dt is None:
+        return datetime.min.replace(tzinfo=UTC)
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 class ConfigPreviewRequest(BaseModel):

@@ -55,6 +55,16 @@ def _member_view(member: ProjectMember, user: Optional[User], open_reviews: int 
     }
 
 
+def _keep_an_admin(db, project_id: str, user_id: str) -> None:
+    """Refuse (409 LAST_ADMIN) a change that leaves the project with no active admin: nobody could
+    add members, assign or approve documents, or run the analysis from the web app any more."""
+    others = [m for m in db.members.list_members(project_id)
+              if m.role == "admin" and m.status == "active" and m.user_id != user_id]
+    if not others:
+        raise conflict("LAST_ADMIN", "This is the project's only admin. Make someone else an admin "
+                                     "first.")
+
+
 def _role(role: str) -> str:
     if role not in ROLES:
         raise HTTPException(status_code=422, detail={
@@ -180,7 +190,10 @@ def update_role(
     member = db.members.get_member(project_id, user_id)
     if not member:
         raise not_found("Member", user_id)
-    member.role = _role(body.role)
+    role = _role(body.role)
+    if member.role == "admin" and role != "admin" and member.status == "active":
+        _keep_an_admin(db, project_id, user_id)
+    member.role = role
     db.members.update_member(member)
     user = db.users.get_by_id(user_id)
     return {"member": _member_view(member, user)}
@@ -196,6 +209,9 @@ def remove_member(
     if not db.projects.get(project_id):
         raise not_found("Project", project_id)
     require_project_admin(project_id, current_user, db)
+    member = db.members.get_member(project_id, user_id)
+    if member is not None and member.role == "admin" and member.status == "active":
+        _keep_an_admin(db, project_id, user_id)
     db.members.remove_member(project_id, user_id)
     # Their documents that are not approved go back to Needs a reviewer, on the record: a
     # document must not wait on someone who can no longer act on it.

@@ -250,3 +250,60 @@ class TestOnlyTheOnlyServerSweeps:
         engine = type("E", (), {"dialect": type("D", (), {"name": "sqlite"})()})()
         assert pr.claim_job_runner(engine) is True
 
+
+class TestCancelAfterTheReview:
+    """Cancel had three gaps (review, 2026-10-04)."""
+
+    def _admin(self, db, project):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        db.members.add_member(ProjectMember(
+            id="m" + uuid.uuid4().hex[:8], project_id=project.id, user_id="u1", role="admin",
+            status="active", invited_by="u1", invited_at=now, joined_at=now))
+
+    def test_a_job_that_has_ended_is_not_cancelled(self, db, client, auth_header):
+        project = _project(db)
+        self._admin(db, project)
+        job = _job(db, project, "v9.4.0")
+        job.status = "failed"                     # stopped, its work kept for `resume`
+        db.jobs.update(job)
+        r = client.post(f"/api/v1/projects/{project.id}/jobs/{job.id}/cancel", headers=auth_header)
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "JOB_FINISHED"
+        assert db.versions.get(job.version_id) is not None
+
+    def test_an_unfollowed_run_is_stopped_before_its_draft_goes(self, db, client, auth_header,
+                                                               monkeypatch):
+        project = _project(db)
+        self._admin(db, project)
+        job = _job(db, project, "v9.5.0")
+        order = []
+        monkeypatch.setattr(pr, "stop_background_run", lambda j: order.append("stop") or True)
+        real = pr._release_draft_version
+        monkeypatch.setattr(pr, "_release_draft_version",
+                            lambda d, j: order.append("release") or real(d, j))
+        r = client.post(f"/api/v1/projects/{project.id}/jobs/{job.id}/cancel", headers=auth_header)
+        assert r.status_code == 200 and order == ["stop", "release"]
+
+
+class TestTheJobWatch:
+    def test_it_looks_again_every_few_minutes_at_jobs_older_than_two(self, monkeypatch):
+        """A follower thread that died left its job "running" until the next restart."""
+        import datetime
+        import threading
+        from api import main
+        seen, done = [], threading.Event()
+
+        stop = threading.Event()
+
+        def sweep(db, before=None, reattach_only=False):
+            seen.append((before, reattach_only))
+            stop.set()                   # ends the watch thread: nothing outlives this test
+            done.set()
+            return 0
+        monkeypatch.setattr(pr, "fail_interrupted_jobs", sweep)
+        monkeypatch.setattr(main, "JOB_WATCH_SECONDS", 0.05)
+        main._watch_jobs(type("Db", (), {"_engine": None})(), stop=stop)
+        assert done.wait(10)
+        before, reattach_only = seen[0]
+        assert reattach_only, "the periodic pass only follows runs again; start-up decides the rest"
+        age = datetime.datetime.now(datetime.timezone.utc) - before
+        assert datetime.timedelta(seconds=110) < age < datetime.timedelta(seconds=180)

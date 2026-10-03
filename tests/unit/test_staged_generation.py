@@ -339,3 +339,46 @@ class TestRecordedCommandLine:
                                         "https://git/x.git", "--version-id", "v1"])
         assert out[2] == str(tmp_path / "my.json")
         assert out[4] == "https://git/x.git" and out[6] == "v1"
+
+
+class TestProcessIdentity:
+    """After a reboot the system gives a run's process id to other programs (review, 2026-10-04)."""
+
+    def test_a_process_that_started_at_another_time_is_not_the_run(self):
+        pytest.importorskip("psutil")
+        import subprocess
+        proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", "analyzer.py"])
+        try:
+            born = frozen_run._create_time(proc.pid)
+            assert frozen_run.process_alive(proc.pid, born) is True
+            assert frozen_run.process_alive(proc.pid, born - 3600) is False
+        finally:
+            proc.kill()
+            proc.wait(timeout=30)
+
+    def test_start_app_leaves_background_runs_alone(self):
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import start_app
+
+        class P:
+            def __init__(self, cmd):
+                self._cmd = cmd
+
+            def cmdline(self):
+                return self._cmd
+        run = P(["python", r"C:\a\analyzer\runs\ver1\20261002-063204\code\engine\run.py"])
+        api = P(["python", "-m", "uvicorn", "api.main:app"])
+        assert start_app._background_run(run) is True
+        assert start_app._background_run(api) is False
+
+
+class TestStopOnlyTheRun:
+    def test_a_process_that_cannot_be_told_apart_is_left_alone(self, monkeypatch):
+        """No psutil (or no access) and no start time to compare: it may be anything after a
+        reboot, so nothing is killed."""
+        import subprocess
+        monkeypatch.setattr(frozen_run, "process_alive", lambda pid, ct=None: None)
+        monkeypatch.setattr(frozen_run, "_create_time", lambda pid: None)
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: pytest.fail("killed something"))
+        frozen_run.stop(4242)
+        frozen_run.stop(4242, create_time=None)

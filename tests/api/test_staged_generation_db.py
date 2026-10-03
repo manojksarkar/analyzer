@@ -639,8 +639,10 @@ class TestResume:
         gen = _bg_job(sql_db, version, status="failed", error_message="Stopped: ...")
         done = []
 
-        def complete(db, job_id):
-            assert db.jobs.get(job_id).status == "running"           # `_complete` skips failed
+        def complete(db, job_id, force=False):
+            # Straight from failed: never "running", which an API's check for unfollowed jobs
+            # would take up and follow again.
+            assert force and db.jobs.get(job_id).status == "failed"
             done.append(job_id)
         monkeypatch.setattr(pr, "_complete", complete)
         analyzer._finish_web_job("p1", version.id, db=sql_db)
@@ -675,3 +677,156 @@ class TestResume:
         r = client.post(f"/api/v1/projects/p1/versions/{version.id}/resume",
                         headers=_hdr(client, "alice"))
         assert r.status_code == 409 and r.json()["detail"]["code"] == "NOTHING_TO_RESUME"
+
+
+class TestAfterTheReview:
+    """A review of the background runs (2026-10-04) found ways a long run could lose its work or
+    be left unfollowed. One test per fix."""
+
+    def test_when_the_database_cannot_say_the_version_is_kept(self, sql_db, version, monkeypatch):
+        from api.services import pipeline_runner as pr
+
+        class Down:
+            def connect(self):
+                raise RuntimeError("database down")
+        monkeypatch.setattr(sql_db, "_engine", Down())
+        assert pr._version_has_work(sql_db, version.id) is True
+
+    def test_the_end_of_a_run_waits_for_the_database(self, monkeypatch):
+        from sqlalchemy.exc import OperationalError
+        from api.services import pipeline_runner as pr
+        monkeypatch.setattr(pr, "_DB_RETRY_SECONDS", 0.01)
+        calls = []
+
+        def flaky():
+            calls.append(1)
+            if len(calls) < 3:
+                raise OperationalError("SELECT 1", {}, Exception("connection refused"))
+            return "done"
+        assert pr._when_db_answers("jobx", "testing", flaky) == "done" and len(calls) == 3
+
+    def test_other_errors_are_not_waited_for(self):
+        """A bug, or a database error waiting does not fix (a constraint, a missing column)."""
+        from sqlalchemy.exc import IntegrityError
+        from api.services import pipeline_runner as pr
+        with pytest.raises(ValueError):
+            pr._when_db_answers("jobx", "testing", lambda: (_ for _ in ()).throw(ValueError("bug")))
+        with pytest.raises(IntegrityError):
+            pr._when_db_answers("jobx", "testing", lambda: (_ for _ in ()).throw(
+                IntegrityError("INSERT", {}, Exception("duplicate key"))))
+
+    def test_a_run_a_resume_finished_counts_as_finished(self, sql_db, version, tmp_path,
+                                                         fast_follow):
+        """Its process gone with no exit code -- but a CLI resume completed the version while
+        this run's record still said running."""
+        pr = fast_follow
+        with sql_db._engine.begin() as cx:
+            cx.execute(sa.update(s.versions).where(s.versions.c.id == version.id)
+                       .values(pipeline_status="complete"))
+        job = _bg_job(sql_db, version)
+        pr._init_state(job.id)
+        _, run = _fake_run(tmp_path, "die")
+        assert pr._follow_detached(sql_db, job.id, run, phase_start=1)
+
+    def test_an_export_that_died_on_a_complete_version_is_not_a_success(self, sql_db, version,
+                                                                          tmp_path, fast_follow):
+        """The version was complete before the export began: that says nothing about the export."""
+        pr = fast_follow
+        with sql_db._engine.begin() as cx:
+            cx.execute(sa.update(s.versions).where(s.versions.c.id == version.id)
+                       .values(pipeline_status="complete"))
+        job = _bg_job(sql_db, version, mode="export")
+        pr._init_state(job.id)
+        _, run = _fake_run(tmp_path, "die")
+        assert not pr._follow_detached(sql_db, job.id, run, phase_start=3)
+        assert sql_db.jobs.get(job.id).status == "failed"
+
+    def test_a_resume_that_cannot_start_keeps_the_work(self, sql_db, version, monkeypatch):
+        from api.services import pipeline_runner as pr
+
+        def refuse(cmd, env):
+            raise pr._LaunchFailed("version busy -- not started")
+        monkeypatch.setattr(pr, "_launch_detached", refuse)
+        job = _bg_job(sql_db, version)
+        pr._init_state(job.id)
+        assert not pr._execute_detached(sql_db, job.id, ["x"])
+        assert sql_db.jobs.get(job.id).status == "failed"
+        assert sql_db.versions.get(version.id) is not None
+
+    def test_an_export_waits_for_the_versions_own_run(self, sql_db, version, monkeypatch):
+        from api.services import pipeline_runner as pr
+        job = _bg_job(sql_db, version, status="running")
+        monkeypatch.setattr(pr, "job_alive", lambda job_id: job_id == job.id)
+        with pytest.raises(pr.ReexportRefused) as exc:
+            pr.start_export(sql_db, version, ["Layer1.App"])
+        assert exc.value.code == "RUN_ACTIVE" and exc.value.job_id == job.id
+
+    def test_the_version_gets_its_own_copy_of_the_config(self, tmp_path, monkeypatch):
+        from types import SimpleNamespace
+        from api.services import doc_render, pipeline_runner as pr
+        monkeypatch.setattr(doc_render, "workspaces_root", lambda: tmp_path / "ws")
+        project_cfg = tmp_path / "ws" / "p1" / "config.json"
+        project_cfg.parent.mkdir(parents=True)
+        project_cfg.write_text('{"llm": {"descriptions": true}}', encoding="utf-8")
+        macros = tmp_path / "ws" / "p1" / "cores" / "Core1" / "macros.json"
+        macros.parent.mkdir(parents=True)
+        macros.write_text('["A=1"]', encoding="utf-8")
+        import json as _json
+        project_cfg.write_text(_json.dumps({"llm": {"descriptions": True},
+                                            "cores": {"Core1": {"macros": str(macros)}}}),
+                               encoding="utf-8")
+        job = SimpleNamespace(id="j1", project_id="p1", version_id="ver1")
+        got = pr._freeze_version_config(job, project_cfg)
+        assert got == tmp_path / "ws" / "p1" / "versions" / "ver1" / "config.json"
+        project_cfg.write_text('{"llm": {"descriptions": false}}', encoding="utf-8")   # a later run
+        macros.write_text('["A=2"]', encoding="utf-8")
+        frozen = _json.loads(got.read_text(encoding="utf-8"))
+        assert frozen["llm"]["descriptions"] is True
+        with open(frozen["cores"]["Core1"]["macros"], encoding="utf-8") as fh:
+            assert fh.read() == '["A=1"]'                       # the version's own macros
+
+
+class TestAfterTheSecondReview:
+    def test_a_resume_takes_this_machine_s_current_secrets_and_keeps_its_switches(
+            self, tmp_path, monkeypatch):
+        """The version's config is frozen with its run, but a gateway key rotated since must
+        reach a resume days later; the run's --no-llm must not be undone."""
+        import json
+        import analyzer
+        local = tmp_path / "engine" / "config" / "config.local.json"
+        local.parent.mkdir(parents=True)
+        local.write_text(json.dumps({"llm": {"apiKey": "NEW", "descriptions": True},
+                                     "db": {"password": "x"}}), encoding="utf-8")
+        monkeypatch.setenv("ANALYZER_DATA_ROOT", str(tmp_path))
+        vcfg = tmp_path / "ver1" / "config.json"
+        vcfg.parent.mkdir()
+        vcfg.write_text(json.dumps({"llm": {"apiKey": "OLD", "descriptions": False},
+                                    "layers": {"L1": {}}}), encoding="utf-8")
+        runtime = json.loads(open(analyzer._with_current_secrets(str(vcfg)), encoding="utf-8").read())
+        assert runtime["llm"] == {"apiKey": "NEW", "descriptions": False}
+        assert "db" not in runtime and runtime["layers"] == {"L1": {}}
+
+    def test_the_periodic_pass_only_follows_runs_again(self, sql_db, draft, tmp_path, monkeypatch):
+        """A job with no background run may be queued or starting: only start-up decides those."""
+        from api.services import pipeline_runner as pr
+        job = _bg_job(sql_db, draft)
+        monkeypatch.setattr(pr, "_data_root", lambda: str(tmp_path))
+        monkeypatch.setattr(sql_db.jobs, "list_active", lambda: [sql_db.jobs.get(job.id)])
+        assert pr.fail_interrupted_jobs(sql_db, reattach_only=True) == 0
+        assert sql_db.jobs.get(job.id).status == "running"
+        assert sql_db.versions.get(draft.id) is not None
+
+    def test_an_ending_thread_forgets_only_its_own_registration(self):
+        import threading
+        from api.services import pipeline_runner as pr
+        other = threading.Thread(target=lambda: None)
+        pr._job_threads["jobreopen1"] = other          # the resume's thread, registered since
+        try:
+            pr._cleanup_state("jobreopen1")            # the old follower ending
+            assert pr._job_threads.get("jobreopen1") is other
+        finally:
+            pr._job_threads.pop("jobreopen1", None)
+
+    def test_sqlite_needs_no_runner_lock(self, sql_db):
+        from api.services import pipeline_runner as pr
+        assert pr.runner_still_held(sql_db._engine) is True

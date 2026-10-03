@@ -91,3 +91,27 @@ class TestInvite:
             assert len(carol) == 1 and carol[0]["role"] == "admin" and carol[0]["name"] == "Carol Schmidt"
         finally:
             client.delete(f"{P}/members/u3", headers=auth_header)
+
+
+class TestTheLastAdminStays:
+    """A project with no active admin cannot be managed from the web app: nobody could add
+    members, assign or approve documents, or run the analysis (UI review #12)."""
+
+    def _ids(self, client, auth_header):
+        by_email = {m["email"]: m for m in _members(client, auth_header)}
+        return by_email["alice@aspice.dev"]["user_id"], by_email["eve@aspice.dev"]["user_id"]
+
+    def test_the_only_admin_cannot_be_demoted_or_removed(self, client, auth_header):
+        alice, _ = self._ids(client, auth_header)
+        r = client.patch(f"{P}/members/{alice}/role", headers=auth_header, json={"role": "developer"})
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "LAST_ADMIN"
+        r = client.delete(f"{P}/members/{alice}", headers=auth_header)
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "LAST_ADMIN"
+        assert {m["email"]: m["role"] for m in _members(client, auth_header)}["alice@aspice.dev"] == "admin"
+
+    def test_with_another_admin_an_admin_may_step_down(self, client, auth_header):
+        alice, eve = self._ids(client, auth_header)
+        assert client.patch(f"{P}/members/{eve}/role", headers=auth_header,
+                            json={"role": "admin"}).status_code == 200
+        r = client.patch(f"{P}/members/{alice}/role", headers=auth_header, json={"role": "developer"})
+        assert r.status_code == 200 and r.json()["member"]["role"] == "developer"
