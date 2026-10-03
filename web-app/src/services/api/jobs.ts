@@ -46,8 +46,6 @@ export const jobsApi = {
     }>(`/projects/${projectId}/jobs/${jobId}/functions`)
     return mapJobFunctions(r)
   },
-  reexport: (projectId: string, jobId: string): Promise<unknown> =>
-    http.post(`/projects/${projectId}/jobs/${jobId}/reexport`),
   /** SSE endpoint URL. The events route is unauthenticated, so no token needed. */
   eventsUrl: (projectId: string, jobId: string): string =>
     http.rawUrl(`/projects/${projectId}/jobs/${jobId}/events`),

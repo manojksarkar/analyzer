@@ -1,4 +1,4 @@
-import type { Document, JobPhase, JobPhaseStatus, ReviewEvent, ReviewStatus } from '../../types'
+import type { Document, JobPhase, JobPhaseStatus, ReviewEvent, ReviewStatus, Version } from '../../types'
 
 /* ── Job formatting helpers ── */
 export const PHASE_UI: Record<JobPhaseStatus, 'done' | 'active' | 'pending'> = {
@@ -81,4 +81,15 @@ export function concernsMe(e: ReviewEvent, myDocIds: ReadonlySet<string>, meId: 
   if (e.actor?.userId === meId) return true
   if (e.payload.to_user_id === meId || e.payload.from_user_id === meId || e.payload.user_id === meId) return true
   return myDocIds.has(e.documentId)
+}
+
+/* ── Run Analysis ── */
+
+/** Why a version name cannot be used, or null. The API requires one, unique in the project
+ *  (`VERSION_EXISTS`); saying so here keeps Start from failing after the click. */
+export function versionNameProblem(name: string, versions?: Version[]): string | null {
+  const n = name.trim()
+  if (!n) return 'Name the version.'
+  if ((versions ?? []).some((v) => v.tag === n)) return `${n} already exists in this project. Choose another name.`
+  return null
 }

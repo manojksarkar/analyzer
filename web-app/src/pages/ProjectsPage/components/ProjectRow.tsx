@@ -1,4 +1,4 @@
-import { Dropdown, DropdownTrigger, DropdownContent, Icon, toast } from '../../../components/ui'
+import { Dropdown, DropdownTrigger, DropdownContent, Icon } from '../../../components/ui'
 import { useDeleteProject, useDownloadProjectConfig } from '../../../hooks/useProjects'
 import { cn } from '../../../lib/cn'
 import type { Project, TeamMember } from '../../../types'
@@ -119,7 +119,6 @@ export function ProjectRow({ project, onNavigate }: { project: Project; onNaviga
   const configItem = { label: 'Download config', icon: 'download', onClick: () => { void downloadConfig(project.name) } }
   const adminItems = [
     configItem,
-    { label: 'Archive',  icon: 'archive',      onClick: () => toast.info('Archive', 'Archiving is not available yet.') },
     { label: 'Delete',   icon: 'delete',       variant: 'danger' as const, onClick: onDelete },
   ]
   const devItems = [

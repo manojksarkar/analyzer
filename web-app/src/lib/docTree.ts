@@ -13,6 +13,19 @@ export const PROCESS_TITLES: Record<string, string> = {
   'SWE.4': 'Unit Test Specification',
 }
 
+/** Each process's document title, as its cover prints it (the render payload's `cover.subtitle`). */
+const DOCUMENT_TITLES: Record<string, string> = {
+  'SWE.3': 'Software Detailed Design Specification',
+  'SWE.4': 'Software Unit Test Specification',
+}
+
+/** The line under a document's name: its process's title as the cover prints it, else the
+ *  document's own subtitle, else the process's short name. Never another process's title. */
+export function documentSubtitle(doc: { process?: string; subtitle?: string }): string {
+  const process = doc.process ?? ''
+  return DOCUMENT_TITLES[process] ?? doc.subtitle ?? PROCESS_TITLES[process] ?? ''
+}
+
 /* The DOCX a process's exporter writes for a component (engine group_planner). */
 const DOCX_PREFIX: Record<string, string> = {
   'SWE.3': 'software_detailed_design',

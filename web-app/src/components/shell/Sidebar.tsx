@@ -116,11 +116,11 @@ export function Sidebar() {
         </div>
       </nav>
 
-      {/* User info (Settings is not built yet, so it is not shown: ui-review #36) */}
+      {/* User info. Not a button: neither a profile nor Settings is built yet (ui-review #36). */}
       <div className="px-2 pb-3 pt-2 border-t border-outline-variant flex-shrink-0">
-        <button
+        <div
           className={cn(
-            'w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-container transition-colors text-left',
+            'w-full flex items-center gap-3 px-2 py-2 rounded-lg text-left',
             collapsed && 'justify-center px-0',
           )}
         >
@@ -142,7 +142,7 @@ export function Sidebar() {
               </div>
             </div>
           )}
-        </button>
+        </div>
       </div>
     </aside>
   )

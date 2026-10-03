@@ -49,6 +49,12 @@ export class ApiError extends Error {
   }
 }
 
+/** The API answered 404: the thing is not there. Any other failure is a read that did not work
+ *  — show it with a Retry, never as "not found". */
+export function isNotFound(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 404
+}
+
 function buildUrl(path: string, params?: QueryParams): string {
   const url = new URL(API_BASE_URL + path)
   if (params) {

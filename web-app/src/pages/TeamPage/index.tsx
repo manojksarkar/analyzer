@@ -1,66 +1,18 @@
-import { useState, useRef, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useProject, useTeam } from '../../hooks/useProjects'
 import {
   usePendingMembers, useInviteMember, useUpdateMemberRole, useRemoveMember, useCancelInvite,
 } from '../../hooks/useTeamMutations'
+import { useAuthStore } from '../../store/auth'
 import { Card, Icon, Skeleton, Text } from '../../components/ui'
 import { SubbarCta } from '../../components/shell/SubbarCta'
 import { cn } from '../../lib/cn'
 import type { TeamMember, UserRole } from '../../types'
 import { AddMemberDialog } from './components/AddMemberDialog'
-
-/* ─── Role badge (read-only) ─── */
-function RolePill({ role }: { role: UserRole }) {
-  const admin = role === 'admin'
-  return (
-    <span
-      className={cn(
-        'uppercase font-mono text-micro font-bold rounded-full tracking-[0.04em] whitespace-nowrap px-2 py-px',
-        admin ? 'bg-surface-container text-secondary' : 'bg-[#f3f4f6] text-on-surface-variant',
-      )}
-    >
-      {admin ? 'Admin' : 'Dev'}
-    </span>
-  )
-}
-
-/* ─── Role dropdown (admin can change) ─── */
-function RoleSelect({ value, onChange }: { value: UserRole; onChange: (r: UserRole) => void }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    function onDown(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [])
-  const label = value === 'admin' ? 'Admin' : 'Developer'
-  return (
-    <div className="relative inline-block" ref={ref}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 transition-colors hover:border-secondary hover:text-secondary px-2 py-[3px] border border-outline-variant rounded-md font-mono text-label font-semibold text-on-surface-variant bg-white"
-      >
-        <span>{label}</span>
-        <Icon name="expand_more" size={11} />
-      </button>
-      {open && (
-        <div className="absolute left-0 bg-white border border-outline-variant rounded-lg overflow-hidden top-[calc(100%+4px)] z-[200] shadow-[0_4px_20px_rgba(4,22,39,.12)] min-w-[150px]">
-          {(['admin', 'developer'] as UserRole[]).map((r) => (
-            <button
-              key={r}
-              onClick={() => { onChange(r); setOpen(false) }}
-              className="w-full flex items-center justify-between px-3 py-2 hover:bg-surface-container-low text-on-surface font-mono text-caption"
-            >
-              <span>{r === 'admin' ? 'Admin' : 'Developer'}</span>
-              {value === r && <Icon name="check" size={14} className="text-secondary" />}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
+import { ConfirmMemberChange } from './components/ConfirmMemberChange'
+import { RolePill, RoleSelect } from './components/RoleControls'
+import { LAST_ADMIN_REASON, asksBeforeRoleChange, isLastAdmin, type MemberChange } from './helpers'
 
 // Two roles, no reviewer role: whoever is assigned to a document reviews it (REVIEW_APPROVE_DESIGN).
 const ACCESS = [
@@ -84,12 +36,34 @@ export function TeamPage() {
   const removeMember = useRemoveMember(pid)
   const cancelInvite = useCancelInvite(pid)
 
+  const navigate = useNavigate()
+  const meId = useAuthStore((s) => s.user?.id ?? '')
+
   const [inviteOpen, setInviteOpen] = useState(false)
+  // Removing anyone, or taking your own admin role away, is asked first.
+  const [confirm, setConfirm] = useState<MemberChange | null>(null)
 
   const active = team ?? []
   const members: TeamMember[] = [...active, ...(pending ?? [])]
   const pendingCount = pending?.length ?? 0
   const roleOf = (m: TeamMember) => m.role
+
+  function changeRole(m: TeamMember, role: UserRole) {
+    if (!m.userId || role === m.role) return
+    if (asksBeforeRoleChange(m, role, meId)) setConfirm({ action: 'demote', member: m })
+    else updateRole.mutate({ userId: m.userId, role })
+  }
+  function confirmChange() {
+    const userId = confirm?.member.userId
+    if (!confirm || !userId) return
+    const done = { onSettled: () => setConfirm(null) }
+    if (confirm.action === 'demote') {
+      updateRole.mutate({ userId, role: 'developer' }, done)
+    } else {
+      // Removing yourself: the project is no longer yours to see.
+      removeMember.mutate(userId, { ...done, onSuccess: () => { if (userId === meId) navigate('/projects') } })
+    }
+  }
 
   return (
     <div className="flex-1 overflow-y-auto bg-surface-container-low">
@@ -133,78 +107,83 @@ export function TeamPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {members.map((m) => (
-                    <tr
-                      key={m.id}
-                      className={cn(
-                        'border-b border-outline-variant last:border-0 transition-colors hover:bg-[#f8f9ff]',
-                        m.pending && 'bg-[#fafafa]',
-                      )}
-                    >
-                      {/* Member */}
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-3">
-                          {m.pending ? (
-                            <div className="flex items-center justify-center flex-shrink-0 w-[34px] h-[34px] rounded-full border-2 border-dashed border-outline-variant">
-                              <Icon name="person" size={16} className="text-on-surface-variant" />
+                  {members.map((m) => {
+                    // The only active admin is neither demoted nor removed (the API: 409 LAST_ADMIN).
+                    const onlyAdmin = isLastAdmin(m, members) ? LAST_ADMIN_REASON : null
+                    return (
+                      <tr
+                        key={m.id}
+                        className={cn(
+                          'border-b border-outline-variant last:border-0 transition-colors hover:bg-[#f8f9ff]',
+                          m.pending && 'bg-[#fafafa]',
+                        )}
+                      >
+                        {/* Member */}
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-3">
+                            {m.pending ? (
+                              <div className="flex items-center justify-center flex-shrink-0 w-[34px] h-[34px] rounded-full border-2 border-dashed border-outline-variant">
+                                <Icon name="person" size={16} className="text-on-surface-variant" />
+                              </div>
+                            ) : (
+                              <div
+                                className="flex items-center justify-center flex-shrink-0 w-[34px] h-[34px] rounded-full"
+                                // eslint-disable-next-line no-restricted-syntax -- avatar colour is data-driven
+                                style={{ background: m.avatarColor }}
+                              >
+                                {/* eslint-disable-next-line no-restricted-syntax -- avatar text colour is data-driven */}
+                                <span className="font-sans text-caption font-bold" style={{ color: m.avatarTextColor }}>{m.initials}</span>
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className={cn('truncate font-mono text-body font-medium', m.pending ? 'text-outline' : 'text-on-surface')}>{m.name}</p>
+                              {m.pending && <p className="font-mono text-label text-amber">Pending</p>}
                             </div>
-                          ) : (
-                            <div
-                              className="flex items-center justify-center flex-shrink-0 w-[34px] h-[34px] rounded-full"
-                              // eslint-disable-next-line no-restricted-syntax -- avatar colour is data-driven
-                              style={{ background: m.avatarColor }}
-                            >
-                              {/* eslint-disable-next-line no-restricted-syntax -- avatar text colour is data-driven */}
-                              <span className="font-sans text-caption font-bold" style={{ color: m.avatarTextColor }}>{m.initials}</span>
+                          </div>
+                        </td>
+                        {/* Role */}
+                        <td className="px-4 py-3">
+                          {isAdmin && !m.pending
+                            ? <RoleSelect value={roleOf(m)} label={m.name} demoteLocked={onlyAdmin} onChange={(r) => changeRole(m, r)} />
+                            : <RolePill role={roleOf(m)} />}
+                        </td>
+                        {/* Last active */}
+                        <td className="px-4 py-3">
+                          <Text variant="caption" className="font-mono">{m.lastActive}</Text>
+                        </td>
+                        {/* Actions */}
+                        <td className="px-4 py-3">
+                          {isAdmin && (
+                            <div className="flex items-center gap-1.5">
+                              {m.pending && (
+                                <button
+                                  onClick={() => inviteMember.mutate({ email: m.email, role: m.role })}
+                                  className="inline-flex items-center gap-1 transition-colors hover:border-secondary hover:text-secondary px-2 py-[3px] border border-outline-variant rounded-md font-mono text-label font-semibold text-on-surface-variant bg-white"
+                                >
+                                  <Icon name="how_to_reg" size={12} />Activate
+                                </button>
+                              )}
+                              <button
+                                onClick={() => {
+                                  if (m.pending) {
+                                    if (window.confirm(`Cancel invite for ${m.email || m.name}?`)) cancelInvite.mutate(m.id)
+                                  } else if (m.userId) {
+                                    setConfirm({ action: 'remove', member: m })
+                                  }
+                                }}
+                                disabled={!!onlyAdmin}
+                                className="p-1.5 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                                aria-label={m.pending ? `Cancel invite for ${m.name}` : `Remove ${m.name}`}
+                                title={m.pending ? 'Cancel invite' : onlyAdmin ?? 'Remove member'}
+                              >
+                                <Icon name={m.pending ? 'close' : 'person_remove'} size={16} />
+                              </button>
                             </div>
                           )}
-                          <div className="min-w-0">
-                            <p className={cn('truncate font-mono text-body font-medium', m.pending ? 'text-outline' : 'text-on-surface')}>{m.name}</p>
-                            {m.pending && <p className="font-mono text-label text-amber">Pending</p>}
-                          </div>
-                        </div>
-                      </td>
-                      {/* Role */}
-                      <td className="px-4 py-3">
-                        {isAdmin && !m.pending
-                          ? <RoleSelect value={roleOf(m)} onChange={(r) => m.userId && updateRole.mutate({ userId: m.userId, role: r })} />
-                          : <RolePill role={roleOf(m)} />}
-                      </td>
-                      {/* Last active */}
-                      <td className="px-4 py-3">
-                        <Text variant="caption" className="font-mono">{m.lastActive}</Text>
-                      </td>
-                      {/* Actions */}
-                      <td className="px-4 py-3">
-                        {isAdmin && (
-                          <div className="flex items-center gap-1.5">
-                            {m.pending && (
-                              <button
-                                onClick={() => inviteMember.mutate({ email: m.email, role: m.role })}
-                                className="inline-flex items-center gap-1 transition-colors hover:border-secondary hover:text-secondary px-2 py-[3px] border border-outline-variant rounded-md font-mono text-label font-semibold text-on-surface-variant bg-white"
-                              >
-                                <Icon name="how_to_reg" size={12} />Activate
-                              </button>
-                            )}
-                            <button
-                              onClick={() => {
-                                if (m.pending) {
-                                  if (window.confirm(`Cancel invite for ${m.email || m.name}?`)) cancelInvite.mutate(m.id)
-                                } else if (m.userId && window.confirm(`Remove ${m.name} from this project?`)) {
-                                  removeMember.mutate(m.userId)
-                                }
-                              }}
-                              className="p-1.5 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant"
-                              aria-label={m.pending ? `Cancel invite for ${m.name}` : `Remove ${m.name}`}
-                              title={m.pending ? 'Cancel invite' : 'Remove member'}
-                            >
-                              <Icon name={m.pending ? 'close' : 'person_remove'} size={16} />
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             )}
@@ -239,6 +218,16 @@ export function TeamPage() {
           projectName={project?.name}
           members={members}
           onClose={() => setInviteOpen(false)}
+        />
+      )}
+      {confirm && (
+        <ConfirmMemberChange
+          change={confirm}
+          isMe={!!meId && confirm.member.userId === meId}
+          projectName={project?.name}
+          busy={updateRole.isPending || removeMember.isPending}
+          onConfirm={confirmChange}
+          onClose={() => setConfirm(null)}
         />
       )}
     </div>

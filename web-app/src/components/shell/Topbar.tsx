@@ -74,9 +74,9 @@ export function Topbar({ breadcrumbs }: TopbarProps) {
               <Icon name="expand_more" size={16} className="text-on-surface-variant" />
             </button>
           </DropdownTrigger>
+          {/* Profile is not built yet, so it is not offered (ui-review #36). */}
           <DropdownContent
             items={[
-              { label: 'Profile',   icon: 'person', onClick: () => {} },
               { label: 'Sign out',  icon: 'logout', variant: 'danger', onClick: signOut },
             ]}
           />

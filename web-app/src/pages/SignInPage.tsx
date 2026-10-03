@@ -170,15 +170,9 @@ export function SignInPage() {
 
               {/* Password */}
               <div>
+                {/* No "Forgot password?" until a reset is built (ui-review #36): an admin resets it. */}
                 <div className="flex items-center justify-between mb-1.5">
                   <label htmlFor={passwordId} className={cn(LABEL_CLS, 'mb-0')}>Password</label>
-                  <button
-                    type="button"
-                    onClick={() => toast.info('Password reset', 'Contact your administrator to reset your password.')}
-                    className="text-secondary hover:underline text-xs"
-                  >
-                    Forgot password?
-                  </button>
                 </div>
                 <div className="relative">
                   <input
@@ -225,19 +219,7 @@ export function SignInPage() {
               </button>
             </form>
 
-            {/* Footer */}
-            <div className="mt-8 pt-6 border-t border-outline-variant text-center">
-              <p className="text-on-surface-variant text-body">
-                New to the platform?{' '}
-                <button
-                  type="button"
-                  onClick={() => toast.info('Request access', 'Ask your workspace administrator to send you an invite.')}
-                  className="text-secondary font-medium hover:underline"
-                >
-                  Request Access
-                </button>
-              </p>
-            </div>
+            {/* No "Request Access" footer until requesting is built (ui-review #36): an admin adds people. */}
           </div>
         </div>
       </div>

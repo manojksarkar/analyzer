@@ -12,10 +12,14 @@ import { useUIStore } from '../../store/ui'
 import { DocTreePanel } from '../../components/shell/DocTreePanel'
 import { SubbarCta } from '../../components/shell/SubbarCta'
 import { AssignReviewerDialog } from '../../components/review/AssignReviewerDialog'
-import { groupDocsByProcess, buildReviewerOptions, docxFileName, matchesReviewer } from '../../lib/docTree'
+import {
+  groupDocsByProcess, buildReviewerOptions, docxFileName, documentSubtitle, matchesReviewer,
+} from '../../lib/docTree'
 import { wordFileOutOfDate } from '../../lib/reviewStatus'
 import { Card, Icon, Skeleton, Text, toast } from '../../components/ui'
+import { LoadError } from '../../components/LoadError'
 import { cn } from '../../lib/cn'
+import { isNotFound } from '../../lib/http'
 import type { FlowchartEntry, Slot } from '../../types'
 import { Swe4Body, Swe4Strip } from './components/Swe4Reader'
 import { RichSectionView } from './components/Sections'
@@ -48,8 +52,10 @@ export function DocumentInspectorPage() {
   const navigate = useNavigate()
 
   const { data: project } = useProject(pid)
-  const { data: doc, isLoading } = useDocument(pid, docId ?? '')
-  const { data: rich } = useDocumentRender(pid, docId ?? '')
+  const docQuery = useDocument(pid, docId ?? '')
+  const { data: doc, isLoading } = docQuery
+  const renderQuery = useDocumentRender(pid, docId ?? '')
+  const { data: rich } = renderQuery
   const { data: team } = useTeam(pid)
   const { viewVersion, pageState } = useProjectViewState(pid)
   // The left rail lists every doc of THIS document's version, so you can jump between documents
@@ -159,6 +165,20 @@ export function DocumentInspectorPage() {
           <Skeleton className="h-10 w-2/3" />
           <Skeleton className="h-4 w-1/3" />
           <Skeleton className="h-64" />
+        </div>
+      </div>
+    )
+  }
+
+  // A failed read is not "not found": say what failed, and offer Retry. Only the API's 404 is.
+  if (!doc && docQuery.isError && !isNotFound(docQuery.error)) {
+    return (
+      <div className="flex-1 overflow-y-auto bg-surface-container-low">
+        <div className="p-6">
+          <Card>
+            <LoadError what="the document" error={docQuery.error} retrying={docQuery.isFetching}
+                       onRetry={() => { void docQuery.refetch() }} />
+          </Card>
         </div>
       </div>
     )
@@ -279,7 +299,7 @@ export function DocumentInspectorPage() {
                     {(rich?.cover.process ?? doc.process)} · <span className="font-mono">{rich?.cover.version ?? refLabel}</span>
                   </Text>
                   <h1 className="text-[28px] font-bold leading-tight tracking-[-0.02em] text-on-surface">{doc.name}</h1>
-                  <p className="text-sm text-on-surface-variant mt-1">{rich?.cover.subtitle ?? doc.subtitle ?? 'Software Detailed Design Specification'}</p>
+                  <p className="text-sm text-on-surface-variant mt-1">{rich?.cover.subtitle ?? documentSubtitle(doc)}</p>
                   {rich && (
                     <div className="flex flex-wrap items-center gap-1.5 mt-3">
                       {[rich.cover.projectName, rich.cover.layer, rich.cover.group, rich.cover.standard]
@@ -320,7 +340,10 @@ export function DocumentInspectorPage() {
             {/* Sections */}
             {rich && isSwe4 ? <Swe4Body sections={rich.sections} /> : (
             <div className="px-8 py-10 space-y-12">
-              {!rich ? (
+              {!rich && renderQuery.isError ? (
+                <LoadError compact what="the document's content" error={renderQuery.error}
+                           retrying={renderQuery.isFetching} onRetry={() => { void renderQuery.refetch() }} />
+              ) : !rich ? (
                 <div className="space-y-4">
                   <Skeleton className="h-6 w-1/3" />
                   <Skeleton className="h-24" />

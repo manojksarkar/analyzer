@@ -25,7 +25,6 @@ export function useProjectViewState(projectId: string): {
   viewVersion?: Version
   viewVersionId?: string
   selectedCommit?: Commit
-  selectedSha?: string
 } {
   const { data: project, isLoading: projectLoading } = useProject(projectId)
   const { data: versions, isLoading: versionsLoading } = useVersions(projectId)
@@ -61,10 +60,6 @@ export function useProjectViewState(projectId: string): {
   }
   const pageState: PageState = jobActive ? 'running' : base
 
-  // Back-compat sha for consumers that key off it (ComparePage); undefined when
-  // nothing is explicitly selected, matching the prior empty-store behaviour.
-  const selectedSha = selVersion?.sha ?? selCommit?.sha
-
   // When a job transitions to a terminal state, refresh project + versions +
   // documents so every page leaves the "running" / empty state automatically.
   // (`jobs/current` skips a cancelled job — it answers with the run before it — so a cancel
@@ -79,5 +74,5 @@ export function useProjectViewState(projectId: string): {
     qc.invalidateQueries({ queryKey: projectKeys.documentsAll(projectId) })
   }, [jobStatus, projectId, qc])
 
-  return { pageState, isLoading, viewVersion, viewVersionId: viewVersion?.id, selectedCommit: selCommit, selectedSha }
+  return { pageState, isLoading, viewVersion, viewVersionId: viewVersion?.id, selectedCommit: selCommit }
 }

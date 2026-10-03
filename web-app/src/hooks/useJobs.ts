@@ -117,14 +117,6 @@ export function useResumeJob(projectId: string) {
   })
 }
 
-export function useReexport(projectId: string) {
-  return useMutation({
-    mutationFn: (jobId: string) => jobsApi.reexport(projectId, jobId),
-    onSuccess: () => toast.success('Re-export queued'),
-    onError: (e: Error) => toast.error('Re-export failed', e.message),
-  })
-}
-
 export function useSetVisibility(projectId: string, jobId: string | undefined) {
   const qc = useQueryClient()
   return useMutation({

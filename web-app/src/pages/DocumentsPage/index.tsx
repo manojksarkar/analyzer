@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useProject, useDocuments, useCommits, useTeam } from '../../hooks/useProjects'
+import { useProject, useDocuments, useCommits, useTeam, useVersions } from '../../hooks/useProjects'
 import { useDownloadAll, useDownloadDoc } from '../../hooks/useDocumentMutations'
 import { useApproveDocuments, useClaimDocument, useDocumentsReadiness } from '../../hooks/useApproval'
 import { reexportActive, useExportReadiness } from '../../hooks/useReview'
@@ -8,6 +8,8 @@ import { SubbarCta } from '../../components/shell/SubbarCta'
 import { useProjectViewState } from '../../hooks/useProjectViewState'
 import { useAuthStore } from '../../store/auth'
 import { Card, Icon, TableSkeleton, Text } from '../../components/ui'
+import { LoadError } from '../../components/LoadError'
+import { failedLoad } from '../../lib/failedLoad'
 import { DocTreePanel } from '../../components/shell/DocTreePanel'
 import { AssignReviewerDialog } from '../../components/review/AssignReviewerDialog'
 import { NEEDS_REVIEWER, buildReviewerOptions, docxFileName, groupDocsByProcess } from '../../lib/docTree'
@@ -36,17 +38,23 @@ export function DocumentsPage() {
   const navigate = useNavigate()
   const goOverview = () => navigate(`/projects/${pid}/overview`)
 
-  const { data: project } = useProject(pid)
+  const projectQuery = useProject(pid)
+  const { data: project } = projectQuery
+  const versionsQuery = useVersions(pid)
   const { data: commits } = useCommits(pid)
   const { data: team } = useTeam(pid)
   // The displayed version/state follows the Subbar picker (shared via the UI store).
   const { pageState, viewVersion, selectedCommit } = useProjectViewState(pid)
   // Scope documents to the picked version so switching versions in the Subbar
   // refetches the right set (default = latest version).
-  const { data: documents, isLoading } = useDocuments(
+  const documentsQuery = useDocuments(
     pid,
     viewVersion?.id ? { versionId: viewVersion.id } : undefined,
   )
+  const { data: documents, isLoading } = documentsQuery
+  // The project, its versions (which say what state the page is in) and the documents: a failed
+  // read of any is shown as one, with Retry — not as "No documents yet" or "No documents found".
+  const failed = failedLoad(projectQuery, versionsQuery, documentsQuery)
   const downloadDoc = useDownloadDoc(pid)
   const downloadAll = useDownloadAll(pid)
   const claim = useClaimDocument(pid)
@@ -137,6 +145,19 @@ export function DocumentsPage() {
         ]
       : []),
   ]
+
+  // ── A read failed: say so, with Retry (an empty page would be a wrong answer) ──
+  if (failed) {
+    return (
+      <div className="flex-1 overflow-y-auto bg-surface-container-low">
+        <div className="p-6">
+          <Card>
+            <LoadError what="the documents" error={failed.error} retrying={failed.retrying} onRetry={failed.retry} />
+          </Card>
+        </div>
+      </div>
+    )
+  }
 
   // ── NOT-RUN state: the picked commit/version has no documents yet ──
   if (pageState === 'never') {
