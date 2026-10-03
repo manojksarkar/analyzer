@@ -214,6 +214,33 @@ def delete_version(
     version = db.versions.get(version_id)
     if not version or version.project_id != project_id:
         raise not_found("Version", version_id)
+    # How a stopped run's kept version is thrown away (its job ended, so Cancel no longer
+    # applies). Three things pointed at a version without ON DELETE CASCADE -- its jobs, another
+    # version's baseline, a cached comparison -- and the delete failed with a 500.
+    from ..services import pipeline_runner
+    busy = pipeline_runner.version_writer_busy(db, version_id)
+    if busy:
+        raise conflict("VERSION_BUSY", f"Version '{version.tag or version_id}' is being written by "
+                                       f"{busy}. Stop that run first.")
+    jobs = db.jobs.list_for_version(version_id)
+    if any(j.status in ("queued", "running", "paused") for j in jobs):
+        raise conflict("RUN_ACTIVE", f"A job is at work on version '{version.tag or version_id}'. "
+                                     f"Cancel it first.")
+    if any(getattr(v, "baseline_version_id", None) == version_id
+           for v in db.versions.list_for_project(project_id)):
+        raise conflict("VERSION_IS_BASELINE", f"Version '{version.tag or version_id}' is the "
+                                              f"baseline of a later version, which reuses its work.")
+    for job in jobs:                         # the job's record stays; it no longer points here
+        job.version_id = None
+        db.jobs.update(job)
+    engine = getattr(db, "_engine", None)
+    if engine is not None:
+        from sqlalchemy import delete, or_
+        from ..db.postgres import schema as s
+        with engine.begin() as cx:
+            cx.execute(delete(s.compare_results).where(or_(
+                s.compare_results.c.current_version_id == version_id,
+                s.compare_results.c.baseline_version_id == version_id)))
     db.versions.delete(version_id)
 
 

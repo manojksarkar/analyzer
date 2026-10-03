@@ -307,3 +307,51 @@ class TestTheJobWatch:
         assert reattach_only, "the periodic pass only follows runs again; start-up decides the rest"
         age = datetime.datetime.now(datetime.timezone.utc) - before
         assert datetime.timedelta(seconds=110) < age < datetime.timedelta(seconds=180)
+
+
+class TestDiscardingAStoppedRun:
+    """A stopped run's version is kept for `resume`; when nobody wants it, deleting it is how it
+    goes. The delete failed with a 500: the job still pointed at the version (no ON DELETE)."""
+
+    def _admin(self, db, project):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        db.members.add_member(ProjectMember(
+            id="m" + uuid.uuid4().hex[:8], project_id=project.id, user_id="u1", role="admin",
+            status="active", invited_by="u1", invited_at=now, joined_at=now))
+
+    def test_a_stopped_run_s_version_can_be_deleted(self, db, client, auth_header):
+        project = _project(db)
+        self._admin(db, project)
+        job = _job(db, project, "v9.6.0")
+        job.status = "failed"                          # stopped, its work kept
+        db.jobs.update(job)
+        vid = job.version_id
+        r = client.delete(f"/api/v1/projects/{project.id}/versions/{vid}", headers=auth_header)
+        assert r.status_code == 204, r.text
+        assert db.versions.get(vid) is None
+        assert db.jobs.get(job.id).version_id is None and db.jobs.get(job.id).version_tag == "v9.6.0"
+
+    def test_not_while_its_run_is_at_work(self, db, client, auth_header):
+        project = _project(db)
+        self._admin(db, project)
+        job = _job(db, project, "v9.7.0")               # running
+        r = client.delete(f"/api/v1/projects/{project.id}/versions/{job.version_id}",
+                          headers=auth_header)
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "RUN_ACTIVE"
+        assert db.versions.get(job.version_id) is not None
+
+    def test_not_while_a_later_version_builds_on_it(self, db, client, auth_header):
+        project = _project(db)
+        self._admin(db, project)
+        base = _job(db, project, "v9.8.0")
+        base.status = "complete"
+        db.jobs.update(base)
+        later = _job(db, project, "v9.9.0")
+        later.status = "complete"
+        db.jobs.update(later)
+        v = db.versions.get(later.version_id)
+        v.baseline_version_id = base.version_id
+        db.versions.update(v)
+        r = client.delete(f"/api/v1/projects/{project.id}/versions/{base.version_id}",
+                          headers=auth_header)
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "VERSION_IS_BASELINE"
