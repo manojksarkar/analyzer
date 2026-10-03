@@ -593,7 +593,7 @@ class TestItIsWiredIntoReexport:
     def test_it_asks_about_the_documents_the_export_writes(self):
         """The document type is resolved BEFORE the question -- the answer depends on it."""
         src = self._source()
-        body = src[src.index("def cmd_reexport("):]
+        body = src[src.index("def _render_version("):]     # reexport, export and resume
         assert body.index("doc_type = a.doc_type or") < self.CALL.search(body).start()
 
     def test_only_phase_4_is_gated(self):

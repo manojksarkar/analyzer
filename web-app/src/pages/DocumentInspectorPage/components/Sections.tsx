@@ -105,9 +105,13 @@ function FlowchartTableView({ data }: { data: FlowchartTableData }) {
                         type="button"
                         disabled={edit.locked}
                         onClick={() => edit.openFlowchart(fc)}
-                        className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1 border border-secondary text-secondary rounded-lg bg-white hover:bg-surface-container-low font-mono text-label font-semibold disabled:opacity-40"
+                        title={edit.labelsLocked ?? undefined}
+                        className={cn(
+                          'flex-shrink-0 flex items-center gap-1 px-2.5 py-1 border rounded-lg bg-white font-mono text-label font-semibold disabled:opacity-40',
+                          edit.labelsLocked ? 'border-outline-variant text-outline' : 'border-secondary text-secondary hover:bg-surface-container-low',
+                        )}
                       >
-                        <Icon name="account_tree" size={13} />
+                        <Icon name={edit.labelsLocked ? 'lock' : 'account_tree'} size={13} />
                         Edit flowchart
                       </button>
                     )}

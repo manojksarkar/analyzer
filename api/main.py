@@ -27,6 +27,7 @@ from .routes import (
     jobs_router, documents_router, team_router,
     compare_router, functions_router, notifications_router,
     repositories_router, users_router, text_overrides_router,
+    version_components_router,
 )
 
 # ---------------------------------------------------------------------------
@@ -71,9 +72,15 @@ def _ensure_default_admin(db) -> None:
         print(f"[api] could not ensure default admin: {type(exc).__name__}: {exc}", file=sys.stderr)
 
 
-def _fail_interrupted_jobs(db) -> None:
-    """Jobs a stopped server left queued or running, failed with what happened
-    (`pipeline_runner.fail_interrupted_jobs`). Never stops the start-up."""
+#: Seconds between two tries of the start-up check below while the database does not answer.
+JOB_SWEEP_RETRY_SECONDS = 30.0
+
+
+def _fail_interrupted_jobs(db) -> bool:
+    """Jobs a stopped server left queued or running: failed with what happened, or -- a run in
+    the background -- followed again (`pipeline_runner.fail_interrupted_jobs`). Only jobs that
+    started before this process did: one started since is this process's own. Never stops the
+    start-up. False when the check could not run (the database did not answer)."""
     import sys
     try:
         from .services import pipeline_runner
@@ -81,14 +88,31 @@ def _fail_interrupted_jobs(db) -> None:
         if engine is not None and not pipeline_runner.claim_job_runner(engine):
             print("[api] another API server runs jobs on this database: none of its jobs is "
                   "touched, and none left by a stopped server is cleared", file=sys.stderr)
-            return
-        n = pipeline_runner.fail_interrupted_jobs(db)
+            return True
+        n = pipeline_runner.fail_interrupted_jobs(db, before=pipeline_runner.PROCESS_STARTED)
         if n:
             print(f"[api] {n} job(s) left running by a stopped server: marked failed "
                   f"(interrupted)", file=sys.stderr)
+        return True
     except Exception as exc:                                  # noqa: BLE001
-        print(f"[api] could not check for interrupted jobs: {type(exc).__name__}: {exc}",
-              file=sys.stderr)
+        print(f"[api] could not check for interrupted jobs: {type(exc).__name__}: {exc} -- "
+              f"trying again in {JOB_SWEEP_RETRY_SECONDS:.0f} s", file=sys.stderr)
+        return False
+
+
+def _sweep_until_done(db) -> None:
+    """Try the start-up check again, in the background, until it runs. A run in the background
+    is followed again only by that check: one missed try -- a database slow to answer while the
+    machine is busy -- left its job saying "running" for ever, with nothing following the run."""
+    import threading
+    import time
+
+    def loop() -> None:
+        while True:
+            time.sleep(JOB_SWEEP_RETRY_SECONDS)
+            if _fail_interrupted_jobs(db):
+                return
+    threading.Thread(target=loop, daemon=True, name="job-sweep").start()
 
 
 @app.on_event("startup")
@@ -123,12 +147,14 @@ async def _db_startup_check() -> None:
             cx.execute(text("SELECT 1"))
         print("[api] database reachable ✓", file=sys.stderr)
         _ensure_default_admin(_db)          # never leave a fresh DB with no way to sign in
-        _fail_interrupted_jobs(_db)         # no job says "running" with nothing running it
     except Exception as exc:                                  # noqa: BLE001
         print(f"[api] *** DATABASE UNREACHABLE *** {type(exc).__name__}: {exc}\n"
               f"      The API is bound to {_redact(dsn)} (source: {src}). If that is 'localhost'\n"
               f"      but you meant a remote server, set DATABASE_URL before starting uvicorn, or\n"
               f"      add a `db` section to engine/config/config.local.json.", file=sys.stderr)
+    # No job says "running" with nothing running or following it -- tried again until it runs.
+    if not _fail_interrupted_jobs(_db):
+        _sweep_until_done(_db)
 
 # ---------------------------------------------------------------------------
 # Self-hosted API docs — Swagger UI / ReDoc assets are served from api/static/
@@ -211,6 +237,8 @@ app.include_router(repositories_router,      prefix=PREFIX)
 app.include_router(users_router,             prefix=PREFIX)
 # Review & Update -- correcting LLM text in a generated document (spec 05 section 10)
 app.include_router(text_overrides_router,    prefix=PREFIX)
+# Staged generation -- a version's components and the documents still to make
+app.include_router(version_components_router, prefix=PREFIX)
 
 # ---------------------------------------------------------------------------
 # Health check

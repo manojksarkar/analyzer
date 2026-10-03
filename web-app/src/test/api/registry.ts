@@ -4,6 +4,7 @@ import {
   ApiDocumentSchema, ApiDocumentDetailSchema, ApiRichDocumentSchema, ApiMemberSchema,
   ApiJobSchema, ApiFunctionSchema, ApiNotificationSchema, ApiConfigPreviewSchema,
   ApiExportReadinessSchema, ApiOverridesSchema,
+  ApiReviewEventSchema, ApiEventsSchema, ApiAssignBatchSchema, ApiApproveManySchema,
 } from '../../services/mappers'
 
 /**
@@ -68,8 +69,20 @@ export const Envelopes = {
   // ── review & update (read only here: the suite never writes a correction) ──
   exportReadiness: ApiExportReadinessSchema,
   overrides: ApiOverridesSchema,
-  approvedCount: z.object({ approved_count: z.number() }),
   downloadUrl: z.object({ download_url: z.string() }),
+
+  // ── review and approval (docs/spec/REVIEW_APPROVE_API_SPEC.md) ──
+  // A1, A4–A8 answer with the document as it now is.
+  reviewedDocument: z.object({ document: ApiDocumentSchema }),
+  assignBatch: ApiAssignBatchSchema,
+  approveMany: ApiApproveManySchema,
+  documentEvents: ApiEventsSchema,
+  // A11: each event names its document.
+  reviewEvents: z.object({
+    events: z.array(ApiReviewEventSchema.extend({
+      document: z.object({ id: z.string(), name: z.string(), process: z.string() }),
+    })),
+  }),
 
   // ── team ──
   members: z.object({ members: z.array(ApiMemberSchema) }),

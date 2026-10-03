@@ -24,6 +24,17 @@ export function formatShortDate(iso?: string | null): string | null {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`
 }
 
+/** "2026-09-30T15:10:…" → "Sep 30, 15:10" (the year added when it is not this year): when a
+ *  review step happened, to the minute. */
+export function formatDateTime(iso?: string | null): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const year = d.getFullYear() === new Date().getFullYear() ? '' : ` ${d.getFullYear()}`
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}${year}, ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 /** ISO timestamp → "just now" / "5m ago" / "2h ago" / "3d ago" / date. */
 export function relativeTime(iso?: string | null): string {
   if (!iso) return '—'

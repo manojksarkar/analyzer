@@ -106,6 +106,10 @@
   .pill-in-review { display: inline-flex; align-items: center; gap: 3px; font-family: 'JetBrains Mono'; font-size: 9px; font-weight: 700; background: #fff8e6; color: #b45309; border: 1px solid #f59e0b; padding: 0px 7px; border-radius: 99px; text-transform: uppercase; letter-spacing: .04em; }
   .pill-approved  { display: inline-flex; align-items: center; gap: 3px; font-family: 'JetBrains Mono'; font-size: 9px; font-weight: 700; background: #f0fdf9; color: #00a572; border: 1px solid #86efac; padding: 0px 7px; border-radius: 99px; text-transform: uppercase; letter-spacing: .04em; }
 
+  /* Review and approval (proposal): a version's progress, derived from its documents */
+  .ver-progress { width: 140px; height: 4px; border-radius: 99px; background: #fde7b0; overflow: hidden; flex-shrink: 0; }
+  .ver-progress > span { display: block; height: 100%; background: #00a572; }
+
   /* SHA chip */
   .sha-chip { font-family: 'JetBrains Mono'; font-size: 10px; font-weight: 500; background: #f3f4f6; color: #44474c; padding: 1px 6px; border-radius: 4px; }
 
@@ -318,11 +322,16 @@
           <div>
             <h2 class="font-headline-sm text-headline-sm text-on-surface">Versions</h2>
             <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" id="ver-subtitle">3 versions · VCU Engine Firmware</p>
+            <!-- Review and approval (proposal): a version's status is derived from its documents -->
+            <p class="flex items-center gap-1 mt-1" style="font-size:11px;color:#74777d;">
+              <span class="material-symbols-outlined" style="font-size:13px;">info</span>
+              A version is Approved when every one of its documents is — never set by hand.
+            </p>
           </div>
           <div class="flex items-center gap-1.5" id="ver-filters">
             <button class="ver-filter-btn active" data-filter="all" onclick="setFilter('all')">All <span class="ver-filter-count" id="fc-all">3</span></button>
-            <button class="ver-filter-btn" data-filter="in_review" onclick="setFilter('in_review')">In Review <span class="ver-filter-count" id="fc-in-review">1</span></button>
-            <button class="ver-filter-btn" data-filter="approved" onclick="setFilter('approved')">Complete <span class="ver-filter-count" id="fc-complete">2</span></button>
+            <button class="ver-filter-btn" data-filter="in_review" onclick="setFilter('in_review')">In review <span class="ver-filter-count" id="fc-in-review">1</span></button>
+            <button class="ver-filter-btn" data-filter="approved" onclick="setFilter('approved')">Approved <span class="ver-filter-count" id="fc-approved">2</span></button>
           </div>
         </div>
 
@@ -375,17 +384,23 @@ const COMMITS = [
   { sha: '07fa8b2', msg: 'chore: update Clang config to 17',          author: 'Arjun M.',   time: '5d ago',   current: false, version: null     },
 ];
 
+// Review and approval (proposal): a version has no status of its own. It is Approved when every one of
+// its documents is (approvedBy/approvedAt = the last document approval), else In review.
+// `carried` = approvals kept from the baseline version because the document's content did not change.
 const VERSIONS = [
-  { tag: 'v1.2.0', sha: 'd9a0c55', desc: 'SWE.3 review draft — all groups',        date: 'Jun 15, 2026', status: 'in_review', docs: 45 },
-  { tag: 'v1.1.0', sha: 'b2c841f', desc: 'Engine + Brake subsystems complete',      date: 'Jun 10, 2026', status: 'approved',  docs: 40 },
-  { tag: 'v1.0.0', sha: '3ef70a9', desc: 'Initial ADAS SWE.3 baseline',             date: 'Jun 1, 2026',  status: 'approved',  docs: 35 },
+  { tag: 'v1.2.0', sha: 'd9a0c55', desc: 'SWE.3 review draft — all groups',        date: 'Jun 15, 2026', docs: 26, approved: 11, carried: 6, carriedFrom: 'v1.1.0' },
+  { tag: 'v1.1.0', sha: 'b2c841f', desc: 'Engine + Brake subsystems added',         date: 'Jun 10, 2026', docs: 24, approved: 24, approvedBy: 'Sarah Chen', approvedAt: 'Jun 13, 2026' },
+  { tag: 'v1.0.0', sha: '3ef70a9', desc: 'Initial ADAS SWE.3 baseline',             date: 'Jun 1, 2026',  docs: 20, approved: 20, approvedBy: 'Zara Patel', approvedAt: 'Jun 4, 2026' },
 ];
+
+// Derived — never stored, never set by hand
+function versionStatus(v) { return v.approved === v.docs ? 'approved' : 'in_review'; }
 
 // ── Filter counts ──
 function updateFilterCounts() {
-  document.getElementById('fc-all').textContent      = VERSIONS.length;
-  document.getElementById('fc-in-review').textContent = VERSIONS.filter(v => v.status === 'in_review').length;
-  document.getElementById('fc-complete').textContent  = VERSIONS.filter(v => v.status === 'approved').length;
+  document.getElementById('fc-all').textContent       = VERSIONS.length;
+  document.getElementById('fc-in-review').textContent = VERSIONS.filter(v => versionStatus(v) === 'in_review').length;
+  document.getElementById('fc-approved').textContent  = VERSIONS.filter(v => versionStatus(v) === 'approved').length;
 }
 
 // ── Set active filter ──
@@ -402,14 +417,35 @@ function accentColor(s) {
   return s === 'approved' ? '#00a572' : s === 'in_review' ? '#f59e0b' : '#c4c6cd';
 }
 function statusPill(s) {
-  if (s === 'in_review') return `<span class="pill-in-review"><span style="width:4px;height:4px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In Review</span>`;
+  if (s === 'in_review') return `<span class="pill-in-review"><span style="width:4px;height:4px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In review</span>`;
   if (s === 'approved')  return `<span class="pill-approved"><span style="width:4px;height:4px;border-radius:50%;background:#00a572;display:inline-block;"></span>Approved</span>`;
   return '';
 }
 
+// Review and approval (proposal): the line under a version's description — how far its documents are
+function reviewLine(v) {
+  if (versionStatus(v) === 'approved') {
+    return `
+      <div class="flex items-center gap-1.5 flex-wrap" style="margin-bottom:10px;">
+        <span class="material-symbols-outlined sym-fill" style="font-size:14px;color:#00a572;">verified</span>
+        <span style="font-size:12px;color:#0b1c30;">Approved by <b style="font-weight:600;">${v.approvedBy}</b> · ${v.approvedAt}</span>
+        <span style="font-size:11px;color:#74777d;">· the last of ${v.docs} document approvals</span>
+      </div>`;
+  }
+  const pct = Math.round((v.approved / v.docs) * 100);
+  return `
+      <div style="margin-bottom:10px;">
+        <div class="flex items-center gap-2.5">
+          <div class="ver-progress" title="${pct}% of documents approved"><span style="width:${pct}%;"></span></div>
+          <span style="font-size:12px;color:#0b1c30;"><b style="font-weight:600;">${v.approved} of ${v.docs}</b> documents approved</span>
+        </div>
+        ${v.carried ? `<p style="font-size:11px;color:#74777d;margin-top:4px;">${v.carried} approvals carried from ${v.carriedFrom} (content unchanged)</p>` : ''}
+      </div>`;
+}
+
 // ── Render version list ──
 function renderVersionList() {
-  const filtered = activeFilter === 'all' ? VERSIONS : VERSIONS.filter(v => v.status === activeFilter);
+  const filtered = activeFilter === 'all' ? VERSIONS : VERSIONS.filter(v => versionStatus(v) === activeFilter);
   const list = document.getElementById('version-list');
   const empty = document.getElementById('ver-empty');
   document.getElementById('ver-subtitle').textContent = `${VERSIONS.length} version${VERSIONS.length !== 1 ? 's' : ''} · VCU Engine Firmware`;
@@ -429,16 +465,17 @@ function renderVersionList() {
     const isCurrent = v.sha === currentSha;
     return `
     <div class="ver-row" id="ver-${v.tag}" onclick="highlightVersion('${v.tag}')">
-      <div class="ver-accent" style="background:${accentColor(v.status)};"></div>
+      <div class="ver-accent" style="background:${accentColor(versionStatus(v))};"></div>
       <div class="flex-1 px-5 py-4">
         <div class="flex items-start justify-between gap-4">
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2.5 flex-wrap mb-1.5">
               <span style="font-family:'JetBrains Mono';font-size:15px;font-weight:700;color:#0b1c30;">${v.tag}</span>
-              ${statusPill(v.status)}
+              ${statusPill(versionStatus(v))}
               ${isCurrent ? `<span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#e5eeff;color:#0058be;border:1px solid #bfcfff;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;">current</span>` : ''}
             </div>
-            <p style="font-size:13px;color:#44474c;margin-bottom:10px;line-height:1.5;">${v.desc}</p>
+            <p style="font-size:13px;color:#44474c;margin-bottom:8px;line-height:1.5;">${v.desc}</p>
+            ${reviewLine(v)}
             <div class="flex items-center gap-2.5 flex-wrap">
               <span class="sha-chip">${v.sha.slice(0,7)}</span>
               <span style="font-size:11px;color:#74777d;">${v.docs} docs</span>
@@ -569,20 +606,23 @@ function renderPickerVersions() {
   const accentCol = s => s === 'approved' ? '#00a572' : s === 'in_review' ? '#f59e0b' : '#c4c6cd';
   const pill = s => {
     if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#f0fdf9;color:#00a572;border:1px solid #86efac;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#00a572;display:inline-block;"></span>Approved</span>`;
-    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In Review</span>`;
+    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In review</span>`;
     return '';
   };
   const activeSha = (COMMITS.find(x => x.current) || {}).sha;
   list.innerHTML = VERSIONS.map(v => {
     const isActive = v.sha === activeSha;
+    const st = versionStatus(v);
+    // Review and approval (proposal): the derived status's count, in place of the bare doc count
+    const progress = st === 'approved' ? `${v.docs} docs · by ${v.approvedBy}` : `${v.approved} of ${v.docs} approved`;
     return `
     <button onclick="selectVersion('${v.tag}')" style="width:100%;display:flex;border:none;cursor:pointer;border-bottom:1px solid #e2e3e8;text-align:left;background:${isActive ? '#f5f8ff' : 'transparent'};" onmouseover="if(!${isActive})this.style.background='#f8f9fa'" onmouseout="if(!${isActive})this.style.background='${isActive ? '#f5f8ff' : 'transparent'}'">
-      <div style="width:3px;flex-shrink:0;background:${accentCol(v.status)};"></div>
+      <div style="width:3px;flex-shrink:0;background:${accentCol(st)};"></div>
       <div style="flex:1;min-width:0;padding:11px 12px 10px 10px;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px;">
           <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">
             <span style="font-family:'JetBrains Mono';font-size:12px;font-weight:700;color:#0b1c30;">${v.tag}</span>
-            ${pill(v.status)}
+            ${pill(st)}
           </div>
           ${isActive ? '<span class="material-symbols-outlined" style="font-size:15px;color:#0058be;flex-shrink:0;">check</span>' : ''}
         </div>
@@ -590,7 +630,7 @@ function renderPickerVersions() {
         <div style="display:flex;align-items:center;gap:8px;">
           <span style="font-family:'JetBrains Mono';font-size:10px;color:#74777d;background:#f3f4f6;padding:1px 5px;border-radius:4px;">${v.sha.slice(0,7)}</span>
           <span style="font-size:10px;color:#74777d;">${v.date}</span>
-          <span style="font-size:10px;color:#74777d;">${v.docs} docs</span>
+          <span style="font-size:10px;color:${st === 'approved' ? '#74777d' : '#b45309'};">${progress}</span>
         </div>
       </div>
     </button>`;

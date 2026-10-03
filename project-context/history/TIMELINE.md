@@ -10,6 +10,11 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-02c | A web run goes on when the API restarts: it runs in the background like `--detach`, the API follows it and follows it again after a restart; a run that dies keeps its version for `resume` | [11](11-2026-09-29e.md) |
+| 2026-10-02b | `analyzer.py generate` makes SWE.3 and SWE.4 by default (`--doc-type all`), like a web run | [11](11-2026-09-29e.md) |
+| 2026-10-02 | Staged generation: one model per version, documents per component, any number of runs; a long run survives the API and code changes; one writer per version; `resume` after a crash | [11](11-2026-09-29e.md) |
+| 2026-10-01e | People can be added: an invite makes an active member and creates the account when there is none; `analyzer.py user` and `tools/create_users.py` create accounts | [11](11-2026-09-29e.md) |
+| 2026-10-01d | Review and approval: a document has one reviewer and is submitted, approved, sent back or reopened on the record; a version is approved when all its documents are; every version gets its documents recorded however it was made | [11](11-2026-09-29e.md) |
 | 2026-10-01c | Mermaid diagrams render in the minlag/mermaid-cli docker image when it draws on the machine, else in local mmdc as before; `doctor` asks for one of the two | [11](11-2026-09-29e.md) |
 | 2026-10-01b | Three things the 2026-09-30g merge checks found, fixed: pictures lost under load, jobs that said "running" for ever, and old versions' descriptions lost on re-export | [11](11-2026-09-29e.md) |
 | 2026-10-01 | Review & update has a screen: the document reader's edit mode | [11](11-2026-09-29e.md) |

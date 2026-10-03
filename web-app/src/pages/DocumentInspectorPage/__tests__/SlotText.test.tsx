@@ -14,6 +14,7 @@ function api(over: Partial<EditApi> = {}): EditApi {
   return {
     editing: true, locked: false, projectId: 'p1', versionId: 'v1',
     save: vi.fn().mockResolvedValue(undefined), undo: vi.fn(), openFlowchart: vi.fn(),
+    labelsLocked: null,
     userName: (id) => (id === 'u1' ? 'Alice Chen' : ''),
     ...over,
   }

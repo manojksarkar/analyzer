@@ -2,7 +2,7 @@ import { Suspense, useState } from 'react'
 import { Outlet, useParams } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
-import { Subbar, StatusBadge } from './Subbar'
+import { Subbar, VersionStatusChip } from './Subbar'
 import { SubbarCtaProvider } from './SubbarCta'
 import { ErrorBoundary } from '../ErrorBoundary'
 import { Skeleton } from '../ui'
@@ -42,7 +42,7 @@ export function ProjectLayout({ breadcrumbLabel, breadcrumbParentLabel, breadcru
 
   // Subbar status reflects the picker selection (and any live run) — shared with
   // the detail page via useProjectViewState.
-  const { pageState, isLoading: viewLoading } = useProjectViewState(projectId ?? '')
+  const { pageState, viewVersion, isLoading: viewLoading } = useProjectViewState(projectId ?? '')
   // The Subbar's action slot, filled by the page through <SubbarCta>.
   const [ctaSlot, setCtaSlot] = useState<HTMLDivElement | null>(null)
 
@@ -68,7 +68,7 @@ export function ProjectLayout({ breadcrumbLabel, breadcrumbParentLabel, breadcru
             viewLoading
               ? <Skeleton className="h-5 w-20 rounded-full" />
               : project
-                ? <StatusBadge state={pageState} />
+                ? <VersionStatusChip state={pageState} version={viewVersion} />
                 : undefined
           }
           ctaSlotRef={setCtaSlot}

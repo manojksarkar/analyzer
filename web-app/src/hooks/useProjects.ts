@@ -8,9 +8,16 @@ import { toast } from '../components/ui/Toast'
 
 export const projectKeys = {
   all: ['projects'] as const,
+  /** Every user's projects list (the prefix of `list`). */
+  lists: ['projects', 'list'] as const,
   list: (userEmail?: string) => ['projects', 'list', userEmail ?? 'anon'] as const,
+  /** NB: a prefix of every key of the project — invalidate it with `exact: true`. */
   detail: (id: string) => ['projects', id] as const,
   versions: (id: string) => ['projects', id, 'versions'] as const,
+  /** A version's components and the state of their documents (staged generation). */
+  versionComponents: (id: string, vid: string) => ['projects', id, 'versions', vid, 'components'] as const,
+  /** Every documents read of the project: lists, details, stats, renders, events. */
+  documentsAll: (id: string) => ['projects', id, 'documents'] as const,
   documents: (id: string, filters?: DocumentFilters) =>
     ['projects', id, 'documents', filters ?? {}] as const,
   document: (id: string, docId: string) =>
@@ -19,9 +26,17 @@ export const projectKeys = {
     ['projects', id, 'documents', 'render', docId] as const,
   /** Every rendered document of the project: a label save changes SWE.3 and SWE.4 renders. */
   documentRenders: (id: string) => ['projects', id, 'documents', 'render'] as const,
+  /** A10: one document's review record. */
+  documentEvents: (id: string, docId: string) => ['projects', id, 'documents', 'events', docId] as const,
+  /** A11: the project's review record (per version, or all). */
+  reviewEvents: (id: string, vid?: string) => ['projects', id, 'review-events', vid ?? 'all'] as const,
+  reviewEventsAll: (id: string) => ['projects', id, 'review-events'] as const,
   /** Review & update, per version (its own prefix, so no document or version refetch wipes it). */
   review: (id: string, vid: string) => ['projects', id, 'review', vid] as const,
   exportReadiness: (id: string, vid: string) => ['projects', id, 'review', vid, 'readiness'] as const,
+  /** A15: R9 for one document's component and type (under the version's, so both refresh together). */
+  documentReadiness: (id: string, vid: string, docId: string) =>
+    ['projects', id, 'review', vid, 'readiness', docId] as const,
   overrides: (id: string, vid: string) => ['projects', id, 'review', vid, 'overrides'] as const,
   slotHistory: (id: string, vid: string, kind: string, key: string) =>
     ['projects', id, 'review', vid, 'history', kind, key] as const,
@@ -31,6 +46,8 @@ export const projectKeys = {
     ['projects', id, 'documents', 'stats', versionId ?? 'all'] as const,
   team: (id: string) => ['projects', id, 'team'] as const,
   pending: (id: string) => ['projects', id, 'team', 'pending'] as const,
+  /** GET /users/search: everyone with an account, by name or email (not per project). */
+  userSearch: (q: string) => ['users', 'search', q] as const,
   commits: (id: string) => ['projects', id, 'commits'] as const,
   job: (id: string) => ['projects', id, 'job'] as const,
   jobFunctions: (id: string, jobId: string) => ['projects', id, 'job', jobId, 'functions'] as const,

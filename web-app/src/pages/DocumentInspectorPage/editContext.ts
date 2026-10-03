@@ -15,6 +15,9 @@ export interface EditApi {
   undo: (slot: Slot) => void
   /** Open the label editor of one flowchart. */
   openFlowchart: (chart: FlowchartEntry) => void
+  /** Why the flowchart labels cannot be corrected (the component's SWE.4 is approved: its test
+   *  steps are built from them), or null. */
+  labelsLocked: string | null
   /** A user id (`updatedBy`) as a name. */
   userName: (userId: string | null) => string
 }

@@ -13,7 +13,7 @@ from sse_starlette.sse import EventSourceResponse
 from ..db.session import get_db
 from ..db.in_memory import InMemoryDatabase
 from ..middleware.auth import get_current_user, require_project_admin, require_project_member
-from ..models.domain import User, AnalysisJob, AnalysisPhase, REEXPORT_MODE
+from ..models.domain import User, AnalysisJob, AnalysisPhase, REEXPORT_MODE, EXPORT_MODE
 from ..services.errors import not_found, conflict, bad_request
 from ..services import pipeline_runner
 from ..schemas import (
@@ -126,6 +126,10 @@ def start_job(
     version_name = (body.version_tag or "").strip()
     if not version_name:
         raise bad_request("A version name is required.")
+    if (body.mode or "").strip() == EXPORT_MODE:
+        raise bad_request("Components are added to a version with POST "
+                          "/projects/{project_id}/versions/{version_id}/documents/generate, "
+                          "not as a new job.")
     if (body.mode or "").strip() == REEXPORT_MODE:
         raise bad_request("A re-export is started with POST "
                           "/projects/{project_id}/versions/{version_id}/reexport, not as a new job.")

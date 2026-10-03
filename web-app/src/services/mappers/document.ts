@@ -1,86 +1,70 @@
 import { z } from 'zod'
 import type {
-  Document, DocStats, DocStatus, DocumentDetail, SectionReviewState,
+  Document, DocStats, DocumentDetail,
   RichDocument, RichSection, RichSectionType, TocEntry, DocCover, DocMeta,
   FlowchartEntry, FlowchartTableData, BehaviorTableData, TestSpecData, TestSummary,
 } from '../../types'
 import { formatShortDate, avatarPalette } from '../../lib/format'
+import { reviewStatusOf } from '../../lib/reviewStatus'
 import { API_BASE_URL } from '../../lib/http'
 import { ApiSlotSchema, mapSlotOrNull, type ApiSlot } from './review'
+import { ApiDocReviewSchema, ApiUserRefSchema, mapDocReview, mapUserRef } from './approval'
 
-export const ApiAssigneeSchema = z.object({
-  user_id: z.string(), name: z.string(), initials: z.string(),
-})
+/** @deprecated the same person as `reviewer`, as a list of 0 or 1 (kept for older clients). */
+export const ApiAssigneeSchema = ApiUserRefSchema
 export type ApiAssignee = z.infer<typeof ApiAssigneeSchema>
 
+// A document, from every route that returns one (REVIEW_APPROVE_API_SPEC §2): its one reviewer
+// (null = "Needs a reviewer") and its review. `due_date` is still sent; nothing shows it.
 export const ApiDocumentSchema = z.object({
   id: z.string(), name: z.string(), subtitle: z.string(), process: z.string(),
   layer: z.string(), group: z.string(), status: z.string(), version_id: z.string(),
   due_date: z.string().nullable(), assignees: z.array(ApiAssigneeSchema),
+  reviewer: ApiUserRefSchema.nullable(),
+  review: ApiDocReviewSchema,
   created_at: z.string(), updated_at: z.string(),
 })
 export type ApiDocument = z.infer<typeof ApiDocumentSchema>
 
-export const ApiDocSectionSchema = z.object({
-  key: z.string(), title: z.string(), order: z.number(), content: z.string(),
-  review_state: z.string().nullable(), reviewed_by: z.string().nullable(), reviewed_at: z.string().nullable(),
-})
-export type ApiDocSection = z.infer<typeof ApiDocSectionSchema>
-
-export const ApiDocumentDetailSchema = ApiDocumentSchema.extend({
-  sections: z.array(ApiDocSectionSchema).optional(),
-  review_progress: z.object({ resolved: z.number(), total: z.number() }).optional(),
-})
-export type ApiDocumentDetail = z.infer<typeof ApiDocumentDetailSchema>
+// `GET …/documents/{id}`: the same document. The placeholder sections it may still carry are
+// not read (review is per document, not per section).
+export const ApiDocumentDetailSchema = ApiDocumentSchema
+export type ApiDocumentDetail = ApiDocument
 
 /**
  * @param versionTagById optional version_id → tag lookup so the UI can show
  * "v1.2.0" instead of the raw "ver3" id when the caller has versions cached.
  */
 export function mapDocument(d: ApiDocument, versionTagById?: Record<string, string>): Document {
-  const a = d.assignees?.[0]
-  const pal = a ? avatarPalette(a.user_id) : undefined
+  // An API from before review and approval sends `assignees` only.
+  const reviewer = mapUserRef(d.reviewer !== undefined ? d.reviewer : d.assignees?.[0])
+  const pal = reviewer ? avatarPalette(reviewer.userId) : undefined
   return {
     id: d.id,
     name: d.name,
     process: d.process,
-    status: d.status as DocStatus,
+    status: reviewStatusOf(d.status),
     version: versionTagById?.[d.version_id] ?? d.version_id,
     versionId: d.version_id,
     updatedAt: formatShortDate(d.updated_at) ?? '',
     subtitle: d.subtitle || undefined,
     layer: d.layer || undefined,
     group: d.group || undefined,
-    due: formatShortDate(d.due_date) ?? undefined,
-    assignee: a?.name,
-    assigneeInitials: a?.initials,
+    reviewer,
+    review: mapDocReview(d.review),
+    assignee: reviewer?.name,
+    assigneeInitials: reviewer?.initials,
     assigneeColor: pal?.bg,
     assigneeTextColor: pal?.text,
   }
 }
 
-/** Document + its section bodies (GET …/documents/{id}). */
+/** GET …/documents/{id}: one document, as a list row. */
 export function mapDocumentDetail(
   d: ApiDocumentDetail,
   versionTagById?: Record<string, string>,
 ): DocumentDetail {
-  const sections = (d.sections ?? [])
-    .slice()
-    .sort((a, b) => a.order - b.order)
-    .map((s) => ({
-      key: s.key,
-      title: s.title,
-      order: s.order,
-      content: s.content,
-      reviewState: (s.review_state as SectionReviewState | null) ?? null,
-      reviewedBy: s.reviewed_by,
-      reviewedAt: s.reviewed_at,
-    }))
-  return {
-    ...mapDocument(d, versionTagById),
-    sections,
-    reviewProgress: d.review_progress,
-  }
+  return mapDocument(d, versionTagById)
 }
 
 /* ── Rich render payload ── */
@@ -367,12 +351,15 @@ export function mapRichDocument(d: ApiRichDocument): RichDocument {
   return { cover, toc, sections: (d.sections ?? []).map(mapRichSection), meta, testSummary }
 }
 
+/** A13: counts per review state, and how many need a reviewer or carried their approval. */
 export function mapDocStats(s: Record<string, number>): DocStats {
   return {
     total: s.total ?? 0,
-    approved: s.approved ?? 0,
     inReview: s.in_review ?? 0,
-    never: s.never ?? 0,
-    unchanged: s.unchanged ?? 0,
+    submitted: s.submitted ?? 0,
+    changesRequested: s.changes_requested ?? 0,
+    approved: s.approved ?? 0,
+    needsReviewer: s.needs_reviewer ?? 0,
+    carried: s.carried ?? 0,
   }
 }

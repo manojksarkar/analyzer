@@ -17,11 +17,121 @@ export interface AuthSession {
   refreshToken: string
 }
 
-// 'never' = no doc generated yet (API DocStatus). 'complete'/'draft' kept for
-// back-compat with existing badge config.
-export type DocStatus = 'never' | 'in_review' | 'approved' | 'complete' | 'draft' | 'unchanged'
-export type VersionStatus = 'in_review' | 'approved' | 'complete' | 'draft'
+/** A document's review state (docs/spec/REVIEW_APPROVE_API_SPEC.md §1). One label each, everywhere:
+ *  In review · Ready for approval · Changes requested · Approved (lib/reviewStatus.ts). */
+export type ReviewStatus = 'in_review' | 'submitted' | 'changes_requested' | 'approved'
+export type DocStatus = ReviewStatus
+/** A version's status is derived from its documents (approved when every one is); `draft` = no
+ *  documents yet (its run is going, or it was only tagged). */
+export type VersionStatus = 'in_review' | 'approved' | 'draft'
+/** `complete` = the version on screen is approved. */
 export type PageState = 'never' | 'running' | 'in_review' | 'complete' | 'stale'
+
+/** Staged generation: a version's model covers whole layers, its documents are made per component,
+ *  by any number of runs (`GET …/versions/{vid}/components`). `stopped` = it was waiting or being
+ *  made when its run died; `not_requested` = in a parsed layer, nobody asked for it yet. */
+export type ComponentState = 'generated' | 'generating' | 'waiting' | 'stopped' | 'failed' | 'not_requested'
+
+export interface VersionComponent {
+  /** Its output folder (`Layer1.Math`) — what `documents.group` and the generate call name. */
+  id: string
+  layer: string
+  name: string
+  state: ComponentState
+  /** Of this version's model; a document outside it (an old group run) cannot be made again here. */
+  inModel: boolean
+  error: string | null
+  documents: { id: string; process: string; status: ReviewStatus }[]
+}
+
+/** The version's latest writing run (generate / export / reexport / resume / web job). */
+export interface VersionRun {
+  command: string
+  /** Holds the version now; null = this server cannot tell (no Postgres). */
+  alive: boolean | null
+  /** Recorded as running, but its process is gone: cut short — `analyzer.py resume` continues it. */
+  stopped: boolean
+  outcome: string
+  host: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  stage: string | null
+  done: number | null
+  total: number | null
+  stageStartedAt: string | null
+  progressAt: string | null
+}
+
+/** The web job at work on the version now (queued or running): what Stop cancels. `mode`
+ *  `export` / `reexport` = documents into this version; anything else = the version's own run. */
+export interface VersionJob {
+  id: string
+  mode: string
+  status: string
+}
+
+export interface VersionComponents {
+  components: VersionComponent[]
+  counts: Partial<Record<ComponentState, number>>
+  run: VersionRun | null
+  /** null from an API that does not say (older), or when no web job is at work on it. */
+  job: VersionJob | null
+}
+
+/** A person as the review routes name them. */
+export interface UserRef {
+  userId: string
+  name: string
+  initials: string
+}
+
+export type ReviewEventKind =
+  | 'generated' | 'carried' | 'assigned' | 'unassigned' | 'claimed'
+  | 'submitted' | 'approved' | 'changes_requested' | 'reopened'
+
+/** One step of a document's review record (A10, A11). */
+export interface ReviewEvent {
+  id: string
+  documentId: string
+  versionId: string
+  kind: ReviewEventKind
+  /** null: the run did it. */
+  actor: UserRef | null
+  at: string
+  comment: string | null
+  payload: Record<string, unknown>
+  /** A11 only: the document the event is about. */
+  document?: { id: string; name: string; process: string }
+}
+
+/** A document's review: the comments, the approval, where the approval came from. */
+export interface DocReview {
+  /** The reviewer's comment at the last submit. */
+  comment: string | null
+  /** The admin's comment at the last request for changes (cleared by the next submit). */
+  changesComment: string | null
+  approvedBy: UserRef | null
+  approvedAt: string | null
+  approvalComment: string | null
+  /** SHA-256 of the Word file that was approved. */
+  docxSha256: string | null
+  /** The earlier version the approval was carried from (its content was the same). */
+  carriedFrom: { versionId: string; tag: string } | null
+  lastEvent: ReviewEvent | null
+}
+
+/** A version's review counts (A14). */
+export interface VersionReview {
+  documents: number
+  approved: number
+  inReview: number
+  submitted: number
+  changesRequested: number
+  carried: number
+  /** The last approval, set only when the version is approved. */
+  approvedBy: UserRef | null
+  approvedAt: string | null
+}
 
 export interface TeamMember {
   id: string
@@ -132,6 +242,8 @@ export interface Version {
   /** What the run that made this version warned about — a component path the checkout did not
    *  have, a dictionary it ran without (`versions.run_report.warnings`). */
   warnings: string[]
+  /** Its documents' review counts; null from an API that does not send them. */
+  review: VersionReview | null
 }
 
 export interface Commit {
@@ -150,7 +262,6 @@ export interface Document {
   name: string
   process: string
   status: DocStatus
-  assignee?: string
   /** Display label: the version's tag when known, else its id. */
   version: string
   /** The version the document belongs to (its id), whatever the Subbar shows. */
@@ -159,31 +270,18 @@ export interface Document {
   subtitle?: string
   layer?: string
   group?: string
-  due?: string
+  /** The one reviewer, or null: "Needs a reviewer". */
+  reviewer: UserRef | null
+  review: DocReview
+  /** The reviewer's name, initials and avatar colours (null reviewer → undefined). */
+  assignee?: string
   assigneeInitials?: string
   assigneeColor?: string
   assigneeTextColor?: string
 }
 
-/** Per-section review outcome (null = not yet reviewed). */
-export type SectionReviewState = 'accepted' | 'declined' | 'edited'
-
-/** One section of a document's detail body (richtext or a markdown table). */
-export interface DocSection {
-  key: string
-  title: string
-  order: number
-  content: string
-  reviewState: SectionReviewState | null
-  reviewedBy?: string | null
-  reviewedAt?: string | null
-}
-
-/** A single document with its full section body — for the inspector view. */
-export interface DocumentDetail extends Document {
-  sections: DocSection[]
-  reviewProgress?: { resolved: number; total: number }
-}
+/** `GET …/documents/{id}`: the same shape as a list row. */
+export type DocumentDetail = Document
 
 /* ── Rich render payload (GET …/documents/{id}/render) — the DOCX-like view ── */
 
@@ -407,13 +505,15 @@ export interface RichDocument {
   testSummary?: TestSummary | null
 }
 
-/** KPI counts for a project's documents (mapped from GET …/documents/stats). */
+/** Counts per review state (GET …/documents/stats, A13). */
 export interface DocStats {
   total: number
-  approved: number
   inReview: number
-  never: number
-  unchanged: number
+  submitted: number
+  changesRequested: number
+  approved: number
+  needsReviewer: number
+  carried: number
 }
 
 /* ── Analysis jobs ─────────────────────────────────────────────────── */
@@ -472,6 +572,8 @@ export interface JobFunctions {
 export interface AppNotification {
   id: string
   projectId: string
+  /** The document it is about, when it is about one: a click opens it. */
+  documentId: string | null
   type: string
   message: string
   readAt: string | null

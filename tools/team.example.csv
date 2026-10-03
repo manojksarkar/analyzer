@@ -1,0 +1,5 @@
+email,name,password,role
+priya.sharma@company.com,Priya Sharma,,developer
+rahul.verma@company.com,Rahul Verma,,developer
+anita.desai@company.com,Anita Desai,MyPassw0rd,reviewer
+review.lead@company.com,Review Lead,,admin

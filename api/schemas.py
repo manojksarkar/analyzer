@@ -55,11 +55,14 @@ class Pagination(BaseModel):
 
 
 class DocCounts(BaseModel):
+    """A version's documents by review state (docs/spec/REVIEW_APPROVE_API_SPEC.md A13)."""
     total: int
-    approved: int
-    in_review: int
-    never: int
-    unchanged: int
+    in_review: int = 0
+    submitted: int = 0
+    changes_requested: int = 0
+    approved: int = 0
+    needs_reviewer: int = 0
+    carried: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -305,14 +308,6 @@ class SectionView(BaseModel):
     title: str
     order: int
     content: str
-    review_state: str
-    reviewed_by: Optional[str] = None
-    reviewed_at: Optional[str] = None
-
-
-class ReviewProgress(BaseModel):
-    resolved: int
-    total: int
 
 
 class DocumentView(BaseModel):
@@ -322,17 +317,18 @@ class DocumentView(BaseModel):
     process: str
     layer: Optional[str] = None
     group: Optional[str] = None
-    status: str
+    status: str                       # in_review | submitted | changes_requested | approved
     version_id: Optional[str] = None
     due_date: Optional[str] = None
-    assignees: List[AssigneeView]
+    assignees: List[AssigneeView]     # the reviewer as a list of 0 or 1
+    reviewer: Optional[AssigneeView] = None
+    review: Optional[dict] = None     # REVIEW_APPROVE_API_SPEC §2
     created_at: str
     updated_at: str
 
 
 class DocumentDetail(DocumentView):
     sections: List[SectionView]
-    review_progress: ReviewProgress
 
 
 class DocumentResponse(BaseModel):
@@ -350,35 +346,6 @@ class DocumentListResponse(BaseModel):
 
 class DocStatsResponse(BaseModel):
     stats: DocCounts
-
-
-class AssigneesResponse(BaseModel):
-    assignees: List[AssigneeView]
-
-
-class SectionReviewView(BaseModel):
-    key: str
-    review_state: str
-    reviewed_by: Optional[str] = None
-
-
-class SectionReviewResponse(BaseModel):
-    section: SectionReviewView
-
-
-class SubmitReviewResponse(BaseModel):
-    message: str
-    document_id: str
-
-
-class DocStatusResponse(BaseModel):
-    document_id: str
-    status: str
-
-
-class ApproveAllResponse(BaseModel):
-    approved_count: int
-    document_ids: List[str]
 
 
 class ExportAllResponse(BaseModel):

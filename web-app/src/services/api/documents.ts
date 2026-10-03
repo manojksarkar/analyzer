@@ -8,7 +8,9 @@ import {
 export interface DocumentFilters {
   versionId?: string
   process?: string
+  /** One of the four review states. */
   status?: string
+  /** A user id, or `none` for the documents without a reviewer. */
   assigneeId?: string
   q?: string
   page?: number
@@ -55,32 +57,8 @@ export const documentsApi = {
     )
     return mapRichDocument(r.document)
   },
-  updateStatus: (projectId: string, docId: string, status: string): Promise<unknown> =>
-    http.patch(`/projects/${projectId}/documents/${docId}`, { status }),
-  approve: (projectId: string, docId: string): Promise<unknown> =>
-    http.post(`/projects/${projectId}/documents/${docId}/approve`),
-  requestChanges: (projectId: string, docId: string): Promise<unknown> =>
-    http.post(`/projects/${projectId}/documents/${docId}/request-changes`),
-  submitReview: (projectId: string, docId: string): Promise<unknown> =>
-    http.post(`/projects/${projectId}/documents/${docId}/submit-review`),
-  approveAll: (
-    projectId: string,
-    body: { version_id: string; process_filter?: string[] },
-  ): Promise<{ approved_count: number }> =>
-    http.post(`/projects/${projectId}/documents/approve-all`, body),
-  assign: (projectId: string, docId: string, userIds: string[]): Promise<unknown> =>
-    http.post(`/projects/${projectId}/documents/${docId}/assignments`, { user_ids: userIds }),
-  removeAssignee: (projectId: string, docId: string, userId: string): Promise<void> =>
-    http.del(`/projects/${projectId}/documents/${docId}/assignments/${userId}`),
-  selfAssign: (projectId: string, docId: string): Promise<unknown> =>
-    http.post(`/projects/${projectId}/documents/${docId}/assignments/self`),
-  reviewSection: (
-    projectId: string,
-    docId: string,
-    sectionKey: string,
-    body: { review_state: string; edited_content?: string },
-  ): Promise<unknown> =>
-    http.patch(`/projects/${projectId}/documents/${docId}/sections/${sectionKey}`, body),
+  // A document's state moves only through the review and approval routes (approvalApi):
+  // `PATCH …/{doc}` with a status and `PATCH …/sections/{key}` are retired.
   download: (projectId: string, docId: string, name: string): Promise<void> =>
     http.download(`/projects/${projectId}/documents/${docId}/download`, `${name}.docx`),
   exportAll: (

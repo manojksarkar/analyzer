@@ -1,26 +1,29 @@
 import { useState, useRef, useEffect } from 'react'
 import { Icon, Text } from '../ui'
 import { cn } from '../../lib/cn'
-import { PROCESS_TITLES } from '../../lib/docTree'
+import { NEEDS_REVIEWER, PROCESS_TITLES, type ReviewerOption } from '../../lib/docTree'
+import { STATUS_META } from '../../lib/reviewStatus'
 import type { Document } from '../../types'
 
 /**
- * Left document-tree rail (assignee filter + process-grouped docs). Presentational:
- * the host page owns the grouping + assignee-filter state so it can stay in sync
+ * Left document-tree rail (reviewer filter + process-grouped docs). Presentational:
+ * the host page owns the grouping + reviewer-filter state so it can stay in sync
  * with a table (Documents) or run standalone (Inspector). Single-doc processes
  * render as a flat row; multi-doc processes (SWE.3) get a collapsible group, and
  * when a process spans more than one layer its docs are sub-grouped by layer.
+ * The filter's value is a reviewer's user id, `none` (Needs a reviewer) or '' (all).
  */
 export function DocTreePanel({
-  groups, assigneeOptions, effectiveAssignee, meName, isDeveloper, activeDocId, onPickAssignee, onOpenDoc, onFold,
+  groups, assigneeOptions, effectiveAssignee, meId, isDeveloper, activeDocId, onPickAssignee, onOpenDoc, onFold,
 }: {
   groups: { process: string; docs: Document[] }[]
-  assigneeOptions: string[]
+  assigneeOptions: ReviewerOption[]
   effectiveAssignee: string
-  meName: string
+  /** The signed-in user's id ("My reviews"). */
+  meId: string
   isDeveloper: boolean
   activeDocId?: string
-  onPickAssignee: (name: string) => void
+  onPickAssignee: (value: string) => void
   onOpenDoc: (doc: Document) => void
   /** Shows a button that folds the panel away (the Inspector, where the reader needs the width). */
   onFold?: () => void
@@ -38,9 +41,10 @@ export function DocTreePanel({
     return () => document.removeEventListener('mousedown', onDown)
   }, [open])
 
-  const label = effectiveAssignee
-    ? (effectiveAssignee === meName ? 'My Assigned' : effectiveAssignee)
-    : 'Assignee'
+  const label = !effectiveAssignee ? 'Reviewer'
+    : effectiveAssignee === meId ? 'My reviews'
+      : effectiveAssignee === NEEDS_REVIEWER ? 'Needs a reviewer'
+        : assigneeOptions.find((o) => o.value === effectiveAssignee)?.label ?? 'Reviewer'
 
   function toggleCollapse(p: string) {
     setCollapsed((prev) => {
@@ -64,7 +68,11 @@ export function DocTreePanel({
           active ? 'bg-surface-container text-secondary font-medium border-l-2 border-secondary' : 'text-on-surface-variant hover:bg-surface-container-low',
         )}
       >
-        <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', active ? 'bg-secondary' : 'bg-outline-variant')} aria-hidden />
+        <span
+          className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', STATUS_META[d.status].dot)}
+          title={STATUS_META[d.status].label}
+          aria-hidden
+        />
         <span className="truncate">{d.name}</span>
       </button>
     )
@@ -104,13 +112,13 @@ export function DocTreePanel({
         {open && (
           <div className="absolute left-2 right-2 top-[calc(100%-4px)] bg-white border border-outline-variant rounded-lg overflow-hidden z-[200] shadow-[0_4px_20px_rgba(4,22,39,.12)]">
             <div className="py-1.5 max-h-[260px] overflow-y-auto">
-              {isDeveloper && meName && (
+              {isDeveloper && meId && (
                 <>
                   <button
-                    onClick={() => { onPickAssignee(meName); setOpen(false) }}
-                    className={cn('w-full text-left px-3 py-2 hover:bg-surface-container-low font-mono text-caption text-on-surface', effectiveAssignee === meName && 'bg-surface-container-low')}
+                    onClick={() => { onPickAssignee(meId); setOpen(false) }}
+                    className={cn('w-full text-left px-3 py-2 hover:bg-surface-container-low font-mono text-caption text-on-surface', effectiveAssignee === meId && 'bg-surface-container-low')}
                   >
-                    My Assignments
+                    My reviews
                   </button>
                   <div className="border-t border-outline-variant my-0.5" />
                 </>
@@ -119,15 +127,21 @@ export function DocTreePanel({
                 onClick={() => { onPickAssignee(''); setOpen(false) }}
                 className={cn('w-full text-left px-3 py-2 hover:bg-surface-container-low font-mono text-caption text-on-surface', !effectiveAssignee && 'bg-surface-container-low')}
               >
-                All assignees
+                All reviewers
+              </button>
+              <button
+                onClick={() => { onPickAssignee(NEEDS_REVIEWER); setOpen(false) }}
+                className={cn('w-full text-left px-3 py-2 hover:bg-surface-container-low font-mono text-caption text-[#b45309]', effectiveAssignee === NEEDS_REVIEWER && 'bg-surface-container-low')}
+              >
+                Needs a reviewer
               </button>
               {assigneeOptions.map((a) => (
                 <button
-                  key={a}
-                  onClick={() => { onPickAssignee(a); setOpen(false) }}
-                  className={cn('w-full text-left px-3 py-2 hover:bg-surface-container-low font-mono text-caption text-on-surface truncate', effectiveAssignee === a && 'bg-surface-container-low')}
+                  key={a.value}
+                  onClick={() => { onPickAssignee(a.value); setOpen(false) }}
+                  className={cn('w-full text-left px-3 py-2 hover:bg-surface-container-low font-mono text-caption text-on-surface truncate', effectiveAssignee === a.value && 'bg-surface-container-low')}
                 >
-                  {a}
+                  {a.label}
                 </button>
               ))}
             </div>

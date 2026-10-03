@@ -108,11 +108,6 @@
   .diff-removed { border-left: 3px solid #ba1a1a; background: rgba(186,26,26,.06); }
   .diff-changed { border-left: 3px solid #0058be; background: #eff4ff; }
 
-  /* Section review state accents — left pane only */
-  .sec-accepted { border-left: 3px solid #00a572 !important; padding-left: 14px; margin-left: -14px; background: rgba(0,165,114,.02); border-radius: 0 4px 4px 0; }
-  .sec-declined  { border-left: 3px solid #c4c6cd !important; padding-left: 14px; margin-left: -14px; background: rgba(196,198,205,.05); border-radius: 0 4px 4px 0; }
-  .sec-edited   { border-left: 3px solid #0058be !important; padding-left: 14px; margin-left: -14px; background: rgba(0,88,190,.02); border-radius: 0 4px 4px 0; }
-
   .subbar-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid #c4c6cd; border-radius: 6px; background: #fff; transition: background .1s, border-color .1s; cursor: pointer; }
   .subbar-pill:hover { background: #eff4ff; border-color: #0058be; }
   .dropdown { position: absolute; top: calc(100% + 6px); left: 0; background: #fff; border: 1px solid #c4c6cd; border-radius: 12px; box-shadow: 0 4px 20px rgba(4,22,39,.12); z-index: 200; overflow: hidden; }
@@ -370,8 +365,8 @@
             <span class="font-label-md text-label-md text-on-surface">Current</span>
             <span class="px-2 py-0.5 rounded" style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;text-transform:uppercase;background:#00a572;color:#fff;">Latest</span>
             <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-family:'JetBrains Mono';" id="current-panel-ref">main @ b2e8d45</span>
-            <span id="current-commit-badge" class="ml-auto" style="display:flex;align-items:center;gap:2px;padding:2px 6px;border-radius:4px;font-size:10px;font-family:'JetBrains Mono';background:#fff8e6;color:#b45309;border:1px solid #f59e0b;">
-              <span class="material-symbols-outlined" style="font-size:10px;">rate_review</span>In Review
+            <span id="current-commit-badge" class="ml-auto" title="The version's status — derived from its documents" style="display:flex;align-items:center;gap:2px;padding:2px 6px;border-radius:4px;font-size:10px;font-family:'JetBrains Mono';background:#fff8e6;color:#b45309;border:1px solid #f59e0b;">
+              <span class="material-symbols-outlined" style="font-size:10px;">rate_review</span>In review
             </span>
           </div>
           <div class="flex-1 overflow-y-auto bg-surface-container-low" id="canvas-current">
@@ -386,27 +381,7 @@
 
                   <!-- 1. Introduction -->
                   <section id="c-intro" class="transition-all duration-200">
-                    <div class="flex items-start justify-between gap-3 mb-3">
-                      <h2 class="font-headline-sm text-headline-sm text-primary">1. Introduction</h2>
-                      <div class="review-ctrl flex-shrink-0 items-center gap-1.5 mt-0.5" style="display:none;" id="ctrl-c-intro">
-                        <span id="badge-c-intro" style="display:none;align-items:center;gap:2px;padding:2px 8px;border-radius:9999px;font-size:10px;font-family:'JetBrains Mono';font-weight:600;background:#f8f9ff;color:#74777d;border:1px solid #c4c6cd;"></span>
-                        <button onclick="acceptSection('c-intro')" id="accept-btn-c-intro"
-                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-on-tertiary-container hover:text-white hover:border-on-tertiary-container text-on-surface-variant transition-colors"
-                                style="font-size:10px;font-family:'JetBrains Mono';">
-                          <span class="material-symbols-outlined" style="font-size:11px;">check</span>Accept
-                        </button>
-                        <button onclick="declineSection('c-intro')" id="decline-btn-c-intro"
-                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-surface-container-high text-on-surface-variant transition-colors"
-                                style="font-size:10px;font-family:'JetBrains Mono';">
-                          <span class="material-symbols-outlined" style="font-size:11px;">remove</span>Decline
-                        </button>
-                        <button onclick="openEdit('c-intro','Introduction')" id="edit-btn-c-intro"
-                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-surface-container text-on-surface-variant transition-colors"
-                                style="font-size:10px;font-family:'JetBrains Mono';">
-                          <span class="material-symbols-outlined" style="font-size:11px;">edit</span>Edit
-                        </button>
-                      </div>
-                    </div>
+                    <h2 class="font-headline-sm text-headline-sm text-primary mb-3">1. Introduction</h2>
                     <p class="text-body-md text-on-surface leading-relaxed">
                       The <strong>Brake Controller</strong> unit implements the core logic for the Electronic Braking System (EBS).
                       It processes wheel speed sensor data and driver brake requests to modulate hydraulic valve actuators
@@ -416,27 +391,7 @@
 
                   <!-- 2. Interfaces — has added row -->
                   <section id="c-interfaces" class="transition-all duration-200">
-                    <div class="flex items-start justify-between gap-3 mb-3">
-                      <h2 class="font-headline-sm text-headline-sm text-primary">2. Interfaces</h2>
-                      <div class="review-ctrl flex-shrink-0 items-center gap-1.5 mt-0.5" style="display:none;" id="ctrl-c-interfaces">
-                        <span id="badge-c-interfaces" style="display:none;align-items:center;gap:2px;padding:2px 8px;border-radius:9999px;font-size:10px;font-family:'JetBrains Mono';font-weight:600;background:#f8f9ff;color:#74777d;border:1px solid #c4c6cd;"></span>
-                        <button onclick="acceptSection('c-interfaces')" id="accept-btn-c-interfaces"
-                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-on-tertiary-container hover:text-white hover:border-on-tertiary-container text-on-surface-variant transition-colors"
-                                style="font-size:10px;font-family:'JetBrains Mono';">
-                          <span class="material-symbols-outlined" style="font-size:11px;">check</span>Accept
-                        </button>
-                        <button onclick="declineSection('c-interfaces')" id="decline-btn-c-interfaces"
-                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-surface-container-high text-on-surface-variant transition-colors"
-                                style="font-size:10px;font-family:'JetBrains Mono';">
-                          <span class="material-symbols-outlined" style="font-size:11px;">remove</span>Decline
-                        </button>
-                        <button onclick="openEdit('c-interfaces','Interfaces')" id="edit-btn-c-interfaces"
-                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-surface-container text-on-surface-variant transition-colors"
-                                style="font-size:10px;font-family:'JetBrains Mono';">
-                          <span class="material-symbols-outlined" style="font-size:11px;">edit</span>Edit
-                        </button>
-                      </div>
-                    </div>
+                    <h2 class="font-headline-sm text-headline-sm text-primary mb-3">2. Interfaces</h2>
                     <div class="overflow-hidden border border-outline-variant rounded-lg">
                       <table class="w-full text-left" style="font-size:12px;">
                         <thead class="bg-surface-container text-on-surface-variant">
@@ -477,27 +432,7 @@
 
                   <!-- 3. Static Design -->
                   <section id="c-static" class="transition-all duration-200">
-                    <div class="flex items-start justify-between gap-3 mb-3">
-                      <h2 class="font-headline-sm text-headline-sm text-primary">3. Static Design</h2>
-                      <div class="review-ctrl flex-shrink-0 items-center gap-1.5 mt-0.5" style="display:none;" id="ctrl-c-static">
-                        <span id="badge-c-static" style="display:none;align-items:center;gap:2px;padding:2px 8px;border-radius:9999px;font-size:10px;font-family:'JetBrains Mono';font-weight:600;background:#f8f9ff;color:#74777d;border:1px solid #c4c6cd;"></span>
-                        <button onclick="acceptSection('c-static')" id="accept-btn-c-static"
-                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-on-tertiary-container hover:text-white hover:border-on-tertiary-container text-on-surface-variant transition-colors"
-                                style="font-size:10px;font-family:'JetBrains Mono';">
-                          <span class="material-symbols-outlined" style="font-size:11px;">check</span>Accept
-                        </button>
-                        <button onclick="declineSection('c-static')" id="decline-btn-c-static"
-                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-surface-container-high text-on-surface-variant transition-colors"
-                                style="font-size:10px;font-family:'JetBrains Mono';">
-                          <span class="material-symbols-outlined" style="font-size:11px;">remove</span>Decline
-                        </button>
-                        <button onclick="openEdit('c-static','Static Design')" id="edit-btn-c-static"
-                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-surface-container text-on-surface-variant transition-colors"
-                                style="font-size:10px;font-family:'JetBrains Mono';">
-                          <span class="material-symbols-outlined" style="font-size:11px;">edit</span>Edit
-                        </button>
-                      </div>
-                    </div>
+                    <h2 class="font-headline-sm text-headline-sm text-primary mb-3">3. Static Design</h2>
                     <div class="bg-surface-container-low border border-outline-variant rounded-lg flex flex-col items-center justify-center text-center py-10 gap-2">
                       <span class="material-symbols-outlined text-outline-variant" style="font-size:36px;">schema</span>
                       <p class="font-label-md text-label-md text-on-surface-variant">Include dependency diagram</p>
@@ -506,27 +441,7 @@
 
                   <!-- 4. Dynamic Design — changed CFG -->
                   <section id="c-dynamic" class="transition-all duration-200">
-                    <div class="flex items-start justify-between gap-3 mb-3">
-                      <h2 class="font-headline-sm text-headline-sm text-primary">4. Dynamic Design</h2>
-                      <div class="review-ctrl flex-shrink-0 items-center gap-1.5 mt-0.5" style="display:none;" id="ctrl-c-dynamic">
-                        <span id="badge-c-dynamic" style="display:none;align-items:center;gap:2px;padding:2px 8px;border-radius:9999px;font-size:10px;font-family:'JetBrains Mono';font-weight:600;background:#f8f9ff;color:#74777d;border:1px solid #c4c6cd;"></span>
-                        <button onclick="acceptSection('c-dynamic')" id="accept-btn-c-dynamic"
-                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-on-tertiary-container hover:text-white hover:border-on-tertiary-container text-on-surface-variant transition-colors"
-                                style="font-size:10px;font-family:'JetBrains Mono';">
-                          <span class="material-symbols-outlined" style="font-size:11px;">check</span>Accept
-                        </button>
-                        <button onclick="declineSection('c-dynamic')" id="decline-btn-c-dynamic"
-                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-surface-container-high text-on-surface-variant transition-colors"
-                                style="font-size:10px;font-family:'JetBrains Mono';">
-                          <span class="material-symbols-outlined" style="font-size:11px;">remove</span>Decline
-                        </button>
-                        <button onclick="openEdit('c-dynamic','Dynamic Design')" id="edit-btn-c-dynamic"
-                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-surface-container text-on-surface-variant transition-colors"
-                                style="font-size:10px;font-family:'JetBrains Mono';">
-                          <span class="material-symbols-outlined" style="font-size:11px;">edit</span>Edit
-                        </button>
-                      </div>
-                    </div>
+                    <h2 class="font-headline-sm text-headline-sm text-primary mb-3">4. Dynamic Design</h2>
                     <div class="mb-6">
                       <h3 class="font-label-md text-label-md text-on-surface mb-2 uppercase tracking-[0.06em]">4.1 Control Flow Graphs</h3>
                       <div class="diff-changed rounded-lg p-4 flex flex-col items-center justify-center text-center py-10 gap-2 border border-secondary/20">
@@ -652,36 +567,13 @@
 
       </div><!-- /split canvas -->
 
-      <!-- REVIEW FOOTER — shown when a doc is open in review mode -->
-      <div id="review-bar" class="flex-shrink-0 border-t z-30" style="display:none;height:40px;"></div>
+      <!-- Review and approval (proposal): Compare is for reading changes only. One quiet line under the
+           open document: its state, and where it is reviewed and approved (the document, not here). -->
+      <div id="doc-state-bar" class="flex-shrink-0 border-t border-outline-variant bg-white z-30" style="display:none;height:36px;"></div>
 
     </div><!-- /compare area -->
   </div><!-- /body row -->
 </div><!-- /app-main -->
-
-<!-- EDIT MODAL -->
-<div id="edit-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-6" style="background:rgba(4,22,39,.4);">
-  <div class="bg-white rounded-xl w-full overflow-hidden" style="max-width:560px;box-shadow:0 8px 40px rgba(4,22,39,.2);">
-    <div class="px-6 py-4 border-b border-outline-variant flex items-center justify-between">
-      <h3 class="font-headline-sm text-headline-sm text-on-surface" id="edit-modal-title">Edit Section</h3>
-      <button onclick="closeEdit()" class="p-1 hover:bg-surface-container rounded-lg transition-colors">
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:20px;">close</span>
-      </button>
-    </div>
-    <div class="p-6">
-      <p class="text-body-sm text-on-surface-variant mb-3">Edit the content for this section. Changes will be marked as "Edited" in the review.</p>
-      <textarea id="edit-textarea" rows="7"
-                class="w-full border border-outline-variant rounded-lg px-3 py-2.5 text-body-md text-on-surface focus:outline-none focus:ring-2 focus:ring-secondary/30 resize-none"
-                style="font-family:Inter;"></textarea>
-    </div>
-    <div class="px-6 py-4 border-t border-outline-variant flex items-center justify-end gap-2">
-      <button onclick="closeEdit()" class="px-4 py-2 border border-outline-variant hover:bg-surface-container rounded-lg font-label-md text-label-md text-on-surface-variant transition-colors">Cancel</button>
-      <button onclick="saveEdit()" class="px-4 py-2 bg-secondary hover:bg-secondary-container text-white rounded-lg font-label-md text-label-md transition-colors flex items-center gap-1.5">
-        <span class="material-symbols-outlined" style="font-size:14px;">save</span>Save & Accept
-      </button>
-    </div>
-  </div>
-</div>
 
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -690,26 +582,28 @@ let currentHash   = 'b2e8d45';
 let selectedHash  = 'a3f9c12';
 let treeMode      = 'diff';
 let activeItem    = null;
-let activeEditSec = null;
 let swe3Expanded  = true;
 
-const sectionStates = {
-  'c-intro': null, 'c-interfaces': null,
-  'c-static': null, 'c-dynamic': null,
+// Review and approval (proposal): Compare is read-only for review. Each document's state in the version
+// on the Current side is shown, never changed, here; it is reviewed and approved in the document itself
+// (documents.html). A document is approved, never a section.
+const DOC_STATES = {
+  'Brake Controller':         { status: 'in_review',         reviewer: 'Bob Kumar' },
+  'Throttle Controller':      { status: 'submitted',         reviewer: 'Bob Kumar' },
+  'ABS Unit':                 { status: 'approved',          reviewer: 'Alice Chen',  carriedFrom: 'v1.1.0' },
+  'Stability Control':        { status: 'changes_requested', reviewer: 'Carol Singh' },
+  'GPIO Driver':              { status: 'approved',          reviewer: 'Bob Kumar',   carriedFrom: 'v1.1.0' },
+  'CAN Driver':               { status: 'in_review',         reviewer: null },
+  'SW Architecture Spec':     { status: 'in_review',         reviewer: 'Bob Kumar' },
+  'SW Requirements Spec':     { status: 'approved',          reviewer: 'Carol Singh', carriedFrom: 'v1.1.0' },
+  'System Requirements Spec': { status: 'approved',          reviewer: 'Alice Chen',  carriedFrom: 'v1.1.0' },
+  'System Test Spec':         { status: 'in_review',         reviewer: 'Bob Kumar' },
 };
-
-let isReviewMode = false;
-const docReviewStats = {
-  'Brake Controller':    { reviewer: 'Bob Kumar', initials: 'BK', resolved: 0, total: 4 },
-  'Throttle Controller': { reviewer: 'Bob Kumar', initials: 'BK', resolved: 0, total: 3 },
-};
-const docApprovalStates = {};
-const docSubmitStates   = {};
 
 // ── Commits ───────────────────────────────────────────────────────────────────
 const commits = [
   { hash: 'b2e8d45', branch: 'main',    age: '2h ago',  msg: 'feat: add IF_DiagStatus interface',       docStatus: 'in_review', version: 'v1.2.0' },
-  { hash: 'a3f9c12', branch: 'main',    age: '5h ago',  msg: 'fix: valve cmd threshold for ASIL-D',    docStatus: 'complete',  version: null     },
+  { hash: 'a3f9c12', branch: 'main',    age: '5h ago',  msg: 'fix: valve cmd threshold for ASIL-D',    docStatus: 'approved',  version: null     },
   { hash: '9e2b881', branch: 'develop', age: '1d ago',  msg: 'refactor: slip control logic extraction', docStatus: 'approved',  version: null     },
   { hash: '3d7a190', branch: 'develop', age: '2d ago',  msg: 'chore: update clang config',              docStatus: null,        version: null     },
   { hash: 'f4c8e02', branch: 'develop', age: '4d ago',  msg: 'fix: ABS Unit interface ID numbering',    docStatus: null,        version: null     },
@@ -717,16 +611,35 @@ const commits = [
   { hash: 'd4f2a31', branch: 'develop', age: '2w ago',  msg: 'init: initial project structure',         docStatus: null,        version: 'v1.0.0' },
 ];
 
-function docStatusBadge(status) {
-  const map = {
-    in_review: { icon: 'rate_review', label: 'In Review', bg: '#fff8e6', color: '#b45309', border: '#f59e0b' },
-    approved:  { icon: 'task_alt',    label: 'Approved',  bg: '#f0fdf9', color: '#00a572', border: '#86efac' },
-    complete:  { icon: 'check_circle',label: 'Complete',  bg: '#f0fdf9', color: '#00a572', border: '#86efac' },
-  };
-  const b = map[status];
+// Review and approval (proposal): the four document states — one word each, everywhere
+const DOC_STATE_META = {
+  in_review:         { icon: 'rate_review',     label: 'In review',          bg: '#fff8e6', color: '#b45309', border: '#f59e0b' },
+  submitted:         { icon: 'pending_actions', label: 'Ready for approval', bg: '#e5eeff', color: '#0058be', border: '#8ab0f0' },
+  changes_requested: { icon: 'undo',            label: 'Changes requested',  bg: '#fff1f0', color: '#ba1a1a', border: '#f5a3a3' },
+  approved:          { icon: 'check_circle',    label: 'Approved',           bg: '#f0fdf9', color: '#00a572', border: '#86efac' },
+};
+
+function docStatusBadge(status, carriedFrom) {
+  const b = DOC_STATE_META[status];
   if (!b) return '';
-  return `<span style="display:inline-flex;align-items:center;gap:2px;padding:2px 6px;border-radius:4px;font-size:9px;font-family:'JetBrains Mono';font-weight:600;background:${b.bg};color:${b.color};border:1px solid ${b.border};">
-    <span class="material-symbols-outlined" style="font-size:9px;">${b.icon}</span>${b.label}</span>`;
+  return `<span style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:99px;font-size:10px;font-family:'JetBrains Mono';font-weight:600;white-space:nowrap;flex-shrink:0;background:${b.bg};color:${b.color};border:1px solid ${b.border};">
+    <span class="material-symbols-outlined" style="font-size:11px;">${b.icon}</span>${b.label}${carriedFrom ? ` · from ${carriedFrom}` : ''}</span>`;
+}
+
+// The status of the commit / version on the Current side: 'in_review', 'approved', or null (no documents)
+function currentRunStatus() {
+  const c = commits.find(c => c.hash === currentHash);
+  if (c) return c.docStatus;
+  const v = VERSIONS.find(v => v.sha === currentHash);
+  return v ? v.status : null;
+}
+
+// A document's state in that version; null when the Current side has no documents
+function docState(name) {
+  const run = currentRunStatus();
+  if (!run) return null;
+  if (run === 'approved') return { status: 'approved' };   // an Approved version: every document is
+  return DOC_STATES[name] || null;
 }
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -755,7 +668,7 @@ function renderChipVersions() {
   const accentColor = s => s === 'approved' ? '#00a572' : s === 'in_review' ? '#f59e0b' : '#c4c6cd';
   const pill = s => {
     if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#f0fdf9;color:#00a572;border:1px solid #86efac;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#00a572;display:inline-block;"></span>Approved</span>`;
-    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In Review</span>`;
+    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In review</span>`;
     return '';
   };
   document.getElementById('cp-versions-list').innerHTML = VERSIONS.map(v => {
@@ -793,9 +706,8 @@ function renderChipCommits(filter = '') {
     ? `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:9px;font-weight:600;color:#00a572;background:#f0fdf9;border:1px solid #86efac;padding:0px 6px;border-radius:99px;"><span class="material-symbols-outlined" style="font-size:10px;color:#00a572;">sell</span>${v}</span>`
     : '';
   const statusPill = s => {
-    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In Review</span>`;
+    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In review</span>`;
     if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#f0fdf9;color:#00a572;border:1px solid #86efac;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#00a572;display:inline-block;"></span>Approved</span>`;
-    if (s === 'complete')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#f0fdf9;color:#00a572;border:1px solid #86efac;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#00a572;display:inline-block;"></span>Complete</span>`;
     return '';
   };
   list.innerHTML = filtered.map((c, i) => {
@@ -868,7 +780,7 @@ function applyChipSelection(hash, branch, label, date, status) {
   document.getElementById('empty-current-ref').textContent    = `${branch} @ ${hash}`;
   document.getElementById('commit-chip-dropdown').classList.add('hidden');
   document.getElementById('chip-chevron').style.transform = '';
-  applyReviewState();
+  applyCurrentState();
 }
 
 function selectChipVersion(sha, tag, branch, date, status) {
@@ -880,19 +792,19 @@ function selectChipCommit(hash, branch) {
   renderChipCommits();
 }
 
-// ── Review mode ───────────────────────────────────────────────────────────────
-function applyReviewState() {
-  const c = commits.find(c => c.hash === currentHash);
-  isReviewMode = !!(c && c.docStatus === 'in_review');
+// ── Current side: the version's status + the open document's state ────────────
+// Review and approval (proposal): read-only. No per-section Accept / Decline / Edit, no Approve or Submit
+// here — Compare is for reading changes; a document is reviewed and approved in the document.
+function applyCurrentState() {
+  const run = currentRunStatus();
 
-  // Update the status badge in the current-version panel header
+  // The version's status (derived from its documents) in the current-pane header
   const badge = document.getElementById('current-commit-badge');
   const statusMap = {
-    in_review: { icon: 'rate_review',  label: 'In Review', bg: '#fff8e6', color: '#b45309', border: '#f59e0b' },
-    approved:  { icon: 'task_alt',     label: 'Approved',  bg: '#f0fdf9', color: '#00a572', border: '#86efac' },
-    complete:  { icon: 'check_circle', label: 'Complete',  bg: '#f0fdf9', color: '#00a572', border: '#86efac' },
+    in_review: { icon: 'rate_review', label: 'In review', bg: '#fff8e6', color: '#b45309', border: '#f59e0b' },
+    approved:  { icon: 'task_alt',    label: 'Approved',  bg: '#f0fdf9', color: '#00a572', border: '#86efac' },
   };
-  const s = c && statusMap[c.docStatus];
+  const s = statusMap[run];
   if (s) {
     badge.style.cssText = `display:flex;align-items:center;gap:2px;padding:2px 6px;border-radius:4px;font-size:10px;font-family:'JetBrains Mono';background:${s.bg};color:${s.color};border:1px solid ${s.border};`;
     badge.innerHTML = `<span class="material-symbols-outlined" style="font-size:10px;">${s.icon}</span>${s.label}`;
@@ -900,194 +812,29 @@ function applyReviewState() {
     badge.style.display = 'none';
   }
 
-  ['ctrl-c-intro','ctrl-c-interfaces','ctrl-c-static','ctrl-c-dynamic'].forEach(id => {
-    document.getElementById(id).style.display = isReviewMode ? 'flex' : 'none';
-  });
-  renderSplitReviewBar();
+  renderDocStateBar();
   renderEmptyCards();
   renderTree();
 }
 
-function renderSplitReviewBar() {
-  const bar = document.getElementById('review-bar');
-  if (!isReviewMode) { bar.style.display = 'none'; return; }
+// One quiet line under the open document: its state, and a link to where it is reviewed
+function renderDocStateBar() {
+  const bar = document.getElementById('doc-state-bar');
+  const st  = activeItem ? docState(activeItem) : null;
+  if (!st) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
 
-  bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:0 16px;flex-shrink:0;height:40px;background:#eff4ff;border-top:1px solid #c7d9fb;z-index:30;';
-
-  if (!activeItem) {
-    // Empty state footer — document-level progress
-    const diffDocs = swe3Items.filter(i => i.diff);
-    const resolved = currentRole === 'admin'
-      ? Object.values(docApprovalStates).filter(s => s === 'approved').length
-      : Object.values(docSubmitStates).filter(Boolean).length;
-    const actionBtn = currentRole === 'admin'
-      ? `<button onclick="approveAll()" style="display:inline-flex;align-items:center;gap:5px;padding:4px 12px;background:#0058be;color:#fff;border:none;border-radius:6px;font-family:'JetBrains Mono';font-size:11px;font-weight:500;cursor:pointer;"><span class="material-symbols-outlined" style="font-size:13px;">done_all</span>Approve All</button>`
-      : `<button onclick="submitAll()" style="display:inline-flex;align-items:center;gap:5px;padding:4px 12px;background:#0058be;color:#fff;border:none;border-radius:6px;font-family:'JetBrains Mono';font-size:11px;font-weight:500;cursor:pointer;"><span class="material-symbols-outlined" style="font-size:13px;">check_circle</span>Submit All</button>`;
-    bar.innerHTML = `
-      <div style="display:flex;align-items:center;gap:10px;">
-        <span class="material-symbols-outlined" style="font-size:15px;color:#0058be;">rate_review</span>
-        <span style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;color:#0b1c30;">In Review</span>
-        <span style="color:#c4c6cd;">·</span>
-        <span style="font-family:'JetBrains Mono';font-size:11px;color:#74777d;" id="empty-docs-progress">${resolved} of ${diffDocs.length} documents resolved</span>
-      </div>
-      ${actionBtn}`;
-  } else {
-    // Split canvas footer — section-level progress
-    const done  = Object.values(sectionStates).filter(s => s !== null).length;
-    const total = Object.keys(sectionStates).length;
-    const dots  = Object.keys(sectionStates).map(id => {
-      const s = sectionStates[id];
-      const color = s === 'accepted' ? '#00a572' : s === 'declined' ? '#ba1a1a' : s === 'edited' ? '#0058be' : '#e2e3e8';
-      return `<span style="width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block;"></span>`;
-    }).join('');
-    const isCompleted = currentRole === 'admin' ? docApprovalStates[activeItem] : docSubmitStates[activeItem];
-    let rightSide;
-    if (isCompleted) {
-      const label = currentRole === 'admin' ? 'Document Approved' : 'Review Submitted';
-      const color = currentRole === 'admin' ? '#00a572' : '#0058be';
-      rightSide = `<span style="display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono';font-size:11px;font-weight:600;color:${color};">
-        <span class="material-symbols-outlined" style="font-size:14px;">check_circle</span>${label}</span>`;
-    } else {
-      const btnLabel = currentRole === 'admin' ? 'Approve Document' : 'Submit Review';
-      const btnIcon  = currentRole === 'admin' ? 'task_alt' : 'check_circle';
-      rightSide = `<button onclick="completeDocReview()" style="display:inline-flex;align-items:center;gap:5px;padding:4px 12px;background:#0058be;color:#fff;border:none;border-radius:6px;font-family:'JetBrains Mono';font-size:11px;font-weight:500;cursor:pointer;">
-        <span class="material-symbols-outlined" style="font-size:13px;">${btnIcon}</span>${btnLabel}</button>`;
-    }
-    bar.innerHTML = `
-      <div style="display:flex;align-items:center;gap:10px;">
-        <div style="display:flex;gap:4px;align-items:center;">${dots}</div>
-        <span style="font-family:'JetBrains Mono';font-size:11px;color:#44474c;">${done} of ${total} sections resolved</span>
-      </div>
-      ${rightSide}`;
-  }
-}
-
-function completeDocReview() {
-  const done  = Object.values(sectionStates).filter(s => s !== null).length;
-  const total = Object.keys(sectionStates).length;
-  if (done < total && !confirm(`${total - done} section(s) still unresolved. Continue anyway?`)) return;
-  if (currentRole === 'admin') {
-    docApprovalStates[activeItem] = 'approved';
-    showToast(`${activeItem} — approved`);
-  } else {
-    docSubmitStates[activeItem] = true;
-    showToast(`${activeItem} — submitted for review`);
-  }
-  updateAdminDocsProgress();
-  renderSplitReviewBar();
-  renderEmptyCards();
-}
-
-function acceptSection(id) {
-  sectionStates[id] = 'accepted';
-  setBadge(id, '#f0fdf9', '#00a572', '#00a572', 'check', 'Accepted');
-  clearActionBtns(id);
-  const sec = document.getElementById(id);
-  sec.classList.remove('sec-declined','sec-edited'); sec.classList.add('sec-accepted');
-  updateReviewCounter();
-  if (isReviewMode) renderTree();
-}
-
-function declineSection(id) {
-  sectionStates[id] = 'declined';
-  setBadge(id, '#fff0f0', '#ba1a1a', '#fca5a5', 'remove', 'Declined');
-  clearActionBtns(id);
-  const sec = document.getElementById(id);
-  sec.classList.remove('sec-accepted','sec-edited'); sec.classList.add('sec-declined');
-  updateReviewCounter();
-  if (isReviewMode) renderTree();
-}
-
-function setBadge(id, bg, color, border, icon, label) {
-  const badge = document.getElementById('badge-' + id);
-  badge.style.cssText = `display:flex;align-items:center;gap:2px;padding:2px 8px;border-radius:9999px;font-size:10px;font-family:'JetBrains Mono';font-weight:600;background:${bg};color:${color};border:1px solid ${border};`;
-  badge.innerHTML = `<span class="material-symbols-outlined" style="font-size:10px;">${icon}</span>${label}`;
-}
-
-function clearActionBtns(id) {
-  ['accept-btn-','decline-btn-','edit-btn-'].forEach(prefix => {
-    const btn = document.getElementById(prefix + id);
-    if (btn) btn.remove();
-  });
-}
-
-function openEdit(sectionId, label) {
-  activeEditSec = sectionId;
-  const samples = {
-    'c-intro':      'The Brake Controller unit implements the core logic for the Electronic Braking System (EBS). It processes wheel speed sensor data and driver brake requests to modulate hydraulic valve actuators via high-frequency PWM signals.',
-    'c-interfaces': 'Input and output interfaces as derived from the SWE.2 Software Architecture. Note: IF_DiagStatus has been added in this commit.',
-    'c-static':     'Include dependencies and internal module structure derived from Clang AST analysis.',
-    'c-dynamic':    'Per-function control flow graphs and state machine diagram derived from Clang AST. CFG expanded from 3 to 4 functions.',
-  };
-  document.getElementById('edit-modal-title').textContent = `Edit: ${label}`;
-  document.getElementById('edit-textarea').value = samples[sectionId] || '';
-  document.getElementById('edit-modal').classList.remove('hidden');
-}
-
-function closeEdit() {
-  document.getElementById('edit-modal').classList.add('hidden');
-  activeEditSec = null;
-}
-
-function saveEdit() {
-  if (!activeEditSec) return;
-  sectionStates[activeEditSec] = 'edited';
-  setBadge(activeEditSec, '#eff4ff', '#0058be', '#0058be', 'edit', 'Edited');
-  clearActionBtns(activeEditSec);
-  const sec = document.getElementById(activeEditSec);
-  sec.classList.remove('sec-accepted','sec-declined'); sec.classList.add('sec-edited');
-  closeEdit();
-  updateReviewCounter();
-  if (isReviewMode) renderTree();
-}
-
-function updateReviewCounter() {
-  const done = Object.values(sectionStates).filter(s => s !== null).length;
-  if (activeItem && docReviewStats[activeItem]) {
-    docReviewStats[activeItem].resolved = done;
-  }
-  renderSplitReviewBar();
-}
-
-function updateAdminDocsProgress() {
-  renderSplitReviewBar();
-}
-
-function approveDoc(name) {
-  docApprovalStates[name] = 'approved';
-  updateAdminDocsProgress();
-  renderEmptyCards();
-  showToast(`${name} — approved`);
-}
-
-function requestChangesDoc(name) {
-  docApprovalStates[name] = 'changes_requested';
-  renderEmptyCards();
-  showToast(`Changes requested on ${name}`);
-}
-
-function submitDoc(name) {
-  docSubmitStates[name] = true;
-  updateAdminDocsProgress();
-  renderEmptyCards();
-  showToast(`${name} — submitted for review`);
-}
-
-function approveAll() {
-  swe3Items.filter(i => i.diff).forEach(i => { docApprovalStates[i.name] = 'approved'; });
-  updateAdminDocsProgress();
-  renderEmptyCards();
-  showToast('All documents approved');
-}
-
-function submitAll() {
-  const done  = Object.values(sectionStates).filter(s => s !== null).length;
-  const total = Object.keys(sectionStates).length;
-  if (done < total && !confirm(`${total - done} section(s) still pending. Submit anyway?`)) return;
-  swe3Items.filter(i => i.diff).forEach(i => { docSubmitStates[i.name] = true; });
-  updateAdminDocsProgress();
-  renderEmptyCards();
-  showToast('Review submitted — Admin will be notified');
+  const who = st.status === 'approved' ? ''
+    : st.reviewer ? `<span style="font-family:'JetBrains Mono';font-size:10px;color:#74777d;white-space:nowrap;">Reviewer: ${st.reviewer}</span>`
+    : `<span style="font-family:'JetBrains Mono';font-size:10px;color:#b45309;white-space:nowrap;">Needs a reviewer</span>`;
+  bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 16px;height:36px;';
+  bar.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+      ${docStatusBadge(st.status, st.carriedFrom)}
+      ${who}
+    </div>
+    <a href="documents.html" id="doc-state-link"
+       style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;color:#0058be;text-decoration:none;white-space:nowrap;"
+       onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">Review and approve in the document →</a>`;
 }
 
 function showToast(msg) {
@@ -1114,7 +861,7 @@ function setRole(role) {
   document.getElementById('sidebar-username').textContent = isAdmin ? 'Engineering Lead' : 'Bob Kumar';
   document.getElementById('sidebar-role').textContent     = isAdmin ? 'Admin' : 'Developer';
   document.getElementById('topbar-initials').textContent  = isAdmin ? 'EL' : 'BK';
-  applyReviewState();
+  applyCurrentState();
 }
 
 // ── Document tree ─────────────────────────────────────────────────────────────
@@ -1207,7 +954,7 @@ function selectItem(name) {
   document.getElementById('bc-doc').textContent    = name;
   document.getElementById('bc-doc').style.display  = '';
   document.getElementById('bc-sep').style.display  = '';
-  renderSplitReviewBar();
+  renderDocStateBar();
   renderTree();
 }
 
@@ -1217,61 +964,19 @@ function renderEmptyCards() {
 
   if (!changed.length) { el.innerHTML = '<p class="text-body-sm text-outline text-center">No changes detected between these commits.</p>'; return; }
   const cards = changed.map(({ name, diff, process }) => {
-    const meta          = diffMeta[diff];
-    const stats         = docReviewStats[name];
-    const approvalState = docApprovalStates[name];
-    const submitState   = docSubmitStates[name];
-    const safeName      = name.replace(/'/g, "\\'");
-
-    let reviewRow = '';
-    if (isReviewMode && stats) {
-      let statusBadge = '';
-      if (currentRole === 'admin' && approvalState === 'approved') {
-        statusBadge = `<span style="display:inline-flex;align-items:center;gap:2px;font-size:10px;font-family:'JetBrains Mono';font-weight:700;background:#f0fdf9;color:#00a572;border:1px solid #86efac;padding:1px 8px;border-radius:99px;"><span class="material-symbols-outlined" style="font-size:10px;">check</span>Approved</span>`;
-      } else if (currentRole === 'admin' && approvalState === 'changes_requested') {
-        statusBadge = `<span style="display:inline-flex;align-items:center;gap:2px;font-size:10px;font-family:'JetBrains Mono';font-weight:700;background:#fff0f0;color:#ba1a1a;border:1px solid #fca5a5;padding:1px 8px;border-radius:99px;"><span class="material-symbols-outlined" style="font-size:10px;">undo</span>Changes Requested</span>`;
-      } else if (currentRole === 'dev' && submitState) {
-        statusBadge = `<span style="display:inline-flex;align-items:center;gap:2px;font-size:10px;font-family:'JetBrains Mono';font-weight:700;background:#eff4ff;color:#0058be;border:1px solid #c7d9fb;padding:1px 8px;border-radius:99px;"><span class="material-symbols-outlined" style="font-size:10px;">check</span>Submitted</span>`;
-      }
-
-      let actionBtns = '';
-      if (currentRole === 'admin' && !approvalState) {
-        actionBtns = `
-          <button onclick="event.stopPropagation();approveDoc('${safeName}')" style="display:inline-flex;align-items:center;gap:3px;padding:2px 9px;border-radius:5px;border:1px solid #c4c6cd;background:#fff;font-family:'JetBrains Mono';font-size:10px;font-weight:600;color:#0b1c30;cursor:pointer;" onmouseover="this.style.background='#f0fdf9';this.style.borderColor='#86efac';this.style.color='#00a572'" onmouseout="this.style.background='#fff';this.style.borderColor='#c4c6cd';this.style.color='#0b1c30'">
-            <span class="material-symbols-outlined" style="font-size:11px;">check</span>Approve
-          </button>
-          <button onclick="event.stopPropagation();requestChangesDoc('${safeName}')" style="display:inline-flex;align-items:center;gap:3px;padding:2px 9px;border-radius:5px;border:1px solid #c4c6cd;background:#fff;font-family:'JetBrains Mono';font-size:10px;font-weight:600;color:#0b1c30;cursor:pointer;" onmouseover="this.style.background='#fff0f0';this.style.borderColor='#fca5a5';this.style.color='#ba1a1a'" onmouseout="this.style.background='#fff';this.style.borderColor='#c4c6cd';this.style.color='#0b1c30'">
-            <span class="material-symbols-outlined" style="font-size:11px;">undo</span>Request Changes
-          </button>`;
-      } else if (currentRole === 'dev' && !submitState) {
-        actionBtns = `
-          <button onclick="event.stopPropagation();submitDoc('${safeName}')" style="display:inline-flex;align-items:center;gap:3px;padding:2px 9px;border-radius:5px;border:1px solid #c7d9fb;background:#eff4ff;font-family:'JetBrains Mono';font-size:10px;font-weight:600;color:#0058be;cursor:pointer;" onmouseover="this.style.background='#dce9ff'" onmouseout="this.style.background='#eff4ff'">
-            <span class="material-symbols-outlined" style="font-size:11px;">send</span>Submit Review
-          </button>`;
-      }
-
-      reviewRow = `
-        <div style="display:flex;align-items:center;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid #e2e3e8;flex-wrap:wrap;" onclick="event.stopPropagation()">
-          <div style="width:18px;height:18px;border-radius:50%;background:#0058be;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">
-            <span style="color:#fff;font-size:8px;font-family:Inter;font-weight:700;">${stats.initials}</span>
-          </div>
-          <span style="font-family:'JetBrains Mono';font-size:10px;color:#44474c;">${stats.reviewer}</span>
-          <span style="color:#c4c6cd;">·</span>
-          <span style="font-family:'JetBrains Mono';font-size:10px;color:#74777d;">${stats.resolved} of ${stats.total} sections resolved</span>
-          ${statusBadge}
-          ${actionBtns}
-        </div>`;
-    }
+    const meta     = diffMeta[diff];
+    const st       = docState(name);   // Review and approval (proposal): shown, not changed, here
+    const safeName = name.replace(/'/g, "\\'");
 
     return `<div onclick="selectItem('${safeName}')"
       class="w-full flex flex-col px-4 py-3 bg-white border border-outline-variant hover:bg-surface-container-low hover:border-secondary/40 rounded-xl transition-colors text-left group cursor-pointer">
       <div class="flex items-center gap-3">
         <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#e5eeff;color:#0058be;padding:2px 6px;border-radius:3px;flex-shrink:0;">${process}</span>
         <span class="flex-1 font-label-md text-label-md text-on-surface group-hover:text-secondary transition-colors" style="font-size:12px;">${name}</span>
+        ${st ? docStatusBadge(st.status, st.carriedFrom) : ''}
         <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;color:${meta.color};background:${meta.bg};padding:2px 6px;border-radius:3px;flex-shrink:0;">${diff === 'added' ? '+ added' : '~ changed'}</span>
         <span class="material-symbols-outlined text-outline-variant group-hover:text-secondary transition-colors" style="font-size:16px;flex-shrink:0;">arrow_forward</span>
       </div>
-      ${reviewRow}
     </div>`;
   });
   el.innerHTML = cards.join('');
@@ -1295,7 +1000,6 @@ document.addEventListener('click', e => {
       if (ch) document.getElementById(ch).style.transform = '';
     }
   });
-  if (e.target === document.getElementById('edit-modal')) closeEdit();
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────

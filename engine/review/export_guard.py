@@ -234,11 +234,16 @@ def _component_of(slot_kind: str, slot_key: str, component_of) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # the question
 # ---------------------------------------------------------------------------
-def staleness(conn, version_id: str, doc_types=None) -> Staleness:
+def staleness(conn, version_id: str, doc_types=None, component: Optional[str] = None) -> Staleness:
     """Whether exporting `doc_types` of this version would ship text a correction replaced.
 
     `doc_types` is what the export writes -- `"swe3"`, `"swe4"`, `"all"` -- and only the views
     those documents are built from are asked about. None asks about every view.
+
+    `component` narrows the question to one component's documents -- whether ITS Word file has
+    every correction, which is what approving one document asks (REVIEW_APPROVE_API_SPEC A6,
+    A15). A correction keyed by no component (a struct description) still counts, as everywhere
+    else here: which unit prints it is not in its key. So does one this build cannot place.
     """
     from review.derive import component_of, views_for
 
@@ -252,6 +257,18 @@ def staleness(conn, version_id: str, doc_types=None) -> Staleness:
                s.text_overrides.c.updated_at)
         .where(s.text_overrides.c.version_id == version_id,
                s.text_overrides.c.is_orphaned.is_(False))).fetchall()
+    if component:
+        want = component_id(component)
+        kept = []
+        for r in rows:
+            try:
+                comp = _component_of(r.slot_kind, r.slot_key, component_of)
+            except Exception:                       # noqa: BLE001 -- cannot place: keep it
+                kept.append(r)
+                continue
+            if comp is None or comp == want:
+                kept.append(r)
+        rows = kept
     if not rows:
         # Nobody has corrected anything, which is every project today. Nothing to be stale
         # against, and the guard costs one indexed lookup.

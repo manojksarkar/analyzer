@@ -48,9 +48,9 @@ PGPASSWORD=analyzer "C:/Users/User/pgsql/bin/psql.exe" -h 127.0.0.1 -U analyzer 
 | Group | Tables | What it holds |
 |---|---|---|
 | **Model** | `entities` · `entity_versions` · `content_blobs` · `model_units` · `model_components` · `model_edges` · `model_summaries` | The parsed + derived C++ model |
-| **Runs** | `projects` · `versions` · `analysis_jobs` · `commits` · `version_output_files` · `parse_snapshots` · `knowledge_base` · `incremental_plans` · `tu_includes` | One analysis run and its artifacts |
+| **Runs** | `projects` · `versions` · `analysis_jobs` · `commits` · `version_output_files` · `parse_snapshots` · `knowledge_base` · `incremental_plans` · `tu_includes` · `version_components` · `version_runs` | One analysis run and its artifacts; each component's documents and the version's latest run |
 | **Reuse / LLM** | `reuse_index` · `llm_description_cache` · `llm_call_stats` | Incremental reuse + LLM accounting |
-| **Documents** | `documents` · `document_sections` · `document_assignments` · `compare_results` · `document_diffs` · `job_functions` | The web app's document layer |
+| **Documents** | `documents` · `document_sections` · `document_assignments` · `document_review_events` · `compare_results` · `document_diffs` · `job_functions` | The web app's document layer, and each document's review and approval |
 | **Access** | `users` · `project_members` · `access_requests` · `notifications` · `data_dictionaries` · `data_dictionary_entries` | RBAC and project inputs |
 | **Review** | `text_overrides` · `text_override_history` · `regeneration_queue` · `render_jobs` · `view_derivations` | Reviewers' corrections to LLM-written text, and the work a correction queues |
 
@@ -137,7 +137,10 @@ erDiagram
     versions ||--o{ llm_call_stats       : ""
     versions ||--o{ documents            : ""
     documents ||--o{ document_sections   : ""
-    documents ||--o{ document_assignments : ""
+    documents ||--o| document_assignments : "its one reviewer"
+    documents ||--o{ document_review_events : "the review record"
+    versions ||--o{ version_components   : "per component a run asked for"
+    versions ||--o| version_runs         : "its latest run and how far it got"
     projects ||--o{ compare_results      : ""
     compare_results ||--o{ document_diffs : ""
 
@@ -147,7 +150,7 @@ erDiagram
         string version UK "UI-supplied, unique per project"
         string commit_sha
         string pipeline_status "parsing|deriving|...|complete|failed"
-        string status "draft|in_review|approved"
+        string status "draft|in_review|approved - from its documents"
         string decision "incremental|full"
         int    regenerated
         int    reused
@@ -162,7 +165,57 @@ erDiagram
         text   content
         string group_name
     }
+    documents {
+        string id PK
+        string version_id FK
+        string component "its output dir, e.g. Layer1.Util"
+        string status "in_review|submitted|changes_requested|approved"
+        string approved_by
+        timestamptz approved_at
+        string docx_sha256 "the Word file that was approved"
+        string approved_docx_path "the copy kept at approval"
+        string content_fingerprint "carries an approval to an unchanged next version"
+        string carried_from "version id the approval came from"
+    }
+    document_review_events {
+        string id PK
+        string document_id FK
+        string kind "assigned|claimed|submitted|approved|changes_requested|reopened|carried|generated"
+        string actor_id "NULL: the run did it"
+        timestamptz at
+        text comment
+        jsonb payload
+    }
+    version_components {
+        string version_id PK
+        string component PK "its output dir = documents.component"
+        string state "waiting|generating|generated|failed"
+        timestamptz requested_at
+        timestamptz started_at
+        timestamptz finished_at
+        text error
+    }
+    version_runs {
+        string version_id PK
+        string command "generate|export|reexport|resume|web run"
+        jsonb argv "repeated by resume"
+        int pid
+        string code_dir "frozen code of a --detach run"
+        string outcome "running|complete|failed"
+        string stage "progress: stage, done, total"
+    }
 ```
+
+A version is `approved` when every one of its documents is: the status is derived and written on
+each approval and reopen (`api/services/review_workflow.py`; contract
+[REVIEW_APPROVE_API_SPEC](../spec/REVIEW_APPROVE_API_SPEC.md)).
+
+A version's model covers whole layers; its documents are made per component, by any number of runs
+(`generate`, `export`, `reexport`, `resume`). `version_components` has a row per component a run
+asked for; a component of the model with no row and no documents is "not requested" — worked out
+when read (`api/services/version_components.py`). `version_runs` is the latest run; whether it is
+still alive is a Postgres advisory lock its process holds (`engine/core/version_run.py`), never a
+column ([CLI_COMMANDS](../CLI_COMMANDS.md#a-run-that-lasts-days)).
 
 ## ER — access & inputs
 
@@ -472,6 +525,32 @@ FROM view_derivations WHERE version_id = 'f1'
 ORDER BY group_name, view_name;
 SELECT slot_kind, slot_key, updated_at FROM text_overrides WHERE version_id = 'f1'
 ORDER BY updated_at DESC;
+```
+
+### Review and approval — who approved what
+
+```sql
+-- A version's review: each document's state, its reviewer, who approved it and when
+SELECT d.process, d.component, d.status, a.user_id AS reviewer,
+       d.approved_by, d.approved_at, d.carried_from, left(d.docx_sha256, 12) AS docx
+FROM documents d LEFT JOIN document_assignments a ON a.document_id = d.id
+WHERE d.version_id = 'f1' ORDER BY d.component, d.process;
+
+-- One document's review record, oldest first: the evidence an approval rests on
+SELECT at, kind, actor_id, comment, payload
+FROM document_review_events WHERE document_id = 'doc1a2b3c4d' ORDER BY at;
+```
+
+### Staged generation — which components, which run
+
+```sql
+-- A version's components: what each run asked for, how it went
+SELECT component, state, requested_at, started_at, finished_at, error
+FROM version_components WHERE version_id = 'f1' ORDER BY component;
+
+-- Its latest run and how far it got (alive or not is the advisory lock, not this row)
+SELECT command, pid, host, outcome, stage, done, total, progress_at, log_path
+FROM version_runs WHERE version_id = 'f1';
 ```
 
 ### Integrity spot-checks

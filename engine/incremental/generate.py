@@ -274,8 +274,12 @@ def generate_full(
     create_version: bool = False,
     selected_units: Optional[List[str]] = None,
     doc_type: str = "swe3",
+    model_only: bool = False,
 ) -> Dict[str, Any]:
     """Produce a new full-generation version. Returns the manifest dict.
+
+    `model_only`: stop after Phase 2 -- the model, no documents. `analyzer.py export` makes them
+    later, per component, into this same version.
 
     `version_id` may be pre-allocated by the caller (the backend reserves it so
     the API can return it immediately); otherwise the next sequential id is used.
@@ -341,10 +345,12 @@ def generate_full(
     else:
         store.write_config(version_id, cfg)
         vcfg_path = os.path.join(_adir, "config.json")
-    store.write_manifest(version_id, _manifest(
+    _m0 = _manifest(
         version_id, branch, actual_commit, scope, data_dict_id,
         decision="full", regenerated=0, reused=0, status="running", warnings=[],
-        doc_type=doc_type))
+        doc_type=doc_type)
+    _m0["modelOnly"] = bool(model_only)     # `resume` keeps a model-only run model-only
+    store.write_manifest(version_id, _m0)
 
     # 3. run the analyzer (full) against the workspace repo (stdout/stderr inherited).
     # Render STRAIGHT into this version's own output dir (doc 09, B1). Previously every run
@@ -430,10 +436,15 @@ def generate_full(
     # Phase 2+ consumed the STORED copy rather than Phase 1's files. Removed with step 11b: the
     # phases read the database directly, so there is nothing to re-materialize and nothing left
     # for the two copies to disagree about.
+    if model_only:
+        base_cmd = base_cmd + ["--to-phase", "2"]       # the model; `export` makes the documents
     rc = subprocess.run(base_cmd + ["--from-phase", "2", repo_dir],
                         cwd=project_root, shell=(os.name == "nt")).returncode
-    if rc != 0:
+    # 3: some components' documents failed and run.py went on with the others. The version keeps
+    # what they made -- stored, recorded, closed -- and `resume` makes the failed ones again.
+    if rc not in (0, 3):
         _fail_full(rc)
+    components_failed = rc == 3
 
     # 4. capture artifacts (model/output/documents) + hashes/edges snapshots
     output_dir = _paths().output_dir
@@ -466,7 +477,12 @@ def generate_full(
     manifest = _manifest(version_id, branch, actual_commit, scope, data_dict_id,
                          decision="full",
                          regenerated=len(fps), reused=0, status="complete",
-                         warnings=_run_warnings, doc_type=doc_type)
+                         warnings=_run_warnings
+                         + (["some components' documents failed (run.py exit 3); the others were made -- `analyzer.py resume` makes the failed ones again"] if components_failed else []),
+                         doc_type=doc_type)
+    manifest["modelOnly"] = bool(model_only)
+    if components_failed:
+        manifest["componentsFailed"] = True
     manifest["documents"] = documents
     # AND to the store, which is what reaches Postgres (doc 09, C1). These are two different
     # stores keyed two different ways: `vstore` is the file VersionStore keyed by COMMIT,

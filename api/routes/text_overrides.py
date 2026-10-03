@@ -31,6 +31,7 @@ from ..db.in_memory import InMemoryDatabase
 from ..db.session import get_db
 from ..middleware.auth import get_current_user, require_project_member
 from ..models.domain import User
+from ..services import review_workflow
 
 _ENGINE_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "engine")
@@ -528,6 +529,9 @@ def update_slot(
     row. Answers the slot as it now is (`REQ-API-09`) and what the save did."""
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
+    # An approved document is locked (REVIEW_APPROVE_API_SPEC): reopen it first.
+    review_workflow.refuse_if_approved(db, project_id, version_id, body.slot_kind.value,
+                                       _key(body.slot_kind.value, body.slot_key))
     svc = _service()
     from review import catalog
     with _connection().begin() as cx:          # one transaction, REQ-AP-02
@@ -565,6 +569,9 @@ def update_flowchart_labels(
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
     flowchart_id = _flowchart_id(body.flowchart_id)
+    # The labels print in the component's SWE.3 and build its SWE.4 test steps: either approved
+    # locks them (REVIEW_APPROVE_API_SPEC).
+    review_workflow.refuse_if_approved(db, project_id, version_id, function_id=flowchart_id)
 
     svc = _service()
     with _connection().begin() as cx:
@@ -608,6 +615,7 @@ def update_behaviour(
     (`REQ-API-09`) -- its bullets one per line in `text`, and as a list in `bullets`."""
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
+    review_workflow.refuse_if_approved(db, project_id, version_id, function_id=body.function_id)
     svc = _service()
     from review import catalog, slot as slot_mod
     with _connection().begin() as cx:
@@ -641,6 +649,7 @@ def undo_slot(
     _version(project_id, version_id)
     kind = slot_kind.value
     key = _key(kind, slot_key)
+    review_workflow.refuse_if_approved(db, project_id, version_id, kind, key)
     svc = _service()
     from review import catalog, slot as slot_mod
     with _connection().begin() as cx:
@@ -723,6 +732,8 @@ def regeneration_queue(
 def export_readiness(
     project_id: str,
     version_id: str,
+    document_id: Optional[str] = Query(None, description="only this document's component and "
+                                                         "document type (REVIEW_APPROVE_API_SPEC A15)"),
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
@@ -737,9 +748,14 @@ def export_readiness(
     _version(project_id, version_id)
     from review.export_guard import staleness
     from ..services.pipeline_runner import export_doc_type
-    doc_type = export_doc_type(db, project_id, version_id)
+    doc_type, component = export_doc_type(db, project_id, version_id), None
+    if document_id:
+        doc = db.documents.get(document_id)
+        if doc is None or doc.project_id != project_id or doc.version_id != version_id:
+            raise HTTPException(status_code=404, detail="no document %s in this version" % document_id)
+        doc_type, component = ("swe4" if doc.process == "SWE.4" else "swe3"), doc.group
     with _connection().connect() as cx:
-        st = staleness(cx, version_id, doc_type)
+        st = staleness(cx, version_id, doc_type, component=component)
         reexport = _latest_reexport(cx, version_id)
     return {"stale": st.is_stale, "reason": st.reason, "explanation": st.explain(),
             # The version's latest re-export job, or null. How a page that was reloaded -- or

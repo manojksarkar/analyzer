@@ -23,7 +23,8 @@ export const versionsApi = {
   update: async (
     projectId: string,
     versionId: string,
-    body: { status?: string; description?: string },
+    // A version's status follows its documents (A14): only its description is set by hand.
+    body: { description?: string },
   ): Promise<Version> => {
     const r = await http.patch<{ version: ApiVersion }>(
       `/projects/${projectId}/versions/${versionId}`,

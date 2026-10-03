@@ -1,17 +1,16 @@
 import { useState, useMemo, Fragment } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import {
   useVersions, useCommits, useDocuments, useDocument,
 } from '../hooks/useProjects'
 import { useProjectViewState } from '../hooks/useProjectViewState'
 import { useCompareDocuments, useCompareDocumentDetail } from '../hooks/useCompare'
-import { useReviewSection, useApproveDoc, useSubmitReview } from '../hooks/useDocumentMutations'
-import { Icon, Skeleton, CompareSectionSkeleton } from '../components/ui'
+import { Avatar, Icon, Skeleton, CompareSectionSkeleton, StatusBadge } from '../components/ui'
 import { cn } from '../lib/cn'
 import { parseSectionBody } from '../lib/markdown'
 import type {
-  DiffType, SectionReviewState, DiffMark, DiffSegment, CompareBlock,
-  CompareRichSection,
+  DiffType, DiffMark, DiffSegment, CompareBlock,
+  CompareRichSection, Document,
 } from '../types'
 
 type TreeMode = 'diff' | 'all'
@@ -38,12 +37,9 @@ const MARK_CELL: Record<DiffMark, string> = {
   change: 'bg-[#fff4d6]',
 }
 
-/* ─── Section accent (left stripe at the gutter) by review state, else "changed" blue ─── */
-function sectionAccent(diffType: DiffType, review: SectionReviewState | null): string {
+/* ─── Section accent (left stripe at the gutter) by the kind of change ─── */
+function sectionAccent(diffType: DiffType): string {
   if (diffType === 'unchanged') return ''
-  if (review === 'accepted') return 'border-l-[3px] border-l-on-tertiary-container bg-[rgba(0,165,114,.04)]'
-  if (review === 'declined') return 'border-l-[3px] border-l-outline-variant bg-surface-container-low'
-  if (review === 'edited')   return 'border-l-[3px] border-l-secondary bg-[rgba(0,88,190,.04)]'
   if (diffType === 'added')   return 'border-l-[3px] border-l-on-tertiary-container bg-[rgba(0,165,114,.03)]'
   if (diffType === 'removed') return 'border-l-[3px] border-l-error bg-error-container/30'
   return 'border-l-[3px] border-l-secondary bg-surface-container-low'
@@ -256,29 +252,29 @@ function DocTree({ rows, mode, setMode, activeId, onSelect, changedCount, total,
   )
 }
 
-/* ─── Per-section review controls (current pane, changed sections) ─── */
-function SectionControls({ review, onAccept, onDecline }: {
-  review: SectionReviewState | null
-  onAccept: () => void; onDecline: () => void
-}) {
+/* ─── The open document's review state: shown, never changed, here ─── */
+// Compare is for reading changes. A document is reviewed and approved in the document itself
+// (compare.html renderDocStateBar).
+function DocStateBar({ doc, projectId }: { doc: Document; projectId: string }) {
+  const carried = doc.review.carriedFrom
   return (
-    <div className="flex-shrink-0 flex items-center gap-1.5 mt-0.5">
-      {review && (
-        <span className={cn(
-          'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-label font-mono font-semibold border',
-          review === 'accepted' ? 'bg-[rgba(0,165,114,.1)] text-on-tertiary-container border-[#86efac]'
-            : review === 'edited' ? 'bg-secondary/10 text-secondary border-[#9cc3ff]'
-            : 'bg-surface-container text-on-surface-variant border-outline-variant',
-        )}>
-          {review === 'accepted' ? 'Accepted' : review === 'edited' ? 'Edited' : 'Declined'}
-        </span>
-      )}
-      <button onClick={onAccept} className="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-on-tertiary-container hover:text-white hover:border-on-tertiary-container text-on-surface-variant transition-colors text-label font-mono">
-        <Icon name="check" size={11} />Accept
-      </button>
-      <button onClick={onDecline} className="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-surface-container-high text-on-surface-variant transition-colors text-label font-mono">
-        <Icon name="remove" size={11} />Decline
-      </button>
+    <div className="flex-shrink-0 h-9 border-t border-outline-variant bg-white px-4 flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2 min-w-0">
+        <StatusBadge status={doc.status} suffix={carried ? ` · from ${carried.tag}` : undefined} />
+        {doc.status !== 'approved' && (doc.reviewer ? (
+          <span className="flex items-center gap-1.5 font-mono text-label text-outline whitespace-nowrap">
+            <Avatar person={doc.reviewer} size={16} />Reviewer: {doc.reviewer.name}
+          </span>
+        ) : (
+          <span className="font-mono text-label text-[#b45309] whitespace-nowrap">Needs a reviewer</span>
+        ))}
+      </div>
+      <Link
+        to={`/projects/${projectId}/documents/${doc.id}?tab=review`}
+        className="font-mono text-caption font-medium text-secondary hover:underline whitespace-nowrap"
+      >
+        Review and approve in the document →
+      </Link>
     </div>
   )
 }
@@ -291,7 +287,6 @@ interface PaneSection {
   level: number
   diffType: DiffType
   sourceLabel: string
-  reviewState: SectionReviewState | null
   /** rich blocks (mode 'rich') */
   current?: CompareBlock[]
   baseline?: CompareBlock[]
@@ -323,15 +318,14 @@ export function ComparePage() {
   const [treeMode, setTreeMode] = useState<TreeMode>('diff')
   const [pickedDocId, setPickedDocId] = useState<string | null>(null)
   const [changesOnly, setChangesOnly] = useState(false)
-  /** Optimistic per-section review state, keyed by section id (rich sections
-   *  don't round-trip through the stored-section table, so we track locally). */
-  const [localReview, setLocalReview] = useState<Record<string, SectionReviewState>>({})
 
   const { data: compareDocs, isLoading: docsLoading } = useCompareDocuments(pid, currentRef, baselineRef)
   const { data: allDocs, isLoading: allDocsLoading } = useDocuments(pid, currentVersion?.id ? { versionId: currentVersion.id } : undefined)
 
   const changedSet = useMemo(() => new Set((compareDocs?.documents ?? []).map((d) => d.documentId)), [compareDocs])
   const changedById = useMemo(() => new Map((compareDocs?.documents ?? []).map((d) => [d.documentId, d])), [compareDocs])
+  // Each current document's review state, shown beside it (never changed here).
+  const docById = useMemo(() => new Map((allDocs ?? []).map((d) => [d.id, d])), [allDocs])
 
   /* Active doc = explicit pick, else ?doc= param (if changed), else first changed doc */
   const paramDoc = searchParams.get('doc')
@@ -339,16 +333,12 @@ export function ComparePage() {
   const activeDocId = pickedDocId ?? defaultDocId
 
   const { data: detail, isLoading: detailLoading } = useCompareDocumentDetail(pid, activeDocId ?? undefined, currentRef, baselineRef)
+  // The open document's review state, shown under it (read-only here). Only for a document of
+  // the Current side: a removed one is the reference's.
   const { data: docDetail } = useDocument(pid, activeDocId ?? '')
-
-  const reviewSection = useReviewSection(pid)
-  const approveDoc = useApproveDoc(pid)
-  const submitReview = useSubmitReview(pid)
+  const stateDoc = docDetail && currentVersion?.id && docDetail.versionId === currentVersion.id ? docDetail : undefined
 
   const isRich = detail?.mode === 'rich'
-
-  /* Flat-fallback overlay: live doc detail (edited content + persisted review). */
-  const liveByKey = useMemo(() => new Map((docDetail?.sections ?? []).map((s) => [s.key, s])), [docDetail])
 
   /* Unify rich + flat into one render-ready section list. */
   const sections: PaneSection[] = useMemo(() => {
@@ -361,31 +351,24 @@ export function ComparePage() {
         level: s.level,
         diffType: s.diffType,
         sourceLabel: s.source.artifact,
-        reviewState: localReview[s.id] ?? null,
         current: s.currentBlocks,
         baseline: s.baselineBlocks,
       }))
     }
-    return detail.flatSections.map((s) => {
-      const live = liveByKey.get(s.key)
-      return {
-        key: s.key,
-        title: s.title,
-        number: '',
-        level: 1,
-        diffType: s.diffType,
-        sourceLabel: 'Interface table',
-        reviewState: live?.reviewState ?? localReview[s.key] ?? null,
-        currentText: live?.content ?? s.currentContent,
-        baselineText: s.baselineContent,
-      }
-    })
-  }, [detail, liveByKey, localReview])
+    return detail.flatSections.map((s) => ({
+      key: s.key,
+      title: s.title,
+      number: '',
+      level: 1,
+      diffType: s.diffType,
+      sourceLabel: 'Interface table',
+      currentText: s.currentContent,
+      baselineText: s.baselineContent,
+    }))
+  }, [detail])
 
   const changedSections = sections.filter((s) => s.diffType !== 'unchanged')
-  const resolved = changedSections.filter((s) => s.reviewState).length
   const total = changedSections.length
-  const reviewMode = docDetail?.status === 'in_review'
   const visibleSections = changesOnly ? changedSections : sections
 
   // A removed document exists only in the baseline, so it is not in `allDocs` (the current
@@ -412,10 +395,6 @@ export function ComparePage() {
 
   function selectDoc(id: string) {
     setPickedDocId(id)
-  }
-  function decide(sectionKey: string, state: SectionReviewState) {
-    setLocalReview((m) => ({ ...m, [sectionKey]: state }))
-    if (activeDocId) reviewSection.mutate({ docId: activeDocId, sectionKey, reviewState: state })
   }
 
   const docTitle = detail?.documentName ?? docDetail?.name ?? changedById.get(activeDocId ?? '')?.name ?? 'Document'
@@ -476,6 +455,7 @@ export function ComparePage() {
                     <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', DIFF_BADGE[d.diffType].dot)} aria-hidden />
                     <span className="text-on-surface text-sm flex-1 truncate">{d.name}</span>
                     <span className="font-mono text-label text-outline flex-shrink-0">{d.process}</span>
+                    {docById.get(d.documentId) && <StatusBadge status={docById.get(d.documentId)!.status} size="sm" />}
                     <span className={cn('px-1.5 py-0.5 rounded font-mono text-caption', DIFF_BADGE[d.diffType].cls)}>{DIFF_BADGE[d.diffType].label}</span>
                   </button>
                 ))}
@@ -512,9 +492,9 @@ export function ComparePage() {
                     >
                       <Icon name="filter_alt" size={11} />Changes only
                     </button>
-                    {reviewMode && (
-                      <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg text-label font-mono bg-[#fff8e6] text-[#b45309] border border-amber">
-                        <Icon name="rate_review" size={10} />In Review
+                    {currentVersion && currentVersion.status !== 'draft' && (
+                      <span title="The version's status — derived from its documents">
+                        <StatusBadge status={currentVersion.status} size="sm" />
                       </span>
                     )}
                   </div>
@@ -558,19 +538,10 @@ export function ComparePage() {
                             : <SectionBody content={s.baselineText ?? ''} />}
                         </div>
                         {/* Current cell */}
-                        <div className={cn('bg-white border-b border-outline-variant/60 px-8 py-6 transition-all', sectionAccent(s.diffType, s.reviewState))}>
-                          <div className="flex items-start justify-between gap-3 mb-3">
-                            <div className="flex items-baseline gap-2 min-w-0">
-                              {s.number && <span className="font-mono text-caption text-outline flex-shrink-0">{s.number}</span>}
-                              <h2 className={cn('text-primary font-semibold font-sans', headingSize)}>{s.title}</h2>
-                            </div>
-                            {changed && reviewMode && (
-                              <SectionControls
-                                review={s.reviewState}
-                                onAccept={() => decide(s.key, 'accepted')}
-                                onDecline={() => decide(s.key, 'declined')}
-                              />
-                            )}
+                        <div className={cn('bg-white border-b border-outline-variant/60 px-8 py-6 transition-all', sectionAccent(s.diffType))}>
+                          <div className="flex items-baseline gap-2 min-w-0 mb-3">
+                            {s.number && <span className="font-mono text-caption text-outline flex-shrink-0">{s.number}</span>}
+                            <h2 className={cn('text-primary font-semibold font-sans', headingSize)}>{s.title}</h2>
                           </div>
                           {changed && (
                             <div className="flex items-center gap-1.5 mb-3">
@@ -593,38 +564,8 @@ export function ComparePage() {
               </div>
             </div>
 
-            {/* Review footer — only while the doc is in review */}
-            {reviewMode && (
-              <footer className="flex-shrink-0 border-t border-outline-variant bg-white px-5 py-2.5 flex items-center justify-between min-h-11">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-1" role="progressbar" aria-valuenow={resolved} aria-valuemax={total} aria-label={`${resolved} of ${total} changes resolved`}>
-                    {changedSections.map((s) => (
-                      <div key={s.key} className={cn('w-3 h-3 rounded-full transition-colors',
-                        s.reviewState === 'accepted' ? 'bg-on-tertiary-container'
-                          : s.reviewState === 'edited' ? 'bg-secondary'
-                          : s.reviewState === 'declined' ? 'bg-error'
-                          : 'bg-outline-variant')} />
-                    ))}
-                  </div>
-                  <span className="text-on-surface-variant font-mono text-caption">{resolved}/{total} changes resolved</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => activeDocId && submitReview.mutate(activeDocId)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 border border-outline-variant rounded-lg hover:bg-surface-container-low transition-colors text-on-surface font-mono text-caption font-medium"
-                  >
-                    Submit Review
-                  </button>
-                  <button
-                    onClick={() => activeDocId && approveDoc.mutate(activeDocId)}
-                    disabled={total === 0 || resolved < total}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors disabled:opacity-50 font-mono text-caption font-bold tracking-[0.04em]"
-                  >
-                    <Icon name="check" size={14} />Approve Document
-                  </button>
-                </div>
-              </footer>
-            )}
+            {/* The document's review state, read-only: it is reviewed in the document */}
+            {stateDoc && <DocStateBar doc={stateDoc} projectId={pid} />}
           </>
         )}
       </div>

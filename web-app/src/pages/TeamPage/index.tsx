@@ -1,13 +1,14 @@
 import { useState, useRef, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { useProject, useTeam } from '../hooks/useProjects'
+import { useProject, useTeam } from '../../hooks/useProjects'
 import {
   usePendingMembers, useInviteMember, useUpdateMemberRole, useRemoveMember, useCancelInvite,
-} from '../hooks/useTeamMutations'
-import { Card, Icon, Skeleton, Text } from '../components/ui'
-import { SubbarCta } from '../components/shell/SubbarCta'
-import { cn } from '../lib/cn'
-import type { TeamMember, UserRole } from '../types'
+} from '../../hooks/useTeamMutations'
+import { Card, Icon, Skeleton, Text } from '../../components/ui'
+import { SubbarCta } from '../../components/shell/SubbarCta'
+import { cn } from '../../lib/cn'
+import type { TeamMember, UserRole } from '../../types'
+import { AddMemberDialog } from './components/AddMemberDialog'
 
 /* ─── Role badge (read-only) ─── */
 function RolePill({ role }: { role: UserRole }) {
@@ -61,9 +62,10 @@ function RoleSelect({ value, onChange }: { value: UserRole; onChange: (r: UserRo
   )
 }
 
+// Two roles, no reviewer role: whoever is assigned to a document reviews it (REVIEW_APPROVE_DESIGN).
 const ACCESS = [
-  { role: 'admin' as UserRole, perms: 'Run analysis · Export DOCX · Manage team · Approve documents · Configure project settings' },
-  { role: 'developer' as UserRole, perms: 'View documents · Download DOCX · Leave comments · Submit for review · Assign self to documents' },
+  { role: 'admin' as UserRole, perms: 'Run analysis · Re-export · Manage team · Assign reviewers · Approve, request changes, reopen documents · Configure project settings' },
+  { role: 'developer' as UserRole, perms: "View and download documents · Correct the LLM's text · Review the documents assigned to them · Submit for approval · Claim an unassigned document" },
 ]
 
 export function TeamPage() {
@@ -83,8 +85,6 @@ export function TeamPage() {
   const cancelInvite = useCancelInvite(pid)
 
   const [inviteOpen, setInviteOpen] = useState(false)
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteRole, setInviteRole] = useState<UserRole>('developer')
 
   const active = team ?? []
   const members: TeamMember[] = [...active, ...(pending ?? [])]
@@ -113,7 +113,7 @@ export function TeamPage() {
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors font-mono text-caption font-bold tracking-[0.04em]"
               >
                 <Icon name="person_add" size={14} />
-                INVITE
+                ADD MEMBER
               </button>
             </SubbarCta>
           )}
@@ -182,7 +182,7 @@ export function TeamPage() {
                                 onClick={() => inviteMember.mutate({ email: m.email, role: m.role })}
                                 className="inline-flex items-center gap-1 transition-colors hover:border-secondary hover:text-secondary px-2 py-[3px] border border-outline-variant rounded-md font-mono text-label font-semibold text-on-surface-variant bg-white"
                               >
-                                <Icon name="send" size={12} />Resend
+                                <Icon name="how_to_reg" size={12} />Activate
                               </button>
                             )}
                             <button
@@ -216,70 +216,29 @@ export function TeamPage() {
             <Text as="h2" variant="heading" className="text-on-surface">Access</Text>
           </div>
           <div>
-            {ACCESS.map((a, i) => (
-              <div key={a.role} className={cn('flex items-start gap-3 px-5 py-3', i < ACCESS.length - 1 && 'border-b border-[#f3f4f6]')}>
+            {ACCESS.map((a) => (
+              <div key={a.role} className="flex items-start gap-3 px-5 py-3 border-b border-[#f3f4f6]">
                 <span className="flex flex-shrink-0 mt-px"><RolePill role={a.role} /></span>
                 <Text as="p" variant="caption" className="font-mono leading-relaxed">{a.perms}</Text>
               </div>
             ))}
+            <div className="flex items-start gap-3 px-5 py-3 bg-surface">
+              <Icon name="info" size={15} className="text-on-surface-variant flex-shrink-0 mt-px" />
+              <Text as="p" variant="caption" className="font-mono leading-relaxed">
+                Reviewer is not a role: whoever is assigned to a document reviews it — one reviewer per document.
+              </Text>
+            </div>
           </div>
         </Card>
       </div>
 
-      {/* ── Invite modal ── */}
       {inviteOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-[rgba(4,22,39,.45)]" onClick={() => setInviteOpen(false)}>
-          <div className="bg-white rounded-xl border border-outline-variant w-full max-w-[440px] shadow-[0_8px_48px_rgba(4,22,39,.24)]" onClick={(e) => e.stopPropagation()}>
-            <div className="px-6 py-5 border-b border-outline-variant flex items-center justify-between">
-              <div>
-                <Text as="h3" variant="heading" className="text-on-surface">Invite to project</Text>
-                <Text as="p" variant="caption" className="font-mono mt-0.5">{project?.name ?? '…'}</Text>
-              </div>
-              <button onClick={() => setInviteOpen(false)} className="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant">
-                <Icon name="close" size={18} />
-              </button>
-            </div>
-            <div className="px-6 py-5 space-y-4">
-              <div>
-                <label className="block text-on-surface-variant uppercase mb-1.5 font-mono text-caption font-semibold tracking-[0.06em]">Email</label>
-                <input
-                  type="email"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="colleague@company.com"
-                  className="w-full h-11 px-3 border border-outline-variant rounded-xl bg-white focus:outline-none focus:border-secondary text-sm"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" name="invite-role" checked={inviteRole === 'developer'} onChange={() => setInviteRole('developer')} className="accent-secondary" />
-                  <span className="text-on-surface text-body">Developer</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" name="invite-role" checked={inviteRole === 'admin'} onChange={() => setInviteRole('admin')} className="accent-secondary" />
-                  <span className="text-on-surface text-body">Admin</span>
-                </label>
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t border-outline-variant flex items-center justify-end gap-2">
-              <button onClick={() => setInviteOpen(false)} className="px-4 py-2 border border-outline-variant hover:bg-surface-container rounded-lg text-on-surface-variant transition-colors font-mono text-xs">Cancel</button>
-              <button
-                disabled={!inviteEmail.trim() || inviteMember.isPending}
-                onClick={() => {
-                  const email = inviteEmail.trim()
-                  if (!email) return
-                  inviteMember.mutate({ email, role: inviteRole })
-                  setInviteOpen(false)
-                  setInviteEmail('')
-                  setInviteRole('developer')
-                }}
-                className="flex items-center gap-1.5 px-4 py-2 bg-secondary hover:bg-secondary-container text-white rounded-lg transition-colors disabled:opacity-60 font-mono text-xs"
-              >
-                <Icon name="send" size={15} />Send Invite
-              </button>
-            </div>
-          </div>
-        </div>
+        <AddMemberDialog
+          projectId={pid}
+          projectName={project?.name}
+          members={members}
+          onClose={() => setInviteOpen(false)}
+        />
       )}
     </div>
   )

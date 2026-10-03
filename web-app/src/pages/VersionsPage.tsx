@@ -3,52 +3,16 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useProject, useVersions, useCommits } from '../hooks/useProjects'
 import { useCreateVersion } from '../hooks/useVersionMutations'
 import { useCurrentJob } from '../hooks/useJobs'
-import { Card, Icon, Skeleton, Text, toast } from '../components/ui'
+import { Card, Icon, Skeleton, StatusBadge, Text, toast } from '../components/ui'
 import { cn } from '../lib/cn'
+import { formatDate } from '../lib/format'
+import { STATUS_META, versionStatusKey } from '../lib/reviewStatus'
 import { useUIStore } from '../store/ui'
-import type { Commit, Version, VersionStatus } from '../types'
+import type { Commit, Version } from '../types'
 
-type Filter = 'all' | 'in_review' | 'complete'
-
-function accentColor(s: VersionStatus): string {
-  if (s === 'in_review') return '#f59e0b'
-  if (s === 'approved' || s === 'complete') return '#00a572'
-  return '#c4c6cd'
-}
-
-// Mockup pill: 9px uppercase, as the CURRENT pill beside it.
-const PILL = 'inline-flex items-center gap-[3px] px-[7px] py-0 rounded-full font-mono text-micro font-bold uppercase tracking-[0.04em] border'
-
-function StatusPill({ status, running }: { status: VersionStatus; running?: boolean }) {
-  if (status === 'draft' && running) {
-    // The run that fills this version is going now: not "Not Run".
-    return (
-      <span className={cn(PILL, 'bg-surface-container text-secondary border-[#bfcfff]')}>
-        <span className="animate-spin inline-block w-[7px] h-[7px] rounded-full border border-secondary border-t-transparent" aria-hidden />Running
-      </span>
-    )
-  }
-  if (status === 'draft') {
-    // Reserved for a run that has not finished, or tagged without one: no documents yet.
-    return (
-      <span className={cn(PILL, 'bg-[#f3f4f6] text-outline border-[#e2e3e8]')}>
-        <span className="inline-block w-1 h-1 rounded-full bg-outline" aria-hidden />Not Run
-      </span>
-    )
-  }
-  if (status === 'in_review') {
-    return (
-      <span className={cn(PILL, 'bg-[#fff8e6] text-[#b45309] border-amber')}>
-        <span className="inline-block w-1 h-1 rounded-full bg-amber" aria-hidden />In Review
-      </span>
-    )
-  }
-  return (
-    <span className={cn(PILL, 'bg-[#f0fdf9] text-[#00a572] border-[#86efac]')}>
-      <span className="inline-block w-1 h-1 rounded-full bg-[#00a572]" aria-hidden />Approved
-    </span>
-  )
-}
+// A version's status is derived from its documents (approved when every one is, A14): the
+// filters read it, nobody sets it.
+type Filter = 'all' | 'in_review' | 'approved'
 
 export function VersionsPage() {
   const { projectId } = useParams<{ projectId: string }>()
@@ -80,15 +44,15 @@ export function VersionsPage() {
 
   const allVersions = versions ?? []
   const inReview = allVersions.filter((v) => v.status === 'in_review')
-  const complete = allVersions.filter((v) => v.status === 'complete' || v.status === 'approved')
+  const approved = allVersions.filter((v) => v.status === 'approved')
 
-  const filtered = filter === 'in_review' ? inReview : filter === 'complete' ? complete : allVersions
+  const filtered = filter === 'in_review' ? inReview : filter === 'approved' ? approved : allVersions
   const untagged = commits?.filter((c) => !c.versionTag) ?? []
 
   const filterDefs: { key: Filter; label: string; count: number }[] = [
     { key: 'all',       label: 'All',       count: allVersions.length },
-    { key: 'in_review', label: 'In Review', count: inReview.length },
-    { key: 'complete',  label: 'Complete',  count: complete.length },
+    { key: 'in_review', label: 'In review', count: inReview.length },
+    { key: 'approved',  label: 'Approved',  count: approved.length },
   ]
 
   return (
@@ -103,6 +67,10 @@ export function VersionsPage() {
               <Text as="p" variant="caption" className="font-mono mt-0.5">
                 {allVersions.length} version{allVersions.length !== 1 ? 's' : ''} · {project?.name ?? '…'}
               </Text>
+              <p className="flex items-center gap-1 mt-1 text-caption text-outline">
+                <Icon name="info" size={13} />
+                A version is Approved when every one of its documents is — never set by hand.
+              </p>
             </div>
             <div className="flex items-center gap-1.5">
               {filterDefs.map(({ key, label, count }) => {
@@ -194,23 +162,24 @@ export function VersionsPage() {
 
 /* ── Single version row ── */
 function VersionRow({ v, isCurrent, last, running, onView, onCompare }: { v: Version; isCurrent: boolean; last: boolean; running: boolean; onView: () => void; onCompare: () => void }) {
+  const status = versionStatusKey(v.status, running)
   return (
     // The last row has no bottom border: the card's own edge closes it (it was doubled).
     <div className={cn('flex transition-colors hover:bg-[#f8f9ff]', !last && 'border-b border-outline-variant')}>
-      {/* dynamic status accent bar */}
-      {/* eslint-disable-next-line no-restricted-syntax -- accent colour is data-driven */}
-      <div className="w-1 flex-shrink-0" style={{ background: accentColor(v.status) }} aria-hidden />
+      {/* status accent bar */}
+      <div className={cn('w-1 flex-shrink-0', v.status === 'draft' ? 'bg-outline-variant' : STATUS_META[status].dot)} aria-hidden />
       <div className="flex-1 px-5 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
               <Text variant="title" className="font-mono font-bold text-on-surface">{v.tag}</Text>
-              <StatusPill status={v.status} running={running} />
+              <StatusBadge status={status} size="sm" />
               {isCurrent && (
                 <span className="uppercase font-mono text-micro font-bold bg-surface-container text-secondary border border-[#bfcfff] px-1.5 rounded-full tracking-[0.04em]">current</span>
               )}
             </div>
-            <Text as="p" variant="body" className="text-on-surface-variant mb-2.5 leading-[1.5]">{v.description}</Text>
+            <Text as="p" variant="body" className="text-on-surface-variant mb-2 leading-[1.5]">{v.description}</Text>
+            <ReviewLine v={v} />
             <div className="flex items-center gap-2.5 flex-wrap">
               <span className="font-mono text-label font-medium bg-[#f3f4f6] text-on-surface-variant px-1.5 py-px rounded">{v.shortSha}</span>
               <Text variant="caption" className="text-outline">{v.docsCount} docs</Text>
@@ -230,6 +199,42 @@ function VersionRow({ v, isCurrent, last, running, onView, onCompare }: { v: Ver
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+/* How far a version's documents are: "N of M documents approved" with a bar while in review;
+   who approved it, and when, once every document is (versions.html reviewLine). */
+function ReviewLine({ v }: { v: Version }) {
+  const r = v.review
+  if (!r || v.status === 'draft' || r.documents === 0) return null
+  if (v.status === 'approved') {
+    return (
+      <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
+        <Icon name="verified" size={14} fill className="text-[#00a572]" />
+        <span className="text-xs text-on-surface">
+          Approved{r.approvedBy ? <> by <b className="font-semibold">{r.approvedBy.name}</b></> : ''}
+          {r.approvedAt ? ` · ${formatDate(r.approvedAt)}` : ''}
+        </span>
+        <span className="text-caption text-outline">· the last of {r.documents} document approvals</span>
+      </div>
+    )
+  }
+  const pct = Math.round((r.approved / r.documents) * 100)
+  return (
+    <div className="mb-2.5">
+      <div className="flex items-center gap-2.5">
+        <div className="w-[140px] h-1 rounded-full bg-[#fde7b0] overflow-hidden flex-shrink-0" title={`${pct}% of documents approved`}>
+          {/* eslint-disable-next-line no-restricted-syntax -- the approved share is data-driven */}
+          <span className="block h-full bg-[#00a572]" style={{ width: `${pct}%` }} />
+        </div>
+        <span className="text-xs text-on-surface"><b className="font-semibold">{r.approved} of {r.documents}</b> documents approved</span>
+      </div>
+      {r.carried > 0 && (
+        <p className="text-caption text-outline mt-1">
+          {r.carried} approval{r.carried === 1 ? '' : 's'} carried from an earlier version (content unchanged)
+        </p>
+      )}
     </div>
   )
 }

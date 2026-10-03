@@ -187,7 +187,9 @@ def require_project_admin(
     if getattr(current_user, "is_superuser", False):
         return
     member = db.members.get_member(project_id, current_user.id)
-    if member is None or member.role != "admin":
+    # An ACTIVE admin. An invited admin who has not accepted is no member yet
+    # (`require_project_member` says the same) -- they passed this check and could approve.
+    if member is None or member.role != "admin" or member.status != "active":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "FORBIDDEN", "message": "Admin role required.", "status": 403},

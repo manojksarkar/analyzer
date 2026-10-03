@@ -239,8 +239,14 @@ default**. The run log says so: `narrowed parse: 1 affected TU(s)`.
 |---|---|
 | `setup` | create or upgrade the database schema |
 | `onboard` | register a project: row, workspace, config, first version |
-| `generate` | produce a version from a commit |
-| `reexport` | rebuild a version's documents from its stored model |
+| `generate` | produce a version from a commit (Phases 1-4; `--model-only`: 1-2) |
+| `export` | make the documents of components a version has not generated yet (Phases 3-4, same version) |
+| `reexport` | make a version's documents again, from its stored model |
+| `resume` | finish a version whose run was cut short, from where it stopped |
+| `progress` | how far a version's run has got: running or stopped, the stage, time left |
+| `components` | a version's components and the state of their documents |
+| `register` | record a version's documents for review and approval, without regenerating |
+| `user` | add a user account (and to a project), reset its password, list accounts |
 | `status` | what the database holds |
 | `check` | check the database, reporting only what is wrong |
 | `report` | a version's generation report |
@@ -353,7 +359,7 @@ python analyzer.py generate --project-id myproj --commit <sha> --version-id v2 -
 | `--project-id`, `--version-id` | required. `--version-id` is this project's version name (`v2`); the full id (`myproj.v2`) works too. |
 | `--commit` | the full 40-character sha. **Default: the one recorded for this version** when it was reserved. |
 | `--branch` | **Default: the project's branch**, as recorded by `onboard`. |
-| `--scope` | one of `project` (default), `layer:A,B`, `group:A,B`, `component:A,B` |
+| `--scope` | one of `project`, `layer:A,B`, `group:A,B`, `component:A,B`. **Default: what the baseline has** — its scope, and for a component scope every component it has documents for (also those `export` added); the whole project when there is no baseline. The run prints which. |
 | `--source` | clone from here if the commit is not checked out yet |
 | `--config` | use this config instead of the project's |
 | `--data-dict <id>` | merge `workspaces/<pid>/datadict/<id>.csv` into the data dictionary |
@@ -365,6 +371,9 @@ python analyzer.py generate --project-id myproj --commit <sha> --version-id v2 -
 | `--verify-parse` | run narrowed AND full, diff them, use the full one. Slow; for validation. |
 | `--unit <name>` | narrow the per-function FLOWCHART work to this unit. Repeatable. See below — it is a speed aid, not a scope. |
 | `--force` | accepted; the commit dir is reused either way |
+| `--no-register` | do not record the documents for review at the end (see `register`) |
+| `--model-only` | stop after Phase 2: the model of the scope's layers, no documents. `export` makes them later, per component, into this version. |
+| `--detach` | run in the background on a frozen copy of the code — see [A run that lasts days](#a-run-that-lasts-days) |
 
 `--full`, `--no-narrowed-parse` and `--verify-parse` are all "do it the slow way on purpose".
 None belongs in a routine run.
@@ -385,6 +394,9 @@ other files is a warning. A component the run renders that gets **no** file stop
 the parse, naming the component. Without this check the parse ran to the end and Phase 3 then
 stopped on that component with a message about re-export scopes. A `layer:` scope renders no
 document, so there it is only a warning.
+
+**The web app and the CLI make the same documents**: SWE.3 and SWE.4 (`--doc-type all`, the
+`generate` default since 2026-10-02). `--doc-type swe3` makes SWE.3 only.
 
 **Regenerating a commit that already has a version** — always name the baseline:
 
@@ -498,8 +510,9 @@ check happens **before Phase 1** rather than three phases in.
 
 ### `reexport`
 
-Rebuild a version's documents from its **stored model** — no parsing, no LLM. This is what you
-run after changing a view or the DOCX template.
+Rebuild documents the version **already has**, from its **stored model** — no parsing. This is
+what you run after changing a view or the DOCX template. Components it has not generated yet are
+`export`'s.
 
 ```
 python analyzer.py reexport --project-id myproj --version-id v2
@@ -511,7 +524,9 @@ python analyzer.py reexport --project-id myproj --version-id v2 --from-phase 4 -
 | Flag | Effect |
 |---|---|
 | `--from-phase` | 2 = re-derive, then views + export; 3 = views + export (default); 4 = export only |
-| `--scope` | re-render a **narrower** slice than the version was generated with |
+| `--components A,B` | only these components; each must have been generated (`export` makes the others). Default: every component the version has documents for, whichever run made them. |
+| `--scope` | a scope instead of `--components`, unchecked. The model covers the layers the version parsed, so any component of them renders. |
+| `--detach` | in the background, on a frozen copy of the code |
 | `--unit <name>` | narrow the per-function flowchart work to this unit. Repeatable. |
 | `--doc-type` | `swe3`, `swe4` or `all`. Default: what the version was generated with |
 | `--force` | export even when a reviewer's correction is newer than the stored views — see below |
@@ -716,6 +731,104 @@ Scoping down costs nothing extra — the model already covers the whole layer, s
 re-export is purely less view work. Scoping *up* beyond what the model holds is not possible;
 generate a wider version for that.
 
+### `export`
+
+Make the documents of components the version has **not** generated yet: Phases 3-4 from its stored
+model, into the **same** version, recorded for review. The version's model covers every component of
+the layers its run parsed (a run on 7 components of a layer parses and describes all of them), so the
+rest cost only their flowcharts and documents — no parsing, no new descriptions.
+
+```
+python analyzer.py export --project-id myproj --version-id v1 --components Layer1.App,Layer1.Util
+python analyzer.py export --project-id myproj --version-id v1 --remaining --detach
+```
+
+A component already generated is left alone (`reexport` makes it again). One of a layer the version
+did not parse is refused: that needs a new version. A version whose Phase 2 did not finish has no
+model to export from — `resume` it first. Into a version whose own run was cut short after its model:
+`export` makes yours, and closes the version once nothing of that run is left unfinished.
+
+### `resume`
+
+Finish a version whose run was cut short — the process died, the machine restarted — from where it
+stopped. `progress` says when a run stopped and prints this command.
+
+```
+python analyzer.py resume --project-id myproj --version-id v1 --detach
+```
+
+| It stopped in | `resume` does |
+|---|---|
+| Phase 1 (the parse) | the recorded `generate` again: the parse starts over, the LLM work already done comes back from the cache |
+| Phase 2 (the model), killed or failed | Phase 2 from the stored parse — descriptions already written come back from the cache — then the documents (a `--model-only` run: Phase 2 only) |
+| Phases 3-4 | only the components the run did not finish, or that failed |
+| after the last document | stores the output, records the documents for review, closes the version |
+
+Refused while the run still holds the version. `--detach` resumes on the frozen code the run started
+with; without it, on the code in this folder (it says so). The LLM cache is saved at least every
+minute, so a crash costs minutes of LLM work, not hours.
+
+### `progress`, `components`
+
+```
+python analyzer.py progress --project-id myproj --version-id v1
+python analyzer.py components --project-id myproj --version-id v1
+```
+
+`progress`: the phase, the run (command, process, started when), **RUNNING** or **STOPPED** (its
+process is gone — then the `resume` command), the log and the frozen code of a detached run, the
+current stage with done/total and the time left at its pace so far, and the components. The stage
+is published at most every 20 s.
+
+`components`: every component of the layers the version parsed, per layer — generated (with its
+documents' review status), generating, waiting, stopped (its run died), failed (with why), or not
+requested — and the `export` command for the rest. Both only read.
+
+### `register`
+
+```
+python analyzer.py register --project-id myproj --version-id v2
+```
+
+Records each Word file of the version (`output/<component>/…docx`, SWE.3 and SWE.4) as a document of
+the web app, so it can be assigned, reviewed and approved, and opens its review: a document whose
+content is the same as its approved twin in the baseline keeps that approval, the others start In
+review with the baseline's reviewer. Nothing is regenerated, and a document already recorded is left
+alone, so it is safe to run again.
+
+`generate` does this at its end (`review: 50 document(s) recorded for review; 9 keep their
+approval`), and so does `reexport`. Run it by hand for a version generated before review and approval
+existed, or one whose run said `note: the documents could not be recorded for review`. The web app's
+admin can do the same from the API (`POST /projects/{id}/versions/{vid}/documents/register`). The
+rules: [REVIEW_APPROVE_API_SPEC](spec/REVIEW_APPROVE_API_SPEC.md) §4.
+
+### `user`
+
+```
+python analyzer.py user add --email priya@company.com --name "Priya Sharma" --project-id myproj
+python analyzer.py user password --email priya@company.com
+python analyzer.py user list
+```
+
+Nothing else creates an account: there is no sign-up. `add` makes one and, with `--project-id`, an
+active member of that project (`--role developer` by default; `admin`, `reviewer`). Without
+`--password` a temporary password is printed once; the person changes it after signing in. `password`
+sets a new one (temporary unless given). A project admin can also add a person from the web app's Team
+page, which creates the account the same way.
+
+Several people at once, for development and demos — `tools/create_users.py`:
+
+```
+python tools/create_users.py                                 # the default team: admin@aspice.dev (admin; an existing
+                                                             #   one keeps its password), dev1..dev5@aspice.dev, password demo1234
+python tools/create_users.py --project-id myproj             # ... and added to a project
+python tools/create_users.py --file team.csv --project-id myproj    # header: email,name[,password][,role]
+```
+
+`team.csv` is your own file; copy [tools/team.example.csv](../tools/team.example.csv). An empty
+`password` gets a temporary one (printed once); an empty `role` takes `--role`. Safe to run again: an
+existing account is left as it is (`--reset` sets its password again).
+
 ### `status`, `check`, `report`
 
 ```
@@ -897,6 +1010,49 @@ live *outside* your tree, like a third-party SDK.
 
 ---
 
+## A run that lasts days
+
+The four phases are separate processes that each load the code when they START, so Phase 3 of a run
+started on Monday uses whatever code the folder holds on Wednesday; and a run in a terminal dies with
+the terminal. For anything long, run in the background with `--detach` -- from the CLI, or from the
+web app, which does the same for every run when it has a database (below):
+
+```
+python analyzer.py generate --project-id P --version-id v1 --commit <sha> --scope "component:L1.A,L2.B" --create-version --detach
+python analyzer.py progress --project-id P --version-id v1            # any time; prints time left
+python analyzer.py resume   --project-id P --version-id v1 --detach   # only if progress says STOPPED
+python analyzer.py export   --project-id P --version-id v1 --remaining --detach   # later: the rest
+```
+
+`--detach` copies `analyzer.py`, `engine/`, `api/` and `tools/` into
+`runs/<version>/<time>/code`, starts the same command from that copy in the background — its output
+in `run.log` beside it — and returns. The copy works on this installation's database and workspaces
+(`ANALYZER_DATA_ROOT`, `ANALYZER_WORKSPACES_DIR`), so the version shows in the web app as usual;
+code changes, API restarts and a closed terminal do not reach it. Its full log and LLM statistics are
+in the copy's own `logs/`, next to `run.log`; its exit code goes into `exit.json` there as it exits.
+
+**From the web app.** A Generate (and Components → Generate) runs exactly that: `analyzer.py generate`
+(or `export`) with `--detach`, and the job follows the run through its log, its process and its exit
+code. Restarting the API does not stop it: the next start finds the run and follows it again. If the
+run's process itself dies -- the machine restarts, someone kills it -- the job says **Stopped**, and the
+version keeps everything made so far (once the parse is stored; before that it is removed as always).
+Carry it on with `python analyzer.py resume --project-id P --version-id <version> --detach` (the job's
+message prints it); that also finishes the web job, so the version leaves draft. Cancel stops the run and
+removes the version. Not covered: an API run under systemd with the default `KillMode=control-group`, or
+in a container that is restarted, takes its background runs down with it -- use `KillMode=process`.
+
+**One writer per version.** `generate`, `export`, `reexport`, `resume` and the web app's jobs hold a
+lock on the version while they run (Postgres only); a second one on the same version is refused,
+naming who holds it. The lock goes with the process, so a killed run never leaves its version
+locked. Its database session has TCP keepalives and a heartbeat every two minutes: a session a
+firewall or an idle timeout cut is noticed, and the lock taken again (it says so in the log).
+
+**A component that fails does not stop the others.** The run marks it failed, goes on with the rest,
+stores what they made and exits 3; `resume` makes the failed one again once the cause is fixed. A
+detached run uses the database its starter resolved (`DATABASE_URL`), and records path arguments
+(`--config`, `--source`) as absolute paths, so `resume` can repeat them from anywhere. Other versions are not held up — but two runs that both use the LLM gateway share its
+~1 call / 3 s limit, so run one at a time.
+
 ## When a run stops
 
 | Message | What to do |
@@ -910,6 +1066,11 @@ live *outside* your tree, like a third-party SDK.
 | `ALREADY EXISTS and differs from --config` | The project already has a config. `--force-config` replaces it. |
 | `--config not found: <path>` | The path does not resolve. Nothing was created; fix it and re-run. |
 | `<path> is not valid JSON` | The message prints the offending line and its neighbours. Comments and trailing commas are accepted, so it is usually a missing comma between entries or an unclosed brace. |
+| `version <id> is being written by analyzer <command> pid N on <host>` | Another run holds that version. `progress` shows how far it is; wait, or stop that process. |
+| `progress` says `STOPPED -- the process is gone` | The run was cut short: `python analyzer.py resume ... --detach` (the line under it). |
+| exit code 3, `N document plan(s) failed; the other components' documents were made` | Fix what the named component's log says, then `resume` — it makes only the failed ones. |
+| `has no model to re-export from` (from `reexport`) | Its Phase 2 did not finish: `resume` it first. |
+| `has no model yet: its Phase 2 did not finish` (from `export`) | `resume` the version first. |
 | `bad --scope '...'` | The message lists the four accepted forms. |
 | `Unknown group(s) in the scope: X` | X is probably a **component**, not a group — the message says so and prints the corrected `--scope`. |
 | `clone failed` | `--source` is wrong or unreachable, or the sha is not on that branch. |

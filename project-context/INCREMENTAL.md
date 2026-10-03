@@ -477,6 +477,18 @@ workspaces/<projectId>/
 - **Testing convention:** `_probe_*.py` (run once, delete) + end-to-end on `SampleCppProject`; run **LLM off**
   to validate the logic (hashing / diff / impact / reuse counts), LLM on only for the time-savings payoff.
 
+### 23.5b Staged generation (2026-10-02)
+
+`generate_full` / `generate_incremental(model_only=)` stop after Phase 2 (`--to-phase 2` on the second
+run.py call). `generate_incremental(scope_from_baseline=)` — the CLI's `generate` without `--scope` — takes
+the baseline's scope after the decision, and for a component scope adds every component the baseline has
+documents for (`_scope_like`; `export` adds components after a run, inside the parsed layers, so the parse
+stays the same layers); no baseline = project. `finish_version` closes a version `analyzer.py resume`
+completed: run metadata, reuse index, plan cleared, manifest `complete` (which closes
+`pipeline_status`). The CLI now sets `ANALYZER_VERSION_ID`, so a CLI run's phases write
+`pipeline_status` as a web job's do (they never did) — `resume` reads where it stopped. More in
+[API_AND_FRONTEND](API_AND_FRONTEND.md) "Staged generation".
+
 ### 23.6 Analyzer changes M1/M2 will make
 `run.py` (`--config`/`ANALYZER_CONFIG`, `--incremental`); `core/config.py` (honor `ANALYZER_CONFIG`);
 `parser.py` (partial-parse; entity hashing; slim type/macro index); `model_deriver.py` (incremental mode;

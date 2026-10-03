@@ -375,17 +375,24 @@
         <div class="px-5 py-3.5 border-b border-outline-variant">
           <h2 class="font-headline-sm text-headline-sm text-on-surface">Access</h2>
         </div>
+        <!-- Review and approval (proposal): two roles only; a reviewer is whoever is assigned to a document -->
         <div>
           <div class="access-row">
             <span class="role-admin flex-shrink-0" style="margin-top:1px;">Admin</span>
             <p class="font-label-sm text-label-sm text-on-surface-variant leading-relaxed">
-              Run analysis &nbsp;·&nbsp; Export DOCX &nbsp;·&nbsp; Manage team &nbsp;·&nbsp; Approve documents &nbsp;·&nbsp; Configure project settings
+              Run analysis &nbsp;·&nbsp; Re-export &nbsp;·&nbsp; Manage team &nbsp;·&nbsp; Assign reviewers &nbsp;·&nbsp; Approve, request changes, reopen documents &nbsp;·&nbsp; Configure project settings
             </p>
           </div>
           <div class="access-row">
-            <span class="role-dev flex-shrink-0" style="margin-top:1px;">Dev</span>
+            <span class="role-dev flex-shrink-0" style="margin-top:1px;">Developer</span>
             <p class="font-label-sm text-label-sm text-on-surface-variant leading-relaxed">
-              View documents &nbsp;·&nbsp; Download DOCX &nbsp;·&nbsp; Leave comments &nbsp;·&nbsp; Submit for review &nbsp;·&nbsp; Assign self to documents
+              View and download documents &nbsp;·&nbsp; Correct the LLM's text &nbsp;·&nbsp; Review the documents assigned to them &nbsp;·&nbsp; Submit for approval &nbsp;·&nbsp; Claim an unassigned document
+            </p>
+          </div>
+          <div class="access-row" style="background:#f8f9ff;">
+            <span class="material-symbols-outlined text-on-surface-variant flex-shrink-0" style="font-size:15px;margin-top:1px;">info</span>
+            <p class="font-label-sm text-label-sm text-on-surface-variant leading-relaxed">
+              Reviewer is not a role: whoever is assigned to a document reviews it — one reviewer per document.
             </p>
           </div>
         </div>
@@ -422,17 +429,19 @@
             <input type="radio" name="invite-role" value="developer" checked class="accent-secondary" onchange="setInviteRole('developer')">
             <div>
               <p class="font-label-md text-label-md text-on-surface" style="font-size:12px;">Developer</p>
-              <p class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;">View &amp; review docs</p>
+              <p class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;">Reviews documents</p>
             </div>
           </label>
           <label class="flex-1 flex items-center gap-2.5 px-3 py-2.5 border border-outline-variant rounded-lg cursor-pointer hover:border-secondary transition-colors" id="invite-role-admin-lbl">
             <input type="radio" name="invite-role" value="admin" class="accent-secondary" onchange="setInviteRole('admin')">
             <div>
               <p class="font-label-md text-label-md text-on-surface" style="font-size:12px;">Admin</p>
-              <p class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;">Full access</p>
+              <p class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;">Assigns and approves</p>
             </div>
           </label>
         </div>
+        <!-- Review and approval (proposal): what the selected role can do -->
+        <p id="invite-role-desc" class="font-label-sm text-label-sm text-on-surface-variant leading-relaxed mt-2.5 px-3 py-2 rounded-lg" style="font-size:10px;background:#f8f9ff;"></p>
       </div>
     </div>
     <div class="px-6 pb-5 flex items-center justify-end gap-2">
@@ -464,16 +473,23 @@ const ROLES = {
   developer: { name: 'Bob Kumar',        initials: 'BK' },
 };
 
+// openReviews — Review and approval (proposal): documents this member is the reviewer of, not yet approved
 const TEAM_MEMBERS = [
-  { id: 'SC', name: 'Sarah Chen',    role: 'Admin',     bg: '#dbeafe', text: '#1e40af', lastActive: 'Today',   pending: false },
-  { id: 'ZP', name: 'Zara Patel',    role: 'Admin',     bg: '#fff7ed', text: '#c2410c', lastActive: '3d ago',  pending: false },
-  { id: 'MW', name: 'Marcus Webb',   role: 'Developer', bg: '#f3e8ff', text: '#7c3aed', lastActive: '2d ago',  pending: false },
-  { id: 'AF', name: 'Ana Ferreira',  role: 'Developer', bg: '#fce7f3', text: '#be185d', lastActive: '4d ago',  pending: false },
-  { id: 'LP', name: 'Liam Park',     role: 'Developer', bg: '#ecfdf5', text: '#065f46', lastActive: '1w ago',  pending: false },
-  { id: 'AM', name: 'Arjun M.',      role: 'Developer', bg: '#fef9c3', text: '#92400e', lastActive: '5d ago',  pending: false },
-  { id: 'MS', name: 'Manoj S.',      role: 'Developer', bg: '#e0f2fe', text: '#0369a1', lastActive: '1d ago',  pending: false },
-  { id: 'PR', name: 'priya@company.com', role: 'Developer', bg: '#f3f4f6', text: '#74777d', lastActive: 'Invited 2d ago', pending: true },
+  { id: 'SC', name: 'Sarah Chen',    role: 'Admin',     bg: '#dbeafe', text: '#1e40af', lastActive: 'Today',   pending: false, openReviews: 0 },
+  { id: 'ZP', name: 'Zara Patel',    role: 'Admin',     bg: '#fff7ed', text: '#c2410c', lastActive: '3d ago',  pending: false, openReviews: 1 },
+  { id: 'MW', name: 'Marcus Webb',   role: 'Developer', bg: '#f3e8ff', text: '#7c3aed', lastActive: '2d ago',  pending: false, openReviews: 4 },
+  { id: 'AF', name: 'Ana Ferreira',  role: 'Developer', bg: '#fce7f3', text: '#be185d', lastActive: '4d ago',  pending: false, openReviews: 3 },
+  { id: 'LP', name: 'Liam Park',     role: 'Developer', bg: '#ecfdf5', text: '#065f46', lastActive: '1w ago',  pending: false, openReviews: 0 },
+  { id: 'AM', name: 'Arjun M.',      role: 'Developer', bg: '#fef9c3', text: '#92400e', lastActive: '5d ago',  pending: false, openReviews: 2 },
+  { id: 'MS', name: 'Manoj S.',      role: 'Developer', bg: '#e0f2fe', text: '#0369a1', lastActive: '1d ago',  pending: false, openReviews: 1 },
+  { id: 'PR', name: 'priya@company.com', role: 'Developer', bg: '#f3f4f6', text: '#74777d', lastActive: 'Invited 2d ago', pending: true, openReviews: 0 },
 ];
+
+// Review and approval (proposal): what each role can do — shown under the role choice in the invite dialog
+const ROLE_ACCESS = {
+  admin:     'Run analysis · Re-export · Manage team · Assign reviewers · Approve, request changes, reopen documents · Configure project settings',
+  developer: "View and download documents · Correct the LLM's text · Review the documents assigned to them · Submit for approval · Claim an unassigned document",
+};
 
 const COMMITS = [
   { sha: 'd9a0c55', msg: 'docs: update SWE.3 traceability links', author: 'Manoj S.', time: '1d ago', current: true,  version: 'v1.2.0' },
@@ -483,7 +499,7 @@ const COMMITS = [
 
 const VERSIONS = [
   { tag: 'v1.2.0', sha: 'd9a0c55', desc: 'SWE.3 review draft — all groups',    date: 'Jun 15, 2026', status: 'in_review', docs: 45 },
-  { tag: 'v1.1.0', sha: 'b2c841f', desc: 'Engine + Brake subsystems complete',  date: 'Jun 10, 2026', status: 'approved',  docs: 40 },
+  { tag: 'v1.1.0', sha: 'b2c841f', desc: 'Engine + Brake subsystems added',     date: 'Jun 10, 2026', status: 'approved',  docs: 40 },
   { tag: 'v1.0.0', sha: '3ef70a9', desc: 'Initial ADAS SWE.3 baseline',         date: 'Jun 1, 2026',  status: 'approved',  docs: 35 },
 ];
 
@@ -563,7 +579,8 @@ function renderTeamTable() {
           ${avatarHtml}
           <div class="min-w-0">
             <p class="font-label-md text-label-md text-on-surface truncate" style="font-size:13px;${m.pending ? 'color:#74777d;' : ''}">${m.pending ? m.name : m.name}</p>
-            ${m.pending ? `<p class="font-label-sm text-label-sm" style="color:#f59e0b;font-size:10px;">Pending</p>` : ''}
+            ${m.pending ? `<p class="font-label-sm text-label-sm" style="color:#f59e0b;font-size:10px;">Pending</p>`
+              : m.openReviews ? `<p class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;">${m.openReviews} open review${m.openReviews === 1 ? '' : 's'}</p>` : ''}
           </div>
         </div>
       </td>
@@ -618,6 +635,7 @@ function revokeInvite(idx) {
 
 // ── Invite modal ──
 function openInviteModal() {
+  setInviteRole(document.querySelector('input[name="invite-role"]:checked').value);
   document.getElementById('invite-modal').classList.remove('hidden');
   setTimeout(() => document.getElementById('invite-email').focus(), 100);
 }
@@ -632,6 +650,7 @@ function setInviteRole(role) {
   devLbl.style.background    = role === 'developer' ? '#eff4ff' : '';
   adminLbl.style.borderColor = role === 'admin' ? '#0058be' : '';
   adminLbl.style.background  = role === 'admin' ? '#eff4ff' : '';
+  document.getElementById('invite-role-desc').textContent = ROLE_ACCESS[role];
 }
 function sendInvite() {
   const email = document.getElementById('invite-email').value.trim();
@@ -721,7 +740,7 @@ function renderPickerVersions() {
   const accentCol = s => s === 'approved' ? '#00a572' : s === 'in_review' ? '#f59e0b' : '#c4c6cd';
   const pill = s => {
     if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#f0fdf9;color:#00a572;border:1px solid #86efac;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#00a572;display:inline-block;"></span>Approved</span>`;
-    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In Review</span>`;
+    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In review</span>`;
     return '';
   };
   const activeSha = (COMMITS.find(x => x.current) || {}).sha;

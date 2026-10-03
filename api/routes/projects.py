@@ -78,8 +78,10 @@ def _project_view(project: Project, db: InMemoryDatabase, user_id: str) -> dict:
     return {
         "id": project.id,
         "name": project.name,
-        "client": project.client,
-        "compliance_standard": project.compliance_standard,
+        # A project onboarded from the CLI leaves these empty; the contract's types are strings
+        # and a list, and the web app refuses the whole project on a null.
+        "client": project.client or "",
+        "compliance_standard": project.compliance_standard or "",
         "status": project.status,
         "last_run_at": job.started_at.isoformat() if job else None,
         "current_version": latest.tag if latest else None,
@@ -94,7 +96,7 @@ def _project_view(project: Project, db: InMemoryDatabase, user_id: str) -> dict:
         # before analysis runs — minus the access token (never exposed).
         "build_config": {k: v for k, v in (project.build_config or {}).items()
                          if k != "repo_access_token"},
-        "architecture_layers": project.architecture_layers,
+        "architecture_layers": project.architecture_layers or [],
         **_cores_view(project),
         # Null-safe. A row written by `analyzer.py onboard` has no `updated_at` -- the CLI
         # has no notion of "modified" -- and an unconditional .isoformat() turned the whole
@@ -197,13 +199,14 @@ def create_project(
     # Every team member needs an account, checked BEFORE anything is written: a membership row
     # references users.id, and an unknown address (stored as "pending_<email>") failed that
     # foreign key after the project row existed -- a 500 that left a half-created project.
+    from ..services.accounts import find_user
     unknown = [e for e in ((t.get("email") or "").strip() for t in body.team)
-               if e and not db.users.get_by_email(e)]
+               if e and not find_user(db, e)]
     if unknown:
         raise HTTPException(status_code=404, detail={
             "code": "USER_NOT_FOUND",
-            "message": f"No user account uses {', '.join(unknown)}. Only people who already have "
-                       f"an account can be added to a project.",
+            "message": f"No user account uses {', '.join(unknown)}. Add the project without them, "
+                       f"then invite them from the Team page: an invite creates the account.",
             "status": 404})
     # Stash the repo access token inside build_config; _project_view never echoes
     # build_config, so the token is not exposed in any API response.
@@ -253,7 +256,7 @@ def create_project(
         email = (invite.get("email") or "").strip()
         if not email:
             continue
-        user = db.users.get_by_email(email)
+        user = find_user(db, email)
         if user.id in added:
             continue
         added.add(user.id)

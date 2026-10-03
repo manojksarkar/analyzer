@@ -56,6 +56,19 @@ newer entry and the code win.
   2026-09-30f, is [history file 12](project-context/history/12-2026-09-29-web-app.md). Review & update's
   screen is the document reader's **edit mode** (2026-10-01; [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md)
   "Review & update in the web app").
+- **Review and approval** (assign a reviewer, submit, approve, request changes, reopen; a version is
+  approved when all its documents are) — built on branch `feat/review-approve`, uncommitted, 2026-10-01d.
+  Backend complete before the office's 4-day generation, so what remains is web work. Contract
+  [REVIEW_APPROVE_API_SPEC](docs/spec/REVIEW_APPROVE_API_SPEC.md), design
+  [REVIEW_APPROVE_DESIGN](docs/design/REVIEW_APPROVE_DESIGN.md) (its open questions are still open), rules in
+  `api/services/review_workflow.py`, recording in `api/services/document_registry.py` (every run, CLI too;
+  `analyzer.py register` for older versions); a database upgrades with `analyzer.py setup` (migration 0015).
+- **Staged generation** (2026-10-02, same branch, uncommitted): one model per version, documents per
+  component by any number of runs (`export`, `reexport`, `resume`), `--detach` for runs that last days, one
+  writer per version (migration 0016); web runs go on in the background when the API restarts, and a
+  run that dies keeps its version for `resume` (2026-10-02c). For the office's multi-day run — guide
+  [CLI_COMMANDS](docs/CLI_COMMANDS.md#a-run-that-lasts-days), detail
+  [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Staged generation".
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
 - The status boards that used to head this file (2026-07-20, 2026-08-14) are kept, unchanged, in
@@ -70,7 +83,7 @@ newer entry and the code win.
   (`software_unit_test_specification_<group>.docx`). The LLM writes only wording — descriptions, names,
   flowchart labels ([SWE3_WIKI](docs/spec/SWE3_WIKI.md#descriptions-the-only-llm-written-content)); ids,
   rows, arrows and every flowchart's shape come from the code.
-- **Front door.** `python analyzer.py <command>`: `setup`, `onboard`, `grant`, `generate`, `reexport`,
+- **Front door.** `python analyzer.py <command>`: `setup`, `onboard`, `grant`, `generate`, `export`, `reexport`, `resume`, `progress`, `components`, `register`, `user`,
   `status`, `check`, `report`, `doctor`, `check-llm`, `check-datadict`, `llm-stats`, `verify`. Human
   guide: [docs/CLI_COMMANDS.md](docs/CLI_COMMANDS.md).
 - **Pipeline.** Four phases, each its own Python process, run by `engine/run.py` through

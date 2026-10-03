@@ -1,8 +1,26 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { teamApi } from '../services/api'
+import { useEffect, useState } from 'react'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
+import { teamApi, usersApi } from '../services/api'
 import { projectKeys } from './useProjects'
 import { toast } from '../components/ui/Toast'
 import type { UserRole } from '../types'
+
+/** People with an account whose name or email contains `q` (empty: the first few by name), for
+ *  adding a member. Asks once the typing pauses; the caller is never in the answer. */
+export function useUserSearch(q: string, enabled = true) {
+  const [term, setTerm] = useState(q.trim())
+  useEffect(() => {
+    const t = setTimeout(() => setTerm(q.trim()), 250)
+    return () => clearTimeout(t)
+  }, [q])
+  return useQuery({
+    queryKey: projectKeys.userSearch(term),
+    queryFn: () => usersApi.search(term),
+    enabled,
+    staleTime: 30_000,
+    placeholderData: keepPreviousData,
+  })
+}
 
 export function usePendingMembers(projectId: string, enabled = true) {
   return useQuery({
@@ -28,9 +46,9 @@ export function useInviteMember(projectId: string) {
       teamApi.invite(projectId, email, role),
     onSuccess: (_d, v) => {
       invalidate()
-      toast.success('Invite sent', v.email)
+      toast.success('Added to the project', v.email)
     },
-    onError: (e: Error) => toast.error('Invite failed', e.message),
+    onError: (e: Error) => toast.error('Could not add them', e.message),
   })
 }
 

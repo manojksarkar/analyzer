@@ -32,6 +32,11 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
 class UpdateMeRequest(BaseModel):
     name: str | None = None
     avatar_url: str | None = None
@@ -61,7 +66,8 @@ def _user_to_dict(user: User, role_in_project: str | None = None) -> dict:
 
 @router.post("/signin")
 def signin(body: SignInRequest, db: InMemoryDatabase = Depends(get_db)):
-    user = db.users.get_by_email(body.email)
+    from ..services.accounts import find_user
+    user = find_user(db, body.email)            # as typed, else in lower case (as stored)
     if not user or not verify_password(body.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -72,6 +78,24 @@ def signin(body: SignInRequest, db: InMemoryDatabase = Depends(get_db)):
         "refresh_token": create_refresh_token(user.id),
         "user": _user_to_dict(user),
     }
+
+
+@router.post("/change-password")
+def change_password(
+    body: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """The signed-in user replaces their password -- the temporary one an invite gave them, first."""
+    from ..services import accounts
+    if not verify_password(body.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={
+            "code": "WRONG_PASSWORD", "message": "The current password is not right.", "status": 403})
+    try:
+        accounts.set_password(db, current_user, body.new_password)
+    except accounts.AccountError as exc:
+        raise HTTPException(status_code=422, detail={"code": exc.code, "message": str(exc), "status": 422})
+    return {"message": "Password changed."}
 
 
 @router.post("/refresh")

@@ -80,3 +80,31 @@ class TestPlanRuns:
     def test_filter_mode_forwarded_to_views(self):
         plans = _run({}, filter_mode="public")
         assert "--filter-mode" in plans[0].phases[2].args
+
+
+class TestPlanComponents:
+    """Each document plan names the components it makes -- the folder its document lands in,
+    which is also `documents.group` -- so run.py can mark them generating / generated / failed
+    (staged generation). The model plan names none."""
+
+    CFG = {"layers": {"L": {"path": "", "groups": {"G": {"Math": {}, "App": {}}}}}}
+
+    @staticmethod
+    def _out_dirs(plan):
+        exporter = next(ph for ph in plan.phases if ph.script.endswith("docx_exporter.py"))
+        return [os.path.basename(os.path.dirname(exporter.args[1]))]
+
+    def test_per_component_documents_name_their_component(self):
+        plans = _run(self.CFG, component_per_docx=True)
+        assert plans[0].components == []                     # the model
+        assert len(plans) == 3
+        for p in plans[1:]:
+            assert p.components == self._out_dirs(p)
+
+    def test_a_group_document_names_its_group_folder(self):
+        plans = _run(self.CFG)
+        assert plans[1].components == self._out_dirs(plans[1])
+
+    def test_a_component_scope_names_each_component(self):
+        plans = _run(self.CFG, selected_components=["Math", "App"], component_per_docx=True)
+        assert [p.components for p in plans[1:]] == [["Math"], ["App"]]

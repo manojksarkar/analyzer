@@ -48,7 +48,7 @@ def resolve_snapshot_asset(project_id: str, version_id: str, group: str,
     ``version_id`` is the real ver id (08 step 3): snapshots live under
     ``workspaces/<pid>/versions/<ver…>/output/<group>``. Also tries the legacy commit-addressed
     ``workspaces/<pid>/<version_id[:16]>/output`` so old (commit-keyed) asset URLs still resolve."""
-    ws = _REPO_ROOT / "workspaces" / project_id
+    ws = (_get_settings().analyzer_workspaces_dir or (_REPO_ROOT / "workspaces")) / project_id
     for base_dir in (ws / "versions" / version_id / "output" / group,
                      ws / (version_id or "")[:16] / "output" / group):
         base = base_dir.resolve()

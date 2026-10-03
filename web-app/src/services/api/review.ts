@@ -49,9 +49,11 @@ export const reviewApi = {
       { flowchart_id: flowchartId, labels })
     return r.labels.map(mapSlotSave)
   },
-  /** R9: do the Word files have every correction? And the latest re-export. */
-  readiness: async (pid: string, vid: string): Promise<ExportReadiness> =>
-    mapExportReadiness(await http.get<ApiExportReadiness>(`${base(pid, vid)}/export-readiness`)),
+  /** R9: do the Word files have every correction? And the latest re-export. With a document,
+   *  only that document's component and type (REVIEW_APPROVE_API_SPEC A15). */
+  readiness: async (pid: string, vid: string, documentId?: string): Promise<ExportReadiness> =>
+    mapExportReadiness(await http.get<ApiExportReadiness>(`${base(pid, vid)}/export-readiness`,
+      { document_id: documentId })),
   /** Re-export the version's Word files (admin). Follow it through R9's `reexport`. */
   reexport: async (pid: string, vid: string): Promise<{ jobId: string }> => {
     const r = await http.post<{ job_id: string }>(`${base(pid, vid)}/reexport`)

@@ -3,7 +3,7 @@ from .interfaces import (
     IAccessRequestRepository, IVersionRepository, ICommitRepository,
     IAnalysisJobRepository, IDocumentRepository,
     IDocumentAssignmentRepository, IFunctionRepository,
-    ICompareRepository, INotificationRepository,
+    ICompareRepository, INotificationRepository, IReviewEventRepository,
 )
 
 __all__ = [
@@ -11,5 +11,5 @@ __all__ = [
     "IAccessRequestRepository", "IVersionRepository", "ICommitRepository",
     "IAnalysisJobRepository", "IDocumentRepository",
     "IDocumentAssignmentRepository", "IFunctionRepository",
-    "ICompareRepository", "INotificationRepository",
+    "ICompareRepository", "INotificationRepository", "IReviewEventRepository",
 ]

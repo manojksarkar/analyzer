@@ -1,5 +1,7 @@
 """Notifications routes — /api/v1/notifications/*"""
-from fastapi import APIRouter, Depends
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Query
 
 from ..db.session import get_db
 from ..db.in_memory import InMemoryDatabase
@@ -14,6 +16,7 @@ def _notif_dict(n) -> dict:
     return {
         "id": n.id,
         "project_id": n.project_id,
+        "document_id": getattr(n, "document_id", None),
         "type": n.type,
         "message": n.message,
         "read_at": n.read_at.isoformat() if n.read_at else None,
@@ -23,10 +26,15 @@ def _notif_dict(n) -> dict:
 
 @router.get("")
 def list_notifications(
+    all: Optional[bool] = Query(False, description="read ones too, newest first"),
+    limit: int = Query(30, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
-    notifs = db.notifications.list_unread(current_user.id)
+    if all:
+        notifs = db.notifications.list_for_user(current_user.id, limit=limit)
+    else:
+        notifs = db.notifications.list_unread(current_user.id)
     return {"notifications": [_notif_dict(n) for n in notifs]}
 
 
@@ -36,6 +44,10 @@ def mark_read(
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
+    # Only the caller's own: by id alone, anyone could mark anyone's notification read.
+    mine = db.notifications.get(notification_id)
+    if mine is None or mine.user_id != current_user.id:
+        raise not_found("Notification", notification_id)
     try:
         n = db.notifications.mark_read(notification_id)
     except KeyError:

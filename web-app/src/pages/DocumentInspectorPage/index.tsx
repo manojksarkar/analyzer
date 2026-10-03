@@ -1,10 +1,9 @@
 import { useCallback, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useDocument, useDocuments, useDocumentRender, useTeam, useProject } from '../../hooks/useProjects'
 import { useProjectViewState } from '../../hooks/useProjectViewState'
-import {
-  useApproveDoc, useSelfAssign, useAssignReviewers, useDownloadDoc,
-} from '../../hooks/useDocumentMutations'
+import { useDownloadDoc } from '../../hooks/useDocumentMutations'
+import { useDocumentEvents, useDocumentReadiness } from '../../hooks/useApproval'
 import {
   reexportActive, useExportReadiness, useSaveSlot, useUndoSlot, useVersionOverrides,
 } from '../../hooks/useReview'
@@ -12,24 +11,29 @@ import { useAuthStore } from '../../store/auth'
 import { useUIStore } from '../../store/ui'
 import { DocTreePanel } from '../../components/shell/DocTreePanel'
 import { SubbarCta } from '../../components/shell/SubbarCta'
-import { groupDocsByProcess, buildAssigneeOptions, docxFileName } from '../../lib/docTree'
-import { Card, Icon, Skeleton, Text } from '../../components/ui'
+import { AssignReviewerDialog } from '../../components/review/AssignReviewerDialog'
+import { groupDocsByProcess, buildReviewerOptions, docxFileName, matchesReviewer } from '../../lib/docTree'
+import { wordFileOutOfDate } from '../../lib/reviewStatus'
+import { Card, Icon, Skeleton, Text, toast } from '../../components/ui'
 import { cn } from '../../lib/cn'
 import type { FlowchartEntry, Slot } from '../../types'
 import { Swe4Body, Swe4Strip } from './components/Swe4Reader'
 import { RichSectionView } from './components/Sections'
 import { MetaBanner } from './components/MetaBanner'
-import { ReviewTracker } from './components/ReviewTracker'
-import { AssignReviewersPanel } from './components/AssignReviewersPanel'
+import { ReviewTab } from './components/ReviewTab'
+import { ApproveDialog, ReopenDialog, RequestChangesDialog } from './components/ReviewDialogs'
 import { RightPanel, type PanelTab } from './components/RightPanel'
 import { OutlineTab } from './components/OutlineTab'
 import { CorrectionsTab } from './components/CorrectionsTab'
-import { EditBar, ReadinessBanner } from './components/ReviewBars'
+import { EditBar, ReadinessBanner, ReviewStateBanner } from './components/ReviewBars'
 import { FlowchartLabelDialog } from './components/FlowchartLabelDialog'
 import { TreeRail } from './components/TreeRail'
 import { EditContext, type EditApi } from './editContext'
 import { buildOutline, docCorrections, docSlots, outlineIds, unitCorrectionCounts } from './outline'
+import { isMine, whyNot, type ReviewCtx } from './review'
 import { useScrollSpy } from './useScrollSpy'
+
+type ReviewDialog = 'assign' | 'approve' | 'changes' | 'reopen'
 
 /** Bring a text into view and flash it, so the eye finds it. */
 function reveal(el: Element | null | undefined) {
@@ -47,7 +51,7 @@ export function DocumentInspectorPage() {
   const { data: doc, isLoading } = useDocument(pid, docId ?? '')
   const { data: rich } = useDocumentRender(pid, docId ?? '')
   const { data: team } = useTeam(pid)
-  const { viewVersion, selectedCommit, pageState } = useProjectViewState(pid)
+  const { viewVersion, pageState } = useProjectViewState(pid)
   // The left rail lists every doc of THIS document's version, so you can jump between documents
   // without going back. Not the Subbar's: while a newer run is going, the Subbar shows that
   // run's draft, which has no documents, and the rail said "No documents" beside an open one.
@@ -55,11 +59,11 @@ export function DocumentInspectorPage() {
   const { data: railDocs } = useDocuments(pid, railVersionId ? { versionId: railVersionId } : undefined)
   const versionId = doc?.versionId ?? ''
 
-  const approveDoc = useApproveDoc(pid)
-  const selfAssign = useSelfAssign(pid)
-  const assignReviewers = useAssignReviewers(pid)
   const downloadDoc = useDownloadDoc(pid)
   const { data: readiness } = useExportReadiness(pid, versionId || undefined)
+  // Review and approval: R9 for this document alone (the Approve guard), and its record.
+  const { data: docReadiness, isError: docReadinessFailed } = useDocumentReadiness(pid, versionId || undefined, doc?.id)
+  const { data: events } = useDocumentEvents(pid, doc?.id)
   // `mutateAsync`/`mutate` are stable across renders; the mutation objects are not, and the edit
   // context below must not change on every job poll (it would re-render every correctable text).
   const { mutateAsync: saveText } = useSaveSlot(pid, versionId)
@@ -67,18 +71,27 @@ export function DocumentInspectorPage() {
 
   const isAdmin = project?.userRole === 'admin'
   const isDeveloper = project?.userRole === 'developer'
-  const meName = useAuthStore((s) => s.user?.name ?? '')
+  const meId = useAuthStore((s) => s.user?.id ?? '')
   const panelCollapsed = useUIStore((s) => s.inspectorPanelCollapsed)
   const togglePanel = useUIStore((s) => s.toggleInspectorPanel)
   const treeFolded = useUIStore((s) => s.docTreeFolded)
   const setTreeFolded = useUIStore((s) => s.setDocTreeFolded)
 
   const [canvasEl, setCanvasEl] = useState<HTMLElement | null>(null)
-  const [assignOpen, setAssignOpen] = useState(false)
+  const [dialog, setDialog] = useState<ReviewDialog | null>(null)
   const [assigneeFilter, setAssigneeFilter] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
   const [openChart, setOpenChart] = useState<FlowchartEntry | null>(null)
-  const [tab, setTab] = useState('outline')
+  // `?tab=review` (from the list's Review action, or a notification) opens the Review tab; a
+  // click on a tab takes over from it.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const urlTab = searchParams.get('tab')
+  const [tabState, setTabState] = useState('outline')
+  const tab = urlTab ?? tabState
+  function setTab(t: string) {
+    setTabState(t)
+    if (urlTab) setSearchParams((p) => { p.delete('tab'); return p }, { replace: true })
+  }
 
   const isSwe4 = doc?.process === 'SWE.4'
   const sections = useMemo(() => rich?.sections ?? [], [rich])
@@ -96,17 +109,32 @@ export function DocumentInspectorPage() {
 
   const names = useMemo(() => new Map((team ?? []).map((m) => [m.userId ?? m.id, m.name])), [team])
   const userName = useCallback((id: string | null) => (id ? names.get(id) ?? '' : ''), [names])
+  const nameOf = useCallback((id: string) => names.get(id), [names])
   const locked = pageState === 'running' || reexportActive(readiness)
+  // Approved: locked. No corrections, so no edit mode, until an admin reopens it.
+  const approved = doc?.status === 'approved'
+  const isEditing = editing && canEdit && !approved
+  // A flowchart's labels are SWE.4's test steps too: they lock while the component's SWE.4 is
+  // approved (the server refuses a label save with 409 DOCUMENT_APPROVED).
+  const swe4Approved = !isSwe4 && !!doc && (railDocs ?? []).some(
+    (d) => d.process === 'SWE.4' && d.group === doc.group && d.status === 'approved')
+  const labelsLocked = swe4Approved && doc
+    ? `SWE.4 of ${doc.name} is approved, and its test steps are built from these labels. An admin can reopen it.`
+    : null
   const editApi: EditApi = useMemo(() => ({
-    editing: editing && canEdit,
+    editing: isEditing,
     locked,
     projectId: pid,
     versionId,
     save: (slot: Slot, text: string) => saveText({ slot, text }),
     undo: (slot: Slot) => undoText(slot),
-    openFlowchart: setOpenChart,
+    openFlowchart: (chart: FlowchartEntry) => {
+      if (labelsLocked) toast.info('These labels are locked.', labelsLocked)
+      else setOpenChart(chart)
+    },
+    labelsLocked,
     userName,
-  }), [editing, canEdit, locked, pid, versionId, saveText, undoText, userName])
+  }), [isEditing, locked, pid, versionId, saveText, undoText, labelsLocked, userName])
 
   function jumpToSection(id: string) {
     document.getElementById(`sec-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -118,11 +146,11 @@ export function DocumentInspectorPage() {
       : all.find((el) => el.dataset.slotKey === slot.key))
   }
 
-  // Rail data (assignee filter shared with the dropdown, mirrors DocumentsPage).
+  // Rail data (reviewer filter shared with the dropdown, mirrors DocumentsPage).
   const allRailDocs = railDocs ?? []
-  const railAssignee = assigneeFilter ?? (isDeveloper ? meName : '')
-  const railGroups = groupDocsByProcess(railAssignee ? allRailDocs.filter((d) => d.assignee === railAssignee) : allRailDocs)
-  const railAssignees = buildAssigneeOptions(allRailDocs)
+  const railAssignee = assigneeFilter ?? (isDeveloper ? meId : '')
+  const railGroups = groupDocsByProcess(allRailDocs.filter((d) => matchesReviewer(d, railAssignee)))
+  const railAssignees = buildReviewerOptions(allRailDocs)
 
   if (isLoading) {
     return (
@@ -159,18 +187,29 @@ export function DocumentInspectorPage() {
     )
   }
 
-  const inReview = doc.status === 'in_review'
-  const isUnchanged = doc.status === 'unchanged' || doc.status === 'draft'
+  // An approval carried from an earlier version means the content is the same: nothing to compare.
+  const isUnchanged = !!doc.review.carriedFrom
   // The document's own version (its cover says the same), not the Subbar's pick.
   const refLabel = rich?.cover.version ?? doc.version
-  const assignedToMe = !!meName && doc.assignee === meName
-  const members = (team ?? []).filter((m) => !m.pending)
-  const docStale = !!readiness?.stale
-  const isEditing = editing && canEdit
+  // An approved document downloads the Word file that was approved (a copy is kept), so a later
+  // correction elsewhere in the version does not make it out of date.
+  const docStale = !approved && !!readiness?.stale
+  const reviewCtx: ReviewCtx = {
+    isAdmin: !!isAdmin,
+    meId,
+    wordFileStale: wordFileOutOfDate(docReadiness),
+    reexporting: reexportActive(readiness) || reexportActive(docReadiness),
+  }
+  const changesEvent = events?.find((e) => e.kind === 'changes_requested')
+  const docCorrectionCount = isSwe4 || !canEdit ? null : corrections.inForce.length
+  function openReview() {
+    setTab('review')
+    if (panelCollapsed) togglePanel()
+  }
 
   const tabs: PanelTab[] = [
     { id: 'outline', label: 'Outline' },
-    ...(inReview ? [{ id: 'review', label: 'Review' }] : []),
+    { id: 'review', label: 'Review' },
     ...(canEdit ? [{ id: 'corr', label: 'Corrections', count: corrections.inForce.length }] : []),
   ]
   const activeTab = tabs.some((t) => t.id === tab) ? tab : 'outline'
@@ -185,12 +224,14 @@ export function DocumentInspectorPage() {
           <button
             onClick={() => setEditing((v) => !v)}
             aria-pressed={isEditing}
+            disabled={approved}
+            title={approved ? 'Approved: locked. An admin can reopen it.' : undefined}
             className={cn(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors font-mono text-caption font-bold tracking-[0.04em] border',
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors font-mono text-caption font-bold tracking-[0.04em] border disabled:opacity-45 disabled:cursor-not-allowed',
               isEditing ? 'bg-secondary border-secondary text-on-secondary hover:bg-secondary-container' : 'border-secondary text-secondary bg-white hover:bg-surface-container-low',
             )}
           >
-            <Icon name={isEditing ? 'check' : 'edit'} size={14} />
+            <Icon name={approved ? 'lock' : isEditing ? 'check' : 'edit'} size={14} />
             {isEditing ? 'DONE' : 'EDIT'}
           </button>
         </SubbarCta>
@@ -202,7 +243,7 @@ export function DocumentInspectorPage() {
           groups={railGroups}
           assigneeOptions={railAssignees}
           effectiveAssignee={railAssignee}
-          meName={meName}
+          meId={meId}
           isDeveloper={!!isDeveloper}
           activeDocId={doc.id}
           onPickAssignee={setAssigneeFilter}
@@ -215,6 +256,16 @@ export function DocumentInspectorPage() {
       <main ref={setCanvasEl} className="flex-1 overflow-y-auto bg-surface-container-low">
         {isEditing && <EditBar locked={locked} />}
         <div className="max-w-5xl mx-auto px-6 py-8">
+          <ReviewStateBanner
+            doc={doc}
+            isAdmin={!!isAdmin}
+            isMine={isMine(doc, { meId })}
+            changesBy={changesEvent?.actor?.name}
+            changesAt={changesEvent?.at}
+            versionTag={refLabel}
+            onReopen={() => setDialog('reopen')}
+            onOpenReview={openReview}
+          />
           {versionId && (
             <ReadinessBanner projectId={pid} versionId={versionId} readiness={readiness} isAdmin={!!isAdmin} />
           )}
@@ -251,7 +302,7 @@ export function DocumentInspectorPage() {
                   </button>
                   {!isUnchanged && (
                     <button
-                      onClick={() => navigate(`/projects/${pid}/compare`)}
+                      onClick={() => navigate(`/projects/${pid}/compare?doc=${doc.id}`)}
                       title="Compare vs reference"
                       className="flex items-center gap-1.5 px-3 py-2 border border-outline-variant hover:border-secondary hover:text-secondary text-on-surface-variant rounded-lg transition-colors font-mono text-caption font-medium"
                     >
@@ -292,17 +343,23 @@ export function DocumentInspectorPage() {
       {/* ── Right panel: Outline · Review · Corrections ── */}
       <RightPanel tabs={tabs} active={activeTab} onTab={setTab} collapsed={panelCollapsed} onToggle={togglePanel}>
         {activeTab === 'review' ? (
-          <ReviewTracker
-            sections={doc.sections}
-            progress={doc.reviewProgress}
-            reviewer={doc.assignee}
-            reviewerInitials={doc.assigneeInitials}
-            isAdmin={!!isAdmin}
-            assignedToMe={assignedToMe}
-            onMarkComplete={() => approveDoc.mutate(doc.id)}
-            onReassign={() => setAssignOpen(true)}
-            onAssignToMe={() => selfAssign.mutate(doc.id)}
-            onJump={jumpToSection}
+          <ReviewTab
+            key={doc.id}
+            projectId={pid}
+            versionId={versionId}
+            doc={doc}
+            versionTag={refLabel}
+            ctx={reviewCtx}
+            readiness={docReadiness}
+            readinessFailed={docReadinessFailed}
+            corrections={docCorrectionCount}
+            isSwe3={!isSwe4}
+            nameOf={nameOf}
+            onAssign={() => setDialog('assign')}
+            onApprove={() => setDialog('approve')}
+            onChanges={() => setDialog('changes')}
+            onReopen={() => setDialog('reopen')}
+            onSubmitted={() => setEditing(false)}
           />
         ) : activeTab === 'corr' ? (
           <CorrectionsTab
@@ -318,18 +375,23 @@ export function DocumentInspectorPage() {
         )}
       </RightPanel>
 
-      {/* ── Assign reviewers slide-in ── */}
-      {assignOpen && (
-        <AssignReviewersPanel
-          members={members}
-          refLabel={refLabel}
-          shortSha={selectedCommit?.shortSha ?? viewVersion?.shortSha}
-          busy={assignReviewers.isPending}
-          onClose={() => setAssignOpen(false)}
-          onAssign={(userId) =>
-            assignReviewers.mutate({ docId: doc.id, userIds: [userId] }, { onSuccess: () => setAssignOpen(false) })
-          }
+      {/* ── Review and approval dialogs ── */}
+      {dialog === 'assign' && (
+        <AssignReviewerDialog projectId={pid} documents={[doc]} allDocuments={allRailDocs} onClose={() => setDialog(null)} />
+      )}
+      {dialog === 'approve' && (
+        <ApproveDialog
+          projectId={pid}
+          doc={doc}
+          corrections={docCorrectionCount}
+          blocked={whyNot('approve', doc, reviewCtx)}
+          onClose={() => setDialog(null)}
+          onDone={() => setEditing(false)}
         />
+      )}
+      {dialog === 'changes' && <RequestChangesDialog projectId={pid} doc={doc} onClose={() => setDialog(null)} />}
+      {dialog === 'reopen' && (
+        <ReopenDialog projectId={pid} doc={doc} onClose={() => setDialog(null)} onDone={() => setEditing(false)} />
       )}
 
       {/* ── One flowchart's labels (edit mode) ── */}

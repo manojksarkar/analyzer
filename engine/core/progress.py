@@ -64,6 +64,7 @@ class ProgressReporter:
             self._idx = 0
             text = msg or (f"start ({self.total} items)" if self.total else "start")
             self.logger.info(text)
+            self._publish(force=True)
 
     def step(self, label: Optional[str] = None) -> None:
         """Advance the counter by one and (optionally) update the live line."""
@@ -72,6 +73,7 @@ class ProgressReporter:
                 self.start()
             self._idx += 1
             self._render(label)
+            self._publish()
 
     def done(self, summary: Optional[str] = None) -> None:
         with self._lock:
@@ -79,6 +81,19 @@ class ProgressReporter:
             elapsed = time.perf_counter() - self._t0 if self._t0 else 0.0
             tail = f" — {summary}" if summary else ""
             self.logger.info(f"done in {elapsed:.2f}s{tail}")
+            self._publish(force=True)
+
+    def _publish(self, force: bool = False) -> None:
+        """Put this stage's progress on the version's run row, so `analyzer.py progress` can
+        show how far a run that lasts days has got (`core.version_run.progress`: throttled, and
+        a no-op without a version or a database). Never raises."""
+        try:
+            from core.version_run import progress
+            progress(self.component, self._idx, self.total,
+                     time.time() - (time.perf_counter() - self._t0) if self._t0 else None,
+                     force=force)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # rendering

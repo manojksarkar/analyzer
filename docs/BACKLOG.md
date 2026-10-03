@@ -107,6 +107,15 @@
 | RF-14 | About 80 source-text grep checks break on renames elsewhere -- AST or behaviour tests would hold up better; `test_project_context_fits.py` belongs in a docs-lint step, not the unit suite | debt | open | tests/ |
 | RF-15 | Nits: `render_queue` uses no `begin_nested()` per job on PG; `set_entity_field` has no `project_id` filter; `schema.py` server defaults differ from 0010 for `is_orphaned` and `group_name`; 2 redundant indexes; `DB_SCHEMA.md` ER diagram errors; `clone.py` lacks `--end-of-options` and a hex check on `commit_sha`; `grant_access --all` defaults to admin and has an undefined `reviewer` role; `cascade._drop_overridden` counts orphans; `rerender` patches only the first copy; `carry_forward` keeps a stale `llm_text`; wrong docstring in `incremental/engine.py`; `_stamp_derivation` shares the capture transaction; `onboard --owner <unknown>` exits 2; `--sqlite` setup skips the column repair | debt | open | review/render_queue.py, api/db/postgres/schema.py, clone.py:199, review/carry_forward.py:324, incremental/engine.py:550-557, tools/grant_access.py |
 
+## Staged generation — long runs (2026-10-02)
+| ID | Item | Type | Status | Ref |
+|---|---|---|---|---|
+| SG-1 | Web **Resume** button on the Components panel. The route (`POST …/versions/{vid}/resume`) and `resume_action` exist; until then `analyzer.py resume --detach` on the server, which also finishes the web job | enhance | deferred (user) | web-app ComponentsPanel, api/routes/version_components.py |
+| SG-2 | A run's 7 components get documents only after Phase 2 has described every function of its layers — order the descriptions by the requested components, or describe the rest at `export` | enhance | parked (user) | engine/model_deriver.py |
+| SG-3 | Frozen code copies under `runs/` are never deleted (~10 MB per web run); a cleanup must not follow the copy's `node_modules` junction | debt | open | engine/core/frozen_run.py |
+| SG-4 | A web re-export still runs as the API's child and dies with it | issue | open | api/services/pipeline_runner.py `_run_reexport` |
+| SG-5 | `--detach` not proved on Linux; an API under systemd (default `KillMode=control-group`) or in a restarted container takes its background runs down | risk | open | docs/CLI_COMMANDS.md "A run that lasts days" |
+
 ## SWE.2 — architecture
 | ID | Item | Type | Status | Ref |
 |---|---|---|---|---|

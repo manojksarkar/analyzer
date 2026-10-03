@@ -26,7 +26,7 @@ def _snap(project_id: str, commit_sha: str, version_id: Optional[str] = None) ->
     """Version snapshot dir. Prefers the version-keyed layout
     ``workspaces/<pid>/versions/<ver…>`` (08 step 3); falls back to the commit dir
     ``workspaces/<pid>/<commit[:16]>`` for pre-migration snapshots."""
-    ws = _REPO_ROOT / "workspaces" / project_id
+    ws = (_get_settings().analyzer_workspaces_dir or (_REPO_ROOT / "workspaces")) / project_id
     if version_id:
         d = ws / "versions" / version_id
         if d.is_dir():

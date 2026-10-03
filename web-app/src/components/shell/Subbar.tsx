@@ -2,17 +2,11 @@ import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useVersions, useCommits, useCommitsLastSync, useProjects } from '../../hooks/useProjects'
 import { useUIStore, type Selection } from '../../store/ui'
-import { Icon, Skeleton } from '../ui'
+import { Icon, Skeleton, StatusBadge } from '../ui'
 import { cn } from '../../lib/cn'
 import { relativeTime } from '../../lib/format'
-import type { Version, Commit, VersionStatus, PageState } from '../../types'
-
-/* ─── Version-status accent (left stripe) ─── */
-function versionAccentClass(status: VersionStatus): string {
-  if (status === 'approved' || status === 'complete') return 'bg-[#00a572]'
-  if (status === 'in_review') return 'bg-amber'
-  return 'bg-outline-variant'
-}
+import { STATUS_META, approvalLabel, pageStateStatus } from '../../lib/reviewStatus'
+import type { Version, Commit, PageState } from '../../types'
 
 /* ─── Commit timeline dot colours (fill + border) ─── */
 function commitDotClass(commit: Commit, isCurrent: boolean): string {
@@ -21,32 +15,25 @@ function commitDotClass(commit: Commit, isCurrent: boolean): string {
   return cn(fill, border)
 }
 
-/* ─── Page-state badge for commit rows ─── */
-const STATE_MAP: Record<PageState, { icon: string; text: string; cls: string } | null> = {
-  never:     { icon: 'radio_button_unchecked', text: 'Not Run',   cls: 'bg-[#f3f4f6] text-outline border-[#e2e3e8]' },
-  running:   { icon: 'progress_activity',       text: 'Running',   cls: 'bg-surface-container text-secondary border-[#9cc3ff]' },
-  in_review: { icon: 'rate_review',             text: 'In Review', cls: 'bg-[#fff8e6] text-[#b45309] border-amber' },
-  complete:  { icon: 'check_circle',            text: 'Complete',  cls: 'bg-[#f0fdf9] text-[#00a572] border-[#86efac]' },
-  stale:     { icon: 'warning',                 text: 'Stale',     cls: 'bg-[#fffbeb] text-[#d97706] border-amber' },
-}
-
-/* ─── Subbar status badge (matches project-detail.html updateStatusBadge) ─── */
-const STATUS_BADGE: Record<PageState, { icon: string; text: string; cls: string }> = {
-  never:     { icon: 'radio_button_unchecked', text: 'Not Run',   cls: 'bg-[#f3f4f6] text-outline border-[#e2e3e8]' },
-  running:   { icon: 'sync',                    text: 'Running',   cls: 'bg-surface-container text-secondary border-[#bfcfff]' },
-  in_review: { icon: 'rate_review',             text: 'In Review', cls: 'bg-[#fff8e6] text-[#b45309] border-amber' },
-  complete:  { icon: 'check_circle',            text: 'Complete',  cls: 'bg-[#f0fdf9] text-[#00a572] border-[#86efac]' },
-  stale:     { icon: 'warning',                 text: 'Stale',     cls: 'bg-[#fffbeb] text-[#d97706] border-amber' },
-}
-
-export function StatusBadge({ state }: { state: PageState }) {
-  const c = STATUS_BADGE[state] ?? STATUS_BADGE.never
-  return (
-    <span className={cn('inline-flex items-center gap-1 font-mono text-label font-bold px-2 py-0.5 rounded-full whitespace-nowrap border', c.cls)}>
-      <Icon name={c.icon} size={11} fill />
-      {c.text}
-    </span>
-  )
+/* ─── Subbar status chip: the version on screen, derived from its documents ─── */
+// "In review · 3/6 approved" or "Approved" (REVIEW_APPROVE_DESIGN: a version is approved when
+// every one of its documents is — never set by hand).
+export function VersionStatusChip({ state, version }: { state: PageState; version?: Version }) {
+  const key = pageStateStatus(state)
+  const r = version?.review
+  if ((key === 'in_review' || key === 'approved') && r && r.documents > 0) {
+    const all = r.approved === r.documents
+    return (
+      <StatusBadge
+        status={all ? 'approved' : 'in_review'}
+        label={approvalLabel(r.approved, r.documents)}
+        title={all
+          ? `Every document is approved${r.approvedBy ? ` (last by ${r.approvedBy.name})` : ''}`
+          : `${version.tag} is approved when every one of its ${r.documents} documents is`}
+      />
+    )
+  }
+  return <StatusBadge status={key} />
 }
 
 /* ─── Version row ─── */
@@ -59,17 +46,12 @@ function VersionRow({ version, isActive, onSelect }: { version: Version; isActiv
         isActive ? 'bg-[#f5f8ff]' : 'hover:bg-[#f8f9fa]',
       )}
     >
-      <div className={cn('w-[3px] flex-shrink-0', versionAccentClass(version.status))} aria-hidden />
+      <div className={cn('w-[3px] flex-shrink-0', version.status === 'draft' ? 'bg-outline-variant' : STATUS_META[version.status].dot)} aria-hidden />
       <div className="flex-1 min-w-0 pt-[11px] pr-3 pb-2.5 pl-2.5">
         <div className="flex items-center justify-between gap-2 mb-[3px]">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-mono text-xs font-bold text-on-surface">{version.tag}</span>
-            {version.status === 'in_review' && (
-              <span className="inline-flex items-center gap-1 font-mono text-[8px] font-bold bg-[#fff8e6] text-[#b45309] border border-amber px-1.5 rounded-full uppercase tracking-[0.04em]">
-                <span className="inline-block w-1 h-1 rounded-full bg-amber" aria-hidden />
-                In Review
-              </span>
-            )}
+            {version.status === 'in_review' && <StatusBadge status="in_review" size="sm" />}
           </div>
           {isActive && <Icon name="check" size={15} className="text-secondary flex-shrink-0" />}
         </div>
@@ -77,16 +59,27 @@ function VersionRow({ version, isActive, onSelect }: { version: Version; isActiv
         <div className="flex items-center gap-2">
           <span className="font-mono text-label text-outline bg-[#f3f4f6] px-[5px] py-px rounded-lg">{version.shortSha}</span>
           <span className="text-label text-outline">{version.date}</span>
-          <span className="text-label text-outline">{version.docsCount} docs</span>
+          <VersionProgress version={version} />
         </div>
       </div>
     </button>
   )
 }
 
+/* "3 of 6 approved" while in review; "6 docs · by Alice" once approved (versions.html picker). */
+function VersionProgress({ version }: { version: Version }) {
+  const r = version.review
+  if (!r || version.status === 'draft' || r.documents === 0) {
+    return <span className="text-label text-outline">{version.docsCount} docs</span>
+  }
+  if (version.status === 'approved') {
+    return <span className="text-label text-outline">{r.documents} docs{r.approvedBy ? ` · by ${r.approvedBy.name}` : ''}</span>
+  }
+  return <span className="text-label text-[#b45309]">{r.approved} of {r.documents} approved</span>
+}
+
 /* ─── Commit row (timeline) ─── */
 function CommitRow({ commit, isCurrent, isLast, onSelect }: { commit: Commit; isCurrent: boolean; isLast: boolean; onSelect: () => void }) {
-  const sm = STATE_MAP[commit.pageState]
   return (
     <button
       onClick={onSelect}
@@ -105,11 +98,7 @@ function CommitRow({ commit, isCurrent, isLast, onSelect }: { commit: Commit; is
                 <Icon name="sell" size={10} />{commit.versionTag}
               </span>
             )}
-            {sm && (
-              <span className={cn('inline-flex items-center gap-0.5 font-mono text-[8px] font-bold px-[5px] rounded-full whitespace-nowrap border', sm.cls)}>
-                <Icon name={sm.icon} size={9} fill />{sm.text}
-              </span>
-            )}
+            <StatusBadge status={pageStateStatus(commit.pageState)} size="sm" />
           </div>
           {isCurrent && <Icon name="check" size={14} className="text-secondary flex-shrink-0" />}
         </div>

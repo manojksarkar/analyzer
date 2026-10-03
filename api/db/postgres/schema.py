@@ -221,6 +221,9 @@ notifications = Table(
     Column("message", Text),
     _ts("read_at"),
     _ts("created_at"),
+    # The document a review notification is about (0015). No foreign key: the notification
+    # outlives a deleted version's documents, and says what happened.
+    Column("document_id", String),
     Index("ix_notifications_user", "user_id"),
 )
 
@@ -237,11 +240,22 @@ documents = Table(
     Column("subtitle", String),
     Column("layer", String),
     Column("component", String),        # domain field is `group` (a SQL reserved word)
-    Column("status", String),
+    Column("status", String),           # in_review|submitted|changes_requested|approved
     Column("due_date", Date),
     Column("docx_path", String),        # artifact stays on disk; DB keeps the path
     _ts("created_at"),
     _ts("updated_at"),
+    # Review and approval (0015; docs/spec/REVIEW_APPROVE_API_SPEC.md). The record of each step
+    # is `document_review_events`; these columns are the document's current state.
+    Column("review_comment", Text),
+    Column("changes_comment", Text),
+    Column("approved_by", String),
+    _ts("approved_at"),
+    Column("approval_comment", Text),
+    Column("docx_sha256", String),          # the Word file that was approved
+    Column("approved_docx_path", String),   # the copy of it kept at approval
+    Column("content_fingerprint", String),  # of the rendered content, at approval
+    Column("carried_from", String),         # version id an unchanged approval came from
     Index("ix_documents_version", "version_id"),
 )
 
@@ -265,6 +279,63 @@ document_assignments = Table(
     Column("user_id", String, ForeignKey("users.id"), nullable=False),
     Column("assigned_by", String),
     _ts("assigned_at"),
+    # One reviewer per document (0015): assigning replaces.
+    UniqueConstraint("document_id", name="uq_document_assignments_document"),
+)
+
+# The review record (0015): one row per step -- assigned, submitted, approved, changes requested,
+# reopened, carried. Who, when, why. It is the ASPICE review evidence, and what the activity
+# feeds and notifications are made from.
+document_review_events = Table(
+    "document_review_events", metadata,
+    Column("id", String, primary_key=True),
+    Column("document_id", String, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False),
+    Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("kind", String, nullable=False),
+    Column("actor_id", String),             # NULL: the run did it
+    _ts("at", nullable=False),
+    Column("comment", Text),
+    Column("payload", _JSONB),
+    Index("ix_review_events_document", "document_id"),
+    Index("ix_review_events_project_at", "project_id", "at"),
+)
+
+# Staged generation: a version's model covers whole layers, its documents are made per component,
+# by any number of runs (`generate`, `export`, `reexport`, `resume`). One row per component a run
+# ASKED for; a component of the parsed layers with no row and no documents is "not requested" --
+# worked out when read (`api/services/version_components.py`), so older versions need no rows.
+version_components = Table(
+    "version_components", metadata,
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), primary_key=True),
+    Column("component", String, primary_key=True),   # its output folder = documents.group
+    Column("state", String, nullable=False),          # waiting|generating|generated|failed
+    _ts("requested_at"),
+    _ts("started_at"),
+    _ts("finished_at"),
+    Column("error", Text),
+)
+
+# The version's latest writing run and how far it got. Whether it is still ALIVE is the
+# version's writer lock (a Postgres advisory lock its process holds, `engine/core/version_run.py`),
+# never this row: a killed run cannot update it.
+version_runs = Table(
+    "version_runs", metadata,
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), primary_key=True),
+    Column("command", String),            # generate | export | reexport | resume | web
+    Column("argv", _JSONB),               # the command line, so `resume` can repeat it
+    Column("pid", Integer),
+    Column("host", String),
+    Column("code_dir", String),           # the frozen code a detached run uses
+    Column("log_path", String),
+    _ts("started_at"),
+    _ts("finished_at"),
+    Column("outcome", String),            # running | complete | failed
+    Column("stage", String),              # the progress reporter's stage, e.g. LLM-description-pass1
+    Column("done", Integer),
+    Column("total", Integer),
+    _ts("stage_started_at"),
+    _ts("progress_at"),
 )
 
 compare_results = Table(

@@ -26,9 +26,25 @@ export function docxFileName(doc: Pick<Document, 'process' | 'group' | 'name'>):
   return prefix ? `${prefix}_${doc.group ?? doc.name}` : `${doc.process}_${doc.name}`
 }
 
-/** Distinct, sorted assignee names from a doc set (for the rail dropdown). */
-export function buildAssigneeOptions(docs: Document[]): string[] {
-  return [...new Set(docs.map((d) => d.assignee).filter((a): a is string => !!a))].sort()
+/** The reviewer filter's value for "Needs a reviewer" (the API's `assignee_id=none`). */
+export const NEEDS_REVIEWER = 'none'
+
+/** One choice of the reviewer filter: a reviewer's user id, and their name. */
+export interface ReviewerOption { value: string; label: string }
+
+/** The distinct reviewers of a doc set, by name (for the reviewer filter). */
+export function buildReviewerOptions(docs: Document[]): ReviewerOption[] {
+  const byId = new Map<string, string>()
+  for (const d of docs) if (d.reviewer) byId.set(d.reviewer.userId, d.reviewer.name)
+  return [...byId].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label))
+}
+
+/** Whether a document passes the reviewer filter: '' every one, `none` those without a
+ *  reviewer, else those the user (by id) reviews. */
+export function matchesReviewer(doc: Pick<Document, 'reviewer'>, filter: string): boolean {
+  if (!filter) return true
+  if (filter === NEEDS_REVIEWER) return !doc.reviewer
+  return doc.reviewer?.userId === filter
 }
 
 /** Group docs by process in the canonical order, dropping empty processes. */

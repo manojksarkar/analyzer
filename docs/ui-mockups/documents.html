@@ -97,15 +97,6 @@
   .comp-dot { width: 6px; height: 6px; border-radius: 50%; background: #c4c6cd; flex-shrink: 0; }
 
 
-  /* Assign panel */
-  .assign-panel {
-    width: 0; flex-shrink: 0; overflow: hidden;
-    transition: width 0.3s cubic-bezier(0.4,0,0.2,1);
-    border-left: 1px solid #c4c6cd; background: #ffffff;
-    display: flex; flex-direction: column;
-  }
-  .assign-panel.open { width: 308px; }
-
   /* Diff blocks */
   .diff-added   { border-left: 3px solid #00a572; background: rgba(0,165,114,.06); border-radius: 4px; }
   .diff-removed { border-left: 3px solid #ba1a1a; background: rgba(186,26,26,.06); border-radius: 4px; }
@@ -118,11 +109,6 @@
   .log-line { animation: log-in 0.18s ease forwards; }
   @keyframes bar-pulse { 0%,100% { opacity:1; } 50% { opacity:.7; } }
   .bar-pulse { animation: bar-pulse 1.2s ease-in-out infinite; }
-
-  /* Review tracker bar */
-  .rev-bar { height: 6px; border-radius: 3px; background: #e5eeff; overflow: hidden; }
-  .rev-bar-fill { height: 100%; border-radius: 3px; background: #0058be; transition: width 0.4s ease; }
-  .rev-bar-fill.done { background: #00a572; }
 
   /* Subbar pills */
   .subbar-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid #c4c6cd; border-radius: 6px; background: #fff; transition: background .1s, border-color .1s; cursor: pointer; }
@@ -329,6 +315,76 @@
   .tree-rail .vt { writing-mode: vertical-rl; font: 600 10px 'JetBrains Mono'; letter-spacing: .1em; text-transform: uppercase; }
   .tree-fold { color: #74777d; border-radius: 4px; padding: 2px; display: flex; }
   .tree-fold:hover { color: #0058be; background: #eff4ff; }
+
+  /* ── Review and approval (proposal): one reviewer per document, four states, every step on record ── */
+  .badge-ready   { background: #e5eeff; color: #0058be; border: 1px solid #8ab0f0; }
+  .badge-changes { background: #fff1f0; color: #ba1a1a; border: 1px solid #f5a3a3; }
+  .av { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; flex-shrink: 0; font: 700 9px Inter; }
+  .av.none { border: 1px dashed #c4c6cd; color: #74777d; background: #fff; }
+  .rv-sec { padding: 12px 12px 0; }
+  .rv-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 0; border-bottom: 1px solid #eef1f6; }
+  .rv-k { font: 600 10px 'JetBrains Mono'; color: #74777d; text-transform: uppercase; letter-spacing: .06em; flex-shrink: 0; }
+  .rv-v { font-size: 11.5px; color: #0b1c30; display: flex; align-items: center; gap: 5px; min-width: 0; text-align: right; }
+  .rv-v a { color: #0058be; cursor: pointer; font: 600 10px 'JetBrains Mono'; }
+  .rv-v a:hover { text-decoration: underline; }
+  .rv-box { border-radius: 8px; border: 1px solid; padding: 9px 10px; font-size: 11.5px; line-height: 1.45; }
+  .rv-box .rv-k { display: block; margin-bottom: 3px; }
+  .rv-box.ok { background: #f0fdf9; border-color: #86efac; color: #065f46; }
+  .rv-box.info { background: #eff4ff; border-color: #b9cdf5; color: #0b1c30; }
+  .rv-box.bad { background: #fff1f0; border-color: #f5a3a3; color: #0b1c30; }
+  .rv-hash { font: 500 10px 'JetBrains Mono'; color: #44474c; margin-top: 4px; }
+  .rv-meta { font: 500 10px 'JetBrains Mono'; color: #74777d; margin-top: 4px; }
+  .rv-btn { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 7px 10px; border-radius: 6px; font: 600 11px 'JetBrains Mono'; margin-top: 8px; border: 1px solid transparent; }
+  .rv-btn .material-symbols-outlined { font-size: 14px; }
+  .rv-btn:disabled { opacity: .45; cursor: not-allowed; }
+  .rv-btn.p { background: #0058be; color: #fff; }
+  .rv-btn.p:hover:not(:disabled) { background: #2170e4; }
+  .rv-btn.ok { background: #00a572; color: #fff; }
+  .rv-btn.ok:hover:not(:disabled) { background: #008a5f; }
+  .rv-btn.bad { border-color: #f5a3a3; color: #ba1a1a; background: #fff; }
+  .rv-btn.bad:hover:not(:disabled) { background: #fff1f0; }
+  .rv-btn.o { border-color: #c4c6cd; color: #0b1c30; background: #fff; }
+  .rv-btn.o:hover:not(:disabled) { background: #eff4ff; }
+  .rv-why { font-size: 11px; color: #b45309; margin-top: 5px; line-height: 1.4; }
+  .rv-note { font-size: 11px; color: #44474c; margin-top: 6px; line-height: 1.4; }
+  textarea.rv-ta { width: 100%; resize: vertical; min-height: 64px; border: 1px solid #c4c6cd; border-radius: 6px; padding: 6px 8px; font: 12px/1.45 Inter; }
+  textarea.rv-ta:focus { outline: 2px solid #0058be; border-color: #0058be; }
+  .tl { position: relative; padding: 0 0 12px 16px; }
+  .tl::before { content: ''; position: absolute; left: 2px; top: 5px; width: 7px; height: 7px; border-radius: 50%; background: #c4c6cd; }
+  .tl::after { content: ''; position: absolute; left: 5px; top: 15px; bottom: 0; width: 1px; background: #e5eeff; }
+  .tl:last-child::after { display: none; }
+  .tl.approved::before, .tl.carried::before { background: #00a572; }
+  .tl.submitted::before { background: #0058be; }
+  .tl.changes_requested::before { background: #ba1a1a; }
+  .tl.assigned::before, .tl.claimed::before { background: #7c3aed; }
+  .tl.reopened::before { background: #b45309; }
+  .tl p { font-size: 11.5px; line-height: 1.4; color: #0b1c30; }
+  .tl .q { color: #44474c; margin-top: 2px; }
+  .tl .w { font: 500 10px 'JetBrains Mono'; color: #74777d; margin-top: 2px; }
+  .rv-banner { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; margin-bottom: 14px; border-radius: 10px; border: 1px solid; font-size: 12px; line-height: 1.45; }
+  .rv-banner .act { margin-left: auto; flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 6px; font: 600 10px 'JetBrains Mono'; border: 1px solid; background: #fff; }
+  .rv-banner.ok { background: #f0fdf9; border-color: #86efac; color: #065f46; }
+  .rv-banner.bad { background: #fff1f0; border-color: #f5a3a3; color: #93000a; }
+  .rv-banner.info { background: #eff4ff; border-color: #b9cdf5; color: #0b1c30; }
+  .ver-bar { padding: 12px 20px; border-bottom: 1px solid #c4c6cd; background: #f8f9ff; }
+  .ver-track { height: 8px; border-radius: 4px; overflow: hidden; display: flex; background: #e5eeff; }
+  .ver-leg { display: inline-flex; align-items: center; gap: 5px; font: 500 11px 'JetBrains Mono'; color: #44474c; padding: 2px 6px; border-radius: 4px; }
+  .ver-leg:hover { background: #e5eeff; color: #0b1c30; }
+  .ver-leg i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .rv-dialog { width: min(460px, 94vw); background: #fff; border-radius: 12px; box-shadow: 0 20px 60px rgba(4,22,39,.3); overflow: hidden; }
+  .rv-dialog .hd { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px; border-bottom: 1px solid #c4c6cd; }
+  .rv-dialog .bd { padding: 14px 18px; font-size: 12px; color: #0b1c30; }
+  .rv-dialog .ft { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 18px; border-top: 1px solid #c4c6cd; }
+  .rv-dialog .ft .rv-btn { width: auto; margin-top: 0; padding: 7px 14px; }
+  .pick { width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin-bottom: 6px; border: 1px solid #c4c6cd; border-radius: 8px; text-align: left; background: #fff; }
+  .pick:hover { border-color: #0058be; background: #f8f9ff; }
+  .pick.on { border-color: #0058be; background: #eff4ff; }
+  .bell-dd { position: absolute; top: calc(100% + 6px); right: 0; width: 340px; background: #fff; border: 1px solid #c4c6cd; border-radius: 10px; box-shadow: 0 4px 20px rgba(4,22,39,.12); z-index: 250; overflow: hidden; }
+  .bell-row { display: flex; gap: 10px; padding: 10px 14px; border-top: 1px solid #eef1f6; font-size: 12px; line-height: 1.4; }
+  .bell-row.unread { background: #f8f9ff; }
+  .bell-row .material-symbols-outlined { font-size: 16px; margin-top: 1px; }
+  .bell-count { position: absolute; top: 3px; right: 2px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #ba1a1a; color: #fff; font: 700 9px/16px Inter; text-align: center; border: 2px solid #fff; box-sizing: content-box; }
+  #cta-edit:disabled { opacity: .45; cursor: not-allowed; }
 </style>
 </head>
 
@@ -438,17 +494,21 @@
     </nav>
     <!-- Right actions -->
     <div class="flex items-center gap-0.5">
-      <button class="relative p-2 hover:bg-surface-container rounded-lg transition-colors" title="Notifications">
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
-        <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border-2 border-white"></span>
-      </button>
+      <!-- Bell: review and approval notifications (assigned, submitted, changes requested, approved, reopened) -->
+      <div class="relative" id="bell-wrap">
+        <button onclick="toggleBell()" class="relative p-2 hover:bg-surface-container rounded-lg transition-colors" title="Notifications">
+          <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
+          <span class="bell-count" id="bell-count" style="display:none;"></span>
+        </button>
+        <div id="bell-dd" class="bell-dd" style="display:none;"></div>
+      </div>
       <button class="p-2 hover:bg-surface-container rounded-lg transition-colors" title="Help">
         <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">help</span>
       </button>
       <div class="w-px h-5 bg-outline-variant mx-1.5"></div>
       <button class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors">
         <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
-          <span class="text-on-secondary-container font-bold text-xs" style="font-family:Inter;">EL</span>
+          <span class="text-on-secondary-container font-bold text-xs" id="top-initials" style="font-family:Inter;">EL</span>
         </div>
         <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">expand_more</span>
       </button>
@@ -528,11 +588,11 @@
       <!-- Project status chip -->
       <div id="proj-status-chip" class="proj-status-chip" style="background:#f0fdf9;color:#00a572;border-color:#86efac;">
         <span class="s-dot" id="proj-chip-dot" style="background:#00a572;"></span>
-        <span id="proj-chip-label">Complete</span>
+        <span id="proj-chip-label">Approved</span>
       </div>
 
-      <!-- Compare button — only shown for In Review docs -->
-      <div id="compare-wrap-sub" style="display:none;">
+      <!-- Compare button: only for a document that changed since the baseline -->
+      <div id="compare-wrap-sub" class="items-center" style="display:none;">
         <div class="w-px h-5 bg-outline-variant mx-1"></div>
         <a href="compare.html"
            class="flex items-center gap-1.5 px-2.5 py-1.5 border border-outline-variant text-on-surface-variant hover:bg-surface-container hover:border-secondary hover:text-secondary rounded-lg transition-colors"
@@ -571,20 +631,21 @@
           <span class="material-symbols-outlined" style="font-size:18px;">left_panel_close</span>
         </button>
       </div>
-      <!-- Assignee filter -->
+      <!-- Reviewer filter (one reviewer per document) -->
       <div class="px-3 py-2 border-b border-outline-variant flex-shrink-0 relative" id="list-assignee-wrap">
         <button onclick="toggleListAssignee()" id="list-assignee-btn"
                 class="w-full flex items-center gap-2 px-2.5 py-1.5 border border-outline-variant rounded-lg bg-white hover:bg-surface-container-low transition-colors"
                 style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;color:#44474c;">
           <span class="material-symbols-outlined text-on-surface-variant" style="font-size:14px;">person</span>
-          <span id="list-assignee-label" class="flex-1 text-left">Assignee</span>
+          <span id="list-assignee-label" class="flex-1 text-left">Reviewer</span>
           <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="list-assignee-chevron" style="font-size:13px;">expand_more</span>
         </button>
         <div id="list-assignee-dd" class="hidden" style="position:absolute;top:calc(100% - 4px);left:8px;right:8px;background:white;border:1px solid #c4c6cd;border-radius:8px;overflow:hidden;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);">
           <div class="py-1.5">
-            <button onclick="setListAssignee(ROLES.developer.assignee,'My Assignments')" id="my-assign-opt" class="list-assignee-opt w-full text-left px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface" style="display:none;">My Assignments</button>
+            <button onclick="setListAssignee(ROLES.developer.assignee,'My reviews')" id="my-assign-opt" class="list-assignee-opt w-full text-left px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface" style="display:none;">My reviews</button>
             <div id="my-assign-divider" class="border-t border-outline-variant my-0.5" style="display:none;"></div>
-            <button onclick="setListAssignee('')"            class="list-assignee-opt w-full text-left px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface" style="background:#eff4ff;">All assignees</button>
+            <button onclick="setListAssignee('')"            class="list-assignee-opt w-full text-left px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface" style="background:#eff4ff;">All reviewers</button>
+            <button onclick="setListAssignee('—','Needs a reviewer')" class="list-assignee-opt w-full text-left px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface" data-val="—">Needs a reviewer</button>
             <button onclick="setListAssignee('Alice Chen')"  class="list-assignee-opt w-full text-left px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface">Alice Chen</button>
             <button onclick="setListAssignee('Bob Kumar')"   class="list-assignee-opt w-full text-left px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface">Bob Kumar</button>
             <button onclick="setListAssignee('Carol Singh')" class="list-assignee-opt w-full text-left px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface">Carol Singh</button>
@@ -622,6 +683,116 @@
             </button>
           </div>
 
+          <!-- Components (staged generation): every component of the layers this version parsed and the
+               state of its documents. An admin ticks the ones not generated and makes them into this same
+               version (Phases 3-4 from its model). The run strip shows a live run's stage, or STOPPED with
+               the command that continues it. Web: pages/DocumentsPage/components/ComponentsPanel.tsx -->
+          <div id="components-panel" class="bg-white border border-outline-variant rounded-xl overflow-hidden mb-4">
+            <button onclick="var b=document.getElementById('components-body');b.style.display=b.style.display==='none'?'':'none'" class="w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-surface transition-colors">
+              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">widgets</span>
+              <span class="flex-1 min-w-0">
+                <span style="font-size:15px;font-weight:600;color:#0b1c30;">Components</span>
+                <span style="font-family:'JetBrains Mono';font-size:11px;color:#44474c;margin-left:8px;">5 of 12 generated · 1 generating · 1 waiting · 1 stopped · 4 not generated</span>
+                <span class="block mt-2 h-1 rounded-full overflow-hidden" style="background:#e5eeff;"><span class="block h-full" style="width:42%;background:#00a572;"></span></span>
+              </span>
+              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">expand_less</span>
+            </button>
+            <div class="flex items-center gap-2 px-5 py-2.5 border-t border-outline-variant bg-surface">
+              <span class="material-symbols-outlined animate-spin" style="font-size:15px;color:#0058be;">autorenew</span>
+              <p style="font-family:'JetBrains Mono';font-size:11px;color:#44474c;flex:1;min-width:0;">Running export — flowcharts 38/112 (33%) · started 2 hours ago</p>
+              <!-- Admin: stop the web job at work on this version (asks first: what is finished stays) -->
+              <button type="button" class="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 border border-outline-variant hover:bg-surface-container flex-shrink-0" style="font-size:12px;color:#991b1b;" title="Stop making these documents? Components already finished keep their documents; the rest show as Stopped.">
+                <span class="material-symbols-outlined" style="font-size:14px;">stop_circle</span>Stop
+              </button>
+            </div>
+            <div id="components-body" class="px-5 py-4 border-t border-outline-variant space-y-4" style="background:#eff4ff;">
+          <section>
+            <p style="font-family:'JetBrains Mono';font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#44474c;margin-bottom:8px;">Application · 3 of 6 generated</p>
+            <ul class="grid gap-2" style="grid-template-columns:repeat(auto-fill,minmax(250px,1fr));">
+              <li class="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-outline-variant bg-white min-w-0">
+                <span style="width:15px;"></span>
+                <span class="flex-1 min-w-0"><span class="block truncate" style="font-family:'JetBrains Mono';font-size:13px;color:#0b1c30;">BrakeController</span><span class="block truncate" style="font-family:'JetBrains Mono';font-size:10px;color:#74777d;">SWE.3 Approved · SWE.4 In review</span></span>
+                <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 flex-shrink-0" style="background:#f0fdf9;color:#00a572;border:1px solid #86efac;font-family:'JetBrains Mono';font-size:10px;font-weight:600;"><span class="material-symbols-outlined" style="font-size:12px;">check_circle</span>Generated</span>
+              </li>
+              <li class="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-outline-variant bg-white min-w-0">
+                <span style="width:15px;"></span>
+                <span class="flex-1 min-w-0"><span class="block truncate" style="font-family:'JetBrains Mono';font-size:13px;color:#0b1c30;">EngineControl</span><span class="block truncate" style="font-family:'JetBrains Mono';font-size:10px;color:#74777d;">SWE.3 In review · SWE.4 In review</span></span>
+                <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 flex-shrink-0" style="background:#f0fdf9;color:#00a572;border:1px solid #86efac;font-family:'JetBrains Mono';font-size:10px;font-weight:600;"><span class="material-symbols-outlined" style="font-size:12px;">check_circle</span>Generated</span>
+              </li>
+              <li class="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-outline-variant bg-white min-w-0">
+                <span style="width:15px;"></span>
+                <span class="flex-1 min-w-0"><span class="block truncate" style="font-family:'JetBrains Mono';font-size:13px;color:#0b1c30;">TorqueManager</span><span class="block truncate" style="font-family:'JetBrains Mono';font-size:10px;color:#74777d;">SWE.3 Ready for approval · SWE.4 In review</span></span>
+                <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 flex-shrink-0" style="background:#f0fdf9;color:#00a572;border:1px solid #86efac;font-family:'JetBrains Mono';font-size:10px;font-weight:600;"><span class="material-symbols-outlined" style="font-size:12px;">check_circle</span>Generated</span>
+              </li>
+              <li class="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-outline-variant bg-white min-w-0">
+                <span style="width:15px;"></span>
+                <span class="flex-1 min-w-0"><span class="block truncate" style="font-family:'JetBrains Mono';font-size:13px;color:#0b1c30;">SignalProcessing</span></span>
+                <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 flex-shrink-0" style="background:rgba(0,88,190,.08);color:#0058be;border:1px solid rgba(0,88,190,.2);font-family:'JetBrains Mono';font-size:10px;font-weight:600;"><span class="material-symbols-outlined animate-spin" style="font-size:12px;">autorenew</span>Generating</span>
+              </li>
+              <li class="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-outline-variant bg-white min-w-0">
+                <input type="checkbox" class="sg-pick" style="accent-color:#0058be;width:15px;height:15px;" onchange="sgCount()">
+                <span class="flex-1 min-w-0"><span class="block truncate" style="font-family:'JetBrains Mono';font-size:13px;color:#0b1c30;">Diagnostics</span></span>
+                <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 flex-shrink-0" style="background:#eff4ff;color:#44474c;border:1px solid #c4c6cd;font-family:'JetBrains Mono';font-size:10px;font-weight:600;"><span class="material-symbols-outlined" style="font-size:12px;">radio_button_unchecked</span>Not generated</span>
+              </li>
+              <li class="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-outline-variant bg-white min-w-0">
+                <input type="checkbox" class="sg-pick" style="accent-color:#0058be;width:15px;height:15px;" onchange="sgCount()">
+                <span class="flex-1 min-w-0"><span class="block truncate" style="font-family:'JetBrains Mono';font-size:13px;color:#0b1c30;">PowerManager</span></span>
+                <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 flex-shrink-0" style="background:#eff4ff;color:#44474c;border:1px solid #c4c6cd;font-family:'JetBrains Mono';font-size:10px;font-weight:600;"><span class="material-symbols-outlined" style="font-size:12px;">radio_button_unchecked</span>Not generated</span>
+              </li>
+            </ul>
+          </section>
+          <section>
+            <p style="font-family:'JetBrains Mono';font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#44474c;margin-bottom:8px;">Drivers · 2 of 6 generated</p>
+            <ul class="grid gap-2" style="grid-template-columns:repeat(auto-fill,minmax(250px,1fr));">
+              <li class="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-outline-variant bg-white min-w-0">
+                <span style="width:15px;"></span>
+                <span class="flex-1 min-w-0"><span class="block truncate" style="font-family:'JetBrains Mono';font-size:13px;color:#0b1c30;">AdcDriver</span><span class="block truncate" style="font-family:'JetBrains Mono';font-size:10px;color:#74777d;">SWE.3 In review · SWE.4 In review</span></span>
+                <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 flex-shrink-0" style="background:#f0fdf9;color:#00a572;border:1px solid #86efac;font-family:'JetBrains Mono';font-size:10px;font-weight:600;"><span class="material-symbols-outlined" style="font-size:12px;">check_circle</span>Generated</span>
+              </li>
+              <li class="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-outline-variant bg-white min-w-0">
+                <span style="width:15px;"></span>
+                <span class="flex-1 min-w-0"><span class="block truncate" style="font-family:'JetBrains Mono';font-size:13px;color:#0b1c30;">CanDriver</span><span class="block truncate" style="font-family:'JetBrains Mono';font-size:10px;color:#74777d;">SWE.3 In review · SWE.4 In review</span></span>
+                <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 flex-shrink-0" style="background:#f0fdf9;color:#00a572;border:1px solid #86efac;font-family:'JetBrains Mono';font-size:10px;font-weight:600;"><span class="material-symbols-outlined" style="font-size:12px;">check_circle</span>Generated</span>
+              </li>
+              <li class="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-outline-variant bg-white min-w-0">
+                <span style="width:15px;"></span>
+                <span class="flex-1 min-w-0"><span class="block truncate" style="font-family:'JetBrains Mono';font-size:13px;color:#0b1c30;">CanMatrix</span></span>
+                <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 flex-shrink-0" style="background:#eff4ff;color:#44474c;border:1px solid #c4c6cd;font-family:'JetBrains Mono';font-size:10px;font-weight:600;"><span class="material-symbols-outlined" style="font-size:12px;">schedule</span>Waiting</span>
+              </li>
+              <li class="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-outline-variant bg-white min-w-0">
+                <input type="checkbox" class="sg-pick" style="accent-color:#0058be;width:15px;height:15px;" onchange="sgCount()">
+                <span class="flex-1 min-w-0"><span class="block truncate" style="font-family:'JetBrains Mono';font-size:13px;color:#0b1c30;">SpiDriver</span></span>
+                <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 flex-shrink-0" style="background:#fff8e6;color:#b45309;border:1px solid #f59e0b;font-family:'JetBrains Mono';font-size:10px;font-weight:600;"><span class="material-symbols-outlined" style="font-size:12px;">pause_circle</span>Stopped</span>
+              </li>
+              <li class="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-outline-variant bg-white min-w-0">
+                <input type="checkbox" class="sg-pick" style="accent-color:#0058be;width:15px;height:15px;" onchange="sgCount()">
+                <span class="flex-1 min-w-0"><span class="block truncate" style="font-family:'JetBrains Mono';font-size:13px;color:#0b1c30;">Gpio</span></span>
+                <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 flex-shrink-0" style="background:#eff4ff;color:#44474c;border:1px solid #c4c6cd;font-family:'JetBrains Mono';font-size:10px;font-weight:600;"><span class="material-symbols-outlined" style="font-size:12px;">radio_button_unchecked</span>Not generated</span>
+              </li>
+              <li class="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-outline-variant bg-white min-w-0">
+                <input type="checkbox" class="sg-pick" style="accent-color:#0058be;width:15px;height:15px;" onchange="sgCount()">
+                <span class="flex-1 min-w-0"><span class="block truncate" style="font-family:'JetBrains Mono';font-size:13px;color:#0b1c30;">Watchdog</span></span>
+                <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 flex-shrink-0" style="background:#eff4ff;color:#44474c;border:1px solid #c4c6cd;font-family:'JetBrains Mono';font-size:10px;font-weight:600;"><span class="material-symbols-outlined" style="font-size:12px;">radio_button_unchecked</span>Not generated</span>
+              </li>
+            </ul>
+          </section>
+              <div class="flex items-center justify-between gap-3 pt-1">
+                <button onclick="document.querySelectorAll('.sg-pick').forEach(function(c){c.checked=true});sgCount()" style="font-family:'JetBrains Mono';font-size:11px;color:#0058be;" class="hover:underline">Select all not generated (5)</button>
+                <div class="flex items-center gap-3">
+                  <span style="font-family:'JetBrains Mono';font-size:11px;color:#44474c;">From this version's model: no parsing, no new descriptions.</span>
+                  <button id="sg-generate" disabled class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style="background:#0058be;font-family:'JetBrains Mono';font-size:11px;font-weight:600;"><span class="material-symbols-outlined" style="font-size:14px;">play_arrow</span><span id="sg-generate-label">Generate</span></button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <script>
+            function sgCount() {
+              var n = document.querySelectorAll('.sg-pick:checked').length
+              document.getElementById('sg-generate').disabled = !n
+              document.getElementById('sg-generate-label').textContent = n ? 'Generate ' + n : 'Generate'
+            }
+          </script>
+
           <div class="bg-white border border-outline-variant rounded-xl overflow-hidden">
 
             <!-- Card header -->
@@ -645,17 +816,21 @@
                     </button>
                     <div id="list-status-dd" class="hidden" style="position:absolute;top:calc(100% + 6px);right:0;background:white;border:1px solid #c4c6cd;border-radius:8px;overflow:hidden;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);min-width:180px;">
                       <div class="py-1.5">
+                        <button onclick="toggleListStatus('in_review')" class="list-status-opt w-full flex items-center justify-between px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface">
+                          <span>In review</span>
+                          <span class="material-symbols-outlined text-secondary" id="ls-check-in_review" style="font-size:14px;display:none;">check</span>
+                        </button>
+                        <button onclick="toggleListStatus('submitted')" class="list-status-opt w-full flex items-center justify-between px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface">
+                          <span>Ready for approval</span>
+                          <span class="material-symbols-outlined text-secondary" id="ls-check-submitted" style="font-size:14px;display:none;">check</span>
+                        </button>
+                        <button onclick="toggleListStatus('changes_requested')" class="list-status-opt w-full flex items-center justify-between px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface">
+                          <span>Changes requested</span>
+                          <span class="material-symbols-outlined text-secondary" id="ls-check-changes_requested" style="font-size:14px;display:none;">check</span>
+                        </button>
                         <button onclick="toggleListStatus('approved')"  class="list-status-opt w-full flex items-center justify-between px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface">
                           <span>Approved</span>
                           <span class="material-symbols-outlined text-secondary" id="ls-check-approved" style="font-size:14px;display:none;">check</span>
-                        </button>
-                        <button onclick="toggleListStatus('review')"    class="list-status-opt w-full flex items-center justify-between px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface">
-                          <span>In Review</span>
-                          <span class="material-symbols-outlined text-secondary" id="ls-check-review" style="font-size:14px;display:none;">check</span>
-                        </button>
-                        <button onclick="toggleListStatus('unchanged')" class="list-status-opt w-full flex items-center justify-between px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface">
-                          <span>Unchanged</span>
-                          <span class="material-symbols-outlined text-secondary" id="ls-check-unchanged" style="font-size:14px;display:none;">check</span>
                         </button>
                       </div>
                       <div class="border-t border-outline-variant py-1">
@@ -684,17 +859,8 @@
               </div>
             </div>
 
-            <!-- In Review summary bar -->
-            <div id="review-summary-bar" class="px-5 py-3 border-b border-outline-variant flex items-center gap-4" style="display:none;background:#fffbeb;">
-              <span class="material-symbols-outlined flex-shrink-0" style="color:#b45309;font-size:16px;">rate_review</span>
-              <div class="flex-1">
-                <div class="flex items-center justify-between mb-1.5">
-                  <span class="font-label-sm text-label-sm" style="color:#92400e;">Review in progress · 8 of 15 documents reviewed</span>
-                  <span class="font-label-sm text-label-sm" style="color:#b45309;font-family:'JetBrains Mono';">53%</span>
-                </div>
-                <div class="rev-bar"><div class="rev-bar-fill" style="width:53%;background:#b45309;"></div></div>
-              </div>
-            </div>
+            <!-- Version approval: derived from the documents (Approved when every one is). Drawn by paintVersionBar(). -->
+            <div id="version-bar" class="ver-bar" style="display:none;"></div>
 
             <!-- Batch bar -->
             <div id="list-batch-bar" class="hidden bg-secondary border-b border-secondary-container px-5 py-2.5 flex items-center justify-between" style="animation:slideDown .18s ease;">
@@ -704,11 +870,12 @@
                 <button onclick="listBatchDownload()" class="flex items-center gap-1.5 px-3 py-1.5 bg-white bg-opacity-10 hover:bg-opacity-20 text-on-secondary rounded-lg transition-colors" style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
                   <span class="material-symbols-outlined" style="font-size:13px;">download</span>Download
                 </button>
-                <button id="batch-assign-btn" onclick="listBatchAssign()" class="flex items-center gap-1.5 px-3 py-1.5 bg-white bg-opacity-10 hover:bg-opacity-20 text-on-secondary rounded-lg transition-colors" style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
-                  <span class="material-symbols-outlined" style="font-size:13px;">person_add</span>Assign
+                <button id="batch-assign-btn" onclick="openAssign([...selectedDocIds])" class="flex items-center gap-1.5 px-3 py-1.5 bg-white bg-opacity-10 hover:bg-opacity-20 text-on-secondary rounded-lg transition-colors" style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
+                  <span class="material-symbols-outlined" style="font-size:13px;">person_add</span>Assign…
                 </button>
-                <button id="batch-approve-btn" onclick="listBatchApprove()" class="flex items-center gap-1.5 px-3 py-1.5 bg-white bg-opacity-10 hover:bg-opacity-20 text-on-secondary rounded-lg transition-colors" style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
-                  <span class="material-symbols-outlined" style="font-size:13px;">task_alt</span>Approve
+                <!-- Approves only the selected documents that are Ready for approval; the dialog names the rest -->
+                <button id="batch-approve-btn" onclick="openModal({ type: 'bulk' })" class="flex items-center gap-1.5 px-3 py-1.5 bg-white bg-opacity-10 hover:bg-opacity-20 text-on-secondary rounded-lg transition-colors" style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
+                  <span class="material-symbols-outlined" style="font-size:13px;">task_alt</span><span id="batch-approve-label">Approve…</span>
                 </button>
               </div>
               <button onclick="clearListSelection()" class="flex items-center gap-1 text-on-secondary opacity-70 hover:opacity-100 transition-opacity" style="font-family:'JetBrains Mono';font-size:11px;">
@@ -726,11 +893,10 @@
                     </th>
                     <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Document</th>
                     <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:100px;">Process</th>
-                    <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:90px;">Version</th>
-                    <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:155px;">Assignee</th>
-                    <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:110px;">Status</th>
-                    <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:100px;">Due Date</th>
-                    <th class="px-4 py-3" style="width:90px;"></th>
+                    <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:160px;">Reviewer</th>
+                    <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:150px;">Status</th>
+                    <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:200px;">Last activity</th>
+                    <th class="px-4 py-3" style="width:120px;"></th>
                   </tr>
                 </thead>
                 <tbody id="doc-list-body"></tbody>
@@ -786,6 +952,9 @@
         </div>
 
         <div class="max-w-4xl mx-auto px-6 py-6">
+
+          <!-- Review state of this document: approved (locked), changes requested, ready for approval -->
+          <div id="rv-banner"></div>
 
           <!-- Export readiness (R9): corrections the Word file does not have yet -->
           <div id="ready-banner" class="ready-banner" role="status">
@@ -929,6 +1098,7 @@
              (engine/swe4_exporter.py). Drawn by renderSwe4() from the version's test specs. ══ -->
         <div id="view-swe4" style="display:none;">
         <div class="max-w-3xl mx-auto px-6 py-8">
+          <div id="rv-banner-4"></div>
           <div class="bg-white rounded-xl border border-outline-variant overflow-hidden"
                style="box-shadow:0 1px 4px rgba(4,22,39,.06);">
             <div class="px-12 pt-10 pb-8 border-b border-outline-variant">
@@ -971,117 +1141,12 @@
         <!-- Corrections tab (R1: this version's corrections, orphans included) -->
         <div id="rp-corr" class="flex-1 overflow-y-auto px-3 py-3" style="display:none;"></div>
 
-        <!-- Review tracker (Admin, shown when version is in_review) -->
-        <div class="hidden flex-1 overflow-y-auto py-3 px-3 space-y-4" id="review-tracker">
-          <div>
-            <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mb-2">Reviewer</p>
-            <div class="flex items-center gap-2 mb-2">
-              <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0">
-                <span class="font-bold text-on-secondary-container" style="font-size:9px;font-family:Inter;">BK</span>
-              </div>
-              <span class="font-label-md text-label-md text-on-surface" style="font-size:11px;">Bob Kumar</span>
-            </div>
-            <div class="flex items-center justify-between mb-1">
-              <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;">Progress</span>
-              <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;">75%</span>
-            </div>
-            <div class="rev-bar"><div class="rev-bar-fill" style="width:75%"></div></div>
-            <p class="font-label-sm text-label-sm text-on-surface-variant mt-1" style="font-size:10px;">3 of 4 sections</p>
-          </div>
-          <div>
-            <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mb-2">Sections</p>
-            <div class="space-y-1.5">
-              <div class="flex items-center gap-1.5">
-                <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:12px;">check_circle</span>
-                <span class="text-on-surface-variant" style="font-size:10px;font-family:'JetBrains Mono';">1. Intro</span>
-              </div>
-              <div class="flex items-center gap-1.5">
-                <span class="material-symbols-outlined text-secondary" style="font-size:12px;">edit</span>
-                <span class="text-on-surface-variant" style="font-size:10px;font-family:'JetBrains Mono';">2. Interfaces</span>
-              </div>
-              <div class="flex items-center gap-1.5">
-                <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:12px;">check_circle</span>
-                <span class="text-on-surface-variant" style="font-size:10px;font-family:'JetBrains Mono';">3. Static</span>
-              </div>
-              <div class="flex items-center gap-1.5">
-                <span class="material-symbols-outlined text-outline" style="font-size:12px;">radio_button_unchecked</span>
-                <span class="text-on-surface-variant" style="font-size:10px;font-family:'JetBrains Mono';">4. Dynamic</span>
-              </div>
-            </div>
-          </div>
-          <div class="space-y-2 pt-1 border-t border-outline-variant">
-            <button onclick="markComplete()"
-                    class="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 bg-on-tertiary-container text-white rounded-lg hover:opacity-90 transition-opacity"
-                    style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;">
-              <span class="material-symbols-outlined" style="font-size:12px;">check_circle</span>
-              Mark Complete
-            </button>
-            <button onclick="openAssignPanel()" id="review-reassign-btn"
-                    class="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 border border-outline-variant hover:bg-surface-container rounded-lg transition-colors"
-                    style="font-family:'JetBrains Mono';font-size:10px;color:#44474c;">
-              <span class="material-symbols-outlined" style="font-size:12px;">person_add</span>
-              Re-assign
-            </button>
-            <button onclick="assignToMeDoc()" id="review-assign-me-btn"
-                    class="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 border border-secondary text-secondary hover:bg-surface-container-low rounded-lg transition-colors"
-                    style="display:none;font-family:'JetBrains Mono';font-size:10px;font-weight:600;">
-              <span class="material-symbols-outlined" style="font-size:12px;">person_add</span>
-              Assign to me
-            </button>
-          </div>
-        </div>
+        <!-- Review tab: the document's state, its reviewer, whether its Word file has every correction,
+             the one action this role can take now, and the activity that is the review record.
+             Drawn by renderReviewTab(). -->
+        <div class="hidden flex-1 overflow-y-auto" id="review-tracker"></div>
       </aside>
 
-
-      <!-- ASSIGN REVIEWERS PANEL -->
-      <div class="assign-panel" id="assign-panel">
-        <div class="flex-shrink-0 px-4 py-3 border-b border-outline-variant flex items-center justify-between">
-          <div>
-            <p class="font-label-md text-label-md text-on-surface">Assign Reviewers</p>
-            <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" id="assign-panel-version" style="font-family:'JetBrains Mono';">v1.1.0 · 9e2b881</p>
-          </div>
-          <button onclick="closeAssignPanel()" class="p-1 hover:bg-surface-container rounded-lg transition-colors">
-            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">close</span>
-          </button>
-        </div>
-        <div class="flex-1 overflow-y-auto px-4 py-4">
-          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mb-2">Select reviewer</p>
-          <div class="space-y-1" id="reviewer-options">
-            <button onclick="selectReviewer('Alice Chen','AC')" data-rev="Alice Chen"
-                    class="rev-opt w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border border-outline-variant hover:border-secondary hover:bg-surface-container-low transition-colors text-left">
-              <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0">
-                <span class="font-bold text-on-secondary-container" style="font-size:10px;font-family:Inter;">AC</span>
-              </div>
-              <span class="flex-1 font-label-md text-label-md text-on-surface" style="font-size:12px;">Alice Chen</span>
-              <span class="rev-check hidden material-symbols-outlined text-secondary" style="font-size:16px;">check</span>
-            </button>
-            <button onclick="selectReviewer('Bob Kumar','BK')" data-rev="Bob Kumar"
-                    class="rev-opt w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border border-outline-variant hover:border-secondary hover:bg-surface-container-low transition-colors text-left">
-              <div class="w-7 h-7 rounded-full bg-surface-container-high flex items-center justify-center flex-shrink-0">
-                <span class="font-bold text-on-surface-variant" style="font-size:10px;font-family:Inter;">BK</span>
-              </div>
-              <span class="flex-1 font-label-md text-label-md text-on-surface" style="font-size:12px;">Bob Kumar</span>
-              <span class="rev-check hidden material-symbols-outlined text-secondary" style="font-size:16px;">check</span>
-            </button>
-            <button onclick="selectReviewer('Carol Singh','CS')" data-rev="Carol Singh"
-                    class="rev-opt w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border border-outline-variant hover:border-secondary hover:bg-surface-container-low transition-colors text-left">
-              <div class="w-7 h-7 rounded-full bg-surface-container-high flex items-center justify-center flex-shrink-0">
-                <span class="font-bold text-on-surface-variant" style="font-size:10px;font-family:Inter;">CS</span>
-              </div>
-              <span class="flex-1 font-label-md text-label-md text-on-surface" style="font-size:12px;">Carol Singh</span>
-              <span class="rev-check hidden material-symbols-outlined text-secondary" style="font-size:16px;">check</span>
-            </button>
-          </div>
-          <p class="font-label-sm text-label-sm text-on-surface-variant mt-3" style="font-size:10px;" id="selected-reviewer-label">No reviewer selected</p>
-        </div>
-        <div class="flex-shrink-0 px-4 py-3 border-t border-outline-variant">
-          <button onclick="sendForReview()"
-                  class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-secondary text-white hover:bg-secondary-container rounded-xl transition-colors font-label-md text-label-md">
-            <span class="material-symbols-outlined" style="font-size:16px;">send</span>
-            Send for Review
-          </button>
-        </div>
-      </div>
 
       <!-- ══ OVERLAY: EMPTY STATE ══ -->
       <div id="state-empty" class="hidden absolute inset-0 z-20 flex items-center justify-center"
@@ -1202,6 +1267,9 @@
     </div>
   </div>
 </div>
+<!-- ══ Review and approval dialogs: assign, approve, request changes, reopen, approve several.
+     Drawn by renderModal(). ══ -->
+<div id="rv-modal" class="fc-modal hidden"></div>
 <div id="toast" class="toast" role="status"><p id="toast-title"></p><p class="sub" id="toast-sub"></p></div>
 
 <!-- ══════════════ SCRIPTS ══════════════ -->
@@ -1210,7 +1278,6 @@
 let canvasState    = 'list';  // 'list' | 'doc' | 'empty' | 'generating'
 let activeVersion  = '';
 let genLogIndex    = 0;
-let selectedReviewer = null;
 let listFilter     = '';
 let currentRole    = 'admin';
 const ROLES = {
@@ -1219,44 +1286,127 @@ const ROLES = {
 };
 
 // ── All documents (for list view) ────────────────────────────────────────────
+// Review and approval (proposal): one reviewer per document (assigning again replaces), four states
+// (In review · Ready for approval · Changes requested · Approved), and every step an event with who,
+// when and a comment. A version is Approved when all its documents are; nobody sets it by hand.
+const MEMBERS = {
+  'Engineering Lead': { initials: 'EL', bg: '#dce9ff', fg: '#0058be' },
+  'Alice Chen':       { initials: 'AC', bg: '#e0f2ff', fg: '#0058be' },
+  'Bob Kumar':        { initials: 'BK', bg: '#f3e8ff', fg: '#7c3aed' },
+  'Carol Singh':      { initials: 'CS', bg: '#fff7ed', fg: '#c2410c' },
+};
+const REVIEWERS = ['Alice Chen', 'Bob Kumar', 'Carol Singh'];
+const ADMIN = 'Engineering Lead';
+const REVIEW_STATES = {
+  in_review:         { cls: 'badge-review',   icon: 'rate_review',     label: 'In review',          color: '#f59e0b' },
+  submitted:         { cls: 'badge-ready',    icon: 'pending_actions', label: 'Ready for approval', color: '#2170e4' },
+  changes_requested: { cls: 'badge-changes',  icon: 'undo',            label: 'Changes requested',  color: '#ba1a1a' },
+  approved:          { cls: 'badge-approved', icon: 'check_circle',    label: 'Approved',           color: '#00a572' },
+};
+
+function mkDoc(process, name, subtitle, reviewer, status, extra = {}) {
+  return { id: `${process}|${name}`, process, name, subtitle, reviewer, status, version: 'v1.2.0',
+           comment: '', adminComment: '', carried: null, corrections: 0, ...extra };
+}
 const allDocs = [
-  { process: 'SYS.1', name: 'System Requirements Spec',   subtitle: 'Customer Requirements', assignee: 'Alice Chen',  initials: 'AC', ac: '#e0f2ff', atc: '#0058be', status: 'approved', version: 'v1.2.0', due: 'Jun 15' },
-  { process: 'SYS.2', name: 'System Test Spec',           subtitle: 'System Verification',   assignee: 'Bob Kumar',   initials: 'BK', ac: '#f3e8ff', atc: '#7c3aed', status: 'review',   version: 'v1.2.0', due: 'Jun 28' },
-  { process: 'SWE.1', name: 'SW Requirements Spec',       subtitle: 'Software Requirements', assignee: 'Carol Singh', initials: 'CS', ac: '#fff7ed', atc: '#c2410c', status: 'approved', version: 'v1.2.0', due: 'Jun 10' },
-  { process: 'SWE.2', name: 'Software Architecture Spec', subtitle: 'Architecture Design',   assignee: 'Bob Kumar',   initials: 'BK', ac: '#f3e8ff', atc: '#7c3aed', status: 'review',   version: 'v1.2.0', due: 'Jun 30' },
-  { process: 'SWE.3', name: 'Brake Controller',           subtitle: 'Detailed Design',       assignee: 'Bob Kumar',   initials: 'BK', ac: '#f3e8ff', atc: '#7c3aed', status: 'approved', version: 'v1.2.0', due: 'Jun 20' },
-  { process: 'SWE.3', name: 'ABS Unit',                   subtitle: 'Detailed Design',       assignee: 'Alice Chen',  initials: 'AC', ac: '#e0f2ff', atc: '#0058be', status: 'approved', version: 'v1.2.0', due: 'Jun 18' },
-  { process: 'SWE.3', name: 'Stability Control',          subtitle: 'Detailed Design',       assignee: 'Carol Singh', initials: 'CS', ac: '#fff7ed', atc: '#c2410c', status: 'review',   version: 'v1.2.0', due: 'Jun 25' },
-  { process: 'SWE.3', name: 'Throttle Controller',        subtitle: 'Detailed Design',       assignee: 'Carol Singh', initials: 'CS', ac: '#fff7ed', atc: '#c2410c', status: 'review',   version: 'v1.2.0', due: 'Jun 27' },
-  { process: 'SWE.3', name: 'Fuel Injector',              subtitle: 'Detailed Design',       assignee: null,           initials: null, ac: null,       atc: null,       status: 'unchanged',    version: 'v1.2.0', due: 'Jul 05' },
-  { process: 'SWE.3', name: 'Lighting Ctrl',              subtitle: 'Detailed Design',       assignee: null,           initials: null, ac: null,       atc: null,       status: 'unchanged',    version: 'v1.2.0', due: 'Jul 08' },
-  { process: 'SWE.3', name: 'HVAC Ctrl',                  subtitle: 'Detailed Design',       assignee: 'Alice Chen',  initials: 'AC', ac: '#e0f2ff', atc: '#0058be', status: 'review',   version: 'v1.2.0', due: 'Jun 29' },
-  { process: 'SWE.3', name: 'GPIO Driver',                subtitle: 'Detailed Design',       assignee: 'Bob Kumar',   initials: 'BK', ac: '#f3e8ff', atc: '#7c3aed', status: 'approved', version: 'v1.2.0', due: 'Jun 12' },
-  { process: 'SWE.3', name: 'CAN Driver',                 subtitle: 'Detailed Design',       assignee: null,           initials: null, ac: null,       atc: null,       status: 'unchanged',    version: 'v1.2.0', due: 'Jul 10' },
-  { process: 'SWE.3', name: 'SPI Driver',                 subtitle: 'Detailed Design',       assignee: null,           initials: null, ac: null,       atc: null,       status: 'unchanged',    version: 'v1.2.0', due: 'Jul 12' },
-  { process: 'SWE.3', name: 'PWM Driver',                 subtitle: 'Detailed Design',       assignee: 'Carol Singh', initials: 'CS', ac: '#fff7ed', atc: '#c2410c', status: 'review',   version: 'v1.2.0', due: 'Jul 01' },
+  mkDoc('SYS.1', 'System Requirements Spec',   'Customer Requirements', 'Alice Chen',  'approved'),
+  mkDoc('SYS.2', 'System Test Spec',           'System Verification',   'Bob Kumar',   'in_review'),
+  mkDoc('SWE.1', 'SW Requirements Spec',       'Software Requirements', 'Carol Singh', 'approved'),
+  mkDoc('SWE.2', 'Software Architecture Spec', 'Architecture Design',   'Bob Kumar',   'submitted',
+        { comment: 'Checked the component split against the code. Nothing to correct.' }),
+  mkDoc('SWE.3', 'Brake Controller',    'Detailed Design', 'Bob Kumar',   'in_review'),
+  mkDoc('SWE.3', 'ABS Unit',            'Detailed Design', 'Alice Chen',  'approved'),
+  mkDoc('SWE.3', 'Stability Control',   'Detailed Design', 'Carol Singh', 'submitted', { corrections: 2,
+        comment: 'Checked every function against the code; corrected two descriptions that named the wrong sensor.' }),
+  mkDoc('SWE.3', 'Throttle Controller', 'Detailed Design', 'Bob Kumar',   'changes_requested', { corrections: 1,
+        comment: 'Names checked.', adminComment: 'The Input and Output names of Throttle_SetTarget are vague: say what the values are, with units.' }),
+  mkDoc('SWE.3', 'Fuel Injector',       'Detailed Design', 'Alice Chen',  'approved', { carried: 'v1.1.0' }),
+  mkDoc('SWE.3', 'Lighting Ctrl',       'Detailed Design', 'Alice Chen',  'approved', { carried: 'v1.1.0' }),
+  mkDoc('SWE.3', 'HVAC Ctrl',           'Detailed Design', 'Alice Chen',  'submitted', { corrections: 2,
+        comment: 'Corrected two unit descriptions; the rest reads right.' }),
+  mkDoc('SWE.3', 'GPIO Driver',         'Detailed Design', 'Bob Kumar',   'approved'),
+  mkDoc('SWE.3', 'CAN Driver',          'Detailed Design', null,          'in_review'),
+  mkDoc('SWE.3', 'SPI Driver',          'Detailed Design', 'Carol Singh', 'approved', { carried: 'v1.1.0' }),
+  mkDoc('SWE.3', 'PWM Driver',          'Detailed Design', null,          'in_review'),
 ];
 
 // SWE.4: one Unit Test Specification per component, next to its Detailed Design (the same run
-// makes both). Its review is its own.
-allDocs.push(...allDocs.filter((d) => d.process === 'SWE.3').map((d, i) => ({
-  ...d, process: 'SWE.4', subtitle: 'Unit Test Specification',
-  status: ['review', 'unchanged', 'review', 'approved'][i % 4],
-})));
+// makes both). Its review is its own: [reviewer, state, carried from].
+const SWE4_REVIEW = {
+  'Brake Controller': ['Bob Kumar', 'in_review'],   'ABS Unit': ['Alice Chen', 'approved'],
+  'Stability Control': ['Carol Singh', 'in_review'], 'Throttle Controller': [null, 'in_review'],
+  'Fuel Injector': ['Alice Chen', 'approved', 'v1.1.0'], 'Lighting Ctrl': ['Alice Chen', 'approved', 'v1.1.0'],
+  'HVAC Ctrl': ['Alice Chen', 'in_review'], 'GPIO Driver': ['Bob Kumar', 'submitted'],
+  'CAN Driver': [null, 'in_review'], 'SPI Driver': ['Carol Singh', 'approved', 'v1.1.0'], 'PWM Driver': [null, 'in_review'],
+};
+allDocs.push(...allDocs.filter((d) => d.process === 'SWE.3').map((d) => {
+  const [reviewer, status, carried] = SWE4_REVIEW[d.name];
+  return mkDoc('SWE.4', d.name, 'Unit Test Specification', reviewer, status, { carried: carried || null,
+    comment: status === 'submitted' ? 'Test steps follow the corrected flowchart labels.' : '' });
+}));
+
+// Corrections a re-export has not written into the Word files yet, per component (R9). A re-export
+// writes every document of the version, so it clears them all.
+const PENDING = { 'Brake Controller': 1, 'Stability Control': 2, 'Throttle Controller': 1 };
+
+// The review record of each document, oldest first (document_review_events in the design).
+function fakeHash(text) {
+  let h = 2166136261;
+  for (const c of text) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;
+  return h.toString(16).padStart(8, '0');
+}
+allDocs.forEach((d) => {
+  const ev = [];
+  if (d.carried) {
+    ev.push({ kind: 'carried', by: null, at: '29 Sep 09:00',
+              text: `Approved in ${d.carried}. The content is unchanged, so the approval carries`, hash: fakeHash(d.id + d.carried) });
+  } else {
+    ev.push({ kind: 'generated', by: null, at: '29 Sep 09:00', text: 'Generated by the run of v1.2.0' });
+    if (d.reviewer) ev.push({ kind: 'assigned', by: ADMIN, at: '29 Sep 09:40', text: `assigned ${d.reviewer}` });
+    if (['submitted', 'changes_requested', 'approved'].includes(d.status))
+      ev.push({ kind: 'submitted', by: d.reviewer, at: '30 Sep 15:10', text: 'submitted it for approval',
+                comment: d.comment || 'Checked every function against the code.' });
+    if (d.status === 'changes_requested')
+      ev.push({ kind: 'changes_requested', by: ADMIN, at: '30 Sep 17:25', text: 'requested changes', comment: d.adminComment });
+    if (d.status === 'approved')
+      ev.push({ kind: 'approved', by: ADMIN, at: '30 Sep 16:05', text: 'approved it', hash: fakeHash(d.id) });
+  }
+  d.events = ev;
+});
+
+// Notifications, per role of the mockup (the admin, and Bob as the developer)
+const NOTES = {
+  admin: [
+    { icon: 'pending_actions', text: 'Carol Singh submitted Stability Control (SWE.3) for approval', at: '30 Sep 15:10', unread: true },
+    { icon: 'pending_actions', text: 'Alice Chen submitted HVAC Ctrl (SWE.3) for approval', at: '30 Sep 15:10', unread: true },
+    { icon: 'pending_actions', text: 'Bob Kumar submitted GPIO Driver (SWE.4) for approval', at: '30 Sep 15:10', unread: true },
+    { icon: 'check_circle', text: '6 approvals carried from v1.1.0: their content is unchanged', at: '29 Sep 09:00', unread: false },
+  ],
+  developer: [
+    { icon: 'undo', text: 'Engineering Lead requested changes to Throttle Controller (SWE.3)', at: '30 Sep 17:25', unread: true },
+    { icon: 'check_circle', text: 'Engineering Lead approved GPIO Driver (SWE.3)', at: '30 Sep 16:05', unread: true },
+    { icon: 'person_add', text: 'Engineering Lead assigned you 6 documents in v1.2.0', at: '29 Sep 09:40', unread: false },
+  ],
+};
 
 function pillClass(p) {
   return { 'SWE.4': 'pill-swe4', 'SWE.3': 'pill-swe3', 'SWE.2': 'pill-swe2', 'SWE.1': 'pill-swe1', 'SYS.1': 'pill-sys1', 'SYS.2': 'pill-sys2' }[p] || '';
 }
 
 function statusBadge(s) {
-  const map = { approved: ['badge-approved','check_circle','Approved'], review: ['badge-review','rate_review','In Review'], unchanged: ['badge-unchanged','horizontal_rule','Unchanged'] };
-  const [cls, icon, label] = map[s] || map.unchanged;
-  return `<span class="badge ${cls}"><span class="material-symbols-outlined" style="font-size:10px;">${icon}</span>${label}</span>`;
+  const st = REVIEW_STATES[s] || REVIEW_STATES.in_review;
+  return `<span class="badge ${st.cls}"><span class="material-symbols-outlined" style="font-size:10px;">${st.icon}</span>${st.label}</span>`;
+}
+
+function avatar(name, size = 24) {
+  if (!name) return `<span class="av none" style="width:${size}px;height:${size}px;"><span class="material-symbols-outlined" style="font-size:${Math.round(size * .55)}px;">person</span></span>`;
+  const m = MEMBERS[name];
+  return `<span class="av" style="width:${size}px;height:${size}px;background:${m.bg};color:${m.fg};font-size:${Math.round(size * .38)}px;">${m.initials}</span>`;
 }
 
 // ── List view filter state ────────────────────────────────────────────────────
 let listStatusFilter   = new Set();
-let listAssigneeFilter = '';
+let listAssigneeFilter = '';     // a reviewer's name, '—' for "Needs a reviewer", '' for all
 let selectedDocIds     = new Set();
 
 function setListFilter(btn, filter) {
@@ -1286,6 +1436,12 @@ function toggleListStatus(val) {
   syncListStatusUI();
   renderDocList();
 }
+// The version bar's legend filters to one state
+function onlyStatus(val) {
+  listStatusFilter = new Set([val]);
+  syncListStatusUI();
+  renderDocList();
+}
 function clearListStatus() {
   listStatusFilter.clear();
   syncListStatusUI();
@@ -1302,8 +1458,7 @@ function syncListStatusUI() {
     btnEl.style.color      = '#44474c';
     btnEl.style.borderColor = '';
   } else if (count === 1) {
-    const labels = { approved: 'Approved', review: 'In Review', unchanged: 'Unchanged' };
-    labelEl.textContent    = labels[[...listStatusFilter][0]];
+    labelEl.textContent    = REVIEW_STATES[[...listStatusFilter][0]].label;
     btnEl.style.color      = '#0058be';
     btnEl.style.borderColor = '#0058be';
   } else {
@@ -1311,7 +1466,7 @@ function syncListStatusUI() {
     btnEl.style.color      = '#0058be';
     btnEl.style.borderColor = '#0058be';
   }
-  ['approved', 'review', 'unchanged'].forEach(v => {
+  Object.keys(REVIEW_STATES).forEach(v => {
     const el = document.getElementById(`ls-check-${v}`);
     if (el) el.style.display = listStatusFilter.has(v) ? '' : 'none';
   });
@@ -1325,19 +1480,19 @@ function toggleListAssignee() {
 }
 function setListAssignee(val, displayLabel) {
   listAssigneeFilter = val;
-  document.getElementById('list-assignee-label').textContent = displayLabel || val || 'Assignee';
+  document.getElementById('list-assignee-label').textContent = displayLabel || val || 'Reviewer';
   document.getElementById('list-assignee-btn').style.color = val ? '#0058be' : '#44474c';
   document.getElementById('list-assignee-btn').style.borderColor = val ? '#0058be' : '';
   document.querySelectorAll('.list-assignee-opt').forEach(b => {
     const isMyOpt = b.id === 'my-assign-opt';
     const isActive = isMyOpt
       ? (val === ROLES.developer.assignee && currentRole === 'developer')
-      : b.textContent.trim() === (val || 'All assignees');
+      : (b.dataset.val || b.textContent.trim()) === (val || 'All reviewers');
     b.style.background = isActive ? '#eff4ff' : '';
   });
   if (currentRole === 'developer') {
     const showAllBtn = document.getElementById('dev-show-all-btn');
-    if (showAllBtn) showAllBtn.textContent = val ? 'Show all' : 'My Docs';
+    if (showAllBtn) showAllBtn.textContent = val ? 'Show all' : 'My reviews';
   }
   document.getElementById('list-assignee-dd').classList.add('hidden');
   document.getElementById('list-assignee-chevron').style.transform = '';
@@ -1346,9 +1501,9 @@ function setListAssignee(val, displayLabel) {
 }
 
 // ── Selection ─────────────────────────────────────────────────────────────────
-function toggleDocRow(name, checked) {
-  if (checked) selectedDocIds.add(name); else selectedDocIds.delete(name);
-  const row = document.querySelector(`tr[data-doc="${CSS.escape(name)}"]`);
+function toggleDocRow(id, checked) {
+  if (checked) selectedDocIds.add(id); else selectedDocIds.delete(id);
+  const row = document.querySelector(`tr[data-doc="${CSS.escape(id)}"]`);
   if (row) row.classList.toggle('row-selected', checked);
   updateListBatchBar();
   syncListSelectAll();
@@ -1382,6 +1537,8 @@ function updateListBatchBar() {
   if (n > 0) {
     bar.classList.remove('hidden');
     document.getElementById('list-batch-count').textContent = `${n} document${n > 1 ? 's' : ''} selected`;
+    const ready = bulkReady().length;
+    document.getElementById('batch-approve-label').textContent = ready ? `Approve ${ready}…` : 'Approve…';
   } else {
     bar.classList.add('hidden');
   }
@@ -1393,27 +1550,25 @@ function listBatchDownload() {
   clearListSelection();
   alert(`Downloading ${n} document${n > 1 ? 's' : ''}…`);
 }
-function listBatchAssign() {
-  clearListSelection();
-  alert('Assign dialog would open here.');
-}
-function listBatchApprove() {
-  selectedDocIds.forEach(name => {
-    const d = allDocs.find(x => x.name === name);
-    if (d) d.status = 'approved';
-  });
-  clearListSelection();
-  renderDocList();
-}
 
-function renderDocList() {
-  const docs = allDocs.filter(d => {
+function visibleDocs() {
+  return allDocs.filter(d => {
     if (listFilter         && d.process  !== listFilter)        return false;
     if (listStatusFilter.size && !listStatusFilter.has(d.status)) return false;
-    if (listAssigneeFilter && d.assignee !== listAssigneeFilter) return false;
+    if (listAssigneeFilter === '—' && d.reviewer) return false;
+    if (listAssigneeFilter && listAssigneeFilter !== '—' && d.reviewer !== listAssigneeFilter) return false;
     if (docSearchQuery && !d.name.toLowerCase().includes(docSearchQuery) && !d.process.toLowerCase().includes(docSearchQuery)) return false;
     return true;
   });
+}
+
+function renderDocList() {
+  const docs = visibleDocs();
+  // a filter hides rows: what it hides is no longer selected (bulk actions act on what you see)
+  const shown = new Set(docs.map(d => d.id));
+  [...selectedDocIds].forEach(id => { if (!shown.has(id)) selectedDocIds.delete(id); });
+  updateListBatchBar();
+  paintVersionBar();
   const n = docs.length;
   document.getElementById('list-count-label').textContent = `${n} document${n !== 1 ? 's' : ''}`;
   document.getElementById('list-footer-label').textContent = `Showing ${n} document${n !== 1 ? 's' : ''}`;
@@ -1429,21 +1584,29 @@ function renderDocList() {
   empty.classList.add('hidden'); empty.classList.remove('flex');
   footer.classList.remove('hidden');
 
+  const admin = currentRole === 'admin', me = ROLES.developer.assignee;
+  const iconBtn = (onclick, icon, title, color = 'text-on-surface-variant') =>
+    `<button onclick="${onclick}" title="${title}" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors ${color}"><span class="material-symbols-outlined" style="font-size:15px;">${icon}</span></button>`;
+
   document.getElementById('doc-list-body').innerHTML = docs.map(d => {
-    const isSel = selectedDocIds.has(d.name);
-    const assigneeHtml = d.assignee
-      ? `<div class="flex items-center gap-2">
-           <div class="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style="background:${d.ac};">
-             <span class="font-bold" style="font-size:9px;font-family:Inter;color:${d.atc};">${d.initials}</span>
-           </div>
-           <span class="font-label-sm text-label-sm text-on-surface truncate" style="max-width:100px;">${d.assignee}</span>
-         </div>`
-      : `<span class="text-outline" style="font-size:12px;">—</span>`;
-    const esc = d.name.replace(/'/g, "\\'");
+    const isSel = selectedDocIds.has(d.id);
+    const reviewerHtml = d.reviewer
+      ? `<div class="flex items-center gap-2">${avatar(d.reviewer)}
+           <span class="font-label-sm text-label-sm text-on-surface truncate" style="max-width:110px;">${d.reviewer}</span></div>`
+      : `<div class="flex items-center gap-2">${avatar(null)}
+           <span class="font-label-sm text-label-sm" style="color:#b45309;font-weight:600;">Needs a reviewer</span></div>`;
+    const last = d.events[d.events.length - 1];
+    const id = d.id.replace(/'/g, "\\'");
+    // the one review action this role can take from the list
+    let act = '';
+    if (admin && d.status === 'submitted') act = iconBtn(`openDocReview('${id}')`, 'fact_check', 'Review and approve', 'text-secondary');
+    else if (admin && d.status !== 'approved') act = iconBtn(`openAssign(['${id}'])`, 'person_add', d.reviewer ? `Re-assign (now ${d.reviewer})` : 'Assign a reviewer');
+    else if (!admin && !d.reviewer && d.status !== 'approved') act = iconBtn(`claimDoc('${id}')`, 'front_hand', 'Claim: become its reviewer', 'text-secondary');
+    else if (!admin && d.reviewer === me) act = `<span class="p-1.5 flex items-center text-on-tertiary-container" title="You review it"><span class="material-symbols-outlined" style="font-size:15px;">how_to_reg</span></span>`;
     return `
-      <tr class="doc-row border-b border-outline-variant last:border-0${isSel ? ' row-selected' : ''}" data-doc="${d.name}" onclick="selectDoc('${d.process}','${esc}')">
+      <tr class="doc-row border-b border-outline-variant last:border-0${isSel ? ' row-selected' : ''}" data-doc="${d.id}" onclick="openDocReview('${id}', false)">
         <td class="px-4 py-3.5 text-center" onclick="event.stopPropagation()">
-          <input type="checkbox" class="doc-checkbox list-row-check" data-doc="${d.name}" ${isSel ? 'checked' : ''} onchange="toggleDocRow('${esc}',this.checked)">
+          <input type="checkbox" class="doc-checkbox list-row-check" data-doc="${d.id}" ${isSel ? 'checked' : ''} onchange="toggleDocRow('${id}',this.checked)">
         </td>
         <td class="px-4 py-3.5">
           <div class="flex items-center gap-3">
@@ -1457,35 +1620,53 @@ function renderDocList() {
           </div>
         </td>
         <td class="px-4 py-3.5"><span class="proc-pill ${pillClass(d.process)}">${d.process}</span></td>
-        <td class="px-4 py-3.5" style="font-family:'JetBrains Mono';font-size:11px;color:#44474c;">${d.version}</td>
-        <td class="px-4 py-3.5">${assigneeHtml}</td>
-        <td class="px-4 py-3.5">${statusBadge(d.status)}</td>
-        <td class="px-4 py-3.5" style="font-family:'JetBrains Mono';font-size:11px;color:#74777d;">${d.due}</td>
+        <td class="px-4 py-3.5">${reviewerHtml}</td>
+        <td class="px-4 py-3.5">${statusBadge(d.status)}${d.carried ? `<p style="font-family:'JetBrains Mono';font-size:10px;color:#00a572;margin-top:3px;" title="Content unchanged since ${d.carried}">from ${d.carried}</p>` : ''}</td>
+        <td class="px-4 py-3.5" style="font-size:11px;color:#44474c;line-height:1.35;">
+          <p class="truncate" style="max-width:190px;" title="${esc((last.by ? last.by + ' ' : '') + last.text)}">${last.by ? `<b style="font-weight:600;">${last.by}</b> ` : ''}${last.text}</p>
+          <p style="font-family:'JetBrains Mono';font-size:10px;color:#74777d;margin-top:2px;">${last.at}</p>
+        </td>
         <td class="px-4 py-3.5" onclick="event.stopPropagation()">
           <div class="flex items-center gap-1">
-            <button onclick="selectDoc('${d.process}','${esc}')" title="View" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-secondary">
-              <span class="material-symbols-outlined" style="font-size:15px;">open_in_new</span>
-            </button>
-            <button title="Download DOCX" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant">
-              <span class="material-symbols-outlined" style="font-size:15px;">download</span>
-            </button>
-            ${d.status !== 'unchanged'
-              ? `<a href="compare.html" title="Compare vs reference" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant"><span class="material-symbols-outlined" style="font-size:15px;">compare_arrows</span></a>`
-              : `<span title="No changes from reference" class="p-1.5 flex items-center cursor-not-allowed" style="color:#c4c6cd;"><span class="material-symbols-outlined" style="font-size:15px;">compare_arrows</span></span>`}
-            ${currentRole === 'admin'
-              ? `<button onclick="openRowAssign('${esc}')" title="Assign reviewer" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant"><span class="material-symbols-outlined" style="font-size:15px;">person_add</span></button>`
-              : (d.assignee === ROLES.developer.assignee
-                  ? `<span class="p-1.5 flex items-center text-on-tertiary-container" title="Assigned to me"><span class="material-symbols-outlined" style="font-size:15px;">how_to_reg</span></span>`
-                  : `<button onclick="assignToMe('${esc}')" title="Assign to me" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-secondary"><span class="material-symbols-outlined" style="font-size:15px;">person_add</span></button>`)}
-            <button title="More" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant">
-              <span class="material-symbols-outlined" style="font-size:15px;">more_vert</span>
-            </button>
+            ${iconBtn(`openDocReview('${id}', false)`, 'open_in_new', 'View', 'text-secondary')}
+            ${iconBtn('', 'download', 'Download DOCX')}
+            ${d.carried
+              ? `<span title="Content unchanged since ${d.carried}: nothing to compare" class="p-1.5 flex items-center cursor-not-allowed" style="color:#c4c6cd;"><span class="material-symbols-outlined" style="font-size:15px;">compare_arrows</span></span>`
+              : `<a href="compare.html" title="Compare vs reference" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant"><span class="material-symbols-outlined" style="font-size:15px;">compare_arrows</span></a>`}
+            ${act}
           </div>
         </td>
       </tr>`;
   }).join('');
 
   syncListSelectAll();
+}
+
+// The version's approval, derived from its documents: Approved when every one is.
+function paintVersionBar() {
+  const bar = document.getElementById('version-bar');
+  if (!bar) return;
+  const n = allDocs.length, a = allDocs.filter(d => d.status === 'approved').length;
+  const counts = Object.keys(REVIEW_STATES).map(k => [k, allDocs.filter(d => d.status === k).length]).filter(([, c]) => c);
+  const pct = Math.round(a / n * 100);
+  const head = a === n
+    ? `<span class="material-symbols-outlined sym-fill" style="font-size:16px;color:#00a572;">check_circle</span>
+       <span class="font-label-sm text-label-sm" style="color:#065f46;"><b>${activeVersion} is approved</b> · all ${n} documents · ${versionApproval() || ''}</span>`
+    : `<span class="material-symbols-outlined" style="font-size:16px;color:#b45309;">rate_review</span>
+       <span class="font-label-sm text-label-sm" style="color:#92400e;"><b>${activeVersion} is in review</b> · ${a} of ${n} documents approved. It is approved when every one is.</span>`;
+  bar.innerHTML = `
+    <div class="flex items-center gap-2 mb-2">${head}<span class="ml-auto font-label-sm text-label-sm" style="font-family:'JetBrains Mono';color:${a === n ? '#00a572' : '#b45309'};">${pct}%</span></div>
+    <div class="ver-track">${counts.map(([k, c]) => `<div style="width:${c / n * 100}%;background:${REVIEW_STATES[k].color};" title="${REVIEW_STATES[k].label}: ${c}"></div>`).join('')}</div>
+    <div class="flex flex-wrap gap-x-2 mt-1.5">${counts.map(([k, c]) =>
+      `<button class="ver-leg" onclick="onlyStatus('${k}')" title="Show only ${REVIEW_STATES[k].label}"><i style="background:${REVIEW_STATES[k].color};"></i>${REVIEW_STATES[k].label} ${c}</button>`).join('')}
+      ${allDocs.some(d => !d.reviewer && d.status !== 'approved')
+        ? `<button class="ver-leg" onclick="setListAssignee('—','Needs a reviewer')" style="color:#b45309;"><span class="material-symbols-outlined" style="font-size:13px;">person_off</span>Needs a reviewer ${allDocs.filter(d => !d.reviewer && d.status !== 'approved').length}</button>` : ''}
+    </div>`;
+}
+// Who approved the version, and when: the last approval of its last document
+function versionApproval() {
+  const last = allDocs.flatMap(d => d.events).filter(e => e.kind === 'approved').sort((x, y) => (x.seq || 0) - (y.seq || 0)).pop();
+  return last ? `approved by ${last.by}, ${last.at}` : '';
 }
 
 // ── Version / commit data (mirrored from project-detail.html) ────────────────
@@ -1500,9 +1681,9 @@ const COMMITS = [
 ];
 
 const VERSIONS = [
-  { tag: 'v1.2.0', sha: 'd9a0c55', desc: 'SWE.3 review draft — all groups',          date: '2026-06-15', status: 'in_review', docs: 45 },
-  { tag: 'v1.1.0', sha: 'b2c841f', desc: 'Engine + Brake subsystems complete',        date: '2026-06-10', status: 'approved',  docs: 40 },
-  { tag: 'v1.0.0', sha: '3ef70a9', desc: 'Initial ADAS SWE.3 baseline',               date: '2026-06-01', status: 'approved',  docs: 35 },
+  { tag: 'v1.2.0', sha: 'd9a0c55', desc: 'SWE.3 review draft — all groups',          date: '2026-06-15', status: 'in_review', docs: 26 },
+  { tag: 'v1.1.0', sha: 'b2c841f', desc: 'Engine + Brake subsystems added',           date: '2026-06-10', status: 'approved',  docs: 24 },
+  { tag: 'v1.0.0', sha: '3ef70a9', desc: 'Initial ADAS SWE.3 baseline',               date: '2026-06-01', status: 'approved',  docs: 20 },
 ];
 
 // ── Commit picker (mirrored from project-detail.html) ────────────────────────
@@ -1585,7 +1766,7 @@ function renderPickerVersions() {
   const accentColor = s => s === 'approved' ? '#00a572' : s === 'in_review' ? '#f59e0b' : '#c4c6cd';
   const pill = s => {
     if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#f0fdf9;color:#00a572;border:1px solid #86efac;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#00a572;display:inline-block;"></span>Approved</span>`;
-    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In Review</span>`;
+    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In review</span>`;
     return '';
   };
   const activeSha = (COMMITS.find(x => x.current) || {}).sha;
@@ -1652,10 +1833,11 @@ function selectCommit(sha) {
   chipDot.style.background = cfg.dot;
   chipDot.classList.toggle('s-dot-pulse', cfg.pulse);
   document.getElementById('proj-chip-label').textContent = cfg.label;
+  paintVersionStatus();
 
   // Banners
   document.getElementById('stale-banner').style.display       = (ps === 'stale') ? '' : 'none';
-  document.getElementById('review-summary-bar').style.display = (ps === 'in-review') ? '' : 'none';
+  document.getElementById('version-bar').style.display        = (ps === 'in-review') ? '' : 'none';
 
   // Canvas
   if (!c.version) {
@@ -1712,8 +1894,8 @@ let projectStatus = 'complete';
 const PROJECT_STATUS_CFG = {
   'not-run':   { label:'Not Run',   dot:'#c4c6cd', bg:'#f3f4f6', color:'#44474c', border:'#c4c6cd', pulse:false },
   'running':   { label:'Running',   dot:'#0058be', bg:'#e5eeff', color:'#0058be', border:'#93c5fd', pulse:true  },
-  'in-review': { label:'In Review', dot:'#b45309', bg:'#fffbeb', color:'#92400e', border:'#fcd34d', pulse:false },
-  'complete':  { label:'Complete',  dot:'#00a572', bg:'#f0fdf9', color:'#00a572', border:'#86efac', pulse:false },
+  'in-review': { label:'In review', dot:'#b45309', bg:'#fffbeb', color:'#92400e', border:'#fcd34d', pulse:false },
+  'complete':  { label:'Approved',  dot:'#00a572', bg:'#f0fdf9', color:'#00a572', border:'#86efac', pulse:false },
   'stale':     { label:'Stale',     dot:'#c2410c', bg:'#fff7ed', color:'#c2410c', border:'#fdba74', pulse:false },
 };
 
@@ -1733,7 +1915,7 @@ function applyProjectStatus(status) {
 
   // Show/hide banners
   document.getElementById('stale-banner').style.display        = (status === 'stale')     ? '' : 'none';
-  document.getElementById('review-summary-bar').style.display  = (status === 'in-review') ? '' : 'none';
+  document.getElementById('version-bar').style.display         = (status === 'in-review') ? '' : 'none';
 
   // Switch canvas based on status
   if (status === 'not-run') {
@@ -1809,17 +1991,19 @@ function showDocState(v) {
   document.getElementById('breadcrumb-doc').style.display     = '';
   document.getElementById('breadcrumb-doc').textContent       = crumb;
 
-  const isInReview = v.docStatus === 'in_review';
-  // Right panel: Outline always; Review while the version is in review; Corrections on SWE.3.
+  // Right panel: Outline · Review (every document: its state, reviewer, action, record) · Corrections on SWE.3.
+  const d = currentDoc();
   document.getElementById('outline-nav').style.display         = swe4 ? 'none' : '';
   document.getElementById('outline-nav-swe4').style.display    = swe4 ? '' : 'none';
   document.getElementById('outline-search-wrap').style.display = swe4 ? 'none' : '';
-  document.getElementById('rp-tab-review').style.display       = isInReview ? '' : 'none';
+  document.getElementById('rp-tab-review').style.display       = d ? '' : 'none';
   document.getElementById('rp-tab-corr').style.display         = swe4 ? 'none' : '';
-  if ((panelTab === 'review' && !isInReview) || (panelTab === 'corr' && swe4)) panelTab = 'outline';
+  if ((panelTab === 'review' && !d) || (panelTab === 'corr' && swe4)) panelTab = 'outline';
   setPanelTab(panelTab);
   foldDocTree();
-  document.getElementById('compare-wrap-sub').style.display = isInReview ? '' : 'none';
+  // Compare: only when the document changed since the baseline (an approval carried = unchanged)
+  document.getElementById('compare-wrap-sub').style.display = d && !d.carried ? 'flex' : 'none';
+  paintReview();
 }
 
 function showEmptyState(v) {
@@ -1865,7 +2049,7 @@ const GEN_LINES = [
   { phase: 4, pct: 80,  txt: 'Phase 4: Exporting DOCX…',                    color: '#8192a7' },
   { phase: 4, pct: 93,  txt: 'Phase 4: Sections 1–4 complete',               color: '#8192a7' },
   { phase: 4, pct: 98,  txt: 'Phase 4: software_detailed_design_Chassis_Mgmt.docx written ✓', color: '#00a572' },
-  { phase: 4, pct: 100, txt: 'Complete. Document ready for review.',         color: '#6ffbbe' },
+  { phase: 4, pct: 100, txt: 'Done. Every document is In review.',         color: '#6ffbbe' },
 ];
 
 let genInterval = null;
@@ -1914,7 +2098,8 @@ function tickGeneration() {
       document.getElementById('state-generating').classList.add('hidden');
       canvasState = 'doc';
       showDocState(currentVersionObj());
-      openAssignPanel();
+      // a run's documents all start In review; the admin assigns their reviewers next
+      if (currentRole === 'admin' && currentDoc()) openAssign([currentDoc().id]);
     }, 1200);
   }
 }
@@ -1926,49 +2111,12 @@ function cancelGeneration() {
   if (!v) showEmptyState({ tag: '', commit: '', branch: 'main', date: '' });
 }
 
-// ── Assign panel ─────────────────────────────────────────────────────────────
-function openAssignPanel() {
-  document.getElementById('assign-panel').classList.add('open');
-  const v = currentVersionObj();
-  document.getElementById('assign-panel-version').textContent = v ? `${v.tag} · ${v.commit}` : '';
-  selectedReviewer = null;
-  document.querySelectorAll('.rev-opt').forEach(b => {
-    b.classList.remove('border-secondary','bg-surface-container-low');
-    b.querySelector('.rev-check').classList.add('hidden');
-  });
-  document.getElementById('selected-reviewer-label').textContent = 'No reviewer selected';
-}
-function closeAssignPanel() { document.getElementById('assign-panel').classList.remove('open'); }
-function selectReviewer(name) {
-  selectedReviewer = name;
-  document.querySelectorAll('.rev-opt').forEach(b => {
-    const active = b.dataset.rev === name;
-    b.classList.toggle('border-secondary', active);
-    b.classList.toggle('bg-surface-container-low', active);
-    b.querySelector('.rev-check').classList.toggle('hidden', !active);
-  });
-  document.getElementById('selected-reviewer-label').textContent = `Selected: ${name}`;
-}
-function sendForReview() {
-  if (!selectedReviewer) { alert('Select a reviewer first.'); return; }
-  const cur = COMMITS.find(x => x.current);
-  if (cur) cur.status = 'in_review';
-  closeAssignPanel();
-  showDocState(currentVersionObj());
-}
-function markComplete() {
-  const cur = COMMITS.find(x => x.current);
-  if (cur) cur.status = 'approved';
-  document.getElementById('rp-tab-review').style.display = 'none';
-  setPanelTab('outline');
-}
-
-
 // ── Role management ───────────────────────────────────────────────────────────
 function applyRole(role) {
   currentRole = role;
   const r = ROLES[role];
   document.getElementById('user-initials').textContent = r.initials;
+  document.getElementById('top-initials').textContent = r.initials;
   document.getElementById('user-name').textContent = r.name;
   document.getElementById('user-role-label').textContent = role === 'admin' ? 'Admin' : 'Developer';
   document.getElementById('role-btn-admin').className = role === 'admin'
@@ -1979,52 +2127,51 @@ function applyRole(role) {
     : 'px-2.5 py-1 transition-colors text-on-surface-variant hover:bg-surface-container';
   document.getElementById('batch-assign-btn').style.display  = role === 'admin' ? '' : 'none';
   document.getElementById('batch-approve-btn').style.display = role === 'admin' ? '' : 'none';
-  document.getElementById('review-reassign-btn').style.display  = role === 'admin' ? '' : 'none';
-  document.getElementById('review-assign-me-btn').style.display = role === 'developer' ? '' : 'none';
   document.getElementById('my-assign-opt').style.display     = role === 'developer' ? '' : 'none';
   document.getElementById('my-assign-divider').style.display = role === 'developer' ? '' : 'none';
   document.getElementById('dev-show-all-wrap').style.display = role === 'developer' ? '' : 'none';
 
   if (role === 'developer') {
     listAssigneeFilter = r.assignee;
-    listStatusFilter   = '';
-    document.getElementById('list-assignee-label').textContent = 'My Assigned';
+    listStatusFilter   = new Set();
+    syncListStatusUI();
+    document.getElementById('list-assignee-label').textContent = 'My reviews';
     document.getElementById('list-assignee-btn').style.color = '#0058be';
     document.getElementById('list-assignee-btn').style.borderColor = '#0058be';
     document.getElementById('dev-show-all-btn').textContent = 'Show all';
     document.querySelectorAll('.list-assignee-opt').forEach(b => {
       b.style.background = b.id === 'my-assign-opt' ? '#eff4ff' : '';
     });
-    document.getElementById('list-status-label').textContent = 'Status';
-    document.getElementById('list-status-btn').style.color = '';
-    document.getElementById('list-status-btn').style.borderColor = '';
   } else {
     listAssigneeFilter = '';
-    document.getElementById('list-assignee-label').textContent = 'Assignee';
+    document.getElementById('list-assignee-label').textContent = 'Reviewer';
     document.getElementById('list-assignee-btn').style.color = '#44474c';
     document.getElementById('list-assignee-btn').style.borderColor = '';
     document.querySelectorAll('.list-assignee-opt').forEach(b => {
-      b.style.background = b.textContent.trim() === 'All assignees' ? '#eff4ff' : '';
+      b.style.background = b.textContent.trim() === 'All reviewers' ? '#eff4ff' : '';
     });
   }
+  bellOpen = false;
+  clearListSelection();
   renderDocList();
   renderTree();
   paintReady();
+  paintReview();
 }
 
 function toggleDevShowAll() {
   if (listAssigneeFilter) {
     listAssigneeFilter = '';
-    document.getElementById('list-assignee-label').textContent = 'Assignee';
+    document.getElementById('list-assignee-label').textContent = 'Reviewer';
     document.getElementById('list-assignee-btn').style.color = '#44474c';
     document.getElementById('list-assignee-btn').style.borderColor = '';
-    document.getElementById('dev-show-all-btn').textContent = 'My Docs';
+    document.getElementById('dev-show-all-btn').textContent = 'My reviews';
     document.querySelectorAll('.list-assignee-opt').forEach(b => {
-      b.style.background = b.textContent.trim() === 'All assignees' ? '#eff4ff' : '';
+      b.style.background = b.textContent.trim() === 'All reviewers' ? '#eff4ff' : '';
     });
   } else {
     listAssigneeFilter = ROLES.developer.assignee;
-    document.getElementById('list-assignee-label').textContent = 'My Assigned';
+    document.getElementById('list-assignee-label').textContent = 'My reviews';
     document.getElementById('list-assignee-btn').style.color = '#0058be';
     document.getElementById('list-assignee-btn').style.borderColor = '#0058be';
     document.getElementById('dev-show-all-btn').textContent = 'Show all';
@@ -2036,32 +2183,389 @@ function toggleDevShowAll() {
   renderTree();
 }
 
-function assignToMe(name) {
-  const d = allDocs.find(x => x.name === name);
+// ── Review and approval (proposal) ───────────────────────────────────────────
+// A document goes In review → (its reviewer submits) Ready for approval → (an admin) Approved, or back
+// as Changes requested. Approved locks it; an admin reopens it, with a reason. Each step is an event:
+// the Review tab's activity, the bell and the list's "Last activity" all read the same record.
+function currentDoc() {
+  return allDocs.find(d => d.process === activeProcess && (!activeDoc || d.name === activeDoc)) || null;
+}
+function docById(id) { return allDocs.find(d => d.id === id); }
+function docLabel(d) { return `${d.name} (${d.process})`; }
+function isMine(d) { return currentRole === 'developer' && d.reviewer === ROLES.developer.assignee; }
+function wordFileStale(d) { return (PENDING[d.name] || 0) > 0; }
+function corrCount(d) {
+  // Brake Controller's SWE.3 is the document drawn in full: count its live corrections
+  if (d.process === 'SWE.3' && d.name === 'Brake Controller')
+    return Object.values(SLOTS).filter(x => x.corrected).length + FC.order.filter(id => FC.nodes[id].corrected).length;
+  return d.corrections || 0;
+}
+function lastEvent(d, kind) { return [...d.events].reverse().find(e => e.kind === kind); }
+
+// What may this role do to this document now? '' = yes, else the reason shown on the disabled control.
+function can(action, d) {
+  const admin = currentRole === 'admin';
+  switch (action) {
+    case 'assign': return !admin ? 'Only an admin assigns reviewers' : d.status === 'approved' ? 'Approved: reopen it first' : '';
+    case 'claim':  return admin ? 'An admin assigns instead' : d.reviewer ? 'It has a reviewer' : d.status === 'approved' ? 'It is approved' : '';
+    case 'submit':
+      if (!['in_review', 'changes_requested'].includes(d.status)) return 'It is not in review';
+      if (!d.reviewer) return 'It needs a reviewer first';
+      return admin || isMine(d) ? '' : 'Only its reviewer submits it';
+    case 'approve':
+      if (!admin) return 'Only an admin approves';
+      if (!['submitted', 'in_review'].includes(d.status)) return 'It is not waiting for approval';
+      if (reexporting) return 'Wait for the re-export to finish';
+      return wordFileStale(d) ? 'Re-export first: the approved Word file must have every correction' : '';
+    case 'changes': return !admin ? 'Only an admin requests changes' : d.status !== 'submitted' ? 'Only a document ready for approval' : '';
+    case 'reopen':  return !admin ? 'Only an admin reopens' : d.status !== 'approved' ? 'It is not approved' : '';
+  }
+  return '';
+}
+
+let evSeq = 0;
+function rvEvent(d, kind, by, text, extra = {}) { d.events.push({ kind, by, text, at: stamp(), seq: ++evSeq, ...extra }); }
+function notify(role, icon, text) { NOTES[role].unshift({ icon, text, at: stamp(), unread: true }); }
+function notifyReviewer(d, icon, text) { if (d.reviewer === ROLES.developer.assignee) notify('developer', icon, text); }
+
+// The design's rules, one function per action (each a POST in the API)
+const RV = {
+  assign(ids, name) {
+    const done = [];
+    ids.map(docById).forEach(d => {
+      if (!d || d.status === 'approved' || d.reviewer === name) return;
+      const from = d.reviewer;
+      d.reviewer = name; done.push(d);
+      rvEvent(d, 'assigned', ADMIN, from ? `re-assigned it from ${from} to ${name}` : `assigned ${name}`);
+      if (from === ROLES.developer.assignee) notify('developer', 'person_remove', `${ADMIN} gave ${docLabel(d)} to ${name}`);
+    });
+    if (done.length && name === ROLES.developer.assignee)
+      notify('developer', 'person_add', `${ADMIN} assigned you ${done.length === 1 ? docLabel(done[0]) : done.length + ' documents'} in ${activeVersion}`);
+    return done.length;
+  },
+  claim(d) {
+    d.reviewer = ROLES.developer.assignee;
+    rvEvent(d, 'claimed', d.reviewer, 'claimed it');
+    notify('admin', 'front_hand', `${d.reviewer} claimed ${docLabel(d)}`);
+  },
+  submit(d, comment) {
+    const by = currentRole === 'admin' ? ADMIN : ROLES.developer.assignee;
+    const again = d.status === 'changes_requested';
+    d.status = 'submitted'; d.comment = comment; d.adminComment = '';
+    rvEvent(d, 'submitted', by, again ? 'fixed it and submitted it again' : 'submitted it for approval', { comment });
+    if (by !== ADMIN) notify('admin', 'pending_actions', `${by} submitted ${docLabel(d)} for approval`);
+  },
+  approve(d, comment) {
+    const direct = d.status === 'in_review';
+    d.status = 'approved';
+    rvEvent(d, 'approved', ADMIN, direct ? 'approved it directly, without a submitted review' : 'approved it',
+            { comment, hash: fakeHash(d.id + evSeq) });
+    notifyReviewer(d, 'check_circle', `${ADMIN} approved ${docLabel(d)}`);
+  },
+  changes(d, comment) {
+    d.status = 'changes_requested'; d.adminComment = comment;
+    rvEvent(d, 'changes_requested', ADMIN, 'requested changes', { comment });
+    notifyReviewer(d, 'undo', `${ADMIN} requested changes to ${docLabel(d)}`);
+  },
+  reopen(d, reason) {
+    d.status = 'in_review'; d.carried = null;
+    rvEvent(d, 'reopened', ADMIN, 'reopened it', { comment: reason });
+    notifyReviewer(d, 'lock_open', `${ADMIN} reopened ${docLabel(d)}`);
+  },
+};
+
+function openDocReview(id, toReview = true) {
+  const d = docById(id);
   if (!d) return;
-  d.assignee = ROLES.developer.assignee;
-  d.initials  = ROLES.developer.initials;
-  d.ac = '#f3e8ff'; d.atc = '#7c3aed';
+  selectDoc(d.process, d.name);
+  if (toReview) setPanelTab('review');
+}
+function claimDoc(id) {
+  const d = docById(id), why = can('claim', d);
+  if (why) return toast(why);
+  RV.claim(d);
+  toast(`You review ${docLabel(d)} now.`, 'The admins are notified. Submit it for approval when you are done.');
+  paintReview();
+}
+const rvDrafts = {};
+function submitReview(id) {
+  const d = docById(id), why = can('submit', d);
+  if (why) return toast(why);
+  const c = (rvDrafts[id] || '').trim();
+  if (!c) {
+    toast('Say what you checked.', 'The comment is the review record the admin approves on.');
+    const ta = document.getElementById('rv-comment');
+    if (ta) ta.focus();
+    return;
+  }
+  RV.submit(d, c);
+  delete rvDrafts[id];
+  if (editing) toggleEdit(false);
+  toast('Submitted for approval.', currentRole === 'admin' ? '' : 'The admins are notified.');
+  paintReview();
+}
+
+// Everything that shows a document's review state, redrawn after any change
+function paintReview() {
   renderDocList();
   renderTree();
+  paintVersionStatus();
+  paintBell();
+  if (canvasState !== 'doc') return;
+  renderReviewTab();
+  paintReviewBanner();
+  paintEditLock();
 }
 
-function assignToMeDoc() {
-  if (activeDoc) {
-    const d = allDocs.find(x => x.name === activeDoc);
-    if (d) { d.assignee = ROLES.developer.assignee; d.initials = ROLES.developer.initials; d.ac = '#f3e8ff'; d.atc = '#7c3aed'; }
+// Subbar chip of the current version: derived from its documents, never set by hand
+function paintVersionStatus() {
+  const c = COMMITS.find(x => x.current);
+  if (!c || !c.version || c.status !== 'in_review') return;
+  const n = allDocs.length, a = allDocs.filter(d => d.status === 'approved').length;
+  const cfg = PROJECT_STATUS_CFG[a === n ? 'complete' : 'in-review'];
+  const chip = document.getElementById('proj-status-chip');
+  chip.style.background = cfg.bg; chip.style.color = cfg.color; chip.style.borderColor = cfg.border;
+  document.getElementById('proj-chip-dot').style.background = cfg.dot;
+  document.getElementById('proj-chip-label').textContent = a === n ? 'Approved' : `In review · ${a}/${n} approved`;
+  chip.title = a === n ? `Every document is approved (${versionApproval()})` : `${activeVersion} is approved when every one of its ${n} documents is`;
+}
+
+function renderReviewTab() {
+  const host = document.getElementById('review-tracker'), d = currentDoc();
+  if (!host || !d) return;
+  const admin = currentRole === 'admin', n = corrCount(d), stale = wordFileStale(d);
+  const row = (k, v) => `<div class="rv-row"><span class="rv-k">${k}</span><span class="rv-v">${v}</span></div>`;
+  const btn = (cls, icon, label, onclick, why) =>
+    `<button class="rv-btn ${cls}" onclick="${onclick}" ${why ? `disabled title="${esc(why)}"` : ''}><span class="material-symbols-outlined">${icon}</span>${label}</button>`;
+  const ic = (name) => `<span class="material-symbols-outlined" style="font-size:13px;vertical-align:-2px;">${name}</span>`;
+  const corr = `${n} correction${n === 1 ? '' : 's'}`;
+  let action = '';
+  if (d.status === 'approved') {
+    const ap = lastEvent(d, 'approved'), ca = lastEvent(d, 'carried');
+    action = `<div class="rv-box ok"><span class="rv-k" style="color:#00a572;">Approved</span>` +
+      (ap ? `By ${ap.by} · ${ap.at}${ap.comment ? `<p style="color:#0b1c30;margin-top:3px;">“${esc(ap.comment)}”</p>` : ''}`
+          : `In ${d.carried}. The content is unchanged in ${d.version}, so the approval carries.`) +
+      `<p class="rv-hash">Word file sha256 ${(ap || ca).hash}…</p></div>` +
+      `<p class="rv-note">${ic('lock')} Locked: no corrections.${admin ? '' : ' An admin can reopen it.'}</p>` +
+      (admin ? btn('o', 'lock_open', 'Reopen…', `openModal({ type: 'reopen', id: '${d.id}' })`) : '');
+  } else if (!d.reviewer) {
+    action = admin
+      ? `<p class="rv-note" style="margin-top:0;">Nobody reviews it yet.</p>` + btn('p', 'person_add', 'Assign a reviewer…', `openAssign(['${d.id}'])`)
+      : `<p class="rv-note" style="margin-top:0;">Nobody reviews it yet. Claim it to become its reviewer.</p>` + btn('p', 'front_hand', 'Claim', `claimDoc('${d.id}')`);
+  } else if (d.status === 'submitted') {
+    const sub = lastEvent(d, 'submitted'), why = can('approve', d);
+    action = `<div class="rv-box info"><span class="rv-k">${d.reviewer.split(' ')[0]}’s review</span>“${esc(d.comment)}”` +
+      `<p class="rv-meta">${corr} · submitted ${sub ? sub.at : ''}</p></div>` +
+      (admin
+        ? btn('ok', 'check_circle', 'Approve…', `openModal({ type: 'approve', id: '${d.id}' })`, why) +
+          (why ? `<p class="rv-why">${why}.</p>` : '') +
+          btn('bad', 'undo', 'Request changes…', `openModal({ type: 'changes', id: '${d.id}' })`)
+        : `<p class="rv-note">${ic('hourglass_top')} Waiting for an admin to approve it.</p>`);
+  } else if (admin || isMine(d)) {
+    const why = can('submit', d), back = d.status === 'changes_requested' ? lastEvent(d, 'changes_requested') : null;
+    const whyApprove = can('approve', d);
+    action = (back ? `<div class="rv-box bad" style="margin-bottom:10px;"><span class="rv-k" style="color:#ba1a1a;">Changes requested · ${back.at}</span>“${esc(back.comment)}”</div>` : '') +
+      `<p class="rv-k" style="margin-bottom:4px;">${back ? 'Fix it, then submit again' : admin && !isMine(d) ? `Submit for ${d.reviewer.split(' ')[0]}` : 'Your review'}</p>` +
+      `<textarea id="rv-comment" class="rv-ta" maxlength="2000" oninput="rvDrafts['${d.id}'] = this.value" ` +
+      `placeholder="What you checked, and what you corrected">${esc(rvDrafts[d.id] || '')}</textarea>` +
+      `<p class="rv-meta">${corr} in this document${d.process === 'SWE.3' ? ' · Edit to correct more' : ''}</p>` +
+      btn('p', 'send', 'Submit for approval', `submitReview('${d.id}')`, why) +
+      (admin && d.status === 'in_review'
+        ? btn('o', 'check_circle', 'Approve directly…', `openModal({ type: 'approve', id: '${d.id}' })`, whyApprove) +
+          (whyApprove ? `<p class="rv-why">${whyApprove}.</p>` : '')
+        : '');
+  } else {
+    action = `<p class="rv-note" style="margin-top:0;">${d.reviewer} reviews it. You can read and download it.</p>`;
   }
-  const btn = document.getElementById('review-assign-me-btn');
-  btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:12px;">how_to_reg</span> Assigned';
-  btn.disabled = true;
-  btn.style.opacity = '0.6';
+  const word = reexporting ? '<span style="color:#b45309;">re-exporting…</span>'
+    : stale ? `<span style="color:#b45309;" title="${PENDING[d.name]} correction${PENDING[d.name] === 1 ? ' is' : 's are'} not in the Word file yet">${PENDING[d.name]} missing</span>` +
+              (admin ? `<a onclick="startReexport()" title="Re-export the version's Word files">Re-export</a>` : '')
+    : '<span style="color:#00a572;">up to date</span>';
+  const events = [...d.events].reverse().map(e => `<div class="tl ${e.kind}">` +
+    `<p>${e.by ? `<b>${e.by}</b> ` : ''}${esc(e.text)}</p>` +
+    (e.comment ? `<p class="q">“${esc(e.comment)}”</p>` : '') +
+    (e.hash ? `<p class="w">Word file sha256 ${e.hash}…</p>` : '') +
+    `<p class="w">${e.at}</p></div>`).join('');
+  host.innerHTML = `<div class="rv-sec">` +
+    row('Status', statusBadge(d.status)) +
+    row('Reviewer', d.reviewer
+      ? `${avatar(d.reviewer, 18)}<span class="truncate">${d.reviewer}</span>${admin && d.status !== 'approved' ? `<a onclick="openAssign(['${d.id}'])">Change</a>` : ''}`
+      : `<span style="color:#b45309;font-weight:600;">Needs a reviewer</span>`) +
+    row('Word file', word) +
+    `<div style="padding:12px 0 14px;border-bottom:1px solid #eef1f6;">${action}</div>` +
+    `<p class="rv-k" style="margin:12px 0 8px;">Activity</p>${events}</div>`;
 }
 
-function openRowAssign(name) {
-  const d = allDocs.find(x => x.name === name);
-  if (!d) return;
-  selectDoc(d.process, name);
-  setTimeout(openAssignPanel, 60);
+// The banner at the top of the open document
+function paintReviewBanner() {
+  const d = currentDoc(), admin = currentRole === 'admin';
+  let h = '';
+  if (d && d.status === 'approved') {
+    const ap = lastEvent(d, 'approved');
+    h = `<div class="rv-banner ok"><span class="material-symbols-outlined" style="font-size:18px;color:#00a572;">lock</span>` +
+        `<p>${ap ? `<b>Approved</b> by ${ap.by} · ${ap.at}.` : `<b>Approved in ${d.carried}.</b> The content is unchanged in ${d.version}, so the approval carries.`}` +
+        ` Locked: no corrections.${admin ? '' : ' An admin can reopen it.'}</p>` +
+        (admin ? `<button class="act" style="border-color:#86efac;color:#065f46;" onclick="openModal({ type: 'reopen', id: '${d.id}' })">` +
+                 `<span class="material-symbols-outlined" style="font-size:13px;">lock_open</span>Reopen…</button>` : '') + `</div>`;
+  } else if (d && d.status === 'changes_requested') {
+    const cr = lastEvent(d, 'changes_requested');
+    h = `<div class="rv-banner bad"><span class="material-symbols-outlined" style="font-size:18px;color:#ba1a1a;">undo</span>` +
+        `<div><p><b>Changes requested</b> by ${cr.by} · ${cr.at}</p><p style="color:#0b1c30;margin-top:2px;">“${esc(cr.comment)}”</p></div>` +
+        (isMine(d) ? `<button class="act" style="border-color:#f5a3a3;color:#ba1a1a;" onclick="setPanelTab('review')">Submit again…</button>` : '') + `</div>`;
+  } else if (d && d.status === 'submitted' && admin) {
+    h = `<div class="rv-banner info"><span class="material-symbols-outlined" style="font-size:18px;color:#0058be;">pending_actions</span>` +
+        `<p><b>Ready for approval.</b> ${d.reviewer} submitted it: “${esc(d.comment)}”</p>` +
+        `<button class="act" style="border-color:#8ab0f0;color:#0058be;" onclick="setPanelTab('review')">Approve or request changes…</button></div>`;
+  }
+  ['rv-banner', 'rv-banner-4'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = h; });
+}
+
+// An approved document is locked: Edit is off until an admin reopens it
+function paintEditLock() {
+  const d = currentDoc(), b = document.getElementById('cta-edit');
+  const locked = !!d && d.status === 'approved';
+  b.disabled = locked;
+  b.title = locked ? 'Approved: locked. An admin can reopen it.' : '';
+  if (locked && editing) toggleEdit(false);
+  document.getElementById('cta-edit-icon').textContent = locked ? 'lock' : editing ? 'check' : 'edit';
+}
+
+// ── Review and approval dialogs ──────────────────────────────────────────────
+let rvModal = null;
+function openModal(m) { rvModal = m; renderModal(); }
+function closeModal() { rvModal = null; renderModal(); }
+function openAssign(ids) {
+  if (!ids.length) return;
+  const first = docById(ids[0]);
+  openModal({ type: 'assign', ids, pick: ids.length === 1 && first ? first.reviewer : null });
+}
+function pickReviewer(name) { rvModal.pick = name; renderModal(); }
+function bulkReady() {
+  return [...selectedDocIds].map(docById).filter(d => d && d.status === 'submitted' && !can('approve', d));
+}
+function renderModal() {
+  const host = document.getElementById('rv-modal'), m = rvModal;
+  if (!m) { host.classList.add('hidden'); host.innerHTML = ''; return; }
+  const ic = (name) => `<span class="material-symbols-outlined" style="font-size:14px;vertical-align:-3px;">${name}</span>`;
+  let title = '', body = '', foot = '';
+  if (m.type === 'assign') {
+    const ds = m.ids.map(docById).filter(Boolean), open = ds.filter(d => d.status !== 'approved'), skip = ds.length - open.length;
+    title = `Assign a reviewer · ${open.length} document${open.length === 1 ? '' : 's'}`;
+    body = `<p class="rv-note" style="margin:0 0 10px;">${open.slice(0, 4).map(docLabel).join(' · ')}${open.length > 4 ? ` and ${open.length - 4} more` : ''}</p>` +
+      REVIEWERS.map(name => {
+        const load = allDocs.filter(d => d.reviewer === name && d.status !== 'approved').length;
+        return `<button class="pick${m.pick === name ? ' on' : ''}" onclick="pickReviewer('${name}')">${avatar(name, 28)}` +
+               `<span class="flex-1"><span style="font-size:13px;">${name}</span>` +
+               `<span class="rv-meta" style="display:block;margin-top:1px;">${load} open review${load === 1 ? '' : 's'}</span></span>` +
+               (m.pick === name ? '<span class="material-symbols-outlined" style="color:#0058be;font-size:18px;">check</span>' : '') + `</button>`;
+      }).join('') +
+      `<p class="rv-note">${ic('info')} One reviewer per document: this replaces the reviewer it has. ${m.pick ? m.pick.split(' ')[0] : 'The reviewer'} gets a notification.</p>` +
+      (skip ? `<p class="rv-why">${skip} approved document${skip === 1 ? ' is' : 's are'} skipped: reopen ${skip === 1 ? 'it' : 'them'} first.</p>` : '');
+    foot = `<button class="rv-btn p" onclick="doAssign()" ${m.pick && open.length ? '' : 'disabled'}>Assign</button>`;
+  } else if (m.type === 'approve') {
+    const d = docById(m.id), n = corrCount(d);
+    title = `Approve ${docLabel(d)}`;
+    body = `<div class="rv-box info" style="line-height:1.75;">` +
+        `<p>${ic('person')} Reviewed by <b>${d.reviewer || 'nobody'}</b>${d.status === 'submitted' && d.comment ? `: “${esc(d.comment)}”` : d.status === 'in_review' ? '. Not submitted: you approve it directly.' : ''}</p>` +
+        `<p>${ic('edit_note')} ${n} correction${n === 1 ? '' : 's'}</p>` +
+        `<p>${ic('description')} The Word file is up to date. Its hash is recorded with the approval.</p></div>` +
+      `<p class="rv-k" style="margin:12px 0 4px;">Comment (optional)</p>` +
+      `<textarea id="rv-m-comment" class="rv-ta" maxlength="2000" placeholder="Anything the record should say"></textarea>` +
+      `<p class="rv-note">${ic('lock')} Approving locks the document: no corrections until an admin reopens it.` +
+      (d.process === 'SWE.4' ? ' The flowchart labels of its SWE.3 lock too: its test steps are built from them.' : '') + `</p>`;
+    foot = `<button class="rv-btn ok" onclick="doApprove()"><span class="material-symbols-outlined">check_circle</span>Approve</button>`;
+  } else if (m.type === 'changes') {
+    const d = docById(m.id);
+    title = `Request changes · ${docLabel(d)}`;
+    body = `<p class="rv-k" style="margin-bottom:4px;">What needs to change (required)</p>` +
+      `<textarea id="rv-m-comment" class="rv-ta" maxlength="2000" placeholder="${d.reviewer} sees this at the top of the document"></textarea>` +
+      `<p class="rv-note">It goes back to ${d.reviewer}, who fixes it and submits it again.</p>`;
+    foot = `<button class="rv-btn bad" onclick="doChanges()"><span class="material-symbols-outlined">undo</span>Request changes</button>`;
+  } else if (m.type === 'reopen') {
+    const d = docById(m.id);
+    title = `Reopen ${docLabel(d)}`;
+    body = `<p class="rv-note" style="margin:0 0 10px;">It goes back to In review${d.reviewer ? ` with ${d.reviewer} as its reviewer` : ''}, ` +
+      `and corrections are allowed again. The approval stays in its activity.</p>` +
+      `<p class="rv-k" style="margin-bottom:4px;">Reason (required)</p><textarea id="rv-m-comment" class="rv-ta" maxlength="2000"></textarea>`;
+    foot = `<button class="rv-btn p" onclick="doReopen()"><span class="material-symbols-outlined">lock_open</span>Reopen</button>`;
+  } else if (m.type === 'bulk') {
+    const ready = bulkReady(), skip = selectedDocIds.size - ready.length;
+    title = `Approve ${ready.length} document${ready.length === 1 ? '' : 's'}`;
+    body = (ready.length ? `<p>${ready.map(docLabel).join(' · ')}</p>` : '<p>None of the selected documents can be approved now.</p>') +
+      (skip ? `<p class="rv-why">${skip} other selected document${skip === 1 ? ' is' : 's are'} skipped: not ready for approval, ` +
+              `or ${skip === 1 ? 'its' : 'their'} Word file is missing corrections.</p>` : '') +
+      `<p class="rv-note">Each is approved on its own record, with its Word file’s hash, and locked.</p>`;
+    foot = `<button class="rv-btn ok" onclick="doBulk()" ${ready.length ? '' : 'disabled'}><span class="material-symbols-outlined">check_circle</span>Approve ${ready.length}</button>`;
+  }
+  host.innerHTML = `<div class="rv-dialog" role="dialog" aria-modal="true">` +
+    `<div class="hd"><p class="font-label-md text-label-md text-on-surface">${title}</p>` +
+    `<button onclick="closeModal()" class="p-1 hover:bg-surface-container rounded-lg" aria-label="Close"><span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">close</span></button></div>` +
+    `<div class="bd">${body}</div>` +
+    `<div class="ft"><button class="rv-btn o" onclick="closeModal()">Cancel</button>${foot}</div></div>`;
+  host.classList.remove('hidden');
+}
+function modalText() { const t = document.getElementById('rv-m-comment'); return t ? t.value.trim() : ''; }
+function doAssign() {
+  const name = rvModal.pick, ids = rvModal.ids, n = RV.assign(ids, name);
+  closeModal(); clearListSelection();
+  toast(n ? `${name} reviews ${n === 1 ? 'it' : n + ' documents'} now.` : 'Nothing changed.',
+        n ? `${name.split(' ')[0]} gets a notification.` : `${name} already reviews ${ids.length === 1 ? 'it' : 'them'}.`);
+  paintReview();
+}
+function doApprove() {
+  const d = docById(rvModal.id), why = can('approve', d);
+  if (why) return toast(why);
+  RV.approve(d, modalText());
+  closeModal();
+  const all = allDocs.every(x => x.status === 'approved');
+  toast(`${docLabel(d)} is approved.`, all ? `Every document is approved, so ${activeVersion} is approved.` : 'It is locked, and its reviewer is notified.');
+  paintReview();
+}
+function doChanges() {
+  const c = modalText();
+  if (!c) return toast('Say what needs to change.');
+  const d = docById(rvModal.id);
+  RV.changes(d, c);
+  closeModal();
+  toast('Sent back to its reviewer.', `${d.reviewer} is notified and sees your comment at the top of the document.`);
+  paintReview();
+}
+function doReopen() {
+  const c = modalText();
+  if (!c) return toast('Give a reason.', 'It goes on the record.');
+  const d = docById(rvModal.id);
+  RV.reopen(d, c);
+  closeModal();
+  toast(`${docLabel(d)} is in review again.`, 'Corrections are allowed. The approval stays in its activity.');
+  paintReview();
+}
+function doBulk() {
+  const ready = bulkReady();
+  ready.forEach(d => RV.approve(d, ''));
+  closeModal(); clearListSelection();
+  toast(`Approved ${ready.length} document${ready.length === 1 ? '' : 's'}.`, 'Each is locked, and its reviewer is notified.');
+  paintReview();
+}
+
+// ── Bell: this role's notifications ──────────────────────────────────────────
+let bellOpen = false;
+function toggleBell() { bellOpen = !bellOpen; paintBell(); }
+function markAllRead() { NOTES[currentRole].forEach(x => { x.unread = false; }); paintBell(); }
+function paintBell() {
+  const list = NOTES[currentRole], unread = list.filter(x => x.unread).length;
+  const c = document.getElementById('bell-count');
+  c.style.display = unread ? '' : 'none';
+  c.textContent = unread;
+  const dd = document.getElementById('bell-dd');
+  dd.style.display = bellOpen ? '' : 'none';
+  if (!bellOpen) return;
+  dd.innerHTML = `<div class="flex items-center justify-between px-4 py-2.5"><p class="font-label-md text-label-md text-on-surface">Notifications</p>` +
+    (unread ? `<button onclick="markAllRead()" class="font-label-sm text-label-sm text-secondary hover:underline">Mark all read</button>` : '') + `</div>` +
+    (list.length
+      ? list.slice(0, 8).map(x => `<div class="bell-row${x.unread ? ' unread' : ''}">` +
+          `<span class="material-symbols-outlined" style="color:${x.unread ? '#0058be' : '#74777d'};">${x.icon}</span>` +
+          `<div class="min-w-0"><p style="color:#0b1c30;">${esc(x.text)}</p><p class="rv-meta" style="margin-top:2px;">${x.at}</p></div></div>`).join('')
+      : '<p class="bell-row" style="color:#74777d;">Nothing new.</p>');
 }
 
 // ── Sidebar toggle ────────────────────────────────────────────────────────────
@@ -2101,6 +2605,8 @@ const expandedGroups = new Set(['Chassis_Mgmt']);
 function selectDoc(process, doc) {
   activeProcess = process;
   activeDoc     = doc || '';
+  const cd = currentDoc();
+  pending = cd ? (PENDING[cd.name] || 0) : 0;   // R9 is per component: SWE.3 and SWE.4 share it
   const entry   = docTree.find(d => d.process === process);
   const title   = doc || `${process} — ${entry.label}`;
   document.getElementById('doc-title').textContent          = title;
@@ -2109,6 +2615,7 @@ function selectDoc(process, doc) {
   if (v && v.docStatus) showDocState(v);
   else if (v) showEmptyState(v);
   renderTree();
+  paintReady();
 }
 
 let treeQuery = '';
@@ -2163,8 +2670,8 @@ function renderTree() {
         if (q && docsToShow.length === 0) return;
         if (filterByMe) {
           docsToShow = docsToShow.filter(doc => {
-            const entry = allDocs.find(x => x.name === doc);
-            return entry && entry.assignee === ROLES.developer.assignee;
+            const entry = allDocs.find(x => x.process === process && x.name === doc);
+            return entry && entry.reviewer === ROLES.developer.assignee;
           });
           if (docsToShow.length === 0) return;
         }
@@ -2183,10 +2690,14 @@ function renderTree() {
 
         docsToShow.forEach(doc => {
           const active = activeProcess === process && activeDoc === doc;
+          const entry  = allDocs.find(x => x.process === process && x.name === doc);
+          const st     = entry ? REVIEW_STATES[entry.status] : null;
           const dRow = document.createElement('div');
           dRow.className = `tree-component ${active ? 'active' : ''}`;
           dRow.style.paddingLeft = '32px';
-          dRow.innerHTML = `<span class="comp-dot"></span>${doc}`;
+          // the dot is the document's review state
+          dRow.title = st ? `${st.label}${entry.reviewer ? ' · ' + entry.reviewer : ' · needs a reviewer'}` : '';
+          dRow.innerHTML = `<span class="comp-dot"${st ? ` style="background:${st.color};"` : ''}></span>${doc}`;
           dRow.onclick = () => selectDoc(process, doc);
           el.appendChild(dRow);
         });
@@ -2196,7 +2707,7 @@ function renderTree() {
       if (q && !process.toLowerCase().includes(q) && !label.toLowerCase().includes(q)) return;
       if (filterByMe) {
         const entry = allDocs.find(x => x.process === process);
-        if (!entry || entry.assignee !== ROLES.developer.assignee) return;
+        if (!entry || entry.reviewer !== ROLES.developer.assignee) return;
       }
       const active = activeProcess === process;
       const sRow = document.createElement('div');
@@ -2540,6 +3051,11 @@ function setEditable() {
 
 function toggleEdit(on) {
   editing = on === undefined ? !editing : on;
+  const cd = currentDoc();
+  if (editing && cd && cd.status === 'approved') {   // approved = locked (review and approval)
+    editing = false;
+    toast('Approved: locked.', 'An admin can reopen it.');
+  }
   document.body.classList.toggle('editing', editing);
   if (!editing) {
     if (document.activeElement && document.activeElement.classList.contains('ed')) document.activeElement.blur();
@@ -2584,6 +3100,8 @@ function paintReady() {
   const b = document.getElementById('ready-banner'), txt = document.getElementById('ready-text');
   const icon = document.getElementById('ready-icon'), btn = document.getElementById('reexport-btn');
   if (!b) return;
+  const cd = currentDoc();
+  if (cd) PENDING[cd.name] = pending;
   refreshPanels();
   btn.style.display = 'none';
   if (reexporting) {
@@ -2597,7 +3115,7 @@ function paintReady() {
     b.className = 'ready-banner show ok';
     icon.textContent = 'check_circle'; icon.style.color = '#00a572';
     txt.style.color = '#065f46';
-    txt.innerHTML = '<b>The Word files are up to date</b> (SWE.3 and SWE.4 of Brake Controller).';
+    txt.innerHTML = `<b>The Word files are up to date</b> (every document of ${activeVersion}).`;
     return;
   }
   txt.style.color = '#92400e';
@@ -2618,6 +3136,7 @@ function startReexport() {
   setTimeout(() => { reexporting = steps[1]; paintReady(); }, 1400);
   setTimeout(() => {
     reexporting = false; pending = 0; justExported = true;
+    Object.keys(PENDING).forEach(k => { PENDING[k] = 0; });   // it writes every document of the version
     setEditable(); paintReady();
     toast('Re-export finished.', 'Download now gives the corrected Word files.');
     setTimeout(() => { justExported = false; paintReady(); }, 3500);
@@ -2744,6 +3263,9 @@ function fcFocus(id) {
 }
 function openFlowchartEditor() {
   if (reexporting) return;
+  const t = allDocs.find(x => x.process === 'SWE.4' && x.name === activeDoc);
+  if (t && t.status === 'approved')
+    return toast('These labels are locked.', `SWE.4 of ${activeDoc} is approved, and its test steps are built from them. An admin can reopen it.`);
   fcDraft = {};
   FC.order.forEach(id => { if (!FC.nodes[id].fixed) fcDraft[id] = FC.nodes[id].label; });
   drawFlowchart('fc-modal-pic', true);
@@ -2959,6 +3481,7 @@ function refreshPanels() {
   if (!slotsReady) return;
   renderOutline();
   renderCorrections();
+  if (canvasState === 'doc') renderReviewTab();   // its correction count and Word-file row follow the edits
 }
 
 // ── Scroll spy: the outline marks where you are ──────────────────────────────
@@ -3005,6 +3528,7 @@ document.addEventListener('click', e => {
     document.getElementById('list-status-dd').classList.add('hidden');
     document.getElementById('list-status-chevron').style.transform = '';
   }
+  if (bellOpen && e.target.isConnected && !document.getElementById('bell-wrap').contains(e.target)) { bellOpen = false; paintBell(); }
   const assigneeWrap = document.getElementById('list-assignee-wrap');
   if (assigneeWrap && !assigneeWrap.contains(e.target)) {
     document.getElementById('list-assignee-dd').classList.add('hidden');
@@ -3018,6 +3542,19 @@ setActiveOutline('s-intro');
 buildExtraUnits(); initSlots(); setEditable(); drawFlowchart('doc-fc', false); paintReady();
 // documents.html#edit opens a SWE.3 document straight in edit mode (review & update mockup).
 if (location.hash === '#edit') { selectDoc('SWE.3', 'Brake Controller'); toggleEdit(true); }
+paintBell();
+// documents.html#review · #changes · #approve · #approved open a document in one review state, in the
+// role that acts on it (review and approval mockup).
+const REVIEW_HASH = {
+  '#review':   ['developer', 'SWE.3', 'Brake Controller'],     // Bob reviews, corrects, submits
+  '#changes':  ['developer', 'SWE.3', 'Throttle Controller'],  // sent back to Bob with a comment
+  '#approve':  ['admin', 'SWE.3', 'Stability Control'],        // ready, but its Word file needs a re-export first
+  '#approved': ['admin', 'SWE.3', 'ABS Unit'],                 // approved and locked; Reopen
+};
+if (REVIEW_HASH[location.hash]) {
+  const [role, proc, name] = REVIEW_HASH[location.hash];
+  applyRole(role); selectDoc(proc, name); setPanelTab('review');
+}
 </script>
 </body>
 </html>

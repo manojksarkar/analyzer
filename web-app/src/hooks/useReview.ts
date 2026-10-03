@@ -77,19 +77,33 @@ export function describeSave(r: Pick<SlotSaveResult, 'previousText' | 'queuedFor
   return parts.join(' ')
 }
 
-function saveError(title: string) {
-  return (e: Error) => {
-    if (e instanceof ApiError && e.status === 409) {
-      toast.error(title, 'A run changed this document while you were editing. Nothing was saved; try again.')
-    } else {
-      toast.error(title, e.message)
+/** A save refused because a document printing the text is approved (REVIEW_APPROVE_API_SPEC
+ *  "Corrections on an approved document"), or because a run changed it under the reviewer. */
+export function saveErrorMessage(e: Error): string {
+  if (e instanceof ApiError && e.status === 409) {
+    if (e.code === 'DOCUMENT_APPROVED') {
+      return 'A document that prints this text is approved, so it is locked. An admin can reopen it. Nothing was saved.'
     }
+    return 'A run changed this document while you were editing. Nothing was saved; try again.'
+  }
+  return e.message
+}
+
+function useSaveError(projectId: string, title: string) {
+  const qc = useQueryClient()
+  return (e: Error) => {
+    // Approved meanwhile: read the documents again, so the page locks.
+    if (e instanceof ApiError && e.code === 'DOCUMENT_APPROVED') {
+      qc.invalidateQueries({ queryKey: projectKeys.documentsAll(projectId), predicate: (q) => q.queryKey[3] !== 'render' })
+    }
+    toast.error(title, saveErrorMessage(e))
   }
 }
 
 /** R3, or R6 for a behaviour row's bullets. */
 export function useSaveSlot(projectId: string, versionId: string) {
   const after = useAfterSave(projectId, versionId)
+  const onError = useSaveError(projectId, 'Not saved')
   return useMutation({
     mutationFn: ({ slot, text }: { slot: Slot; text: string }) =>
       slot.kind === 'behaviourDescription'
@@ -97,23 +111,25 @@ export function useSaveSlot(projectId: string, versionId: string) {
           text.split('\n').map((l) => l.replace(/^\s*[•-]\s*/, '').trim()).filter(Boolean))
         : reviewApi.saveSlot(projectId, versionId, slot.kind, slot.key, text),
     onSuccess: (r) => { after(); toast.success('Saved', describeSave(r)) },
-    onError: saveError('Not saved'),
+    onError,
   })
 }
 
 /** R4: back to the LLM's wording. */
 export function useUndoSlot(projectId: string, versionId: string) {
   const after = useAfterSave(projectId, versionId)
+  const onError = useSaveError(projectId, 'Undo failed')
   return useMutation({
     mutationFn: (slot: Slot) => reviewApi.undo(projectId, versionId, slot.kind, slot.key),
     onSuccess: () => { after(); toast.success('Back to the LLM’s text', 'The history keeps your correction.') },
-    onError: saveError('Undo failed'),
+    onError,
   })
 }
 
 /** R8: one flowchart's changed labels, saved together. */
 export function useSaveFlowchartLabels(projectId: string, versionId: string) {
   const after = useAfterSave(projectId, versionId)
+  const onError = useSaveError(projectId, 'Labels not saved')
   return useMutation({
     mutationFn: ({ flowchartId, labels }: { flowchartId: string; labels: Record<string, string> }) =>
       reviewApi.saveFlowchartLabels(projectId, versionId, flowchartId, labels),
@@ -123,7 +139,7 @@ export function useSaveFlowchartLabels(projectId: string, versionId: string) {
       toast.success(`Saved ${n} label${n === 1 ? '' : 's'}`,
         'The picture is redrawn, and the SWE.4 test steps use the new wording.')
     },
-    onError: saveError('Labels not saved'),
+    onError,
   })
 }
 

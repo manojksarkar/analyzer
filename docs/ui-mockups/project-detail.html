@@ -248,7 +248,7 @@
           <span class="material-symbols-outlined" style="font-size:17px;color:#0058be;font-variation-settings:'FILL' 1;flex-shrink:0;">manage_accounts</span>
           <div style="flex:1;min-width:0;">
             <div style="font-size:12px;font-weight:500;color:#0b1c30;">Admin</div>
-            <div style="font-size:10px;color:#74777d;">Full access — run, assign, manage</div>
+            <div style="font-size:10px;color:#74777d;">Full access — run, assign, approve</div>
           </div>
           <span id="role-check-admin" class="material-symbols-outlined" style="font-size:15px;color:#0058be;flex-shrink:0;">check</span>
         </button>
@@ -258,7 +258,7 @@
           <span class="material-symbols-outlined" style="font-size:17px;color:#7c3aed;font-variation-settings:'FILL' 1;flex-shrink:0;">code</span>
           <div style="flex:1;min-width:0;">
             <div style="font-size:12px;font-weight:500;color:#0b1c30;">Developer</div>
-            <div style="font-size:10px;color:#74777d;">View only — no actions</div>
+            <div style="font-size:10px;color:#74777d;">Reviews, claims, submits for approval</div>
           </div>
           <span id="role-check-developer" class="material-symbols-outlined" style="font-size:15px;color:#0058be;flex-shrink:0;visibility:hidden;">check</span>
         </button>
@@ -287,10 +287,24 @@
     </nav>
     <!-- Right actions -->
     <div class="flex items-center gap-0.5">
-      <button class="relative p-2 hover:bg-surface-container rounded-lg transition-colors" title="Notifications">
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
-        <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border-2 border-white"></span>
-      </button>
+      <!-- Review and approval (proposal): the bell lists the review events meant for the role on
+           screen (admin: submitted, claimed; developer: assigned, approved, changes requested,
+           reopened) - drawn by renderBell(). -->
+      <div class="relative" id="bell-wrap">
+        <button id="bell-btn" onclick="toggleBell()" class="relative p-2 hover:bg-surface-container rounded-lg transition-colors" title="Notifications">
+          <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
+          <span id="bell-count" class="absolute bg-error text-white rounded-full border-2 border-white"
+                style="display:none;top:2px;right:1px;min-width:18px;height:18px;padding:0 4px;font-family:'JetBrains Mono';font-size:9px;font-weight:700;line-height:14px;text-align:center;"></span>
+        </button>
+        <div id="bell-dropdown" class="hidden dropdown" style="left:auto;right:0;width:340px;">
+          <div class="px-4 py-3 border-b border-outline-variant flex items-center justify-between">
+            <p class="text-on-surface" style="font-family:Inter;font-size:13px;font-weight:600;">Notifications</p>
+            <button id="bell-mark-read" onclick="markAllNotesRead()" style="font-size:11px;font-weight:600;color:#0058be;background:none;border:none;cursor:pointer;padding:0;"
+                    onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">Mark all read</button>
+          </div>
+          <div id="bell-list" class="overflow-y-auto" style="max-height:380px;"></div>
+        </div>
+      </div>
       <button class="p-2 hover:bg-surface-container rounded-lg transition-colors" title="Help">
         <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">help</span>
       </button>
@@ -585,11 +599,12 @@
           </table>
         </div>
 
-        <!-- Unassigned pool — developer only -->
+        <!-- Unassigned pool — developer only. Review and approval (proposal): a document with no
+             reviewer that is not approved; claiming it makes you its reviewer. -->
         <div id="unassigned-pool-card" class="bg-white border border-outline-variant rounded-xl overflow-hidden" style="display:none;">
           <div class="px-5 py-3.5 border-b border-outline-variant flex items-center justify-between">
             <div>
-              <h2 class="text-headline-sm text-on-surface">Available to Claim</h2>
+              <h2 class="text-headline-sm text-on-surface">Available to claim</h2>
               <p id="pool-subtitle" class="font-label-sm text-label-sm text-on-surface-variant mt-0.5"></p>
             </div>
           </div>
@@ -638,35 +653,14 @@
         <!-- Right: role-aware sidebar -->
         <div id="right-sidebar" style="width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:1rem;">
 
-          <!-- Review Queue (admin only) -->
+          <!-- Review Queue (admin only). Review and approval (proposal): three queues - Ready for
+               approval, Needs a reviewer, Changes requested - drawn by renderReviewQueue(). -->
           <div id="review-queue-card" class="bg-white border border-outline-variant rounded-xl overflow-hidden">
             <div class="px-4 py-3.5 border-b border-outline-variant flex items-center justify-between">
               <h2 class="text-headline-sm text-on-surface">Review Queue</h2>
-              <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#e5eeff;color:#0058be;padding:2px 10px;border-radius:99px;">3 pending</span>
+              <span id="review-queue-count" style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#e5eeff;color:#0058be;padding:2px 10px;border-radius:99px;"></span>
             </div>
-            <div class="divide-y divide-outline-variant">
-              <div class="px-4 py-3 flex items-center gap-3 hover:bg-surface-container-low transition-colors cursor-pointer" onclick="location.href='documents.html'">
-                <div class="flex-1 min-w-0">
-                  <p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Brake-FMEA — Detailed Design</p>
-                  <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Assigned to you</p>
-                </div>
-                <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#ffdad6;color:#ba1a1a;padding:2px 7px;border-radius:99px;flex-shrink:0;">Jun 20</span>
-              </div>
-              <div class="px-4 py-3 flex items-center gap-3 hover:bg-surface-container-low transition-colors cursor-pointer" onclick="location.href='documents.html'">
-                <div class="flex-1 min-w-0">
-                  <p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">System Architecture Document</p>
-                  <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Ana Ferreira</p>
-                </div>
-                <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#fff8e6;color:#d97706;padding:2px 7px;border-radius:99px;flex-shrink:0;">Jun 25</span>
-              </div>
-              <div class="px-4 py-3 flex items-center gap-3 hover:bg-surface-container-low transition-colors cursor-pointer" onclick="location.href='documents.html'">
-                <div class="flex-1 min-w-0">
-                  <p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Layer1-Sample — Detailed Design</p>
-                  <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Marcus Webb</p>
-                </div>
-                <span style="font-size:10px;color:#74777d;flex-shrink:0;">Jun 30</span>
-              </div>
-            </div>
+            <div id="review-queue-body"></div>
           </div>
 
           <!-- Function Visibility card -->
@@ -707,7 +701,10 @@
 
 
 <!-- ══════════════ ASSIGNEE PICKER ══════════════ -->
-<div id="assignee-picker" style="display:none;position:absolute;z-index:300;min-width:220px;background:white;border:1px solid #e2e3e8;border-radius:12px;box-shadow:0 4px 20px rgba(4,22,39,.12);overflow:hidden;">
+<!-- Review and approval (proposal): single-select - one reviewer per document; picking a member
+     assigns them and replaces any reviewer the document had. -->
+<div id="assignee-picker" style="display:none;position:absolute;z-index:300;min-width:240px;background:white;border:1px solid #e2e3e8;border-radius:12px;box-shadow:0 4px 20px rgba(4,22,39,.12);overflow:hidden;">
+  <div id="assignee-picker-title" style="padding:9px 12px 0;font-size:11px;color:#74777d;"></div>
   <div style="padding:8px 10px;border-bottom:1px solid #e2e3e8;">
     <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:#f3f4f6;border:1px solid #e2e3e8;border-radius:8px;">
       <span class="material-symbols-outlined" style="font-size:14px;color:#74777d;">search</span>
@@ -718,7 +715,7 @@
   <div id="assignee-picker-list" style="max-height:210px;overflow-y:auto;"></div>
   <div style="padding:6px 12px;border-top:1px solid #e2e3e8;display:flex;align-items:center;justify-content:space-between;">
     <span id="assignee-picker-count" style="font-size:11px;color:#74777d;"></span>
-    <button onclick="clearAssignees()" style="font-size:11px;color:#74777d;background:none;border:none;cursor:pointer;padding:0;" onmouseover="this.style.color='#b91c1c'" onmouseout="this.style.color='#74777d'">Clear all</button>
+    <button id="assignee-remove" onclick="removeReviewer()" style="font-size:11px;color:#74777d;background:none;border:none;cursor:pointer;padding:0;" onmouseover="this.style.color='#b91c1c'" onmouseout="this.style.color='#74777d'">Remove reviewer</button>
   </div>
 </div>
 
@@ -1030,21 +1027,35 @@ const TEAM_MEMBERS = [
   { id: 'MS', name: 'Manoj S.',     role: 'Developer', bg: '#e0f2fe', text: '#0369a1' },
 ];
 
+// Review and approval (proposal): the documents of v1.2.0, the version in review. Each has ONE
+// reviewer (or null: "Needs a reviewer") and one of four states - in_review, submitted (Ready for
+// approval), changes_requested, approved. `comment` is the reviewer's note on submitting,
+// `adminComment` what the admin asked to change, `carried` the version an approval carried from
+// because the document's content did not change. No due dates.
 const DOCUMENTS = [
-  { id:1,  name: 'Layer1-Sample — Detailed Design',     process: 'SWE.3', version: 'v1.2.0', assignees: ['MS','SC'],       status: 'in_review', due: 'Jun 18', overdue: true },
-  { id:2,  name: 'Layer2-Engine — Detailed Design',     process: 'SWE.3', version: 'v1.2.0', assignees: [],                status: 'never',     due: '—'      },
-  { id:3,  name: 'Brake-FMEA — Detailed Design',        process: 'SWE.3', version: 'v1.2.0', assignees: ['MS'],            status: 'approved',  due: 'Jun 20' },
-  { id:4,  name: 'ADAS-Control — Detailed Design',      process: 'SWE.3', version: 'v1.2.0', assignees: ['ZP','LP'],       status: 'in_review', due: 'Jul 5'  },
-  { id:5,  name: 'Signal-Interface — Design',           process: 'SWE.3', version: 'v1.2.0', assignees: [],                status: 'never',     due: '—'      },
-  { id:6,  name: 'Powertrain — Detailed Design',        process: 'SWE.3', version: 'v1.2.0', assignees: ['AF'],            status: 'in_review', due: 'Jul 8'  },
-  { id:7,  name: 'CAN-Matrix — Detailed Design',        process: 'SWE.3', version: 'v1.1.0', assignees: ['AM','SC'],       status: 'approved',  due: 'Jun 18' },
-  { id:8,  name: 'Diagnostics — Detailed Design',       process: 'SWE.3', version: 'v1.1.0', assignees: ['SC','MW','LP'],  status: 'in_review', due: 'Jul 2'  },
-  { id:9,  name: 'SYS Requirements Specification',      process: 'SYS.1', version: 'v1.1.0', assignees: ['AM'],            status: 'never',     due: '—'      },
-  { id:10, name: 'System Architecture Document',        process: 'SYS.2', version: 'v1.1.0', assignees: ['AF'],            status: 'in_review', due: 'Jun 25' },
-  { id:11, name: 'SW Requirements Specification',       process: 'SWE.1', version: 'v1.0.0', assignees: ['MW'],            status: 'in_review', due: 'Jul 1'  },
-  { id:12, name: 'Detailed SW Design Specification',    process: 'SWE.2', version: 'v1.1.0', assignees: ['MS','ZP'],       status: 'approved',  due: 'Jun 15' },
-  { id:13, name: 'Interface Control Document',          process: 'SWE.2', version: 'v1.1.0', assignees: [],                status: 'in_review', due: 'Jul 3'  },
+  { id:1,  name: 'Layer1-Sample — Detailed Design',     process: 'SWE.3', version: 'v1.2.0', reviewer: 'MS', status: 'changes_requested', comment: 'Checked the interface table against the headers.', adminComment: 'Input names of Sample_Run are vague: say what the values are.' },
+  { id:2,  name: 'Layer2-Engine — Detailed Design',     process: 'SWE.3', version: 'v1.2.0', reviewer: null, status: 'in_review' },
+  { id:3,  name: 'Brake-FMEA — Detailed Design',        process: 'SWE.3', version: 'v1.2.0', reviewer: 'MS', status: 'approved',  comment: 'Every function checked; 3 texts corrected.' },
+  { id:4,  name: 'ADAS-Control — Detailed Design',      process: 'SWE.3', version: 'v1.2.0', reviewer: 'LP', status: 'submitted', comment: 'Checked every function; corrected 4 vague requirements.' },
+  { id:5,  name: 'Signal-Interface — Design',           process: 'SWE.3', version: 'v1.2.0', reviewer: null, status: 'in_review' },
+  { id:6,  name: 'Powertrain — Detailed Design',        process: 'SWE.3', version: 'v1.2.0', reviewer: 'AF', status: 'in_review' },
+  { id:7,  name: 'CAN-Matrix — Detailed Design',        process: 'SWE.3', version: 'v1.2.0', reviewer: 'AM', status: 'approved',  carried: 'v1.1.0' },
+  { id:8,  name: 'Diagnostics — Detailed Design',       process: 'SWE.3', version: 'v1.2.0', reviewer: 'MS', status: 'submitted', comment: 'Flowchart labels corrected; the rest reads right.' },
+  { id:9,  name: 'SYS Requirements Specification',      process: 'SYS.1', version: 'v1.2.0', reviewer: null, status: 'in_review' },
+  { id:10, name: 'System Architecture Document',        process: 'SYS.2', version: 'v1.2.0', reviewer: 'AF', status: 'submitted', comment: 'Checked the component list against the code.' },
+  { id:11, name: 'SW Requirements Specification',       process: 'SWE.1', version: 'v1.2.0', reviewer: 'MS', status: 'in_review' },
+  { id:12, name: 'Detailed SW Design Specification',    process: 'SWE.2', version: 'v1.2.0', reviewer: 'MW', status: 'approved',  carried: 'v1.1.0' },
+  { id:13, name: 'Interface Control Document',          process: 'SWE.2', version: 'v1.2.0', reviewer: 'MW', status: 'changes_requested', comment: 'Directions checked.', adminComment: 'Two interface ids are missing a direction.' },
 ];
+
+// Review and approval (proposal): the four document states - one word each, everywhere.
+const REVIEW_STATES = {
+  approved:          { label: 'Approved',           icon: 'check_circle',    color: '#00a572', bg: '#f0fdf9', border: '#86efac', dot: '#00a572', next: 'Approved' },
+  submitted:         { label: 'Ready for approval', icon: 'pending_actions', color: '#0058be', bg: '#e5eeff', border: '#8ab0f0', dot: '#2170e4', next: 'Waiting for approval' },
+  changes_requested: { label: 'Changes requested',  icon: 'undo',            color: '#ba1a1a', bg: '#fff1f0', border: '#f5a3a3', dot: '#ba1a1a', next: 'Fix what the admin asked, then submit again' },
+  in_review:         { label: 'In review',          icon: 'rate_review',     color: '#b45309', bg: '#fff8e6', border: '#f59e0b', dot: '#f59e0b', next: 'Review, then submit for approval' },
+};
+const REVIEW_ORDER = ['approved', 'submitted', 'changes_requested', 'in_review'];
 
 const PROCESSES = [
   { key: 'SWE.3', label: 'Detailed Design' },
@@ -1054,22 +1065,118 @@ const PROCESSES = [
   { key: 'SWE.2', label: 'SW Architecture' },
 ];
 
-const LAST_ACTIONS_ADMIN = [
-  { icon: 'check_circle', iconColor: '#00a572', text: 'Sarah C. approved CAN-Matrix',                time: '1d ago' },
-  { icon: 'play_circle',  iconColor: '#0058be', text: 'Manoj S. ran analysis — v1.2.0',             time: '3d ago' },
-  { icon: 'person_add',   iconColor: '#7c3aed', text: 'Ana F. assigned to System Architecture',     time: '4d ago' },
-  { icon: 'sell',         iconColor: '#00a572', text: 'v1.1.0 tagged — Engine + Brake complete',    time: '6d ago' },
-  { icon: 'rate_review',  iconColor: '#f59e0b', text: 'Liam P. submitted Diagnostics for review',  time: '1w ago' },
+// Review and approval (proposal): every step is an event with who, when and a comment, newest
+// first. Last Actions, the bell and the live Claim / Assign actions all read and add to this list.
+// `from` / `to` are reviewers (assigned); `fromVersion` the version an approval carried from.
+const REVIEW_EVENTS = [
+  { id:'e1',  kind:'changes_requested', actor:'SC', doc:1,  time:'2h ago', comment:'Input names of Sample_Run are vague: say what the values are.' },
+  { id:'e2',  kind:'submitted',         actor:'LP', doc:4,  time:'3h ago', comment:'Checked every function; corrected 4 vague requirements.' },
+  { id:'e3',  kind:'submitted',         actor:'MS', doc:8,  time:'5h ago', comment:'Flowchart labels corrected; the rest reads right.' },
+  { id:'e4',  kind:'submitted',         actor:'AF', doc:10, time:'6h ago', comment:'Checked the component list against the code.' },
+  { id:'e5',  kind:'approved',          actor:'SC', doc:3,  time:'1d ago', comment:'Corrections read well.', hash:'3f9a2c1e' },
+  { id:'e6',  kind:'reopened',          actor:'ZP', doc:11, time:'1d ago', comment:'The new CAN signals change two requirements.' },
+  { id:'e7',  kind:'claimed',           actor:'MS', doc:8,  time:'1d ago' },
+  { id:'e8',  kind:'changes_requested', actor:'ZP', doc:13, time:'2d ago', comment:'Two interface ids are missing a direction.' },
+  { id:'e9',  kind:'submitted',         actor:'MS', doc:1,  time:'2d ago', comment:'Checked the interface table against the headers.' },
+  { id:'e10', kind:'assigned',          actor:'ZP', doc:6,  time:'2d ago', from:'LP', to:'AF' },
+  { id:'e11', kind:'assigned',          actor:'SC', doc:1,  time:'3d ago', to:'MS' },
+  { id:'e12', kind:'carried',           actor:null, doc:7,  time:'3d ago', fromVersion:'v1.1.0' },
+  { id:'e13', kind:'carried',           actor:null, doc:12, time:'3d ago', fromVersion:'v1.1.0' },
+  { id:'e14', kind:'generated',         actor:'MS', doc:null, time:'3d ago', version:'v1.2.0' },
 ];
-const LAST_ACTIONS_DEV = [
-  { icon: 'check_circle', iconColor: '#00a572', text: 'Sarah C. approved your Brake-FMEA',          time: '1d ago' },
-  { icon: 'play_circle',  iconColor: '#0058be', text: 'Analysis ran — v1.2.0 ready',                time: '3d ago' },
-  { icon: 'person_add',   iconColor: '#7c3aed', text: 'Zara P. assigned you to Detailed SW Design', time: '5d ago' },
-  { icon: 'rate_review',  iconColor: '#f59e0b', text: 'Ana F. submitted System Arch for review',    time: '1w ago' },
-];
+const EVENT_KINDS = {
+  generated:         { icon: 'play_circle',     color: '#0058be' },
+  assigned:          { icon: 'person_add',      color: '#7c3aed' },
+  claimed:           { icon: 'front_hand',      color: '#7c3aed' },
+  submitted:         { icon: 'pending_actions', color: '#0058be' },
+  approved:          { icon: 'check_circle',    color: '#00a572' },
+  changes_requested: { icon: 'undo',            color: '#ba1a1a' },
+  reopened:          { icon: 'lock_open',       color: '#b45309' },
+  carried:           { icon: 'verified',        color: '#00a572' },
+};
+// Notifications already read, per role (the rest count on the bell).
+const NOTES_READ = { admin: new Set(['e7', 'e9']), developer: new Set(['e5', 'e11']) };
+let _eventSeq = 0;
 
 let pickerDocId = null;
 const CURRENT_DEV_ID = 'MS'; // developer persona for demo
+const CURRENT_ADMIN_ID = 'SC'; // admin persona for demo: live Assign actions are recorded as hers
+
+// ── Review and approval (proposal): helpers ──
+const memberById = id => TEAM_MEMBERS.find(m => m.id === id);
+const docById    = id => DOCUMENTS.find(d => d.id === id);
+const docShort   = d => d.name.split(' — ')[0];
+const meId       = () => (currentRole === 'developer' ? CURRENT_DEV_ID : CURRENT_ADMIN_ID);
+const isAdminId  = id => { const m = memberById(id); return !!m && m.role === 'Admin'; };
+// A person's short name ("Sarah C."), or "You" / "you" for the persona on screen.
+function who(id, object) {
+  if (!id) return 'The app';
+  if (id === meId()) return object ? 'you' : 'You';
+  const m = memberById(id);
+  if (!m) return id;
+  const p = m.name.split(' ');
+  return p.length > 1 && p[1].length > 2 ? `${p[0]} ${p[1][0]}.` : m.name;
+}
+function reviewBadge(status) {
+  const s = REVIEW_STATES[status];
+  return `<span style="display:inline-flex;align-items:center;gap:4px;font-family:'JetBrains Mono';font-size:10px;font-weight:700;color:${s.color};background:${s.bg};border:1px solid ${s.border};padding:2px 8px;border-radius:99px;white-space:nowrap;"><span class="material-symbols-outlined sym-fill" style="font-size:11px;color:${s.color};">${s.icon}</span>${s.label}</span>`;
+}
+// The documents of the version on screen. Only v1.2.0 is still in review in this mock: the older
+// versions (the "complete" and "stale" page states) have every document approved.
+function versionDocs() {
+  if (currentState === 'in_review') return DOCUMENTS;
+  return DOCUMENTS.map(d => Object.assign({}, d, { status: 'approved', carried: null, adminComment: '' }));
+}
+function lastEventOf(docId, kind) { return REVIEW_EVENTS.find(e => e.doc === docId && e.kind === kind); }
+function recordEvent(e) {
+  REVIEW_EVENTS.unshift(Object.assign({ id: 'n' + (++_eventSeq), time: 'just now' }, e));
+}
+function eventText(e) {
+  const d = docById(e.doc);
+  const doc = d ? `<span style="font-weight:600;">${docShort(d)}</span>` : '';
+  const a = who(e.actor);
+  switch (e.kind) {
+    case 'assigned':
+      if (!e.to) return `${a} removed ${who(e.from, true)} as reviewer of ${doc}`;
+      return e.from ? `${a} re-assigned ${doc} from ${who(e.from, true)} to ${who(e.to, true)}`
+                    : `${a} assigned ${who(e.to, true)} to ${doc}`;
+    case 'claimed':           return `${a} claimed ${doc}`;
+    case 'submitted':         return `${a} submitted ${doc} for approval`;
+    case 'approved':          return `${a} approved ${doc}`;
+    case 'changes_requested': return `${a} requested changes to ${doc}`;
+    case 'reopened':          return `${a} reopened ${doc}`;
+    case 'carried':           return `${doc} stays approved: content unchanged since ${e.fromVersion}`;
+    case 'generated':         return `${a} ran the analysis: ${e.version}, every document in review`;
+  }
+  return '';
+}
+// What a developer sees: their own actions and anything on the documents they review.
+function concernsDev(e) {
+  const d = docById(e.doc);
+  return e.kind === 'generated' || e.actor === CURRENT_DEV_ID || e.to === CURRENT_DEV_ID
+    || e.from === CURRENT_DEV_ID || (!!d && d.reviewer === CURRENT_DEV_ID);
+}
+// Who is notified: admins of submitted and claimed; a reviewer of being assigned, and of their
+// document being approved, sent back or reopened.
+function notesFor(role) {
+  if (role === 'admin') {
+    return REVIEW_EVENTS.filter(e => (e.kind === 'submitted' || e.kind === 'claimed') && !isAdminId(e.actor));
+  }
+  return REVIEW_EVENTS.filter(e => {
+    if (e.actor === CURRENT_DEV_ID) return false;
+    if (e.kind === 'assigned') return e.to === CURRENT_DEV_ID;
+    const d = docById(e.doc);
+    return ['approved', 'changes_requested', 'reopened'].includes(e.kind) && !!d && d.reviewer === CURRENT_DEV_ID;
+  });
+}
+// Everything a review action changes on this page.
+function renderReviewViews() {
+  renderKpi();
+  renderDocs();
+  renderReviewQueue();
+  renderLastActions();
+  renderBell();
+}
 
 function memberAvatar(m, size) {
   size = size || 26;
@@ -1078,59 +1185,68 @@ function memberAvatar(m, size) {
   </div>`;
 }
 
-function renderAssigneeCell(doc) {
-  const isAdmin = currentRole === 'admin';
-  if (!doc.assignees.length) {
-    if (!isAdmin) return `<span style="font-size:11px;color:#c4c6cd;">—</span>`;
-    return `<button class="assignee-cell-btn" onclick="event.stopPropagation();openAssigneePicker(${doc.id},this)"
-      style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border:1.5px dashed #c4c6cd;border-radius:99px;background:transparent;cursor:pointer;color:#74777d;font-size:11px;"
+// Review and approval (proposal): the dashed Assign button opens the single-select picker.
+function assignButton(doc) {
+  return `<button class="assignee-cell-btn" data-rq-assign="${doc.id}" onclick="event.stopPropagation();openAssigneePicker(${doc.id},this)"
+      style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border:1.5px dashed #c4c6cd;border-radius:99px;background:transparent;cursor:pointer;color:#74777d;font-size:11px;white-space:nowrap;flex-shrink:0;"
       onmouseover="this.style.borderColor='#0058be';this.style.color='#0058be'"
       onmouseout="this.style.borderColor='#c4c6cd';this.style.color='#74777d'">
       <span class="material-symbols-outlined" style="font-size:13px;">person_add</span>
       Assign
     </button>`;
+}
+// One reviewer per document: their avatar and name (an admin clicks to change it), or
+// "Needs a reviewer".
+function renderAssigneeCell(doc) {
+  const isAdmin = currentRole === 'admin';
+  const m = doc.reviewer ? memberById(doc.reviewer) : null;
+  if (!m) {
+    if (isAdmin && doc.status !== 'approved') return assignButton(doc);
+    return `<span style="font-size:11px;color:#b45309;font-weight:600;">Needs a reviewer</span>`;
   }
-  const shown = doc.assignees.slice(0, 3);
-  const overflow = doc.assignees.length - 3;
-  const avatars = shown.map((id, i) => {
-    const m = TEAM_MEMBERS.find(x => x.id === id);
-    if (!m) return '';
-    return `<div title="${m.name}" style="margin-left:${i > 0 ? '-6px' : '0'};position:relative;z-index:${10-i};">${memberAvatar(m, 26)}</div>`;
-  }).join('');
-  const overflowChip = overflow > 0
-    ? `<div style="margin-left:-6px;width:26px;height:26px;border-radius:50%;background:#f3f4f6;border:2px solid white;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#44474c;">+${overflow}</div>`
-    : '';
-  if (!isAdmin) {
-    return `<div style="display:flex;align-items:center;">${avatars}${overflowChip}</div>`;
-  }
-  return `<div style="display:flex;align-items:center;gap:4px;">
-    <div style="display:flex;align-items:center;" onclick="event.stopPropagation();openAssigneePicker(${doc.id},this)" title="Manage assignees" class="cursor-pointer">${avatars}${overflowChip}</div>
-    <button class="assignee-cell-btn" onclick="event.stopPropagation();openAssigneePicker(${doc.id},this)" title="Add assignee"
-      style="width:22px;height:22px;border-radius:50%;border:1.5px dashed #c4c6cd;background:transparent;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;color:#74777d;flex-shrink:0;"
-      onmouseover="this.style.borderColor='#0058be';this.style.color='#0058be'"
-      onmouseout="this.style.borderColor='#c4c6cd';this.style.color='#74777d'">
-      <span class="material-symbols-outlined" style="font-size:13px;">add</span>
-    </button>
-  </div>`;
+  const canChange = isAdmin && doc.status !== 'approved';
+  return `<div style="display:flex;align-items:center;gap:6px;${canChange ? 'cursor:pointer;' : ''}" title="${canChange ? 'Change the reviewer' : m.name}"
+      ${canChange ? `onclick="event.stopPropagation();openAssigneePicker(${doc.id},this)"` : ''}>
+      ${memberAvatar(m, 24)}<span style="font-size:12px;color:#0b1c30;">${who(m.id)}</span>
+    </div>`;
 }
 
 function renderKpi() {
   const container = document.getElementById('kpi-cards');
   if (!container) return;
 
-  const total      = DOCUMENTS.length;
-  const approved   = DOCUMENTS.filter(d => d.status === 'approved').length;
-  const inReview   = DOCUMENTS.filter(d => d.status === 'in_review').length;
-  const notStarted = DOCUMENTS.filter(d => d.status === 'never').length;
-  const assigned   = DOCUMENTS.filter(d => d.assignees.length > 0).length;
-  const unassigned = total - assigned;
-  const assignPct  = total ? Math.round(assigned / total * 100) : 0;
+  // Review and approval (proposal): the approval progress of the version on screen - "N of M
+  // approved" and the four states. A version is Approved when every one of its documents is.
+  const docs     = versionDocs();
+  const total    = docs.length;
+  const count    = {};
+  REVIEW_ORDER.forEach(k => { count[k] = docs.filter(d => d.status === k).length; });
+  const approved = count.approved;
+  const allDone  = total > 0 && approved === total;
+  const vTag     = BRANCH.version || 'v1.2.0';
 
-  // SVG donut r=52, C=2π×52≈326.73
+  // SVG donut r=52, C=2π×52≈326.73 - one arc per state, in REVIEW_ORDER
   const C2 = 326.73;
-  const aArc2 = approved   / total * C2;
-  const rArc2 = inReview   / total * C2;
-  const nArc2 = notStarted / total * C2;
+  let arcAt = 0;
+  const arcs = REVIEW_ORDER.map(k => {
+    const len = total ? count[k] / total * C2 : 0;
+    const arc = `<circle cx="68" cy="68" r="52" fill="none" stroke="${REVIEW_STATES[k].dot}" stroke-width="14"
+              stroke-dasharray="${len.toFixed(2)} ${C2.toFixed(2)}" stroke-dashoffset="${(-arcAt).toFixed(2)}"/>`;
+    arcAt += len;
+    return arc;
+  }).join('');
+  const legendRow = k => `
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;align-items:center;gap:9px;">
+              <span style="width:10px;height:10px;border-radius:50%;background:${REVIEW_STATES[k].dot};flex-shrink:0;"></span>
+              <span style="font-size:13px;color:#44474c;">${REVIEW_STATES[k].label}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-family:'JetBrains Mono';font-size:15px;font-weight:700;color:#0b1c30;">${count[k]}</span>
+              <span style="font-size:11px;color:#9aa0a6;min-width:36px;text-align:right;">${total ? Math.round(count[k]/total*100) : 0}%</span>
+            </div>
+          </div>`;
+  const vState = allDone ? REVIEW_STATES.approved : REVIEW_STATES.in_review;
 
   const donutCard = `
     <div class="bg-white border border-outline-variant rounded-xl p-6" style="display:flex;align-items:center;gap:32px;">
@@ -1138,50 +1254,21 @@ function renderKpi() {
         <svg width="136" height="136" viewBox="0 0 136 136">
           <g transform="rotate(-90 68 68)">
             <circle cx="68" cy="68" r="52" fill="none" stroke="#e8eaed" stroke-width="14"/>
-            <circle cx="68" cy="68" r="52" fill="none" stroke="#00a572" stroke-width="14"
-              stroke-dasharray="${aArc2.toFixed(2)} ${C2.toFixed(2)}" stroke-dashoffset="0"/>
-            <circle cx="68" cy="68" r="52" fill="none" stroke="#f59e0b" stroke-width="14"
-              stroke-dasharray="${rArc2.toFixed(2)} ${C2.toFixed(2)}" stroke-dashoffset="${(-aArc2).toFixed(2)}"/>
-            <circle cx="68" cy="68" r="52" fill="none" stroke="#c4c6cd" stroke-width="14"
-              stroke-dasharray="${nArc2.toFixed(2)} ${C2.toFixed(2)}" stroke-dashoffset="${(-(aArc2 + rArc2)).toFixed(2)}"/>
+            ${arcs}
           </g>
-          <text x="68" y="61" text-anchor="middle" font-size="30" font-weight="700" fill="#0b1c30" font-family="Inter,sans-serif">${total}</text>
-          <text x="68" y="79" text-anchor="middle" font-size="11" fill="#9aa0a6" font-family="Inter,sans-serif" letter-spacing="0.5">documents</text>
+          <text x="68" y="63" text-anchor="middle" font-size="30" font-weight="700" fill="#0b1c30" font-family="Inter,sans-serif">${approved}</text>
+          <text x="68" y="81" text-anchor="middle" font-size="11" fill="#9aa0a6" font-family="Inter,sans-serif">of ${total} approved</text>
         </svg>
       </div>
       <div style="flex:1;">
-        <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-5">Document Status</p>
-        <div style="display:flex;flex-direction:column;gap:13px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;">
-            <div style="display:flex;align-items:center;gap:9px;">
-              <span style="width:10px;height:10px;border-radius:50%;background:#00a572;flex-shrink:0;"></span>
-              <span style="font-size:13px;color:#44474c;">Approved</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span style="font-family:'JetBrains Mono';font-size:15px;font-weight:700;color:#0b1c30;">${approved}</span>
-              <span style="font-size:11px;color:#9aa0a6;min-width:36px;text-align:right;">${total ? Math.round(approved/total*100) : 0}%</span>
-            </div>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;">
-            <div style="display:flex;align-items:center;gap:9px;">
-              <span style="width:10px;height:10px;border-radius:50%;background:#f59e0b;flex-shrink:0;"></span>
-              <span style="font-size:13px;color:#44474c;">In Review</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span style="font-family:'JetBrains Mono';font-size:15px;font-weight:700;color:#0b1c30;">${inReview}</span>
-              <span style="font-size:11px;color:#9aa0a6;min-width:36px;text-align:right;">${total ? Math.round(inReview/total*100) : 0}%</span>
-            </div>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;">
-            <div style="display:flex;align-items:center;gap:9px;">
-              <span style="width:10px;height:10px;border-radius:50%;background:#c4c6cd;flex-shrink:0;"></span>
-              <span style="font-size:13px;color:#44474c;">Not started</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span style="font-family:'JetBrains Mono';font-size:15px;font-weight:700;color:#0b1c30;">${notStarted}</span>
-              <span style="font-size:11px;color:#9aa0a6;min-width:36px;text-align:right;">${total ? Math.round(notStarted/total*100) : 0}%</span>
-            </div>
-          </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px;">
+          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Approval · ${vTag}</p>
+          <span title="A version is Approved when every one of its documents is" style="display:inline-flex;align-items:center;gap:4px;font-family:'JetBrains Mono';font-size:10px;font-weight:700;color:${vState.color};background:${vState.bg};border:1px solid ${vState.border};padding:1px 8px;border-radius:99px;white-space:nowrap;">
+            <span class="material-symbols-outlined sym-fill" style="font-size:11px;color:${vState.color};">${vState.icon}</span>${allDone ? 'Approved' : 'In review'}
+          </span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:11px;">
+          ${REVIEW_ORDER.map(legendRow).join('')}
         </div>
       </div>
     </div>`;
@@ -1189,51 +1276,53 @@ function renderKpi() {
   const versions = (window.VERSIONS || []);
   const latestTag = versions.length ? versions[0].tag : 'v1.2.0';
 
-  const myDocs       = DOCUMENTS.filter(d => d.assignees.includes(CURRENT_DEV_ID));
-  const myAssigned   = myDocs.length;
-  const myInReview   = myDocs.filter(d => d.status === 'in_review').length;
-  const myApproved   = myDocs.filter(d => d.status === 'approved').length;
-  const myOverdue    = myDocs.filter(d => d.overdue).length;
-  const myPct        = total ? Math.round(myAssigned / total * 100) : 0;
+  // Admin: how many documents still need a reviewer (one reviewer each; Assign or Claim).
+  const withReviewer = docs.filter(d => d.reviewer).length;
+  const needs        = docs.filter(d => !d.reviewer && d.status !== 'approved').length;
+  const assignPct    = total ? Math.round(withReviewer / total * 100) : 0;
 
   const assignCardAdmin = `
     <div class="bg-white border border-outline-variant rounded-xl p-5">
       <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-3">Assignment</p>
       <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:10px;">
-        <span style="font-family:'JetBrains Mono';font-size:32px;font-weight:700;color:#0b1c30;line-height:1;">${assigned}</span>
-        <span style="font-size:13px;color:#9aa0a6;line-height:1;">/ ${total} assigned</span>
+        <span style="font-family:'JetBrains Mono';font-size:32px;font-weight:700;color:#0b1c30;line-height:1;">${withReviewer}</span>
+        <span style="font-size:13px;color:#9aa0a6;line-height:1;">/ ${total} have a reviewer</span>
       </div>
       <div style="height:6px;border-radius:99px;background:#e8eaed;overflow:hidden;margin-bottom:10px;">
-        <div style="height:100%;width:${assignPct}%;background:${assignPct === 100 ? '#00a572' : '#0058be'};border-radius:99px;transition:width .4s;"></div>
+        <div style="height:100%;width:${assignPct}%;background:${needs === 0 ? '#00a572' : '#0058be'};border-radius:99px;transition:width .4s;"></div>
       </div>
-      ${unassigned > 0
-        ? `<p style="font-size:12px;color:#b45309;"><span style="font-weight:600;">${unassigned} docs</span> need an owner</p>`
-        : `<p style="font-size:12px;color:#00a572;font-weight:500;">All docs have owners</p>`}
+      ${needs > 0
+        ? `<p style="font-size:12px;color:#b45309;"><span style="font-weight:600;">${needs} ${needs === 1 ? 'needs' : 'need'} a reviewer</span> · see the review queue</p>`
+        : `<p style="font-size:12px;color:#00a572;font-weight:500;">Every open document has a reviewer</p>`}
     </div>`;
 
+  // Developer: the documents I review, by state - what needs me first.
+  const mine    = docs.filter(d => d.reviewer === CURRENT_DEV_ID);
+  const myCount = {};
+  REVIEW_ORDER.forEach(k => { myCount[k] = mine.filter(d => d.status === k).length; });
+  const devOrder = ['changes_requested', 'in_review', 'submitted', 'approved'];
+  const myBar = REVIEW_ORDER.map(k => myCount[k]
+    ? `<div style="height:100%;width:${myCount[k] / mine.length * 100}%;background:${REVIEW_STATES[k].dot};"></div>` : '').join('');
+
   const assignCardDev = `
-    <div class="bg-white border border-outline-variant rounded-xl p-5" style="${myOverdue > 0 ? 'border-color:#fca5a5;' : ''}">
-      <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-3">My Assignments</p>
+    <div class="bg-white border border-outline-variant rounded-xl p-5">
+      <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-3">My reviews</p>
       <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:10px;">
-        <span style="font-family:'JetBrains Mono';font-size:32px;font-weight:700;color:#0b1c30;line-height:1;">${myAssigned}</span>
-        <span style="font-size:13px;color:#9aa0a6;line-height:1;">/ ${total} docs</span>
+        <span style="font-family:'JetBrains Mono';font-size:32px;font-weight:700;color:#0b1c30;line-height:1;">${mine.length}</span>
+        <span style="font-size:13px;color:#9aa0a6;line-height:1;">/ ${total} documents</span>
       </div>
-      <div style="height:6px;border-radius:99px;background:#e8eaed;overflow:hidden;margin-bottom:10px;">
-        <div style="height:100%;width:${myPct}%;background:${myOverdue > 0 ? '#ba1a1a' : '#0058be'};border-radius:99px;transition:width .4s;"></div>
-      </div>
-      <div style="display:flex;gap:12px;flex-wrap:wrap;">
-        ${myOverdue > 0 ? `<div style="display:flex;align-items:center;gap:5px;">
-          <span class="material-symbols-outlined" style="font-size:13px;color:#ba1a1a;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">warning</span>
-          <span style="font-size:11px;color:#ba1a1a;font-weight:600;">${myOverdue} overdue</span>
-        </div>` : ''}
-        <div style="display:flex;align-items:center;gap:5px;">
-          <span style="width:7px;height:7px;border-radius:50%;background:#f59e0b;flex-shrink:0;"></span>
-          <span style="font-size:11px;color:#74777d;">${myInReview} in review</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:5px;">
-          <span style="width:7px;height:7px;border-radius:50%;background:#00a572;flex-shrink:0;"></span>
-          <span style="font-size:11px;color:#74777d;">${myApproved} approved</span>
-        </div>
+      <div style="height:6px;border-radius:99px;background:#e8eaed;overflow:hidden;margin-bottom:10px;display:flex;">${myBar}</div>
+      <div style="display:flex;gap:4px 12px;flex-wrap:wrap;">
+        ${devOrder.filter(k => myCount[k]).map(k => k === 'changes_requested'
+          ? `<div style="display:flex;align-items:center;gap:4px;">
+              <span class="material-symbols-outlined" style="font-size:13px;color:#ba1a1a;">undo</span>
+              <span style="font-size:11px;color:#ba1a1a;font-weight:600;">${myCount[k]} changes requested</span>
+            </div>`
+          : `<div style="display:flex;align-items:center;gap:5px;">
+              <span style="width:7px;height:7px;border-radius:50%;background:${REVIEW_STATES[k].dot};flex-shrink:0;"></span>
+              <span style="font-size:11px;color:#74777d;">${myCount[k]} ${REVIEW_STATES[k].label.toLowerCase()}</span>
+            </div>`).join('')}
+        ${mine.length ? '' : `<span style="font-size:11px;color:#74777d;">None yet — claim one below</span>`}
       </div>
     </div>`;
 
@@ -1269,13 +1358,14 @@ function renderUnassignedPool() {
   const card     = document.getElementById('unassigned-pool-card');
   const list     = document.getElementById('pool-list');
   const subtitle = document.getElementById('pool-subtitle');
-  const pool = DOCUMENTS.filter(d => d.assignees.length === 0);
+  // Review and approval (proposal): what a developer may claim - no reviewer, not approved.
+  const pool = versionDocs().filter(d => !d.reviewer && d.status !== 'approved');
   if (!pool.length) {
     card.style.display = 'none';
     return;
   }
   card.style.display = '';
-  subtitle.textContent = `${pool.length} document${pool.length !== 1 ? 's' : ''} without an owner`;
+  subtitle.textContent = `${pool.length} document${pool.length !== 1 ? 's' : ''} without a reviewer · claim one to review it`;
   list.innerHTML = pool.map(doc => {
     const proc = PROCESSES.find(p => p.key === doc.process);
     return `
@@ -1288,38 +1378,139 @@ function renderUnassignedPool() {
           <span style="font-size:11px;color:#74777d;">${proc ? proc.label : ''}</span>
         </div>
       </div>
-      <button onclick="claimDoc(${doc.id})"
+      <button data-claim="${doc.id}" onclick="claimDoc(${doc.id})"
         style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:8px;border:1px solid #0058be;background:white;color:#0058be;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;"
         onmouseover="this.style.background='#e5eeff'" onmouseout="this.style.background='white'">
-        <span class="material-symbols-outlined" style="font-size:14px;">add</span>
+        <span class="material-symbols-outlined" style="font-size:14px;">front_hand</span>
         Claim
       </button>
     </div>`;
   }).join('');
 }
 
+// Review and approval (proposal): claiming makes you the document's reviewer. It is recorded as an
+// event and the admins are notified.
 function claimDoc(docId) {
-  const doc = DOCUMENTS.find(d => d.id === docId);
-  if (!doc) return;
-  if (!doc.assignees.includes(CURRENT_DEV_ID)) doc.assignees.push(CURRENT_DEV_ID);
-  renderDocs();
-  renderKpi();
-  showToast('check_circle', `You've been assigned to "${doc.name}".`, '#00a572');
+  const doc = docById(docId);
+  if (!doc || doc.reviewer || doc.status === 'approved') return;
+  doc.reviewer = CURRENT_DEV_ID;
+  recordEvent({ kind: 'claimed', actor: CURRENT_DEV_ID, doc: doc.id });
+  renderReviewViews();
+  showToast('check_circle', `You are the reviewer of "${doc.name}". Admins are notified.`, '#00a572');
 }
 
+// Review and approval (proposal): Last Actions are the review events - an admin sees all of them,
+// a developer what concerns them.
 function renderLastActions() {
   const body = document.getElementById('last-actions-body');
   if (!body) return;
-  const actions = currentRole === 'developer' ? LAST_ACTIONS_DEV : LAST_ACTIONS_ADMIN;
-  body.innerHTML = actions.map(a => `
+  const events = currentRole === 'developer' ? REVIEW_EVENTS.filter(concernsDev) : REVIEW_EVENTS;
+  body.innerHTML = events.slice(0, 5).map(e => {
+    const k = EVENT_KINDS[e.kind];
+    return `
     <div style="display:flex;align-items:flex-start;gap:10px;padding:12px 16px;border-bottom:1px solid #f0f1f3;">
-      <span class="material-symbols-outlined" style="font-size:15px;color:${a.iconColor};flex-shrink:0;margin-top:1px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">${a.icon}</span>
+      <span class="material-symbols-outlined" style="font-size:15px;color:${k.color};flex-shrink:0;margin-top:1px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">${k.icon}</span>
       <div style="flex:1;min-width:0;">
-        <p style="font-size:12px;color:#0b1c30;line-height:1.4;">${a.text}</p>
-        <p style="font-size:10px;color:#9aa0a6;margin-top:2px;font-family:'JetBrains Mono';">${a.time}</p>
+        <p style="font-size:12px;color:#0b1c30;line-height:1.4;">${eventText(e)}</p>
+        ${e.comment ? `<p title="${e.comment}" style="font-size:11px;color:#44474c;line-height:1.35;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">“${e.comment}”</p>` : ''}
+        ${e.hash ? `<p style="font-size:10px;color:#74777d;margin-top:2px;font-family:'JetBrains Mono';">Word file sha256 ${e.hash}…</p>` : ''}
+        <p style="font-size:10px;color:#9aa0a6;margin-top:2px;font-family:'JetBrains Mono';">${e.time}</p>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('') || `<p style="padding:16px;font-size:12px;color:#74777d;">Nothing yet.</p>`;
 }
+
+// Review and approval (proposal): the admin's three queues - Ready for approval (the reviewer's
+// comment, Review), Needs a reviewer (Assign), Changes requested (whose court it is, and why).
+function renderReviewQueue() {
+  const body = document.getElementById('review-queue-body');
+  const pill = document.getElementById('review-queue-count');
+  if (!body) return;
+  const docs  = versionDocs();
+  const ready = docs.filter(d => d.status === 'submitted');
+  const none  = docs.filter(d => !d.reviewer && d.status !== 'approved');
+  const back  = docs.filter(d => d.status === 'changes_requested');
+  const open  = ready.length + none.length + back.length;
+  pill.textContent = open ? `${open} to act on` : 'All clear';
+
+  const goBtn = (label, primary) => primary
+    ? `<button onclick="event.stopPropagation();location.href='documents.html'" style="flex-shrink:0;padding:4px 11px;border-radius:6px;border:1px solid #0058be;background:#0058be;color:white;font-size:11px;font-weight:600;cursor:pointer;" onmouseover="this.style.background='#2170e4'" onmouseout="this.style.background='#0058be'">${label}</button>`
+    : `<button onclick="event.stopPropagation();location.href='documents.html'" style="flex-shrink:0;padding:4px 11px;border-radius:6px;border:1px solid #c4c6cd;background:white;color:#44474c;font-size:11px;font-weight:600;cursor:pointer;" onmouseover="this.style.borderColor='#0058be';this.style.color='#0058be'" onmouseout="this.style.borderColor='#c4c6cd';this.style.color='#44474c'">${label}</button>`;
+  const row = (d, sub, action) => `
+    <div class="px-4 py-2.5 flex items-center gap-3 hover:bg-surface-container-low transition-colors cursor-pointer" onclick="location.href='documents.html'">
+      <div class="flex-1 min-w-0">
+        <div style="display:flex;align-items:center;gap:6px;min-width:0;">
+          <span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;color:#0058be;background:#e5eeff;padding:1px 5px;border-radius:4px;flex-shrink:0;">${d.process}</span>
+          <p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">${docShort(d)}</p>
+        </div>
+        <p style="font-size:11px;color:#74777d;line-height:1.35;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${sub}</p>
+      </div>
+      ${action}
+    </div>`;
+  const section = (first, title, icon, st, list, rowOf) => `
+    <div style="display:flex;align-items:center;gap:7px;padding:9px 16px;background:#f8f9ff;${first ? '' : 'border-top:1px solid #e2e3e8;'}border-bottom:1px solid #e2e3e8;">
+      <span class="material-symbols-outlined" style="font-size:15px;color:${st.color};">${icon}</span>
+      <span style="font-size:12px;font-weight:600;color:#0b1c30;">${title}</span>
+      <span style="margin-left:auto;font-family:'JetBrains Mono';font-size:10px;font-weight:700;color:${st.color};background:${st.bg};border:1px solid ${st.border};padding:0 8px;border-radius:99px;">${list.length}</span>
+    </div>
+    ${list.length
+      ? `<div class="divide-y divide-outline-variant">${list.map(rowOf).join('')}</div>`
+      : `<p style="padding:10px 16px;font-size:11px;color:#9aa0a6;">Nothing here.</p>`}`;
+
+  body.innerHTML =
+      section(true, 'Ready for approval', 'pending_actions', REVIEW_STATES.submitted, ready,
+        d => row(d, `<span style="color:#44474c;font-weight:500;">${who(d.reviewer)}:</span> “${d.comment || 'Submitted for approval'}”`, goBtn('Review', true)))
+    + section(false, 'Needs a reviewer', 'person_add', REVIEW_STATES.in_review, none,
+        d => row(d, 'In review · no reviewer yet', assignButton(d)))
+    + section(false, 'Changes requested', 'undo', REVIEW_STATES.changes_requested, back,
+        d => row(d, `Back with <span style="color:#44474c;font-weight:500;">${who(d.reviewer)}</span>: “${d.adminComment}”`, goBtn('Open', false)));
+}
+
+// ── Review and approval (proposal): notifications (the bell) ──
+function renderBell() {
+  const notes  = notesFor(currentRole);
+  const read   = NOTES_READ[currentRole];
+  const unread = notes.filter(e => !read.has(e.id)).length;
+  const dot = document.getElementById('bell-count');
+  dot.textContent   = unread > 9 ? '9+' : String(unread);
+  dot.style.display = unread ? '' : 'none';
+  document.getElementById('bell-mark-read').style.visibility = unread ? 'visible' : 'hidden';
+  document.getElementById('bell-list').innerHTML = notes.length ? notes.slice(0, 10).map(e => {
+    const k = EVENT_KINDS[e.kind];
+    const isNew = !read.has(e.id);
+    const bg = isNew ? '#f5f8ff' : 'white';
+    return `<button onclick="openNote('${e.id}')" style="width:100%;display:flex;align-items:flex-start;gap:10px;padding:11px 16px;border:none;border-bottom:1px solid #f0f1f3;background:${bg};cursor:pointer;text-align:left;"
+        onmouseover="this.style.background='#eff4ff'" onmouseout="this.style.background='${bg}'">
+        <span class="material-symbols-outlined" style="font-size:15px;color:${k.color};flex-shrink:0;margin-top:1px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">${k.icon}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;color:#0b1c30;line-height:1.4;">${eventText(e)}</div>
+          ${e.comment ? `<div style="font-size:11px;color:#74777d;line-height:1.35;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">“${e.comment}”</div>` : ''}
+          <div style="font-size:10px;color:#9aa0a6;margin-top:2px;font-family:'JetBrains Mono';">${e.time}</div>
+        </div>
+        ${isNew ? `<span title="Unread" style="width:7px;height:7px;border-radius:50%;background:#0058be;flex-shrink:0;margin-top:5px;"></span>` : ''}
+      </button>`;
+  }).join('') : `<p style="padding:20px 16px;text-align:center;font-size:12px;color:#74777d;">No notifications.</p>`;
+}
+function toggleBell() {
+  const dd = document.getElementById('bell-dropdown');
+  const opening = dd.classList.contains('hidden');
+  if (opening) renderBell();
+  dd.classList.toggle('hidden', !opening);
+}
+function closeBell() { document.getElementById('bell-dropdown').classList.add('hidden'); }
+function markAllNotesRead() {
+  notesFor(currentRole).forEach(e => NOTES_READ[currentRole].add(e.id));
+  renderBell();
+}
+function openNote(id) {
+  NOTES_READ[currentRole].add(id);
+  renderBell();
+  location.href = 'documents.html';
+}
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('bell-wrap');
+  if (wrap && !wrap.contains(e.target)) closeBell();
+});
 
 function renderDocs() {
   const tbody  = document.getElementById('docs-tbody');
@@ -1328,46 +1519,55 @@ function renderDocs() {
   const sub    = document.getElementById('docs-section-subtitle');
   const link   = document.getElementById('docs-section-link');
   if (!tbody) return;
+  const docs = versionDocs();
 
   if (currentRole === 'developer') {
-    const myDocs = DOCUMENTS.filter(d => d.assignees.includes(CURRENT_DEV_ID));
-    title.textContent = 'My Documents';
-    sub.textContent   = `${myDocs.length} document${myDocs.length !== 1 ? 's' : ''} assigned to you`;
+    // Review and approval (proposal): My reviews - every document I review, its state and what it
+    // needs next; what needs me comes first.
+    const urgency = { changes_requested: 0, in_review: 1, submitted: 2, approved: 3 };
+    const myDocs = docs.filter(d => d.reviewer === CURRENT_DEV_ID).sort((a, b) => urgency[a.status] - urgency[b.status]);
+    const toDo   = myDocs.filter(d => d.status === 'in_review' || d.status === 'changes_requested').length;
+    title.textContent = 'My reviews';
+    sub.textContent   = `${myDocs.length} document${myDocs.length !== 1 ? 's' : ''} you review`
+      + (toDo ? ` · ${toDo} need${toDo === 1 ? 's' : ''} you now` : '');
     sub.style.display = '';
     link.textContent  = '';
     link.innerHTML    = 'All Documents <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>';
 
     thead.innerHTML = `<tr class="bg-surface-container-low border-b border-outline-variant">
       <th class="text-left px-5 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Document</th>
-      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:100px;">Process</th>
-      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:120px;">Status</th>
-      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:90px;">Due</th>
+      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:90px;">Process</th>
+      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:165px;">Status</th>
+      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:230px;">Next step</th>
       <th style="width:72px;"></th>
     </tr>`;
 
-    const statusBadge = s => {
-      if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:4px;font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#f0fdf9;color:#00a572;border:1px solid #86efac;padding:2px 9px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:5px;height:5px;border-radius:50%;background:#00a572;display:inline-block;"></span>Approved</span>`;
-      if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:4px;font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:2px 9px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:5px;height:5px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In Review</span>`;
-      return `<span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#f3f4f6;color:#74777d;border:1px solid #e2e3e8;padding:2px 9px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;">Not Started</span>`;
-    };
-
     tbody.innerHTML = myDocs.map(doc => {
-      const proc = PROCESSES.find(p => p.key === doc.process);
-      const rowBg = doc.overdue ? '#fff5f5' : '';
-      const dueCl = doc.overdue ? '#ba1a1a' : doc.due === '—' ? '#c4c6cd' : '#44474c';
+      const proc  = PROCESSES.find(p => p.key === doc.process);
+      const st    = REVIEW_STATES[doc.status];
+      const needsMe = doc.status === 'in_review' || doc.status === 'changes_requested';
+      let next = `<div style="font-size:12px;line-height:1.35;color:${needsMe ? '#0b1c30' : '#74777d'};font-weight:${needsMe ? 600 : 400};">${st.next}</div>`;
+      if (doc.status === 'changes_requested' && doc.adminComment) {
+        const ev = lastEventOf(doc.id, 'changes_requested');
+        next += `<div style="font-size:11px;line-height:1.35;color:#ba1a1a;margin-top:3px;">“${doc.adminComment}”${ev ? ` — ${who(ev.actor)}` : ''}</div>`;
+      }
+      if (doc.status === 'approved') {
+        next = `<div style="display:flex;align-items:center;gap:4px;font-size:12px;color:#74777d;">
+            <span class="material-symbols-outlined" style="font-size:13px;">lock</span>${st.next}${doc.carried ? ` · carried from ${doc.carried}` : ''}</div>`;
+      }
       return `
-        <tr style="border-bottom:1px solid #e2e3e8;cursor:pointer;${doc.overdue ? 'box-shadow:inset 3px 0 0 #ba1a1a;' : ''}" onclick="window.location.href='documents.html'"
-          onmouseover="this.style.background='${doc.overdue ? '#ffe8e8' : '#f8f9fa'}'" onmouseout="this.style.background='${rowBg}'">
-          <td style="padding:13px 20px;background:${rowBg};">
+        <tr style="border-bottom:1px solid #e2e3e8;cursor:pointer;" onclick="window.location.href='documents.html'"
+          onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background=''">
+          <td style="padding:13px 20px;">
             <div style="font-size:13px;font-weight:500;color:#0b1c30;line-height:1.3;">${doc.name}</div>
             <div style="font-size:11px;color:#74777d;margin-top:2px;">${proc ? proc.label : doc.process}</div>
           </td>
-          <td style="padding:13px 16px;background:${rowBg};">
+          <td style="padding:13px 16px;">
             <span style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;color:#0058be;background:#e5eeff;padding:2px 8px;border-radius:5px;">${doc.process}</span>
           </td>
-          <td style="padding:13px 16px;background:${rowBg};">${statusBadge(doc.status)}</td>
-          <td style="padding:13px 16px;background:${rowBg};font-family:'JetBrains Mono';font-size:11px;color:${dueCl};font-weight:${doc.overdue ? '600' : '400'};">${doc.overdue ? '⚠ ' : ''}${doc.due}</td>
-          <td style="padding:8px 12px;background:${rowBg};">
+          <td style="padding:13px 16px;">${reviewBadge(doc.status)}</td>
+          <td style="padding:11px 16px;">${next}</td>
+          <td style="padding:8px 12px;">
             <div style="display:flex;align-items:center;gap:4px;">
               <button onclick="event.stopPropagation()" title="Open"
                 style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid #e2e3e8;border-radius:6px;background:white;cursor:pointer;color:#74777d;"
@@ -1384,7 +1584,7 @@ function renderDocs() {
             </div>
           </td>
         </tr>`;
-    }).join('');
+    }).join('') || `<tr><td colspan="5" style="padding:18px 20px;font-size:12px;color:#74777d;">No documents to review yet — claim one below.</td></tr>`;
 
     renderUnassignedPool();
 
@@ -1394,31 +1594,37 @@ function renderDocs() {
     sub.style.display = 'none';
     link.innerHTML    = 'View all <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>';
 
+    // Review and approval (proposal): per process, the approval of its documents (a bar of the
+    // four states) and its reviewers - one per document.
     thead.innerHTML = `<tr class="bg-surface-container-low border-b border-outline-variant">
       <th class="text-left px-5 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Process</th>
-      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:210px;">Assignment</th>
-      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:160px;">Team</th>
+      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:250px;">Approval</th>
+      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:160px;">Reviewers</th>
       <th style="width:44px;"></th>
     </tr>`;
 
-    tbody.innerHTML = PROCESSES.map(p => {
-      const docs  = DOCUMENTS.filter(d => d.process === p.key);
-      if (!docs.length) return '';
-      const total      = docs.length;
-      const assigned   = docs.filter(d => d.assignees.length > 0).length;
-      const unassigned = total - assigned;
-      const pct        = Math.round(assigned / total * 100);
-      const barColor   = pct === 100 ? '#00a572' : pct === 0 ? '#e2e3e8' : '#f59e0b';
-      const textColor  = pct === 100 ? '#00a572' : pct === 0 ? '#9aa0a6' : '#b45309';
+    const chip = (st, text) => `<span style="font-size:10px;color:${st.color};background:${st.bg};border:1px solid ${st.border};padding:0 6px;border-radius:99px;font-weight:600;white-space:nowrap;">${text}</span>`;
 
-      const allIds = [...new Set(docs.flatMap(d => d.assignees))];
+    tbody.innerHTML = PROCESSES.map(p => {
+      const pd = docs.filter(d => d.process === p.key);
+      if (!pd.length) return '';
+      const total = pd.length;
+      const c = {};
+      REVIEW_ORDER.forEach(k => { c[k] = pd.filter(d => d.status === k).length; });
+      const needs = pd.filter(d => !d.reviewer && d.status !== 'approved').length;
+      const bar = REVIEW_ORDER.map(k => c[k]
+        ? `<div title="${REVIEW_STATES[k].label}: ${c[k]}" style="height:100%;width:${c[k] / total * 100}%;background:${REVIEW_STATES[k].dot};"></div>` : '').join('');
+      const chips = (c.submitted ? chip(REVIEW_STATES.submitted, `${c.submitted} ready for approval`) : '')
+        + (needs ? chip(REVIEW_STATES.in_review, `${needs} ${needs === 1 ? 'needs' : 'need'} a reviewer`) : '');
+
+      const allIds = [...new Set(pd.map(d => d.reviewer).filter(Boolean))];
       const shown  = allIds.slice(0, 4);
       const extra  = allIds.length - 4;
       const avatarStack = shown.length === 0
-        ? `<span style="font-size:11px;color:#c4c6cd;font-style:italic;">Unassigned</span>`
+        ? (needs ? `<span style="font-size:11px;color:#b45309;font-style:italic;">Needs a reviewer</span>` : `<span style="font-size:11px;color:#c4c6cd;">—</span>`)
         : `<div style="display:flex;align-items:center;">
             ${shown.map((id, i) => {
-              const m = TEAM_MEMBERS.find(x => x.id === id);
+              const m = memberById(id);
               return m ? `<div title="${m.name}" style="margin-left:${i>0?'-6px':'0'};position:relative;z-index:${10-i};">${memberAvatar(m,24)}</div>` : '';
             }).join('')}
             ${extra > 0 ? `<div style="margin-left:-6px;width:24px;height:24px;border-radius:50%;background:#f3f4f6;border:2px solid white;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#44474c;">+${extra}</div>` : ''}
@@ -1438,12 +1644,10 @@ function renderDocs() {
           </td>
           <td style="padding:13px 16px;">
             <div style="display:flex;align-items:center;gap:8px;">
-              <div style="flex:1;height:4px;border-radius:99px;background:#e8eaed;overflow:hidden;min-width:72px;">
-                <div style="height:100%;width:${pct}%;background:${barColor};border-radius:99px;"></div>
-              </div>
-              <span style="font-size:11px;color:${textColor};font-weight:600;white-space:nowrap;">${assigned} / ${total}</span>
-              ${unassigned > 0 ? `<span style="font-size:10px;color:#b45309;background:#fff8e6;border:1px solid #f59e0b;padding:0 6px;border-radius:99px;font-weight:600;white-space:nowrap;">${unassigned} left</span>` : ''}
+              <div style="flex:1;height:5px;border-radius:99px;background:#e8eaed;overflow:hidden;min-width:72px;display:flex;">${bar}</div>
+              <span style="font-size:11px;color:${c.approved === total ? '#00a572' : '#44474c'};font-weight:600;white-space:nowrap;">${c.approved} / ${total} approved</span>
             </div>
+            ${chips ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">${chips}</div>` : ''}
           </td>
           <td style="padding:13px 16px;">${avatarStack}</td>
           <td style="padding:8px 12px;">
@@ -1460,58 +1664,71 @@ function renderDocs() {
 }
 
 // ── Assignee picker ──
+// Review and approval (proposal): single-select. One reviewer per document: picking a member
+// assigns them and replaces the reviewer the document had; it is recorded as an "assigned" event
+// and they are notified.
 function openAssigneePicker(docId, anchor) {
   pickerDocId = docId;
   const picker = document.getElementById('assignee-picker');
   const rect = anchor.getBoundingClientRect();
   picker.style.display = 'block';
-  picker.style.top  = (rect.bottom + window.scrollY + 6) + 'px';
-  picker.style.left = Math.min(rect.left, window.innerWidth - 240) + 'px';
+  picker.style.left = Math.min(rect.left, window.innerWidth - 260) + 'px';
   document.getElementById('assignee-search').value = '';
   renderAssigneePicker('');
+  // Below the button, or above it when the window has no room below.
+  const h = picker.offsetHeight;
+  const below = rect.bottom + 6 + h <= window.innerHeight - 8 || rect.top - 6 - h < 8;
+  picker.style.top = ((below ? rect.bottom + 6 : rect.top - 6 - h) + window.scrollY) + 'px';
 }
 function closeAssigneePicker() {
   document.getElementById('assignee-picker').style.display = 'none';
   pickerDocId = null;
 }
 function renderAssigneePicker(filter) {
-  const doc = DOCUMENTS.find(d => d.id === pickerDocId);
+  const doc = docById(pickerDocId);
   if (!doc) return;
   filter = (filter || '').toLowerCase();
   const members = TEAM_MEMBERS.filter(m => !filter || m.name.toLowerCase().includes(filter) || m.id.toLowerCase().includes(filter));
+  document.getElementById('assignee-picker-title').innerHTML = `Reviewer of <span style="font-weight:600;color:#0b1c30;">${docShort(doc)}</span>`;
   const list = document.getElementById('assignee-picker-list');
   list.innerHTML = members.map(m => {
-    const checked = doc.assignees.includes(m.id);
-    return `<button onclick="toggleAssignee('${m.id}')"
-      style="width:100%;display:flex;align-items:center;gap:10px;padding:8px 12px;border:none;background:${checked ? '#f5f8ff' : 'transparent'};cursor:pointer;text-align:left;"
-      onmouseover="this.style.background='${checked ? '#eef3ff' : '#f8f9fa'}'"
-      onmouseout="this.style.background='${checked ? '#f5f8ff' : 'transparent'}'">
+    const current = doc.reviewer === m.id;
+    const open = DOCUMENTS.filter(d => d.reviewer === m.id && d.status !== 'approved').length;
+    return `<button onclick="pickReviewer('${m.id}')"
+      style="width:100%;display:flex;align-items:center;gap:10px;padding:8px 12px;border:none;background:${current ? '#f5f8ff' : 'transparent'};cursor:pointer;text-align:left;"
+      onmouseover="this.style.background='${current ? '#eef3ff' : '#f8f9fa'}'"
+      onmouseout="this.style.background='${current ? '#f5f8ff' : 'transparent'}'">
       ${memberAvatar(m, 28)}
       <div style="flex:1;min-width:0;">
         <div style="font-size:12px;color:#0b1c30;font-weight:500;">${m.name}</div>
-        <div style="font-size:10px;color:#74777d;">${m.role}</div>
+        <div style="font-size:10px;color:#74777d;">${m.role} · ${open} open review${open === 1 ? '' : 's'}</div>
       </div>
-      ${checked ? '<span class="material-symbols-outlined" style="font-size:16px;color:#0058be;flex-shrink:0;">check</span>' : ''}
+      ${current ? '<span class="material-symbols-outlined" style="font-size:16px;color:#0058be;flex-shrink:0;">check</span>' : ''}
     </button>`;
   }).join('');
-  const count = doc.assignees.length;
-  document.getElementById('assignee-picker-count').textContent = count === 0 ? 'Unassigned' : `${count} assigned`;
+  document.getElementById('assignee-picker-count').textContent = doc.reviewer ? 'One reviewer: picking another replaces them' : 'One reviewer per document';
+  document.getElementById('assignee-remove').style.display = doc.reviewer ? '' : 'none';
 }
-function toggleAssignee(memberId) {
-  const doc = DOCUMENTS.find(d => d.id === pickerDocId);
+function pickReviewer(memberId) {
+  const doc = docById(pickerDocId);
   if (!doc) return;
-  const idx = doc.assignees.indexOf(memberId);
-  if (idx === -1) doc.assignees.push(memberId);
-  else doc.assignees.splice(idx, 1);
-  renderDocs();
-  renderAssigneePicker(document.getElementById('assignee-search').value);
+  closeAssigneePicker();
+  if (doc.reviewer === memberId || doc.status === 'approved') return;
+  const from = doc.reviewer;
+  doc.reviewer = memberId;
+  recordEvent({ kind: 'assigned', actor: CURRENT_ADMIN_ID, doc: doc.id, from: from, to: memberId });
+  renderReviewViews();
+  showToast('person_add', `${memberById(memberId).name} now reviews "${docShort(doc)}" and is notified.`, '#0058be');
 }
-function clearAssignees() {
-  const doc = DOCUMENTS.find(d => d.id === pickerDocId);
-  if (!doc) return;
-  doc.assignees = [];
-  renderDocs();
-  renderAssigneePicker('');
+function removeReviewer() {
+  const doc = docById(pickerDocId);
+  if (!doc || !doc.reviewer) return;
+  closeAssigneePicker();
+  const from = doc.reviewer;
+  doc.reviewer = null;
+  recordEvent({ kind: 'assigned', actor: CURRENT_ADMIN_ID, doc: doc.id, from: from, to: null });
+  renderReviewViews();
+  showToast('person_remove', `"${docShort(doc)}" has no reviewer now.`, '#d97706');
 }
 document.addEventListener('click', e => {
   const picker = document.getElementById('assignee-picker');
@@ -1611,8 +1828,8 @@ function renderPickerCommits(filter) {
       : '';
     const stateMap = {
       never:     { icon:'radio_button_unchecked', text:'Not Run',   color:'#74777d', bg:'#f3f4f6',  border:'#e2e3e8' },
-      in_review: { icon:'rate_review',            text:'In Review', color:'#b45309', bg:'#fff8e6',  border:'#f59e0b' },
-      complete:  { icon:'check_circle',           text:'Complete',  color:'#00a572', bg:'#f0fdf9',  border:'#86efac' },
+      in_review: { icon:'rate_review',            text:'In review', color:'#b45309', bg:'#fff8e6',  border:'#f59e0b' },
+      complete:  { icon:'check_circle',           text:'Approved',  color:'#00a572', bg:'#f0fdf9',  border:'#86efac' },
       stale:     { icon:'warning',                text:'Stale',     color:'#d97706', bg:'#fffbeb',  border:'#f59e0b' },
     };
     const sm = stateMap[c.pageState];
@@ -1689,6 +1906,7 @@ function selectCommit(sha) {
   if (c.pageState !== 'never' && c.pageState !== 'running') {
     renderKpi();
     renderDocs();
+    renderReviewQueue();
     renderLastActions();
   }
 }
@@ -1858,11 +2076,15 @@ let currentState = 'in_review';
 
 function updateStatusBadge(state) {
   const badge = document.getElementById('sb-status-badge');
+  // Review and approval (proposal): a version's status is derived from its documents -
+  // "In review · N of M approved" until every one is approved, then "Approved".
+  const vDocs = versionDocs();
+  const vApproved = vDocs.filter(d => d.status === 'approved').length;
   const cfgs = {
     never:     { icon: 'radio_button_unchecked', text: 'Not Run',   color: '#74777d', bg: '#f3f4f6', border: '#e2e3e8' },
     running:   { icon: 'sync',                   text: 'Running',   color: '#0058be', bg: '#e5eeff', border: '#bfcfff' },
-    in_review: { icon: 'rate_review',             text: 'In Review', color: '#b45309', bg: '#fff8e6', border: '#f59e0b' },
-    complete:  { icon: 'check_circle',            text: 'Complete',  color: '#00a572', bg: '#f0fdf9', border: '#86efac' },
+    in_review: { icon: 'rate_review',             text: `In review · ${vApproved} of ${vDocs.length} approved`, color: '#b45309', bg: '#fff8e6', border: '#f59e0b' },
+    complete:  { icon: 'check_circle',            text: 'Approved',  color: '#00a572', bg: '#f0fdf9', border: '#86efac' },
     stale:     { icon: 'warning',                 text: 'Stale',     color: '#d97706', bg: '#fffbeb', border: '#f59e0b' },
   };
   const cfg = cfgs[state] || cfgs.never;
@@ -2416,11 +2638,10 @@ function setRole(role) {
     ? 'px-2.5 py-1 transition-colors bg-secondary text-white'
     : 'px-2.5 py-1 transition-colors text-on-surface-variant hover:bg-surface-container';
   closeRoleMenu();
+  closeBell();
   const c = COMMITS.find(x => x.current);
   setState(currentState, c);
-  renderKpi();
-  renderDocs();
-  renderLastActions();
+  renderReviewViews();   // KPI, documents, review queue, last actions, bell
 }
 function toggleRoleMenu() {
   const menu = document.getElementById('role-menu');
@@ -2669,7 +2890,7 @@ function finishGeneration() {
   const c = COMMITS.find(x => x.current);
   if (c) c.pageState = 'in_review';
   setState('in_review', c);
-  renderKpi(); renderDocs(); renderLastActions();
+  renderKpi(); renderDocs(); renderReviewQueue(); renderLastActions();
   showToast('check_circle', 'Analysis complete — documents ready for assignment.', '#00a572');
 }
 
@@ -2739,9 +2960,7 @@ document.getElementById('delete-version-modal').addEventListener('click', e => {
 const _initCommit = COMMITS.find(c => c.current);
 currentState = _initCommit ? _initCommit.pageState : 'in_review';
 updateChip();
-renderKpi();
-renderDocs();
-renderLastActions();
+renderReviewViews();   // KPI, documents, review queue, last actions, bell
 setState(currentState, _initCommit);
 </script>
 </body>

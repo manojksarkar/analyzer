@@ -77,6 +77,14 @@ class TestReexportRunsInPlace:
         cmd = self._cmd({"type": stype, "names": ["Layer1.My Sample", "Layer1.Full"]})
         assert self._values(cmd, flag) == ["Layer1.My Sample", "Layer1.Full"]
 
+    @pytest.mark.parametrize("stype", ["component", "group", "layer", "project"])
+    def test_every_scope_gets_one_document_per_component(self, stype):
+        """A component scope used to be left without `--component-per-docx`: a version of several
+        components was re-exported as ONE bundled document, and each component's own document
+        kept its old text."""
+        cmd = self._cmd({"type": stype, "names": ["Layer1.Lib", "Layer1.Util"]})
+        assert "--component-per-docx" in cmd
+
     def test_a_project_scope_selects_nothing(self):
         cmd = self._cmd({"type": "project"}, layer_filter=None)
         assert not any(a.startswith("--selected-") for a in cmd)

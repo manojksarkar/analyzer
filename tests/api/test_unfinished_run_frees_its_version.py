@@ -167,6 +167,38 @@ class TestAJobAStoppedServerLeftRunning:
         from api import main
         assert "_fail_interrupted_jobs(_db)" in inspect.getsource(main._db_startup_check)
 
+    def test_a_job_started_after_this_process_is_its_own(self, db, monkeypatch):
+        """The check may run late -- tried again while the database does not answer -- and a job
+        started meanwhile is this process's own, between its row and its thread."""
+        import datetime
+        project = _project(db)
+        job = _job(db, project, "v9.3.0")
+        monkeypatch.setattr(pr, "job_alive", lambda job_id: job_id != job.id)
+        an_hour_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
+        assert pr.fail_interrupted_jobs(db, before=an_hour_ago) == 0
+        assert db.jobs.get(job.id).status == "running"
+
+    def test_a_check_that_could_not_run_is_tried_again(self, monkeypatch):
+        """Only this check follows a background run again after a restart: one missed try (the
+        database slow to answer) left the job "running" for ever with nothing following it."""
+        import threading
+        from api import main
+        calls, done = [], threading.Event()
+
+        def sweep(db, before=None):
+            calls.append(before)
+            if len(calls) < 3:
+                raise RuntimeError("connection timeout expired")
+            done.set()
+            return 0
+        monkeypatch.setattr(pr, "fail_interrupted_jobs", sweep)
+        monkeypatch.setattr(main, "JOB_SWEEP_RETRY_SECONDS", 0.05)
+        db = type("Db", (), {"_engine": None})()
+        assert main._fail_interrupted_jobs(db) is False
+        main._sweep_until_done(db)
+        assert done.wait(10) and len(calls) == 3
+        assert calls[-1] == pr.PROCESS_STARTED
+
 
 class TestOnlyTheOnlyServerSweeps:
     """A second API server on the same database runs jobs of its own; failing them would delete

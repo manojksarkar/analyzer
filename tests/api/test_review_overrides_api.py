@@ -560,8 +560,8 @@ class TestExportReadiness:
         from api.services import pipeline_runner
         asked, real = [], guard.staleness
         monkeypatch.setattr(pipeline_runner, "export_doc_type", lambda db, pid, vid: "all")
-        monkeypatch.setattr(guard, "staleness", lambda cx, vid, doc_types=None: (
-            asked.append(doc_types) or real(cx, vid, doc_types)))
+        monkeypatch.setattr(guard, "staleness", lambda cx, vid, doc_types=None, component=None: (
+            asked.append(doc_types) or real(cx, vid, doc_types, component=component)))
         r = client.get(BASE + "/export-readiness", headers=auth_header)
         assert r.status_code == 200
         assert asked == ["all"]

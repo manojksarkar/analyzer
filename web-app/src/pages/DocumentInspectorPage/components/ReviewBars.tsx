@@ -1,6 +1,8 @@
 import { Button, Icon } from '../../../components/ui'
 import { reexportActive, useReexportFinished, useReexportVersion } from '../../../hooks/useReview'
-import type { ExportReadiness } from '../../../types'
+import { cn } from '../../../lib/cn'
+import { formatDateTime } from '../../../lib/format'
+import type { Document, ExportReadiness } from '../../../types'
 
 /* Review & update: what edit mode says above the document. */
 
@@ -61,6 +63,102 @@ function Banner({ icon, spin, action, children }: {
       <p className="flex-1 min-w-0 text-caption text-[#92400e]">{children}</p>
       {action}
     </div>
+  )
+}
+
+/** Above the document, its review state when it asks for something (documents.html
+ *  paintReviewBanner): approved and locked; sent back with the admin's comment; ready for an
+ *  admin's decision. In review says nothing here: the Review tab has it. */
+export function ReviewStateBanner({
+  doc, versionTag, isAdmin, isMine, changesBy, changesAt, onReopen, onOpenReview,
+}: {
+  doc: Document
+  /** The document's version, as its cover names it. */
+  versionTag: string
+  isAdmin: boolean
+  /** The signed-in user reviews it. */
+  isMine: boolean
+  /** Who asked for changes, and when (the record's last `changes_requested`). */
+  changesBy?: string | null
+  changesAt?: string | null
+  onReopen: () => void
+  /** Bring the Review tab forward. */
+  onOpenReview: () => void
+}) {
+  const r = doc.review
+  if (doc.status === 'approved') {
+    const at = formatDateTime(r.approvedAt)
+    return (
+      <StateBanner
+        tone="ok"
+        icon="lock"
+        action={isAdmin ? <BannerAction tone="ok" icon="lock_open" label="Reopen…" onClick={onReopen} /> : undefined}
+      >
+        {r.carriedFrom
+          ? <><b>Approved in {r.carriedFrom.tag}.</b> The content is unchanged in {versionTag}, so the approval carries.</>
+          : <><b>Approved</b>{r.approvedBy ? ` by ${r.approvedBy.name}` : ''}{at ? ` · ${at}` : ''}.</>}
+        {' '}Locked: no corrections.{isAdmin ? '' : ' An admin can reopen it.'}
+      </StateBanner>
+    )
+  }
+  if (doc.status === 'changes_requested') {
+    const at = formatDateTime(changesAt)
+    return (
+      <StateBanner
+        tone="bad"
+        icon="undo"
+        action={isMine ? <BannerAction tone="bad" label="Submit again…" onClick={onOpenReview} /> : undefined}
+      >
+        <b>Changes requested</b>{changesBy ? ` by ${changesBy}` : ''}{at ? ` · ${at}` : ''}
+        {r.changesComment && <span className="block text-on-surface mt-0.5">“{r.changesComment}”</span>}
+      </StateBanner>
+    )
+  }
+  if (doc.status === 'submitted' && isAdmin) {
+    return (
+      <StateBanner
+        tone="info"
+        icon="pending_actions"
+        action={<BannerAction tone="info" label="Approve or request changes…" onClick={onOpenReview} />}
+      >
+        <b>Ready for approval.</b> {doc.reviewer?.name ?? 'Its reviewer'} submitted it{r.comment ? <>: “{r.comment}”</> : '.'}
+      </StateBanner>
+    )
+  }
+  return null
+}
+
+const STATE_TONE = {
+  ok: { box: 'bg-[#f0fdf9] border-[#86efac] text-[#065f46]', icon: 'text-[#00a572]', act: 'border-[#86efac] text-[#065f46]' },
+  bad: { box: 'bg-[#fff1f0] border-[#f5a3a3] text-on-error-container', icon: 'text-error', act: 'border-[#f5a3a3] text-error' },
+  info: { box: 'bg-surface-container-low border-[#b9cdf5] text-on-surface', icon: 'text-secondary', act: 'border-[#8ab0f0] text-secondary' },
+} as const
+
+function StateBanner({ tone, icon, action, children }: {
+  tone: keyof typeof STATE_TONE; icon: string; action?: React.ReactNode; children: React.ReactNode
+}) {
+  const t = STATE_TONE[tone]
+  return (
+    <div role="status" className={cn('mb-4 flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl border text-xs leading-[1.45]', t.box)}>
+      <Icon name={icon} size={18} className={cn('flex-shrink-0', t.icon)} />
+      <p className="flex-1 min-w-0">{children}</p>
+      {action}
+    </div>
+  )
+}
+
+function BannerAction({ tone, icon, label, onClick }: {
+  tone: keyof typeof STATE_TONE; icon?: string; label: string; onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn('ml-auto flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-[5px] rounded-lg border bg-white font-mono text-label font-semibold hover:opacity-90', STATE_TONE[tone].act)}
+    >
+      {icon && <Icon name={icon} size={13} />}
+      {label}
+    </button>
   )
 }
 

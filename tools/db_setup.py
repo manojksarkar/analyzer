@@ -278,6 +278,20 @@ def main() -> int:
         print(f"stored {filled['units']} unit and {filled['structs']} struct description(s) of "
               f"{touched} version(s) made before Phase 2 stored them (from their earlier output)")
 
+    # 5. review and approval (0015; idempotent): statuses to the four states, one reviewer per
+    # document and its unique index, a record for documents approved before there was one.
+    # `create_all` adds none of that to a database that already has these tables.
+    from api.db.postgres.review_repair import repair_review
+    with eng.begin() as cx:
+        fixed = repair_review(cx)
+    if fixed["statuses"]:
+        print(f"review: {fixed['statuses']} document status(es) set to in_review")
+    if fixed["assignments"]:
+        print(f"review: kept one reviewer per document, removed {fixed['assignments']} older "
+              f"assignment(s)")
+    if fixed["events"]:
+        print(f"review: recorded {fixed['events']} approval(s) made before the review record")
+
     print("\nOK - now run:  python tools\\verify_db_sync.py")
     return 0
 

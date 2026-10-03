@@ -156,7 +156,7 @@ export function ProjectRow({ project, onNavigate }: { project: Project; onNaviga
         <VersionBadge version={project.latestVersion} />
       </td>
 
-      {/* In Review — right-aligned, blue */}
+      {/* In review (not approved yet: in review, ready for approval, changes requested) — right-aligned, blue */}
       <td className="text-right px-4 py-3.5">
         {project.inReviewCount > 0 ? (
           <span className="text-secondary font-mono text-xs font-semibold">{project.inReviewCount}</span>

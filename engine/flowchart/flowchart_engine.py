@@ -285,6 +285,22 @@ def _db_conn():
     return get_engine()
 
 
+def _publish_progress(config: EngineConfig, done: int, total: int, started: float,
+                      force: bool = False) -> None:
+    """How far the flowcharts are, on the version's run row (`analyzer.py progress`, the web
+    app's Components panel). Phase 3's longest stage, and this engine is a process of its own with
+    its own stack, so the phases' ProgressReporter never saw it: a run spent hours here showing the
+    stage before. Throttled there; never raises; nothing without a version."""
+    if not getattr(config, "version_id", None):
+        return
+    try:
+        _db_conn()                                   # the repo root + engine/ on the path
+        from core.version_run import progress
+        progress("flowcharts", done, total, started, force=force, version_id=config.version_id)
+    except Exception:                                # noqa: BLE001 - progress is never fatal
+        pass
+
+
 # --- LLM label cache (content-addressed, shared with the description cache) ------------
 _LABEL_CACHE = None
 _LABEL_NS = "flowchart_labels"
@@ -942,6 +958,9 @@ def run(config: EngineConfig) -> None:
     total_err = 0
     total_funcs = len(processable)  # global denominator (functions actually processed)
     processed = 0                   # global running counter across all files
+    import time as _time
+    _started = _time.time()
+    _publish_progress(config, 0, total_funcs, _started, force=True)
 
     for source_file, entries in sorted(by_file.items()):
         logger.debug("── File: %s  (%d function(s))", source_file, len(entries))
@@ -951,6 +970,7 @@ def run(config: EngineConfig) -> None:
             processed += 1
             logger.info("[%d/%d] Processing: %s",
                         processed, total_funcs, entry.qualified_name)
+            _publish_progress(config, processed - 1, total_funcs, _started)
             result = _process_function(
                 func_entry=entry,
                 pkb=pkb,
@@ -972,6 +992,8 @@ def run(config: EngineConfig) -> None:
                              len(result.mermaid_script))
 
         file_results.append(fr)
+
+    _publish_progress(config, processed, total_funcs, _started, force=True)
 
     # Write output
     written = writer.write_all(file_results)

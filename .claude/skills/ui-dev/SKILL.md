@@ -161,3 +161,20 @@ lists the calls per screen. Rules the spec's tests cannot enforce on the client:
   ("X input", the interface descriptions' join). Edit the slot's text; show the stand-in as a hint.
 - **Flowcharts are server-drawn SVGs**, redrawn by the label save itself; the mapper adds
   `?v=<source_hash>` so the `<img>` reloads. A save changes the page, not the Word file (R9).
+
+## 7. Review and approval (assign, submit, approve, reopen)
+
+Contract: [REVIEW_APPROVE_API_SPEC](docs/spec/REVIEW_APPROVE_API_SPEC.md) (A1–A19). Data:
+`services/api/approval.ts`, `services/mappers/approval.ts`, `hooks/useApproval.ts`. Screens: the reader's
+`ReviewTab.tsx` / `ReviewDialogs.tsx` / banners in `ReviewBars.tsx`, `components/review/AssignReviewerDialog.tsx`,
+`pages/DocumentsPage/`, `pages/ProjectDetailPage/` (queues). The rules live in the API — the client never
+decides them:
+
+- **One status vocabulary**: `lib/reviewStatus.ts` + `ui/StatusBadge`. Never add a local status map.
+- **Ask, don't infer, who may act**: a 409 (`WRONG_STATE`, `STALE_EXPORT`, `DOCUMENT_APPROVED`,
+  `HAS_REVIEWER`, `NO_REVIEWER`) is the authority; show its message and refetch. Approve is gated on R9 for
+  the document (A15), but the server's `STALE_EXPORT` is the real guard.
+- **"Me" is a user id**, never a display name. A version's status is the API's (derived) — never computed
+  on the client from a partial list.
+- **Tests**: `npm test`. A bare `npx vitest run` also runs the live API suite, which WRITES to whatever
+  `localhost:8000` is; run `npm run test:api` only with `API_TEST_URL` at a throwaway API.

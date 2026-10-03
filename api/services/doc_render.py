@@ -31,6 +31,13 @@ from typing import Any, Optional
 from .settings import get_settings as _get_settings
 _REPO_ROOT = _get_settings().repo_root
 OUTPUT_ROOT = _REPO_ROOT / "output"
+
+
+def workspaces_root() -> Path:
+    """Per-project workspaces: `ANALYZER_WORKSPACES_DIR`, else <repo>/workspaces. A run started
+    with `--detach` works from a frozen copy of the code, so its repo root is that copy -- the
+    workspaces it writes, and these lookups read, are this installation's (core/frozen_run.py)."""
+    return _get_settings().analyzer_workspaces_dir or (_REPO_ROOT / "workspaces")
 _log = logging.getLogger(__name__)
 
 KEY_SEP = "|"
@@ -48,7 +55,7 @@ def commit_output_root(project_id: Optional[str], commit_sha: Optional[str],
     latest shared run."""
     if not project_id:
         return None
-    ws = _REPO_ROOT / "workspaces" / project_id
+    ws = workspaces_root() / project_id
     if version_id:
         d = ws / "versions" / version_id / "output"
         if d.is_dir():

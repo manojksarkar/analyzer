@@ -12,7 +12,7 @@ const COLUMNS = [
   { label: 'Name',      cls: 'text-left px-5 py-3' },
   { label: 'Standard',  cls: 'text-left px-4 py-3' },
   { label: 'Latest',    cls: 'text-left px-4 py-3' },
-  { label: 'In Review', cls: 'text-right px-4 py-3' },
+  { label: 'In review', cls: 'text-right px-4 py-3' },
   { label: 'Progress',  cls: 'px-4 py-3 w-40' },
   { label: 'Last Run',  cls: 'text-left px-4 py-3' },
   { label: 'Team',      cls: 'text-left px-4 py-3' },

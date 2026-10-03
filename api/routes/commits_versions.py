@@ -11,8 +11,8 @@ from ..db.session import get_db
 from ..db.in_memory import InMemoryDatabase
 from ..middleware.auth import get_current_user, require_project_admin, require_project_member
 from ..models.domain import User, Version, Commit, Project
-from ..services import repo_git
-from ..services.errors import not_found, conflict
+from ..services import repo_git, review_workflow
+from ..services.errors import bad_request, not_found, conflict
 from ..schemas import CommitListResponse, VersionResponse, VersionListResponse
 
 router = APIRouter(tags=["commits-versions"])
@@ -79,7 +79,13 @@ def list_commits(
             # API is never slowed by the git round-trip; they appear on the next
             # refetch.
             background_tasks.add_task(_backfill_commits_from_repo, project_id, db)
-    versions = {v.commit_sha: v.tag for v in db.versions.list_for_project(project_id)}
+    all_versions = sorted(db.versions.list_for_project(project_id),
+                          key=lambda v: review_workflow._aware(v.created_at))
+    versions = {v.commit_sha: v.tag for v in all_versions}
+    # A commit's document status is its newest finished version's: in_review or approved (derived
+    # from the documents, review_workflow.roll_up). `commits.doc_status` was written once, as
+    # "never", and nothing kept it current.
+    reviewed = {v.commit_sha: v.status for v in all_versions if v.status in ("in_review", "approved")}
     # Mark the most recent commit as "current"
     current_job = db.jobs.get_current(project_id)
     current_sha = current_job.commit_sha if current_job else None
@@ -91,7 +97,7 @@ def list_commits(
                 "author": c.author_name,
                 "committed_at": c.committed_at.isoformat(),
                 "branch": c.branch,
-                "doc_status": c.doc_status,
+                "doc_status": reviewed.get(c.sha) or c.doc_status,
                 "version": versions.get(c.sha),
                 "is_current": c.sha == current_sha,
             }
@@ -121,7 +127,7 @@ def list_versions(
     require_project_member(project_id, current_user, db)
     versions = db.versions.list_for_project(project_id)
     versions.sort(key=lambda v: v.created_at, reverse=True)
-    return {"versions": [_version_dict(v) for v in versions]}
+    return {"versions": [_version_dict(v, db) for v in versions]}
 
 
 @router.post("/projects/{project_id}/versions", status_code=201,
@@ -150,7 +156,7 @@ def create_version(
         created_at=datetime.now(UTC),
     )
     db.versions.create(version)
-    return {"version": _version_dict(version)}
+    return {"version": _version_dict(version, db)}
 
 
 @router.get("/projects/{project_id}/versions/{version_id}",
@@ -167,7 +173,7 @@ def get_version(
     version = db.versions.get(version_id)
     if not version or version.project_id != project_id:
         raise not_found("Version", version_id)
-    return {"version": _version_dict(version)}
+    return {"version": _version_dict(version, db)}
 
 
 @router.patch("/projects/{project_id}/versions/{version_id}",
@@ -185,12 +191,14 @@ def update_version(
     version = db.versions.get(version_id)
     if not version or version.project_id != project_id:
         raise not_found("Version", version_id)
-    if body.status:
-        version.status = body.status
+    if body.status is not None:
+        # A version is approved when every one of its documents is (REVIEW_APPROVE_API_SPEC
+        # A14): derived, never set. Setting it by hand recorded nothing and agreed with nothing.
+        raise bad_request("A version's status follows its documents: approve the documents.")
     if body.description is not None:
         version.description = body.description
     db.versions.update(version)
-    return {"version": _version_dict(version)}
+    return {"version": _version_dict(version, db)}
 
 
 @router.delete("/projects/{project_id}/versions/{version_id}", status_code=204)
@@ -276,16 +284,26 @@ def _backfill_commits_from_repo(project_id: str, db: InMemoryDatabase) -> None:
         ))
 
 
-def _version_dict(v: Version) -> dict:
+def _version_dict(v: Version, db=None) -> dict:
+    """A version; with `db`, its status derived from its documents and their review counts."""
+    review = None
+    status = v.status
+    if db is not None:
+        docs = review_workflow.version_docs(db, v)
+        status = review_workflow.derived_status(v, docs)
+        review = review_workflow.version_review(db, v, docs)
     return {
         "id": v.id,
         "tag": v.tag,
         "commit_sha": v.commit_sha,
-        "branch": v.branch,
-        "description": v.description,
-        "status": v.status,
+        # A version the CLI made (`--create-version`) has no branch, description or author; the
+        # contract's types are strings, and the web app refused the WHOLE version list on a null.
+        "branch": v.branch or "",
+        "description": v.description or "",
+        "status": status,
+        "review": review,
         "docs_count": v.docs_count,
-        "created_by": v.created_by,
+        "created_by": v.created_by or "",
         "created_at": v.created_at.isoformat(),
         "baseline_version_id": getattr(v, "baseline_version_id", None),
         "decision": getattr(v, "decision", None),

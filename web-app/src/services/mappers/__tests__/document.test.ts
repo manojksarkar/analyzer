@@ -5,6 +5,7 @@ import {
   type ApiDocumentDetail,
 } from '../document'
 
+// A document as every route returns it (REVIEW_APPROVE_API_SPEC §2).
 const detail: ApiDocumentDetail = {
   id: 'd1',
   name: 'Software Detailed Design',
@@ -12,17 +13,24 @@ const detail: ApiDocumentDetail = {
   process: 'SWE.3',
   layer: 'Layer1',
   group: 'Full',
-  status: 'in_review',
+  status: 'submitted',
   version_id: 'ver3',
   due_date: null,
   assignees: [{ user_id: 'u1', name: 'Alice', initials: 'AL' }],
+  reviewer: { user_id: 'u1', name: 'Alice', initials: 'AL' },
+  review: {
+    comment: 'Checked every function; corrected 3 texts.',
+    changes_comment: null,
+    approved_by: null, approved_at: null, approval_comment: null, docx_sha256: null,
+    carried_from: null,
+    last_event: {
+      id: 'rev1', document_id: 'd1', version_id: 'ver3', kind: 'submitted',
+      actor: { user_id: 'u1', name: 'Alice', initials: 'AL' }, at: '2026-10-01T09:40:00+00:00',
+      comment: 'Checked every function; corrected 3 texts.', payload: {},
+    },
+  },
   created_at: '2026-06-01T00:00:00Z',
   updated_at: '2026-06-10T00:00:00Z',
-  sections: [
-    { key: 'b', title: 'B', order: 2, content: 'b', review_state: null, reviewed_by: null, reviewed_at: null },
-    { key: 'a', title: 'A', order: 1, content: 'a', review_state: 'accepted', reviewed_by: 'u1', reviewed_at: null },
-  ],
-  review_progress: { resolved: 1, total: 2 },
 }
 
 describe('mapDocument', () => {
@@ -32,17 +40,48 @@ describe('mapDocument', () => {
   it('falls back to the raw version_id when no lookup is given', () => {
     expect(mapDocument(detail).version).toBe('ver3')
   })
-  it('takes the first assignee as the row assignee', () => {
-    expect(mapDocument(detail).assignee).toBe('Alice')
+  it('maps the one reviewer, and names them as the row assignee', () => {
+    const d = mapDocument(detail)
+    expect(d.reviewer).toEqual({ userId: 'u1', name: 'Alice', initials: 'AL' })
+    expect(d.assignee).toBe('Alice')
+  })
+  it('reads no reviewer as "Needs a reviewer" (null)', () => {
+    const d = mapDocument({ ...detail, reviewer: null, assignees: [] })
+    expect(d.reviewer).toBeNull()
+    expect(d.assignee).toBeUndefined()
+  })
+  it('maps the review: the comment and the last event', () => {
+    const d = mapDocument(detail)
+    expect(d.status).toBe('submitted')
+    expect(d.review.comment).toBe('Checked every function; corrected 3 texts.')
+    expect(d.review.lastEvent).toMatchObject({ kind: 'submitted', actor: { userId: 'u1' }, documentId: 'd1' })
+  })
+  it('maps an approval and where it was carried from', () => {
+    const d = mapDocument({
+      ...detail,
+      status: 'approved',
+      review: {
+        ...detail.review,
+        approved_by: { user_id: 'u9', name: 'Ada Admin', initials: 'AA' },
+        approved_at: '2026-10-01T10:00:00+00:00',
+        approval_comment: 'Reads well.',
+        docx_sha256: '9f2c',
+        carried_from: { version_id: 'ver2', tag: 'v1.1.0' },
+      },
+    })
+    expect(d.review.approvedBy?.name).toBe('Ada Admin')
+    expect(d.review.docxSha256).toBe('9f2c')
+    expect(d.review.carriedFrom).toEqual({ versionId: 'ver2', tag: 'v1.1.0' })
+  })
+  it('reads an older state word as the nearest of the four', () => {
+    expect(mapDocument({ ...detail, status: 'complete' }).status).toBe('approved')
+    expect(mapDocument({ ...detail, status: 'never' }).status).toBe('in_review')
   })
 })
 
 describe('mapDocumentDetail', () => {
-  it('sorts sections by order and maps review_state', () => {
-    const d = mapDocumentDetail(detail)
-    expect(d.sections.map((s) => s.key)).toEqual(['a', 'b'])
-    expect(d.sections[0].reviewState).toBe('accepted')
-    expect(d.reviewProgress).toEqual({ resolved: 1, total: 2 })
+  it('is the document itself (review is per document, not per section)', () => {
+    expect(mapDocumentDetail(detail)).toEqual(mapDocument(detail))
   })
 })
 
@@ -61,16 +100,17 @@ describe('resolveAssetUrl (default mode — relative path under the API base)', 
 })
 
 describe('ApiDocumentDetailSchema', () => {
-  it('accepts the full detail DTO', () => {
+  it('accepts the document of the contract', () => {
     expect(ApiDocumentDetailSchema.safeParse(detail).success).toBe(true)
   })
-  it('tolerates a detail DTO without the optional sections list', () => {
-    const noSections: ApiDocumentDetail = {
-      id: 'd2', name: 'X', subtitle: '', process: 'SWE.2', layer: 'L', group: 'G',
-      status: 'approved', version_id: 'ver1', due_date: null, assignees: [],
-      created_at: '2026-06-01T00:00:00Z', updated_at: '2026-06-01T00:00:00Z',
-    }
-    expect(ApiDocumentDetailSchema.safeParse(noSections).success).toBe(true)
+  it('accepts a document nobody reviews, with leftover placeholder sections', () => {
+    const doc = { ...detail, reviewer: null, assignees: [], sections: [{ key: 'a' }], review_progress: { resolved: 0, total: 1 } }
+    expect(ApiDocumentDetailSchema.safeParse(doc).success).toBe(true)
+  })
+  it('refuses a document without its review (the API must send it)', () => {
+    const { review: _review, ...noReview } = detail
+    void _review
+    expect(ApiDocumentDetailSchema.safeParse(noReview).success).toBe(false)
   })
 })
 

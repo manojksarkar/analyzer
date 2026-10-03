@@ -6,13 +6,15 @@ import type {
 import { formatDate, avatarPalette } from '../../lib/format'
 
 export const ApiProjectSchema = z.object({
-  id: z.string(), name: z.string(), client: z.string(), compliance_standard: z.string(),
+  // null for a project `analyzer.py onboard` wrote (no client, standard or architecture in the
+  // database): tolerated, as an older server still answers so.
+  id: z.string(), name: z.string(), client: z.string().nullable(), compliance_standard: z.string().nullable(),
   status: z.string(), last_run_at: z.string().nullable(), current_version: z.string().nullable(),
   doc_counts: z.record(z.string(), z.number()), team_count: z.number(), my_role: z.string().nullable(),
   repo_url: z.string(), default_branch: z.string().optional(),
   build_config: z.record(z.string(), z.unknown()).optional(),
   // null for a project `analyzer.py onboard` wrote: the CLI records no created/updated time.
-  architecture_layers: z.array(z.unknown()), created_at: z.string().nullable(), updated_at: z.string().nullable(),
+  architecture_layers: z.array(z.unknown()).nullable(), created_at: z.string().nullable(), updated_at: z.string().nullable(),
   // The project's cores and each layer's core; a project from before cores reads as one core.
   cores: z.array(z.object({
     name: z.string(), macros: z.string().nullable(), data_dictionary: z.string().nullable(),
@@ -54,9 +56,10 @@ export function mapProject(p: ApiProject): Project {
     client: p.client ?? '',
     repoPath: p.repo_url,
     defaultBranch: p.default_branch ?? '',
-    standard: standardLabel(p.compliance_standard),
+    standard: standardLabel(p.compliance_standard ?? ''),
     latestVersion: p.current_version,
-    inReviewCount: counts.in_review ?? 0,
+    // Not approved yet: in review, ready for approval or sent back (REVIEW_APPROVE_API_SPEC §1).
+    inReviewCount: (counts.in_review ?? 0) + (counts.submitted ?? 0) + (counts.changes_requested ?? 0),
     progress,
     lastRun: formatDate(p.last_run_at),
     // GET /projects exposes only team_count (no member array). Render generic
