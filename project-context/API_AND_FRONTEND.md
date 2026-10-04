@@ -253,6 +253,14 @@ chart's box labels together; a banner says when the Word files lack the latest c
   `resolveAssetUrl`) so a redrawn SVG reloads.
 - **Rules** — the `ui-dev` skill §6; the contract's page section is REVIEW_UPDATE_API_SPEC §3a.
 - **Mockup** — `docs/ui-mockups/documents.html` (open with `#edit`).
+- **Since 2026-10-05** (history 11 2026-10-05 … and 13): a save met by a run that replaced the model
+  answers 409 `{code: VERSION_REGENERATING}` (the other refusals stay strings); a save's queued texts
+  carry `label`; R9 adds `staleComponents` (per-component, read in one pass:
+  `export_guard.stale_components`) and ignores corrections in components with no document; R12
+  `DELETE …/overrides/orphans` (admins) discards orphans; Phase 3 puts back a correction the model
+  lost (`carry_forward.restore_missing_corrections`, RF-1). The web reads R1 in pages of 1000, blocks
+  U+0000, counts an undone correction as not corrected, shows orphans inline, lists R10 in the
+  Corrections tab, and marks only the stale components' downloads.
 
 ### Staged generation (2026-10-02)
 
@@ -319,7 +327,12 @@ generated yet), `reexport` (again), `resume` (after a crash). Human guide:
 - **Web re-export** re-renders every component the version has documents for (`_reexport_scope`), one
   document each (`--component-per-docx` for every scope — a component scope used to come back as one
   bundled document). A web generate job does not hold the writer lock: the `analyzer.py generate` it
-  starts does.
+  starts does. Since 2026-10-05: also a version made from the command line (it has no generation
+  job; commit/branch/tag come from the version; 409 `NO_DOCUMENTS` when nothing is recorded), and
+  optionally only `{"components": [...]}` (each with documents; the Components panel sends the stale
+  ones). `GET /projects/{pid}/runs` lists the runs at work or cut short from either front door (the
+  Overview's card); the versions list carries `run: {made_by, scope, doc_type, model_only}`.
+  `analyzer.py clean-runs` removes the code copies of runs that finished (exit 0) days ago.
 - **`--detach`** (CLI): `core/frozen_run.py` — a frozen copy of the code under `runs/<version>/<time>/`,
   the same data via `ANALYZER_DATA_ROOT` / `ANALYZER_WORKSPACES_DIR`, output in `run.log`, `run.json`
   (pid, argv, `job_id` from `ANALYZER_JOB_ID`), and `exit.json` written by `analyzer.py` as it exits
