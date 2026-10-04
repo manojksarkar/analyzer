@@ -41,7 +41,8 @@ describe('reviewAction — admin', () => {
     const a = reviewAction(doc('changes_requested'), admin)
     expect(a.kind).toBe('submit')
     expect(a.directApprove).toBe(false)
-    expect(a.submitHeading).toBe('Fix it, then submit again')
+    // Said to the reviewer, "Fix it, then submit again"; an admin is not the one asked to fix it.
+    expect(a.submitHeading).toBe('Changes requested — submit again for Bob')
   })
 })
 
@@ -54,6 +55,9 @@ describe('reviewAction — developer', () => {
     expect(a.kind).toBe('submit')
     expect(a.submitHeading).toBe('Your review')
     expect(a.directApprove).toBe(false)
+  })
+  it('my document sent back: fix it, then submit again', () => {
+    expect(reviewAction(doc('changes_requested'), dev).submitHeading).toBe('Fix it, then submit again')
   })
   it('ready for approval: waiting for an admin', () => {
     expect(reviewAction(doc('submitted'), dev).kind).toBe('wait')

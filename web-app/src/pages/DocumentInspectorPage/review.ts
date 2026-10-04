@@ -101,9 +101,12 @@ export function reviewAction(doc: Doc, ctx: ReviewCtx): ReviewAction {
       ...base,
       kind: 'submit',
       directApprove: ctx.isAdmin && doc.status === 'in_review',
-      submitHeading: doc.status === 'changes_requested'
-        ? 'Fix it, then submit again'
-        : ctx.isAdmin && !isMine(doc, ctx) ? `Submit for ${firstName(doc.reviewer.name)}` : 'Your review',
+      // "Fix it" is said to the reviewer; an admin looking at another's document submits for them.
+      submitHeading: ctx.isAdmin && !isMine(doc, ctx)
+        ? doc.status === 'changes_requested'
+          ? `Changes requested — submit again for ${firstName(doc.reviewer.name)}`
+          : `Submit for ${firstName(doc.reviewer.name)}`
+        : doc.status === 'changes_requested' ? 'Fix it, then submit again' : 'Your review',
     }
   }
   return base
