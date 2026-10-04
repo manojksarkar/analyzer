@@ -36,3 +36,39 @@ def test_same_named_components_of_two_layers_are_both_in_the_zip(db, client, aut
     names = sorted(zipfile.ZipFile(io.BytesIO(r.content)).namelist())
     assert names == ["software_detailed_design_Layer1.Lib.docx",
                      "software_detailed_design_Layer2.Lib.docx"]
+
+
+def test_the_zip_is_built_on_disk_stored_and_deleted_once_sent(db, client, auth_header,
+                                                               tmp_path, monkeypatch):
+    """A version of a large project holds dozens of Word files of tens of MB: built in memory the
+    archive reached gigabytes for one click, and a DOCX is a ZIP already -- compressing it again
+    cost CPU for nothing."""
+    import os
+    import tempfile
+    now = datetime.datetime.now(datetime.timezone.utc)
+    version = Version(id="ver" + uuid.uuid4().hex[:8], project_id="p1", tag="zip-" + uuid.uuid4().hex[:6],
+                      commit_sha="0" * 40, branch="main", description="", status="in_review",
+                      docs_count=1, created_by="u1", created_at=now)
+    db.versions.create(version)
+    d = tmp_path / "Layer1.Lib"
+    d.mkdir()
+    (d / "software_detailed_design_Layer1.Lib.docx").write_bytes(b"x" * 5000)
+    db.documents.update(Document(
+        id="doc" + uuid.uuid4().hex[:8], project_id="p1", version_id=version.id, process="SWE.3",
+        name="Lib", subtitle="", layer="Layer1", group="Layer1.Lib", status="in_review",
+        due_date=None, created_at=now, updated_at=now))
+    made = []
+    real = tempfile.mkstemp
+
+    def mkstemp(*a, **k):
+        fd, path = real(*a, **k)
+        made.append(path)
+        return fd, path
+    monkeypatch.setattr(tempfile, "mkstemp", mkstemp)
+    with patch("api.services.doc_render.commit_output_root", return_value=tmp_path):
+        r = client.get("/api/v1/projects/p1/documents/export-all/download",
+                       params={"version_id": version.id}, headers=auth_header)
+    assert r.status_code == 200, r.text
+    info = zipfile.ZipFile(io.BytesIO(r.content)).infolist()
+    assert [i.compress_type for i in info] == [zipfile.ZIP_STORED]
+    assert made and not os.path.exists(made[0]), "the temporary archive is deleted once sent"

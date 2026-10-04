@@ -1,12 +1,11 @@
 """Documents routes — /api/v1/projects/:id/documents/*"""
 from __future__ import annotations
-import io
 import zipfile
 from datetime import date, datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from ..db.session import get_db
@@ -372,31 +371,34 @@ def download_export_all(
     require_project_member(project_id, current_user, db)
     docs, _ = db.documents.list_for_project(project_id, version_id=version_id, per_page=1000)
 
-    buf = io.BytesIO()
+    # Built in a temporary file, not in memory, with the files STORED: a version of a large
+    # project holds dozens of Word files of tens of MB each (every flowchart is a picture), so the
+    # archive held in memory reached gigabytes for one click; and a DOCX is already a ZIP, so
+    # compressing it again only cost CPU. The file is deleted once it has been sent.
+    import os
+    import tempfile
+    from starlette.background import BackgroundTask
+    fd, path = tempfile.mkstemp(prefix="export-", suffix=".zip")
     added = 0
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for doc in docs:
-            docx = _docx_for(db, project_id, doc)
-            if docx is not None:
+    try:
+        with os.fdopen(fd, "wb") as fh, zipfile.ZipFile(fh, "w", zipfile.ZIP_STORED) as zf:
+            seen = set()
+            for doc in docs:
+                docx = _docx_for(db, project_id, doc)
                 # The DOCX's own name carries the layer-qualified component id, so it is unique.
                 # `doc.name` is not: two layers with a component of the same name wrote two
                 # entries with one name, and unzipping kept only one of them.
-                zf.write(docx, arcname=docx.name)
-                added += 1
+                if docx is not None and docx.name not in seen:
+                    zf.write(docx, arcname=docx.name)
+                    seen.add(docx.name)
+                    added += 1
+    except Exception:
+        os.unlink(path)
+        raise
 
-    if added == 0:
-        return Response(
-            content=b"PK\x05\x06" + b"\x00" * 18,
-            media_type="application/zip",
-            headers={"Content-Disposition": "attachment; filename=export.zip"},
-        )
-
-    buf.seek(0)
-    return StreamingResponse(
-        buf,
-        media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=export.zip"},
-    )
+    # An archive with nothing in it is still a valid (empty) ZIP, as before.
+    return FileResponse(path, media_type="application/zip", filename="export.zip",
+                        background=BackgroundTask(os.unlink, path))
 
 
 # ---------------------------------------------------------------------------
