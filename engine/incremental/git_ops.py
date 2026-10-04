@@ -23,11 +23,56 @@ class GitError(RuntimeError):
     pass
 
 
+#: Seconds one git command may run before it is stopped -- the same limits as the API's
+#: (api/services/git_cli.py): with none, an unreachable server or a credential helper waiting for a
+#: login held a clone, and the run or request behind it, for ever. `ANALYZER_GIT_TIMEOUT`
+#: overrides the network ones.
+TIMEOUTS = {"clone": 1800, "fetch": 900, "ls-remote": 120}
+LOCAL_TIMEOUT = 600
+TIMED_OUT = 124
+
+
+def _git_exe() -> str:
+    return shutil.which("git") or "git"
+
+
+def _timeout(args: List[str]) -> float:
+    for a in args:
+        if a in TIMEOUTS:
+            try:
+                return float(os.environ.get("ANALYZER_GIT_TIMEOUT") or TIMEOUTS[a])
+            except ValueError:
+                return TIMEOUTS[a]
+    return LOCAL_TIMEOUT
+
+
 def _run(args: List[str]) -> subprocess.CompletedProcess:
+    """`git <args>`, never prompting, and stopped -- with every process beneath it -- once it has
+    run longer than its limit; then a failure (exit `TIMED_OUT`) like any other. The message
+    never carries the arguments: a clone URL can hold a token."""
     env = dict(os.environ)
-    env["GIT_TERMINAL_PROMPT"] = "0"
-    return subprocess.run([shutil.which("git") or "git", *args],
-                          capture_output=True, text=True, env=env, shell=False)
+    env["GIT_TERMINAL_PROMPT"] = "0"           # no username/password prompt on a console
+    env["GCM_INTERACTIVE"] = "never"           # Git Credential Manager: no login window
+    env.setdefault("GIT_SSH_COMMAND", "ssh -o BatchMode=yes")
+    cmd = [_git_exe(), *args]
+    limit = _timeout(args)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            env=env, shell=False)
+    try:
+        out, err = proc.communicate(timeout=limit)
+    except subprocess.TimeoutExpired:
+        from core.subprocess_util import stop_tree
+        stop_tree(proc)
+        try:
+            proc.communicate(timeout=10)
+        except Exception:                               # noqa: BLE001 - the pipes are closing
+            pass
+        what = next((a for a in args if a in TIMEOUTS), "command")
+        return subprocess.CompletedProcess(
+            cmd, TIMED_OUT, "",
+            f"git {what} did not finish within {int(limit)} s and was stopped: the repository is "
+            f"slow or unreachable, or git is waiting for a login, which cannot be typed here")
+    return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
 
 
 def _check(proc: subprocess.CompletedProcess, what: str) -> str:

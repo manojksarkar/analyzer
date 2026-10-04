@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-04f | A git command that does not finish is stopped: the API's and the engine's git runners have a time limit, kill the whole process tree, and never prompt | [11](11-2026-09-29e.md) |
 | 2026-10-04e | A version takes components of another layer: `export` of one adds its layer to the same version -- every layer re-parsed, the LLM only for the new layer, the old layers' documents marked stale where the new layer changes them | [11](11-2026-09-29e.md) |
 | 2026-10-04d | A private repository's token no longer travels in a URL; the config import is proved to ask the API a fixed number of times; the wizard no longer copies the whole folder tree on every keystroke | [11](11-2026-09-29e.md) |
 | 2026-10-04c | The wizard's developer search no longer calls the API without end; a run's code copy waits out a file another process holds, and two runs started in one second no longer share a folder | [11](11-2026-09-29e.md) |
