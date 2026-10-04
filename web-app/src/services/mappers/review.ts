@@ -88,6 +88,8 @@ export const ApiExportReadinessSchema = z.object({
   overrideCount: z.number(),
   pendingRenders: z.number(),
   failedRenders: z.number(),
+  /** When the version's oldest derived output was written: the Word files are no older. */
+  oldestDerivationAt: z.string().nullable().optional(),
   reexport: z.object({
     jobId: z.string(), status: z.string(),
     startedAt: z.string().nullable().optional(), completedAt: z.string().nullable().optional(),
@@ -172,6 +174,7 @@ export function mapExportReadiness(r: ApiExportReadiness): ExportReadiness {
     overrideCount: r.overrideCount,
     pendingRenders: r.pendingRenders,
     failedRenders: r.failedRenders,
+    oldestDerivationAt: r.oldestDerivationAt ?? null,
     reexport: r.reexport ? {
       jobId: r.reexport.jobId,
       status: r.reexport.status,

@@ -67,6 +67,13 @@ describe('DocumentsPage: Download while the Word files lack corrections', { time
     expect(within(downloadAll).getByText('Previous Word files — the corrections are not in them yet')).toHaveClass('sr-only')
   })
 
+  it('Download All is not marked when R9 names only components whose documents are all approved', async () => {
+    // `Global`'s two documents are approved: their Word files are the approved ones.
+    const slot = setup(true, ['Global'])
+    expect(await screen.findAllByRole('button', { name: 'Download DOCX' })).toHaveLength(all)
+    expect(within(slot).getByRole('button', { name: /DOWNLOAD ALL/ })).not.toHaveAttribute('title')
+  })
+
   it('an API that does not say which components: every row but the approved ones', async () => {
     setup(true)
     const approved = documents.documents.filter((d) => d.status === 'approved').length

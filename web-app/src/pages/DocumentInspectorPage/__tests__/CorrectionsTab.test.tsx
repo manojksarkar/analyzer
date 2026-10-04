@@ -78,12 +78,31 @@ describe('QueuedList (R10)', () => {
     )
     render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <QueuedList projectId="p1" versionId="v1" slotKeys={new Set(['C|U|sub|int', 'C|U|add|int'])} />
+        <QueuedList projectId="p1" versionId="v1" slotRefs={new Set(['description:C|U|sub|int', 'description:C|U|add|int'])} />
       </QueryClientProvider>,
     )
     expect(await screen.findByText('rewrite C|U|sub|int')).toBeInTheDocument()
     expect(screen.queryByText('rewrite Other|X|f|')).toBeNull()
     expect(screen.getByText('Queued for the next run (1)')).toBeInTheDocument()
     expect(screen.getByText('2 more in other documents of this version.')).toBeInTheDocument()
+  })
+
+  it('matches a queued text by its kind and key: a description and a behaviour name share a key', async () => {
+    const pending = (kind: string) => ({
+      slotKind: kind, slotKey: 'C|U|sub|int', reason: `rewrite the ${kind}`, causedBy: null, requestedAt: null,
+    })
+    server.use(
+      http.get(`${API_BASE_URL}/projects/p1/versions/v1/regeneration-queue`, () => HttpResponse.json({
+        pending: [pending('description'), pending('behaviourInputName')], total: 2,
+      })),
+    )
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <QueuedList projectId="p1" versionId="v1" slotRefs={new Set(['description:C|U|sub|int'])} />
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByText('rewrite the description')).toBeInTheDocument()
+    expect(screen.queryByText('rewrite the behaviourInputName')).toBeNull()
+    expect(screen.getByText('1 more in other documents of this version.')).toBeInTheDocument()
   })
 })

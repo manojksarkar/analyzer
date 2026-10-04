@@ -1,6 +1,7 @@
 import * as ToastPrimitive from '@radix-ui/react-toast'
 import { create } from 'zustand'
 import { cn } from '../../lib/cn'
+import { CodeText } from './CodeText'
 
 type ToastVariant = 'default' | 'success' | 'error'
 
@@ -74,7 +75,7 @@ export function ToastProvider() {
             <div className="flex-1 min-w-0">
               <ToastPrimitive.Title className="text-sm font-semibold text-on-surface">{t.title}</ToastPrimitive.Title>
               {t.description && (
-                <ToastPrimitive.Description className="text-xs text-on-surface-variant mt-0.5">{t.description}</ToastPrimitive.Description>
+                <ToastPrimitive.Description className="text-xs text-on-surface-variant mt-0.5 break-words"><CodeText text={t.description} /></ToastPrimitive.Description>
               )}
             </div>
             <ToastPrimitive.Close aria-label="Dismiss" className="text-on-surface-variant hover:text-on-surface transition-colors flex-shrink-0">

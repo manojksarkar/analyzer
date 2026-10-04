@@ -7,7 +7,7 @@ import { SubbarCtaProvider } from './SubbarCta'
 import { ErrorBoundary } from '../ErrorBoundary'
 import { Skeleton } from '../ui'
 import { useProject, useVersions, useCommits, useDocument } from '../../hooks/useProjects'
-import { useProjectViewState } from '../../hooks/useProjectViewState'
+import { useProjectViewState, useRefreshOnJobEnd } from '../../hooks/useProjectViewState'
 
 interface ProjectLayoutProps {
   breadcrumbLabel: string
@@ -44,6 +44,8 @@ export function ProjectLayout({ breadcrumbLabel, breadcrumbParentLabel, breadcru
   // Subbar status reflects the picker selection (and any live run) — shared with
   // the detail page via useProjectViewState.
   const { pageState, viewVersion, isLoading: viewLoading } = useProjectViewState(projectId ?? '')
+  // The layout outlives the project's pages: it alone reads the project again when a run ends.
+  useRefreshOnJobEnd(projectId ?? '')
   // The Subbar's action slot, filled by the page through <SubbarCta>.
   const [ctaSlot, setCtaSlot] = useState<HTMLDivElement | null>(null)
 

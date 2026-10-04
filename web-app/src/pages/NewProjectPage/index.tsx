@@ -11,6 +11,7 @@ import type { ConfigPreview } from '../../types'
 import { ConfigImport } from './components/ConfigImport'
 import { CoresReview, CoresStep, type FolderResult } from './components/CoresStep'
 import { Readiness, type ReadinessItem } from './components/Readiness'
+import { clearDraft, loadDraft, saveDraft } from './draft'
 import {
   assignmentsOf, baseName, CORE_FILES, coreInput, coreProblems, draftToCores, draftToLayers, fitsCoreFile, indexTree,
   matchFolder, newCore, nextCoreName, openWants, ownerOf, pathProblems, settingsSummary, typedDefines,
@@ -90,8 +91,10 @@ function repoRootName(url: string): string {
   return t.split(/[/\\]/).pop() || 'project-root'
 }
 
+// Unique across reloads too: a restored draft keeps its ids, and a new one must not repeat them.
 let _uid = 0
-const uid = () => `id${++_uid}`
+const UID_RUN = Math.random().toString(36).slice(2, 7)
+const uid = () => `id${UID_RUN}${++_uid}`
 const plural = (n: number, w: string) => `${n} ${w}${n !== 1 ? 's' : ''}`
 
 function initialsOf(label: string) {
@@ -217,9 +220,15 @@ function WizardView({
   onCancel, onSubmit, submitting, onStepChange,
 }: { onCancel: () => void; onSubmit: (data: CreateProjectInput) => void; submitting: boolean; onStepChange: (n: number) => void }) {
   const repo = useRepositoryWizard()
+  // A reload keeps the wizard where it was (this tab's draft, read once). A private repository's
+  // token is never kept: that draft opens on step 1 to have it typed again, its later steps one
+  // click away on the rail.
+  const [draft] = useState(loadDraft)
+  const reenterToken = !!draft?.tokenUsed && !!draft.repoUrl
   // 1-based step + `done` set (steps advanced past) — drives the rail + bar.
-  const [cur, setCur] = useState(1)
-  const [done, setDone] = useState<Set<number>>(new Set())
+  const [cur, setCur] = useState(() =>
+    draft && !reenterToken ? Math.min(Math.max(Math.round(draft.step), 1), STEPS.length) : 1)
+  const [done, setDone] = useState<Set<number>>(() => new Set(draft?.done ?? []))
   // Steps where Continue was tried: their problems show inside the step from then on.
   const [attempted, setAttempted] = useState<Set<number>>(new Set())
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -228,12 +237,12 @@ function WizardView({
   const me = { name: authUser?.name ?? 'You', email: authUser?.email ?? '', initials: authUser?.initials ?? 'YOU' }
 
   // ── Step 1: project & repository ──
-  const [name, setName] = useState('')
-  const [repoUrl, setRepoUrl] = useState('')
+  const [name, setName] = useState(draft?.name ?? '')
+  const [repoUrl, setRepoUrl] = useState(draft?.repoUrl ?? '')
   const [token, setToken] = useState('')
   const [showToken, setShowToken] = useState(false)
-  const [tokenOpen, setTokenOpen] = useState(false)
-  const [branch, setBranch] = useState('')
+  const [tokenOpen, setTokenOpen] = useState(reenterToken)
+  const [branch, setBranch] = useState(draft?.branch ?? '')
   const [branches, setBranches] = useState<string[]>([])
   // Filters the branch list - a repository can have hundreds. The picked branch always stays listed.
   const [branchQuery, setBranchQuery] = useState('')
@@ -244,7 +253,9 @@ function WizardView({
     return branch && !hits.includes(branch) ? [branch, ...hits] : hits
   }, [branches, branchQuery, branch])
   const [testState, setTestState] = useState<'idle' | 'connecting' | 'connected'>('idle')
-  const [testMsg, setTestMsg] = useState<{ text: string; tone: TestTone } | null>(null)
+  const [testMsg, setTestMsg] = useState<{ text: string; tone: TestTone } | null>(() => reenterToken
+    ? { text: 'Enter the access token again and test the connection: a token is never kept.', tone: 'neutral' }
+    : null)
   const [errs, setErrs] = useState<{ name?: boolean; repo?: boolean; branch?: boolean }>({})
   // Source tree fetched from /repositories/browse after a successful connection.
   const [repoTree, setRepoTree] = useState<RepoEntry[]>([])
@@ -261,24 +272,26 @@ function WizardView({
   const checkSeq = useRef(0)
 
   // ── Config import (step 1, optional) — fills every step it can ──
-  const [imported, setImported] = useState<{ text: string; fileName: string; preview: ConfigPreview } | null>(null)
+  // A restored import has no `text` (a draft never keeps the file): it is not checked again.
+  const [imported, setImported] = useState<{ text: string; fileName: string; preview: ConfigPreview } | null>(
+    () => (draft?.imported ? { text: '', ...draft.imported } : null))
   const [importBusy, setImportBusy] = useState(false)
   // What the config also named but the user's own value was kept for (e.g. "project name").
-  const [importKept, setImportKept] = useState<string[]>([])
+  const [importKept, setImportKept] = useState<string[]>(draft?.importKept ?? [])
   // A check of the import against the repository is under way (a network round trip or two).
   const [importChecking, setImportChecking] = useState(false)
-  // The branch the config names, picked once Test Connection lists the branches.
-  const [preferredBranch, setPreferredBranch] = useState('')
+  // The branch the config names (or a restored draft's), picked once Test Connection lists the branches.
+  const [preferredBranch, setPreferredBranch] = useState(draft?.branch ?? '')
   // True once the user edits the imported architecture: the re-check after Test Connection then
   // leaves the tree alone and only refreshes the report.
-  const archEdited = useRef(false)
-  const [archChanged, setArchChanged] = useState(false)
+  const archEdited = useRef(draft?.archEdited ?? false)
+  const [archChanged, setArchChanged] = useState(draft?.archEdited ?? false)
   function markArchEdited(edited = true) { archEdited.current = edited; setArchChanged(edited) }
 
   // ── Step 2: cores ──
   // One to start with: most projects are one build. `coresRef` is always the latest list, so an
   // import's layers find the cores the same import just made (state lags a render behind).
-  const [cores, setCoresState] = useState<Core[]>(() => [newCore(uid(), 'Core1')])
+  const [cores, setCoresState] = useState<Core[]>(() => draft?.cores ?? [newCore(uid(), 'Core1')])
   const coresRef = useRef(cores)
   function updateCores(fn: (prev: Core[]) => Core[]) {
     const next = fn(coresRef.current)
@@ -292,7 +305,7 @@ function WizardView({
   const [folderBusy, setFolderBusy] = useState(false)
 
   // ── Step 3: architecture ──
-  const [layers, setLayers] = useState<Layer[]>([])
+  const [layers, setLayers] = useState<Layer[]>(draft?.layers ?? [])
   const [addLayerOpen, setAddLayerOpen] = useState(false)
   const [newLayerName, setNewLayerName] = useState('')
   const [newLayerPath, setNewLayerPath] = useState('')
@@ -306,7 +319,7 @@ function WizardView({
   const [compName, setCompName] = useState('')
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
   const [treeOpen, setTreeOpen] = useState<Record<string, boolean>>({ 'src/': true })
-  const [fileAssignments, setFileAssignments] = useState<Record<string, string>>({})
+  const [fileAssignments, setFileAssignments] = useState<Record<string, string>>(draft?.fileAssignments ?? {})
   // Browse folder-picker
   type FpTarget = { kind: 'new-layer-path' } | { kind: 'lib-path'; layerId: string; index: number }
   const [fpTarget, setFpTarget] = useState<FpTarget | null>(null)
@@ -314,7 +327,7 @@ function WizardView({
   const [fpOpen, setFpOpen] = useState<Record<string, boolean>>({})
 
   // ── Step 4: team ──
-  const [members, setMembers] = useState<Member[]>([])
+  const [members, setMembers] = useState<Member[]>(draft?.members ?? [])
   const [addMemberOpen, setAddMemberOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -330,6 +343,21 @@ function WizardView({
     scrollRef.current?.scrollTo({ top: 0 })
     onStepChange(cur)
   }, [cur, onStepChange])
+  // Keep this tab's draft as it changes (draft.ts: never the token, nor the imported file's text).
+  const tokenUsed = tokenOpen || !!token
+  useEffect(() => {
+    saveDraft({
+      step: cur, done: [...done], name, repoUrl, branch, tokenUsed, cores, layers, fileAssignments, members,
+      imported: imported ? { fileName: imported.fileName, preview: imported.preview } : null,
+      importKept, archEdited: archChanged,
+    })
+  }, [cur, done, name, repoUrl, branch, tokenUsed, cores, layers, fileAssignments, members, imported, importKept, archChanged])
+  // A restored public repository is connected again by itself: its branches and files are not
+  // kept, and steps 3 and 5 check every path against them. A private one waits for its token.
+  useEffect(() => {
+    if (draft?.repoUrl && !reenterToken) void testConnection()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, for the draft this page opened with
+  }, [])
   // An undo is offered for a while, not forever.
   useEffect(() => {
     if (!lastRemoved) return
@@ -429,6 +457,8 @@ function WizardView({
     }
   }
   async function checkImportAgainstRepo(imp: { text: string; fileName: string; preview: ConfigPreview }, ref: string, layersToo: boolean) {
+    // Restored from a draft, the import has no file text to send: its paths are checked by step 3.
+    if (!imp.text) return
     const seq = ++checkSeq.current
     setImportChecking(true)
     try {
@@ -1602,17 +1632,23 @@ export function NewProjectPage() {
   async function handleSubmit(data: CreateProjectInput) {
     try {
       const project = await createProject.mutateAsync(data)
+      clearDraft()
       navigate(`/projects/${project.id}/overview`)
     } catch {
-      /* error toast handled by the mutation */
+      /* error toast handled by the mutation; the draft stays */
     }
+  }
+  // Leaving the wizard by its own buttons drops the draft; a reload keeps it.
+  function leave() {
+    clearDraft()
+    navigate('/projects')
   }
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      <PageHeader step={step} onBack={() => navigate('/projects')} backLabel="Back to Projects" />
+      <PageHeader step={step} onBack={leave} backLabel="Back to Projects" />
       <WizardView
-        onCancel={() => navigate('/projects')}
+        onCancel={leave}
         onSubmit={handleSubmit}
         submitting={createProject.isPending}
         onStepChange={setStep}

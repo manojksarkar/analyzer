@@ -65,16 +65,16 @@ export function ProjectsPage() {
                 aria-label={`User menu — ${user?.name}`}
               >
                 <div className="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
-                  <span className="text-on-secondary-container font-bold text-xs font-sans">
-                    {user?.initials ?? 'EL'}
-                  </span>
+                  {user?.initials
+                    ? <span className="text-on-secondary-container font-bold text-xs font-sans">{user.initials}</span>
+                    : <Icon name="person" size={16} className="text-on-secondary-container" />}
                 </div>
                 <Icon name="expand_more" size={16} className="text-on-surface-variant" />
               </button>
             </DropdownTrigger>
+            {/* Profile is not built yet, so it is not offered (ui-review #36, #37). */}
             <DropdownContent
               items={[
-                { label: 'Profile',  icon: 'person', onClick: () => {} },
                 { label: 'Sign out', icon: 'logout', variant: 'danger', onClick: signOut },
               ]}
             />
@@ -149,6 +149,7 @@ export function ProjectsPage() {
                           key={project.id}
                           project={project}
                           onNavigate={(id) => navigate(`/projects/${id}/overview`)}
+                          onTeam={(id) => navigate(`/projects/${id}/team`)}
                         />
                       ))}
                 </tbody>

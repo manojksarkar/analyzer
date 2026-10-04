@@ -79,10 +79,12 @@ function RunStrip({ run, job, cutShort, projectId, versionId, onStop }: {
 /** Components whose documents a layer added since has made out of date. Re-export makes them
  *  again — with any component whose Word file lacks corrections (R9 `staleComponents`) — and
  *  leaves the version's current documents alone (`reexportTargets`). */
-function StaleStrip({ count, onReexport, busy, disabled }: {
+function StaleStrip({ count, onReexport, targets, busy, disabled }: {
   count: number
   /** An admin's Re-export. */
   onReexport?: () => void
+  /** What it re-exports (`reexportTargets`): these components, or every document. */
+  targets?: string[]
   busy: boolean
   disabled: boolean
 }) {
@@ -95,7 +97,8 @@ function StaleStrip({ count, onReexport, busy, disabled }: {
         {onReexport ? 'A re-export makes them again.' : 'A re-export makes them again — an admin starts it.'}
       </p>
       {onReexport && (
-        <Button variant="outline" size="sm" loading={busy} disabled={disabled} onClick={onReexport} className="flex-shrink-0">
+        <Button variant="outline" size="sm" loading={busy} disabled={disabled} onClick={onReexport} className="flex-shrink-0"
+          title={targets ? `Re-export ${targets.join(', ')}` : 'Re-export every document of this version'}>
           <Icon name="refresh" size={14} />
           Re-export
         </Button>
@@ -227,6 +230,7 @@ export function ComponentsPanel({ projectId, versionId, isAdmin }: {
         <StaleStrip
           count={stale}
           onReexport={isAdmin ? startReexport : undefined}
+          targets={reexportTargets(comps, readiness)}
           busy={reexport.isPending}
           disabled={!!data.job || !!data.run?.alive}
         />

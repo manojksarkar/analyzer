@@ -103,7 +103,11 @@ function VersionBadge({ version }: { version: string | null }) {
 }
 
 /* ─── Project row ───────────────────────────────────────────────────── */
-export function ProjectRow({ project, onNavigate }: { project: Project; onNavigate: (id: string) => void }) {
+export function ProjectRow({ project, onNavigate, onTeam }: {
+  project: Project; onNavigate: (id: string) => void
+  /** Opens the project's Team page (an admin adds people there). */
+  onTeam: (id: string) => void
+}) {
   // Role is per-project now (project.userRole from the API's my_role).
   const isAdmin = project.userRole === 'admin'
   const isStale = project.pageState === 'never' || project.pageState === 'stale'
@@ -185,15 +189,18 @@ export function ProjectRow({ project, onNavigate }: { project: Project; onNaviga
 
       {/* Team */}
       <td className="px-4 py-3.5">
+        {/* "Add" did nothing: it opens the Team page now, for an admin — the one who can add. */}
         {project.team.length === 0 ? (
-          <button
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1 px-[9px] py-[3px] border-[1.5px] border-dashed border-outline-variant rounded-full bg-transparent cursor-pointer text-outline font-mono text-label"
-            aria-label="Add team members"
-          >
-            <Icon name="person_add" size={12} />
-            Add
-          </button>
+          isAdmin ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); onTeam(project.id) }}
+              className="inline-flex items-center gap-1 px-[9px] py-[3px] border-[1.5px] border-dashed border-outline-variant rounded-full bg-transparent cursor-pointer text-outline font-mono text-label"
+              aria-label={`Add team members to ${project.name}`}
+            >
+              <Icon name="person_add" size={12} />
+              Add
+            </button>
+          ) : <span className="text-on-surface-variant font-mono text-caption">—</span>
         ) : (
           <AvatarStack members={project.team} max={3} />
         )}

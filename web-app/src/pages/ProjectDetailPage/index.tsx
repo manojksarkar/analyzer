@@ -100,8 +100,9 @@ export function ProjectDetailPage() {
       )}
       <div className="px-6 py-6 max-w-[1280px] mx-auto">
 
-        {/* ══ LOADING — gate the empty-state flash until the view state resolves ══ */}
-        {isLoading && !project ? (
+        {/* ══ LOADING — gate the empty-state flash until the view state resolves: the project,
+            its versions and its run (a run found after the dashboard showed swapped it out) ══ */}
+        {isLoading ? (
           <DashboardSkeleton />
         ) : (
           <>
@@ -276,7 +277,12 @@ export function ProjectDetailPage() {
           <div className="mb-6 flex items-center gap-3 px-5 py-3.5 rounded-xl bg-[#fffbeb] border border-amber">
             <Icon name="warning" size={20} fill className="flex-shrink-0 text-[#d97706]" />
             <div className="flex-1 min-w-0">
-              <p className="font-semibold text-on-surface text-body">3 new commits since this analysis</p>
+              {/* The count is the version's own (it said "3" for every version). */}
+              <p className="font-semibold text-on-surface text-body">
+                {viewVersion?.newCommitsSince
+                  ? `${viewVersion.newCommitsSince} new commit${viewVersion.newCommitsSince !== 1 ? 's' : ''} since this analysis`
+                  : 'New commits since this analysis'}
+              </p>
               <p className="text-caption text-outline font-mono mt-0.5">Results may be outdated — re-run to analyze the latest code.</p>
             </div>
             <button

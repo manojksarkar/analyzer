@@ -3,19 +3,22 @@ import { Icon } from '../../../components/ui'
 import { cn } from '../../../lib/cn'
 import { parseSectionBody } from '../../../lib/markdown'
 import type { CompareBlock, DiffMark, DiffSegment } from '../../../types'
+import { MARK_MEANING, rowChange } from '../helpers'
 
-/* ─── Inline highlight styling by change mark ─── */
+/* ─── Inline highlight styling by change mark ───
+   Not by colour alone: added text is underlined, removed text struck through, changed text
+   dotted-underlined, and each says what it is to a screen reader. */
 const MARK_INLINE: Record<DiffMark, string> = {
   none:   '',
-  add:    'bg-[rgba(0,165,114,.18)] text-on-tertiary-container rounded-[2px] px-px',
+  add:    'bg-[rgba(0,165,114,.18)] text-on-tertiary-container rounded-[2px] px-px underline decoration-1 underline-offset-2',
   del:    'bg-error-container text-error line-through rounded-[2px] px-px',
-  change: 'bg-[#fff1cc] text-[#92600a] rounded-[2px] px-px',
+  change: 'bg-[#fff1cc] text-[#92600a] rounded-[2px] px-px underline decoration-dotted decoration-1 underline-offset-2',
 }
 const MARK_CELL: Record<DiffMark, string> = {
   none:   '',
-  add:    'bg-[rgba(0,165,114,.14)]',
+  add:    'bg-[rgba(0,165,114,.14)] underline decoration-1 underline-offset-2',
   del:    'bg-error-container/70 line-through',
-  change: 'bg-[#fff4d6]',
+  change: 'bg-[#fff4d6] underline decoration-dotted decoration-1 underline-offset-2',
 }
 
 /* ─── Inline word-level highlighted text ─── */
@@ -23,12 +26,27 @@ function Segments({ segments }: { segments: DiffSegment[] }) {
   if (!segments.length) return null
   return (
     <>
-      {segments.map((s, i) =>
-        s.mark === 'none'
-          ? <span key={i}>{s.text}</span>
-          : <span key={i} className={MARK_INLINE[s.mark]}>{s.text}</span>,
-      )}
+      {segments.map((s, i) => {
+        if (s.mark === 'none') return <span key={i}>{s.text}</span>
+        const Tag = s.mark === 'add' ? 'ins' : s.mark === 'del' ? 'del' : 'span'
+        return (
+          <Tag key={i} className={MARK_INLINE[s.mark]}>
+            <span className="sr-only">[{MARK_MEANING[s.mark].label}: </span>{s.text}<span className="sr-only">]</span>
+          </Tag>
+        )
+      })}
     </>
+  )
+}
+
+/* ─── A table row's change as a sign (+ ~ −) in its own column ─── */
+function RowMarker({ mark }: { mark: DiffMark }) {
+  if (mark === 'none') return <td className="w-6 px-1.5 py-2" />
+  const m = MARK_MEANING[mark]
+  return (
+    <td className="w-6 px-1.5 py-2 align-top text-center font-mono font-bold text-on-surface-variant" title={m.label}>
+      <span aria-hidden>{m.sign}</span><span className="sr-only">{m.label}</span>
+    </td>
   )
 }
 
@@ -88,12 +106,14 @@ function DiffBlockView({ block }: { block: CompareBlock }) {
   if (block.kind === 'diagram') {
     return <DiffDiagramBlock block={block} />
   }
-  // table
+  // table — with a marker column when any row or cell changed
+  const marked = block.rows.some((_, ri) => rowChange(block.rowMarks[ri], block.cellMarks[ri]) !== 'none')
   return (
     <div className="overflow-x-auto border border-outline-variant rounded-lg">
       <table className="w-full text-left text-xs">
         <thead className="bg-surface-container text-on-surface-variant">
           <tr>
+            {marked && <th className="w-6 px-1.5 py-2.5 border-b border-outline-variant"><span className="sr-only">Change</span></th>}
             {block.headers.map((h, hi) => (
               <th key={hi} className="px-3 py-2.5 border-b border-outline-variant font-semibold whitespace-nowrap">{h}</th>
             ))}
@@ -104,6 +124,7 @@ function DiffBlockView({ block }: { block: CompareBlock }) {
             const rowMark = block.rowMarks[ri] ?? 'none'
             return (
               <tr key={ri} className={cn('border-b border-[rgba(196,198,205,.6)]', rowMark !== 'none' && rowMark !== 'change' && MARK_CELL[rowMark])}>
+                {marked && <RowMarker mark={rowChange(rowMark, block.cellMarks[ri])} />}
                 {r.map((c, ci) => {
                   const cellMark = block.cellMarks[ri]?.[ci] ?? 'none'
                   return (

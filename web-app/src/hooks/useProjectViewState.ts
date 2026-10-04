@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useProject, useVersions, useCommits, projectKeys } from './useProjects'
 import { useCurrentJob } from './useJobs'
@@ -44,8 +44,9 @@ export function useProjectViewState(projectId: string): {
 
   // First-load only (isLoading, not isFetching) so background refetches don't
   // re-trigger skeletons. Consumers gate their empty states on this so the
-  // default `pageState = 'never'` isn't shown before the queries resolve.
-  const isLoading = projectLoading || versionsLoading || commitsLoading || jobLoading
+  // default `pageState = 'never'` isn't shown before the queries resolve. The commits (every
+  // page of them) count only for a commit pick: nothing else here reads them.
+  const isLoading = projectLoading || versionsLoading || jobLoading || (selection?.type === 'commit' && commitsLoading)
 
   // Resolve the selection: a version by its id (so two versions on the same
   // commit don't collide), a commit by sha.
@@ -70,19 +71,30 @@ export function useProjectViewState(projectId: string): {
   }
   const pageState: PageState = jobActive ? 'running' : base
 
-  // When a job transitions to a terminal state, refresh project + versions +
-  // documents so every page leaves the "running" / empty state automatically.
-  // (`jobs/current` skips a cancelled job — it answers with the run before it — so a cancel
-  // mostly shows up here as that run's status; useCancelJob refetches the project itself.)
+  return { pageState, isLoading, viewVersion, viewVersionId: viewVersion?.id, selectedCommit: selCommit }
+}
+
+const ACTIVE_JOB = ['queued', 'running', 'paused']
+const ENDED_JOB = ['complete', 'failed', 'cancelled']
+
+/**
+ * When a run ends while the project is open, read the project again — every key of it (project,
+ * versions, commits, documents, components, review) — so every page leaves the "running" / empty
+ * state by itself. Only on the change from at work to ended, seen here: a page opened after the
+ * run ended reads nothing again (each visit used to refetch the whole project, the last run
+ * being "complete"). Called once, by the project layout, so one run's end is one refresh.
+ * (`jobs/current` skips a cancelled job — it answers with the run before it — so a cancel mostly
+ * shows up as that run's status; useCancelJob refetches the project itself.)
+ */
+export function useRefreshOnJobEnd(projectId: string): void {
+  const { data: job } = useCurrentJob(projectId)
   const qc = useQueryClient()
   const jobStatus = job?.status
+  const seen = useRef(jobStatus)
   useEffect(() => {
-    if (!projectId || !jobStatus || !['complete', 'failed', 'cancelled'].includes(jobStatus)) return
+    const was = seen.current
+    seen.current = jobStatus
+    if (!projectId || !was || !jobStatus || !ACTIVE_JOB.includes(was) || !ENDED_JOB.includes(jobStatus)) return
     qc.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
-    qc.invalidateQueries({ queryKey: projectKeys.versions(projectId) })
-    qc.invalidateQueries({ queryKey: projectKeys.commits(projectId) })
-    qc.invalidateQueries({ queryKey: projectKeys.documentsAll(projectId) })
   }, [jobStatus, projectId, qc])
-
-  return { pageState, isLoading, viewVersion, viewVersionId: viewVersion?.id, selectedCommit: selCommit }
 }

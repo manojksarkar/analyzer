@@ -87,8 +87,13 @@ export function patchOverrides(old: Slot[] | undefined, saved: Slot[]): Slot[] |
  *  shows on the page; a label is in the SWE.4 test steps too). */
 function useAfterSave(projectId: string, versionId: string) {
   const qc = useQueryClient()
-  return (saved: Slot[]) => {
-    qc.setQueryData<Slot[]>(projectKeys.overrides(projectId, versionId), (old) => patchOverrides(old, saved))
+  return async (saved: Slot[]) => {
+    // A read of R1 under way began before this save: its answer would put the saved slots back
+    // as they were. Stop it, then patch what is cached — or, with nothing cached yet, read again.
+    const key = projectKeys.overrides(projectId, versionId)
+    await qc.cancelQueries({ queryKey: key, exact: true })
+    if (qc.getQueryData(key)) qc.setQueryData<Slot[]>(key, (old) => patchOverrides(old, saved))
+    else qc.invalidateQueries({ queryKey: key, exact: true })
     qc.invalidateQueries({
       queryKey: projectKeys.review(projectId, versionId),
       predicate: (q) => q.queryKey[4] !== 'overrides',
@@ -198,7 +203,7 @@ export function useSaveSlot(projectId: string, versionId: string) {
         ? reviewApi.saveBehaviour(projectId, versionId, slot.functionId ?? '', slot.externalCallerId ?? '',
           text.split('\n').map((l) => l.replace(/^\s*[•-]\s*/, '').trim()).filter(Boolean))
         : reviewApi.saveSlot(projectId, versionId, slot.kind, slot.key, text),
-    onSuccess: (r) => { after([r]); toast.success('Saved', describeSave(r)) },
+    onSuccess: (r) => { void after([r]); toast.success('Saved', describeSave(r)) },
     onError,
   })
 }
@@ -209,7 +214,7 @@ export function useUndoSlot(projectId: string, versionId: string) {
   const onError = useSaveError(projectId, 'Undo failed')
   return useMutation({
     mutationFn: (slot: Slot) => reviewApi.undo(projectId, versionId, slot.kind, slot.key),
-    onSuccess: (r) => { after([r]); toast.success('Back to the LLM’s text', 'The history keeps your correction.') },
+    onSuccess: (r) => { void after([r]); toast.success('Back to the LLM’s text', 'The history keeps your correction.') },
     onError,
   })
 }
@@ -222,7 +227,7 @@ export function useSaveFlowchartLabels(projectId: string, versionId: string) {
     mutationFn: ({ flowchartId, labels }: { flowchartId: string; labels: Record<string, string> }) =>
       reviewApi.saveFlowchartLabels(projectId, versionId, flowchartId, labels),
     onSuccess: (saved) => {
-      after(saved)
+      void after(saved)
       const n = saved.length
       toast.success(`Saved ${n} label${n === 1 ? '' : 's'}`,
         'The picture is redrawn, and the SWE.4 test steps use the new wording.')
@@ -234,7 +239,11 @@ export function useSaveFlowchartLabels(projectId: string, versionId: string) {
 /** Re-export the version's Word files (admin). R9 follows it. */
 export function useReexportVersion(projectId: string, versionId: string) {
   const qc = useQueryClient()
-  const refresh = () => qc.invalidateQueries({ queryKey: projectKeys.exportReadiness(projectId, versionId) })
+  // R9 follows the re-export; the Overview's runs list it (a web job it shows nowhere else).
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: projectKeys.exportReadiness(projectId, versionId) })
+    qc.invalidateQueries({ queryKey: projectKeys.runs(projectId) })
+  }
   return useMutation({
     mutationFn: (components?: string[] | void) =>
       reviewApi.reexport(projectId, versionId, components || undefined),
@@ -275,7 +284,10 @@ export function useDiscardOrphans(projectId: string, versionId: string) {
   return useMutation({
     mutationFn: (slot?: Slot | void) => reviewApi.discardOrphans(projectId, versionId, slot || undefined),
     onSuccess: (n) => {
-      qc.invalidateQueries({ queryKey: projectKeys.overrides(projectId, versionId) })
+      // R1 and the version's other review reads (under `review`), and the rendered documents:
+      // an edit box's slot comes from the render, and kept its orphan note until a reload.
+      qc.invalidateQueries({ queryKey: projectKeys.review(projectId, versionId) })
+      qc.invalidateQueries({ queryKey: projectKeys.documentRenders(projectId) })
       toast.success(`Discarded ${n} orphaned correction${n === 1 ? '' : 's'}`)
     },
     onError: (e: Error) => toast.error('Not discarded', e.message),

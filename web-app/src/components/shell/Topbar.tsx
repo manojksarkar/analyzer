@@ -67,9 +67,9 @@ export function Topbar({ breadcrumbs }: TopbarProps) {
               aria-label={`User menu — ${user?.name}`}
             >
               <div className="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
-                <span className="text-on-secondary-container font-bold text-xs font-sans">
-                  {user?.initials ?? 'EL'}
-                </span>
+                {user?.initials
+                  ? <span className="text-on-secondary-container font-bold text-xs font-sans">{user.initials}</span>
+                  : <Icon name="person" size={16} className="text-on-secondary-container" />}
               </div>
               <Icon name="expand_more" size={16} className="text-on-surface-variant" />
             </button>

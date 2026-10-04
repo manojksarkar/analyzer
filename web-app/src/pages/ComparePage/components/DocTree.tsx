@@ -50,8 +50,18 @@ export function DocTree({ rows, mode, setMode, activeId, onSelect, changedCount,
                   isActive ? 'pl-2 pr-2.5 bg-surface-container text-secondary border-secondary' : 'px-2.5 border-transparent text-on-surface-variant hover:bg-surface-container-low',
                 )}
               >
-                <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', isActive ? 'bg-secondary' : d.changed ? DIFF_BADGE[d.diffType].dot : 'bg-outline-variant')} aria-hidden />
+                {/* The change as a sign (+ ~ −) in its colour, and in words for a screen reader. */}
+                {d.changed && d.diffType !== 'unchanged' ? (
+                  <span className={cn('w-2.5 flex-shrink-0 text-center font-bold', DIFF_BADGE[d.diffType].text)} title={DIFF_BADGE[d.diffType].label} aria-hidden>
+                    {DIFF_BADGE[d.diffType].sign}
+                  </span>
+                ) : (
+                  <span className="w-2.5 flex-shrink-0 flex justify-center" aria-hidden>
+                    <span className={cn('w-1.5 h-1.5 rounded-full', isActive ? 'bg-secondary' : 'bg-outline-variant')} />
+                  </span>
+                )}
                 <span className={cn('truncate', !d.changed && !isActive && 'opacity-40')}>{d.name}</span>
+                {d.changed && d.diffType !== 'unchanged' && <span className="sr-only">({DIFF_BADGE[d.diffType].label})</span>}
                 {d.process && <span className={cn('ml-auto flex-shrink-0 text-label text-outline', !d.changed && !isActive && 'opacity-40')}>{d.process}</span>}
               </button>
             )

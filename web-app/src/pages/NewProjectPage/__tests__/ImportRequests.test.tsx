@@ -60,7 +60,8 @@ beforeAll(() => {
   // jsdom has no scrolling; the wizard scrolls to the top on every step.
   if (!Element.prototype.scrollTo) Element.prototype.scrollTo = () => {}
 })
-afterEach(() => { server.events.removeAllListeners('request:start') })
+// Each test starts a fresh wizard: the draft a test leaves (sessionStorage) would be restored.
+afterEach(() => { server.events.removeAllListeners('request:start'); sessionStorage.clear() })
 
 const settle = () => new Promise((r) => setTimeout(r, 1500))
 const count = (calls: string[], what: string) => calls.filter((c) => c.endsWith(what)).length

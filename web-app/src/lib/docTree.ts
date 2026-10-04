@@ -3,6 +3,16 @@ import type { Document } from '../types'
 /** Process column order shared by the documents list + the tree rail. */
 export const DOC_PROCESSES = ['SYS.1', 'SYS.2', 'SWE.1', 'SWE.2', 'SWE.3', 'SWE.4'] as const
 
+/** The processes this app writes documents for. The others are shown only where a document of
+ *  theirs exists: a tab or row of a process nothing generates was a placeholder, always empty. */
+export const GENERATED_PROCESSES: readonly string[] = ['SWE.3', 'SWE.4']
+
+/** The processes to offer for `docs`, in the canonical order: the generated ones, and any other
+ *  that has a document. */
+export function shownProcesses(docs: Pick<Document, 'process'>[]): string[] {
+  return DOC_PROCESSES.filter((p) => GENERATED_PROCESSES.includes(p) || docs.some((d) => d.process === p))
+}
+
 /** Each process's document, as the tree names it (docs/ui-mockups/documents.html). */
 export const PROCESS_TITLES: Record<string, string> = {
   'SYS.1': 'System Requirements Spec',

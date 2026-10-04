@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { CodeText, Icon } from '../../../components/ui'
 import { relativeTime } from '../../../lib/format'
 import type { AnalysisJob, Version } from '../../../types'
+import { failureParts } from '../helpers'
 
 /* ─── The run that made the version on screen warned about something ─── */
 // A path the checkout did not have (of a component with other files), a dictionary the run went
@@ -41,9 +42,8 @@ export function RunWarningsBanner({ version }: { version: Version }) {
 /* ─── The project's latest run ended in an error ─── */
 export function FailedRunBanner({ job, isAdmin, onRerun }: { job: AnalysisJob; isAdmin: boolean; onRerun: () => void }) {
   const [open, setOpen] = useState(false)
-  const lines = (job.errorMessage ?? '').trim().split('\n')
-  const headline = lines[0] || 'The analysis stopped with an error.'
-  const details = lines.slice(1).join('\n').trim()
+  // The headline and the engine's reasons read as text, their `paths` as code; the log as a log.
+  const { headline, reasons, log: details } = failureParts(job.errorMessage)
   return (
     <div role="alert" className="mb-6 rounded-xl border border-error/40 bg-error-container/40 px-5 py-4">
       <div className="flex items-start gap-3">
@@ -55,7 +55,14 @@ export function FailedRunBanner({ job, isAdmin, onRerun }: { job: AnalysisJob; i
           <p className="text-caption text-outline font-mono mt-0.5">
             {job.branch} @ {job.shortSha}{job.completedAt ? ` · ${relativeTime(job.completedAt)}` : ''}
           </p>
-          <p className="text-xs text-on-error-container font-mono mt-2 break-words">{headline}</p>
+          <p className="text-xs text-on-error-container font-mono mt-2 break-words"><CodeText text={headline} /></p>
+          {reasons.length > 0 && (
+            <ul className="mt-1 ml-5 list-disc space-y-1">
+              {reasons.map((r, i) => (
+                <li key={i} className="text-xs text-on-error-container font-mono break-words"><CodeText text={r} /></li>
+              ))}
+            </ul>
+          )}
           {details && (
             <>
               <button onClick={() => setOpen((v) => !v)} className="mt-2 flex items-center gap-1 text-caption font-mono text-secondary hover:underline">

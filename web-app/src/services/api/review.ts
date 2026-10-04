@@ -31,8 +31,10 @@ export const reviewApi = {
       const r = await http.get<ApiOverrides>(`${base(pid, vid)}/overrides`,
         { limit: OVERRIDES_PAGE, offset })
       for (const s of r.overrides.map(mapSlot)) if (!all.has(slotId(s))) all.set(slotId(s), s)
-      offset += r.overrides.length
-      if (!r.overrides.length || offset >= r.total) return [...all.values()]
+      // By the page's size, not its rows: the server leaves out a row it cannot show, so a page
+      // can hold fewer — and the next page starts after the whole of this one all the same.
+      offset += r.limit > 0 ? r.limit : OVERRIDES_PAGE
+      if (offset >= r.total) return [...all.values()]
     }
   },
   /** R12 (admins): discard orphaned corrections — every one of the version, or one slot. Final:

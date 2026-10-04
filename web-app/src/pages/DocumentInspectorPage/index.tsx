@@ -34,7 +34,9 @@ import { EditBar, ReadinessBanner, ReviewStateBanner } from './components/Review
 import { FlowchartLabelDialog } from './components/FlowchartLabelDialog'
 import { TreeRail } from './components/TreeRail'
 import { EditContext, type EditApi } from './editContext'
-import { buildOutline, docCorrections, docSlots, outlineIds, unitCorrectionCounts } from './outline'
+import {
+  buildOutline, docCorrections, docSlots, outlineIds, slotRef, undoneSince, unitCorrectionCounts, wordFileWrittenAt,
+} from './outline'
 import { isMine, whyNot, type ReviewCtx } from './review'
 import { useScrollSpy } from './useScrollSpy'
 
@@ -63,7 +65,7 @@ export function DocumentInspectorPage() {
   // without going back. Not the Subbar's: while a newer run is going, the Subbar shows that
   // run's draft, which has no documents, and the rail said "No documents" beside an open one.
   const railVersionId = doc?.versionId ?? viewVersion?.id
-  const { data: railDocs } = useDocuments(pid, railVersionId ? { versionId: railVersionId } : undefined)
+  const { data: railDocs, isLoading: railLoading } = useDocuments(pid, railVersionId ? { versionId: railVersionId } : undefined)
   const versionId = doc?.versionId ?? ''
 
   const downloadDoc = useDownloadDoc(pid)
@@ -110,7 +112,7 @@ export function DocumentInspectorPage() {
   const corrections = useMemo(
     () => docCorrections(overrides ?? [], sections, rich?.cover.group ?? ''), [overrides, sections, rich])
   const counts = useMemo(() => unitCorrectionCounts(corrections.inForce, sections), [corrections, sections])
-  const slotKeys = useMemo(() => new Set(slots.map((s) => s.key)), [slots])
+  const slotRefs = useMemo(() => new Set(slots.map((s) => slotRef(s.kind, s.key))), [slots])
   // The outline stops at units for SWE.4 (as the mockup): a line per test spec would bury it.
   const outline = useMemo(() => buildOutline(sections, isSwe4 ? 3 : 4), [sections, isSwe4])
   const ids = useMemo(() => outlineIds(outline), [outline])
@@ -219,8 +221,8 @@ export function DocumentInspectorPage() {
   // names its component (`staleComponents`).
   const wordStale = componentWordFileStale(readiness, doc.group)
   const docStale = !approved && wordStale
-  // Undone corrections the Word file still carries: R9 counts them until a re-export.
-  const undoneShown = wordStale ? corrections.undone : []
+  // Undone corrections the Word file still carries: those undone since it was last written.
+  const undoneShown = wordStale ? undoneSince(corrections.undone, wordFileWrittenAt(readiness)) : []
   const versionOrphans = (overrides ?? []).filter((s) => s.isOrphaned).length
   const reviewCtx: ReviewCtx = {
     isAdmin: !!isAdmin,
@@ -277,6 +279,7 @@ export function DocumentInspectorPage() {
           onPickAssignee={setAssigneeFilter}
           onOpenDoc={(d) => navigate(`/projects/${pid}/documents/${d.id}`)}
           onFold={() => setTreeFolded(true)}
+          loading={railLoading}
         />
       )}
 
@@ -408,7 +411,7 @@ export function DocumentInspectorPage() {
               busy: discardOrphans.isPending,
             } : undefined}
           >
-            <QueuedList projectId={pid} versionId={versionId} slotKeys={slotKeys} />
+            <QueuedList projectId={pid} versionId={versionId} slotRefs={slotRefs} />
           </CorrectionsTab>
         ) : (
           <OutlineTab nodes={outline} activeId={activeId} counts={isEditing ? counts : null} onJump={jumpToSection} />

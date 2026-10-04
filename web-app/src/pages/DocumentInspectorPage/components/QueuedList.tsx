@@ -1,11 +1,13 @@
 import { Icon, Text } from '../../../components/ui'
 import { formatShortDate } from '../../../lib/format'
 import { kindWords, useRegenerationQueue } from '../../../hooks/useReview'
+import { slotRef } from '../outline'
 
 /* R10, read-only: this document's texts the next run rewrites, because a correction they were
    written from has changed (API spec §15) — the version's others only counted. Recorded at save
-   time, drained by a run — nothing clears them on a timer. A key is matched whole against the
-   page's slots and shown as the server gave it — never taken apart. */
+   time, drained by a run — nothing clears them on a timer. A text is matched by its kind and its
+   whole key against the page's slots (a function's description and its behaviour names share a
+   key) and the key shown as the server gave it — never taken apart. */
 
 /** A key for the eye: a behaviour row's and a node label's keys join their two ids with U+0001,
  *  shown as a visible mark. */
@@ -14,14 +16,14 @@ function shownKey(key: string): string {
   return key.replace(/[\u0000-\u001f]+/g, ' · ')
 }
 
-export function QueuedList({ projectId, versionId, slotKeys }: {
+export function QueuedList({ projectId, versionId, slotRefs }: {
   projectId: string
   versionId: string
-  /** The keys of the texts this document prints (its slots). */
-  slotKeys: Set<string>
+  /** The texts this document prints (its slots), each as `slotRef(kind, key)`. */
+  slotRefs: Set<string>
 }) {
   const { data, isLoading, isError } = useRegenerationQueue(projectId, versionId)
-  const items = (data ?? []).filter((q) => slotKeys.has(q.slotKey))
+  const items = (data ?? []).filter((q) => slotRefs.has(slotRef(q.slotKind, q.slotKey)))
   const elsewhere = (data?.length ?? 0) - items.length
   return (
     <section aria-label="Queued for the next run" className="mt-4">

@@ -3,7 +3,7 @@ import { useDownloadDoc } from '../../../hooks/useDocumentMutations'
 import { Avatar, Icon, StatusBadge, Text } from '../../../components/ui'
 import { cn } from '../../../lib/cn'
 import { relativeTime } from '../../../lib/format'
-import { docxFileName } from '../../../lib/docTree'
+import { GENERATED_PROCESSES, docxFileName, shownProcesses } from '../../../lib/docTree'
 import {
   NEXT_STEP, REVIEW_ORDER, STATUS_META, describeEvent, eventMeta, reviewCounts, shortHash,
 } from '../../../lib/reviewStatus'
@@ -15,14 +15,18 @@ import { concernsMe, foldRunEvents, myReviews, reviewQueues } from '../helpers'
 
 type Nav = (to: string) => void
 
-const PROCESSES: { key: string; label: string }[] = [
-  { key: 'SWE.3', label: 'Detailed Design' },
-  { key: 'SWE.4', label: 'Unit Test Specification' },
-  { key: 'SYS.1', label: 'Req. Elicitation' },
-  { key: 'SYS.2', label: 'System Architecture' },
-  { key: 'SWE.1', label: 'SW Requirements' },
-  { key: 'SWE.2', label: 'SW Architecture' },
-]
+const PROCESS_LABELS: Record<string, string> = {
+  'SWE.3': 'Detailed Design',
+  'SWE.4': 'Unit Test Specification',
+  'SYS.1': 'Req. Elicitation',
+  'SYS.2': 'System Architecture',
+  'SWE.1': 'SW Requirements',
+  'SWE.2': 'SW Architecture',
+}
+// SWE.3 and SWE.4 first, as the documents are made; any other process only with a document.
+const processRows = (documents: Document[]) =>
+  [...GENERATED_PROCESSES, ...shownProcesses(documents).filter((p) => !GENERATED_PROCESSES.includes(p))]
+    .map((key) => ({ key, label: PROCESS_LABELS[key] ?? key }))
 
 const pct = (n: number, total: number) => (total ? Math.round((n / total) * 100) : 0)
 const KPI_LABEL = 'font-mono text-caption font-medium tracking-[.07em]'
@@ -190,8 +194,9 @@ export function AdminDocsCard({ documents, go, projectId }: { documents: Documen
           </tr>
         </thead>
         <tbody>
-          {/* Every ASPICE process row; one with no document of this version is muted. */}
-          {PROCESSES.map((p) => {
+          {/* A row per process the app makes (one with no document of this version is muted), and
+              any other with a document: never a placeholder row for a process nothing makes. */}
+          {processRows(documents).map((p) => {
             const docs = documents.filter((d) => d.process === p.key)
             const total = docs.length
             if (total === 0) {

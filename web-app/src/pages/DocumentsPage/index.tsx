@@ -7,12 +7,12 @@ import { reexportActive, useExportReadiness } from '../../hooks/useReview'
 import { SubbarCta } from '../../components/shell/SubbarCta'
 import { useProjectViewState } from '../../hooks/useProjectViewState'
 import { useAuthStore } from '../../store/auth'
-import { Card, Icon, TableSkeleton, Text } from '../../components/ui'
+import { Card, Icon, Skeleton, TableSkeleton, Text } from '../../components/ui'
 import { LoadError } from '../../components/LoadError'
 import { failedLoad } from '../../lib/failedLoad'
 import { DocTreePanel } from '../../components/shell/DocTreePanel'
 import { AssignReviewerDialog } from '../../components/review/AssignReviewerDialog'
-import { NEEDS_REVIEWER, buildReviewerOptions, docxFileName, groupDocsByProcess } from '../../lib/docTree'
+import { NEEDS_REVIEWER, buildReviewerOptions, docxFileName, groupDocsByProcess, shownProcesses } from '../../lib/docTree'
 import { cn } from '../../lib/cn'
 import { componentWordFileStale, wordFileOutOfDate } from '../../lib/reviewStatus'
 import type { Document, ReviewStatus } from '../../types'
@@ -22,8 +22,6 @@ import { VersionApprovalBar } from './components/VersionApprovalBar'
 import { BulkApproveDialog } from './components/BulkApproveDialog'
 import { StatusFilter } from './components/StatusFilter'
 import { ComponentsPanel } from './components/ComponentsPanel'
-
-const PROCESSES = ['All', 'SYS.1', 'SYS.2', 'SWE.1', 'SWE.2', 'SWE.3', 'SWE.4']
 
 /** Download All while the version's Word files lack corrections (R9 `stale`). */
 const PREVIOUS_WORD_FILES = 'Previous Word files — the corrections are not in them yet'
@@ -85,8 +83,12 @@ export function DocumentsPage() {
   const effectiveAssignee = assigneeFilter ?? (isDeveloper ? meId : '')
 
   const all = useMemo(() => documents ?? [], [documents])
+  // A tab per process the app makes, and any other a document has (never an empty placeholder).
+  // A picked tab the version does not have (picked on another version) is All.
+  const processTabs = ['All', ...shownProcesses(all)]
+  const tabProcess = processTabs.includes(activeProcess) ? activeProcess : 'All'
   const filtered = filterDocuments(all, {
-    process: activeProcess, statuses: statusFilter, reviewer: effectiveAssignee, search,
+    process: tabProcess, statuses: statusFilter, reviewer: effectiveAssignee, search,
   })
   const reviewerOptions = buildReviewerOptions(all)
   const treeGroups = groupDocsByProcess(filtered)
@@ -99,11 +101,12 @@ export function DocumentsPage() {
   // Approve…: only Ready for approval with an up-to-date Word file (R9). The version's R9 says
   // so for all at once; when it is stale, each candidate's own (A15) is read as the dialog opens.
   // Every role reads it: Download says when it gives the previous Word file — a row when R9 names
-  // its component (`staleComponents`), Download All when the version is behind at all.
+  // its component (`staleComponents`), Download All when it names one of a document not approved.
   const { data: versionReadiness, isError: versionReadinessFailed } =
     useExportReadiness(pid, viewVersion?.id)
-  // Download All: the approved documents' files are the approved ones; the rest are previous.
-  const allStale = wordFileOutOfDate(versionReadiness) && all.some((d) => d.status !== 'approved')
+  // Download All: the approved documents' files are the approved ones; another's is the previous
+  // one when R9 names its component — the same test as its row's Download.
+  const allStale = all.some((d) => d.status !== 'approved' && componentWordFileStale(versionReadiness, d.group))
   const candidates = selectedDocs.filter((d) => d.status === 'submitted')
   const perDoc = useDocumentsReadiness(pid, candidates,
     bulkOpen && (versionReadinessFailed || wordFileOutOfDate(versionReadiness)))
@@ -162,6 +165,24 @@ export function DocumentsPage() {
         <div className="p-6">
           <Card>
             <LoadError what="the documents" error={failed.error} retrying={failed.retrying} onRetry={failed.retry} />
+          </Card>
+        </div>
+      </div>
+    )
+  }
+
+  // ── First load: until the project, its versions and its run are read, the page cannot tell
+  //    "No documents yet" (the view state's default) from a version that has them ──
+  if (viewLoading) {
+    return (
+      <div className="flex-1 overflow-y-auto bg-surface-container-low">
+        <div className="p-6">
+          <Card className="overflow-hidden" aria-busy="true" aria-label="Loading documents">
+            <div className="px-5 py-4 border-b border-outline-variant space-y-2">
+              <Skeleton className="h-5 w-40" />
+              <Skeleton className="h-3 w-64" />
+            </div>
+            <TableSkeleton rows={8} cols={7} />
           </Card>
         </div>
       </div>
@@ -261,6 +282,7 @@ export function DocumentsPage() {
         isDeveloper={!!isDeveloper}
         onPickAssignee={setAssigneeFilter}
         onOpenDoc={(d) => openDoc(d)}
+        loading={isLoading}
       />
       <div className="flex-1 overflow-y-auto bg-surface-container-low">
         <div className="p-6">
@@ -305,7 +327,7 @@ export function DocumentsPage() {
               <div>
                 <Text as="h2" variant="heading" className="text-on-surface">Documents</Text>
                 <Text as="p" variant="caption" className="font-mono mt-0.5">
-                  {filtered.length} document{filtered.length !== 1 ? 's' : ''}
+                  {isLoading ? 'Loading…' : `${filtered.length} document${filtered.length !== 1 ? 's' : ''}`}
                   {isDeveloper && (
                     <>
                       {' · '}
@@ -338,8 +360,8 @@ export function DocumentsPage() {
 
             {/* Process tabs */}
             <div className="flex items-center -mb-px overflow-x-auto" role="tablist" aria-label="Filter by process">
-              {PROCESSES.map((p) => {
-                const active = activeProcess === p
+              {processTabs.map((p) => {
+                const active = tabProcess === p
                 return (
                   <button
                     key={p}

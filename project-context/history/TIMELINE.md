@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-05f | Web: seven UI-review leftovers closed -- no refetch on every visit, no cold-load flashes, no placeholder tabs, diffs not by colour alone, backticked text rendered, Compare deep links and a reference picker, the wizard keeps its step on reload; the Overview's runs are polled always | [13](13-2026-10-05c.md) |
 | 2026-10-05e | Web: the review & update gaps the audit found are closed; orphans can be discarded; only the stale components' downloads are marked; version cards and the Overview say how runs were made and which are at work | [13](13-2026-10-05c.md) |
 | 2026-10-05d | Proved with the LLM on: adding a layer asks the LLM only about the new layer | [13](13-2026-10-05c.md) |
 | 2026-10-05c | R9 names the components whose documents are behind; `GET /projects/{pid}/runs` lists the runs at work from either front door | [13](13-2026-10-05c.md) |

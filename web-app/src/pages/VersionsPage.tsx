@@ -66,7 +66,7 @@ export function VersionsPage() {
             <div>
               <Text as="h2" variant="heading" className="text-on-surface">Versions</Text>
               <Text as="p" variant="caption" className="font-mono mt-0.5">
-                {allVersions.length} version{allVersions.length !== 1 ? 's' : ''} · {project?.name ?? '…'}
+                {versionsLoading ? 'Loading…' : `${allVersions.length} version${allVersions.length !== 1 ? 's' : ''}`} · {project?.name ?? '…'}
               </Text>
               <p className="flex items-center gap-1 mt-1 text-caption text-outline">
                 <Icon name="info" size={13} />
@@ -127,7 +127,7 @@ export function VersionsPage() {
           <div className="px-5 py-3.5 border-b border-outline-variant flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <Text as="h2" variant="heading" className="text-on-surface">Untagged Commits</Text>
-              <span className="font-mono text-label font-bold bg-[#f3f4f6] text-on-surface-variant px-2 py-0.5 rounded-full">{untagged.length}</span>
+              {!commitsLoading && <span className="font-mono text-label font-bold bg-[#f3f4f6] text-on-surface-variant px-2 py-0.5 rounded-full">{untagged.length}</span>}
             </div>
             <Text as="p" variant="caption" className="font-mono">Commits without a version tag</Text>
           </div>

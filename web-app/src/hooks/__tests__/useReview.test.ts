@@ -1,13 +1,15 @@
 import { createElement, type ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
+import { http, HttpResponse } from 'msw'
+import { server } from '../../test/server'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { ApiError } from '../../lib/http'
+import { API_BASE_URL, ApiError } from '../../lib/http'
 import type { ExportReadiness, Slot, SlotSaveResult } from '../../types'
 import { projectKeys } from '../useProjects'
 import {
   describeQueued, describeSave, isRegenerating, patchOverrides, saveErrorMessage, saveFailedNote,
-  useReexportFinished,
+  useDiscardOrphans, useReexportFinished, useReexportVersion, useSaveSlot, useVersionOverrides,
 } from '../useReview'
 
 /* Review & update: what the page says after a save, and after a save that failed
@@ -98,5 +100,62 @@ describe('useReexportFinished', () => {
     rerender({ r: r9('complete') })
     expect(spy).toHaveBeenCalledWith({ queryKey: ['projects', 'p1', 'documents'] })
     expect(spy).toHaveBeenCalledWith({ queryKey: projectKeys.review('p1', 'v1') })
+  })
+})
+
+/* Review findings on 6c5863b: a discard left the edit boxes' orphan notes (the renders were not
+   read again); a re-export did not show in the Overview's runs; a save racing a read of R1 was
+   undone by that read's older answer. */
+describe('after a mutation, what is read again', () => {
+  const API = `${API_BASE_URL}/projects/p1/versions/v1`
+  const wire = (key: string, text: string) => ({
+    slotKind: 'description', slotKey: key, text, llmText: 'llm', humanText: text, isOverridden: true,
+    isOrphaned: false, canUndo: true, updatedBy: 'u1', updatedAt: '2026-10-05T10:00:00Z',
+  })
+  function mount<T>(hook: () => T) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client }, children)
+    return { client, ...renderHook(hook, { wrapper }) }
+  }
+
+  it('a discard reads the version’s review reads (R1 among them) and the rendered documents again', async () => {
+    server.use(http.delete(`${API}/overrides/orphans`, () => HttpResponse.json({ discarded: 2 })))
+    const { client, result } = mount(() => useDiscardOrphans('p1', 'v1'))
+    const spy = vi.spyOn(client, 'invalidateQueries')
+    await act(async () => { await result.current.mutateAsync() })
+    expect(spy).toHaveBeenCalledWith({ queryKey: projectKeys.review('p1', 'v1') })
+    expect(spy).toHaveBeenCalledWith({ queryKey: projectKeys.documentRenders('p1') })
+  })
+
+  it('a re-export reads R9 and the project’s runs again', async () => {
+    server.use(http.post(`${API}/reexport`, () => HttpResponse.json({ job_id: 'j1', status: 'queued' }, { status: 202 })))
+    const { client, result } = mount(() => useReexportVersion('p1', 'v1'))
+    const spy = vi.spyOn(client, 'invalidateQueries')
+    await act(async () => { await result.current.mutateAsync() })
+    expect(spy).toHaveBeenCalledWith({ queryKey: projectKeys.exportReadiness('p1', 'v1') })
+    expect(spy).toHaveBeenCalledWith({ queryKey: projectKeys.runs('p1') })
+  })
+
+  it('a save stops a read of R1 begun before it: the older answer does not undo the save', async () => {
+    let release = () => {}
+    const held = new Promise<void>((r) => { release = r })
+    let reads = 0
+    server.use(
+      http.get(`${API}/overrides`, async () => {
+        reads += 1
+        if (reads > 1) await held                                // the read under way at the save
+        return HttpResponse.json({ overrides: [wire('k1', 'before')], total: 1, limit: 1000, offset: 0 })
+      }),
+      http.put(`${API}/overrides/slot`, () => HttpResponse.json(wire('k1', 'after'))),
+    )
+    const { client, result } = mount(() => ({ list: useVersionOverrides('p1', 'v1'), save: useSaveSlot('p1', 'v1') }))
+    await waitFor(() => expect(result.current.list.data?.[0]?.text).toBe('before'))
+    void client.refetchQueries({ queryKey: projectKeys.overrides('p1', 'v1') })
+    await waitFor(() => expect(reads).toBe(2))
+    await act(async () => { await result.current.save.mutateAsync({ slot: result.current.list.data![0], text: 'after' }) })
+    await waitFor(() => expect(result.current.list.data?.[0]?.text).toBe('after'))
+    release()
+    await new Promise((r) => setTimeout(r, 50))
+    expect(client.getQueryData<Slot[]>(projectKeys.overrides('p1', 'v1'))?.[0]?.text).toBe('after')
   })
 })

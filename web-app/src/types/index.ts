@@ -427,6 +427,8 @@ export interface ExportReadiness {
   overrideCount: number
   pendingRenders: number
   failedRenders: number
+  /** When the version's oldest derived output was written (null: an older API, or none yet). */
+  oldestDerivationAt?: string | null
   reexport: {
     jobId: string
     status: string

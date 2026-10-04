@@ -13,31 +13,37 @@ import { failedLoad } from '../../lib/failedLoad'
 import { BlocksPane, SectionBody } from './components/DiffBlocks'
 import { DocTree, type TreeRow } from './components/DocTree'
 import { DocStateBar } from './components/DocStateBar'
+import { ReferencePicker } from './components/ReferencePicker'
 import {
-  DIFF_BADGE, compareVersions, paneSections, sectionAccent, versionRef, type TreeMode,
+  DIFF_BADGE, compareVersions, olderVersions, paneSections, sectionAccent, versionRef, type TreeMode,
 } from './helpers'
 
 export function ComparePage() {
   const { projectId } = useParams<{ projectId: string }>()
   const pid = projectId ?? ''
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  // The page's address carries what is open: `?doc=` the document (a link from the documents
+  // list opens on it), `?ref=` a reference other than the default.
+  const setParam = (key: string, value: string) =>
+    setSearchParams((p) => { p.set(key, value); return p }, { replace: true })
 
   const versionsQuery = useVersions(pid)
   const { data: versions } = versionsQuery
   const { data: commits } = useCommits(pid)
-  const { viewVersion } = useProjectViewState(pid)
+  const { viewVersion, isLoading: viewLoading } = useProjectViewState(pid)
 
-  /* Current = the Subbar picker's version (defaults to the latest); the reference is FIXED by it
-     (its predecessor), not user-pickable. Both by version id, end to end: two versions of one
+  /* Current = the Subbar picker's version (defaults to the latest); the reference is the version
+     before it, or an older one picked here. Both by version id, end to end: two versions of one
      commit are two versions (by commit, the second found the first, and showed "No changes"). */
-  const { current: currentVersion, baseline: baselineVersion } = compareVersions(versions, viewVersion)
+  const { current: currentVersion, baseline: baselineVersion } =
+    compareVersions(versions, viewVersion, searchParams.get('ref'))
+  const referenceOptions = olderVersions(versions, currentVersion)
   const currentRef = versionRef(currentVersion)
   const baselineRef = versionRef(baselineVersion)
   const currentCommit = commits?.find((c) => c.sha === currentVersion?.sha)
   const baselineCommit = commits?.find((c) => c.sha === baselineVersion?.sha)
 
-  const [treeMode, setTreeMode] = useState<TreeMode>('diff')
-  const [pickedDocId, setPickedDocId] = useState<string | null>(null)
+  const [treeModePick, setTreeMode] = useState<TreeMode | null>(null)
   const [changesOnly, setChangesOnly] = useState(false)
 
   const compareDocsQuery = useCompareDocuments(pid, currentRef, baselineRef)
@@ -50,10 +56,16 @@ export function ComparePage() {
   // Each current document's review state, shown beside it (never changed here).
   const docById = useMemo(() => new Map((allDocs ?? []).map((d) => [d.id, d])), [allDocs])
 
-  /* Active doc = explicit pick, else ?doc= param (if changed), else first changed doc */
+  /* Active doc = the one `?doc=` names (a pick sets it) when it is a document of either version,
+     changed or not, else the first changed one. An unchanged one opens too, under "All": the
+     list's Compare named it, and the page opened the first changed document instead. */
   const paramDoc = searchParams.get('doc')
-  const defaultDocId = (paramDoc && changedSet.has(paramDoc) ? paramDoc : undefined) ?? compareDocs?.documents?.[0]?.documentId ?? null
-  const activeDocId = pickedDocId ?? defaultDocId
+  const paramChanged = !!paramDoc && changedSet.has(paramDoc)
+  const paramKnown = paramChanged || (!!paramDoc && docById.has(paramDoc))
+  // Until the current version's documents are read, an unchanged one is not known yet.
+  const paramPending = !!paramDoc && !paramKnown && allDocsLoading
+  const activeDocId = (paramKnown ? paramDoc : null) ?? compareDocs?.documents?.[0]?.documentId ?? null
+  const treeMode: TreeMode = treeModePick ?? (paramKnown && !paramChanged ? 'all' : 'diff')
 
   const detailQuery = useCompareDocumentDetail(pid, activeDocId ?? undefined, currentRef, baselineRef)
   const { data: detail, isLoading: detailLoading } = detailQuery
@@ -97,7 +109,7 @@ export function ComparePage() {
   const detailFailed = failedLoad(detailQuery)
 
   function selectDoc(id: string) {
-    setPickedDocId(id)
+    setParam('doc', id)
   }
 
   const docTitle = detail?.documentName ?? docDetail?.name ?? changedById.get(activeDocId ?? '')?.name ?? 'Document'
@@ -131,7 +143,9 @@ export function ComparePage() {
       />
 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        {docsLoading && !compareDocs ? (
+        {/* Loading until the versions say what is compared and the list (and a linked document)
+            is read: it said "Nothing to compare yet" while the versions loaded. */}
+        {(viewLoading && !versions) || (docsLoading && !compareDocs) || paramPending ? (
           /* ─── Loading the diff list ─── */
           <div className="flex-1 overflow-y-auto bg-surface-container-low">
             <div className="bg-white border-b border-outline-variant px-8 pt-7 pb-5 space-y-3">
@@ -154,8 +168,8 @@ export function ComparePage() {
                   : compareDocs && compareDocs.documents.length === 0 ? 'No changes between these versions'
                     : 'Select a document to compare'}
               </h2>
-              <p className="text-on-surface-variant text-xs mb-1">
-                Reference <span className="font-mono text-outline">{baselineVersion?.tag ?? baselineShort}</span> → Current <span className="font-mono text-on-tertiary-container">{currentTag ?? `${currentBranch} @ ${currentShort}`}</span>
+              <p className="text-on-surface-variant text-xs mb-1 flex items-center justify-center gap-1 flex-wrap">
+                Reference <ReferencePicker options={referenceOptions} value={baselineVersion} fallback={baselineShort} onPick={(r) => setParam('ref', r)} /> → Current <span className="font-mono text-on-tertiary-container">{currentTag ?? `${currentBranch} @ ${currentShort}`}</span>
               </p>
               <p className="text-outline text-xs mb-8">
                 {!currentVersion ? 'This commit has no version yet. Pick a version in the bar above, or run analysis on this commit.'
@@ -174,7 +188,7 @@ export function ComparePage() {
                     <span className="text-on-surface text-sm flex-1 truncate">{d.name}</span>
                     <span className="font-mono text-label text-outline flex-shrink-0">{d.process}</span>
                     {docById.get(d.documentId) && <StatusBadge status={docById.get(d.documentId)!.status} size="sm" />}
-                    <span className={cn('px-1.5 py-0.5 rounded font-mono text-caption', DIFF_BADGE[d.diffType].cls)}>{DIFF_BADGE[d.diffType].label}</span>
+                    <span className={cn('px-1.5 py-0.5 rounded font-mono text-caption', DIFF_BADGE[d.diffType].cls)}>{DIFF_BADGE[d.diffType].sign} {DIFF_BADGE[d.diffType].label}</span>
                   </button>
                 ))}
               </div>
@@ -191,7 +205,7 @@ export function ComparePage() {
                 <div className="sticky top-0 z-10 bg-white border-b border-r border-outline-variant px-4 py-2 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-outline-variant flex-shrink-0" aria-hidden />
                   <span className="text-on-surface font-mono text-xs font-medium">Reference</span>
-                  <span className="px-2 py-0.5 rounded bg-surface-container text-on-surface-variant border border-outline-variant uppercase font-mono text-micro font-bold">{baselineVersion?.tag ?? baselineShort}</span>
+                  <ReferencePicker options={referenceOptions} value={baselineVersion} fallback={baselineShort} onPick={(r) => setParam('ref', r)} />
                   <span className="ml-auto flex items-center gap-1 text-secondary font-mono text-caption">
                     <span className="w-1.5 h-1.5 rounded-sm bg-secondary inline-block" aria-hidden />{total} changed
                   </span>
@@ -268,7 +282,7 @@ export function ComparePage() {
                           </div>
                           {changed && (
                             <div className="flex items-center gap-1.5 mb-3">
-                              <span className={cn('px-1.5 py-0.5 rounded font-mono text-caption', DIFF_BADGE[s.diffType].cls)}>{DIFF_BADGE[s.diffType].label}</span>
+                              <span className={cn('px-1.5 py-0.5 rounded font-mono text-caption', DIFF_BADGE[s.diffType].cls)}>{DIFF_BADGE[s.diffType].sign} {DIFF_BADGE[s.diffType].label}</span>
                               {s.sourceLabel && (
                                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-caption text-on-surface-variant bg-surface-container-low border border-outline-variant">
                                   <Icon name="source" size={11} />{s.sourceLabel}

@@ -11,7 +11,7 @@ import commits from '../../../test/fixtures/captured/commits.json'
 import versionsFx from '../../../test/fixtures/captured/versions.json'
 import documentsFx from '../../../test/fixtures/captured/documents.json'
 import { ComparePage } from '..'
-import { compareVersions, versionRef } from '../helpers'
+import { compareVersions, olderVersions, versionRef } from '../helpers'
 import type { Version } from '../../../types'
 
 /* Compare names versions by id: two versions made on one commit are two versions (by commit the
@@ -23,17 +23,27 @@ const [v3, v2] = versionsFx.versions
 const sameCommit = { versions: [v3, { ...v2, commit_sha: v3.commit_sha }] }
 const swe4 = { ...documentsFx.documents[0], id: 'doc9', name: 'Brake', process: 'SWE.4', subtitle: 'Unit Test Specification', group: 'Brake' }
 
-function setup({ failCompare = false } = {}) {
+// An unchanged document of the current version (the list's Compare can name one).
+const same = { ...documentsFx.documents[0], id: 'doc8', name: 'Pedal', process: 'SWE.3', subtitle: 'Detailed Design', group: 'Pedal' }
+
+function setup({ failCompare = false, path = '/projects/p1/compare', versions = sameCommit, holdVersions = false } = {}) {
+  let release = () => {}
+  const held = new Promise<void>((r) => { release = r })
   const asked: string[] = []
+  const details: string[] = []
   let failures = failCompare ? 1 : 0
   server.use(
     http.get(`${API_BASE_URL}/projects/p1`, () => HttpResponse.json(project)),
-    http.get(`${API_BASE_URL}/projects/p1/versions`, () => HttpResponse.json(sameCommit)),
+    http.get(`${API_BASE_URL}/projects/p1/versions`, async () => {
+      if (holdVersions) await held
+      return HttpResponse.json(versions)
+    }),
     http.get(`${API_BASE_URL}/projects/p1/commits`, () => HttpResponse.json(commits)),
     http.get(`${API_BASE_URL}/projects/p1/jobs/current`, () => HttpResponse.json({ job: null })),
     http.get(`${API_BASE_URL}/projects/p1/documents`, () =>
-      HttpResponse.json({ documents: [swe4], pagination: { page: 1, per_page: 100, total: 1 } })),
+      HttpResponse.json({ documents: [swe4, same], pagination: { page: 1, per_page: 100, total: 2 } })),
     http.get(`${API_BASE_URL}/projects/p1/documents/doc9`, () => HttpResponse.json({ document: swe4 })),
+    http.get(`${API_BASE_URL}/projects/p1/documents/doc8`, () => HttpResponse.json({ document: same })),
     http.get(`${API_BASE_URL}/projects/p1/compare/documents`, ({ request }) => {
       const u = new URL(request.url)
       asked.push(`${u.searchParams.get('current')} vs ${u.searchParams.get('baseline')}`)
@@ -46,20 +56,23 @@ function setup({ failCompare = false } = {}) {
         summary: { added: 0, changed: 1, removed: 0, unchanged: 0 },
       })
     }),
-    http.get(`${API_BASE_URL}/projects/p1/compare/documents/doc9`, () =>
-      HttpResponse.json({ mode: 'flat', document_name: 'Brake', sections: [] })),
+    http.get(`${API_BASE_URL}/projects/p1/compare/documents/:docId`, ({ params }) => {
+      details.push(String(params.docId))
+      const name = params.docId === 'doc8' ? 'Pedal' : 'Brake'
+      return HttpResponse.json({ mode: 'flat', document_name: name, sections: [] })
+    }),
   )
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/projects/p1/compare']}>
+      <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/projects/:projectId/compare" element={<ComparePage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   )
-  return { asked, user: userEvent.setup() }
+  return { asked, details, release, user: userEvent.setup() }
 }
 
 describe('ComparePage', { timeout: 30_000 }, () => {
@@ -83,6 +96,56 @@ describe('ComparePage', { timeout: 30_000 }, () => {
   })
 })
 
+/* #30: the documents list's Compare opens the document it names, changed or not, and the
+   reference can be any older version. #45: a change is told by a sign and in words, not by its
+   colour alone. */
+describe('ComparePage: the linked document, the reference, the change marks', { timeout: 30_000 }, () => {
+  it('?doc= opens that document even when it did not change, listed under All', async () => {
+    const { details } = setup({ path: '/projects/p1/compare?doc=doc8' })
+    expect((await screen.findAllByRole('heading', { name: 'Pedal' })).length).toBe(2)
+    expect(details).toEqual(['doc8'])
+    expect(screen.getByRole('button', { name: 'All' })).toHaveClass('bg-primary')
+  })
+
+  it('?doc= of a changed document opens it under Diff', async () => {
+    const { details } = setup({ path: '/projects/p1/compare?doc=doc9' })
+    expect((await screen.findAllByRole('heading', { name: 'Brake' })).length).toBe(2)
+    expect(details).toEqual(['doc9'])
+    expect(screen.getByRole('button', { name: 'Diff' })).toHaveClass('bg-primary')
+  })
+
+  it('the reference is the version before by default, and any older one can be picked', async () => {
+    const { asked, user } = setup({ versions: versionsFx })
+    const picker = await screen.findByRole('combobox', { name: 'Reference version' })
+    expect(picker).toHaveValue('ver2')
+    await waitFor(() => expect(asked).toEqual(['ver3 vs ver2']))
+    await user.selectOptions(picker, 'ver1')
+    await waitFor(() => expect(asked).toEqual(['ver3 vs ver2', 'ver3 vs ver1']))
+    expect(screen.getByRole('combobox', { name: 'Reference version' })).toHaveValue('ver1')
+  })
+
+  it('with one older version the reference is shown, not offered', async () => {
+    setup()
+    expect((await screen.findAllByRole('heading', { name: 'Brake' })).length).toBe(2)
+    expect(screen.queryByRole('combobox', { name: 'Reference version' })).not.toBeInTheDocument()
+  })
+
+  it('#16: says nothing about the comparison until the versions are read', async () => {
+    const { release } = setup({ holdVersions: true })
+    await new Promise((r) => setTimeout(r, 200))
+    expect(screen.queryByText('Nothing to compare yet')).not.toBeInTheDocument()
+    release()
+    expect((await screen.findAllByRole('heading', { name: 'Brake' })).length).toBe(2)
+  })
+
+  it('a changed document says so with a sign and in words', async () => {
+    setup()
+    expect((await screen.findAllByRole('heading', { name: 'Brake' })).length).toBe(2)
+    expect(screen.getByText('(changed)')).toHaveClass('sr-only')
+    expect(screen.getByTitle('changed')).toHaveTextContent('~')
+  })
+})
+
 describe('compareVersions', () => {
   const v = (id: string, sha: string) => ({ id, sha, tag: id }) as Version
 
@@ -91,6 +154,14 @@ describe('compareVersions', () => {
     expect(compareVersions(list, list[0]).baseline?.id).toBe('ver2')
     expect(compareVersions(list, list[1]).baseline?.id).toBe('ver1')
     expect(compareVersions(list, list[2]).baseline).toBeUndefined()
+  })
+
+  it('the reference can be any older version, never the current one or a newer one', () => {
+    const list = [v('ver3', 'abc'), v('ver2', 'abc'), v('ver1', 'def')]
+    expect(compareVersions(list, list[0], 'ver1').baseline?.id).toBe('ver1')
+    expect(compareVersions(list, list[1], 'ver3').baseline?.id).toBe('ver1')     // newer: the default
+    expect(compareVersions(list, list[0], 'gone').baseline?.id).toBe('ver2')
+    expect(olderVersions(list, list[1]).map((x) => x.id)).toEqual(['ver1'])
   })
 
   it('no current version (a commit with no run): nothing to compare', () => {

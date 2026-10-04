@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Icon, Text } from '../ui'
+import { Icon, Skeleton, Text } from '../ui'
 import { cn } from '../../lib/cn'
 import { NEEDS_REVIEWER, PROCESS_TITLES, type ReviewerOption } from '../../lib/docTree'
 import { STATUS_META } from '../../lib/reviewStatus'
@@ -14,7 +14,7 @@ import type { Document } from '../../types'
  * The filter's value is a reviewer's user id, `none` (Needs a reviewer) or '' (all).
  */
 export function DocTreePanel({
-  groups, assigneeOptions, effectiveAssignee, meId, isDeveloper, activeDocId, onPickAssignee, onOpenDoc, onFold,
+  groups, assigneeOptions, effectiveAssignee, meId, isDeveloper, activeDocId, onPickAssignee, onOpenDoc, onFold, loading,
 }: {
   groups: { process: string; docs: Document[] }[]
   assigneeOptions: ReviewerOption[]
@@ -27,6 +27,8 @@ export function DocTreePanel({
   onOpenDoc: (doc: Document) => void
   /** Shows a button that folds the panel away (the Inspector, where the reader needs the width). */
   onFold?: () => void
+  /** The documents are not read yet: placeholder rows, not "No documents". */
+  loading?: boolean
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [open, setOpen] = useState(false)
@@ -151,7 +153,11 @@ export function DocTreePanel({
 
       {/* Tree */}
       <div className="flex-1 overflow-y-auto min-h-0 py-2">
-        {groups.length === 0 ? (
+        {loading ? (
+          <div className="px-2.5 space-y-2" aria-hidden>
+            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-5" />)}
+          </div>
+        ) : groups.length === 0 ? (
           <div className="px-3 py-6 text-center">
             <Text variant="caption" className="font-mono">No documents</Text>
           </div>

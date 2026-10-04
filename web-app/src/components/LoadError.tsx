@@ -1,4 +1,4 @@
-import { Button, Icon, Text } from './ui'
+import { Button, CodeText, Icon, Text } from './ui'
 import { cn } from '../lib/cn'
 
 /** The message a failed read carries (the http client puts the API's own on `Error.message`). */
@@ -33,7 +33,7 @@ export function LoadError({ what, error, onRetry, retrying, compact, className }
         <Icon name="error" size={18} className="text-error flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <Text as="p" variant="body" className="text-on-surface font-medium">Could not load {what}</Text>
-          <Text as="p" variant="caption" className="font-mono break-words">{errorMessage(error)}</Text>
+          <Text as="p" variant="caption" className="font-mono break-words"><CodeText text={errorMessage(error)} /></Text>
         </div>
         {retry}
       </div>
@@ -46,7 +46,7 @@ export function LoadError({ what, error, onRetry, retrying, compact, className }
       </div>
       <div className="max-w-[420px]">
         <Text as="p" variant="heading" className="text-on-surface">Could not load {what}</Text>
-        <Text as="p" variant="caption" className="font-mono mt-1 break-words">{errorMessage(error)}</Text>
+        <Text as="p" variant="caption" className="font-mono mt-1 break-words"><CodeText text={errorMessage(error)} /></Text>
       </div>
       {retry}
     </div>

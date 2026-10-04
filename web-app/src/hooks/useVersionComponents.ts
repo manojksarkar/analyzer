@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { versionComponentsApi } from '../services/api'
 import { projectKeys } from './useProjects'
 import { toast } from '../components/ui/Toast'
-import type { VersionComponents } from '../types'
+import type { ProjectRun, VersionComponents } from '../types'
 
 /* Staged generation: a version's components, the state of their documents, its latest run — and
    making the documents of the ones not generated yet. */
@@ -38,14 +38,22 @@ export function useVersionComponents(projectId: string, versionId?: string, poll
   return query
 }
 
+/** How often the runs are read again: every 15 s while one is alive, else every minute — a run
+ *  started from the command line (`--detach`) after the page loaded must show up, and a
+ *  "Stopped" card go once it is resumed or discarded. (Reading only while one was alive, an
+ *  Overview that loaded without a live run never saw one.) */
+export function runsPollMs(runs: ProjectRun[] | undefined): number {
+  return runs?.some((r) => r.alive) ? 15_000 : 60_000
+}
+
 /** The project's runs at work now or cut short (a web job, or `analyzer.py` on the server, which
- *  the Overview could not see). Read again every 15 s while any is alive. */
+ *  the Overview could not see). A run started or ended here reads them again at once. */
 export function useProjectRuns(projectId: string) {
   return useQuery({
     queryKey: projectKeys.runs(projectId),
     queryFn: () => versionComponentsApi.runs(projectId),
     enabled: !!projectId,
-    refetchInterval: (q) => (q.state.data?.some((r) => r.alive) ? 15_000 : false),
+    refetchInterval: (q) => runsPollMs(q.state.data),
   })
 }
 
@@ -57,6 +65,7 @@ export function useGenerateComponents(projectId: string, versionId?: string) {
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: projectKeys.versionComponents(projectId, versionId ?? '') })
       qc.invalidateQueries({ queryKey: projectKeys.job(projectId) })
+      qc.invalidateQueries({ queryKey: projectKeys.runs(projectId) })
       const n = r.components.length
       const detail = r.addedLayers.length
         ? `${r.addedLayers.join(', ')} is added to this version first (parse + descriptions); then the documents.`

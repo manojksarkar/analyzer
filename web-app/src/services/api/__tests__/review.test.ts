@@ -46,12 +46,28 @@ describe('reviewApi.overrides (R1)', () => {
     expect(calls).toBe(1)
   })
 
-  it('stops on an empty page: a total that overstates what there is must not loop for ever', async () => {
+  it('moves on by the page size: a page the server thinned (a row it could not show) neither ends the read nor overlaps the next', async () => {
+    const asked: string[] = []
+    server.use(
+      mock.get(`${API_BASE_URL}/projects/p1/versions/v1/overrides`, ({ request }) => {
+        const offset = Number(new URL(request.url).searchParams.get('offset'))
+        asked.push(String(offset))
+        // 2,000 corrections; the first page shows 998 of its 1,000, the third is past the end.
+        const rows = offset === 0 ? Array.from({ length: 998 }, (_, i) => slot(i))
+          : offset === 1000 ? Array.from({ length: 1000 }, (_, i) => slot(1000 + i)) : []
+        return HttpResponse.json({ overrides: rows, total: 2000, limit: 1000, offset })
+      }),
+    )
+    expect(await reviewApi.overrides('p1', 'v1')).toHaveLength(1998)
+    expect(asked).toEqual(['0', '1000'])
+  })
+
+  it('an empty page short of total does not loop for ever: the read ends at total', async () => {
     let calls = 0
     server.use(
       mock.get(`${API_BASE_URL}/projects/p1/versions/v1/overrides`, () => {
         calls += 1
-        return HttpResponse.json({ overrides: calls === 1 ? [slot(0)] : [], total: 5, limit: 1000, offset: 0 })
+        return HttpResponse.json({ overrides: calls === 1 ? [slot(0)] : [], total: 1500, limit: 1000, offset: 0 })
       }),
     )
     expect(await reviewApi.overrides('p1', 'v1')).toHaveLength(1)

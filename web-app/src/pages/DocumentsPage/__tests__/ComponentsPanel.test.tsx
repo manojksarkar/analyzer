@@ -173,18 +173,21 @@ describe('ComponentsPanel', () => {
     expect(screen.getByText(/1 of 4 generated · 1 stale · 2 not generated/)).toBeInTheDocument()
     expect(screen.getByText(/1 component is stale: a layer added to the model since/)).toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: 'Generate Math' })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Re-export' }))
+    // Once R9 is read, Re-export says what it takes (before, every document).
+    const button = screen.getByRole('button', { name: 'Re-export' })
+    await waitFor(() => expect(button).toHaveAttribute('title', 'Re-export Layer1.Math'))
+    await user.click(button)
     // Only the stale component, not every document of the version
     await waitFor(() => expect(reexported).toEqual(['ver1 ["Layer1.Math"]']))
   })
 
   it('Re-export takes the layer-stale components and those R9 says lack corrections', async () => {
-    const { reexported, r9Reads, user } = setup(true, ADDED, r9(true, ['Layer1.App']))
+    const { reexported, user } = setup(true, ADDED, r9(true, ['Layer1.App']))
     await screen.findByText('Stale — re-export')
-    // R9 answered (and its answer rendered) before the click.
-    await waitFor(() => expect(r9Reads.length).toBeGreaterThan(0))
-    await new Promise((r) => setTimeout(r, 50))
-    await user.click(screen.getByRole('button', { name: 'Re-export' }))
+    // R9 answered, and the button says so, before the click.
+    const button = screen.getByRole('button', { name: 'Re-export' })
+    await waitFor(() => expect(button).toHaveAttribute('title', 'Re-export Layer1.Math, Layer1.App'))
+    await user.click(button)
     await waitFor(() => expect(reexported).toEqual(['ver1 ["Layer1.Math","Layer1.App"]']))
   })
 
@@ -224,6 +227,8 @@ describe('the component helpers', () => {
     expect(reexportTargets([one('Layer1.App', { state: 'generated' })], { stale: true, staleComponents: [] })).toBeUndefined()
     // An older API: stale, but not which — a re-export of fewer would leave a correction out.
     expect(reexportTargets(comps, { stale: true })).toBeUndefined()
+    // R9 not read yet, or failed: nothing says which Word files lack corrections — all of them.
+    expect(reexportTargets(comps, undefined)).toBeUndefined()
   })
 
   it('groups by layer in order, and only components without documents are pickable', () => {
