@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-05 | The web app re-exports a version made from the command line, and only the stale components when asked; a save that meets a regenerating run says so with a code; RF-1 closed; only the layers the run's config has are offered | [11](11-2026-09-29e.md) |
 | 2026-10-04f | A git command that does not finish is stopped: the API's and the engine's git runners have a time limit, kill the whole process tree, and never prompt | [11](11-2026-09-29e.md) |
 | 2026-10-04e | A version takes components of another layer: `export` of one adds its layer to the same version -- every layer re-parsed, the LLM only for the new layer, the old layers' documents marked stale where the new layer changes them | [11](11-2026-09-29e.md) |
 | 2026-10-04d | A private repository's token no longer travels in a URL; the config import is proved to ask the API a fixed number of times; the wizard no longer copies the whole folder tree on every keystroke | [11](11-2026-09-29e.md) |

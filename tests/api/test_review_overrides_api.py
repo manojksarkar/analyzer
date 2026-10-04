@@ -1175,7 +1175,10 @@ class TestAnErrorSaysWhoseFaultItIs:
             raise model_store.ModelRowMissing("replaced while it was being written")
         monkeypatch.setattr(model_store, "set_entity_field", _gone)
         r = self._put(client, auth_header)
-        assert r.status_code == 409 and "regenerating" in r.json()["detail"]
+        detail = r.json()["detail"]
+        assert r.status_code == 409 and "regenerating" in detail["message"]
+        # A code of its own: the web app says "save again once the run has finished" for it
+        assert detail["code"] == "VERSION_REGENERATING" and detail["status"] == 409
         got = client.get(BASE + "/overrides/slot", headers=auth_header,
                          params={"slot_kind": "description", "slot_key": FID})
         assert got.json()["isOverridden"] is False, "nothing was saved"

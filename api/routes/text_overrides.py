@@ -186,6 +186,10 @@ def _as_http(exc: Exception) -> HTTPException:
     if isinstance(exc, HTTPException):
         return exc
     if isinstance(exc, (OverrideError, catalog.NotScoped)):
+        code = getattr(exc, "code", None)
+        if code:
+            return HTTPException(status_code=exc.status,
+                                 detail={"code": code, "message": str(exc), "status": exc.status})
         return HTTPException(status_code=exc.status, detail=str(exc))
     if isinstance(exc, slot_mod.SlotKeyError):
         return HTTPException(status_code=400, detail=str(exc))

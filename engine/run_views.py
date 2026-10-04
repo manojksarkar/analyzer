@@ -231,6 +231,30 @@ def _with_text_overrides(config):
         return config
 
 
+def _check_model_corrections(model) -> None:
+    """Leave this run's views unstamped when the model lacks a correction that is in force
+    (`review.carry_forward.corrections_missing`): Phase 2 could not put it back, so the views
+    print the LLM's text -- the export guard then asks for a re-derive instead (RF-1). Never
+    fatal, like loading the corrections."""
+    global _OVERRIDES_UNAVAILABLE
+    try:
+        from core.run_context import version_id as _vid
+        from core.db import get_engine, is_database_configured
+        vid = _vid()
+        if not (vid and is_database_configured()):
+            return
+        from review.carry_forward import corrections_missing
+        with get_engine().connect() as cx:
+            missing = corrections_missing(cx, vid, model)
+    except Exception as exc:                       # noqa: BLE001 - cannot tell: the cautious way
+        missing = [("?", str(exc))]
+    if missing:
+        _OVERRIDES_UNAVAILABLE = True
+        print("[run_views] WARNING: %d reviewer correction(s) are not in the model (Phase 2 could "
+              "not put them back, e.g. %s %s): these views print the LLM's text and are left "
+              "marked stale, so an export re-derives them first" % (len(missing), *missing[0]))
+
+
 def _rebuilt_behaviour_rows(output_dir) -> list:
     """The slot keys of the behaviour rows this run wrote into its manifest."""
     from review import phase3_overrides as p3, slot
@@ -471,6 +495,7 @@ def main():
     # runner, rather than inside a view: a view stays a pure function of (model, config) and
     # never opens a database of its own.
     config = _with_text_overrides(config)
+    _check_model_corrections(model)
 
     ran = run_views(model, output_dir, model_dir, config, doc_type=doc_type) or []
 

@@ -34,6 +34,7 @@ import sys
 import threading
 import time
 import uuid
+from types import SimpleNamespace
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
@@ -209,7 +210,7 @@ def _reexport_alive(job_id: str) -> bool:
     return t is not None and t.is_alive()
 
 
-def start_reexport(db: Any, version: Any) -> AnalysisJob:
+def start_reexport(db: Any, version: Any, components: Optional[list] = None) -> AnalysisJob:
     """Re-export `version` as a job of its own, and return that job.
 
     A re-export used to reuse the version's GENERATION job and never change its status, which
@@ -223,18 +224,36 @@ def start_reexport(db: Any, version: Any) -> AnalysisJob:
     a finished generation can be re-exported. One at a time per version: a second request while
     one runs is refused with the running job's id.
 
+    A version made from the command line has no generation job: its documents are re-exported
+    the same way (the job is `analyzer.py reexport`, which reads the version's own record), so it
+    is enough that it has documents. A web re-export of one used to be refused
+    (`NO_GENERATION_JOB`), so the stale components a layer added to it left could only be made
+    again from the command line.
+
+    `components`: only these (each must have documents) -- the stale ones, say. Default: every
+    component the version has documents for.
+
     Raises ReexportRefused. The version must belong to the project; the caller checks that.
     """
     with _REEXPORT_LOCK:
         jobs = db.jobs.list_for_version(version.id)
         generation = next((j for j in jobs if getattr(j, "mode", None) not in RENDER_MODES), None)
-        if generation is None:
+        scope = _reexport_scope(db, version, generation.scope if generation else None)
+        if generation is None and (getattr(version, "status", None) == "draft"
+                                   or not (scope or {}).get("names")):
             raise ReexportRefused(
-                409, "NO_GENERATION_JOB",
-                f"Version '{version.id}' was not generated through the web app, so there is no "
-                f"run to repeat its export from. Re-export it with `python analyzer.py reexport "
-                f"--project-id {version.project_id} --version-id {version.id}`.")
-        if generation.status != "complete":
+                409, "NO_DOCUMENTS",
+                f"Version '{version.id}' has no documents to re-export yet.")
+        if components:
+            have = set((scope or {}).get("names") or [])
+            missing = [c for c in components if c not in have]
+            if missing:
+                raise ReexportRefused(
+                    422, "INVALID_COMPONENTS",
+                    f"Not re-exportable -- no documents in version '{version.id}': "
+                    f"{', '.join(missing)}. `Generate` makes them.")
+            scope = {"type": "component", "names": list(dict.fromkeys(components))}
+        if generation is not None and generation.status != "complete":
             raise ReexportRefused(
                 409, "VERSION_NOT_READY",
                 f"Version '{version.id}' has no finished generation to re-export: its job "
@@ -258,23 +277,29 @@ def start_reexport(db: Any, version: Any) -> AnalysisJob:
                     running.id)
             _mark_failed(db, running.id, "Interrupted: the API server stopped while this "
                                          "re-export was running. Start it again.")
+        # How the version was generated is how it is re-rendered: same LLM switch, same data
+        # dictionary, same document title. A command-line version has no job to say so: the
+        # re-export (`analyzer.py reexport`) reads all of that from the version's own record.
+        gen = generation or SimpleNamespace(
+            commit_sha=version.commit_sha, layer_filter=None, branch=version.branch,
+            version_tag=getattr(version, "tag", None) or version.id, no_llm=False,
+            data_dict_id=None, narrowed_parse=False)
         job = AnalysisJob(
             id=f"job{uuid.uuid4().hex[:8]}", project_id=version.project_id,
-            commit_sha=generation.commit_sha, version_id=version.id,
+            commit_sha=gen.commit_sha, version_id=version.id,
             reference_version_id=None, status="queued", pause_after_phase1=False,
-            layer_filter=generation.layer_filter, phase=3, phase_pct=0,
+            layer_filter=gen.layer_filter, phase=3, phase_pct=0,
             current_activity="Queued — waiting for worker…", activity_detail="",
             elapsed_seconds=0, eta_seconds=None,
             phases=[AnalysisPhase(3, "Run Views", "pending", None),
                     AnalysisPhase(4, "Export DOCX", "pending", None)],
             started_at=_now(), completed_at=None, error_message=None,
-            branch=generation.branch, version_tag=generation.version_tag,
-            # How the version was generated is how it is re-rendered: same LLM switch, same
-            # data dictionary, same document title -- and every document it HAS, which since
-            # `export` can be more than its generation's scope (`_reexport_scope`).
-            mode=REEXPORT_MODE, scope=_reexport_scope(db, version, generation.scope),
-            no_llm=generation.no_llm,
-            data_dict_id=generation.data_dict_id, narrowed_parse=generation.narrowed_parse)
+            branch=gen.branch, version_tag=gen.version_tag,
+            # Every document it HAS, which since `export` can be more than its generation's
+            # scope (`_reexport_scope`) -- or the components asked for.
+            mode=REEXPORT_MODE, scope=scope,
+            no_llm=gen.no_llm,
+            data_dict_id=gen.data_dict_id, narrowed_parse=gen.narrowed_parse)
         db.jobs.create(job)
         t = threading.Thread(target=_run_reexport, args=(db, job.id), daemon=True,
                              name=f"reexport-{job.id}")

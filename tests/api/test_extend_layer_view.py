@@ -84,6 +84,23 @@ class TestTheConfigsComponents:
         can = _by_id(components_view(sql_db, version))["Layer3.Can-Bus"]
         assert can["in_model"] is False and can["name"] == "Can-Bus"
 
+    def test_only_the_config_the_export_runs_with(self, sql_db, version, workspaces):
+        """The version's own config.json is what `export` runs with: a layer only the project
+        names (added after the version was made) is not offered -- its parse would find nothing."""
+        import json
+        own = workspaces / "p1" / "versions" / version.id / "config.json"
+        own.parent.mkdir(parents=True)
+        own.write_text(json.dumps({"layers": {"Layer1": {"groups": {"G": {"Math": ["m"]}}},
+                                              "Layer2": {"groups": {"P": {"Gpio": ["g"]}}}}}),
+                       encoding="utf-8")
+        (workspaces / "p1" / "config.json").write_text(json.dumps({"layers": {
+            "Layer1": {"groups": {"G": {"Math": ["m"]}}}, "Layer2": {"groups": {"P": {"Gpio": ["g"]}}},
+            "Layer9": {"groups": {"N": {"New": ["n"]}}}}}), encoding="utf-8")
+        from api.services.version_components import config_components
+        assert config_components(sql_db, version) == ["Layer1.Math", "Layer2.Gpio"]
+        own.unlink()                                  # no config of its own: the project's
+        assert "Layer9.New" in config_components(sql_db, version)
+
     def test_a_config_that_cannot_be_read_leaves_the_view_as_it_was(self, sql_db, version,
                                                                      monkeypatch):
         from api.services import document_registry

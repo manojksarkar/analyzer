@@ -68,10 +68,17 @@ def config_components(db: Any, version: Any) -> List[str]:
     try:
         from types import SimpleNamespace
         from . import doc_render, document_registry
+        ws = doc_render.workspaces_root() / str(version.project_id)
+        # The configuration an `export` will run with -- the version's own when it has one, else
+        # the project's (`analyzer.py _render_version`). A layer only the project names now (added
+        # to it after the version was made) is not offered: the version's run would not find it.
+        own = ws / "versions" / str(version.id) / "config.json"
+        run_cfg = own if own.is_file() else ws / "config.json"
+        if run_cfg.is_file():
+            return sorted(document_registry._read_layers(run_cfg))
         project = db.projects.get(version.project_id) or SimpleNamespace(
             id=version.project_id, architecture_layers=None)
-        out_root = (doc_render.workspaces_root() / str(version.project_id) / "versions"
-                    / str(version.id) / "output")
+        out_root = ws / "versions" / str(version.id) / "output"
         return sorted(document_registry.component_dirs(project, version, out_root))
     except Exception as exc:                        # noqa: BLE001 - see the docstring
         _log.warning("version %s: its configuration's components could not be read (%s: %s)",

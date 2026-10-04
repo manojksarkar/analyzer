@@ -554,7 +554,7 @@ touch, on the next run. An unannounced change reads as a bug.
 | code | when |
 |---|---|
 | 404 | the slot does not resolve in this version |
-| 409 | a run is regenerating this version and replaced the model while the save was writing it. Nothing was saved — save again once the run has finished |
+| 409 | a run is regenerating this version and replaced the model while the save was writing it. Nothing was saved — save again once the run has finished. The one 409 with a code: `{"detail": {"code": "VERSION_REGENERATING", "message", "status": 409}}` |
 | 422 | empty or whitespace-only `text`; a NUL character (`\u0000`) in `text` or `slot_key`; or a `snake_case` field is missing |
 | 501 | `slot_kind` is `nodeLabel` or `behaviourDescription` — use R8 / R6 |
 | 401 / 403 / 500 / 503 | see §16 |
@@ -1172,7 +1172,7 @@ Error bodies are `{"detail": "…"}`, except 401 (an object, §4) and 422 from s
 | 401 | missing, malformed or non-access Bearer token |
 | 403 | not a member of the project |
 | 404 | a version that is not one of the project's (every endpoint; a tag sent instead of the id is answered with the id — §3), or an unknown slot, flowchart, or node named in a flowchart save |
-| 409 | undo with no LLM original to restore, or of an orphaned correction; a flowchart with no stored graph; stored output that cannot be read; a save that met a run regenerating the version (nothing saved — save again once it has finished) |
+| 409 | undo with no LLM original to restore, or of an orphaned correction; a flowchart with no stored graph; stored output that cannot be read; a save that met a run regenerating the version (nothing saved — save again once it has finished; `detail.code` `VERSION_REGENERATING`, the others are a string) |
 | 422 | empty or whitespace-only text (`REQ-ST-06`); a NUL character (`\u0000`) anywhere in a save's body (R3, R6, R8) — PostgreSQL cannot store one, and `loc` names the field; or a request body/query field missing — **check `snake_case` first** (§4) |
 | 500 | a fault on the server, not in the request. `detail` names only the kind of error; the server log has the rest. Nothing was changed |
 | 501 | a slot kind with no save path on that endpoint (`nodeLabel`, `behaviourDescription` on R3) |

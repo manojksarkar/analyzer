@@ -271,13 +271,14 @@ class TestRefusals:
         r = _start(client, auth_header, pid, vid)
         assert r.status_code == 409 and r.json()["detail"]["code"] == "VERSION_NOT_READY"
 
-    def test_a_version_generated_with_the_cli(self, client, db, auth_header, monkeypatch):
+    def test_a_cli_version_with_no_documents_yet(self, client, db, auth_header, monkeypatch):
+        """A command-line version has no generation job; it is re-exported like any other once
+        it has documents (tests/api/test_staged_generation_db.py) -- until then, refused."""
         _Engine(monkeypatch)
         pid = _project(db)
         vid = _version(db, pid, generation=None)
         r = _start(client, auth_header, pid, vid)
-        assert r.status_code == 409 and r.json()["detail"]["code"] == "NO_GENERATION_JOB"
-        assert "analyzer.py reexport" in r.json()["detail"]["message"]
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "NO_DOCUMENTS"
 
     def test_another_projects_version(self, client, db, auth_header, monkeypatch):
         _Engine(monkeypatch)

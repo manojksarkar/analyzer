@@ -424,11 +424,11 @@ def list_functions(
     }
 
 
-def _start_reexport(db, version):
+def _start_reexport(db, version, components=None):
     """`pipeline_runner.start_reexport`, with its refusals as HTTP errors. A refusal caused by
     another job names it (`job_id`), so a client can follow that job instead of guessing."""
     try:
-        return pipeline_runner.start_reexport(db, version)
+        return pipeline_runner.start_reexport(db, version, components)
     except pipeline_runner.ReexportRefused as exc:
         detail = {"code": exc.code, "message": str(exc), "status": exc.status}
         if exc.job_id:
@@ -436,26 +436,34 @@ def _start_reexport(db, version):
         raise HTTPException(status_code=exc.status, detail=detail)
 
 
+class ReexportComponentsRequest(BaseModel):
+    components: Optional[list[str]] = None
+
+
 @router.post("/projects/{project_id}/versions/{version_id}/reexport", status_code=202,
              responses={202: {"model": ReexportVersionResponse}})
 def reexport_version(
     project_id: str,
     version_id: str,
+    body: Optional[ReexportComponentsRequest] = None,
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
-    """Re-export ONE version -- any version with a finished generation, not only the newest.
+    """Re-export ONE version -- any version with documents, not only the newest, whether the web
+    app or the command line made it.
 
     Starts a job of its own (`mode: "reexport"`) and answers with its id at once. Follow it like
     any job, `GET /jobs/{job_id}` or the `GET /jobs/{job_id}/events` stream: `status` goes
     queued -> running -> complete | failed (`error_message` says why). Refused with 409 and the
-    running job's id while one is already re-exporting this version.
+    running job's id while one is already re-exporting this version; 409 `NO_DOCUMENTS` when it
+    has none yet. Optional body `{"components": [...]}`: only those (each must have documents --
+    else 422 `INVALID_COMPONENTS`), e.g. the ones a layer added to the version left stale.
     """
     require_project_admin(project_id, current_user, db)
     version = db.versions.get(version_id)
     if not version or version.project_id != project_id:
         raise not_found("Version", version_id)
-    job = _start_reexport(db, version)
+    job = _start_reexport(db, version, (body.components if body else None) or None)
     return {"job_id": job.id, "status": job.status, "version_id": version.id}
 
 

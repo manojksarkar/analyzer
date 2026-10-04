@@ -526,6 +526,34 @@ def apply_live_corrections(conn, version_id: str, model: Dict[str, Any]) -> Dict
     return changed
 
 
+def corrections_missing(conn, version_id: str, model: Dict[str, Any]) -> list:
+    """`(slot_kind, slot_key)` of every correction in force whose text the model does not carry.
+
+    Phase 2 puts the corrections back last (`apply_live_corrections`) and never fails a run over
+    it: when that step fails, the model holds the LLM's text again while the corrections still
+    say they are in force. Phase 3 asks this before it vouches for its views (RF-1): built from
+    such a model they print the LLM's words, and a stamp would let them ship as up to date. A slot
+    the model cannot locate (another component's, in a narrowed run) is not counted."""
+    from review import resolver
+    rows = conn.execute(
+        select(s.text_overrides.c.slot_kind, s.text_overrides.c.slot_key,
+               s.text_overrides.c.human_text)
+        .where(s.text_overrides.c.version_id == version_id,
+               s.text_overrides.c.is_orphaned.is_(False),
+               s.text_overrides.c.slot_kind.in_(resolver.MODEL_BACKED_KINDS))).fetchall()
+    missing = []
+    for r in rows:
+        text = (r.human_text or "").strip()
+        if not text:
+            continue
+        try:
+            if resolver.read_text(model, r.slot_kind, r.slot_key) != text:
+                missing.append((r.slot_kind, r.slot_key))
+        except (resolver.SlotError, slot.SlotKeyError):
+            continue
+    return missing
+
+
 def overrides_for_config(conn, version_id: str) -> Dict[str, Dict]:
     """The corrections a Phase-3 run must apply, in the shape `phase3_overrides.from_config`
     reads (`REQ-AP-05`):

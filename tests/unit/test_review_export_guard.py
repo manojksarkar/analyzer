@@ -740,3 +740,53 @@ class TestCorrectionsThatCouldNotBeLoaded:
         run_views._record_derivation(str(tmp_path), ["flowcharts"], {}, {},
                                      datetime.datetime.now(datetime.timezone.utc), None)
         assert calls == [("forget", ["flowcharts"])]
+
+
+class TestCorrectionsPhase2CouldNotPutBack:
+    """RF-1, the Phase 2 half: `_reapply_corrections` failed (never fatal), so the model holds the
+    LLM's text while the correction says it is in force. Phase 3 must not stamp views built from
+    it."""
+
+    FID = "Comp|UnitA|f|"
+
+    def _model(self, text):
+        return {"functions": {self.FID: {"qualifiedName": "f", "description": text}},
+                "globalVariables": {}, "units": {}, "dataDictionary": {}}
+
+    def test_a_correction_the_model_lacks_is_found(self, conn):
+        from review.carry_forward import corrections_missing
+        _override(conn, T0, key=self.FID)
+        assert corrections_missing(conn, "v1", self._model("llm")) == [("description", self.FID)]
+        assert corrections_missing(conn, "v1", self._model("human")) == []
+
+    def test_an_orphan_or_another_component_s_slot_is_not(self, conn):
+        from review.carry_forward import corrections_missing
+        _override(conn, T0, key=self.FID, orphaned=True)
+        _override(conn, T0, key="Other|U|g|")
+        assert corrections_missing(conn, "v1", self._model("llm")) == []
+
+    def test_phase_3_leaves_its_views_unstamped_then(self, monkeypatch):
+        import core.db as cdb
+        import core.run_context as rc
+        import run_views
+        import review.carry_forward as cf
+        monkeypatch.setattr(run_views, "_OVERRIDES_UNAVAILABLE", False)
+        monkeypatch.setattr(rc, "version_id", lambda: "v1")
+        monkeypatch.setattr(cdb, "is_database_configured", lambda: True)
+        monkeypatch.setattr(cdb, "get_engine", lambda: sa.create_engine("sqlite://"))
+        monkeypatch.setattr(cf, "corrections_missing", lambda cx, v, m: [("description", "k")])
+        run_views._check_model_corrections({})
+        assert run_views._OVERRIDES_UNAVAILABLE is True
+
+    def test_a_model_with_every_correction_is_vouched_for(self, monkeypatch):
+        import core.db as cdb
+        import core.run_context as rc
+        import run_views
+        import review.carry_forward as cf
+        monkeypatch.setattr(run_views, "_OVERRIDES_UNAVAILABLE", False)
+        monkeypatch.setattr(rc, "version_id", lambda: "v1")
+        monkeypatch.setattr(cdb, "is_database_configured", lambda: True)
+        monkeypatch.setattr(cdb, "get_engine", lambda: sa.create_engine("sqlite://"))
+        monkeypatch.setattr(cf, "corrections_missing", lambda cx, v, m: [])
+        run_views._check_model_corrections({})
+        assert run_views._OVERRIDES_UNAVAILABLE is False

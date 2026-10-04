@@ -455,6 +455,44 @@ class TestWebReexportScope:
         job = pr.start_reexport(sql_db, version)
         assert job.scope == {"type": "component", "names": ["Layer1.Math", "Layer2.Gpio"]}
 
+    def test_a_version_made_from_the_command_line_is_re_exported_too(self, sql_db, version,
+                                                                     monkeypatch):
+        """It has no generation job; it used to be refused (NO_GENERATION_JOB), so the stale
+        components a layer added to it left could only be made again from the command line."""
+        from api.services import pipeline_runner as pr
+        from core.version_run import mark_components
+        monkeypatch.setattr(pr, "_run_reexport", lambda db, job_id: None)
+        mark_components(version.id, ["Layer1.Math", "Layer2.Gpio"], "generated")
+        job = pr.start_reexport(sql_db, version)
+        assert job.mode == "reexport" and job.commit_sha == version.commit_sha
+        assert job.scope == {"type": "component", "names": ["Layer1.Math", "Layer2.Gpio"]}
+
+    def test_one_without_documents_is_refused(self, sql_db, version, monkeypatch):
+        from api.services import pipeline_runner as pr
+        monkeypatch.setattr(pr, "_run_reexport", lambda db, job_id: None)
+        with pytest.raises(pr.ReexportRefused) as exc:
+            pr.start_reexport(sql_db, version)
+        assert exc.value.code == "NO_DOCUMENTS"
+
+    def test_only_the_components_asked_for(self, sql_db, version, monkeypatch):
+        """The web app's stale strip re-exports the stale ones, not every document."""
+        from api.services import pipeline_runner as pr
+        from core.version_run import mark_components
+        monkeypatch.setattr(pr, "_run_reexport", lambda db, job_id: None)
+        mark_components(version.id, ["Layer1.Math", "Layer2.Gpio"], "generated")
+        mark_components(version.id, ["Layer1.Math"], "stale")
+        job = pr.start_reexport(sql_db, version, ["Layer1.Math"])
+        assert job.scope == {"type": "component", "names": ["Layer1.Math"]}
+
+    def test_a_component_without_documents_is_422(self, sql_db, version, monkeypatch):
+        from api.services import pipeline_runner as pr
+        from core.version_run import mark_components
+        monkeypatch.setattr(pr, "_run_reexport", lambda db, job_id: None)
+        mark_components(version.id, ["Layer1.Math"], "generated")
+        with pytest.raises(pr.ReexportRefused) as exc:
+            pr.start_reexport(sql_db, version, ["Layer1.App"])
+        assert exc.value.status == 422 and exc.value.code == "INVALID_COMPONENTS"
+
 
 class TestPartialRuns:
     """Exit 3: some components failed, the run went on with the others. A web job treats it as a

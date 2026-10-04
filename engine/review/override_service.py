@@ -99,8 +99,10 @@ def version_settings(conn, version_id: str) -> VersionSettings:
 
 
 class OverrideError(Exception):
-    """The edit was refused. Carries a `status` the API maps straight onto HTTP."""
+    """The edit was refused. Carries a `status` the API maps straight onto HTTP, and a `code`
+    when a client must tell this refusal from the others (then the answer is an object)."""
     status = 400
+    code = None
 
 
 class EmptyText(OverrideError):
@@ -136,6 +138,8 @@ class VersionBusy(OverrideError):
     """The version's model was replaced while the save was writing it -- a run is regenerating
     this version. Nothing was saved; save again once the run has finished."""
     status = 409
+    #: The web app says "save again once the run has finished" for this one -- not a plain retry.
+    code = "VERSION_REGENERATING"
 
 
 def _begin():
