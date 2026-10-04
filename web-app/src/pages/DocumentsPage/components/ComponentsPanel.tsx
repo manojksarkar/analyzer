@@ -1,29 +1,34 @@
 import { useState } from 'react'
 import { useGenerateComponents, useVersionComponents } from '../../../hooks/useVersionComponents'
 import { useCancelJob } from '../../../hooks/useJobs'
+import { useReexportVersion } from '../../../hooks/useReview'
 import { Badge, Button, Card, Icon, Text } from '../../../components/ui'
 import type { BadgeVariant } from '../../../components/ui'
 import { cn } from '../../../lib/cn'
 import { relativeTime } from '../../../lib/format'
 import { STATUS_META } from '../../../lib/reviewStatus'
 import type { ComponentState, VersionComponent, VersionJob, VersionRun } from '../../../types'
-import { componentsByLayer, pickable } from '../helpers'
+import { componentsByLayer, layerNote, layersAdded, pickable } from '../helpers'
 import { StopRunDialog } from '../../../components/run/StopRunDialog'
 
-/* Staged generation: every component of the layers the version parsed and the state of its
-   documents — generated, being made, waiting, stopped, failed, or not generated yet — with the
-   version's latest run. An admin ticks components that have no documents and generates them into
-   this same version (Phases 3–4 from its stored model; `analyzer.py export` on the server). */
+/* Staged generation: every component of the version and the state of its documents — generated,
+   stale, being made, waiting, stopped, failed, or not generated yet — with the version's latest
+   run. An admin ticks components that have no documents and generates them into this same version
+   (Phases 3–4 from its stored model; `analyzer.py export` on the server). A component of a layer
+   the model lacks yet (from the version's config) can be ticked too: the job adds that layer first
+   (parse + descriptions), and documents of the other layers it changes become stale — a re-export
+   makes them again. */
 
-const STATE: Record<ComponentState, { label: string; variant: BadgeVariant; icon: string }> = {
+const STATE: Record<ComponentState, { label: string; variant: BadgeVariant; icon: string; count?: string }> = {
   generated: { label: 'Generated', variant: 'success', icon: 'check_circle' },
+  stale: { label: 'Stale — re-export', variant: 'warning', icon: 'history', count: 'stale' },
   generating: { label: 'Generating', variant: 'primary', icon: 'autorenew' },
   waiting: { label: 'Waiting', variant: 'default', icon: 'schedule' },
   stopped: { label: 'Stopped', variant: 'warning', icon: 'pause_circle' },
   failed: { label: 'Failed', variant: 'danger', icon: 'error' },
   not_requested: { label: 'Not generated', variant: 'mono', icon: 'radio_button_unchecked' },
 }
-const ORDER: ComponentState[] = ['generated', 'generating', 'waiting', 'stopped', 'failed', 'not_requested']
+const ORDER: ComponentState[] = ['generated', 'stale', 'generating', 'waiting', 'stopped', 'failed', 'not_requested']
 
 function RunStrip({ run, job, cutShort, projectId, versionId, onStop }: {
   run: VersionRun | null; job: VersionJob | null; cutShort: number; projectId: string; versionId: string
@@ -71,6 +76,33 @@ function RunStrip({ run, job, cutShort, projectId, versionId, onStop }: {
   return null
 }
 
+/** Components whose documents a layer added since has made out of date: a re-export of the version
+ *  makes them again (with its other documents). */
+function StaleStrip({ count, onReexport, busy, disabled }: {
+  count: number
+  /** An admin's Re-export. */
+  onReexport?: () => void
+  busy: boolean
+  disabled: boolean
+}) {
+  const one = count === 1
+  return (
+    <div className="flex items-center gap-2 px-5 py-2.5 border-b border-[#fcd34d] bg-[#fffbeb]">
+      <Icon name="history" size={15} className="text-[#b45309] flex-shrink-0" />
+      <p className="flex-1 min-w-0 font-mono text-caption text-[#92400e]">
+        {`${count} component${one ? ' is' : 's are'} stale: a layer added to the model since changed what ${one ? 'its' : 'their'} documents say. `}
+        {onReexport ? 'A re-export makes them again.' : 'A re-export makes them again — an admin starts it.'}
+      </p>
+      {onReexport && (
+        <Button variant="outline" size="sm" loading={busy} disabled={disabled} onClick={onReexport} className="flex-shrink-0">
+          <Icon name="refresh" size={14} />
+          Re-export
+        </Button>
+      )}
+    </div>
+  )
+}
+
 function ComponentRow({ c, canPick, picked, onToggle }: {
   c: VersionComponent; canPick: boolean; picked: boolean; onToggle: () => void
 }) {
@@ -114,6 +146,7 @@ export function ComponentsPanel({ projectId, versionId, isAdmin }: {
   const [pollUntil, setPollUntil] = useState(0)
   const { data } = useVersionComponents(projectId, versionId, pollUntil)
   const generate = useGenerateComponents(projectId, versionId)
+  const reexport = useReexportVersion(projectId, versionId)
   const cancel = useCancelJob(projectId)
   const [stopping, setStopping] = useState(false)
   const [open, setOpen] = useState<boolean | null>(null)
@@ -127,6 +160,8 @@ export function ComponentsPanel({ projectId, versionId, isAdmin }: {
   const expanded = open ?? !allDone
   const choosable = comps.filter(pickable)
   const pickedNow = choosable.filter((c) => picked.has(c.id))
+  const adding = layersAdded(pickedNow)
+  const stale = data.counts.stale ?? 0
   const bar = { width: `${Math.round((100 * generated) / comps.length)}%` }
 
   function toggle(id: string) {
@@ -141,6 +176,10 @@ export function ComponentsPanel({ projectId, versionId, isAdmin }: {
     generate.mutate(pickedNow.map((c) => c.id), {
       onSuccess: () => { setPicked(new Set()); setPollUntil(Date.now() + 120_000) },
     })
+  }
+  function startReexport() {
+    // The re-export job shows on the next reads (`job`); keep reading until it does.
+    reexport.mutate(undefined, { onSuccess: () => setPollUntil(Date.now() + 120_000) })
   }
   function stop(job: VersionJob) {
     cancel.mutate(job.id, {
@@ -162,7 +201,7 @@ export function ComponentsPanel({ projectId, versionId, isAdmin }: {
           <Text as="span" variant="title" className="text-on-surface">Components</Text>
           <Text as="span" variant="caption" className="font-mono ml-2">
             {generated} of {comps.length} generated
-            {ORDER.filter((s) => s !== 'generated' && data.counts[s]).map((s) => ` · ${data.counts[s]} ${STATE[s].label.toLowerCase()}`).join('')}
+            {ORDER.filter((s) => s !== 'generated' && data.counts[s]).map((s) => ` · ${data.counts[s]} ${STATE[s].count ?? STATE[s].label.toLowerCase()}`).join('')}
           </Text>
           <span className="block mt-2 h-1 rounded-full bg-surface-container overflow-hidden" aria-hidden>
             {/* eslint-disable-next-line no-restricted-syntax -- the share generated is data-driven */}
@@ -180,6 +219,14 @@ export function ComponentsPanel({ projectId, versionId, isAdmin }: {
         versionId={versionId}
         onStop={isAdmin ? () => setStopping(true) : undefined}
       />
+      {stale > 0 && (
+        <StaleStrip
+          count={stale}
+          onReexport={isAdmin ? startReexport : undefined}
+          busy={reexport.isPending}
+          disabled={!!data.job || !!data.run?.alive}
+        />
+      )}
       {stopping && data.job && (
         <StopRunDialog
           job={data.job}
@@ -193,11 +240,18 @@ export function ComponentsPanel({ projectId, versionId, isAdmin }: {
         <div className="px-5 py-4 border-t border-outline-variant space-y-4 bg-surface-container-low">
           {componentsByLayer(comps).map(([layer, list]) => {
             const done = list.filter((c) => c.state === 'generated').length
+            const note = layerNote(layer, comps)
             return (
               <section key={layer || '—'}>
                 <Text as="h3" variant="label" className="mb-2">
                   {layer || 'No layer'} · {done} of {list.length} generated
                 </Text>
+                {note && (
+                  <p className="flex items-start gap-1.5 mb-2 font-mono text-caption text-on-surface-variant">
+                    <Icon name="add_circle" size={13} className="flex-shrink-0 mt-px" />
+                    {note}
+                  </p>
+                )}
                 <ul className="grid gap-2 grid-cols-[repeat(auto-fill,minmax(260px,1fr))]">
                   {list.map((c) => (
                     <ComponentRow
@@ -224,7 +278,9 @@ export function ComponentsPanel({ projectId, versionId, isAdmin }: {
               </button>
               <div className="flex items-center gap-3">
                 <Text as="span" variant="caption" className="font-mono hidden sm:inline">
-                  From this version's model: no parsing, no new descriptions.
+                  {adding.length
+                    ? `Adds layer${adding.length > 1 ? 's' : ''} ${adding.join(', ')} first: parse + descriptions, then the documents.`
+                    : "From this version's model: no parsing, no new descriptions."}
                 </Text>
                 <Button size="sm" loading={generate.isPending} disabled={!pickedNow.length} onClick={start}>
                   <Icon name="play_arrow" size={14} />

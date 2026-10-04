@@ -31,6 +31,18 @@ def version(sql_db):
     return sql_db.versions.get(vid)
 
 
+@pytest.fixture
+def layer3(sql_db, version):
+    """`version`, its config naming a layer its model lacks: Layer3 (Can, Lin) -- what
+    `export --components Layer3.Can` adds."""
+    v = sql_db.versions.get(version.id)
+    v.resolved_config = {"layers": {
+        "Layer1": {"groups": {"Core": {"Math": ["src/math"], "App": ["src/app"]}}},
+        "Layer3": {"groups": {"Bus": {"Can": ["src/can"], "Lin": ["src/lin"]}}}}}
+    sql_db.versions.update(v)
+    return sql_db.versions.get(version.id)
+
+
 def _rows(db, vid):
     from core.version_run import component_rows
     return component_rows(vid)
@@ -216,8 +228,8 @@ class TestRoutes:
         mark_components(version.id, ["Layer1.Math"], "generated")
         started = {}
 
-        def fake_start(db, v, comps):
-            started.update(version=v.id, components=comps)
+        def fake_start(db, v, comps, added_layers=None):
+            started.update(version=v.id, components=comps, added_layers=added_layers)
             return type("J", (), {"id": "jobexport1", "status": "queued"})()
 
         monkeypatch.setattr(pr, "start_export", fake_start)
@@ -226,12 +238,58 @@ class TestRoutes:
         assert r.status_code == 202, r.text
         assert r.json()["components"] == ["Layer1.App", "Layer2.Gpio"]
         assert r.json()["skipped"] == ["Layer1.Math"] and r.json()["job_id"] == "jobexport1"
-        assert started == {"version": version.id, "components": ["Layer1.App", "Layer2.Gpio"]}
+        assert r.json()["added_layers"] == []                       # every layer is in the model
+        assert started == {"version": version.id, "components": ["Layer1.App", "Layer2.Gpio"],
+                           "added_layers": []}
 
-    def test_a_component_outside_the_model_is_422(self, client, sql_db, version):
-        r = client.post(self._url(version, "documents/generate"), headers=_hdr(client, "alice"),
+    def test_a_name_neither_in_the_model_nor_in_the_config_is_422(self, client, sql_db, layer3):
+        r = client.post(self._url(layer3, "documents/generate"), headers=_hdr(client, "alice"),
                         json={"components": ["Nope"]})
         assert r.status_code == 422 and r.json()["detail"]["code"] == "INVALID_COMPONENTS"
+        r = client.post(self._url(layer3, "documents/generate"), headers=_hdr(client, "alice"),
+                        json={"components": ["Layer9.Can"]})
+        assert r.status_code == 422 and r.json()["detail"]["code"] == "INVALID_COMPONENTS"
+
+    def test_the_config_s_components_outside_the_model_are_listed(self, client, sql_db, layer3):
+        r = client.get(self._url(layer3), headers=_hdr(client, "bob"))
+        assert r.status_code == 200, r.text
+        got = {c["component"]: (c["state"], c["in_model"], c["layer_parsed"])
+               for c in r.json()["components"]}
+        assert got == {"Layer1.App": ("not_requested", True, True),
+                       "Layer1.Math": ("not_requested", True, True),
+                       "Layer2.Gpio": ("not_requested", True, True),
+                       "Layer3.Can": ("not_requested", False, False),
+                       "Layer3.Lin": ("not_requested", False, False)}
+        assert r.json()["counts"] == {"not_requested": 5}
+
+    def test_a_stale_component_is_listed_as_stale(self, client, sql_db, version):
+        """A layer added since changed what its documents say: a re-export makes them again."""
+        from core.version_run import mark_components
+        mark_components(version.id, ["Layer1.Math"], "generated")
+        mark_components(version.id, ["Layer1.Math"], "stale")
+        r = client.get(self._url(version), headers=_hdr(client, "bob"))
+        assert r.status_code == 200, r.text
+        states = {c["component"]: c["state"] for c in r.json()["components"]}
+        assert states["Layer1.Math"] == "stale"
+        assert r.json()["counts"] == {"stale": 1, "not_requested": 2}
+
+    def test_generate_for_a_component_outside_the_model_adds_its_layer(self, client, sql_db,
+                                                                       layer3, monkeypatch):
+        from api.services import pipeline_runner as pr
+        started = {}
+
+        def fake_start(db, v, comps, added_layers=None):
+            started.update(components=comps, added_layers=added_layers)
+            return type("J", (), {"id": "jobexport2", "status": "queued"})()
+
+        monkeypatch.setattr(pr, "start_export", fake_start)
+        r = client.post(self._url(layer3, "documents/generate"), headers=_hdr(client, "alice"),
+                        json={"components": ["Can", "Layer1.App"]})
+        assert r.status_code == 202, r.text
+        body = r.json()
+        assert body["components"] == ["Layer3.Can", "Layer1.App"] and body["skipped"] == []
+        assert body["added_layers"] == ["Layer3"] and body["job_id"] == "jobexport2"
+        assert started == {"components": ["Layer3.Can", "Layer1.App"], "added_layers": ["Layer3"]}
 
     def test_nothing_left_to_make_is_409(self, client, sql_db, version):
         from core.version_run import mark_components
@@ -249,7 +307,7 @@ class TestRoutes:
                                                                 monkeypatch):
         from api.services import pipeline_runner as pr
 
-        def busy(db, v, comps):
+        def busy(db, v, comps, added_layers=None):
             raise pr.ReexportRefused(409, "VERSION_BUSY", "being written by analyzer generate")
 
         monkeypatch.setattr(pr, "start_export", busy)
@@ -261,6 +319,51 @@ class TestRoutes:
         r = client.post(self._url(version, "documents/generate"), headers=_hdr(client, "bob"),
                         json={"components": ["App"]})
         assert r.status_code == 403
+
+
+class TestExportAddingALayer:
+    """`start_export` with layers to add: the job's phases are 1-4 and it says what it does
+    first; `analyzer.py export` (the same command) parses and derives the layer itself."""
+
+    def _run(self, sql_db, version, monkeypatch, **kw):
+        from api.services import pipeline_runner as pr
+        seen = {}
+
+        def engine(db, job_id, cmd, **k):
+            seen.update(cmd=cmd, kw=k, activity=db.jobs.get(job_id).current_activity)
+            return False                                      # no engine here: nothing to finish
+        monkeypatch.setattr(pr, "_run_engine_command", engine)
+        job = pr.start_export(sql_db, version, ["Layer3.Can"], **kw)
+        t = pr._reexport_threads.get(job.id)
+        if t is not None:
+            t.join(timeout=30)
+        return job, seen
+
+    def test_a_layer_to_add_makes_the_job_phases_1_to_4(self, sql_db, version, monkeypatch):
+        job, seen = self._run(sql_db, version, monkeypatch, added_layers=["Layer3"])
+        assert job.mode == "export" and [p.number for p in job.phases] == [1, 2, 3, 4]
+        assert job.phase == 1 and job.scope["added_layers"] == ["Layer3"]
+        assert seen["kw"]["phase_start"] == 1
+        assert seen["cmd"][2:] == ["export", "--project-id", "p1", "--version-id", version.id,
+                                   "--components", "Layer3.Can"]
+        assert seen["activity"] == ("Adding layer Layer3 (parse + model), then making the "
+                                    "documents…")
+
+    def test_without_one_the_job_is_phases_3_and_4_as_before(self, sql_db, version, monkeypatch):
+        job, seen = self._run(sql_db, version, monkeypatch)
+        assert [p.number for p in job.phases] == [3, 4] and job.phase == 3
+        assert "added_layers" not in job.scope
+        assert seen["kw"]["phase_start"] == 3 and seen["activity"] == "Making the documents…"
+
+    def test_its_end_says_the_layer_was_added(self, sql_db, version, monkeypatch):
+        from api.services import pipeline_runner as pr
+        job = _bg_job(sql_db, version, mode="export",
+                      scope={"type": "component", "names": ["Layer3.Can"],
+                             "added_layers": ["Layer3"]})
+        monkeypatch.setattr(pr, "_complete_reexport", lambda db, job_id: None)
+        pr._complete_render(sql_db, job.id)
+        assert sql_db.jobs.get(job.id).activity_detail == ("Generated 1 component(s); added "
+                                                           "layer Layer3")
 
 
 class TestCliMadeVersionsInTheWebApp:

@@ -19,9 +19,10 @@ from api.services.version_components import resolve  # noqa: E402
 UTC = datetime.timezone.utc
 
 
-def comp(cid, state, *, in_model=True, docs=(), error=None):
+def comp(cid, state, *, in_model=True, docs=(), error=None, layer_parsed=None):
     layer, _, name = cid.partition(".")
     return {"component": cid, "layer": layer, "name": name, "state": state, "in_model": in_model,
+            "layer_parsed": in_model if layer_parsed is None else layer_parsed,
             "error": error, "documents": [{"id": f"d-{cid}-{p}", "process": p, "status": s}
                                           for p, s in docs]}
 
@@ -46,8 +47,83 @@ class TestExportTargets:
                                               remaining=False)
         assert todo == ["L1.App"] and skipped == ["L1.Math", "L2.Uart"]
 
-    def test_a_component_outside_the_model_is_never_made(self):
-        assert staged.export_targets(VIEW, ["L2.Old"], remaining=False) == ([], [])
+    def test_a_component_outside_the_model_with_documents_is_left_alone(self):
+        assert staged.export_targets(VIEW, ["L2.Old"], remaining=False) == ([], ["L2.Old"])
+
+
+class TestAddALayer:
+    """`export --components Layer2.Gpio` on a version whose model has only Layer1: the export
+    adds Layer2 to the version, then makes Gpio's documents."""
+    VIEW = [comp("L1.Math", "generated", docs=[("SWE.3", "in_review")]),
+            comp("L1.App", "not_requested"),
+            comp("L2.Gpio", "not_requested", in_model=False),
+            comp("L2.Uart", "not_requested", in_model=False),
+            comp("L3.Can", "not_requested", in_model=False)]
+
+    def test_a_named_component_of_an_unparsed_layer_is_made(self):
+        todo, skipped = staged.export_targets(self.VIEW, ["L2.Gpio", "L1.App"], remaining=False)
+        assert todo == ["L2.Gpio", "L1.App"] and skipped == []
+
+    def test_remaining_never_adds_a_layer(self):
+        assert staged.export_targets(self.VIEW, [], remaining=True) == (["L1.App"], [])
+
+    def test_the_layers_to_add_are_those_of_components_outside_the_model(self):
+        assert staged.layers_to_add(self.VIEW, ["L3.Can", "L2.Gpio", "L2.Uart", "L1.App"]) == \
+            ["L2", "L3"]
+        assert staged.layers_to_add(self.VIEW, ["L1.App", "L1.Math"]) == []
+        assert staged.layers_to_add(self.VIEW, ["Nope"]) == []
+
+    def test_a_component_outside_the_model_in_a_parsed_layer_adds_no_layer(self):
+        """A configured component the parse found no source for: parsing its layer again would
+        not put it in the model."""
+        view = self.VIEW + [comp("L1.Empty", "not_requested", in_model=False, layer_parsed=True)]
+        assert staged.layers_to_add(view, ["L1.Empty"]) == []
+
+    def test_the_table_says_which_layers_export_adds(self):
+        text = "\n".join(staged.component_lines(self.VIEW, project_id="P", version_id="v1"))
+        assert "(its layer is not in this version's model: `export` adds it)" in text
+        assert "not parsed yet: L2, L3" in text
+
+    def test_an_add_layer_export_cut_short_is_resumed_as_that_export(self):
+        """Its components were waiting when the run died, still outside the model: `resume`
+        runs the export again (it adds the layer first), it does not just close the version."""
+        view = self.VIEW[:2] + [comp("L2.Gpio", "stopped", in_model=False),
+                                comp("L2.Uart", "not_requested", in_model=False)]
+        p = staged.resume_plan(alive=False, pipeline_status="exporting", view=view, run=None)
+        assert p == {"action": "export", "components": ["L2.Gpio"], "layers_to_add": ["L2"]}
+
+    def test_a_component_outside_the_model_nobody_asked_for_is_not_resumed(self):
+        p = staged.resume_plan(alive=False, pipeline_status="complete", view=self.VIEW, run=None)
+        assert p == {"action": "nothing"}
+
+
+class TestStale:
+    """Documents older than the model: a layer added since changed the component's inputs. It
+    has documents -- `reexport` makes them again, `export` and `resume` leave it."""
+    VIEW = [comp("L1.Math", "stale", docs=[("SWE.3", "approved")]),
+            comp("L1.App", "generated", docs=[("SWE.3", "in_review")]),
+            comp("L1.Util", "not_requested")]
+
+    def test_it_counts_as_having_documents(self):
+        assert staged.has_documents(comp("L1.Math", "stale"))
+
+    def test_reexport_takes_it(self):
+        assert staged.default_reexport(self.VIEW) == ["L1.Math", "L1.App"]
+        assert staged.reexport_targets(self.VIEW, ["L1.Math", "L1.Util"]) == (["L1.Math"], ["L1.Util"])
+
+    def test_export_leaves_it_as_generated(self):
+        assert staged.export_targets(self.VIEW, ["L1.Math"], remaining=False) == ([], ["L1.Math"])
+        assert staged.export_targets(self.VIEW, [], remaining=True) == (["L1.Util"], [])
+
+    def test_resume_does_not_take_it_for_unfinished(self):
+        p = staged.resume_plan(alive=False, pipeline_status="complete", view=self.VIEW, run=None)
+        assert p == {"action": "nothing"}
+
+    def test_it_is_listed_and_counted_with_the_command_that_clears_it(self):
+        text = "\n".join(staged.component_lines(self.VIEW, project_id="P", version_id="v1"))
+        assert "3 component(s): 1 generated · 1 stale · 1 not requested" in text
+        assert "stale - documents older than the model; `reexport` makes them again" in text
+        assert "analyzer.py reexport --project-id P --version-id v1 --components L1.Math" in text
 
 
 class TestReexport:
@@ -57,6 +133,7 @@ class TestReexport:
 
     def test_the_default_is_every_component_with_documents_in_the_model(self):
         assert staged.default_reexport(VIEW) == ["L1.Math"]
+        assert staged.default_reexport(VIEW + [comp("L2.Spi", "stale")]) == ["L1.Math", "L2.Spi"]
 
 
 class TestResumePlan:
@@ -213,8 +290,14 @@ class TestResolve:
         found, problems = resolve(view, ["Math"])
         assert found == [] and "more than one layer" in problems[0]
 
-    def test_a_name_no_parsed_layer_has_is_a_problem(self):
-        assert "not a component of the layers" in resolve(VIEW, ["Nope"])[1][0]
+    def test_a_name_neither_the_model_nor_the_config_has_is_a_problem(self):
+        assert "not a component of this version" in resolve(VIEW, ["Nope"])[1][0]
+
+    def test_a_component_only_the_config_names_resolves(self):
+        """Its layer is not in the model: `export` adds it."""
+        view = VIEW + [comp("L3.Can", "not_requested", in_model=False)]
+        assert resolve(view, ["Can"]) == (["L3.Can"], [])
+        assert resolve(view, ["L3.Can"]) == (["L3.Can"], [])
 
 
 class TestFrozenRun:

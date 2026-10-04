@@ -47,8 +47,10 @@ export function useGenerateComponents(projectId: string, versionId?: string) {
       qc.invalidateQueries({ queryKey: projectKeys.versionComponents(projectId, versionId ?? '') })
       qc.invalidateQueries({ queryKey: projectKeys.job(projectId) })
       const n = r.components.length
-      toast.success(`Generating ${n} component${n === 1 ? '' : 's'}`,
-        r.skipped.length ? `${r.skipped.length} already had documents and were left alone.` : 'Their documents appear here as each is made.')
+      const detail = r.addedLayers.length
+        ? `${r.addedLayers.join(', ')} is added to this version first (parse + descriptions); then the documents.`
+        : r.skipped.length ? `${r.skipped.length} already had documents and were left alone.` : 'Their documents appear here as each is made.'
+      toast.success(`Generating ${n} component${n === 1 ? '' : 's'}`, detail)
     },
     onError: (e: Error) => toast.error('Could not start', e.message),
   })

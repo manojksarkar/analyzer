@@ -29,8 +29,10 @@ export type PageState = 'never' | 'running' | 'in_review' | 'complete' | 'stale'
 
 /** Staged generation: a version's model covers whole layers, its documents are made per component,
  *  by any number of runs (`GET …/versions/{vid}/components`). `stopped` = it was waiting or being
- *  made when its run died; `not_requested` = in a parsed layer, nobody asked for it yet. */
-export type ComponentState = 'generated' | 'generating' | 'waiting' | 'stopped' | 'failed' | 'not_requested'
+ *  made when its run died; `stale` = it has documents, but a layer added to the model since
+ *  changed what they say (a re-export makes them again); `not_requested` = nobody asked for it yet. */
+export type ComponentState =
+  'generated' | 'generating' | 'waiting' | 'stopped' | 'failed' | 'stale' | 'not_requested'
 
 export interface VersionComponent {
   /** Its output folder (`Layer1.Math`) — what `documents.group` and the generate call name. */
@@ -40,6 +42,9 @@ export interface VersionComponent {
   state: ComponentState
   /** Of this version's model; a document outside it (an old group run) cannot be made again here. */
   inModel: boolean
+  /** Its layer is in the model. false: named by the version's config in a layer the model lacks
+   *  yet — Generate adds that layer (parse + descriptions) before making its documents. */
+  layerParsed: boolean
   error: string | null
   documents: { id: string; process: string; status: ReviewStatus }[]
 }

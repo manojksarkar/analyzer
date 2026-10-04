@@ -467,7 +467,7 @@ def _refuse_stale_export(version_id: str, doc_type: str = None, *, quiet: bool =
     return 0
 
 
-def _render_version(a, *, scope, command: str, after=None):
+def _render_version(a, *, scope, command: str, after=None, before=None):
     """Phases `a.from_phase`..4 of a version from its STORED model, into that same version --
     the work behind `reexport`, `export` and `resume`. Returns (exit code, the documents stored).
 
@@ -484,7 +484,8 @@ def _render_version(a, *, scope, command: str, after=None):
     Holds the version's writer lock while it runs (`core.version_run.writing`): storing the
     output REPLACES what was stored, so two writers at once lose the first one's documents.
     `after(documents)` runs inside the lock once the output is stored (`resume` closes the
-    version there).
+    version there). `before(cfg, own_cfg, checkout, doc_type)` runs inside the lock before the
+    phases, and a non-zero answer stops there (`export` adds a layer to the model with it).
     """
     from incremental.store import make_store
     store = make_store(a.project_id)
@@ -603,6 +604,10 @@ def _render_version(a, *, scope, command: str, after=None):
         with writing(a.version_id, command=command, argv=getattr(a, "_argv", None),
                      log_path=os.environ.get("ANALYZER_RUN_LOG"),
                      code_dir=os.environ.get("ANALYZER_RUN_CODE")) as run:
+            if before is not None:
+                rc = before(cfg, own_cfg, checkout, doc_type)
+                if rc:
+                    return run.ok(rc), None
             rc = _script(os.path.join(_ROOT, "engine", "run.py"), argv)
             # 3: some components failed and run.py went on with the others -- store and record
             # what they made, and report the failure.
@@ -770,10 +775,20 @@ def cmd_reexport(a) -> int:
     if known and not any(vid == a.version_id for vid, _, _, _ in known):
         return _no_such_version(a.project_id, a._name, known)
     from incremental.staged import default_reexport, reexport_targets
+    from incremental import extend
+    pending = extend.load_pending(a.version_id)
+    if pending:
+        # The add's parse replaced the model and its Phase 2 has not run: a re-export now would
+        # render the parse skeleton (no interface ids, no descriptions).
+        print(f"an add of layer(s) {', '.join(pending.get('new_layers') or [])} to version "
+              f"{a._name} was cut short, so its model is not finished. Finish it first:\n"
+              f"    python analyzer.py resume --project-id {a.project_id} --version-id {a._name}",
+              file=sys.stderr)
+        return 2
+    version, view = _component_view(a.project_id, a.version_id)
     if a.scope:
         scope = _parse_scope(a.scope)
     else:
-        version, view = _component_view(a.project_id, a.version_id)
         if version is not None and a.from_phase >= 3 and not any(c["in_model"] for c in view):
             print(f"version {a._name} has no model to re-export from: its Phase 2 did not "
                   f"finish. Complete it first:\n    python analyzer.py resume --project-id "
@@ -799,8 +814,139 @@ def cmd_reexport(a) -> int:
             # (an old group-scoped run) keep the old default.
             todo = default_reexport(view)
             scope = {"type": "component", "names": todo} if todo else None
+    # Stale components (a layer added to the version moved their model): their views are older
+    # than it, and an export alone would print them again -- and call them generated. Any stale
+    # one in what this re-exports, or in the version when the scope is not by component.
+    named = set((scope or {}).get("names") or []) if (scope or {}).get("type") == "component" else None
+    stale = [c["component"] for c in view if c["state"] == "stale"
+             and (named is None or c["component"] in named)]
+    if stale and a.from_phase >= 4:
+        if getattr(a, "_views_when_stale", False):
+            print(f"stale: {', '.join(stale)} -- their views are made again first (phase 3).")
+            a.from_phase = 3
+        elif not getattr(a, "force", False):
+            print(f"{', '.join(stale)} are stale: a layer added to the version changed their "
+                  f"model, so their views must be made again -- run with --from-phase 3 (or "
+                  f"--force to export the old views).", file=sys.stderr)
+            return 2
     rc, _ = _render_version(a, scope=scope, command="reexport")
     return rc
+
+
+def _layers_adder(a, *, parse_layers, new_layers, added, documented):
+    """`before` for `_render_version`: add `new_layers` to the version's model, under its writer
+    lock (engine/incremental/extend.py has the why of each step). Phase 1 parses every layer of
+    `parse_layers` -- the old ones too, so calls from them into the new layer are found -- and
+    Phase 2 describes only what is new: the old text is put back first, and the plan keeps the
+    LLM to the new entities. Components of `documented` whose model the new layer changed are
+    marked stale; their documents are left as they are. 0, or the failed phase's exit code."""
+    def before(cfg, own_cfg, checkout, doc_type):
+        from incremental import extend
+        from incremental.store import make_store
+        from incremental.generate import (scope_to_args, snapshot_parse_model,
+                                          _persist_run_metadata)
+        from core.db import _read_pipeline_status, _write_pipeline_status, _FINISHED_STATUSES
+        from core.version_run import mark_components
+        store = make_store(a.project_id)
+        adir = store.artifact_dir(a.version_id)
+        run_py = os.path.join(_ROOT, "engine", "run.py")
+        pending = extend.load_pending(a.version_id)
+        if pending:
+            # An add cut short: its capture is the version's text from BEFORE that add's parse,
+            # which replaced the model's rows -- capturing now would take the skeleton for it.
+            saved = pending
+            layers_all = sorted(set(parse_layers) | set(saved.get("parse_layers") or []))
+            news = sorted(set(new_layers) | set(saved.get("new_layers") or []))
+            adds = list(dict.fromkeys(list(saved.get("added") or []) + list(added)))
+            docs = list(saved.get("documented") or documented)
+            print(f"an add of layer(s) {', '.join(saved.get('new_layers') or [])} to version "
+                  f"{a._name} was cut short: carrying it on from the text it saved", flush=True)
+        else:
+            found, status = _read_pipeline_status(a.version_id)
+            layers_all, news, adds, docs = list(parse_layers), list(new_layers), list(added), list(documented)
+            saved = extend.capture(a.version_id)
+            saved.update(parse_layers=layers_all, new_layers=news, added=adds, documented=docs,
+                         status_before=status if found else None, had_status=found,
+                         in_model=sorted({c for c in saved.get("fingerprints") or {}}))
+            extend.save_pending(a.version_id, saved)
+        mark_components(a.version_id, adds, "waiting")       # kept if this is cut short
+        print(f"adding layer(s) {', '.join(news)} to version {a._name}: the parse of "
+              f"{', '.join(layers_all)}, then the model -- the LLM describes only what "
+              f"{', '.join(news)} adds", flush=True)
+        manifest = store.read_manifest(a.version_id) or {}
+
+        def _status_back():
+            if saved.get("had_status") and saved.get("status_before") in _FINISHED_STATUSES:
+                _write_pipeline_status(a.version_id, saved["status_before"])
+
+        common =["--config", cfg, "--version-id", a.version_id, "--project-id", a.project_id,
+                  "--model-root", os.path.join(adir, "model"),
+                  "--output-root", os.path.join(adir, "output"), "--doc-type", doc_type]
+        try:
+            from incremental.project_db import get_project
+            pname = ((get_project(a.project_id) or {}).get("name") or "").strip()
+        except Exception:                           # noqa: BLE001 - the parse names it then
+            pname = ""
+        if pname:
+            common += ["--project-name", pname]     # as generate: else the cover shows the sha
+        if own_cfg and _llm_off(cfg):
+            common.append("--no-llm-summarize")     # a --no-llm version stays without the LLM
+        dd_id = manifest.get("dataDictId")
+        if dd_id:
+            try:
+                from incremental.stores import Workspace
+                dd = Workspace(a.project_id).datadict_path(dd_id)
+                if os.path.isfile(dd):
+                    common += ["--data-dictionary", dd]
+            except Exception:                       # noqa: BLE001 - per-layer dictionaries still apply
+                pass
+        layers = scope_to_args({"type": "layer", "names": list(layers_all)})
+        rc = _script(run_py, common + layers + ["--to-phase", "1", checkout])
+        if rc:
+            if not pending:
+                # A parse that fails stores nothing: the version is as it was before this add.
+                extend.clear_pending(a.version_id)
+                mark_components(a.version_id, adds, "failed", error=f"the parse failed (exit {rc})")
+                _status_back()
+            print(f"the parse failed (exit {rc}); the version's documents are as they were. "
+                  f"Run the same export again once the cause is fixed.", file=sys.stderr)
+            return rc
+        snapshot_parse_model(os.path.join(adir, "model"), adir, store, a.version_id)
+        _persist_run_metadata(store, a.version_id, a.project_id)
+        n = extend.restore_text(a.version_id, saved)
+        plan = extend.write_plan(a.version_id, a.project_id, saved)
+        print(f"model: kept the text of {n['functions']} function(s), {n['globals']} global(s) "
+              f"and {len(saved.get('units') or {})} unit(s); describing "
+              f"{len(plan['impactFids'])} new function(s) and {len(plan['impactedGlobals'])} "
+              f"new global(s)", flush=True)
+        try:
+            rc = _script(run_py, common + layers + ["--from-phase", "2", "--to-phase", "2",
+                                                    checkout])
+        finally:
+            extend.restore_plan(a.version_id, saved)
+        if rc:
+            # The parse has replaced the model; the capture stays, so `resume` (or the same
+            # export) finishes this add from it. Nothing else may use the version until then.
+            print(f"the model (Phase 2) failed (exit {rc}). `python analyzer.py resume "
+                  f"--project-id {a.project_id} --version-id {a._name}` finishes the add once the "
+                  f"cause is fixed.", file=sys.stderr)
+            return rc
+        stale = extend.changed_components(a.version_id, saved, docs)
+        if stale:
+            mark_components(a.version_id, stale, "stale")
+            print(f"stale: {', '.join(stale)} -- {', '.join(news)} changed what their "
+                  f"documents are made from; `reexport --components {','.join(stale)}` makes "
+                  f"them again")
+        else:
+            print(f"no document of the version changes with {', '.join(news)}")
+        # Recorded once the model holds every layer: what the next version is made like.
+        manifest["scope"] = extend.widen_scope(manifest.get("scope"), docs, adds,
+                                               saved.get("in_model") or [])
+        store.write_manifest(a.version_id, manifest)
+        _status_back()                                       # the phases left it mid-way
+        extend.clear_pending(a.version_id)
+        return 0
+    return before
 
 
 def cmd_export(a) -> int:
@@ -810,7 +956,10 @@ def cmd_export(a) -> int:
     The version's model covers every component of the layers its run parsed, so any of them can
     be made later without parsing or describing anything again: only their flowcharts (LLM
     labels) and documents. A component already generated is left alone (`reexport` makes it
-    again); one of a layer the version did not parse is refused -- that needs a new version.
+    again). A component of a layer the version did not parse adds that layer to the model first,
+    in the same version: the parse of every layer, then the model, with the LLM describing only
+    the new layer; components whose documents the new layer changes are marked stale
+    (`_layers_adder`, engine/incremental/extend.py).
     """
     a._name = a.version_id
     a.version_id = _version_id_for(a.project_id, a.version_id)
@@ -844,6 +993,31 @@ def cmd_export(a) -> int:
     a.from_phase = 3
     unfinished = _pipeline_status(a.version_id) not in (None, "complete")
     closed = []
+    # A component of a layer the version did not parse: that layer joins the model first, in the
+    # same version (`_layers_adder`).
+    before = None
+    by_id = {c["component"]: c for c in view}
+    in_model = {c["component"] for c in view if c["in_model"]}
+    # Outside the model although its layer is parsed: a configured component with no source.
+    # Parsing again would not add it (and costs the whole parse) -- refused, as before.
+    sourceless = [c for c in todo if c not in in_model and by_id.get(c, {}).get("layer_parsed")]
+    if sourceless:
+        print(f"not in this version's model although their layer was parsed (no source file "
+              f"found for them): {', '.join(sourceless)}", file=sys.stderr)
+        todo = [c for c in todo if c not in sourceless]
+        if not todo:
+            return 2
+    added = [c for c in todo if c not in in_model]
+    from incremental import extend
+    pending = extend.load_pending(a.version_id)
+    if added or pending:
+        # A layer joins the model first (or an add cut short is finished first).
+        from incremental.staged import has_documents, layers_to_add
+        model_layers = sorted({c.split(".", 1)[0] for c in in_model})
+        new_layers = layers_to_add(view, added)
+        documented = [c["component"] for c in view if c["in_model"] and has_documents(c)]
+        before = _layers_adder(a, parse_layers=sorted(set(model_layers) | set(new_layers)),
+                               new_layers=new_layers, added=added, documented=documented)
 
     def _maybe_close(docs):
         # A version whose own run was cut short stays unfinished (never a baseline) until
@@ -864,7 +1038,7 @@ def cmd_export(a) -> int:
         print(f"version {a._name}: complete")
 
     rc, _ = _render_version(a, scope={"type": "component", "names": todo}, command="export",
-                            after=_maybe_close)
+                            after=_maybe_close, before=before)
     if closed:
         # A web run's version, stopped and finished here: its web job ends too (draft no more).
         _finish_web_job(a.project_id, a.version_id)
@@ -949,6 +1123,24 @@ def _resume(a) -> int:
         print(f"version {a._name} is still being written by {describe(holder(a.version_id))}: "
               f"nothing was cut short.", file=sys.stderr)
         return 2
+    # Before anything else: an add in progress left the status mid-parse, and "regenerate" would
+    # re-run the version's first generate -- without the layer it is adding.
+    from incremental import extend
+    pending = extend.load_pending(a.version_id)
+    if plan.get("layers_to_add") or pending:
+        # An `export` that adds a layer, cut short: the same export again -- it parses every
+        # layer, keeps the model's text and makes the components (`_layers_adder`).
+        comps = plan.get("components") or list((pending or {}).get("added") or [])
+        import copy
+        e = copy.copy(a)
+        e.version_id, e.components, e.remaining = a._name, ",".join(comps), False
+        for k, v in (("doc_type", None), ("force", False), ("unit", None)):
+            if not hasattr(e, k):
+                setattr(e, k, v)
+        layers = plan.get("layers_to_add") or (pending or {}).get("new_layers") or []
+        print(f"an export that adds layer(s) {', '.join(layers)} was cut short: running it again "
+              f"for {', '.join(comps)}", flush=True)
+        return cmd_export(e)
     if act == "nothing":
         print(f"version {a._name} is complete: nothing was cut short. `export` makes the "
               f"components it has not generated.")

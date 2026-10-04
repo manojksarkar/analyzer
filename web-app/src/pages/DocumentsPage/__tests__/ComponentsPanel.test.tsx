@@ -7,7 +7,7 @@ import { http, HttpResponse } from 'msw'
 import { server } from '../../../test/server'
 import { API_BASE_URL } from '../../../lib/http'
 import { ComponentsPanel } from '../components/ComponentsPanel'
-import { componentsByLayer, pickable } from '../helpers'
+import { addsLayer, componentsByLayer, layerNote, layersAdded, pickable } from '../helpers'
 import type { VersionComponent } from '../../../types'
 
 /* Staged generation: a version's components and the documents still to make
@@ -15,8 +15,26 @@ import type { VersionComponent } from '../../../types'
 
 const comp = (component: string, state: string, documents: { id: string; process: string; status: string }[] = []) => ({
   component, layer: component.split('.')[0], name: component.split('.')[1], state, in_model: true,
+  layer_parsed: true,
   error: state === 'failed' ? 'Components: L1.Util: stopped with exit code 1' : null, documents,
 })
+
+/** Named by the version's config in a layer the model lacks yet. */
+const outside = (component: string) => ({ ...comp(component, 'not_requested'), in_model: false, layer_parsed: false })
+
+/** Layer2 added to a version that had Layer1: Math's documents are stale, Can is not in the model. */
+const ADDED = {
+  version_id: 'ver1',
+  components: [
+    comp('Layer1.Math', 'stale', [{ id: 'd1', process: 'SWE.3', status: 'in_review' }]),
+    comp('Layer1.App', 'generated', [{ id: 'd2', process: 'SWE.3', status: 'in_review' }]),
+    outside('Layer3.Can'),
+    outside('Layer3.Lin'),
+  ],
+  counts: { generated: 1, stale: 1, not_requested: 2 },
+  run: null,
+  job: null,
+}
 
 const BODY = {
   version_id: 'ver1',
@@ -43,8 +61,13 @@ const RUNNING = (mode: string) => ({
 function setup(isAdmin: boolean, body: object = BODY) {
   const sent: string[][] = []
   const cancelled: string[] = []
+  const reexported: string[] = []
   server.use(
     http.get(`${API_BASE_URL}/projects/p1/versions/ver1/components`, () => HttpResponse.json(body)),
+    http.post(`${API_BASE_URL}/projects/p1/versions/ver1/reexport`, () => {
+      reexported.push('ver1')
+      return HttpResponse.json({ job_id: 'jobrx', status: 'queued' }, { status: 202 })
+    }),
     http.post(`${API_BASE_URL}/projects/p1/jobs/:jobId/cancel`, ({ params }) => {
       cancelled.push(String(params.jobId))
       return HttpResponse.json({ job: null })
@@ -58,7 +81,7 @@ function setup(isAdmin: boolean, body: object = BODY) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const wrap = (c: ReactNode) => <QueryClientProvider client={client}>{c}</QueryClientProvider>
   render(wrap(<ComponentsPanel projectId="p1" versionId="ver1" isAdmin={isAdmin} />))
-  return { sent, cancelled, user: userEvent.setup() }
+  return { sent, cancelled, reexported, user: userEvent.setup() }
 }
 
 describe('ComponentsPanel', () => {
@@ -130,16 +153,62 @@ describe('ComponentsPanel', () => {
     await user.click(await screen.findByRole('button', { name: 'Select all not generated (3)' }))
     expect(screen.getByRole('button', { name: /Generate 3/ })).toBeEnabled()
   })
+
+  it('a stale component says so, and an admin re-exports the version', async () => {
+    const { reexported, user } = setup(true, ADDED)
+    expect(await screen.findByText('Stale — re-export')).toBeInTheDocument()
+    expect(screen.getByText(/1 of 4 generated · 1 stale · 2 not generated/)).toBeInTheDocument()
+    expect(screen.getByText(/1 component is stale: a layer added to the model since/)).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Generate Math' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Re-export' }))
+    await waitFor(() => expect(reexported).toEqual(['ver1']))
+  })
+
+  it('a developer sees a stale component, but no Re-export', async () => {
+    setup(false, ADDED)
+    expect(await screen.findByText(/an admin starts it/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Re-export' })).not.toBeInTheDocument()
+  })
+
+  it('a component of a layer the model lacks is pickable: Generate adds the layer', async () => {
+    const { sent, user } = setup(true, ADDED)
+    expect(await screen.findByText(
+      "Not in this version's model yet — Generate adds layer Layer3 (parse + descriptions for that layer; Layer1 documents may be marked stale)",
+    )).toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: 'Generate Can' }))
+    expect(screen.getByText('Adds layer Layer3 first: parse + descriptions, then the documents.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Generate 1/ }))
+    await waitFor(() => expect(sent).toEqual([['Layer3.Can']]))
+  })
 })
 
 describe('the component helpers', () => {
   const view: VersionComponent[] = BODY.components.map((c) => ({
     id: c.component, layer: c.layer, name: c.name, state: c.state as VersionComponent['state'],
-    inModel: c.in_model, error: c.error, documents: [],
+    inModel: c.in_model, layerParsed: c.layer_parsed, error: c.error, documents: [],
   }))
+  const one = (id: string, over: Partial<VersionComponent>): VersionComponent => ({
+    id, layer: id.split('.')[0], name: id.split('.')[1], state: 'not_requested',
+    inModel: true, layerParsed: true, error: null, documents: [], ...over,
+  })
 
   it('groups by layer in order, and only components without documents are pickable', () => {
     expect(componentsByLayer(view).map(([l, cs]) => [l, cs.length])).toEqual([['Layer1', 3], ['Layer2', 1]])
     expect(view.filter(pickable).map((c) => c.id)).toEqual(['Layer1.App', 'Layer1.Util', 'Layer2.Gpio'])
+  })
+
+  it('outside the model: pickable when its layer is to be added, never when the layer is parsed', () => {
+    const toAdd = one('Layer3.Can', { inModel: false, layerParsed: false })
+    const noSource = one('Layer1.Ghost', { inModel: false, layerParsed: true })
+    const stale = one('Layer1.Math', { state: 'stale', documents: [{ id: 'd1', process: 'SWE.3', status: 'in_review' }] })
+    expect([toAdd, noSource, stale].filter(pickable).map((c) => c.id)).toEqual(['Layer3.Can'])
+    expect(addsLayer(toAdd) && !addsLayer(noSource)).toBe(true)
+    expect(layersAdded([toAdd, one('Layer2.Lin', { inModel: false, layerParsed: false }), stale])).toEqual(['Layer2', 'Layer3'])
+  })
+
+  it('a note only under a layer the model lacks, naming the layers whose documents may go stale', () => {
+    const comps = [one('Layer1.Math', {}), one('Layer3.Can', { inModel: false, layerParsed: false })]
+    expect(layerNote('Layer1', comps)).toBeNull()
+    expect(layerNote('Layer3', comps)).toMatch(/Generate adds layer Layer3 .*Layer1 documents may be marked stale/)
   })
 })

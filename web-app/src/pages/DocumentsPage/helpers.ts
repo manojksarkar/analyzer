@@ -81,9 +81,26 @@ export function componentsByLayer(comps: VersionComponent[]): [string, VersionCo
   return [...out.entries()]
 }
 
-/** Components an admin can ask for: of the model, with no documents (never asked for, or the run
- *  that was making them failed or stopped). One with documents whose re-export failed is not:
- *  making it again is a re-export. */
+/** A component of a layer the model lacks yet: Generate adds that layer first (parse + descriptions). */
+export const addsLayer = (c: VersionComponent) => !c.inModel && !c.layerParsed
+
+/** Components an admin can ask for: with no documents (never asked for, or the run that was making
+ *  them failed or stopped), of the model — or of a layer it lacks, which Generate adds. One with
+ *  documents whose re-export failed, or a stale one, is not: making it again is a re-export. One
+ *  outside the model whose layer IS parsed (configured, no source found) cannot be made at all. */
 export const PICKABLE_STATES = new Set<ComponentState>(['not_requested', 'failed', 'stopped'])
 export const pickable = (c: VersionComponent) =>
-  c.inModel && PICKABLE_STATES.has(c.state) && c.documents.length === 0
+  (c.inModel || addsLayer(c)) && PICKABLE_STATES.has(c.state) && c.documents.length === 0
+
+/** The layers Generate would add for `comps` (those outside the model), in order. */
+export const layersAdded = (comps: VersionComponent[]): string[] =>
+  [...new Set(comps.filter(addsLayer).map((c) => c.layer))].sort()
+
+/** Under a layer the model lacks: what Generate does for its components, and what it costs. */
+export function layerNote(layer: string, comps: VersionComponent[]): string | null {
+  const list = comps.filter((c) => c.layer === layer)
+  if (!list.length || !list.every(addsLayer)) return null
+  const modelLayers = [...new Set(comps.filter((c) => c.inModel).map((c) => c.layer))].filter(Boolean)
+  const others = modelLayers.length ? `${modelLayers.join(', ')} documents` : 'documents of the other layers'
+  return `Not in this version's model yet — Generate adds layer ${layer} (parse + descriptions for that layer; ${others} may be marked stale)`
+}

@@ -66,7 +66,9 @@ newer entry and the code win.
 - **Staged generation** (2026-10-02, same branch, committed `a55c9c5`): one model per version, documents per
   component by any number of runs (`export`, `reexport`, `resume`), `--detach` for runs that last days, one
   writer per version (migration 0016); web runs go on in the background when the API restarts, and a
-  run that dies keeps its version for `resume` (2026-10-02c). For the office's multi-day run — guide
+  run that dies keeps its version for `resume` (2026-10-02c); an `export` of a component from another
+  layer adds that layer to the same version, the old layers' documents marked stale where it changes
+  them (2026-10-04e). For the office's multi-day run — guide
   [CLI_COMMANDS](docs/CLI_COMMANDS.md#a-run-that-lasts-days), detail
   [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Staged generation".
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by

@@ -70,9 +70,11 @@ def _assert_components_in_model(model: dict, selected_components) -> None:
         f"{'is' if len(missing) == 1 else 'are'} not in this version's model.\n"
         f"  The model covers {len(known)} component(s)"
         + (f" in layer(s): {', '.join(layers)}.\n" if layers else ".\n")
-        + "  Phase 1 parses only the layers the ORIGINAL run selected, so a component\n"
-        "  outside them has nothing stored to render. Re-run `generate` with a scope\n"
-        "  that covers its layer, then re-export."
+        + "  Phase 1 parsed only the layers this version's runs selected, so a component\n"
+        "  outside them has nothing stored to render. `analyzer.py export --components\n"
+        "  <it>` adds a layer the version did not parse (it parses that layer with the\n"
+        "  model's and derives the model again), then makes its documents; or run\n"
+        "  `generate` with a scope that covers its layer, for a new version."
     )
 
 def _unit_names(model: dict, allowed_components=None) -> list:

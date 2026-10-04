@@ -6,21 +6,27 @@ one view behind `analyzer.py components`, `export --remaining`, `resume`, and la
 
 State of a component, first rule that applies:
 
-    a `version_components` row   its state: waiting | generating | generated | failed --
-                                 and "stopped" for waiting/generating when no writer holds the
-                                 version any more (the run died)
+    a `version_components` row   its state: waiting | generating | generated | failed | stale
+                                 -- and "stopped" for waiting/generating when no writer holds
+                                 the version any more (the run died). `stale`: documents older
+                                 than the model (a layer added since changed their inputs)
     documents, no row            generated (a version made before rows existed)
-    neither                      not_requested -- in a parsed layer, nobody asked for it yet
+    neither                      not_requested -- nobody asked for it yet
 
 The components come from the stored model (`model_components`: every component of the layers
-Phase 1 parsed), the rows and the documents together, so nothing that has a state is missing.
+Phase 1 parsed), the version's configuration (`config_components`: those of layers the model
+lacks too -- `export` adds such a layer), the rows and the documents together, so nothing that
+has a state is missing. Each entry says `in_model` and `layer_parsed` (its layer is in the model).
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Optional
 
-STATES = ("generating", "waiting", "stopped", "failed", "generated", "not_requested")
-HAS_DOCUMENTS = ("generated",)
+_log = logging.getLogger(__name__)
+
+STATES = ("generating", "waiting", "stopped", "failed", "stale", "generated", "not_requested")
+HAS_DOCUMENTS = ("generated", "stale")
 # What `export --remaining` and `resume` make: everything that has no documents yet.
 NOT_GENERATED = ("waiting", "stopped", "failed", "not_requested")
 
@@ -52,20 +58,49 @@ def state_rows(engine, version_id: str) -> Dict[str, Dict[str, Any]]:
                 for r in cx.execute(select(t).where(t.c.version_id == version_id))}
 
 
-def components_view(db: Any, version: Any, *, alive: Optional[bool] = None) -> List[Dict[str, Any]]:
+def config_components(db: Any, version: Any) -> List[str]:
+    """Every component the version's configuration names, as layer-qualified output folder
+    names (`Layer2.Gpio`) -- those of layers its model lacks too. From what
+    `document_registry.component_dirs` merges: the project's `architecture_layers`, the version's
+    `resolved_config`, the version's own `config.json` (`workspaces/<pid>/versions/<vid>/`) and
+    the project's. Never raises: a configuration that cannot be read gives [] (and a log line),
+    and the view is then the model's components, rows and documents, as before."""
+    try:
+        from types import SimpleNamespace
+        from . import doc_render, document_registry
+        project = db.projects.get(version.project_id) or SimpleNamespace(
+            id=version.project_id, architecture_layers=None)
+        out_root = (doc_render.workspaces_root() / str(version.project_id) / "versions"
+                    / str(version.id) / "output")
+        return sorted(document_registry.component_dirs(project, version, out_root))
+    except Exception as exc:                        # noqa: BLE001 - see the docstring
+        _log.warning("version %s: its configuration's components could not be read (%s: %s)",
+                     getattr(version, "id", "?"), type(exc).__name__, exc)
+        return []
+
+
+def components_view(db: Any, version: Any, *, alive: Optional[bool] = None,
+                    all_components: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """Every component of `version`, sorted by layer then name.
 
     `alive`: whether a writer holds the version now (`core.version_run.alive`). False turns a
-    waiting or generating component into "stopped"; None (cannot tell) leaves it as recorded."""
+    waiting or generating component into "stopped"; None (cannot tell) leaves it as recorded.
+    `all_components`: the components the version's configuration names; None reads them
+    (`config_components`). Those outside the model are listed with `in_model: False`."""
     engine = getattr(db, "_engine", None)
     comps = set(model_components(engine, version.id))
     rows = state_rows(engine, version.id)
+    if all_components is None:
+        all_components = config_components(db, version)
+    configured = {c for c in all_components or () if c}
+    parsed_layers = {_split(c)[0] for c in comps}
     from .review_workflow import version_docs
     docs: Dict[str, list] = {}
     for d in version_docs(db, version):
         docs.setdefault(d.group, []).append(d)
     out = []
-    for c in sorted(comps | set(rows) | set(docs), key=lambda x: (_split(x)[0], _split(x)[1].lower())):
+    for c in sorted(comps | configured | set(rows) | set(docs),
+                    key=lambda x: (_split(x)[0], _split(x)[1].lower())):
         row = rows.get(c)
         if row is not None:
             state = row["state"]
@@ -77,6 +112,8 @@ def components_view(db: Any, version: Any, *, alive: Optional[bool] = None) -> L
         out.append({
             "component": c, "layer": layer, "name": name, "state": state,
             "in_model": c in comps,
+            # Whether its layer is in the model: False for a layer `export` must add first.
+            "layer_parsed": c in comps or (bool(layer) and layer in parsed_layers),
             "requested_at": row and row.get("requested_at"),
             "started_at": row and row.get("started_at"),
             "finished_at": row and row.get("finished_at"),
@@ -95,9 +132,10 @@ def counts(view: List[Dict[str, Any]]) -> Dict[str, int]:
 
 
 def resolve(view: List[Dict[str, Any]], names: List[str]) -> tuple:
-    """Map what a user typed -- `Layer1.Math` or a bare `Math` -- to components of the view.
-    Returns (found, problems): a bare name two layers share, or one no parsed layer has, is a
-    problem that names the candidates."""
+    """Map what a user typed -- `Layer1.Math` or a bare `Math` -- to components of the view:
+    those of the model and those the version's configuration names in layers the model lacks
+    (`export` adds such a layer). Returns (found, problems): a bare name two layers share, or
+    one neither has, is a problem that names the candidates."""
     by_id = {c["component"]: c for c in view}
     found, problems = [], []
     for n in names:
@@ -115,7 +153,8 @@ def resolve(view: List[Dict[str, Any]], names: List[str]) -> tuple:
             problems.append(f"{n!r} is in more than one layer: {', '.join(hits)} -- name it "
                             f"with its layer")
         else:
-            problems.append(f"{n!r} is not a component of the layers this version parsed")
+            problems.append(f"{n!r} is not a component of this version: not in its model, nor "
+                            f"in its configuration")
     return list(dict.fromkeys(found)), problems
 
 

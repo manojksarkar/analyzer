@@ -41,11 +41,13 @@ class TestComponentNotInModel:
         assert "'Layer2.Gpio'" in msg and "not in this version's model" in msg
 
     def test_the_message_says_which_layers_the_model_does_cover(self):
-        """So the fix — re-run generate with a wider scope — is obvious."""
+        """So the fix — `export` adds the layer to this version, or `generate` makes a new one
+        with a wider scope — is obvious."""
         with pytest.raises(SystemExit) as exc:
             _assert_components_in_model(LAYER1_ONLY, ["Layer2.Gpio"])
         msg = str(exc.value)
         assert "Layer1" in msg and "3 component(s)" in msg
+        assert "export --components" in msg and "adds a layer the version did not parse" in msg
         assert "generate" in msg
 
     def test_one_missing_name_among_valid_ones_still_fails(self):

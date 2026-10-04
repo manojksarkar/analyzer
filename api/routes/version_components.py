@@ -7,7 +7,9 @@ component, by any number of runs. These routes are the web app's view of that, t
     GET  /projects/{pid}/versions/{vid}/components            every component, its state, its
                                                               documents; and the latest run
     POST /projects/{pid}/versions/{vid}/documents/generate    make the documents of components
-                                                              not generated yet (a job)
+                                                              not generated yet (a job) -- of a
+                                                              layer the model lacks too: the job
+                                                              adds that layer first
     POST /projects/{pid}/versions/{vid}/resume                carry on a run that stopped
                                                               before it finished (a job)
 """
@@ -67,9 +69,13 @@ def _run_view(db, version_id: str) -> tuple:
 def list_components(project_id: str, version_id: str,
                     current_user: User = Depends(get_current_user),
                     db: InMemoryDatabase = Depends(get_db)) -> Dict[str, Any]:
-    """Every component of the layers the version parsed: `state` (generated | generating |
-    waiting | stopped | failed | not_requested), its documents with their review status, and
-    the version's latest run (`run`: command, running or stopped, the current stage's progress).
+    """Every component of the version: those of the layers its run parsed (`in_model: true`) and
+    those its config names in layers the model lacks yet (`in_model: false`, `layer_parsed:
+    false` -- Generate adds the layer). Each with `state` (generated | generating | waiting |
+    stopped | failed | stale | not_requested; `stale`: it has documents, but a layer added
+    since changed what they say -- a re-export makes them again), its documents with their review
+    status; and the version's latest run (`run`: command, running or stopped, the current
+    stage's progress).
     """
     require_project_member(project_id, current_user, db)
     version = _version(db, project_id, version_id)
@@ -129,10 +135,18 @@ class GenerateComponentsRequest(BaseModel):
 def generate_components(project_id: str, version_id: str, body: GenerateComponentsRequest,
                         current_user: User = Depends(get_current_user),
                         db: InMemoryDatabase = Depends(get_db)) -> Dict[str, Any]:
-    """Make the documents of components the version has not generated yet: Phases 3-4 from its
-    stored model, into this version, as a job (`mode: "export"`; follow it with
-    `GET /jobs/{job_id}`). A component already generated is skipped (`skipped`); one outside the
-    layers the version parsed is 422; nothing left to make is 409.
+    """Make the documents of components the version has not generated yet, into this version,
+    as a job (`mode: "export"`; follow it with `GET /jobs/{job_id}`) running `analyzer.py
+    export`: Phases 3-4 from its stored model. Any component the GET lists can be asked for --
+    one of a layer the model lacks yet (`in_model: false`) too: the job then adds that layer
+    first (Phases 1-2: the parse of the model's layers and the new one, the model derived again
+    keeping the descriptions it had; documents of the other layers the new one changes become
+    `stale`), so its phases are 1-4.
+
+    202 {job_id, status, version_id, components (to make), skipped (generated already),
+    added_layers (the layers the job adds to the model; empty when none)}. 422
+    INVALID_COMPONENTS: a name that is no component of the version (nor of its config); 409
+    NO_MODEL / NOTHING_TO_GENERATE, and the runner's VERSION_BUSY / EXPORT_RUNNING / RUN_ACTIVE.
     """
     require_project_admin(project_id, current_user, db)
     version = _version(db, project_id, version_id)
@@ -149,12 +163,13 @@ def generate_components(project_id: str, version_id: str, body: GenerateComponen
         raise conflict("NOTHING_TO_GENERATE",
                        f"Every component asked for has its documents already: "
                        f"{', '.join(skipped) or 'none'}. A re-export makes them again.")
+    added = list(vc._staged().layers_to_add(view, todo))
     try:
-        job = pipeline_runner.start_export(db, version, todo)
+        job = pipeline_runner.start_export(db, version, todo, added_layers=added)
     except pipeline_runner.ReexportRefused as exc:
         detail = {"code": exc.code, "message": str(exc), "status": exc.status}
         if exc.job_id:
             detail["job_id"] = exc.job_id
         raise HTTPException(status_code=exc.status, detail=detail)
     return {"job_id": job.id, "status": job.status, "version_id": version.id,
-            "components": todo, "skipped": skipped}
+            "components": todo, "skipped": skipped, "added_layers": added}

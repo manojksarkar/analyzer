@@ -2,10 +2,11 @@ import { z } from 'zod'
 import type { ComponentState, ReviewStatus, VersionComponents } from '../../types'
 
 /* Staged generation (GET /projects/{pid}/versions/{vid}/components): every component of the layers
-   the version parsed, the state of its documents, and the version's latest run. snake_case on the
-   wire. */
+   the version parsed — and those its config names in layers the model lacks yet (`in_model` and
+   `layer_parsed` false) — the state of its documents, and the version's latest run. snake_case on
+   the wire. */
 
-const STATES: ComponentState[] = ['generated', 'generating', 'waiting', 'stopped', 'failed', 'not_requested']
+const STATES: ComponentState[] = ['generated', 'generating', 'waiting', 'stopped', 'failed', 'stale', 'not_requested']
 
 export const ApiVersionComponentSchema = z.object({
   component: z.string(),
@@ -13,6 +14,8 @@ export const ApiVersionComponentSchema = z.object({
   name: z.string(),
   state: z.string(),
   in_model: z.boolean(),
+  /** Absent from an older API, which listed only the parsed layers' components. */
+  layer_parsed: z.boolean().optional(),
   error: z.string().nullable().optional(),
   documents: z.array(z.object({ id: z.string(), process: z.string(), status: z.string() })),
 })
@@ -55,6 +58,7 @@ export function mapVersionComponents(r: ApiVersionComponents): VersionComponents
       name: c.name,
       state: asState(c.state),
       inModel: c.in_model,
+      layerParsed: c.layer_parsed ?? true,
       error: c.error ?? null,
       documents: c.documents.map((d) => ({ id: d.id, process: d.process, status: d.status as ReviewStatus })),
     })),

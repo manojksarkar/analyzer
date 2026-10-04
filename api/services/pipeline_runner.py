@@ -2997,12 +2997,16 @@ def _reexport_scope(db: Any, version: Any, generation_scope: Optional[dict]) -> 
     return generation_scope
 
 
-def start_export(db: Any, version: Any, components: list) -> AnalysisJob:
+def start_export(db: Any, version: Any, components: list, *,
+                 added_layers: Optional[list] = None) -> AnalysisJob:
     """Make the documents of `components` -- not generated yet -- into `version`, as a job of its
     own (`mode: "export"`, phases 3 and 4), and return it.
 
     The job runs `analyzer.py export`, the same command as the CLI: Phases 3-4 from the version's
-    stored model, the output stored, the documents recorded for review. That process takes the
+    stored model, the output stored, the documents recorded for review. `added_layers`: layers
+    the model lacks that some of `components` are of -- the same command adds them first (the
+    parse again with them, the model derived again keeping its descriptions), so the job's
+    phases are 1-4 and it says so in its activity. That process takes the
     version's writer lock itself, so this thread does not. One at a time per version, like a
     re-export; refused while any other process writes the version. The caller has checked the
     components (`version_components`): each is of the version's model and has no documents yet.
@@ -3034,19 +3038,22 @@ def start_export(db: Any, version: Any, components: list) -> AnalysisJob:
                 f"Job {own.id} is at work on version '{version.id}'. Follow that job, then add "
                 f"these.", own.id)
         generation = next((j for j in jobs if getattr(j, "mode", None) not in RENDER_MODES), None)
+        added = list(added_layers or [])
+        first = 1 if added else 3
+        scope: dict = {"type": "component", "names": list(components)}
+        if added:
+            scope["added_layers"] = added
         job = AnalysisJob(
             id=f"job{uuid.uuid4().hex[:8]}", project_id=version.project_id,
             commit_sha=version.commit_sha or (generation.commit_sha if generation else ""),
             version_id=version.id, reference_version_id=None, status="queued",
-            pause_after_phase1=False, layer_filter=None, phase=3, phase_pct=0,
+            pause_after_phase1=False, layer_filter=None, phase=first, phase_pct=0,
             current_activity="Queued — waiting for worker…", activity_detail="",
             elapsed_seconds=0, eta_seconds=None,
-            phases=[AnalysisPhase(3, "Run Views", "pending", None),
-                    AnalysisPhase(4, "Export DOCX", "pending", None)],
+            phases=[AnalysisPhase(n, name, "pending", None) for n, name in _PHASES if n >= first],
             started_at=_now(), completed_at=None, error_message=None,
             branch=(generation.branch if generation else None) or version.branch or "main",
-            version_tag=version.tag, mode=EXPORT_MODE,
-            scope={"type": "component", "names": list(components)})
+            version_tag=version.tag, mode=EXPORT_MODE, scope=scope)
         db.jobs.create(job)
         t = threading.Thread(target=_run_export, args=(db, job.id), daemon=True,
                              name=f"export-{job.id}")
@@ -3063,14 +3070,17 @@ def _run_export(db: Any, job_id: str) -> None:
         if not job or job.status == "cancelled":
             return
         job.status = "running"
-        job.current_activity = "Making the documents…"
+        added = (job.scope or {}).get("added_layers") or []
+        job.current_activity = _export_activity(added)
         db.jobs.update(job)
         names = (job.scope or {}).get("names") or []
         cmd = [sys.executable, str(get_settings().repo_root / "analyzer.py"), "export",
                "--project-id", job.project_id, "--version-id", job.version_id,
                "--components", ",".join(names)]
         # In the background when it can be: making 33 components' documents takes a day too.
-        if (_run_engine_command(db, job_id, cmd, phase_start=3, extra_env=_engine_db_env(db))
+        # A layer to add: `export` parses and derives it first (Phases 1-2), then the documents.
+        if (_run_engine_command(db, job_id, cmd, phase_start=1 if added else 3,
+                                extra_env=_engine_db_env(db))
                 and not _is_cancelled(db, job_id)):
             _when_db_answers(job_id, "finishing the job", _complete_render, db, job_id)
     except Exception as exc:                  # noqa: BLE001 - recorded on the job, not lost
@@ -3081,6 +3091,15 @@ def _run_export(db: Any, job_id: str) -> None:
             _reexport_threads.pop(job_id, None)
 
 
+def _export_activity(added_layers: list) -> str:
+    """An export job's headline while it runs: what it does first."""
+    if not added_layers:
+        return "Making the documents…"
+    s = "s" if len(added_layers) > 1 else ""
+    return (f"Adding layer{s} {', '.join(added_layers)} (parse + model), then making the "
+            f"documents…")
+
+
 def _complete_render(db: Any, job_id: str) -> None:
     """The end of an export, resume or re-export job: complete, saying what it made."""
     _complete_reexport(db, job_id)
@@ -3088,8 +3107,12 @@ def _complete_render(db: Any, job_id: str) -> None:
     if getattr(done, "mode", None) == REEXPORT_MODE:
         return                                           # "Re-exported", as _complete_reexport says
     names = (done.scope or {}).get("names") or []
+    added = (done.scope or {}).get("added_layers") or []
     done.activity_detail = (f"Generated {len(names)} component(s)" if names
                             else "Resumed: the version is complete")
+    if names and added:
+        done.activity_detail += (f"; added layer{'s' if len(added) > 1 else ''} "
+                                 f"{', '.join(added)}")
     db.jobs.update(done)
 
 

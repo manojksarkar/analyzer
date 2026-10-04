@@ -4,9 +4,15 @@ A version's model (Phases 1-2) covers whole layers; its documents (Phases 3-4) a
 component, by any number of runs into the same version:
 
     generate   Phases 1-4             a new version (or `--model-only`: Phases 1-2)
-    export     Phases 3-4             components NOT generated yet, of the layers it parsed
-    reexport   Phases 3-4 (or 2/4)    components ALREADY generated, again
+    export     Phases 3-4             components NOT generated yet -- of a layer the version did
+                                      not parse too: it adds that layer first (Phases 1-2 again)
+    reexport   Phases 3-4 (or 2/4)    components ALREADY generated, again (`stale` ones too)
     resume     from where it stopped  a run that was cut short
+
+The view lists the components of the version's model (`in_model`) and those its config names in
+layers the model lacks (`in_model: False`, `layer_parsed: False`). A component whose documents
+exist but are older than the model -- a layer added since changed its inputs -- is `stale`: it
+counts as having documents everywhere here.
 
 Everything here is pure -- it takes the component view (`api/services/version_components.py`)
 and the run record (`core/version_run.py`) and returns what to do or what to print -- so the
@@ -19,10 +25,19 @@ from typing import Any, Dict, List, Optional, Tuple
 
 NOT_GENERATED = ("waiting", "stopped", "failed", "not_requested")
 UNFINISHED = ("waiting", "stopped", "failed", "generating")
+HAS_DOCUMENTS = ("generated", "stale")
 DOC_STATUS = {"in_review": "In review", "submitted": "Ready for approval",
               "changes_requested": "Changes requested", "approved": "Approved"}
 STATE_LABEL = {"generated": "generated", "generating": "generating", "waiting": "waiting",
-               "stopped": "stopped", "failed": "failed", "not_requested": "not requested"}
+               "stopped": "stopped", "failed": "failed", "not_requested": "not requested",
+               "stale": "stale - documents older than the model; `reexport` makes them again"}
+#: Every state, in the order counts are printed.
+STATE_ORDER = ("generated", "stale", "generating", "waiting", "stopped", "failed", "not_requested")
+
+
+def short_label(state: str) -> str:
+    """The state's name for a column or a count: its label up to the explanation."""
+    return STATE_LABEL.get(state, state).split(" - ", 1)[0]
 
 
 # ---------------------------------------------------------------------------
@@ -34,15 +49,19 @@ def _by_id(view: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
 
 
 def has_documents(c: Dict[str, Any]) -> bool:
-    """Generated, or has documents whatever its last run recorded: a re-export that died leaves
-    its components "stopped" or "failed" although their documents are there."""
-    return c["state"] == "generated" or bool(c.get("documents"))
+    """Generated (or stale), or has documents whatever its last run recorded: a re-export that
+    died leaves its components "stopped" or "failed" although their documents are there."""
+    return c["state"] in HAS_DOCUMENTS or bool(c.get("documents"))
 
 
 def export_targets(view: List[Dict[str, Any]], found: List[str], *,
                    remaining: bool) -> Tuple[List[str], List[str]]:
     """(to make, skipped as already generated). `found` are resolved component ids; `remaining`
-    takes every component of the parsed layers that has no documents yet instead."""
+    takes every component of the parsed layers that has no documents yet instead.
+
+    A named component outside the model (`in_model: False`: its layer was not parsed) is made
+    too -- `layers_to_add` says which layers the export must add first. `remaining` stays within
+    the model: adding a layer takes days on a large project, so only a name asks for it."""
     comps = _by_id(view)
     if remaining:
         return [c["component"] for c in view
@@ -50,10 +69,29 @@ def export_targets(view: List[Dict[str, Any]], found: List[str], *,
     todo, skipped = [], []
     for cid in found:
         c = comps.get(cid)
-        if c is None or not c["in_model"]:
+        if c is None:
             continue
         (skipped if has_documents(c) or c["state"] == "generating" else todo).append(cid)
     return todo, skipped
+
+
+def layers_to_add(view: List[Dict[str, Any]], components: List[str]) -> List[str]:
+    """The layers (`Layer2` of `Layer2.Gpio`) an export of `components` must add to the model
+    first: those of the components outside it, sorted.
+
+    A component outside the model whose layer IS in it (`layer_parsed: True` -- a configured
+    component with no source the parse found) adds nothing: parsing that layer again would not
+    put it in the model, and Phase 3 says so (`run_views._assert_components_in_model`)."""
+    comps = _by_id(view)
+    layers = set()
+    for cid in components:
+        c = comps.get(cid)
+        if c is None or c["in_model"] or c.get("layer_parsed") is True:
+            continue
+        layer = cid.partition(".")[0] if "." in cid else ""
+        if layer:
+            layers.add(layer)
+    return sorted(layers)
 
 
 def reexport_targets(view: List[Dict[str, Any]], found: List[str]) -> Tuple[List[str], List[str]]:
@@ -89,7 +127,9 @@ def resume_plan(*, alive: Optional[bool], pipeline_status: Optional[str],
                 the stored parse, then Phases 3-4 for the components the run asked for -- or, for a
                 `--model-only` run, Phase 2 alone (`to_phase: 2`)
     export      the model is complete: Phases 3-4 for the components the run asked for and did
-                not finish
+                not finish. With `layers_to_add` when some of them are outside the model: an
+                export that adds a layer was cut short before the layer was in -- run that
+                export again (it parses the layer first), never just Phases 3-4
     close       every requested component is generated, but the run died before closing the
                 version: only the closing steps
     nothing     the version is complete; nothing was cut short
@@ -107,12 +147,29 @@ def resume_plan(*, alive: Optional[bool], pipeline_status: Optional[str],
                 return {"action": "derive", "components": [], "to_phase": 2}
             return {"action": "derive", "components": todo}
         return {"action": "regenerate", "argv": [a for a in argv if a != "--detach"]}
-    todo = [c["component"] for c in view if c["in_model"] and c["state"] in UNFINISHED]
+    todo = [c["component"] for c in view if _cut_short(c)]
     if todo:
-        return {"action": "export", "components": todo}
+        plan: Dict[str, Any] = {"action": "export", "components": todo}
+        adding = layers_to_add(view, todo)
+        if adding:
+            plan["layers_to_add"] = adding
+        return plan
     if pipeline_status not in (None, "complete"):
         return {"action": "close"}
     return {"action": "nothing"}
+
+
+def _cut_short(c: Dict[str, Any]) -> bool:
+    """A component a run asked for and did not finish, which `resume` makes.
+
+    In the model: any unfinished state. Outside it, only waiting or stopped: an export that adds
+    a layer marks what it was asked for before it parses that layer, so a cut-short one leaves
+    them waiting outside the model -- running that export again finishes them. Anything else
+    outside the model (an old version's documents, a component no run asked for) is not a
+    run's unfinished work."""
+    if c.get("in_model", True):
+        return c["state"] in UNFINISHED
+    return c["state"] in ("waiting", "stopped")
 
 
 # ---------------------------------------------------------------------------
@@ -165,9 +222,8 @@ def stage_eta(run: Dict[str, Any]) -> Tuple[Optional[int], Optional[float]]:
 
 
 def count_line(view: List[Dict[str, Any]]) -> str:
-    order = ("generated", "generating", "waiting", "stopped", "failed", "not_requested")
-    n = {s: sum(1 for c in view if c["state"] == s) for s in order}
-    parts = [f"{n[s]} {STATE_LABEL[s]}" for s in order if n[s]]
+    n = {s: sum(1 for c in view if c["state"] == s) for s in STATE_ORDER}
+    parts = [f"{n[s]} {short_label(s)}" for s in STATE_ORDER if n[s]]
     return f"{len(view)} component(s): " + (" · ".join(parts) if parts else "none")
 
 
@@ -214,7 +270,7 @@ def progress_lines(*, version: Any, pipeline_status: Optional[str], run: Optiona
     else:
         out.append("run       none recorded")
     out.append(count_line(view))
-    if not alive and any(c["state"] in ("stopped", "failed") and c.get("in_model", True)
+    if not alive and any(c["state"] in ("stopped", "failed") and _cut_short(c)
                          for c in view) and not (
             run and run.get("outcome") == "running" and alive is False):
         out.append(f"          components were cut short or failed -- `resume` makes them again:\n"
@@ -242,11 +298,30 @@ def component_lines(view: List[Dict[str, Any]], *, project_id: str, version_id: 
         if c.get("error") and c["state"] == "failed":
             note += f"   {c['error']}"
         if not c["in_model"]:
-            note += "   (not in this version's model)"
-        out.append(f"  {c['name']:<{width}}  {STATE_LABEL[c['state']]:<13}{note}")
+            note += ("   (its layer is not in this version's model: `export` adds it)"
+                     if _layer_to_add(c) else "   (not in this version's model)")
+        out.append(f"  {c['name']:<{width}}  {short_label(c['state']):<13}{note}")
     out.append("")
     out.append(count_line(view))
     if any(c["state"] in NOT_GENERATED and c["in_model"] for c in view):
         out.append(f"make the rest:  python analyzer.py export --project-id {project_id} "
                    f"--version-id {version_id} --remaining   (or --components A,B)")
+    unparsed = sorted({c["layer"] for c in view if _layer_to_add(c)})
+    if unparsed:
+        out.append(f"add a layer:    python analyzer.py export --project-id {project_id} "
+                   f"--version-id {version_id} --components <layer>.<component>,...   "
+                   f"(not parsed yet: {', '.join(unparsed)}; parses the layer again with the "
+                   f"model's, keeps their descriptions)")
+    stale = [c["component"] for c in view if c["state"] == "stale"]
+    if stale:
+        out.append(f"{STATE_LABEL['stale']}:\n"
+                   f"                python analyzer.py reexport --project-id {project_id} "
+                   f"--version-id {version_id} --components {','.join(stale)}")
     return out
+
+
+def _layer_to_add(c: Dict[str, Any]) -> bool:
+    """A component `export` would add its layer for: outside the model, its layer not parsed,
+    and no documents (`layers_to_add`'s rule, for one entry)."""
+    return (not c["in_model"] and c.get("layer_parsed") is not True and bool(c.get("layer"))
+            and not has_documents(c))

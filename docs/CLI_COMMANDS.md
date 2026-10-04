@@ -729,8 +729,8 @@ The one thing to know: phase 4 reads phase 3's output, so it needs that output t
 there. Wipe `output/` and `--from-phase 4` has nothing to export.
 
 Scoping down costs nothing extra — the model already covers the whole layer, so a narrower
-re-export is purely less view work. Scoping *up* beyond what the model holds is not possible;
-generate a wider version for that.
+re-export is purely less view work. A component of a layer the model does not hold is `export`'s:
+it adds the layer to the version.
 
 ### `export`
 
@@ -744,10 +744,29 @@ python analyzer.py export --project-id myproj --version-id v1 --components Layer
 python analyzer.py export --project-id myproj --version-id v1 --remaining --detach
 ```
 
-A component already generated is left alone (`reexport` makes it again). One of a layer the version
-did not parse is refused: that needs a new version. A version whose Phase 2 did not finish has no
-model to export from — `resume` it first. Into a version whose own run was cut short after its model:
-`export` makes yours, and closes the version once nothing of that run is left unfinished.
+A component already generated is left alone (`reexport` makes it again). A version whose Phase 2 did
+not finish has no model to export from — `resume` it first. Into a version whose own run was cut short
+after its model: `export` makes yours, and closes the version once nothing of that run is left
+unfinished.
+
+**A component of a layer the version did not parse** adds that layer to the same version first:
+
+```
+python analyzer.py export --project-id myproj --version-id v1 --components Layer2.Gpio --detach
+```
+
+1. **Phase 1** parses every layer, the version's own and the new one: calls from the old layers into
+   the new one are only found by parsing them again (no LLM; the parse a run of both would do).
+2. **Phase 2** rebuilds the model across the layers — who calls whom, which globals another unit uses,
+   what is published — and the LLM describes **only what the new layer adds**. The old layers keep
+   the text they had (descriptions, behaviour names, unit and struct descriptions, and the reviewers'
+   corrections). Its time is about that of the new layer's own descriptions.
+3. **Phases 3-4** for the components asked for, as for any `export`.
+
+The old layers' documents are not made again. Those the new layer changes — a function of theirs is
+now called from it, a global of theirs is read by it — are marked **stale** (`components` and the web
+app say so), their review status untouched; `reexport --components <them>` makes them again when you
+choose. `components` lists the layers not parsed yet and their components.
 
 ### `resume`
 

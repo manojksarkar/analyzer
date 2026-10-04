@@ -276,6 +276,30 @@ generated yet), `reexport` (again), `resume` (after a crash). Human guide:
   (`model_components`) ∪ rows ∪ documents; no row + documents = generated, neither = `not_requested`,
   waiting/generating with no live writer = `stopped`. The rules for which components each command
   makes are `engine/incremental/staged.py` (pure).
+- **A layer added to a version** (2026-10-04e). `export` of a component whose layer the model does
+  not hold adds the layer to the SAME version (`analyzer.py _layers_adder`, run inside
+  `_render_version`'s writer lock via `before=`; `engine/incremental/extend.py`): capture the model's
+  LLM text + a per-component fingerprint of the structural fields → widen the manifest scope (a
+  `resume` re-parses every layer) → `run.py --to-phase 1` with `--selected-layer` for every layer, old
+  and new (a full parse of the union: Layer 1 → Layer 2 calls are only found by re-parsing Layer 1; the
+  narrowed-parse merge was rejected — no Layer 1 → Layer 2 edges, same-named types keyed differently)
+  → `snapshot_parse_model` → `restore_text` (old text back where the new rows are empty) →
+  incremental plan `impactFids`/`impactedGlobals` = new entities only, `unitDescriptions` = the old
+  units' text (model_deriver pre-fills them; units are rebuilt blank), `addedLayers: True` →
+  `run.py --from-phase 2 --to-phase 2` → the version's previous plan put back → documented components
+  whose fingerprint moved are marked **`stale`** (documents left as they are, review status
+  untouched) → the finished `pipeline_status` put back → Phases 3-4 for the requested components as
+  any export. The view lists the config's components not in the model (`in_model: false`,
+  `layer_parsed`); `staged.layers_to_add`; `resume` of a cut-short add runs the export again;
+  `reexport` of a stale component goes from Phase 3 (`auto` escalates, an explicit 4 is refused).
+  **Proved** on a cross-layer copy of the sample (Layer1.Math ↔ Layer2.Gpio): the extended model
+  equals a one-run model of both layers table for table, Layer2.Gpio's documents are byte-identical,
+  only Layer1.Math goes stale, and its re-export is identical too (`_derivations.json` differs in
+  build times only). Phase 2 asks the LLM only for the new layer; Phase 1 re-parses every layer.
+  **Recovery**: the capture is stored before the parse (`parse_snapshots` row `add_layers_pending`)
+  and reused by a retry or `resume` (which checks it before anything else); `reexport` is refused
+  while it exists; it is removed once the add finishes, or when its parse fails (nothing changed).
+  Proved: an add killed mid-parse, then `resume`, equals the one-run model.
 - **Routes** (`api/routes/version_components.py`): `GET /projects/{pid}/versions/{vid}/components`
   (components, counts, `run` with `alive`/`stopped`); `POST …/versions/{vid}/documents/generate
   {components}` → 202, a job `mode: "export"` (`RENDER_MODES` = reexport + export: never "the project's

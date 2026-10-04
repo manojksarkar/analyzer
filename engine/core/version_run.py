@@ -14,7 +14,10 @@ Three things a run that lasts days needs and a short one could ignore (staged ge
   progress; the phases' `ProgressReporter` publishes into it (`progress`, at most every 20 s).
   Whether the run is ALIVE is the lock (`holder`), never that row: a killed run cannot update it.
 * **Each component's documents.** `version_components`: waiting -> generating -> generated |
-  failed, written by run.py around each component's Phases 3-4 (`mark_components`).
+  failed, written by run.py around each component's Phases 3-4 (`mark_components`); and
+  `stale` -- it has documents, but a layer added to the version since (`export` of a layer the
+  model lacked) changed the model they were made from. A re-export of it goes waiting ->
+  generating -> generated again, which clears it.
 
 Nothing here may fail a run. Every write is best-effort and says so on stderr when it fails; the
 one deliberate refusal is `VersionBusy`, raised before a run starts.
@@ -34,7 +37,7 @@ from typing import Any, Dict, Iterable, Optional
 LOCK_NAMESPACE = 72157
 _KEY2 = "(hashtext(:v) & 2147483647)"
 
-STATES = ("waiting", "generating", "generated", "failed")
+STATES = ("waiting", "generating", "generated", "failed", "stale")
 _PUBLISH_EVERY = 20.0          # seconds between progress writes from one process
 _last_publish = 0.0
 _warned: set = set()
@@ -387,7 +390,10 @@ def progress(stage: str, done: int, total: int, stage_started: Optional[float] =
 
 def mark_components(version_id: Optional[str], components: Iterable[str], state: str, *,
                     error: Optional[str] = None) -> None:
-    """Move components to `state` (waiting | generating | generated | failed)."""
+    """Move components to `state` (waiting | generating | generated | failed | stale).
+
+    `stale` keeps when the documents were made (`finished_at`): they exist, only the model has
+    moved on since."""
     comps = [c for c in dict.fromkeys(components or ()) if c]
     if not version_id or not comps or state not in STATES:
         return
@@ -400,6 +406,7 @@ def mark_components(version_id: Optional[str], components: Iterable[str], state:
         "generating": {"started_at": now, "finished_at": None, "error": None},
         "generated": {"finished_at": now, "error": None},
         "failed": {"finished_at": now, "error": (error or "")[:2000] or None},
+        "stale": {"error": None},
     }[state]
     try:
         from sqlalchemy import and_, insert, select, update
@@ -422,7 +429,8 @@ def mark_components(version_id: Optional[str], components: Iterable[str], state:
 
 
 def generated_components(version_id: str) -> list:
-    """Components the version has documents for (by any run), as their output folder names."""
+    """Components the version has documents for (by any run), as their output folder names --
+    `stale` ones too: their documents are there, only older than the model."""
     eng = _engine()
     if eng is None or not version_id:
         return []
@@ -432,7 +440,7 @@ def generated_components(version_id: str) -> list:
     with eng.connect() as cx:
         names = {r[0] for r in cx.execute(select(d.c.component).where(d.c.version_id == version_id))}
         names |= {r[0] for r in cx.execute(select(t.c.component).where(
-            (t.c.version_id == version_id) & (t.c.state == "generated")))}
+            (t.c.version_id == version_id) & t.c.state.in_(("generated", "stale"))))}
     return sorted(n for n in names if n)
 
 

@@ -78,8 +78,10 @@ def _scope_label(scope: Dict[str, Any]) -> str:
 def _scope_like(base_vid: str) -> Optional[Dict[str, Any]]:
     """The scope a new version takes when its caller named none: the baseline's own -- and, for
     a component scope, every component the baseline has documents for too, because `export` adds
-    components to a version after its run. A component scope keeps the parse to the same layers:
-    `export` can only add components of layers the version parsed. None when it cannot be read."""
+    components to a version after its run. A component scope keeps the parse to the layers of
+    those components -- the ones the version parsed, and any `export` added since (an export of
+    a component whose layer the version did not parse adds that layer). None when it cannot be
+    read."""
     try:
         from core.db import get_engine, is_database_configured
         if not (base_vid and is_database_configured()):
