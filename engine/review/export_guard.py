@@ -65,7 +65,7 @@ import datetime
 import json
 import os
 import sys
-from typing import Dict, Iterable, Iterator, NamedTuple, Optional, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, NamedTuple, Optional, Tuple
 
 from sqlalchemy import delete, insert, select, update
 
@@ -263,6 +263,23 @@ def _printed_somewhere(conn, version_id: str, rows, component_of) -> list:
     return kept
 
 
+def _derivation_stamps(conn, version_id: str) -> Dict[Tuple[str, str], datetime.datetime]:
+    """`(view, component) -> newest derivation` of this version."""
+    stamps: Dict[Tuple[str, str], datetime.datetime] = {}
+    for r in conn.execute(select(s.view_derivations.c.view_name, s.view_derivations.c.group_name,
+                                 s.view_derivations.c.derived_at)
+                          .where(s.view_derivations.c.version_id == version_id)):
+        if r.view_name == PIPELINE_ALL or not r.derived_at or not component_id(r.group_name):
+            # A legacy wildcard, or a stamp that names no component, vouches for nothing --
+            # see the module docstring.
+            continue
+        k = (r.view_name, component_id(r.group_name))
+        at = _aware(r.derived_at)
+        if k not in stamps or stamps[k] < at:
+            stamps[k] = at
+    return stamps
+
+
 def staleness(conn, version_id: str, doc_types=None, component: Optional[str] = None) -> Staleness:
     """Whether exporting `doc_types` of this version would ship text a correction replaced.
 
@@ -274,18 +291,47 @@ def staleness(conn, version_id: str, doc_types=None, component: Optional[str] = 
     A15). A correction keyed by no component (a struct description) still counts, as everywhere
     else here: which unit prints it is not in its key. So does one this build cannot place.
     """
-    from review.derive import component_of, views_for
+    return _judge(conn, version_id, _rows_in_force(conn, version_id), doc_types, component, {})
 
+
+def stale_components(conn, version_id: str, doc_types, components: Iterable[str]) -> List[str]:
+    """Of `components`, those whose documents are behind a correction -- `staleness(...,
+    component=c).is_stale` for each, with what that reads (the render queue, the derivation stamps,
+    the stored records) read ONCE: R9's `staleComponents` asks it of every component with a
+    document, and the web app polls R9 while a re-export runs."""
+    rows = _rows_in_force(conn, version_id)
+    if not rows:
+        return []
+    cache: Dict[str, Any] = {}
+    return [c for c in components
+            if _judge(conn, version_id, rows, doc_types, c, cache).is_stale]
+
+
+def _rows_in_force(conn, version_id: str) -> list:
     # The corrections IN FORCE. An orphan was written for code that has since changed: it is
     # never applied, so no document prints it and no view is behind it (REQ-ID-03). Asking about
     # it anyway made a version whose only corrections were orphans stale for ever -- "no
     # derivation of this view for that component was ever recorded" when the component is gone --
     # and a re-export could not clear that.
-    rows = conn.execute(
+    return conn.execute(
         select(s.text_overrides.c.slot_kind, s.text_overrides.c.slot_key,
                s.text_overrides.c.updated_at)
         .where(s.text_overrides.c.version_id == version_id,
                s.text_overrides.c.is_orphaned.is_(False))).fetchall()
+
+
+def _cached(cache: Dict[str, Any], key: str, load):
+    if key not in cache:
+        cache[key] = load()
+    return cache[key]
+
+
+def _judge(conn, version_id: str, rows, doc_types, component: Optional[str],
+           cache: Dict[str, Any]) -> Staleness:
+    """`staleness` from the corrections in force (`rows`); what else it reads is kept in `cache`
+    for the next component's question (`stale_components`)."""
+    from review.derive import component_of, views_for
+
     if component:
         want = component_id(component)
         kept = []
@@ -315,27 +361,17 @@ def staleness(conn, version_id: str, doc_types=None, component: Optional[str] = 
     # reported instead, through `failed_renders` and `explain()`, so the document goes out with
     # somebody knowing the picture is stale rather than nobody.
     from review.render_queue import counts as _render_counts
-    renders = _render_counts(conn, version_id)
+    renders = _cached(cache, "renders", lambda: _render_counts(conn, version_id))
 
-    stamps: Dict[Tuple[str, str], datetime.datetime] = {}
-    for r in conn.execute(select(s.view_derivations.c.view_name, s.view_derivations.c.group_name,
-                                 s.view_derivations.c.derived_at)
-                          .where(s.view_derivations.c.version_id == version_id)):
-        if r.view_name == PIPELINE_ALL or not r.derived_at or not component_id(r.group_name):
-            # A legacy wildcard, or a stamp that names no component, vouches for nothing --
-            # see the module docstring.
-            continue
-        k = (r.view_name, component_id(r.group_name))
-        at = _aware(r.derived_at)
-        if k not in stamps or stamps[k] < at:
-            stamps[k] = at
+    stamps = _cached(cache, "stamps", lambda: _derivation_stamps(conn, version_id))
 
     def verdict(stale: bool, reason: str, oldest=None) -> Staleness:
         return Staleness(stale, reason, newest, oldest, count,
                          renders.pending, renders.failed)
 
     types = doc_types_of(doc_types)
-    swe3_built = _swe3_built(conn, version_id) if types and "swe3" in types else None
+    swe3_built = (_cached(cache, "swe3_built", lambda: _swe3_built(conn, version_id))
+                  if types and "swe3" in types else None)
     # Only a document with pictures waits for one: SWE.4 prints no flowchart, and SWE.3 only
     # where a SWE.3 run draws them.
     if renders.pending and (types is None or "flowcharts" in views_read(("flowcharts",), types,

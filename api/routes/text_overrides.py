@@ -847,9 +847,9 @@ def export_readiness(
         if st.is_stale and not document_id:
             docs, _ = db.documents.list_for_project(project_id, version_id=version_id,
                                                     per_page=1000)
-            for group in sorted({d.group for d in docs if d.group}):
-                if staleness(cx, version_id, doc_type, component=group).is_stale:
-                    stale_components.append(group)
+            from review.export_guard import stale_components as _behind
+            stale_components = _behind(cx, version_id, doc_type,
+                                       sorted({d.group for d in docs if d.group}))
     return {"stale": st.is_stale, "reason": st.reason, "explanation": st.explain(),
             # The version's latest re-export job, or null. How a page that was reloaded -- or
             # opened by someone else -- learns a re-export is already running, and follows that

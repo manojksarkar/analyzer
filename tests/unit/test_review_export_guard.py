@@ -849,3 +849,19 @@ class TestPhase3PutsLostCorrectionsBack:
         assert model["functions"][self.FID]["description"] == "human"
         assert model_store.load_functions(conn, "v1")[self.FID]["description"] == "human"
         assert corrections_missing(conn, "v1", model) == []
+
+
+class TestStaleComponentsInOnePass:
+    """R9's `staleComponents` asks every component with a document; read once, judged each."""
+
+    def test_it_agrees_with_asking_each_component(self, conn):
+        g.stamp_view_derivations(conn, "v1", [(v, "A") for v in DESCRIPTION_VIEWS], T1)
+        g.stamp_view_derivations(conn, "v1", [(v, "B") for v in DESCRIPTION_VIEWS], T3)
+        _override(conn, T2, key="A|UnitA|f|")       # newer than A's views, older than B's
+        _override(conn, T2, key="B|UnitB|g|")
+        comps = ["A", "B", "C"]
+        one_by_one = [c for c in comps if g.staleness(conn, "v1", component=c).is_stale]
+        assert g.stale_components(conn, "v1", None, comps) == one_by_one == ["A"]
+
+    def test_nothing_when_nobody_corrected_anything(self, conn):
+        assert g.stale_components(conn, "v1", None, ["A", "B"]) == []
