@@ -318,10 +318,16 @@ def _version_dict(v: Version, db=None) -> dict:
     """A version; with `db`, its status derived from its documents and their review counts."""
     review = None
     status = v.status
+    made_by = None
     if db is not None:
         docs = review_workflow.version_docs(db, v)
         status = review_workflow.derived_status(v, docs)
         review = review_workflow.version_review(db, v, docs)
+        from ..models.domain import RENDER_MODES
+        # A generation job: the web app made it. None: the command line (`analyzer.py generate`).
+        made_by = "web" if any(getattr(j, "mode", None) not in RENDER_MODES
+                               for j in db.jobs.list_for_version(v.id)) else "cli"
+    info = getattr(v, "run_info", None) or {}
     return {
         "id": v.id,
         "tag": v.tag,
@@ -341,4 +347,8 @@ def _version_dict(v: Version, db=None) -> dict:
         "reused": getattr(v, "reused", None),
         # What the run warned about (engine manifest, `versions.run_report.warnings`).
         "warnings": list(getattr(v, "warnings", None) or []),
+        # How it was made: from the web app or the command line, for which scope, which
+        # documents, model only or not (`versions.run_report`).
+        "run": {"made_by": made_by, "scope": info.get("scope"),
+                "doc_type": info.get("docType"), "model_only": bool(info.get("modelOnly"))},
     }

@@ -999,3 +999,29 @@ class TestAfterTheSecondReview:
     def test_sqlite_needs_no_runner_lock(self, sql_db):
         from api.services import pipeline_runner as pr
         assert pr.runner_still_held(sql_db._engine) is True
+
+
+class TestHowAVersionWasMade:
+    """Version cards did not say how the run was made (UI review #38): the versions list says
+    whether the web app or the command line made it, for which scope and which documents."""
+
+    def test_a_command_line_version(self, sql_db, version, client, auth_header):
+        with sql_db._engine.begin() as cx:
+            cx.execute(sa.update(s.versions).where(s.versions.c.id == version.id).values(
+                run_report={"scope": {"type": "component", "names": ["Layer1.Math"]},
+                            "docType": "all", "modelOnly": False, "warnings": []}))
+        r = client.get("/api/v1/projects/p1/versions", headers=auth_header)
+        v = next(x for x in r.json()["versions"] if x["id"] == version.id)
+        assert v["run"] == {"made_by": "cli",
+                            "scope": {"type": "component", "names": ["Layer1.Math"]},
+                            "doc_type": "all", "model_only": False}
+
+    def test_a_web_version(self, sql_db, version, client, auth_header):
+        import dataclasses
+        gen = dataclasses.replace(sql_db.jobs.get("job2"), id="jobgw" + uuid.uuid4().hex[:6],
+                                  project_id="p1", version_id=version.id, mode="auto",
+                                  status="complete")
+        sql_db.jobs.create(gen)
+        r = client.get("/api/v1/projects/p1/versions", headers=auth_header)
+        v = next(x for x in r.json()["versions"] if x["id"] == version.id)
+        assert v["run"]["made_by"] == "web"

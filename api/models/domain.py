@@ -125,6 +125,9 @@ class Version:
     # have, a dictionary it ran without. READ-ONLY: it comes from `versions.run_report`, which
     # only the engine writes, so the API never writes it back (api/db/postgres/mappers.py).
     warnings: list = field(default_factory=list)
+    # How the run that made it was asked for -- scope, document types, model only -- from the same
+    # `versions.run_report` (READ-ONLY, as `warnings`).
+    run_info: dict = field(default_factory=dict)
 
 
 @dataclass

@@ -36,7 +36,7 @@ _RENAMES: dict[type, dict[str, str]] = {
 # Fields read from the database but never written by the API. `Version.warnings` is derived
 # from `versions.run_report`, the manifest only the engine writes: writing it back from an
 # object read before the run finished would erase what the run reported.
-_READ_ONLY: dict[type, set] = {Version: {"warnings"}}
+_READ_ONLY: dict[type, set] = {Version: {"warnings", "run_info"}}
 
 
 def to_row(obj: Any) -> dict:
@@ -71,4 +71,6 @@ def from_row(cls: Type, row: Any) -> Any:
         report = mapping.get("run_report")
         warns = report.get("warnings") if isinstance(report, dict) else None
         kwargs["warnings"] = [str(w) for w in warns] if isinstance(warns, list) else []
+        kwargs["run_info"] = ({k: report.get(k) for k in ("scope", "docType", "modelOnly")
+                               if report.get(k) is not None} if isinstance(report, dict) else {})
     return cls(**kwargs)

@@ -190,6 +190,8 @@ class VersionView(BaseModel):
     created_at: str
     # What the run that made the version warned about (`versions.run_report.warnings`).
     warnings: List[str] = []
+    # How it was made: {made_by: "web"|"cli"|null, scope, doc_type, model_only}.
+    run: Optional[dict] = None
 
 
 class VersionResponse(BaseModel):
