@@ -790,3 +790,36 @@ class TestCorrectionsPhase2CouldNotPutBack:
         monkeypatch.setattr(cf, "corrections_missing", lambda cx, v, m: [])
         run_views._check_model_corrections({})
         assert run_views._OVERRIDES_UNAVAILABLE is False
+
+
+class TestCorrectionsNoDocumentPrints:
+    """A correction in a component that has no document in the version (R11 lists every
+    component of the model) kept R9 stale for good: no re-export derives a component without a
+    document (review & update guide, section 11)."""
+
+    def _doc(self, conn, component):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        conn.execute(sa.insert(s.documents).values(
+            id="d" + component, project_id="p", version_id="v1", process="SWE.3",
+            name=component, component=component, status="in_review",
+            created_at=now, updated_at=now))
+
+    def test_it_does_not_hold_the_version_stale(self, conn):
+        self._doc(conn, "Comp")
+        _derived(conn, T1)                                  # Comp's views, derived after
+        _override(conn, T0, key="Comp|UnitA|f|")
+        _override(conn, T2, key="Other|UnitB|g|")           # no document prints it
+        st = g.staleness(conn, "v1")
+        assert not st.is_stale and st.override_count == 1
+
+    def test_a_documented_component_s_correction_still_does(self, conn):
+        self._doc(conn, "Comp")
+        _derived(conn, T0)
+        _override(conn, T1, key="Comp|UnitA|f|")
+        assert g.staleness(conn, "v1").is_stale
+
+    def test_with_no_document_rows_at_all_every_correction_counts(self, conn):
+        """A version made before documents were recorded: nothing says which are printed."""
+        _derived(conn, T1)
+        _override(conn, T2, key="Other|UnitB|g|")
+        assert g.staleness(conn, "v1").is_stale

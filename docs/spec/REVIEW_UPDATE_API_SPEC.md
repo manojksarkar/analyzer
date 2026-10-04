@@ -907,7 +907,7 @@ No parameters.
 | `stale` | boolean | `true` ⇒ the views need re-deriving before a download is honest |
 | `reason` | string | short, always present: `"up to date"`, `"no corrections"`, or the reason it is stale |
 | `explanation` | string | one line fit to show as-is, including any failed renders |
-| `overrideCount` | integer | corrections in force in this version. Orphans are not counted and never make a version stale: they are not printed |
+| `overrideCount` | integer | corrections in force in this version. Orphans are not counted and never make a version stale: they are not printed. Nor are corrections in a component that has no document in the version (when the version has document rows): no Word file prints them, and no re-export could derive them |
 | `pendingRenders` | integer | pictures still owed — **any of these makes it stale** |
 | `failedRenders` | integer | renders that gave up — reported, **does not block** |
 | `newestOverrideAt` | string \| null | ISO-8601 UTC |

@@ -234,6 +234,35 @@ def _component_of(slot_kind: str, slot_key: str, component_of) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # the question
 # ---------------------------------------------------------------------------
+def _printed_somewhere(conn, version_id: str, rows, component_of) -> list:
+    """`rows` without the corrections of components that have NO document in this version.
+
+    No Word file prints them, and no re-export derives their views -- the version has no document
+    for them -- so they kept the version stale for good ("no derivation of interfaceTables for
+    layer1.access was ever recorded"), with nothing anyone could do to clear it (review & update
+    guide, §11). A correction keyed by no component (a struct description), or one this build
+    cannot place, is kept: the cautious reading. So is everything when the version has no
+    document rows at all -- a version made before documents were recorded."""
+    try:
+        documented = {component_id(c) for (c,) in conn.execute(
+            select(s.documents.c.component).where(s.documents.c.version_id == version_id))
+            if c}
+    except Exception:                               # noqa: BLE001 -- cannot tell: keep them all
+        return list(rows)
+    if not documented:
+        return list(rows)
+    kept = []
+    for r in rows:
+        try:
+            comp = _component_of(r.slot_kind, r.slot_key, component_of)
+        except Exception:                           # noqa: BLE001 -- cannot place: keep it
+            kept.append(r)
+            continue
+        if comp is None or comp in documented:
+            kept.append(r)
+    return kept
+
+
 def staleness(conn, version_id: str, doc_types=None, component: Optional[str] = None) -> Staleness:
     """Whether exporting `doc_types` of this version would ship text a correction replaced.
 
@@ -269,6 +298,8 @@ def staleness(conn, version_id: str, doc_types=None, component: Optional[str] = 
             if comp is None or comp == want:
                 kept.append(r)
         rows = kept
+    else:
+        rows = _printed_somewhere(conn, version_id, rows, component_of)
     if not rows:
         # Nobody has corrected anything, which is every project today. Nothing to be stale
         # against, and the guard costs one indexed lookup.
