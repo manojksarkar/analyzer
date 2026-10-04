@@ -46,6 +46,16 @@ re-checks it; once the user edits the architecture a re-check keeps it and its r
 warnings reach the web app as `versions.warnings`, and a run the engine stops before the parse
 fails with the engine's reason as the job's first line.
 
+**Staged generation, runs and review (since 2026-10-05).** The Components panel reads
+`GET …/versions/{vid}/components` (`in_model`, `layer_parsed`, state `stale`); Generate on a component
+of a layer the model lacks answers `added_layers`. The stale strip re-exports with
+`POST …/versions/{vid}/reexport {"components": [...]}` -- the `stale` components plus R9's
+`staleComponents` (`DocumentsPage/helpers.reexportTargets`); a CLI-made version is re-exportable too. The
+Overview polls `GET /projects/{pid}/runs` (`OtherRuns.tsx`). The versions list carries `run` (how a
+version was made, `lib/versionRun.ts`). Review & update: R9 `staleComponents` marks only those rows'
+downloads (`lib/reviewStatus.componentWordFileStale`); R12 `DELETE …/overrides/orphans` (admins) from
+the Corrections tab; R10 in the Corrections tab; a 409 `{code: VERSION_REGENERATING}` on a save.
+
 ## Setup
 
 - Base URL: `VITE_API_URL` ([.env.example](.env.example)) — defaults to `http://localhost:8000/api/v1`.
