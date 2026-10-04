@@ -65,6 +65,29 @@ def _run_view(db, version_id: str) -> tuple:
     return out, alive
 
 
+@router.get("/projects/{project_id}/runs")
+def project_runs(project_id: str,
+                 current_user: User = Depends(get_current_user),
+                 db: InMemoryDatabase = Depends(get_db)) -> Dict[str, Any]:
+    """The runs of the project's versions that are at work now, or were cut short (`stopped`) --
+    whichever front door started them: a web job, or `analyzer.py generate | export | reexport |
+    resume` on the server (`--detach`). The Overview showed the web jobs only, so a run started
+    from the command line was invisible there. `{"runs": [{version_id, version_tag, command,
+    alive, stopped, stage, done, total, started_at, progress_at, …}]}`, newest first; `[]` on a
+    database that keeps no run records."""
+    require_project_member(project_id, current_user, db)
+    if not db.projects.get(project_id):
+        raise not_found("Project", project_id)
+    out = []
+    for v in db.versions.list_for_project(project_id):
+        run, alive = _run_view(db, v.id)
+        if run is None or not (alive or run.get("stopped")):
+            continue
+        out.append({"version_id": v.id, "version_tag": v.tag, **run})
+    out.sort(key=lambda r: r.get("started_at") or "", reverse=True)
+    return {"runs": out}
+
+
 @router.get("/projects/{project_id}/versions/{version_id}/components")
 def list_components(project_id: str, version_id: str,
                     current_user: User = Depends(get_current_user),

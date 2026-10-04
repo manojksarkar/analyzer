@@ -653,6 +653,24 @@ class TestExportReadiness:
         assert r.status_code == 200
         assert asked == ["all"]
 
+    def test_it_names_the_components_whose_documents_are_behind(self, client, review_db,
+                                                                 auth_header, db, monkeypatch):
+        """One version-wide `stale` marked every row "previous Word file" for one correction in
+        one component."""
+        from types import SimpleNamespace
+        client.put(BASE + "/overrides/slot", headers=auth_header,
+                   json={"slot_kind": "description", "slot_key": FID, "text": "Corrected."})
+        docs = [SimpleNamespace(group="Sample-Core"), SimpleNamespace(group="Other")]
+        monkeypatch.setattr(type(db.documents), "list_for_project",
+                            lambda self, pid, version_id=None, per_page=20, **k: (docs, 2))
+        body = client.get(BASE + "/export-readiness", headers=auth_header).json()
+        assert body["stale"] is True and body["staleComponents"] == ["Sample-Core"]
+
+    def test_nothing_is_behind_when_the_version_is_not_stale(self, client, review_db,
+                                                             auth_header):
+        body = client.get(BASE + "/export-readiness", headers=auth_header).json()
+        assert body["staleComponents"] == []
+
 
 class TestNoDatabase:
     def test_a_write_is_refused_rather_than_dropped(self, client, auth_header, monkeypatch):

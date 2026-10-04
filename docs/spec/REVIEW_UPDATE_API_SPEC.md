@@ -907,6 +907,7 @@ No parameters.
 | field | type | notes |
 |---|---|---|
 | `stale` | boolean | `true` ⇒ the views need re-deriving before a download is honest |
+| `staleComponents` | string[] | when the version is `stale`: the components (a document's `group`) whose documents are behind — the per-document question A15 answers, for each. `[]` when nothing is, and always for a `document_id` question. Mark only those rows' downloads |
 | `reason` | string | short, always present: `"up to date"`, `"no corrections"`, or the reason it is stale |
 | `explanation` | string | one line fit to show as-is, including any failed renders |
 | `overrideCount` | integer | corrections in force in this version. Orphans are not counted and never make a version stale: they are not printed. Nor are corrections in a component that has no document in the version (when the version has document rows): no Word file prints them, and no re-export could derive them |

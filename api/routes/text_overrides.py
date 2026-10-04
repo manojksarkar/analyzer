@@ -840,11 +840,23 @@ def export_readiness(
     with _connection().connect() as cx:
         st = staleness(cx, version_id, doc_type, component=component)
         reexport = _latest_reexport(cx, version_id)
+        # WHICH documents are behind, when the version is: the per-component question A15 asks,
+        # for each component with a document. One version-wide `stale` marked every row of the
+        # Documents page "previous Word file" for one correction in one component.
+        stale_components = []
+        if st.is_stale and not document_id:
+            docs, _ = db.documents.list_for_project(project_id, version_id=version_id,
+                                                    per_page=1000)
+            for group in sorted({d.group for d in docs if d.group}):
+                if staleness(cx, version_id, doc_type, component=group).is_stale:
+                    stale_components.append(group)
     return {"stale": st.is_stale, "reason": st.reason, "explanation": st.explain(),
             # The version's latest re-export job, or null. How a page that was reloaded -- or
             # opened by someone else -- learns a re-export is already running, and follows that
             # job instead of offering to start a second one.
             "reexport": reexport,
+            # The components whose documents are behind (version-wide question only).
+            "staleComponents": stale_components,
             "overrideCount": st.override_count,
             # REQ-IM-02/03: a picture still being drawn blocks the export; one that failed does
             # not, but the UI must be able to say the image is out of date.

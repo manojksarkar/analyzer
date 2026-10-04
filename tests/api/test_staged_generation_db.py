@@ -1025,3 +1025,22 @@ class TestHowAVersionWasMade:
         r = client.get("/api/v1/projects/p1/versions", headers=auth_header)
         v = next(x for x in r.json()["versions"] if x["id"] == version.id)
         assert v["run"]["made_by"] == "web"
+
+
+class TestTheProjectsRuns:
+    """The Overview showed web jobs only: a run started from the command line was invisible."""
+
+    def test_a_stopped_run_is_listed_and_a_finished_one_is_not(self, sql_db, version, client,
+                                                                auth_header, monkeypatch):
+        from api.routes import version_components as route
+        runs = {version.id: ({"command": "export", "outcome": "running", "alive": False,
+                              "stopped": True, "started_at": "2026-10-05T01:00:00"}, False)}
+        monkeypatch.setattr(route, "_run_view", lambda db, vid: runs.get(vid, (None, None)))
+        r = client.get("/api/v1/projects/p1/runs", headers=auth_header)
+        assert r.status_code == 200, r.text
+        listed = [x for x in r.json()["runs"] if x["version_id"] == version.id]
+        assert listed and listed[0]["command"] == "export" and listed[0]["stopped"] is True
+        runs[version.id] = ({"command": "export", "outcome": "complete", "alive": False,
+                             "stopped": False}, False)
+        r = client.get("/api/v1/projects/p1/runs", headers=auth_header)
+        assert not [x for x in r.json()["runs"] if x["version_id"] == version.id]
