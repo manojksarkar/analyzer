@@ -218,7 +218,7 @@ export function ownerOf(path: string, assignments: Record<string, string>): stri
   return undefined
 }
 
-/** The repository's paths, each a `file` or a `folder`, from the tree `GET /repositories/browse`
+/** The repository's paths, each a `file` or a `folder`, from the tree `POST /repositories/browse`
  *  returns — what every path of the new project is checked against. */
 export type TreeIndex = Map<string, 'file' | 'folder'>
 export function indexTree(nodes: RepoEntry[], out: TreeIndex = new Map()): TreeIndex {

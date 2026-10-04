@@ -3,7 +3,10 @@ Repository routes — /api/v1/repositories/*
 
 Backs the new-project wizard's repository step:
   * POST /repositories/test-connection  — validate a repo URL, list branches
-  * GET  /repositories/browse           — browse the source tree (folders+files)
+  * POST /repositories/browse           — browse the source tree (folders+files); the
+                                          access token goes in the JSON body
+  * GET  /repositories/browse           — the same for a public repository; refuses a
+                                          token in the query string (URLs reach logs)
   * POST /repositories/uploads          — upload a build-config file (defs / data dict)
 
 Branch lists and the source tree are produced by api.services.repo_git, which
@@ -82,6 +85,14 @@ class TestConnectionRequest(BaseModel):
     access_token: Optional[str] = None
 
 
+class BrowseRequest(BaseModel):
+    repo_url: str
+    ref: Optional[str] = None            # branch / ref to browse
+    path: str = ""                       # repo-root-relative folder path
+    access_token: Optional[str] = None   # token for a private repository
+    refresh: bool = False                # fetch the branch's current tip first
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -95,23 +106,49 @@ def test_connection(
     return repo_git.test_connection(body.repo_url, body.access_token)
 
 
-@router.get("/browse", responses={200: {"model": BrowseResponse}})
-def browse(
-    repo_url: str = Query(..., description="Repository URL connected in step 1"),
-    ref: Optional[str] = Query(None, description="Branch / ref to browse"),
-    path: str = Query("", description="Repo-root-relative folder path"),
-    access_token: Optional[str] = Query(None, description="Token for private repos"),
-    refresh: bool = Query(False, description="Fetch the branch's current tip first"),
-    current_user: User = Depends(get_current_user),
-):
-    """Browse the repository source tree rooted at ``path`` (real depth-1 clone). With
-    ``refresh`` the cached clone is brought up to the branch's current tip first."""
+def _browse(repo_url: str, ref: Optional[str], path: str, access_token: Optional[str],
+            refresh: bool) -> dict:
+    """The tree under ``path`` (real depth-1 clone), for both browse routes."""
     if not (repo_url or "").strip():
         raise bad_request("A repository URL is required to browse.")
     try:
         return repo_git.browse(repo_url, ref, path, access_token, refresh=refresh)
     except repo_git.git_cli.GitError as exc:
         raise bad_request(repo_git._friendly(str(exc)))
+
+
+@router.post("/browse", responses={200: {"model": BrowseResponse}})
+def browse_post(
+    body: BrowseRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Browse the repository source tree rooted at ``path`` (real depth-1 clone). With
+    ``refresh`` the cached clone is brought up to the branch's current tip first.
+
+    The way to browse a private repository: its access token travels in the body, which no
+    access log, proxy or browser history records."""
+    return _browse(body.repo_url, body.ref, body.path, body.access_token, body.refresh)
+
+
+@router.get("/browse", responses={200: {"model": BrowseResponse}})
+def browse(
+    repo_url: str = Query(..., description="Repository URL connected in step 1"),
+    ref: Optional[str] = Query(None, description="Branch / ref to browse"),
+    path: str = Query("", description="Repo-root-relative folder path"),
+    refresh: bool = Query(False, description="Fetch the branch's current tip first"),
+    # Not accepted: a URL is written to the server's access log, proxies and browser history.
+    # Read only to refuse it, so a client still sending it learns to move to POST.
+    access_token: Optional[str] = Query(None, include_in_schema=False),
+    current_user: User = Depends(get_current_user),
+):
+    """Browse a public repository's source tree rooted at ``path``. A private repository's
+    token goes in the body of ``POST /repositories/browse``; this route answers 400 to a
+    query string that carries ``access_token``."""
+    if access_token is not None:
+        raise bad_request(
+            "Send the access token in the body of POST /repositories/browse, not in the URL: "
+            "a URL is written to server and proxy logs.")
+    return _browse(repo_url, ref, path, None, refresh)
 
 
 @router.post("/uploads", status_code=201, responses={201: {"model": UploadResponse}})

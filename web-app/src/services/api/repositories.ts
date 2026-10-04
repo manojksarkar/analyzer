@@ -44,8 +44,10 @@ export const repositoriesApi = {
       message: r.message,
     }
   },
-  /** Browse the source tree rooted at `path` (full nested subtree). */
-  /** `refresh` fetches the branch's current tip first — the tree every path is checked against. */
+  /** Browse the source tree rooted at `path` (full nested subtree). `refresh` fetches the
+   *  branch's current tip first — the tree every path is checked against. A POST, so the access
+   *  token travels in the body: in a URL it reached the server's access log, proxies and dev tools
+   *  (the API refuses a GET that carries one). */
   browse: async (
     repoUrl: string,
     ref?: string,
@@ -53,12 +55,12 @@ export const repositoriesApi = {
     accessToken?: string,
     refresh = false,
   ): Promise<RepoEntry[]> => {
-    const r = await http.get<{ entries: RepoEntry[] }>('/repositories/browse', {
+    const r = await http.post<{ entries: RepoEntry[] }>('/repositories/browse', {
       repo_url: repoUrl,
-      ref,
+      ref: ref || undefined,
       path,
-      access_token: accessToken,
-      refresh: refresh ? 'true' : undefined,
+      access_token: accessToken || undefined,
+      refresh,
     })
     return r.entries
   },

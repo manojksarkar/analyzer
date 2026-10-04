@@ -38,7 +38,7 @@ defines) that the engine ignores. Wiring: `projectsApi.previewConfig` via `useRe
 
 **Every path is checked before a project is created** (`NewProjectPage/helpers.ts` `pathProblems`):
 layer folders, component files and folders, relative lib paths, against the selected branch's
-tree as it is now (`GET /repositories/browse?refresh=true` — the cached clone is fetched first; a
+tree as it is now (`POST /repositories/browse` with `refresh: true` — the cached clone is fetched first; a
 fetch in the last 60 s counts as current). Step 3 marks each problem and refuses Continue; so does
 Initialize. Changing the repository URL or token un-checks an imported config; a branch change
 re-checks it; once the user edits the architecture a re-check keeps it and its report lines

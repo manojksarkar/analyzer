@@ -364,6 +364,8 @@ describe('API responses', () => {
     if (HEAVY && projectId) {
       const repo = 'https://github.com/githubtraining/hellogitworld.git'
       await call('POST /repositories/test-connection', 'POST', '/repositories/test-connection', { schema: Envelopes.repoTest, body: { repo_url: repo }, optional: true })
+      // The web app's call: POST, a private repository's token in the body. GET stays for a public one.
+      await call('POST /repositories/browse', 'POST', '/repositories/browse', { schema: Envelopes.repoEntries, body: { repo_url: repo }, optional: true })
       await call('GET /repositories/browse', 'GET', `/repositories/browse?repo_url=${encodeURIComponent(repo)}`, { schema: Envelopes.repoEntries, optional: true })
       const started = await call('POST …/jobs', 'POST', `/projects/${projectId}/jobs`, { schema: Envelopes.jobStart, body: { commit_sha: 'HEAD' }, optional: true })
       const jid = pickStr(started.body, 'job_id')

@@ -6,7 +6,10 @@ missing from the tree the wizard showed and checked, and stayed missing. `browse
 which the wizard asks for on Test Connection and on a branch change, fetches the tip first and
 reads the tree there; the preview of an imported config does the same.
 
-Real git, no mocks: a local bare repository stands in for the remote.
+The routes that serve the tree are here too: `POST /repositories/browse` takes a private
+repository's token in its body; `GET` refuses one in the query string, which logs record.
+
+Real git: a local bare repository stands in for the remote.
 """
 import subprocess
 
@@ -87,3 +90,99 @@ def test_the_tree_is_read_at_the_fetched_tip_when_there_is_one(remote):
     assert repo_git.tree_ref(clone, "no-such-branch") == "HEAD"
     assert repo_git.tree_ref(clone, None) == "HEAD"
     assert git_cli.has_ref(str(clone), "refs/remotes/origin/main")
+
+
+# ---------------------------------------------------------------------------
+# The routes: a private repository's token goes in a POST body, never in a URL.
+# `GET /repositories/browse?...&access_token=` wrote the token to the server's access log,
+# proxies and the browser's dev tools. POST takes it in the body; GET stays for a public
+# repository and refuses a query string that carries one.
+# ---------------------------------------------------------------------------
+
+BROWSE_URL = "/api/v1/repositories/browse"
+TOKEN = "ghp_do-not-log-me"
+
+
+@pytest.fixture
+def browse_calls(monkeypatch):
+    """Every call the routes make to `repo_git.browse`, which still does the real work."""
+    calls = []
+    real = repo_git.browse
+
+    def spy(repo_url, ref=None, path="", access_token=None, refresh=False):
+        calls.append({"repo_url": repo_url, "ref": ref, "path": path,
+                      "access_token": access_token, "refresh": refresh})
+        return real(repo_url, ref, path, access_token, refresh=refresh)
+
+    monkeypatch.setattr(repo_git, "browse", spy)
+    return calls
+
+
+def test_post_browse_takes_the_token_in_the_body(client, auth_header, remote, browse_calls):
+    url, _ = remote
+    r = client.post(BROWSE_URL, headers=auth_header, json={
+        "repo_url": url, "ref": "main", "path": "", "access_token": TOKEN, "refresh": True})
+    assert r.status_code == 200, r.text
+    assert _paths(r.json()) == {"a.cpp"}
+    assert browse_calls == [{"repo_url": url, "ref": "main", "path": "",
+                             "access_token": TOKEN, "refresh": True}]
+
+
+def test_post_browse_answers_as_get_does(client, auth_header, remote):
+    url, _ = remote
+    got = client.get(BROWSE_URL, headers=auth_header, params={"repo_url": url, "ref": "main"})
+    posted = client.post(BROWSE_URL, headers=auth_header, json={"repo_url": url, "ref": "main"})
+    assert got.status_code == posted.status_code == 200, (got.text, posted.text)
+    assert posted.json() == got.json()
+
+
+def test_get_browse_with_a_token_is_refused_and_git_is_not_run(client, auth_header, remote,
+                                                               browse_calls, monkeypatch):
+    url, _ = remote
+    git_runs = []
+    monkeypatch.setattr(git_cli, "_run", lambda *a, **k: git_runs.append(a))
+    r = client.get(BROWSE_URL, headers=auth_header,
+                   params={"repo_url": url, "ref": "main", "access_token": TOKEN})
+    assert r.status_code == 400
+    assert "POST" in r.json()["detail"]["message"]
+    assert TOKEN not in r.text
+    assert browse_calls == [] and git_runs == []
+
+
+def test_get_browse_with_an_empty_token_is_refused_too(client, auth_header, browse_calls):
+    r = client.get(BROWSE_URL, headers=auth_header,
+                   params={"repo_url": "https://example.invalid/x.git", "access_token": ""})
+    assert r.status_code == 400
+    assert browse_calls == []
+
+
+def test_get_browse_without_a_token_still_works(client, auth_header, remote, browse_calls):
+    url, _ = remote
+    r = client.get(BROWSE_URL, headers=auth_header,
+                   params={"repo_url": url, "ref": "main", "refresh": "true"})
+    assert r.status_code == 200, r.text
+    assert _paths(r.json()) == {"a.cpp"}
+    assert browse_calls == [{"repo_url": url, "ref": "main", "path": "",
+                             "access_token": None, "refresh": True}]
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_both_routes_answer_the_same_errors(client, auth_header, tmp_path, monkeypatch, method):
+    monkeypatch.setattr(repo_git, "_CACHE_DIR", tmp_path / "cache")
+
+    def ask(repo_url, headers=auth_header):
+        if method == "GET":
+            return client.get(BROWSE_URL, headers=headers, params={"repo_url": repo_url})
+        return client.post(BROWSE_URL, headers=headers, json={"repo_url": repo_url})
+
+    assert ask("x", headers={}).status_code == 401                  # signed in, as before
+    empty = ask("   ")
+    assert empty.status_code == 400
+    assert empty.json()["detail"]["message"] == "A repository URL is required to browse."
+    missing = ask((tmp_path / "no-such-repo.git").as_uri())        # git fails: 400, not 500
+    assert missing.status_code == 400
+    assert missing.json()["detail"]["code"] == "VALIDATION_ERROR"
+    if method == "GET":
+        assert client.get(BROWSE_URL, headers=auth_header).status_code == 422
+    else:
+        assert client.post(BROWSE_URL, headers=auth_header, json={}).status_code == 422

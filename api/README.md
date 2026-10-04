@@ -199,7 +199,8 @@ All endpoints except `/auth/signin` and `/auth/refresh` require
 | Method | Path | Description |
 |---|---|---|
 | POST | `/repositories/test-connection` | Reach the repository; list its branches |
-| GET | `/repositories/browse` | The branch's file tree (cached blobless clone); `refresh=true` first fetches the branch's current tip — the tree the wizard checks every path against |
+| POST | `/repositories/browse` | The branch's file tree (cached blobless clone); body `{repo_url, ref?, path?, access_token?, refresh?}`. `refresh: true` first fetches the branch's current tip — the tree the wizard checks every path against. A private repository's token goes here, in the body |
+| GET | `/repositories/browse` | The same for a public repository (`repo_url`, `ref`, `path`, `refresh` in the query). A query with `access_token` is refused (400): a URL is written to access logs |
 | POST | `/repositories/uploads` | Upload data dictionary (`.csv`/`.xlsx`) or macros (`.csv`/`.json`) |
 
 ### Commits & Versions
