@@ -4,6 +4,7 @@ import type {
   ArchLayer, ArchGroup, ArchComponent,
 } from '../../types'
 import { formatDate, avatarPalette } from '../../lib/format'
+import { toUserRole } from './member'
 
 export const ApiProjectSchema = z.object({
   // null for a project `analyzer.py onboard` wrote (no client, standard or architecture in the
@@ -72,7 +73,7 @@ export function mapProject(p: ApiProject): Project {
         compileCommands: c.compile_commands, layers: c.layers,
       })),
     },
-    userRole: (p.my_role as UserRole) ?? 'developer',
+    userRole: toUserRole(p.my_role),
     pageState: projectPageState(p.status),
   }
 }

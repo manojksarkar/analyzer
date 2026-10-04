@@ -7,6 +7,8 @@ import { DashboardSkeleton, Icon, Text } from '../../components/ui'
 import { SubbarCta } from '../../components/shell/SubbarCta'
 import { StopRunDialog } from '../../components/run/StopRunDialog'
 import { cn } from '../../lib/cn'
+import { failedLoad } from '../../lib/failedLoad'
+import { LoadError } from '../../components/LoadError'
 import { useAuthStore } from '../../store/auth'
 import type { StartJobInput } from '../../services/api'
 import { ConfigOverview } from './components/ConfigOverview'
@@ -48,7 +50,11 @@ export function ProjectDetailPage() {
 
   const meId = useAuthStore((s) => s.user?.id ?? '')
 
-  const { data: project } = useProject(projectId ?? '')
+  const projectQuery = useProject(projectId ?? '')
+  const { data: project } = projectQuery
+  // A project that cannot be read (not a member: 403; no such project: 404) says so -- it showed
+  // "No documents generated yet", as if the project had never run.
+  const projectFailed = failedLoad(projectQuery)
   // pageState + the version to view come from the Subbar selection (shared store).
   const { pageState, isLoading, viewVersion, viewVersionId, selectedCommit } = useProjectViewState(projectId ?? '')
   const { data: versions } = useVersions(projectId ?? '')
@@ -102,7 +108,9 @@ export function ProjectDetailPage() {
 
         {/* ══ LOADING — gate the empty-state flash until the view state resolves: the project,
             its versions and its run (a run found after the dashboard showed swapped it out) ══ */}
-        {isLoading ? (
+        {projectFailed ? (
+          <LoadError what="the project" error={projectFailed.error} retrying={projectFailed.retrying} onRetry={projectFailed.retry} />
+        ) : isLoading ? (
           <DashboardSkeleton />
         ) : (
           <>

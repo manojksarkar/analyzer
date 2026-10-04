@@ -26,6 +26,9 @@ export default defineConfig({
           setupFiles: ['./src/test/setup.ts'],
           include: ['src/**/*.test.{ts,tsx}'],
           exclude: ['src/test/api/**'],
+          // 5 s by default: a page test that renders and types ran out on a busy machine and a
+          // passing test failed (findBy / waitFor wait up to 4 s, src/test/setup.ts).
+          testTimeout: 20000,
         },
       },
       {

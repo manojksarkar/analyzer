@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ApiProjectSchema, mapProject, type ApiProject } from '../project'
+import { mapMember } from '../member'
 
 const base: ApiProject = {
   id: 'p1',
@@ -27,6 +28,14 @@ describe('mapProject', () => {
     expect(p.repoPath).toBe(base.repo_url)
     expect(p.standard).toBe('ISO 26262')
     expect(p.userRole).toBe('admin')
+  })
+
+  it('a `reviewer` membership (the CLI still grants one) is a developer here, not a third role', () => {
+    // Passed through as is, it was neither: no Claim, no "My reviews" filter on the Documents page.
+    expect(mapProject({ ...base, my_role: 'reviewer' }).userRole).toBe('developer')
+    expect(mapProject({ ...base, my_role: 'developer' }).userRole).toBe('developer')
+    expect(mapProject({ ...base, my_role: undefined }).userRole).toBe('developer')
+    expect(mapMember({ id: 'm1', user_id: 'u1', name: 'Rita', email: 'r@x', initials: 'R', role: 'reviewer', status: 'active', joined_at: null }).role).toBe('developer')
   })
 
   it('computes approval progress from doc_counts', () => {
