@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-05c | R9 names the components whose documents are behind; `GET /projects/{pid}/runs` lists the runs at work from either front door | [13](13-2026-10-05c.md) |
 | 2026-10-05b | Orphaned corrections can be discarded (R12); a correction no document prints no longer keeps a version stale; Phase 3 puts back a correction the model lost; Download All builds its ZIP on disk; `clean-runs`; the versions list says how each version was made | [11](11-2026-09-29e.md) |
 | 2026-10-05 | The web app re-exports a version made from the command line, and only the stale components when asked; a save that meets a regenerating run says so with a code; RF-1 closed; only the layers the run's config has are offered | [11](11-2026-09-29e.md) |
 | 2026-10-04f | A git command that does not finish is stopped: the API's and the engine's git runners have a time limit, kill the whole process tree, and never prompt | [11](11-2026-09-29e.md) |

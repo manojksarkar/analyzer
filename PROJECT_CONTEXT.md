@@ -200,7 +200,8 @@ so neighbouring files can overlap by a few days — search the date tag.
 | File | Entries |
 |---|---|
 | [TIMELINE.md](project-context/history/TIMELINE.md) | **every dated change in one line, newest first — start here** |
-| [11-2026-09-29e.md](project-context/history/11-2026-09-29e.md) | from 2026-09-29e — **the newest: new entries go at the top** |
+| [13-2026-10-05c.md](project-context/history/13-2026-10-05c.md) | from 2026-10-05c — **the newest: new entries go at the top** |
+| [11-2026-09-29e.md](project-context/history/11-2026-09-29e.md) | 2026-09-29e … 2026-10-05b |
 | [12-2026-09-29-web-app.md](project-context/history/12-2026-09-29-web-app.md) | the web app branch `integrate/ui-v5`, 2026-09-29 … 2026-09-30f (13 entries), written beside files 10–11 and closed when it merged develop (2026-09-30g) |
 | [10-2026-09-26.md](project-context/history/10-2026-09-26.md) | 2026-09-26e … 2026-09-29d; at its end, develop's 2026-09-25 … 2026-09-26 (merged 2026-09-29) |
 | [09-2026-09-24.md](project-context/history/09-2026-09-24.md) | 2026-09-24 … 2026-09-26d (17 entries) |
