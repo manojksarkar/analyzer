@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -7,7 +7,7 @@ import { http, HttpResponse } from 'msw'
 import { server } from '../../../test/server'
 import { API_BASE_URL } from '../../../lib/http'
 import { ComponentsPanel } from '../components/ComponentsPanel'
-import { addsLayer, componentsByLayer, layerNote, layersAdded, pickable, reexportTargets } from '../helpers'
+import { addsLayer, componentsByLayer, layerNote, layersAdded, pickable, reexportPlan, reexportTargets } from '../helpers'
 import type { VersionComponent } from '../../../types'
 
 /* Staged generation: a version's components and the documents still to make
@@ -65,15 +65,18 @@ const r9 = (stale: boolean, staleComponents?: string[]) => ({
   ...(staleComponents ? { staleComponents } : {}),
 })
 
-function setup(isAdmin: boolean, body: object = BODY, readiness: object = r9(false, [])) {
+/** R9's answer: a body, still being read (`pending`, never answers), or failed (`failed`, 500). */
+function setup(isAdmin: boolean, body: object = BODY, readiness: object | 'pending' | 'failed' = r9(false, [])) {
   const sent: string[][] = []
   const cancelled: string[] = []
   const reexported: string[] = []
   const r9Reads: number[] = []
   server.use(
     http.get(`${API_BASE_URL}/projects/p1/versions/ver1/components`, () => HttpResponse.json(body)),
-    http.get(`${API_BASE_URL}/projects/p1/versions/ver1/export-readiness`, () => {
+    http.get(`${API_BASE_URL}/projects/p1/versions/ver1/export-readiness`, async () => {
       r9Reads.push(1)
+      if (readiness === 'pending') await new Promise(() => {})
+      if (readiness === 'failed') return HttpResponse.json({ detail: { message: 'Database unavailable' } }, { status: 500 })
       return HttpResponse.json(readiness)
     }),
     http.post(`${API_BASE_URL}/projects/p1/versions/ver1/reexport`, async ({ request }) => {
@@ -191,6 +194,37 @@ describe('ComponentsPanel', () => {
     await waitFor(() => expect(reexported).toEqual(['ver1 ["Layer1.Math","Layer1.App"]']))
   })
 
+  /* Review of cded9b4: while R9 was loading or had failed, Re-export re-exported every document of
+     the version — hours on a big project, holding its one writer. */
+  it('Re-export waits for R9: disabled until it answers', async () => {
+    const { reexported } = setup(true, ADDED, 'pending')
+    await screen.findByText('Stale — re-export')
+    const button = screen.getByRole('button', { name: 'Re-export' })
+    expect(button).toBeDisabled()
+    expect(button).toHaveAttribute('title', 'Reading which Word files lack corrections…')
+    expect(reexported).toEqual([])
+  })
+
+  it('R9 failed: Re-export asks before re-exporting every document, and does nothing when declined', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    try {
+      const { reexported, user } = setup(true, ADDED, 'failed')
+      await screen.findByText('Stale — re-export')
+      const button = screen.getByRole('button', { name: 'Re-export' })
+      await waitFor(() => expect(button).toHaveAttribute('title', 'Re-export every document of this version'))
+      expect(button).toBeEnabled()
+      await user.click(button)
+      expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/^Could not read which Word files lack corrections \(R9\)\. Re-export every document of this version\?/))
+      await new Promise((r) => setTimeout(r, 50))
+      expect(reexported).toEqual([])
+      await user.click(button)
+      // Confirmed: every document (no components named).
+      await waitFor(() => expect(reexported).toEqual(['ver1 null']))
+    } finally {
+      confirm.mockRestore()
+    }
+  })
+
   it('a developer sees a stale component, but no Re-export', async () => {
     setup(false, ADDED)
     expect(await screen.findByText(/an admin starts it/)).toBeInTheDocument()
@@ -229,6 +263,15 @@ describe('the component helpers', () => {
     expect(reexportTargets(comps, { stale: true })).toBeUndefined()
     // R9 not read yet, or failed: nothing says which Word files lack corrections — all of them.
     expect(reexportTargets(comps, undefined)).toBeUndefined()
+  })
+
+  it('reexportPlan: waits while R9 is read, asks when it failed, never every document silently', () => {
+    const comps = [one('Layer1.Math', { state: 'stale' })]
+    expect(reexportPlan(comps, undefined, false)).toEqual({ kind: 'wait' })
+    expect(reexportPlan(comps, undefined, true)).toEqual({ kind: 'confirm' })
+    expect(reexportPlan(comps, { stale: false, staleComponents: [] }, false)).toEqual({ kind: 'go', targets: ['Layer1.Math'] })
+    // An older API that does not name them: every document, as R9 itself asks.
+    expect(reexportPlan(comps, { stale: true }, false)).toEqual({ kind: 'go', targets: undefined })
   })
 
   it('groups by layer in order, and only components without documents are pickable', () => {

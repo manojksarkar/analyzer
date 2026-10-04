@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -11,6 +11,7 @@ import commits from '../../../test/fixtures/captured/commits.json'
 import versionsFx from '../../../test/fixtures/captured/versions.json'
 import documentsFx from '../../../test/fixtures/captured/documents.json'
 import { ComparePage } from '..'
+import { useUIStore } from '../../../store/ui'
 import { compareVersions, olderVersions, versionRef } from '../helpers'
 import type { Version } from '../../../types'
 
@@ -26,6 +27,9 @@ const swe4 = { ...documentsFx.documents[0], id: 'doc9', name: 'Brake', process: 
 // An unchanged document of the current version (the list's Compare can name one).
 const same = { ...documentsFx.documents[0], id: 'doc8', name: 'Pedal', process: 'SWE.3', subtitle: 'Detailed Design', group: 'Pedal' }
 
+// A document of the version before the latest (a link from that version's documents).
+const older = { ...documentsFx.documents[0], id: 'doc7', name: 'Gear', process: 'SWE.3', subtitle: 'Detailed Design', group: 'Gear', version_id: 'ver2' }
+
 function setup({ failCompare = false, path = '/projects/p1/compare', versions = sameCommit, holdVersions = false } = {}) {
   let release = () => {}
   const held = new Promise<void>((r) => { release = r })
@@ -40,10 +44,13 @@ function setup({ failCompare = false, path = '/projects/p1/compare', versions = 
     }),
     http.get(`${API_BASE_URL}/projects/p1/commits`, () => HttpResponse.json(commits)),
     http.get(`${API_BASE_URL}/projects/p1/jobs/current`, () => HttpResponse.json({ job: null })),
-    http.get(`${API_BASE_URL}/projects/p1/documents`, () =>
-      HttpResponse.json({ documents: [swe4, same], pagination: { page: 1, per_page: 100, total: 2 } })),
+    http.get(`${API_BASE_URL}/projects/p1/documents`, ({ request }) => {
+      const docs = new URL(request.url).searchParams.get('version_id') === 'ver2' ? [older] : [swe4, same]
+      return HttpResponse.json({ documents: docs, pagination: { page: 1, per_page: 100, total: docs.length } })
+    }),
     http.get(`${API_BASE_URL}/projects/p1/documents/doc9`, () => HttpResponse.json({ document: swe4 })),
     http.get(`${API_BASE_URL}/projects/p1/documents/doc8`, () => HttpResponse.json({ document: same })),
+    http.get(`${API_BASE_URL}/projects/p1/documents/doc7`, () => HttpResponse.json({ document: older })),
     http.get(`${API_BASE_URL}/projects/p1/compare/documents`, ({ request }) => {
       const u = new URL(request.url)
       asked.push(`${u.searchParams.get('current')} vs ${u.searchParams.get('baseline')}`)
@@ -172,5 +179,19 @@ describe('compareVersions', () => {
     expect(versionRef(v('ver3', 'abc'))).toBe('ver3')
     expect(versionRef({ sha: 'abc' } as Version)).toBe('abc')
     expect(versionRef(undefined)).toBeUndefined()
+  })
+})
+
+/* Smoke test: `/compare?doc=<id>` compared the latest version, not the document's own. */
+describe('ComparePage opened on a document of an older version', { timeout: 30_000 }, () => {
+  // Unmounted before the pick is cleared: a page still open would follow its document again.
+  afterEach(() => { cleanup(); useUIStore.setState({ selectedRef: {} }) })
+
+  it("compares the document's own version with the one before it, never the latest first", async () => {
+    const { asked, details } = setup({ path: '/projects/p1/compare?doc=doc7', versions: versionsFx })
+    expect((await screen.findAllByRole('heading', { name: 'Gear' })).length).toBe(2)
+    expect(asked).toEqual(['ver2 vs ver1'])
+    expect(details).toEqual(['doc7'])
+    expect(useUIStore.getState().selectedRef.p1).toEqual({ type: 'version', id: 'ver2' })
   })
 })

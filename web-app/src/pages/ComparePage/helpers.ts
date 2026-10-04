@@ -26,6 +26,27 @@ export function rowChange(rowMark: DiffMark | undefined, cellMarks: DiffMark[] |
   return (cellMarks ?? []).some((m) => m !== 'none') ? 'change' : 'none'
 }
 
+/** A table block with a changed row or cell: it needs a sign column. */
+export function tableMarked(b: Extract<CompareBlock, { kind: 'table' }>): boolean {
+  return b.rows.some((_, ri) => rowChange(b.rowMarks[ri], b.cellMarks[ri]) !== 'none')
+}
+
+/** The sign column of each table of a section, by its order among the section's tables, decided
+ *  for both panes together: a table and its counterpart on the other side get the same columns
+ *  (added rows marked on one side only shifted that side's columns against the other's). */
+export function signColumns(...panes: (CompareBlock[] | undefined)[]): boolean[] {
+  const out: boolean[] = []
+  for (const blocks of panes) {
+    let k = 0
+    for (const b of blocks ?? []) {
+      if (b.kind !== 'table') continue
+      out[k] = !!out[k] || tableMarked(b)
+      k += 1
+    }
+  }
+  return out
+}
+
 /* ─── Section accent (left stripe at the gutter) by the kind of change ─── */
 export function sectionAccent(diffType: DiffType): string {
   if (diffType === 'unchanged') return ''

@@ -59,6 +59,7 @@ export function OutlineTab({
               type="button"
               onClick={() => toggle(n.id)}
               aria-label={`${open ? 'Fold' : 'Open'} ${n.title}`}
+              aria-expanded={open}
               className="w-[18px] h-[18px] flex-shrink-0 flex items-center justify-center rounded text-outline hover:bg-surface-container hover:text-secondary"
             >
               <Icon name={open ? 'expand_more' : 'chevron_right'} size={16} />
@@ -67,6 +68,7 @@ export function OutlineTab({
           <button
             type="button"
             data-active={n.id === activeId ? 'true' : undefined}
+            aria-current={n.id === activeId ? 'location' : undefined}
             onClick={() => onJump(n.id)}
             className={cn(
               'flex-1 min-w-0 flex items-baseline gap-1.5 text-left px-1.5 py-1 rounded-lg text-body transition-colors',

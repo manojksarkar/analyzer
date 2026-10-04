@@ -3,7 +3,7 @@ import { Icon, Text } from '../../../components/ui'
 import { cn } from '../../../lib/cn'
 import type { BehaviorTableData, FlowchartTableData, RichSection, RichTable } from '../../../types'
 import { useEdit } from '../editContext'
-import { FlowchartFigure } from './FlowchartFigure'
+import { FlowchartFigure, ImageViewer } from './FlowchartFigure'
 import { SlotText } from './SlotText'
 
 /* The SWE.3 document, section by section as its DOCX. Texts the LLM wrote carry their slot and
@@ -40,18 +40,36 @@ function TableView({ table }: { table: RichTable }) {
   )
 }
 
+/* ── A diagram's picture: fits the column (no taller than 440 px), and opens full size ── */
+function DiagramImage({ src, title }: { src: string; title: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title="Open full size"
+        aria-label={`Open ${title} full size`}
+        className="group relative block w-full bg-white focus-visible:outline-2 focus-visible:outline-secondary"
+      >
+        <img src={src} alt={title} loading="lazy" className="block w-full max-h-[440px] object-contain bg-white" />
+        <span className="absolute top-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/90 border border-outline-variant text-on-surface-variant opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity">
+          <Icon name="open_in_full" size={13} />
+          <span className="font-mono text-label">Open</span>
+        </span>
+      </button>
+      {open && <ImageViewer title={title} alt={title} src={src} onClose={() => setOpen(false)} />}
+    </>
+  )
+}
+
 /* ── Diagram: rendered PNG (+ optional mermaid "view source") ── */
 function DiagramView({ section }: { section: RichSection }) {
   const [showSrc, setShowSrc] = useState(false)
   return (
     <figure className="bg-surface-container-low border border-outline-variant rounded-lg overflow-hidden">
       {section.imageUrl ? (
-        <img
-          src={section.imageUrl}
-          alt={section.title}
-          loading="lazy"
-          className="block w-full max-h-[440px] object-contain bg-white"
-        />
+        <DiagramImage src={section.imageUrl} title={section.title} />
       ) : (
         <div className="flex flex-col items-center justify-center text-center py-12 gap-3">
           <Icon name="account_tree" size={40} className="text-outline-variant" />
@@ -79,7 +97,7 @@ function DiagramView({ section }: { section: RichSection }) {
 
 function KeyCell({ children, top }: { children: string; top?: boolean }) {
   return (
-    <td className={cn('px-4 py-3 font-semibold text-on-surface-variant bg-surface-container w-40', top && 'align-top')}>{children}</td>
+    <td className={cn('px-4 py-3 font-semibold text-on-surface-variant bg-surface-container w-32 2xl:w-40', top && 'align-top')}>{children}</td>
   )
 }
 
@@ -183,7 +201,7 @@ function BehaviorTableView({ data }: { data: BehaviorTableData }) {
       </div>
       {data.diagramUrl && (
         <figure className="bg-surface-container-low border border-outline-variant rounded-lg overflow-hidden">
-          <img src={data.diagramUrl} alt="Behaviour diagram" loading="lazy" className="block w-full max-h-[440px] object-contain bg-white" />
+          <DiagramImage src={data.diagramUrl} title="Behaviour diagram" />
         </figure>
       )}
     </div>
@@ -191,8 +209,11 @@ function BehaviorTableView({ data }: { data: BehaviorTableData }) {
 }
 
 /* ── One rich section (richtext | table | diagram | flowchart_table | behavior_table) + nested children ──
-   Memoised: a document can hold 500+ functions, and the page re-renders on every job poll. */
-export const RichSectionView = memo(function RichSectionView({ section, depth = 0 }: { section: RichSection; depth?: number }) {
+   Memoised: a document can hold 500+ functions, and the page re-renders on every job poll. Its
+   children go through the memoised `RichSectionView` too: inside `memo(function RichSectionView…)`
+   that name was the function itself, not the memo, so one corrected text re-rendered every
+   function of its component (the render read again keeps each unchanged section's object). */
+function SectionView({ section, depth = 0 }: { section: RichSection; depth?: number }) {
   const headingSize = depth === 0 ? 'text-[20px]' : depth === 1 ? 'text-[17px]' : 'text-[15px]'
   return (
     <section id={`sec-${section.id}`} className="scroll-mt-16">
@@ -210,14 +231,18 @@ export const RichSectionView = memo(function RichSectionView({ section, depth = 
         <BehaviorTableView data={section.behaviorTable} />
       ) : section.content ? (
         section.contentSlot
-          ? <SlotText slot={section.contentSlot} display={section.content} className="text-sm text-on-surface leading-relaxed" />
-          : <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">{section.content}</p>
+          ? <SlotText slot={section.contentSlot} display={section.content} className="max-w-[80ch] text-sm text-on-surface leading-relaxed" />
+          : <p className="max-w-[80ch] text-sm text-on-surface leading-relaxed whitespace-pre-line">{section.content}</p>
       ) : null}
       {section.children.length > 0 && (
-        <div className="mt-8 space-y-8 pl-4 border-l border-outline-variant">
+        // A chapter and a unit indent what they hold; deeper levels do not (a function's parts
+        // would lose the width a flowchart needs), their numbered headings say the level.
+        <div className={cn('mt-6 space-y-6 2xl:mt-8 2xl:space-y-8', depth < 2 && 'pl-3 2xl:pl-4 border-l border-outline-variant')}>
           {section.children.map((c) => <RichSectionView key={c.id} section={c} depth={depth + 1} />)}
         </div>
       )}
     </section>
   )
-})
+}
+
+export const RichSectionView = memo(SectionView)

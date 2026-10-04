@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_SCALE, MIN_SCALE, centred, fitScale, initialView, zoomAt } from '../helpers'
+import { MAX_SCALE, MIN_SCALE, centred, fitScale, initialView, thumbSize, viewerKey, zoomAt } from '../helpers'
 
 describe('fitScale', () => {
   it('shrinks a chart bigger than the box to fit, inside a margin', () => {
@@ -37,5 +37,27 @@ describe('zoomAt', () => {
   it('stays within the zoom limits', () => {
     expect(zoomAt({ x: 0, y: 0, scale: 3 }, 10, 0, 0).scale).toBe(MAX_SCALE)
     expect(zoomAt({ x: 0, y: 0, scale: 0.1 }, 0.01, 0, 0).scale).toBe(MIN_SCALE)
+  })
+})
+
+describe('thumbSize (a flowchart in the reading column)', () => {
+  it('keeps a chart that fits as it is', () => {
+    expect(thumbSize(400, 200)).toEqual({ width: 400, height: 200 })
+  })
+  it('draws a tall chart no taller than the cap, narrowed in proportion', () => {
+    expect(thumbSize(10_000, 37_000)).toEqual({ width: 130, height: 480 })
+  })
+  it('leaves a wide one to the column (max-width), and says nothing of an unknown size', () => {
+    expect(thumbSize(10_000, 400)).toEqual({ width: 10_000, height: 400 })
+    expect(thumbSize(null, 400)).toBeNull()
+    expect(thumbSize(0, 0)).toBeNull()
+  })
+})
+
+describe('viewerKey', () => {
+  it('maps the zoom, fit and move keys, and nothing else', () => {
+    expect(['+', '=', '-', '0', 'ArrowLeft', 'ArrowUp'].map(viewerKey)).toEqual(['in', 'in', 'out', 'fit', 'left', 'up'])
+    expect(viewerKey('a')).toBeNull()
+    expect(viewerKey('Enter')).toBeNull()
   })
 })

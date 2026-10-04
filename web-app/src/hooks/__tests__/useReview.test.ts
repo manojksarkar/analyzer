@@ -139,14 +139,16 @@ describe('after a mutation, what is read again', () => {
   it('a save stops a read of R1 begun before it: the older answer does not undo the save', async () => {
     let release = () => {}
     const held = new Promise<void>((r) => { release = r })
+    let stored = 'before'
     let reads = 0
     server.use(
       http.get(`${API}/overrides`, async () => {
         reads += 1
-        if (reads > 1) await held                                // the read under way at the save
-        return HttpResponse.json({ overrides: [wire('k1', 'before')], total: 1, limit: 1000, offset: 0 })
+        const text = stored                                      // the answer as the read began
+        if (reads === 2) await held                              // the read under way at the save
+        return HttpResponse.json({ overrides: [wire('k1', text)], total: 1, limit: 1000, offset: 0 })
       }),
-      http.put(`${API}/overrides/slot`, () => HttpResponse.json(wire('k1', 'after'))),
+      http.put(`${API}/overrides/slot`, () => { stored = 'after'; return HttpResponse.json(wire('k1', 'after')) }),
     )
     const { client, result } = mount(() => ({ list: useVersionOverrides('p1', 'v1'), save: useSaveSlot('p1', 'v1') }))
     await waitFor(() => expect(result.current.list.data?.[0]?.text).toBe('before'))
@@ -157,5 +159,24 @@ describe('after a mutation, what is read again', () => {
     release()
     await new Promise((r) => setTimeout(r, 50))
     expect(client.getQueryData<Slot[]>(projectKeys.overrides('p1', 'v1'))?.[0]?.text).toBe('after')
+    // The read it stopped was asked for (a discard, a job's end): R1 is read again, not left as patched.
+    expect(reads).toBe(3)
+  })
+
+  it('a save with no read of R1 under way patches it, and does not read it again', async () => {
+    let reads = 0
+    server.use(
+      http.get(`${API}/overrides`, () => {
+        reads += 1
+        return HttpResponse.json({ overrides: [wire('k1', 'before')], total: 1, limit: 1000, offset: 0 })
+      }),
+      http.put(`${API}/overrides/slot`, () => HttpResponse.json(wire('k1', 'after'))),
+    )
+    const { result } = mount(() => ({ list: useVersionOverrides('p1', 'v1'), save: useSaveSlot('p1', 'v1') }))
+    await waitFor(() => expect(result.current.list.data?.[0]?.text).toBe('before'))
+    await act(async () => { await result.current.save.mutateAsync({ slot: result.current.list.data![0], text: 'after' }) })
+    await waitFor(() => expect(result.current.list.data?.[0]?.text).toBe('after'))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(reads).toBe(1)
   })
 })

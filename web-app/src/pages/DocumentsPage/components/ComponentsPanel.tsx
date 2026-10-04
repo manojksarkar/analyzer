@@ -8,7 +8,9 @@ import { cn } from '../../../lib/cn'
 import { relativeTime } from '../../../lib/format'
 import { STATUS_META } from '../../../lib/reviewStatus'
 import type { ComponentState, VersionComponent, VersionJob, VersionRun } from '../../../types'
-import { componentsByLayer, layerNote, layersAdded, pickable, reexportTargets } from '../helpers'
+import {
+  componentsByLayer, layerNote, layersAdded, pickable, REEXPORT_ALL_CONFIRM, reexportPlan, type ReexportPlan,
+} from '../helpers'
 import { StopRunDialog } from '../../../components/run/StopRunDialog'
 
 /* Staged generation: every component of the version and the state of its documents — generated,
@@ -78,16 +80,22 @@ function RunStrip({ run, job, cutShort, projectId, versionId, onStop }: {
 
 /** Components whose documents a layer added since has made out of date. Re-export makes them
  *  again — with any component whose Word file lacks corrections (R9 `staleComponents`) — and
- *  leaves the version's current documents alone (`reexportTargets`). */
-function StaleStrip({ count, onReexport, targets, busy, disabled }: {
+ *  leaves the version's current documents alone (`reexportTargets`). It waits for R9: before it
+ *  answers, nothing says which Word files lack corrections (`reexportPlan`). */
+function StaleStrip({ count, onReexport, plan, busy, disabled }: {
   count: number
   /** An admin's Re-export. */
   onReexport?: () => void
-  /** What it re-exports (`reexportTargets`): these components, or every document. */
-  targets?: string[]
+  /** What it re-exports (`reexportPlan`). */
+  plan: ReexportPlan
   busy: boolean
   disabled: boolean
 }) {
+  const title = plan.kind === 'wait'
+    ? 'Reading which Word files lack corrections…'
+    : plan.kind === 'go' && plan.targets
+      ? `Re-export ${plan.targets.join(', ')}`
+      : 'Re-export every document of this version'
   const one = count === 1
   return (
     <div className="flex items-center gap-2 px-5 py-2.5 border-b border-[#fcd34d] bg-[#fffbeb]">
@@ -97,8 +105,8 @@ function StaleStrip({ count, onReexport, targets, busy, disabled }: {
         {onReexport ? 'A re-export makes them again.' : 'A re-export makes them again — an admin starts it.'}
       </p>
       {onReexport && (
-        <Button variant="outline" size="sm" loading={busy} disabled={disabled} onClick={onReexport} className="flex-shrink-0"
-          title={targets ? `Re-export ${targets.join(', ')}` : 'Re-export every document of this version'}>
+        <Button variant="outline" size="sm" loading={busy} disabled={disabled || plan.kind === 'wait'} onClick={onReexport}
+          className="flex-shrink-0" title={title}>
           <Icon name="refresh" size={14} />
           Re-export
         </Button>
@@ -152,7 +160,7 @@ export function ComponentsPanel({ projectId, versionId, isAdmin }: {
   const generate = useGenerateComponents(projectId, versionId)
   const reexport = useReexportVersion(projectId, versionId)
   // R9 (the Documents page reads the same): which components lack corrections.
-  const { data: readiness } = useExportReadiness(projectId, versionId)
+  const { data: readiness, isError: readinessFailed } = useExportReadiness(projectId, versionId)
   const cancel = useCancelJob(projectId)
   const [stopping, setStopping] = useState(false)
   const [open, setOpen] = useState<boolean | null>(null)
@@ -183,9 +191,13 @@ export function ComponentsPanel({ projectId, versionId, isAdmin }: {
       onSuccess: () => { setPicked(new Set()); setPollUntil(Date.now() + 120_000) },
     })
   }
+  const plan = reexportPlan(comps, readiness, readinessFailed)
   function startReexport() {
+    // Never every document of the version by default: R9 not answered yet waits; failed, asks.
+    if (plan.kind === 'wait') return
+    if (plan.kind === 'confirm' && !window.confirm(REEXPORT_ALL_CONFIRM)) return
     // The re-export job shows on the next reads (`job`); keep reading until it does.
-    reexport.mutate(reexportTargets(data?.components ?? [], readiness),
+    reexport.mutate(plan.kind === 'go' ? plan.targets : undefined,
       { onSuccess: () => setPollUntil(Date.now() + 120_000) })
   }
   function stop(job: VersionJob) {
@@ -230,7 +242,7 @@ export function ComponentsPanel({ projectId, versionId, isAdmin }: {
         <StaleStrip
           count={stale}
           onReexport={isAdmin ? startReexport : undefined}
-          targets={reexportTargets(comps, readiness)}
+          plan={plan}
           busy={reexport.isPending}
           disabled={!!data.job || !!data.run?.alive}
         />

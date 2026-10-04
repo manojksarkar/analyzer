@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { RichSection, Slot } from '../../../types'
 import {
   ancestorsOf, buildOutline, defaultExpanded, docCorrections, filterOutline, flowOrder, isCorrected, outlineIds,
-  slotWhere, undoneSince, unitCorrectionCounts, wordFileWrittenAt,
+  slotWhere, undoneInWordFile, unitCorrectionCounts,
 } from '../outline'
 
 function sec(id: string, number: string, title: string, level: number, children: RichSection[] = [],
@@ -129,24 +129,19 @@ describe('flowOrder (a flowchart’s boxes as its arrows run)', () => {
   })
 })
 
-/* "Undone — not in the Word file yet" listed every undo ever made while R9 was stale for any
-   reason. It lists those undone after the Word file was last written. */
-describe('undone corrections the Word file still carries', () => {
-  const rx = (status: string, completedAt: string | null) =>
-    ({ jobId: 'j', status, startedAt: null, completedAt, errorMessage: null })
-  it('the Word file was written by the last re-export that finished, else at the oldest derivation', () => {
-    expect(wordFileWrittenAt({ reexport: rx('complete', '2026-10-02T10:00:00Z'), oldestDerivationAt: '2026-10-01T10:00:00Z' }))
-      .toBe('2026-10-02T10:00:00Z')
-    expect(wordFileWrittenAt({ reexport: rx('failed', '2026-10-02T10:00:00Z'), oldestDerivationAt: '2026-10-01T10:00:00Z' }))
-      .toBe('2026-10-01T10:00:00Z')
-    expect(wordFileWrittenAt({ reexport: null, oldestDerivationAt: null })).toBeNull()
-    expect(wordFileWrittenAt(undefined)).toBeNull()
+/* "Undone — not in the Word file yet": cut off at the last re-export's end (or the version's oldest
+   derivation), it hid undos a partial re-export never wrote. Every undone correction of the
+   document is listed while its Word file is stale. */
+describe('undone corrections the Word file may still carry', () => {
+  const undo = (key: string, updatedAt: string | null) =>
+    slot('description', key, { isOverridden: true, updatedAt })
+  it('lists every one while the Word file is stale, however long ago it was undone', () => {
+    const old = undo('a', '2026-09-01T09:00:00Z')
+    const recent = undo('b', '2026-10-05T09:00:00Z')
+    const unknown = undo('c', null)
+    expect(undoneInWordFile([old, recent, unknown], true).map((s) => s.key)).toEqual(['a', 'b', 'c'])
   })
-  it('keeps only those undone after it, and any with no time to go by', () => {
-    const before = slot('description', 'a', { isOverridden: true, updatedAt: '2026-10-01T09:00:00Z' })
-    const after = slot('description', 'b', { isOverridden: true, updatedAt: '2026-10-01T11:00:00Z' })
-    const unknown = slot('description', 'c', { isOverridden: true, updatedAt: null })
-    expect(undoneSince([before, after, unknown], '2026-10-01T10:00:00Z').map((s) => s.key)).toEqual(['b', 'c'])
-    expect(undoneSince([before, after], null).map((s) => s.key)).toEqual(['a', 'b'])
+  it('lists none once the Word file is up to date', () => {
+    expect(undoneInWordFile([undo('a', '2026-09-01T09:00:00Z')], false)).toEqual([])
   })
 })

@@ -22,15 +22,16 @@ const draft = (over: Partial<WizardDraft> = {}): WizardDraft => ({
   importKept: [], archEdited: false, ...over,
 })
 
-function setup() {
+/** `testAnswer`: what Test Connection answers (default: connected, branches dev and main). */
+function setup(testAnswer?: () => Response) {
   const calls: string[] = []
   server.events.on('request:start', ({ request }) => {
     calls.push(`${request.method} ${new URL(request.url).pathname.replace(/^.*\/api\/v1/, '')}`)
   })
   server.use(
-    http.post(`${API_BASE_URL}/repositories/test-connection`, () => HttpResponse.json({
+    http.post(`${API_BASE_URL}/repositories/test-connection`, testAnswer ?? (() => HttpResponse.json({
       connected: true, default_branch: 'main', branches: ['dev', 'main'], message: 'Connected',
-    })),
+    }))),
     http.get(`${API_BASE_URL}/repositories/browse`, () => HttpResponse.json({ entries: [] })),
     http.post(`${API_BASE_URL}/repositories/browse`, () => HttpResponse.json({ entries: [] })),
   )
@@ -101,6 +102,20 @@ describe('NewProjectPage across a reload', { timeout: 60_000 }, () => {
     const { calls } = setup()
     expect(await screen.findByText('Step 2 of 5')).toBeInTheDocument()
     await waitFor(() => expect(calls.filter((c) => c.endsWith('/repositories/test-connection'))).toHaveLength(1))
+  })
+
+  /* Review of cded9b4: a failed automatic test on a restore cleared the branch, and the draft
+     kept the cleared one — the next reload had lost it. */
+  it.each([
+    ['refuses', () => HttpResponse.json({ connected: false, default_branch: null, branches: [], message: 'Repository unreachable' })],
+    ['fails', () => HttpResponse.json({ detail: { message: 'Bad gateway' } }, { status: 502 })],
+  ])('a restore whose automatic test %s keeps the branch in the draft', async (_, answer) => {
+    saveDraft(draft({ step: 1 }))
+    const { calls } = setup(answer)
+    await waitFor(() => expect(calls.filter((c) => c.endsWith('/repositories/test-connection'))).toHaveLength(1))
+    expect(await screen.findByText(/Repository unreachable|Bad gateway|failed/i)).toBeInTheDocument()
+    await new Promise((r) => setTimeout(r, 100))
+    expect(loadDraft()?.branch).toBe('dev')
   })
 
   it('closing the wizard drops the draft', async () => {

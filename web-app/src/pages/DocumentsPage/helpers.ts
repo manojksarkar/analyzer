@@ -107,8 +107,8 @@ export function layerNote(layer: string, comps: VersionComponent[]): string | nu
 
 /** What the stale strip's Re-export asks for: the components a layer made stale, and those R9
  *  says lack corrections. `undefined` — every document — when that is nothing, when R9 is not
- *  read (still loading, or it failed), or when R9 is stale but does not say which (an older API):
- *  a re-export of fewer would leave a correction out. */
+ *  read, or when R9 is stale but does not say which (an older API): a re-export of fewer would
+ *  leave a correction out. Whether to start it before R9 has answered is `reexportPlan`'s. */
 export function reexportTargets(
   comps: VersionComponent[], readiness: { stale: boolean; staleComponents?: string[] } | undefined,
 ): string[] | undefined {
@@ -117,3 +117,23 @@ export function reexportTargets(
   for (const g of readiness?.stale ? readiness.staleComponents ?? [] : []) ids.add(g)
   return ids.size ? [...ids] : undefined
 }
+
+/** The stale strip's Re-export, by what R9 has said. Every document of a big version is hours of
+ *  work that holds the version's one writer, so it is never the silent fallback of an R9 not read:
+ *  `wait` — R9 is still being read, Re-export waits for it; `confirm` — R9 failed, so nothing says
+ *  which Word files lack corrections: every document, once the admin says so; `go` — R9 answered,
+ *  re-export `targets` (`reexportTargets`; undefined: every document, as R9 asks). */
+export type ReexportPlan = { kind: 'wait' } | { kind: 'confirm' } | { kind: 'go'; targets?: string[] }
+
+export function reexportPlan(
+  comps: VersionComponent[],
+  readiness: { stale: boolean; staleComponents?: string[] } | undefined,
+  readinessFailed: boolean,
+): ReexportPlan {
+  if (!readiness) return readinessFailed ? { kind: 'confirm' } : { kind: 'wait' }
+  return { kind: 'go', targets: reexportTargets(comps, readiness) }
+}
+
+export const REEXPORT_ALL_CONFIRM =
+  'Could not read which Word files lack corrections (R9). Re-export every document of this version? '
+  + 'On a big project that takes hours, and nothing else runs on the version meanwhile.'

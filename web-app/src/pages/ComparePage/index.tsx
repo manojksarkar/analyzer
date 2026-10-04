@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import {
   useVersions, useCommits, useDocuments, useDocument,
 } from '../../hooks/useProjects'
-import { useProjectViewState } from '../../hooks/useProjectViewState'
+import { useFollowDocumentVersion, useProjectViewState } from '../../hooks/useProjectViewState'
 import { useCompareDocuments, useCompareDocumentDetail } from '../../hooks/useCompare'
 import { Icon, Skeleton, CompareSectionSkeleton, StatusBadge } from '../../components/ui'
 import { LoadError } from '../../components/LoadError'
@@ -15,7 +15,7 @@ import { DocTree, type TreeRow } from './components/DocTree'
 import { DocStateBar } from './components/DocStateBar'
 import { ReferencePicker } from './components/ReferencePicker'
 import {
-  DIFF_BADGE, compareVersions, olderVersions, paneSections, sectionAccent, versionRef, type TreeMode,
+  DIFF_BADGE, compareVersions, olderVersions, paneSections, sectionAccent, signColumns, versionRef, type TreeMode,
 } from './helpers'
 
 export function ComparePage() {
@@ -31,6 +31,14 @@ export function ComparePage() {
   const { data: versions } = versionsQuery
   const { data: commits } = useCommits(pid)
   const { viewVersion, isLoading: viewLoading } = useProjectViewState(pid)
+  // Opened on a document (`?doc=`: the reader's Compare, the list's, a shared address): Current is
+  // that document's version, not the latest. Only the document it opened on — a pick in the tree
+  // may be a removed document, which is the reference's. Until the pick has followed it, the
+  // comparison is not read: it would be the latest version's.
+  const [openedOn] = useState(() => searchParams.get('doc'))
+  const { data: openedDoc, isLoading: openedLoading } = useDocument(pid, openedOn ?? '')
+  const { following } = useFollowDocumentVersion(pid, openedDoc)
+  const holding = !!openedOn && (openedLoading || following)
 
   /* Current = the Subbar picker's version (defaults to the latest); the reference is the version
      before it, or an older one picked here. Both by version id, end to end: two versions of one
@@ -39,6 +47,7 @@ export function ComparePage() {
     compareVersions(versions, viewVersion, searchParams.get('ref'))
   const referenceOptions = olderVersions(versions, currentVersion)
   const currentRef = versionRef(currentVersion)
+  const readRef = holding ? undefined : currentRef
   const baselineRef = versionRef(baselineVersion)
   const currentCommit = commits?.find((c) => c.sha === currentVersion?.sha)
   const baselineCommit = commits?.find((c) => c.sha === baselineVersion?.sha)
@@ -46,9 +55,9 @@ export function ComparePage() {
   const [treeModePick, setTreeMode] = useState<TreeMode | null>(null)
   const [changesOnly, setChangesOnly] = useState(false)
 
-  const compareDocsQuery = useCompareDocuments(pid, currentRef, baselineRef)
+  const compareDocsQuery = useCompareDocuments(pid, readRef, baselineRef)
   const { data: compareDocs, isLoading: docsLoading } = compareDocsQuery
-  const allDocsQuery = useDocuments(pid, currentVersion?.id ? { versionId: currentVersion.id } : undefined)
+  const allDocsQuery = useDocuments(pid, currentVersion?.id && !holding ? { versionId: currentVersion.id } : undefined)
   const { data: allDocs, isLoading: allDocsLoading } = allDocsQuery
 
   const changedSet = useMemo(() => new Set((compareDocs?.documents ?? []).map((d) => d.documentId)), [compareDocs])
@@ -67,7 +76,7 @@ export function ComparePage() {
   const activeDocId = (paramKnown ? paramDoc : null) ?? compareDocs?.documents?.[0]?.documentId ?? null
   const treeMode: TreeMode = treeModePick ?? (paramKnown && !paramChanged ? 'all' : 'diff')
 
-  const detailQuery = useCompareDocumentDetail(pid, activeDocId ?? undefined, currentRef, baselineRef)
+  const detailQuery = useCompareDocumentDetail(pid, activeDocId ?? undefined, readRef, baselineRef)
   const { data: detail, isLoading: detailLoading } = detailQuery
   // The open document's review state, shown under it (read-only here). Only for a document of
   // the Current side: a removed one is the reference's.
@@ -138,14 +147,14 @@ export function ComparePage() {
         rows={treeRows} mode={treeMode} setMode={setTreeMode}
         activeId={activeDocId} onSelect={selectDoc}
         changedCount={changedCount} total={totalCount}
-        loading={treeMode === 'diff' ? docsLoading && !compareDocs : (allDocsLoading || versionsQuery.isLoading) && !allDocs}
+        loading={holding || (treeMode === 'diff' ? docsLoading && !compareDocs : (allDocsLoading || versionsQuery.isLoading) && !allDocs)}
         failed={treeFailed}
       />
 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Loading until the versions say what is compared and the list (and a linked document)
             is read: it said "Nothing to compare yet" while the versions loaded. */}
-        {(viewLoading && !versions) || (docsLoading && !compareDocs) || paramPending ? (
+        {(viewLoading && !versions) || holding || (docsLoading && !compareDocs) || paramPending ? (
           /* ─── Loading the diff list ─── */
           <div className="flex-1 overflow-y-auto bg-surface-container-low">
             <div className="bg-white border-b border-outline-variant px-8 pt-7 pb-5 space-y-3">
@@ -261,6 +270,8 @@ export function ComparePage() {
                   visibleSections.map((s) => {
                     const changed = s.diffType !== 'unchanged'
                     const headingSize = s.level <= 1 ? 'text-lg' : s.level === 2 ? 'text-base' : 'text-sm'
+                    // One decision for both sides: a table and its counterpart get the same columns.
+                    const signs = isRich ? signColumns(s.baseline, s.current) : undefined
                     return (
                       <Fragment key={s.key}>
                         {/* Reference cell */}
@@ -271,7 +282,7 @@ export function ComparePage() {
                             <h2 className={cn('text-primary font-semibold font-sans', headingSize)}>{s.title}</h2>
                           </div>
                           {isRich
-                            ? <BlocksPane blocks={s.baseline ?? []} emptyLabel={s.diffType === 'added' ? 'New in current — not present in reference.' : 'No content.'} />
+                            ? <BlocksPane blocks={s.baseline ?? []} signs={signs} emptyLabel={s.diffType === 'added' ? 'New in current — not present in reference.' : 'No content.'} />
                             : <SectionBody content={s.baselineText ?? ''} />}
                         </div>
                         {/* Current cell */}
@@ -291,7 +302,7 @@ export function ComparePage() {
                             </div>
                           )}
                           {isRich
-                            ? <BlocksPane blocks={s.current ?? []} emptyLabel={s.diffType === 'removed' ? 'Removed — not present in current.' : 'No content.'} />
+                            ? <BlocksPane blocks={s.current ?? []} signs={signs} emptyLabel={s.diffType === 'removed' ? 'Removed — not present in current.' : 'No content.'} />
                             : <SectionBody content={s.currentText ?? ''} />}
                         </div>
                       </Fragment>

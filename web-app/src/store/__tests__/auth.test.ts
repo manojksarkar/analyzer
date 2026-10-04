@@ -4,6 +4,7 @@ import { server } from '../../test/server'
 import { API_BASE_URL } from '../../lib/http'
 import { queryClient } from '../../lib/queryClient'
 import { useAuthStore } from '../auth'
+import { loadDraft, saveDraft } from '../../pages/NewProjectPage/draft'
 
 /* Sign-out ends everything the tab knew; only the API saying no to a token ends a session. */
 
@@ -37,6 +38,16 @@ describe('auth store', () => {
     useAuthStore.getState().signOut()
     expect(queryClient.getQueryCache().getAll()).toHaveLength(0)
     expect(useAuthStore.getState()).toMatchObject({ user: null, accessToken: null, isAuthenticated: false })
+  })
+
+  it("sign-out drops the New Project wizard's draft, so the next user does not get it", () => {
+    saveDraft({
+      step: 2, done: [0, 1], name: 'Secret FW', repoUrl: 'https://git.example/fw.git', branch: 'main', tokenUsed: true,
+      cores: [], layers: [], fileAssignments: {}, members: [], imported: null, importKept: [], archEdited: false,
+    })
+    expect(loadDraft()?.name).toBe('Secret FW')
+    useAuthStore.getState().signOut()
+    expect(loadDraft()).toBeNull()
   })
 
   it.each([500, 503, 'network' as const])('a %s from /auth/me keeps the session', async (status) => {

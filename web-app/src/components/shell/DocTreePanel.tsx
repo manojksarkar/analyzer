@@ -33,14 +33,25 @@ export function DocTreePanel({
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
 
+  // The reviewer menu closes on a click outside it, and on Esc -- back to its button.
   useEffect(() => {
     if (!open) return
     function onDown(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      setOpen(false)
+      trigger.current?.focus()
+    }
     document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
   }, [open])
 
   const label = !effectiveAssignee ? 'Reviewer'
@@ -64,6 +75,7 @@ export function DocTreePanel({
         key={d.id}
         onClick={() => onOpenDoc(d)}
         title={d.name}
+        aria-current={active ? 'page' : undefined}
         className={cn(
           'w-full flex items-center gap-1.5 py-[5px] pr-2.5 transition-colors text-left font-mono text-caption',
           pad,
@@ -101,7 +113,11 @@ export function DocTreePanel({
       {/* Assignee filter */}
       <div className="px-3 py-2 border-b border-outline-variant flex-shrink-0 relative" ref={ref}>
         <button
+          ref={trigger}
           onClick={() => setOpen((v) => !v)}
+          aria-haspopup="true"
+          aria-expanded={open}
+          aria-label={`Reviewer filter: ${label}`}
           className={cn(
             'w-full flex items-center gap-2 px-2.5 py-1.5 border rounded-lg bg-white hover:bg-surface-container-low transition-colors font-mono text-caption font-medium',
             effectiveAssignee ? 'border-secondary text-secondary' : 'border-outline-variant text-on-surface-variant',
@@ -151,8 +167,8 @@ export function DocTreePanel({
         )}
       </div>
 
-      {/* Tree */}
-      <div className="flex-1 overflow-y-auto min-h-0 py-2">
+      {/* Tree: buttons in reading order, so Tab walks it */}
+      <nav aria-label="Documents of this version" className="flex-1 overflow-y-auto min-h-0 py-2">
         {loading ? (
           <div className="px-2.5 space-y-2" aria-hidden>
             {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-5" />)}
@@ -173,6 +189,7 @@ export function DocTreePanel({
                   key={g.process}
                   onClick={() => onOpenDoc(d)}
                   title={d.name}
+                  aria-current={active ? 'page' : undefined}
                   className={cn(
                     'w-full flex items-center gap-2 px-3 py-2 transition-colors text-left select-none',
                     active ? 'bg-surface-container-low' : 'hover:bg-surface-container-low',
@@ -199,6 +216,7 @@ export function DocTreePanel({
               <div key={g.process}>
                 <button
                   onClick={() => toggleCollapse(g.process)}
+                  aria-expanded={isOpen}
                   className="w-full flex items-center gap-1.5 px-3 py-2 hover:bg-surface-container-low transition-colors select-none"
                 >
                   <Icon name="chevron_right" size={14} className={cn('text-on-surface-variant transition-transform', isOpen && 'rotate-90')} />
@@ -214,6 +232,7 @@ export function DocTreePanel({
                         <div key={key}>
                           <button
                             onClick={() => toggleCollapse(key)}
+                            aria-expanded={layerOpen}
                             className="w-full flex items-center gap-1.5 pl-7 pr-3 py-1.5 hover:bg-surface-container-low transition-colors select-none"
                           >
                             <Icon name="chevron_right" size={12} className={cn('text-on-surface-variant transition-transform', layerOpen && 'rotate-90')} />
@@ -228,7 +247,7 @@ export function DocTreePanel({
             )
           })
         )}
-      </div>
+      </nav>
     </aside>
   )
 }

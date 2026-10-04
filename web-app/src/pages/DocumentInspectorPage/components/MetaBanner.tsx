@@ -11,7 +11,7 @@ export function MetaBanner({ meta }: { meta: DocMeta }) {
     ['Layers', meta.layers.length],
   ]
   return (
-    <div className="px-8 py-2.5 border-b border-outline-variant bg-surface flex flex-wrap items-center gap-x-[18px] gap-y-1.5">
+    <div className="px-5 2xl:px-8 py-2.5 border-b border-outline-variant bg-surface flex flex-wrap items-center gap-x-[18px] gap-y-1.5">
       <span className="flex items-center gap-1.5 font-mono text-caption uppercase tracking-[0.06em] text-on-surface-variant">
         <Icon
           name={meta.source === 'pipeline' ? 'bolt' : 'dataset'}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useProject, useVersions, useCommits } from '../hooks/useProjects'
 import { useCreateVersion } from '../hooks/useVersionMutations'
@@ -161,6 +161,16 @@ export function VersionsPage() {
   )
 }
 
+/* ── One item of a row's meta line, after a "·" that wraps with it ── */
+function MetaItem({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-2.5 min-w-0">
+      <Text variant="caption" className="text-outline flex-shrink-0" aria-hidden>·</Text>
+      {children}
+    </span>
+  )
+}
+
 /* ── Single version row ── */
 function VersionRow({ v, isCurrent, last, running, onView, onCompare }: { v: Version; isCurrent: boolean; last: boolean; running: boolean; onView: () => void; onCompare: () => void }) {
   const status = versionStatusKey(v.status, running)
@@ -183,16 +193,16 @@ function VersionRow({ v, isCurrent, last, running, onView, onCompare }: { v: Ver
             </div>
             <Text as="p" variant="body" className="text-on-surface-variant mb-2 leading-[1.5]">{v.description}</Text>
             <ReviewLine v={v} />
-            <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Each "·" goes with the item after it: when the line wraps, it moves down with that
+                item instead of dangling at the end of the line above. */}
+            <div className="flex items-center gap-x-2.5 gap-y-1 flex-wrap">
               <span className="font-mono text-label font-medium bg-[#f3f4f6] text-on-surface-variant px-1.5 py-px rounded">{v.shortSha}</span>
               <Text variant="caption" className="text-outline">{v.docsCount} docs</Text>
-              <Text variant="caption" className="text-outline">·</Text>
-              <Text variant="caption" className="text-outline">{v.date}</Text>
+              <MetaItem><Text variant="caption" className="text-outline">{v.date}</Text></MetaItem>
               {made && (
-                <>
-                  <Text variant="caption" className="text-outline">·</Text>
+                <MetaItem>
                   <Text variant="caption" className="font-mono text-on-surface-variant" title="How this version was made">{made}</Text>
-                </>
+                </MetaItem>
               )}
             </div>
           </div>

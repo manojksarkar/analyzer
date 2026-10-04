@@ -3,11 +3,13 @@ import { Icon } from '../../../components/ui'
 import { cn } from '../../../lib/cn'
 import { parseSectionBody } from '../../../lib/markdown'
 import type { CompareBlock, DiffMark, DiffSegment } from '../../../types'
-import { MARK_MEANING, rowChange } from '../helpers'
+import { MARK_MEANING, rowChange, signColumns } from '../helpers'
 
 /* ─── Inline highlight styling by change mark ───
    Not by colour alone: added text is underlined, removed text struck through, changed text
-   dotted-underlined, and each says what it is to a screen reader. */
+   dotted-underlined, and each says what it is to a screen reader. What it says is for the screen
+   reader only: `select-none` keeps "[added: …]" out of text copied from the page. */
+const SR_ONLY = 'sr-only select-none'
 const MARK_INLINE: Record<DiffMark, string> = {
   none:   '',
   add:    'bg-[rgba(0,165,114,.18)] text-on-tertiary-container rounded-[2px] px-px underline decoration-1 underline-offset-2',
@@ -31,7 +33,7 @@ function Segments({ segments }: { segments: DiffSegment[] }) {
         const Tag = s.mark === 'add' ? 'ins' : s.mark === 'del' ? 'del' : 'span'
         return (
           <Tag key={i} className={MARK_INLINE[s.mark]}>
-            <span className="sr-only">[{MARK_MEANING[s.mark].label}: </span>{s.text}<span className="sr-only">]</span>
+            <span className={SR_ONLY}>[{MARK_MEANING[s.mark].label}: </span>{s.text}<span className={SR_ONLY}>]</span>
           </Tag>
         )
       })}
@@ -45,7 +47,7 @@ function RowMarker({ mark }: { mark: DiffMark }) {
   const m = MARK_MEANING[mark]
   return (
     <td className="w-6 px-1.5 py-2 align-top text-center font-mono font-bold text-on-surface-variant" title={m.label}>
-      <span aria-hidden>{m.sign}</span><span className="sr-only">{m.label}</span>
+      <span aria-hidden>{m.sign}</span><span className={SR_ONLY}>{m.label}</span>
     </td>
   )
 }
@@ -86,8 +88,9 @@ function DiffDiagramBlock({ block }: { block: Extract<CompareBlock, { kind: 'dia
   )
 }
 
-/* ─── One diff block (text | keyvalue | table | diagram) ─── */
-function DiffBlockView({ block }: { block: CompareBlock }) {
+/* ─── One diff block (text | keyvalue | table | diagram) ───
+   `marked`: a table's sign column, decided with the other pane's (`signColumns`). */
+function DiffBlockView({ block, marked = false }: { block: CompareBlock; marked?: boolean }) {
   if (block.kind === 'text') {
     return (
       <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">
@@ -106,14 +109,13 @@ function DiffBlockView({ block }: { block: CompareBlock }) {
   if (block.kind === 'diagram') {
     return <DiffDiagramBlock block={block} />
   }
-  // table — with a marker column when any row or cell changed
-  const marked = block.rows.some((_, ri) => rowChange(block.rowMarks[ri], block.cellMarks[ri]) !== 'none')
+  // table — with a marker column when any row or cell changed, here or in its counterpart
   return (
     <div className="overflow-x-auto border border-outline-variant rounded-lg">
       <table className="w-full text-left text-xs">
         <thead className="bg-surface-container text-on-surface-variant">
           <tr>
-            {marked && <th className="w-6 px-1.5 py-2.5 border-b border-outline-variant"><span className="sr-only">Change</span></th>}
+            {marked && <th className="w-6 px-1.5 py-2.5 border-b border-outline-variant"><span className={SR_ONLY}>Change</span></th>}
             {block.headers.map((h, hi) => (
               <th key={hi} className="px-3 py-2.5 border-b border-outline-variant font-semibold whitespace-nowrap">{h}</th>
             ))}
@@ -144,14 +146,18 @@ function DiffBlockView({ block }: { block: CompareBlock }) {
   )
 }
 
-/* ─── A pane's stack of blocks (or an empty-side placeholder) ─── */
-export function BlocksPane({ blocks, emptyLabel }: { blocks: CompareBlock[]; emptyLabel: string }) {
+/* ─── A pane's stack of blocks (or an empty-side placeholder) ───
+   `signs`: each table's sign column by its order among the tables (`signColumns` of both panes,
+   so the two sides have the same columns); by default, decided from this pane alone. */
+export function BlocksPane({ blocks, emptyLabel, signs }: { blocks: CompareBlock[]; emptyLabel: string; signs?: boolean[] }) {
   if (!blocks.length) {
     return <p className="text-on-surface-variant italic text-sm">{emptyLabel}</p>
   }
+  const columns = signs ?? signColumns(blocks)
+  let table = -1
   return (
     <div className="space-y-3">
-      {blocks.map((b, i) => <DiffBlockView key={i} block={b} />)}
+      {blocks.map((b, i) => <DiffBlockView key={i} block={b} marked={b.kind === 'table' && !!columns[++table]} />)}
     </div>
   )
 }

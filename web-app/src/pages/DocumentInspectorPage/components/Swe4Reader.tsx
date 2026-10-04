@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { memo, useState, type ReactNode } from 'react'
 import { cn } from '../../../lib/cn'
 import type { RichSection, RichTable, TestSpecData, TestSummary } from '../../../types'
 
@@ -13,7 +13,7 @@ import type { RichSection, RichTable, TestSpecData, TestSummary } from '../../..
 export function Swe4Strip({ summary }: { summary: TestSummary }) {
   const plural = (n: number, one: string, many = `${one}s`) => `${n === 1 ? one : many}`
   return (
-    <div className="px-8 py-2.5 border-b border-outline-variant bg-surface flex flex-wrap gap-x-[18px] gap-y-1.5 font-mono text-caption text-on-surface-variant">
+    <div className="px-5 2xl:px-8 py-2.5 border-b border-outline-variant bg-surface flex flex-wrap gap-x-[18px] gap-y-1.5 font-mono text-caption text-on-surface-variant">
       <span><b className="text-on-surface">{summary.units}</b> {plural(summary.units, 'unit')}</span>
       <span><b className="text-on-surface">{summary.functionSpecs}</b> function {plural(summary.functionSpecs, 'spec')}</span>
       <span><b className="text-on-surface">{summary.dynamicSpecs}</b> dynamic behaviour {plural(summary.dynamicSpecs, 'spec')}</span>
@@ -23,16 +23,18 @@ export function Swe4Strip({ summary }: { summary: TestSummary }) {
   )
 }
 
-/** Every section of the document, flat, in DOCX order. */
-export function Swe4Body({ sections }: { sections: RichSection[] }) {
+/** Every section of the document, flat, in DOCX order. Memoised, each section too: the page
+ *  renders again on every section scrolled past (the outline marks it) and on each job poll, and
+ *  a SWE.4 document holds hundreds of test specs. */
+export const Swe4Body = memo(function Swe4Body({ sections }: { sections: RichSection[] }) {
   return (
-    <div className="px-8 py-10 space-y-14">
+    <div className="px-5 py-8 space-y-12 2xl:px-8 2xl:py-10 2xl:space-y-14">
       {sections.map((s) => <Swe4Section key={s.id} section={s} />)}
     </div>
   )
-}
+})
 
-function Swe4Section({ section }: { section: RichSection }) {
+function Swe4SectionView({ section }: { section: RichSection }) {
   if (section.type === 'test_spec' && section.testSpec) {
     return <SpecCard section={section} spec={section.testSpec} />
   }
@@ -61,6 +63,8 @@ function Swe4Section({ section }: { section: RichSection }) {
     </section>
   )
 }
+
+const Swe4Section = memo(Swe4SectionView)
 
 function TermsTable({ table }: { table: RichTable }) {
   return (

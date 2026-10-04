@@ -1,4 +1,4 @@
-import type { ExportReadiness, RichSection, Slot } from '../../types'
+import type { RichSection, Slot } from '../../types'
 
 /* The right panel's Outline and Corrections, as pure functions of the rendered document. A
    firmware document has hundreds of functions: the outline folds them under their unit, a
@@ -154,23 +154,12 @@ export function docCorrections(all: Slot[], sections: RichSection[], group: stri
   }
 }
 
-/** When the version's Word files were last written: the last re-export's end when it finished,
- *  else the version's oldest derivation (R9). Null when R9 does not say. */
-export function wordFileWrittenAt(r: Pick<ExportReadiness, 'reexport' | 'oldestDerivationAt'> | null | undefined): string | null {
-  if (r?.reexport?.status === 'complete' && r.reexport.completedAt) return r.reexport.completedAt
-  return r?.oldestDerivationAt ?? null
-}
-
-/** The undone corrections the Word file still carries: those undone after it was written. An
- *  undo before it is in it already (the list showed every undo ever made while R9 was stale for
- *  any reason). With no time to go by, each is kept: it may still be in the file. */
-export function undoneSince(undone: Slot[], writtenAt: string | null): Slot[] {
-  const since = writtenAt ? Date.parse(writtenAt) : NaN
-  if (Number.isNaN(since)) return undone
-  return undone.filter((s) => {
-    const at = s.updatedAt ? Date.parse(s.updatedAt) : NaN
-    return Number.isNaN(at) || at > since
-  })
+/** The undone corrections to list as "not in the Word file yet": every one of the document while
+ *  its Word file is stale, none once it is not. Not cut off by time: a re-export can be partial
+ *  (some components only), and R9's `oldestDerivationAt` is the version's, not the component's —
+ *  so no time says which undo a given Word file already has. */
+export function undoneInWordFile(undone: Slot[], wordFileStale: boolean): Slot[] {
+  return wordFileStale ? undone : []
 }
 
 /** One slot of a version, by kind and key: a key alone may name two kinds (a function's

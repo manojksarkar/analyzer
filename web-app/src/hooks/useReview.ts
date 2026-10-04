@@ -90,10 +90,15 @@ function useAfterSave(projectId: string, versionId: string) {
   return async (saved: Slot[]) => {
     // A read of R1 under way began before this save: its answer would put the saved slots back
     // as they were. Stop it, then patch what is cached — or, with nothing cached yet, read again.
+    // A read that was stopped was asked for by something (a discard, a job's end, a focus): its
+    // ask must not be lost with it, so R1 is read again — the save is in that answer.
     const key = projectKeys.overrides(projectId, versionId)
+    const stopped = qc.isFetching({ queryKey: key, exact: true }) > 0
     await qc.cancelQueries({ queryKey: key, exact: true })
-    if (qc.getQueryData(key)) qc.setQueryData<Slot[]>(key, (old) => patchOverrides(old, saved))
-    else qc.invalidateQueries({ queryKey: key, exact: true })
+    if (qc.getQueryData(key)) {
+      qc.setQueryData<Slot[]>(key, (old) => patchOverrides(old, saved))
+      if (stopped) qc.invalidateQueries({ queryKey: key, exact: true })
+    } else qc.invalidateQueries({ queryKey: key, exact: true })
     qc.invalidateQueries({
       queryKey: projectKeys.review(projectId, versionId),
       predicate: (q) => q.queryKey[4] !== 'overrides',

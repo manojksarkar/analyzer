@@ -355,7 +355,7 @@ function WizardView({
   // A restored public repository is connected again by itself: its branches and files are not
   // kept, and steps 3 and 5 check every path against them. A private one waits for its token.
   useEffect(() => {
-    if (draft?.repoUrl && !reenterToken) void testConnection()
+    if (draft?.repoUrl && !reenterToken) void testConnection({ restoring: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, for the draft this page opened with
   }, [])
   // An undo is offered for a while, not forever.
@@ -395,7 +395,10 @@ function WizardView({
       if (seq === treeSeq.current) setRepoTreeLoading(false)
     }
   }
-  async function testConnection() {
+  /** `restoring`: the automatic test of a restored draft. If it fails (the network, the server),
+   *  the draft's branch is kept — in the page and so in the draft — for the next test to pick. */
+  async function testConnection(opts: { restoring?: boolean } = {}) {
+    const dropBranch = () => { if (!opts.restoring) setBranch('') }
     if (!repoUrl.trim()) {
       setErrs((p) => ({ ...p, repo: true }))
       return
@@ -410,7 +413,7 @@ function WizardView({
       if (!res.connected) {
         setTestState('idle')
         setTestMsg({ text: res.message || 'Could not connect to the repository.', tone: 'error' })
-        setBranches([]); setBranch(''); setRepoTree([])
+        setBranches([]); dropBranch(); setRepoTree([])
         return
       }
       // An imported config's branch wins when the repository has it.
@@ -430,7 +433,7 @@ function WizardView({
     } catch (e) {
       setTestState('idle')
       setTestMsg({ text: (e as Error).message || 'Connection failed.', tone: 'error' })
-      setBranches([]); setBranch(''); setRepoTree([])
+      setBranches([]); dropBranch(); setRepoTree([])
     }
   }
 
@@ -890,7 +893,7 @@ function WizardView({
 
                 {/* Test connection */}
                 <div className="flex items-center gap-3 pt-1">
-                  <button onClick={testConnection} disabled={testState === 'connecting'} className="flex items-center gap-1.5 px-4 py-2 border border-outline-variant rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors flex-shrink-0 disabled:opacity-60 font-mono text-caption font-bold tracking-[.06em] uppercase text-on-surface-variant">
+                  <button onClick={() => void testConnection()} disabled={testState === 'connecting'} className="flex items-center gap-1.5 px-4 py-2 border border-outline-variant rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors flex-shrink-0 disabled:opacity-60 font-mono text-caption font-bold tracking-[.06em] uppercase text-on-surface-variant">
                     <Icon name="wifi_tethering" size={15} />
                     Test Connection
                   </button>

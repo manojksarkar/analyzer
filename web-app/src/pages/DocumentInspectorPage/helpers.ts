@@ -40,3 +40,29 @@ export function zoomAt(v: ChartView, factor: number, px: number, py: number): Ch
   const k = scale / v.scale
   return { scale, x: px - (px - v.x) * k, y: py - (py - v.y) * k }
 }
+
+/** A flowchart's picture in the reading column: its own size, but no taller than `maxH`, so a
+ *  tall chart (a long function is ~10,000 x 37,000 px) is drawn narrow rather than as a sliver
+ *  letterboxed in a column-wide box; the column narrows a wide one (max-width 100%, the height
+ *  following the ratio). Given as the image's width and height, it also reserves the space before
+ *  the picture loads. Null when the size is not known (an older API). */
+export function thumbSize(w: number | null | undefined, h: number | null | undefined, maxH = 480): { width: number; height: number } | null {
+  if (!w || !h || w <= 0 || h <= 0) return null
+  const k = Math.min(1, maxH / h)
+  return { width: Math.max(1, Math.round(w * k)), height: Math.max(1, Math.round(h * k)) }
+}
+
+/** The viewer's keys: zoom (+ -), whole chart (0), move (arrows). */
+export type ViewerKey = 'in' | 'out' | 'fit' | 'left' | 'right' | 'up' | 'down'
+export function viewerKey(key: string): ViewerKey | null {
+  switch (key) {
+    case '+': case '=': return 'in'
+    case '-': case '_': return 'out'
+    case '0': return 'fit'
+    case 'ArrowLeft': return 'left'
+    case 'ArrowRight': return 'right'
+    case 'ArrowUp': return 'up'
+    case 'ArrowDown': return 'down'
+    default: return null
+  }
+}

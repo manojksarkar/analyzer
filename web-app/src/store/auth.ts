@@ -3,6 +3,7 @@ import { persist, createJSONStorage, type StateStorage } from 'zustand/middlewar
 import { authApi } from '../services/api'
 import { ApiError } from '../lib/http'
 import { queryClient } from '../lib/queryClient'
+import { clearDraft } from '../pages/NewProjectPage/draft'
 import type { AuthUser } from '../types'
 
 const REMEMBER_KEY = 'auth-remember'
@@ -89,6 +90,8 @@ export const useAuthStore = create<AuthState>()(
         // Drop every cached read: the next user to sign in on this tab must not see this one's
         // projects, documents or reviews.
         queryClient.clear()
+        // Nor this one's half-made project (the New Project wizard keeps its draft in the tab).
+        clearDraft()
       },
     }),
     {

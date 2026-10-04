@@ -65,6 +65,7 @@ function CorrectedMark({ slot, edit }: { slot: Slot; edit: EditApi | null }) {
   return (
     <span
       title={title}
+      role="img"
       aria-label="Corrected by a reviewer"
       className="inline-block w-1.5 h-1.5 rounded-full bg-secondary mr-1.5 align-middle"
     />

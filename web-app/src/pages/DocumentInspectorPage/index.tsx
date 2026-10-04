@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useDocument, useDocuments, useDocumentRender, useTeam, useProject } from '../../hooks/useProjects'
-import { useProjectViewState } from '../../hooks/useProjectViewState'
+import { useFollowDocumentVersion, useProjectViewState } from '../../hooks/useProjectViewState'
 import { useDownloadDoc } from '../../hooks/useDocumentMutations'
 import { useDocumentEvents, useDocumentReadiness } from '../../hooks/useApproval'
 import {
@@ -35,7 +35,7 @@ import { FlowchartLabelDialog } from './components/FlowchartLabelDialog'
 import { TreeRail } from './components/TreeRail'
 import { EditContext, type EditApi } from './editContext'
 import {
-  buildOutline, docCorrections, docSlots, outlineIds, slotRef, undoneSince, unitCorrectionCounts, wordFileWrittenAt,
+  buildOutline, docCorrections, docSlots, outlineIds, slotRef, undoneInWordFile, unitCorrectionCounts,
 } from './outline'
 import { isMine, whyNot, type ReviewCtx } from './review'
 import { useScrollSpy } from './useScrollSpy'
@@ -61,6 +61,9 @@ export function DocumentInspectorPage() {
   const { data: rich } = renderQuery
   const { data: team } = useTeam(pid)
   const { viewVersion, pageState } = useProjectViewState(pid)
+  // Opened on this document (a link, a notification, an address): the Subbar's version chip and
+  // status are its version's, not the latest's.
+  useFollowDocumentVersion(pid, doc)
   // The left rail lists every doc of THIS document's version, so you can jump between documents
   // without going back. Not the Subbar's: while a newer run is going, the Subbar shows that
   // run's draft, which has no documents, and the rail said "No documents" beside an open one.
@@ -221,8 +224,8 @@ export function DocumentInspectorPage() {
   // names its component (`staleComponents`).
   const wordStale = componentWordFileStale(readiness, doc.group)
   const docStale = !approved && wordStale
-  // Undone corrections the Word file still carries: those undone since it was last written.
-  const undoneShown = wordStale ? undoneSince(corrections.undone, wordFileWrittenAt(readiness)) : []
+  // Undone corrections the Word file may still carry: every one, while it is stale (R9 counts them).
+  const undoneShown = undoneInWordFile(corrections.undone, wordStale)
   const versionOrphans = (overrides ?? []).filter((s) => s.isOrphaned).length
   const reviewCtx: ReviewCtx = {
     isAdmin: !!isAdmin,
@@ -286,7 +289,10 @@ export function DocumentInspectorPage() {
       {/* ── Document canvas ── */}
       <main ref={setCanvasEl} className="flex-1 overflow-y-auto bg-surface-container-low">
         {isEditing && <EditBar locked={locked} />}
-        <div className="max-w-5xl mx-auto px-6 py-8">
+        {/* The reading column: room for the tables at a laptop's width (paddings grow on a wide
+            screen only), capped so a wide screen does not stretch the lines; prose keeps its own
+            measure (Sections). */}
+        <div className="max-w-[1120px] mx-auto px-4 py-6 2xl:px-6 2xl:py-8">
           <ReviewStateBanner
             doc={doc}
             isAdmin={!!isAdmin}
@@ -303,7 +309,7 @@ export function DocumentInspectorPage() {
           <div className="bg-white rounded-xl border border-outline-variant overflow-hidden shadow-[0_1px_4px_rgba(4,22,39,.06)]">
 
             {/* Cover header */}
-            <div className="px-8 pt-10 pb-8 border-b border-outline-variant">
+            <div className="px-5 pt-8 pb-6 2xl:px-8 2xl:pt-10 2xl:pb-8 border-b border-outline-variant">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <Text as="p" variant="label" className="text-on-surface-variant tracking-[0.1em] mb-2">
@@ -329,7 +335,12 @@ export function DocumentInspectorPage() {
                   >
                     <Icon name="download" size={15} />
                     DOCX
-                    {docStale && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber border-2 border-white" aria-label="Out of date" />}
+                    {docStale && (
+                      <>
+                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber border-2 border-white" aria-hidden />
+                        <span className="sr-only"> (out of date: re-export first)</span>
+                      </>
+                    )}
                   </button>
                   {!isUnchanged && (
                     <button
@@ -350,7 +361,7 @@ export function DocumentInspectorPage() {
 
             {/* Sections */}
             {rich && isSwe4 ? <Swe4Body sections={rich.sections} /> : (
-            <div className="px-8 py-10 space-y-12">
+            <div className="px-5 py-8 space-y-10 2xl:px-8 2xl:py-10 2xl:space-y-12">
               {!rich && renderQuery.isError ? (
                 <LoadError compact what="the document's content" error={renderQuery.error}
                            retrying={renderQuery.isFetching} onRetry={() => { void renderQuery.refetch() }} />

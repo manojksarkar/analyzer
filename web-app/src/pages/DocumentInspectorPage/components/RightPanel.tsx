@@ -7,7 +7,8 @@ export interface PanelTab {
   count?: number
 }
 
-/* The reader's right panel: tabs (Outline · Review · Corrections), collapsible to a thin rail. */
+/* The reader's right panel: tabs (Outline · Review · Corrections), collapsible to a thin rail.
+   By keyboard: Tab reaches the selected tab, the arrows (Home, End) move between the tabs. */
 export function RightPanel({
   tabs, active, onTab, collapsed, onToggle, children,
 }: {
@@ -36,12 +37,24 @@ export function RightPanel({
   return (
     <aside className="w-64 flex-shrink-0 bg-white border-l border-outline-variant flex flex-col overflow-hidden">
       <div className="flex items-center border-b border-outline-variant flex-shrink-0 pl-1 pr-0.5">
-        <div role="tablist" className="flex flex-1 min-w-0">
+        <div role="tablist" aria-label="Panel" className="flex flex-1 min-w-0" onKeyDown={(e) => {
+          const i = tabs.findIndex((t) => t.id === active)
+          const next = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1
+            : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : null
+          if (next === null || !tabs.length) return
+          e.preventDefault()
+          const t = tabs[(next + tabs.length) % tabs.length]
+          onTab(t.id)
+          e.currentTarget.querySelector<HTMLElement>(`#panel-tab-${t.id}`)?.focus()
+        }}>
           {tabs.map((t) => (
             <button
               key={t.id}
+              id={`panel-tab-${t.id}`}
               role="tab"
               aria-selected={active === t.id}
+              aria-controls="panel-tabpanel"
+              tabIndex={active === t.id ? 0 : -1}
               onClick={() => onTab(t.id)}
               className={cn(
                 'flex items-center gap-1 px-1.5 pt-3 pb-2.5 -mb-px border-b-2 font-mono text-caption font-semibold whitespace-nowrap transition-colors',
@@ -64,7 +77,9 @@ export function RightPanel({
           <Icon name="chevron_right" size={15} />
         </button>
       </div>
-      {children}
+      <div id="panel-tabpanel" role="tabpanel" aria-labelledby={`panel-tab-${active}`} className="flex-1 flex flex-col min-h-0">
+        {children}
+      </div>
     </aside>
   )
 }
