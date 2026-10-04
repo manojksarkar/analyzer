@@ -1330,3 +1330,17 @@ class TestEveryRouteGivesASlotInOneShape:
             assert self.SLOT | self.SAVE <= set(u.json()), kind
             assert u.json()["text"] == u.json()["llmText"] and u.json()["canUndo"] is False
         assert "llm n1" in u.json()["dot"] and "renderPending" in u.json()
+
+
+class TestQueuedTextsCarryAName:
+    """A save's `queuedForRegeneration` carries `label` -- the function's or the unit's name --
+    so the web app can say WHICH texts will be rewritten without taking a key apart."""
+
+    def test_a_function_and_a_unit(self):
+        from api.routes.text_overrides import _readable
+        assert _readable("description", "Layer1.Lib|Lib|libAdd|int,int") == "libAdd"
+        assert _readable("unitDescription", "Layer1.Lib|Lib") == "Lib"
+
+    def test_a_key_it_cannot_read_is_its_own_label(self):
+        from api.routes.text_overrides import _readable
+        assert _readable("description", "nonsense") == "nonsense"

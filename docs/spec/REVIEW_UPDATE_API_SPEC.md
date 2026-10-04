@@ -400,6 +400,7 @@ What a correction invalidated — text that was generated **from** the text just
 |---|---|---|
 | `slotKind` | string | |
 | `slotKey` | string | |
+| `label` | string | in a save's answer: the function's, global's or unit's name, for saying WHICH texts the next run rewrites without taking the key apart |
 
 ---
 
@@ -531,8 +532,8 @@ of SWE.3 alone), `queuedForRegeneration`.
   "firstEdit": true,
   "viewsDerived": [],
   "queuedForRegeneration": [
-    { "slotKind": "unitDescription", "slotKey": "Layer2.Gpio|GpioDrv" },
-    { "slotKind": "description", "slotKey": "Layer1.App|AppMain|App_Start|void" }
+    { "slotKind": "unitDescription", "slotKey": "Layer2.Gpio|GpioDrv", "label": "GpioDrv" },
+    { "slotKind": "description", "slotKey": "Layer1.App|AppMain|App_Start|void", "label": "App_Start" }
   ]
 }
 ```

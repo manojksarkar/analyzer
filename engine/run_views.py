@@ -232,10 +232,11 @@ def _with_text_overrides(config):
 
 
 def _check_model_corrections(model) -> None:
-    """Leave this run's views unstamped when the model lacks a correction that is in force
-    (`review.carry_forward.corrections_missing`): Phase 2 could not put it back, so the views
-    print the LLM's text -- the export guard then asks for a re-derive instead (RF-1). Never
-    fatal, like loading the corrections."""
+    """Every correction in force must be in the model these views are built from. Phase 2 puts
+    them back last and never fails a run over it, so one can be missing (RF-1): this run puts it
+    back -- in `model` and in the stored model (`carry_forward.restore_missing_corrections`) --
+    and only if that fails are the views left unstamped, so the export guard does not call the
+    LLM's text up to date. Never fatal, like loading the corrections."""
     global _OVERRIDES_UNAVAILABLE
     try:
         from core.run_context import version_id as _vid
@@ -243,16 +244,23 @@ def _check_model_corrections(model) -> None:
         vid = _vid()
         if not (vid and is_database_configured()):
             return
-        from review.carry_forward import corrections_missing
+        from review.carry_forward import corrections_missing, restore_missing_corrections
         with get_engine().connect() as cx:
             missing = corrections_missing(cx, vid, model)
+        if missing:
+            with get_engine().begin() as cx:
+                n = restore_missing_corrections(cx, vid, model, missing)
+            print("[run_views] put back %d reviewer correction(s) the model had lost (Phase 2 "
+                  "could not re-apply them)" % n)
+            with get_engine().connect() as cx:
+                missing = corrections_missing(cx, vid, model)
     except Exception as exc:                       # noqa: BLE001 - cannot tell: the cautious way
         missing = [("?", str(exc))]
     if missing:
         _OVERRIDES_UNAVAILABLE = True
-        print("[run_views] WARNING: %d reviewer correction(s) are not in the model (Phase 2 could "
-              "not put them back, e.g. %s %s): these views print the LLM's text and are left "
-              "marked stale, so an export re-derives them first" % (len(missing), *missing[0]))
+        print("[run_views] WARNING: %d reviewer correction(s) are not in the model and could not "
+              "be put back (e.g. %s %s): these views print the LLM's text and are left marked "
+              "stale; `reexport --from-phase 2` re-derives the model" % (len(missing), *missing[0]))
 
 
 def _rebuilt_behaviour_rows(output_dir) -> list:

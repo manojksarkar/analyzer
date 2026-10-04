@@ -243,9 +243,24 @@ def start_reexport(db: Any, version: Any, components: Optional[list] = None) -> 
                                    or not (scope or {}).get("names")):
             raise ReexportRefused(
                 409, "NO_DOCUMENTS",
-                f"Version '{version.id}' has no documents to re-export yet.")
+                f"Version '{version.id}' has no documents recorded to re-export. A version made "
+                f"from the command line before its documents were recorded: `python analyzer.py "
+                f"register --project-id {version.project_id} --version-id {version.id}`, or "
+                f"`python analyzer.py reexport` for it.")
+        if generation is not None and generation.status != "complete":
+            raise ReexportRefused(
+                409, "VERSION_NOT_READY",
+                f"Version '{version.id}' has no finished generation to re-export: its job "
+                f"{generation.id} is '{generation.status}'.", generation.id)
         if components:
-            have = set((scope or {}).get("names") or [])
+            # Any component with documents -- its model entry is not asked for (`analyzer.py
+            # reexport`'s rule, `staged.reexport_targets`).
+            try:
+                from .version_components import _staged, components_view
+                has_documents = _staged().has_documents
+                have = {c["component"] for c in components_view(db, version) if has_documents(c)}
+            except Exception:                         # noqa: BLE001 - the default scope's view
+                have = set((scope or {}).get("names") or [])
             missing = [c for c in components if c not in have]
             if missing:
                 raise ReexportRefused(
@@ -253,11 +268,6 @@ def start_reexport(db: Any, version: Any, components: Optional[list] = None) -> 
                     f"Not re-exportable -- no documents in version '{version.id}': "
                     f"{', '.join(missing)}. `Generate` makes them.")
             scope = {"type": "component", "names": list(dict.fromkeys(components))}
-        if generation is not None and generation.status != "complete":
-            raise ReexportRefused(
-                409, "VERSION_NOT_READY",
-                f"Version '{version.id}' has no finished generation to re-export: its job "
-                f"{generation.id} is '{generation.status}'.", generation.id)
         busy = version_writer_busy(db, version.id)
         if busy:
             raise ReexportRefused(
@@ -281,7 +291,7 @@ def start_reexport(db: Any, version: Any, components: Optional[list] = None) -> 
         # dictionary, same document title. A command-line version has no job to say so: the
         # re-export (`analyzer.py reexport`) reads all of that from the version's own record.
         gen = generation or SimpleNamespace(
-            commit_sha=version.commit_sha, layer_filter=None, branch=version.branch,
+            commit_sha=version.commit_sha, layer_filter=None, branch=version.branch or "main",
             version_tag=getattr(version, "tag", None) or version.id, no_llm=False,
             data_dict_id=None, narrowed_parse=False)
         job = AnalysisJob(

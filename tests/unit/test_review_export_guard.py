@@ -823,3 +823,29 @@ class TestCorrectionsNoDocumentPrints:
         _derived(conn, T1)
         _override(conn, T2, key="Other|UnitB|g|")
         assert g.staleness(conn, "v1").is_stale
+
+
+class TestPhase3PutsLostCorrectionsBack:
+    """Review of 922801f: once Phase 2 failed to re-apply a correction, every later Phase 3 found
+    it missing again and left the version stale for good -- every remedy on offer runs Phase 3
+    only. Phase 3 now puts it back itself."""
+
+    FID = "Comp|UnitA|f|"
+
+    def test_it_is_written_into_the_model_and_the_stored_rows(self, conn):
+        from core import model_store
+        from review.carry_forward import corrections_missing, restore_missing_corrections
+        model_store.persist_model(
+            conn, "p", "v1",
+            functions={self.FID: {"qualifiedName": "f", "description": "llm",
+                                  "location": {"file": "a.cpp", "line": 1}}},
+            globals={}, datadict={}, edges={"typeUsers": {}, "macroUsers": {}})
+        _override(conn, T0, key=self.FID)                     # human_text "human"
+        model = {"functions": model_store.load_functions(conn, "v1"), "globalVariables": {},
+                 "units": {}, "dataDictionary": {}}
+        missing = corrections_missing(conn, "v1", model)
+        assert missing == [("description", self.FID)]
+        assert restore_missing_corrections(conn, "v1", model, missing) == 1
+        assert model["functions"][self.FID]["description"] == "human"
+        assert model_store.load_functions(conn, "v1")[self.FID]["description"] == "human"
+        assert corrections_missing(conn, "v1", model) == []

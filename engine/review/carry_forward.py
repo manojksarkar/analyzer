@@ -526,6 +526,36 @@ def apply_live_corrections(conn, version_id: str, model: Dict[str, Any]) -> Dict
     return changed
 
 
+def restore_missing_corrections(conn, version_id: str, model: Dict[str, Any], missing) -> int:
+    """Put back `missing` (`corrections_missing`) -- into `model` in memory, so the views about
+    to be built print them, and into the stored model one row each, so every later reader does
+    too. Phase 3's repair when Phase 2 could not put them back (RF-1): without it the version
+    stayed stale for good, as every remedy on offer -- a re-export -- runs Phase 3 only. Returns
+    how many were put back."""
+    from core import model_store
+    from review import resolver
+    kinds = {"functions": "function", "globalVariables": "global",
+             "dataDictionary": ("type", "macro")}
+    texts = {(r.slot_kind, r.slot_key): (r.human_text or "").strip() for r in conn.execute(
+        select(s.text_overrides.c.slot_kind, s.text_overrides.c.slot_key,
+               s.text_overrides.c.human_text)
+        .where(s.text_overrides.c.version_id == version_id,
+               s.text_overrides.c.is_orphaned.is_(False)))}
+    n = 0
+    for kind, key in missing:
+        text = texts.get((kind, key))
+        if not text:
+            continue
+        loc = resolver.write_text(model, kind, key, text)
+        if loc.artifact == "units":
+            model_store.set_unit_description(conn, version_id, loc.entry_key, text)
+        else:
+            model_store.set_entity_field(conn, version_id, loc.entry_key, loc.field, text,
+                                         kinds[loc.artifact])
+        n += 1
+    return n
+
+
 def corrections_missing(conn, version_id: str, model: Dict[str, Any]) -> list:
     """`(slot_kind, slot_key)` of every correction in force whose text the model does not carry.
 

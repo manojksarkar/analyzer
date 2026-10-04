@@ -75,7 +75,18 @@ def config_components(db: Any, version: Any) -> List[str]:
         own = ws / "versions" / str(version.id) / "config.json"
         run_cfg = own if own.is_file() else ws / "config.json"
         if run_cfg.is_file():
-            return sorted(document_registry._read_layers(run_cfg))
+            import json
+            try:
+                # Comments and trailing commas are allowed in a config, as the engine reads it.
+                layers = (json.loads(doc_render._strip_jsonc(run_cfg.read_text(encoding="utf-8")))
+                          or {}).get("layers")
+                found = sorted(document_registry._from_engine_layers(layers))
+            except (OSError, ValueError, AttributeError) as exc:
+                found = []
+                _log.warning("version %s: %s could not be read (%s); offering the components "
+                             "the other sources name", version.id, run_cfg, exc)
+            if found:
+                return found
         project = db.projects.get(version.project_id) or SimpleNamespace(
             id=version.project_id, architecture_layers=None)
         out_root = ws / "versions" / str(version.id) / "output"

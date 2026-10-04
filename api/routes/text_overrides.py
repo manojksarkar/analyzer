@@ -319,7 +319,26 @@ def _saved(res, slot_kind: str, slot_key: str) -> Dict[str, Any]:
             "viewsDerived": list(res.views_derived or ()),
             # What this correction invalidated. Returned so the UI can say that an edit changed
             # something the reviewer did not touch, rather than letting it appear unannounced.
-            "queuedForRegeneration": [{"slotKind": k, "slotKey": v} for k, v in queued]}
+            "queuedForRegeneration": [{"slotKind": k, "slotKey": v, "label": _readable(k, v)}
+                                      for k, v in queued]}
+
+
+def _readable(slot_kind: str, slot_key: str) -> str:
+    """A name a reviewer recognises for a slot -- the function's, the global's or the unit's --
+    so the UI can say WHICH texts a save queued without taking a key apart (keys are the server's
+    to read). The key itself when it names nothing simpler."""
+    from review import slot as slot_mod
+    try:
+        parts = slot_mod.parse(slot_kind, slot_key)
+    except Exception:                                   # noqa: BLE001 - a label, never an error
+        return slot_key
+    ident = parts.get("entity_key") or parts.get("function_id") or ""
+    if ident.count("|") >= 2:
+        return ident.split("|")[2]                      # Comp|Unit|name|params -> name
+    unit = parts.get("unit_key") or ""
+    if "|" in unit:
+        return unit.split("|")[1]                       # Comp|Unit -> Unit
+    return slot_key
 
 
 def _draw_web_svgs(db, project_id: str, version_id: str, flowchart_id: str) -> None:

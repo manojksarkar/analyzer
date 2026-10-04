@@ -101,6 +101,16 @@ class TestTheConfigsComponents:
         own.unlink()                                  # no config of its own: the project's
         assert "Layer9.New" in config_components(sql_db, version)
 
+    def test_a_config_with_comments_and_trailing_commas_is_read(self, sql_db, version,
+                                                                 workspaces):
+        """The engine accepts them; a plain JSON read returned nothing and offered no layer."""
+        own = workspaces / "p1" / "versions" / version.id / "config.json"
+        own.parent.mkdir(parents=True)
+        own.write_text('{\n  // the run config\n  "layers": {"Layer2": {"groups": {"P": '
+                       '{"Gpio": ["g"],}}}},\n}\n', encoding="utf-8")
+        from api.services.version_components import config_components
+        assert config_components(sql_db, version) == ["Layer2.Gpio"]
+
     def test_a_config_that_cannot_be_read_leaves_the_view_as_it_was(self, sql_db, version,
                                                                      monkeypatch):
         from api.services import document_registry
