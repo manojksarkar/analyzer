@@ -265,6 +265,52 @@ class TestFrozenRun:
         assert os.path.isfile(os.path.join(code, "engine", "config", "config.local.json"))
         assert not os.path.exists(os.path.join(code, "engine", "config", "analyzer-dev.db"))
 
+    def test_a_file_another_process_holds_is_copied_on_a_later_try(self, tmp_path, monkeypatch):
+        """An antivirus scanner opens each file just written; a web export failed to start on
+        dozens of them (WinError 32, 2026-10-03)."""
+        src = tmp_path / "src"
+        (src / "engine").mkdir(parents=True)
+        (src / "engine" / "x.py").write_text("X = 1", encoding="utf-8")
+        monkeypatch.setattr(frozen_run, "COPY_RETRIES", (0, 0, 0))
+        real, tries = frozen_run.shutil.copy2, []
+
+        def copy2(s, d, *a, **k):
+            tries.append(s)
+            if len(tries) < 3:
+                err = OSError("The process cannot access the file")
+                err.winerror = 32
+                raise err
+            return real(s, d, *a, **k)
+        monkeypatch.setattr(frozen_run.shutil, "copy2", copy2)
+        code = frozen_run.freeze(str(src), str(tmp_path / "run"))
+        assert os.path.isfile(os.path.join(code, "engine", "x.py")) and len(tries) == 3
+
+    def test_any_other_copy_error_is_not_tried_again(self, tmp_path, monkeypatch):
+        src = tmp_path / "src"
+        (src / "engine").mkdir(parents=True)
+        (src / "engine" / "x.py").write_text("X = 1", encoding="utf-8")
+        tries = []
+
+        def copy2(s, d, *a, **k):
+            tries.append(s)
+            raise OSError("disk full")
+        monkeypatch.setattr(frozen_run.shutil, "copy2", copy2)
+        with pytest.raises(Exception, match="disk full"):
+            frozen_run.freeze(str(src), str(tmp_path / "run"))
+        assert len(tries) == 1
+
+    def test_two_runs_started_in_one_second_get_a_folder_each(self, tmp_path, monkeypatch):
+        """They shared one: one code copy failed on the other's open files, and the second
+        run.json replaced the first."""
+        import datetime
+        same = datetime.datetime(2026, 10, 3, 8, 50, 37)
+        real = frozen_run.run_dir
+        monkeypatch.setattr(frozen_run, "run_dir", lambda root, key, now=None: real(root, key, same))
+        a = frozen_run._claim_run_dir(str(tmp_path), "ver1")
+        b = frozen_run._claim_run_dir(str(tmp_path), "ver1")
+        assert a != b and os.path.isdir(a) and os.path.isdir(b)
+        assert sorted([a, b], reverse=True)[0] == b, "the later one reads as the newest"
+
 
 class TestFollowingABackgroundRun:
     """What a web job needs to follow a run nobody waits for (staged generation, C4): its exit

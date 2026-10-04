@@ -25,6 +25,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from typing import Dict, List, Optional
 
 # What a run imports. analyzer.py imports api/ (registration, accounts) and tools/ (doctor,
@@ -49,6 +50,39 @@ def run_dir(data_root: str, version_key: str, now: Optional[datetime.datetime] =
     return os.path.join(data_root, "runs", safe_name(version_key), stamp)
 
 
+def _claim_run_dir(data_root: str, version_key: str) -> str:
+    """A run folder of its own: `run_dir`, or `<stamp>-2`, `-3`, ... when a run of the same
+    version started in the same second. Two runs shared one folder -- their code copies, their
+    run.json and their log -- and on Windows one copy failed on the other's open files."""
+    base = run_dir(data_root, version_key)
+    os.makedirs(os.path.dirname(base), exist_ok=True)
+    for n in range(1, 100):
+        dest = base if n == 1 else f"{base}-{n}"
+        try:
+            os.mkdir(dest)
+            return dest
+        except FileExistsError:
+            continue
+    raise RuntimeError(f"no free run folder beside {base}")
+
+
+#: Waits (seconds) before each new try of a file Windows says another process holds.
+COPY_RETRIES = (0.2, 0.5, 1, 2, 4)
+
+
+def _copy_retrying(src: str, dst: str) -> str:
+    """`shutil.copy2`, tried again while the file is held by another process (WinError 32/33):
+    an antivirus scanner opens every file just written, and a web export failed to start on
+    dozens of them at once ("The run could not be started", 2026-10-03)."""
+    for wait in COPY_RETRIES + (None,):
+        try:
+            return shutil.copy2(src, dst)
+        except OSError as exc:
+            if wait is None or getattr(exc, "winerror", None) not in (32, 33):
+                raise
+            time.sleep(wait)
+
+
 def freeze(code_root: str, dest: str) -> str:
     """Copy the code a run needs into `dest/code`; return that directory."""
     code = os.path.join(dest, "code")
@@ -56,9 +90,10 @@ def freeze(code_root: str, dest: str) -> str:
     for name in COPIED:
         src = os.path.join(code_root, name)
         if os.path.isdir(src):
-            shutil.copytree(src, os.path.join(code, name), ignore=_IGNORED, dirs_exist_ok=True)
+            shutil.copytree(src, os.path.join(code, name), ignore=_IGNORED, dirs_exist_ok=True,
+                            copy_function=_copy_retrying)
         elif os.path.isfile(src):
-            shutil.copy2(src, os.path.join(code, name))
+            _copy_retrying(src, os.path.join(code, name))
     _link_node_modules(code_root, code)
     return code
 
@@ -130,8 +165,7 @@ def detach(argv: List[str], *, code_root: str, data_root: str, workspaces_dir: s
            database_url: Optional[str] = None) -> Dict[str, object]:
     """Freeze the code (or reuse `existing_code`, a run's earlier copy), start `argv` in the
     background, write run.json beside the log; return what was started."""
-    dest = run_dir(data_root, version_key)
-    os.makedirs(dest, exist_ok=True)
+    dest = _claim_run_dir(data_root, version_key)
     code = existing_code if existing_code and os.path.isdir(existing_code) else freeze(code_root, dest)
     log_path = os.path.join(dest, "run.log")
     argv = strip_detach(argv)
