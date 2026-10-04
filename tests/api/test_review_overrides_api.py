@@ -1209,6 +1209,51 @@ class TestAnOrphanOverHttp:
         assert body["firstEdit"] is True and body["llmText"] == "Does the thing."
 
 
+class TestDiscardingOrphans:
+    """R12: orphans piled up version after version with no way to clean them up."""
+
+    def _seed(self, review_db):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        with review_db.begin() as cx:
+            cx.execute(insert(s.text_overrides), [
+                {"version_id": VERSION, "slot_kind": "description", "slot_key": FID,
+                 "llm_text": "old", "human_text": "Corrected, old code.", "is_orphaned": True,
+                 "updated_at": now},
+                {"version_id": VERSION, "slot_kind": "behaviourInputName", "slot_key": FID,
+                 "llm_text": "in", "human_text": "Pump input", "is_orphaned": False,
+                 "updated_at": now}])
+            cx.execute(insert(s.text_override_history).values(
+                version_id=VERSION, slot_kind="description", slot_key=FID,
+                human_text="Corrected, old code.", updated_at=now, seq=1))
+
+    def test_an_admin_discards_them_and_corrections_in_force_stay(self, client, review_db,
+                                                                   auth_header):
+        self._seed(review_db)
+        r = client.delete(BASE + "/overrides/orphans", headers=auth_header)
+        assert r.status_code == 200, r.text
+        assert r.json() == {"discarded": 1}
+        with review_db.connect() as cx:
+            left = cx.execute(select(s.text_overrides.c.slot_kind)
+                              .where(s.text_overrides.c.version_id == VERSION)).fetchall()
+            hist = cx.execute(select(s.text_override_history.c.slot_kind)
+                              .where(s.text_override_history.c.version_id == VERSION)).fetchall()
+        assert [r.slot_kind for r in left] == ["behaviourInputName"] and hist == []
+
+    def test_one_slot_only(self, client, review_db, auth_header):
+        self._seed(review_db)
+        r = client.delete(BASE + "/overrides/orphans", headers=auth_header,
+                          params={"slot_kind": "behaviourInputName", "slot_key": FID})
+        assert r.status_code == 200 and r.json() == {"discarded": 0}, "in force: untouched"
+        r = client.delete(BASE + "/overrides/orphans", headers=auth_header,
+                          params={"slot_kind": "description", "slot_key": FID})
+        assert r.json() == {"discarded": 1}
+
+    def test_a_developer_may_not(self, client, review_db, dev_header):
+        self._seed(review_db)
+        r = client.delete(BASE + "/overrides/orphans", headers=dev_header)
+        assert r.status_code == 403
+
+
 class TestR11MatchesAComponentHoweverItIsSpelled:
     @pytest.mark.parametrize("asked", ["Sample Core", "Sample-Core", "sample-core"])
     def test_the_config_spelling_finds_it(self, client, review_db, auth_header, asked):

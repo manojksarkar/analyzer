@@ -29,7 +29,7 @@ from pydantic import AfterValidator, BaseModel, Field, StringConstraints, field_
 
 from ..db.in_memory import InMemoryDatabase
 from ..db.session import get_db
-from ..middleware.auth import get_current_user, require_project_member
+from ..middleware.auth import get_current_user, require_project_admin, require_project_member
 from ..models.domain import User
 from ..services import review_workflow
 
@@ -702,6 +702,36 @@ def undo_slot(
         body.update({"renderPending": out.render_pending, "renderJobs": list(out.render_jobs),
                      "dot": (entry or {}).get("flowchart") or ""})
     return body
+
+
+@router.delete(
+    "/projects/{project_id}/versions/{version_id}/overrides/orphans",
+    summary="R12 - discard orphaned corrections")
+def discard_orphans(
+    project_id: str,
+    version_id: str,
+    slot_kind: Optional[SlotKind] = Query(None, description="only this kind"),
+    slot_key: Optional[str] = Query(None, description="only this slot (with slot_kind); from an "
+                                                      "R1 response, never built by hand"),
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """Discard ORPHANED corrections -- written for code that has since changed, so never printed
+    and never applied -- with their history: every one of the version, those of one kind, or one
+    slot. A correction in force is never touched. Final, so project admins only; a later version
+    made from this one no longer carries them. Answers `{"discarded": n}`."""
+    require_project_admin(project_id, current_user, db)
+    _version(project_id, version_id)
+    if slot_key and not slot_kind:
+        raise HTTPException(status_code=400, detail="slot_key needs its slot_kind")
+    kind = slot_kind.value if slot_kind else None
+    key = _key(kind, slot_key) if slot_key else None
+    with _connection().begin() as cx:
+        try:
+            n = _service().discard_orphans(cx, version_id, slot_kind=kind, slot_key=key)
+        except Exception as exc:
+            raise _as_http(exc)
+    return {"discarded": n}
 
 
 @router.get(

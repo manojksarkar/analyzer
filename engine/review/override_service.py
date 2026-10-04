@@ -985,3 +985,26 @@ def overrides_for_version(conn, version_id: str, slot_kind: Optional[str] = None
     if slot_kind:
         q = q.where(s.text_overrides.c.slot_kind == slot_kind)
     return conn.execute(q).fetchall()
+
+
+def discard_orphans(conn, version_id: str, *, slot_kind: Optional[str] = None,
+                    slot_key: Optional[str] = None) -> int:
+    """Delete this version's ORPHANED corrections -- written for code that has since changed, so
+    never printed (`REQ-ID-03`) -- and their history: all of them, those of one kind, or one slot.
+    Returns how many. Final: an orphan is the reviewer's old words, kept for reference until
+    someone decides they are not needed; nothing restores them, and a later version made from
+    this one no longer carries them. A correction in force is never touched."""
+    to, hist = s.text_overrides, s.text_override_history
+    cond = (to.c.version_id == version_id) & to.c.is_orphaned.is_(True)
+    if slot_kind:
+        cond = cond & (to.c.slot_kind == slot_kind)
+    if slot_key:
+        cond = cond & (to.c.slot_key == slot_key)
+    keys = conn.execute(select(to.c.slot_kind, to.c.slot_key).where(cond)).fetchall()
+    for k in keys:
+        conn.execute(delete(hist).where(hist.c.version_id == version_id,
+                                        hist.c.slot_kind == k.slot_kind,
+                                        hist.c.slot_key == k.slot_key))
+    if keys:
+        conn.execute(delete(to).where(cond))
+    return len(keys)

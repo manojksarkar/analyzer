@@ -114,6 +114,7 @@ are node labels), and a correction is stored under (version, kind, key). Sending
 | **R9** | GET | `/projects/{projectId}/versions/{versionId}/export-readiness` | Would exporting now ship stale text? |
 | **R10** | GET | `/projects/{projectId}/versions/{versionId}/regeneration-queue` | Slots needing regeneration because a correction invalidated them |
 | **R11** | GET | `/projects/{projectId}/versions/{versionId}/slots` | What **can** be edited — the slots themselves, with their text and key |
+| **R12** | DELETE | `/projects/{projectId}/versions/{versionId}/overrides/orphans` | Discard orphaned corrections — all, of one `slot_kind`, or one slot (`slot_kind` + `slot_key`); project admins only; answers `{"discarded": n}`. A correction in force is never touched; nothing restores a discarded one, and later versions no longer carry it |
 
 Every path is under the `/api/v1` prefix. All require project **membership** (`REQ-API-05`).
 
