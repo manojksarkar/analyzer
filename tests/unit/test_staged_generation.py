@@ -382,6 +382,51 @@ class TestFrozenRun:
             frozen_run.freeze(str(src), str(tmp_path / "run"))
         assert len(tries) == 1
 
+    def _run(self, root, stamp, exit_code=0, days_ago=30, link_to=None):
+        import json as _json
+        import time as _time
+        rdir = root / "runs" / "pextend.v1" / stamp
+        (rdir / "code" / "engine").mkdir(parents=True)
+        (rdir / "code" / "engine" / "run.py").write_text("x" * 1000, encoding="utf-8")
+        (rdir / "run.log").write_text("log", encoding="utf-8")
+        if link_to is not None:
+            if os.name == "nt":
+                import _winapi
+                _winapi.CreateJunction(str(link_to), str(rdir / "code" / "node_modules"))
+            else:
+                os.symlink(str(link_to), str(rdir / "code" / "node_modules"))
+        if exit_code is not None:
+            p = rdir / frozen_run.EXIT_FILE
+            p.write_text(_json.dumps({"exit_code": exit_code}), encoding="utf-8")
+            t = _time.time() - days_ago * 86400
+            os.utime(p, (t, t))
+        return rdir
+
+    def test_clean_runs_removes_only_the_code_of_runs_that_finished_long_ago(self, tmp_path):
+        old = self._run(tmp_path, "20260901-000000")
+        recent = self._run(tmp_path, "20261004-000000", days_ago=1)
+        partial = self._run(tmp_path, "20260902-000000", exit_code=3)    # resume needs its code
+        died = self._run(tmp_path, "20260903-000000", exit_code=None)    # no exit: resumable
+        gone = frozen_run.clean_runs(str(tmp_path), keep_days=7)
+        assert [g[0] for g in gone] == [str(old / "code")] and gone[0][1] >= 1000
+        assert not (old / "code").exists() and (old / "run.log").is_file()
+        for kept in (recent, partial, died):
+            assert (kept / "code" / "engine" / "run.py").is_file()
+
+    def test_clean_runs_never_deletes_what_node_modules_points_at(self, tmp_path):
+        target = tmp_path / "installation_node_modules"
+        (target / "pkg").mkdir(parents=True)
+        (target / "pkg" / "index.js").write_text("module", encoding="utf-8")
+        run = self._run(tmp_path, "20260901-000000", link_to=target)
+        frozen_run.clean_runs(str(tmp_path), keep_days=7)
+        assert not (run / "code").exists()
+        assert (target / "pkg" / "index.js").is_file(), "the junction's target survived"
+
+    def test_clean_runs_dry_run_removes_nothing(self, tmp_path):
+        old = self._run(tmp_path, "20260901-000000")
+        assert len(frozen_run.clean_runs(str(tmp_path), keep_days=7, dry_run=True)) == 1
+        assert (old / "code").is_dir()
+
     def test_two_runs_started_in_one_second_get_a_folder_each(self, tmp_path, monkeypatch):
         """They shared one: one code copy failed on the other's open files, and the second
         run.json replaced the first."""

@@ -206,6 +206,82 @@ def record_exit(code: int, path: Optional[str]) -> None:
         pass
 
 
+def _tree_size(path: str) -> int:
+    """Bytes under `path`, not following links or junctions (`node_modules` is one)."""
+    total = 0
+    for root, dirs, files in os.walk(path, followlinks=False):
+        dirs[:] = [d for d in dirs if not _is_link(os.path.join(root, d))]
+        for f in files:
+            try:
+                total += os.lstat(os.path.join(root, f)).st_size
+            except OSError:
+                pass
+    return total
+
+
+def _is_link(path: str) -> bool:
+    """A symlink, or a Windows junction (`os.path.isjunction` is Python 3.12+)."""
+    isjunction = getattr(os.path, "isjunction", None)
+    return os.path.islink(path) or bool(isjunction and isjunction(path))
+
+
+def _remove_code(code: str) -> None:
+    """Delete a frozen copy -- after unlinking its `node_modules` junction, so the installation's
+    own `node_modules` it points at is never touched."""
+    nm = os.path.join(code, "node_modules")
+    if _is_link(nm):
+        try:
+            os.unlink(nm)
+        except OSError:
+            os.rmdir(nm)                          # a junction is removed as a directory
+    def _writable(func, p, _exc):                 # read-only files (Windows) are made writable
+        os.chmod(p, 0o600)
+        func(p)
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(code, onexc=_writable)
+    else:                                         # pragma: no cover - older Pythons
+        shutil.rmtree(code, onerror=_writable)
+
+
+def clean_runs(data_root: str, *, keep_days: float = 7, dry_run: bool = False,
+               now: Optional[float] = None) -> List[tuple]:
+    """Remove the frozen code copy (`runs/<version>/<time>/code`, ~10 MB each) of every background
+    run that FINISHED -- exit code 0 -- more than `keep_days` ago. Nothing else: a run still going,
+    one that died or stopped, or one with failed components (exit 3) keeps its copy, because
+    `resume --detach` carries it on with that very code. The run's log, run.json and exit.json
+    stay. Returns `[(code dir, bytes)]` removed -- or that would be, with `dry_run`."""
+    import time
+    now = time.time() if now is None else now
+    out: List[tuple] = []
+    base = os.path.join(data_root, "runs")
+    try:
+        versions = sorted(os.listdir(base))
+    except OSError:
+        return out
+    for v in versions:
+        vdir = os.path.join(base, v)
+        try:
+            stamps = sorted(os.listdir(vdir))
+        except OSError:
+            continue
+        for stamp in stamps:
+            rdir = os.path.join(vdir, stamp)
+            code = os.path.join(rdir, "code")
+            if not os.path.isdir(code) or read_exit(rdir) != 0:
+                continue
+            try:
+                finished = os.path.getmtime(os.path.join(rdir, EXIT_FILE))
+            except OSError:
+                continue
+            if now - finished < keep_days * 86400:
+                continue
+            size = _tree_size(code)
+            if not dry_run:
+                _remove_code(code)
+            out.append((code, size))
+    return out
+
+
 def read_exit(run_dir_: str) -> Optional[int]:
     """The exit code a background run recorded, or None while it has not exited (or if it died)."""
     try:

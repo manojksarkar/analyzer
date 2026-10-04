@@ -1202,6 +1202,24 @@ def _resume(a) -> int:
     return rc
 
 
+def cmd_clean_runs(a) -> int:
+    """Remove the frozen code copies of background runs that finished (exit code 0) more than
+    `--keep-days` ago -- about 10 MB each; every `--detach` run and every web job makes one. A
+    run that is still going, stopped, died or had failed components keeps its copy: `resume
+    --detach` carries it on with that code. Logs, run.json and exit.json stay. `--dry-run` says
+    what would go."""
+    from core.frozen_run import clean_runs
+    from core.paths import paths
+    gone = clean_runs(paths().data_root, keep_days=a.keep_days, dry_run=a.dry_run)
+    for code, size in gone:
+        print(f"{'would remove' if a.dry_run else 'removed'}  {code}  ({size / 1e6:.1f} MB)")
+    total = sum(s for _, s in gone) / 1e6
+    print(f"{len(gone)} frozen code cop{'y' if len(gone) == 1 else 'ies'}, {total:.1f} MB"
+          f"{' would be freed' if a.dry_run else ' freed'} (finished more than {a.keep_days:g} "
+          f"day(s) ago)")
+    return 0
+
+
 def cmd_progress(a) -> int:
     """How far a version's run has got: running or stopped, the phase, the current stage with the
     time left at its pace so far, and each component's state. Reads only."""
@@ -1772,6 +1790,14 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--project-id", required=True)
     s.add_argument("--version-id", required=True)
     s.set_defaults(fn=cmd_progress)
+
+    s = sub.add_parser("clean-runs", help="remove the code copies of background runs that "
+                                          "finished (keeps logs; never a resumable run's)",
+                       description=cmd_clean_runs.__doc__)
+    s.add_argument("--keep-days", type=float, default=7,
+                   help="keep the copies of runs that finished within this many days (default 7)")
+    s.add_argument("--dry-run", action="store_true", help="only say what would be removed")
+    s.set_defaults(fn=cmd_clean_runs)
 
     s = sub.add_parser("components", help="a version's components and the state of their "
                                           "documents",

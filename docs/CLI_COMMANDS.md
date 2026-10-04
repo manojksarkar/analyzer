@@ -245,6 +245,7 @@ default**. The run log says so: `narrowed parse: 1 affected TU(s)`.
 | `resume` | finish a version whose run was cut short, from where it stopped |
 | `progress` | how far a version's run has got: running or stopped, the stage, time left |
 | `components` | a version's components and the state of their documents |
+| `clean-runs` | remove the frozen code copies (~10 MB each) of background runs that finished more than `--keep-days` (7) ago; `--dry-run` lists them. A run that stopped, died or had failed components keeps its copy for `resume --detach` |
 | `register` | record a version's documents for review and approval, without regenerating |
 | `user` | add a user account (and to a project), reset its password, list accounts |
 | `status` | what the database holds |
