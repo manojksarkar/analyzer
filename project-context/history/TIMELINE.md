@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-05h | Web, from the review of 2026-10-05g: Compare's removed-document address, Compare's reads before the shown version is known, a pick made while a document loads, Esc in the reviewer menu | [13](13-2026-10-05c.md) |
 | 2026-10-05g | Web: the reader re-rendered every section on each save (a memo that wrapped only the outer call) -- fixed; flowcharts fit the column and open full size; keyboard access; deep links follow the document's version; a re-export waits for R9 | [13](13-2026-10-05c.md) |
 | 2026-10-05f | Web: seven UI-review leftovers closed -- no refetch on every visit, no cold-load flashes, no placeholder tabs, diffs not by colour alone, backticked text rendered, Compare deep links and a reference picker, the wizard keeps its step on reload; the Overview's runs are polled always | [13](13-2026-10-05c.md) |
 | 2026-10-05e | Web: the review & update gaps the audit found are closed; orphans can be discarded; only the stale components' downloads are marked; version cards and the Overview say how runs were made and which are at work | [13](13-2026-10-05c.md) |

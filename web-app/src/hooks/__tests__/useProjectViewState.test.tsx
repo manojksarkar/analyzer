@@ -189,7 +189,7 @@ describe('useFollowDocumentVersion', () => {
   // Unmounted before the pick is cleared: a page still open would follow its document again.
   afterEach(() => { cleanup(); useUIStore.setState({ selectedRef: {} }) })
 
-  function mount(doc: { id: string; versionId: string }) {
+  function mount(doc: { id: string; versionId: string } | undefined) {
     server.use(
       http.get(`${API_BASE_URL}/projects/p1`, () => HttpResponse.json(project)),
       http.get(`${API_BASE_URL}/projects/p1/versions`, () => HttpResponse.json(versions)),
@@ -228,5 +228,15 @@ describe('useFollowDocumentVersion', () => {
     expect(result.current.view.viewVersionId).toBe('ver1')
     rerender({ d: { id: 'd9', versionId: 'ver2' } })
     await waitFor(() => expect(result.current.view.viewVersionId).toBe('ver2'))
+  })
+
+  it('a pick made while the document is still loading stands', async () => {
+    const { result, rerender } = mount(undefined)
+    await waitFor(() => expect(result.current.view.isLoading).toBe(false))
+    act(() => useUIStore.getState().setSelectedRef('p1', { type: 'version', id: 'ver1' }))
+    rerender({ d: { id: 'd2', versionId: 'ver2' } })
+    await settle()
+    expect(result.current.view.viewVersionId).toBe('ver1')
+    expect(result.current.follow.following).toBe(false)
   })
 })

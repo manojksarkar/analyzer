@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { http, HttpResponse } from 'msw'
 import { server } from '../../../test/server'
 import { API_BASE_URL } from '../../../lib/http'
@@ -30,9 +30,16 @@ const same = { ...documentsFx.documents[0], id: 'doc8', name: 'Pedal', process: 
 // A document of the version before the latest (a link from that version's documents).
 const older = { ...documentsFx.documents[0], id: 'doc7', name: 'Gear', process: 'SWE.3', subtitle: 'Detailed Design', group: 'Gear', version_id: 'ver2' }
 
-function setup({ failCompare = false, path = '/projects/p1/compare', versions = sameCommit, holdVersions = false } = {}) {
+// The page's address, shown so a test can read what a pick wrote into it.
+function Where() {
+  return <output data-testid="where">{useLocation().search}</output>
+}
+
+function setup({ failCompare = false, path = '/projects/p1/compare', versions = sameCommit, holdVersions = false, removed = false, holdJob = false } = {}) {
   let release = () => {}
   const held = new Promise<void>((r) => { release = r })
+  let releaseJob = () => {}
+  const heldJob = new Promise<void>((r) => { releaseJob = r })
   const asked: string[] = []
   const details: string[] = []
   let failures = failCompare ? 1 : 0
@@ -43,7 +50,10 @@ function setup({ failCompare = false, path = '/projects/p1/compare', versions = 
       return HttpResponse.json(versions)
     }),
     http.get(`${API_BASE_URL}/projects/p1/commits`, () => HttpResponse.json(commits)),
-    http.get(`${API_BASE_URL}/projects/p1/jobs/current`, () => HttpResponse.json({ job: null })),
+    http.get(`${API_BASE_URL}/projects/p1/jobs/current`, async () => {
+      if (holdJob) await heldJob
+      return HttpResponse.json({ job: null })
+    }),
     http.get(`${API_BASE_URL}/projects/p1/documents`, ({ request }) => {
       const docs = new URL(request.url).searchParams.get('version_id') === 'ver2' ? [older] : [swe4, same]
       return HttpResponse.json({ documents: docs, pagination: { page: 1, per_page: 100, total: docs.length } })
@@ -59,13 +69,16 @@ function setup({ failCompare = false, path = '/projects/p1/compare', versions = 
         return HttpResponse.json({ detail: { code: 'INTERNAL', message: 'Compare crashed' } }, { status: 500 })
       }
       return HttpResponse.json({
-        documents: [{ document_id: 'doc9', name: 'Brake', process: 'SWE.4', diff_type: 'changed', sections_changed: [] }],
-        summary: { added: 0, changed: 1, removed: 0, unchanged: 0 },
+        documents: [
+          { document_id: 'doc9', name: 'Brake', process: 'SWE.4', diff_type: 'changed', sections_changed: [] },
+          ...(removed ? [{ document_id: 'doc7', name: 'Gear', process: 'SWE.3', diff_type: 'removed', sections_changed: [] }] : []),
+        ],
+        summary: { added: 0, changed: 1, removed: removed ? 1 : 0, unchanged: 0 },
       })
     }),
     http.get(`${API_BASE_URL}/projects/p1/compare/documents/:docId`, ({ params }) => {
       details.push(String(params.docId))
-      const name = params.docId === 'doc8' ? 'Pedal' : 'Brake'
+      const name = params.docId === 'doc8' ? 'Pedal' : params.docId === 'doc7' ? 'Gear' : 'Brake'
       return HttpResponse.json({ mode: 'flat', document_name: name, sections: [] })
     }),
   )
@@ -74,12 +87,12 @@ function setup({ failCompare = false, path = '/projects/p1/compare', versions = 
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route path="/projects/:projectId/compare" element={<ComparePage />} />
+          <Route path="/projects/:projectId/compare" element={<><ComparePage /><Where /></>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   )
-  return { asked, details, release, user: userEvent.setup() }
+  return { asked, details, release, releaseJob, user: userEvent.setup() }
 }
 
 describe('ComparePage', { timeout: 30_000 }, () => {
@@ -193,5 +206,36 @@ describe('ComparePage opened on a document of an older version', { timeout: 30_0
     expect(asked).toEqual(['ver2 vs ver1'])
     expect(details).toEqual(['doc7'])
     expect(useUIStore.getState().selectedRef.p1).toEqual({ type: 'version', id: 'ver2' })
+  })
+
+  it('reads nothing until the shown version is known: never the latest version first', async () => {
+    const { asked, releaseJob } = setup({ path: '/projects/p1/compare?doc=doc7', versions: versionsFx, holdJob: true })
+    await new Promise((r) => setTimeout(r, 300))
+    expect(asked).toEqual([])
+    releaseJob()
+    expect((await screen.findAllByRole('heading', { name: 'Gear' })).length).toBe(2)
+    expect(asked).toEqual(['ver2 vs ver1'])
+  })
+})
+
+/* Review of 2026-10-05: a removed document is the reference's. Picked in the tree, its address
+   named only it, and a reload followed it to the reference's version -- another comparison. */
+describe('ComparePage: a removed document picked, then the page reloaded', { timeout: 30_000 }, () => {
+  afterEach(() => { cleanup(); useUIStore.setState({ selectedRef: {} }) })
+
+  it('the pick writes the reference into the address too', async () => {
+    const { user } = setup({ versions: versionsFx, removed: true })
+    await user.click(await screen.findByRole('button', { name: /Gear/ }))
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('doc=doc7'))
+    expect(screen.getByTestId('where')).toHaveTextContent('ref=ver2')
+    expect(useUIStore.getState().selectedRef.p1).toBeUndefined()
+  })
+
+  it('that address compares the same two versions; it does not follow the document', async () => {
+    const { asked, details } = setup({ path: '/projects/p1/compare?doc=doc7&ref=ver2', versions: versionsFx, removed: true })
+    expect((await screen.findAllByRole('heading', { name: 'Gear' })).length).toBe(2)
+    expect(asked).toEqual(['ver3 vs ver2'])
+    expect(details).toEqual(['doc7'])
+    expect(useUIStore.getState().selectedRef.p1).toBeUndefined()
   })
 })

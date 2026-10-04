@@ -66,4 +66,18 @@ describe('DocTreePanel by keyboard', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
     expect(trigger).toHaveFocus()
   })
+
+  it('an Esc in a box elsewhere closes the menu but leaves focus in the box', async () => {
+    const { user } = setup()
+    const box = document.body.appendChild(document.createElement('textarea'))
+    try {
+      await user.click(screen.getByRole('button', { name: 'Reviewer filter: Reviewer' }))
+      box.focus()
+      await user.keyboard('{Escape}')
+      expect(screen.queryByRole('button', { name: 'Bob Kumar' })).toBeNull()
+      expect(box).toHaveFocus()
+    } finally {
+      box.remove()
+    }
+  })
 })

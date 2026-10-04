@@ -94,9 +94,10 @@ export function useFollowDocumentVersion(
   const target = doc?.versionId
   const key = target && doc ? `${projectId}|${doc.id}` : null
   // The pick as it was when this document opened: once it has changed — by the follow below, or
-  // by a pick in the Subbar — this document's follow is done.
+  // by a pick in the Subbar — this document's follow is done. Opened = when the page asked for
+  // it, not when it arrived: a pick made while the document loads stands.
   const [opened, setOpened] = useState<{ key: string | null; selection: typeof selection }>({ key, selection })
-  if (opened.key !== key) setOpened({ key, selection })
+  if (opened.key !== key) setOpened({ key, selection: opened.key === null ? opened.selection : selection })
   const following = !!key && !!target && !isLoading && viewVersionId !== target
     && opened.key === key && selection === opened.selection
   useEffect(() => {

@@ -33,12 +33,16 @@ export function ComparePage() {
   const { viewVersion, isLoading: viewLoading } = useProjectViewState(pid)
   // Opened on a document (`?doc=`: the reader's Compare, the list's, a shared address): Current is
   // that document's version, not the latest. Only the document it opened on — a pick in the tree
-  // may be a removed document, which is the reference's. Until the pick has followed it, the
+  // may be a removed document, which is the reference's. So is an address that names the
+  // reference too (`?ref=` = the document's version: a removed document's pick writes both), which
+  // is not followed. Until the pick has followed it, and the shown version is known, the
   // comparison is not read: it would be the latest version's.
   const [openedOn] = useState(() => searchParams.get('doc'))
+  const [openedRef] = useState(() => searchParams.get('ref'))
   const { data: openedDoc, isLoading: openedLoading } = useDocument(pid, openedOn ?? '')
-  const { following } = useFollowDocumentVersion(pid, openedDoc)
-  const holding = !!openedOn && (openedLoading || following)
+  const followDoc = openedDoc && openedDoc.versionId !== openedRef ? openedDoc : undefined
+  const { following } = useFollowDocumentVersion(pid, followDoc)
+  const holding = !!openedOn && (openedLoading || viewLoading || following)
 
   /* Current = the Subbar picker's version (defaults to the latest); the reference is the version
      before it, or an older one picked here. Both by version id, end to end: two versions of one
@@ -118,7 +122,10 @@ export function ComparePage() {
   const detailFailed = failedLoad(detailQuery)
 
   function selectDoc(id: string) {
-    setParam('doc', id)
+    // A removed document is the reference's: its address names the reference too, so a reload
+    // or a shared link compares the same two versions instead of following it to the reference.
+    const ref = changedById.get(id)?.diffType === 'removed' ? versionRef(baselineVersion) : undefined
+    setSearchParams((p) => { p.set('doc', id); if (ref) p.set('ref', ref); return p }, { replace: true })
   }
 
   const docTitle = detail?.documentName ?? docDetail?.name ?? changedById.get(activeDocId ?? '')?.name ?? 'Document'

@@ -35,7 +35,8 @@ export function DocTreePanel({
   const ref = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
 
-  // The reviewer menu closes on a click outside it, and on Esc -- back to its button.
+  // The reviewer menu closes on a click outside it, and on Esc -- back to its button when focus
+  // was in the menu. An Esc elsewhere (a correction box, a dialog) is not the menu's: focus stays.
   useEffect(() => {
     if (!open) return
     function onDown(e: MouseEvent) {
@@ -43,8 +44,9 @@ export function DocTreePanel({
     }
     function onKey(e: KeyboardEvent) {
       if (e.key !== 'Escape') return
+      const inMenu = !!ref.current && ref.current.contains(document.activeElement)
       setOpen(false)
-      trigger.current?.focus()
+      if (inMenu) trigger.current?.focus()
     }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
