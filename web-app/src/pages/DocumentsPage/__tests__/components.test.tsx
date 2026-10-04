@@ -12,7 +12,7 @@ const mk = (id: string, status: Document['status'], over: Partial<Document> = {}
   reviewer: bob, review: EMPTY_REVIEW, ...over,
 })
 
-function row(doc: Document, role: { isAdmin: boolean; meId: string }) {
+function row(doc: Document, role: { isAdmin: boolean; meId: string }, wordFileStale = false) {
   const handlers = {
     onToggle: vi.fn(), onOpen: vi.fn(), onReview: vi.fn(), onCompare: vi.fn(), onDownload: vi.fn(),
     onAssign: vi.fn(), onClaim: vi.fn(),
@@ -20,7 +20,7 @@ function row(doc: Document, role: { isAdmin: boolean; meId: string }) {
   render(
     <table><tbody>
       <DocRow doc={doc} selected={false} isAdmin={role.isAdmin} isDeveloper={!role.isAdmin} meId={role.meId}
-        nameOf={() => undefined} claimPending={false} {...handlers} />
+        nameOf={() => undefined} claimPending={false} wordFileStale={wordFileStale} {...handlers} />
     </tbody></table>,
   )
   return handlers
@@ -45,6 +45,18 @@ describe('DocRow', () => {
     expect(screen.getByText('Needs a reviewer')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Claim: become its reviewer' }))
     expect(h.onClaim).toHaveBeenCalled()
+  })
+  it('Download says it gives the previous Word file while the corrections are not in it (R9 stale)', async () => {
+    const h = row(mk('a', 'in_review'), { isAdmin: false, meId: 'u2' }, true)
+    const dl = screen.getByRole('button', { name: /Download DOCX/ })
+    expect(dl).toHaveAttribute('title', 'Download DOCX: Previous Word file — the corrections are not in it yet')
+    await userEvent.click(dl)
+    expect(h.onDownload).toHaveBeenCalled()
+  })
+  it('Download is plain when the Word files are up to date, and for an approved document (its approved file)', () => {
+    row(mk('a', 'in_review'), { isAdmin: false, meId: 'u2' })
+    row(mk('b', 'approved'), { isAdmin: false, meId: 'u2' }, true)
+    expect(screen.getAllByRole('button', { name: 'Download DOCX' })).toHaveLength(2)
   })
   it('shows where a carried approval came from, and nothing to compare', () => {
     row(mk('a', 'approved', { review: { ...EMPTY_REVIEW, carriedFrom: { versionId: 'ver0', tag: 'v1.1.0' } } }), { isAdmin: true, meId: 'u1' })

@@ -3,7 +3,7 @@ import {
   ApiSignInSchema, ApiUserSchema, ApiProjectSchema, ApiCommitSchema, ApiVersionSchema,
   ApiDocumentSchema, ApiDocumentDetailSchema, ApiRichDocumentSchema, ApiMemberSchema,
   ApiJobSchema, ApiFunctionSchema, ApiNotificationSchema, ApiConfigPreviewSchema,
-  ApiExportReadinessSchema, ApiOverridesSchema,
+  ApiExportReadinessSchema, ApiOverridesSchema, ApiRegenerationQueueSchema, ApiProjectRunsSchema,
   ApiReviewEventSchema, ApiEventsSchema, ApiAssignBatchSchema, ApiApproveManySchema,
 } from '../../services/mappers'
 
@@ -69,6 +69,9 @@ export const Envelopes = {
   // ── review & update (read only here: the suite never writes a correction) ──
   exportReadiness: ApiExportReadinessSchema,
   overrides: ApiOverridesSchema,
+  regenerationQueue: ApiRegenerationQueueSchema,
+  // Runs at work or cut short, whichever front door started them (the Overview).
+  projectRuns: ApiProjectRunsSchema,
   downloadUrl: z.object({ download_url: z.string() }),
 
   // ── review and approval (docs/spec/REVIEW_APPROVE_API_SPEC.md) ──

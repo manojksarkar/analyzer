@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import { useGenerateComponents, useVersionComponents } from '../../../hooks/useVersionComponents'
 import { useCancelJob } from '../../../hooks/useJobs'
-import { useReexportVersion } from '../../../hooks/useReview'
+import { useExportReadiness, useReexportVersion } from '../../../hooks/useReview'
 import { Badge, Button, Card, Icon, Text } from '../../../components/ui'
 import type { BadgeVariant } from '../../../components/ui'
 import { cn } from '../../../lib/cn'
 import { relativeTime } from '../../../lib/format'
 import { STATUS_META } from '../../../lib/reviewStatus'
 import type { ComponentState, VersionComponent, VersionJob, VersionRun } from '../../../types'
-import { componentsByLayer, layerNote, layersAdded, pickable } from '../helpers'
+import { componentsByLayer, layerNote, layersAdded, pickable, reexportTargets } from '../helpers'
 import { StopRunDialog } from '../../../components/run/StopRunDialog'
 
 /* Staged generation: every component of the version and the state of its documents — generated,
@@ -76,8 +76,9 @@ function RunStrip({ run, job, cutShort, projectId, versionId, onStop }: {
   return null
 }
 
-/** Components whose documents a layer added since has made out of date: a re-export of the version
- *  makes them again (with its other documents). */
+/** Components whose documents a layer added since has made out of date. Re-export makes them
+ *  again — with any component whose Word file lacks corrections (R9 `staleComponents`) — and
+ *  leaves the version's current documents alone (`reexportTargets`). */
 function StaleStrip({ count, onReexport, busy, disabled }: {
   count: number
   /** An admin's Re-export. */
@@ -147,6 +148,8 @@ export function ComponentsPanel({ projectId, versionId, isAdmin }: {
   const { data } = useVersionComponents(projectId, versionId, pollUntil)
   const generate = useGenerateComponents(projectId, versionId)
   const reexport = useReexportVersion(projectId, versionId)
+  // R9 (the Documents page reads the same): which components lack corrections.
+  const { data: readiness } = useExportReadiness(projectId, versionId)
   const cancel = useCancelJob(projectId)
   const [stopping, setStopping] = useState(false)
   const [open, setOpen] = useState<boolean | null>(null)
@@ -179,7 +182,8 @@ export function ComponentsPanel({ projectId, versionId, isAdmin }: {
   }
   function startReexport() {
     // The re-export job shows on the next reads (`job`); keep reading until it does.
-    reexport.mutate(undefined, { onSuccess: () => setPollUntil(Date.now() + 120_000) })
+    reexport.mutate(reexportTargets(data?.components ?? [], readiness),
+      { onSuccess: () => setPollUntil(Date.now() + 120_000) })
   }
   function stop(job: VersionJob) {
     cancel.mutate(job.id, {

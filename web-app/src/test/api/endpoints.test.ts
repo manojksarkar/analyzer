@@ -239,6 +239,7 @@ describe('API responses', () => {
       await get('GET …/members', `${p}/members`, Envelopes.members)
       await get('GET …/members/pending', `${p}/members/pending`, Envelopes.membersPending)
       const cur = await get('GET …/jobs/current', `${p}/jobs/current`, Envelopes.jobCurrent)
+      await get('GET …/runs', `${p}/runs`, Envelopes.projectRuns, { optional: true })
 
       const curJobId = pickStr(cur.body, 'job', 'id')
       if (curJobId) {
@@ -260,6 +261,9 @@ describe('API responses', () => {
             Envelopes.exportReadiness, { optional: true })
           await get('GET …/versions/:vid/overrides', `${p}/versions/${docVersion}/overrides`,
             Envelopes.overrides, { optional: true })
+          // R10: what the next run rewrites (the reader's Queued tab).
+          await get('GET …/versions/:vid/regeneration-queue', `${p}/versions/${docVersion}/regeneration-queue`,
+            Envelopes.regenerationQueue, { optional: true })
           // A15: R9 for this document's component and type.
           await get('GET …/versions/:vid/export-readiness?document_id', `${p}/versions/${docVersion}/export-readiness?document_id=${docId}`,
             Envelopes.exportReadiness, { optional: true })

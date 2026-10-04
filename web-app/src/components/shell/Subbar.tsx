@@ -7,6 +7,7 @@ import { Icon, Skeleton, StatusBadge } from '../ui'
 import { cn } from '../../lib/cn'
 import { relativeTime } from '../../lib/format'
 import { STATUS_META, approvalLabel, pageStateStatus } from '../../lib/reviewStatus'
+import { describeVersionRun } from '../../lib/versionRun'
 import type { Version, Commit, PageState } from '../../types'
 
 /* ─── Commit timeline dot colours (fill + border) ─── */
@@ -57,6 +58,10 @@ function VersionRow({ version, isActive, onSelect }: { version: Version; isActiv
           {isActive && <Icon name="check" size={15} className="text-secondary flex-shrink-0" />}
         </div>
         <div className="text-caption text-on-surface-variant mb-1 leading-[1.4] truncate">{version.description}</div>
+        {(() => {
+          const made = describeVersionRun(version.run)
+          return made ? <div className="font-mono text-label text-outline mb-1 truncate" title="How this version was made">{made}</div> : null
+        })()}
         <div className="flex items-center gap-2">
           <span className="font-mono text-label text-outline bg-[#f3f4f6] px-[5px] py-px rounded-lg">{version.shortSha}</span>
           <span className="text-label text-outline">{version.date}</span>

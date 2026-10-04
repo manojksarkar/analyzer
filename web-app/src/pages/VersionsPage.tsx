@@ -7,6 +7,7 @@ import { Card, Icon, Skeleton, StatusBadge, Text, toast } from '../components/ui
 import { cn } from '../lib/cn'
 import { formatDate } from '../lib/format'
 import { STATUS_META, versionStatusKey } from '../lib/reviewStatus'
+import { describeVersionRun } from '../lib/versionRun'
 import { useUIStore } from '../store/ui'
 import type { Commit, Version } from '../types'
 
@@ -163,6 +164,8 @@ export function VersionsPage() {
 /* ── Single version row ── */
 function VersionRow({ v, isCurrent, last, running, onView, onCompare }: { v: Version; isCurrent: boolean; last: boolean; running: boolean; onView: () => void; onCompare: () => void }) {
   const status = versionStatusKey(v.status, running)
+  // How it was made: web or command line, its scope, which documents (or the model only).
+  const made = describeVersionRun(v.run)
   return (
     // The last row has no bottom border: the card's own edge closes it (it was doubled).
     <div className={cn('flex transition-colors hover:bg-[#f8f9ff]', !last && 'border-b border-outline-variant')}>
@@ -185,6 +188,12 @@ function VersionRow({ v, isCurrent, last, running, onView, onCompare }: { v: Ver
               <Text variant="caption" className="text-outline">{v.docsCount} docs</Text>
               <Text variant="caption" className="text-outline">·</Text>
               <Text variant="caption" className="text-outline">{v.date}</Text>
+              {made && (
+                <>
+                  <Text variant="caption" className="text-outline">·</Text>
+                  <Text variant="caption" className="font-mono text-on-surface-variant" title="How this version was made">{made}</Text>
+                </>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-1.5 flex-shrink-0 pt-0.5">

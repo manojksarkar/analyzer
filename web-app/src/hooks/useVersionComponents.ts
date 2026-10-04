@@ -38,6 +38,17 @@ export function useVersionComponents(projectId: string, versionId?: string, poll
   return query
 }
 
+/** The project's runs at work now or cut short (a web job, or `analyzer.py` on the server, which
+ *  the Overview could not see). Read again every 15 s while any is alive. */
+export function useProjectRuns(projectId: string) {
+  return useQuery({
+    queryKey: projectKeys.runs(projectId),
+    queryFn: () => versionComponentsApi.runs(projectId),
+    enabled: !!projectId,
+    refetchInterval: (q) => (q.state.data?.some((r) => r.alive) ? 15_000 : false),
+  })
+}
+
 export function useGenerateComponents(projectId: string, versionId?: string) {
   const qc = useQueryClient()
   return useMutation({

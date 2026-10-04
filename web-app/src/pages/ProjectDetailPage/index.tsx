@@ -13,6 +13,7 @@ import { ConfigOverview } from './components/ConfigOverview'
 import { FailedRunBanner, RunWarningsBanner } from './components/RunBanners'
 import { RunAnalysisModal } from './components/RunAnalysisModal'
 import { GeneratedContent } from './components/GeneratedContent'
+import { OtherRuns } from './components/OtherRuns'
 import { PHASE_UI, fmtClock, fmtEta, fmtStart, phaseTime } from './helpers'
 
 /* ─── Phase step (running panel) ─── */
@@ -108,6 +109,11 @@ export function ProjectDetailPage() {
         {/* ══ LAST RUN FAILED — the error, which no other state shows ══ */}
         {job?.status === 'failed' && pageState !== 'running' && (
           <FailedRunBanner job={job} isAdmin={isAdmin} onRerun={() => setRunOpen(true)} />
+        )}
+
+        {/* ══ OTHER RUNS — at work or cut short, not the web job below (a CLI run too) ══ */}
+        {projectId && (
+          <OtherRuns projectId={projectId} exceptVersionId={pageState === 'running' && job ? job.versionId : null} />
         )}
 
         {/* ══ THE RUN FINISHED, WITH WARNINGS — e.g. a component path the checkout did not have ══ */}

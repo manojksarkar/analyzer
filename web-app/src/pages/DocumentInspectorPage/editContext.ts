@@ -28,5 +28,15 @@ export function useEdit(): EditApi | null {
   return useContext(EditContext)
 }
 
-/** The longest text a save sends (the API sets no limit yet — BACKLOG RF-10). */
+/** The longest text a save sends. The API refuses more than 10,000 characters (422) — one text,
+ *  one label, or a behaviour row's bullets together with their line breaks (RF-10); the page
+ *  keeps a correction well under that. */
 export const MAX_TEXT = 2000
+
+/** U+0000: the API refuses it in any save (422 — PostgreSQL cannot store it), so the page stops
+ *  it before sending. A paste from a binary or a mangled file can carry one. */
+export function hasNul(text: string): boolean {
+  return text.includes('\u0000')
+}
+
+export const NUL_MESSAGE = 'The text contains a NUL character (U+0000), which cannot be saved — remove it. Nothing was saved.'

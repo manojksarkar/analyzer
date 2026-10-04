@@ -210,7 +210,19 @@ export function shortHash(sha: string | null | undefined): string {
   return sha ? `${sha.slice(0, 12)}…` : ''
 }
 
-/** R9: the Word file lacks corrections (or pictures still owed): it cannot be approved now. */
-export function wordFileOutOfDate(r: { stale: boolean; pendingRenders: number } | null | undefined): boolean {
-  return !!r && (r.stale || r.pendingRenders > 0)
+/** R9: the Word file lacks corrections: it cannot be approved now. One rule everywhere — `stale`.
+ *  The server folds an owed picture into it when the document embeds the flowcharts; one it does
+ *  not embed (`pendingRenders` alone) leaves the Word file as it is. */
+export function wordFileOutOfDate(r: { stale: boolean } | null | undefined): boolean {
+  return !!r && r.stale
+}
+
+/** The version-wide R9 for one component's documents (a document's `group`): behind when the
+ *  version is and the answer names it in `staleComponents` — or, from an API that does not say
+ *  which, whenever the version is. */
+export function componentWordFileStale(
+  r: { stale: boolean; staleComponents?: string[] } | null | undefined, group: string | null | undefined,
+): boolean {
+  if (!r?.stale) return false
+  return r.staleComponents ? !!group && r.staleComponents.includes(group) : true
 }

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { RichSection, Slot } from '../../../types'
 import {
-  ancestorsOf, buildOutline, defaultExpanded, docCorrections, filterOutline, flowOrder, outlineIds, slotWhere,
-  unitCorrectionCounts,
+  ancestorsOf, buildOutline, defaultExpanded, docCorrections, filterOutline, flowOrder, isCorrected, outlineIds,
+  slotWhere, unitCorrectionCounts,
 } from '../outline'
 
 function sec(id: string, number: string, title: string, level: number, children: RichSection[] = [],
@@ -73,16 +73,31 @@ describe('filterOutline', () => {
 })
 
 describe('corrections of this document', () => {
+  // A correction in force (API spec §5): the human's text printed, the LLM's kept, Undo possible.
+  const fixed = { isOverridden: true, canUndo: true, text: 'new', humanText: 'new' }
   const all = [
-    slot('description', `${U}|libAdd|int`, { isOverridden: true }),
-    slot('structDescription', 'Acc', { isOverridden: true }),
-    slot('description', 'Other|X|f|', { isOverridden: true }),
-    slot('description', `${U}|gone|`, { isOrphaned: true }),
+    slot('description', `${U}|libAdd|int`, fixed),
+    slot('structDescription', 'Acc', fixed),
+    slot('description', 'Other|X|f|', fixed),
+    slot('description', `${U}|gone|`, { isOrphaned: true, humanText: 'old words' }),
+    // Undone (R4): the record stays, isOverridden too, but the page prints the LLM's text again.
+    slot('unitDescription', U, { isOverridden: true, canUndo: false, humanText: 't' }),
   ]
-  it('keeps the ones it prints, and its component’s orphans', () => {
-    const { inForce, orphans } = docCorrections(all, doc, 'C')
+  it('keeps the ones it prints, and its component’s orphans — an undone one apart', () => {
+    const { inForce, undone, orphans } = docCorrections(all, doc, 'C')
     expect(inForce.map((s) => s.key)).toEqual([`${U}|libAdd|int`, 'Acc'])
+    // Undone: not in force on the page, but the Word file has it until a re-export (R9 counts it).
+    expect(undone.map((s) => s.key)).toEqual([U])
     expect(orphans.map((s) => s.key)).toEqual([`${U}|gone|`])
+  })
+  it('tells a correction in force from an undone one, an orphan and a never-corrected text', () => {
+    expect(isCorrected(slot('description', 'k', fixed))).toBe(true)
+    expect(isCorrected(slot('description', 'k', { isOverridden: true, canUndo: false, humanText: 't' }))).toBe(false)
+    expect(isCorrected(slot('description', 'k', { isOrphaned: true, humanText: 'old' }))).toBe(false)
+    expect(isCorrected(slot('description', 'k'))).toBe(false)
+    // A slot that was empty before its first correction has no original to undo to: still corrected.
+    expect(isCorrected(slot('description', 'k', { isOverridden: true, canUndo: false, llmText: null, text: 'new' })))
+      .toBe(true)
   })
   it('counts them per unit, a struct by its header row', () => {
     const { inForce } = docCorrections(all, doc, 'C')

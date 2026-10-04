@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ApiExportReadinessSchema, ApiRichDocumentSchema, ApiSlotSchema, mapExportReadiness, mapRichDocument,
-  mapSlot, mapSlotSave,
+  ApiExportReadinessSchema, ApiRegenerationQueueSchema, ApiRichDocumentSchema, ApiSlotSchema,
+  mapExportReadiness, mapRegenerationQueue, mapRichDocument, mapSlot, mapSlotSave,
 } from '../index'
 import { describeSave } from '../../../hooks/useReview'
 
@@ -27,7 +27,28 @@ describe('mapSlot (one correctable text, the shape every review route returns)',
     const r = mapSlotSave({ ...slot, previousText: 'Old.', firstEdit: true,
       queuedForRegeneration: [{ slotKind: 'unitDescription', slotKey: 'C|U' }] })
     expect(r.previousText).toBe('Old.')
-    expect(describeSave(r)).toBe('You replaced “Old.”. The next run rewrites 1 text that depends on it.')
+    expect(describeSave(r)).toBe('You replaced “Old.”. The next run rewrites 1 text that depends on it: 1 unit description.')
+  })
+})
+
+describe('mapRegenerationQueue (R10)', () => {
+  it('maps each queued text, its reason and the correction that caused it', () => {
+    const api = {
+      pending: [{
+        slotKind: 'description', slotKey: 'L1.App|AppMain|App_Start|void',
+        reason: 'its description was written with this function as context',
+        causedBy: { slotKind: 'description', slotKey: 'L2.Gpio|GpioDrv|Gpio_Init|void' },
+        requestedAt: '2026-09-18T09:14:22Z',
+      }],
+      total: 1,
+    }
+    expect(ApiRegenerationQueueSchema.safeParse(api).success).toBe(true)
+    expect(mapRegenerationQueue(api)).toEqual([{
+      slotKind: 'description', slotKey: 'L1.App|AppMain|App_Start|void',
+      reason: 'its description was written with this function as context',
+      causedBy: { slotKind: 'description', slotKey: 'L2.Gpio|GpioDrv|Gpio_Init|void' },
+      requestedAt: '2026-09-18T09:14:22Z',
+    }])
   })
 })
 

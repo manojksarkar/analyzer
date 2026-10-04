@@ -1,11 +1,11 @@
 import { http } from '../../lib/http'
 import type {
-  ExportReadiness, FlowchartLabels, Slot, SlotHistoryEntry, SlotKind, SlotSaveResult,
+  ExportReadiness, FlowchartLabels, QueuedRegeneration, Slot, SlotHistoryEntry, SlotKind, SlotSaveResult,
 } from '../../types'
 import {
-  mapExportReadiness, mapFlowchartLabels, mapHistory, mapSlot, mapSlotSave,
-  type ApiExportReadiness, type ApiFlowchartLabels, type ApiFlowchartSave, type ApiSlot,
-  type ApiSlotSave, ApiHistorySchema,
+  mapExportReadiness, mapFlowchartLabels, mapHistory, mapRegenerationQueue, mapSlot, mapSlotSave,
+  type ApiExportReadiness, type ApiFlowchartLabels, type ApiFlowchartSave, type ApiOverrides,
+  type ApiRegenerationQueue, type ApiSlotSave, ApiHistorySchema,
 } from '../mappers'
 import type { z } from 'zod'
 
@@ -15,11 +15,32 @@ import type { z } from 'zod'
 
 const base = (pid: string, vid: string) => `/projects/${pid}/versions/${vid}`
 
+/** R1's largest page. */
+const OVERRIDES_PAGE = 1000
+
+/** One slot of a version: its kind and key (a key alone may name two kinds). */
+export const slotId = (s: Pick<Slot, 'kind' | 'key'>): string => `${s.kind}:${s.key}`
+
 export const reviewApi = {
-  /** R1: every correction of the version, orphans included, newest first. */
+  /** R1: every correction of the version, orphans included, newest first — every page of it,
+   *  until `total` (a version with more than one page of corrections lost the rest). */
   overrides: async (pid: string, vid: string): Promise<Slot[]> => {
-    const r = await http.get<{ overrides: ApiSlot[] }>(`${base(pid, vid)}/overrides`, { limit: 1000 })
-    return r.overrides.map(mapSlot)
+    // By kind + key: a save between two pages shifts the rows, and one comes back twice.
+    const all = new Map<string, Slot>()
+    for (let offset = 0; ;) {
+      const r = await http.get<ApiOverrides>(`${base(pid, vid)}/overrides`,
+        { limit: OVERRIDES_PAGE, offset })
+      for (const s of r.overrides.map(mapSlot)) if (!all.has(slotId(s))) all.set(slotId(s), s)
+      offset += r.overrides.length
+      if (!r.overrides.length || offset >= r.total) return [...all.values()]
+    }
+  },
+  /** R12 (admins): discard orphaned corrections — every one of the version, or one slot. Final:
+   *  their history goes too, and a later version made from this one does not carry them. */
+  discardOrphans: async (pid: string, vid: string, slot?: Pick<Slot, 'kind' | 'key'>): Promise<number> => {
+    const r = await http.del<{ discarded: number }>(`${base(pid, vid)}/overrides/orphans`,
+      slot ? { slot_kind: slot.kind, slot_key: slot.key } : undefined)
+    return r?.discarded ?? 0
   },
   /** R3: save one text (description, a behaviour name, a unit or struct description). */
   saveSlot: async (pid: string, vid: string, kind: SlotKind, key: string, text: string): Promise<SlotSaveResult> =>
@@ -54,9 +75,15 @@ export const reviewApi = {
   readiness: async (pid: string, vid: string, documentId?: string): Promise<ExportReadiness> =>
     mapExportReadiness(await http.get<ApiExportReadiness>(`${base(pid, vid)}/export-readiness`,
       { document_id: documentId })),
-  /** Re-export the version's Word files (admin). Follow it through R9's `reexport`. */
-  reexport: async (pid: string, vid: string): Promise<{ jobId: string }> => {
-    const r = await http.post<{ job_id: string }>(`${base(pid, vid)}/reexport`)
+  /** R10: the texts the next run rewrites, because a correction they were written from changed.
+   *  Not paged. */
+  regenerationQueue: async (pid: string, vid: string): Promise<QueuedRegeneration[]> =>
+    mapRegenerationQueue(await http.get<ApiRegenerationQueue>(`${base(pid, vid)}/regeneration-queue`)),
+  /** Re-export the version's Word files (admin) -- every document, or only `components` (the
+   *  stale ones). Follow it through R9's `reexport`. */
+  reexport: async (pid: string, vid: string, components?: string[]): Promise<{ jobId: string }> => {
+    const r = await http.post<{ job_id: string }>(`${base(pid, vid)}/reexport`,
+      components?.length ? { components } : undefined)
     return { jobId: r.job_id }
   },
 }

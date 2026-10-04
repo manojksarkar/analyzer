@@ -24,6 +24,8 @@ describe('approvalErrorMessage', () => {
 describe('saveErrorMessage (a correction on an approved document)', () => {
   it('says the document is locked', () => {
     expect(saveErrorMessage(new ApiError('x', 409, 'DOCUMENT_APPROVED'))).toMatch(/approved, so it is locked/)
-    expect(saveErrorMessage(new ApiError('x', 409))).toMatch(/A run changed this document/)
+    // A 409 with no code (no stored graph, nothing to undo, …) says what the server said; only
+    // VERSION_REGENERATING means a run (hooks/__tests__/useReview.test.ts).
+    expect(saveErrorMessage(new ApiError('the flowchart has no stored graph', 409))).toBe('the flowchart has no stored graph')
   })
 })

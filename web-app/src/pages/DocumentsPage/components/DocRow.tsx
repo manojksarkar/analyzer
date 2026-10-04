@@ -5,10 +5,13 @@ import { relativeTime } from '../../../lib/format'
 import { describeEvent } from '../../../lib/reviewStatus'
 import type { Document } from '../../../types'
 
+/** What Download gives while the version's Word files lack corrections (R9 `stale`). */
+const PREVIOUS_WORD_FILE = 'Previous Word file — the corrections are not in it yet'
+
 /* One row of the documents list: who reviews it, its state, what happened last, and the one
    review action this role can take from the list (documents.html renderDocList). */
 export function DocRow({
-  doc, selected, isAdmin, isDeveloper, meId, nameOf, claimPending,
+  doc, selected, isAdmin, isDeveloper, meId, nameOf, claimPending, wordFileStale = false,
   onToggle, onOpen, onReview, onCompare, onDownload, onAssign, onClaim,
 }: {
   doc: Document
@@ -18,6 +21,9 @@ export function DocRow({
   meId: string
   nameOf: (userId: string) => string | undefined
   claimPending: boolean
+  /** Its component's Word files lack corrections (R9 `staleComponents`): Download gives the
+   *  previous file. An approved document downloads the file that was approved: never marked. */
+  wordFileStale?: boolean
   onToggle: () => void
   onOpen: () => void
   /** Open the document on its Review tab. */
@@ -31,6 +37,7 @@ export function DocRow({
   const last = doc.review.lastEvent
   const said = last ? describeEvent(last, { nameOf, meId }) : null
   const lastLine = said ? `${said.actor ? `${said.actor} ` : ''}${said.text}` : ''
+  const stale = wordFileStale && doc.status !== 'approved'
 
   // The one review action from the list, per role and state.
   let action: React.ReactNode = null
@@ -111,7 +118,12 @@ export function DocRow({
       <td className="px-3 py-3.5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-1">
           <RowButton icon="open_in_new" title="View" onClick={onOpen} className="text-secondary" />
-          <RowButton icon="download" title="Download DOCX" onClick={onDownload} />
+          <RowButton
+            icon="download"
+            title={stale ? `Download DOCX: ${PREVIOUS_WORD_FILE}` : 'Download DOCX'}
+            onClick={onDownload}
+            dot={stale}
+          />
           {carried ? (
             <span title={`Content unchanged since ${carried.tag}: nothing to compare`} className="p-1.5 flex items-center cursor-not-allowed text-outline-variant">
               <Icon name="compare_arrows" size={15} />
@@ -126,8 +138,10 @@ export function DocRow({
   )
 }
 
-function RowButton({ icon, title, onClick, disabled, className }: {
+function RowButton({ icon, title, onClick, disabled, className, dot }: {
   icon: string; title: string; onClick: () => void; disabled?: boolean; className?: string
+  /** A small amber dot: what it gives is out of date (the title says how). */
+  dot?: boolean
 }) {
   return (
     <button
@@ -135,9 +149,10 @@ function RowButton({ icon, title, onClick, disabled, className }: {
       title={title}
       aria-label={title}
       disabled={disabled}
-      className={cn('p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant disabled:opacity-40', className)}
+      className={cn('relative p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant disabled:opacity-40', className)}
     >
       <Icon name={icon} size={15} />
+      {dot && <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-amber border border-white" aria-hidden />}
     </button>
   )
 }

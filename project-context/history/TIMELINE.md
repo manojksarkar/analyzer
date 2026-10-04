@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-05e | Web: the review & update gaps the audit found are closed; orphans can be discarded; only the stale components' downloads are marked; version cards and the Overview say how runs were made and which are at work | [13](13-2026-10-05c.md) |
 | 2026-10-05d | Proved with the LLM on: adding a layer asks the LLM only about the new layer | [13](13-2026-10-05c.md) |
 | 2026-10-05c | R9 names the components whose documents are behind; `GET /projects/{pid}/runs` lists the runs at work from either front door | [13](13-2026-10-05c.md) |
 | 2026-10-05b | Orphaned corrections can be discarded (R12); a correction no document prints no longer keeps a version stale; Phase 3 puts back a correction the model lost; Download All builds its ZIP on disk; `clean-runs`; the versions list says how each version was made | [11](11-2026-09-29e.md) |

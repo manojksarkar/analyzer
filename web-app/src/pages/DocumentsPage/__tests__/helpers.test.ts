@@ -37,9 +37,13 @@ describe('bulkApprovePlan', () => {
     expect(plan.skipped).toEqual([{ doc: ready2, reason: 'its Word file is missing corrections' }])
   })
 
-  it('a picture still owed counts as missing', () => {
-    const plan = bulkApprovePlan([ready], {
+  it('one rule, `stale`: a picture owed for a flowchart its Word file does not embed does not block', () => {
+    // The server folds an owed picture into `stale` when the document embeds the flowcharts.
+    expect(bulkApprovePlan([ready], {
       versionReadiness: r9(true), readinessById: { a: r9(false, 1) }, reexporting: false,
+    }).ready.map((d) => d.id)).toEqual(['a'])
+    const plan = bulkApprovePlan([ready], {
+      versionReadiness: r9(true), readinessById: { a: r9(true, 1) }, reexporting: false,
     })
     expect(plan.ready).toEqual([])
     expect(plan.skipped[0].reason).toBe('its Word file is missing corrections')

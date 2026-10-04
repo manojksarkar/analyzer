@@ -130,15 +130,26 @@ export function docFlowchartIds(sections: RichSection[]): Set<string> {
   return ids
 }
 
-/** This document's corrections out of the version's (R1): the ones it prints, and the orphans
- *  of its component. */
-export function docCorrections(all: Slot[], sections: RichSection[], group: string): { inForce: Slot[]; orphans: Slot[] } {
+/** The page prints a reviewer's words here: a correction in force that was not undone. An undone
+ *  slot (R4) keeps its record — `isOverridden` stays true — but prints the LLM's text again and
+ *  cannot be undone (API spec §5, "undone"), so it is not a correction to mark or count. */
+export function isCorrected(s: Slot): boolean {
+  return s.isOverridden && !s.isOrphaned && !(!s.canUndo && s.llmText !== null && s.text === s.llmText)
+}
+
+/** This document's corrections out of the version's (R1): the ones it prints, the undone ones
+ *  (R4: the page prints the LLM's text again, but the Word file keeps the correction until a
+ *  re-export, and R9 still counts it), and the orphans of its component. */
+export function docCorrections(all: Slot[], sections: RichSection[], group: string): {
+  inForce: Slot[]; undone: Slot[]; orphans: Slot[]
+} {
   const keys = new Set(docSlots(sections).map((s) => s.key))
   const charts = docFlowchartIds(sections)
   const mine = (s: Slot) =>
     keys.has(s.key) || (s.kind === 'nodeLabel' && !!s.flowchartId && charts.has(s.flowchartId))
   return {
-    inForce: all.filter((s) => s.isOverridden && mine(s)),
+    inForce: all.filter((s) => isCorrected(s) && mine(s)),
+    undone: all.filter((s) => s.isOverridden && !s.isOrphaned && !isCorrected(s) && mine(s)),
     orphans: all.filter((s) => s.isOrphaned && (mine(s) || s.key.startsWith(`${group}|`))),
   }
 }

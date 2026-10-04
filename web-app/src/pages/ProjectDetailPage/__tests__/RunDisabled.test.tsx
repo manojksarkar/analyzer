@@ -20,6 +20,7 @@ function setup(status: string, role: string, withVersions: boolean) {
     http.get(`${API_BASE_URL}/projects/p1/versions`, () =>
       HttpResponse.json(withVersions ? versions : { versions: [] })),
     http.get(`${API_BASE_URL}/projects/p1/commits`, () => HttpResponse.json(commits)),
+    http.get(`${API_BASE_URL}/projects/p1/runs`, () => HttpResponse.json({ runs: [] })),
     http.get(`${API_BASE_URL}/projects/p1/members`, () => HttpResponse.json(members)),
     http.get(`${API_BASE_URL}/projects/p1/documents`, () =>
       HttpResponse.json({ documents: [], pagination: { page: 1, per_page: 100, total: 0 } })),

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type {
-  ExportReadiness, FlowchartLabels, Slot, SlotHistoryEntry, SlotKind, SlotSaveResult,
+  ExportReadiness, FlowchartLabels, QueuedRegeneration, QueuedSlot, Slot, SlotHistoryEntry, SlotKind,
+  SlotSaveResult,
 } from '../../types'
 
 /* Review & update (docs/spec/REVIEW_UPDATE_API_SPEC.md). Unlike the rest of the API these
@@ -26,16 +27,34 @@ export const ApiSlotSchema = z.object({
 })
 export type ApiSlot = z.infer<typeof ApiSlotSchema>
 
+/** §5 `QueuedSlot`. A readable `label` is not in the contract today; kept when a server sends one. */
+export const ApiQueuedSlotSchema = z.object({
+  slotKind: z.string(), slotKey: z.string(), label: z.string().nullable().optional(),
+})
+export type ApiQueuedSlot = z.infer<typeof ApiQueuedSlotSchema>
+
 export const ApiSlotSaveSchema = ApiSlotSchema.extend({
   previousText: z.string().nullable().optional(),
   firstEdit: z.boolean().optional(),
-  queuedForRegeneration: z.array(z.object({ slotKind: z.string(), slotKey: z.string() })).optional(),
+  queuedForRegeneration: z.array(ApiQueuedSlotSchema).optional(),
 })
 export type ApiSlotSave = z.infer<typeof ApiSlotSaveSchema>
 
 export const ApiOverridesSchema = z.object({
   overrides: z.array(ApiSlotSchema), total: z.number(), limit: z.number(), offset: z.number(),
 })
+export type ApiOverrides = z.infer<typeof ApiOverridesSchema>
+
+/** R10: the regeneration queue. */
+export const ApiRegenerationQueueSchema = z.object({
+  pending: z.array(ApiQueuedSlotSchema.extend({
+    reason: z.string().nullable().optional(),
+    causedBy: ApiQueuedSlotSchema.nullable().optional(),
+    requestedAt: z.string().nullable().optional(),
+  })),
+  total: z.number(),
+})
+export type ApiRegenerationQueue = z.infer<typeof ApiRegenerationQueueSchema>
 
 export const ApiHistorySchema = z.object({
   history: z.array(z.object({
@@ -62,6 +81,8 @@ export type ApiFlowchartSave = z.infer<typeof ApiFlowchartSaveSchema>
 
 export const ApiExportReadinessSchema = z.object({
   stale: z.boolean(),
+  /** The components whose Word files are behind (version-wide question); absent from an older API. */
+  staleComponents: z.array(z.string()).optional(),
   reason: z.string().nullable().optional(),
   explanation: z.string().nullable().optional(),
   overrideCount: z.number(),
@@ -104,13 +125,26 @@ export function mapSlotOrNull(s: ApiSlot | null | undefined): Slot | null {
   return s ? mapSlot(s) : null
 }
 
+function mapQueuedSlot(q: ApiQueuedSlot): QueuedSlot {
+  return { slotKind: q.slotKind, slotKey: q.slotKey, ...(q.label ? { label: q.label } : {}) }
+}
+
 export function mapSlotSave(s: ApiSlotSave): SlotSaveResult {
   return {
     ...mapSlot(s),
     previousText: s.previousText ?? null,
     firstEdit: !!s.firstEdit,
-    queuedForRegeneration: s.queuedForRegeneration ?? [],
+    queuedForRegeneration: (s.queuedForRegeneration ?? []).map(mapQueuedSlot),
   }
+}
+
+export function mapRegenerationQueue(r: ApiRegenerationQueue): QueuedRegeneration[] {
+  return r.pending.map((p) => ({
+    ...mapQueuedSlot(p),
+    reason: p.reason ?? '',
+    causedBy: p.causedBy ? mapQueuedSlot(p.causedBy) : null,
+    requestedAt: p.requestedAt ?? null,
+  }))
 }
 
 export function mapHistory(h: z.infer<typeof ApiHistorySchema>): SlotHistoryEntry[] {
@@ -133,6 +167,7 @@ export function mapFlowchartLabels(r: ApiFlowchartLabels): FlowchartLabels {
 export function mapExportReadiness(r: ApiExportReadiness): ExportReadiness {
   return {
     stale: r.stale,
+    ...(r.staleComponents ? { staleComponents: r.staleComponents } : {}),
     explanation: r.explanation ?? null,
     overrideCount: r.overrideCount,
     pendingRenders: r.pendingRenders,

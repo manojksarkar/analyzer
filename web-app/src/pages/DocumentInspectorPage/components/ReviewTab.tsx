@@ -62,7 +62,7 @@ export function ReviewTab({
       : wordFileOutOfDate(readiness) ? (
         <>
           <span className="text-[#b45309]" title={readiness.explanation ?? undefined}>
-            {readiness.pendingRenders && !readiness.stale
+            {readiness.pendingRenders && !readiness.overrideCount
               ? `${readiness.pendingRenders} picture${readiness.pendingRenders === 1 ? '' : 's'} missing`
               : 'corrections missing'}
           </span>

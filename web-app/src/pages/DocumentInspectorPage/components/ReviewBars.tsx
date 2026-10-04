@@ -16,7 +16,7 @@ export function ReadinessBanner({
   isAdmin: boolean
 }) {
   const reexport = useReexportVersion(projectId, versionId)
-  useReexportFinished(projectId, readiness)
+  useReexportFinished(projectId, versionId, readiness)
   if (!readiness) return null
 
   if (reexportActive(readiness)) {
@@ -27,7 +27,8 @@ export function ReadinessBanner({
       </Banner>
     )
   }
-  if (!readiness.stale && !readiness.pendingRenders) {
+  // One rule: `stale` (an owed picture is in it when the Word file embeds the flowcharts).
+  if (!readiness.stale) {
     return readiness.failedRenders ? (
       <Banner icon="image_not_supported">
         {readiness.failedRenders} flowchart picture{readiness.failedRenders === 1 ? '' : 's'} could not be redrawn

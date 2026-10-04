@@ -7,7 +7,7 @@ import { http, HttpResponse } from 'msw'
 import { server } from '../../../test/server'
 import { API_BASE_URL } from '../../../lib/http'
 import { ComponentsPanel } from '../components/ComponentsPanel'
-import { addsLayer, componentsByLayer, layerNote, layersAdded, pickable } from '../helpers'
+import { addsLayer, componentsByLayer, layerNote, layersAdded, pickable, reexportTargets } from '../helpers'
 import type { VersionComponent } from '../../../types'
 
 /* Staged generation: a version's components and the documents still to make
@@ -58,14 +58,27 @@ const RUNNING = (mode: string) => ({
   job: { id: 'job9', mode, status: 'running' },
 })
 
-function setup(isAdmin: boolean, body: object = BODY) {
+/** R9: `staleComponents` names the components whose Word files lack corrections. */
+const r9 = (stale: boolean, staleComponents?: string[]) => ({
+  stale, reason: '', explanation: '', overrideCount: stale ? 1 : 0, pendingRenders: 0, failedRenders: 0,
+  newestOverrideAt: null, oldestDerivationAt: null, reexport: null,
+  ...(staleComponents ? { staleComponents } : {}),
+})
+
+function setup(isAdmin: boolean, body: object = BODY, readiness: object = r9(false, [])) {
   const sent: string[][] = []
   const cancelled: string[] = []
   const reexported: string[] = []
+  const r9Reads: number[] = []
   server.use(
     http.get(`${API_BASE_URL}/projects/p1/versions/ver1/components`, () => HttpResponse.json(body)),
-    http.post(`${API_BASE_URL}/projects/p1/versions/ver1/reexport`, () => {
-      reexported.push('ver1')
+    http.get(`${API_BASE_URL}/projects/p1/versions/ver1/export-readiness`, () => {
+      r9Reads.push(1)
+      return HttpResponse.json(readiness)
+    }),
+    http.post(`${API_BASE_URL}/projects/p1/versions/ver1/reexport`, async ({ request }) => {
+      const sentBody = (await request.text()) || '{}'
+      reexported.push(`ver1 ${JSON.stringify(JSON.parse(sentBody).components ?? null)}`)
       return HttpResponse.json({ job_id: 'jobrx', status: 'queued' }, { status: 202 })
     }),
     http.post(`${API_BASE_URL}/projects/p1/jobs/:jobId/cancel`, ({ params }) => {
@@ -81,7 +94,7 @@ function setup(isAdmin: boolean, body: object = BODY) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const wrap = (c: ReactNode) => <QueryClientProvider client={client}>{c}</QueryClientProvider>
   render(wrap(<ComponentsPanel projectId="p1" versionId="ver1" isAdmin={isAdmin} />))
-  return { sent, cancelled, reexported, user: userEvent.setup() }
+  return { sent, cancelled, reexported, r9Reads, user: userEvent.setup() }
 }
 
 describe('ComponentsPanel', () => {
@@ -161,7 +174,18 @@ describe('ComponentsPanel', () => {
     expect(screen.getByText(/1 component is stale: a layer added to the model since/)).toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: 'Generate Math' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Re-export' }))
-    await waitFor(() => expect(reexported).toEqual(['ver1']))
+    // Only the stale component, not every document of the version
+    await waitFor(() => expect(reexported).toEqual(['ver1 ["Layer1.Math"]']))
+  })
+
+  it('Re-export takes the layer-stale components and those R9 says lack corrections', async () => {
+    const { reexported, r9Reads, user } = setup(true, ADDED, r9(true, ['Layer1.App']))
+    await screen.findByText('Stale — re-export')
+    // R9 answered (and its answer rendered) before the click.
+    await waitFor(() => expect(r9Reads.length).toBeGreaterThan(0))
+    await new Promise((r) => setTimeout(r, 50))
+    await user.click(screen.getByRole('button', { name: 'Re-export' }))
+    await waitFor(() => expect(reexported).toEqual(['ver1 ["Layer1.Math","Layer1.App"]']))
   })
 
   it('a developer sees a stale component, but no Re-export', async () => {
@@ -190,6 +214,16 @@ describe('the component helpers', () => {
   const one = (id: string, over: Partial<VersionComponent>): VersionComponent => ({
     id, layer: id.split('.')[0], name: id.split('.')[1], state: 'not_requested',
     inModel: true, layerParsed: true, error: null, documents: [], ...over,
+  })
+
+  it('reexportTargets: layer-stale ∪ R9 staleComponents; every document when that is nothing or R9 does not say', () => {
+    const comps = [one('Layer1.Math', { state: 'stale' }), one('Layer1.App', { state: 'generated' })]
+    expect(reexportTargets(comps, { stale: false, staleComponents: [] })).toEqual(['Layer1.Math'])
+    expect(reexportTargets(comps, { stale: true, staleComponents: ['Layer1.App', 'Layer1.Math'] }))
+      .toEqual(['Layer1.Math', 'Layer1.App'])
+    expect(reexportTargets([one('Layer1.App', { state: 'generated' })], { stale: true, staleComponents: [] })).toBeUndefined()
+    // An older API: stale, but not which — a re-export of fewer would leave a correction out.
+    expect(reexportTargets(comps, { stale: true })).toBeUndefined()
   })
 
   it('groups by layer in order, and only components without documents are pickable', () => {

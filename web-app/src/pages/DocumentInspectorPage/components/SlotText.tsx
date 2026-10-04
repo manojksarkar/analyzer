@@ -2,9 +2,10 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { Icon } from '../../../components/ui'
 import { cn } from '../../../lib/cn'
 import { formatShortDate } from '../../../lib/format'
-import { useSlotHistory } from '../../../hooks/useReview'
+import { saveFailedNote, useSlotHistory } from '../../../hooks/useReview'
 import type { Slot } from '../../../types'
-import { MAX_TEXT, useEdit, type EditApi } from '../editContext'
+import { MAX_TEXT, NUL_MESSAGE, hasNul, useEdit, type EditApi } from '../editContext'
+import { isCorrected } from '../outline'
 
 /* A text of the document that a reviewer can correct (review & update). Read mode prints it as
    the document does, with a small mark when a correction is in force. Edit mode turns it into a
@@ -23,13 +24,15 @@ interface Props {
 export function SlotText({ slot, display, bullets, className }: Props) {
   const edit = useEdit()
   if (!slot || !edit?.editing) {
+    // Undone (R4) is not corrected: the page prints the LLM's text again.
+    const mark = slot && isCorrected(slot) ? <CorrectedMark slot={slot} edit={edit} /> : null
     return (
       <div data-slot-key={slot?.key} className={cn('whitespace-pre-line', className)}>
         {bullets ? (
-          <BulletList items={bullets} mark={slot?.isOverridden ? <CorrectedMark slot={slot} edit={edit} /> : null} />
+          <BulletList items={bullets} mark={mark} />
         ) : (
           <>
-            {slot?.isOverridden && <CorrectedMark slot={slot} edit={edit} />}
+            {mark}
             {display}
           </>
         )}
@@ -103,14 +106,18 @@ function SlotEditor({ slot, display, list, edit, className }: {
       setMessage(`Keep it under ${MAX_TEXT.toLocaleString()} characters. Nothing was saved.`)
       return
     }
+    if (hasNul(text)) {
+      setMessage(NUL_MESSAGE)
+      return
+    }
     setMessage(null)
     setState('saving')
     try {
       await edit.save(slot, text)
       setState('idle')
-    } catch {
+    } catch (e) {
       setState('error')
-      setMessage('Not saved — your text is still here. Leave the box again to retry.')
+      setMessage(saveFailedNote(e))
     }
   }
 
@@ -125,6 +132,8 @@ function SlotEditor({ slot, display, list, edit, className }: {
   }
 
   const who = edit.userName(slot.updatedBy)
+  // Undone (R4): its record stays, but the page prints the LLM's text — not a correction.
+  const corrected = isCorrected(slot)
   return (
     <div data-slot-key={slot.key} className={className}>
       <textarea
@@ -149,7 +158,7 @@ function SlotEditor({ slot, display, list, edit, className }: {
       <div className="mt-1 font-mono text-label text-outline flex flex-wrap items-center gap-x-1.5">
         {state === 'saving' && <span>Saving…</span>}
         {message && <span className={state === 'error' ? 'text-error font-semibold' : 'text-error'}>{message}</span>}
-        {state !== 'saving' && !message && slot.isOverridden && (
+        {state !== 'saving' && !message && corrected && (
           <>
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-secondary" aria-hidden />
             <span>Corrected{who ? ` by ${who}` : ''}{slot.updatedAt ? ` · ${formatShortDate(slot.updatedAt)}` : ''}</span>
@@ -158,18 +167,25 @@ function SlotEditor({ slot, display, list, edit, className }: {
             )}
           </>
         )}
-        {state !== 'saving' && !message && !slot.isOverridden && !slot.text && (
+        {state !== 'saving' && !message && !corrected && !slot.text && (
           <span>No text of its own yet — the page shows a stand-in</span>
         )}
         {state !== 'saving' && (slot.isOverridden || slot.isOrphaned) && (
           <>
-            {(slot.isOverridden || message) && <span>·</span>}
+            {(corrected || message || !slot.text) && <span>·</span>}
             <button type="button" onClick={() => setShowHistory((v) => !v)} className="text-secondary hover:underline">
               {showHistory ? 'Hide history' : 'History'}
             </button>
           </>
         )}
       </div>
+      {/* An orphan: written for code that has since changed, so not printed and not undoable —
+          its words are shown greyed, never as the current wording (API spec §5). */}
+      {slot.isOrphaned && slot.humanText && (
+        <p className="mt-0.5 font-mono text-label text-outline italic whitespace-pre-line">
+          Your correction no longer applies (the code changed): «{slot.humanText}»
+        </p>
+      )}
       {showHistory && <SlotHistory slot={slot} edit={edit} />}
     </div>
   )

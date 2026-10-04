@@ -16,6 +16,8 @@ export const projectKeys = {
   versions: (id: string) => ['projects', id, 'versions'] as const,
   /** A version's components and the state of their documents (staged generation). */
   versionComponents: (id: string, vid: string) => ['projects', id, 'versions', vid, 'components'] as const,
+  /** GET /projects/{pid}/runs: runs at work now or cut short, whichever front door started them. */
+  runs: (id: string) => ['projects', id, 'runs'] as const,
   /** Every documents read of the project: lists, details, stats, renders, events. */
   documentsAll: (id: string) => ['projects', id, 'documents'] as const,
   documents: (id: string, filters?: DocumentFilters) =>
@@ -38,6 +40,8 @@ export const projectKeys = {
   documentReadiness: (id: string, vid: string, docId: string) =>
     ['projects', id, 'review', vid, 'readiness', docId] as const,
   overrides: (id: string, vid: string) => ['projects', id, 'review', vid, 'overrides'] as const,
+  /** R10: what the next run rewrites (a save refreshes it with the version's review reads). */
+  regenerationQueue: (id: string, vid: string) => ['projects', id, 'review', vid, 'queue'] as const,
   slotHistory: (id: string, vid: string, kind: string, key: string) =>
     ['projects', id, 'review', vid, 'history', kind, key] as const,
   flowchartLabels: (id: string, vid: string, flowchartId: string) =>

@@ -4,8 +4,8 @@ import { cn } from '../../../lib/cn'
 import { formatShortDate } from '../../../lib/format'
 import { useFlowchartLabels, useSaveFlowchartLabels, useUndoSlot } from '../../../hooks/useReview'
 import type { FlowchartEntry, Slot } from '../../../types'
-import { MAX_TEXT } from '../editContext'
-import { flowOrder } from '../outline'
+import { MAX_TEXT, hasNul } from '../editContext'
+import { flowOrder, isCorrected } from '../outline'
 
 /* One flowchart's box labels, corrected together (R7 reads them, R8 saves the changed ones all
    or nothing). The chart's shape and arrows come from the code and stay as they are; the server
@@ -41,6 +41,8 @@ export function FlowchartLabelDialog({
   const changed = labels.filter((s) => valueOf(s).trim() !== s.text.trim())
   const empty = labels.some((s) => !valueOf(s).trim())
   const tooLong = labels.some((s) => valueOf(s).length > MAX_TEXT)
+  // The API refuses U+0000 (422): stop it here, and say which box has one.
+  const nul = labels.some((s) => hasNul(valueOf(s)))
 
   function close() {
     if (changed.length && !window.confirm(`Discard ${changed.length} changed label${changed.length === 1 ? '' : 's'}?`)) return
@@ -48,7 +50,7 @@ export function FlowchartLabelDialog({
   }
 
   function submit() {
-    if (!chart.flowchartId || !changed.length || empty || tooLong) return
+    if (!chart.flowchartId || !changed.length || empty || tooLong || nul) return
     const body: Record<string, string> = {}
     for (const s of changed) if (s.nodeId) body[s.nodeId] = valueOf(s).replace(/\s+/g, ' ').trim()
     save.mutate({ flowchartId: chart.flowchartId, labels: body }, { onSuccess: () => onClose() })
@@ -98,7 +100,7 @@ export function FlowchartLabelDialog({
                   <p className="font-mono text-label text-outline mt-0.5 flex flex-wrap gap-x-1.5">
                     <span>{s.nodeId}</span>
                     <span>·</span>
-                    {s.isOverridden ? (
+                    {isCorrected(s) ? (
                       <>
                         <span>corrected{s.updatedBy ? ` by ${userName(s.updatedBy)}` : ''}{s.updatedAt ? ` · ${formatShortDate(s.updatedAt)}` : ''}</span>
                         {s.canUndo && !locked && (
@@ -108,6 +110,16 @@ export function FlowchartLabelDialog({
                     ) : <span>generated</span>}
                     {isChanged && <span className="text-secondary font-semibold">· changed</span>}
                   </p>
+                  {hasNul(valueOf(s)) && (
+                    <p className="font-mono text-label text-error font-semibold mt-0.5">
+                      Contains a NUL character (U+0000) — remove it.
+                    </p>
+                  )}
+                  {s.isOrphaned && s.humanText && (
+                    <p className="font-mono text-label text-outline italic mt-0.5">
+                      Your correction no longer applies (the code changed): «{s.humanText}»
+                    </p>
+                  )}
                 </div>
               </div>
             )
@@ -115,14 +127,15 @@ export function FlowchartLabelDialog({
         </div>
       </div>
       <div className="flex items-center justify-between gap-4 pt-4">
-        <Text as="p" variant="caption" className={empty || tooLong ? 'text-error font-semibold' : ''}>
+        <Text as="p" variant="caption" className={empty || tooLong || nul ? 'text-error font-semibold' : ''}>
           {empty ? 'A label can’t be empty.'
             : tooLong ? `Keep each label under ${MAX_TEXT.toLocaleString()} characters.`
-              : 'Saves the changed labels together. The picture is redrawn, and the SWE.4 test steps use the new wording.'}
+              : nul ? 'A label contains a NUL character (U+0000), which cannot be saved — remove it.'
+                : 'Saves the changed labels together. The picture is redrawn, and the SWE.4 test steps use the new wording.'}
         </Text>
         <div className="flex items-center gap-2 flex-shrink-0">
           <Button variant="outline" size="sm" onClick={close}>Cancel</Button>
-          <Button size="sm" loading={save.isPending} disabled={!changed.length || empty || tooLong || locked} onClick={submit}>
+          <Button size="sm" loading={save.isPending} disabled={!changed.length || empty || tooLong || nul || locked} onClick={submit}>
             {changed.length ? `Save ${changed.length} label${changed.length === 1 ? '' : 's'}` : 'Save'}
           </Button>
         </div>

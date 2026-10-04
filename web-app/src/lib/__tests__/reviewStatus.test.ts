@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   REVIEW_STATUSES, STATUS_META, approvalLabel, describeEvent, needsReviewer, pageStateStatus,
-  reviewCounts, reviewStatusOf, versionStatusKey, versionStatusOf, wordFileOutOfDate,
+  reviewCounts, reviewStatusOf, versionStatusKey, versionStatusOf, wordFileOutOfDate, componentWordFileStale,
 } from '../reviewStatus'
 import { NEEDS_REVIEWER, buildReviewerOptions, matchesReviewer } from '../docTree'
 import type { Document, ReviewEvent } from '../../types'
@@ -80,11 +80,25 @@ describe('describeEvent', () => {
 })
 
 describe('wordFileOutOfDate (R9)', () => {
-  it('is out of date when stale or a picture is owed', () => {
-    expect(wordFileOutOfDate({ stale: true, pendingRenders: 0 })).toBe(true)
-    expect(wordFileOutOfDate({ stale: false, pendingRenders: 2 })).toBe(true)
-    expect(wordFileOutOfDate({ stale: false, pendingRenders: 0 })).toBe(false)
+  it('one rule: stale. An owed picture is in it when the document embeds the flowcharts', () => {
+    expect(wordFileOutOfDate({ stale: true })).toBe(true)
+    // A picture owed for a flowchart the Word file does not embed: the server says not stale.
+    expect(wordFileOutOfDate({ stale: false, pendingRenders: 2 } as { stale: boolean })).toBe(false)
+    expect(wordFileOutOfDate({ stale: false })).toBe(false)
     expect(wordFileOutOfDate(undefined)).toBe(false)
+  })
+})
+
+describe('componentWordFileStale (R9 staleComponents)', () => {
+  it('marks only the components the answer names', () => {
+    const r = { stale: true, staleComponents: ['Layer1.Math'] }
+    expect(componentWordFileStale(r, 'Layer1.Math')).toBe(true)
+    expect(componentWordFileStale(r, 'Layer1.Util')).toBe(false)
+    expect(componentWordFileStale({ stale: false, staleComponents: [] }, 'Layer1.Math')).toBe(false)
+  })
+  it('an API that does not say which: every component of a stale version', () => {
+    expect(componentWordFileStale({ stale: true }, 'Layer1.Util')).toBe(true)
+    expect(componentWordFileStale(undefined, 'Layer1.Util')).toBe(false)
   })
 })
 

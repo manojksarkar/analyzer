@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ComponentState, ReviewStatus, VersionComponents } from '../../types'
+import type { ComponentState, ProjectRun, ReviewStatus, VersionComponents, VersionRun } from '../../types'
 
 /* Staged generation (GET /projects/{pid}/versions/{vid}/components): every component of the layers
    the version parsed — and those its config names in layers the model lacks yet (`in_model` and
@@ -45,6 +45,33 @@ export const ApiVersionComponentsSchema = z.object({
 })
 export type ApiVersionComponents = z.infer<typeof ApiVersionComponentsSchema>
 
+/** GET /projects/{pid}/runs: the runs at work now, or cut short, whichever front door started them. */
+export const ApiProjectRunsSchema = z.object({
+  runs: z.array(ApiVersionRunSchema.extend({ version_id: z.string(), version_tag: z.string().nullable().optional() })),
+})
+export type ApiProjectRuns = z.infer<typeof ApiProjectRunsSchema>
+
+export function mapVersionRun(r: z.infer<typeof ApiVersionRunSchema>): VersionRun {
+  return {
+    command: r.command ?? '',
+    alive: r.alive ?? null,
+    stopped: !!r.stopped,
+    outcome: r.outcome ?? '',
+    host: r.host ?? null,
+    startedAt: r.started_at ?? null,
+    finishedAt: r.finished_at ?? null,
+    stage: r.stage ?? null,
+    done: r.done ?? null,
+    total: r.total ?? null,
+    stageStartedAt: r.stage_started_at ?? null,
+    progressAt: r.progress_at ?? null,
+  }
+}
+
+export function mapProjectRuns(r: ApiProjectRuns): ProjectRun[] {
+  return r.runs.map((x) => ({ ...mapVersionRun(x), versionId: x.version_id, versionTag: x.version_tag ?? x.version_id }))
+}
+
 const asState = (s: string): ComponentState =>
   (STATES as string[]).includes(s) ? (s as ComponentState) : 'not_requested'
 
@@ -63,22 +90,7 @@ export function mapVersionComponents(r: ApiVersionComponents): VersionComponents
       documents: c.documents.map((d) => ({ id: d.id, process: d.process, status: d.status as ReviewStatus })),
     })),
     counts,
-    run: r.run
-      ? {
-          command: r.run.command ?? '',
-          alive: r.run.alive ?? null,
-          stopped: !!r.run.stopped,
-          outcome: r.run.outcome ?? '',
-          host: r.run.host ?? null,
-          startedAt: r.run.started_at ?? null,
-          finishedAt: r.run.finished_at ?? null,
-          stage: r.run.stage ?? null,
-          done: r.run.done ?? null,
-          total: r.run.total ?? null,
-          stageStartedAt: r.run.stage_started_at ?? null,
-          progressAt: r.run.progress_at ?? null,
-        }
-      : null,
+    run: r.run ? mapVersionRun(r.run) : null,
     job: r.job ? { id: r.job.id, mode: r.job.mode ?? 'auto', status: r.job.status } : null,
   }
 }

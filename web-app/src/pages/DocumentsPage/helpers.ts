@@ -104,3 +104,15 @@ export function layerNote(layer: string, comps: VersionComponent[]): string | nu
   const others = modelLayers.length ? `${modelLayers.join(', ')} documents` : 'documents of the other layers'
   return `Not in this version's model yet — Generate adds layer ${layer} (parse + descriptions for that layer; ${others} may be marked stale)`
 }
+
+/** What the stale strip's Re-export asks for: the components a layer made stale, and those R9
+ *  says lack corrections. `undefined` — every document — when that is nothing, or when R9 is
+ *  stale but does not say which (an older API): a re-export of fewer would leave a correction out. */
+export function reexportTargets(
+  comps: VersionComponent[], readiness: { stale: boolean; staleComponents?: string[] } | undefined,
+): string[] | undefined {
+  if (readiness?.stale && !readiness.staleComponents) return undefined
+  const ids = new Set(comps.filter((c) => c.state === 'stale').map((c) => c.id))
+  for (const g of readiness?.stale ? readiness.staleComponents ?? [] : []) ids.add(g)
+  return ids.size ? [...ids] : undefined
+}

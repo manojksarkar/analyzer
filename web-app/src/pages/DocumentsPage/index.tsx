@@ -14,7 +14,7 @@ import { DocTreePanel } from '../../components/shell/DocTreePanel'
 import { AssignReviewerDialog } from '../../components/review/AssignReviewerDialog'
 import { NEEDS_REVIEWER, buildReviewerOptions, docxFileName, groupDocsByProcess } from '../../lib/docTree'
 import { cn } from '../../lib/cn'
-import { wordFileOutOfDate } from '../../lib/reviewStatus'
+import { componentWordFileStale, wordFileOutOfDate } from '../../lib/reviewStatus'
 import type { Document, ReviewStatus } from '../../types'
 import { bulkApprovePlan, filterDocuments } from './helpers'
 import { DocRow } from './components/DocRow'
@@ -24,6 +24,9 @@ import { StatusFilter } from './components/StatusFilter'
 import { ComponentsPanel } from './components/ComponentsPanel'
 
 const PROCESSES = ['All', 'SYS.1', 'SYS.2', 'SWE.1', 'SWE.2', 'SWE.3', 'SWE.4']
+
+/** Download All while the version's Word files lack corrections (R9 `stale`). */
+const PREVIOUS_WORD_FILES = 'Previous Word files — the corrections are not in them yet'
 
 // Fixed layout, widths including the cells' padding: the actions column holds four icon buttons
 // (~120px), Status the widest badge ("Ready for approval"). Declared narrower a column took its
@@ -95,8 +98,12 @@ export function DocumentsPage() {
 
   // Approve…: only Ready for approval with an up-to-date Word file (R9). The version's R9 says
   // so for all at once; when it is stale, each candidate's own (A15) is read as the dialog opens.
+  // Every role reads it: Download says when it gives the previous Word file — a row when R9 names
+  // its component (`staleComponents`), Download All when the version is behind at all.
   const { data: versionReadiness, isError: versionReadinessFailed } =
-    useExportReadiness(pid, isAdmin ? viewVersion?.id : undefined)
+    useExportReadiness(pid, viewVersion?.id)
+  // Download All: the approved documents' files are the approved ones; the rest are previous.
+  const allStale = wordFileOutOfDate(versionReadiness) && all.some((d) => d.status !== 'approved')
   const candidates = selectedDocs.filter((d) => d.status === 'submitted')
   const perDoc = useDocumentsReadiness(pid, candidates,
     bulkOpen && (versionReadinessFailed || wordFileOutOfDate(versionReadiness)))
@@ -232,10 +239,17 @@ export function DocumentsPage() {
           <button
             onClick={() => downloadAll.mutate({ versionId: viewVersion.id!, fileName: `${project?.name ?? pid}-${viewVersion.tag}.zip` })}
             disabled={downloadAll.isPending}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container rounded-lg transition-colors text-on-secondary font-mono text-caption font-bold tracking-[0.04em] disabled:opacity-60"
+            title={allStale ? `Download all: ${PREVIOUS_WORD_FILES}` : undefined}
+            className="relative flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container rounded-lg transition-colors text-on-secondary font-mono text-caption font-bold tracking-[0.04em] disabled:opacity-60"
           >
             <Icon name="download" size={14} />
             {downloadAll.isPending ? 'PREPARING…' : 'DOWNLOAD ALL'}
+            {allStale && (
+              <>
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber border-2 border-white" aria-hidden />
+                <span className="sr-only">{PREVIOUS_WORD_FILES}</span>
+              </>
+            )}
           </button>
         </SubbarCta>
       )}
@@ -420,6 +434,7 @@ export function DocumentsPage() {
                       meId={meId}
                       nameOf={nameOf}
                       claimPending={claim.isPending}
+                      wordFileStale={componentWordFileStale(versionReadiness, doc.group)}
                       onToggle={() => toggle(doc.id)}
                       onOpen={() => openDoc(doc)}
                       onReview={() => openDoc(doc, true)}

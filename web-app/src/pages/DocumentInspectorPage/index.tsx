@@ -5,7 +5,7 @@ import { useProjectViewState } from '../../hooks/useProjectViewState'
 import { useDownloadDoc } from '../../hooks/useDocumentMutations'
 import { useDocumentEvents, useDocumentReadiness } from '../../hooks/useApproval'
 import {
-  reexportActive, useExportReadiness, useSaveSlot, useUndoSlot, useVersionOverrides,
+  reexportActive, useDiscardOrphans, useExportReadiness, useSaveSlot, useUndoSlot, useVersionOverrides,
 } from '../../hooks/useReview'
 import { useAuthStore } from '../../store/auth'
 import { useUIStore } from '../../store/ui'
@@ -15,7 +15,7 @@ import { AssignReviewerDialog } from '../../components/review/AssignReviewerDial
 import {
   groupDocsByProcess, buildReviewerOptions, docxFileName, documentSubtitle, matchesReviewer,
 } from '../../lib/docTree'
-import { wordFileOutOfDate } from '../../lib/reviewStatus'
+import { componentWordFileStale, wordFileOutOfDate } from '../../lib/reviewStatus'
 import { Card, Icon, Skeleton, Text, toast } from '../../components/ui'
 import { LoadError } from '../../components/LoadError'
 import { cn } from '../../lib/cn'
@@ -29,6 +29,7 @@ import { ApproveDialog, ReopenDialog, RequestChangesDialog } from './components/
 import { RightPanel, type PanelTab } from './components/RightPanel'
 import { OutlineTab } from './components/OutlineTab'
 import { CorrectionsTab } from './components/CorrectionsTab'
+import { QueuedList } from './components/QueuedList'
 import { EditBar, ReadinessBanner, ReviewStateBanner } from './components/ReviewBars'
 import { FlowchartLabelDialog } from './components/FlowchartLabelDialog'
 import { TreeRail } from './components/TreeRail'
@@ -74,6 +75,7 @@ export function DocumentInspectorPage() {
   // context below must not change on every job poll (it would re-render every correctable text).
   const { mutateAsync: saveText } = useSaveSlot(pid, versionId)
   const { mutate: undoText } = useUndoSlot(pid, versionId)
+  const discardOrphans = useDiscardOrphans(pid, versionId)
 
   const isAdmin = project?.userRole === 'admin'
   const isDeveloper = project?.userRole === 'developer'
@@ -108,6 +110,7 @@ export function DocumentInspectorPage() {
   const corrections = useMemo(
     () => docCorrections(overrides ?? [], sections, rich?.cover.group ?? ''), [overrides, sections, rich])
   const counts = useMemo(() => unitCorrectionCounts(corrections.inForce, sections), [corrections, sections])
+  const slotKeys = useMemo(() => new Set(slots.map((s) => s.key)), [slots])
   // The outline stops at units for SWE.4 (as the mockup): a line per test spec would bury it.
   const outline = useMemo(() => buildOutline(sections, isSwe4 ? 3 : 4), [sections, isSwe4])
   const ids = useMemo(() => outlineIds(outline), [outline])
@@ -212,8 +215,13 @@ export function DocumentInspectorPage() {
   // The document's own version (its cover says the same), not the Subbar's pick.
   const refLabel = rich?.cover.version ?? doc.version
   // An approved document downloads the Word file that was approved (a copy is kept), so a later
-  // correction elsewhere in the version does not make it out of date.
-  const docStale = !approved && !!readiness?.stale
+  // correction elsewhere in the version does not make it out of date. Otherwise: behind when R9
+  // names its component (`staleComponents`).
+  const wordStale = componentWordFileStale(readiness, doc.group)
+  const docStale = !approved && wordStale
+  // Undone corrections the Word file still carries: R9 counts them until a re-export.
+  const undoneShown = wordStale ? corrections.undone : []
+  const versionOrphans = (overrides ?? []).filter((s) => s.isOrphaned).length
   const reviewCtx: ReviewCtx = {
     isAdmin: !!isAdmin,
     meId,
@@ -230,7 +238,7 @@ export function DocumentInspectorPage() {
   const tabs: PanelTab[] = [
     { id: 'outline', label: 'Outline' },
     { id: 'review', label: 'Review' },
-    ...(canEdit ? [{ id: 'corr', label: 'Corrections', count: corrections.inForce.length }] : []),
+    ...(canEdit ? [{ id: 'corr', label: 'Corrections', count: corrections.inForce.length + undoneShown.length }] : []),
   ]
   const activeTab = tabs.some((t) => t.id === tab) ? tab : 'outline'
 
@@ -387,12 +395,21 @@ export function DocumentInspectorPage() {
         ) : activeTab === 'corr' ? (
           <CorrectionsTab
             inForce={corrections.inForce}
+            undone={undoneShown}
             orphans={corrections.orphans}
             isLoading={overridesLoading}
             isError={overridesError}
             userName={userName}
             onJump={jumpToSlot}
-          />
+            orphanActions={isAdmin ? {
+              discard: (s) => discardOrphans.mutate(s),
+              discardAll: () => discardOrphans.mutate(),
+              versionCount: versionOrphans,
+              busy: discardOrphans.isPending,
+            } : undefined}
+          >
+            <QueuedList projectId={pid} versionId={versionId} slotKeys={slotKeys} />
+          </CorrectionsTab>
         ) : (
           <OutlineTab nodes={outline} activeId={activeId} counts={isEditing ? counts : null} onJump={jumpToSection} />
         )}

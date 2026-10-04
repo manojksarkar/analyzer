@@ -40,6 +40,15 @@ describe('mapVersion', () => {
     expect(mapVersion({ ...base, status: 'draft', docs_count: 0 }).pageState).toBe('never')
   })
 
+  it('maps how it was made, and tolerates an API that does not say', () => {
+    const v = mapVersion(ApiVersionSchema.parse({ ...base,
+      run: { made_by: 'cli', scope: { type: 'layer', names: ['Layer1'] }, doc_type: null, model_only: true } }))
+    expect(v.run).toEqual({ madeBy: 'cli', scope: { type: 'layer', names: ['Layer1'] }, docType: null, modelOnly: true })
+    expect(mapVersion(base).run).toBeNull()
+    expect(mapVersion({ ...base, run: { made_by: null, scope: null, doc_type: 'all', model_only: false } }).run)
+      .toEqual({ madeBy: null, scope: null, docType: 'all', modelOnly: false })
+  })
+
   it("carries the run's warnings, and none from an API that does not send them", () => {
     const w = 'Layer1 / G / Ghost: `Layer1/Gone` is not in the checkout'
     expect(mapVersion({ ...base, warnings: [w] }).warnings).toEqual([w])

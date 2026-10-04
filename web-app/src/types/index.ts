@@ -67,6 +67,13 @@ export interface VersionRun {
   progressAt: string | null
 }
 
+/** A run at work on one of the project's versions now, or cut short — whichever front door
+ *  started it (`GET /projects/{pid}/runs`). */
+export interface ProjectRun extends VersionRun {
+  versionId: string
+  versionTag: string
+}
+
 /** The web job at work on the version now (queued or running): what Stop cancels. `mode`
  *  `export` / `reexport` = documents into this version; anything else = the version's own run. */
 export interface VersionJob {
@@ -249,6 +256,18 @@ export interface Version {
   warnings: string[]
   /** Its documents' review counts; null from an API that does not send them. */
   review: VersionReview | null
+  /** How it was made; null from an API that does not say. */
+  run: VersionRunInfo | null
+}
+
+/** How a version was made (`versions.run_report`): from the web app or the command line, for
+ *  which scope, which documents, or the model only. */
+export interface VersionRunInfo {
+  madeBy: 'web' | 'cli' | null
+  /** `type`: project | layer | group | component. */
+  scope: { type: string; names: string[] } | null
+  docType: 'swe3' | 'swe4' | 'all' | null
+  modelOnly: boolean
 }
 
 export interface Commit {
@@ -356,11 +375,28 @@ export interface Slot {
   nodeId?: string
 }
 
+/** A text a correction made out of date: the next run rewrites it (API spec §5 `QueuedSlot`).
+ *  `label` only when the server names it — the key is never taken apart here. */
+export interface QueuedSlot {
+  slotKind: string
+  slotKey: string
+  label?: string
+}
+
 /** A save's answer: the slot as it now is, plus what it replaced and what it queued. */
 export interface SlotSaveResult extends Slot {
   previousText: string | null
   firstEdit: boolean
-  queuedForRegeneration: { slotKind: string; slotKey: string }[]
+  queuedForRegeneration: QueuedSlot[]
+}
+
+/** R10: one text the next run rewrites, because a correction it was written from changed. */
+export interface QueuedRegeneration extends QueuedSlot {
+  /** Plain language, from the server. */
+  reason: string
+  /** The correction that made it out of date. */
+  causedBy: QueuedSlot | null
+  requestedAt: string | null
 }
 
 export interface SlotHistoryEntry {
@@ -384,6 +420,9 @@ export interface FlowchartLabels {
 /** R9: whether the version's Word files have every correction, and its latest re-export. */
 export interface ExportReadiness {
   stale: boolean
+  /** The components (documents' `group`) whose Word files are behind, when the version is —
+   *  the version-wide question only. Absent: an API that does not say which. */
+  staleComponents?: string[]
   explanation: string | null
   overrideCount: number
   pendingRenders: number

@@ -24,8 +24,11 @@ function setup(fail: 'documents' | 'versions') {
     : ok()
   const docs = () => HttpResponse.json({ ...documents, pagination: { page: 1, per_page: 100, total: documents.documents.length } })
   server.use(
-    // A developer: no export-readiness read.
+    // A developer. Every role reads R9: Download says when it gives the previous Word file.
     http.get(`${API_BASE_URL}/projects/p1`, () => HttpResponse.json({ project: { ...project.project, my_role: 'developer' } })),
+    http.get(`${API_BASE_URL}/projects/p1/versions/:vid/export-readiness`, () => HttpResponse.json({
+      stale: false, reason: 'up to date', explanation: 'up to date', overrideCount: 0, pendingRenders: 0,
+      failedRenders: 0, newestOverrideAt: null, oldestDerivationAt: null, reexport: null })),
     http.get(`${API_BASE_URL}/projects/p1/versions`,
       fail === 'versions' ? failWhileDown(() => HttpResponse.json(versions)) : () => HttpResponse.json(versions)),
     http.get(`${API_BASE_URL}/projects/p1/commits`, () => HttpResponse.json(commits)),
