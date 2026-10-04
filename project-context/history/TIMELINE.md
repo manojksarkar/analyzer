@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-04d | A private repository's token no longer travels in a URL; the config import is proved to ask the API a fixed number of times; the wizard no longer copies the whole folder tree on every keystroke | [11](11-2026-09-29e.md) |
 | 2026-10-04c | The wizard's developer search no longer calls the API without end; a run's code copy waits out a file another process holds, and two runs started in one second no longer share a folder | [11](11-2026-09-29e.md) |
 | 2026-10-04b | A database error no longer reaches the caller; a late cancel is finished on every path; a web re-export waits out a correction instead of refusing; a run's every engine tries a timed-out connection again; setup stamps only a migration it knows | [11](11-2026-09-29e.md) |
 | 2026-10-04 | Background runs hardened after a review: a database blip at a run's end no longer deletes its work or leaves the job unfollowed; cancel, export and a recycled process id are safe; each version keeps its own config. Small API fixes: Globals count, the draft no longer takes over the project view, projects sorted, the last admin stays | [11](11-2026-09-29e.md) |

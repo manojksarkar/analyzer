@@ -48,7 +48,7 @@ const TREE_CB = 'w-3.5 h-3.5 accent-secondary cursor-pointer flex-shrink-0'
 
 type TestTone = 'neutral' | 'error' | 'ok'
 
-// The source tree comes from the real GET /repositories/browse endpoint
+// The source tree comes from the real POST /repositories/browse endpoint
 // (api/routes/repositories.py) as a nested RepoEntry[] — folders carry
 // `children`, files don't. Fetched once after a successful Test Connection.
 const isFolder = (n: RepoEntry) => n.type === 'folder'
@@ -629,12 +629,14 @@ function WizardView({
   const compTree: RepoEntry[] = [{ type: 'folder', name: compRoot, path: panelLayer?.path || '__root__', children: panelLayer ? subtreeFor(panelLayer.path) : [] }]
   // Select-Folder picker — rooted at the Step-1 repo (folders only).
   const repoRoot = repoRootName(repoUrl)
-  const pickerTree: RepoEntry[] = [{ type: 'folder', name: repoRoot, path: '.', children: foldersOnly(repoTree) }]
+  // Once per tree, not on every keystroke: it walks the whole branch.
+  const repoFolders = useMemo(() => foldersOnly(repoTree), [repoTree])
+  const pickerTree: RepoEntry[] = [{ type: 'folder', name: repoRoot, path: '.', children: repoFolders }]
   const fpDisplay = fpSelected ? (fpSelected === '.' ? repoRoot : `${repoRoot}/${fpSelected}`) : 'No folder selected'
   function openFolderPicker(target: FpTarget) {
     setFpTarget(target); setFpSelected('')
     // Expand the project root + its first level by default.
-    setFpOpen({ '.': true, ...Object.fromEntries(foldersOnly(repoTree).map((n) => [n.path, true])) })
+    setFpOpen({ '.': true, ...Object.fromEntries(repoFolders.map((n) => [n.path, true])) })
   }
   function confirmFolderPicker() {
     if (!fpSelected || !fpTarget) return
