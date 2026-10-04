@@ -227,6 +227,19 @@ All endpoints except `/auth/signin` and `/auth/refresh` require
 | GET | `/projects/:id/jobs/:jobId/functions` | Discovered functions after Phase 1 |
 | POST | `/projects/:id/jobs/:jobId/reexport` | Re-export DOCX (admin) |
 
+### Versions: staged generation, re-export, runs
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/projects/:id/versions/:versionId/components` | Every component: in the model or not, its state (`stale` included), documents, the version's run |
+| POST | `/projects/:id/versions/:versionId/documents/generate` | Make components' documents into the version (admin); a component of a layer the model lacks adds the layer (`added_layers`) |
+| POST | `/projects/:id/versions/:versionId/resume` | Carry on a run that was cut short (admin) |
+| POST | `/projects/:id/versions/:versionId/reexport` | Re-export (admin) -- any version with documents, web- or CLI-made; optional `{"components": [...]}` |
+| GET | `/projects/:id/runs` | Runs at work or cut short, from the web app or `analyzer.py` |
+
+Review & update (R1–R12, reviewers' corrections): `docs/spec/REVIEW_UPDATE_API_SPEC.md`. Review and
+approval: `docs/spec/REVIEW_APPROVE_API_SPEC.md`.
+
 ### Documents
 
 | Method | Path | Description |
