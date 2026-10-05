@@ -280,3 +280,10 @@ export function pathProblems(layers: Layer[], tree: TreeIndex, branch: string): 
   if (!comps) out.push({ layerId: '', path: '', text: 'No component yet — a run needs at least one' })
   return out
 }
+
+/** Step 1's branch box: the branches `query` finds - all of them for an empty query, else those
+ *  containing it (any case). */
+export function matchBranches(branches: string[], query: string): string[] {
+  const q = query.trim().toLowerCase()
+  return q ? branches.filter((b) => b.toLowerCase().includes(q)) : branches
+}

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>[PRODUCT NAME] — Get Started</title>
+<title>ArtiFex — Get Started</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
@@ -57,14 +57,18 @@
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: #c4c6cd; border-radius: 10px; }
 
-  /* ── Empty state cards ── */
-  .get-started-card {
-    cursor: pointer; transition: box-shadow .15s, border-color .15s;
-  }
-  .get-started-card:hover {
-    box-shadow: 0 4px 20px rgba(4,22,39,.10);
-    border-color: #0058be;
-  }
+  /* ── Empty state choice cards (web-app ProjectsEmptyState) ── */
+  .choice-card { cursor: pointer; transition: background-color .15s; }
+  .choice-card-primary { border: 2px solid #0058be; }
+  .choice-card-primary:hover { background: rgba(0,88,190,.05); }
+  .choice-card-plain { border: 1px solid #c4c6cd; }
+  .choice-card-plain:hover { background: #eff4ff; }
+
+  /* ── Toast (web-app components/ui/Toast: white card, slides in from the right, 4 s) ── */
+  @keyframes slideInRight  { from { transform: translateX(110%); opacity:0; } to { transform: translateX(0); opacity:1; } }
+  @keyframes fadeOut       { from { opacity:1; } to { opacity:0; } }
+  .toast-in  { animation: slideInRight .3s ease forwards; }
+  .toast-out { animation: fadeOut .2s ease forwards; }
 
   /* ── Inputs ── */
   .inp {
@@ -252,6 +256,15 @@
   .fp-folder-row.selected .fp-name { color:#0058be; font-weight:600; }
   .fp-children { margin-left:16px; border-left:1px solid #e5eeff; }
 
+  /* ── Branch: one box - search and list (step 1) ── */
+  .bd-head  { padding: 6px 12px; font: 500 11px/16px 'JetBrains Mono', monospace; color: #74777d; border-bottom: 1px solid #eff4ff; }
+  .bd-item  { display: flex; align-items: center; gap: 8px; padding: 7px 12px; cursor: pointer; font: 400 12px/18px 'JetBrains Mono', monospace; color: #0b1c30; }
+  .bd-item:hover, .bd-item.focused { background: #eff4ff; }
+  .bd-item.picked { color: #0058be; font-weight: 600; }
+  .bd-item .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bd-item .tag { padding: 0 6px; border-radius: 3px; background: #e5eeff; color: #0058be; font-size: 10px; font-weight: 600; }
+  .bd-empty { padding: 10px 12px; font: 400 12px/16px Inter, sans-serif; color: #74777d; }
+
   /* ── Member search dropdown ── */
   .ms-item { display:flex; align-items:center; gap:10px; padding:8px 12px; cursor:pointer; transition:background .1s; }
   .ms-item:hover, .ms-item.focused { background:#eff4ff; }
@@ -267,13 +280,22 @@
      TOP BAR
      ══════════════════════════════════════════ -->
 <header class="fixed top-0 left-0 right-0 h-14 bg-white border-b border-outline-variant flex items-center justify-between px-6 z-50">
+  <!-- Brand: the ArtiFex mark (web-app components/ui/BrandMark.tsx) and wordmark (constants/branding.ts) -->
   <a href="projects.html" class="flex items-center gap-3">
-    <div class="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
-      <span class="material-symbols-outlined sym-fill text-on-primary" style="font-size:18px;">account_tree</span>
-    </div>
+    <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true" class="flex-shrink-0 text-secondary">
+      <g stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 8.5 2 16l3 7.5"/>
+        <path d="M27 8.5 30 16l-3 7.5"/>
+      </g>
+      <g stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M13.6 7 9.2 24"/>
+        <path d="M11 17.8h6.2"/>
+      </g>
+      <path fill="currentColor" d="M19.8 18.6C19.8 20.7 20.9 21.8 23 21.8 20.9 21.8 19.8 22.9 19.8 25 19.8 22.9 18.7 21.8 16.6 21.8 18.7 21.8 19.8 20.7 19.8 18.6Z"/>
+    </svg>
     <div>
-      <h1 class="text-primary font-bold tracking-tight" style="font-family:Inter;font-size:15px;line-height:1.2;">[PRODUCT NAME]</h1>
-      <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mt-0.5">Automotive Tier 1</p>
+      <h1 class="text-primary font-bold tracking-tight" style="font-family:Inter;font-size:20px;line-height:1.2;">ArtiFex</h1>
+      <p class="text-on-surface-variant uppercase mt-0.5" style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;line-height:16px;letter-spacing:.08em;">Crafted from Code</p>
     </div>
   </a>
 
@@ -283,11 +305,8 @@
   </div>
 
   <div class="flex items-center gap-0.5">
-    <button class="p-2 hover:bg-surface-container rounded-lg transition-colors">
+    <button class="p-2 hover:bg-surface-container rounded-lg transition-colors" aria-label="Notifications">
       <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
-    </button>
-    <button class="p-2 hover:bg-surface-container rounded-lg transition-colors">
-      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">help</span>
     </button>
     <div class="w-px h-5 bg-outline-variant mx-1.5"></div>
     <button class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors">
@@ -301,60 +320,70 @@
 
 
 <!-- ══════════════════════════════════════════
-     VIEW: EMPTY STATE (default)
+     VIEW: EMPTY STATE (default) - the Projects page with no project yet
+     (web-app pages/ProjectsPage: its heading, and ProjectsEmptyState where the table goes)
      ══════════════════════════════════════════ -->
-<div id="view-empty" class="fixed inset-0 pt-14 bg-background flex items-center justify-center">
-  <div class="text-center" style="max-width:560px;padding:0 24px;">
+<div id="view-empty" class="fixed inset-0 pt-14 overflow-y-auto">
+  <div class="px-6 py-6 mx-auto" style="max-width:1280px;">
 
-    <div class="w-16 h-16 bg-surface-container rounded-2xl flex items-center justify-center mx-auto mb-6">
-      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:32px;">folder_open</span>
-    </div>
-    <h2 class="text-headline-md text-on-surface mb-2">No projects yet</h2>
-    <p class="text-body-md text-on-surface-variant mb-10" style="max-width:400px;margin-left:auto;margin-right:auto;line-height:1.7;">
-      Create a new project, or request access to an existing project your team is already working on.
-    </p>
-
-    <div class="grid grid-cols-2 gap-4 text-left">
-
-      <!-- New Project -->
-      <div class="get-started-card bg-white border border-outline-variant rounded-xl p-6" onclick="showWizard()">
-        <div class="w-10 h-10 bg-secondary-container rounded-xl flex items-center justify-center mb-4">
-          <span class="material-symbols-outlined text-secondary sym-fill" style="font-size:20px;">add_circle</span>
-        </div>
-        <p class="font-label-md text-label-md text-on-surface mb-1.5" style="font-size:13px;">New Project</p>
-        <p class="text-body-sm text-on-surface-variant" style="font-size:12px;line-height:1.6;">Set up a fresh project — define your codebase, architecture layers, and compliance target.</p>
-        <div class="mt-4 flex items-center gap-1 text-secondary" style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;letter-spacing:.04em;">
-          GET STARTED
-          <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
-        </div>
+    <!-- Page heading. No New Project / Request Access buttons while there is no project: the two
+         cards below are the way in. -->
+    <div class="flex items-center justify-between mb-5">
+      <div>
+        <h1 class="text-on-surface" style="font-family:Inter;font-size:24px;font-weight:600;line-height:32px;letter-spacing:-0.01em;">Projects</h1>
+        <p class="text-on-surface-variant mt-0.5" style="font-size:12px;line-height:16px;">System-wide · 0 projects</p>
       </div>
-
-      <!-- Request Access -->
-      <div class="get-started-card bg-white border border-outline-variant rounded-xl p-6" onclick="openLoadModal()">
-        <div class="w-10 h-10 bg-surface-container rounded-xl flex items-center justify-center mb-4">
-          <span class="material-symbols-outlined text-on-surface-variant sym-fill" style="font-size:20px;">lock_open</span>
-        </div>
-        <p class="font-label-md text-label-md text-on-surface mb-1.5" style="font-size:13px;">Request Access</p>
-        <p class="text-body-sm text-on-surface-variant" style="font-size:12px;line-height:1.6;">Find a project your team is working on and send an access request to the project admin.</p>
-        <div class="mt-4 flex items-center gap-1 text-on-surface-variant" style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;letter-spacing:.04em;">
-          BROWSE PROJECTS
-          <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
-        </div>
-      </div>
-
     </div>
 
-    <!-- Demo shortcut -->
-    <p class="mt-10 text-body-sm text-on-surface-variant" style="font-size:12px;">
-      Want to explore with sample data?
-      <a href="projects.html" class="text-secondary hover:underline font-medium">Load demo projects</a>
-    </p>
+    <!-- Where the projects table goes -->
+    <div class="bg-white border border-outline-variant rounded-xl overflow-hidden mb-6">
+      <div class="flex flex-col items-center justify-center text-center px-6 py-16">
+        <div class="w-16 h-16 bg-secondary-container flex items-center justify-center mb-6" style="border-radius:.75rem;">
+          <span class="material-symbols-outlined sym-fill text-secondary" style="font-size:32px;">folder_open</span>
+        </div>
+        <h2 class="text-on-surface mb-2" style="font-family:Inter;font-size:18px;font-weight:600;line-height:28px;letter-spacing:-0.01em;">No projects yet</h2>
+        <p class="text-on-surface-variant mb-8" style="font-size:13px;line-height:1.6;max-width:440px;">
+          Create a new project to start generating compliance documentation, or request access to an existing workspace.
+        </p>
+
+        <!-- Choice cards -->
+        <div class="grid grid-cols-2 gap-4 w-full" style="max-width:520px;">
+
+          <!-- New Project - opens the wizard -->
+          <button onclick="showWizard()" class="choice-card choice-card-primary flex flex-col items-center gap-3 p-6 bg-white rounded-xl text-center">
+            <div class="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center">
+              <span class="material-symbols-outlined text-white" style="font-size:20px;">add</span>
+            </div>
+            <div>
+              <p class="text-on-surface mb-1" style="font-size:14px;line-height:20px;font-weight:600;">New Project</p>
+              <p class="text-on-surface-variant" style="font-size:12px;line-height:1.5;">Connect a C++ repository and generate your first compliance artifacts.</p>
+            </div>
+            <span class="mt-auto flex items-center gap-1 text-secondary" style="font-size:12px;line-height:16px;font-weight:600;">
+              Get started
+              <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
+            </span>
+          </button>
+
+          <!-- Request Access - a message, no dialog: a project admin adds people from Team -->
+          <button onclick="requestAccess()" class="choice-card choice-card-plain flex flex-col items-center gap-3 p-6 bg-white rounded-xl text-center">
+            <div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center">
+              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:20px;">lock</span>
+            </div>
+            <div>
+              <p class="text-on-surface mb-1" style="font-size:14px;line-height:20px;font-weight:600;">Request Access</p>
+              <p class="text-on-surface-variant" style="font-size:12px;line-height:1.5;">Ask an admin to add you to an existing project workspace.</p>
+            </div>
+            <span class="mt-auto flex items-center gap-1 text-on-surface-variant" style="font-size:12px;line-height:16px;font-weight:600;">
+              Send request
+              <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
+            </span>
+          </button>
+
+        </div>
+      </div>
+    </div>
 
   </div>
-
-  <!-- Dot grid -->
-  <div class="fixed inset-0 pointer-events-none -z-10 opacity-[.025]"
-       style="background-image:radial-gradient(#041627 0.5px,transparent 0.5px);background-size:24px 24px;"></div>
 </div>
 
 
@@ -448,13 +477,25 @@
             <span id="test-conn-status" class="text-body-sm" style="font-size:12px;"></span>
           </div>
 
-          <!-- Branch — shown after successful test -->
+          <!-- Branch — shown after successful test. ONE box: it shows the picked branch; a click (or
+               the chevron) opens every branch, typing filters them (a repository can have hundreds),
+               arrows + Enter pick. Esc or leaving the box keeps the branch picked before. -->
           <div id="branch-field" class="hidden">
             <div style="height:1px;background:#eff4ff;margin-bottom:16px;"></div>
             <div class="lbl">Branch <span class="req">*</span></div>
-            <select class="inp" id="s1-branch" oninput="this.classList.remove('err')">
-              <option value="">Select a branch…</option>
-            </select>
+            <div style="position:relative;">
+              <span class="material-symbols-outlined" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:16px;color:#74777d;pointer-events:none;">call_split</span>
+              <input class="inp mono" id="s1-branch-box" type="text" autocomplete="off" spellcheck="false"
+                     role="combobox" aria-label="Branch" aria-autocomplete="list" aria-expanded="false" aria-controls="branch-dd"
+                     placeholder="Search or pick a branch…" style="padding-left:34px;padding-right:34px;"
+                     onfocus="branchOpen()" onclick="branchOpen()" oninput="branchFilter()"
+                     onmouseup="branchMouseUp(event)" onkeydown="branchKey(event)" onblur="setTimeout(branchClose, 150)">
+              <span class="material-symbols-outlined" id="branch-chevron" onmousedown="event.preventDefault(); branchToggle()"
+                    style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:20px;color:#74777d;cursor:pointer;transition:transform .15s;">expand_more</span>
+              <div id="branch-dd" role="listbox" aria-label="Branches"
+                   style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid #c4c6cd;border-radius:0.5rem;box-shadow:0 4px 16px rgba(4,22,39,.12);max-height:248px;overflow-y:auto;z-index:200;"></div>
+            </div>
+            <input type="hidden" id="s1-branch" value="">
           </div>
         </div>
 
@@ -784,78 +825,19 @@
 
 
 <!-- ══════════════════════════════════════════
-     MODAL: LOAD PROJECT
+     TOAST - Request Access answers with one, as the web app does
      ══════════════════════════════════════════ -->
-<div id="load-modal" class="hidden fixed inset-0 z-[60] flex items-end sm:items-center justify-center" style="background:rgba(4,22,39,.55);">
-  <div class="bg-white rounded-t-2xl sm:rounded-xl border border-outline-variant w-full mx-0 sm:mx-4 flex flex-col" style="max-width:620px;max-height:88vh;box-shadow:0 8px 48px rgba(4,22,39,.28);">
-
-    <!-- Header -->
-    <div class="px-6 py-5 border-b border-outline-variant flex-shrink-0">
-      <div class="flex items-center justify-between mb-4">
-        <div>
-          <h3 class="text-headline-sm text-on-surface">Request Project Access</h3>
-          <p class="text-body-sm text-on-surface-variant mt-0.5" style="font-size:12px;">Find a project and send an access request to its admin. You'll be notified when granted.</p>
-        </div>
-        <button onclick="closeLoadModal()" class="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
-          <span class="material-symbols-outlined" style="font-size:18px;">close</span>
-        </button>
-      </div>
-      <!-- Search -->
-      <div style="position:relative;">
-        <span class="material-symbols-outlined" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:16px;color:#74777d;pointer-events:none;">search</span>
-        <input class="inp" id="lp-search" type="text" placeholder="Search projects or clients…"
-               style="padding-left:34px;" oninput="lpFilter()">
-      </div>
-    </div>
-
-    <!-- Project list -->
-    <div id="lp-list" class="flex-1 overflow-y-auto divide-y divide-outline-variant" style="min-height:180px;"></div>
-
-    <!-- Empty search state -->
-    <div id="lp-empty" class="hidden flex-1 flex flex-col items-center justify-center py-12 text-center">
-      <span class="material-symbols-outlined text-on-surface-variant mb-3" style="font-size:36px;opacity:.3;">search_off</span>
-      <p class="font-label-md text-label-md text-on-surface-variant" style="font-size:12px;">No projects match your search.</p>
-    </div>
-
-    <!-- Footer -->
-    <div class="px-6 py-4 border-t border-outline-variant flex-shrink-0 flex justify-end">
-      <button onclick="closeLoadModal()" class="px-4 py-2 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container rounded-lg transition-colors">Close</button>
-    </div>
-
+<div id="toast" role="status" class="hidden fixed bottom-4 right-4 z-[100] flex items-start gap-3 p-4 rounded-xl border border-outline-variant bg-white"
+     style="width:320px;box-shadow:0 4px 24px rgba(4,22,39,.12);">
+  <span class="material-symbols-outlined sym-fill mt-0.5 flex-shrink-0" style="font-size:18px;color:#0058be;" aria-hidden="true">info</span>
+  <div class="flex-1 min-w-0">
+    <p id="toast-title" class="text-on-surface" style="font-size:14px;font-weight:600;"></p>
+    <p id="toast-msg" class="text-on-surface-variant mt-0.5" style="font-size:12px;"></p>
   </div>
+  <button onclick="hideToast()" aria-label="Dismiss" class="text-on-surface-variant hover:text-on-surface transition-colors flex-shrink-0">
+    <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+  </button>
 </div>
-
-<style>
-.lp-row {
-  display: flex; align-items: center; gap: 14px; padding: 14px 20px;
-  transition: background .12s;
-}
-.lp-row:hover { background: #f8f9ff; }
-.lp-row.locked { opacity: .75; }
-.lp-avatar {
-  width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center;
-  justify-content: center; flex-shrink: 0; font-family: 'JetBrains Mono', monospace;
-  font-size: 12px; font-weight: 700; color: #fff; letter-spacing: .04em;
-}
-.lp-btn {
-  padding: 6px 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace;
-  font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
-  cursor: pointer; flex-shrink: 0; transition: background .12s, color .12s, border-color .12s;
-  border: 1px solid transparent; white-space: nowrap;
-}
-.lp-btn-request {
-  background: none; color: #44474c; border-color: #c4c6cd;
-}
-.lp-btn-request:hover { background: #f8f9ff; border-color: #0058be; color: #0058be; }
-.lp-requested {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 6px 12px; border-radius: 8px;
-  font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
-  letter-spacing: .04em; text-transform: uppercase;
-  color: #00a572; background: rgba(0,165,114,.08); border: 1px solid rgba(0,165,114,.25);
-  flex-shrink: 0;
-}
-</style>
 
 
 <!-- ══════════════════════════════════════════
@@ -928,91 +910,27 @@ function cancelWizard() {
 }
 
 // ════════════════════════════════════════
-// Load project modal
+// Request Access: a message, as the web app (no dialog, nothing sent)
 // ════════════════════════════════════════
-var LP_PROJECTS = [
-  { id: 'vcu',  name: 'VCU Engine Firmware',       client: 'BMW',         std: 'ISO 26262',  lastRun: 'Jun 15, 2026', role: 'Admin',     access: true  },
-  { id: 'adas', name: 'ADAS Sensor Fusion',          client: 'Continental', std: 'ASPICE L2',  lastRun: 'Jun 12, 2026', role: 'Developer', access: true  },
-  { id: 'eps',  name: 'EPS Control Unit',             client: 'ZF',          std: 'ISO 26262',  lastRun: 'Jun 8, 2026',  role: 'Developer', access: true  },
-  { id: 'brk',  name: 'Brake-by-Wire ECU',            client: 'Bosch',       std: 'ISO 26262',  lastRun: null,           role: null,        access: false },
-  { id: 'pcm',  name: 'Powertrain Control Module',    client: 'Denso',       std: 'ASPICE L3',  lastRun: null,           role: null,        access: false },
-  { id: 'bms',  name: 'Battery Management System',    client: 'CATL',        std: 'ISO 26262',  lastRun: null,           role: null,        access: false },
-  { id: 'tcu',  name: 'Transmission Control Unit',    client: 'ZF',          std: 'ASPICE L2',  lastRun: null,           role: null,        access: false },
-];
-var _lpAccessRequested = {};
-
-var LP_COLORS = ['#0058be','#1a2b3c','#006e45','#7b4a00','#5c35a8','#b02020','#0077a0'];
-
-function lpAvatarColor(id) {
-  var idx = ['vcu','adas','eps','brk','pcm','bms','tcu'].indexOf(id);
-  return LP_COLORS[idx % LP_COLORS.length] || '#0058be';
-}
-function lpInitials(name) {
-  return name.split(' ').filter(function(w) { return /^[A-Z]/.test(w); }).map(function(w) { return w[0]; }).join('').substring(0,2);
+function requestAccess() {
+  showToast('Request access', 'Ask your workspace administrator to add you to a project.');
 }
 
-function openLoadModal() {
-  _lpAccessRequested = {};
-  document.getElementById('lp-search').value = '';
-  document.getElementById('load-modal').classList.remove('hidden');
-  lpRender();
-  document.getElementById('lp-search').focus();
+var toastTimer = null;
+function showToast(title, msg) {
+  clearTimeout(toastTimer);
+  var el = document.getElementById('toast');
+  document.getElementById('toast-title').textContent = title;
+  document.getElementById('toast-msg').textContent = msg;
+  el.classList.remove('hidden', 'toast-out');
+  el.classList.add('toast-in');
+  toastTimer = setTimeout(hideToast, 4000);
 }
-function closeLoadModal() { document.getElementById('load-modal').classList.add('hidden'); }
-
-function lpFilter() {
-  var q = document.getElementById('lp-search').value.toLowerCase().trim();
-  lpRender(q);
-}
-
-function lpRender(q) {
-  q = q || '';
-  var visible = LP_PROJECTS.filter(function(p) {
-    if (p.access) return false;
-    if (q && (p.name.toLowerCase().indexOf(q) < 0 && p.client.toLowerCase().indexOf(q) < 0)) return false;
-    return true;
-  });
-
-  var list  = document.getElementById('lp-list');
-  var empty = document.getElementById('lp-empty');
-
-  if (!visible.length) {
-    list.innerHTML = '';
-    list.classList.add('hidden');
-    empty.classList.remove('hidden');
-    return;
-  }
-  list.classList.remove('hidden');
-  empty.classList.add('hidden');
-
-  list.innerHTML = visible.map(function(p) {
-    var initials = lpInitials(p.name);
-    var color    = lpAvatarColor(p.id);
-    var avatarBg = p.access ? color : '#c4c6cd';
-    var requested = _lpAccessRequested[p.id];
-
-    var metaParts = [p.client, p.std];
-    var actionHtml = requested
-      ? '<span class="lp-requested"><span class="material-symbols-outlined sym-fill" style="font-size:13px;">check_circle</span>Requested</span>'
-      : '<button class="lp-btn lp-btn-request" onclick="lpRequestAccess(\'' + p.id + '\')">'
-        + '<span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle;margin-right:3px;">lock</span>Request Access</button>';
-
-    return '<div class="lp-row locked">'
-      + '<div class="lp-avatar" style="background:#c4c6cd;">'
-      + '<span class="material-symbols-outlined" style="font-size:16px;color:#fff;opacity:.7;">lock</span>'
-      + '</div>'
-      + '<div style="flex:1;min-width:0;">'
-      + '<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:600;color:#44474c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(p.name) + '</p>'
-      + '<p style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#74777d;margin-top:2px;">' + metaParts.join(' · ') + '</p>'
-      + '</div>'
-      + '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' + actionHtml + '</div>'
-      + '</div>';
-  }).join('');
-}
-
-function lpRequestAccess(id) {
-  _lpAccessRequested[id] = true;
-  lpFilter();
+function hideToast() {
+  var el = document.getElementById('toast');
+  el.classList.remove('toast-in');
+  el.classList.add('toast-out');
+  setTimeout(function() { el.classList.add('hidden'); }, 200);
 }
 
 // ════════════════════════════════════════
@@ -2443,13 +2361,123 @@ function toggleToken() {
 // ════════════════════════════════════════
 // Step 1: repo connection + branch fetch
 // ════════════════════════════════════════
+// The sample repository's branches and its default branch.
+var SAMPLE_BRANCHES = ['main', 'develop', 'release/v1.0', 'release/v1.1', 'release/v1.2', 'release/v2.0',
+  'feature/aspice-docs', 'feature/can-stack', 'feature/bootloader-update', 'feature/diag-dtc',
+  'hotfix/ftl-wear-level', 'hotfix/watchdog-reset', 'experimental/flash-trace', 'ci/clang-tidy'];
+var SAMPLE_DEFAULT_BRANCH = 'main';
+var BRANCHES = [];
+
+var branchShown = [];      // what the list shows now
+var branchFocus = -1;      // the row the arrows are on
+var branchSelectOnUp = false;   // a click that opened the box: its mouseup must not undo the selection
+
+function branchIsOpen() { return document.getElementById('branch-dd').style.display === 'block'; }
+
+// The list for `q` (empty: every branch). The row under the arrows: the picked branch when the
+// whole list shows, the first match while typing (Enter picks it).
+function renderBranchList(q) {
+  var picked = document.getElementById('s1-branch').value;
+  var ql = q.trim().toLowerCase();
+  branchShown = ql ? BRANCHES.filter(function(b) { return b.toLowerCase().indexOf(ql) >= 0; }) : BRANCHES.slice();
+  branchFocus = ql ? (branchShown.length ? 0 : -1) : branchShown.indexOf(picked);
+  var html = ql ? '<div class="bd-head">' + branchShown.length + ' of ' + BRANCHES.length + ' branches</div>' : '';
+  if (!branchShown.length) html += '<div class="bd-empty">No branch matches “' + escHtml(q.trim()) + '”</div>';
+  html += branchShown.map(function(b, i) {
+    var on = b === picked;
+    return '<div class="bd-item' + (on ? ' picked' : '') + (i === branchFocus ? ' focused' : '') + '" role="option"'
+      + ' aria-selected="' + on + '" data-i="' + i + '" onmousedown="event.preventDefault(); branchPick(' + i + ')">'
+      + '<span class="nm">' + escHtml(b) + '</span>'
+      + (b === SAMPLE_DEFAULT_BRANCH ? '<span class="tag">default</span>' : '')
+      + (on ? '<span class="material-symbols-outlined" style="font-size:16px;">check</span>' : '')
+      + '</div>';
+  }).join('');
+  var dd = document.getElementById('branch-dd');
+  dd.innerHTML = html;
+  dd.style.display = 'block';
+  document.getElementById('s1-branch-box').setAttribute('aria-expanded', 'true');
+  document.getElementById('branch-chevron').style.transform = 'translateY(-50%) rotate(180deg)';
+  branchScroll();
+}
+
+// The focused row in view - by scrolling the list alone (scrollIntoView would scroll the page too).
+function branchScroll() {
+  var dd = document.getElementById('branch-dd');
+  var row = dd.querySelector('.bd-item.focused');
+  if (!row) return;
+  if (row.offsetTop < dd.scrollTop) dd.scrollTop = row.offsetTop;
+  else if (row.offsetTop + row.offsetHeight > dd.scrollTop + dd.clientHeight) dd.scrollTop = row.offsetTop + row.offsetHeight - dd.clientHeight;
+}
+
+// Opening shows every branch, whatever the box says; the text is selected, so typing replaces it.
+function branchOpen() {
+  if (branchIsOpen() || !BRANCHES.length) return;
+  document.getElementById('s1-branch-box').select();
+  branchSelectOnUp = true;
+  renderBranchList('');
+}
+function branchMouseUp(e) {
+  if (branchSelectOnUp) { e.preventDefault(); branchSelectOnUp = false; }
+}
+function branchToggle() {
+  if (branchIsOpen()) { branchClose(); return; }
+  var box = document.getElementById('s1-branch-box');
+  if (document.activeElement !== box) box.focus(); else branchOpen();
+}
+function branchFilter() { renderBranchList(document.getElementById('s1-branch-box').value); }
+
+// Closing keeps the branch picked before: text typed and not picked is dropped.
+function branchClose() {
+  document.getElementById('branch-dd').style.display = 'none';
+  document.getElementById('s1-branch-box').setAttribute('aria-expanded', 'false');
+  document.getElementById('branch-chevron').style.transform = 'translateY(-50%)';
+  document.getElementById('s1-branch-box').value = document.getElementById('s1-branch').value;
+}
+
+function branchPick(i) {
+  var b = branchShown[i];
+  if (!b) return;
+  var changed = b !== document.getElementById('s1-branch').value;
+  document.getElementById('s1-branch').value = b;
+  branchClose();
+  if (changed) branchPicked();
+}
+
+function branchKey(e) {
+  branchSelectOnUp = false;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!branchIsOpen()) { branchOpen(); return; }
+    if (!branchShown.length) return;
+    var step = e.key === 'ArrowDown' ? 1 : -1;
+    branchFocus = Math.max(0, Math.min(branchShown.length - 1, branchFocus + step));
+    document.querySelectorAll('#branch-dd .bd-item').forEach(function(el, i) { el.classList.toggle('focused', i === branchFocus); });
+    branchScroll();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (branchIsOpen() && branchFocus >= 0) branchPick(branchFocus);
+  } else if (e.key === 'Escape') {
+    if (branchIsOpen()) { e.preventDefault(); branchClose(); }
+  }
+}
+
+// Paths differ between branches: an imported config is checked again against the one picked.
+function branchPicked() {
+  document.getElementById('s1-branch-box').classList.remove('err');
+  refreshStepState();
+  if (document.getElementById('s1-branch').value && IMPORTED) { IMPORT_CHECKED = false; checkImportAgainstRepo(); }
+}
+
 function repoChanged() {
   // Reset test state when URL or token changes
   var statusEl = document.getElementById('test-conn-status');
   statusEl.textContent = '';
   statusEl.style.color = '';
   document.getElementById('branch-field').classList.add('hidden');
-  document.getElementById('s1-branch').innerHTML = '<option value="">Select a branch…</option>';
+  BRANCHES = [];
+  document.getElementById('s1-branch').value = '';
+  if (branchIsOpen()) branchClose();
+  document.getElementById('s1-branch-box').value = '';
   // An import checked against the old repository is not checked against this one.
   if (typeof IMPORTED !== 'undefined' && IMPORTED) { IMPORT_CHECKED = false; IMPORT_CHECKING = false; renderImportReport(); }
 }
@@ -2474,12 +2502,12 @@ function testConnection() {
     btn.disabled = false;
     btn.style.opacity = '';
 
-    // Simulate success with sample branches
-    var branches = ['main', 'develop', 'release/v1.2', 'feature/aspice-docs'];
-    var sel = document.getElementById('s1-branch');
-    sel.innerHTML = '<option value="">Select a branch…</option>'
-      + branches.map(function(b) { return '<option value="' + b + '">' + b + '</option>'; }).join('');
-    sel.value = branches.includes('main') ? 'main' : '';
+    // Simulate success with the sample repository's branches; the default branch is picked.
+    var branches = SAMPLE_BRANCHES;
+    BRANCHES = branches.slice();
+    var first = BRANCHES.indexOf(SAMPLE_DEFAULT_BRANCH) >= 0 ? SAMPLE_DEFAULT_BRANCH : (BRANCHES[0] || '');
+    document.getElementById('s1-branch').value = first;
+    document.getElementById('s1-branch-box').value = first;
 
     document.getElementById('branch-field').classList.remove('hidden');
     refreshStepState();

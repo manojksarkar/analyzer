@@ -8,6 +8,7 @@ import { cn } from '../../lib/cn'
 import { APP_NAME, APP_TAGLINE } from '../../constants/branding'
 import type { CreateProjectInput, RepoEntry, OrgUser } from '../../services/api'
 import type { ConfigPreview } from '../../types'
+import { BranchPicker } from './components/BranchPicker'
 import { ConfigImport } from './components/ConfigImport'
 import { CoresReview, CoresStep, type FolderResult } from './components/CoresStep'
 import { Readiness, type ReadinessItem } from './components/Readiness'
@@ -244,14 +245,8 @@ function WizardView({
   const [tokenOpen, setTokenOpen] = useState(reenterToken)
   const [branch, setBranch] = useState(draft?.branch ?? '')
   const [branches, setBranches] = useState<string[]>([])
-  // Filters the branch list - a repository can have hundreds. The picked branch always stays listed.
-  const [branchQuery, setBranchQuery] = useState('')
-  const shownBranches = useMemo(() => {
-    const q = branchQuery.trim().toLowerCase()
-    if (!q) return branches
-    const hits = branches.filter((b) => b.toLowerCase().includes(q))
-    return branch && !hits.includes(branch) ? [branch, ...hits] : hits
-  }, [branches, branchQuery, branch])
+  // The repository's default branch, tagged in the branch list.
+  const [defaultBranch, setDefaultBranch] = useState('')
   const [testState, setTestState] = useState<'idle' | 'connecting' | 'connected'>('idle')
   const [testMsg, setTestMsg] = useState<{ text: string; tone: TestTone } | null>(() => reenterToken
     ? { text: 'Enter the access token again and test the connection: a token is never kept.', tone: 'neutral' }
@@ -371,12 +366,23 @@ function WizardView({
     setTestMsg(null)
     setBranches([])
     setBranch('')
-    setBranchQuery('')
+    setDefaultBranch('')
     setRepoTree([])
     treeSeq.current++; checkSeq.current++                  // drop answers about the old one
     setRepoTreeFor(''); setRepoTreeFailed(false); setImportChecking(false)
     // An import checked against the old repository is not checked against this one.
     setImported((p) => (p?.preview.repositoryChecked ? { ...p, preview: { ...p.preview, repositoryChecked: false } } : p))
+  }
+  /** A branch picked: the tree is that branch's, and an imported config's paths are checked
+   *  against it (paths differ between branches) - after the tree, which fetches the branch; the
+   *  check then reuses it. */
+  function pickBranch(b: string) {
+    setBranch(b)
+    setErrs((p) => ({ ...p, branch: false }))
+    void (async () => {
+      await loadRepoTree(b)
+      if (imported) await checkImportAgainstRepo(imported, b, !archEdited.current)
+    })()
   }
   // Load the source tree for a specific branch/ref (architecture + folder pickers).
   // Re-run whenever the selected branch changes so the tree matches the branch.
@@ -420,7 +426,7 @@ function WizardView({
       const initialBranch = (preferredBranch && res.branches.includes(preferredBranch) ? preferredBranch : '')
         || res.defaultBranch || res.branches[0] || ''
       setBranches(res.branches)
-      setBranchQuery('')
+      setDefaultBranch(res.defaultBranch ?? '')
       setBranch(initialBranch)
       setTestState('connected')
       setTestMsg({ text: res.message, tone: 'ok' })
@@ -910,31 +916,9 @@ function WizardView({
                   <div>
                     <div className="h-px bg-surface-container-low mb-4" />
                     <div className="lbl">Branch <span className="req">*</span></div>
-                    {branches.length > 10 && (
-                      <>
-                        <input className="inp mb-1.5" type="search" placeholder="Search branches…" value={branchQuery}
-                          onChange={(e) => setBranchQuery(e.target.value)} aria-label="Search branches" />
-                        {branchQuery.trim() && (
-                          <div className="text-on-surface-variant font-mono text-caption mb-1.5">
-                            {shownBranches.length} of {branches.length} branches
-                          </div>
-                        )}
-                      </>
-                    )}
-                    <select className={`inp ${errs.branch ? 'err' : ''}`} value={branch} onChange={(e) => {
-                      const b = e.target.value; setBranch(b); setErrs((p) => ({ ...p, branch: false }))
-                      if (b) {
-                        // Paths differ between branches: check an imported config against this one -
-                        // after the tree, which fetches the branch; the check then reuses it.
-                        void (async () => {
-                          await loadRepoTree(b)
-                          if (imported) await checkImportAgainstRepo(imported, b, !archEdited.current)
-                        })()
-                      }
-                    }}>
-                      <option value="">Select a branch…</option>
-                      {shownBranches.map((b) => <option key={b} value={b}>{b}</option>)}
-                    </select>
+                    {/* One box: search and pick (components/BranchPicker). */}
+                    <BranchPicker branches={branches} value={branch} defaultBranch={defaultBranch}
+                      invalid={errs.branch} onPick={pickBranch} />
                   </div>
                 )}
               </div>
