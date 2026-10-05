@@ -59,6 +59,62 @@ def _save(conn, labels, **kw):
     return svc.apply_flowchart_overrides(conn, "v1", FID, labels, **kw)
 
 
+class TestTheWebPictureIsRedrawnAtOnce:
+    """The web reader shows a flowchart only when its SVG was drawn from the stored DOT. A save
+    rebuilds the DOT, so the page read "not drawn for this run" until a re-export."""
+
+    @staticmethod
+    def _fake_renderer(drawn):
+        from core.flowchart_svg import svg_content_key
+
+        def render(_project_root, jobs, **_kw):
+            for dot, path in jobs:
+                drawn.append((os.path.basename(path), dot))
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write('<!-- dot-key: %s -->\n<svg width="10pt" height="10pt"></svg>'
+                             % svg_content_key(dot))
+            return {}
+        return render
+
+    def _redraw(self, conn, tmp_path, monkeypatch):
+        import views.flowcharts as fc
+        from review import rerender
+        drawn = []
+        monkeypatch.setattr(fc, "render_dot_svgs", self._fake_renderer(drawn))
+        counts = rerender.draw_web_svgs(conn, "v1", FID, str(tmp_path), PROJECT_ROOT)
+        return counts, drawn
+
+    def test_the_corrected_chart_is_drawn_from_the_stored_dot(self, conn, tmp_path, monkeypatch):
+        from core.flowchart_svg import svg_content_key, svg_file_key, svg_file_name
+        from review import rerender
+        (tmp_path / "Sample" / "flowcharts").mkdir(parents=True)
+        self._redraw(conn, tmp_path, monkeypatch)                  # the pictures before the save
+        _save(conn, {"n1": "Check the flag"})
+        counts, drawn = self._redraw(conn, tmp_path, monkeypatch)
+        stored = rerender.find_flowchart_row(conn, "v1", FID)[2]
+        dot = next(e for e in json.loads(stored) if e["functionKey"] == FID)["flowchart"]
+        assert "Check the flag" in dot
+        assert [name for name, _ in drawn] == [svg_file_name("UnitA", "ns::doThing")], \
+            "only the corrected chart is drawn; its neighbour is still current"
+        svg = tmp_path / "Sample" / "flowcharts" / svg_file_name("UnitA", "ns::doThing")
+        assert svg_file_key(str(svg)) == svg_content_key(dot.strip())
+        assert counts["drawn"] == 1 and counts["current"] == 1
+
+    def test_the_disk_copy_follows_the_database(self, conn, tmp_path, monkeypatch):
+        """The SVG pass and the backfill tool read disk: an old copy there redraws old labels."""
+        from review import rerender
+        (tmp_path / "Sample" / "flowcharts").mkdir(parents=True)
+        _save(conn, {"n1": "Check the flag"})
+        self._redraw(conn, tmp_path, monkeypatch)
+        on_disk = (tmp_path / "Sample" / "flowcharts" / "UnitA.json").read_text(encoding="utf-8")
+        assert on_disk == rerender.find_flowchart_row(conn, "v1", FID)[2]
+
+    def test_no_output_tree_here_draws_nothing(self, conn, tmp_path, monkeypatch):
+        """An API host without the version's output: the next re-export draws it instead."""
+        counts, drawn = self._redraw(conn, tmp_path, monkeypatch)
+        assert counts == {} and drawn == []
+
+
 class TestOneCallManyLabels:
     def test_three_labels_write_three_rows(self, conn):
         out = _save(conn, {"n0": "Start here", "n1": "Check the flag", "n2": "Return"})

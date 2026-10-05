@@ -1,5 +1,5 @@
-import { Dropdown, DropdownTrigger, DropdownContent, Icon, toast } from '../../../components/ui'
-import { useDeleteProject } from '../../../hooks/useProjects'
+import { Dropdown, DropdownTrigger, DropdownContent, Icon } from '../../../components/ui'
+import { useDeleteProject, useDownloadProjectConfig } from '../../../hooks/useProjects'
 import { cn } from '../../../lib/cn'
 import type { Project, TeamMember } from '../../../types'
 
@@ -19,7 +19,8 @@ function AvatarStack({ members, max = 3 }: { members: TeamMember[]; max?: number
           style={{ background: m.avatarColor, color: m.avatarTextColor, zIndex: visible.length - i, marginLeft: i > 0 ? -8 : 0 }}
           aria-hidden
         >
-          {m.initials}
+          {/* The list payload has only a member count, so no initials: a glyph, not a blank disc. */}
+          {m.initials || <Icon name="person" size={12} />}
         </div>
       ))}
       {overflow > 0 && (
@@ -78,6 +79,9 @@ function RolePill({ role }: { role: 'admin' | 'developer' }) {
 
 /* ─── Standard badge ────────────────────────────────────────────────── */
 function StandardBadge({ standard }: { standard: string }) {
+  // None (a project `analyzer.py onboard` wrote): a dash like the row's other empty cells, not an
+  // empty pill.
+  if (!standard) return <span className="text-on-surface-variant font-mono text-caption">—</span>
   const isAspiceL3 = standard === 'ASPICE L3'
   return (
     <span
@@ -102,11 +106,18 @@ function VersionBadge({ version }: { version: string | null }) {
 }
 
 /* ─── Project row ───────────────────────────────────────────────────── */
-export function ProjectRow({ project, onNavigate }: { project: Project; onNavigate: (id: string) => void }) {
+export function ProjectRow({ project, onNavigate, onTeam, onRename }: {
+  project: Project; onNavigate: (id: string) => void
+  /** Opens the project's Team page (an admin adds people there). */
+  onTeam: (id: string) => void
+  /** Opens the page's Rename dialog for this project (its admins). */
+  onRename?: (project: Project) => void
+}) {
   // Role is per-project now (project.userRole from the API's my_role).
   const isAdmin = project.userRole === 'admin'
   const isStale = project.pageState === 'never' || project.pageState === 'stale'
   const deleteProject = useDeleteProject()
+  const downloadConfig = useDownloadProjectConfig(project.id)
 
   const onDelete = () => {
     if (window.confirm(`Delete "${project.name}"? This cannot be undone.`)) {
@@ -114,13 +125,16 @@ export function ProjectRow({ project, onNavigate }: { project: Project; onNaviga
     }
   }
 
+  const configItem = { label: 'Download config', icon: 'download', onClick: () => { void downloadConfig(project.name) } }
   const adminItems = [
-    { label: 'Settings', icon: 'settings',     onClick: () => onNavigate(project.id) },
-    { label: 'Archive',  icon: 'archive',      onClick: () => toast.info('Archive', 'Archiving is not available yet.') },
+    // A rename is rare: it lives here, not on the project's own pages.
+    ...(onRename ? [{ label: 'Rename', icon: 'edit', onClick: () => onRename(project) }] : []),
+    configItem,
     { label: 'Delete',   icon: 'delete',       variant: 'danger' as const, onClick: onDelete },
   ]
   const devItems = [
     { label: 'View Project', icon: 'open_in_new', onClick: () => onNavigate(project.id) },
+    configItem,
   ]
 
   return (
@@ -151,7 +165,7 @@ export function ProjectRow({ project, onNavigate }: { project: Project; onNaviga
         <VersionBadge version={project.latestVersion} />
       </td>
 
-      {/* In Review — right-aligned, blue */}
+      {/* In review (not approved yet: in review, ready for approval, changes requested) — right-aligned, blue */}
       <td className="text-right px-4 py-3.5">
         {project.inReviewCount > 0 ? (
           <span className="text-secondary font-mono text-xs font-semibold">{project.inReviewCount}</span>
@@ -182,15 +196,18 @@ export function ProjectRow({ project, onNavigate }: { project: Project; onNaviga
 
       {/* Team */}
       <td className="px-4 py-3.5">
+        {/* "Add" did nothing: it opens the Team page now, for an admin — the one who can add. */}
         {project.team.length === 0 ? (
-          <button
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1 px-[9px] py-[3px] border-[1.5px] border-dashed border-outline-variant rounded-full bg-transparent cursor-pointer text-outline font-mono text-label"
-            aria-label="Add team members"
-          >
-            <Icon name="person_add" size={12} />
-            Add
-          </button>
+          isAdmin ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); onTeam(project.id) }}
+              className="inline-flex items-center gap-1 px-[9px] py-[3px] border-[1.5px] border-dashed border-outline-variant rounded-full bg-transparent cursor-pointer text-outline font-mono text-label"
+              aria-label={`Add team members to ${project.name}`}
+            >
+              <Icon name="person_add" size={12} />
+              Add
+            </button>
+          ) : <span className="text-on-surface-variant font-mono text-caption">—</span>
         ) : (
           <AvatarStack members={project.team} max={3} />
         )}

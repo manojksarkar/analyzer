@@ -11,6 +11,13 @@
 > store is historical. Current state → root [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md) §6 + its
 > 2026-08-13 entry; next work → [docs/production-redesign/09](../docs/production-redesign/09-post-migration-consolidation-plan.md).
 >
+> **⚠ 2026-10-01 — review and approval** (branch `feat/review-approve`). A document has one reviewer and
+> moves in review → submitted → approved (or changes requested; reopen); a version is approved when all
+> its documents are. Rules `services/review_workflow.py`, recording a version's documents
+> `services/document_registry.py` (every run, CLI too), routes in `routes/documents.py` (A1–A18) and
+> `routes/team.py`; tables `document_review_events` + review columns on `documents` (migration 0015).
+> Contract: [docs/spec/REVIEW_APPROVE_API_SPEC.md](../docs/spec/REVIEW_APPROVE_API_SPEC.md).
+>
 > **⚠ 2026-09-27 — review & update** (on `develop` since PR #70). New router
 > `routes/text_overrides.py`, R1–R11 under `/projects/{projectId}/versions/{versionId}/…`: list, read,
 > correct, undo and history of one slot; a Dynamic Behaviour row; a flowchart's labels; export

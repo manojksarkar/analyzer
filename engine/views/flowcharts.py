@@ -9,7 +9,11 @@ import sys
 
 from .registry import register
 from core.macro_input import args_for_scope, normalize_scoped_args
-from utils import KEY_SEP, log, safe_filename, os_type, render_dot_cached
+from utils import (
+    KEY_SEP, log, safe_filename, os_type, render_dot_cached,
+    FLOWCHART_SVG_MAX_BOXES, count_dot_boxes, render_dot_svgs, svg_content_key, svg_file_key,
+)
+from core.flowchart_svg import svg_file_name
 from core.subprocess_util import log_stderr_tail, run_streaming
 
 
@@ -70,15 +74,17 @@ def _baseline_flowchart_dir(plan, model_dir_abs, out_dir):
 
 
 def _carry_forward_flowcharts(base_fc, out_dir):
-    """Copy every baseline flowchart JSON + PNG into out_dir (engine then overwrites
-    the changed files' JSONs; the merge restores unchanged functions). Returns count."""
+    """Copy every baseline flowchart JSON + PNG + SVG into out_dir (engine then overwrites
+    the changed files' JSONs; the merge restores unchanged functions). Returns count.
+    An SVG whose chart then changes is redrawn by write_flowchart_svgs (its key no longer
+    matches), so carrying them only saves drawing the unchanged ones again."""
     carried = 0
 
     for fn in os.listdir(base_fc):
         if fn == "_summary.json":
             continue
 
-        if fn.endswith(".json") or fn.endswith(".png"):
+        if fn.endswith(".json") or fn.endswith(".png") or fn.endswith(".svg"):
             shutil.copyfile(
                 os.path.join(base_fc, fn),
                 os.path.join(out_dir, fn)
@@ -88,7 +94,7 @@ def _carry_forward_flowcharts(base_fc, out_dir):
                 carried += 1
 
     log(
-        f"incremental: carried forward {carried} baseline flowchart file(s) (+PNGs)",
+        f"incremental: carried forward {carried} baseline flowchart file(s) (+images)",
         "flowcharts"
     )
     return carried
@@ -141,7 +147,7 @@ def _splice_function_pngs(src_fc_dir, out_dir, stem, qn) -> int:
 def _prune_orphan_flowcharts(out_dir, valid_stems):
     """Move/rename cleanup (M3.x): drop carried flowchart artifacts for source-file stems
     no longer present in the current model (a deleted or RENAMED file), so the version's
-    output carries no stale units. JSON files are <stem>.json; PNGs <stem>_<func>.png.
+    output carries no stale units. JSON files are <stem>.json; images <stem>_<func>.png/.svg.
     Skips pruning when `valid_stems` is empty (avoids nuking everything on a load glitch)."""
 
     valid = set(valid_stems)
@@ -173,7 +179,7 @@ def _prune_orphan_flowcharts(out_dir, valid_stems):
         is_orphan = (
             (fn.endswith(".json") and fn[:-5] in orphan)
             or (
-                fn.endswith(".png")
+                (fn.endswith(".png") or fn.endswith(".svg"))
                 and any(fn.startswith(s + "_") for s in orphan)
             )
         )
@@ -1002,6 +1008,114 @@ def clang_args_file(output_dir_abs: str) -> str:
     """
     return os.path.join(output_dir_abs, ".flowcharts_clang_args.txt")
 
+def _node_available(project_root) -> bool:
+    """Whether Node is installed -- asked of PATH first, so a busy machine cannot say "no".
+
+    It used to be `node --version` with a 10 s timeout, and a timeout counted as "not found":
+    under load (a test suite and two pipelines at once, 2026-09-30) one component's check timed
+    out and the component shipped with no flowchart at all, SVG or PNG. Now PATH answers; the
+    probe runs only when PATH does not, and a probe that STARTED but was slow means Node is there.
+    """
+    if shutil.which("node"):
+        return True
+    try:
+        probe = subprocess.run(["node", "--version"], capture_output=True, timeout=60,
+                               cwd=project_root, shell=(os_type == "Windows"))
+        return probe.returncode == 0
+    except subprocess.TimeoutExpired:
+        return True                     # it started: slow, not missing
+    except (OSError, FileNotFoundError):
+        return False
+
+
+def _flowchart_items(out_dir):
+    """Every (unit, function, DOT) in out_dir's per-unit JSON (<unit>.json)."""
+    items = []
+    for fname in sorted(os.listdir(out_dir)):
+        if not fname.endswith(".json") or fname == "_summary.json":
+            continue
+        try:
+            with open(os.path.join(out_dir, fname), "r", encoding="utf-8") as f:
+                arr = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            continue
+        if not isinstance(arr, list):
+            continue
+        for item in arr:
+            if not isinstance(item, dict):
+                continue
+            func_name = (item.get("name") or "").strip()
+            flowchart = (item.get("flowchart") or "").strip()
+            if func_name and flowchart:
+                items.append((fname[:-5], func_name, flowchart))
+    return items
+
+
+def write_flowchart_svgs(project_root, out_dir) -> dict:
+    """Draw every flowchart in out_dir to <unit>_<function>.svg (the PNG's name, .svg).
+
+    These are the web reader's pictures, so they are drawn on every run: views.flowcharts
+    gates only the PNGs, which are Word's and cost a headless browser each.
+
+    Cheap enough to stay simple: a chart is redrawn when its SVG is missing or was drawn from
+    another DOT (the key inside the file), so incremental runs, carried units and the backfill
+    tool (tools/render_flowchart_pngs.py) all come out right without tracking what moved.
+    Charts over FLOWCHART_SVG_MAX_BOXES are not drawn, and every SVG no current chart owns is
+    removed -- a stale picture must never stand in for a chart that changed or went away.
+
+    Returns {"drawn", "current", "too_large", "failed", "removed"} counts.
+    """
+    counts = {"drawn": 0, "current": 0, "too_large": 0, "failed": 0, "removed": 0}
+    if not os.path.isdir(out_dir):
+        return counts
+
+    # By file name, last wins: overloads share a qualified name, hence a file, and the web
+    # render keeps the last of them too (doc_render._load_flowcharts).
+    wanted = {}
+    for unit_name, func_name, dot in _flowchart_items(out_dir):
+        wanted[svg_file_name(unit_name, func_name)] = (unit_name, func_name, dot)
+
+    keep, jobs, too_large = set(), [], []
+    for name, (unit_name, func_name, dot) in wanted.items():
+        path = os.path.join(out_dir, name)
+        if count_dot_boxes(dot) > FLOWCHART_SVG_MAX_BOXES:
+            too_large.append(f"{unit_name}/{func_name}")
+            continue
+        keep.add(name)
+        if svg_file_key(path) == svg_content_key(dot):
+            counts["current"] += 1
+        else:
+            jobs.append((dot, path, f"{unit_name}/{func_name}"))
+
+    failed = render_dot_svgs(project_root, [(dot, path) for dot, path, _ in jobs]) if jobs else {}
+    for dot, path, label in jobs:
+        reason = failed.get(os.path.abspath(path))
+        if reason is None:
+            counts["drawn"] += 1
+            continue
+        counts["failed"] += 1
+        keep.discard(os.path.basename(path))
+        if counts["failed"] <= 5:
+            log(f"SVG not drawn for {label}: {reason}", component="flowcharts", err=True)
+
+    for fn in os.listdir(out_dir):
+        if fn.endswith(".svg") and fn not in keep:
+            try:
+                os.unlink(os.path.join(out_dir, fn))
+                counts["removed"] += 1
+            except OSError:
+                pass
+
+    counts["too_large"] = len(too_large)
+    if too_large:
+        log(f"{len(too_large)} flowchart(s) over {FLOWCHART_SVG_MAX_BOXES} boxes not drawn: "
+            + ", ".join(too_large[:5]) + (" ..." if len(too_large) > 5 else ""),
+            component="flowcharts")
+    log("SVG: %(drawn)d drawn, %(current)d up to date, %(too_large)d too large, "
+        "%(failed)d failed, %(removed)d removed" % counts, component="flowcharts")
+    return counts
+
+
 def _needs_flowchart_images(config) -> bool:
     """`views.flowcharts` -- draw the flowchart images, or not.
 
@@ -1465,25 +1579,16 @@ def run(model, output_dir, model_dir, config):
     # Flowcharts are rendered with Graphviz (viz-js -> SVG -> puppeteer PNG),
     # which runs under Node.  Bail out early with a clear message if Node is
     # unavailable rather than failing once per function below.
-    try:
-        node_check = subprocess.run(
-            ["node", "--version"],
-            capture_output=True,
-            timeout=10,
-            cwd=project_root,
-            shell=(os_type == "Windows"),
-        )
-        node_ok = node_check.returncode == 0
-    except (subprocess.TimeoutExpired, OSError, FileNotFoundError):
-        node_ok = False
-
-    if not node_ok:
+    if not _node_available(project_root):
         log(
             "node not found — cannot render Graphviz flowcharts. Install Node.js.",
             component="flowcharts",
             err=True,
         )
         return
+
+    # The web reader's pictures, on every run: views.flowcharts gates only the PNGs below.
+    write_flowchart_svgs(project_root, out_dir)
 
     # Incremental PNG reuse: file-level carries whole non-impacted units;
     # function-level carries every function except the directly changed ones

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ApiProjectSchema, mapProject, type ApiProject } from '../project'
+import { mapMember } from '../member'
 
 const base: ApiProject = {
   id: 'p1',
@@ -29,6 +30,14 @@ describe('mapProject', () => {
     expect(p.userRole).toBe('admin')
   })
 
+  it('a `reviewer` membership (the CLI still grants one) is a developer here, not a third role', () => {
+    // Passed through as is, it was neither: no Claim, no "My reviews" filter on the Documents page.
+    expect(mapProject({ ...base, my_role: 'reviewer' }).userRole).toBe('developer')
+    expect(mapProject({ ...base, my_role: 'developer' }).userRole).toBe('developer')
+    expect(mapProject({ ...base, my_role: undefined }).userRole).toBe('developer')
+    expect(mapMember({ id: 'm1', user_id: 'u1', name: 'Rita', email: 'r@x', initials: 'R', role: 'reviewer', status: 'active', joined_at: null }).role).toBe('developer')
+  })
+
   it('computes approval progress from doc_counts', () => {
     expect(mapProject({ ...base, doc_counts: { total: 4, approved: 1 } }).progress).toBe(25)
   })
@@ -50,6 +59,22 @@ describe('mapProject', () => {
     })
     expect(p.architectureLayers[0].groups[0]).toEqual({ name: 'G1', components: [] })
     expect(p.architectureLayers[0].groups[1].components[0]).toEqual({ name: 'C1', files: ['a.cpp'] })
+  })
+
+  it('maps the cores and puts each layer on its core', () => {
+    const p = mapProject({
+      ...base,
+      architecture_layers: [{ name: 'L1', groups: [] }, { name: 'L2', groups: [] }],
+      cores: [{ name: 'Core1', macros: '2 typed', data_dictionary: 'dd.csv', compile_commands: null, layers: ['L1'] }],
+      layer_cores: { L1: 'Core1', L2: null },
+    })
+    expect(p.buildConfig.cores).toEqual([
+      { name: 'Core1', macros: '2 typed', dataDictionary: 'dd.csv', compileCommands: null, layers: ['L1'] }])
+    expect(p.architectureLayers.map((l) => l.core)).toEqual(['Core1', null])
+  })
+
+  it('reads a project the API sends no cores for as having none', () => {
+    expect(mapProject(base).buildConfig.cores).toEqual([])
   })
 
   it('the test DTO satisfies the contract schema (keeps the schema honest)', () => {

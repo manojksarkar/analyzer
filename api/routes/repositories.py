@@ -3,7 +3,13 @@ Repository routes — /api/v1/repositories/*
 
 Backs the new-project wizard's repository step:
   * POST /repositories/test-connection  — validate a repo URL, list branches
-  * GET  /repositories/browse           — browse the source tree (folders+files)
+  * POST /repositories/browse           — browse the source tree (folders+files); the
+                                          access token goes in the JSON body
+  * GET  /repositories/browse           — the same for a public repository; refuses a
+                                          token in the query string (URLs reach logs)
+  * GET  /repositories/local-folders    — the server's folders, one at a time, for picking a
+                                          LOCAL repository (a git repository's folder on the
+                                          server); limited by `repositories.localRoots`
   * POST /repositories/uploads          — upload a build-config file (defs / data dict)
 
 Branch lists and the source tree are produced by api.services.repo_git, which
@@ -18,15 +24,15 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 from ..middleware.auth import get_current_user
 from ..models.domain import User
-from ..services import repo_git
+from ..services import local_repos, repo_git
 from ..services.errors import bad_request
 from ..services.settings import get_settings
-from ..schemas import TestConnectionResponse, BrowseResponse, UploadResponse
+from ..schemas import TestConnectionResponse, BrowseResponse, LocalFoldersResponse, UploadResponse
 
 router = APIRouter(prefix="/repositories", tags=["repositories"])
 
@@ -35,13 +41,17 @@ _UPLOADS: dict[str, dict[str, Any]] = {}
 
 # Upload guard rails.
 _MAX_UPLOAD_BYTES = 5 * 1024 * 1024   # 5 MB — defs / data-dictionary files are small
-_ALLOWED_KINDS = {"preprocessor_definitions", "data_dictionary"}
+# A build's compile_commands.json lists every translation unit with its full command line:
+# tens of MB for a firmware tree.
+_MAX_BYTES_BY_KIND = {"compile_commands": 100 * 1024 * 1024}
+_ALLOWED_KINDS = {"preprocessor_definitions", "data_dictionary", "compile_commands"}
 
 # Extensions each kind can actually be read from. Definitions accept CSV plus the
 # JSON shapes engine/core/macro_input.py understands (toolchain dump, map, list).
 _ALLOWED_EXTS = {
     "preprocessor_definitions": {".csv", ".json"},
     "data_dictionary": {".csv", ".xlsx", ".xls"},
+    "compile_commands": {".json"},
 }
 
 
@@ -78,6 +88,14 @@ class TestConnectionRequest(BaseModel):
     access_token: Optional[str] = None
 
 
+class BrowseRequest(BaseModel):
+    repo_url: str
+    ref: Optional[str] = None            # branch / ref to browse
+    path: str = ""                       # repo-root-relative folder path
+    access_token: Optional[str] = None   # token for a private repository
+    refresh: bool = False                # fetch the branch's current tip first
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -91,21 +109,70 @@ def test_connection(
     return repo_git.test_connection(body.repo_url, body.access_token)
 
 
+def _browse(repo_url: str, ref: Optional[str], path: str, access_token: Optional[str],
+            refresh: bool) -> dict:
+    """The tree under ``path`` (real depth-1 clone), for both browse routes."""
+    if not (repo_url or "").strip():
+        raise bad_request("A repository URL is required to browse.")
+    try:
+        return repo_git.browse(repo_url, ref, path, access_token, refresh=refresh)
+    except repo_git.git_cli.GitError as exc:
+        raise bad_request(repo_git._friendly(str(exc)))
+
+
+@router.post("/browse", responses={200: {"model": BrowseResponse}})
+def browse_post(
+    body: BrowseRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Browse the repository source tree rooted at ``path`` (real depth-1 clone). With
+    ``refresh`` the cached clone is brought up to the branch's current tip first.
+
+    The way to browse a private repository: its access token travels in the body, which no
+    access log, proxy or browser history records."""
+    return _browse(body.repo_url, body.ref, body.path, body.access_token, body.refresh)
+
+
 @router.get("/browse", responses={200: {"model": BrowseResponse}})
 def browse(
     repo_url: str = Query(..., description="Repository URL connected in step 1"),
     ref: Optional[str] = Query(None, description="Branch / ref to browse"),
     path: str = Query("", description="Repo-root-relative folder path"),
-    access_token: Optional[str] = Query(None, description="Token for private repos"),
+    refresh: bool = Query(False, description="Fetch the branch's current tip first"),
+    # Not accepted: a URL is written to the server's access log, proxies and browser history.
+    # Read only to refuse it, so a client still sending it learns to move to POST.
+    access_token: Optional[str] = Query(None, include_in_schema=False),
     current_user: User = Depends(get_current_user),
 ):
-    """Browse the repository source tree rooted at ``path`` (real depth-1 clone)."""
-    if not (repo_url or "").strip():
-        raise bad_request("A repository URL is required to browse.")
+    """Browse a public repository's source tree rooted at ``path``. A private repository's
+    token goes in the body of ``POST /repositories/browse``; this route answers 400 to a
+    query string that carries ``access_token``."""
+    if access_token is not None:
+        raise bad_request(
+            "Send the access token in the body of POST /repositories/browse, not in the URL: "
+            "a URL is written to server and proxy logs.")
+    return _browse(repo_url, ref, path, None, refresh)
+
+
+_LOCAL_CODES = {400: "VALIDATION_ERROR", 403: "FORBIDDEN", 404: "NOT_FOUND"}
+
+
+@router.get("/local-folders", responses={200: {"model": LocalFoldersResponse}})
+def local_folders(
+    path: str = Query("", description="A folder's full path on the server; empty: the top list"),
+    current_user: User = Depends(get_current_user),
+):
+    """One folder's folders on the server, for picking a LOCAL repository in the wizard's Browse
+    panel: names only, and `git` -- whether each is a git repository (only those can be picked).
+    `path` "" is the top list: the folders `repositories.localRoots` (engine/config/
+    config.local.json) limits the picker to, else the server's drives. 400 for a relative path,
+    403 outside the allowed folders (or unreadable), 404 for no such folder."""
     try:
-        return repo_git.browse(repo_url, ref, path, access_token)
-    except repo_git.git_cli.GitError as exc:
-        raise bad_request(repo_git._friendly(str(exc)))
+        return local_repos.list_folders(path)
+    except local_repos.LocalPathError as exc:
+        raise HTTPException(status_code=exc.status, detail={
+            "code": _LOCAL_CODES.get(exc.status, "VALIDATION_ERROR"), "message": str(exc),
+            "status": exc.status})
 
 
 @router.post("/uploads", status_code=201, responses={201: {"model": UploadResponse}})
@@ -120,18 +187,32 @@ async def upload_file(
     Returns a reference (``id`` + ``file_name``) that the wizard stores in the
     project's ``build_config`` and that the pipeline can later resolve.
     """
+    data = await file.read()
+    try:
+        return store_upload(data, file.filename or "upload", kind, current_user.id,
+                            content_type=file.content_type)
+    except ValueError as exc:
+        raise bad_request(str(exc))
+
+
+def store_upload(data: bytes, file_name: str, kind: str, uploaded_by: str,
+                 content_type: Optional[str] = None) -> dict:
+    """Validate and store a build-configuration file; return its upload record.
+
+    The one place an upload is created and checked. `file_name` may carry folders (a browser
+    sends a file picked with its folder by its path in that folder): the record keeps it, the
+    disk only its last part. Raises ValueError with a user-facing reason."""
     if kind not in _ALLOWED_KINDS:
-        raise bad_request(f"Unknown upload kind '{kind}'.")
-    file_name = file.filename or "upload"
+        raise ValueError(f"Unknown upload kind '{kind}'.")
     allowed_exts = _ALLOWED_EXTS[kind]
     if Path(file_name).suffix.lower() not in allowed_exts:
-        raise bad_request(
+        raise ValueError(
             f"'{file_name}' is not a supported {kind.replace('_', ' ')} file. "
             f"Expected: {', '.join(sorted(allowed_exts))}."
         )
-    data = await file.read()
-    if len(data) > _MAX_UPLOAD_BYTES:
-        raise bad_request("File exceeds the 5 MB upload limit.")
+    limit = _MAX_BYTES_BY_KIND.get(kind, _MAX_UPLOAD_BYTES)
+    if len(data) > limit:
+        raise ValueError(f"File exceeds the {limit // (1024 * 1024)} MB upload limit.")
 
     upload_id = f"up_{uuid.uuid4().hex[:12]}"
     # On disk, not in memory: the wizard stores the id in build_config and a job
@@ -143,16 +224,16 @@ async def upload_file(
     _UPLOADS[upload_id] = {
         "id": upload_id,
         "file_name": file_name,
-        "content_type": file.content_type,
+        "content_type": content_type,
         "size": len(data),
         "kind": kind,
-        "uploaded_by": current_user.id,
+        "uploaded_by": uploaded_by,
         "path": str(stored_path),
     }
     return {
         "id": upload_id,
-        "file_name": file.filename or "upload",
+        "file_name": file_name,
         "size": len(data),
-        "content_type": file.content_type,
+        "content_type": content_type,
         "kind": kind,
     }

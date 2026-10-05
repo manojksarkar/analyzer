@@ -1,6 +1,22 @@
 import { http } from '../../lib/http'
-import type { Project } from '../../types'
-import { mapProject, type ApiProject } from '../mappers'
+import type { ConfigPreview, Project } from '../../types'
+import { mapConfigPreview, mapProject, type ApiConfigPreview, type ApiProject } from '../mappers'
+
+/** A config file to read into the New Project wizard; the repository when one is connected. */
+export interface ConfigPreviewInput {
+  text: string
+  repo_url?: string
+  branch?: string
+  access_token?: string
+}
+
+/** One core of a new project, as the API stores it (api/services/project_cores.py). */
+export interface CoreInput {
+  name: string
+  macros: { mode: 'upload'; file_id: string; file_name: string } | { mode: 'manual'; defines: string[] } | null
+  data_dictionary: { file_id: string; file_name: string } | null
+  compile_commands: { file_id: string; file_name: string } | null
+}
 
 export interface CreateProjectInput {
   name: string
@@ -10,7 +26,9 @@ export interface CreateProjectInput {
   repo_provider?: string
   default_branch?: string
   access_token?: string
+  /** `cores`: each core's macros, data dictionary and compile commands (see CoreInput). */
   build_config?: Record<string, unknown>
+  /** Each layer names its core: `{ ..., core: 'Core1' | null }`. */
   architecture_layers?: unknown[]
   team?: { email: string; role: string }[]
 }
@@ -45,4 +63,10 @@ export const projectsApi = {
     )
     return r.projects
   },
+  /** Fill the New Project wizard from a config file. Creates nothing. */
+  previewConfig: async (body: ConfigPreviewInput): Promise<ConfigPreview> =>
+    mapConfigPreview(await http.post<ApiConfigPreview>('/projects/config/preview', body)),
+  /** The project as a config file — what `analyzer.py onboard --config` reads. */
+  downloadConfig: (id: string, fileName: string): Promise<void> =>
+    http.download(`/projects/${id}/config`, fileName),
 }

@@ -20,6 +20,7 @@ What it verifies:
 from __future__ import annotations
 
 import argparse
+import functools
 import importlib.util
 import json
 import os
@@ -150,8 +151,19 @@ def check_node_pkg(pkg, *, required=True, purpose="", category="core"):
                  f"npm install {pkg}", required=required, category=category)
 
 
+@functools.lru_cache(maxsize=None)
+def mermaid_docker_image():
+    """True when the minlag/mermaid-cli docker image is loaded -- mirrors utils.mermaid_in_docker."""
+    if not shutil.which("docker"):
+        return False
+    return _run(["docker", "image", "inspect", "minlag/mermaid-cli"])[0] == 0
+
+
 def check_mmdc():
-    """Mirror utils.mmdc_path: local node_modules/.bin -> %APPDATA%/npm -> PATH."""
+    """Mermaid needs ONE of two, used in this order (as utils.mmdc_command does): the
+    minlag/mermaid-cli docker image, or a local mmdc -- node_modules/.bin -> %APPDATA%/npm -> PATH."""
+    if mermaid_docker_image():
+        return Check("mmdc", OK, "docker: minlag/mermaid-cli", category="mermaid")
     ext = ".cmd" if IS_WIN else ""
     local = os.path.join(ROOT, "node_modules", ".bin", "mmdc" + ext)
     if os.path.isfile(local):
@@ -163,8 +175,10 @@ def check_mmdc():
     if shutil.which("mmdc"):
         return Check("mmdc", OK, "global: PATH", category="mermaid")
     return Check("mmdc", FAIL,
-                 "not found (checked local ./node_modules/.bin and npm global)",
-                 "npm install @mermaid-js/mermaid-cli", category="mermaid")
+                 "not found (checked docker image minlag/mermaid-cli, local ./node_modules/.bin "
+                 "and npm global)",
+                 "npm install @mermaid-js/mermaid-cli   (or docker load the minlag/mermaid-cli image)",
+                 category="mermaid")
 
 
 def _configured_browser_path():
@@ -293,8 +307,9 @@ def preflight(*, need_flowchart, need_mermaid):
 
     Called by run.py before a long run. `core` deps always block; render/node/mermaid
     deps block only when a view that uses them is enabled, so a parse-only run isn't
-    stopped by a missing browser."""
-    render = need_flowchart or need_mermaid
+    stopped by a missing browser. Mermaid drawn in docker needs neither Node nor a local
+    browser."""
+    render = need_flowchart or (need_mermaid and not mermaid_docker_image())
     blocking = []
     for c in collect_checks():
         if c.status != FAIL:

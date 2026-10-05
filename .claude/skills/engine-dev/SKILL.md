@@ -152,6 +152,13 @@ test that catches it: [REVIEW_UPDATE_HANDOVER §4](docs/design/REVIEW_UPDATE_HAN
   `test_steps.cfgs_from_entries` and `ut_export.build`. Changing those views? Keep `run` a thin
   `build` + write, or a save and a run stop agreeing — `test_review_swe4_rederive.py` checks it.
 
+- **Review and approval** (assign, submit, approve — [REVIEW_APPROVE_API_SPEC](docs/spec/REVIEW_APPROVE_API_SPEC.md))
+  is API-side, but two engine-side things carry it: `analyzer.py generate` records the version's
+  documents for review at its end (`_register_for_review` → `api/services/document_registry.py`;
+  `analyzer.py register` by hand), and approving a document asks `export_guard.staleness(…, component=)`
+  whether ITS Word file has every correction. Keep both: a CLI run that records no documents has nothing
+  to review, and a guard asked for the whole version blocks every approval while any component is stale.
+
 ## Definition of done — every output-rule change
 
 The list the user should not have to retype. A rule change is not done until all six:

@@ -534,7 +534,8 @@ and other calls are untouched):
 
 - **Domain anchoring (root-cause fix).** `load_domain_context(project_root,
   config)` reads a free-text brief from `config.llm.domainContextPath` (default
-  `config/domain.txt`; `#` lines are comments) and `_call_llm` **appends it to
+  `engine/config/domain.txt` — was `config/domain.txt`, which never resolved, until 2026-09-29;
+  `#` lines are comments) and `_call_llm` **appends it to
   the `system` message** — so the model is told the codebase's real domain and
   stops inventing unrelated vocabulary. The brief is memoized per path
   (`_get_domain_context`, project root resolved via `core.paths`) so the file is

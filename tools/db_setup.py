@@ -122,7 +122,10 @@ def main() -> int:
     from sqlalchemy import create_engine, text
 
     is_pg = raw.startswith("postgres")
-    ca = {"connect_timeout": 5} if is_pg else {}
+    # The engine's own setting (DATABASE_CONNECT_TIMEOUT, default 5 s): a fixed 5 here made setup
+    # the one command that could not be given longer on a slow machine.
+    from core.db import CONNECT_TIMEOUT_SEC
+    ca = {"connect_timeout": CONNECT_TIMEOUT_SEC} if is_pg else {}
 
     # Build the engines BEFORE importing api.* / schema (a defensive ordering: an engine
     # resolves and caches its dialect at creation, so create_all() below is unaffected by
@@ -193,7 +196,10 @@ def main() -> int:
         print("schema up to date: no missing columns")
     if blocked:
         print("\n!! These columns are declared NOT NULL with no default, so they cannot be")
-        print("   added to a table that already has rows. Run the migration instead:")
+        print("   added to a table that already has rows. Their migration adds them with a value")
+        print("   for the rows there. A database this setup made has no migration stamp, so stamp")
+        print("   it at the revision before that migration first:")
+        print("       python -m alembic stamp <revision before it>")
         print("       python -m alembic upgrade head")
         for line in blocked:
             print(f"     - {line}")
@@ -251,8 +257,115 @@ def main() -> int:
         print(f"repaired {n} version row(s) stranded mid-phase -> 'complete' "
               f"(they are baseline-eligible again; reuse will work on the next run)")
 
+    # 4. LLM unit and struct descriptions of versions made before Phase 2 stored them (BACKLOG
+    # RF-6; idempotent). A re-export of such a version printed fallback text where the LLM's
+    # wording had been; the wording is in its own earlier output (review/backfill.py).
+    from review.backfill import backfill
+    with eng.connect() as cx:
+        version_ids = [r[0] for r in cx.execute(text("SELECT id FROM versions"))]
+    filled = {"units": 0, "structs": 0}
+    touched = 0
+    for vid in version_ids:
+        try:
+            with eng.begin() as cx:                 # one version per transaction
+                got = backfill(cx, vid)
+        except Exception as exc:                    # noqa: BLE001 - report, carry on
+            print(f"  !! could not backfill the descriptions of version {vid}: "
+                  f"{type(exc).__name__}: {exc}")
+            continue
+        if got["units"] or got["structs"]:
+            touched += 1
+            filled["units"] += got["units"]
+            filled["structs"] += got["structs"]
+    if touched:
+        print(f"stored {filled['units']} unit and {filled['structs']} struct description(s) of "
+              f"{touched} version(s) made before Phase 2 stored them (from their earlier output)")
+
+    # 5. review and approval (0015; idempotent): statuses to the four states, one reviewer per
+    # document and its unique index, a record for documents approved before there was one.
+    # `create_all` adds none of that to a database that already has these tables.
+    from api.db.postgres.review_repair import repair_review
+    with eng.begin() as cx:
+        fixed = repair_review(cx)
+    if fixed["statuses"]:
+        print(f"review: {fixed['statuses']} document status(es) set to in_review")
+    if fixed["assignments"]:
+        print(f"review: kept one reviewer per document, removed {fixed['assignments']} older "
+              f"assignment(s)")
+    if fixed["events"]:
+        print(f"review: recorded {fixed['events']} approval(s) made before the review record")
+
+    # 6. stamp the migration head (RF-4). `create_all` builds every table without Alembic, so a
+    # database made or upgraded here had no `alembic_version` -- and the next `alembic upgrade
+    # head` started from the first migration and failed on a table that already exists. Stamped
+    # only now, when the schema is the head's: a later migration then applies on top of it.
+    print(_stamp_head(eng))
+
     print("\nOK - now run:  python tools\\verify_db_sync.py")
     return 0
+
+
+def _alembic_head():
+    """The newest migration's revision (alembic/versions), or None when it cannot be read."""
+    return _alembic_chain()[0]
+
+
+def _alembic_chain():
+    """(the newest migration's revision, every revision oldest first), or (None, []) when
+    alembic/versions cannot be read."""
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cfg = Config(os.path.join(root, "alembic.ini"))
+        cfg.set_main_option("script_location", os.path.join(root, "alembic"))
+        script = ScriptDirectory.from_config(cfg)
+        chain = [r.revision for r in script.walk_revisions()][::-1]
+        return script.get_current_head(), chain
+    except Exception as exc:                        # noqa: BLE001 - setup still succeeded
+        print(f"note: the migration head could not be read ({type(exc).__name__}: {exc}); "
+              f"`alembic_version` not stamped")
+        return None, []
+
+
+#: The newest migration with a step setup does not repeat: 0006 puts a foreign key on a table that
+#: already exists (`create_all` adds tables, `_add_missing_columns` columns, neither a
+#: constraint). Every later one adds tables with their indexes, or columns, or repairs rows as
+#: step 5 does -- so a database stamped at it or after it is at the head once setup has run.
+LAST_NOT_REPEATED = "0006_reuse_index_fk"
+
+
+def _stamp_head(eng) -> str:
+    """Stamp `alembic_version` at the head (RF-4), and say what was done.
+
+    Only when the stamp would be true: there is none yet (a database `create_all` made), or it
+    names a migration of this checkout at or after `LAST_NOT_REPEATED`. Several branches share a
+    database: a revision this checkout does not have is a newer branch's migration, and stamping
+    over it made Alembic apply that migration again, on columns that are already there. One
+    before 0006 still lacks that migration's foreign key. Both are left as they are."""
+    from sqlalchemy import inspect, text
+    head, chain = _alembic_chain()
+    if not head:
+        return "migrations: not stamped"
+    current = []
+    if inspect(eng).has_table("alembic_version"):
+        with eng.connect() as cx:
+            current = [r[0] for r in cx.execute(text("SELECT version_num FROM alembic_version"))]
+    if current:
+        if len(current) > 1 or current[0] not in chain:
+            return (f"migrations: alembic_version is at {', '.join(current)}, which this checkout "
+                    f"does not have (a newer branch's migration?); left as it is")
+        if chain.index(current[0]) < chain.index(LAST_NOT_REPEATED):
+            return (f"migrations: alembic_version is at {current[0]}, before "
+                    f"{LAST_NOT_REPEATED}, whose foreign key setup does not add; left as it is")
+    with eng.begin() as cx:
+        cx.execute(text("CREATE TABLE IF NOT EXISTS alembic_version ("
+                        "version_num VARCHAR(32) NOT NULL, "
+                        "CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num))"))
+        cx.execute(text("DELETE FROM alembic_version"))
+        cx.execute(text("INSERT INTO alembic_version (version_num) VALUES (:v)"), {"v": head})
+    return (f"migrations: stamped at {head} (a later `alembic upgrade head` applies only newer "
+            f"ones)")
 
 
 if __name__ == "__main__":

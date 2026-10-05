@@ -1,93 +1,93 @@
 import { z } from 'zod'
 import type {
-  Document, DocStats, DocStatus, DocumentDetail, SectionReviewState,
+  Document, DocStats, DocumentDetail,
   RichDocument, RichSection, RichSectionType, TocEntry, DocCover, DocMeta,
-  FlowchartTableData, BehaviorTableData,
+  FlowchartEntry, FlowchartTableData, BehaviorTableData, TestSpecData, TestSummary,
 } from '../../types'
 import { formatShortDate, avatarPalette } from '../../lib/format'
+import { reviewStatusOf } from '../../lib/reviewStatus'
 import { API_BASE_URL } from '../../lib/http'
+import { ApiSlotSchema, mapSlotOrNull, type ApiSlot } from './review'
+import { ApiDocReviewSchema, ApiUserRefSchema, mapDocReview, mapUserRef } from './approval'
 
-export const ApiAssigneeSchema = z.object({
-  user_id: z.string(), name: z.string(), initials: z.string(),
-})
+/** @deprecated the same person as `reviewer`, as a list of 0 or 1 (kept for older clients). */
+export const ApiAssigneeSchema = ApiUserRefSchema
 export type ApiAssignee = z.infer<typeof ApiAssigneeSchema>
 
+// A document, from every route that returns one (REVIEW_APPROVE_API_SPEC §2): its one reviewer
+// (null = "Needs a reviewer") and its review. `due_date` is still sent; nothing shows it.
 export const ApiDocumentSchema = z.object({
   id: z.string(), name: z.string(), subtitle: z.string(), process: z.string(),
   layer: z.string(), group: z.string(), status: z.string(), version_id: z.string(),
   due_date: z.string().nullable(), assignees: z.array(ApiAssigneeSchema),
+  reviewer: ApiUserRefSchema.nullable(),
+  review: ApiDocReviewSchema,
   created_at: z.string(), updated_at: z.string(),
 })
 export type ApiDocument = z.infer<typeof ApiDocumentSchema>
 
-export const ApiDocSectionSchema = z.object({
-  key: z.string(), title: z.string(), order: z.number(), content: z.string(),
-  review_state: z.string().nullable(), reviewed_by: z.string().nullable(), reviewed_at: z.string().nullable(),
-})
-export type ApiDocSection = z.infer<typeof ApiDocSectionSchema>
-
-export const ApiDocumentDetailSchema = ApiDocumentSchema.extend({
-  sections: z.array(ApiDocSectionSchema).optional(),
-  review_progress: z.object({ resolved: z.number(), total: z.number() }).optional(),
-})
-export type ApiDocumentDetail = z.infer<typeof ApiDocumentDetailSchema>
+// `GET …/documents/{id}`: the same document. The placeholder sections it may still carry are
+// not read (review is per document, not per section).
+export const ApiDocumentDetailSchema = ApiDocumentSchema
+export type ApiDocumentDetail = ApiDocument
 
 /**
  * @param versionTagById optional version_id → tag lookup so the UI can show
  * "v1.2.0" instead of the raw "ver3" id when the caller has versions cached.
  */
 export function mapDocument(d: ApiDocument, versionTagById?: Record<string, string>): Document {
-  const a = d.assignees?.[0]
-  const pal = a ? avatarPalette(a.user_id) : undefined
+  // An API from before review and approval sends `assignees` only.
+  const reviewer = mapUserRef(d.reviewer !== undefined ? d.reviewer : d.assignees?.[0])
+  const pal = reviewer ? avatarPalette(reviewer.userId) : undefined
   return {
     id: d.id,
     name: d.name,
     process: d.process,
-    status: d.status as DocStatus,
+    status: reviewStatusOf(d.status),
     version: versionTagById?.[d.version_id] ?? d.version_id,
+    versionId: d.version_id,
     updatedAt: formatShortDate(d.updated_at) ?? '',
     subtitle: d.subtitle || undefined,
     layer: d.layer || undefined,
     group: d.group || undefined,
-    due: formatShortDate(d.due_date) ?? undefined,
-    assignee: a?.name,
-    assigneeInitials: a?.initials,
+    reviewer,
+    review: mapDocReview(d.review),
+    assignee: reviewer?.name,
+    assigneeInitials: reviewer?.initials,
     assigneeColor: pal?.bg,
     assigneeTextColor: pal?.text,
   }
 }
 
-/** Document + its section bodies (GET …/documents/{id}). */
+/** GET …/documents/{id}: one document, as a list row. */
 export function mapDocumentDetail(
   d: ApiDocumentDetail,
   versionTagById?: Record<string, string>,
 ): DocumentDetail {
-  const sections = (d.sections ?? [])
-    .slice()
-    .sort((a, b) => a.order - b.order)
-    .map((s) => ({
-      key: s.key,
-      title: s.title,
-      order: s.order,
-      content: s.content,
-      reviewState: (s.review_state as SectionReviewState | null) ?? null,
-      reviewedBy: s.reviewed_by,
-      reviewedAt: s.reviewed_at,
-    }))
-  return {
-    ...mapDocument(d, versionTagById),
-    sections,
-    reviewProgress: d.review_progress,
-  }
+  return mapDocument(d, versionTagById)
 }
 
 /* ── Rich render payload ── */
 
+// One flowchart's SVG, or why there is none. The DOT is not sent (a document can hold 500+).
+// `status` is a plain string so an unknown one degrades to "missing" rather than failing the
+// whole document's parse; an API from before SVGs sends none of these but `image_url`.
 const ApiFlowchartSchema = z.object({
-  image_url: z.string().nullable().optional(),
-  mermaid: z.string().nullable().optional(),
   label: z.string(),
+  status: z.string().optional(),
+  image_url: z.string().nullable().optional(),
+  width: z.number().nullable().optional(),
+  height: z.number().nullable().optional(),
+  boxes: z.number().optional(),
+  source_hash: z.string().nullable().optional(),
+  // Review & update: the chart's id for the label editor, and whether it has labels to edit.
+  flowchart_id: z.string().nullable().optional(),
+  editable: z.boolean().optional(),
 })
+type ApiFlowchart = z.infer<typeof ApiFlowchartSchema>
+
+// A correctable text's slot (review & update); an older API sends none.
+const ApiSlotRefSchema = ApiSlotSchema.nullable().optional()
 
 const ApiFlowchartTableSchema = z.object({
   description: z.string(),
@@ -96,6 +96,9 @@ const ApiFlowchartTableSchema = z.object({
   capacity: z.string(),
   input_name: z.string(),
   output_name: z.string(),
+  description_slot: ApiSlotRefSchema,
+  input_name_slot: ApiSlotRefSchema,
+  output_name_slot: ApiSlotRefSchema,
 })
 type ApiFlowchartTable = z.infer<typeof ApiFlowchartTableSchema>
 
@@ -106,29 +109,63 @@ const ApiBehaviorTableSchema = z.object({
   input_name: z.string(),
   output_name: z.string(),
   diagram_url: z.string().nullable().optional(),
+  description_slot: ApiSlotRefSchema,
+  input_name_slot: ApiSlotRefSchema,
+  output_name_slot: ApiSlotRefSchema,
 })
 type ApiBehaviorTable = z.infer<typeof ApiBehaviorTableSchema>
+
+const ApiTestSpecSchema = z.object({
+  test_case_id: z.string(),
+  generation_method: z.string(),
+  return_type: z.string(),
+  equipment: z.string(),
+  platform: z.string(),
+  priority: z.string(),
+  environment: z.string(),
+  precondition: z.object({
+    mocks: z.array(z.string()), parameters: z.array(z.string()), globals: z.array(z.string()),
+  }),
+  inputs: z.array(z.string()),
+  steps: z.array(z.object({ number: z.string(), text: z.string() })),
+  expected: z.array(z.object({ text: z.string(), steps: z.array(z.string()) })),
+  expected_note: z.string().nullable(),
+})
+type ApiTestSpec = z.infer<typeof ApiTestSpecSchema>
+
+const ApiTestSummarySchema = z.object({
+  units: z.number(), function_specs: z.number(), dynamic_specs: z.number(), mocks: z.number(),
+  equipment: z.string(), platform: z.string(),
+})
 
 // Recursive section — the type is hand-declared and the schema is built with
 // `z.lazy` so it can reference itself (zod can't infer a self-referential type).
 interface ApiRichSection {
   id: string; number: string; title: string; level: number; type: string
-  content: string | null; table: { headers: string[]; rows: string[][] } | null
+  content: string | null
+  table: { headers: string[]; rows: string[][]; cell_slots?: (ApiSlot | null)[][] | null } | null
   image_url?: string | null; mermaid?: string | null
   children: ApiRichSection[]
   flowchart_table?: ApiFlowchartTable | null
   behavior_table?: ApiBehaviorTable | null
+  test_spec?: ApiTestSpec | null
+  content_slot?: ApiSlot | null
 }
 const ApiRichSectionSchema: z.ZodType<ApiRichSection> = z.lazy(() =>
   z.object({
     id: z.string(), number: z.string(), title: z.string(), level: z.number(), type: z.string(),
     content: z.string().nullable(),
-    table: z.object({ headers: z.array(z.string()), rows: z.array(z.array(z.string())) }).nullable(),
+    table: z.object({
+      headers: z.array(z.string()), rows: z.array(z.array(z.string())),
+      cell_slots: z.array(z.array(ApiSlotSchema.nullable())).nullable().optional(),
+    }).nullable(),
     image_url: z.string().nullable().optional(),
     mermaid: z.string().nullable().optional(),
     children: z.array(ApiRichSectionSchema),
     flowchart_table: ApiFlowchartTableSchema.nullable().optional(),
     behavior_table: ApiBehaviorTableSchema.nullable().optional(),
+    test_spec: ApiTestSpecSchema.nullable().optional(),
+    content_slot: ApiSlotSchema.nullable().optional(),
   }),
 )
 
@@ -147,8 +184,48 @@ export const ApiRichDocumentSchema = z.object({
     source: z.string(), layers: z.array(z.string()), components: z.array(z.string()),
     units_total: z.number(), functions_total: z.number(), globals_total: z.number(),
   }),
+  test_summary: ApiTestSummarySchema.nullable().optional(),
 })
 export type ApiRichDocument = z.infer<typeof ApiRichDocumentSchema>
+
+function mapTestSpec(t: ApiTestSpec): TestSpecData {
+  return {
+    testCaseId: t.test_case_id,
+    generationMethod: t.generation_method,
+    returnType: t.return_type,
+    equipment: t.equipment,
+    platform: t.platform,
+    priority: t.priority,
+    environment: t.environment,
+    precondition: t.precondition,
+    inputs: t.inputs,
+    steps: t.steps,
+    expected: t.expected,
+    expectedNote: t.expected_note,
+  }
+}
+
+export function mapFlowchart(fc: ApiFlowchart): FlowchartEntry {
+  const imageUrl = withVersion(resolveAssetUrl(fc.image_url), fc.source_hash)
+  return {
+    label: fc.label ?? '',
+    status: fc.status === 'too_large' ? 'too_large' : imageUrl ? 'drawn' : 'missing',
+    imageUrl: fc.status === 'too_large' ? null : imageUrl,
+    width: fc.width ?? null,
+    height: fc.height ?? null,
+    boxes: fc.boxes ?? 0,
+    flowchartId: fc.flowchart_id ?? null,
+    editable: !!(fc.flowchart_id && fc.editable),
+  }
+}
+
+/** The SVG's URL changes with its drawing: a corrected label is redrawn under the same file
+ *  name, and an `<img>` keeps the picture it has for an unchanged `src`. Added after
+ *  `resolveAssetUrl` so it stays a query parameter of its own in either asset-URL shape. */
+function withVersion(url: string | null, sourceHash: string | null | undefined): string | null {
+  if (!url || !sourceHash) return url
+  return `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(sourceHash)}`
+}
 
 function mapRichSection(s: ApiRichSection): RichSection {
   let flowchartTable: FlowchartTableData | null = null
@@ -156,15 +233,14 @@ function mapRichSection(s: ApiRichSection): RichSection {
     const ft = s.flowchart_table
     flowchartTable = {
       description: ft.description,
-      flowcharts: (ft.flowcharts ?? []).map((fc) => ({
-        imageUrl: resolveAssetUrl(fc.image_url),
-        mermaid: fc.mermaid ?? null,
-        label: fc.label ?? '',
-      })),
+      flowcharts: (ft.flowcharts ?? []).map(mapFlowchart),
       risk: ft.risk,
       capacity: ft.capacity,
       inputName: ft.input_name,
       outputName: ft.output_name,
+      descriptionSlot: mapSlotOrNull(ft.description_slot),
+      inputNameSlot: mapSlotOrNull(ft.input_name_slot),
+      outputNameSlot: mapSlotOrNull(ft.output_name_slot),
     }
   }
 
@@ -178,6 +254,9 @@ function mapRichSection(s: ApiRichSection): RichSection {
       inputName: bt.input_name,
       outputName: bt.output_name,
       diagramUrl: resolveAssetUrl(bt.diagram_url),
+      descriptionSlot: mapSlotOrNull(bt.description_slot),
+      inputNameSlot: mapSlotOrNull(bt.input_name_slot),
+      outputNameSlot: mapSlotOrNull(bt.output_name_slot),
     }
   }
 
@@ -188,12 +267,20 @@ function mapRichSection(s: ApiRichSection): RichSection {
     level: s.level,
     type: (s.type as RichSectionType) ?? 'richtext',
     content: s.content,
-    table: s.table,
+    table: s.table ? {
+      headers: s.table.headers,
+      rows: s.table.rows,
+      ...(s.table.cell_slots
+        ? { cellSlots: s.table.cell_slots.map((row) => row.map((c) => mapSlotOrNull(c))) }
+        : {}),
+    } : null,
     imageUrl: resolveAssetUrl(s.image_url),
     mermaid: s.mermaid ?? null,
     children: (s.children ?? []).map(mapRichSection),
     flowchartTable,
     behaviorTable,
+    testSpec: s.test_spec ? mapTestSpec(s.test_spec) : null,
+    contentSlot: mapSlotOrNull(s.content_slot),
   }
 }
 
@@ -252,15 +339,27 @@ export function mapRichDocument(d: ApiRichDocument): RichDocument {
     functionsTotal: d.meta.functions_total ?? 0,
     globalsTotal: d.meta.globals_total ?? 0,
   }
-  return { cover, toc, sections: (d.sections ?? []).map(mapRichSection), meta }
+  const ts = d.test_summary
+  const testSummary: TestSummary | null = ts ? {
+    units: ts.units,
+    functionSpecs: ts.function_specs,
+    dynamicSpecs: ts.dynamic_specs,
+    mocks: ts.mocks,
+    equipment: ts.equipment,
+    platform: ts.platform,
+  } : null
+  return { cover, toc, sections: (d.sections ?? []).map(mapRichSection), meta, testSummary }
 }
 
+/** A13: counts per review state, and how many need a reviewer or carried their approval. */
 export function mapDocStats(s: Record<string, number>): DocStats {
   return {
     total: s.total ?? 0,
-    approved: s.approved ?? 0,
     inReview: s.in_review ?? 0,
-    never: s.never ?? 0,
-    unchanged: s.unchanged ?? 0,
+    submitted: s.submitted ?? 0,
+    changesRequested: s.changes_requested ?? 0,
+    approved: s.approved ?? 0,
+    needsReviewer: s.needs_reviewer ?? 0,
+    carried: s.carried ?? 0,
   }
 }

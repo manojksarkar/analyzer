@@ -27,6 +27,7 @@ from .routes import (
     jobs_router, documents_router, team_router,
     compare_router, functions_router, notifications_router,
     repositories_router, users_router, text_overrides_router,
+    version_components_router,
 )
 
 # ---------------------------------------------------------------------------
@@ -71,6 +72,80 @@ def _ensure_default_admin(db) -> None:
         print(f"[api] could not ensure default admin: {type(exc).__name__}: {exc}", file=sys.stderr)
 
 
+#: Seconds between two tries of the start-up check below while the database does not answer.
+JOB_SWEEP_RETRY_SECONDS = 30.0
+
+
+def _fail_interrupted_jobs(db) -> bool:
+    """Jobs a stopped server left queued or running: failed with what happened, or -- a run in
+    the background -- followed again (`pipeline_runner.fail_interrupted_jobs`). Only jobs that
+    started before this process did: one started since is this process's own. Never stops the
+    start-up. False when the check could not run (the database did not answer)."""
+    import sys
+    try:
+        from .services import pipeline_runner
+        engine = getattr(db, "_engine", None)
+        if engine is not None and not pipeline_runner.claim_job_runner(engine):
+            print("[api] another API server runs jobs on this database: none of its jobs is "
+                  "touched, and none left by a stopped server is cleared", file=sys.stderr)
+            return True
+        n = pipeline_runner.fail_interrupted_jobs(db, before=pipeline_runner.PROCESS_STARTED)
+        if n:
+            print(f"[api] {n} job(s) left running by a stopped server: marked failed "
+                  f"(interrupted)", file=sys.stderr)
+        return True
+    except Exception as exc:                                  # noqa: BLE001
+        print(f"[api] could not check for interrupted jobs: {type(exc).__name__}: {exc} -- "
+              f"trying again in {JOB_SWEEP_RETRY_SECONDS:.0f} s", file=sys.stderr)
+        return False
+
+
+#: Seconds between two looks for active jobs that nothing follows any more.
+JOB_WATCH_SECONDS = 300.0
+
+
+def _watch_jobs(db, stop=None) -> None:
+    """After start-up, every five minutes: a job left active with nothing following it -- its
+    thread died on an error it could not record (the database down at the end of a run) -- is
+    followed again (a background run) or failed, as at start-up. Only by the server that runs
+    jobs on this database, and never a job started in the last two minutes: it may be between
+    its row and its thread."""
+    import datetime as _dt
+    import sys
+    import threading
+
+    stop = stop or threading.Event()          # set by a test to end the thread
+
+    def loop() -> None:
+        from .services import pipeline_runner
+        while not stop.wait(JOB_WATCH_SECONDS):
+            try:
+                engine = getattr(db, "_engine", None)
+                if engine is not None and not pipeline_runner.runner_still_held(engine):
+                    continue
+                pipeline_runner.fail_interrupted_jobs(
+                    db, before=pipeline_runner._now() - _dt.timedelta(seconds=120),
+                    reattach_only=True)
+            except Exception as exc:                          # noqa: BLE001 - next round
+                print(f"[api] job watch: {type(exc).__name__}: {exc}", file=sys.stderr)
+    threading.Thread(target=loop, daemon=True, name="job-watch").start()
+
+
+def _sweep_until_done(db) -> None:
+    """Try the start-up check again, in the background, until it runs. A run in the background
+    is followed again only by that check: one missed try -- a database slow to answer while the
+    machine is busy -- left its job saying "running" for ever, with nothing following the run."""
+    import threading
+    import time
+
+    def loop() -> None:
+        while True:
+            time.sleep(JOB_SWEEP_RETRY_SECONDS)
+            if _fail_interrupted_jobs(db):
+                return
+    threading.Thread(target=loop, daemon=True, name="job-sweep").start()
+
+
 @app.on_event("startup")
 async def _db_startup_check() -> None:
     """When the SQL backend is active, log which database the API is bound to (password
@@ -108,6 +183,11 @@ async def _db_startup_check() -> None:
               f"      The API is bound to {_redact(dsn)} (source: {src}). If that is 'localhost'\n"
               f"      but you meant a remote server, set DATABASE_URL before starting uvicorn, or\n"
               f"      add a `db` section to engine/config/config.local.json.", file=sys.stderr)
+    # No job says "running" with nothing running or following it -- tried again until it runs,
+    # then looked for again every few minutes.
+    if not _fail_interrupted_jobs(_db):
+        _sweep_until_done(_db)
+    _watch_jobs(_db)
 
 # ---------------------------------------------------------------------------
 # Self-hosted API docs — Swagger UI / ReDoc assets are served from api/static/
@@ -155,10 +235,43 @@ app.add_middleware(
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    # Starlette answers an unhandled exception from ServerErrorMiddleware, which sits OUTSIDE
+    # CORSMiddleware, so this response never gets its CORS headers. The browser then blocks it
+    # and the web app reports "Failed to fetch" instead of the message below. Echo the origin
+    # the way CORSMiddleware does for every other response (allow_origins=["*"] with credentials).
+    headers = {}
+    origin = request.headers.get("origin")
+    if origin:
+        headers = {"Access-Control-Allow-Origin": origin,
+                   "Access-Control-Allow-Credentials": "true",
+                   "Vary": "Origin"}
+    status, code, message = 500, "INTERNAL_ERROR", str(exc)
+    if _database_error(exc):
+        # A driver's text names the host, the database, the SQL and its parameters: it is for the
+        # server log -- Starlette logs the traceback after this answer -- not the caller (RF-9).
+        from .services.pipeline_runner import _db_unavailable
+        if _db_unavailable(exc):
+            status, code = 503, "DATABASE_UNAVAILABLE"
+            message = ("The database did not answer. Try again in a minute; "
+                       "the server log has the detail.")
+        else:
+            message = "A database error; the server log has the detail."
     return JSONResponse(
-        status_code=500,
-        content={"error": {"code": "INTERNAL_ERROR", "message": str(exc), "status": 500}},
+        status_code=status,
+        content={"error": {"code": code, "message": message, "status": status}},
+        headers=headers,
     )
+
+
+def _database_error(exc: BaseException) -> bool:
+    """An error raised by the database or its driver, wrapped by SQLAlchemy or not."""
+    try:
+        from sqlalchemy import exc as sa_exc
+    except ImportError:                                      # pragma: no cover
+        return False
+    if isinstance(exc, (sa_exc.DBAPIError, sa_exc.TimeoutError, sa_exc.DisconnectionError)):
+        return True
+    return type(exc).__module__.split(".")[0] in ("psycopg", "psycopg2", "sqlite3")
 
 # ---------------------------------------------------------------------------
 # Register routers under /api/v1
@@ -179,6 +292,8 @@ app.include_router(repositories_router,      prefix=PREFIX)
 app.include_router(users_router,             prefix=PREFIX)
 # Review & Update -- correcting LLM text in a generated document (spec 05 section 10)
 app.include_router(text_overrides_router,    prefix=PREFIX)
+# Staged generation -- a version's components and the documents still to make
+app.include_router(version_components_router, prefix=PREFIX)
 
 # ---------------------------------------------------------------------------
 # Health check

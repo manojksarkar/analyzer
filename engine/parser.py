@@ -140,6 +140,14 @@ if _llvm and os.path.isfile(_llvm):
     cindex.Config.set_library_file(_llvm)
 
 from core.config import get_flat_groups as _get_flat_groups, get_group_layer_name as _get_group_layer_name, get_layer_flat_groups as _get_layer_flat_groups, get_component_layer_name as _get_component_layer_name
+# The rule itself lives in core.component_files: the check a run makes before the parse
+# (report.emit_run_summary) reads the config with it too, so the two cannot drift apart.
+from core.component_files import (
+    HEADER_EXTS as _HEADER_EXTS, SOURCE_EXTS as _SOURCE_EXTS, TU_EXTS as _TU_EXTS,
+    build_file_component_map as _build_file_component_map,
+    exclude_name_patterns as _exclude_name_patterns,
+    merge_group_components as _merge_group_components,
+)
 if _selected_layers:
     # UNION of every named layer, not just the first.
     _components_groups = {}
@@ -167,30 +175,7 @@ _components_cfg = _config.get("components") or _config.get("modules") or {}
 # If layer exists but no explicit component mapping is provided, merge all groups.
 # This makes the model parse only the union of all configured component folders.
 if not _components_cfg and isinstance(_components_groups, dict) and _components_groups:
-    merged = {}
-    for _, grp in _components_groups.items():
-        if not isinstance(grp, dict):
-            continue
-        for component, paths in grp.items():
-            if not paths:
-                continue
-            if isinstance(paths, str):
-                paths_list = [paths]
-            else:
-                paths_list = list(paths) if isinstance(paths, list) else []
-            if component not in merged:
-                merged[component] = paths_list if len(paths_list) != 1 else paths_list[0]
-            else:
-                existing = merged.get(component)
-                if isinstance(existing, str):
-                    existing_list = [existing]
-                else:
-                    existing_list = list(existing) if isinstance(existing, list) else []
-                for p in paths_list:
-                    if p and p not in existing_list:
-                        existing_list.append(p)
-                merged[component] = existing_list if len(existing_list) != 1 else existing_list[0]
-    _components_cfg = merged
+    _components_cfg = _merge_group_components(_components_groups)
 _COMPONENT_FOLDERS = []
 for _mod_paths in _components_cfg.values():
     if not _mod_paths:
@@ -206,43 +191,6 @@ for _mod_paths in _components_cfg.values():
 # Flat file-to-component map (replaces prefix-matching for lookup + filtering)
 # ---------------------------------------------------------------------------
 
-_SOURCE_EXTS = {'.cpp', '.cc', '.cxx', '.c', '.h', '.hpp', '.hxx'}
-
-
-def _build_file_component_map(components_cfg: dict, base_path: str) -> dict:
-    """Resolve component config to {lowercase_relpath: component}.
-
-    Each entry (string or element of a list) is inspected individually:
-    - Known C/C++ extension → added as an exact file.
-    - No recognised extension → treated as a directory; all source files
-      under it are included recursively.
-
-    setdefault ensures the first component in config iteration order wins on overlap.
-    """
-    file_map: dict = {}
-    for component, paths in (components_cfg or {}).items():
-        if isinstance(paths, str):
-            paths = [paths]
-        for p in (paths or []):
-            p_norm = (p or "").replace("\\", "/").lstrip("./").rstrip("/")
-            if not p_norm:
-                continue
-            _, ext = os.path.splitext(p_norm)
-            if ext.lower() in _SOURCE_EXTS:
-                # Explicit file entry — add directly
-                file_map.setdefault(p_norm.lower(), component.replace(" ", "-"))
-            else:
-                # Directory entry — walk the filesystem
-                abs_dir = os.path.join(base_path, p_norm)
-                if not os.path.isdir(abs_dir):
-                    continue
-                for root, _, files in os.walk(abs_dir):
-                    for fname in files:
-                        if os.path.splitext(fname)[1].lower() in _SOURCE_EXTS:
-                            full = os.path.join(root, fname)
-                            key = os.path.relpath(full, base_path).replace("\\", "/").lower()
-                            file_map.setdefault(key, component.replace(" ", "-"))
-    return file_map
 
 
 _FILE_COMPONENT_MAP: dict = _build_file_component_map(_components_cfg, MODULE_BASE_PATH)
@@ -250,12 +198,7 @@ _FILE_COMPONENT_MAP: dict = _build_file_component_map(_components_cfg, MODULE_BA
 # Emulator/stub files are excluded from the parse scope by default (3.1): any file whose
 # basename contains one of these (case-insensitive) substrings is skipped. Overridable per
 # project via config `excludeNamePatterns` (a list); `--include-emulator` disables it.
-_cfg_exclude = _config.get("excludeNamePatterns")
-if _cfg_exclude is None:
-    _cfg_exclude = ["emul"]
-_EXCLUDE_NAME_PATTERNS: list = [] if _include_emulator else [
-    str(p).lower() for p in _cfg_exclude if p
-]
+_EXCLUDE_NAME_PATTERNS: list = _exclude_name_patterns(_config, _include_emulator)
 
 # Read layer include paths written by run.py before Phase 1 started.
 _layer_include_paths: dict = {}
@@ -2629,9 +2572,9 @@ def _collect_source_files():
     sources, headers = [], []
     for root, _, fnames in os.walk(MODULE_BASE_PATH):
         for f in fnames:
-            if f.endswith((".cpp", ".cc", ".cxx")):
+            if f.endswith(_TU_EXTS):
                 bucket = sources
-            elif f.endswith((".h", ".hpp", ".hxx")):
+            elif f.endswith(_HEADER_EXTS):
                 bucket = headers
             else:
                 continue

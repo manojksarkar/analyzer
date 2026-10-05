@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>[PRODUCT NAME] — Get Started</title>
+<title>ArtiFex — Get Started</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
@@ -57,14 +57,18 @@
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: #c4c6cd; border-radius: 10px; }
 
-  /* ── Empty state cards ── */
-  .get-started-card {
-    cursor: pointer; transition: box-shadow .15s, border-color .15s;
-  }
-  .get-started-card:hover {
-    box-shadow: 0 4px 20px rgba(4,22,39,.10);
-    border-color: #0058be;
-  }
+  /* ── Empty state choice cards (web-app ProjectsEmptyState) ── */
+  .choice-card { cursor: pointer; transition: background-color .15s; }
+  .choice-card-primary { border: 2px solid #0058be; }
+  .choice-card-primary:hover { background: rgba(0,88,190,.05); }
+  .choice-card-plain { border: 1px solid #c4c6cd; }
+  .choice-card-plain:hover { background: #eff4ff; }
+
+  /* ── Toast (web-app components/ui/Toast: white card, slides in from the right, 4 s) ── */
+  @keyframes slideInRight  { from { transform: translateX(110%); opacity:0; } to { transform: translateX(0); opacity:1; } }
+  @keyframes fadeOut       { from { opacity:1; } to { opacity:0; } }
+  .toast-in  { animation: slideInRight .3s ease forwards; }
+  .toast-out { animation: fadeOut .2s ease forwards; }
 
   /* ── Inputs ── */
   .inp {
@@ -126,6 +130,43 @@
   .drop-zone:hover, .drop-zone.dragover { border-color: #0058be; background: #eff4ff; }
   .drop-zone.has-file { border-style: solid; border-color: #00a572; background: #f0fff9; }
 
+  /* ── Step 2: cores - one settings card per core ── */
+  .core-card { background: #fff; border: 1px solid #c4c6cd; border-radius: 0.75rem; overflow: hidden; }
+  .core-card-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #f8f9ff; border-bottom: 1px solid #e5eeff; }
+  .core-chip-icon { width: 32px; height: 32px; border-radius: 0.5rem; background: #1a2b3c; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .core-name { width: 100%; max-width: 240px; padding: 0 6px; margin-left: -6px; font: 600 14px/22px 'Inter', sans-serif; color: #0b1c30; background: transparent; border: 1px solid transparent; border-radius: 0.25rem; }
+  .core-name:hover { border-color: #c4c6cd; background: #fff; }
+  .core-name:focus { outline: none; border-color: #0058be; background: #fff; box-shadow: 0 0 0 3px rgba(0,88,190,.10); }
+  .core-uses { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 3px; font: 500 10px/16px 'JetBrains Mono', monospace; color: #74777d; }
+  .core-uses .layer-tag { padding: 0 6px; border-radius: 3px; background: #e5eeff; color: #0058be; font-weight: 600; }
+  .core-uses.none { color: #b45309; }
+  .core-row { display: grid; grid-template-columns: 172px minmax(0, 1fr); gap: 16px; align-items: start; padding: 14px 16px; }
+  .core-row + .core-row { border-top: 1px solid #eff4ff; }
+  .core-row-label { font: 600 12px/18px 'JetBrains Mono', monospace; color: #0b1c30; }
+  .core-row-help { margin-top: 2px; font: 400 11px/15px 'Inter', sans-serif; color: #74777d; }
+  .core-row-help code { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; }
+  .core-row-help .opt { font-weight: 600; color: #44474c; }
+  .wanted-note { margin-top: 6px; font: 400 11px/15px 'Inter', sans-serif; color: #8a5300; }
+  .upload-btn { width: 100%; min-height: 40px; display: flex; align-items: center; gap: 10px; padding: 8px 12px; text-align: left; background: #f8f9ff; border: 1.5px dashed #c4c6cd; border-radius: 0.5rem; cursor: pointer; transition: border-color .15s, background .15s; }
+  .upload-btn:hover, .upload-btn.dragover { border-color: #0058be; background: #eff4ff; }
+  .upload-btn .t { font: 500 12px/16px 'Inter', sans-serif; color: #0b1c30; }
+  .upload-btn .s { margin-left: auto; white-space: nowrap; font: 400 11px/14px 'JetBrains Mono', monospace; color: #74777d; }
+  .upload-btn.wanted { border-color: #e5b25d; background: #fffaf0; }
+  .upload-btn.wanted .t { color: #8a5300; }
+  .file-pill { min-height: 40px; display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 12px; background: #f0fff9; border: 1px solid rgba(0,165,114,.35); border-radius: 0.5rem; }
+  .file-pill .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 12px/16px 'JetBrains Mono', monospace; color: #0b1c30; }
+  .file-pill .z { white-space: nowrap; font: 400 11px/14px 'JetBrains Mono', monospace; color: #74777d; }
+  .pill-btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: #74777d; background: none; border: none; border-radius: 0.25rem; cursor: pointer; }
+  .pill-btn:hover { background: #e5eeff; color: #0058be; }
+  .pill-btn.del:hover { background: #ffdad6; color: #ba1a1a; }
+  .switch-link { margin-top: 6px; padding: 0; font: 500 11px/14px 'Inter', sans-serif; color: #0058be; background: none; border: none; cursor: pointer; }
+  .switch-link:hover { text-decoration: underline; }
+  .macro-text { min-height: 76px; resize: vertical; }
+
+  /* ── Step 3: a layer's core ── */
+  .layer-core { display: flex; align-items: center; gap: 6px; flex-shrink: 0; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #74777d; }
+  .layer-core-select { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: #0058be; background-color: #fff; background-size: 1.1em 1.1em; background-position: right 4px center; border: 1px solid #c4c6cd; border-radius: 0.25rem; padding: 3px 24px 3px 6px; cursor: pointer; }
+
   /* ── Step rail ── */
   .step-li { position: relative; display: flex; gap: 14px; padding-bottom: 28px; }
   .step-li:last-child { padding-bottom: 0; }
@@ -148,6 +189,7 @@
   /* ── Layer / architecture ── */
   .layer-block { border: 1px solid #c4c6cd; border-radius: 0.5rem; overflow: hidden; }
   .layer-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #eff4ff; border-bottom: 1px solid #c4c6cd; cursor: pointer; user-select: none; }
+  .layer-block.collapsed .layer-head { border-bottom: none; }   /* a collapsed layer is its head alone */
   .layer-path-display { display: block; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #74777d; margin-top: 2px; cursor: pointer; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .layer-path-display:hover { color: #0058be; }
   .layer-path-display.empty { color: #b0b3b8; }
@@ -214,6 +256,40 @@
   .fp-folder-row.selected .fp-name { color:#0058be; font-weight:600; }
   .fp-children { margin-left:16px; border-left:1px solid #e5eeff; }
 
+  /* ── Repository source: Git URL | Local path (step 1) ── */
+  .seg { display: inline-flex; margin-left: auto; padding: 2px; gap: 2px; background: #eff4ff; border: 1px solid #c4c6cd; border-radius: .5rem; }
+  .seg-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border: none; border-radius: .375rem; background: none; cursor: pointer;
+             font: 600 11px/16px 'JetBrains Mono', monospace; letter-spacing: .02em; color: #44474c; transition: background .15s, color .15s; }
+  .seg-btn .material-symbols-outlined { font-size: 14px; }
+  .seg-btn:hover { color: #0b1c30; }
+  .seg-btn.on { background: #fff; color: #0058be; box-shadow: 0 1px 2px rgba(4,22,39,.12); }
+
+  /* ── Local path: Browse - the server's folders ── */
+  .rb-browse { display: none; align-items: center; gap: 6px; padding: 0 12px; flex-shrink: 0; background: #fff; border: 1px solid #c4c6cd; border-radius: .5rem; cursor: pointer;
+               font: 700 11px/16px 'JetBrains Mono', monospace; letter-spacing: .04em; color: #44474c; transition: background .15s; }
+  .rb-browse:hover { background: #eff4ff; }
+  .rb-crumb { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: none; border-radius: .25rem; background: none; cursor: pointer;
+              font: 500 11px/16px 'JetBrains Mono', monospace; color: #0058be; }
+  .rb-crumb:hover { background: #eff4ff; }
+  .rb-crumb:last-child { color: #0b1c30; font-weight: 600; }
+  .rb-sep { color: #74777d; font-size: 11px; }
+  .rb-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: .375rem; cursor: pointer; user-select: none;
+            font: 400 12px/18px 'JetBrains Mono', monospace; color: #0b1c30; }
+  .rb-row:hover { background: #eff4ff; }
+  .rb-row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rb-row.picked { background: #e5eeff; color: #0058be; font-weight: 600; }
+  .rb-git { padding: 0 6px; border-radius: 3px; background: #d6f5ea; color: #006e45; font: 600 10px/16px 'JetBrains Mono', monospace; }
+  .rb-empty { padding: 16px 10px; text-align: center; font: 400 12px/16px Inter, sans-serif; color: #74777d; }
+
+  /* ── Branch: one box - search and list (step 1) ── */
+  .bd-head  { padding: 6px 12px; font: 500 11px/16px 'JetBrains Mono', monospace; color: #74777d; border-bottom: 1px solid #eff4ff; }
+  .bd-item  { display: flex; align-items: center; gap: 8px; padding: 7px 12px; cursor: pointer; font: 400 12px/18px 'JetBrains Mono', monospace; color: #0b1c30; }
+  .bd-item:hover, .bd-item.focused { background: #eff4ff; }
+  .bd-item.picked { color: #0058be; font-weight: 600; }
+  .bd-item .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bd-item .tag { padding: 0 6px; border-radius: 3px; background: #e5eeff; color: #0058be; font-size: 10px; font-weight: 600; }
+  .bd-empty { padding: 10px 12px; font: 400 12px/16px Inter, sans-serif; color: #74777d; }
+
   /* ── Member search dropdown ── */
   .ms-item { display:flex; align-items:center; gap:10px; padding:8px 12px; cursor:pointer; transition:background .1s; }
   .ms-item:hover, .ms-item.focused { background:#eff4ff; }
@@ -229,13 +305,22 @@
      TOP BAR
      ══════════════════════════════════════════ -->
 <header class="fixed top-0 left-0 right-0 h-14 bg-white border-b border-outline-variant flex items-center justify-between px-6 z-50">
+  <!-- Brand: the ArtiFex mark (web-app components/ui/BrandMark.tsx) and wordmark (constants/branding.ts) -->
   <a href="projects.html" class="flex items-center gap-3">
-    <div class="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
-      <span class="material-symbols-outlined sym-fill text-on-primary" style="font-size:18px;">account_tree</span>
-    </div>
+    <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true" class="flex-shrink-0 text-secondary">
+      <g stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 8.5 2 16l3 7.5"/>
+        <path d="M27 8.5 30 16l-3 7.5"/>
+      </g>
+      <g stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M13.6 7 9.2 24"/>
+        <path d="M11 17.8h6.2"/>
+      </g>
+      <path fill="currentColor" d="M19.8 18.6C19.8 20.7 20.9 21.8 23 21.8 20.9 21.8 19.8 22.9 19.8 25 19.8 22.9 18.7 21.8 16.6 21.8 18.7 21.8 19.8 20.7 19.8 18.6Z"/>
+    </svg>
     <div>
-      <h1 class="text-primary font-bold tracking-tight" style="font-family:Inter;font-size:15px;line-height:1.2;">[PRODUCT NAME]</h1>
-      <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mt-0.5">Automotive Tier 1</p>
+      <h1 class="text-primary font-bold tracking-tight" style="font-family:Inter;font-size:20px;line-height:1.2;">ArtiFex</h1>
+      <p class="text-on-surface-variant uppercase mt-0.5" style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;line-height:16px;letter-spacing:.08em;">Crafted from Code</p>
     </div>
   </a>
 
@@ -245,11 +330,8 @@
   </div>
 
   <div class="flex items-center gap-0.5">
-    <button class="p-2 hover:bg-surface-container rounded-lg transition-colors">
+    <button class="p-2 hover:bg-surface-container rounded-lg transition-colors" aria-label="Notifications">
       <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
-    </button>
-    <button class="p-2 hover:bg-surface-container rounded-lg transition-colors">
-      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">help</span>
     </button>
     <div class="w-px h-5 bg-outline-variant mx-1.5"></div>
     <button class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors">
@@ -263,60 +345,70 @@
 
 
 <!-- ══════════════════════════════════════════
-     VIEW: EMPTY STATE (default)
+     VIEW: EMPTY STATE (default) - the Projects page with no project yet
+     (web-app pages/ProjectsPage: its heading, and ProjectsEmptyState where the table goes)
      ══════════════════════════════════════════ -->
-<div id="view-empty" class="fixed inset-0 pt-14 bg-background flex items-center justify-center">
-  <div class="text-center" style="max-width:560px;padding:0 24px;">
+<div id="view-empty" class="fixed inset-0 pt-14 overflow-y-auto">
+  <div class="px-6 py-6 mx-auto" style="max-width:1280px;">
 
-    <div class="w-16 h-16 bg-surface-container rounded-2xl flex items-center justify-center mx-auto mb-6">
-      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:32px;">folder_open</span>
-    </div>
-    <h2 class="text-headline-md text-on-surface mb-2">No projects yet</h2>
-    <p class="text-body-md text-on-surface-variant mb-10" style="max-width:400px;margin-left:auto;margin-right:auto;line-height:1.7;">
-      Create a new project, or request access to an existing project your team is already working on.
-    </p>
-
-    <div class="grid grid-cols-2 gap-4 text-left">
-
-      <!-- New Project -->
-      <div class="get-started-card bg-white border border-outline-variant rounded-xl p-6" onclick="showWizard()">
-        <div class="w-10 h-10 bg-secondary-container rounded-xl flex items-center justify-center mb-4">
-          <span class="material-symbols-outlined text-secondary sym-fill" style="font-size:20px;">add_circle</span>
-        </div>
-        <p class="font-label-md text-label-md text-on-surface mb-1.5" style="font-size:13px;">New Project</p>
-        <p class="text-body-sm text-on-surface-variant" style="font-size:12px;line-height:1.6;">Set up a fresh project — define your codebase, architecture layers, and compliance target.</p>
-        <div class="mt-4 flex items-center gap-1 text-secondary" style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;letter-spacing:.04em;">
-          GET STARTED
-          <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
-        </div>
+    <!-- Page heading. No New Project / Request Access buttons while there is no project: the two
+         cards below are the way in. -->
+    <div class="flex items-center justify-between mb-5">
+      <div>
+        <h1 class="text-on-surface" style="font-family:Inter;font-size:24px;font-weight:600;line-height:32px;letter-spacing:-0.01em;">Projects</h1>
+        <p class="text-on-surface-variant mt-0.5" style="font-size:12px;line-height:16px;">System-wide · 0 projects</p>
       </div>
-
-      <!-- Request Access -->
-      <div class="get-started-card bg-white border border-outline-variant rounded-xl p-6" onclick="openLoadModal()">
-        <div class="w-10 h-10 bg-surface-container rounded-xl flex items-center justify-center mb-4">
-          <span class="material-symbols-outlined text-on-surface-variant sym-fill" style="font-size:20px;">lock_open</span>
-        </div>
-        <p class="font-label-md text-label-md text-on-surface mb-1.5" style="font-size:13px;">Request Access</p>
-        <p class="text-body-sm text-on-surface-variant" style="font-size:12px;line-height:1.6;">Find a project your team is working on and send an access request to the project admin.</p>
-        <div class="mt-4 flex items-center gap-1 text-on-surface-variant" style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;letter-spacing:.04em;">
-          BROWSE PROJECTS
-          <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
-        </div>
-      </div>
-
     </div>
 
-    <!-- Demo shortcut -->
-    <p class="mt-10 text-body-sm text-on-surface-variant" style="font-size:12px;">
-      Want to explore with sample data?
-      <a href="projects.html" class="text-secondary hover:underline font-medium">Load demo projects</a>
-    </p>
+    <!-- Where the projects table goes -->
+    <div class="bg-white border border-outline-variant rounded-xl overflow-hidden mb-6">
+      <div class="flex flex-col items-center justify-center text-center px-6 py-16">
+        <div class="w-16 h-16 bg-secondary-container flex items-center justify-center mb-6" style="border-radius:.75rem;">
+          <span class="material-symbols-outlined sym-fill text-secondary" style="font-size:32px;">folder_open</span>
+        </div>
+        <h2 class="text-on-surface mb-2" style="font-family:Inter;font-size:18px;font-weight:600;line-height:28px;letter-spacing:-0.01em;">No projects yet</h2>
+        <p class="text-on-surface-variant mb-8" style="font-size:13px;line-height:1.6;max-width:440px;">
+          Create a new project to start generating compliance documentation, or request access to an existing workspace.
+        </p>
+
+        <!-- Choice cards -->
+        <div class="grid grid-cols-2 gap-4 w-full" style="max-width:520px;">
+
+          <!-- New Project - opens the wizard -->
+          <button onclick="showWizard()" class="choice-card choice-card-primary flex flex-col items-center gap-3 p-6 bg-white rounded-xl text-center">
+            <div class="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center">
+              <span class="material-symbols-outlined text-white" style="font-size:20px;">add</span>
+            </div>
+            <div>
+              <p class="text-on-surface mb-1" style="font-size:14px;line-height:20px;font-weight:600;">New Project</p>
+              <p class="text-on-surface-variant" style="font-size:12px;line-height:1.5;">Connect a C++ repository and generate your first compliance artifacts.</p>
+            </div>
+            <span class="mt-auto flex items-center gap-1 text-secondary" style="font-size:12px;line-height:16px;font-weight:600;">
+              Get started
+              <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
+            </span>
+          </button>
+
+          <!-- Request Access - a message, no dialog: a project admin adds people from Team -->
+          <button onclick="requestAccess()" class="choice-card choice-card-plain flex flex-col items-center gap-3 p-6 bg-white rounded-xl text-center">
+            <div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center">
+              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:20px;">lock</span>
+            </div>
+            <div>
+              <p class="text-on-surface mb-1" style="font-size:14px;line-height:20px;font-weight:600;">Request Access</p>
+              <p class="text-on-surface-variant" style="font-size:12px;line-height:1.5;">Ask an admin to add you to an existing project workspace.</p>
+            </div>
+            <span class="mt-auto flex items-center gap-1 text-on-surface-variant" style="font-size:12px;line-height:16px;font-weight:600;">
+              Send request
+              <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
+            </span>
+          </button>
+
+        </div>
+      </div>
+    </div>
 
   </div>
-
-  <!-- Dot grid -->
-  <div class="fixed inset-0 pointer-events-none -z-10 opacity-[.025]"
-       style="background-image:radial-gradient(#041627 0.5px,transparent 0.5px);background-size:24px 24px;"></div>
 </div>
 
 
@@ -372,12 +464,51 @@
                    oninput="this.classList.remove('err')">
           </div>
 
+          <!-- Where the code is: a Git URL (GitHub, GitLab, any git server) or a local path - a git
+               repository's folder on the server ArtiFex runs on. Either is read with git: branches,
+               files, commits. A plain folder is refused: it must be a git repository. -->
           <div>
-            <div class="lbl">Repository URL <span class="req">*</span></div>
-            <input class="inp mono" id="s1-repo" type="text" placeholder="https://github.com/org/repo.git"
-                   oninput="this.classList.remove('err'); repoChanged();">
+            <div class="lbl">
+              <span id="repo-label">Repository URL</span> <span class="req">*</span>
+              <div class="seg" role="radiogroup" aria-label="Where the repository is">
+                <button type="button" id="src-url" class="seg-btn on" role="radio" aria-checked="true" onclick="setRepoSource('url')">
+                  <span class="material-symbols-outlined">link</span>Git URL
+                </button>
+                <button type="button" id="src-local" class="seg-btn" role="radio" aria-checked="false" onclick="setRepoSource('local')">
+                  <span class="material-symbols-outlined">folder</span>Local path
+                </button>
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <div style="position:relative;flex:1;">
+                <span id="repo-icon" class="material-symbols-outlined" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:16px;color:#74777d;pointer-events:none;">link</span>
+                <input class="inp mono" id="s1-repo" type="text" placeholder="https://github.com/org/repo.git" style="padding-left:34px;"
+                       spellcheck="false" oninput="this.classList.remove('err'); repoTyped();">
+              </div>
+              <!-- Local path: pick the folder instead of typing it - from the SERVER's folders (a
+                   browser cannot give a full path from the reviewer's own PC, and git runs on the
+                   server). -->
+              <button type="button" id="repo-browse" class="rb-browse" onclick="openRepoBrowser()">
+                <span class="material-symbols-outlined" style="font-size:16px;">folder_open</span>BROWSE…
+              </button>
+            </div>
+            <!-- Local path: where the folder must be, and what it must be. -->
+            <p id="repo-local-hint" class="hidden mt-1.5 text-on-surface-variant" style="font-size:11px;line-height:16px;">
+              A git repository on the server ArtiFex runs on — the folder that holds
+              <code style="font-family:'JetBrains Mono';font-size:10.5px;">.git</code>. Type its full path, or Browse.
+            </p>
+            <!-- Git URL chosen, but a folder path typed: say so, one click to switch. -->
+            <p id="repo-looks-local" class="hidden mt-1.5" style="font-size:11px;line-height:16px;color:#8a5300;">
+              This looks like a folder path, not a URL.
+              <button type="button" class="text-secondary hover:underline font-medium" onclick="setRepoSource('local')">Use Local path</button>
+            </p>
           </div>
 
+          <!-- Only a private repository needs a token: a link until asked for. -->
+          <button type="button" id="token-link" onclick="openToken()" class="flex items-center gap-1 text-secondary hover:underline" style="font-size:11px;">
+            <span class="material-symbols-outlined" style="font-size:13px;">lock</span>Private repository? Add an access token
+          </button>
+          <div id="token-field" class="hidden">
           <div>
             <div class="lbl">
               Access Token
@@ -392,6 +523,7 @@
               </button>
             </div>
           </div>
+          </div>
 
           <!-- Test connection row -->
           <div class="flex items-center gap-3 pt-1">
@@ -404,116 +536,77 @@
             <span id="test-conn-status" class="text-body-sm" style="font-size:12px;"></span>
           </div>
 
-          <!-- Branch — shown after successful test -->
+          <!-- Branch — shown after successful test. ONE box: it shows the picked branch; a click (or
+               the chevron) opens every branch, typing filters them (a repository can have hundreds),
+               arrows + Enter pick. Esc or leaving the box keeps the branch picked before. -->
           <div id="branch-field" class="hidden">
             <div style="height:1px;background:#eff4ff;margin-bottom:16px;"></div>
             <div class="lbl">Branch <span class="req">*</span></div>
-            <select class="inp" id="s1-branch" oninput="this.classList.remove('err')">
-              <option value="">Select a branch…</option>
-            </select>
+            <div style="position:relative;">
+              <span class="material-symbols-outlined" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:16px;color:#74777d;pointer-events:none;">call_split</span>
+              <input class="inp mono" id="s1-branch-box" type="text" autocomplete="off" spellcheck="false"
+                     role="combobox" aria-label="Branch" aria-autocomplete="list" aria-expanded="false" aria-controls="branch-dd"
+                     placeholder="Search or pick a branch…" style="padding-left:34px;padding-right:34px;"
+                     onfocus="branchOpen()" onclick="branchOpen()" oninput="branchFilter()"
+                     onmouseup="branchMouseUp(event)" onkeydown="branchKey(event)" onblur="setTimeout(branchClose, 150)">
+              <span class="material-symbols-outlined" id="branch-chevron" onmousedown="event.preventDefault(); branchToggle()"
+                    style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:20px;color:#74777d;cursor:pointer;transition:transform .15s;">expand_more</span>
+              <div id="branch-dd" role="listbox" aria-label="Branches"
+                   style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid #c4c6cd;border-radius:0.5rem;box-shadow:0 4px 16px rgba(4,22,39,.12);max-height:248px;overflow-y:auto;z-index:200;"></div>
+            </div>
+            <input type="hidden" id="s1-branch" value="">
+          </div>
+        </div>
+
+        <!-- Start from a config file (optional) - what `analyzer.py onboard --config` reads. One row:
+             before an import a dashed invitation; after it the file, what it filled and how much
+             needs the user (and in which step), with the full report in a popup. The name and the
+             repository are filled only when empty. Simulated here (importConfig); the app posts the
+             file to POST /projects/config/preview and re-checks it against the repository. -->
+        <div id="import-row"></div>
+        <input type="file" id="import-file" accept=".json,.jsonc" class="hidden" onchange="importConfig(this)">
+        <div id="import-modal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(4,22,39,.4);align-items:center;justify-content:center;" onclick="if (event.target === this) closeImportModal()">
+          <div style="width:100%;max-width:640px;background:#fff;border-radius:1rem;padding:24px;box-shadow:0 8px 40px rgba(4,22,39,.18);">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px;">
+              <div>
+                <p id="import-modal-title" style="font-size:16px;font-weight:600;color:#0b1c30;"></p>
+                <p style="font-size:12px;color:#44474c;margin-top:2px;">Items that need your attention are dealt with in the step named beside them.</p>
+              </div>
+              <button onclick="closeImportModal()" style="background:none;border:none;cursor:pointer;color:#44474c;padding:4px;"><span class="material-symbols-outlined" style="font-size:20px;">close</span></button>
+            </div>
+            <div id="import-modal-body" style="max-height:60vh;overflow-y:auto;display:grid;gap:18px;"></div>
           </div>
         </div>
       </div><!-- /step-1 -->
 
 
-      <!-- ══ STEP 2 — BUILD CONFIGURATION ══ -->
+      <!-- ══ STEP 2 — CORES ══ -->
+      <!-- One core = one build of the firmware: its macros (-D set), data dictionary and compile
+           commands - what the engine reads as cores.<Core>. Every layer picks its core in step 3
+           (layers.<Layer>.cores), so its files parse with that core's macros and include paths.
+           The cards are drawn by renderCores(). -->
       <div id="step-2" class="hidden max-w-2xl mx-auto px-6 py-6 space-y-4">
         <div class="pb-4 border-b border-outline-variant">
-          <h2 class="text-headline-md text-on-surface mb-1">Build Configuration</h2>
-          <p class="text-body-md text-on-surface-variant">Preprocessor definitions and optional data dictionary.</p>
+          <h2 class="text-headline-md text-on-surface mb-1">Cores</h2>
+          <p class="text-body-md text-on-surface-variant">A core is one build of the firmware, with its own macros, data dictionary and compile commands. Each layer picks its core in the next step.</p>
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
-
-          <!-- Preprocessor Definitions -->
-          <div class="card">
-            <div class="card-head">
-              <div class="card-head-l">
-                <div class="card-icon bg-primary-container">
-                  <span class="material-symbols-outlined text-on-primary-container" style="font-size:17px;">data_object</span>
-                </div>
-                <div>
-                  <h3 class="text-headline-sm text-on-surface" style="font-size:14px;">Preprocessor Definitions</h3>
-                </div>
-              </div>
-              <button class="hbtn" style="width:22px;height:22px;" title="Macro definitions passed as -D flags to Clang. Upload a Makefile or CSV, or enter them manually."><span class="material-symbols-outlined" style="font-size:13px;">help</span></button>
-            </div>
-
-            <div id="def-upload-tab">
-              <div class="drop-zone" id="def-drop-zone"
-                   onclick="document.getElementById('def-file').click()"
-                   ondragover="event.preventDefault();this.classList.add('dragover');"
-                   ondragleave="this.classList.remove('dragover');"
-                   ondrop="defFileDrop(event);">
-                <span class="material-symbols-outlined text-on-surface-variant mb-2" style="font-size:28px;display:block;">upload_file</span>
-                <p class="font-label-md text-label-md text-on-surface mb-1">Drop Makefile or CSV here</p>
-                <p class="text-body-sm text-on-surface-variant">Supported: <span style="font-family:'JetBrains Mono';font-size:11px;">Makefile, .csv, .mk</span></p>
-              </div>
-              <input type="file" id="def-file" accept=".csv,.mk,Makefile,makefile" class="hidden" onchange="defFileChosen(this)">
-              <div id="def-file-chip" class="hidden mt-3 flex items-center gap-2 px-3 py-2 bg-surface-container-low border border-outline-variant rounded-lg">
-                <span class="material-symbols-outlined text-secondary" style="font-size:18px;">description</span>
-                <span class="font-label-md text-label-md text-on-surface flex-1" id="def-file-name" style="font-size:12px;"></span>
-                <button onclick="clearDefFile()" class="text-on-surface-variant hover:text-error transition-colors">
-                  <span class="material-symbols-outlined" style="font-size:16px;">close</span>
-                </button>
-              </div>
-            </div>
-
-            <div id="def-manual-tab" class="hidden">
-              <div class="lbl mb-2" style="margin-top:0;">One definition per line — KEY or KEY=VALUE</div>
-              <textarea class="inp mono" id="def-manual-textarea" rows="5" placeholder="DEBUG=1&#10;PLATFORM=QNX&#10;ASPICE_LEVEL_2&#10;MAX_INPUTS=64"></textarea>
-            </div>
-
-            <div class="flex gap-2 mt-4 pt-3 border-t border-outline-variant">
-              <button class="tab-btn on" id="tab-upload" onclick="switchDefTab('upload')">
-                <span class="material-symbols-outlined" style="font-size:13px;vertical-align:middle;margin-right:3px;">upload_file</span>Upload
-              </button>
-              <button class="tab-btn" id="tab-manual" onclick="switchDefTab('manual')">
-                <span class="material-symbols-outlined" style="font-size:13px;vertical-align:middle;margin-right:3px;">edit_note</span>Manual
-              </button>
-            </div>
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-secondary" style="font-size:17px;">memory</span>
+            <span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-[.08em]">Cores <span id="cores-count"></span></span>
           </div>
+          <button onclick="addCore()"
+                  class="flex items-center gap-1.5 px-3 py-1.5 text-secondary border border-outline-variant rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors">
+            <span class="material-symbols-outlined" style="font-size:15px;">add</span> Add Core
+          </button>
+        </div>
 
-          <!-- Data Dictionary -->
-          <div class="card">
-            <div class="card-head">
-              <div class="card-head-l">
-                <div class="card-icon" style="background:#00311f;">
-                  <span class="material-symbols-outlined" style="font-size:17px;color:#6ffbbe;">menu_book</span>
-                </div>
-                <div>
-                  <h3 class="text-headline-sm text-on-surface" style="font-size:14px;">Data Dictionary</h3>
-                  <p class="text-body-sm text-on-surface-variant" style="font-size:11px;margin-top:2px;">Signal names, units, ranges</p>
-                </div>
-              </div>
-            </div>
+        <div id="cores-list" class="space-y-3"></div>
 
-            <div class="drop-zone" id="dd-zone"
-                 onclick="document.getElementById('dd-file').click()"
-                 ondragover="event.preventDefault();this.classList.add('dragover');"
-                 ondragleave="this.classList.remove('dragover');"
-                 ondrop="ddFileDrop(event);">
-              <span class="material-symbols-outlined text-on-surface-variant mb-2" style="font-size:28px;display:block;">cloud_upload</span>
-              <p class="font-label-md text-label-md text-on-surface mb-1">Drop CSV or Excel here</p>
-              <p class="text-body-sm text-on-surface-variant">Supported: <span style="font-family:'JetBrains Mono';font-size:11px;">.csv, .xlsx</span> · Optional</p>
-            </div>
-            <input type="file" id="dd-file" accept=".csv,.xlsx,.xls" class="hidden" onchange="ddFileChosen(this)">
-            <div id="dd-chip" class="hidden mt-3 flex items-center gap-3 px-3 py-2.5 bg-surface-container-low border rounded-xl" style="border-color:rgba(0,165,114,.3);">
-              <span class="material-symbols-outlined sym-fill" style="font-size:20px;color:#00a572;">description</span>
-              <div class="flex-1 min-w-0">
-                <div class="font-label-md text-label-md text-on-surface" id="dd-file-name" style="font-size:12px;"></div>
-                <div class="font-label-sm text-label-sm text-on-surface-variant" id="dd-file-meta"></div>
-              </div>
-              <button onclick="clearDdFile()" class="text-on-surface-variant hover:text-error transition-colors p-1">
-                <span class="material-symbols-outlined" style="font-size:18px;">close</span>
-              </button>
-            </div>
-
-            <p class="text-body-sm text-on-surface-variant mt-3" style="font-size:11px;">
-              Skipping is fine — you can upload a data dictionary later from Project Settings.
-            </p>
-          </div>
-
+        <div class="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
+          <span class="material-symbols-outlined text-secondary flex-shrink-0" style="font-size:18px;">info</span>
+          <p class="text-body-sm text-on-surface-variant">Layers built the same way share a core. A layer with no core is parsed without macros or a data dictionary. Paths inside a compile_commands.json come from the build machine and are mapped onto the repository automatically.</p>
         </div>
       </div><!-- /step-2 -->
 
@@ -565,6 +658,11 @@
               </button>
             </div>
           </div>
+          <div>
+            <div class="lbl" style="margin-bottom:4px;">Core</div>
+            <select class="inp mono" id="new-layer-core"></select>
+            <p class="text-body-sm text-on-surface-variant" style="font-size:11px;margin-top:4px;">Its files parse with this core's macros and include paths, and take its data dictionary.</p>
+          </div>
           <div class="flex gap-2 pt-1">
             <button onclick="confirmAddLayer()" class="px-4 py-2 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md hover:bg-secondary-container transition-colors">Add Layer</button>
             <button onclick="cancelAddLayer()" class="px-4 py-2 border border-outline-variant text-on-surface-variant rounded-lg font-label-md text-label-md hover:bg-surface-container transition-colors">Cancel</button>
@@ -574,6 +672,13 @@
         <div class="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
           <span class="material-symbols-outlined text-secondary flex-shrink-0" style="font-size:18px;">info</span>
           <p class="text-body-sm text-on-surface-variant">Layer root path is scanned by Clang. Groups define logical modules. Components map to physical source folders.</p>
+        </div>
+        <!-- One click removes a whole layer or group: it can be undone for 10 s. -->
+        <div id="undo-bar" role="status" style="display:none;position:sticky;bottom:12px;z-index:10;align-items:center;gap:12px;padding:10px 16px;background:#041627;color:#fff;border-radius:.5rem;box-shadow:0 4px 16px rgba(4,22,39,.25);">
+          <span class="material-symbols-outlined" style="font-size:16px;opacity:.7;">delete</span>
+          <span class="undo-label" style="flex:1;font-size:12px;"></span>
+          <button onclick="undoRemove()" style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#8ab4ff;background:none;border:none;cursor:pointer;">Undo</button>
+          <button onclick="LAST_REMOVED = null; renderUndo();" aria-label="Dismiss" style="background:none;border:none;color:#fff;opacity:.7;cursor:pointer;"><span class="material-symbols-outlined" style="font-size:15px;">close</span></button>
         </div>
       </div><!-- /step-3 -->
 
@@ -656,8 +761,11 @@
           </div>
         </div>
 
-        <!-- Role legend -->
-        <div class="grid grid-cols-2 gap-3">
+        <!-- What each role may do: on request, not in the way. -->
+        <button type="button" onclick="toggleRoles(this)" class="flex items-center gap-1 text-secondary hover:underline" style="font-size:11px;">
+          <span class="material-symbols-outlined" style="font-size:14px;">help</span><span>What can each role do?</span>
+        </button>
+        <div id="role-legend" class="grid grid-cols-2 gap-3" style="display:none;">
           <div class="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
             <div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center flex-shrink-0">
               <span class="material-symbols-outlined text-on-primary-container sym-fill" style="font-size:16px;">manage_accounts</span>
@@ -688,6 +796,10 @@
           <p class="text-body-md text-on-surface-variant">Confirm every setting before the first analysis run.</p>
         </div>
 
+        <!-- Is the project ready: what must be fixed (blocks), what it would miss (warns) - then the details. -->
+        <div id="r-ready"></div>
+        <p style="padding-top:8px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#74777d;">Details</p>
+
         <!-- Project Basics -->
         <div class="rev-card">
           <div class="rev-card-head">
@@ -698,36 +810,21 @@
             <button onclick="goToStep(1)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
           </div>
           <div class="rev-row"><span>Name</span><span id="r-name">—</span></div>
-          <div class="rev-row"><span>Repository URL</span><span id="r-repo">—</span></div>
+          <div class="rev-row"><span id="r-repo-label">Repository URL</span><span id="r-repo">—</span></div>
           <div class="rev-row"><span>Branch</span><span id="r-branch">—</span></div>
           <div class="rev-row"><span>Access Token</span><span id="r-token">—</span></div>
         </div>
 
-        <!-- Build Configuration -->
+        <!-- Cores -->
         <div class="rev-card">
           <div class="rev-card-head">
             <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">data_object</span>
-              <span class="font-label-md text-label-md text-on-surface" style="font-weight:600;">Build Configuration</span>
+              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">memory</span>
+              <span class="font-label-md text-label-md text-on-surface" style="font-weight:600;">Cores</span>
             </div>
             <button onclick="goToStep(2)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
           </div>
-          <div style="padding:10px 16px;border-bottom:1px solid #eff4ff;">
-            <button id="r-defines-toggle" onclick="toggleDefinesExpand()"
-                    style="width:100%;display:flex;align-items:center;gap:6px;background:none;border:none;cursor:pointer;padding:0;text-align:left;">
-              <span class="material-symbols-outlined" id="r-defines-arrow" style="font-size:15px;color:#74777d;flex-shrink:0;">keyboard_arrow_right</span>
-              <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#44474c;flex:1;">Preprocessor Definitions</span>
-              <span id="r-defines-count" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#74777d;margin-right:6px;"></span>
-              <span id="r-defines-mode" style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:3px;background:#e5eeff;color:#0058be;">—</span>
-            </button>
-            <div id="r-defines-detail" style="display:none;margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:11px;"></div>
-          </div>
-          <div style="padding:12px 16px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;">
-              <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#44474c;">Data Dictionary</span>
-              <span id="r-dict" style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;color:#0b1c30;">—</span>
-            </div>
-          </div>
+          <div id="r-cores"></div>
         </div>
 
         <!-- Architecture -->
@@ -740,7 +837,10 @@
             <button onclick="goToStep(3)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
           </div>
           <div class="rev-row"><span>Layers</span><span id="r-layers">—</span></div>
-          <div id="r-arch-tree" class="border-t border-outline-variant divide-y divide-outline-variant"></div>
+          <button type="button" onclick="toggleReviewTree(this)" class="w-full flex items-center gap-1.5 text-secondary hover:bg-surface-container-low" style="padding:10px 16px;border-top:1px solid #c4c6cd;font-family:'JetBrains Mono',monospace;font-size:11px;text-align:left;">
+            <span class="material-symbols-outlined" style="font-size:15px;">expand_more</span><span>Show every layer, group and component</span>
+          </button>
+          <div id="r-arch-tree" class="border-t border-outline-variant divide-y divide-outline-variant" style="display:none;"></div>
         </div>
 
         <!-- Team -->
@@ -763,12 +863,8 @@
 
     <!-- ACTION BAR -->
     <div class="h-16 flex-shrink-0 bg-white border-t border-outline-variant flex items-center justify-between px-8 gap-4">
-      <div class="flex items-center gap-3 text-on-surface-variant">
-        <div class="flex items-center gap-1.5">
-          <span class="material-symbols-outlined" style="font-size:14px;">save</span>
-          <span class="font-label-sm text-label-sm text-on-surface-variant">Auto-saved</span>
-        </div>
-      </div>
+      <!-- What this step needs, or what still stops it. (Nothing is saved until Initialize.) -->
+      <div id="step-hint" class="flex items-center gap-1.5 text-on-surface-variant" style="min-width:0;"></div>
       <div class="flex items-center gap-3">
         <button id="back-btn" onclick="doBack()"
                 class="flex items-center gap-2 px-5 py-2.5 border border-outline-variant rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors invisible">
@@ -788,78 +884,19 @@
 
 
 <!-- ══════════════════════════════════════════
-     MODAL: LOAD PROJECT
+     TOAST - Request Access answers with one, as the web app does
      ══════════════════════════════════════════ -->
-<div id="load-modal" class="hidden fixed inset-0 z-[60] flex items-end sm:items-center justify-center" style="background:rgba(4,22,39,.55);">
-  <div class="bg-white rounded-t-2xl sm:rounded-xl border border-outline-variant w-full mx-0 sm:mx-4 flex flex-col" style="max-width:620px;max-height:88vh;box-shadow:0 8px 48px rgba(4,22,39,.28);">
-
-    <!-- Header -->
-    <div class="px-6 py-5 border-b border-outline-variant flex-shrink-0">
-      <div class="flex items-center justify-between mb-4">
-        <div>
-          <h3 class="text-headline-sm text-on-surface">Request Project Access</h3>
-          <p class="text-body-sm text-on-surface-variant mt-0.5" style="font-size:12px;">Find a project and send an access request to its admin. You'll be notified when granted.</p>
-        </div>
-        <button onclick="closeLoadModal()" class="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
-          <span class="material-symbols-outlined" style="font-size:18px;">close</span>
-        </button>
-      </div>
-      <!-- Search -->
-      <div style="position:relative;">
-        <span class="material-symbols-outlined" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:16px;color:#74777d;pointer-events:none;">search</span>
-        <input class="inp" id="lp-search" type="text" placeholder="Search projects or clients…"
-               style="padding-left:34px;" oninput="lpFilter()">
-      </div>
-    </div>
-
-    <!-- Project list -->
-    <div id="lp-list" class="flex-1 overflow-y-auto divide-y divide-outline-variant" style="min-height:180px;"></div>
-
-    <!-- Empty search state -->
-    <div id="lp-empty" class="hidden flex-1 flex flex-col items-center justify-center py-12 text-center">
-      <span class="material-symbols-outlined text-on-surface-variant mb-3" style="font-size:36px;opacity:.3;">search_off</span>
-      <p class="font-label-md text-label-md text-on-surface-variant" style="font-size:12px;">No projects match your search.</p>
-    </div>
-
-    <!-- Footer -->
-    <div class="px-6 py-4 border-t border-outline-variant flex-shrink-0 flex justify-end">
-      <button onclick="closeLoadModal()" class="px-4 py-2 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container rounded-lg transition-colors">Close</button>
-    </div>
-
+<div id="toast" role="status" class="hidden fixed bottom-4 right-4 z-[100] flex items-start gap-3 p-4 rounded-xl border border-outline-variant bg-white"
+     style="width:320px;box-shadow:0 4px 24px rgba(4,22,39,.12);">
+  <span class="material-symbols-outlined sym-fill mt-0.5 flex-shrink-0" style="font-size:18px;color:#0058be;" aria-hidden="true">info</span>
+  <div class="flex-1 min-w-0">
+    <p id="toast-title" class="text-on-surface" style="font-size:14px;font-weight:600;"></p>
+    <p id="toast-msg" class="text-on-surface-variant mt-0.5" style="font-size:12px;"></p>
   </div>
+  <button onclick="hideToast()" aria-label="Dismiss" class="text-on-surface-variant hover:text-on-surface transition-colors flex-shrink-0">
+    <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+  </button>
 </div>
-
-<style>
-.lp-row {
-  display: flex; align-items: center; gap: 14px; padding: 14px 20px;
-  transition: background .12s;
-}
-.lp-row:hover { background: #f8f9ff; }
-.lp-row.locked { opacity: .75; }
-.lp-avatar {
-  width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center;
-  justify-content: center; flex-shrink: 0; font-family: 'JetBrains Mono', monospace;
-  font-size: 12px; font-weight: 700; color: #fff; letter-spacing: .04em;
-}
-.lp-btn {
-  padding: 6px 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace;
-  font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
-  cursor: pointer; flex-shrink: 0; transition: background .12s, color .12s, border-color .12s;
-  border: 1px solid transparent; white-space: nowrap;
-}
-.lp-btn-request {
-  background: none; color: #44474c; border-color: #c4c6cd;
-}
-.lp-btn-request:hover { background: #f8f9ff; border-color: #0058be; color: #0058be; }
-.lp-requested {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 6px 12px; border-radius: 8px;
-  font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
-  letter-spacing: .04em; text-transform: uppercase;
-  color: #00a572; background: rgba(0,165,114,.08); border: 1px solid rgba(0,165,114,.25);
-  flex-shrink: 0;
-}
-</style>
 
 
 <!-- ══════════════════════════════════════════
@@ -897,11 +934,21 @@ var done = new Set();
 
 var STEPS = [
   { title: 'Project & Repository', sub: 'Name, source path' },
-  { title: 'Build Configuration',  sub: 'Defines & data dictionary' },
+  { title: 'Cores',                sub: 'Macros & dictionary per core' },
   { title: 'Architecture',         sub: 'Layers & groups' },
-  { title: 'Team & Access',        sub: 'Invite developers' },
+  { title: 'Team & Access',        sub: 'Optional · add people later' },
   { title: 'Review & Initialize',  sub: 'Confirm & create project' },
 ];
+// The action bar's note for each step: what is required, and what can be left out.
+var STEP_HINTS = [
+  'Name, repository and branch are required',
+  'Optional - a layer with no core is parsed without macros',
+  'At least one component is required',
+  'Optional - people can be added later from Team',
+  'Nothing is created until you initialize',
+];
+// Steps where Continue was tried: their problems show inside the step from then on.
+var attempted = new Set();
 
 // ════════════════════════════════════════
 // View switching
@@ -922,91 +969,27 @@ function cancelWizard() {
 }
 
 // ════════════════════════════════════════
-// Load project modal
+// Request Access: a message, as the web app (no dialog, nothing sent)
 // ════════════════════════════════════════
-var LP_PROJECTS = [
-  { id: 'vcu',  name: 'VCU Engine Firmware',       client: 'BMW',         std: 'ISO 26262',  lastRun: 'Jun 15, 2026', role: 'Admin',     access: true  },
-  { id: 'adas', name: 'ADAS Sensor Fusion',          client: 'Continental', std: 'ASPICE L2',  lastRun: 'Jun 12, 2026', role: 'Developer', access: true  },
-  { id: 'eps',  name: 'EPS Control Unit',             client: 'ZF',          std: 'ISO 26262',  lastRun: 'Jun 8, 2026',  role: 'Developer', access: true  },
-  { id: 'brk',  name: 'Brake-by-Wire ECU',            client: 'Bosch',       std: 'ISO 26262',  lastRun: null,           role: null,        access: false },
-  { id: 'pcm',  name: 'Powertrain Control Module',    client: 'Denso',       std: 'ASPICE L3',  lastRun: null,           role: null,        access: false },
-  { id: 'bms',  name: 'Battery Management System',    client: 'CATL',        std: 'ISO 26262',  lastRun: null,           role: null,        access: false },
-  { id: 'tcu',  name: 'Transmission Control Unit',    client: 'ZF',          std: 'ASPICE L2',  lastRun: null,           role: null,        access: false },
-];
-var _lpAccessRequested = {};
-
-var LP_COLORS = ['#0058be','#1a2b3c','#006e45','#7b4a00','#5c35a8','#b02020','#0077a0'];
-
-function lpAvatarColor(id) {
-  var idx = ['vcu','adas','eps','brk','pcm','bms','tcu'].indexOf(id);
-  return LP_COLORS[idx % LP_COLORS.length] || '#0058be';
-}
-function lpInitials(name) {
-  return name.split(' ').filter(function(w) { return /^[A-Z]/.test(w); }).map(function(w) { return w[0]; }).join('').substring(0,2);
+function requestAccess() {
+  showToast('Request access', 'Ask your workspace administrator to add you to a project.');
 }
 
-function openLoadModal() {
-  _lpAccessRequested = {};
-  document.getElementById('lp-search').value = '';
-  document.getElementById('load-modal').classList.remove('hidden');
-  lpRender();
-  document.getElementById('lp-search').focus();
+var toastTimer = null;
+function showToast(title, msg) {
+  clearTimeout(toastTimer);
+  var el = document.getElementById('toast');
+  document.getElementById('toast-title').textContent = title;
+  document.getElementById('toast-msg').textContent = msg;
+  el.classList.remove('hidden', 'toast-out');
+  el.classList.add('toast-in');
+  toastTimer = setTimeout(hideToast, 4000);
 }
-function closeLoadModal() { document.getElementById('load-modal').classList.add('hidden'); }
-
-function lpFilter() {
-  var q = document.getElementById('lp-search').value.toLowerCase().trim();
-  lpRender(q);
-}
-
-function lpRender(q) {
-  q = q || '';
-  var visible = LP_PROJECTS.filter(function(p) {
-    if (p.access) return false;
-    if (q && (p.name.toLowerCase().indexOf(q) < 0 && p.client.toLowerCase().indexOf(q) < 0)) return false;
-    return true;
-  });
-
-  var list  = document.getElementById('lp-list');
-  var empty = document.getElementById('lp-empty');
-
-  if (!visible.length) {
-    list.innerHTML = '';
-    list.classList.add('hidden');
-    empty.classList.remove('hidden');
-    return;
-  }
-  list.classList.remove('hidden');
-  empty.classList.add('hidden');
-
-  list.innerHTML = visible.map(function(p) {
-    var initials = lpInitials(p.name);
-    var color    = lpAvatarColor(p.id);
-    var avatarBg = p.access ? color : '#c4c6cd';
-    var requested = _lpAccessRequested[p.id];
-
-    var metaParts = [p.client, p.std];
-    var actionHtml = requested
-      ? '<span class="lp-requested"><span class="material-symbols-outlined sym-fill" style="font-size:13px;">check_circle</span>Requested</span>'
-      : '<button class="lp-btn lp-btn-request" onclick="lpRequestAccess(\'' + p.id + '\')">'
-        + '<span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle;margin-right:3px;">lock</span>Request Access</button>';
-
-    return '<div class="lp-row locked">'
-      + '<div class="lp-avatar" style="background:#c4c6cd;">'
-      + '<span class="material-symbols-outlined" style="font-size:16px;color:#fff;opacity:.7;">lock</span>'
-      + '</div>'
-      + '<div style="flex:1;min-width:0;">'
-      + '<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:600;color:#44474c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(p.name) + '</p>'
-      + '<p style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#74777d;margin-top:2px;">' + metaParts.join(' · ') + '</p>'
-      + '</div>'
-      + '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' + actionHtml + '</div>'
-      + '</div>';
-  }).join('');
-}
-
-function lpRequestAccess(id) {
-  _lpAccessRequested[id] = true;
-  lpFilter();
+function hideToast() {
+  var el = document.getElementById('toast');
+  el.classList.remove('toast-in');
+  el.classList.add('toast-out');
+  setTimeout(function() { el.classList.add('hidden'); }, 200);
 }
 
 // ════════════════════════════════════════
@@ -1018,6 +1001,8 @@ function goToStep(n) {
     if (el) el.classList.toggle('hidden', i !== n);
   }
   cur = n;
+  if (n === 2) renderCores();              // 'Used by' follows the layers
+  if (n === 3) refreshLayerCoreSelects();  // the pickers follow the cores
   if (n === 5) populateReview();
 
   document.getElementById('step-counter-text').textContent = 'Step ' + n + ' of 5';
@@ -1038,6 +1023,7 @@ function goToStep(n) {
 
   renderRail();
   updateBar();
+  renderStepState();
   var scroll = document.getElementById('form-scroll');
   if (scroll) scroll.scrollTop = 0;
 }
@@ -1069,13 +1055,16 @@ function renderRail() {
     var icon = cls === 'done'
       ? '<span class="material-symbols-outlined sym-fill" style="font-size:14px;">check</span>' : n;
     var titleColor = n === cur ? '#0058be' : done.has(n) ? '#0b1c30' : '#44474c';
-    var subColor   = n === cur ? '#0058be' : '#74777d';
+    var bad = n <= 3 && (attempted.has(n) || done.has(n)) && issuesFor(n).length > 0;
+    var subColor   = bad ? '#ba1a1a' : n === cur ? '#0058be' : '#74777d';
     var clickable  = (n < cur || done.has(n)) ? 'cursor-pointer' : '';
     return '<div class="step-li ' + clickable + '" onclick="railClick(' + n + ')">'
-      + '<div class="step-dot ' + cls + '">' + icon + '</div>'
+      + '<div class="step-dot ' + cls + '">' + icon
+      + (bad ? '<span style="position:absolute;top:-2px;right:-2px;width:10px;height:10px;border-radius:50%;background:#ba1a1a;border:2px solid #fff;"></span>' : '')
+      + '</div>'
       + '<div style="padding-top:3px;">'
       + '<p class="font-label-md text-label-md" style="color:' + titleColor + ';font-weight:' + (n===cur?'600':'500') + ';line-height:1.2;">' + s.title + '</p>'
-      + '<p class="font-label-sm text-label-sm" style="color:' + subColor + ';margin-top:2px;">' + s.sub + '</p>'
+      + '<p class="font-label-sm text-label-sm" style="color:' + subColor + ';margin-top:2px;">' + (bad ? 'Needs a fix' : s.sub) + '</p>'
       + '</div></div>';
   }).join('');
 }
@@ -1091,73 +1080,463 @@ function updateBar() {
 // ════════════════════════════════════════
 // Validation
 // ════════════════════════════════════════
+// What stops each step, worked out when asked. It shows inside the step once Continue was tried
+// there (not in a toast that is gone before it is read), and marks the step in the rail.
+function issuesFor(n) {
+  var out = [];
+  if (n === 1) {
+    var repo = document.getElementById('s1-repo').value.trim();
+    var connected = !document.getElementById('branch-field').classList.contains('hidden');
+    if (!document.getElementById('s1-name').value.trim()) out.push('Give the project a name');
+    if (!repo) out.push(REPO_SOURCE === 'local' ? 'Enter the repository folder' : 'Enter the repository URL');
+    if (repo && !connected) out.push('Test the connection to load the branches');
+    if (connected && !document.getElementById('s1-branch').value) out.push('Pick a branch');
+  }
+  if (n === 2) {
+    var seen = {};
+    CORES.forEach(function(c, i) {
+      var nm = (c.name || '').trim().toLowerCase();
+      if (!nm) out.push('Core ' + (i + 1) + ' has no name');
+      else if (seen[nm]) out.push('Two cores are called ' + c.name.trim());
+      seen[nm] = true;
+    });
+  }
+  if (n === 3 && !document.querySelector('#arch-tree .tree-comp-block')) out.push('No component yet - a run needs at least one');
+  return out;
+}
+
 function validate(n) {
   if (n === 1) {
-    var name = document.getElementById('s1-name');
-    if (!name.value.trim()) { name.classList.add('err'); name.focus(); return false; }
-    var repo = document.getElementById('s1-repo');
-    if (!repo.value.trim()) { repo.classList.add('err'); repo.focus(); return false; }
-    var branchField = document.getElementById('branch-field');
-    if (branchField.classList.contains('hidden')) {
+    var name = document.getElementById('s1-name'), repo = document.getElementById('s1-repo');
+    name.classList.toggle('err', !name.value.trim());
+    repo.classList.toggle('err', !repo.value.trim());
+    if (repo.value.trim() && document.getElementById('branch-field').classList.contains('hidden')) {
       var st = document.getElementById('test-conn-status');
       st.style.color = '#ba1a1a';
       st.textContent = 'Test the connection first to load branches.';
-      document.getElementById('test-conn-btn').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      return false;
     }
-    var branch = document.getElementById('s1-branch');
-    if (!branch.value) { branch.classList.add('err'); branch.focus(); return false; }
   }
-  return true;
+  // The last step re-checks every step before it and takes the user to the first that needs a fix.
+  var bad = (n === 5 ? [1, 2, 3] : [n]).filter(function(k) { return issuesFor(k).length; })[0];
+  if (!bad) return true;
+  attempted.add(bad);
+  if (bad !== cur) goToStep(bad); else { renderStepState(); renderRail(); }
+  var scroll = document.getElementById('form-scroll');
+  if (scroll) scroll.scrollTop = 0;
+  return false;
+}
+
+// Live, as in the app: a step's problems follow what the user types.
+function refreshStepState() { if (attempted.size) { renderStepState(); renderRail(); } }
+document.addEventListener('input', refreshStepState);
+document.addEventListener('change', refreshStepState);
+
+// The problems banner inside the current step, the action bar's note, and step 4's button.
+function renderStepState() {
+  var step = document.getElementById('step-' + cur);
+  if (!step) return;
+  var box = step.querySelector('.step-issues');
+  if (!box) {
+    box = document.createElement('div');
+    box.className = 'step-issues';
+    step.insertBefore(box, step.children[1]);
+  }
+  var items = attempted.has(cur) ? issuesFor(cur) : [];
+  var many = (items.length === 1 ? 'One thing' : items.length + ' things');
+  box.innerHTML = !items.length ? '' : '<div role="alert" style="padding:14px;background:#ffdad6;border:1px solid #ba1a1a;border-radius:.75rem;">'
+    + '<p style="display:flex;align-items:center;gap:8px;font-family:\'JetBrains Mono\',monospace;font-size:12px;font-weight:600;color:#410002;">'
+    + '<span class="material-symbols-outlined sym-fill" style="font-size:15px;color:#ba1a1a;">error</span>' + many + ' to fix before you continue</p>'
+    + '<ul style="margin:8px 0 0 24px;list-style:disc;display:grid;gap:4px;">'
+    + items.map(function(t) { return '<li style="font-size:12px;color:#410002;line-height:1.45;">' + escHtml(t) + '</li>'; }).join('')
+    + '</ul></div>';
+  var hint = document.getElementById('step-hint');
+  hint.innerHTML = items.length
+    ? '<span class="material-symbols-outlined sym-fill" style="font-size:14px;color:#ba1a1a;">error</span>'
+      + '<span class="font-label-sm text-label-sm" style="color:#ba1a1a;">' + many + ' to fix in this step</span>'
+    : '<span class="material-symbols-outlined" style="font-size:14px;">info</span>'
+      + '<span class="font-label-sm text-label-sm text-on-surface-variant" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + STEP_HINTS[cur - 1] + '</span>';
+  if (cur === 4) {
+    document.getElementById('continue-btn').innerHTML = (members.length ? 'Continue' : 'Skip for now')
+      + ' <span class="material-symbols-outlined" style="font-size:16px;">arrow_forward</span>';
+  }
 }
 
 // ════════════════════════════════════════
-// Step 3: Build config helpers
+// Step 2: Cores
 // ════════════════════════════════════════
-function switchDefTab(tab) {
-  document.getElementById('def-upload-tab').classList.toggle('hidden', tab !== 'upload');
-  document.getElementById('def-manual-tab').classList.toggle('hidden', tab !== 'manual');
-  document.getElementById('tab-upload').classList.toggle('on', tab === 'upload');
-  document.getElementById('tab-manual').classList.toggle('on', tab === 'manual');
+// One core = one build: macros (a file, or typed -D lines), a data dictionary (CSV) and an
+// optional compile_commands.json. Each layer names its core in step 3.
+var CORES = [];
+var _coreSeq = 0;
+
+function addCore(name) {
+  _coreSeq++;
+  CORES.push({ id: 'core' + _coreSeq, name: name || ('Core' + _coreSeq), macroMode: 'upload',
+               macroFile: null, macroText: '', ddFile: null, ccFile: null });
+  renderCores();
+  refreshLayerCoreSelects();
+}
+function coreById(id) { return CORES.filter(function(c) { return c.id === id; })[0]; }
+function removeCore(id) {
+  CORES = CORES.filter(function(c) { return c.id !== id; });
+  renderCores();
+  refreshLayerCoreSelects();
+}
+function renameCore(id, input) {
+  var c = coreById(id);
+  if (!c) return;
+  c.name = input.value.trim() || c.name;
+  input.value = c.name;
+  refreshLayerCoreSelects();
+}
+function setMacroMode(id, mode) { var c = coreById(id); if (c) { c.macroMode = mode; renderCores(); } }
+function setMacroText(id, ta)   { var c = coreById(id); if (c) c.macroText = ta.value; }
+function setCoreFile(id, kind, f) {
+  var c = coreById(id);
+  if (c && f) { c[kind] = { name: f.name, size: f.size }; renderCores(); }
+}
+function coreFileChosen(id, kind, inp) { setCoreFile(id, kind, inp.files && inp.files[0]); }
+function coreFileDrop(e, id, kind) {
+  e.preventDefault(); e.currentTarget.classList.remove('dragover');
+  setCoreFile(id, kind, e.dataTransfer.files[0]);
+}
+function clearCoreFile(id, kind) { var c = coreById(id); if (c) { c[kind] = null; renderCores(); } }
+
+// The names of the layers (step 3) whose core is `coreId` ('' = no core).
+function layersUsing(coreId) {
+  return Array.from(document.querySelectorAll('#arch-tree .layer-block')).filter(function(b) {
+    var sel = b.querySelector('.layer-core-select');
+    return (sel ? sel.value : '') === coreId;
+  }).map(function(b) { return (b.querySelector('.layer-head .font-bold') || {}).textContent || '—'; });
 }
 
-function defFileDrop(e) {
-  e.preventDefault(); e.currentTarget.classList.remove('dragover');
-  if (e.dataTransfer.files[0]) showDefFile(e.dataTransfer.files[0]);
-}
-function defFileChosen(inp) { if (inp.files[0]) showDefFile(inp.files[0]); }
-function showDefFile(f) {
-  document.getElementById('def-drop-zone').classList.add('has-file');
-  document.getElementById('def-file-name').textContent = f.name;
-  document.getElementById('def-file-chip').classList.remove('hidden');
-}
-function clearDefFile() {
-  document.getElementById('def-drop-zone').classList.remove('has-file');
-  document.getElementById('def-file-chip').classList.add('hidden');
-  document.getElementById('def-file').value = '';
-  document.getElementById('def-file-name').textContent = '';
+// One control per input: an upload button, or - once there is a file - a pill with its name,
+// size, Replace and Remove. A file an imported config names but the repository lacks asks for
+// itself by name (amber).
+function fileControl(c, kind, accept, types, icon) {
+  var f = c[kind];
+  var exp = (c.expected || {})[kind];
+  var input = '<input type="file" class="hidden" id="' + c.id + '-' + kind + '" accept="' + accept + '"'
+    + ' onchange="coreFileChosen(\'' + c.id + '\',\'' + kind + '\',this)">';
+  var pick = 'document.getElementById(\'' + c.id + '-' + kind + '\').click()';
+  if (f) {
+    return '<div class="file-pill">'
+      + '<span class="material-symbols-outlined sym-fill" style="font-size:18px;color:#00a572;">' + icon + '</span>'
+      + '<span class="n" title="' + escHtml(f.name) + '">' + escHtml(f.name) + '</span>'
+      + '<span class="z">' + (f.size / 1024).toFixed(1) + ' KB</span>'
+      + '<button class="pill-btn" onclick="' + pick + '" title="Replace"><span class="material-symbols-outlined" style="font-size:17px;">swap_horiz</span></button>'
+      + '<button class="pill-btn del" onclick="clearCoreFile(\'' + c.id + '\',\'' + kind + '\')" title="Remove"><span class="material-symbols-outlined" style="font-size:17px;">close</span></button>'
+      + '</div>' + input;
+  }
+  return '<button class="upload-btn' + (exp ? ' wanted' : '') + '" onclick="' + pick + '"'
+    + ' ondragover="event.preventDefault();this.classList.add(\'dragover\');" ondragleave="this.classList.remove(\'dragover\');"'
+    + ' ondrop="coreFileDrop(event,\'' + c.id + '\',\'' + kind + '\')">'
+    + '<span class="material-symbols-outlined" style="font-size:18px;color:' + (exp ? '#b45309' : '#74777d') + ';">upload_file</span>'
+    + '<span class="t">' + (exp ? 'Upload <b>' + escHtml(exp) + '</b>' : 'Choose a file or drop it here') + '</span>'
+    + (exp ? '' : '<span class="s">' + types + '</span>')
+    + '</button>'
+    + (exp ? '<div class="wanted-note">The imported config names it; the repository does not have it.</div>' : '')
+    + input;
 }
 
-function ddFileDrop(e) {
-  e.preventDefault(); e.currentTarget.classList.remove('dragover');
-  if (e.dataTransfer.files[0]) showDdFile(e.dataTransfer.files[0]);
+function macrosControl(c) {
+  if (c.macroMode === 'manual') {
+    return '<textarea class="inp mono macro-text" rows="3" placeholder="_CONFIG_CMCORE=1&#10;PLATFORM=QNX" oninput="setMacroText(\'' + c.id + '\',this)">'
+      + escHtml(c.macroText) + '</textarea>'
+      + '<div class="flex items-center justify-between gap-3">'
+      + '<span class="core-row-help" style="margin-top:6px;">One per line: KEY or KEY=VALUE</span>'
+      + '<button class="switch-link" onclick="setMacroMode(\'' + c.id + '\',\'upload\')">Upload a file instead</button></div>';
+  }
+  return fileControl(c, 'macroFile', '.json,.csv', '.json · .csv', 'data_object')
+    + '<button class="switch-link" onclick="setMacroMode(\'' + c.id + '\',\'manual\')">Type them instead</button>';
 }
-function ddFileChosen(inp) { if (inp.files[0]) showDdFile(inp.files[0]); }
-function showDdFile(f) {
-  document.getElementById('dd-zone').classList.add('has-file');
-  document.getElementById('dd-file-name').textContent = f.name;
-  document.getElementById('dd-file-meta').textContent = (f.size / 1024).toFixed(1) + ' KB';
-  document.getElementById('dd-chip').classList.remove('hidden');
+
+function coreRow(label, help, optional, control) {
+  return '<div class="core-row"><div>'
+    + '<div class="core-row-label">' + label + '</div>'
+    + '<div class="core-row-help">' + (optional ? '<span class="opt">Optional</span> · ' : '') + help + '</div></div>'
+    + '<div class="min-w-0">' + control + '</div></div>';
 }
-function clearDdFile() {
-  document.getElementById('dd-zone').classList.remove('has-file');
-  document.getElementById('dd-chip').classList.add('hidden');
-  document.getElementById('dd-file').value = '';
+
+// A core's optional inputs stay out of the way until they have a file, a config asks for one, or
+// the user adds one.
+var OPENED_INPUTS = {};
+function showsInput(c, kind) { return !!c[kind] || !!(c.expected || {})[kind] || !!OPENED_INPUTS[c.id + ':' + kind]; }
+function openInput(id, kind) { OPENED_INPUTS[id + ':' + kind] = true; renderCores(); }
+function optionalLinks(c) {
+  var links = [['ddFile', 'Data dictionary'], ['ccFile', 'Compile commands']].filter(function(k) { return !showsInput(c, k[0]); });
+  if (!links.length) return '';
+  return '<div style="display:flex;align-items:center;gap:16px;padding:10px 16px;border-top:1px solid #eff4ff;">'
+    + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#74777d;">Optional</span>'
+    + links.map(function(k) {
+        return '<button class="switch-link" style="margin-top:0;display:flex;align-items:center;gap:3px;" onclick="openInput(\'' + c.id + '\',\'' + k[0] + '\')">'
+          + '<span class="material-symbols-outlined" style="font-size:13px;">add</span>' + k[1] + '</button>';
+      }).join('')
+    + '</div>';
+}
+
+function renderCores() {
+  var list = document.getElementById('cores-list');
+  if (!list) return;
+  var count = document.getElementById('cores-count');
+  if (count) count.textContent = CORES.length ? '· ' + CORES.length : '';
+  if (!CORES.length) {
+    list.innerHTML = '<div class="flex flex-col items-center justify-center py-10 text-center">'
+      + '<span class="material-symbols-outlined text-on-surface-variant mb-3" style="font-size:36px;opacity:.35;">memory</span>'
+      + '<p class="font-label-md text-label-md text-on-surface-variant" style="font-size:12px;">No cores.</p>'
+      + '<p class="text-body-sm text-on-surface-variant mt-1" style="font-size:12px;">Every layer is parsed without macros or a data dictionary. Click <strong>Add Core</strong> to add one.</p></div>';
+    return;
+  }
+  list.innerHTML = CORES.map(function(c) {
+    var used = layersUsing(c.id);
+    return '<div class="core-card">'
+      + '<div class="core-card-head">'
+      +   '<div class="core-chip-icon"><span class="material-symbols-outlined" style="font-size:17px;color:#8192a7;">memory</span></div>'
+      +   '<div class="flex-1 min-w-0">'
+      +     '<input class="core-name" value="' + escHtml(c.name) + '" onchange="renameCore(\'' + c.id + '\',this)" aria-label="Core name" title="Rename the core">'
+      +     '<div class="core-uses' + (used.length ? '' : ' none') + '">'
+      +       (used.length
+                ? 'Used by ' + used.map(function(l) { return '<span class="layer-tag">' + escHtml(l) + '</span>'; }).join('')
+                : 'No layer uses it yet · pick it for a layer in step 3')
+      +     '</div>'
+      +   '</div>'
+      +   '<button onclick="removeCore(\'' + c.id + '\')" class="pill-btn del" title="Remove the core">'
+      +   '<span class="material-symbols-outlined" style="font-size:18px;">delete</span></button>'
+      + '</div>'
+      + coreRow('Macros', 'The <code>-D</code> set for this build', false, macrosControl(c))
+      + (showsInput(c, 'ddFile') ? coreRow('Data dictionary', 'Signal names, units, ranges', true, fileControl(c, 'ddFile', '.csv', '.csv', 'menu_book')) : '')
+      + (showsInput(c, 'ccFile') ? coreRow('Compile commands', 'Include paths from the build', true, fileControl(c, 'ccFile', '.json', 'compile_commands.json', 'terminal')) : '')
+      + optionalLinks(c)
+      + '</div>';
+  }).join('');
+}
+
+// Every layer's Core picker (step 3): the cores as they are now, each layer keeping its choice.
+function coreOptions(selected) {
+  return '<option value="">No core</option>' + CORES.map(function(c) {
+    return '<option value="' + c.id + '"' + (c.id === selected ? ' selected' : '') + '>' + escHtml(c.name) + '</option>';
+  }).join('');
+}
+function refreshLayerCoreSelects() {
+  document.querySelectorAll('.layer-core-select').forEach(function(sel) {
+    sel.innerHTML = coreOptions(coreById(sel.value) ? sel.value : '');
+  });
+  var add = document.getElementById('new-layer-core');
+  if (add) add.innerHTML = coreOptions(coreById(add.value) ? add.value : (CORES[0] ? CORES[0].id : ''));
 }
 
 // ════════════════════════════════════════
 // Step 4: Architecture helpers
 // ════════════════════════════════════════
+// ════════════════════════════════════════
+// Step 1: Import config (simulated)
+// ════════════════════════════════════════
+// The app posts the file to POST /projects/config/preview, which reads it the way the engine
+// does and reports what it filled, what needs the user, and what it skipped. Here the sample
+// project's config stands in for whatever file is picked: two cores, three layers.
+var IMPORTED = null;          // the imported file's name
+var IMPORT_KEPT = [];         // what the config named but the user's own value was kept for
+var IMPORT_CHECKED = false;   // checked against the connected repository
+var IMPORT_CHECKING = false;
+
+var SAMPLE_IMPORT = {
+  name: 'Brake ECU', repo: 'https://github.com/org/brake-ecu.git',
+  cores: [
+    { name: 'Core1', macros: 'macros.core1.json', dd: 'data_dictionary.core1.csv', cc: 'compile_commands.core1.json' },
+    { name: 'Core2', macros: 'macros.core2.json', dd: 'data_dictionary.core2.csv', cc: null },
+  ],
+  layers: [
+    { name: 'Layer1', path: 'Layer1', core: 'Core1', groups: [
+      { name: 'My Sample', components: [
+        { name: 'Sample Core', files: ['Layer1/Sample/Core'] },
+        { name: 'Lib',         files: ['Layer1/Sample/Lib'] },
+        { name: 'Util',        files: ['Layer1/Sample/Util'] } ] },
+      { name: 'Support', components: [
+        { name: 'Math', files: ['Layer1/Math'] },
+        { name: 'App',  files: ['Layer1/App/Main.cpp'] } ] } ] },
+    { name: 'Layer2', path: 'Layer2', core: 'Core2', groups: [
+      { name: 'Platform', components: [
+        { name: 'Gpio', files: ['Layer2/Platform/Gpio'] },
+        { name: 'Uart', files: ['Layer2/Platform/Uart'] },
+        { name: 'Spi',  files: ['Layer2/Platform/Spi'] } ] } ] },
+    { name: 'Layer3', path: 'Layer3', core: null, groups: [
+      { name: 'Diag', components: [
+        { name: 'Diag', files: ['Layer3/Diag'] } ] } ] },
+  ],
+};
+
+function importConfig(inp) {
+  var f = inp.files && inp.files[0];
+  inp.value = '';
+  if (!f) return;
+  IMPORTED = f.name;
+  // The name and the repository are filled only when empty: what the user typed wins.
+  IMPORT_KEPT = [];
+  var nameEl = document.getElementById('s1-name'), repoEl = document.getElementById('s1-repo');
+  if (!nameEl.value.trim()) nameEl.value = SAMPLE_IMPORT.name;
+  else if (nameEl.value.trim() !== SAMPLE_IMPORT.name) IMPORT_KEPT.push('project name');
+  if (!repoEl.value.trim()) {                       // a new repository: connect again
+    repoEl.value = SAMPLE_IMPORT.repo;
+    REPO_SOURCE = looksLocal(SAMPLE_IMPORT.repo) ? 'local' : 'url';   // a path in the config: Local path
+    showRepoSource();
+    repoChanged();
+  }
+  else if (repoEl.value.trim() !== SAMPLE_IMPORT.repo) IMPORT_KEPT.push('repository');
+  // Step 2: one card per core. Their files are read from the repository once it is connected.
+  CORES = []; _coreSeq = 0;
+  SAMPLE_IMPORT.cores.forEach(function(c) { addCore(c.name); });
+  // Step 3: every layer with its core, groups and components - the whole layer configuration
+  document.querySelectorAll('#arch-tree .layer-block').forEach(function(b) { b.remove(); });
+  fileAssignments = {};
+  var empty = document.getElementById('arch-empty');
+  if (empty) empty.style.display = 'none';
+  SAMPLE_IMPORT.layers.forEach(function(l) {
+    var core = CORES.filter(function(c) { return c.name === l.core; })[0];
+    var block = layerEl(l.name, l.path, core ? core.id : '');
+    var groups = block.querySelector('.groups-container');
+    (l.groups || []).forEach(function(g) {
+      var grp = groupEl(g.name);
+      var children = grp.querySelector('.tree-children');
+      var addBtn = children.querySelector('.add-group-btn');
+      g.components.forEach(function(c) {
+        c.files.forEach(function(f) { fileAssignments[f] = c.name; });
+        children.insertBefore(componentEl(c.name, c.files, true), addBtn);
+      });
+      groups.appendChild(grp);
+    });
+    collapseLayer(block);                          // a real config lists dozens of components
+    document.getElementById('arch-tree').appendChild(block);
+  });
+  renderImportReport();
+  // Already connected: check the config against that repository - the one the project uses.
+  if (!document.getElementById('branch-field').classList.contains('hidden')) checkImportAgainstRepo();
+}
+
+// Test Connection found the repository: check the import against the branch.
+function checkImportAgainstRepo() {
+  IMPORT_CHECKING = true;
+  renderImportReport();
+  setTimeout(function() {
+    IMPORT_CHECKING = false;
+    IMPORT_CHECKED = true;
+    SAMPLE_IMPORT.cores.forEach(function(sc) {
+      var c = CORES.filter(function(x) { return x.name === sc.name; })[0];
+      if (!c) return;
+      // Found in the repository: read in as uploads - never over a file the user chose.
+      if (!c.macroFile && c.macroMode === 'upload') c.macroFile = { name: sc.macros, size: 1260 };
+      if (!c.ddFile) c.ddFile = { name: sc.dd, size: 3480 };
+      // Not in the repository: step 2 asks for it.
+      c.expected = sc.cc ? { ccFile: sc.cc } : {};
+    });
+    renderCores();
+    renderImportReport();
+  }, 900);
+}
+
+function importCounts() {
+  var layers = SAMPLE_IMPORT.layers, groups = 0, comps = 0;
+  layers.forEach(function(l) { (l.groups || []).forEach(function(g) { groups++; comps += g.components.length; }); });
+  return layers.length + ' layers, ' + groups + ' groups, ' + comps + ' components';
+}
+
+function importItems() {
+  var items = [['filled', 'Project: name, repository.']];
+  if (!IMPORT_CHECKED) {
+    items.push(['filled', 'Cores: `Core1`, `Core2` (step 2).']);
+    items.push(['filled', 'Architecture: ' + importCounts() + ', each layer with its core: Layer1 → Core1, Layer2 → Core2, Layer3 → no core.']);
+    items.push(['check', 'The cores\' files and every path are checked against the repository once it is connected (Test Connection).']);
+  } else {
+    items.push(['filled', 'Core1: `macros.core1.json` and `data_dictionary.core1.csv`, read from the repository.']);
+    items.push(['check', 'Core1: upload `compile_commands.core1.json` in step 2. The repository has no file `build/compile_commands.core1.json`.']);
+    items.push(['filled', 'Core2: `macros.core2.json` and `data_dictionary.core2.csv`, read from the repository.']);
+    items.push(['filled', 'Architecture: ' + importCounts() + ', each layer with its core. Every path is on branch `' + (document.getElementById('s1-branch').value || 'main') + '`.']);
+  }
+  items.push(['skipped', '`clang.llvmLibPath`: a path on the machine that wrote the file. The server uses its own.']);
+  return items;
+}
+
+function codeText(t) {
+  return escHtml(t).split('`').map(function(p, i) {
+    return i % 2 ? '<code style="font-family:\'JetBrains Mono\',monospace;font-size:11px;background:#eff4ff;padding:0 4px;border-radius:3px;">' + p + '</code>' : p;
+  }).join('');
+}
+
+var IMPORT_LEVEL = {
+  check:   ['error',        '#b45309', 'Needs your attention'],
+  filled:  ['check_circle', '#00a572', 'Filled in'],
+  skipped: ['block',        '#74777d', 'Not used'],
+};
+// Where the wizard deals with what a report item is about.
+function importWhere(t) {
+  if (/^Project/.test(t)) return 'Step 1';
+  if (/^Core|cores'/.test(t)) return 'Step 2 · Cores';
+  if (/^Architecture/.test(t)) return 'Step 3 · Architecture';
+  if (/^`clang|^Document/.test(t)) return 'Step 5 · Review';
+  return '';
+}
+var MONO = 'font-family:\'JetBrains Mono\',monospace;';
+function importBtn(label, icon, onclick, primary) {
+  return '<button type="button" onclick="' + onclick + '" style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:.5rem;background:#fff;cursor:pointer;flex-shrink:0;'
+    + MONO + 'font-size:11px;font-weight:600;border:1px solid ' + (primary ? '#0058be;color:#0058be;' : '#c4c6cd;color:#44474c;') + '">'
+    + '<span class="material-symbols-outlined" style="font-size:14px;">' + icon + '</span>' + label + '</button>';
+}
+// Step 1's import: one row - an invitation before an import, a summary after it.
+function renderImportReport() {
+  var row = document.getElementById('import-row');
+  if (!IMPORTED) {
+    row.innerHTML = '<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border:1px dashed #c4c6cd;border-radius:.75rem;background:#fff;">'
+      + '<span class="material-symbols-outlined text-secondary" style="font-size:18px;flex-shrink:0;">settings_suggest</span>'
+      + '<div style="flex:1;min-width:0;"><p style="font-size:14px;color:#0b1c30;">Have a config file? <span style="color:#44474c;">Optional</span></p>'
+      + '<p style="font-size:11px;color:#44474c;margin-top:2px;">Fills the cores and the architecture from the config <span style="' + MONO + '">analyzer.py onboard --config</span> reads. The access token is never read from it.</p></div>'
+      + importBtn('Import config', 'upload_file', "document.getElementById('import-file').click()", true)
+      + '</div>';
+    return;
+  }
+  var items = importItems();
+  var of = function(level) { return items.filter(function(i) { return i[0] === level; }); };
+  var where = {};
+  of('check').forEach(function(i) { var w = (importWhere(i[1]) || 'Other').split(' · ').pop(); where[w] = (where[w] || 0) + 1; });
+  var whereText = Object.keys(where).map(function(w) { return where[w] + ' in ' + w; }).join(', ');
+  var branch = document.getElementById('s1-branch').value;
+  var state = IMPORT_CHECKING ? '<span style="color:#44474c;">checking paths on ' + escHtml(branch || 'main') + '…</span>'
+    : IMPORT_CHECKED ? '' : '<span style="color:#44474c;">paths are checked after Test Connection</span>';
+  var n = of('check').length;
+  row.innerHTML = '<div style="padding:12px 16px;border:1px solid #c4c6cd;border-radius:.75rem;background:#fff;">'
+    + '<div style="display:flex;align-items:center;gap:12px;">'
+    + '<span class="material-symbols-outlined text-secondary" style="font-size:18px;flex-shrink:0;">description</span>'
+    + '<div style="flex:1;min-width:0;">'
+    + '<p style="' + MONO + 'font-size:12px;font-weight:600;color:#0b1c30;">' + escHtml(IMPORTED) + '</p>'
+    + '<p style="display:flex;flex-wrap:wrap;gap:2px 12px;margin-top:2px;font-size:11px;">'
+    + '<span style="color:#00a572;">✓ ' + of('filled').length + ' filled</span>'
+    + (n ? '<span style="color:#b45309;">⚠ ' + n + ' need' + (n === 1 ? 's' : '') + ' attention' + (whereText ? ' (' + whereText + ')' : '') + '</span>' : '')
+    + (of('skipped').length ? '<span style="color:#74777d;">' + of('skipped').length + ' not used</span>' : '')
+    + state + '</p></div>'
+    + importBtn('View details', 'list_alt', 'openImportModal()', false)
+    + importBtn('Replace', 'swap_horiz', "document.getElementById('import-file').click()", false)
+    + '</div>'
+    + (IMPORT_KEPT.length ? '<p style="margin:8px 0 0 30px;font-size:11px;color:#44474c;">Kept your ' + IMPORT_KEPT.join(' and ') + '; the config\'s were not used.</p>' : '')
+    + '</div>';
+  // The popup: what needs attention first, then what was filled, then what was not used.
+  document.getElementById('import-modal-title').textContent = 'What ' + IMPORTED + ' filled in';
+  document.getElementById('import-modal-body').innerHTML = ['check', 'filled', 'skipped'].map(function(level) {
+    var list = of(level);
+    if (!list.length) return '';
+    var lv = IMPORT_LEVEL[level];
+    return '<section><p style="margin-bottom:8px;' + MONO + 'font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#44474c;">' + lv[2] + ' · ' + list.length + '</p>'
+      + '<ul style="display:grid;gap:8px;">' + list.map(function(i) {
+          return '<li style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#0b1c30;">'
+            + '<span class="material-symbols-outlined sym-fill" style="font-size:14px;color:' + lv[1] + ';flex-shrink:0;margin-top:1px;">' + lv[0] + '</span>'
+            + '<span style="flex:1;line-height:1.45;">' + codeText(i[1]) + '</span>'
+            + '<span style="flex-shrink:0;' + MONO + 'font-size:9px;color:#74777d;white-space:nowrap;margin-top:1px;">' + importWhere(i[1]) + '</span></li>';
+        }).join('') + '</ul></section>';
+  }).join('');
+}
+function openImportModal()  { document.getElementById('import-modal').style.display = 'flex'; }
+function closeImportModal() { document.getElementById('import-modal').style.display = 'none'; }
+renderImportReport();
+
+addCore('Core1');
+
 function toggleLayer(head) {
   var block = head.closest('.layer-block');
   var icon  = head.querySelector('.material-symbols-outlined');
@@ -1167,10 +1546,7 @@ function toggleLayer(head) {
     body.className = 'layer-body';
     body.innerHTML = '<div class="groups-container"></div>'
       + '<button onclick="addGroup(this)" class="add-group-btn"><span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Group</button>'
-      + '<div class="inc-paths-section"><div class="inc-paths-row"><div class="inc-paths-label" title="External include paths for this layer">Lib Paths</div>'
-      + '<div class="inc-paths-content"><div class="ext-paths-list"></div>'
-      + '<button onclick="addExtPath(this)" class="inc-add-btn"><span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle;">add</span> Add path</button>'
-      + '</div></div></div>';
+      + libPathLink();
     block.appendChild(body);
     icon.textContent = 'keyboard_arrow_down';
     return;
@@ -1178,7 +1554,68 @@ function toggleLayer(head) {
   var open = icon.textContent.trim() === 'keyboard_arrow_down';
   body.style.display = open ? 'none' : '';
   icon.textContent = open ? 'keyboard_arrow_right' : 'keyboard_arrow_down';
+  block.classList.toggle('collapsed', open);
 }
+function collapseLayer(block) {
+  var body = block.querySelector('.layer-body');
+  if (body) body.style.display = 'none';
+  block.querySelector('.layer-head .material-symbols-outlined').textContent = 'keyboard_arrow_right';
+  block.classList.add('collapsed');
+}
+
+// Lib paths are optional: a link until the layer has one.
+function libPathLink() {
+  return '<button onclick="openLibPaths(this)" class="add-group-btn" style="color:#74777d;" title="External include paths (-I flags) for this layer.">'
+    + '<span class="material-symbols-outlined" style="font-size:12px;">add</span> Lib path <span style="font-weight:400;">(optional)</span></button>';
+}
+function openLibPaths(btn) {
+  var sec = document.createElement('div');
+  sec.className = 'inc-paths-section';
+  sec.innerHTML = '<div class="inc-paths-row"><div class="inc-paths-label" title="External include paths (-I flags) for this layer.">Lib Paths</div>'
+    + '<div class="inc-paths-content"><div class="ext-paths-list"></div>'
+    + '<button onclick="addExtPath(this)" class="inc-add-btn"><span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle;">add</span> Add path</button>'
+    + '</div></div>';
+  btn.replaceWith(sec);
+  addExtPath(sec.querySelector('.inc-add-btn'));
+}
+
+// A layer's head says what it holds, so it can stay collapsed.
+function refreshLayerSummaries() {
+  document.querySelectorAll('#arch-tree .layer-block').forEach(function(b) {
+    var g = b.querySelectorAll('.tree-group').length, c = b.querySelectorAll('.tree-comp-block').length;
+    var t = '· ' + g + ' group' + (g !== 1 ? 's' : '') + ' · ' + c + ' component' + (c !== 1 ? 's' : '');
+    var s = b.querySelector('.layer-summary');
+    if (s && s.textContent !== t) s.textContent = t;      // unchanged text: no new mutation
+  });
+}
+new MutationObserver(refreshLayerSummaries).observe(document.getElementById('arch-tree'), { childList: true, subtree: true });
+
+// One click removes a whole layer or group: keep it, so it can be undone for a while.
+var LAST_REMOVED = null, _undoTimer = null;
+function removeWithUndo(el, label, assignments) {
+  LAST_REMOVED = { el: el, parent: el.parentNode, next: el.nextSibling, label: label,
+                   assignments: assignments || Object.assign({}, fileAssignments) };
+  el.remove();
+  renderUndo();
+  clearTimeout(_undoTimer);
+  _undoTimer = setTimeout(function() { LAST_REMOVED = null; renderUndo(); }, 10000);
+}
+function undoRemove() {
+  if (!LAST_REMOVED) return;
+  LAST_REMOVED.parent.insertBefore(LAST_REMOVED.el, LAST_REMOVED.next);
+  fileAssignments = LAST_REMOVED.assignments;
+  var empty = document.getElementById('arch-empty');
+  if (empty) empty.style.display = 'none';
+  LAST_REMOVED = null;
+  renderUndo();
+}
+function renderUndo() {
+  var bar = document.getElementById('undo-bar');
+  if (!LAST_REMOVED) { bar.style.display = 'none'; return; }
+  bar.querySelector('.undo-label').textContent = LAST_REMOVED.label;
+  bar.style.display = 'flex';
+}
+function plural(n, w) { return n + ' ' + w + (n !== 1 ? 's' : ''); }
 
 function addGroup(btn) {
   var block    = btn.closest('.layer-block');
@@ -1200,11 +1637,8 @@ function addGroup(btn) {
   };
 }
 
-function confirmAddGroup(btn) {
-  var row  = btn.closest('.inline-add-row');
-  var name = row.querySelector('.inline-add-input').value.trim();
-  if (!name) { row.querySelector('.inline-add-input').focus(); return; }
-  var container = row.closest('.groups-container');
+// A group: its row (toggle, name, remove) and its components, with an Add Component button.
+function groupEl(name) {
   var grp = document.createElement('div');
   grp.className = 'tree-group';
   grp.innerHTML = '<div class="tree-group-row">'
@@ -1217,11 +1651,20 @@ function confirmAddGroup(btn) {
     + '<button onclick="addComponent(this)" class="add-group-btn" style="padding-left:20px;">'
     + '<span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Component</button>'
     + '</div>';
-  row.replaceWith(grp);
+  return grp;
+}
+
+function confirmAddGroup(btn) {
+  var row  = btn.closest('.inline-add-row');
+  var name = row.querySelector('.inline-add-input').value.trim();
+  if (!name) { row.querySelector('.inline-add-input').focus(); return; }
+  row.replaceWith(groupEl(name));
 }
 
 function removeGroup(btn) {
-  btn.closest('.tree-group').remove();
+  var g = btn.closest('.tree-group');
+  var name = ((g.querySelector('.tree-group-row .flex-1') || {}).textContent || 'group').trim();
+  removeWithUndo(g, 'Removed group ' + name + ' (' + plural(g.querySelectorAll('.tree-comp-block').length, 'component') + ')');
 }
 
 var _compTarget = null;
@@ -1275,6 +1718,32 @@ function closeCompSidebar() {
   _compTarget = null;
 }
 
+// A component: its row (toggle, name, remove) and its files or folders. An imported config lists
+// dozens of components, so those start collapsed.
+function componentEl(name, files, collapsed) {
+  var open = files.length > 0 && !collapsed;
+  var block = document.createElement('div');
+  block.className = 'tree-comp-block';
+  block.dataset.compName = name;
+  block.innerHTML = '<div class="tree-comp-row">'
+    + '<button onclick="toggleCompFiles(this)" class="tree-toggle">'
+    + '<span class="material-symbols-outlined" style="font-size:13px;">' + (open ? 'keyboard_arrow_down' : 'keyboard_arrow_right') + '</span></button>'
+    + '<span class="material-symbols-outlined text-secondary" style="font-size:13px;opacity:.6;">folder</span>'
+    + '<span class="font-label-md text-on-surface flex-1" style="font-size:13px;">' + escHtml(name) + '</span>'
+    + (collapsed && files.length ? '<span class="font-label-sm text-label-sm text-on-surface-variant" style="margin-right:4px;">' + files.length + (files.length === 1 ? ' path' : ' paths') + '</span>' : '')
+    + '<button onclick="removeComponent(this)" class="p-1 text-on-surface-variant hover:text-error transition-colors">'
+    + '<span class="material-symbols-outlined" style="font-size:13px;">close</span></button>'
+    + '</div>'
+    + '<div class="comp-files' + (open ? '' : ' hidden') + '">'
+    + files.map(function(f) {
+        return '<div class="file-row" data-filename="' + escHtml(f) + '">'
+          + '<span class="material-symbols-outlined" style="font-size:12px;color:#b0b3b8;">' + (/\.[a-z]+$/i.test(f) ? 'description' : 'folder') + '</span>'
+          + escHtml(f) + '</div>';
+      }).join('')
+    + '</div>';
+  return block;
+}
+
 function confirmAddComponent() {
   var name = document.getElementById('sidebar-comp-name').value.trim();
   if (!name) { document.getElementById('sidebar-comp-name').focus(); return; }
@@ -1287,25 +1756,7 @@ function confirmAddComponent() {
   // Register file assignments
   files.forEach(function(f) { fileAssignments[f] = name; });
 
-  var hasFiles = files.length > 0;
-  var block = document.createElement('div');
-  block.className = 'tree-comp-block';
-  block.dataset.compName = name;
-  block.innerHTML = '<div class="tree-comp-row">'
-    + '<button onclick="toggleCompFiles(this)" class="tree-toggle">'
-    + '<span class="material-symbols-outlined" style="font-size:13px;">' + (hasFiles ? 'keyboard_arrow_down' : 'keyboard_arrow_right') + '</span></button>'
-    + '<span class="material-symbols-outlined text-secondary" style="font-size:13px;opacity:.6;">folder</span>'
-    + '<span class="font-label-md text-on-surface flex-1" style="font-size:13px;">' + escHtml(name) + '</span>'
-    + '<button onclick="removeComponent(this)" class="p-1 text-on-surface-variant hover:text-error transition-colors">'
-    + '<span class="material-symbols-outlined" style="font-size:13px;">close</span></button>'
-    + '</div>'
-    + '<div class="comp-files' + (hasFiles ? '' : ' hidden') + '">'
-    + files.map(function(f) {
-        return '<div class="file-row" data-filename="' + escHtml(f) + '">'
-          + '<span class="material-symbols-outlined" style="font-size:12px;color:#b0b3b8;">description</span>'
-          + escHtml(f) + '</div>';
-      }).join('')
-    + '</div>';
+  var block = componentEl(name, files, false);
   if (_compTarget) {
     var addBtn = _compTarget.querySelector('.add-group-btn');
     if (addBtn) _compTarget.insertBefore(block, addBtn);
@@ -1316,11 +1767,12 @@ function confirmAddComponent() {
 
 function removeComponent(btn) {
   var block = btn.closest('.tree-comp-block');
+  var before = Object.assign({}, fileAssignments);
   // Unregister all files owned by this component
   block.querySelectorAll('.file-row[data-filename]').forEach(function(row) {
     delete fileAssignments[row.dataset.filename];
   });
-  block.remove();
+  removeWithUndo(block, 'Removed component ' + (block.dataset.compName || ''), before);
 }
 
 function toggleCompFiles(btn) {
@@ -1398,6 +1850,7 @@ function toggleTreeGroup(btn) {
 }
 
 function showAddLayer() {
+  refreshLayerCoreSelects();
   document.getElementById('add-layer-row').classList.remove('hidden');
   document.getElementById('new-layer-name').focus();
 }
@@ -1407,39 +1860,47 @@ function cancelAddLayer() {
   document.getElementById('new-layer-path').value = '';
 }
 function removeLayer(btn) {
-  btn.closest('.layer-block').remove();
+  var b = btn.closest('.layer-block');
+  var name = (b.querySelector('.layer-head .font-bold') || {}).textContent || 'layer';
+  removeWithUndo(b, 'Removed layer ' + name + ' (' + plural(b.querySelectorAll('.tree-comp-block').length, 'component') + ')');
   if (!document.querySelector('#arch-tree .layer-block')) {
     var empty = document.getElementById('arch-empty');
     if (empty) empty.style.display = '';
   }
 }
-function confirmAddLayer() {
-  var name = document.getElementById('new-layer-name').value.trim().toUpperCase().replace(/\s+/g,'_');
-  var path = document.getElementById('new-layer-path').value.trim();
-  if (!name) { document.getElementById('new-layer-name').focus(); return; }
-  var tree  = document.getElementById('arch-tree');
-  var empty = document.getElementById('arch-empty');
-  if (empty) empty.style.display = 'none';
+// A layer: its head (name, root path, core, remove) and body (groups, lib paths).
+function layerEl(name, path, coreId) {
   var block = document.createElement('div');
   block.className = 'layer-block';
   block.innerHTML = '<div class="layer-head" onclick="toggleLayer(this)">'
     + '<span class="material-symbols-outlined" style="font-size:15px;color:#44474c;">keyboard_arrow_down</span>'
     + '<div class="flex-1 min-w-0">'
     + '<div class="font-label-md font-bold text-on-surface" style="font-size:13px;line-height:1.3;">' + escHtml(name) + '</div>'
+    + '<div style="display:flex;align-items:baseline;gap:6px;min-width:0;">'
     + '<span class="layer-path-display' + (path ? '' : ' empty') + '" onclick="event.stopPropagation();startEditPath(this)">' + (path ? escHtml(path) : 'Set root path…') + '</span>'
+    + '<span class="layer-summary" style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#74777d;white-space:nowrap;"></span>'
     + '</div>'
+    + '</div>'
+    + '<label class="layer-core" onclick="event.stopPropagation()">Core'
+    + '<select class="layer-core-select">' + coreOptions(coreId) + '</select></label>'
     + '<button onclick="event.stopPropagation();removeLayer(this);" class="p-1 text-on-surface-variant hover:text-error transition-colors"><span class="material-symbols-outlined" style="font-size:15px;">close</span></button>'
     + '</div>'
     + '<div class="layer-body">'
     + '<div class="groups-container"></div>'
     + '<button onclick="addGroup(this)" class="add-group-btn"><span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Group</button>'
-    + '<div class="inc-paths-section"><div class="inc-paths-row">'
-    + '<div class="inc-paths-label" title="External include paths (-I flags) specific to this layer.">Lib Paths</div>'
-    + '<div class="inc-paths-content"><div class="ext-paths-list"></div>'
-    + '<button onclick="addExtPath(this)" class="inc-add-btn"><span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle;">add</span> Add path</button>'
-    + '</div></div></div>'
+    + libPathLink()
     + '</div>';
-  tree.appendChild(block);
+  return block;
+}
+
+function confirmAddLayer() {
+  var name = document.getElementById('new-layer-name').value.trim().toUpperCase().replace(/\s+/g,'_');
+  var path = document.getElementById('new-layer-path').value.trim();
+  var coreId = document.getElementById('new-layer-core').value;
+  if (!name) { document.getElementById('new-layer-name').focus(); return; }
+  var empty = document.getElementById('arch-empty');
+  if (empty) empty.style.display = 'none';
+  document.getElementById('arch-tree').appendChild(layerEl(name, path, coreId));
   cancelAddLayer();
 }
 
@@ -1654,6 +2115,7 @@ function nameInitials(m) {
 }
 
 function renderMemberList() {
+  if (cur === 4) setTimeout(renderStepState, 0);
   var list = document.getElementById('member-list');
   if (!members.length) { list.innerHTML = ''; return; }
   list.innerHTML = members.map(function(m) {
@@ -1694,14 +2156,6 @@ function escHtml(s) {
 // ════════════════════════════════════════
 // Step 6: Review
 // ════════════════════════════════════════
-function toggleDefinesExpand() {
-  var detail = document.getElementById('r-defines-detail');
-  var arrow  = document.getElementById('r-defines-arrow');
-  var open   = detail.style.display !== 'none';
-  detail.style.display = open ? 'none' : '';
-  arrow.textContent = open ? 'keyboard_arrow_right' : 'keyboard_arrow_down';
-}
-
 function rTeamRow(name, email, role, pending, isYou) {
   var displayName = name || email;
   var initials = displayName.split(' ').map(function(w) { return w[0] || ''; }).join('').substring(0, 2).toUpperCase();
@@ -1722,50 +2176,91 @@ function rTeamRow(name, email, role, pending, isYou) {
     + '</div>';
 }
 
+// Step 5, first: is the project ready - `error` blocks creating it, `warn` is what it would miss.
+function renderReadiness(items) {
+  var errors = items.filter(function(i) { return i[0] === 'error'; }).length;
+  var warns  = items.filter(function(i) { return i[0] === 'warn'; }).length;
+  var LOOK = { ok: ['check_circle', '#00a572'], warn: ['error', '#b45309'], error: ['cancel', '#ba1a1a'] };
+  var MONO = 'font-family:\'JetBrains Mono\',monospace;';
+  document.getElementById('r-ready').innerHTML = '<div style="border:1px solid ' + (errors ? '#ba1a1a' : '#c4c6cd') + ';border-radius:.75rem;background:#fff;overflow:hidden;">'
+    + '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #c4c6cd;background:' + (errors ? '#ffdad6' : '#f0fff9') + ';">'
+    + '<span class="material-symbols-outlined sym-fill" style="font-size:18px;color:' + (errors ? '#ba1a1a' : '#00a572') + ';">' + (errors ? 'block' : 'rocket_launch') + '</span>'
+    + '<div><p style="font-size:14px;font-weight:600;color:' + (errors ? '#410002' : '#0b1c30') + ';">'
+    + (errors ? (errors === 1 ? 'One thing' : errors + ' things') + ' to fix before the project can be created' : 'Ready to create') + '</p>'
+    + (warns ? '<p style="font-size:11px;color:#44474c;margin-top:2px;">' + (warns === 1 ? 'One thing' : warns + ' things') + ' it would miss - fine to create now and fix later.</p>' : '')
+    + '</div></div>'
+    + items.map(function(i) {
+        var lk = LOOK[i[0]];
+        return '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 16px;border-top:1px solid #eff4ff;">'
+          + '<span class="material-symbols-outlined sym-fill" style="font-size:16px;color:' + lk[1] + ';flex-shrink:0;margin-top:1px;">' + lk[0] + '</span>'
+          + '<div style="flex:1;min-width:0;"><p style="font-size:12px;color:#0b1c30;">' + escHtml(i[1]) + '</p>'
+          + (i[2] ? '<p style="font-size:11px;color:#44474c;margin-top:2px;">' + codeText(i[2]) + '</p>' : '') + '</div>'
+          + (i[3] && i[0] !== 'ok' ? '<button onclick="goToStep(' + i[3] + ')" style="flex-shrink:0;background:none;border:none;cursor:pointer;' + MONO + 'font-size:11px;font-weight:600;color:#0058be;">Fix in step ' + i[3] + '</button>' : '')
+          + '</div>';
+      }).join('')
+    + '</div>';
+}
+
 function populateReview() {
+  // ── Readiness ──
+  var ready = [];
+  var s1 = issuesFor(1), s2 = issuesFor(2), s3 = issuesFor(3);
+  var nLayers = document.querySelectorAll('#arch-tree .layer-block').length;
+  var nComps = document.querySelectorAll('#arch-tree .tree-comp-block').length;
+  ready.push(s1.length ? ['error', 'Project and repository', s1.join(' · '), 1]
+    : ['ok', 'Repository connected · branch ' + (document.getElementById('s1-branch').value || 'main')]);
+  ready.push(s3.length ? ['error', 'Architecture', s3.join(' · '), 3] : ['ok', plural(nLayers, 'layer') + ', ' + plural(nComps, 'component')]);
+  ready.push(s2.length ? ['error', 'Cores', s2.join(' · '), 2]
+    : CORES.length ? ['ok', plural(CORES.length, 'core') + ': ' + CORES.map(function(c) { return c.name; }).join(', ')]
+      : ['warn', 'No cores', 'Every layer is parsed without macros or a data dictionary.', 2]);
+  var pending = [], pendingMacros = {};
+  CORES.forEach(function(c) {
+    var e = c.expected || {};
+    ['macroFile', 'ddFile', 'ccFile'].forEach(function(k) {
+      if (e[k] && !c[k]) { pending.push(c.name + ': ' + e[k]); if (k === 'macroFile') pendingMacros[c.id] = true; }
+    });
+  });
+  if (pending.length) ready.push(['warn', plural(pending.length, 'file') + ' the config names ' + (pending.length === 1 ? 'is' : 'are') + ' not uploaded', pending.join(' · '), 2]);
+  var noMacros = CORES.filter(function(c) {
+    return !pendingMacros[c.id] && (c.macroMode === 'manual' ? !c.macroText.trim() : !c.macroFile);
+  }).map(function(c) { return c.name; });
+  if (noMacros.length) ready.push(['warn', noMacros.join(', ') + ': no macros', 'Its layers parse without their -D flags, so #if branches may be read the wrong way.', 2]);
+  var noCore = CORES.length ? layersUsing('') : [];
+  if (noCore.length) ready.push(['warn', noCore.join(', ') + ': no core', 'Parsed without macros or a data dictionary.', 3]);
+  ready.push(['ok', members.length ? 'You and ' + plural(members.length, 'member') : 'Just you - people can be added later from Team']);
+  renderReadiness(ready);
+
   // ── Project & Repository ──
   document.getElementById('r-name').textContent   = document.getElementById('s1-name').value || '—';
   document.getElementById('r-repo').textContent   = document.getElementById('s1-repo').value || '—';
+  document.getElementById('r-repo-label').textContent = REPO_SOURCE === 'local' ? 'Repository folder' : 'Repository URL';
   document.getElementById('r-branch').textContent = document.getElementById('s1-branch').value || '—';
   var tok = document.getElementById('s1-token').value;
   document.getElementById('r-token').textContent  = tok ? '••••••••' : 'Not set';
 
-  // ── Build Configuration ──
-  var isUpload  = document.getElementById('tab-upload').classList.contains('on');
-  var modeEl    = document.getElementById('r-defines-mode');
-  var detailEl  = document.getElementById('r-defines-detail');
-  var countEl   = document.getElementById('r-defines-count');
-  // reset expand state each time review is opened
-  detailEl.style.display = 'none';
-  document.getElementById('r-defines-arrow').textContent = 'keyboard_arrow_right';
-
-  if (isUpload) {
-    var fname = document.getElementById('def-file-name').textContent.trim();
-    modeEl.textContent = 'Upload';
-    countEl.textContent = fname ? '' : 'No file';
-    detailEl.innerHTML = fname
-      ? '<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:#eff4ff;border:1px solid #c4c6cd;border-radius:6px;">'
-        + '<span class="material-symbols-outlined text-secondary" style="font-size:14px;">description</span>'
-        + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#0b1c30;">' + escHtml(fname) + '</span>'
-        + '</div>'
-      : '<span style="color:#74777d;font-size:11px;">No file selected</span>';
-  } else {
-    modeEl.textContent = 'Manual';
-    var ta    = document.getElementById('def-manual-textarea');
-    var lines = ta ? ta.value.split('\n').map(function(l) { return l.trim(); }).filter(Boolean) : [];
-    countEl.textContent = lines.length ? lines.length + ' definition' + (lines.length !== 1 ? 's' : '') : 'empty';
-    detailEl.innerHTML = lines.length
-      ? lines.map(function(l) {
-          return '<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f0f2f8;">'
-            + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#0058be;font-weight:700;flex-shrink:0;">#</span>'
-            + '<code style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#0b1c30;">' + escHtml(l) + '</code>'
-            + '</div>';
-        }).join('')
-      : '<span style="color:#74777d;font-size:11px;">No definitions entered</span>';
+  // ── Cores ──
+  var mono = 'font-family:\'JetBrains Mono\',monospace;';
+  var coreRows = CORES.map(function(c) {
+    var typed = c.macroText.split('\n').map(function(l) { return l.trim(); }).filter(Boolean).length;
+    var macros = c.macroMode === 'manual' ? typed + ' typed' : (c.macroFile ? c.macroFile.name : 'no macros');
+    var used = layersUsing(c.id);
+    return '<div style="padding:10px 16px;border-bottom:1px solid #eff4ff;">'
+      + '<div style="display:flex;align-items:center;gap:6px;">'
+      + '<span class="material-symbols-outlined text-secondary" style="font-size:14px;">memory</span>'
+      + '<span style="' + mono + 'font-size:11px;font-weight:700;color:#0b1c30;">' + escHtml(c.name) + '</span>'
+      + '<span style="margin-left:auto;' + mono + 'font-size:10px;color:' + (used.length ? '#44474c' : '#b45309') + ';">'
+      + (used.length ? 'used by ' + used.map(escHtml).join(', ') : 'no layer uses it') + '</span></div>'
+      + '<div style="margin:4px 0 0 20px;' + mono + 'font-size:10px;color:#74777d;">'
+      + escHtml(macros) + ' · ' + escHtml(c.ddFile ? c.ddFile.name : 'no dictionary') + ' · '
+      + escHtml(c.ccFile ? c.ccFile.name : 'no compile commands') + '</div></div>';
+  }).join('');
+  var noCore = layersUsing('');
+  if (noCore.length) {
+    coreRows += '<div style="padding:10px 16px;' + mono + 'font-size:10px;color:#74777d;">No core: '
+      + noCore.map(escHtml).join(', ') + '</div>';
   }
-
-  var ddName = document.getElementById('dd-file-name').textContent.trim();
-  document.getElementById('r-dict').textContent = ddName || 'Not uploaded';
+  document.getElementById('r-cores').innerHTML = coreRows
+    || '<div style="padding:12px 16px;' + mono + 'font-size:11px;color:#74777d;">No cores</div>';
 
   // ── Architecture ──
   var layers = document.querySelectorAll('#arch-tree .layer-block');
@@ -1781,6 +2276,8 @@ function populateReview() {
     var pathEl = block.querySelector('.layer-path-display');
     var lPath  = (pathEl && !pathEl.classList.contains('empty')) ? pathEl.textContent.trim() : null;
     var groups = block.querySelectorAll('.tree-group');
+    var coreSel = block.querySelector('.layer-core-select');
+    var core    = coreSel ? coreById(coreSel.value) : null;
 
     rows += '<div style="padding:10px 16px;">';
     // Layer row
@@ -1788,6 +2285,8 @@ function populateReview() {
       + '<span class="material-symbols-outlined text-secondary" style="font-size:14px;">layers</span>'
       + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;color:#0b1c30;">' + escHtml(lName) + '</span>'
       + (lPath ? '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#74777d;margin-left:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escHtml(lPath) + '</span>' : '')
+      + '<span style="margin-left:auto;font-family:\'JetBrains Mono\',monospace;font-size:9px;font-weight:600;padding:2px 7px;border-radius:3px;'
+      + (core ? 'background:#e5eeff;color:#0058be;">' + escHtml(core.name) : 'background:#f3f4f6;color:#74777d;">no core') + '</span>'
       + '</div>';
 
     // Lib paths for this layer
@@ -1898,6 +2397,25 @@ function initProject() {
   }, 900);
 }
 
+function openToken() {
+  document.getElementById('token-link').classList.add('hidden');
+  document.getElementById('token-field').classList.remove('hidden');
+  document.getElementById('s1-token').focus();
+}
+function toggleRoles(btn) {
+  var l = document.getElementById('role-legend');
+  var open = l.style.display === 'none';
+  l.style.display = open ? '' : 'none';
+  btn.querySelector('.material-symbols-outlined').textContent = open ? 'expand_less' : 'help';
+}
+function toggleReviewTree(btn) {
+  var t = document.getElementById('r-arch-tree');
+  var open = t.style.display === 'none';
+  t.style.display = open ? '' : 'none';
+  btn.querySelector('.material-symbols-outlined').textContent = open ? 'expand_less' : 'expand_more';
+  btn.querySelector('span:last-child').textContent = open ? 'Hide the layers' : 'Show every layer, group and component';
+}
+
 function toggleToken() {
   var inp  = document.getElementById('s1-token');
   var icon = document.getElementById('token-eye');
@@ -1908,17 +2426,300 @@ function toggleToken() {
 // ════════════════════════════════════════
 // Step 1: repo connection + branch fetch
 // ════════════════════════════════════════
+// The sample repository's branches and its default branch.
+var SAMPLE_BRANCHES = ['main', 'develop', 'release/v1.0', 'release/v1.1', 'release/v1.2', 'release/v2.0',
+  'feature/aspice-docs', 'feature/can-stack', 'feature/bootloader-update', 'feature/diag-dtc',
+  'hotfix/ftl-wear-level', 'hotfix/watchdog-reset', 'experimental/flash-trace', 'ci/clang-tidy'];
+var SAMPLE_DEFAULT_BRANCH = 'main';
+var BRANCHES = [];
+
+var branchShown = [];      // what the list shows now
+var branchFocus = -1;      // the row the arrows are on
+var branchSelectOnUp = false;   // a click that opened the box: its mouseup must not undo the selection
+
+function branchIsOpen() { return document.getElementById('branch-dd').style.display === 'block'; }
+
+// The list for `q` (empty: every branch). The row under the arrows: the picked branch when the
+// whole list shows, the first match while typing (Enter picks it).
+function renderBranchList(q) {
+  var picked = document.getElementById('s1-branch').value;
+  var ql = q.trim().toLowerCase();
+  branchShown = ql ? BRANCHES.filter(function(b) { return b.toLowerCase().indexOf(ql) >= 0; }) : BRANCHES.slice();
+  branchFocus = ql ? (branchShown.length ? 0 : -1) : branchShown.indexOf(picked);
+  var html = ql ? '<div class="bd-head">' + branchShown.length + ' of ' + BRANCHES.length + ' branches</div>' : '';
+  if (!branchShown.length) html += '<div class="bd-empty">No branch matches “' + escHtml(q.trim()) + '”</div>';
+  html += branchShown.map(function(b, i) {
+    var on = b === picked;
+    return '<div class="bd-item' + (on ? ' picked' : '') + (i === branchFocus ? ' focused' : '') + '" role="option"'
+      + ' aria-selected="' + on + '" data-i="' + i + '" onmousedown="event.preventDefault(); branchPick(' + i + ')">'
+      + '<span class="nm">' + escHtml(b) + '</span>'
+      + (b === SAMPLE_DEFAULT_BRANCH ? '<span class="tag">default</span>' : '')
+      + (on ? '<span class="material-symbols-outlined" style="font-size:16px;">check</span>' : '')
+      + '</div>';
+  }).join('');
+  var dd = document.getElementById('branch-dd');
+  dd.innerHTML = html;
+  dd.style.display = 'block';
+  document.getElementById('s1-branch-box').setAttribute('aria-expanded', 'true');
+  document.getElementById('branch-chevron').style.transform = 'translateY(-50%) rotate(180deg)';
+  branchScroll();
+}
+
+// The focused row in view - by scrolling the list alone (scrollIntoView would scroll the page too).
+function branchScroll() {
+  var dd = document.getElementById('branch-dd');
+  var row = dd.querySelector('.bd-item.focused');
+  if (!row) return;
+  if (row.offsetTop < dd.scrollTop) dd.scrollTop = row.offsetTop;
+  else if (row.offsetTop + row.offsetHeight > dd.scrollTop + dd.clientHeight) dd.scrollTop = row.offsetTop + row.offsetHeight - dd.clientHeight;
+}
+
+// Opening shows every branch, whatever the box says; the text is selected, so typing replaces it.
+function branchOpen() {
+  if (branchIsOpen() || !BRANCHES.length) return;
+  document.getElementById('s1-branch-box').select();
+  branchSelectOnUp = true;
+  renderBranchList('');
+}
+function branchMouseUp(e) {
+  if (branchSelectOnUp) { e.preventDefault(); branchSelectOnUp = false; }
+}
+function branchToggle() {
+  if (branchIsOpen()) { branchClose(); return; }
+  var box = document.getElementById('s1-branch-box');
+  if (document.activeElement !== box) box.focus(); else branchOpen();
+}
+function branchFilter() { renderBranchList(document.getElementById('s1-branch-box').value); }
+
+// Closing keeps the branch picked before: text typed and not picked is dropped.
+function branchClose() {
+  document.getElementById('branch-dd').style.display = 'none';
+  document.getElementById('s1-branch-box').setAttribute('aria-expanded', 'false');
+  document.getElementById('branch-chevron').style.transform = 'translateY(-50%)';
+  document.getElementById('s1-branch-box').value = document.getElementById('s1-branch').value;
+}
+
+function branchPick(i) {
+  var b = branchShown[i];
+  if (!b) return;
+  var changed = b !== document.getElementById('s1-branch').value;
+  document.getElementById('s1-branch').value = b;
+  branchClose();
+  if (changed) branchPicked();
+}
+
+function branchKey(e) {
+  branchSelectOnUp = false;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!branchIsOpen()) { branchOpen(); return; }
+    if (!branchShown.length) return;
+    var step = e.key === 'ArrowDown' ? 1 : -1;
+    branchFocus = Math.max(0, Math.min(branchShown.length - 1, branchFocus + step));
+    document.querySelectorAll('#branch-dd .bd-item').forEach(function(el, i) { el.classList.toggle('focused', i === branchFocus); });
+    branchScroll();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (branchIsOpen() && branchFocus >= 0) branchPick(branchFocus);
+  } else if (e.key === 'Escape') {
+    if (branchIsOpen()) { e.preventDefault(); branchClose(); }
+  }
+}
+
+// Paths differ between branches: an imported config is checked again against the one picked.
+function branchPicked() {
+  document.getElementById('s1-branch-box').classList.remove('err');
+  refreshStepState();
+  if (document.getElementById('s1-branch').value && IMPORTED) { IMPORT_CHECKED = false; checkImportAgainstRepo(); }
+}
+
+// ════════════════════════════════════════
+// Step 1: where the repository is - a Git URL, or a local path (a git repository on the server)
+// ════════════════════════════════════════
+var REPO_SOURCE = 'url';
+var REPO_TEXT = { url: '', local: '' };   // what was typed under each choice: switching back finds it
+
+// A full path: a drive (D:/ or D:\), a root (/), a share (\\host) or a file:// link.
+function looksLocal(v) { return /^([A-Za-z]:[\\/]|\/|\\\\|file:\/\/)/.test(cleanPath(v)); }
+// Explorer's "Copy as path" adds quotes: they go.
+function cleanPath(v) { return (v || '').trim().replace(/^["']+|["']+$/g, ''); }
+
+// The switch, the label, the placeholder, the hint and the token link, for REPO_SOURCE.
+function showRepoSource() {
+  var local = REPO_SOURCE === 'local';
+  [['src-url', !local], ['src-local', local]].forEach(function(b) {
+    var el = document.getElementById(b[0]);
+    el.classList.toggle('on', b[1]);
+    el.setAttribute('aria-checked', String(b[1]));
+  });
+  document.getElementById('repo-label').textContent = local ? 'Repository folder' : 'Repository URL';
+  document.getElementById('s1-repo').placeholder = local ? 'D:/src/vcu-firmware' : 'https://github.com/org/repo.git';
+  document.getElementById('repo-icon').textContent = local ? 'folder' : 'link';
+  document.getElementById('repo-local-hint').classList.toggle('hidden', !local);
+  document.getElementById('repo-browse').style.display = local ? 'inline-flex' : 'none';
+  document.getElementById('repo-looks-local').classList.add('hidden');
+  // A folder on the server needs no access token.
+  var tokenTyped = !!document.getElementById('s1-token').value;
+  document.getElementById('token-link').classList.toggle('hidden', local || tokenTyped);
+  document.getElementById('token-field').classList.toggle('hidden', local || !tokenTyped);
+}
+
+function setRepoSource(src) {
+  if (src === REPO_SOURCE) return;
+  var el = document.getElementById('s1-repo');
+  REPO_TEXT[REPO_SOURCE] = el.value;
+  // A path typed under Git URL goes along to Local path.
+  var carry = src === 'local' && looksLocal(el.value) && !REPO_TEXT.local;
+  el.value = carry ? el.value : REPO_TEXT[src];
+  if (carry) REPO_TEXT.url = '';
+  REPO_SOURCE = src;
+  el.classList.remove('err');
+  showRepoSource();
+  repoChanged();
+  el.focus();
+}
+
+function repoTyped() {
+  var v = document.getElementById('s1-repo').value;
+  document.getElementById('repo-looks-local').classList.toggle('hidden', !(REPO_SOURCE === 'url' && looksLocal(v)));
+  repoChanged();
+}
+
+// ════════════════════════════════════════
+// Local path: Browse - the server's folders, one folder at a time; only a git repository is picked
+// ════════════════════════════════════════
+// The server's disk, simulated. `_git`: the folder holds .git. The real list comes from the server,
+// one folder per request (folder names only, and whether each is a git repository).
+var SERVER_FS = {
+  'C:': { 'Program Files': {}, 'Users': { 'build': { 'checkouts': { 'vcu-firmware': { _git: true } } } }, 'Windows': {} },
+  'D:': {
+    'src': {
+      'adas-fusion': { _git: true }, 'brake-ecu': { _git: true }, 'vcu-firmware': { _git: true },
+      'docs': { 'manuals': {}, 'specs': {} },
+      'third_party': { 'freertos': { _git: true }, 'lwip': { _git: true } },
+    },
+    'builds': { '2026-10-01': {}, '2026-10-04': {} },
+  },
+};
+var RB_PATH = [];     // the folder shown: [] = the server's drives; ['D:', 'src'] = D:/src
+var RB_PICKED = '';   // the repository picked, a full path
+
+function rbNode(parts) { var n = SERVER_FS; parts.forEach(function(p) { n = n && n[p]; }); return n; }
+function rbJoin(parts) { return parts.length ? parts[0] + '/' + parts.slice(1).join('/') : ''; }
+function rbChildren(parts) {
+  return Object.keys(rbNode(parts) || {}).filter(function(k) { return k !== '_git'; })
+    .sort(function(a, b) { return a.toLowerCase() < b.toLowerCase() ? -1 : 1; });
+}
+
+// Opens where the box points when that folder is there (a repository: picked, in its folder);
+// else at the drives.
+function openRepoBrowser() {
+  var parts = cleanPath(document.getElementById('s1-repo').value).replace(/\\/g, '/').split('/').filter(Boolean);
+  while (parts.length && !rbNode(parts)) parts.pop();
+  RB_PICKED = '';
+  if (parts.length && rbNode(parts)._git) { RB_PICKED = rbJoin(parts); parts.pop(); }
+  RB_PATH = parts;
+  renderRepoBrowser();
+  document.getElementById('repo-browser').classList.remove('hidden');
+  document.getElementById('repo-browser-backdrop').classList.remove('hidden');
+}
+function closeRepoBrowser() {
+  document.getElementById('repo-browser').classList.add('hidden');
+  document.getElementById('repo-browser-backdrop').classList.add('hidden');
+}
+function rbOpen(i) { RB_PATH = RB_PATH.concat([rbChildren(RB_PATH)[i]]); RB_PICKED = ''; renderRepoBrowser(); }
+// Marked in place, not redrawn: a double-click's second click must land on the same row.
+function rbPick(i) { RB_PICKED = rbJoin(RB_PATH.concat([rbChildren(RB_PATH)[i]])); rbMarkPicked(); }
+function rbCrumb(n) { RB_PATH = RB_PATH.slice(0, n); RB_PICKED = ''; renderRepoBrowser(); }
+
+// The repository goes into the box, and Test Connection runs: its branches load at once.
+function confirmRepoBrowser() {
+  if (!RB_PICKED) return;
+  var el = document.getElementById('s1-repo');
+  el.value = RB_PICKED;
+  el.classList.remove('err');
+  closeRepoBrowser();
+  repoTyped();
+  testConnection();
+}
+
+function renderRepoBrowser() {
+  document.getElementById('rb-crumbs').innerHTML =
+    '<button class="rb-crumb" onclick="rbCrumb(0)"><span class="material-symbols-outlined" style="font-size:14px;">dns</span>This server</button>'
+    + RB_PATH.map(function(p, i) {
+      return '<span class="rb-sep">›</span><button class="rb-crumb" onclick="rbCrumb(' + (i + 1) + ')">' + escHtml(p) + '</button>';
+    }).join('');
+  var rows = rbChildren(RB_PATH).map(function(name, i) {
+    var node = rbNode(RB_PATH.concat([name]));
+    if (!RB_PATH.length) {
+      return '<div class="rb-row" onclick="rbOpen(' + i + ')"><span class="material-symbols-outlined" style="font-size:16px;color:#74777d;">hard_drive</span>'
+        + '<span class="nm">' + escHtml(name) + '</span><span class="material-symbols-outlined" style="font-size:16px;color:#74777d;">chevron_right</span></div>';
+    }
+    if (node._git) {
+      return '<div class="rb-row" data-path="' + escHtml(rbJoin(RB_PATH.concat([name]))) + '" onclick="rbPick(' + i + ')" ondblclick="rbPick(' + i + '); confirmRepoBrowser()">'
+        + '<span class="material-symbols-outlined" style="font-size:16px;color:#006e45;">source</span>'
+        + '<span class="nm">' + escHtml(name) + '</span><span class="rb-git">git</span>'
+        + '<span class="material-symbols-outlined rb-check" style="font-size:16px;visibility:hidden;">check</span></div>';
+    }
+    return '<div class="rb-row" onclick="rbOpen(' + i + ')"><span class="material-symbols-outlined text-secondary" style="font-size:16px;">folder</span>'
+      + '<span class="nm">' + escHtml(name) + '/</span><span class="material-symbols-outlined" style="font-size:16px;color:#74777d;">chevron_right</span></div>';
+  });
+  document.getElementById('rb-list').innerHTML = rows.join('') || '<div class="rb-empty">No folders here</div>';
+  rbMarkPicked();
+}
+
+// The picked repository: its row, the footer, and "Use this repository".
+function rbMarkPicked() {
+  document.querySelectorAll('#rb-list .rb-row[data-path]').forEach(function(r) {
+    var on = r.getAttribute('data-path') === RB_PICKED;
+    r.classList.toggle('picked', on);
+    r.querySelector('.rb-check').style.visibility = on ? 'visible' : 'hidden';
+  });
+  var picked = document.getElementById('rb-picked');
+  picked.textContent = RB_PICKED || 'Pick a git repository';
+  picked.style.color = RB_PICKED ? '#0b1c30' : '#74777d';
+  var use = document.getElementById('rb-use');
+  use.disabled = !RB_PICKED;
+  use.style.opacity = RB_PICKED ? '' : '0.5';
+  use.style.cursor = RB_PICKED ? '' : 'not-allowed';
+}
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && !document.getElementById('repo-browser').classList.contains('hidden')) closeRepoBrowser();
+});
+
+function connectFailed(msg) {
+  var statusEl = document.getElementById('test-conn-status');
+  statusEl.style.color = '#ba1a1a';
+  statusEl.innerHTML = '<span style="vertical-align:middle;font-size:14px;margin-right:3px;" class="material-symbols-outlined sym-fill">error</span> ' + escHtml(msg);
+}
+
+// What the server answers for a local path - simulated here: a path with "missing" in it does
+// not exist on the server, one with "notgit" is a plain folder; anything else is a repository.
+function localAnswer(p) {
+  if (!looksLocal(p)) return 'Give the full path of the folder, e.g. D:/src/vcu-firmware.';
+  if (/missing/i.test(p)) return 'No folder ' + p + ' on the server.';
+  if (/notgit/i.test(p)) return p + ' is not a git repository (it has no .git): pick the repository\'s root folder.';
+  return '';
+}
+
 function repoChanged() {
   // Reset test state when URL or token changes
   var statusEl = document.getElementById('test-conn-status');
   statusEl.textContent = '';
   statusEl.style.color = '';
   document.getElementById('branch-field').classList.add('hidden');
-  document.getElementById('s1-branch').innerHTML = '<option value="">Select a branch…</option>';
+  BRANCHES = [];
+  document.getElementById('s1-branch').value = '';
+  if (branchIsOpen()) branchClose();
+  document.getElementById('s1-branch-box').value = '';
+  // An import checked against the old repository is not checked against this one.
+  if (typeof IMPORTED !== 'undefined' && IMPORTED) { IMPORT_CHECKED = false; IMPORT_CHECKING = false; renderImportReport(); }
 }
 
 function testConnection() {
-  var url = document.getElementById('s1-repo').value.trim();
+  var repoEl = document.getElementById('s1-repo');
+  if (REPO_SOURCE === 'local') repoEl.value = cleanPath(repoEl.value);
+  var url = repoEl.value.trim();
   if (!url) {
     document.getElementById('s1-repo').classList.add('err');
     document.getElementById('s1-repo').focus();
@@ -1936,17 +2737,21 @@ function testConnection() {
   setTimeout(function() {
     btn.disabled = false;
     btn.style.opacity = '';
+    var refused = REPO_SOURCE === 'local' ? localAnswer(url) : '';
+    if (refused) { connectFailed(refused); return; }
 
-    // Simulate success with sample branches
-    var branches = ['main', 'develop', 'release/v1.2', 'feature/aspice-docs'];
-    var sel = document.getElementById('s1-branch');
-    sel.innerHTML = '<option value="">Select a branch…</option>'
-      + branches.map(function(b) { return '<option value="' + b + '">' + b + '</option>'; }).join('');
-    sel.value = branches.includes('main') ? 'main' : '';
+    // Simulate success with the sample repository's branches; the default branch is picked.
+    var branches = SAMPLE_BRANCHES;
+    BRANCHES = branches.slice();
+    var first = BRANCHES.indexOf(SAMPLE_DEFAULT_BRANCH) >= 0 ? SAMPLE_DEFAULT_BRANCH : (BRANCHES[0] || '');
+    document.getElementById('s1-branch').value = first;
+    document.getElementById('s1-branch-box').value = first;
 
     document.getElementById('branch-field').classList.remove('hidden');
+    refreshStepState();
     statusEl.style.color = '#00a572';
     statusEl.innerHTML = '<span style="vertical-align:middle;font-size:14px;margin-right:3px;" class="material-symbols-outlined sym-fill">check_circle</span> Connected · ' + branches.length + ' branches found';
+    if (IMPORTED && !IMPORT_CHECKED) checkImportAgainstRepo();   // the imported config, against this branch
   }, 1200);
 }
 
@@ -2096,6 +2901,32 @@ function fpToggle(btn) {
   });
 })();
 </script>
+
+<!-- ══ LOCAL PATH: THE SERVER'S FOLDERS (Browse) ══ -->
+<div id="repo-browser-backdrop" class="hidden fixed inset-0 z-[99]" style="background:rgba(4,22,39,.25);" onclick="closeRepoBrowser()"></div>
+<div id="repo-browser" role="dialog" aria-label="Choose a git repository on the server"
+     class="hidden fixed top-0 right-0 h-screen bg-white border-l border-outline-variant z-[100] flex flex-col" style="width:380px;box-shadow:-4px 0 24px rgba(4,22,39,.12);">
+  <div class="flex items-center justify-between px-5 py-4 border-b border-outline-variant flex-shrink-0">
+    <div>
+      <h3 class="text-headline-sm text-on-surface" style="font-size:14px;">Choose a repository</h3>
+      <p class="text-on-surface-variant mt-0.5" style="font-size:11px;line-height:16px;">Folders on the server ArtiFex runs on. Only a git repository can be picked.</p>
+    </div>
+    <button onclick="closeRepoBrowser()" aria-label="Close" class="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-colors">
+      <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+    </button>
+  </div>
+  <!-- Where we are: each part goes back there -->
+  <div id="rb-crumbs" class="flex flex-wrap items-center gap-0.5 px-4 py-2.5 border-b border-outline-variant flex-shrink-0"></div>
+  <!-- The folder's folders: a plain one opens, a git repository is picked (double-click: picked and used) -->
+  <div id="rb-list" class="flex-1 overflow-y-auto px-2 py-2"></div>
+  <div class="px-4 py-3 border-t border-outline-variant flex-shrink-0 space-y-2.5">
+    <p id="rb-picked" style="font:500 11px/16px 'JetBrains Mono',monospace;color:#74777d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Pick a git repository</p>
+    <div class="flex gap-3">
+      <button onclick="closeRepoBrowser()" class="px-4 py-2 border border-outline-variant text-on-surface-variant rounded-lg font-label-md text-label-md hover:bg-surface-container transition-colors">Cancel</button>
+      <button id="rb-use" onclick="confirmRepoBrowser()" class="flex-1 py-2 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md hover:bg-secondary-container transition-colors">Use this repository</button>
+    </div>
+  </div>
+</div>
 
 <!-- ══ FOLDER PICKER SIDEBAR ══ -->
 <div id="folder-picker-backdrop" class="hidden fixed inset-0 z-[99]" style="background:rgba(4,22,39,.25);" onclick="closeFolderPicker()"></div>

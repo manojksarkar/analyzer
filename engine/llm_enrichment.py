@@ -99,9 +99,19 @@ def load_domain_context(project_root: str, config: dict) -> str:
         return ""
 
 
+def analyzer_root() -> str:
+    """Where a relative `llm.*Path` in the config is read from: the analyzer's own root
+    (core.paths.project_root), the same for every reader. NOT the analyzed project's
+    `base_path` - the abbreviations were looked for inside the C++ repository and never found."""
+    try:
+        from core.paths import paths
+        return paths().project_root
+    except Exception:
+        return os.getcwd()
+
+
 # Memoized by config path so the brief file is read once per process, not on
-# every description call. _call_llm has no base_path, so resolve the project
-# root via core.paths (same accessor the aux-description cache uses).
+# every description call.
 _DOMAIN_CONTEXT_CACHE: Dict[str, str] = {}
 
 
@@ -111,12 +121,7 @@ def _get_domain_context(config: dict) -> str:
         return ""
     if path in _DOMAIN_CONTEXT_CACHE:
         return _DOMAIN_CONTEXT_CACHE[path]
-    try:
-        from core.paths import paths
-        root = paths().project_root
-    except Exception:
-        root = os.getcwd()
-    text = load_domain_context(root, config)
+    text = load_domain_context(analyzer_root(), config)
     _DOMAIN_CONTEXT_CACHE[path] = text
     return text
 
@@ -664,7 +669,7 @@ def enrich_functions_with_descriptions(functions_data: list, base_path: str, con
     if not llm_provider_reachable(config):
         _log.warning("LLM provider not reachable. Start Ollama (ollama serve) or check openai gateway settings.")
         return {}
-    abbreviations = load_abbreviations(base_path, config)
+    abbreviations = load_abbreviations(analyzer_root(), config)
     processor = lambda source, cfg, callee: get_description(source, cfg, callee, abbreviations)
     return _enrich_functions_loop(functions_data, base_path, config, processor, "description", "LLM-description")
 
@@ -689,7 +694,7 @@ def _enrich_globals_loop(globals_list: list, base_path: str, config: dict, proce
 def enrich_globals_with_descriptions(globals_data: list, base_path: str, config: dict) -> dict:
     if not llm_provider_reachable(config):
         return {}
-    abbreviations = load_abbreviations(base_path, config)
+    abbreviations = load_abbreviations(analyzer_root(), config)
     processor = lambda source, cfg: get_global_description(source, cfg, abbreviations)
     return _enrich_globals_loop(globals_data, base_path, config, processor, "description", "LLM-global")
 
@@ -1131,7 +1136,7 @@ def enrich_functions_rich(
     from llm_core.cache import EntityCache
 
     llm_cfg = load_llm_config(config)
-    abbreviations = load_abbreviations(base_path, config)
+    abbreviations = load_abbreviations(analyzer_root(), config)
     counter = get_counter(llm_cfg.get("defaultModel", ""))
     max_tokens = resolve_max_tokens(llm_cfg)
     builder = ContextBuilder(counter)
@@ -1347,7 +1352,7 @@ def enrich_globals_rich(
     from llm_core.context_builder import ContextBuilder, ContextItem
 
     llm_cfg = load_llm_config(config)
-    abbreviations = load_abbreviations(base_path, config)
+    abbreviations = load_abbreviations(analyzer_root(), config)
     counter = get_counter(llm_cfg.get("defaultModel", ""))
     max_tokens = resolve_max_tokens(llm_cfg)
     builder = ContextBuilder(counter)

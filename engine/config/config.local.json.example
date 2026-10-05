@@ -22,6 +22,16 @@
     "accessTokenMinutes": 480
   },
 
+  // Local repositories: the New Project wizard takes a Git URL or a LOCAL PATH -- a git
+  // repository's folder on this server, typed or picked in its Browse panel. `localRoots` limits
+  // both to these folders (and their subfolders): the panel starts at them and cannot go above,
+  // and a path outside them is refused. Empty or absent: every drive of the server, and any
+  // signed-in user may list its folder names -- set it on a shared server. Read on every
+  // request: no restart needed.
+  "repositories": {
+    "localRoots": ["D:/src"]
+  },
+
   // LLM endpoint + credentials. Keep these here (gitignored), NOT in tracked config.defaults.json.
   // Deep-merged over config.defaults.json's `llm`, so list ONLY the keys you want to override — e.g. the
   // gateway URL and the auth-header token; provider/model/timeouts stay as set in config.json.

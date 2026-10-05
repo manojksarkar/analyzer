@@ -166,6 +166,80 @@ class TestUpdatingASlot:
                        json={"slot_kind": "description", "slot_key": FID, "text": "   "})
         assert r.status_code == 422
 
+    def test_a_text_longer_than_a_correction_can_be_is_422(self, client, review_db, auth_header):
+        """A 5 MB "correction" was accepted (RF-10). The page caps one at 2,000 characters."""
+        from api.routes.text_overrides import MAX_TEXT
+        r = client.put(BASE + "/overrides/slot", headers=auth_header,
+                       json={"slot_kind": "description", "slot_key": FID,
+                             "text": "x" * (MAX_TEXT + 1)})
+        assert r.status_code == 422 and "text" in str(r.json())
+        r = client.put(BASE + "/overrides/slot", headers=auth_header,
+                       json={"slot_kind": "description", "slot_key": FID,
+                             "text": "Within the limit. " * 100})
+        assert r.status_code == 200, r.text
+
+    def test_an_unreachable_database_does_not_say_why_to_the_caller(self, monkeypatch):
+        """The driver's own message is for the server log (RF-9)."""
+        import pytest as _pytest
+        from fastapi import HTTPException
+        from api.routes import text_overrides as to
+        import core.db as core_db
+        monkeypatch.setattr(core_db, "is_database_configured", lambda: True)
+
+        def down():
+            raise RuntimeError("connection to server at 10.0.0.5 port 5432 failed: password for "
+                               "user analyzer")
+        monkeypatch.setattr(core_db, "get_engine", down)
+        with _pytest.raises(HTTPException) as exc:
+            to._connection()
+        assert exc.value.status_code == 503 and "10.0.0.5" not in exc.value.detail
+
+    def test_a_connection_refused_at_connect_does_not_say_why_either(
+            self, review_db, auth_header, monkeypatch):
+        """The engine is made without a connection; the server is reached at `.connect()`,
+        outside `_connection()`'s guard. The driver's text (host, port, user) went to the caller
+        through the 500 handler's `str(exc)` (RF-9, second half)."""
+        from fastapi.testclient import TestClient
+        from sqlalchemy import exc as sa_exc
+        from api.main import app
+        from api.routes import text_overrides as to
+
+        class Down:
+            def connect(self):
+                raise sa_exc.OperationalError(
+                    "SELECT 1", {}, Exception("connection to server at 10.0.0.5 port 5432 "
+                                              "failed: timeout expired"))
+            begin = connect
+
+        monkeypatch.setattr(to, "_connection", lambda: Down())
+        raw = TestClient(app, raise_server_exceptions=False)
+        r = raw.get(BASE + "/overrides/slot", headers=auth_header,
+                    params={"slot_kind": "description", "slot_key": FID})
+        assert r.status_code == 503, r.text
+        assert "10.0.0.5" not in r.text and "SELECT" not in r.text
+        assert r.json()["error"]["code"] == "DATABASE_UNAVAILABLE"
+
+    def test_any_other_database_error_is_a_500_without_its_sql(
+            self, review_db, auth_header, monkeypatch):
+        from fastapi.testclient import TestClient
+        from sqlalchemy import exc as sa_exc
+        from api.main import app
+        from api.routes import text_overrides as to
+
+        class Broken:
+            def connect(self):
+                raise sa_exc.ProgrammingError(
+                    "SELECT secret_column FROM versions", {"id": "ver1"},
+                    Exception("column secret_column does not exist"))
+            begin = connect
+
+        monkeypatch.setattr(to, "_connection", lambda: Broken())
+        raw = TestClient(app, raise_server_exceptions=False)
+        r = raw.get(BASE + "/overrides/slot", headers=auth_header,
+                    params={"slot_kind": "description", "slot_key": FID})
+        assert r.status_code == 500, r.text
+        assert "secret_column" not in r.text
+
     def test_an_unknown_slot_is_404(self, client, review_db, auth_header):
         r = client.put(BASE + "/overrides/slot", headers=auth_header,
                        json={"slot_kind": "description", "slot_key": "Nope|Nope|gone|",
@@ -273,6 +347,53 @@ class TestFlowchartLabels:
     def test_an_unknown_flowchart_is_404(self, client, review_db, auth_header):
         assert _read_labels(client, auth_header, "No|Such|fn|").status_code == 404
         assert _save_labels(client, auth_header, {"n1": "x"}, "No|Such|fn|").status_code == 404
+
+
+class TestALabelSaveRedrawsTheWebPicture:
+    """The web page shows a flowchart only when its SVG was drawn from the stored DOT, so R8 and a
+    label's R4 redraw it once the save has committed (`review.rerender.draw_web_svgs`)."""
+
+    @pytest.fixture
+    def redraws(self, monkeypatch, tmp_path):
+        import review.rerender as rerender
+        from api.services import doc_render
+        calls = []
+        monkeypatch.setattr(doc_render, "commit_output_root", lambda *_a, **_k: tmp_path)
+        monkeypatch.setattr(rerender, "draw_web_svgs", lambda _cx, vid, fid, out, _root: (
+            calls.append((vid, fid, out)) or {}))
+        return calls
+
+    def test_r8_redraws_the_corrected_chart(self, client, review_db, auth_header, redraws,
+                                            tmp_path):
+        assert _save_labels(client, auth_header, {"n1": "Checked."}).status_code == 200
+        assert redraws == [(VERSION, FID, str(tmp_path))]
+
+    def test_undoing_a_label_redraws_it_too(self, client, review_db, auth_header, redraws):
+        _save_labels(client, auth_header, {"n1": "Checked."})
+        n1 = next(l for l in _read_labels(client, auth_header).json()["labels"]
+                  if l["nodeId"] == "n1")
+        r = client.delete(BASE + "/overrides/slot", headers=auth_header,
+                          params={"slot_kind": "nodeLabel", "slot_key": n1["slotKey"]})
+        assert r.status_code == 200, r.text
+        assert [fid for _vid, fid, _out in redraws] == [FID, FID]
+
+    def test_a_refused_save_draws_nothing(self, client, review_db, auth_header, redraws):
+        assert _save_labels(client, auth_header, {"n99": "Nowhere"}).status_code == 404
+        assert redraws == []
+
+    def test_a_picture_that_cannot_be_drawn_does_not_fail_the_save(
+            self, client, review_db, auth_header, monkeypatch, tmp_path):
+        """The correction is stored either way; the next re-export draws the picture."""
+        import review.rerender as rerender
+        from api.services import doc_render
+        monkeypatch.setattr(doc_render, "commit_output_root", lambda *_a, **_k: tmp_path)
+
+        def no_node(*_a, **_k):
+            raise RuntimeError("node not found")
+        monkeypatch.setattr(rerender, "draw_web_svgs", no_node)
+        r = _save_labels(client, auth_header, {"n1": "Checked."})
+        assert r.status_code == 200, r.text
+        assert r.json()["labels"][0]["text"] == "Checked."
 
 
 class TestASaveReDerivesTheSwe4Specs:
@@ -387,6 +508,19 @@ class TestBehaviourRow:
         assert r.json()["bullets"] == ["start calls doThing to prime the pump",
                                        "doThing returns the pump state"]
         assert r.json()["llmText"] == "start calls doThing"
+
+    def test_the_bullets_together_are_one_text_and_have_its_limit(
+            self, client, review_db, auth_header):
+        """Each bullet within the limit, 500 of them a 5 MB cell (RF-10)."""
+        from api.routes.text_overrides import MAX_TEXT
+        r = client.put(BASE + "/overrides/behaviour", headers=auth_header,
+                       json={"function_id": FID, "external_caller_id": CALLER,
+                             "bullets": ["x" * (MAX_TEXT // 2)] * 3})
+        assert r.status_code == 422 and "bullets" in r.text
+        r = client.put(BASE + "/overrides/behaviour", headers=auth_header,
+                       json={"function_id": FID, "external_caller_id": CALLER,
+                             "bullets": ["x" * 100] * 10})
+        assert r.status_code == 200, r.text
 
     def test_an_unknown_caller_is_404(self, client, review_db, auth_header):
         r = client.put(BASE + "/overrides/behaviour", headers=auth_header,
@@ -504,6 +638,38 @@ class TestExportReadiness:
         body = client.get(BASE + "/export-readiness", headers=auth_header).json()
         assert body["stale"] is True
         assert body["overrideCount"] == 1
+
+    def test_it_asks_about_every_document_the_version_has(self, client, review_db, auth_header,
+                                                           monkeypatch):
+        """A web run writes SWE.4 beside SWE.3, so R9 asks what the re-export writes
+        (`pipeline_runner.export_doc_type`), not SWE.3 alone."""
+        import review.export_guard as guard
+        from api.services import pipeline_runner
+        asked, real = [], guard.staleness
+        monkeypatch.setattr(pipeline_runner, "export_doc_type", lambda db, pid, vid: "all")
+        monkeypatch.setattr(guard, "staleness", lambda cx, vid, doc_types=None, component=None: (
+            asked.append(doc_types) or real(cx, vid, doc_types, component=component)))
+        r = client.get(BASE + "/export-readiness", headers=auth_header)
+        assert r.status_code == 200
+        assert asked == ["all"]
+
+    def test_it_names_the_components_whose_documents_are_behind(self, client, review_db,
+                                                                 auth_header, db, monkeypatch):
+        """One version-wide `stale` marked every row "previous Word file" for one correction in
+        one component."""
+        from types import SimpleNamespace
+        client.put(BASE + "/overrides/slot", headers=auth_header,
+                   json={"slot_kind": "description", "slot_key": FID, "text": "Corrected."})
+        docs = [SimpleNamespace(group="Sample-Core"), SimpleNamespace(group="Other")]
+        monkeypatch.setattr(type(db.documents), "list_for_project",
+                            lambda self, pid, version_id=None, per_page=20, **k: (docs, 2))
+        body = client.get(BASE + "/export-readiness", headers=auth_header).json()
+        assert body["stale"] is True and body["staleComponents"] == ["Sample-Core"]
+
+    def test_nothing_is_behind_when_the_version_is_not_stale(self, client, review_db,
+                                                             auth_header):
+        body = client.get(BASE + "/export-readiness", headers=auth_header).json()
+        assert body["staleComponents"] == []
 
 
 class TestNoDatabase:
@@ -1027,7 +1193,10 @@ class TestAnErrorSaysWhoseFaultItIs:
             raise model_store.ModelRowMissing("replaced while it was being written")
         monkeypatch.setattr(model_store, "set_entity_field", _gone)
         r = self._put(client, auth_header)
-        assert r.status_code == 409 and "regenerating" in r.json()["detail"]
+        detail = r.json()["detail"]
+        assert r.status_code == 409 and "regenerating" in detail["message"]
+        # A code of its own: the web app says "save again once the run has finished" for it
+        assert detail["code"] == "VERSION_REGENERATING" and detail["status"] == 409
         got = client.get(BASE + "/overrides/slot", headers=auth_header,
                          params={"slot_kind": "description", "slot_key": FID})
         assert got.json()["isOverridden"] is False, "nothing was saved"
@@ -1056,6 +1225,51 @@ class TestAnOrphanOverHttp:
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["firstEdit"] is True and body["llmText"] == "Does the thing."
+
+
+class TestDiscardingOrphans:
+    """R12: orphans piled up version after version with no way to clean them up."""
+
+    def _seed(self, review_db):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        with review_db.begin() as cx:
+            cx.execute(insert(s.text_overrides), [
+                {"version_id": VERSION, "slot_kind": "description", "slot_key": FID,
+                 "llm_text": "old", "human_text": "Corrected, old code.", "is_orphaned": True,
+                 "updated_at": now},
+                {"version_id": VERSION, "slot_kind": "behaviourInputName", "slot_key": FID,
+                 "llm_text": "in", "human_text": "Pump input", "is_orphaned": False,
+                 "updated_at": now}])
+            cx.execute(insert(s.text_override_history).values(
+                version_id=VERSION, slot_kind="description", slot_key=FID,
+                human_text="Corrected, old code.", updated_at=now, seq=1))
+
+    def test_an_admin_discards_them_and_corrections_in_force_stay(self, client, review_db,
+                                                                   auth_header):
+        self._seed(review_db)
+        r = client.delete(BASE + "/overrides/orphans", headers=auth_header)
+        assert r.status_code == 200, r.text
+        assert r.json() == {"discarded": 1}
+        with review_db.connect() as cx:
+            left = cx.execute(select(s.text_overrides.c.slot_kind)
+                              .where(s.text_overrides.c.version_id == VERSION)).fetchall()
+            hist = cx.execute(select(s.text_override_history.c.slot_kind)
+                              .where(s.text_override_history.c.version_id == VERSION)).fetchall()
+        assert [r.slot_kind for r in left] == ["behaviourInputName"] and hist == []
+
+    def test_one_slot_only(self, client, review_db, auth_header):
+        self._seed(review_db)
+        r = client.delete(BASE + "/overrides/orphans", headers=auth_header,
+                          params={"slot_kind": "behaviourInputName", "slot_key": FID})
+        assert r.status_code == 200 and r.json() == {"discarded": 0}, "in force: untouched"
+        r = client.delete(BASE + "/overrides/orphans", headers=auth_header,
+                          params={"slot_kind": "description", "slot_key": FID})
+        assert r.json() == {"discarded": 1}
+
+    def test_a_developer_may_not(self, client, review_db, dev_header):
+        self._seed(review_db)
+        r = client.delete(BASE + "/overrides/orphans", headers=dev_header)
+        assert r.status_code == 403
 
 
 class TestR11MatchesAComponentHoweverItIsSpelled:
@@ -1134,3 +1348,17 @@ class TestEveryRouteGivesASlotInOneShape:
             assert self.SLOT | self.SAVE <= set(u.json()), kind
             assert u.json()["text"] == u.json()["llmText"] and u.json()["canUndo"] is False
         assert "llm n1" in u.json()["dot"] and "renderPending" in u.json()
+
+
+class TestQueuedTextsCarryAName:
+    """A save's `queuedForRegeneration` carries `label` -- the function's or the unit's name --
+    so the web app can say WHICH texts will be rewritten without taking a key apart."""
+
+    def test_a_function_and_a_unit(self):
+        from api.routes.text_overrides import _readable
+        assert _readable("description", "Layer1.Lib|Lib|libAdd|int,int") == "libAdd"
+        assert _readable("unitDescription", "Layer1.Lib|Lib") == "Lib"
+
+    def test_a_key_it_cannot_read_is_its_own_label(self):
+        from api.routes.text_overrides import _readable
+        assert _readable("description", "nonsense") == "nonsense"

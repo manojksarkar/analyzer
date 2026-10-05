@@ -48,7 +48,8 @@ export function Sidebar() {
               <h1 className="text-primary font-bold tracking-tight whitespace-nowrap font-sans text-xl leading-[1.2]">
                 {APP_NAME}
               </h1>
-              <p className="text-on-surface-variant uppercase whitespace-nowrap mt-0.5 font-mono text-caption font-medium tracking-[0.08em]">
+              {/* 10px / 0.04em fits the rail: at 11px / 0.08em it was cut to "CRAFTED FROM COI". */}
+              <p className="text-on-surface-variant uppercase whitespace-nowrap mt-0.5 font-mono text-label font-medium tracking-[0.04em]">
                 {APP_TAGLINE}
               </p>
             </div>
@@ -115,27 +116,11 @@ export function Sidebar() {
         </div>
       </nav>
 
-      {/* Settings */}
-      <div className="px-2 pt-2 border-t border-outline-variant flex-shrink-0">
-        <button
+      {/* User info. Not a button: neither a profile nor Settings is built yet (ui-review #36). */}
+      <div className="px-2 pb-3 pt-2 border-t border-outline-variant flex-shrink-0">
+        <div
           className={cn(
-            'nav-item w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors',
-            collapsed && 'justify-center px-0',
-          )}
-          title={collapsed ? 'Settings' : undefined}
-        >
-          <Icon name="settings" size={18} className="flex-shrink-0" />
-          {!collapsed && (
-            <span className="font-mono text-xs font-medium">Settings</span>
-          )}
-        </button>
-      </div>
-
-      {/* User info */}
-      <div className="px-2 pb-3 pt-1 flex-shrink-0">
-        <button
-          className={cn(
-            'w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-container transition-colors text-left',
+            'w-full flex items-center gap-3 px-2 py-2 rounded-lg text-left',
             collapsed && 'justify-center px-0',
           )}
         >
@@ -152,12 +137,12 @@ export function Sidebar() {
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-secondary flex-shrink-0" />
                 <p className="text-on-surface-variant uppercase tracking-wide font-mono text-caption font-medium">
-                  {user?.role === 'admin' ? 'Admin' : 'Dev'}
+                  {project?.userRole === 'admin' ? 'Admin' : 'Dev'}
                 </p>
               </div>
             </div>
           )}
-        </button>
+        </div>
       </div>
     </aside>
   )

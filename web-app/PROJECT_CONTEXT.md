@@ -42,10 +42,10 @@ The goal: point it at a repo, configure your architecture layers, and get the fu
 | `projects.html` | 220px | yes | All-projects table — project name, standard (ISO 26262/ASPICE level), latest version, docs in review, progress bar, last run, team avatars, row kebab menu (Settings / Archive / Delete) |
 | `projects-empty.html` | 220px | yes | Empty state → 5-step new-project wizard (Project & Repo → Build Config → Architecture → Team & Access → Review & Init); plus "Request Project Access" modal |
 | `project-detail.html` | 220px | yes | Project overview: KPI cards, live generation progress (phases), documents table, team list, review queue, function-visibility slide-over, Admin/Developer role switcher, Run Analysis modal, version/commit picker |
-| `documents.html` | 56px collapsed | yes | Document list with process filter tabs (All / SYS.1 / SYS.2 / SWE.1 / SWE.2 / SWE.3), status + assignee filters, batch actions (Download / Assign / Approve), edit-section modal, assign-reviewers slide panel |
-| `compare.html` | 56px collapsed | yes | Split diff view: left = reference version, right = current version; per-section Accept / Decline / Edit controls; section progress dots; approve/submit footer |
+| `documents.html` | 56px collapsed | yes | Document list with process filter tabs, the four review states + reviewer filters, version approval bar, batch Download / Assign / Approve dialogs; the reader's Review tab, banners and lock, the bell (`#review`, `#changes`, `#approve`, `#approved`), and review & update's edit mode (`#edit`) |
+| `compare.html` | 56px collapsed | yes | Split diff view: left = reference version, right = current version; read-only for review — a footer names the document's state and links to the reader |
 | `team.html` | 220px | yes | Team table: member, role dropdown (Admin/Developer), last active, row actions; pending-invite rows with Resend / Revoke; Invite Member modal; permission legend card |
-| `versions.html` | 56px collapsed | yes | Tagged version cards (status: In Review / Approved, commit hash, doc count, View Docs + Compare buttons); untagged commits timeline below; filter tabs (All / In Review / Complete) |
+| `versions.html` | 56px collapsed | yes | Tagged version cards (derived status: In review · N of M approved / Approved by X, commit hash, doc count, View Docs + Compare buttons); untagged commits timeline below; filter tabs (All / In review / Approved) |
 
 ---
 
@@ -89,8 +89,20 @@ The goal: point it at a repo, configure your architecture layers, and get the fu
 
 | Role | Capabilities |
 |---|---|
-| **Admin** | Creates project, owns configuration (onboarding), manages layers/groups/components, uploads data dictionary and macros |
-| **Developer** | Loads existing project + configuration, runs analysis, views and exports documents, reviews generated content |
+| **Admin** | Creates project, owns configuration (onboarding), manages layers/groups/components, uploads data dictionary and macros; runs analysis, re-exports, manages the team; assigns reviewers; approves, requests changes, reopens documents |
+| **Developer** | Views and downloads documents, corrects the LLM's text, reviews the documents assigned to them, submits for approval, claims an unassigned document |
+
+Review and approval: a document has one reviewer; a version is approved when all its documents are
+(contract [REVIEW_APPROVE_API_SPEC](../docs/spec/REVIEW_APPROVE_API_SPEC.md)). One status vocabulary:
+`lib/reviewStatus.ts` + `ui/StatusBadge` — add no local status map. Due dates are not shown (the API stores
+`due_date`). `projectKeys.detail` prefixes every project key, so invalidate it with `exact: true`; review
+mutations do not refetch rendered pages.
+
+Staged generation: a version's documents are made per component by any number of runs. The Documents
+page's **Components** panel (`pages/DocumentsPage/components/ComponentsPanel.tsx`, `hooks/useVersionComponents.ts`)
+lists every component of the version's layers by state, shows the latest run (progress, or STOPPED with the
+`analyzer.py resume` command), and lets an admin generate the ones without documents. Versions and projects
+the CLI made can have null fields: the mappers tolerate them (one null used to empty the whole list).
 
 ---
 
@@ -119,7 +131,9 @@ All pages are designed as HTML mockups in `docs/ui-mockups/`. Build in React in 
 2. **Sign-in** — `signin.html`
 3. **Projects list** — `projects.html` + empty state / onboarding wizard (`projects-empty.html`)
 4. **Project detail / overview** — `project-detail.html` (covers KPIs, generation progress, run analysis, function visibility)
-5. **Documents** — `documents.html` (list view, filters, batch actions, edit modal)
+5. **Documents** — `documents.html` (list view, filters, batch actions, edit modal). Two readers: SWE.3 (rich
+   sections) and SWE.4 (`pages/DocumentInspectorPage/components/Swe4Reader.tsx`, `view-swe4` in the mockup; every
+   run makes both documents per component — root `PROJECT_CONTEXT.md` 2026-09-30)
 6. **Compare** — `compare.html` (split diff, review controls)
 7. **Versions** — `versions.html`
 8. **Team** — `team.html`
@@ -130,7 +144,7 @@ All pages are designed as HTML mockups in `docs/ui-mockups/`. Build in React in 
 
 | Decision | Status |
 |---|---|
-| Product name | TBD |
+| Product name | ArtiFex (locked) |
 | Versioning model | TBD — design for git-commit-tied first |
 | "Build Configuration" as final name | Proposed, not confirmed |
 | "Preprocessor Definitions" as final name | Proposed, not confirmed |
@@ -164,7 +178,7 @@ Settings                (bottom, below border-t)
 [ 📁 VCU Engine Firmware ▾ ]  ·  [ v1.2.0 ▾ ]  ·  ⑂ main @ d9a0c55  ·  Jun 15    [CTA]
 ```
 - Project switcher → version/commit picker (Versions / Commits tabs) → read-only commit chip → page CTA
-- CTAs: Overview `[▶ RUN ANALYSIS]`, Documents `[↓ Download All]`, Compare `[✓ Accept All] [✗ Reject All]`, Versions — none, Team `[+ Invite]`
+- CTAs: Overview `[▶ RUN ANALYSIS]`, Documents `[↓ Download All]`, Compare — none (read-only), Versions — none, Team `[+ Invite]`
 
 **Breadcrumbs** — always start with `[⬡]` home icon (→ projects.html):
 - Overview:   `[⬡] / VCU Engine Firmware / Overview`

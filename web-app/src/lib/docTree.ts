@@ -1,11 +1,73 @@
 import type { Document } from '../types'
 
 /** Process column order shared by the documents list + the tree rail. */
-export const DOC_PROCESSES = ['SYS.1', 'SYS.2', 'SWE.1', 'SWE.2', 'SWE.3'] as const
+export const DOC_PROCESSES = ['SYS.1', 'SYS.2', 'SWE.1', 'SWE.2', 'SWE.3', 'SWE.4'] as const
 
-/** Distinct, sorted assignee names from a doc set (for the rail dropdown). */
-export function buildAssigneeOptions(docs: Document[]): string[] {
-  return [...new Set(docs.map((d) => d.assignee).filter((a): a is string => !!a))].sort()
+/** The processes this app writes documents for. The others are shown only where a document of
+ *  theirs exists: a tab or row of a process nothing generates was a placeholder, always empty. */
+export const GENERATED_PROCESSES: readonly string[] = ['SWE.3', 'SWE.4']
+
+/** The processes to offer for `docs`, in the canonical order: the generated ones, and any other
+ *  that has a document. */
+export function shownProcesses(docs: Pick<Document, 'process'>[]): string[] {
+  return DOC_PROCESSES.filter((p) => GENERATED_PROCESSES.includes(p) || docs.some((d) => d.process === p))
+}
+
+/** Each process's document, as the tree names it (docs/ui-mockups/documents.html). */
+export const PROCESS_TITLES: Record<string, string> = {
+  'SYS.1': 'System Requirements Spec',
+  'SYS.2': 'System Test Spec',
+  'SWE.1': 'SW Requirements Spec',
+  'SWE.2': 'Software Architecture Spec',
+  'SWE.3': 'Detailed Design',
+  'SWE.4': 'Unit Test Specification',
+}
+
+/** Each process's document title, as its cover prints it (the render payload's `cover.subtitle`). */
+const DOCUMENT_TITLES: Record<string, string> = {
+  'SWE.3': 'Software Detailed Design Specification',
+  'SWE.4': 'Software Unit Test Specification',
+}
+
+/** The line under a document's name: its process's title as the cover prints it, else the
+ *  document's own subtitle, else the process's short name. Never another process's title. */
+export function documentSubtitle(doc: { process?: string; subtitle?: string }): string {
+  const process = doc.process ?? ''
+  return DOCUMENT_TITLES[process] ?? doc.subtitle ?? PROCESS_TITLES[process] ?? ''
+}
+
+/* The DOCX a process's exporter writes for a component (engine group_planner). */
+const DOCX_PREFIX: Record<string, string> = {
+  'SWE.3': 'software_detailed_design',
+  'SWE.4': 'software_unit_test_specification',
+}
+
+/** The name a document downloads under (no extension) — the engine's own file name, so a
+ *  component's SWE.3 and SWE.4 never land on one file. */
+export function docxFileName(doc: Pick<Document, 'process' | 'group' | 'name'>): string {
+  const prefix = DOCX_PREFIX[doc.process]
+  return prefix ? `${prefix}_${doc.group ?? doc.name}` : `${doc.process}_${doc.name}`
+}
+
+/** The reviewer filter's value for "Needs a reviewer" (the API's `assignee_id=none`). */
+export const NEEDS_REVIEWER = 'none'
+
+/** One choice of the reviewer filter: a reviewer's user id, and their name. */
+export interface ReviewerOption { value: string; label: string }
+
+/** The distinct reviewers of a doc set, by name (for the reviewer filter). */
+export function buildReviewerOptions(docs: Document[]): ReviewerOption[] {
+  const byId = new Map<string, string>()
+  for (const d of docs) if (d.reviewer) byId.set(d.reviewer.userId, d.reviewer.name)
+  return [...byId].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label))
+}
+
+/** Whether a document passes the reviewer filter: '' every one, `none` those without a
+ *  reviewer, else those the user (by id) reviews. */
+export function matchesReviewer(doc: Pick<Document, 'reviewer'>, filter: string): boolean {
+  if (!filter) return true
+  if (filter === NEEDS_REVIEWER) return !doc.reviewer
+  return doc.reviewer?.userId === filter
 }
 
 /** Group docs by process in the canonical order, dropping empty processes. */

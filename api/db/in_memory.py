@@ -19,14 +19,15 @@ import uuid
 from ..models.domain import (
     User, Project, ProjectMember, Version, Commit, AnalysisJob,
     AnalysisPhase, Document, DocumentSection, DocumentAssignment,
-    Function, CompareResult, DocumentDiff, Notification, AccessRequest, REEXPORT_MODE,
+    Function, CompareResult, DocumentDiff, Notification, AccessRequest, RENDER_MODES, ACTIVE_JOB_STATUSES,
+    ReviewEvent, DOC_STATUSES,
 )
 from ..repositories.interfaces import (
     IUserRepository, IProjectRepository, IProjectMemberRepository,
     IAccessRequestRepository, IVersionRepository, ICommitRepository,
     IAnalysisJobRepository, IDocumentRepository,
     IDocumentAssignmentRepository, IFunctionRepository,
-    ICompareRepository, INotificationRepository,
+    ICompareRepository, INotificationRepository, IReviewEventRepository,
 )
 
 # ---------------------------------------------------------------------------
@@ -195,10 +196,10 @@ def _seed_documents() -> dict[str, Document]:
         # (id, version_id, project_id, process, name, subtitle, layer, group, status)
         ("doc1",  "ver3", "p1", "SWE.3", "Brake Controller",        "Unit Design",    "APP_LAYER", "Chassis_Mgmt", "in_review"),
         ("doc2",  "ver3", "p1", "SWE.3", "Throttle Controller",     "Unit Design",    "APP_LAYER", "Powertrain",   "in_review"),
-        ("doc3",  "ver3", "p1", "SWE.2", "Chassis Management",      "Component Design","APP_LAYER","Chassis_Mgmt", "never"),
+        ("doc3",  "ver3", "p1", "SWE.2", "Chassis Management",      "Component Design","APP_LAYER","Chassis_Mgmt", "in_review"),
         ("doc4",  "ver3", "p1", "SWE.1", "Software Requirements",   "SRS",            "APP_LAYER", "Global",       "approved"),
         ("doc5",  "ver3", "p1", "SYS.2", "System Requirements",     "SyRS",           "APP_LAYER", "Global",       "approved"),
-        ("doc6",  "ver3", "p1", "SWE.3", "Body Control Module",     "Unit Design",    "APP_LAYER", "Body",         "unchanged"),
+        ("doc6",  "ver3", "p1", "SWE.3", "Body Control Module",     "Unit Design",    "APP_LAYER", "Body",         "submitted"),
         ("doc7",  "ver2", "p1", "SWE.3", "Brake Controller",        "Unit Design",    "APP_LAYER", "Chassis_Mgmt", "approved"),
         ("doc8",  "ver4", "p2", "SWE.3", "Kalman Filter Core",      "Unit Design",    "FUSION",    "Kalman",       "approved"),
     ]
@@ -209,6 +210,9 @@ def _seed_documents() -> dict[str, Document]:
             layer=e[6], group=e[7], status=e[8],
             due_date=date(2026, 7, 1) if e[8] == "in_review" else None,
             created_at=_dt(10), updated_at=_dt(2),
+            review_comment="Checked every unit against the code." if e[8] == "submitted" else None,
+            approved_by="u1" if e[8] == "approved" else None,
+            approved_at=_dt(3) if e[8] == "approved" else None,
         ))
     return {d.id: d for d in docs}
 
@@ -277,10 +281,12 @@ def _seed_assignments() -> dict[str, list[DocumentAssignment]]:
     return {
         "doc1": [
             DocumentAssignment("asgn1", "doc1", "u2", "u1", _dt(5)),
-            DocumentAssignment("asgn2", "doc1", "u3", "u1", _dt(5)),
         ],
         "doc2": [
             DocumentAssignment("asgn3", "doc2", "u3", "u1", _dt(4)),
+        ],
+        "doc6": [
+            DocumentAssignment("asgn4", "doc6", "u2", "u1", _dt(4)),
         ],
     }
 
@@ -440,7 +446,9 @@ class _InMemMemberRepo(IProjectMemberRepository):
         return [copy.deepcopy(m) for m in self._project_members(project_id) if m.status == "pending"]
 
     def cancel_invite(self, project_id, invite_id):
-        self._store.pop(invite_id, None)
+        m = self._store.get(invite_id)
+        if m is not None and m.project_id == project_id and m.status == "pending":
+            self._store.pop(invite_id, None)
 
 
 class _InMemAccessReqRepo(IAccessRequestRepository):
@@ -500,6 +508,7 @@ class _InMemCommitRepo(ICommitRepository):
             copy.deepcopy(c) for c in self._store.values()
             if c.project_id == project_id
         ]
+        items.sort(key=lambda c: c.sha)                     # a tie stays in one order (as SQL)
         items.sort(key=lambda c: c.committed_at, reverse=True)
         total = len(items)
         start = (page - 1) * per_page
@@ -530,7 +539,7 @@ class _InMemJobRepo(IAnalysisJobRepository):
         candidates = [
             j for j in self._store.values()
             if j.project_id == project_id and j.status not in ("cancelled",)
-            and getattr(j, "mode", None) != REEXPORT_MODE
+            and getattr(j, "mode", None) not in RENDER_MODES
         ]
         if not candidates:
             return None
@@ -539,6 +548,10 @@ class _InMemJobRepo(IAnalysisJobRepository):
     def list_for_version(self, version_id):
         jobs = [j for j in self._store.values() if j.version_id == version_id]
         return [copy.deepcopy(j) for j in sorted(jobs, key=lambda j: j.started_at, reverse=True)]
+
+    def list_active(self):
+        jobs = [j for j in self._store.values() if j.status in ACTIVE_JOB_STATUSES]
+        return [copy.deepcopy(j) for j in sorted(jobs, key=lambda j: j.started_at)]
 
     def update(self, job):
         self._store[job.id] = job
@@ -550,9 +563,15 @@ class _InMemDocRepo(IDocumentRepository):
         self,
         store: dict[str, Document],
         sections: dict[str, list[DocumentSection]],
+        assignments: Optional[dict[str, list[DocumentAssignment]]] = None,
     ):
         self._store = store
         self._sections = sections   # doc_id → [DocumentSection]
+        self._assign = assignments if assignments is not None else {}
+
+    def _reviewer(self, document_id):
+        lst = self._assign.get(document_id) or []
+        return lst[-1].user_id if lst else None
 
     def list_for_project(self, project_id, version_id=None, process=None,
                          status=None, assignee_id=None, query=None, page=1, per_page=20):
@@ -563,6 +582,10 @@ class _InMemDocRepo(IDocumentRepository):
             items = [d for d in items if d.process == process]
         if status:
             items = [d for d in items if d.status == status]
+        if assignee_id == "none":
+            items = [d for d in items if self._reviewer(d.id) is None]
+        elif assignee_id:
+            items = [d for d in items if self._reviewer(d.id) == assignee_id]
         if query:
             q = query.lower()
             items = [d for d in items if q in d.name.lower()]
@@ -581,10 +604,15 @@ class _InMemDocRepo(IDocumentRepository):
         items = [d for d in self._store.values() if d.project_id == project_id]
         if version_id:
             items = [d for d in items if d.version_id == version_id]
-        stats: dict[str, int] = {"total": 0, "approved": 0, "in_review": 0, "never": 0, "unchanged": 0}
+        stats: dict[str, int] = {"total": 0, **{k: 0 for k in DOC_STATUSES},
+                                 "needs_reviewer": 0, "carried": 0}
         for d in items:
             stats["total"] += 1
             stats[d.status] = stats.get(d.status, 0) + 1
+            if d.status != "approved" and self._reviewer(d.id) is None:
+                stats["needs_reviewer"] += 1
+            if d.status == "approved" and d.carried_from:
+                stats["carried"] += 1
         return stats
 
     def list_sections(self, document_id):
@@ -615,9 +643,21 @@ class _InMemAssignRepo(IDocumentAssignmentRepository):
         return [copy.deepcopy(a) for a in self._store.get(document_id, [])]
 
     def assign(self, assignment):
-        lst = self._store.setdefault(assignment.document_id, [])
-        lst.append(assignment)
+        self.set_reviewer(assignment)
         return copy.deepcopy(assignment)
+
+    def set_reviewer(self, assignment):
+        before = self._store.get(assignment.document_id) or []
+        self._store[assignment.document_id] = [assignment]
+        return copy.deepcopy(before[-1]) if before else None
+
+    def reviewers(self, document_ids):
+        out = {}
+        for d in document_ids:
+            lst = self._store.get(d) or []
+            if lst:
+                out[d] = lst[-1].user_id
+        return out
 
     def remove(self, document_id, user_id):
         self._store[document_id] = [
@@ -650,12 +690,15 @@ class _InMemFunctionRepo(IFunctionRepository):
                     fns[i] = function
         return copy.deepcopy(function)
 
-    def bulk_update_visibility(self, function_ids, is_visible):
+    def bulk_update_visibility(self, function_ids, is_visible, project_id=None):
+        n = 0
         for fid in function_ids:
             f = self._by_id.get(fid)
-            if f:
+            if f and (project_id is None or f.project_id == project_id):
                 f.is_visible = is_visible
                 self.update(f)
+                n += 1
+        return n
 
     def load_from_pipeline(self, pipeline_functions: dict[str, list[Function]]) -> None:
         """Add/replace functions for the given job_ids (additive — preserves other jobs)."""
@@ -710,6 +753,13 @@ class _InMemNotifRepo(INotificationRepository):
             if n.read_at is None
         ]
 
+    def list_for_user(self, user_id, limit=30):
+        items = sorted(self._store.get(user_id, []), key=lambda n: n.created_at, reverse=True)
+        return [copy.deepcopy(n) for n in items[:limit]]
+
+    def get(self, notification_id):
+        return copy.deepcopy(self._by_id.get(notification_id))
+
     def mark_read(self, notification_id):
         n = self._by_id.get(notification_id)
         if n:
@@ -727,6 +777,38 @@ class _InMemNotifRepo(INotificationRepository):
         self._store.setdefault(notification.user_id, []).append(notification)
         self._by_id[notification.id] = notification
         return copy.deepcopy(notification)
+
+
+class _InMemReviewEventRepo(IReviewEventRepository):
+    def __init__(self):
+        self._events: list[ReviewEvent] = []     # in the order they happened
+
+    @staticmethod
+    def _newest_first(items):
+        # `at` first; for two events of one instant, the one recorded later is the newer
+        indexed = list(enumerate(items))
+        indexed.sort(key=lambda p: (p[1].at, p[0]), reverse=True)
+        return [copy.deepcopy(e) for _, e in indexed]
+
+    def add(self, event):
+        self._events.append(copy.deepcopy(event))
+        return event
+
+    def list_for_document(self, document_id):
+        return self._newest_first([e for e in self._events if e.document_id == document_id])
+
+    def list_for_project(self, project_id, version_id=None, document_id=None, limit=50):
+        items = [e for e in self._events if e.project_id == project_id
+                 and (not version_id or e.version_id == version_id)
+                 and (not document_id or e.document_id == document_id)]
+        return self._newest_first(items)[:limit]
+
+    def last_for_documents(self, document_ids):
+        wanted = set(document_ids)
+        out: dict[str, ReviewEvent] = {}
+        for e in self._newest_first([e for e in self._events if e.document_id in wanted]):
+            out.setdefault(e.document_id, e)
+        return out
 
 
 # ---------------------------------------------------------------------------
@@ -767,8 +849,9 @@ class InMemoryDatabase:
         self.versions:     IVersionRepository            = _InMemVersionRepo(versions)
         self.commits:      ICommitRepository             = _InMemCommitRepo(commits)
         self.jobs:         IAnalysisJobRepository        = _InMemJobRepo(jobs)
-        self.documents:    IDocumentRepository           = _InMemDocRepo(docs, sections)
+        self.documents:    IDocumentRepository           = _InMemDocRepo(docs, sections, assigns)
         self.assignments:  IDocumentAssignmentRepository = _InMemAssignRepo(assigns)
         self.functions:    IFunctionRepository           = _InMemFunctionRepo(functions)
         self.compare:      ICompareRepository            = _InMemCompareRepo(cmp_results, cmp_diffs)
         self.notifications: INotificationRepository      = _InMemNotifRepo(notifs)
+        self.review_events: IReviewEventRepository       = _InMemReviewEventRepo()

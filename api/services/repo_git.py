@@ -19,14 +19,46 @@ from __future__ import annotations
 
 import hashlib
 import re
+import threading
+import time
 from pathlib import Path
 from typing import Any, Optional
 
-from . import git_cli
+from . import git_cli, local_repos
 
 # Project root (…/analyzer) — used only to locate the transient clone cache.
 _ROOT = Path(__file__).resolve().parents[2]
 _CACHE_DIR = _ROOT / "workspaces" / "_wizard"
+
+# A wizard clone (blobless) fetched this recently is current enough: Test Connection reads the
+# tree and then checks an imported config against it, and each fetch is a network round trip
+# (seconds). Commit-list clones keep fetching every time.
+_FRESH_SECONDS = 60
+_FETCHED_MARK = "analyzer-fetched"
+
+# One lock per clone folder: two requests for a branch no one has cloned yet - the tree and the
+# config check, or two tabs - both ran `git clone` into it, and the second one failed.
+_LOCKS: dict = {}
+_LOCKS_GUARD = threading.Lock()
+
+
+def _folder_lock(dest: Path) -> threading.Lock:
+    with _LOCKS_GUARD:
+        return _LOCKS.setdefault(str(dest), threading.Lock())
+
+
+def _fetched_recently(dest: Path) -> bool:
+    try:
+        return time.time() - (dest / ".git" / _FETCHED_MARK).stat().st_mtime < _FRESH_SECONDS
+    except OSError:
+        return False
+
+
+def _mark_fetched(dest: Path) -> None:
+    try:
+        (dest / ".git" / _FETCHED_MARK).write_text(str(time.time()), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def repo_root_name(repo_url: str) -> str:
@@ -53,8 +85,16 @@ def test_connection(repo_url: str, access_token: Optional[str] = None) -> dict[s
     if not url:
         return {"connected": False, "default_branch": None, "branches": [],
                 "message": "Repository URL is required."}
+    creds = _creds(access_token)
+    if local_repos.is_local(url):
+        # A git repository's folder on the server: said plainly when it is not one (git's own
+        # answer ended "...and the repository exists."), and no token is sent.
+        why = local_repos.problem(url)
+        if why:
+            return {"connected": False, "default_branch": None, "branches": [], "message": why}
+        url, creds = local_repos.clean(url), ("", "")
     try:
-        res = git_cli.ls_remote(url, *_creds(access_token))
+        res = git_cli.ls_remote(url, *creds)
     except git_cli.GitError as exc:
         return {"connected": False, "default_branch": None, "branches": [],
                 "message": _friendly(str(exc))}
@@ -83,22 +123,25 @@ def _clone_or_reuse(
     depth: int = 1, blobless: bool = False, refresh: bool = False,
 ) -> Path:
     dest = _cache_path(repo_url, ref, depth, blobless)
-    if (dest / ".git").exists():
-        # A cached clone is frozen at clone time. When the caller needs fresh
-        # history (commit list), pull the branch's current tip so newly-pushed
-        # commits appear. Best-effort: on failure, fall back to the snapshot.
-        if refresh and ref:
-            try:
-                git_cli.fetch(str(dest), repo_url.strip(), *_creds(access_token),
-                              ref, depth=depth)
-            except git_cli.GitError:
-                pass
+    with _folder_lock(dest):
+        if (dest / ".git").exists():
+            # A cached clone is frozen at clone time. When the caller needs fresh
+            # history (commit list), pull the branch's current tip so newly-pushed
+            # commits appear. Best-effort: on failure, fall back to the snapshot.
+            if refresh and ref and not (blobless and _fetched_recently(dest)):
+                try:
+                    git_cli.fetch(str(dest), repo_url.strip(), *_creds(access_token),
+                                  ref, depth=depth)
+                    _mark_fetched(dest)
+                except git_cli.GitError:
+                    pass
+            return dest
+        git_cli.shallow_clone(
+            repo_url.strip(), *_creds(access_token), str(dest),
+            ref=ref or None, depth=depth, blobless=blobless,
+        )
+        _mark_fetched(dest)
         return dest
-    git_cli.shallow_clone(
-        repo_url.strip(), *_creds(access_token), str(dest),
-        ref=ref or None, depth=depth, blobless=blobless,
-    )
-    return dest
 
 
 def list_commits(
@@ -133,19 +176,31 @@ def _children_at(nodes: list[dict], path: str) -> list[dict]:
     return []
 
 
+def tree_ref(repo_dir: Path, ref: Optional[str]) -> str:
+    """The commit to read a cached clone at: the branch's fetched tip (``origin/<ref>``) when
+    the clone has it, else HEAD. A reused clone's HEAD stays at the commit it was cloned at, so
+    reading HEAD after a refresh showed - and checked paths against - an old snapshot."""
+    if ref and git_cli.has_ref(str(repo_dir), f"refs/remotes/origin/{ref}"):
+        return f"refs/remotes/origin/{ref}"
+    return "HEAD"
+
+
 def browse(
     repo_url: str,
     ref: Optional[str] = None,
     path: str = "",
     access_token: Optional[str] = None,
+    refresh: bool = False,
 ) -> dict[str, Any]:
     """Clone (cached, depth-1, **blobless**) and return the tree under ``path``. The
     partial clone fetches commit + tree objects but no file contents, so listing folder
-    names doesn't download the whole repo. Raises git_cli.GitError on clone failure (the
-    route maps it to 400)."""
+    names doesn't download the whole repo. ``refresh`` first fetches the branch's current
+    tip into a reused clone: the wizard asks for it when it connects or changes branch, since
+    that tree is what every path of the new project is checked against. Raises
+    git_cli.GitError on clone failure (the route maps it to 400)."""
     url = (repo_url or "").strip()
-    repo_dir = _clone_or_reuse(url, ref, access_token, blobless=True)
-    tree = git_cli.list_tree(str(repo_dir), "HEAD")
+    repo_dir = _clone_or_reuse(url, ref, access_token, blobless=True, refresh=refresh)
+    tree = git_cli.list_tree(str(repo_dir), tree_ref(repo_dir, ref))
     norm = (path or "").strip().strip("/")
     entries = _children_at(tree, norm) if norm else tree
     return {
@@ -162,6 +217,8 @@ def _friendly(msg: str) -> str:
     low = msg.lower()
     if "authentication failed" in low or "could not read username" in low:
         return "Authentication failed — check the access token."
+    if "does not appear to be a git repository" in low:
+        return "Not a git repository — check the URL or the folder."
     if "repository not found" in low or "not found" in low:
         return "Repository not found — check the URL (and token for private repos)."
     if "could not resolve host" in low or "unable to access" in low or "timed out" in low:

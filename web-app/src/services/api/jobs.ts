@@ -2,12 +2,22 @@ import { http } from '../../lib/http'
 import type { AnalysisJob, JobFunctions, JobStatus } from '../../types'
 import { mapJob, mapJobFunctions, type ApiJob, type ApiFunction } from '../mappers'
 
+/** What a run analyses: `names` of ONE kind - layer names, or layer-qualified group or component
+ *  ids (`Layer1.My Sample`, `Layer1.Lib`). Several may be named, from different layers. */
+export interface JobScope {
+  type: 'project' | 'layer' | 'group' | 'component'
+  names: string[]
+}
+
 export interface StartJobInput {
   commit_sha: string
   version_tag?: string
   reference_version_id?: string
   pause_after_phase1?: boolean
-  layer_filter?: string
+  /** Narrows the run. The server's generation command reads `scope`, not `layer_filter`. */
+  scope?: JobScope
+  /** Skip the LLM steps (the engine's `--no-llm`): faster, for checking structure, not wording. */
+  no_llm?: boolean
 }
 
 export const jobsApi = {
@@ -36,8 +46,6 @@ export const jobsApi = {
     }>(`/projects/${projectId}/jobs/${jobId}/functions`)
     return mapJobFunctions(r)
   },
-  reexport: (projectId: string, jobId: string): Promise<unknown> =>
-    http.post(`/projects/${projectId}/jobs/${jobId}/reexport`),
   /** SSE endpoint URL. The events route is unauthenticated, so no token needed. */
   eventsUrl: (projectId: string, jobId: string): string =>
     http.rawUrl(`/projects/${projectId}/jobs/${jobId}/events`),

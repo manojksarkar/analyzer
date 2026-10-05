@@ -19,6 +19,7 @@ const DocumentInspectorPage = lazy(() => import('./pages/DocumentInspectorPage')
 const ComparePage         = lazy(() => import('./pages/ComparePage').then((m) => ({ default: m.ComparePage })))
 const VersionsPage        = lazy(() => import('./pages/VersionsPage').then((m) => ({ default: m.VersionsPage })))
 const TeamPage            = lazy(() => import('./pages/TeamPage').then((m) => ({ default: m.TeamPage })))
+const NotFoundPage        = lazy(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })))
 
 function PageSpinner() {
   return (
@@ -139,11 +140,7 @@ export default function App() {
                 path="/projects/:projectId/compare"
                 element={
                   <ProtectedRoute>
-                    <ProjectLayout
-                      breadcrumbLabel="Compare"
-                      breadcrumbParentLabel="Documents"
-                      breadcrumbParentTo="/projects/:projectId/documents"
-                    />
+                    <ProjectLayout breadcrumbLabel="Compare" />
                   </ProtectedRoute>
                 }
               >
@@ -174,7 +171,10 @@ export default function App() {
 
               {/* Fallbacks */}
               <Route path="/" element={<Navigate to="/projects" replace />} />
-              <Route path="*" element={<Navigate to="/projects" replace />} />
+              {/* A project's own address opens its Overview. */}
+              <Route path="/projects/:projectId" element={<Navigate to="overview" replace />} />
+              {/* Anything else says so, with a way back (it went to Projects without a word). */}
+              <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </Suspense>
           </AuthGate>

@@ -40,13 +40,78 @@ def _git_exe() -> str:
     return shutil.which("git") or "git"
 
 
-def _run(args: List[str], cwd: Optional[str] = None) -> subprocess.CompletedProcess:
+#: Seconds one git command may run before it is stopped. A clone or fetch of a large repository
+#: over a slow link takes minutes; listing a remote's branches, seconds. With no limit, a slow or
+#: unreachable server -- or a credential helper waiting for a login nobody can type -- held the
+#: request for ever (one test waited an hour). `ANALYZER_GIT_TIMEOUT` overrides the network ones.
+TIMEOUTS = {"clone": 1800, "fetch": 900, "ls-remote": 120}
+LOCAL_TIMEOUT = 600
+#: The exit code a stopped command reports (as coreutils `timeout` does).
+TIMED_OUT = 124
+
+
+def _timeout(args: List[str]) -> float:
+    for a in args:
+        if a in TIMEOUTS:
+            try:
+                return float(os.environ.get("ANALYZER_GIT_TIMEOUT") or TIMEOUTS[a])
+            except ValueError:
+                return TIMEOUTS[a]
+    return LOCAL_TIMEOUT
+
+
+def quiet_env() -> Dict[str, str]:
+    """The environment git runs in: it never asks for anything, it fails instead."""
     env = dict(os.environ)
-    env["GIT_TERMINAL_PROMPT"] = "0"
-    return subprocess.run(
-        [_git_exe(), *args],
-        cwd=cwd, capture_output=True, text=True, env=env, shell=False,
-    )
+    env["GIT_TERMINAL_PROMPT"] = "0"           # no username/password prompt on a console
+    env["GCM_INTERACTIVE"] = "never"           # Git Credential Manager: no login window
+    env.setdefault("GIT_SSH_COMMAND", "ssh -o BatchMode=yes")   # no ssh password prompt
+    return env
+
+
+def _stop_tree(proc: subprocess.Popen) -> None:
+    """Kill `proc` and everything beneath it (git starts helpers that hold its pipes open).
+    Best-effort: never raises."""
+    try:
+        import psutil                                   # type: ignore[import]
+        for child in psutil.Process(proc.pid).children(recursive=True):
+            try:
+                child.kill()
+            except Exception:                           # noqa: BLE001
+                pass
+    except Exception:                                   # noqa: BLE001 - no psutil, or gone
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                           capture_output=True)
+    try:
+        proc.kill()
+    except Exception:                                   # noqa: BLE001
+        pass
+
+
+def _run(args: List[str], cwd: Optional[str] = None) -> subprocess.CompletedProcess:
+    """`git <args>`, stopped -- the whole process tree -- once it has run longer than its limit
+    (`TIMEOUTS`), and then answered as a failure (exit `TIMED_OUT`) like any other, so every
+    caller's handling of a failed git command applies. The message never carries the arguments:
+    a clone URL can hold a token."""
+    cmd = [_git_exe(), *args]
+    limit = _timeout(args)
+    proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, env=quiet_env(), shell=False)
+    try:
+        out, err = proc.communicate(timeout=limit)
+    except subprocess.TimeoutExpired:
+        _stop_tree(proc)
+        try:
+            proc.communicate(timeout=10)
+        except Exception:                               # noqa: BLE001 - the pipes are closing
+            pass
+        what = next((a for a in args if a in TIMEOUTS), "command")
+        return subprocess.CompletedProcess(
+            cmd, TIMED_OUT, "",
+            f"git {what} did not finish within {int(limit)} s and was stopped: the repository is "
+            f"slow or unreachable, or git is waiting for a login, which cannot be typed here")
+    return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
 
 
 def _check(proc: subprocess.CompletedProcess, what: str) -> subprocess.CompletedProcess:
@@ -149,20 +214,30 @@ def fetch(
 ) -> None:
     """Update a cached shallow clone's ``origin/<ref>`` to the current remote tip.
 
-    Fetches straight from the credential-injected URL (not the clone's
-    credential-free ``origin``), so private repos keep working without
+    Fetches from ``origin`` with the credential-injected URL supplied for this one
+    command (``-c remote.origin.url=...``), so private repos keep working without
     persisting the token, and stays shallow (``--depth``) to match the clone.
-    Without this a reused clone is frozen at clone time and newly-pushed commits
-    never appear. Raises GitError on failure."""
+    Through ``origin`` - not the bare URL - because a blobless clone's filter belongs
+    to that remote: fetching the URL downloaded the content of every file the new
+    commits added or changed. Without
+    this a reused clone is frozen at clone time and newly-pushed commits never
+    appear. Raises GitError on failure."""
     branch = (ref or "").strip()
     if not branch:
         return
     auth = _auth_url(clone_url, username, token)
-    proc = _run(["-C", repo_dir, "fetch", "--depth", str(int(depth)), auth,
+    proc = _run(["-C", repo_dir, "-c", f"remote.origin.url={auth}", "fetch",
+                 "--depth", str(int(depth)), "origin",
                  f"+refs/heads/{branch}:refs/remotes/origin/{branch}"])
     if proc.returncode != 0:
         msg = proc.stderr.strip().replace(auth, _clean_url(clone_url))
         raise GitError(f"git fetch failed (exit {proc.returncode}): {msg}")
+
+
+def has_ref(repo_dir: str, ref: str) -> bool:
+    """Whether ``ref`` names a commit in the clone."""
+    return _run(["-C", repo_dir, "rev-parse", "--verify", "--quiet",
+                 f"{ref}^{{commit}}"]).returncode == 0
 
 
 def list_tree(repo_dir: str, ref: str = "HEAD") -> List[Dict]:

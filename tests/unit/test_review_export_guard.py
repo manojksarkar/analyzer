@@ -593,7 +593,7 @@ class TestItIsWiredIntoReexport:
     def test_it_asks_about_the_documents_the_export_writes(self):
         """The document type is resolved BEFORE the question -- the answer depends on it."""
         src = self._source()
-        body = src[src.index("def cmd_reexport("):]
+        body = src[src.index("def _render_version("):]     # reexport, export and resume
         assert body.index("doc_type = a.doc_type or") < self.CALL.search(body).start()
 
     def test_only_phase_4_is_gated(self):
@@ -604,6 +604,22 @@ class TestItIsWiredIntoReexport:
     def test_there_is_an_escape_hatch(self):
         """A guard with no override becomes something people work around by other means."""
         assert '"--force"' in self._source()
+
+    def test_the_web_s_auto_makes_the_views_again_instead_of_refusing(self):
+        """The web app judges "export only" when it makes the job; a correction saved while the
+        job waited made the process refuse (review 2026-10-04). `--from-phase auto` goes back to
+        Phase 3 instead -- only `auto`: a plain `--from-phase 4` still refuses."""
+        import analyzer
+        a = analyzer.build_parser().parse_args(
+            ["reexport", "--project-id", "p", "--version-id", "v", "--from-phase", "auto"])
+        assert a.from_phase == "auto"
+        src = self._source()
+        gate = src[src.index("if a.from_phase >= 4 and not forced:"):]
+        gate = gate[:gate.index("argv = [")]
+        assert (gate.index("_views_when_stale") < gate.index("a.from_phase = 3")
+                < self.CALL.search(gate).start())
+        body = src[src.index("def cmd_reexport("):]
+        assert "a.from_phase, a._views_when_stale = 4, True" in body[:body.index("\ndef ")]
 
 
 class TestTheApiRederivesRatherThanRefusing:
@@ -694,3 +710,158 @@ class TestTheApiRederivesRatherThanRefusing:
 
         monkeypatch.setattr(core_db, "is_database_configured", _boom)
         assert pr._reexport_from_phase("v1") == 4
+
+
+class TestCorrectionsThatCouldNotBeLoaded:
+    """RF-1: Phase 3 could not load the corrections, built the views with the LLM's text, and
+    recorded the derivation anyway -- the guard then called the version up to date."""
+
+    def test_the_views_built_without_them_lose_their_stamp(self, tmp_path):
+        import datetime
+        from review import export_guard as eg
+        at = datetime.datetime(2026, 10, 4, tzinfo=datetime.timezone.utc)
+        eg.record_derivation(str(tmp_path), ["interfaceTables", "flowcharts"], ["Layer1.Lib"], at)
+        eg.forget_derivation(str(tmp_path), ["flowcharts"])
+        rec = eg.read_record(str(tmp_path / eg.DERIVATION_RECORD))
+        assert list(rec["views"]) == ["interfaceTables"]
+
+    def test_phase_3_does_not_vouch_for_views_built_without_them(self, tmp_path, monkeypatch):
+        import datetime
+        import core.db as cdb
+        import core.run_context as rc
+        import review.export_guard as eg
+        import run_views
+        calls = []
+        monkeypatch.setattr(run_views, "_OVERRIDES_UNAVAILABLE", True)
+        monkeypatch.setattr(eg, "record_derivation", lambda *a, **k: calls.append("record"))
+        monkeypatch.setattr(eg, "forget_derivation", lambda d, v: calls.append(("forget", list(v))))
+        monkeypatch.setattr(rc, "version_id", lambda: "v1")
+        monkeypatch.setattr(cdb, "is_database_configured", lambda: True)
+        run_views._record_derivation(str(tmp_path), ["flowcharts"], {}, {},
+                                     datetime.datetime.now(datetime.timezone.utc), None)
+        assert calls == [("forget", ["flowcharts"])]
+
+
+class TestCorrectionsPhase2CouldNotPutBack:
+    """RF-1, the Phase 2 half: `_reapply_corrections` failed (never fatal), so the model holds the
+    LLM's text while the correction says it is in force. Phase 3 must not stamp views built from
+    it."""
+
+    FID = "Comp|UnitA|f|"
+
+    def _model(self, text):
+        return {"functions": {self.FID: {"qualifiedName": "f", "description": text}},
+                "globalVariables": {}, "units": {}, "dataDictionary": {}}
+
+    def test_a_correction_the_model_lacks_is_found(self, conn):
+        from review.carry_forward import corrections_missing
+        _override(conn, T0, key=self.FID)
+        assert corrections_missing(conn, "v1", self._model("llm")) == [("description", self.FID)]
+        assert corrections_missing(conn, "v1", self._model("human")) == []
+
+    def test_an_orphan_or_another_component_s_slot_is_not(self, conn):
+        from review.carry_forward import corrections_missing
+        _override(conn, T0, key=self.FID, orphaned=True)
+        _override(conn, T0, key="Other|U|g|")
+        assert corrections_missing(conn, "v1", self._model("llm")) == []
+
+    def test_phase_3_leaves_its_views_unstamped_then(self, monkeypatch):
+        import core.db as cdb
+        import core.run_context as rc
+        import run_views
+        import review.carry_forward as cf
+        monkeypatch.setattr(run_views, "_OVERRIDES_UNAVAILABLE", False)
+        monkeypatch.setattr(rc, "version_id", lambda: "v1")
+        monkeypatch.setattr(cdb, "is_database_configured", lambda: True)
+        monkeypatch.setattr(cdb, "get_engine", lambda: sa.create_engine("sqlite://"))
+        monkeypatch.setattr(cf, "corrections_missing", lambda cx, v, m: [("description", "k")])
+        run_views._check_model_corrections({})
+        assert run_views._OVERRIDES_UNAVAILABLE is True
+
+    def test_a_model_with_every_correction_is_vouched_for(self, monkeypatch):
+        import core.db as cdb
+        import core.run_context as rc
+        import run_views
+        import review.carry_forward as cf
+        monkeypatch.setattr(run_views, "_OVERRIDES_UNAVAILABLE", False)
+        monkeypatch.setattr(rc, "version_id", lambda: "v1")
+        monkeypatch.setattr(cdb, "is_database_configured", lambda: True)
+        monkeypatch.setattr(cdb, "get_engine", lambda: sa.create_engine("sqlite://"))
+        monkeypatch.setattr(cf, "corrections_missing", lambda cx, v, m: [])
+        run_views._check_model_corrections({})
+        assert run_views._OVERRIDES_UNAVAILABLE is False
+
+
+class TestCorrectionsNoDocumentPrints:
+    """A correction in a component that has no document in the version (R11 lists every
+    component of the model) kept R9 stale for good: no re-export derives a component without a
+    document (review & update guide, section 11)."""
+
+    def _doc(self, conn, component):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        conn.execute(sa.insert(s.documents).values(
+            id="d" + component, project_id="p", version_id="v1", process="SWE.3",
+            name=component, component=component, status="in_review",
+            created_at=now, updated_at=now))
+
+    def test_it_does_not_hold_the_version_stale(self, conn):
+        self._doc(conn, "Comp")
+        _derived(conn, T1)                                  # Comp's views, derived after
+        _override(conn, T0, key="Comp|UnitA|f|")
+        _override(conn, T2, key="Other|UnitB|g|")           # no document prints it
+        st = g.staleness(conn, "v1")
+        assert not st.is_stale and st.override_count == 1
+
+    def test_a_documented_component_s_correction_still_does(self, conn):
+        self._doc(conn, "Comp")
+        _derived(conn, T0)
+        _override(conn, T1, key="Comp|UnitA|f|")
+        assert g.staleness(conn, "v1").is_stale
+
+    def test_with_no_document_rows_at_all_every_correction_counts(self, conn):
+        """A version made before documents were recorded: nothing says which are printed."""
+        _derived(conn, T1)
+        _override(conn, T2, key="Other|UnitB|g|")
+        assert g.staleness(conn, "v1").is_stale
+
+
+class TestPhase3PutsLostCorrectionsBack:
+    """Review of 922801f: once Phase 2 failed to re-apply a correction, every later Phase 3 found
+    it missing again and left the version stale for good -- every remedy on offer runs Phase 3
+    only. Phase 3 now puts it back itself."""
+
+    FID = "Comp|UnitA|f|"
+
+    def test_it_is_written_into_the_model_and_the_stored_rows(self, conn):
+        from core import model_store
+        from review.carry_forward import corrections_missing, restore_missing_corrections
+        model_store.persist_model(
+            conn, "p", "v1",
+            functions={self.FID: {"qualifiedName": "f", "description": "llm",
+                                  "location": {"file": "a.cpp", "line": 1}}},
+            globals={}, datadict={}, edges={"typeUsers": {}, "macroUsers": {}})
+        _override(conn, T0, key=self.FID)                     # human_text "human"
+        model = {"functions": model_store.load_functions(conn, "v1"), "globalVariables": {},
+                 "units": {}, "dataDictionary": {}}
+        missing = corrections_missing(conn, "v1", model)
+        assert missing == [("description", self.FID)]
+        assert restore_missing_corrections(conn, "v1", model, missing) == 1
+        assert model["functions"][self.FID]["description"] == "human"
+        assert model_store.load_functions(conn, "v1")[self.FID]["description"] == "human"
+        assert corrections_missing(conn, "v1", model) == []
+
+
+class TestStaleComponentsInOnePass:
+    """R9's `staleComponents` asks every component with a document; read once, judged each."""
+
+    def test_it_agrees_with_asking_each_component(self, conn):
+        g.stamp_view_derivations(conn, "v1", [(v, "A") for v in DESCRIPTION_VIEWS], T1)
+        g.stamp_view_derivations(conn, "v1", [(v, "B") for v in DESCRIPTION_VIEWS], T3)
+        _override(conn, T2, key="A|UnitA|f|")       # newer than A's views, older than B's
+        _override(conn, T2, key="B|UnitB|g|")
+        comps = ["A", "B", "C"]
+        one_by_one = [c for c in comps if g.staleness(conn, "v1", component=c).is_stale]
+        assert g.stale_components(conn, "v1", None, comps) == one_by_one == ["A"]
+
+    def test_nothing_when_nobody_corrected_anything(self, conn):
+        assert g.stale_components(conn, "v1", None, ["A", "B"]) == []

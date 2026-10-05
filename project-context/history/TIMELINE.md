@@ -6,17 +6,66 @@
 > the detail. **A new dated entry needs its line here** — `tests/unit/test_project_context_fits.py`
 > fails until it has one.
 
+## 2026-10
+
+| Date | Change | File |
+|---|---|---|
+| 2026-10-05n | Rename moves to the Projects page: an admin's row menu, not the project menu on every page; the dialog warns of a name already used | [13](13-2026-10-05c.md) |
+| 2026-10-05m | A project's admins rename it from the project menu; the server takes a name trimmed, never blank or over 120 characters, and a status only the app knows | [13](13-2026-10-05c.md) |
+| 2026-10-05l | The web wizard takes a local repository: Git URL / Local path in step 1, and a Browse panel of the server's folders | [13](13-2026-10-05c.md) |
+| 2026-10-05k | A project's repository can be a local path (a git repository's folder on the server): checks, a folder-listing route, `repositories.localRoots`; the mockup's switch and Browse panel | [13](13-2026-10-05c.md) |
+| 2026-10-05j | The New Project wizard's branch is one box to search and pick in; the Get Started mockup follows the built Projects page | [13](13-2026-10-05c.md) |
+| 2026-10-05i | Review & approval smoke-tested in a browser (7 of 7 steps); a `reviewer` membership is a developer in the web app; the Overview of a project it cannot read says so | [13](13-2026-10-05c.md) |
+| 2026-10-05h | Web, from the review of 2026-10-05g: Compare's removed-document address, Compare's reads before the shown version is known, a pick made while a document loads, Esc in the reviewer menu | [13](13-2026-10-05c.md) |
+| 2026-10-05g | Web: the reader re-rendered every section on each save (a memo that wrapped only the outer call) -- fixed; flowcharts fit the column and open full size; keyboard access; deep links follow the document's version; a re-export waits for R9 | [13](13-2026-10-05c.md) |
+| 2026-10-05f | Web: seven UI-review leftovers closed -- no refetch on every visit, no cold-load flashes, no placeholder tabs, diffs not by colour alone, backticked text rendered, Compare deep links and a reference picker, the wizard keeps its step on reload; the Overview's runs are polled always | [13](13-2026-10-05c.md) |
+| 2026-10-05e | Web: the review & update gaps the audit found are closed; orphans can be discarded; only the stale components' downloads are marked; version cards and the Overview say how runs were made and which are at work | [13](13-2026-10-05c.md) |
+| 2026-10-05d | Proved with the LLM on: adding a layer asks the LLM only about the new layer | [13](13-2026-10-05c.md) |
+| 2026-10-05c | R9 names the components whose documents are behind; `GET /projects/{pid}/runs` lists the runs at work from either front door | [13](13-2026-10-05c.md) |
+| 2026-10-05b | Orphaned corrections can be discarded (R12); a correction no document prints no longer keeps a version stale; Phase 3 puts back a correction the model lost; Download All builds its ZIP on disk; `clean-runs`; the versions list says how each version was made | [11](11-2026-09-29e.md) |
+| 2026-10-05 | The web app re-exports a version made from the command line, and only the stale components when asked; a save that meets a regenerating run says so with a code; RF-1 closed; only the layers the run's config has are offered | [11](11-2026-09-29e.md) |
+| 2026-10-04f | A git command that does not finish is stopped: the API's and the engine's git runners have a time limit, kill the whole process tree, and never prompt | [11](11-2026-09-29e.md) |
+| 2026-10-04e | A version takes components of another layer: `export` of one adds its layer to the same version -- every layer re-parsed, the LLM only for the new layer, the old layers' documents marked stale where the new layer changes them | [11](11-2026-09-29e.md) |
+| 2026-10-04d | A private repository's token no longer travels in a URL; the config import is proved to ask the API a fixed number of times; the wizard no longer copies the whole folder tree on every keystroke | [11](11-2026-09-29e.md) |
+| 2026-10-04c | The wizard's developer search no longer calls the API without end; a run's code copy waits out a file another process holds, and two runs started in one second no longer share a folder | [11](11-2026-09-29e.md) |
+| 2026-10-04b | A database error no longer reaches the caller; a late cancel is finished on every path; a web re-export waits out a correction instead of refusing; a run's every engine tries a timed-out connection again; setup stamps only a migration it knows | [11](11-2026-09-29e.md) |
+| 2026-10-04 | Background runs hardened after a review: a database blip at a run's end no longer deletes its work or leaves the job unfollowed; cancel, export and a recycled process id are safe; each version keeps its own config. Small API fixes: Globals count, the draft no longer takes over the project view, projects sorted, the last admin stays | [11](11-2026-09-29e.md) |
+| 2026-10-02c | A web run goes on when the API restarts: it runs in the background like `--detach`, the API follows it and follows it again after a restart; a run that dies keeps its version for `resume` | [11](11-2026-09-29e.md) |
+| 2026-10-02b | `analyzer.py generate` makes SWE.3 and SWE.4 by default (`--doc-type all`), like a web run | [11](11-2026-09-29e.md) |
+| 2026-10-02 | Staged generation: one model per version, documents per component, any number of runs; a long run survives the API and code changes; one writer per version; `resume` after a crash | [11](11-2026-09-29e.md) |
+| 2026-10-01e | People can be added: an invite makes an active member and creates the account when there is none; `analyzer.py user` and `tools/create_users.py` create accounts | [11](11-2026-09-29e.md) |
+| 2026-10-01d | Review and approval: a document has one reviewer and is submitted, approved, sent back or reopened on the record; a version is approved when all its documents are; every version gets its documents recorded however it was made | [11](11-2026-09-29e.md) |
+| 2026-10-01c | Mermaid diagrams render in the minlag/mermaid-cli docker image when it draws on the machine, else in local mmdc as before; `doctor` asks for one of the two | [11](11-2026-09-29e.md) |
+| 2026-10-01b | Three things the 2026-09-30g merge checks found, fixed: pictures lost under load, jobs that said "running" for ever, and old versions' descriptions lost on re-export | [11](11-2026-09-29e.md) |
+| 2026-10-01 | Review & update has a screen: the document reader's edit mode | [11](11-2026-09-29e.md) |
+
 ## 2026-09
 
 | Date | Change | File |
 |---|---|---|
+| 2026-09-30i | A corrected flowchart label shows on the web page at once: R8 redraws the chart's SVG | [11](11-2026-09-29e.md) |
+| 2026-09-30h | A re-export writes every document the version has, and R9 asks about all of them | [11](11-2026-09-29e.md) |
+| 2026-09-30g | `integrate/ui-v5` merged develop — PR #70's review & update is on the web app's branch; the branch's 13 dated entries moved whole into file 12 | [11](11-2026-09-29e.md) |
+| 2026-09-30f | Config import: core files are user inputs, filled from ONE folder pick in step 2; Import config moved to the top of step 1 | [12](12-2026-09-29-web-app.md) |
+| 2026-09-30e | Web app CSS lowered for old browsers | [12](12-2026-09-29-web-app.md) |
+| 2026-09-30d | `tools/copy_changes.py` — copy this repo's changes into the office project, deletions included | [12](12-2026-09-29-web-app.md) |
+| 2026-09-30c | `start-app` — one command that starts the API + web app cleanly | [12](12-2026-09-29-web-app.md) |
+| 2026-09-30b | Flowcharts in the web app are server-drawn SVGs | [12](12-2026-09-29-web-app.md) |
 | 2026-09-30 | The PR #70 review: the seven must-fix items fixed, the whole review feature passes on PostgreSQL, and fifteen follow-ups are BACKLOG RF-1…RF-15 | [11](11-2026-09-29e.md) |
+| 2026-09-30 | SWE.4 in the web app, end to end; overnight test projects; round-1 UI review fixes | [12](12-2026-09-29-web-app.md) |
 | 2026-09-29f | `tools/review_api_test/` tests the whole review feature through the REST API; its first run found a re-export that rebuilt only the first group of a version generated for several | [11](11-2026-09-29e.md) |
+| 2026-09-29f | Run Analysis: any mix of components, and Skip LLM, under Advanced options | [12](12-2026-09-29-web-app.md) |
+| 2026-09-29f | New Project wizard: onboarding UX pass | [12](12-2026-09-29-web-app.md) |
 | 2026-09-29e | Every review route gives a slot one shape — `text`, `llmText`, `humanText`, `isOverridden`, `isOrphaned`, `canUndo`, `updatedBy`, `updatedAt` — and every save answers with the slot as it now is; R8 returns each saved node and the rebuilt DOT | [11](11-2026-09-29e.md) |
+| 2026-09-29e | The SWE.3 page in the web app reads like the DOCX | [12](12-2026-09-29-web-app.md) |
 | 2026-09-29d | The review of every review & update flow, and its ten fixes: a save writes one row and saves of a version take turns; the regeneration queue is paid where each text is written, and travels to the next version; an orphan is no correction; a 4xx is the caller's fault | [10](10-2026-09-26.md) |
+| 2026-09-29d | Onboarding is per core, as the engine is: a project has cores (macros, data dictionary, compile commands each) and every layer picks one | [12](12-2026-09-29-web-app.md) |
 | 2026-09-29c | R7 and R8 name a flowchart by its function id, `flowchart_id`, in the query and the body -- not a base64 token in the path | [10](10-2026-09-26.md) |
+| 2026-09-29c | Every component path is checked, from the wizard to the run, and a run stops BEFORE the parse on a component that gets no file | [12](12-2026-09-29-web-app.md) |
 | 2026-09-29b | Rebased onto develop `5542736` as branch `review_update_v3`: develop's six commits bring no new LLM text; one thing to decide — doccheck's pair check reads the behaviour bullets a reviewer can rewrite (RU-6) | [10](10-2026-09-26.md) |
+| 2026-09-29b | A config file in and out of the web app: Import config in the New Project wizard, Download config on a project | [12](12-2026-09-29-web-app.md) |
 | 2026-09-29 | The export guard asks per view, component and document; a saved correction re-derives the SWE.4 specs; the restore before a run finally runs | [10](10-2026-09-26.md) |
+| 2026-09-29 | The web app works end to end on develop again — branch `ui_v2`, cut from develop `5542736`; local commits only, NOT pushed, NOT merged (user reviews first) | [12](12-2026-09-29-web-app.md) |
 | 2026-09-28b | A new session now meets the changes the numbered sections do not describe | [10](10-2026-09-26.md) |
 | 2026-09-28 | `PROJECT_CONTEXT.md` is an index now; the content is in `project-context/` | [10](10-2026-09-26.md) |
 | 2026-09-27d | Context files, skills and the merge handover brought up to date for `review_update_v2` — docs and comments only, no behaviour change | [10](10-2026-09-26.md) |

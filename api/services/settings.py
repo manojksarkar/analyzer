@@ -79,7 +79,11 @@ class Settings(BaseSettings):
     # (`rateLimitSeconds: 0`). Concurrency with LLM enabled and a 3s per-process limit WILL
     # exceed the gateway.
     job_max_concurrency: int = 2
-    subprocess_timeout: int = 0        # seconds; 0 = no limit
+    subprocess_timeout: int = 0        # seconds; 0 = no limit (a run as a child of the API)
+    # A run started from the web app runs in the BACKGROUND (`analyzer.py ... --detach`) when the
+    # API has a database: it outlives an API restart, which follows it again. Off = a child of
+    # the API, as before (it dies with the API). pipeline_runner `_execute_detached`.
+    job_detach: bool = True
 
     # Toolchain paths forwarded to subprocesses
     libclang_path: str = ""

@@ -27,17 +27,21 @@ import copy
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
 import threading
+import time
 import uuid
+from types import SimpleNamespace
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Set
 
-from ..models.domain import Version, Document, AnalysisJob, AnalysisPhase, REEXPORT_MODE
+from ..models.domain import (Version, Document, AnalysisJob, AnalysisPhase, REEXPORT_MODE,
+                             EXPORT_MODE, RENDER_MODES)
 from . import git_cli
 from . import doc_render
 from .model_reader import ModelReader
@@ -55,6 +59,7 @@ _job_logs: dict[str, deque] = {}        # recent log lines (ring buffer)
 _job_log_totals: dict[str, int] = {}    # monotonic line count (for SSE cursor)
 _job_procs: dict[str, subprocess.Popen] = {}
 _job_resume_events: dict[str, threading.Event] = {}
+_job_threads: dict[str, threading.Thread] = {}   # see job_alive
 _LOG_MAX = 500
 
 # Concurrency semaphore — lazily initialised from JOB_MAX_CONCURRENCY setting.
@@ -114,15 +119,31 @@ def _elapsed_since(started_at: Optional[datetime], now: Optional[datetime] = Non
 def start(db: Any, job_id: str) -> None:
     """Kick off the real pipeline on a daemon thread (returns immediately)."""
     t = threading.Thread(target=_run, args=(db, job_id), daemon=True, name=f"job-{job_id}")
+    with _LOCK:
+        _job_threads[job_id] = t
     t.start()
 
 
+def job_alive(job_id: str) -> bool:
+    """Whether THIS process is running that job. A row left `running` by a server that stopped
+    mid-run is not: no thread here will ever finish it, or clean up after it."""
+    with _LOCK:
+        t = _job_threads.get(job_id)
+    return t is not None and t.is_alive()
+
+
 def cancel_subprocess(job_id: str) -> None:
-    """Stop the subprocess for the given job (if still alive), and what it started."""
+    """Stop the subprocess for the given job (if still alive), and what it started -- or the
+    background run it follows (on a thread: stopping a process tree can take seconds)."""
     with _LOCK:
         proc = _job_procs.get(job_id)
+        run = _job_runs.get(job_id)
     if proc is not None:
         _stop_tree(proc)
+    fr = _frozen_run_module() if run is not None else None
+    if fr is not None:
+        threading.Thread(target=fr.stop, args=(run.get("pid"), run.get("create_time")),
+                         daemon=True, name=f"stop-{job_id}").start()
 
 
 def _stop_tree(proc: subprocess.Popen) -> None:
@@ -189,7 +210,7 @@ def _reexport_alive(job_id: str) -> bool:
     return t is not None and t.is_alive()
 
 
-def start_reexport(db: Any, version: Any) -> AnalysisJob:
+def start_reexport(db: Any, version: Any, components: Optional[list] = None) -> AnalysisJob:
     """Re-export `version` as a job of its own, and return that job.
 
     A re-export used to reuse the version's GENERATION job and never change its status, which
@@ -203,23 +224,59 @@ def start_reexport(db: Any, version: Any) -> AnalysisJob:
     a finished generation can be re-exported. One at a time per version: a second request while
     one runs is refused with the running job's id.
 
+    A version made from the command line has no generation job: its documents are re-exported
+    the same way (the job is `analyzer.py reexport`, which reads the version's own record), so it
+    is enough that it has documents. A web re-export of one used to be refused
+    (`NO_GENERATION_JOB`), so the stale components a layer added to it left could only be made
+    again from the command line.
+
+    `components`: only these (each must have documents) -- the stale ones, say. Default: every
+    component the version has documents for.
+
     Raises ReexportRefused. The version must belong to the project; the caller checks that.
     """
     with _REEXPORT_LOCK:
         jobs = db.jobs.list_for_version(version.id)
-        generation = next((j for j in jobs if getattr(j, "mode", None) != REEXPORT_MODE), None)
-        if generation is None:
+        generation = next((j for j in jobs if getattr(j, "mode", None) not in RENDER_MODES), None)
+        scope = _reexport_scope(db, version, generation.scope if generation else None)
+        if generation is None and (getattr(version, "status", None) == "draft"
+                                   or not (scope or {}).get("names")):
             raise ReexportRefused(
-                409, "NO_GENERATION_JOB",
-                f"Version '{version.id}' was not generated through the web app, so there is no "
-                f"run to repeat its export from. Re-export it with `python analyzer.py reexport "
-                f"--project-id {version.project_id} --version-id {version.id}`.")
-        if generation.status != "complete":
+                409, "NO_DOCUMENTS",
+                f"Version '{version.id}' has no documents recorded to re-export. A version made "
+                f"from the command line before its documents were recorded: `python analyzer.py "
+                f"register --project-id {version.project_id} --version-id {version.id}`, or "
+                f"`python analyzer.py reexport` for it.")
+        if generation is not None and generation.status != "complete":
             raise ReexportRefused(
                 409, "VERSION_NOT_READY",
                 f"Version '{version.id}' has no finished generation to re-export: its job "
                 f"{generation.id} is '{generation.status}'.", generation.id)
-        running = next((j for j in jobs if getattr(j, "mode", None) == REEXPORT_MODE
+        if components:
+            # Any component with documents -- its model entry is not asked for (`analyzer.py
+            # reexport`'s rule, `staged.reexport_targets`).
+            try:
+                from .version_components import _staged, components_view
+                has_documents = _staged().has_documents
+                have = {c["component"] for c in components_view(db, version) if has_documents(c)}
+            except Exception:                         # noqa: BLE001 - the default scope's view
+                have = set((scope or {}).get("names") or [])
+            missing = [c for c in components if c not in have]
+            if missing:
+                raise ReexportRefused(
+                    422, "INVALID_COMPONENTS",
+                    f"Not re-exportable -- no documents in version '{version.id}': "
+                    f"{', '.join(missing)}. `Generate` makes them.")
+            scope = {"type": "component", "names": list(dict.fromkeys(components))}
+        busy = version_writer_busy(db, version.id)
+        if busy:
+            raise ReexportRefused(
+                409, "VERSION_BUSY",
+                f"Version '{version.id}' is being written by {busy}. Wait for it to finish, "
+                f"then re-export.")
+        # An export renders the version too: whichever of the two took the lock second would
+        # fail on it, so one waits for the other here.
+        running = next((j for j in jobs if getattr(j, "mode", None) in RENDER_MODES
                         and j.status in _REEXPORT_ACTIVE), None)
         if running is not None:
             if _reexport_alive(running.id):
@@ -230,21 +287,29 @@ def start_reexport(db: Any, version: Any) -> AnalysisJob:
                     running.id)
             _mark_failed(db, running.id, "Interrupted: the API server stopped while this "
                                          "re-export was running. Start it again.")
+        # How the version was generated is how it is re-rendered: same LLM switch, same data
+        # dictionary, same document title. A command-line version has no job to say so: the
+        # re-export (`analyzer.py reexport`) reads all of that from the version's own record.
+        gen = generation or SimpleNamespace(
+            commit_sha=version.commit_sha, layer_filter=None, branch=version.branch or "main",
+            version_tag=getattr(version, "tag", None) or version.id, no_llm=False,
+            data_dict_id=None, narrowed_parse=False)
         job = AnalysisJob(
             id=f"job{uuid.uuid4().hex[:8]}", project_id=version.project_id,
-            commit_sha=generation.commit_sha, version_id=version.id,
+            commit_sha=gen.commit_sha, version_id=version.id,
             reference_version_id=None, status="queued", pause_after_phase1=False,
-            layer_filter=generation.layer_filter, phase=3, phase_pct=0,
+            layer_filter=gen.layer_filter, phase=3, phase_pct=0,
             current_activity="Queued — waiting for worker…", activity_detail="",
             elapsed_seconds=0, eta_seconds=None,
             phases=[AnalysisPhase(3, "Run Views", "pending", None),
                     AnalysisPhase(4, "Export DOCX", "pending", None)],
             started_at=_now(), completed_at=None, error_message=None,
-            branch=generation.branch, version_tag=generation.version_tag,
-            # How the version was generated is how it is re-rendered: same scope, same LLM
-            # switch, same data dictionary, same document title.
-            mode=REEXPORT_MODE, scope=generation.scope, no_llm=generation.no_llm,
-            data_dict_id=generation.data_dict_id, narrowed_parse=generation.narrowed_parse)
+            branch=gen.branch, version_tag=gen.version_tag,
+            # Every document it HAS, which since `export` can be more than its generation's
+            # scope (`_reexport_scope`) -- or the components asked for.
+            mode=REEXPORT_MODE, scope=scope,
+            no_llm=gen.no_llm,
+            data_dict_id=gen.data_dict_id, narrowed_parse=gen.narrowed_parse)
         db.jobs.create(job)
         t = threading.Thread(target=_run_reexport, args=(db, job.id), daemon=True,
                              name=f"reexport-{job.id}")
@@ -291,6 +356,11 @@ def _cleanup_state(job_id: str) -> None:
         _job_procs.pop(job_id, None)
         _job_resume_events.pop(job_id, None)
         _progress_warned.difference_update({k for k in _progress_warned if k[0] == job_id})
+        _step_clocks.pop(job_id, None)
+        # Only this thread's own entry: a job reopened by `start_resume` has a new thread, which
+        # the old one ending must not unregister (the job would look unfollowed).
+        if _job_threads.get(job_id) is threading.current_thread():
+            _job_threads.pop(job_id, None)
         # Keep logs so SSE can drain remaining lines after completion
 
 
@@ -355,11 +425,16 @@ def _materialise_data_dictionary(db: Any, job: Any) -> Optional[Path]:
 
 
 def _upload_bytes(upload_id: str) -> Optional[bytes]:
-    """The uploaded bytes, if this process still holds them (they are in memory only)."""
+    """The uploaded bytes, read from where the upload route stores them.
+
+    Uploads live on disk (`routes/repositories.py`, `_upload_dir`); `_UPLOADS` holds only their
+    metadata. This used to read a `data` key that is never set, so every data dictionary was
+    reported to have "no content on this node" and the run went on without it.
+    """
     try:
-        from ..routes.repositories import _UPLOADS
-        rec = _UPLOADS.get(upload_id) or {}
-        return rec.get("data")
+        from ..routes.repositories import resolve_upload
+        path = resolve_upload(upload_id)
+        return path.read_bytes() if path is not None else None
     except Exception:
         return None
 
@@ -444,14 +519,187 @@ def _mark_failed(db: Any, job_id: str, message: str) -> None:
         job.completed_at = _now()
         db.jobs.update(job)
         # drop the reserved (still-draft) version so its name is free for a retry
-        vid = getattr(job, "version_id", None)
-        if vid:
-            v = db.versions.get(vid)
-            if v is not None and getattr(v, "status", None) == "draft":
-                try:
-                    db.versions.delete(vid)
-                except Exception:               # best-effort cleanup
-                    pass
+        _release_draft_version(db, job)
+
+
+def _release_draft_version(db: Any, job: Any) -> None:
+    """Delete the draft version a job reserved and did not finish, so its name is free again.
+
+    `analysis_jobs.version_id` is a foreign key to `versions.id` with no ON DELETE, so PostgreSQL
+    refused to delete the version while its own job still pointed at it -- and the refusal was
+    swallowed as best-effort cleanup. Every failed or cancelled run left an empty draft behind as
+    the project's newest version: the Subbar showed it by default instead of the last good one,
+    the Versions page listed it, and its name could not be used for the retry. The job is
+    detached first; its `version_tag` still names what it was generating. The engine's
+    per-version rows go with the version (ON DELETE CASCADE).
+    """
+    vid = getattr(job, "version_id", None)
+    if not vid:
+        return
+    v = db.versions.get(vid)
+    if v is None or getattr(v, "status", None) != "draft":
+        return
+    try:
+        if delete_version(db, vid, only_draft=True):
+            job.version_id = None
+    except Exception as exc:                                  # noqa: BLE001 - logged, not fatal
+        _log.warning("job %s: could not delete its unfinished draft version %s: %s: %s",
+                     job.id, vid, type(exc).__name__, exc)
+
+
+def delete_version(db: Any, version_id: str, *, only_draft: bool = False) -> bool:
+    """Delete a version, and first what points at it without ON DELETE CASCADE -- its jobs'
+    `version_id` (the jobs stay, naming no version) and cached comparisons -- in ONE transaction.
+    In two, a reader between them saw the job detached while the version was still there (the web
+    app took a cancelled run's draft for gone, and showed it again); and a job created between
+    them made the delete fail on its foreign key. `only_draft`: only while it is still a draft.
+    True when it was deleted."""
+    eng = getattr(db, "_engine", None)
+    if eng is None:                       # the in-memory backend: one process, no transactions
+        v = db.versions.get(version_id)
+        if v is None or (only_draft and getattr(v, "status", None) != "draft"):
+            return False
+        for j in db.jobs.list_for_version(version_id):
+            j.version_id = None
+            db.jobs.update(j)
+        db.versions.delete(version_id)
+        return True
+    import sqlalchemy as sa
+    from ..db.postgres import schema as s
+    cond = s.versions.c.id == version_id
+    if only_draft:
+        cond = cond & (s.versions.c.status == "draft")
+    with eng.begin() as cx:
+        if cx.execute(sa.select(s.versions.c.id).where(cond).with_for_update()).first() is None:
+            return False
+        cx.execute(sa.update(s.analysis_jobs).where(s.analysis_jobs.c.version_id == version_id)
+                   .values(version_id=None))
+        cx.execute(sa.delete(s.compare_results).where(sa.or_(
+            s.compare_results.c.current_version_id == version_id,
+            s.compare_results.c.baseline_version_id == version_id)))
+        cx.execute(sa.delete(s.versions).where(cond))
+    return True
+
+
+#: What a job a stopped server left behind says, on the job and in the Overview's banner.
+INTERRUPTED_MESSAGE = ("Interrupted: the API server stopped while this ran, so it never "
+                       "finished. Start it again.")
+
+#: The advisory lock an API process holds while it runs jobs (`claim_job_runner`): the two-key
+#: form, whose key space is not the one-key form's that a review save locks a version with.
+_RUNNER_LOCK = (0x41524658, 1)          # "ARFX"
+_runner_conn = None                     # the connection holding it, open for the process's life
+
+
+def runner_still_held(engine: Any) -> bool:
+    """Whether this process still holds the job-runner lock (`claim_job_runner`). A database
+    restart or a dropped idle connection frees it in silence; then another server may sweep, and
+    two sweeping at once would follow (and fail) each other's jobs. A lost claim is dropped, not
+    taken again: the server that holds it now does the sweeping. True on a database without
+    advisory locks (one process by construction)."""
+    global _runner_conn
+    if getattr(getattr(engine, "dialect", None), "name", "") != "postgresql":
+        return True
+    if _runner_conn is None:
+        return False
+    from sqlalchemy import text
+    try:
+        held = _runner_conn.execute(text(
+            "SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND granted "
+            "AND classid::bigint = :a AND objid::bigint = :b AND pid = pg_backend_pid()"),
+            {"a": _RUNNER_LOCK[0], "b": _RUNNER_LOCK[1]}).first() is not None
+        _runner_conn.commit()
+    except Exception:                                    # noqa: BLE001 - the session is gone
+        held = False
+    if not held:
+        try:
+            _runner_conn.invalidate()
+            _runner_conn.close()
+        except Exception:                                # noqa: BLE001
+            pass
+        _runner_conn = None
+    return held
+
+
+def claim_job_runner(engine: Any) -> bool:
+    """Whether this process is the only API server running jobs on its database.
+
+    Takes the session-level advisory lock `_RUNNER_LOCK` on a connection kept open for the life
+    of the process; PostgreSQL releases it when the process ends, however it ends. True when no
+    other server holds it -- then every job the database calls active was left by a server that
+    stopped (`fail_interrupted_jobs`). False when another server runs on this database: its jobs
+    are alive there, and failing them would delete the draft versions it is still generating.
+    That is why `web-app/PLAN.md` once ruled a stale-job sweep out. A database without advisory
+    locks (SQLite: local runs and tests) serves one process by construction.
+    """
+    global _runner_conn
+    if _runner_conn is not None:
+        return True
+    if getattr(getattr(engine, "dialect", None), "name", "") != "postgresql":
+        return True
+    from sqlalchemy import text
+    conn = engine.connect()
+    try:
+        got = bool(conn.execute(text("SELECT pg_try_advisory_lock(:a, :b)"),
+                                {"a": _RUNNER_LOCK[0], "b": _RUNNER_LOCK[1]}).scalar())
+        conn.commit()                   # a session lock outlives the transaction
+    except Exception:
+        conn.close()
+        raise
+    if not got:
+        conn.close()
+        return False
+    _runner_conn = conn
+    return True
+
+
+#: When this process started: a job that started before it cannot be one of its own.
+PROCESS_STARTED = datetime.now(UTC)
+
+
+def fail_interrupted_jobs(db: Any, *, before: Optional[datetime] = None,
+                          reattach_only: bool = False) -> int:
+    """At start-up: fail every job a stopped server left queued, running or paused.
+
+    A job runs on a thread of the API process that started it (`job_alive`), and a process that
+    has just started runs none -- so, when no other server runs on the database
+    (`claim_job_runner`, which the caller asks first), a job the database still calls active
+    belongs to a server that stopped mid-run, and no thread will ever finish it. Left alone it
+    said "running" for ever: the Overview showed it, and every new run of its project was refused
+    as JOB_ALREADY_RUNNING until someone pressed Cancel Job (2026-09-30: two such jobs, one from
+    June). Each is marked failed with what happened, and its unfinished draft version is freed,
+    as a cancel of a dead job does. Returns how many.
+
+    Except a job whose run is in the BACKGROUND (`_execute_detached`): that run did not stop with
+    the server, so it is followed again (`_reattach_detached`) and its job ends when it does.
+
+    `before` (the API passes `PROCESS_STARTED`): only jobs started before then. The check may run
+    late -- tried again while the database does not answer -- and a job started meanwhile is this
+    process's own, between its row being written and its thread being registered.
+    """
+    failed = 0
+    for job in db.jobs.list_active():
+        if job_alive(job.id) or _reexport_alive(job.id):
+            continue
+        started = job.started_at
+        if before is not None and started is not None:
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=UTC)
+            if started >= before:
+                continue
+        if _reattach_detached(db, job):
+            continue
+        if reattach_only:
+            # The periodic pass: only background runs nobody follows. A job with no run.json
+            # may be queued, checking out or starting -- the start-up check decides those.
+            continue
+        job.status = "failed"
+        job.error_message = INTERRUPTED_MESSAGE
+        job.completed_at = _now()
+        db.jobs.update(job)
+        _release_draft_version(db, job)
+        failed += 1
+    return failed
 
 
 # ---------------------------------------------------------------------------
@@ -463,9 +711,44 @@ def _run(db: Any, job_id: str) -> None:
         _init_state(job_id)
         _inner_run(db, job_id)
     except Exception as exc:
-        _mark_failed(db, job_id, f"Runner error: {exc}")
+        # Kept when there is work in it: a database error at the end of a long run must not
+        # delete the version it made. If even this fails, the job stays active with nothing
+        # following it, and the periodic check follows its run again (main._watch_jobs).
+        try:
+            _fail_keeping_work(db, job_id, f"Runner error: {exc}")
+        except Exception as exc2:                             # noqa: BLE001 - see above
+            _log.error("job %s: could not record the runner error (%s)", job_id, exc2)
     finally:
+        # A cancelled run's draft goes too -- here, once the subprocess has exited, not in the
+        # cancel route while the engine may still be writing rows under that version.
+        try:
+            job = db.jobs.get(job_id)
+            if job is not None and job.status == "cancelled":
+                _release_draft_version(db, job)
+                _finish_if_it_finished(db, job)
+        except Exception as exc:                              # noqa: BLE001 - cleanup only
+            _log.warning("job %s: draft cleanup after cancel failed: %s", job_id, exc)
         _cleanup_state(job_id)
+
+
+def _finish_if_it_finished(db: Any, job: Any) -> None:
+    """A cancel that came too late: the run had finished and recorded its documents, so its
+    version is no longer a draft and was kept. Finalise it as a finished run (`_complete`) --
+    left as it was, it said "Generating…" for ever, with no functions registered -- and the job
+    says complete: the run did.
+
+    A background run says whether it finished (its exit code): a resume of a version that had
+    documents already starts out of draft, and stopping it half-way is a cancel, not a finish."""
+    vid = getattr(job, "version_id", None)
+    v = db.versions.get(vid) if vid else None
+    if v is None or getattr(v, "status", None) == "draft":
+        return
+    fr = _frozen_run_module()
+    run = fr.find_job_run(_data_root(), vid, job.id) if fr is not None else None
+    if run is not None and fr.read_exit(run["run_dir"]) not in (0, 3):
+        return
+    _append_log(job.id, "The run had finished before the cancel; its version is kept.")
+    _complete(db, job.id, force=True)
 
 
 def _inner_run(db: Any, job_id: str) -> None:
@@ -484,9 +767,55 @@ def _inner_run(db: Any, job_id: str) -> None:
             return
 
     try:
+        # NOT under the version's writer lock: the run is `analyzer.py generate`, which takes it
+        # itself, in its own process -- holding it here as well refused that process, and every
+        # run started from the web app failed at once. (A re-export, which runs the engine
+        # directly, does hold it here: `_run_reexport`.)
         _inner_run_locked(db, job_id, project)
     finally:
         sem.release()
+
+
+def _version_run_module():
+    """core.version_run, with the engine on the path (it is added lazily, as elsewhere here);
+    None when it cannot be imported."""
+    try:
+        eng_dir = os.path.join(str(get_settings().repo_root), "engine")
+        if eng_dir not in sys.path:
+            sys.path.insert(0, eng_dir)
+        from core import version_run
+        return version_run
+    except ImportError:
+        return None
+
+
+def _version_busy(exc: BaseException) -> bool:
+    return type(exc).__name__ == "VersionBusy"
+
+
+def _version_writer(db: Any, version_id: Optional[str], command: str):
+    """Hold the version's writer lock and record the run, on the API's OWN database (the one
+    its versions are in). A no-op for the in-memory database and without a version id."""
+    import contextlib
+    eng = getattr(db, "_engine", None)
+    vr = _version_run_module() if (eng is not None and version_id) else None
+    if vr is None:
+        return contextlib.nullcontext()
+    return vr.writing(version_id, command=command, engine=eng)
+
+
+def version_writer_busy(db: Any, version_id: str) -> Optional[str]:
+    """Who is writing the version now, in words -- or None. For refusing a re-export up front."""
+    eng = getattr(db, "_engine", None)
+    vr = _version_run_module() if eng is not None else None
+    if vr is None:
+        return None
+    try:
+        describe, holder = vr.describe, vr.holder
+        h = holder(version_id, engine=eng)
+        return describe(h) if h else None
+    except Exception:                                # noqa: BLE001 - the job checks again
+        return None
 
 
 def _scope_to_cli(scope: Any) -> str:
@@ -558,12 +887,93 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
         # creates that file.
         _materialise_data_dictionary(db, job)
     mode = (getattr(job, "mode", "auto") or "auto")
+    config_path = _freeze_version_config(job, config_path)
     cmd = _generate_cmd(job, root, config_path)
     _append_log(job_id, f"Generating ({'full' if mode == 'full' else 'auto'}) via analyzer.py generate…")
 
-    ok = _execute_subprocess(db, job_id, cmd, phase_start=1, extra_env=_engine_db_env(db))
+    # In the background when the API has a database: the run outlives this server
+    # (`_execute_detached`), and a restarted server follows it again.
+    ok = _run_engine_command(db, job_id, cmd, phase_start=1, extra_env=_engine_db_env(db))
     if ok:
-        _complete(db, job_id)
+        _when_db_answers(job_id, "finishing the job", _complete, db, job_id)
+
+
+def _freeze_version_config(job: Any, config_path: Path) -> Path:
+    """The version's own copy of the config the run starts with, and its path.
+
+    `export`, `resume` and `reexport` read `<version dir>/config.json` first
+    (analyzer._render_version), else the project's `config.json` -- which every later run
+    rewrites. A run stopped on day 3 and resumed after another run (LLM off, other layers) would
+    have carried on with that run's settings. The paths in the config are absolute, so the copy
+    reads the same files."""
+    vid = getattr(job, "version_id", None)
+    if not vid:
+        return config_path
+    try:
+        vdir = doc_render.workspaces_root() / job.project_id / "versions" / vid
+        vdir.mkdir(parents=True, exist_ok=True)
+        with open(config_path, encoding="utf-8") as fh:
+            cfg = json.loads(_strip_jsonc(fh.read()))
+        # A core's typed macros are a file of the PROJECT (cores/<core>/macros.json), rewritten
+        # by every run: the version keeps its own. (Uploaded files are kept by upload id.)
+        for name, core in (cfg.get("cores") or {}).items():
+            src = core.get("macros") if isinstance(core, dict) else None
+            if src and os.path.isfile(src):
+                dst = vdir / "cores" / re.sub(r"[^A-Za-z0-9._-]+", "_", str(name)) / Path(src).name
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(src, dst)
+                core["macros"] = str(dst)
+        dest = vdir / "config.json"
+        with open(dest, "w", encoding="utf-8") as fh:
+            json.dump(cfg, fh, indent=2)
+        return dest
+    except (OSError, ValueError) as exc:
+        _append_log(getattr(job, "id", ""), f"note: the version's own copy of the config could "
+                                            f"not be written ({exc}); using the project's")
+        return config_path
+
+
+#: Database errors the end of a run waits out rather than turns into a failed job.
+_DB_RETRY_SECONDS = 30.0
+_DB_RETRY_FOR = 6 * 3600.0
+
+
+def _db_unavailable(exc: BaseException) -> bool:
+    """Whether `exc` says the database did not answer (connection refused or lost, pool
+    exhausted) -- what waiting fixes. A constraint violation or a missing column does not go away:
+    those raise at once, or a job would sit "running" for six hours over a bug."""
+    try:
+        from sqlalchemy import exc as sa_exc
+    except ImportError:                                      # pragma: no cover
+        return False
+    if isinstance(exc, (sa_exc.OperationalError, sa_exc.InterfaceError,
+                        sa_exc.DisconnectionError, sa_exc.TimeoutError)):
+        return True
+    return isinstance(exc, sa_exc.DBAPIError) and bool(getattr(exc, "connection_invalidated", False))
+
+
+def _when_db_answers(job_id: str, what: str, fn, *args):
+    """`fn(*args)`, tried again every 30 s while the database does not answer (up to six hours).
+
+    The end of a run -- its outcome judged, the version finalised -- is a handful of writes after
+    days of work. A database restart at that moment raised out of the runner: the job failed
+    ("Runner error") or stayed "running" with nothing following it. The run's outcome is on disk
+    (exit.json), so waiting for the database loses nothing. Other errors raise at once."""
+    end = time.monotonic() + _DB_RETRY_FOR
+    warned = False
+    while True:
+        try:
+            return fn(*args)
+        except Exception as exc:
+            if not _db_unavailable(exc) or time.monotonic() >= end:
+                raise
+            if not warned:
+                warned = True
+                _log.warning("job %s: %s: the database did not answer (%s); trying again every "
+                             "%.0f s", job_id, what, type(exc).__name__, _DB_RETRY_SECONDS)
+                _append_log(job_id, f"The database did not answer while {what}; trying again "
+                                    f"every {_DB_RETRY_SECONDS:.0f} s.")
+            time.sleep(_DB_RETRY_SECONDS)
 
 
 def _generate_cmd(job: Any, root: Path, config_path: Path) -> list[str]:
@@ -583,8 +993,9 @@ def _generate_cmd(job: Any, root: Path, config_path: Path) -> list[str]:
         data_dict_id              --data-dict
         no_llm                    --no-llm
 
-    No `--doc-type`: the scripts never passed one, and both functions default to swe3, as the
-    CLI does.
+    `--doc-type all`, always: a run that makes a component's Detailed Design (SWE.3) makes its
+    Unit Test Specification (SWE.4) too (docs/ui-mockups/documents.html). The engine derives
+    SWE.4 from the same model with no LLM, so the second document costs little.
     """
     mode = (getattr(job, "mode", "auto") or "auto")
     scope = getattr(job, "scope", None) or {"type": "project"}
@@ -595,7 +1006,11 @@ def _generate_cmd(job: Any, root: Path, config_path: Path) -> list[str]:
            "--version-id", job.version_id,
            "--branch", job.branch, "--commit", job.commit_sha,
            "--scope", _scope_to_cli(scope),
-           "--config", str(config_path)]
+           "--config", str(config_path),
+           "--doc-type", "all"]
+    # No `--no-register`: the run records its documents for review itself, as well as `_complete`
+    # does (both idempotent), so a 4-day run whose server restarted under it -- the job then
+    # marked failed, `_complete` never reached -- still has its documents listed.
     if mode == "full":
         cmd.append("--full")
     else:
@@ -771,6 +1186,9 @@ def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = F
     from core.config import _deep_merge
     base_path = get_settings().repo_root / "engine" / "config" / "config.defaults.json"
     cfg = _load_base_config(base_path)
+    # The defaults' `project` block names the sample project, for the wizard's Import config; the
+    # engine ignores it, and left in, every version's stored config would carry the sample's name.
+    cfg.pop("project", None)
 
     # Apply explicit section overrides from build_config (per-project, from onboarding)
     bc = project.build_config or {}
@@ -788,6 +1206,10 @@ def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = F
     layers = _convert_layers(project.architecture_layers or [])
     if layers:
         cfg["layers"] = layers
+        # The defaults' `cores` belong to their own (sample) layers, which these replace. A web
+        # project names no core - its definitions reach Clang as clang.macrosFile - so every run
+        # warned "cores.Core1 is listed by no layer", and the web app shows a run's warnings.
+        cfg.pop("cores", None)
     from core.config import validate_layer_names
     name_problems = (_duplicate_wizard_names(project.architecture_layers or [])
                      + validate_layer_names({"layers": layers}))
@@ -795,13 +1217,17 @@ def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = F
         raise ValueError("ambiguous architecture layer names - "
                          + "; ".join(name_problems))
 
-    # Preprocessor definitions -> a macro file the engine reads via clang.macrosFile.
-    # The wizard stores them as JSON (manual list or an upload reference); without
-    # this they never reached Clang at all.
-    macros_file = _materialize_macros(bc.get("preprocessor_definitions"), workspace_dir)
-    if macros_file:
-        cfg.setdefault("clang", {})
-        cfg["clang"]["macrosFile"] = str(macros_file)
+    # Cores: each one's macros, data dictionary and compile commands as files the engine reads
+    # (cores.<Core>), and the core each layer is built for (layers.<Layer>.cores) - so a layer's
+    # files parse with its own core's -D set and include paths. A project from before cores (one
+    # definitions file and one dictionary) is one core, Core1, used by every layer.
+    from .project_cores import project_cores
+    cores, layer_core = project_cores(bc, project.architecture_layers or [])
+    if cores:
+        cfg["cores"] = {c["name"]: _materialize_core(c, workspace_dir) for c in cores}
+        for lname, core in layer_core.items():
+            if core and lname in (cfg.get("layers") or {}):
+                cfg["layers"][lname]["cores"] = [core]
 
     # noLlm — disable per-entity LLM (descriptions + behaviour names), mirroring
     # apply_no_llm. Phase summarization is disabled via --no-llm-summarize in _build_cmd.
@@ -833,6 +1259,24 @@ def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = F
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
     return out_path, analysis_cfg
+
+
+def _materialize_core(core: dict, workspace_dir: Path) -> dict:
+    """One core's inputs as the paths the engine reads: `{macros, dataDictionary,
+    compileCommands}`, each only when the core has it. Typed macros are written to
+    `cores/<core>/macros.json`; an uploaded file is read where the upload route stored it."""
+    from ..routes.repositories import resolve_upload
+    out: dict = {}
+    folder = workspace_dir / "cores" / re.sub(r"[^A-Za-z0-9._-]+", "_", core["name"])
+    macros = _materialize_macros(core.get("macros"), folder)
+    if macros:
+        out["macros"] = str(macros)
+    for key, field in (("dataDictionary", "data_dictionary"), ("compileCommands", "compile_commands")):
+        ref = core.get(field)
+        path = resolve_upload(ref["file_id"]) if ref else None
+        if path is not None:
+            out[key] = str(path)
+    return out
 
 
 def _materialize_macros(defs: Any, workspace_dir: Path) -> Optional[Path]:
@@ -990,10 +1434,13 @@ def _component_paths_from_files(files: list, layer_path: str) -> list:
     directory, which over-selects and degenerates to the layer root whenever the
     selection spans sibling directories.
 
-    An entry equal to the layer path itself (a whole-layer selection) is dropped,
-    since there is nothing meaningful to scope below the layer. An entry that is
-    not under the layer is kept as-is (defensive; the wizard only picks within the
-    layer). Duplicates are removed.
+    An entry equal to the layer path itself (a whole-layer selection) becomes ``""``,
+    the config's own spelling of "the whole layer" (``core.config._resolve_layer_paths``).
+    It used to be dropped, and ``_convert_layers`` then fell back to the component NAME
+    as its path: a config whose component took its whole layer came back from the web
+    app pointing at a folder that does not exist, and the run stopped on it. An
+    entry that is not under the layer is kept as-is (defensive; the wizard only picks
+    within the layer). Duplicates are removed.
 
     Both the ``str`` (single path) and ``list`` (multiple paths) result forms are
     accepted downstream by ``core.config._resolve_layer_paths`` and
@@ -1008,10 +1455,10 @@ def _component_paths_from_files(files: list, layer_path: str) -> list:
         if not p:
             continue
         if layer_norm and p == layer_norm:
-            continue
-        if prefix and p.startswith(prefix):
+            p = ""                              # the whole layer
+        elif prefix and p.startswith(prefix):
             p = p[len(prefix):]
-        if p and p not in seen:
+        if p not in seen:                       # "" only for the whole layer
             seen.add(p)
             out.append(p)
     return out
@@ -1033,9 +1480,13 @@ def _build_cmd(
     model_root=None,
     output_root=None,
     version_id=None,
+    doc_type: Optional[str] = None,
 ) -> list[str]:
     cmd = [sys.executable, str(get_settings().repo_root / "engine" / "run.py")]
     cmd += ["--config", str(config_path)]
+    # Which documents Phase 4 writes (`export_doc_type`): run.py's default is swe3 alone.
+    if doc_type:
+        cmd += ["--doc-type", doc_type]
     # Run against THIS version's own model/ and output/ instead of the shared <repo>/model
     # and <repo>/output (doc 09, B1 + C11b). Without these the caller has to stage the
     # version's trees into the repo root first — which means rmtree-ing a directory another
@@ -1073,11 +1524,12 @@ def _build_cmd(
             cmd += [flag, str(name)]
     elif job.layer_filter:
         cmd += ["--selected-layer", job.layer_filter]
-    # Generate one DOCX per component (the default), not one per group. This is
-    # mutually exclusive with --selected-component (run.py errors if combined), so
-    # add it for project / group / layer scope but never for a specific-component run.
-    if stype != "component":
-        cmd.append("--component-per-docx")
+    # One DOCX per component, for every scope -- as a generation makes them
+    # (`per_component_docx_args`). It used to be left out of a component scope, from when run.py
+    # refused the two together; it no longer does, and without it a version of several
+    # components was re-exported as ONE bundled document while each component's own document
+    # kept its old text.
+    cmd.append("--component-per-docx")
     if getattr(job, "no_llm", False):
         cmd.append("--no-llm-summarize")     # descriptions/behaviourNames disabled via config
     ddid = getattr(job, "data_dict_id", None)
@@ -1191,21 +1643,16 @@ def _execute_subprocess(
     cmd: list[str],
     phase_start: int = 1,
     extra_env: Optional[dict] = None,
+    partial_ok: bool = True,
 ) -> bool:
-    """Run cmd, tail its output, update job progress. Returns True on success."""
+    """Run cmd, tail its output, update job progress. Returns True on success.
+
+    Exit 3 (`partial_ok`): some components' documents failed and the run went on with the
+    others (engine/run.py). That is a success with failures in it -- the version keeps what was
+    made, and its Components panel names the failed ones -- not a failed job, whose draft
+    version would be deleted with everything the run made."""
     cfg = get_settings()
-    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-    if cfg.libclang_path:
-        env["LIBCLANG_PATH"] = cfg.libclang_path
-    # Tag this run's metrics records (doc 09, D2a). Concurrent jobs append to one
-    # metrics file, so without an id their phase timings and peak-RSS numbers cannot
-    # be told apart — which is the whole point of measuring before raising B4.
-    env["ANALYZER_JOB_ID"] = job_id
-    _job = db.jobs.get(job_id)
-    _vid = getattr(_job, "version_id", None) if _job else None
-    if _vid:
-        env["ANALYZER_VERSION_ID"] = str(_vid)
-    env.update(extra_env or {})
+    env = _subprocess_env(db, job_id, extra_env)
 
     try:
         proc = subprocess.Popen(
@@ -1224,24 +1671,10 @@ def _execute_subprocess(
     with _LOCK:
         _job_procs[job_id] = proc
 
-    current_phase = phase_start
-    phase_start_time = _now()
-    recent_lines: list[str] = []
-    line_count = 0
+    tracker = _LineTracker(db, job_id, phase_start)
+    recent_lines = tracker.recent_lines
     _timeout = get_settings().subprocess_timeout or None
     _timed_out = False
-
-    # Mark the first phase of this subprocess as "running" immediately.
-    # Without this, phase_start stays "pending" until the *next* phase fires
-    # _transition_phase — meaning phase 1 (and phase 3 on a resume) would
-    # skip "running" entirely and jump from "pending" to "done".
-    job = db.jobs.get(job_id)
-    if job:
-        for p in job.phases:
-            if p.number == phase_start:
-                p.status = "running"
-        job.phase = phase_start
-        db.jobs.update(job)
 
     # This loop is the only thing reading the child's output. Every way out of it before the end
     # of that output -- a cancel, or anything raising -- leaves a child writing into a pipe nobody
@@ -1250,38 +1683,8 @@ def _execute_subprocess(
     abandoned = True
     try:
         for raw_line in proc.stdout:
-            line = raw_line.rstrip("\n\r")
-            if not line:
-                continue
-
-            _append_log(job_id, line)
-            recent_lines.append(line)
-            if len(recent_lines) > 80:
-                recent_lines.pop(0)
-            line_count += 1
-
-            # Cancel check (every 20 lines to keep overhead low)
-            if line_count % 20 == 0 and _progress(job_id, _is_cancelled, db, job_id):
+            if tracker.feed(raw_line):
                 return False
-
-            # Phase transition detection
-            new_phase = _detect_phase(line, current_phase)
-            if new_phase != current_phase:
-                _progress(job_id, _transition_phase, db, job_id, current_phase, new_phase,
-                          phase_start_time)
-                current_phase = new_phase
-                phase_start_time = _now()
-
-            # The ACTIVITY label follows the marker regardless of direction, so a later
-            # component's Phase 3 is not still announced as "Exporting".
-            _marker = _marker_phase(line)
-            if _marker:
-                _progress(job_id, _set_activity, db, job_id, _ACTIVITY[_marker])
-
-            # Update activity detail from log content (strip log prefix)
-            detail = _strip_log_prefix(line)
-            if detail and len(detail) > 10:
-                _progress(job_id, _update_activity, db, job_id, detail[:120])
         abandoned = False
 
     finally:
@@ -1310,22 +1713,534 @@ def _execute_subprocess(
     if _is_cancelled(db, job_id):
         return False
 
-    if rc != 0:
+    if rc == 3 and partial_ok:
+        _append_log(job_id, "Some components' documents failed (see above); the others were "
+                            "made. Their state is on the Documents page's Components panel.")
+    elif rc != 0:
         tail = "\n".join(recent_lines[-20:])
         _append_log(job_id, f"Job failed with code {rc}")
-        _mark_failed(db, job_id, f"run.py exited with code {rc}.\n{tail}")
+        _mark_failed(db, job_id, _failure_message(rc, recent_lines, tail))
         return False
 
-    # Mark the final phase done
-    job = db.jobs.get(job_id)
-    if job:
+    tracker.finish()
+    return True
+
+
+def _subprocess_env(db: Any, job_id: str, extra_env: Optional[dict] = None) -> dict:
+    """The environment a job's analyzer process runs in."""
+    cfg = get_settings()
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    if cfg.libclang_path:
+        env["LIBCLANG_PATH"] = cfg.libclang_path
+    # Tag this run's metrics records (doc 09, D2a). Concurrent jobs append to one
+    # metrics file, so without an id their phase timings and peak-RSS numbers cannot
+    # be told apart — which is the whole point of measuring before raising B4.
+    # A background run also records it in its run.json: how a restarted API finds it.
+    env["ANALYZER_JOB_ID"] = job_id
+    _job = db.jobs.get(job_id)
+    _vid = getattr(_job, "version_id", None) if _job else None
+    if _vid:
+        env["ANALYZER_VERSION_ID"] = str(_vid)
+    env.update(extra_env or {})
+    return env
+
+
+class _LineTracker:
+    """What a job learns from its run's output, a line at a time: the live log, the phase, the
+    activity and the progress -- whether the lines come from a pipe (`_execute_subprocess`) or
+    from a background run's log file (`_follow_detached`)."""
+
+    def __init__(self, db: Any, job_id: str, phase_start: int):
+        self.db, self.job_id = db, job_id
+        self.current_phase = phase_start
+        self.phase_start_time = _now()
+        self.recent_lines: list[str] = []
+        self.line_count = 0
+        # Mark the first phase of this run as "running" immediately. Without this, phase_start
+        # stays "pending" until the *next* phase fires _transition_phase — meaning phase 1 (and
+        # phase 3 on a resume) would skip "running" entirely and jump from "pending" to "done".
+        job = db.jobs.get(job_id)
+        if job:
+            for p in job.phases:
+                if p.number == phase_start and p.status != "done":
+                    p.status = "running"
+            job.phase = phase_start
+            db.jobs.update(job)
+
+    def _keep(self, line: str) -> None:
+        _append_log(self.job_id, line)
+        self.recent_lines.append(line)
+        if len(self.recent_lines) > 80:
+            self.recent_lines.pop(0)
+        self.line_count += 1
+
+    def feed(self, raw_line: str) -> bool:
+        """Take one line of output; True when the job has been cancelled."""
+        db, job_id = self.db, self.job_id
+        line = raw_line.rstrip("\n\r")
+        if not line:
+            return False
+        self._keep(line)
+
+        # Cancel check (every 20 lines to keep overhead low)
+        if self.line_count % 20 == 0 and _progress(job_id, _is_cancelled, db, job_id):
+            return True
+
+        # Phase transition detection
+        new_phase = _detect_phase(line, self.current_phase)
+        if new_phase != self.current_phase:
+            _progress(job_id, _transition_phase, db, job_id, self.current_phase, new_phase,
+                      self.phase_start_time)
+            self.current_phase = new_phase
+            self.phase_start_time = _now()
+
+        # The ACTIVITY label follows the marker regardless of direction, so a later
+        # component's Phase 3 is not still announced as "Exporting".
+        _marker = _marker_phase(line)
+        if _marker:
+            _progress(job_id, _set_activity, db, job_id, _ACTIVITY[_marker])
+
+        # Update activity detail from log content (strip log prefix)
+        detail = _strip_log_prefix(line)
+        if detail and len(detail) > 10:
+            _progress(job_id, _update_activity, db, job_id, detail[:120])
+        return False
+
+    def replay(self, lines: list) -> None:
+        """Catch up on output written while nobody followed it (an API that restarted): the
+        live log and the phase, with one database write instead of one per line."""
+        phase, activity, detail = self.current_phase, None, None
+        for raw in lines:
+            line = raw.rstrip("\n\r")
+            if not line:
+                continue
+            self._keep(line)
+            phase = _detect_phase(line, phase)
+            marker = _marker_phase(line)
+            if marker:
+                activity = _ACTIVITY[marker]
+            d = _strip_log_prefix(line)
+            if d and len(d) > 10:
+                detail = d[:120]
+        job = self.db.jobs.get(self.job_id)
+        if job is None:
+            return
         for p in job.phases:
-            if p.number == current_phase and p.status != "done":
+            if p.number < phase and p.status in ("pending", "running"):
                 p.status = "done"
-                p.duration_seconds = max(1, int((_now() - phase_start_time).total_seconds()))
+            elif p.number == phase and p.status != "done":
+                p.status = "running"
+        job.phase = phase
+        if activity:
+            job.current_activity = activity
+        if detail:
+            job.activity_detail = detail
+        job.elapsed_seconds = _elapsed_since(job.started_at)
+        _progress(self.job_id, self.db.jobs.update, job)
+        self.current_phase = phase
+
+    def finish(self) -> None:
+        """Mark the final phase done."""
+        job = self.db.jobs.get(self.job_id)
+        if job:
+            for p in job.phases:
+                if p.number == self.current_phase and p.status != "done":
+                    p.status = "done"
+                    p.duration_seconds = max(
+                        1, int((_now() - self.phase_start_time).total_seconds()))
+            self.db.jobs.update(job)
+
+
+# ---------------------------------------------------------------------------
+# Background runs: a web run that outlives the API (staged generation, C4)
+# ---------------------------------------------------------------------------
+#
+# A run started as a child of this process died with it: a restart of the API on day 3 of a
+# 5-day run stopped the run, the next start failed the job, and failing it deleted the draft
+# version with everything in it. So with a database behind the API, a run is started as the
+# CLI's `--detach` starts one -- a process of its own, on a frozen copy of the code, its output
+# in a log file -- and the job only FOLLOWS it: the log for the live output and the phase, the
+# run's process and the version's writer lock for whether it lives, `exit.json` for how it
+# ended (core/frozen_run.py). A restarted API follows it again (`fail_interrupted_jobs`).
+
+#: Seconds between two looks at a background run (its log, its process, the job's cancel flag).
+DETACHED_POLL_SECONDS = 2.0
+_CANCEL_CHECK_SECONDS = 5.0
+_LAUNCH_TIMEOUT = 600
+
+_job_runs: dict[str, dict] = {}     # job id -> the background run it follows (run.json's fields)
+
+STOPPED_MESSAGE = ("Stopped: the run's process ended before it finished -- the machine "
+                   "restarted, or the process was killed.")
+
+
+def _resume_hint(job: Any) -> str:
+    from ..models.domain import REEXPORT_MODE
+    if getattr(job, "mode", None) == REEXPORT_MODE:
+        # The version's documents stand as they were; a re-export is started again, not resumed.
+        return "The version's documents are as they were before this re-export."
+    return (f"What the run made is kept. To carry it on from where it stopped, on the server: "
+            f"python analyzer.py resume --project-id {job.project_id} --version-id "
+            f"{job.version_id} --detach")
+
+
+def _frozen_run_module():
+    """core.frozen_run, with the engine on the path; None when it cannot be imported."""
+    try:
+        eng_dir = os.path.join(str(get_settings().repo_root), "engine")
+        if eng_dir not in sys.path:
+            sys.path.insert(0, eng_dir)
+        from core import frozen_run
+        return frozen_run
+    except ImportError:
+        return None
+
+
+def _data_root() -> str:
+    """Where `--detach` puts its runs (`<data root>/runs`), as the analyzer resolves it."""
+    try:
+        _frozen_run_module()
+        from core.paths import paths
+        return paths().data_root
+    except Exception:                                    # noqa: BLE001
+        return str(get_settings().repo_root)
+
+
+def _detach_enabled(db: Any) -> bool:
+    """Runs go to the background when the API has a database (the run, its lock and its record
+    are there) and `JOB_DETACH` is not off. The in-memory database keeps the child process."""
+    return (getattr(db, "_engine", None) is not None
+            and bool(getattr(get_settings(), "job_detach", True))
+            and _frozen_run_module() is not None)
+
+
+def _run_engine_command(db: Any, job_id: str, cmd: list, *, phase_start: int,
+                        extra_env: Optional[dict] = None) -> bool:
+    """A job's `analyzer.py` command, in the background when it can be (`_execute_detached`),
+    else as a child of this process (`_execute_subprocess`). Same answer either way."""
+    if _detach_enabled(db):
+        return _execute_detached(db, job_id, cmd, phase_start=phase_start, extra_env=extra_env)
+    return _execute_subprocess(db, job_id, cmd, phase_start=phase_start, extra_env=extra_env)
+
+
+class _LaunchFailed(Exception):
+    pass
+
+
+def _launch_detached(cmd: list, env: dict) -> dict:
+    """Run `cmd --detach` and return the background run it started: {pid, log_path, run_dir}.
+
+    The launcher is a process of its own that exits once the run has started, so the run is not
+    a child of this server: stopping the server's process tree (tools/start_app.py) does not
+    reach it. Its output goes to a file, not a pipe -- a pipe is read until every process holding
+    it has closed it, and a run that inherited it by accident would hold it for days."""
+    import tempfile
+    kw: dict = {}
+    if os.name == "nt":
+        kw["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    with tempfile.TemporaryFile() as out:
+        try:
+            proc = subprocess.run([*cmd, "--detach"], cwd=str(get_settings().repo_root), env=env,
+                                  stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
+                                  timeout=_LAUNCH_TIMEOUT, **kw)
+        except subprocess.TimeoutExpired:
+            raise _LaunchFailed(f"starting the run took more than {_LAUNCH_TIMEOUT} s")
+        out.seek(0)
+        text = out.read().decode("utf-8", "replace")
+    pid = re.search(r"started in the background: pid (\d+)", text)
+    log = re.search(r"^\s*log\s+(\S.*?)\s*$", text, re.M)
+    if proc.returncode != 0 or not pid or not log:
+        raise _LaunchFailed(text.strip() or f"the launcher exited with code {proc.returncode}")
+    log_path = log.group(1)
+    run = {"pid": int(pid.group(1)), "log_path": log_path, "run_dir": os.path.dirname(log_path)}
+    try:                                    # run.json has the process's start time (identity)
+        with open(os.path.join(run["run_dir"], "run.json"), encoding="utf-8") as fh:
+            run["create_time"] = json.load(fh).get("create_time")
+    except (OSError, ValueError):
+        pass
+    return run
+
+
+class _LogFollower:
+    """A growing log file, read a whole line at a time from where the last read stopped."""
+
+    def __init__(self, path: str):
+        self.path, self.offset, self.rest = path, 0, b""
+
+    def read(self) -> list:
+        try:
+            with open(self.path, "rb") as fh:
+                fh.seek(self.offset)
+                data = fh.read()
+        except OSError:
+            return []
+        if not data:
+            return []
+        self.offset += len(data)
+        parts = (self.rest + data).split(b"\n")
+        self.rest = parts.pop()
+        return [p.decode("utf-8", "replace") for p in parts]
+
+    def flush(self) -> list:
+        """Everything left, the last line too even without its line break."""
+        lines = self.read()
+        if self.rest:
+            lines.append(self.rest.decode("utf-8", "replace"))
+            self.rest = b""
+        return lines
+
+
+def _lock_held(vr: Any, version_id: Optional[str], eng: Any) -> Optional[bool]:
+    if vr is None or eng is None or not version_id:
+        return None
+    return vr.alive(version_id, engine=eng)
+
+
+def _execute_detached(db: Any, job_id: str, cmd: list, phase_start: int = 1,
+                      extra_env: Optional[dict] = None) -> bool:
+    """`_execute_subprocess` for a run that must outlive this server: start `cmd` in the
+    background and follow it (`_follow_detached`). Same answer: True when it succeeded."""
+    env = _subprocess_env(db, job_id, extra_env)
+    _append_log(job_id, "Starting the run in the background: it carries on if this server "
+                        "stops, and is followed again when the server starts.")
+    try:
+        run = _launch_detached(cmd, env)
+    except _LaunchFailed as exc:
+        for line in str(exc).splitlines()[-40:]:
+            _append_log(job_id, line)
+        # Kept when there is work in it: a resume of a stopped run that cannot start (the
+        # version busy for a moment, the code copy failing) must not delete days of work.
+        _fail_keeping_work(db, job_id, f"The run could not be started:\n{str(exc)[-3000:]}")
+        return False
+    _append_log(job_id, f"Background run: process {run['pid']}, log {run['log_path']}")
+    return _follow_detached(db, job_id, run, phase_start=phase_start)
+
+
+def _wait_gone(fr: Any, pid: Optional[int], seconds: float = 30.0,
+               create_time: Optional[float] = None) -> None:
+    """A run writes its exit code just before it exits: wait for the process to be gone, so the
+    last lines it wrote are in the log."""
+    end = time.monotonic() + seconds
+    while fr.process_alive(pid, create_time) and time.monotonic() < end:
+        time.sleep(0.25)
+
+
+def _follow_detached(db: Any, job_id: str, run: dict, *, phase_start: int,
+                     replay: bool = False) -> bool:
+    """Follow background run `run` to its end as `_execute_subprocess` follows a child, with the
+    same answer: True when it succeeded (exit 0, or 3: some components failed and the others
+    were made), False when it failed -- recorded on the job -- or was cancelled (the run is
+    stopped then).
+
+    It has ended when it recorded its exit code (`frozen_run.record_exit`). Its process gone with
+    no exit code, and the version's lock free, means it died -- the machine restarted, someone
+    killed it. Either way the job fails, and what the run made is kept for `resume` once Phase 1
+    stored anything (`_fail_keeping_work`). `replay`: catch up on the whole log first (an API that
+    restarted while the run went on)."""
+    fr = _frozen_run_module()
+    vr = _version_run_module()
+    eng = getattr(db, "_engine", None)
+    job = db.jobs.get(job_id)
+    vid = getattr(job, "version_id", None) if job else None
+    pid, born = run.get("pid"), run.get("create_time")
+    run_dir = run.get("run_dir") or os.path.dirname(run["log_path"])
+    with _LOCK:
+        _job_runs[job_id] = run
+    rc: Optional[int] = None
+    try:
+        tracker = _LineTracker(db, job_id, phase_start)
+        log = _LogFollower(run["log_path"])
+        if replay:
+            tracker.replay(log.read())
+        held_once, next_cancel_check = False, 0.0
+        while True:
+            for line in log.read():
+                if tracker.feed(line):
+                    fr.stop(pid, born)
+                    return False
+            now = time.monotonic()
+            if now >= next_cancel_check:
+                if _progress(job_id, _is_cancelled, db, job_id):
+                    fr.stop(pid, born)
+                    return False
+                next_cancel_check = now + _CANCEL_CHECK_SECONDS
+            rc = fr.read_exit(run_dir)
+            if rc is None:
+                alive = fr.process_alive(pid, born)
+                if alive:
+                    time.sleep(DETACHED_POLL_SECONDS)
+                    continue
+                held = _progress(job_id, _lock_held, vr, vid, eng)
+                held_once = held_once or bool(held)
+                # Without psutil the process cannot be asked: then the lock decides, once the
+                # run has been seen holding it (it takes it a few seconds after it starts).
+                if held or (alive is None and not held_once):
+                    time.sleep(DETACHED_POLL_SECONDS)
+                    continue
+                rc = fr.read_exit(run_dir)          # it may have ended between the two looks
+            else:
+                _wait_gone(fr, pid, create_time=born)
+            for line in log.flush():
+                tracker.feed(line)
+            break
+    finally:
+        with _LOCK:
+            _job_runs.pop(job_id, None)
+
+    def conclude() -> bool:
+        if _is_cancelled(db, job_id):
+            return False
+        code = rc
+        if (code is None and getattr(job, "mode", None) not in RENDER_MODES
+                and _version_completed(db, vid)):
+            # The version's own run: its process is gone with no exit code, yet the version is
+            # complete -- a `resume` from the command line finished it while this run's record
+            # still said running. (An export's version may have been complete before it started,
+            # so for an export this says nothing.)
+            _append_log(job_id, "The version was completed by another run (a resume).")
+            code = 0
+        if code in (0, 3):
+            if code == 3:
+                _append_log(job_id, "Some components' documents failed (see above); the others "
+                                    "were made. Their state is on the Documents page's Components "
+                                    "panel.")
+            tracker.finish()
+            return True
+        if code is None:
+            _append_log(job_id, "The run's process ended before it finished.")
+            _fail_keeping_work(db, job_id, STOPPED_MESSAGE)
+        else:
+            tail = "\n".join(tracker.recent_lines[-20:])
+            _append_log(job_id, f"Job failed with code {code}")
+            _fail_keeping_work(db, job_id, _failure_message(code, tracker.recent_lines, tail))
+        return False
+
+    return _when_db_answers(job_id, "recording the run's end", conclude)
+
+
+def _version_completed(db: Any, version_id: Optional[str]) -> bool:
+    """Whether the version's pipeline is complete (`versions.pipeline_status`)."""
+    eng = getattr(db, "_engine", None)
+    if eng is None or not version_id:
+        return False
+    import sqlalchemy as sa
+    from ..db.postgres import schema as s
+    with eng.connect() as cx:
+        return cx.execute(sa.select(s.versions.c.pipeline_status)
+                          .where(s.versions.c.id == version_id)).scalar() == "complete"
+
+
+def stop_background_run(job: Any) -> bool:
+    """Stop the background run of `job` that no thread of this server follows (a server that
+    stopped mid-run, before its run is followed again) -- before its version is removed, so the
+    run does not go on writing into a deleted version. True when one was stopped."""
+    fr = _frozen_run_module()
+    vid = getattr(job, "version_id", None)
+    if fr is None or not vid:
+        return False
+    run = fr.find_job_run(_data_root(), vid, job.id)
+    if not run or fr.process_alive(run.get("pid"), run.get("create_time")) is False:
+        return False
+    fr.stop(run.get("pid"), run.get("create_time"))
+    return True
+
+
+def _version_has_work(db: Any, version_id: Optional[str]) -> bool:
+    """Whether the version holds something a `resume` carries on from: a stored parse, or a
+    pipeline that got past the parse. A run that stopped before that is started again instead."""
+    eng = getattr(db, "_engine", None)
+    if eng is None or not version_id:
+        return False
+    try:
+        import sqlalchemy as sa
+        from ..db.postgres import schema as s
+        with eng.connect() as cx:
+            if cx.execute(sa.select(sa.func.count()).select_from(s.parse_snapshots)
+                          .where(s.parse_snapshots.c.version_id == version_id)).scalar():
+                return True
+            status = cx.execute(sa.select(s.versions.c.pipeline_status)
+                                .where(s.versions.c.id == version_id)).scalar()
+        return status in ("deriving", "viewing", "exporting", "complete")
+    except Exception:                                    # noqa: BLE001 - see below
+        # Cannot tell (the database did not answer): keep the version. Deleting a draft that
+        # holds days of work is the one mistake that cannot be undone; keeping an empty one is.
+        return True
+
+
+def _fail_keeping_work(db: Any, job_id: str, message: str) -> None:
+    """Fail the job; keep its version when there is work in it to resume (`_version_has_work`),
+    else free it as `_mark_failed` does. Days of LLM work are not thrown away because the
+    machine restarted."""
+    job = db.jobs.get(job_id)
+    if job is None:
+        return
+    if not _version_has_work(db, getattr(job, "version_id", None)):
+        _mark_failed(db, job_id, message)
+        return
+    _log.error("job %s stopped: %s", job_id, message)
+    if job.status not in ("cancelled", "complete", "failed"):
+        job.status = "failed"
+        job.error_message = f"{message}\n\n{_resume_hint(job)}"[:4000]
+        job.completed_at = _now()
         db.jobs.update(job)
 
+
+def _reattach_detached(db: Any, job: Any) -> bool:
+    """At start-up: follow again the background run a stopped server was following for `job`
+    (its run.json names the job). False when the job has none -- it ran as a child, or never got
+    as far as starting one."""
+    fr = _frozen_run_module()
+    vid = getattr(job, "version_id", None)
+    if fr is None or not vid:
+        return False
+    run = fr.find_job_run(_data_root(), vid, job.id)
+    if run is None:
+        return False
+    render = getattr(job, "mode", None) in RENDER_MODES
+    t = threading.Thread(target=_refollow, args=(db, job.id, run, render), daemon=True,
+                         name=f"follow-{job.id}")
+    if render:
+        with _REEXPORT_LOCK:
+            _reexport_threads[job.id] = t
+    else:
+        with _LOCK:
+            _job_threads[job.id] = t
+    print(f"[api] job {job.id}: its run goes on in the background (process {run.get('pid')}); "
+          f"following it again", file=sys.stderr)
+    t.start()
     return True
+
+
+def _refollow(db: Any, job_id: str, run: dict, render: bool) -> None:
+    """The thread of a job followed again after a restart: to the run's end, then the job's."""
+    sem = _get_semaphore()
+    slot = sem.acquire(blocking=False)      # the run goes on whether or not a slot is free
+    try:
+        _init_state(job_id)
+        _append_log(job_id, "The API server restarted while this ran; following the "
+                            "background run again.")
+        job = db.jobs.get(job_id)
+        phase = getattr(job, "phase", None) or (3 if render else 1)
+        if _follow_detached(db, job_id, run, phase_start=phase, replay=True) \
+                and not _is_cancelled(db, job_id):
+            _when_db_answers(job_id, "finishing the job",
+                             _complete_render if render else _complete, db, job_id)
+    except Exception as exc:                             # noqa: BLE001 - recorded on the job
+        _fail_keeping_work(db, job_id, f"Runner error: {exc}")
+    finally:
+        if slot:
+            sem.release()
+        try:
+            job = db.jobs.get(job_id)
+            if job is not None and job.status == "cancelled" and not render:
+                _release_draft_version(db, job)
+                _finish_if_it_finished(db, job)
+        except Exception as exc:                         # noqa: BLE001 - cleanup only
+            _log.warning("job %s: draft cleanup after cancel failed: %s", job_id, exc)
+        _cleanup_state(job_id)
+        if render:
+            with _REEXPORT_LOCK:
+                _reexport_threads.pop(job_id, None)
 
 
 def _marker_phase(line: str) -> int:
@@ -1353,6 +2268,33 @@ def _detect_phase(line: str, current_phase: int) -> int:
     """
     n = _marker_phase(line)
     return n if n > current_phase else current_phase
+
+
+def _stop_reasons(lines: list) -> list:
+    """What the engine said it must stop for, before the parse - the `STOPPING BEFORE THE PARSE`
+    block of its run summary (engine/incremental/report.py) - or [] when it did not stop there."""
+    out: list = []
+    inside = False
+    for raw in lines:
+        msg = _strip_log_prefix(raw)
+        if msg.startswith("STOPPING BEFORE THE PARSE"):
+            inside, out = True, []
+        elif inside:
+            if not msg.startswith("- "):
+                break                               # the rule that closes the block
+            out.append(msg[2:])
+    return out
+
+
+def _failure_message(rc: int, lines: list, tail: str) -> str:
+    """The job's error: the engine's own reasons first when it stopped before the parse - the
+    web app shows the first line as the headline, and "run.py exited with code 2" said nothing
+    about a component path the checkout does not have."""
+    reasons = _stop_reasons(lines)
+    if not reasons:
+        return f"run.py exited with code {rc}.\n{tail}"
+    more = "".join(f"- {r}\n" for r in reasons[1:])
+    return f"Stopped before the parse: {reasons[0]}\n{more}\n{tail}"
 
 
 def _strip_log_prefix(line: str) -> str:
@@ -1396,7 +2338,45 @@ def _update_activity(db: Any, job_id: str, detail: str) -> None:
     if job:
         job.activity_detail = detail
         job.elapsed_seconds = _elapsed_since(job.started_at)
+        _count_progress(job, detail)
         db.jobs.update(job)
+
+
+# "[45/159] coreDoWhileClamp" -- a ProgressReporter step (engine/core/progress.py), logged every
+# few items. The phase runner's own "[2/4] === Derive Model ===" and "[2/4] Derive Model — 12.3s"
+# lines count phases, not items, and are skipped.
+_ITEM_COUNTER = re.compile(r"^\[(\d+)/(\d+)\](?:\s+(.*))?$")
+_step_clocks: dict = {}    # job_id -> (total, monotonic time first seen, done first seen)
+
+
+def _count_progress(job: Any, detail: str) -> None:
+    """Set the phase percentage and the time left from the engine's item counter.
+
+    Nothing set `phase_pct`, so the web app's progress bar sat at 0% for a whole phase, and
+    `eta_seconds` was only ever the transition guess of two minutes per remaining phase: "~4m
+    remaining" for an LLM phase that takes an hour. The estimate is the rate seen so far in this
+    counted step, plus that same guess for the phases still to come.
+    """
+    m = _ITEM_COUNTER.match(detail or "")
+    if not m:
+        return
+    rest = m.group(3) or ""
+    if rest.startswith("===") or " — " in rest:
+        return
+    done, total = int(m.group(1)), int(m.group(2))
+    if total <= 0 or done > total:
+        return
+    now = time.monotonic()
+    with _LOCK:
+        clock = _step_clocks.get(job.id)
+        if clock is None or clock[0] != total or done < clock[2]:     # a new counted step
+            clock = (total, now, done)
+            _step_clocks[job.id] = clock
+    job.phase_pct = done * 100 // total
+    _, t0, done0 = clock
+    later = max(0, (4 - (job.phase or 4)) * 120)
+    if done > done0:
+        job.eta_seconds = int((now - t0) / (done - done0) * (total - done)) + later
 
 
 _progress_warned: set = set()      # (job_id, function) pairs already logged -- see _progress
@@ -1505,9 +2485,11 @@ def _read_engine_manifest(project_id: str, commit_sha: str,
 # backend — so the API-side sync was always a redundant second write of data already stored.
 
 
-def _complete(db: Any, job_id: str) -> None:
+def _complete(db: Any, job_id: str, *, force: bool = False) -> None:
+    """Finalise a finished run's job and version. `force`: a failed job too -- a version a
+    `resume` from the command line finished (analyzer._finish_web_job)."""
     job = db.jobs.get(job_id)
-    if not job or job.status in ("cancelled", "failed"):
+    if not job or (job.status in ("cancelled", "failed") and not force):
         return
 
     now = _now()
@@ -1523,7 +2505,10 @@ def _complete(db: Any, job_id: str) -> None:
     # captured one, else the legacy commit dir (doc_render.commit_output_root resolves both).
     _out_root = doc_render.commit_output_root(job.project_id, job.commit_sha, version.id)
     _make_sections(db, docs, now, _out_root or (_commit_dir(job.project_id, job.commit_sha) / "output"))
-    version.docs_count = len(docs)
+    # Every document of the version: a run that registered some before (a CLI run inside the job,
+    # a retried completion) has only the rest to add.
+    from .review_workflow import version_docs as _version_docs
+    version.docs_count = len(_version_docs(db, version))
     db.versions.update(version)
 
     # The engine already persisted the model to Postgres during the run (PgStore.write_model), so
@@ -1534,7 +2519,7 @@ def _complete(db: Any, job_id: str) -> None:
     job.phase = 4
     job.phase_pct = 100
     job.current_activity = "Done"
-    job.activity_detail = f"{len(docs)} document(s) generated"
+    job.activity_detail = f"{version.docs_count} document(s) generated"
     job.eta_seconds = 0
     job.completed_at = now
     job.version_id = version.id
@@ -1548,7 +2533,25 @@ def _complete(db: Any, job_id: str) -> None:
         project.updated_at = now
         db.projects.update(project)
 
-    _append_log(job_id, f"Complete. Version {version.tag}, {len(docs)} document(s).")
+    # Review and approval (REVIEW_APPROVE_API_SPEC §4): a document unchanged since the baseline
+    # keeps its approval; the others start In review with the baseline's reviewer, who is told.
+    # It never fails the run -- a document it could not judge stays In review, which is where
+    # every document started before. The run itself has usually recorded and opened them already
+    # (`analyzer.py generate` does at its end), so `docs` is empty here; the version's and the
+    # project's status are derived again either way, as `_make_version` rewrote the row.
+    if project:
+        try:
+            from .review_workflow import roll_up, start_review
+            if docs:
+                got = start_review(db, project, version, docs)
+                if got["carried"]:
+                    _append_log(job_id, f"{got['carried']} document(s) unchanged since the "
+                                        f"baseline keep their approval.")
+            roll_up(db, version)
+        except Exception:                                   # noqa: BLE001 - see above
+            _log.exception("opening the review of version %s failed", version.id)
+
+    _append_log(job_id, f"Complete. Version {version.tag}, {version.docs_count} document(s).")
 
 
 def _make_sections(db: Any, docs: list, now: datetime, output_dir: Path) -> None:
@@ -1570,6 +2573,25 @@ def _make_sections(db: Any, docs: list, now: datetime, output_dir: Path) -> None
                     content=f"This document captures the {doc.subtitle} for {doc.name}.",
                     review_state=None, reviewed_by=None, reviewed_at=None,
                 ),
+            ]
+        elif doc.process == "SWE.4":
+            # The three numbered chapters of the SWE.4 DOCX (engine/swe4_exporter.py). The keys
+            # are the ids the page gives those chapters, so the review tracker can jump to them.
+            sections = [
+                DocumentSection(
+                    id=f"sec{uuid.uuid4().hex[:8]}", document_id=doc.id,
+                    section_key=key, title=title, order=order, content=content,
+                    review_state=None, reviewed_by=None, reviewed_at=None,
+                )
+                for order, (key, title, content) in enumerate((
+                    ("intro", "1. Introduction",
+                     f"Purpose and scope of the unit tests of '{doc.name}', and the terms used."),
+                    ("test_spec", "2. Unit Test Specification",
+                     "Per function: precondition, inputs, test steps along its control flow and "
+                     "the expected results, with the test case metadata."),
+                    ("metrics", "3. Code Metric, Coding Rule, Test Coverage",
+                     "Code metrics, coding-rule compliance and test-coverage results."),
+                ), start=1)
             ]
         else:
             # SWE.2 / SWE.3 — read unit count from interface_tables.json
@@ -1671,76 +2693,16 @@ def _make_version(db: Any, project: Any, job: Any, now: datetime, manifest: dict
 
 
 def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> list[Document]:
-    """Create one Document per *real* generated DOCX in this version's output/.
+    """Create one Document per *real* generated DOCX in this version's output/ that is not
+    recorded yet, and return the new ones.
 
-    Runs are generated **per component** (``--component-per-docx``), so the
-    pipeline writes ``output/<id>/software_detailed_design_<id>.docx``, where ``<id>`` is
-    the component's layer-qualified id (``Layer1.Sample-Core``)
-    — one dir per component declared under a group in ``architecture_layers``.
-    This creates one record per such dir that actually holds a real DOCX (verified
-    via ``doc_render.find_docx`` — the same file download/render serve), so records
-    map 1:1 to documents on disk. Output dirs that don't match a declared component
-    are skipped (stale dirs, or a group with no components mapped — which generates
-    nothing in per-component mode). The previous hardcoded SYS.2 / SWE.1
-    placeholders and architecture-walk fallbacks (no DOCX behind them) were dropped
-    so the dashboard count never overstates what exists; processes with no real
-    output still render on the dashboard as muted "Not generated yet" rows."""
-    from .doc_render import commit_output_root, find_docx
-
-    docs: list[Document] = []
-
-    def add(process: str, name: str, subtitle: str, layer: str, group: str) -> None:
-        doc = Document(
-            id=f"doc{uuid.uuid4().hex[:8]}",
-            project_id=project.id,
-            version_id=version.id,
-            process=process, name=name, subtitle=subtitle,
-            layer=layer, group=group, status="in_review",
-            due_date=None, created_at=now, updated_at=now,
-        )
-        db.documents.update(doc)
-        docs.append(doc)
-
-    out_root = commit_output_root(version.project_id, version.commit_sha, version.id)
-    if out_root is None:
-        return docs
-
-    # Map every declared component to its output-dir name (pipeline normalises
-    # spaces -> hyphens) -> (display name, parent layer). Per-component output
-    # dirs are named by component, so a dir is only "real" when it matches one of
-    # these — guarding against stale dirs from prior runs / other projects.
-    #
-    # The dir carries the component's LAYER-QUALIFIED id (`Layer1.Sample-Core`), not its bare
-    # name, since group and component ids carry their layer (1df3016). Matching the bare name
-    # matched nothing: every run finished with its documents on disk and none registered, so the
-    # web app listed no documents at all. Qualified the same way the engine qualifies it.
-    from core.config import make_qualified_id
-    comp_by_dir: dict[str, tuple[str, str]] = {}
-    for _layer in (project.architecture_layers or []):
-        if not isinstance(_layer, dict):
-            continue
-        lname = str(_layer.get("name") or "")
-        for _g in (_layer.get("groups") or []):
-            if not isinstance(_g, dict):
-                continue
-            for _c in (_g.get("components") or []):
-                cname = _c if isinstance(_c, str) else (str(_c.get("name") or "") if isinstance(_c, dict) else "")
-                if cname:
-                    comp_by_dir[make_qualified_id(lname, cname).replace(" ", "-")] = (cname, lname)
-
-    # One SWE.3 detailed-design doc per component output dir that holds a real DOCX.
-    for d in sorted(out_root.iterdir()):
-        if not d.is_dir():
-            continue
-        meta = comp_by_dir.get(d.name)
-        if meta is None:
-            continue
-        if find_docx(d.name, out_root) is None:
-            continue
-        disp, lname = meta
-        add("SWE.3", disp, "Detailed Design", lname, d.name)
-
-    return docs
+    Runs are generated **per component**, so the pipeline writes
+    ``output/<id>/software_detailed_design_<id>.docx`` (and the SWE.4 beside it), where ``<id>``
+    is the component's layer-qualified id (``Layer1.Sample-Core``). Which component a dir is, and
+    the idempotence that lets a CLI run, a re-export and `analyzer.py register` all call this,
+    live in `services/document_registry.py` (`new_documents`)."""
+    from .document_registry import new_documents
+    return new_documents(db, project, version, now)
 
 
 # ---------------------------------------------------------------------------
@@ -1850,7 +2812,25 @@ def _capture_reexport_output(db: Any, job: Any, adir) -> None:
         _log.warning("re-export: could not persist rendered output for %s: %s", version_id, exc)
 
 
-def _reexport_from_phase(version_id: Optional[str]) -> int:
+def export_doc_type(db: Any, project_id: str, version_id: Optional[str]) -> str:
+    """What exporting this version writes: `all` when a run made its SWE.4 documents, else `swe3`.
+
+    A web run makes both (`--doc-type all`, `_generate_cmd`). A version generated before that
+    has SWE.3 alone, and asking run.py for SWE.4 there would export specs that were never built.
+    The re-export (`_do_reexport`) and R9 (`text_overrides.export_readiness`) ask the same
+    question, so this answers both.
+    """
+    if not version_id:
+        return "swe3"
+    try:
+        _docs, total = db.documents.list_for_project(project_id, version_id=version_id,
+                                                     process="SWE.4", per_page=1)
+    except Exception:                                  # noqa: BLE001 - SWE.3 alone, as before
+        return "swe3"
+    return "all" if total else "swe3"
+
+
+def _reexport_from_phase(version_id: Optional[str], doc_type: str = "swe3") -> int:
     """4 normally; 3 when a reviewer's correction is newer than the last derivation.
 
     `REQ-AP-04` says an export must verify rather than assume. The CLI answers by refusing and
@@ -1879,10 +2859,10 @@ def _reexport_from_phase(version_id: Optional[str]) -> int:
             return 4
         from review.export_guard import staleness                  # type: ignore[import]
         with get_engine().connect() as cx:
-            # Asked about SWE.3 only: this re-export runs run.py with no --doc-type, so SWE.3 is
-            # all it writes. SWE.4 specs it does not rebuild are not its question -- and its
-            # derivation, recorded per view, cannot vouch for them either.
-            st = staleness(cx, version_id, "swe3")
+            # Asked about what this re-export writes (`export_doc_type`): SWE.3, and SWE.4 when
+            # the version has it -- a node-label correction re-derives the SWE.4 specs at save
+            # time, so that document is behind as well.
+            st = staleness(cx, version_id, doc_type)
     except Exception as exc:                                       # noqa: BLE001 - see docstring
         _log.warning("re-export: could not check whether %s is up to date (%s); "
                      "exporting without re-deriving", version_id, exc)
@@ -1908,6 +2888,14 @@ def _do_reexport(db: Any, job_id: str) -> bool:
     if not project:
         _mark_failed(db, job_id, f"Project {job.project_id} not found.")
         return False
+    if _detach_enabled(db):
+        # In the background, as `analyzer.py reexport`: it restores the source, takes the
+        # version's writer lock, and stores and records what it makes. Re-exporting every
+        # document of a large version takes hours, and as a child of this server it died with
+        # every restart.
+        doc_type = export_doc_type(db, job.project_id, job.version_id)
+        return _reexport_detached(db, job_id, _reexport_from_phase(job.version_id, doc_type),
+                                  doc_type)
 
     root = get_settings().repo_root
     version_id = getattr(job, "version_id", None)
@@ -1970,7 +2958,11 @@ def _do_reexport(db: Any, job_id: str) -> bool:
     #
     # Phase 3 is exactly that remedy: it rebuilds the view rows from the model with the
     # corrections applied, and draws the flowchart pictures that were owed on the way through.
-    from_phase = _reexport_from_phase(getattr(job, "version_id", None))
+    #
+    # Both documents of a version that has both: a web run writes SWE.4 beside SWE.3, and a
+    # re-export that rewrote only SWE.3 left the SWE.4 Word file with the old labels.
+    doc_type = export_doc_type(db, job.project_id, getattr(job, "version_id", None))
+    from_phase = _reexport_from_phase(getattr(job, "version_id", None), doc_type)
 
     arch_layers = project.architecture_layers or []
     # The model is rows, so Phase 4 needs the version id to find it. This used to ASK whether
@@ -1980,7 +2972,7 @@ def _do_reexport(db: Any, job_id: str) -> bool:
     cmd = _build_cmd(job, cdir, config_path, from_phase=from_phase, use_model=True,
                      arch_layers=arch_layers,
                      model_root=adir / "model", output_root=adir / "output",
-                     version_id=getattr(job, "version_id", None))
+                     version_id=getattr(job, "version_id", None), doc_type=doc_type)
     if from_phase > 3:
         # Nothing to re-derive: say so on the job rather than leave phase 3 "pending" for ever.
         job = db.jobs.get(job_id)
@@ -1998,6 +2990,284 @@ def _do_reexport(db: Any, job_id: str) -> bool:
     return True
 
 
+def _reexport_detached(db: Any, job_id: str, first_phase: int, doc_type: str) -> bool:
+    """A web re-export as `analyzer.py reexport --detach`, followed like a run: the documents of
+    the job's scope, from `first_phase` (3 when a correction is newer than the views, else 4 --
+    `_reexport_from_phase`), of `doc_type`. Same answer as `_do_reexport`."""
+    job = db.jobs.get(job_id)
+    scope = job.scope or {}
+    # Export only was judged when the job was made; a correction saved while it waited for its
+    # turn would make the process refuse. `auto` makes the views again instead.
+    cmd = [sys.executable, str(get_settings().repo_root / "analyzer.py"), "reexport",
+           "--project-id", job.project_id, "--version-id", job.version_id,
+           "--from-phase", "auto" if first_phase >= 4 else str(first_phase),
+           "--doc-type", doc_type]
+    names = scope.get("names") or []
+    if scope.get("type") == "component" and names:
+        cmd += ["--components", ",".join(names)]
+    elif scope.get("type") not in (None, "project"):
+        cmd += ["--scope", _scope_to_cli(scope)]
+    if first_phase > 3:
+        # Nothing to re-derive: say so on the job rather than leave phase 3 "pending" for ever.
+        for p in job.phases:
+            if p.number < first_phase and p.status == "pending":
+                p.status = "skipped"
+        db.jobs.update(job)
+    return _execute_detached(db, job_id, cmd, phase_start=first_phase,
+                             extra_env=_engine_db_env(db))
+
+
+def _reexport_scope(db: Any, version: Any, generation_scope: Optional[dict]) -> Optional[dict]:
+    """Every component the version has documents for, whichever run made them -- `analyzer.py
+    reexport`'s default too. The generation's scope when its documents are not per component (an
+    old group-scoped run) or the view cannot be read."""
+    try:
+        from .version_components import components_view, default_reexport
+        names = default_reexport(components_view(db, version))
+        if names:
+            return {"type": "component", "names": names}
+    except Exception as exc:                          # noqa: BLE001 - the old scope still works
+        _log.warning("re-export of %s: its components could not be read (%s); using the "
+                     "generation's scope", getattr(version, "id", "?"), exc)
+    return generation_scope
+
+
+def start_export(db: Any, version: Any, components: list, *,
+                 added_layers: Optional[list] = None) -> AnalysisJob:
+    """Make the documents of `components` -- not generated yet -- into `version`, as a job of its
+    own (`mode: "export"`, phases 3 and 4), and return it.
+
+    The job runs `analyzer.py export`, the same command as the CLI: Phases 3-4 from the version's
+    stored model, the output stored, the documents recorded for review. `added_layers`: layers
+    the model lacks that some of `components` are of -- the same command adds them first (the
+    parse again with them, the model derived again keeping its descriptions), so the job's
+    phases are 1-4 and it says so in its activity. That process takes the
+    version's writer lock itself, so this thread does not. One at a time per version, like a
+    re-export; refused while any other process writes the version. The caller has checked the
+    components (`version_components`): each is of the version's model and has no documents yet.
+
+    Raises ReexportRefused.
+    """
+    with _REEXPORT_LOCK:
+        busy = version_writer_busy(db, version.id)
+        if busy:
+            raise ReexportRefused(
+                409, "VERSION_BUSY",
+                f"Version '{version.id}' is being written by {busy}. Wait for it to finish.")
+        jobs = db.jobs.list_for_version(version.id)
+        running = next((j for j in jobs if getattr(j, "mode", None) in RENDER_MODES
+                        and j.status in _REEXPORT_ACTIVE), None)
+        if running is not None and _reexport_alive(running.id):
+            raise ReexportRefused(
+                409, "EXPORT_RUNNING",
+                f"Version '{version.id}' is already being rendered by job {running.id}. Follow "
+                f"that job, then add these.", running.id)
+        # The version's own run, alive in this server: on SQLite there is no lock to say so, and
+        # a resumed run holds none for the moment before it starts. Whichever stored last would
+        # replace the other's documents.
+        own = next((j for j in jobs if j.status in ("queued", "running", "paused")
+                    and job_alive(j.id)), None)
+        if own is not None:
+            raise ReexportRefused(
+                409, "RUN_ACTIVE",
+                f"Job {own.id} is at work on version '{version.id}'. Follow that job, then add "
+                f"these.", own.id)
+        generation = next((j for j in jobs if getattr(j, "mode", None) not in RENDER_MODES), None)
+        added = list(added_layers or [])
+        first = 1 if added else 3
+        scope: dict = {"type": "component", "names": list(components)}
+        if added:
+            scope["added_layers"] = added
+        job = AnalysisJob(
+            id=f"job{uuid.uuid4().hex[:8]}", project_id=version.project_id,
+            commit_sha=version.commit_sha or (generation.commit_sha if generation else ""),
+            version_id=version.id, reference_version_id=None, status="queued",
+            pause_after_phase1=False, layer_filter=None, phase=first, phase_pct=0,
+            current_activity="Queued — waiting for worker…", activity_detail="",
+            elapsed_seconds=0, eta_seconds=None,
+            phases=[AnalysisPhase(n, name, "pending", None) for n, name in _PHASES if n >= first],
+            started_at=_now(), completed_at=None, error_message=None,
+            branch=(generation.branch if generation else None) or version.branch or "main",
+            version_tag=version.tag, mode=EXPORT_MODE, scope=scope)
+        db.jobs.create(job)
+        t = threading.Thread(target=_run_export, args=(db, job.id), daemon=True,
+                             name=f"export-{job.id}")
+        _reexport_threads[job.id] = t
+        t.start()
+    return job
+
+
+def _run_export(db: Any, job_id: str) -> None:
+    """The export job's thread: `analyzer.py export` as its subprocess, followed like a run."""
+    try:
+        _init_state(job_id)
+        job = db.jobs.get(job_id)
+        if not job or job.status == "cancelled":
+            return
+        job.status = "running"
+        added = (job.scope or {}).get("added_layers") or []
+        job.current_activity = _export_activity(added)
+        db.jobs.update(job)
+        names = (job.scope or {}).get("names") or []
+        cmd = [sys.executable, str(get_settings().repo_root / "analyzer.py"), "export",
+               "--project-id", job.project_id, "--version-id", job.version_id,
+               "--components", ",".join(names)]
+        # In the background when it can be: making 33 components' documents takes a day too.
+        # A layer to add: `export` parses and derives it first (Phases 1-2), then the documents.
+        if (_run_engine_command(db, job_id, cmd, phase_start=1 if added else 3,
+                                extra_env=_engine_db_env(db))
+                and not _is_cancelled(db, job_id)):
+            _when_db_answers(job_id, "finishing the job", _complete_render, db, job_id)
+    except Exception as exc:                  # noqa: BLE001 - recorded on the job, not lost
+        _fail_keeping_work(db, job_id, f"Export error: {exc}")
+    finally:
+        _cleanup_state(job_id)
+        with _REEXPORT_LOCK:
+            _reexport_threads.pop(job_id, None)
+
+
+def _export_activity(added_layers: list) -> str:
+    """An export job's headline while it runs: what it does first."""
+    if not added_layers:
+        return "Making the documents…"
+    s = "s" if len(added_layers) > 1 else ""
+    return (f"Adding layer{s} {', '.join(added_layers)} (parse + model), then making the "
+            f"documents…")
+
+
+def _complete_render(db: Any, job_id: str) -> None:
+    """The end of an export, resume or re-export job: complete, saying what it made."""
+    _complete_reexport(db, job_id)
+    done = db.jobs.get(job_id)
+    if getattr(done, "mode", None) == REEXPORT_MODE:
+        return                                           # "Re-exported", as _complete_reexport says
+    names = (done.scope or {}).get("names") or []
+    added = (done.scope or {}).get("added_layers") or []
+    done.activity_detail = (f"Generated {len(names)} component(s)" if names
+                            else "Resumed: the version is complete")
+    if names and added:
+        done.activity_detail += (f"; added layer{'s' if len(added) > 1 else ''} "
+                                 f"{', '.join(added)}")
+    db.jobs.update(done)
+
+
+class ResumeRefused(ReexportRefused):
+    """Why a version cannot be resumed now (HTTP status, code, message)."""
+
+
+def start_resume(db: Any, version: Any) -> AnalysisJob:
+    """Carry on a version whose run stopped before it finished, from the web app: `analyzer.py
+    resume`, in the background, followed as a job (staged generation, C4).
+
+    The version's own generation job is reopened when it did not finish -- a web run that
+    stopped -- so its end finalises the version as a run's end does (`_complete`). Otherwise
+    (a version made from the command line, or one complete apart from some components) the
+    resume is a job of its own, like an export. What it does is `resume`'s to decide: the parse
+    again, Phase 2 from the stored parse, the unfinished components, or only the closing steps.
+
+    Raises ResumeRefused: VERSION_BUSY (a writer holds the version), RUN_ACTIVE (a job of this
+    server is at work on it), NOTHING_TO_RESUME, NO_BACKGROUND_RUNS (no database behind the API).
+    """
+    if not _detach_enabled(db):
+        raise ResumeRefused(409, "NO_BACKGROUND_RUNS",
+                            "Resuming needs the API on a database. Resume on the server: "
+                            f"python analyzer.py resume --project-id {version.project_id} "
+                            f"--version-id {version.id} --detach")
+    with _REEXPORT_LOCK:
+        busy = version_writer_busy(db, version.id)
+        if busy:
+            raise ResumeRefused(409, "VERSION_BUSY",
+                                f"Version '{version.id}' is being written by {busy}: it has not "
+                                f"stopped. Follow it on the Components panel.")
+        jobs = db.jobs.list_for_version(version.id)
+        active = next((j for j in jobs if j.status in ("queued", "running", "paused")
+                       and (job_alive(j.id) or _reexport_alive(j.id))), None)
+        if active is not None:
+            raise ResumeRefused(409, "RUN_ACTIVE",
+                                f"Job {active.id} is at work on version '{version.id}'. Follow "
+                                f"that job.", active.id)
+        from .version_components import resume_action
+        action = resume_action(db, version)
+        if action == "busy":
+            raise ResumeRefused(409, "VERSION_BUSY",
+                                f"Version '{version.id}' is being written: it has not stopped.")
+        if action == "nothing":
+            raise ResumeRefused(409, "NOTHING_TO_RESUME",
+                                f"Version '{version.id}' is complete: nothing was cut short. "
+                                f"Components it has not generated are added with Generate.")
+        generation = next((j for j in jobs if getattr(j, "mode", None) not in RENDER_MODES), None)
+        first = {"regenerate": 1, "derive": 2}.get(action, 3)
+        if generation is not None and generation.status != "complete":
+            job, render = generation, False
+            job.status = "queued"
+            job.error_message = None
+            job.completed_at = None
+            # Started again: the checks for unfollowed jobs leave a job alone for its first
+            # minutes, and they read this (and "the project's run" is the newest).
+            job.started_at = _now()
+            job.current_activity = "Resuming…"
+            for p in job.phases:
+                if p.number >= first and p.status != "done":
+                    p.status = "pending"
+            db.jobs.update(job)
+        else:
+            render = True
+            job = AnalysisJob(
+                id=f"job{uuid.uuid4().hex[:8]}", project_id=version.project_id,
+                commit_sha=version.commit_sha or (generation.commit_sha if generation else ""),
+                version_id=version.id, reference_version_id=None, status="queued",
+                pause_after_phase1=False, layer_filter=None, phase=first, phase_pct=0,
+                current_activity="Resuming…", activity_detail="",
+                elapsed_seconds=0, eta_seconds=None,
+                phases=[AnalysisPhase(n, name, "pending", None) for n, name in _PHASES
+                        if n >= first],
+                started_at=_now(), completed_at=None, error_message=None,
+                branch=(generation.branch if generation else None) or version.branch or "main",
+                version_tag=version.tag, mode=EXPORT_MODE, scope=None)
+            db.jobs.create(job)
+        t = threading.Thread(target=_run_resume, args=(db, job.id, render, first), daemon=True,
+                             name=f"resume-{job.id}")
+        if render:
+            _reexport_threads[job.id] = t
+        else:
+            with _LOCK:
+                _job_threads[job.id] = t
+        t.start()
+    return job
+
+
+def _run_resume(db: Any, job_id: str, render: bool, first_phase: int) -> None:
+    """The resume job's thread: `analyzer.py resume` in the background, followed to its end."""
+    try:
+        _init_state(job_id)
+        job = db.jobs.get(job_id)
+        if not job or job.status == "cancelled":
+            return
+        job.status = "running"
+        db.jobs.update(job)
+        cmd = [sys.executable, str(get_settings().repo_root / "analyzer.py"), "resume",
+               "--project-id", job.project_id, "--version-id", job.version_id]
+        if (_execute_detached(db, job_id, cmd, phase_start=first_phase,
+                              extra_env=_engine_db_env(db))
+                and not _is_cancelled(db, job_id)):
+            _when_db_answers(job_id, "finishing the job",
+                             _complete_render if render else _complete, db, job_id)
+    except Exception as exc:                  # noqa: BLE001 - recorded on the job, not lost
+        _fail_keeping_work(db, job_id, f"Resume error: {exc}")
+    finally:
+        try:
+            job = db.jobs.get(job_id)
+            if job is not None and job.status == "cancelled" and not render:
+                _release_draft_version(db, job)
+                _finish_if_it_finished(db, job)
+        except Exception as exc:              # noqa: BLE001 - cleanup only
+            _log.warning("job %s: draft cleanup after cancel failed: %s", job_id, exc)
+        _cleanup_state(job_id)
+        if render:
+            with _REEXPORT_LOCK:
+                _reexport_threads.pop(job_id, None)
+
+
 def _run_reexport(db: Any, job_id: str) -> None:
     """The re-export job's thread: queued -> running -> complete | failed, as a generation does."""
     try:
@@ -2008,9 +3278,15 @@ def _run_reexport(db: Any, job_id: str) -> None:
         job.status = "running"
         job.current_activity = "Preparing re-export…"
         db.jobs.update(job)
-        if _do_reexport(db, job_id) and not _is_cancelled(db, job_id):
-            _register_missing_documents(db, job_id)
-            _complete_reexport(db, job_id)
+        # In the background the re-export's own process takes the version's writer lock, as a web
+        # run's generate does: holding it here as well would refuse that process.
+        import contextlib
+        writer = (contextlib.nullcontext() if _detach_enabled(db)
+                  else _version_writer(db, job.version_id, "web reexport"))
+        with writer:
+            if _do_reexport(db, job_id) and not _is_cancelled(db, job_id):
+                _register_missing_documents(db, job_id)
+                _when_db_answers(job_id, "finishing the job", _complete_reexport, db, job_id)
     except Exception as exc:                  # noqa: BLE001 - recorded on the job, not lost
         _mark_failed(db, job_id, f"Re-export error: {exc}")
     finally:
@@ -2020,13 +3296,13 @@ def _run_reexport(db: Any, job_id: str) -> None:
 
 
 def _register_missing_documents(db: Any, job_id: str) -> int:
-    """Register the documents of a re-exported version that has none. Returns how many.
+    """Register the documents of a re-exported version that are not recorded yet, and open their
+    review. Returns how many.
 
-    A version generated while `_make_documents` matched output dirs by the bare component name
-    has its DOCX files on disk and no `documents` rows: since 1df3016 the dirs carry the
-    layer-qualified id, so that was every run started from the web app. Re-exporting such a
-    version is how it gets its document list back. One that already has documents is left alone,
-    so a re-export never registers a document twice.
+    A version generated from the CLI, or while `_make_documents` matched output dirs by the bare
+    component name, has its DOCX files on disk and no `documents` rows; re-exporting it is one way
+    it gets its document list. Registration is idempotent (`document_registry`), so a version
+    whose documents are all recorded is left exactly as it is.
 
     Best-effort: the re-export has succeeded by now, and its job must not fail over this.
     """
@@ -2037,18 +3313,9 @@ def _register_missing_documents(db: Any, job_id: str) -> int:
         project = db.projects.get(job.project_id) if version else None
         if version is None or project is None:
             return 0
-        _existing, total = db.documents.list_for_project(project.id, version_id=version.id,
-                                                         per_page=1)
-        if total:
-            return 0
-        now = _now()
-        docs = _make_documents(db, project, version, now)
+        from .document_registry import register_documents
+        docs = register_documents(db, project, version, now=_now())
         if docs:
-            out_root = doc_render.commit_output_root(project.id, version.commit_sha, version.id)
-            _make_sections(db, docs, now,
-                           out_root or (_commit_dir(project.id, version.commit_sha) / "output"))
-            version.docs_count = len(docs)
-            db.versions.update(version)
             _append_log(job_id, f"Registered {len(docs)} document(s) this version was missing.")
         return len(docs)
     except Exception as exc:                  # noqa: BLE001 - see docstring

@@ -81,6 +81,16 @@ def _no_test_reaches_the_configured_database(request, monkeypatch, _spare_engine
     monkeypatch.setattr(core_db, "is_database_configured", lambda: True)
 
 
+@pytest.fixture(autouse=True)
+def _no_commit_sync_over_the_network(monkeypatch):
+    """`GET /projects/{id}/commits` syncs the project's repository on its first view -- a real
+    `git clone` of the seeded `https://github.com/org/vcu-firmware`, which does not exist. It hung
+    the suite for an hour once (2026-10-04, `test_smoke.py::test_list_commits`). No test here is
+    about the sync; each reads the commits the database has."""
+    from api.routes import commits_versions
+    monkeypatch.setattr(commits_versions, "_backfill_commits_from_repo", lambda *a, **k: None)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _startup_meets_no_database():
     """`with TestClient(app)` runs the app's startup hook, which connects to -- and seeds a login

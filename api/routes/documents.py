@@ -1,29 +1,21 @@
 """Documents routes — /api/v1/projects/:id/documents/*"""
 from __future__ import annotations
-import io
-import uuid
 import zipfile
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, Response
-from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
 from ..db.session import get_db
 from ..db.in_memory import InMemoryDatabase
 from ..middleware.auth import get_current_user, require_project_admin, require_project_member
-from ..models.domain import User, DocumentAssignment
-from ..services.errors import not_found, forbidden
-from ..services import doc_render
-from ..services.model_reader import ModelReader
-from ..services.output_reader import OutputReader
-from ..schemas import (
-    DocStatsResponse, DocumentListResponse, RenderResponse,
-    DocumentDetailResponse, DocumentResponse, AssigneesResponse,
-    MessageResponse, SectionReviewResponse, SubmitReviewResponse,
-    DocStatusResponse, ApproveAllResponse, ExportAllResponse,
-)
+from ..models.domain import User
+from ..services.errors import bad_request, not_found, forbidden
+from ..services import doc_render, review_workflow as rw
+from ..services.document_payload import build_document_render
+from ..schemas import RenderResponse, ExportAllResponse
 
 router = APIRouter(tags=["documents"])
 UTC = timezone.utc
@@ -38,23 +30,30 @@ class UpdateDocumentRequest(BaseModel):
     due_date: Optional[str] = None
 
 
-class UpdateSectionRequest(BaseModel):
-    review_state: str                  # "accepted" | "declined" | "edited"
-    edited_content: Optional[str] = None
-
-
+# Review and approval (docs/spec/REVIEW_APPROVE_API_SPEC.md §3). Comments are checked by
+# review_workflow.clean_text, so a blank one and a missing one get the same 422.
 class AssignRequest(BaseModel):
-    user_ids: list[str]
+    user_id: Optional[str] = None
+    user_ids: Optional[list[str]] = None     # the older shape: exactly one
 
 
 class BatchAssignRequest(BaseModel):
-    document_ids: list[str]
-    user_ids: list[str]
+    document_ids: list[str] = Field(..., min_length=1, max_length=500)
+    user_id: Optional[str] = None
+    user_ids: Optional[list[str]] = None
+
+
+class CommentRequest(BaseModel):
+    comment: Optional[str] = None
+
+
+class ReopenRequest(BaseModel):
+    reason: Optional[str] = None
 
 
 class ApproveAllRequest(BaseModel):
-    version_id: str
-    process_filter: Optional[list[str]] = None
+    document_ids: list[str] = Field(..., min_length=1, max_length=500)
+    comment: Optional[str] = None
 
 
 class ExportAllRequest(BaseModel):
@@ -66,47 +65,31 @@ class ExportAllRequest(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _doc_dict(doc, assignees: list, sections=None) -> dict:
-    d = {
-        "id": doc.id,
-        "name": doc.name,
-        "subtitle": doc.subtitle,
-        "process": doc.process,
-        "layer": doc.layer,
-        "group": doc.group,
-        "status": doc.status,
-        "version_id": doc.version_id,
-        "due_date": doc.due_date.isoformat() if doc.due_date else None,
-        "assignees": assignees,
-        "created_at": doc.created_at.isoformat(),
-        "updated_at": doc.updated_at.isoformat(),
-    }
-    if sections is not None:
-        resolved = sum(1 for s in sections if s.review_state in ("accepted", "declined", "edited"))
-        d["sections"] = [
-            {
-                "key": s.section_key,
-                "title": s.title,
-                "order": s.order,
-                "content": s.content,
-                "review_state": s.review_state,
-                "reviewed_by": s.reviewed_by,
-                "reviewed_at": s.reviewed_at.isoformat() if s.reviewed_at else None,
-            }
-            for s in sections
-        ]
-        d["review_progress"] = {"resolved": resolved, "total": len(sections)}
-    return d
+def _document(db, project_id: str, doc_id: str):
+    """The document `doc_id` of `project_id` -- 404 when it belongs to another project. Every
+    route that takes a document id asks this: an id alone named any project's document."""
+    doc = db.documents.get(doc_id)
+    if not doc or doc.project_id != project_id:
+        raise not_found("Document", doc_id)
+    return doc
 
 
-def _assignee_views(document_id: str, db: InMemoryDatabase) -> list[dict]:
-    assignments = db.assignments.list_for_document(document_id)
-    user_ids = [a.user_id for a in assignments]
-    users = {u.id: u for u in db.users.list_by_ids(user_ids)}
-    return [
-        {"user_id": uid, "name": users[uid].name, "initials": users[uid].initials}
-        for uid in user_ids if uid in users
-    ]
+def _project(db, project_id: str):
+    project = db.projects.get(project_id)
+    if not project:
+        raise not_found("Project", project_id)
+    return project
+
+
+def _docx_for(db, project_id: str, doc):
+    """The Word file a download serves: the copy kept at approval for an approved document
+    (a later re-export cannot change what was approved), else the version's own."""
+    kept = rw.approved_docx(doc)
+    if kept is not None:
+        return kept
+    version = db.versions.get(doc.version_id) if doc.version_id else None
+    out_root = doc_render.commit_output_root(project_id, version.commit_sha, version.id) if version else None
+    return doc_render.find_docx(doc.group, out_root, doc.process)
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +131,7 @@ def list_documents(
         page=page, per_page=per_page,
     )
     return {
-        "documents": [_doc_dict(d, _assignee_views(d.id, db)) for d in docs],
+        "documents": rw.document_views(db, docs),
         "pagination": {"page": page, "per_page": per_page, "total": total},
     }
 
@@ -235,7 +218,8 @@ def _render_doc_dict(doc, sections, project, version) -> dict:
     # fallback render matches the exported DOCX even without live pipeline output.
     intro_comps = components or ([doc.group] if doc.group else [])
     if not any(s.get("id") == "intro" for s in rich_sections):
-        rich_sections = [doc_render.intro_section_from_config(intro_comps, project.name), *rich_sections]
+        rich_sections = [doc_render.intro_section_from_config(intro_comps, project.name, version),
+                         *rich_sections]
     units_total = max(len(components), 1) * 2
     return {
         "cover": {
@@ -287,34 +271,10 @@ def render_document(
     if not doc or doc.project_id != project_id:
         raise not_found("Document", doc_id)
     version = db.versions.get(doc.version_id) if doc.version_id else None
-
-    # Render THIS version's artifacts from its commit dir (workspaces/<pid>/<commit[:16]>/
-    # output), not the shared latest run.
-    out_root = doc_render.commit_output_root(project_id, version.commit_sha, version.id) if version else None
-    group_dir = doc_render.output_group_dir(doc.group, out_root)
-    if group_dir is not None:
-        # Imported projects (created by tools/import-output-project, no repo_url) render
-        # their own copied model snapshot (workspaces/<pid>/<commit[:16]>/model). Real
-        # repo-backed projects are left exactly as before: model read from the shared repo
-        # model/ (model_root=None). Scoped on repo_url so real flows are unchanged.
-        model_root = None
-        if not (project.repo_url or "").strip():
-            commit_model = out_root.parent / "model"
-            if commit_model.is_dir():
-                model_root = commit_model
-        # PG-7a: serve the model for THIS version from Postgres when it's there, falling back to
-        # the disk dir resolved above (so behaviour is unchanged without a SQL backend).
-        reader = ModelReader(db, version.id if version else None,
-                             model_root or (doc_render._REPO_ROOT / "model"))
-        # C0: the VIEW outputs (interface tables / flowcharts / behaviour rows) also come
-        # from Postgres when present. They have been stored since PG-5a, but the rendered
-        # document still read them off local disk — so the main product surface depended on
-        # the machine that produced it. snap_dir is the version's own output tree, used as
-        # the fallback.
-        out_reader = OutputReader(db, version.id if version else None, out_root.parent)
-        return {"document": doc_render.build_render(
-            doc, project, version, group_dir, project_id, model_root=model_root,
-            model_reader=reader, output_reader=out_reader)}
+    # The same build an approval fingerprints (services/document_payload.py).
+    render = build_document_render(db, project, doc)
+    if render is not None:
+        return {"document": render}
 
     sections = db.documents.list_sections(doc_id)
     return {"document": _render_doc_dict(doc, sections, project, version)}
@@ -327,7 +287,7 @@ def document_asset(
     asset_path: str,
     db: InMemoryDatabase = Depends(get_db),
 ):
-    """Stream a diagram file (PNG/MMD) from the document's live pipeline output.
+    """Stream a diagram file (PNG/SVG/MMD) from the document's live pipeline output.
 
     Intentionally unauthenticated so ``<img>`` tags can load diagrams directly."""
     doc = db.documents.get(doc_id)
@@ -338,6 +298,17 @@ def document_asset(
     target = doc_render.resolve_asset(doc.group, asset_path, out_root)
     if target is None:
         raise not_found("Asset", asset_path)
+    if target.suffix.lower() == ".svg":
+        # Named explicitly: an <img> shows an SVG only as image/svg+xml, and the guess comes
+        # from the OS registry on Windows. And an SVG is a document too: opened on its own tab
+        # it could run script from this origin. Graphviz writes none; the policy keeps it so.
+        # no-cache: a label correction redraws the file under the same name, so the browser
+        # must ask again (the ETag answers 304 when nothing changed) instead of showing its copy.
+        return FileResponse(target, media_type="image/svg+xml", headers={
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-cache",
+        })
     return FileResponse(target)
 
 
@@ -351,11 +322,9 @@ def get_document(
     if not db.projects.get(project_id):
         raise not_found("Project", project_id)
     require_project_member(project_id, current_user, db)
-    doc = db.documents.get(doc_id)
-    if not doc or doc.project_id != project_id:
-        raise not_found("Document", doc_id)
+    doc = _document(db, project_id, doc_id)
     sections = db.documents.list_sections(doc_id)
-    return {"document": _doc_dict(doc, _assignee_views(doc_id, db), sections)}
+    return {"document": rw.document_view(db, doc, sections)}
 
 
 @router.patch("/projects/{project_id}/documents/{doc_id}")
@@ -367,14 +336,21 @@ def update_document(
     db: InMemoryDatabase = Depends(get_db),
 ):
     require_project_admin(project_id, current_user, db)
-    doc = db.documents.get(doc_id)
-    if not doc or doc.project_id != project_id:
-        raise not_found("Document", doc_id)
-    if body.status:
-        doc.status = body.status
+    doc = _document(db, project_id, doc_id)
+    if body.status is not None:
+        # Retired (REVIEW_APPROVE_API_SPEC §3): any string was accepted, and approval had no
+        # record. A state moves only through submit, approve, request changes and reopen.
+        raise bad_request("A document's status moves only through submit-review, approve, "
+                          "request-changes and reopen.")
+    if "due_date" in body.model_fields_set:
+        # Stored now (it was accepted and dropped): a review deadline, `YYYY-MM-DD`, or null to clear.
+        try:
+            doc.due_date = date.fromisoformat(body.due_date) if body.due_date else None
+        except ValueError:
+            raise rw.unprocessable("VALIDATION_ERROR", "due_date must be a date, YYYY-MM-DD.")
     doc.updated_at = datetime.now(UTC)
     db.documents.update(doc)
-    return {"document": _doc_dict(doc, _assignee_views(doc_id, db))}
+    return {"document": rw.document_view(db, doc)}
 
 
 # ---------------------------------------------------------------------------
@@ -395,30 +371,34 @@ def download_export_all(
     require_project_member(project_id, current_user, db)
     docs, _ = db.documents.list_for_project(project_id, version_id=version_id, per_page=1000)
 
-    buf = io.BytesIO()
+    # Built in a temporary file, not in memory, with the files STORED: a version of a large
+    # project holds dozens of Word files of tens of MB each (every flowchart is a picture), so the
+    # archive held in memory reached gigabytes for one click; and a DOCX is already a ZIP, so
+    # compressing it again only cost CPU. The file is deleted once it has been sent.
+    import os
+    import tempfile
+    from starlette.background import BackgroundTask
+    fd, path = tempfile.mkstemp(prefix="export-", suffix=".zip")
     added = 0
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for doc in docs:
-            version = db.versions.get(doc.version_id) if doc.version_id else None
-            out_root = doc_render.commit_output_root(project_id, version.commit_sha, version.id) if version else None
-            docx = doc_render.find_docx(doc.group, out_root)
-            if docx is not None:
-                zf.write(docx, arcname=f"{doc.name}.docx")
-                added += 1
+    try:
+        with os.fdopen(fd, "wb") as fh, zipfile.ZipFile(fh, "w", zipfile.ZIP_STORED) as zf:
+            seen = set()
+            for doc in docs:
+                docx = _docx_for(db, project_id, doc)
+                # The DOCX's own name carries the layer-qualified component id, so it is unique.
+                # `doc.name` is not: two layers with a component of the same name wrote two
+                # entries with one name, and unzipping kept only one of them.
+                if docx is not None and docx.name not in seen:
+                    zf.write(docx, arcname=docx.name)
+                    seen.add(docx.name)
+                    added += 1
+    except Exception:
+        os.unlink(path)
+        raise
 
-    if added == 0:
-        return Response(
-            content=b"PK\x05\x06" + b"\x00" * 18,
-            media_type="application/zip",
-            headers={"Content-Disposition": "attachment; filename=export.zip"},
-        )
-
-    buf.seek(0)
-    return StreamingResponse(
-        buf,
-        media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=export.zip"},
-    )
+    # An archive with nothing in it is still a valid (empty) ZIP, as before.
+    return FileResponse(path, media_type="application/zip", filename="export.zip",
+                        background=BackgroundTask(os.unlink, path))
 
 
 # ---------------------------------------------------------------------------
@@ -435,17 +415,15 @@ def download_document(
     if not db.projects.get(project_id):
         raise not_found("Project", project_id)
     require_project_member(project_id, current_user, db)
-    doc = db.documents.get(doc_id)
-    if not doc or doc.project_id != project_id:
-        raise not_found("Document", doc_id)
-    version = db.versions.get(doc.version_id) if doc.version_id else None
-    out_root = doc_render.commit_output_root(project_id, version.commit_sha, version.id) if version else None
-    docx = doc_render.find_docx(doc.group, out_root)
+    doc = _document(db, project_id, doc_id)
+    docx = _docx_for(db, project_id, doc)
     if docx is not None:
+        # The file's own name: `doc.name` is the component, which its SWE.3 and SWE.4
+        # documents share. (An approved copy keeps it: approved/<doc id>/<file name>.)
         return FileResponse(
             docx,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f'attachment; filename="{doc.name}.docx"'},
+            headers={"Content-Disposition": f'attachment; filename="{docx.name}"'},
         )
     return Response(
         content=b"PK\x03\x04",
@@ -455,184 +433,281 @@ def download_document(
 
 
 # ---------------------------------------------------------------------------
-# Assignments
+# Review and approval — docs/spec/REVIEW_APPROVE_API_SPEC.md §3 (A1–A11)
+#
+# The rules -- what state a document may be in, what each step records and who hears of it --
+# are services/review_workflow.py. Here: who may call, and that the document is this project's.
 # ---------------------------------------------------------------------------
 
-@router.post("/projects/{project_id}/documents/{doc_id}/assignments", status_code=201)
-def assign_reviewers(
+def _one_user(user_id: Optional[str], user_ids: Optional[list[str]]) -> str:
+    ids = [u for u in ([user_id] if user_id else []) + list(user_ids or []) if u]
+    ids = list(dict.fromkeys(ids))
+    if len(ids) != 1:
+        raise rw.unprocessable("VALIDATION_ERROR",
+                               "Name exactly one reviewer: a document has one reviewer.")
+    return ids[0]
+
+
+@router.post("/projects/{project_id}/documents/{doc_id}/assignments")
+def assign_reviewer(
     project_id: str,
     doc_id: str,
     body: AssignRequest,
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
+    """A1 — make one user the document's reviewer, replacing any."""
     require_project_admin(project_id, current_user, db)
-    doc = db.documents.get(doc_id)
-    if not doc or doc.project_id != project_id:
-        raise not_found("Document", doc_id)
-    now = datetime.now(UTC)
-    for uid in body.user_ids:
-        db.assignments.assign(DocumentAssignment(
-            id=f"asgn{uuid.uuid4().hex[:8]}",
-            document_id=doc_id, user_id=uid,
-            assigned_by=current_user.id, assigned_at=now,
-        ))
-    return {"assignees": _assignee_views(doc_id, db)}
+    doc = _document(db, project_id, doc_id)
+    rw.assign(db, doc, _one_user(body.user_id, body.user_ids), current_user)
+    return {"document": rw.document_view(db, doc)}
 
 
 @router.delete("/projects/{project_id}/documents/{doc_id}/assignments/{user_id}", status_code=204)
-def remove_assignee(
+def remove_reviewer(
     project_id: str,
     doc_id: str,
     user_id: str,
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
+    """A3."""
     require_project_admin(project_id, current_user, db)
-    db.assignments.remove(doc_id, user_id)
+    rw.unassign(db, _document(db, project_id, doc_id), user_id, current_user)
 
 
-@router.post("/projects/{project_id}/documents/assignments/batch", status_code=201)
+@router.post("/projects/{project_id}/documents/assignments/batch")
 def batch_assign(
     project_id: str,
     body: BatchAssignRequest,
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
+    """A2 — one reviewer for several documents; those that cannot take one are reported."""
     require_project_admin(project_id, current_user, db)
-    now = datetime.now(UTC)
-    for doc_id in body.document_ids:
-        for uid in body.user_ids:
-            db.assignments.assign(DocumentAssignment(
-                id=f"asgn{uuid.uuid4().hex[:8]}",
-                document_id=doc_id, user_id=uid,
-                assigned_by=current_user.id, assigned_at=now,
-            ))
-    return {"message": "Batch assignment complete."}
+    user_id = _one_user(body.user_id, body.user_ids)
+    assigned, skipped, first = [], [], None
+    for doc_id in dict.fromkeys(body.document_ids):
+        doc = db.documents.get(doc_id)
+        if not doc or doc.project_id != project_id:
+            skipped.append({"document_id": doc_id, "code": "NOT_FOUND",
+                            "message": "Document %s does not exist." % doc_id})
+            continue
+        try:
+            if rw.assign(db, doc, user_id, current_user, tell=False):
+                assigned.append(doc_id)
+                first = first or doc
+        except HTTPException as exc:
+            if exc.status_code == 422:       # the reviewer is not a member: no document can take them
+                raise
+            detail = exc.detail if isinstance(exc.detail, dict) else {"code": "ERROR", "message": str(exc.detail)}
+            skipped.append({"document_id": doc_id, "code": detail.get("code"), "message": detail.get("message")})
+    if assigned:
+        msg = ("%s assigned you to review %s." % (current_user.name, rw.label(first))
+               if len(assigned) == 1 else
+               "%s assigned you %d documents to review." % (current_user.name, len(assigned)))
+        rw.notify(db, [user_id], project_id, first if len(assigned) == 1 else None,
+                  rw.N_ASSIGNED, msg, skip=current_user.id)
+    return {"assigned": assigned, "skipped": skipped}
 
 
-@router.post("/projects/{project_id}/documents/{doc_id}/assignments/self", status_code=201)
-def self_assign(
+@router.post("/projects/{project_id}/documents/{doc_id}/assignments/self")
+def claim_document(
     project_id: str,
     doc_id: str,
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
-    member = db.members.get_member(project_id, current_user.id)
-    if not member or member.role != "developer":
-        raise forbidden("Only developers may self-assign.")
-    db.assignments.assign(DocumentAssignment(
-        id=f"asgn{uuid.uuid4().hex[:8]}",
-        document_id=doc_id, user_id=current_user.id,
-        assigned_by=current_user.id, assigned_at=datetime.now(UTC),
-    ))
-    return {"assignees": _assignee_views(doc_id, db)}
-
-
-# ---------------------------------------------------------------------------
-# Section-level review
-# ---------------------------------------------------------------------------
-
-@router.patch("/projects/{project_id}/documents/{doc_id}/sections/{section_key}")
-def review_section(
-    project_id: str,
-    doc_id: str,
-    section_key: str,
-    body: UpdateSectionRequest,
-    current_user: User = Depends(get_current_user),
-    db: InMemoryDatabase = Depends(get_db),
-):
-    require_project_member(project_id, current_user, db)
-    section = db.documents.get_section(doc_id, section_key)
-    if not section:
-        raise not_found("Section", section_key)
-    section.review_state = body.review_state
-    if body.review_state == "edited" and body.edited_content:
-        section.content = body.edited_content
-    section.reviewed_by = current_user.id
-    section.reviewed_at = datetime.now(UTC)
-    db.documents.update_section(section)
-    return {
-        "section": {
-            "key": section.section_key,
-            "review_state": section.review_state,
-            "reviewed_by": section.reviewed_by,
-        }
-    }
+    """A4 — an active developer becomes the reviewer of a document that has none."""
+    _project(db, project_id)
+    member = rw.active_member(db, project_id, current_user.id)
+    if member is None or member.role not in rw.CLAIMING_ROLES:
+        raise forbidden("Only an active developer or reviewer of this project claims a document; "
+                        "an admin assigns one.")
+    doc = _document(db, project_id, doc_id)
+    rw.claim(db, doc, current_user)
+    return {"document": rw.document_view(db, doc)}
 
 
 @router.post("/projects/{project_id}/documents/{doc_id}/submit-review")
 def submit_review(
     project_id: str,
     doc_id: str,
+    body: CommentRequest,
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
+    """A5 — its reviewer (or an admin) submits it for approval, saying what was checked."""
     require_project_member(project_id, current_user, db)
-    doc = db.documents.get(doc_id)
-    if not doc or doc.project_id != project_id:
-        raise not_found("Document", doc_id)
-    doc.status = "in_review"
-    doc.updated_at = datetime.now(UTC)
-    db.documents.update(doc)
-    return {"message": "Review submitted.", "document_id": doc_id}
+    doc = _document(db, project_id, doc_id)
+    rw.submit(db, doc, current_user, rw.clean_text(body.comment, "A comment", required=True))
+    return {"document": rw.document_view(db, doc)}
 
 
 @router.post("/projects/{project_id}/documents/{doc_id}/approve")
 def approve_document(
     project_id: str,
     doc_id: str,
+    body: Optional[CommentRequest] = None,
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
+    """A6 — approve, keeping the Word file and its hash; refused while the file lacks corrections."""
     require_project_admin(project_id, current_user, db)
-    doc = db.documents.get(doc_id)
-    if not doc or doc.project_id != project_id:
-        raise not_found("Document", doc_id)
-    doc.status = "approved"
-    doc.updated_at = datetime.now(UTC)
-    db.documents.update(doc)
-    return {"document_id": doc_id, "status": "approved"}
+    project = _project(db, project_id)
+    doc = _document(db, project_id, doc_id)
+    comment = rw.clean_text(body.comment if body else None, "A comment", required=False)
+    rw.approve(db, project, doc, current_user, comment)
+    return {"document": rw.document_view(db, doc)}
 
 
 @router.post("/projects/{project_id}/documents/{doc_id}/request-changes")
 def request_changes(
     project_id: str,
     doc_id: str,
+    body: CommentRequest,
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
+    """A7 — send it back to its reviewer, saying what needs to change."""
     require_project_admin(project_id, current_user, db)
-    doc = db.documents.get(doc_id)
-    if not doc or doc.project_id != project_id:
-        raise not_found("Document", doc_id)
-    doc.status = "in_review"
-    doc.updated_at = datetime.now(UTC)
-    db.documents.update(doc)
-    return {"document_id": doc_id, "status": "in_review"}
+    doc = _document(db, project_id, doc_id)
+    rw.request_changes(db, doc, current_user, rw.clean_text(body.comment, "A comment", required=True))
+    return {"document": rw.document_view(db, doc)}
+
+
+@router.post("/projects/{project_id}/documents/{doc_id}/reopen")
+def reopen_document(
+    project_id: str,
+    doc_id: str,
+    body: ReopenRequest,
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """A8 — an approved document back to In review, on the record."""
+    require_project_admin(project_id, current_user, db)
+    doc = _document(db, project_id, doc_id)
+    rw.reopen(db, doc, current_user, rw.clean_text(body.reason, "A reason", required=True))
+    return {"document": rw.document_view(db, doc)}
 
 
 @router.post("/projects/{project_id}/documents/approve-all")
-def approve_all(
+def approve_several(
     project_id: str,
     body: ApproveAllRequest,
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
+    """A9 — approve the listed documents that are ready for approval, each on its own record.
+
+    It used to take a version and approve all of it -- every version's documents when the
+    version was empty -- with no record. Now it takes the documents, by id, of this project.
+    """
     require_project_admin(project_id, current_user, db)
-    docs, _ = db.documents.list_for_project(
-        project_id, version_id=body.version_id, per_page=1000,
-    )
-    now = datetime.now(UTC)
-    approved_ids = []
-    for doc in docs:
-        if body.process_filter and doc.process not in body.process_filter:
+    project = _project(db, project_id)
+    comment = rw.clean_text(body.comment, "A comment", required=False)
+    approved, skipped = [], []
+    for doc_id in dict.fromkeys(body.document_ids):
+        doc = db.documents.get(doc_id)
+        if not doc or doc.project_id != project_id:
+            skipped.append({"document_id": doc_id, "code": "NOT_FOUND",
+                            "message": "Document %s does not exist." % doc_id})
             continue
-        doc.status = "approved"
-        doc.updated_at = now
-        db.documents.update(doc)
-        approved_ids.append(doc.id)
-    return {"approved_count": len(approved_ids), "document_ids": approved_ids}
+        try:
+            rw.approve(db, project, doc, current_user, comment, only_ready=True)
+            approved.append(doc_id)
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {"code": "ERROR", "message": str(exc.detail)}
+            skipped.append({"document_id": doc_id, "code": detail.get("code"), "message": detail.get("message")})
+    return {"approved": approved, "skipped": skipped}
+
+
+@router.post("/projects/{project_id}/versions/{version_id}/documents/register")
+def register_version_documents(
+    project_id: str,
+    version_id: str,
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """A17 — record the version's Word files that have no document yet, and open their review.
+
+    For a version generated from the command line, or before review and approval existed: its
+    documents are on disk and nothing lists them. Idempotent; regenerates nothing.
+    """
+    require_project_admin(project_id, current_user, db)
+    project = _project(db, project_id)
+    version = db.versions.get(version_id)
+    if not version or version.project_id != project_id:
+        raise not_found("Version", version_id)
+    from ..services.document_registry import register_documents
+    docs = register_documents(db, project, version)
+    return {"registered": rw.document_views(db, docs),
+            "carried": sum(1 for d in docs if d.status == "approved")}
+
+
+@router.get("/reviews/mine")
+def my_reviews(
+    include_approved: bool = Query(False),
+    limit: int = Query(200, ge=1, le=1000),
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """A18 — the documents the caller reviews, across every project they are an active member of:
+    each with its project and version, newest version first; approved ones only on request."""
+    projects = (db.projects.list_all() if getattr(current_user, "is_superuser", False)
+                else db.projects.list_for_user(current_user.id))
+    out = []
+    for project in projects:
+        docs, _ = db.documents.list_for_project(project.id, assignee_id=current_user.id,
+                                                per_page=rw.ALL)
+        docs = [d for d in docs if include_approved or d.status != "approved"]
+        if not docs:
+            continue
+        tags = {}
+        for view in rw.document_views(db, docs):
+            vid = view["version_id"]
+            if vid not in tags:
+                v = db.versions.get(vid)
+                tags[vid] = (v.tag if v else None, v.created_at if v else None)
+            out.append({**view, "project": {"id": project.id, "name": project.name},
+                        "version": {"id": vid, "tag": tags[vid][0]},
+                        "_order": rw._aware(tags[vid][1])})
+    out.sort(key=lambda d: (d["name"], d["process"]))          # then, stably: newest version first
+    out.sort(key=lambda d: d["_order"], reverse=True)
+    for d in out:
+        d.pop("_order")
+    return {"documents": out[:limit], "total": len(out)}
+
+
+@router.get("/projects/{project_id}/documents/{doc_id}/events")
+def document_events(
+    project_id: str,
+    doc_id: str,
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """A10 — the document's review record, newest first."""
+    _project(db, project_id)
+    require_project_member(project_id, current_user, db)
+    doc = _document(db, project_id, doc_id)
+    return {"events": rw.event_views(db, db.review_events.list_for_document(doc.id))}
+
+
+@router.get("/projects/{project_id}/review-events")
+def project_review_events(
+    project_id: str,
+    version_id: Optional[str] = Query(None),
+    document_id: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """A11 — the project's review record, newest first, each with its document."""
+    _project(db, project_id)
+    require_project_member(project_id, current_user, db)
+    events = db.review_events.list_for_project(project_id, version_id=version_id,
+                                               document_id=document_id, limit=limit)
+    return {"events": rw.event_views(db, events, with_documents=True)}
 
 
 # ---------------------------------------------------------------------------
@@ -649,12 +724,8 @@ def export_document(
     if not db.projects.get(project_id):
         raise not_found("Project", project_id)
     require_project_member(project_id, current_user, db)
-    doc = db.documents.get(doc_id)
-    if not doc or doc.project_id != project_id:
-        raise not_found("Document", doc_id)
-    version = db.versions.get(doc.version_id) if doc.version_id else None
-    out_root = doc_render.commit_output_root(project_id, version.commit_sha, version.id) if version else None
-    docx = doc_render.find_docx(doc.group, out_root)
+    doc = _document(db, project_id, doc_id)
+    docx = _docx_for(db, project_id, doc)
     if docx is not None:
         return FileResponse(
             docx,

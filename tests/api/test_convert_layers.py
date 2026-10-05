@@ -40,8 +40,11 @@ pytestmark = pytest.mark.unit
     (["Layer1/Sample/Core/"], "Layer1/", ["Sample/Core"]),
     # Multi-segment layer path is stripped wholesale.
     (["App/Sample/Core/Core.cpp"], "App/Sample", ["Core/Core.cpp"]),
-    # Whole-layer selection and empties yield nothing.
-    (["Layer1"], "Layer1", []),
+    # A whole-layer selection is "" - the config's "the whole layer". It used to yield
+    # nothing, and the component then took its NAME as its path: a folder that is not there.
+    (["Layer1"], "Layer1", [""]),
+    (["Layer1", "Layer1/Main.cpp"], "Layer1", ["", "Main.cpp"]),
+    # Empties yield nothing.
     ([], "Layer1", []),
     (["", None, "   "], "Layer1", []),
     # Entry outside the layer is kept as-is (defensive).
@@ -88,6 +91,13 @@ def test_convert_layers_single_path_is_string_multi_is_list():
     groups = _convert_layers(arch)["L1"]["groups"]["G1"]
     assert groups["Single"] == "Sample/Core"           # one entry -> str
     assert groups["Multi"] == ["Direction", "Types"]   # many -> list
+
+
+def test_convert_layers_whole_layer_component_round_trips():
+    # A CLI config's `"All": ""` is imported as the layer's own path; it must go back as "".
+    arch = [{"name": "L1", "path": "Layer1",
+             "groups": [{"name": "G1", "components": [{"name": "All", "files": ["Layer1"]}]}]}]
+    assert _convert_layers(arch)["L1"]["groups"]["G1"] == {"All": ""}
 
 
 def test_convert_layers_empty_files_falls_back_to_component_name():

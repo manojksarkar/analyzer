@@ -1,24 +1,39 @@
 """
-render_flowchart_pngs.py — functions.json -> flowchart PNGs, in one step.
+render_flowchart_pngs.py — flowchart pictures (SVG + PNG) without a pipeline run.
 
-Runs flowchart_engine.py on a functions.json (producing per-unit JSON, each with
-a Graphviz DOT `flowchart` field), then renders every flowchart to PNG using the
-project's own renderer (engine/config/render_dot.mjs via render_dot_cached) and
-filename convention — so the PNGs match pipeline/DOCX output exactly.
+Three ways in:
 
-Requires Node.js (renderer is viz-js -> SVG -> puppeteer PNG). The engine step
-also needs libclang configured (LIBCLANG_PATH or engine/config/config.json).
+  * FUNCTIONS_JSON — runs flowchart_engine.py on a functions.json (producing per-unit JSON,
+    each with a Graphviz DOT `flowchart` field), then draws every flowchart.
+  * --skip-engine --out-dir DIR — draws what one finished run's flowcharts dir already holds.
+  * --project ID / --all — draws what EVERY version of a web-app project already holds
+    (workspaces/<ID>/versions/*/output/**/flowcharts). The backfill for runs made before
+    runs drew SVGs: nothing is parsed, generated or exported, only the pictures are drawn.
+
+Pictures, with the project's own renderers and file names, so they match a pipeline run:
+  * SVG, <unit>_<safe_func_name>.svg — the web reader's (views.flowcharts.write_flowchart_svgs;
+    one Node process for all of them, about a millisecond per chart). Always drawn; a chart
+    whose SVG is already current is left alone.
+  * PNG, <unit>_<safe_func_name>.png — the Word document's (render_dot.mjs via
+    render_dot_cached; a headless browser per chart, ~12 s each, cached by content). Drawn by
+    the first two modes, and by --project/--all only with --png.
+
+Requires Node.js (viz-js; the PNGs also puppeteer). The engine step also needs libclang
+configured (LIBCLANG_PATH or engine/config/config.json).
 
 Usage:
     python tools/render_flowchart_pngs.py FUNCTIONS_JSON \
         [--metadata METADATA_JSON] [--out-dir DIR] [--llm] [--scale N]
+    python tools/render_flowchart_pngs.py --skip-engine --out-dir DIR [--only PATTERN]
+    python tools/render_flowchart_pngs.py --project ID [--project ID2] [--png]
+    python tools/render_flowchart_pngs.py --all [--png]
 
     FUNCTIONS_JSON   path to functions.json (analyzer output)
     --metadata       metadata.json (default: metadata.json beside FUNCTIONS_JSON)
-    --out-dir        where JSON + PNGs go (default: <functions_dir>/flowcharts)
+    --out-dir        where JSON + pictures go (default: <functions_dir>/flowcharts)
     --llm            use the LLM for node labels (default: --no-llm, deterministic)
 
-PNGs are written into OUT_DIR as <unit>_<safe_func_name>.png.
+A document shows the new pictures on its next load; the API reads them from disk.
 """
 
 import argparse
@@ -36,6 +51,7 @@ _IS_WINDOWS = os.name == "nt"
 
 sys.path.insert(0, _ENGINE_DIR)
 from utils import render_dot_cached, safe_filename  # noqa: E402
+from views.flowcharts import write_flowchart_svgs  # noqa: E402
 
 
 def _debug_render(dot, scale):
@@ -156,6 +172,70 @@ def _render(out_dir, scale, timeout, only=None):
     return 1 if failed else 0
 
 
+def _svgs(out_dir):
+    """Draw out_dir's SVGs and say what happened. Returns the counts."""
+    c = write_flowchart_svgs(_REPO_ROOT, out_dir)
+    extra = "".join(f", {c[k]} {label}" for k, label in
+                    (("too_large", "too large"), ("failed", "failed"), ("removed", "removed"))
+                    if c[k])
+    print(f"SVG: {c['drawn']} drawn, {c['current']} already current{extra} -> {out_dir}")
+    return c
+
+
+def _project_flowchart_dirs(project_dir):
+    """Every flowcharts dir in a project's version outputs: versions/<v>/output (and the
+    older commit-addressed <commit>/output, which api doc_render still reads)."""
+    roots = sorted(glob.glob(os.path.join(project_dir, "versions", "*", "output")))
+    roots += sorted(p for p in glob.glob(os.path.join(project_dir, "*", "output"))
+                    if os.path.basename(os.path.dirname(p)) != "versions")
+    found = []
+    for root in roots:
+        for here, subdirs, _files in os.walk(root):
+            if os.path.basename(here) == "flowcharts":
+                found.append(here)
+                subdirs[:] = []
+    return found
+
+
+def _backfill(project_ids, every, png, scale, timeout, only):
+    """--project / --all: draw the pictures every version of the projects already has."""
+    workspaces = os.path.join(_REPO_ROOT, "workspaces")
+    if every:
+        project_ids = sorted(
+            d for d in os.listdir(workspaces)
+            if os.path.isdir(os.path.join(workspaces, d, "versions"))) \
+            if os.path.isdir(workspaces) else []
+    if not project_ids:
+        print(f"No projects to draw (nothing under {workspaces}).", file=sys.stderr)
+        return 1
+
+    dirs = drawn = failed = too_large = 0
+    png_failed = False
+    for pid in project_ids:
+        project_dir = os.path.join(workspaces, pid)
+        if not os.path.isdir(project_dir):
+            print(f"{pid}: no such project (no {project_dir})", file=sys.stderr)
+            png_failed = True
+            continue
+        fc_dirs = _project_flowchart_dirs(project_dir)
+        if not fc_dirs:
+            print(f"{pid}: no flowcharts in any version")
+            continue
+        for fc_dir in fc_dirs:
+            print(f"{pid}: {os.path.relpath(fc_dir, project_dir)}")
+            c = _svgs(fc_dir)
+            dirs += 1
+            drawn += c["drawn"]
+            failed += c["failed"]
+            too_large += c["too_large"]
+            if png and _render(fc_dir, scale=scale, timeout=timeout, only=only) != 0:
+                png_failed = True
+    print(f"Done. {len(project_ids)} project(s), {dirs} flowchart dir(s): {drawn} SVG(s) drawn"
+          + (f", {too_large} too large to draw" if too_large else "")
+          + (f", {failed} failed" if failed else "") + ".")
+    return 1 if (failed or png_failed) else 0
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -174,7 +254,18 @@ def main():
                    help="Render from the per-unit JSON already in --out-dir")
     p.add_argument("--only", default=None,
                    help='Render only "<unit>/<function>" matching this (substring or glob)')
+    p.add_argument("--project", action="append", default=[], metavar="ID",
+                   help="Draw what every version of this web-app project already has "
+                        "(workspaces/ID): SVGs, and PNGs with --png. Repeatable.")
+    p.add_argument("--all", action="store_true",
+                   help="Like --project, for every project under workspaces/")
+    p.add_argument("--png", action="store_true",
+                   help="With --project/--all: also draw the PNGs (Word's; ~12 s per new chart)")
     args = p.parse_args()
+
+    if args.project or args.all:
+        return _backfill(args.project, args.all, png=args.png, scale=args.scale,
+                         timeout=args.timeout, only=args.only)
 
     # --skip-engine renders what is already there, so it needs only --out-dir. This is
     # the one-function path: re-rendering a single PNG of a finished run must not cost
@@ -185,7 +276,9 @@ def main():
         out_dir = os.path.abspath(args.out_dir)
         if not os.path.isdir(out_dir):
             p.error(f"no such directory: {out_dir}")
-        return _render(out_dir, scale=args.scale, timeout=args.timeout, only=args.only)
+        svg = _svgs(out_dir)
+        rc = _render(out_dir, scale=args.scale, timeout=args.timeout, only=args.only)
+        return 1 if (rc or svg["failed"]) else 0
 
     if not args.functions_json:
         p.error("FUNCTIONS_JSON is required (or pass --skip-engine --out-dir DIR)")
@@ -205,7 +298,9 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
 
     _run_engine(functions_json, metadata_json, out_dir, use_llm=args.llm)
-    return _render(out_dir, scale=args.scale, timeout=args.timeout, only=args.only)
+    svg = _svgs(out_dir)
+    rc = _render(out_dir, scale=args.scale, timeout=args.timeout, only=args.only)
+    return 1 if (rc or svg["failed"]) else 0
 
 
 if __name__ == "__main__":

@@ -675,7 +675,7 @@ the stored records say, in the same transaction.
 
 Until 2026-09-29 the capture wrote one `view_name = "*"` row for the whole version, whatever Phase 3
 had done — after a SWE.3-only run, after an export-only run that ran no Phase 3 at all. Reproduced: a
-label corrected, a SWE.3 re-export (what the web app runs), then
+label corrected, a SWE.3 re-export (what the web app ran until 2026-09-30h), then
 `reexport --from-phase 4 --doc-type all` shipped the SWE.4 document with the old Test Step and no
 warning.
 

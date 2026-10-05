@@ -6,8 +6,7 @@ tests pass an in-memory SQLite engine and run the *same* API test suite, which i
 parity guarantee (identical behaviour to `InMemoryDatabase`).
 
 Semantics mirror `InMemoryDatabase` deliberately, including its quirks (e.g.
-`documents.list_for_project` ignores `assignee_id`; `compare.get_or_create` matches on
-project only): the goal is a drop-in swap, not a redesign. `create` and `update` are
+`compare.get_or_create` matches on project only): the goal is a drop-in swap, not a redesign. `create` and `update` are
 both **upsert-by-PK**, matching the in-memory "set by key" behaviour.
 """
 from __future__ import annotations
@@ -21,13 +20,15 @@ from sqlalchemy import and_, delete, func, insert, select, update
 from ...models.domain import (
     User, Project, ProjectMember, AccessRequest, Version, Commit, AnalysisJob,
     Document, DocumentSection, DocumentAssignment, Function, CompareResult,
-    DocumentDiff, Notification, REEXPORT_MODE,
+    DocumentDiff, Notification, RENDER_MODES, ACTIVE_JOB_STATUSES,
+    ReviewEvent, DOC_STATUSES,
 )
 from ...repositories.interfaces import (
     IUserRepository, IProjectRepository, IProjectMemberRepository,
     IAccessRequestRepository, IVersionRepository, ICommitRepository,
     IAnalysisJobRepository, IDocumentRepository, IDocumentAssignmentRepository,
     IFunctionRepository, ICompareRepository, INotificationRepository,
+    IReviewEventRepository,
 )
 from . import schema as s
 from .mappers import to_row, from_row
@@ -109,6 +110,9 @@ class _ProjectRepo(_Base, IProjectRepository):
         self._put(s.projects, ["id"], to_row(project)); return project
 
     def delete(self, project_id):
+        # job_functions has no foreign key to the project, so nothing cascades to it: its rows
+        # outlived every deleted project.
+        self._exec(delete(s.job_functions).where(s.job_functions.c.project_id == project_id))
         self._exec(delete(s.projects).where(s.projects.c.id == project_id))
 
     def search(self, query):
@@ -146,7 +150,12 @@ class _MemberRepo(_Base, IProjectMemberRepository):
                          ProjectMember)
 
     def cancel_invite(self, project_id, invite_id):
-        self._exec(delete(s.project_members).where(s.project_members.c.id == invite_id))
+        # Scoped to the project and to a PENDING row: the route's admin check is on the project in
+        # the path, and deleting by id alone let an admin of one project delete any membership of
+        # any other -- active members and admins included.
+        m = s.project_members
+        self._exec(delete(m).where((m.c.id == invite_id) & (m.c.project_id == project_id)
+                                   & (m.c.status == "pending")))
 
 
 class _AccessReqRepo(_Base, IAccessRequestRepository):
@@ -194,7 +203,8 @@ class _CommitRepo(_Base, ICommitRepository):
         where = c.c.project_id == project_id
         with self._engine.connect() as cx:
             total = cx.execute(select(func.count()).select_from(c).where(where)).scalar_one()
-            stmt = (select(c).where(where).order_by(c.c.committed_at.desc())
+            # sha breaks a tie: commits of one second came back on two pages, or on none
+            stmt = (select(c).where(where).order_by(c.c.committed_at.desc(), c.c.sha)
                     .limit(per_page).offset((page - 1) * per_page))
             items = [from_row(Commit, r) for r in cx.execute(stmt)]
         return items, total
@@ -218,7 +228,7 @@ class _JobRepo(_Base, IAnalysisJobRepository):
         # The latest GENERATION job: a re-export is a job of its own, followed by its id.
         j = s.analysis_jobs
         stmt = (select(j).where((j.c.project_id == project_id) & (j.c.status != "cancelled")
-                                & (j.c.mode.is_(None) | (j.c.mode != REEXPORT_MODE)))
+                                & (j.c.mode.is_(None) | j.c.mode.notin_(RENDER_MODES)))
                 .order_by(j.c.started_at.desc()).limit(1))
         return self._first(stmt, AnalysisJob)
 
@@ -226,6 +236,11 @@ class _JobRepo(_Base, IAnalysisJobRepository):
         j = s.analysis_jobs
         return self._all(select(j).where(j.c.version_id == version_id)
                          .order_by(j.c.started_at.desc()), AnalysisJob)
+
+    def list_active(self):
+        j = s.analysis_jobs
+        return self._all(select(j).where(j.c.status.in_(ACTIVE_JOB_STATUSES))
+                         .order_by(j.c.started_at), AnalysisJob)
 
     def update(self, job):
         self._put(s.analysis_jobs, ["id"], to_row(job)); return job
@@ -244,11 +259,18 @@ class _DocRepo(_Base, IDocumentRepository):
             conds.append(d.c.status == status)
         if query:
             conds.append(func.lower(d.c.name).like(f"%{query.lower()}%"))
-        # assignee_id is accepted but not filtered (parity with InMemoryDatabase).
+        a = s.document_assignments
+        if assignee_id == "none":
+            conds.append(~d.c.id.in_(select(a.c.document_id)))
+        elif assignee_id:
+            conds.append(d.c.id.in_(select(a.c.document_id).where(a.c.user_id == assignee_id)))
         where = and_(*conds)
         with self._engine.connect() as cx:
             total = cx.execute(select(func.count()).select_from(d).where(where)).scalar_one()
-            stmt = select(d).where(where).limit(per_page).offset((page - 1) * per_page)
+            # A fixed order, or pages could overlap or skip a document: the web app reads every
+            # page of a version's documents (240 for the office project) and stitches them.
+            stmt = (select(d).where(where).order_by(d.c.name, d.c.process, d.c.id)
+                    .limit(per_page).offset((page - 1) * per_page))
             items = [from_row(Document, r) for r in cx.execute(stmt)]
         return items, total
 
@@ -263,12 +285,20 @@ class _DocRepo(_Base, IDocumentRepository):
         conds = [d.c.project_id == project_id]
         if version_id:
             conds.append(d.c.version_id == version_id)
-        stats = {"total": 0, "approved": 0, "in_review": 0, "never": 0, "unchanged": 0}
+        stats = {"total": 0, **{k: 0 for k in DOC_STATUSES}, "needs_reviewer": 0, "carried": 0}
+        a = s.document_assignments
         with self._engine.connect() as cx:
             for statusval, n in cx.execute(
                     select(d.c.status, func.count()).where(and_(*conds)).group_by(d.c.status)):
                 stats["total"] += n
                 stats[statusval] = stats.get(statusval, 0) + n
+            stats["needs_reviewer"] = cx.execute(
+                select(func.count()).select_from(d).where(and_(
+                    *conds, d.c.status != "approved",
+                    ~d.c.id.in_(select(a.c.document_id))))).scalar_one()
+            stats["carried"] = cx.execute(
+                select(func.count()).select_from(d).where(and_(
+                    *conds, d.c.status == "approved", d.c.carried_from.is_not(None)))).scalar_one()
         return stats
 
     def list_sections(self, document_id):
@@ -297,8 +327,24 @@ class _AssignRepo(_Base, IDocumentAssignmentRepository):
         return self._all(select(a).where(a.c.document_id == document_id), DocumentAssignment)
 
     def assign(self, assignment):
-        self._exec(insert(s.document_assignments).values(**to_row(assignment)))
+        self.set_reviewer(assignment)
         return assignment
+
+    def set_reviewer(self, assignment):
+        a = s.document_assignments
+        with self._engine.begin() as cx:
+            before = cx.execute(select(a).where(a.c.document_id == assignment.document_id)).first()
+            cx.execute(delete(a).where(a.c.document_id == assignment.document_id))
+            cx.execute(insert(a).values(**to_row(assignment)))
+        return from_row(DocumentAssignment, before) if before is not None else None
+
+    def reviewers(self, document_ids):
+        if not document_ids:
+            return {}
+        a = s.document_assignments
+        with self._engine.connect() as cx:
+            return {r.document_id: r.user_id for r in cx.execute(
+                select(a.c.document_id, a.c.user_id).where(a.c.document_id.in_(list(document_ids))))}
 
     def remove(self, document_id, user_id):
         a = s.document_assignments
@@ -323,9 +369,14 @@ class _FunctionRepo(_Base, IFunctionRepository):
         self._exec(update(s.job_functions).where(s.job_functions.c.id == function.id).values(**row))
         return function
 
-    def bulk_update_visibility(self, function_ids, is_visible):
+    def bulk_update_visibility(self, function_ids, is_visible, project_id=None):
+        # Scoped to the project in the route's path when given: by id alone, an admin of one
+        # project could flip the visibility of another project's functions.
         jf = s.job_functions
-        self._exec(update(jf).where(jf.c.id.in_(function_ids)).values(is_visible=is_visible))
+        where = jf.c.id.in_(function_ids)
+        if project_id is not None:
+            where = where & (jf.c.project_id == project_id)
+        return self._exec(update(jf).where(where).values(is_visible=is_visible)).rowcount
 
     def load_from_pipeline(self, pipeline_functions: dict) -> None:
         """Replace each job's functions (additive across jobs) — matches InMemoryDatabase."""
@@ -365,6 +416,15 @@ class _NotifRepo(_Base, INotificationRepository):
         return self._all(select(n).where((n.c.user_id == user_id) & (n.c.read_at.is_(None))),
                          Notification)
 
+    def list_for_user(self, user_id, limit=30):
+        n = s.notifications
+        return self._all(select(n).where(n.c.user_id == user_id)
+                         .order_by(n.c.created_at.desc()).limit(limit), Notification)
+
+    def get(self, notification_id):
+        n = s.notifications
+        return self._first(select(n).where(n.c.id == notification_id), Notification)
+
     def mark_read(self, notification_id):
         n = s.notifications
         res = self._exec(update(n).where(n.c.id == notification_id).values(read_at=datetime.now(UTC)))
@@ -380,6 +440,41 @@ class _NotifRepo(_Base, INotificationRepository):
     def create(self, notification):
         self._exec(insert(s.notifications).values(**to_row(notification)))
         return notification
+
+
+class _ReviewEventRepo(_Base, IReviewEventRepository):
+    # Newest first. The workflow stamps each event strictly later than the one before it
+    # (review_workflow._stamp), so `at` alone orders them; `id` only makes a tie deterministic.
+    def _order(self, stmt):
+        e = s.document_review_events
+        return stmt.order_by(e.c.at.desc(), e.c.id.desc())
+
+    def add(self, event):
+        self._exec(insert(s.document_review_events).values(**to_row(event)))
+        return event
+
+    def list_for_document(self, document_id):
+        e = s.document_review_events
+        return self._all(self._order(select(e).where(e.c.document_id == document_id)), ReviewEvent)
+
+    def list_for_project(self, project_id, version_id=None, document_id=None, limit=50):
+        e = s.document_review_events
+        conds = [e.c.project_id == project_id]
+        if version_id:
+            conds.append(e.c.version_id == version_id)
+        if document_id:
+            conds.append(e.c.document_id == document_id)
+        return self._all(self._order(select(e).where(and_(*conds))).limit(limit), ReviewEvent)
+
+    def last_for_documents(self, document_ids):
+        if not document_ids:
+            return {}
+        e = s.document_review_events
+        out: dict = {}
+        for ev in self._all(self._order(select(e).where(e.c.document_id.in_(list(document_ids)))),
+                            ReviewEvent):
+            out.setdefault(ev.document_id, ev)
+        return out
 
 
 class SqlDatabase:
@@ -409,6 +504,7 @@ class SqlDatabase:
         self.functions = _FunctionRepo(engine)
         self.compare = _CompareRepo(engine)
         self.notifications = _NotifRepo(engine)
+        self.review_events = _ReviewEventRepo(engine)
 
     def seed(self) -> "SqlDatabase":
         """Load the same seed data InMemoryDatabase ships with (parity tests / demos)."""

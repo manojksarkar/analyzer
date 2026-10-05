@@ -114,6 +114,7 @@ are node labels), and a correction is stored under (version, kind, key). Sending
 | **R9** | GET | `/projects/{projectId}/versions/{versionId}/export-readiness` | Would exporting now ship stale text? |
 | **R10** | GET | `/projects/{projectId}/versions/{versionId}/regeneration-queue` | Slots needing regeneration because a correction invalidated them |
 | **R11** | GET | `/projects/{projectId}/versions/{versionId}/slots` | What **can** be edited — the slots themselves, with their text and key |
+| **R12** | DELETE | `/projects/{projectId}/versions/{versionId}/overrides/orphans` | Discard orphaned corrections — all, of one `slot_kind`, or one slot (`slot_kind` + `slot_key`); project admins only; answers `{"discarded": n}`. A correction in force is never touched; nothing restores a discarded one, and later versions no longer carry it |
 
 Every path is under the `/api/v1` prefix. All require project **membership** (`REQ-API-05`).
 
@@ -156,15 +157,32 @@ A project onboarded with `analyzer.py onboard` cannot be run from the web app ei
 | step | call | why |
 |---|---|---|
 | 1 | `GET /documents?version_id={versionId}` | the version's documents, one per component; `documents[].id` is the `docId` |
-| 2 | `GET /documents/{docId}/render` | the page. Draw its flowcharts from their DOT — see *Drawing a flowchart* below |
+| 2 | `GET /documents/{docId}/render` | the page. **Every text a reviewer can correct carries its `Slot`** (see *The page carries each text's slot* below) — its key and state, so no R11 lookup is needed from the page |
 | 3 | R9 `GET /versions/{versionId}/export-readiness` | the banner: `stale: true` means corrections are not in the Word file yet |
 | 4 | R1 `GET /versions/{versionId}/overrides` | optional: mark corrected items. Fetch once, index by `slotKey` |
+
+### The page carries each text's slot
+
+`GET /documents/{docId}/render` (SWE.3) puts a `Slot` (§5, camelCase as every review route) beside
+each text a reviewer can correct, built by the server — the client still never builds a key:
+
+| where in the page payload | slot kind |
+|---|---|
+| `table.cell_slots[row][col]` — same shape as `table.rows`, `null` for a cell that is not correctable | Component/Unit table: `unitDescription`; unit header: `structDescription` (a record row); unit interface "Information": `description` |
+| `flowchart_table.description_slot`, `.input_name_slot`, `.output_name_slot` | `description`, `behaviourInputName`, `behaviourOutputName` |
+| `content_slot` on a function section without a flowchart | `description` |
+| `behavior_table.description_slot` (with `bullets`, `functionId`, `externalCallerId`), `.input_name_slot`, `.output_name_slot` | `behaviourDescription` (R6), the two names |
+| `flowchart_table.flowcharts[].flowchart_id`, `.editable` | the `flowchart_id` R7/R8 take; `editable` = the chart has a stored graph |
+
+The slot's `text` is its own text: where it is empty the page prints a stand-in (the interface
+descriptions' join, "X input", "-"), which is not the slot's. The web app's reader edits these in
+place (`web-app/src/pages/DocumentInspectorPage/`).
 
 ### Flow 2 — correct a text: `description`, `behaviourInputName`, `behaviourOutputName`, `unitDescription`, `structDescription`
 
 | step | call | why |
 |---|---|---|
-| 1 | R11 `GET /versions/{versionId}/slots?slot_kind=<kind>&unit=<unit>` | the editable items, each with `slotKey`, `label` and current `text` |
+| 1 | the page's slot, or R11 `GET /versions/{versionId}/slots?slot_kind=<kind>&unit=<unit>` | the editable items, each with `slotKey`, `label` and current `text` |
 | 2 | R3 `PUT /versions/{versionId}/overrides/slot` with `{"slot_kind", "slot_key", "text"}` | save |
 | 3 | — | show the answer: it is the item as it now is (`text`, `humanText`, `canUndo` …). When `queuedForRegeneration` is not empty, say which other texts the next run rewrites |
 | 4 | R9 | update the banner |
@@ -177,7 +195,7 @@ reaches the page and the Word file with the next re-export (§14).
 
 | step | call | why |
 |---|---|---|
-| 1 | R11 `GET /versions/{versionId}/slots?slot_kind=behaviourDescription&unit=<unit>` | rows with `bullets`, `functionId`, `externalCallerId` and `slotKey` |
+| 1 | the page's `behavior_table.description_slot`, or R11 `GET /versions/{versionId}/slots?slot_kind=behaviourDescription&unit=<unit>` | rows with `bullets`, `functionId`, `externalCallerId` and `slotKey` |
 | 2 | R6 `PUT /versions/{versionId}/overrides/behaviour` with `{"function_id", "external_caller_id", "bullets"}` | save the **whole** list; both ids copied from step 1. The answer is the row as it now is |
 | 3 | R9 | update the banner |
 
@@ -185,7 +203,7 @@ reaches the page and the Word file with the next re-export (§14).
 
 | step | call | why |
 |---|---|---|
-| 1 | R11 `GET /versions/{versionId}/slots?slot_kind=nodeLabel&unit=<unit>` | one row per flowchart, with its `flowchartId`. Coming from the page, match the flowchart by `functionName` within its unit — the page carries no tokens (§17) |
+| 1 | the page's `flowcharts[].flowchart_id`, or R11 `GET /versions/{versionId}/slots?slot_kind=nodeLabel&unit=<unit>` | one row per flowchart, with its `flowchartId` |
 | 2 | R7 `GET /versions/{versionId}/flowcharts/labels?flowchart_id=<flowchartId>` | every node's `nodeId`, `text` and `slotKey`, and the diagram as `dot`. Draw the diagram; list the labels for editing |
 | 3 | R8 `PUT /versions/{versionId}/flowcharts/labels` with `{"flowchart_id": "<flowchartId>", "labels": {"<nodeId>": "<text>"}}` | **only the labels that changed**, all in one call |
 | 4 | — | the answer carries each saved node as it now is (`labels`) and the rebuilt diagram (`dot`): redraw from it, and the correction shows at once. `renderPending: true` is about the PNG in the Word file only |
@@ -382,6 +400,7 @@ What a correction invalidated — text that was generated **from** the text just
 |---|---|---|
 | `slotKind` | string | |
 | `slotKey` | string | |
+| `label` | string | in a save's answer: the function's, global's or unit's name, for saying WHICH texts the next run rewrites without taking the key apart |
 
 ---
 
@@ -494,7 +513,8 @@ For the five model-backed kinds. `nodeLabel` → R8, `behaviourDescription` → 
 
 **Response 200** — the `Slot` as it now is, and what the save did (§5): `previousText`,
 `firstEdit`, `viewsDerived` (the SWE.4 views this save re-derived — see the note below; `[]` for a
-version with no SWE.4 output, which is every web-app version), `queuedForRegeneration`.
+version with no SWE.4 output — a web-app version from before web runs wrote SWE.4 too, or a CLI run
+of SWE.3 alone), `queuedForRegeneration`.
 
 ```json
 {
@@ -512,14 +532,15 @@ version with no SWE.4 output, which is every web-app version), `queuedForRegener
   "firstEdit": true,
   "viewsDerived": [],
   "queuedForRegeneration": [
-    { "slotKind": "unitDescription", "slotKey": "Layer2.Gpio|GpioDrv" },
-    { "slotKind": "description", "slotKey": "Layer1.App|AppMain|App_Start|void" }
+    { "slotKind": "unitDescription", "slotKey": "Layer2.Gpio|GpioDrv", "label": "GpioDrv" },
+    { "slotKind": "description", "slotKey": "Layer1.App|AppMain|App_Start|void", "label": "App_Start" }
   ]
 }
 ```
 
 **`viewsDerived` names only views this request rebuilt.** A `description` correction reaches the
-SWE.4 test spec that copies it, so on a version with SWE.4 output — one generated from the CLI — the
+SWE.4 test spec that copies it, so on a version with SWE.4 output — every web run since it writes
+SWE.4 beside SWE.3 (`--doc-type all`), or a CLI run that asked for it — the
 save re-derives the component's specs and the UT export built from them, from the stored rows
 (`REQ-CS-04`), and returns `["testSpecs", "utExport"]`. Those views are then stamped as derived, and
 only those: the SWE.3 rows a save changes are patched in place, not re-derived, so R9 keeps
@@ -535,7 +556,7 @@ touch, on the next run. An unannounced change reads as a bug.
 | code | when |
 |---|---|
 | 404 | the slot does not resolve in this version |
-| 409 | a run is regenerating this version and replaced the model while the save was writing it. Nothing was saved — save again once the run has finished |
+| 409 | a run is regenerating this version and replaced the model while the save was writing it. Nothing was saved — save again once the run has finished. The one 409 with a code: `{"detail": {"code": "VERSION_REGENERATING", "message", "status": 409}}` |
 | 422 | empty or whitespace-only `text`; a NUL character (`\u0000`) in `text` or `slot_key`; or a `snake_case` field is missing |
 | 501 | `slot_kind` is `nodeLabel` or `behaviourDescription` — use R8 / R6 |
 | 401 / 403 / 500 / 503 | see §16 |
@@ -872,10 +893,12 @@ and R5 still work on a single `nodeLabel` slot key.
 `GET /projects/{projectId}/versions/{versionId}/export-readiness`
 
 Whether exporting now would ship text a correction has already replaced (`REQ-AP-04`). **Call it
-before offering a download.** It asks about the SWE.3 document — the one the web app exports — so
-only the views SWE.3 prints count: a label on a flowchart SWE.3 does not embed (`views.flowcharts`
-off, the default) does not make it stale. A SWE.4 document of a CLI-generated version is exported
-from the CLI, which asks its own question (`analyzer.py reexport --doc-type swe4`).
+before offering a download.** It asks about the documents a re-export writes: SWE.3, and SWE.4
+when the version has SWE.4 documents (`pipeline_runner.export_doc_type` — every web run writes both).
+Only the views those documents print count: on a version with SWE.3 alone, a label on a flowchart
+SWE.3 does not embed (`views.flowcharts` off, the default) does not make it stale. A SWE.4 document
+of a CLI-generated version is exported from the CLI, which asks its own question
+(`analyzer.py reexport --doc-type swe4`).
 
 No parameters.
 
@@ -884,9 +907,10 @@ No parameters.
 | field | type | notes |
 |---|---|---|
 | `stale` | boolean | `true` ⇒ the views need re-deriving before a download is honest |
+| `staleComponents` | string[] | when the version is `stale`: the components (a document's `group`) whose documents are behind — the per-document question A15 answers, for each. `[]` when nothing is, and always for a `document_id` question. Mark only those rows' downloads |
 | `reason` | string | short, always present: `"up to date"`, `"no corrections"`, or the reason it is stale |
 | `explanation` | string | one line fit to show as-is, including any failed renders |
-| `overrideCount` | integer | corrections in force in this version. Orphans are not counted and never make a version stale: they are not printed |
+| `overrideCount` | integer | corrections in force in this version. Orphans are not counted and never make a version stale: they are not printed. Nor are corrections in a component that has no document in the version (when the version has document rows): no Word file prints them, and no re-export could derive them |
 | `pendingRenders` | integer | pictures still owed — **any of these makes it stale** |
 | `failedRenders` | integer | renders that gave up — reported, **does not block** |
 | `newestOverrideAt` | string \| null | ISO-8601 UTC |
@@ -965,7 +989,7 @@ the UI must refetch after a save:
 | `description` | next page load — the stored interface table is patched | after re-export |
 | `behaviourInputName`, `behaviourOutputName` | next page load — read from the model | after re-export |
 | `behaviourDescription` | next page load — the stored behaviour row is written | after re-export |
-| `nodeLabel` | next page load **when the UI draws the DOT** (§3a, *Drawing a flowchart*): the payload's DOT is read from the database, and R8 rebuilt it. The PNG (`image_url`) changes only after the owed render (next re-export), so a page that shows the PNG shows the old label until then. Today's web-app does, and prints the DOT as text only when no PNG exists | after re-export |
+| `nodeLabel` | next page load. The web page draws each flowchart as an SVG on the server (`image_url`, no DOT in the payload); R8, and R4 of a label, redraw that chart's SVG once the save has committed (`review.rerender.draw_web_svgs`), and the asset is served `no-cache`. Best effort: with no output tree or no Node on the API host the chart reads "not drawn" until the next re-export. The Word PNG still waits for the owed render | after re-export |
 | `unitDescription` | next page load — the Component/Unit table reads the stored description from the model, as the Word file does | after re-export |
 | `structDescription` | **after re-export** — the unit header table on the page is the Phase-3 view's output (`unit_headers.json`), and the re-export rebuilds it | after re-export |
 
@@ -1151,7 +1175,7 @@ Error bodies are `{"detail": "…"}`, except 401 (an object, §4) and 422 from s
 | 401 | missing, malformed or non-access Bearer token |
 | 403 | not a member of the project |
 | 404 | a version that is not one of the project's (every endpoint; a tag sent instead of the id is answered with the id — §3), or an unknown slot, flowchart, or node named in a flowchart save |
-| 409 | undo with no LLM original to restore, or of an orphaned correction; a flowchart with no stored graph; stored output that cannot be read; a save that met a run regenerating the version (nothing saved — save again once it has finished) |
+| 409 | undo with no LLM original to restore, or of an orphaned correction; a flowchart with no stored graph; stored output that cannot be read; a save that met a run regenerating the version (nothing saved — save again once it has finished; `detail.code` `VERSION_REGENERATING`, the others are a string) |
 | 422 | empty or whitespace-only text (`REQ-ST-06`); a NUL character (`\u0000`) anywhere in a save's body (R3, R6, R8) — PostgreSQL cannot store one, and `loc` names the field; or a request body/query field missing — **check `snake_case` first** (§4) |
 | 500 | a fault on the server, not in the request. `detail` names only the kind of error; the server log has the rest. Nothing was changed |
 | 501 | a slot kind with no save path on that endpoint (`nodeLabel`, `behaviourDescription` on R3) |
@@ -1185,8 +1209,6 @@ Honest gaps, so the UI does not plan around something that is not there.
 - **A corrected flowchart's PNG is redrawn by the next run or re-export**, not by the save — R8
   over HTTP has no output tree to draw into, so `renderPending` is `true`. Its DOT is rebuilt by the
   save: draw that (§3a) and the page is current at once.
-- **The page payload carries no slot keys**, so "edit this sentence" on the page means finding the
-  item in R11 (same unit, by `label` or `functionName`) and using its `slotKey`.
 
 ---
 

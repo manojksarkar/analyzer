@@ -108,7 +108,10 @@ llm/
 dot_builder.py          Converts a labeled CFG to a Graphviz DOT script
                         (build_dot); word-wraps long labels, curved edges,
                         loop-anchor push-down for Return/End at the bottom.
-                        Rendered to PNG by engine.utils.render_dot_cached.
+                        Drawn to SVG for the web reader on every run
+                        (views/flowcharts.write_flowchart_svgs) and to PNG
+                        for the DOCX (engine.utils.render_dot_cached, only
+                        with views.flowcharts).
 
 mermaid/                LEGACY after the DOT switch (2026-07-27):
   validator.py          validate_cfg() still used; validate_mermaid() is dead

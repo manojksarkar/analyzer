@@ -364,6 +364,8 @@ class TestAVersionIdIsPerProject:
         monkeypatch.setattr(st, "default_workspaces_root", lambda: str(ws))
         monkeypatch.setattr(store_mod, "default_workspaces_root", lambda: str(ws))
         self._reserve_v1_in_both()
+        with db.begin() as cx:        # a model to re-export from: without one it is refused first
+            cx.execute(insert(s.model_components), {"version_id": "project2.v1", "name": "L.C"})
         for pid, sha in self.SHA.items():
             (ws / pid / sha[:16] / ".git").mkdir(parents=True)          # its checkout
             (ws / pid / "config.json").write_text("{}", encoding="utf-8")

@@ -51,6 +51,26 @@ newer entry and the code win.
 
 - `develop` is the integration branch: work branches open their PR into it, and `main` has not moved
   since 2026-07-02.
+- **The web app** (`web-app/` + `api/`) is built on branch `integrate/ui-v5`, which merged develop —
+  review & update included — on 2026-09-30g. Its own history before that merge, 2026-09-29 …
+  2026-09-30f, is [history file 12](project-context/history/12-2026-09-29-web-app.md). Review & update's
+  screen is the document reader's **edit mode** (2026-10-01; [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md)
+  "Review & update in the web app").
+- **Review and approval** (assign a reviewer, submit, approve, request changes, reopen; a version is
+  approved when all its documents are) — built on branch `feat/review-approve` (committed `a55c9c5`, not pushed), 2026-10-01d.
+  Backend complete before the office's 4-day generation, so what remains is web work. Contract
+  [REVIEW_APPROVE_API_SPEC](docs/spec/REVIEW_APPROVE_API_SPEC.md), design
+  [REVIEW_APPROVE_DESIGN](docs/design/REVIEW_APPROVE_DESIGN.md) (its open questions are still open), rules in
+  `api/services/review_workflow.py`, recording in `api/services/document_registry.py` (every run, CLI too;
+  `analyzer.py register` for older versions); a database upgrades with `analyzer.py setup` (migration 0015).
+- **Staged generation** (2026-10-02, same branch, committed `a55c9c5`): one model per version, documents per
+  component by any number of runs (`export`, `reexport`, `resume`), `--detach` for runs that last days, one
+  writer per version (migration 0016); web runs go on in the background when the API restarts, and a
+  run that dies keeps its version for `resume` (2026-10-02c); an `export` of a component from another
+  layer adds that layer to the same version, the old layers' documents marked stale where it changes
+  them (2026-10-04e). For the office's multi-day run — guide
+  [CLI_COMMANDS](docs/CLI_COMMANDS.md#a-run-that-lasts-days), detail
+  [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Staged generation".
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
 - The status boards that used to head this file (2026-07-20, 2026-08-14) are kept, unchanged, in
@@ -65,7 +85,7 @@ newer entry and the code win.
   (`software_unit_test_specification_<group>.docx`). The LLM writes only wording — descriptions, names,
   flowchart labels ([SWE3_WIKI](docs/spec/SWE3_WIKI.md#descriptions-the-only-llm-written-content)); ids,
   rows, arrows and every flowchart's shape come from the code.
-- **Front door.** `python analyzer.py <command>`: `setup`, `onboard`, `grant`, `generate`, `reexport`,
+- **Front door.** `python analyzer.py <command>`: `setup`, `onboard`, `grant`, `generate`, `export`, `reexport`, `resume`, `progress`, `components`, `register`, `user`,
   `status`, `check`, `report`, `doctor`, `check-llm`, `check-datadict`, `llm-stats`, `verify`. Human
   guide: [docs/CLI_COMMANDS.md](docs/CLI_COMMANDS.md).
 - **Pipeline.** Four phases, each its own Python process, run by `engine/run.py` through
@@ -128,7 +148,11 @@ The big shifts since most of §1–§24 were written. Each names its dated entry
 - **API and web app.** A CLI-onboarded project is reachable over HTTP — `analyzer.py grant`, and a
   superuser who reaches every project (2026-09-22, 2026-09-22b); web-app runs go through
   `analyzer.py generate` (2026-09-26); a sign-in lasts a working day (2026-09-26b); a re-export is a job
-  of its own (2026-09-26d).
+  of its own (2026-09-26d). On `integrate/ui-v5` (history 12): a project has cores, and a config file
+  goes in and out of the wizard (2026-09-29b, 2026-09-29d, 2026-09-30f); the SWE.3 page reads like the
+  DOCX (2026-09-29e); a web run makes SWE.4 too (2026-09-30); flowcharts are server-drawn SVGs
+  (2026-09-30b); `start-app` (2026-09-30c). A re-export writes every document the version has
+  (2026-09-30h); a corrected flowchart label redraws the web page's SVG at once (2026-09-30i).
 - **Review & update** — reviewers correct LLM-written text (2026-09-16 → 2026-09-29); see
   [Current state](#current-state).
 - **Tools.** `tools/doccheck/` compares two generated documents by content (2026-09-22), on five levels
@@ -176,7 +200,9 @@ so neighbouring files can overlap by a few days — search the date tag.
 | File | Entries |
 |---|---|
 | [TIMELINE.md](project-context/history/TIMELINE.md) | **every dated change in one line, newest first — start here** |
-| [11-2026-09-29e.md](project-context/history/11-2026-09-29e.md) | from 2026-09-29e — **the newest: new entries go at the top** |
+| [13-2026-10-05c.md](project-context/history/13-2026-10-05c.md) | from 2026-10-05c — **the newest: new entries go at the top** |
+| [11-2026-09-29e.md](project-context/history/11-2026-09-29e.md) | 2026-09-29e … 2026-10-05b |
+| [12-2026-09-29-web-app.md](project-context/history/12-2026-09-29-web-app.md) | the web app branch `integrate/ui-v5`, 2026-09-29 … 2026-09-30f (13 entries), written beside files 10–11 and closed when it merged develop (2026-09-30g) |
 | [10-2026-09-26.md](project-context/history/10-2026-09-26.md) | 2026-09-26e … 2026-09-29d; at its end, develop's 2026-09-25 … 2026-09-26 (merged 2026-09-29) |
 | [09-2026-09-24.md](project-context/history/09-2026-09-24.md) | 2026-09-24 … 2026-09-26d (17 entries) |
 | [08-2026-09-21.md](project-context/history/08-2026-09-21.md) | 2026-09-21 … 2026-09-23f (15 entries) |

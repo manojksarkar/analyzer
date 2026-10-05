@@ -26,6 +26,8 @@ Thumbs.db
 
 # Incremental workspaces — runtime data (clones, versions, cache).
 workspaces/
+# `--detach` runs: a frozen copy of the code and the run's log, per version (core/frozen_run.py).
+/runs/
 
 # JSON DB data files (API_DB_BACKEND=json runtime state)
 api/db/data/

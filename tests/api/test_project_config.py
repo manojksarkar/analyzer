@@ -148,3 +148,32 @@ def test_distinct_names_still_write_the_config(tmp_path, monkeypatch):
     ])
     _, analysis_cfg = pr._write_project_config(project, tmp_path / "ws")
     assert sorted(analysis_cfg["layers"]) == ["L1", "L2"]
+
+
+def test_the_defaults_sample_cores_do_not_reach_a_web_project(tmp_path, monkeypatch):
+    # They belong to the defaults' own layers, which the project's replace: left in, every run
+    # warned "cores.Core1 is listed by no layer" - on every version, in the web app.
+    cfg_dir = tmp_path / "engine" / "config"
+    _write_json(cfg_dir / "config.defaults.json", {
+        "cores": {"Core1": {"macros": "macros.core1.example.json"}},
+        "layers": {"Layer1": {"path": "Layer1", "cores": ["Core1"], "groups": {}}},
+    })
+    monkeypatch.setattr(pr, "get_settings", lambda: SimpleNamespace(repo_root=tmp_path))
+    project = _project(architecture_layers=[{"name": "L1", "path": "Layer1", "groups": [
+        {"name": "G", "components": [{"name": "Core", "files": ["Layer1/Sample/Core"]}]}]}])
+    _, analysis_cfg = pr._write_project_config(project, tmp_path / "ws")
+    assert "cores" not in analysis_cfg
+    assert list(analysis_cfg["layers"]) == ["L1"]
+
+
+def test_the_defaults_sample_project_block_does_not_reach_a_web_project(tmp_path, monkeypatch):
+    # It names the sample (for the wizard's Import config); a version's stored config would
+    # otherwise say every project is SampleCppProject.
+    cfg_dir = tmp_path / "engine" / "config"
+    _write_json(cfg_dir / "config.defaults.json", {
+        "project": {"name": "SampleCppProject", "repository": "https://example.invalid/s.git"},
+        "llm": {"provider": "ollama"}})
+    monkeypatch.setattr(pr, "get_settings", lambda: SimpleNamespace(repo_root=tmp_path))
+    out_path, analysis_cfg = pr._write_project_config(_project(), tmp_path / "ws")
+    assert "project" not in analysis_cfg
+    assert "project" not in json.loads(out_path.read_text(encoding="utf-8"))

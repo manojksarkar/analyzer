@@ -13,6 +13,8 @@ export const ApiJobSchema = z.object({
   elapsed_seconds: z.number(), eta_seconds: z.number().nullable(), phases: z.array(ApiJobPhaseSchema),
   commit_sha: z.string(), branch: z.string(), version_id: z.string().nullable(),
   version_tag: z.string().nullable().optional(),
+  /** `auto` / `full` / `incremental` = the version's own run; `export` / `reexport` add documents. */
+  mode: z.string().nullable().optional(),
   started_at: z.string().nullable(), completed_at: z.string().nullable(), error_message: z.string().nullable(),
 })
 export type ApiJob = z.infer<typeof ApiJobSchema>
@@ -45,6 +47,7 @@ export function mapJob(j: ApiJob): AnalysisJob {
     branch: j.branch,
     versionId: j.version_id,
     versionTag: j.version_tag ?? null,
+    mode: j.mode ?? 'auto',
     startedAt: j.started_at,
     completedAt: j.completed_at,
     errorMessage: j.error_message,

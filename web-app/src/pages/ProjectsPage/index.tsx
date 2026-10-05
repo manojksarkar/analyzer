@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useProjects } from '../../hooks/useProjects'
 import { useAuthStore } from '../../store/auth'
@@ -5,6 +6,7 @@ import { Dropdown, DropdownTrigger, DropdownContent, Icon, BrandMark, TableSkele
 import { NotificationBell } from '../../components/shell/NotificationBell'
 import { ProjectRow } from './components/ProjectRow'
 import { ProjectsEmptyState } from './components/ProjectsEmptyState'
+import { RenameProjectDialog } from './components/RenameProjectDialog'
 import { APP_NAME, APP_TAGLINE } from '../../constants/branding'
 
 /* Column headers — width baked into the class so no inline style is needed. */
@@ -12,7 +14,7 @@ const COLUMNS = [
   { label: 'Name',      cls: 'text-left px-5 py-3' },
   { label: 'Standard',  cls: 'text-left px-4 py-3' },
   { label: 'Latest',    cls: 'text-left px-4 py-3' },
-  { label: 'In Review', cls: 'text-right px-4 py-3' },
+  { label: 'In review', cls: 'text-right px-4 py-3' },
   { label: 'Progress',  cls: 'px-4 py-3 w-40' },
   { label: 'Last Run',  cls: 'text-left px-4 py-3' },
   { label: 'Team',      cls: 'text-left px-4 py-3' },
@@ -26,6 +28,9 @@ export function ProjectsPage() {
   const isEmpty = !isLoading && !isError && (projects?.length ?? 0) === 0
   const requestAccess = () =>
     toast.info('Request access', 'Ask your workspace administrator to add you to a project.')
+  // The project being renamed (a row's menu). The dialog is the page's, not the row's: a click in
+  // it would reach the row and open the project.
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null)
 
   return (
     <div className="h-screen flex flex-col overflow-hidden relative">
@@ -55,9 +60,6 @@ export function ProjectsPage() {
         {/* Right */}
         <div className="flex items-center gap-0.5">
           <NotificationBell />
-          <button className="p-2 hover:bg-surface-container rounded-lg transition-colors" aria-label="Help">
-            <Icon name="help" size={22} className="text-on-surface-variant" />
-          </button>
 
           <div className="w-px h-5 bg-outline-variant mx-1.5" aria-hidden />
 
@@ -68,16 +70,16 @@ export function ProjectsPage() {
                 aria-label={`User menu — ${user?.name}`}
               >
                 <div className="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
-                  <span className="text-on-secondary-container font-bold text-xs font-sans">
-                    {user?.initials ?? 'EL'}
-                  </span>
+                  {user?.initials
+                    ? <span className="text-on-secondary-container font-bold text-xs font-sans">{user.initials}</span>
+                    : <Icon name="person" size={16} className="text-on-secondary-container" />}
                 </div>
                 <Icon name="expand_more" size={16} className="text-on-surface-variant" />
               </button>
             </DropdownTrigger>
+            {/* Profile is not built yet, so it is not offered (ui-review #36, #37). */}
             <DropdownContent
               items={[
-                { label: 'Profile',  icon: 'person', onClick: () => {} },
                 { label: 'Sign out', icon: 'logout', variant: 'danger', onClick: signOut },
               ]}
             />
@@ -152,6 +154,8 @@ export function ProjectsPage() {
                           key={project.id}
                           project={project}
                           onNavigate={(id) => navigate(`/projects/${id}/overview`)}
+                          onTeam={(id) => navigate(`/projects/${id}/team`)}
+                          onRename={(p) => setRenaming({ id: p.id, name: p.name })}
                         />
                       ))}
                 </tbody>
@@ -159,6 +163,13 @@ export function ProjectsPage() {
             )}
             {isLoading && <TableSkeleton rows={5} cols={8} />}
           </div>
+          {renaming && (
+            <RenameProjectDialog
+              project={renaming}
+              otherNames={(projects ?? []).filter((p) => p.id !== renaming.id).map((p) => p.name)}
+              onClose={() => setRenaming(null)}
+            />
+          )}
         </div>
       </div>
     </div>

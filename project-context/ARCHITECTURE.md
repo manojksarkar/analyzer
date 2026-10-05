@@ -122,7 +122,7 @@ and lets `--from-phase N` skip earlier phases on a resume.
 `SampleCppProject/` is **vendored directly in this repo** — committed as normal tracked
 files, so a plain `git clone` has the full fixture (no submodule, no `git submodule update
 --init`, no empty folder). It is the single source of truth for the fixture. It was briefly
-a git submodule → `github.com/manojksarkar/SampleCppProject`; that standalone repo is now
+a git submodule pointing at a standalone SampleCppProject repo; that repo is now
 abandoned and the analyzer no longer depends on it. The incremental-diff **unit tests build
 their own throwaway git repos** in a temp dir, so they don't need any external fixture repo;
 for a manual incremental-UI demo, onboard the analyzer repo's own URL (a shallow, single-

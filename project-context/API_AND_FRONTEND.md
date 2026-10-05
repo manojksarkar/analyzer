@@ -189,16 +189,16 @@ The Vite + React + TS app under `frontend/app/` ports every design HTML to a rou
 | `projects-empty.html` | `ProjectsEmptyPage.tsx` | `/projects/new` |
 | `project-detail.html` | `ProjectDetailPage.tsx` | `/projects/:projectId/overview` (index) |
 | `documents.html` | `DocumentsPage.tsx` | `/projects/:projectId/documents` |
-| `compare.html` | `ComparePage.tsx` | `/projects/:projectId/compare` |
+| `compare.html` | `ComparePage/` (by version id since 2026-10-04) | `/projects/:projectId/compare` |
 | `versions.html` | `VersionsPage.tsx` | `/projects/:projectId/versions` |
-| `team.html` | `TeamPage.tsx` | `/projects/:projectId/team` |
+| `team.html` | `TeamPage/` | `/projects/:projectId/team` |
 
 `/` and unmatched paths redirect to `/projects`; all non-auth routes are wrapped in `ProtectedRoute`.
 
 - **Shared shell**: the four project-scoped routes render inside `ProjectLayout` → `Sidebar` + `Topbar` + `Subbar` + `<Outlet>`.
 - **Data**: `@tanstack/react-query` hooks (`useProject` / `useDocuments` / `useTeam` / `useVersions` / `useCommits`) over mock data in `src/data/mock.ts` (5 projects, 15 documents, 9 team members incl. 1 pending, 3 versions, untagged commits).
 - **State**: Zustand `ui` store holds `roleView` (Admin/Dev toggle in the Topbar — drives admin-vs-developer page content) + `sidebarCollapsed`; `auth` store (persisted) gates `ProtectedRoute`. Page state (never / running / in_review / complete / stale) is driven per-project by `project.pageState`, **not** a dev toolbar.
-- **Tailwind v4** (`@import "tailwindcss"` + `@theme {}`, no config file). The design HTML uses the Tailwind **v3** CDN, so its named type-scale classes (e.g. `text-body-md`, `font-label-sm`) are not portable — ported with explicit inline styles / v4 utilities. Verify production builds with `npm run build` (`tsc -b` catches `Record<DocStatus,…>` exhaustiveness errors that `tsc --noEmit` misses).
+- **Tailwind v4** (`@import "tailwindcss"` + `@theme {}`, no config file). The design HTML uses the Tailwind **v3** CDN, so its named type-scale classes (e.g. `text-body-md`, `font-label-sm`) are not portable — ported with explicit inline styles / v4 utilities. Verify production builds with `npm run build` (`tsc -b` catches `Record<DocStatus,…>` exhaustiveness errors that `tsc --noEmit` misses). **Browser floor = Chrome/Edge 99, Firefox 97, Safari 15.4**: `vite.config.ts` lowers Tailwind v4's nested CSS / range media queries / `color-mix()` via `css.transformer: 'lightningcss'` + `css.lightningcss.targets` (dev server) and `build.cssTarget` (build) — both needed (2026-09-30e entry).
 
 ### Shell rules
 
@@ -229,6 +229,216 @@ signin.html → projects.html (no sidebar)
        ├─ Versions  → versions.html (56px)
        └─ Team      → team.html (220px)
 ```
+
+
+### Review & update in the web app (2026-10-01)
+
+The document reader corrects the LLM's wording in place. **Edit** (Subbar, SWE.3 only; any member)
+turns each correctable text into a box that saves on leaving it; **Edit flowchart** corrects one
+chart's box labels together; a banner says when the Word files lack the latest corrections, with
+**Re-export** for admins. Editing pauses while a run or a re-export is going.
+
+- **API** — `api/services/doc_render.py` puts each text's slot in the render payload (`_Slots`,
+  `load_overrides`: one query for the version's corrections): `table.cell_slots`,
+  `flowchart_table.*_slot`, `behavior_table.*_slot`, `content_slot`, and `flowcharts[].flowchart_id` /
+  `editable`. A record row of the unit header shows the model's `structDescription`, which a save
+  writes, instead of Phase 3's copy (stale until a re-export). Tests: `tests/api/test_render_carries_slots.py`.
+- **Web** — `pages/DocumentInspectorPage/` is a folder now: `components/Sections.tsx` (the section
+  views, memoised), `SlotText.tsx` (one text: read mark, editor, Undo, History), `FlowchartLabelDialog.tsx`,
+  `ReviewBars.tsx` (R9 banner + Re-export, the Editing bar), `RightPanel.tsx` + `OutlineTab.tsx` +
+  `CorrectionsTab.tsx` (+ the moved `ReviewTracker.tsx`), `TreeRail.tsx`; `outline.ts` (pure, tested),
+  `editContext.ts`, `useScrollSpy.ts`. Data: `services/api/review.ts`, `services/mappers/review.ts`,
+  `hooks/useReview.ts`; `projectKeys.review(…)` keys live under their own prefix. A save reads the
+  render again; the flowchart `<img>` URL carries `?v=<source_hash>` (added in the mapper, after
+  `resolveAssetUrl`) so a redrawn SVG reloads.
+- **Rules** — the `ui-dev` skill §6; the contract's page section is REVIEW_UPDATE_API_SPEC §3a.
+- **Mockup** — `docs/ui-mockups/documents.html` (open with `#edit`).
+- **Since 2026-10-05** (history 11 2026-10-05 … and 13): a save met by a run that replaced the model
+  answers 409 `{code: VERSION_REGENERATING}` (the other refusals stay strings); a save's queued texts
+  carry `label`; R9 adds `staleComponents` (per-component, read in one pass:
+  `export_guard.stale_components`) and ignores corrections in components with no document; R12
+  `DELETE …/overrides/orphans` (admins) discards orphans; Phase 3 puts back a correction the model
+  lost (`carry_forward.restore_missing_corrections`, RF-1). The web reads R1 in pages of 1000, blocks
+  U+0000, counts an undone correction as not corrected, shows orphans inline, lists R10 in the
+  Corrections tab, and marks only the stale components' downloads.
+
+### Staged generation (2026-10-02)
+
+A version's model (Phases 1-2) covers whole layers; its documents (Phases 3-4) are made per component,
+by any number of runs into the same version: `generate` (or `--model-only`), `export` (components not
+generated yet), `reexport` (again), `resume` (after a crash). Human guide:
+[CLI_COMMANDS](../docs/CLI_COMMANDS.md#a-run-that-lasts-days); decisions: the untracked notes
+`staged-generation-2026-10-01.md` (repo root).
+
+- **Tables** (migration 0016): `version_components` — one row per component a run ASKED for
+  (waiting → generating → generated | failed; run.py marks them around each component's plan,
+  `RunPlan.components`); `version_runs` — the latest run's command line, process, log, frozen code and
+  progress (the phases' `ProgressReporter` publishes, ≤ every 20 s). **Alive** is a Postgres advisory
+  lock the run's process holds (`engine/core/version_run.py`: `writing`, `holder`, `alive`), never a
+  column; SQLite has no lock (alive = unknown).
+- **One writer per version** — CLI `generate`/`export`/`reexport`/`resume` and the web jobs
+  (`pipeline_runner._version_writer`, on the API's own engine) take the lock; a second is refused
+  (`VersionBusy`; web re-export 409 `VERSION_BUSY`). Storing output replaces the version's stored files
+  (`persist_output_files`), so two writers lost documents before.
+- **The view** — `api/services/version_components.py` `components_view`: the model's components
+  (`model_components`) ∪ rows ∪ documents; no row + documents = generated, neither = `not_requested`,
+  waiting/generating with no live writer = `stopped`. The rules for which components each command
+  makes are `engine/incremental/staged.py` (pure).
+- **A layer added to a version** (2026-10-04e). `export` of a component whose layer the model does
+  not hold adds the layer to the SAME version (`analyzer.py _layers_adder`, run inside
+  `_render_version`'s writer lock via `before=`; `engine/incremental/extend.py`): capture the model's
+  LLM text + a per-component fingerprint of the structural fields → widen the manifest scope (a
+  `resume` re-parses every layer) → `run.py --to-phase 1` with `--selected-layer` for every layer, old
+  and new (a full parse of the union: Layer 1 → Layer 2 calls are only found by re-parsing Layer 1; the
+  narrowed-parse merge was rejected — no Layer 1 → Layer 2 edges, same-named types keyed differently)
+  → `snapshot_parse_model` → `restore_text` (old text back where the new rows are empty) →
+  incremental plan `impactFids`/`impactedGlobals` = new entities only, `unitDescriptions` = the old
+  units' text (model_deriver pre-fills them; units are rebuilt blank), `addedLayers: True` →
+  `run.py --from-phase 2 --to-phase 2` → the version's previous plan put back → documented components
+  whose fingerprint moved are marked **`stale`** (documents left as they are, review status
+  untouched) → the finished `pipeline_status` put back → Phases 3-4 for the requested components as
+  any export. The view lists the config's components not in the model (`in_model: false`,
+  `layer_parsed`); `staged.layers_to_add`; `resume` of a cut-short add runs the export again;
+  `reexport` of a stale component goes from Phase 3 (`auto` escalates, an explicit 4 is refused).
+  **Proved** on a cross-layer copy of the sample (Layer1.Math ↔ Layer2.Gpio): the extended model
+  equals a one-run model of both layers table for table, Layer2.Gpio's documents are byte-identical,
+  only Layer1.Math goes stale, and its re-export is identical too (`_derivations.json` differs in
+  build times only). Phase 2 asks the LLM only for the new layer; Phase 1 re-parses every layer.
+  **Recovery**: the capture is stored before the parse (`parse_snapshots` row `add_layers_pending`)
+  and reused by a retry or `resume` (which checks it before anything else); `reexport` is refused
+  while it exists; it is removed once the add finishes, or when its parse fails (nothing changed).
+  Proved: an add killed mid-parse, then `resume`, equals the one-run model.
+- **Routes** (`api/routes/version_components.py`): `GET /projects/{pid}/versions/{vid}/components`
+  (components, counts, `run` with `alive`/`stopped`); `POST …/versions/{vid}/documents/generate
+  {components}` → 202, a job `mode: "export"` (`RENDER_MODES` = reexport + export: never "the project's
+  run") running `analyzer.py export`; 422 `INVALID_COMPONENTS`, 409 `NO_MODEL` / `NOTHING_TO_GENERATE` /
+  `VERSION_BUSY` / `EXPORT_RUNNING`; `POST …/versions/{vid}/resume` (below).
+- **Web** — Documents page `ComponentsPanel` (per layer: state, documents' review status; the run strip:
+  progress, or STOPPED with the `resume` command; an admin ticks components without documents →
+  Generate). Data: `services/api/versionComponents.ts`, mapper, `hooks/useVersionComponents.ts`
+  (polls every 10 s while something is being made; re-reads the documents when one finishes). **Stop**
+  (admin, 2026-10-02c): `GET …/components` names the web job at work on the version (`job`: id, mode,
+  status — a Components → Generate job is never `jobs/current`, so the Overview's Cancel missed it); the
+  run strip's Stop asks first (`StopRunDialog`: an export keeps what is finished, the version's own run is
+  removed) and calls `POST /jobs/{id}/cancel` (`useCancelJob`). An API that does not send `job` shows no
+  Stop.
+- **Exit 3 = partial success**: run.py goes on past a component that fails and exits 3; the CLI and the
+  web jobs (`_execute_subprocess(partial_ok)`) store, record and keep what the others made.
+- **Web re-export** re-renders every component the version has documents for (`_reexport_scope`), one
+  document each (`--component-per-docx` for every scope — a component scope used to come back as one
+  bundled document). A web generate job does not hold the writer lock: the `analyzer.py generate` it
+  starts does. Since 2026-10-05: also a version made from the command line (it has no generation
+  job; commit/branch/tag come from the version; 409 `NO_DOCUMENTS` when nothing is recorded), and
+  optionally only `{"components": [...]}` (each with documents; the Components panel sends the stale
+  ones). `GET /projects/{pid}/runs` lists the runs at work or cut short from either front door (the
+  Overview's card); the versions list carries `run: {made_by, scope, doc_type, model_only}`.
+  `analyzer.py clean-runs` removes the code copies of runs that finished (exit 0) days ago.
+- **`--detach`** (CLI): `core/frozen_run.py` — a frozen copy of the code under `runs/<version>/<time>/`,
+  the same data via `ANALYZER_DATA_ROOT` / `ANALYZER_WORKSPACES_DIR`, output in `run.log`, `run.json`
+  (pid, argv, `job_id` from `ANALYZER_JOB_ID`), and `exit.json` written by `analyzer.py` as it exits
+  (`_main_recording_exit` → `frozen_run.record_exit`; it pops `ANALYZER_EXIT_FILE`, so the phases do not).
+- **Web runs in the background** (2026-10-02c, C4). With a database behind the API (`settings.job_detach`,
+  on by default; the in-memory backend keeps the child process), a web Generate and a Components →
+  Generate run `analyzer.py generate|export … --detach` through a launcher that exits once the run has
+  started (`pipeline_runner._launch_detached`; its output to a temp file, never a pipe), so the run is not
+  in the API's process tree and `start_app`'s restart does not reach it. The job thread only FOLLOWS it
+  (`_follow_detached`): `run.log` for the live log and the phase (`_LineTracker`, shared with
+  `_execute_subprocess`), the process (`frozen_run.process_alive`, by command line, so a reused pid is not
+  the run) and the version's lock for life, `exit.json` for the end. Exit 0/3 → `_complete` (export:
+  `_complete_render`); no exit code, no process and no lock → it died.
+- **A restarted API follows its runs again**: `fail_interrupted_jobs` asks `_reattach_detached` first —
+  the run folder whose `run.json` names the job (`frozen_run.find_job_run`) — and replays the log to catch
+  the phase up (`_LineTracker.replay`, one write); only a job with no background run is failed as before.
+  The check is tried again every 30 s until the database answers (`main._sweep_until_done`; one missed
+  try under load left a job "running" with nothing following it), and touches only jobs started before
+  this process (`PROCESS_STARTED`).
+- **A stop keeps the version** when there is work in it (`_version_has_work`: a stored parse, or
+  `pipeline_status` past `parsing`): `_fail_keeping_work` fails the job with "Stopped: …" and the resume
+  command instead of deleting the draft. A failure before that frees the draft as always. Cancel stops the
+  run (`frozen_run.stop`, its whole tree) and deletes the draft.
+- **Resume**: on the server `analyzer.py resume --detach`; a successful CLI resume of a web version finishes
+  that version's failed web job as the API would (`analyzer._finish_web_job` → `_complete`), so the version
+  leaves draft. Over HTTP `POST …/versions/{vid}/resume` → `start_resume`: the version's unfinished
+  generation job reopened (its end runs `_complete`), else a job `mode: "export"`; 409 `VERSION_BUSY` /
+  `RUN_ACTIVE` / `NOTHING_TO_RESUME` / `NO_BACKGROUND_RUNS`. `GET …/components` answers `resume_action`
+  (`version_components.resume_action` = `staged.resume_plan`'s action, "busy" while a job or a process
+  of this machine is at work). **No web button yet** — the user deferred it; the panel prints the command.
+- **Hardened 2026-10-04** (a review): unknown work = keep (`_version_has_work`); DB errors at a run's end
+  are waited out (`_when_db_answers`, 30 s, up to 6 h); `main._watch_jobs` re-checks every 5 min for
+  active jobs nothing follows; cancel refuses ended jobs (`JOB_FINISHED`), stops an unfollowed run first
+  (`stop_background_run`), never releases for exports; a generation job whose dead run left a complete
+  version is done; the web generate runs on the version's own config (`_freeze_version_config`);
+  run.json `create_time` identifies the process; an export waits for the version's own run
+  (`RUN_ACTIVE`); `start_app.kill_tree` skips `runs/.../code/` processes. Round 2: only connection
+  errors are waited out (`_db_unavailable`); the frozen config keeps its typed macros, and `export` /
+  `resume` overlay this machine's current local settings (`analyzer._with_current_secrets`, the run's
+  LLM switches kept); the periodic pass only re-attaches, and only while `runner_still_held`.
+  `DELETE /versions/{id}` throws a stopped run's kept version away (409 `VERSION_BUSY` / `RUN_ACTIVE` /
+  `VERSION_IS_BASELINE`; jobs detached, cached comparisons dropped).
+- **Limits**: each web run freezes ~10 MB of code (about a minute on Windows with the virus scanner; never
+  deleted automatically — removing a copy must not follow its `node_modules` junction); a web re-export runs in the
+  background too since 2026-10-04 (`_reexport_detached`); the launcher's window between spawning the run and writing `run.json`
+  (milliseconds) is not covered; an API under systemd with the default `KillMode=control-group`, or in a
+  container that restarts, kills its background runs with it (`KillMode=process`).
+
+### Review and approval (2026-10-01d)
+
+A document has **one reviewer** and moves In review → (its reviewer submits, with a comment) Ready for
+approval → (an active admin) Approved, or back as Changes requested; an admin reopens an approved one,
+with a reason. A **version is approved when every one of its documents is** — derived, never set. Each
+step is a `ReviewEvent` (the review evidence) and notifies who it concerns. Contract:
+[REVIEW_APPROVE_API_SPEC](../docs/spec/REVIEW_APPROVE_API_SPEC.md); why: [REVIEW_APPROVE_DESIGN](../docs/design/REVIEW_APPROVE_DESIGN.md).
+
+- **Rules** — `api/services/review_workflow.py`, one function per step (`assign`, `claim`, `submit`,
+  `approve`, `request_changes`, `reopen`), plus `document_views` (the contract's Document, three repository
+  reads for a whole list), `roll_up` (writes the version's derived status, and the project's `complete` /
+  `in_review` when it is the latest version), `start_review` (a run's new documents) and
+  `refuse_if_approved` (corrections). Routes (`api/routes/documents.py`) only check the role and that the
+  document is the path's project's.
+- **Approve** refuses while R9 says this document's Word file lacks corrections — `export_guard.staleness(…,
+  component=doc.group)` — and keeps a copy of the file (`versions/<ver>/approved/<doc id>/<name>`) and its
+  SHA-256; downloads of an approved document serve the copy, so a re-export cannot change what was approved.
+  It also stores a fingerprint of the rendered content (`compare_render.render_fingerprint` over
+  `document_payload.build_document_render`, the page's own build).
+- **A run** (`pipeline_runner._complete` → `start_review`): a new document whose baseline twin (same
+  process + component; the run's baseline, else the previous version) was approved and fingerprints the
+  same keeps the approval (`carried_from`, event `carried`); the rest are In review with the baseline's
+  reviewer kept if still an active member. Checked on real data: unchanged components fingerprint
+  identically across an incremental and a full run of the same code.
+- **Every version gets its documents recorded** — `api/services/document_registry.py`
+  (`register_documents`, idempotent; `new_documents` is the rows alone, what `_make_documents` now is).
+  Called by the job's `_complete`, by `analyzer.py generate` at its end (also inside a web job, so a run
+  whose server restarted still has its documents), by re-export, by `analyzer.py register` and by A17
+  (`POST …/versions/{vid}/documents/register`). Before this a CLI run recorded none. Which component a
+  dir is: project layers → version `resolved_config` → `versions/<ver>/config.json` → the project's
+  `config.json`; an undeclared dir is skipped unless nothing declares any. Checked on a copy of
+  `analyzer_ui`: re-recording a 50-document version carried 9 approvals (8 of them made before
+  fingerprints existed) and left the one changed component In review.
+- **Carry-over** compares the new document's fingerprint with the stored one, and when they differ (or
+  none was stored) fingerprints the baseline twin again with the current code — a change to the render
+  code then cannot stop unchanged documents from carrying.
+- **Team** — Add member finds people by name or email (`GET /users/search`, `pages/TeamPage/components/AddMemberDialog.tsx`); adding a person (A20) makes an active member, creating the account (temporary password, shown once) when there is none; `POST /auth/change-password` (A21); `analyzer.py user` and `tools/create_users.py` create accounts. Members show `open_reviews` (latest version); a role is `admin|developer|reviewer` (422
+  otherwise; `reviewer` acts as a developer); removing a member takes them off their unapproved
+  documents (`release_reviews`). `GET /reviews/mine` lists the caller's documents across projects. A
+  commit's `doc_status` is derived from its version. `PATCH …/documents/{id}` stores `due_date`.
+- **Locked** — a correction (R3, R4, R6, R8) answers 409 `DOCUMENT_APPROVED` while the text's component has
+  an approved SWE.3 or SWE.4 (a struct description, keyed by no component: any approved document).
+- **Web** — one status vocabulary: `lib/reviewStatus.ts` + `ui/StatusBadge` (no local status maps).
+  Data: `services/api/approval.ts`, `services/mappers/approval.ts`, `hooks/useApproval.ts` (A1–A11, A15;
+  409 codes → messages). `pages/DocumentsPage/` and `pages/ProjectDetailPage/` are folders now; the
+  reader's Review tab is `ReviewTab.tsx` + `ReviewDialogs.tsx` (+ pure `review.ts`), banners in
+  `ReviewBars.tsx`, the shared `components/review/AssignReviewerDialog.tsx`; `?tab=review` opens the tab.
+  Compare is read-only. `ReviewTracker` / `AssignReviewersPanel` are gone. vitest 185, build clean, lint
+  at its baseline (27). Checked live: web on :5180 → API on :8010 over a copy of `analyzer_ui` (assign,
+  submit, approve, carried approval), and `npm run test:api` 0 mismatches against it. **Never run a bare
+  `npx vitest run`**: it includes the live suite, which writes to whatever API `localhost:8000` is.
+- **Storage** — `documents` review columns, `document_review_events`, `notifications.document_id`, one
+  reviewer per document (unique index); migration 0015, and `analyzer.py setup` runs the same data repair
+  (`api/db/postgres/review_repair.py`: statuses, newest reviewer kept, "approved before the record" events).
+- **Access fixes** — every review route checks the document belongs to the path's project; a pending
+  admin no longer passes `require_project_admin`; a notification is marked read only by its owner;
+  approve-all takes document ids (by version it approved every version's documents).
+- **Tests** — `tests/api/test_review_approve.py` (both backends).
 
 ---
 

@@ -57,14 +57,6 @@ export function Topbar({ breadcrumbs }: TopbarProps) {
         {/* Notifications */}
         <NotificationBell />
 
-        {/* Help */}
-        <button
-          className="p-2 hover:bg-surface-container rounded-lg transition-colors"
-          aria-label="Help"
-        >
-          <Icon name="help" size={22} className="text-on-surface-variant" />
-        </button>
-
         <div className="w-px h-5 bg-outline-variant mx-1.5" aria-hidden />
 
         {/* User avatar + dropdown */}
@@ -75,16 +67,16 @@ export function Topbar({ breadcrumbs }: TopbarProps) {
               aria-label={`User menu — ${user?.name}`}
             >
               <div className="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
-                <span className="text-on-secondary-container font-bold text-xs font-sans">
-                  {user?.initials ?? 'EL'}
-                </span>
+                {user?.initials
+                  ? <span className="text-on-secondary-container font-bold text-xs font-sans">{user.initials}</span>
+                  : <Icon name="person" size={16} className="text-on-secondary-container" />}
               </div>
               <Icon name="expand_more" size={16} className="text-on-surface-variant" />
             </button>
           </DropdownTrigger>
+          {/* Profile is not built yet, so it is not offered (ui-review #36). */}
           <DropdownContent
             items={[
-              { label: 'Profile',   icon: 'person', onClick: () => {} },
               { label: 'Sign out',  icon: 'logout', variant: 'danger', onClick: signOut },
             ]}
           />

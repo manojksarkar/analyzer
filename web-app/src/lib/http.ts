@@ -32,9 +32,15 @@ interface RequestOptions {
   skipAuth?: boolean
 }
 
+/** One of FastAPI's request-validation problems (a 422's `detail` list). */
+interface ValidationIssue {
+  loc?: (string | number)[]
+  msg?: string
+}
+
 interface ErrorEnvelope {
   error?: { code?: string; message?: string; status?: number }
-  detail?: { code?: string; message?: string; status?: number } | string
+  detail?: { code?: string; message?: string; status?: number } | string | ValidationIssue[]
 }
 
 /** Error thrown for any non-2xx response. Carries status + backend code. */
@@ -47,6 +53,31 @@ export class ApiError extends Error {
     this.status = status
     this.code = code
   }
+}
+
+/** The API answered 404: the thing is not there. Any other failure is a read that did not work
+ *  — show it with a Retry, never as "not found". */
+export function isNotFound(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 404
+}
+
+/** A failure worth one more try: the network (no answer) or the server (5xx). A 4xx answer —
+ *  401, 403, 404, 409, 422 — is the same the second time; retrying only delayed the error page. */
+export function isRetryable(e: unknown): boolean {
+  return !(e instanceof ApiError) || e.status >= 500
+}
+
+/** A 422's validation problems as one readable line: the first one's field and message
+ *  (`tag: Field required`), and how many more. FastAPI sends them as a `detail` list, which the
+ *  envelope parsing dropped — the page said only "Unprocessable Entity". */
+function validationMessage(detail: ValidationIssue[]): string | undefined {
+  const first = detail.find((d) => typeof d?.msg === 'string')
+  if (!first?.msg) return undefined
+  // `loc` starts with where the value was sent (body, query, path): the rest names the field.
+  const where = new Set(['body', 'query', 'path', 'header', 'cookie'])
+  const field = (first.loc ?? []).filter((p, i) => !(i === 0 && where.has(String(p)))).join('.')
+  const more = detail.length > 1 ? ` (and ${detail.length - 1} more)` : ''
+  return `${field ? `${field}: ` : ''}${first.msg}${more}`
 }
 
 function buildUrl(path: string, params?: QueryParams): string {
@@ -67,9 +98,11 @@ async function parseError(res: Response): Promise<ApiError> {
   let code: string | undefined
   try {
     const body = (await res.json()) as ErrorEnvelope
-    const env = body.error ?? (typeof body.detail === 'object' ? body.detail : undefined)
+    const detail = body.detail
+    const env = body.error ?? (detail && typeof detail === 'object' && !Array.isArray(detail) ? detail : undefined)
     if (env?.message) message = env.message
-    else if (typeof body.detail === 'string') message = body.detail
+    else if (typeof detail === 'string') message = detail
+    else if (Array.isArray(detail)) message = validationMessage(detail) ?? message
     code = env?.code
   } catch {
     /* non-JSON body — keep the status-derived message */
@@ -149,12 +182,19 @@ async function upload<T>(path: string, form: FormData, _retry = false): Promise<
   return (text ? JSON.parse(text) : undefined) as T
 }
 
-/** Fetch a binary endpoint with auth and trigger a browser download. */
-async function download(path: string, fallbackName: string, params?: QueryParams): Promise<void> {
+/** Fetch a binary endpoint with auth (+ one-shot 401 refresh) and trigger a browser download. */
+async function download(path: string, fallbackName: string, params?: QueryParams, _retry = false): Promise<void> {
   const token = useAuthStore.getState().accessToken
   const res = await fetch(buildUrl(path, params), {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   })
+  // Access tokens are short-lived; without this a download after an idle spell failed where
+  // any other request would have refreshed and retried.
+  if (res.status === 401 && !_retry) {
+    if (await refreshAccessToken()) return download(path, fallbackName, params, true)
+    useAuthStore.getState().signOut()
+    throw await parseError(res)
+  }
   if (!res.ok) throw await parseError(res)
   const blob = await res.blob()
   const disposition = res.headers.get('Content-Disposition') ?? ''
@@ -167,7 +207,8 @@ async function download(path: string, fallbackName: string, params?: QueryParams
   document.body.appendChild(a)
   a.click()
   a.remove()
-  URL.revokeObjectURL(url)
+  // Revoking in the same tick can cancel the download in some browsers.
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
 export const http = {
@@ -176,6 +217,8 @@ export const http = {
     request<T>('POST', path, { body, params }),
   patch: <T>(path: string, body?: unknown, params?: QueryParams) =>
     request<T>('PATCH', path, { body, params }),
+  put: <T>(path: string, body?: unknown, params?: QueryParams) =>
+    request<T>('PUT', path, { body, params }),
   del: <T>(path: string, params?: QueryParams) => request<T>('DELETE', path, { params }),
   upload,
   download,

@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 from .registry import register
-from utils import (KEY_SEP, display_name, log, mmdc_path, safe_filename, os_type,
+from utils import (KEY_SEP, display_name, log, safe_filename, os_type,
                    render_mermaid_cached, scoped_name)
 
 
@@ -403,13 +403,6 @@ def run(model, output_dir, model_dir, config):
     render_png = True
     # Project root must not be derived from output_dir: with --all-groups output is output/<group>/.
     project_root = _project_root()
-    mmdc = mmdc_path(project_root)
-    puppeteer = os.path.join(project_root, "engine", "config", "puppeteer-config.json")
-    if not os.path.isabs(puppeteer):
-        puppeteer = os.path.join(project_root, puppeteer)
-    run_cmd_base = [mmdc]
-    if os.path.isfile(puppeteer):
-        run_cmd_base.extend(["-p", puppeteer])
 
     cpp_units = [uk for uk, u in units_data.items() if (u.get("fileName") or "").endswith(".cpp")]
     if allowed_components:

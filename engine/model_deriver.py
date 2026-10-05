@@ -992,6 +992,7 @@ def _enrich_behaviour_names_llm(
             extract_source,
             get_behaviour_names,
             load_abbreviations,
+            analyzer_root,
         )
     except ImportError:
         return
@@ -999,7 +1000,7 @@ def _enrich_behaviour_names_llm(
         return
     from core.progress import ProgressReporter
     from core.logging_setup import get_logger
-    abbreviations = load_abbreviations(SCRIPT_DIR, config)  # SCRIPT_DIR == engine/, which contains config/
+    abbreviations = load_abbreviations(analyzer_root(), config)
     order = list(functions_data.keys())
     n = len(order)
     progress = ProgressReporter("LLM-behaviour-names", total=n, logger=get_logger("model_deriver"))
@@ -1482,6 +1483,12 @@ def main():
     _plan = _read_incremental_plan()
     only_fids = set(_plan.get("impactFids") or []) if _plan else None
     only_globals = set(_plan.get("impactedGlobals") or []) if _plan else None
+    # A layer added to a version (incremental/extend.py): the units the version already had keep
+    # their description. Units are rebuilt above without one, and the enrichment further down
+    # skips a unit that has one -- so this is what keeps the LLM away from them.
+    for _uk, _text in ((_plan or {}).get("unitDescriptions") or {}).items():
+        if _text and _uk in units_data and not units_data[_uk].get("description"):
+            units_data[_uk]["description"] = _text
     if _plan is not None:
         print(f"  incremental: enriching {len(only_fids or [])} function(s) + "
               f"{len(only_globals or [])} global(s); reusing the rest")

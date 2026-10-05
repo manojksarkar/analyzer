@@ -1,17 +1,27 @@
 import { z } from 'zod'
 import type {
   Project, TeamMember, PageState, UserRole,
-  ArchLayer, ArchGroup, ArchComponent, ProjectBuildConfig,
+  ArchLayer, ArchGroup, ArchComponent,
 } from '../../types'
 import { formatDate, avatarPalette } from '../../lib/format'
+import { toUserRole } from './member'
 
 export const ApiProjectSchema = z.object({
-  id: z.string(), name: z.string(), client: z.string(), compliance_standard: z.string(),
+  // null for a project `analyzer.py onboard` wrote (no client, standard or architecture in the
+  // database): tolerated, as an older server still answers so.
+  id: z.string(), name: z.string(), client: z.string().nullable(), compliance_standard: z.string().nullable(),
   status: z.string(), last_run_at: z.string().nullable(), current_version: z.string().nullable(),
   doc_counts: z.record(z.string(), z.number()), team_count: z.number(), my_role: z.string().nullable(),
   repo_url: z.string(), default_branch: z.string().optional(),
   build_config: z.record(z.string(), z.unknown()).optional(),
-  architecture_layers: z.array(z.unknown()), created_at: z.string(), updated_at: z.string(),
+  // null for a project `analyzer.py onboard` wrote: the CLI records no created/updated time.
+  architecture_layers: z.array(z.unknown()).nullable(), created_at: z.string().nullable(), updated_at: z.string().nullable(),
+  // The project's cores and each layer's core; a project from before cores reads as one core.
+  cores: z.array(z.object({
+    name: z.string(), macros: z.string().nullable(), data_dictionary: z.string().nullable(),
+    compile_commands: z.string().nullable(), layers: z.array(z.string()),
+  })).optional(),
+  layer_cores: z.record(z.string(), z.string().nullable()).optional(),
 })
 export type ApiProject = z.infer<typeof ApiProjectSchema>
 
@@ -47,17 +57,23 @@ export function mapProject(p: ApiProject): Project {
     client: p.client ?? '',
     repoPath: p.repo_url,
     defaultBranch: p.default_branch ?? '',
-    standard: standardLabel(p.compliance_standard),
+    standard: standardLabel(p.compliance_standard ?? ''),
     latestVersion: p.current_version,
-    inReviewCount: counts.in_review ?? 0,
+    // Not approved yet: in review, ready for approval or sent back (REVIEW_APPROVE_API_SPEC §1).
+    inReviewCount: (counts.in_review ?? 0) + (counts.submitted ?? 0) + (counts.changes_requested ?? 0),
     progress,
     lastRun: formatDate(p.last_run_at),
     // GET /projects exposes only team_count (no member array). Render generic
     // placeholder avatars so the stack/overflow still works. See INTEGRATION_NOTES.
     team: placeholderTeam(p.team_count, p.id),
-    architectureLayers: mapArchitecture(p.architecture_layers),
-    buildConfig: mapBuildConfig(p.build_config),
-    userRole: (p.my_role as UserRole) ?? 'developer',
+    architectureLayers: mapArchitecture(p.architecture_layers, p.layer_cores ?? {}),
+    buildConfig: {
+      cores: (p.cores ?? []).map((c) => ({
+        name: c.name, macros: c.macros, dataDictionary: c.data_dictionary,
+        compileCommands: c.compile_commands, layers: c.layers,
+      })),
+    },
+    userRole: toUserRole(p.my_role),
     pageState: projectPageState(p.status),
   }
 }
@@ -67,7 +83,7 @@ export function mapProject(p: ApiProject): Project {
  * projects store `groups` as a string array; wizard-created projects store
  * `groups: [{name, components:[{name, files}]}]`. Both are handled.
  */
-function mapArchitecture(raw: unknown): ArchLayer[] {
+function mapArchitecture(raw: unknown, layerCores: Record<string, string | null>): ArchLayer[] {
   if (!Array.isArray(raw)) return []
   const str = (v: unknown, fallback: string) => (typeof v === 'string' && v ? v : fallback)
   return raw.map((l): ArchLayer => {
@@ -87,38 +103,15 @@ function mapArchitecture(raw: unknown): ArchLayer[] {
       })
       return { name: str(grp.name, 'Group'), components }
     })
+    const name = str(layer.name, 'Layer')
     return {
-      name: str(layer.name, 'Layer'),
+      name,
       path: typeof layer.path === 'string' && layer.path ? layer.path : undefined,
       libPaths: Array.isArray(layer.lib_paths) ? layer.lib_paths.map(String) : undefined,
       groups,
+      core: layerCores[name.trim()] ?? null,
     }
   })
-}
-
-/** Summarise the (token-free) build config for the overview, defensively. */
-function mapBuildConfig(raw: unknown): ProjectBuildConfig {
-  const cfg = (raw ?? {}) as Record<string, unknown>
-  const out: ProjectBuildConfig = {}
-  const defs = cfg.preprocessor_definitions as Record<string, unknown> | undefined
-  if (defs && typeof defs === 'object') {
-    const mode = typeof defs.mode === 'string' ? defs.mode : 'manual'
-    if (mode === 'manual') {
-      const list = Array.isArray(defs.defines) ? defs.defines : []
-      out.definitions = { mode, count: list.length }
-    } else {
-      out.definitions = {
-        mode,
-        count: 0,
-        fileName: typeof defs.file_name === 'string' ? defs.file_name : undefined,
-      }
-    }
-  }
-  const dd = cfg.data_dictionary as Record<string, unknown> | undefined
-  if (dd && typeof dd === 'object' && typeof dd.file_name === 'string') {
-    out.dataDictionary = dd.file_name
-  }
-  return out
 }
 
 function placeholderTeam(count: number, seed: string): TeamMember[] {

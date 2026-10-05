@@ -48,7 +48,7 @@ def resolve_snapshot_asset(project_id: str, version_id: str, group: str,
     ``version_id`` is the real ver id (08 step 3): snapshots live under
     ``workspaces/<pid>/versions/<ver…>/output/<group>``. Also tries the legacy commit-addressed
     ``workspaces/<pid>/<version_id[:16]>/output`` so old (commit-keyed) asset URLs still resolve."""
-    ws = _REPO_ROOT / "workspaces" / project_id
+    ws = (_get_settings().analyzer_workspaces_dir or (_REPO_ROOT / "workspaces")) / project_id
     for base_dir in (ws / "versions" / version_id / "output" / group,
                      ws / (version_id or "")[:16] / "output" / group):
         base = base_dir.resolve()
@@ -83,6 +83,10 @@ def _version_render(db: Any, project: Any, doc: Any, version: Any,
         from .output_reader import OutputReader as _OutputReader
         reader = ModelReader(db, getattr(version, "id", None),
                              model_root if model_root.is_dir() else None)
+        if doc.process == "SWE.4":
+            from .swe4_render import build_swe4_render
+            return build_swe4_render(doc, project, version, group_dir, model_reader=reader,
+                                     output_reader=_OutputReader(db, getattr(version, "id", None), snap))
         return doc_render.build_render(
             doc, project, version, group_dir, project_id,
             model_root=model_root if model_root.is_dir() else None,
@@ -109,7 +113,10 @@ def _section_blocks(sec: dict) -> list[dict]:
     t = sec.get("type")
     blocks: list[dict] = []
 
-    if t == "table" and sec.get("table"):
+    if t in ("table", "test_spec") and sec.get("table"):
+        # A SWE.4 test spec diffs as the DOCX prints it: its description, then Table A + B.
+        if t == "test_spec" and sec.get("content"):
+            blocks.append({"kind": "text", "text": str(sec["content"])})
         tbl = sec["table"]
         blocks.append({"kind": "table",
                        "headers": list(tbl.get("headers") or []),
@@ -126,9 +133,12 @@ def _section_blocks(sec: dict) -> list[dict]:
         if ft.get("description"):
             blocks.append({"kind": "text", "text": str(ft["description"])})
         for fc in ft.get("flowcharts") or []:
+            # The render carries a flowchart's picture, not its DOT (a document can hold 500+),
+            # so the DOT's hash is what tells a changed flowchart from an unchanged one.
             blocks.append({"kind": "diagram",
                            "image_url": fc.get("image_url"),
-                           "mermaid": fc.get("mermaid"),
+                           "mermaid": None,
+                           "source_hash": fc.get("source_hash"),
                            "caption": fc.get("label")})
         for label, key in _KV_FIELDS:
             blocks.append({"kind": "keyvalue", "label": label,
@@ -166,8 +176,13 @@ def _block_fingerprint(blocks: list[dict]) -> str:
         elif k == "table":
             parts.append("B:" + repr(b["headers"]) + repr(b["rows"]))
         elif k == "diagram":
-            parts.append("D:" + (b.get("mermaid") or "") + "|" + (b.get("caption") or ""))
+            parts.append("D:" + _diagram_source(b) + "|" + (b.get("caption") or ""))
     return "\n".join(parts)
+
+
+def _diagram_source(block: dict) -> str:
+    """What a diagram is drawn from: its mermaid text, or a flowchart's DOT hash."""
+    return block.get("mermaid") or block.get("source_hash") or ""
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +308,7 @@ def _diff_block_pair(cur: Optional[dict], base: Optional[dict]) -> tuple[Optiona
     if k == "table":
         return _diff_table(cur, base)
     if k == "diagram":
-        changed = (cur.get("mermaid") or "") != (base.get("mermaid") or "")
+        changed = _diagram_source(cur) != _diagram_source(base)
         return ({"kind": "diagram", "image_url": cur.get("image_url"),
                  "mermaid": cur.get("mermaid"), "caption": cur.get("caption"),
                  "changed": changed},
@@ -394,6 +409,8 @@ def _artifact_label(sec: dict) -> str:
         return "Function flowchart"
     if t == "behavior_table":
         return "Dynamic behaviour"
+    if t == "test_spec":
+        return "Unit test specification"
     if t == "table":
         if sid.endswith("-iface"):
             return "Unit interface table"

@@ -41,12 +41,17 @@ import datetime
 import hashlib
 import logging
 import threading
+import time
 from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 # One statement per this many buffered rows on flush (mirrors core.db_util).
 _FLUSH_CHUNK = 1000
+# ...and at least this often, whatever the count. At the gateway's ~1 call per 3 s, 1,000 rows is
+# about an hour of LLM work, and a run that lasts days can be killed: what was still buffered is
+# paid again by the resume. A minute's worth is a cheap insert.
+_FLUSH_SECONDS = 60.0
 
 
 class EntityCache:
@@ -63,6 +68,7 @@ class EntityCache:
         self._pending: Dict[Tuple[str, str], str] = {}
         self._loaded: Dict[Tuple[str, str], str] = {}
         self._enabled = False
+        self._last_flush = time.monotonic()
         self._load()
 
     # ------------------------------------------------------------------
@@ -125,8 +131,10 @@ class EntityCache:
             self._loaded[key] = value
             if self._enabled:
                 self._pending[key] = value
-                if len(self._pending) >= _FLUSH_CHUNK:
+                if (len(self._pending) >= _FLUSH_CHUNK
+                        or time.monotonic() - self._last_flush >= _FLUSH_SECONDS):
                     batch, self._pending = self._pending, {}    # hand it off, keep buffering
+                    self._last_flush = time.monotonic()
         if batch:
             self._write(batch)
 
@@ -134,6 +142,7 @@ class EntityCache:
         """Persist buffered entries. Safe to call repeatedly and when empty."""
         with self._lock:
             pending, self._pending = self._pending, {}
+            self._last_flush = time.monotonic()
         if pending:
             self._write(pending)
 

@@ -194,7 +194,8 @@ describe('API responses', () => {
     expect(token, 'sign-in failed — check API_TEST_EMAIL / API_TEST_PASSWORD').not.toBe('')
 
     /* ── auth ── */
-    await get('GET /auth/me', '/auth/me', Envelopes.me)
+    const me = await get('GET /auth/me', '/auth/me', Envelopes.me)
+    const meId = pickStr(me.body, 'user', 'id')
     if (refreshToken) {
       await call('POST /auth/refresh', 'POST', '/auth/refresh', {
         schema: Envelopes.refresh,
@@ -206,16 +207,23 @@ describe('API responses', () => {
     const projects = await get('GET /projects', '/projects', Envelopes.projects)
     await get('GET /projects/search', '/projects/search?q=a', Envelopes.projectSearch, { optional: true })
     await get('GET /notifications', '/notifications', Envelopes.notifications)
-    await get('GET /users/search', '/users/search?q=a', Envelopes.usersSearch, { optional: true })
+    // A16: read ones included — what the bell lists.
+    await get('GET /notifications?all=true', '/notifications?all=true&limit=30', Envelopes.notifications)
+    const directory = await get('GET /users/search', '/users/search?q=a', Envelopes.usersSearch, { optional: true })
+    // Without a repository the preview reads only the text: it stores nothing.
+    await call('POST /projects/config/preview', 'POST', '/projects/config/preview', {
+      schema: Envelopes.configPreview,
+      body: { text: '{"project": {"name": "API Test Probe"}, "layers": {"L": {"groups": {"G": {"C": "src"}}}}}' },
+    })
 
     /* ── project-scoped reads ── */
     const projectId = firstId(projects.body, 'projects')
     let docId: string | undefined
     let versionId: string | undefined
-    let sectionKey: string | undefined
     if (projectId) {
       const p = `/projects/${projectId}`
       await get('GET /projects/:id', p, Envelopes.project)
+      await call('GET …/config', 'GET', `${p}/config`, { binary: true })
       await get('GET …/commits', `${p}/commits`, Envelopes.commits)
       const versions = await get('GET …/versions', `${p}/versions`, Envelopes.versions)
       versionId = firstId(versions.body, 'versions')
@@ -224,9 +232,14 @@ describe('API responses', () => {
       }
       await get('GET …/documents/stats', `${p}/documents/stats`, Envelopes.docStats)
       const documents = await get('GET …/documents', `${p}/documents`, Envelopes.documents)
+      // A12: the documents without a reviewer.
+      await get('GET …/documents?assignee_id=none', `${p}/documents?assignee_id=none`, Envelopes.documents)
+      // A11: the project's review record.
+      await get('GET …/review-events', `${p}/review-events?limit=50${versionId ? `&version_id=${versionId}` : ''}`, Envelopes.reviewEvents)
       await get('GET …/members', `${p}/members`, Envelopes.members)
       await get('GET …/members/pending', `${p}/members/pending`, Envelopes.membersPending)
       const cur = await get('GET …/jobs/current', `${p}/jobs/current`, Envelopes.jobCurrent)
+      await get('GET …/runs', `${p}/runs`, Envelopes.projectRuns, { optional: true })
 
       const curJobId = pickStr(cur.body, 'job', 'id')
       if (curJobId) {
@@ -237,9 +250,24 @@ describe('API responses', () => {
       docId = firstId(documents.body, 'documents')
       if (docId) {
         const detail = await get('GET …/documents/:id', `${p}/documents/${docId}`, Envelopes.document)
-        sectionKey = pickStr(detail.body, 'document', 'sections', 0, 'key')
+        // A10: the document's review record.
+        await get('GET …/documents/:id/events', `${p}/documents/${docId}/events`, Envelopes.documentEvents)
         const render = await get('GET …/documents/:id/render', `${p}/documents/${docId}/render`, Envelopes.documentRender)
         sampleAssetRef = findFirstImageUrl(render.body)
+        const docVersion = pickStr(detail.body, 'document', 'version_id')
+        if (docVersion) {
+          // Review & update reads (R9, R1): a version with no database answers 503, so optional.
+          await get('GET …/versions/:vid/export-readiness', `${p}/versions/${docVersion}/export-readiness`,
+            Envelopes.exportReadiness, { optional: true })
+          await get('GET …/versions/:vid/overrides', `${p}/versions/${docVersion}/overrides`,
+            Envelopes.overrides, { optional: true })
+          // R10: what the next run rewrites (the reader's Queued tab).
+          await get('GET …/versions/:vid/regeneration-queue', `${p}/versions/${docVersion}/regeneration-queue`,
+            Envelopes.regenerationQueue, { optional: true })
+          // A15: R9 for this document's component and type.
+          await get('GET …/versions/:vid/export-readiness?document_id', `${p}/versions/${docVersion}/export-readiness?document_id=${docId}`,
+            Envelopes.exportReadiness, { optional: true })
+        }
         await call('GET …/documents/:id/download', 'GET', `${p}/documents/${docId}/download`, { binary: true, optional: true })
       }
 
@@ -283,9 +311,15 @@ describe('API responses', () => {
           await call('DELETE …/versions/:id', 'DELETE', `${np}/versions/${newVid}`, { optional: true })
         }
 
-        await call('POST …/members/invite', 'POST', `${np}/members/invite`, {
-          body: { email: 'api.test.probe@aspice.dev', role: 'developer' }, optional: true,
-        })
+        // Invite someone who has an account: an address without one is refused (404), and the
+        // throwaway project's only member is its creator.
+        const invitee = ((directory.body as { users?: { email: string }[] } | undefined)?.users ?? [])
+          .map((u) => u.email).find((e) => e !== EMAIL)
+        if (invitee) {
+          await call('POST …/members/invite', 'POST', `${np}/members/invite`, {
+            body: { email: invitee, role: 'developer' },
+          })
+        }
         const pend = await call('GET …/members/pending', 'GET', `${np}/members/pending`, {
           schema: Envelopes.membersPending, optional: true,
         })
@@ -301,18 +335,26 @@ describe('API responses', () => {
       if (projectId) {
         const p = `/projects/${projectId}`
         if (docId) {
-          await call('POST …/documents/:id/assignments/self', 'POST', `${p}/documents/${docId}/assignments/self`, { optional: true })
-          await call('POST …/documents/:id/assignments', 'POST', `${p}/documents/${docId}/assignments`, { body: { user_ids: [] }, optional: true })
-          await call('PATCH …/documents/:id', 'PATCH', `${p}/documents/${docId}`, { body: { status: 'in_review' }, optional: true })
-          if (sectionKey) {
-            await call('PATCH …/documents/:id/sections/:key', 'PATCH', `${p}/documents/${docId}/sections/${sectionKey}`, { body: { review_state: 'accepted' }, optional: true })
+          // Review and approval, A1–A9, in the order a review goes. Each step depends on the
+          // document's state (and on its Word file, for an approval), so each is optional. It ends
+          // reopened: In review, with the signed-in admin as its reviewer.
+          const d = `${p}/documents/${docId}`
+          const doc = Envelopes.reviewedDocument
+          await call('POST …/documents/:id/assignments/self (A4)', 'POST', `${d}/assignments/self`, { schema: doc, optional: true })
+          if (meId) {
+            await call('POST …/documents/:id/assignments (A1)', 'POST', `${d}/assignments`, { schema: doc, body: { user_id: meId }, optional: true })
+            await call('POST …/documents/assignments/batch (A2)', 'POST', `${p}/documents/assignments/batch`,
+              { schema: Envelopes.assignBatch, body: { document_ids: [docId], user_id: meId }, optional: true })
           }
-          await call('POST …/documents/:id/submit-review', 'POST', `${p}/documents/${docId}/submit-review`, { optional: true })
-          await call('POST …/documents/:id/request-changes', 'POST', `${p}/documents/${docId}/request-changes`, { optional: true })
-          await call('POST …/documents/:id/approve', 'POST', `${p}/documents/${docId}/approve`, { optional: true })
+          await call('POST …/documents/:id/submit-review (A5)', 'POST', `${d}/submit-review`, { schema: doc, body: { comment: 'API test: checked.' }, optional: true })
+          await call('POST …/documents/:id/request-changes (A7)', 'POST', `${d}/request-changes`, { schema: doc, body: { comment: 'API test: change it.' }, optional: true })
+          await call('POST …/documents/:id/submit-review again (A5)', 'POST', `${d}/submit-review`, { schema: doc, body: { comment: 'API test: fixed.' }, optional: true })
+          await call('POST …/documents/approve-all (A9)', 'POST', `${p}/documents/approve-all`,
+            { schema: Envelopes.approveMany, body: { document_ids: [docId], comment: null }, optional: true })
+          await call('POST …/documents/:id/approve (A6)', 'POST', `${d}/approve`, { schema: doc, body: { comment: 'API test' }, optional: true })
+          await call('POST …/documents/:id/reopen (A8)', 'POST', `${d}/reopen`, { schema: doc, body: { reason: 'API test: reopen.' }, optional: true })
         }
         if (versionId) {
-          await call('POST …/documents/approve-all', 'POST', `${p}/documents/approve-all`, { schema: Envelopes.approvedCount, body: { version_id: versionId }, optional: true })
           await call('POST …/documents/export-all', 'POST', `${p}/documents/export-all`, { schema: Envelopes.downloadUrl, body: { version_id: versionId }, optional: true })
         }
         const notifs = await call('GET /notifications', 'GET', '/notifications', { schema: Envelopes.notifications })
@@ -326,6 +368,8 @@ describe('API responses', () => {
     if (HEAVY && projectId) {
       const repo = 'https://github.com/githubtraining/hellogitworld.git'
       await call('POST /repositories/test-connection', 'POST', '/repositories/test-connection', { schema: Envelopes.repoTest, body: { repo_url: repo }, optional: true })
+      // The web app's call: POST, a private repository's token in the body. GET stays for a public one.
+      await call('POST /repositories/browse', 'POST', '/repositories/browse', { schema: Envelopes.repoEntries, body: { repo_url: repo }, optional: true })
       await call('GET /repositories/browse', 'GET', `/repositories/browse?repo_url=${encodeURIComponent(repo)}`, { schema: Envelopes.repoEntries, optional: true })
       const started = await call('POST …/jobs', 'POST', `/projects/${projectId}/jobs`, { schema: Envelopes.jobStart, body: { commit_sha: 'HEAD' }, optional: true })
       const jid = pickStr(started.body, 'job_id')

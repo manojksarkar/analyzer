@@ -1,43 +1,65 @@
 import { useState, useRef, useEffect } from 'react'
-import { Icon, Text } from '../ui'
+import { Icon, Skeleton, Text } from '../ui'
 import { cn } from '../../lib/cn'
+import { NEEDS_REVIEWER, PROCESS_TITLES, type ReviewerOption } from '../../lib/docTree'
+import { STATUS_META } from '../../lib/reviewStatus'
 import type { Document } from '../../types'
 
 /**
- * Left document-tree rail (assignee filter + process-grouped docs). Presentational:
- * the host page owns the grouping + assignee-filter state so it can stay in sync
+ * Left document-tree rail (reviewer filter + process-grouped docs). Presentational:
+ * the host page owns the grouping + reviewer-filter state so it can stay in sync
  * with a table (Documents) or run standalone (Inspector). Single-doc processes
  * render as a flat row; multi-doc processes (SWE.3) get a collapsible group, and
  * when a process spans more than one layer its docs are sub-grouped by layer.
+ * The filter's value is a reviewer's user id, `none` (Needs a reviewer) or '' (all).
  */
 export function DocTreePanel({
-  groups, assigneeOptions, effectiveAssignee, meName, isDeveloper, activeDocId, onPickAssignee, onOpenDoc,
+  groups, assigneeOptions, effectiveAssignee, meId, isDeveloper, activeDocId, onPickAssignee, onOpenDoc, onFold, loading,
 }: {
   groups: { process: string; docs: Document[] }[]
-  assigneeOptions: string[]
+  assigneeOptions: ReviewerOption[]
   effectiveAssignee: string
-  meName: string
+  /** The signed-in user's id ("My reviews"). */
+  meId: string
   isDeveloper: boolean
   activeDocId?: string
-  onPickAssignee: (name: string) => void
+  onPickAssignee: (value: string) => void
   onOpenDoc: (doc: Document) => void
+  /** Shows a button that folds the panel away (the Inspector, where the reader needs the width). */
+  onFold?: () => void
+  /** The documents are not read yet: placeholder rows, not "No documents". */
+  loading?: boolean
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
 
+  // The reviewer menu closes on a click outside it, and on Esc -- back to its button when focus
+  // was in the menu. An Esc elsewhere (a correction box, a dialog) is not the menu's: focus stays.
   useEffect(() => {
     if (!open) return
     function onDown(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      const inMenu = !!ref.current && ref.current.contains(document.activeElement)
+      setOpen(false)
+      if (inMenu) trigger.current?.focus()
+    }
     document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
   }, [open])
 
-  const label = effectiveAssignee
-    ? (effectiveAssignee === meName ? 'My Assigned' : effectiveAssignee)
-    : 'Assignee'
+  const label = !effectiveAssignee ? 'Reviewer'
+    : effectiveAssignee === meId ? 'My reviews'
+      : effectiveAssignee === NEEDS_REVIEWER ? 'Needs a reviewer'
+        : assigneeOptions.find((o) => o.value === effectiveAssignee)?.label ?? 'Reviewer'
 
   function toggleCollapse(p: string) {
     setCollapsed((prev) => {
@@ -55,13 +77,18 @@ export function DocTreePanel({
         key={d.id}
         onClick={() => onOpenDoc(d)}
         title={d.name}
+        aria-current={active ? 'page' : undefined}
         className={cn(
           'w-full flex items-center gap-1.5 py-[5px] pr-2.5 transition-colors text-left font-mono text-caption',
           pad,
-          active ? 'bg-surface-container text-secondary font-medium' : 'text-on-surface-variant hover:bg-surface-container-low',
+          active ? 'bg-surface-container text-secondary font-medium border-l-2 border-secondary' : 'text-on-surface-variant hover:bg-surface-container-low',
         )}
       >
-        <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', active ? 'bg-secondary' : 'bg-outline-variant')} aria-hidden />
+        <span
+          className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', STATUS_META[d.status].dot)}
+          title={STATUS_META[d.status].label}
+          aria-hidden
+        />
         <span className="truncate">{d.name}</span>
       </button>
     )
@@ -70,14 +97,29 @@ export function DocTreePanel({
   return (
     <aside className="w-60 flex-shrink-0 bg-white border-r border-outline-variant flex flex-col">
       {/* Panel header */}
-      <div className="px-3 py-2.5 border-b border-outline-variant flex-shrink-0">
+      <div className="px-3 py-2.5 border-b border-outline-variant flex-shrink-0 flex items-center justify-between">
         <Text variant="label" className="block text-on-surface-variant tracking-[0.1em]">Documents</Text>
+        {onFold && (
+          <button
+            type="button"
+            onClick={onFold}
+            title="Hide the document list"
+            aria-label="Hide the document list"
+            className="p-0.5 -my-1 rounded text-outline hover:text-secondary hover:bg-surface-container-low"
+          >
+            <Icon name="left_panel_close" size={18} />
+          </button>
+        )}
       </div>
 
       {/* Assignee filter */}
       <div className="px-3 py-2 border-b border-outline-variant flex-shrink-0 relative" ref={ref}>
         <button
+          ref={trigger}
           onClick={() => setOpen((v) => !v)}
+          aria-haspopup="true"
+          aria-expanded={open}
+          aria-label={`Reviewer filter: ${label}`}
           className={cn(
             'w-full flex items-center gap-2 px-2.5 py-1.5 border rounded-lg bg-white hover:bg-surface-container-low transition-colors font-mono text-caption font-medium',
             effectiveAssignee ? 'border-secondary text-secondary' : 'border-outline-variant text-on-surface-variant',
@@ -90,13 +132,13 @@ export function DocTreePanel({
         {open && (
           <div className="absolute left-2 right-2 top-[calc(100%-4px)] bg-white border border-outline-variant rounded-lg overflow-hidden z-[200] shadow-[0_4px_20px_rgba(4,22,39,.12)]">
             <div className="py-1.5 max-h-[260px] overflow-y-auto">
-              {isDeveloper && meName && (
+              {isDeveloper && meId && (
                 <>
                   <button
-                    onClick={() => { onPickAssignee(meName); setOpen(false) }}
-                    className={cn('w-full text-left px-3 py-2 hover:bg-surface-container-low font-mono text-caption text-on-surface', effectiveAssignee === meName && 'bg-surface-container-low')}
+                    onClick={() => { onPickAssignee(meId); setOpen(false) }}
+                    className={cn('w-full text-left px-3 py-2 hover:bg-surface-container-low font-mono text-caption text-on-surface', effectiveAssignee === meId && 'bg-surface-container-low')}
                   >
-                    My Assignments
+                    My reviews
                   </button>
                   <div className="border-t border-outline-variant my-0.5" />
                 </>
@@ -105,15 +147,21 @@ export function DocTreePanel({
                 onClick={() => { onPickAssignee(''); setOpen(false) }}
                 className={cn('w-full text-left px-3 py-2 hover:bg-surface-container-low font-mono text-caption text-on-surface', !effectiveAssignee && 'bg-surface-container-low')}
               >
-                All assignees
+                All reviewers
+              </button>
+              <button
+                onClick={() => { onPickAssignee(NEEDS_REVIEWER); setOpen(false) }}
+                className={cn('w-full text-left px-3 py-2 hover:bg-surface-container-low font-mono text-caption text-[#b45309]', effectiveAssignee === NEEDS_REVIEWER && 'bg-surface-container-low')}
+              >
+                Needs a reviewer
               </button>
               {assigneeOptions.map((a) => (
                 <button
-                  key={a}
-                  onClick={() => { onPickAssignee(a); setOpen(false) }}
-                  className={cn('w-full text-left px-3 py-2 hover:bg-surface-container-low font-mono text-caption text-on-surface truncate', effectiveAssignee === a && 'bg-surface-container-low')}
+                  key={a.value}
+                  onClick={() => { onPickAssignee(a.value); setOpen(false) }}
+                  className={cn('w-full text-left px-3 py-2 hover:bg-surface-container-low font-mono text-caption text-on-surface truncate', effectiveAssignee === a.value && 'bg-surface-container-low')}
                 >
-                  {a}
+                  {a.label}
                 </button>
               ))}
             </div>
@@ -121,9 +169,13 @@ export function DocTreePanel({
         )}
       </div>
 
-      {/* Tree */}
-      <div className="flex-1 overflow-y-auto min-h-0 py-2">
-        {groups.length === 0 ? (
+      {/* Tree: buttons in reading order, so Tab walks it */}
+      <nav aria-label="Documents of this version" className="flex-1 overflow-y-auto min-h-0 py-2">
+        {loading ? (
+          <div className="px-2.5 space-y-2" aria-hidden>
+            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-5" />)}
+          </div>
+        ) : groups.length === 0 ? (
           <div className="px-3 py-6 text-center">
             <Text variant="caption" className="font-mono">No documents</Text>
           </div>
@@ -139,6 +191,7 @@ export function DocTreePanel({
                   key={g.process}
                   onClick={() => onOpenDoc(d)}
                   title={d.name}
+                  aria-current={active ? 'page' : undefined}
                   className={cn(
                     'w-full flex items-center gap-2 px-3 py-2 transition-colors text-left select-none',
                     active ? 'bg-surface-container-low' : 'hover:bg-surface-container-low',
@@ -165,11 +218,12 @@ export function DocTreePanel({
               <div key={g.process}>
                 <button
                   onClick={() => toggleCollapse(g.process)}
+                  aria-expanded={isOpen}
                   className="w-full flex items-center gap-1.5 px-3 py-2 hover:bg-surface-container-low transition-colors select-none"
                 >
                   <Icon name="chevron_right" size={14} className={cn('text-on-surface-variant transition-transform', isOpen && 'rotate-90')} />
-                  <span className="font-mono text-caption font-semibold text-on-surface">{g.process}</span>
-                  <span className="ml-auto font-mono text-label text-on-surface-variant">{g.docs.length}</span>
+                  <span className="font-mono text-caption font-semibold text-on-surface flex-shrink-0">{g.process}</span>
+                  <span className="font-mono text-label text-on-surface-variant truncate">{PROCESS_TITLES[g.process] ?? ''}</span>
                 </button>
                 {isOpen && (multiLayer
                   ? layers.map((layer) => {
@@ -180,11 +234,11 @@ export function DocTreePanel({
                         <div key={key}>
                           <button
                             onClick={() => toggleCollapse(key)}
+                            aria-expanded={layerOpen}
                             className="w-full flex items-center gap-1.5 pl-7 pr-3 py-1.5 hover:bg-surface-container-low transition-colors select-none"
                           >
                             <Icon name="chevron_right" size={12} className={cn('text-on-surface-variant transition-transform', layerOpen && 'rotate-90')} />
-                            <span className="font-mono text-label font-medium text-on-surface-variant truncate">{layer}</span>
-                            <span className="ml-auto font-mono text-label text-on-surface-variant">{docs.length}</span>
+                            <span className="font-mono text-label text-on-surface-variant uppercase tracking-[0.08em] truncate">{layer}</span>
                           </button>
                           {layerOpen && docs.map((d) => renderDocRow(d, 'pl-11'))}
                         </div>
@@ -195,7 +249,7 @@ export function DocTreePanel({
             )
           })
         )}
-      </div>
+      </nav>
     </aside>
   )
 }

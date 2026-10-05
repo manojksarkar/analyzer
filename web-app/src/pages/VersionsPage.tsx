@@ -1,33 +1,19 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useProject, useVersions, useCommits } from '../hooks/useProjects'
 import { useCreateVersion } from '../hooks/useVersionMutations'
-import { Card, Icon, Skeleton, Text, toast } from '../components/ui'
+import { useCurrentJob } from '../hooks/useJobs'
+import { Card, Icon, Skeleton, StatusBadge, Text, toast } from '../components/ui'
 import { cn } from '../lib/cn'
-import type { Commit, Version, VersionStatus } from '../types'
+import { formatDate } from '../lib/format'
+import { STATUS_META, versionStatusKey } from '../lib/reviewStatus'
+import { describeVersionRun } from '../lib/versionRun'
+import { useUIStore } from '../store/ui'
+import type { Commit, Version } from '../types'
 
-type Filter = 'all' | 'in_review' | 'complete'
-
-function accentColor(s: VersionStatus): string {
-  if (s === 'in_review') return '#f59e0b'
-  if (s === 'approved' || s === 'complete') return '#00a572'
-  return '#c4c6cd'
-}
-
-function StatusPill({ status }: { status: VersionStatus }) {
-  if (status === 'in_review') {
-    return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-mono text-label font-bold bg-[#fff8e6] text-[#b45309] border border-amber">
-        <span className="inline-block w-1 h-1 rounded-full bg-amber" aria-hidden />In Review
-      </span>
-    )
-  }
-  return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-mono text-label font-bold bg-[#f0fdf9] text-[#00a572] border border-[#86efac]">
-      <span className="inline-block w-1 h-1 rounded-full bg-[#00a572]" aria-hidden />Approved
-    </span>
-  )
-}
+// A version's status is derived from its documents (approved when every one is, A14): the
+// filters read it, nobody sets it.
+type Filter = 'all' | 'in_review' | 'approved'
 
 export function VersionsPage() {
   const { projectId } = useParams<{ projectId: string }>()
@@ -37,9 +23,19 @@ export function VersionsPage() {
   const { data: project } = useProject(projectId ?? '')
   const { data: versions, isLoading: versionsLoading } = useVersions(projectId ?? '')
   const { data: commits, isLoading: commitsLoading } = useCommits(projectId ?? '')
+  const { data: job } = useCurrentJob(projectId ?? '')
+  const runningVersionId = job && ['queued', 'running', 'paused'].includes(job.status) ? job.versionId : null
 
   const isAdmin = project?.userRole === 'admin'
   const createVersion = useCreateVersion(projectId ?? '')
+  const setSelectedRef = useUIStore((s) => s.setSelectedRef)
+
+  // Documents and Compare show the Subbar's selected version, so select THIS one first —
+  // otherwise both buttons opened the latest version whichever row was clicked.
+  function openVersion(v: Version, page: 'documents' | 'compare') {
+    if (projectId && v.id) setSelectedRef(projectId, { type: 'version', id: v.id })
+    navigate(`/projects/${projectId}/${page}`)
+  }
 
   function tagCommit(c: Commit) {
     if (!isAdmin) { toast.info('Tag version', 'Only project admins can tag versions.'); return }
@@ -49,15 +45,15 @@ export function VersionsPage() {
 
   const allVersions = versions ?? []
   const inReview = allVersions.filter((v) => v.status === 'in_review')
-  const complete = allVersions.filter((v) => v.status === 'complete' || v.status === 'approved')
+  const approved = allVersions.filter((v) => v.status === 'approved')
 
-  const filtered = filter === 'in_review' ? inReview : filter === 'complete' ? complete : allVersions
+  const filtered = filter === 'in_review' ? inReview : filter === 'approved' ? approved : allVersions
   const untagged = commits?.filter((c) => !c.versionTag) ?? []
 
   const filterDefs: { key: Filter; label: string; count: number }[] = [
     { key: 'all',       label: 'All',       count: allVersions.length },
-    { key: 'in_review', label: 'In Review', count: inReview.length },
-    { key: 'complete',  label: 'Complete',  count: complete.length },
+    { key: 'in_review', label: 'In review', count: inReview.length },
+    { key: 'approved',  label: 'Approved',  count: approved.length },
   ]
 
   return (
@@ -70,8 +66,12 @@ export function VersionsPage() {
             <div>
               <Text as="h2" variant="heading" className="text-on-surface">Versions</Text>
               <Text as="p" variant="caption" className="font-mono mt-0.5">
-                {allVersions.length} version{allVersions.length !== 1 ? 's' : ''} · {project?.name ?? '…'}
+                {versionsLoading ? 'Loading…' : `${allVersions.length} version${allVersions.length !== 1 ? 's' : ''}`} · {project?.name ?? '…'}
               </Text>
+              <p className="flex items-center gap-1 mt-1 text-caption text-outline">
+                <Icon name="info" size={13} />
+                A version is Approved when every one of its documents is — never set by hand.
+              </p>
             </div>
             <div className="flex items-center gap-1.5">
               {filterDefs.map(({ key, label, count }) => {
@@ -114,8 +114,9 @@ export function VersionsPage() {
             ) : (
               filtered.map((v, i, arr) => (
                 <VersionRow key={v.tag} v={v} isCurrent={i === 0 && filter === 'all'} last={i === arr.length - 1}
-                  onView={() => navigate(`/projects/${projectId}/documents`)}
-                  onCompare={() => navigate(`/projects/${projectId}/compare`)} />
+                  running={!!v.id && v.id === runningVersionId}
+                  onView={() => openVersion(v, 'documents')}
+                  onCompare={() => openVersion(v, 'compare')} />
               ))
             )}
           </div>
@@ -126,7 +127,7 @@ export function VersionsPage() {
           <div className="px-5 py-3.5 border-b border-outline-variant flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <Text as="h2" variant="heading" className="text-on-surface">Untagged Commits</Text>
-              <span className="font-mono text-label font-bold bg-[#f3f4f6] text-on-surface-variant px-2 py-0.5 rounded-full">{untagged.length}</span>
+              {!commitsLoading && <span className="font-mono text-label font-bold bg-[#f3f4f6] text-on-surface-variant px-2 py-0.5 rounded-full">{untagged.length}</span>}
             </div>
             <Text as="p" variant="caption" className="font-mono">Commits without a version tag</Text>
           </div>
@@ -143,12 +144,12 @@ export function VersionsPage() {
                     {i < arr.length - 1 && <div className="w-0.5 flex-1 min-h-2.5 bg-[#e2e3e8] mt-[3px]" aria-hidden />}
                   </div>
                   <div className={cn('flex-1 min-w-0 pl-2.5 py-2.5', i < arr.length - 1 && 'border-b border-[#f3f4f6]')}>
-                    <div className="flex items-center gap-2.5 mb-1">
-                      <span className="font-mono text-label font-medium bg-[#f3f4f6] text-on-surface-variant px-1.5 py-px rounded-lg">{c.shortSha}</span>
-                      <Text variant="caption" className="text-outline">{c.relativeTime}</Text>
+                    {/* Mockup: SHA chip + one truncated line of message, then "author · time". */}
+                    <div className="flex items-center gap-2.5 mb-1 min-w-0">
+                      <span className="font-mono text-label font-medium bg-[#f3f4f6] text-on-surface-variant px-1.5 py-px rounded flex-shrink-0">{c.shortSha}</span>
+                      <Text as="p" variant="body" className="text-xs text-on-surface truncate" title={c.message}>{c.message}</Text>
                     </div>
-                    <Text as="p" variant="body" className="text-on-surface leading-[1.4]">{c.message}</Text>
-                    <Text as="p" variant="caption" className="text-outline mt-0.5">{c.author}</Text>
+                    <Text as="p" variant="caption" className="text-outline">{c.author} · {c.relativeTime}</Text>
                   </div>
                 </button>
               ))
@@ -160,29 +161,49 @@ export function VersionsPage() {
   )
 }
 
-/* ── Single version row ── */
-function VersionRow({ v, isCurrent, onView, onCompare }: { v: Version; isCurrent: boolean; last: boolean; onView: () => void; onCompare: () => void }) {
+/* ── One item of a row's meta line, after a "·" that wraps with it ── */
+function MetaItem({ children }: { children: ReactNode }) {
   return (
-    <div className="flex transition-colors hover:bg-[#f8f9ff] border-b border-outline-variant">
-      {/* dynamic status accent bar */}
-      {/* eslint-disable-next-line no-restricted-syntax -- accent colour is data-driven */}
-      <div className="w-1 flex-shrink-0" style={{ background: accentColor(v.status) }} aria-hidden />
+    <span className="inline-flex items-center gap-2.5 min-w-0">
+      <Text variant="caption" className="text-outline flex-shrink-0" aria-hidden>·</Text>
+      {children}
+    </span>
+  )
+}
+
+/* ── Single version row ── */
+function VersionRow({ v, isCurrent, last, running, onView, onCompare }: { v: Version; isCurrent: boolean; last: boolean; running: boolean; onView: () => void; onCompare: () => void }) {
+  const status = versionStatusKey(v.status, running)
+  // How it was made: web or command line, its scope, which documents (or the model only).
+  const made = describeVersionRun(v.run)
+  return (
+    // The last row has no bottom border: the card's own edge closes it (it was doubled).
+    <div className={cn('flex transition-colors hover:bg-[#f8f9ff]', !last && 'border-b border-outline-variant')}>
+      {/* status accent bar */}
+      <div className={cn('w-1 flex-shrink-0', v.status === 'draft' ? 'bg-outline-variant' : STATUS_META[status].dot)} aria-hidden />
       <div className="flex-1 px-5 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
               <Text variant="title" className="font-mono font-bold text-on-surface">{v.tag}</Text>
-              <StatusPill status={v.status} />
+              <StatusBadge status={status} size="sm" />
               {isCurrent && (
                 <span className="uppercase font-mono text-micro font-bold bg-surface-container text-secondary border border-[#bfcfff] px-1.5 rounded-full tracking-[0.04em]">current</span>
               )}
             </div>
-            <Text as="p" variant="body" className="text-on-surface-variant mb-2.5 leading-[1.5]">{v.description}</Text>
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <span className="font-mono text-label font-medium bg-[#f3f4f6] text-on-surface-variant px-1.5 py-px rounded-lg">{v.shortSha}</span>
+            <Text as="p" variant="body" className="text-on-surface-variant mb-2 leading-[1.5]">{v.description}</Text>
+            <ReviewLine v={v} />
+            {/* Each "·" goes with the item after it: when the line wraps, it moves down with that
+                item instead of dangling at the end of the line above. */}
+            <div className="flex items-center gap-x-2.5 gap-y-1 flex-wrap">
+              <span className="font-mono text-label font-medium bg-[#f3f4f6] text-on-surface-variant px-1.5 py-px rounded">{v.shortSha}</span>
               <Text variant="caption" className="text-outline">{v.docsCount} docs</Text>
-              <Text variant="caption" className="text-outline">·</Text>
-              <Text variant="caption" className="text-outline">{v.date}</Text>
+              <MetaItem><Text variant="caption" className="text-outline">{v.date}</Text></MetaItem>
+              {made && (
+                <MetaItem>
+                  <Text variant="caption" className="font-mono text-on-surface-variant" title="How this version was made">{made}</Text>
+                </MetaItem>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-1.5 flex-shrink-0 pt-0.5">
@@ -197,6 +218,42 @@ function VersionRow({ v, isCurrent, onView, onCompare }: { v: Version; isCurrent
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+/* How far a version's documents are: "N of M documents approved" with a bar while in review;
+   who approved it, and when, once every document is (versions.html reviewLine). */
+function ReviewLine({ v }: { v: Version }) {
+  const r = v.review
+  if (!r || v.status === 'draft' || r.documents === 0) return null
+  if (v.status === 'approved') {
+    return (
+      <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
+        <Icon name="verified" size={14} fill className="text-[#00a572]" />
+        <span className="text-xs text-on-surface">
+          Approved{r.approvedBy ? <> by <b className="font-semibold">{r.approvedBy.name}</b></> : ''}
+          {r.approvedAt ? ` · ${formatDate(r.approvedAt)}` : ''}
+        </span>
+        <span className="text-caption text-outline">· the last of {r.documents} document approvals</span>
+      </div>
+    )
+  }
+  const pct = Math.round((r.approved / r.documents) * 100)
+  return (
+    <div className="mb-2.5">
+      <div className="flex items-center gap-2.5">
+        <div className="w-[140px] h-1 rounded-full bg-[#fde7b0] overflow-hidden flex-shrink-0" title={`${pct}% of documents approved`}>
+          {/* eslint-disable-next-line no-restricted-syntax -- the approved share is data-driven */}
+          <span className="block h-full bg-[#00a572]" style={{ width: `${pct}%` }} />
+        </div>
+        <span className="text-xs text-on-surface"><b className="font-semibold">{r.approved} of {r.documents}</b> documents approved</span>
+      </div>
+      {r.carried > 0 && (
+        <p className="text-caption text-outline mt-1">
+          {r.carried} approval{r.carried === 1 ? '' : 's'} carried from an earlier version (content unchanged)
+        </p>
+      )}
     </div>
   )
 }

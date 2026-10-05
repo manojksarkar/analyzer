@@ -55,11 +55,14 @@ class Pagination(BaseModel):
 
 
 class DocCounts(BaseModel):
+    """A version's documents by review state (docs/spec/REVIEW_APPROVE_API_SPEC.md A13)."""
     total: int
-    approved: int
-    in_review: int
-    never: int
-    unchanged: int
+    in_review: int = 0
+    submitted: int = 0
+    changes_requested: int = 0
+    approved: int = 0
+    needs_reviewer: int = 0
+    carried: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +111,9 @@ class ProjectView(BaseModel):
     default_branch: str
     build_config: Dict[str, Any]
     architecture_layers: List[Dict[str, Any]]
+    # {name, macros, data_dictionary, compile_commands (file names or "N typed"), layers}
+    cores: List[Dict[str, Any]] = []
+    layer_cores: Dict[str, Optional[str]] = {}     # layer name -> its core
     created_at: str
     updated_at: str
 
@@ -182,6 +188,10 @@ class VersionView(BaseModel):
     docs_count: int
     created_by: str
     created_at: str
+    # What the run that made the version warned about (`versions.run_report.warnings`).
+    warnings: List[str] = []
+    # How it was made: {made_by: "web"|"cli"|null, scope, doc_type, model_only}.
+    run: Optional[dict] = None
 
 
 class VersionResponse(BaseModel):
@@ -300,14 +310,6 @@ class SectionView(BaseModel):
     title: str
     order: int
     content: str
-    review_state: str
-    reviewed_by: Optional[str] = None
-    reviewed_at: Optional[str] = None
-
-
-class ReviewProgress(BaseModel):
-    resolved: int
-    total: int
 
 
 class DocumentView(BaseModel):
@@ -317,17 +319,18 @@ class DocumentView(BaseModel):
     process: str
     layer: Optional[str] = None
     group: Optional[str] = None
-    status: str
+    status: str                       # in_review | submitted | changes_requested | approved
     version_id: Optional[str] = None
     due_date: Optional[str] = None
-    assignees: List[AssigneeView]
+    assignees: List[AssigneeView]     # the reviewer as a list of 0 or 1
+    reviewer: Optional[AssigneeView] = None
+    review: Optional[dict] = None     # REVIEW_APPROVE_API_SPEC §2
     created_at: str
     updated_at: str
 
 
 class DocumentDetail(DocumentView):
     sections: List[SectionView]
-    review_progress: ReviewProgress
 
 
 class DocumentResponse(BaseModel):
@@ -345,35 +348,6 @@ class DocumentListResponse(BaseModel):
 
 class DocStatsResponse(BaseModel):
     stats: DocCounts
-
-
-class AssigneesResponse(BaseModel):
-    assignees: List[AssigneeView]
-
-
-class SectionReviewView(BaseModel):
-    key: str
-    review_state: str
-    reviewed_by: Optional[str] = None
-
-
-class SectionReviewResponse(BaseModel):
-    section: SectionReviewView
-
-
-class SubmitReviewResponse(BaseModel):
-    message: str
-    document_id: str
-
-
-class DocStatusResponse(BaseModel):
-    document_id: str
-    status: str
-
-
-class ApproveAllResponse(BaseModel):
-    approved_count: int
-    document_ids: List[str]
 
 
 class ExportAllResponse(BaseModel):
@@ -395,17 +369,38 @@ class TocEntry(BaseModel):
     level: int
 
 
+class RenderFlowchart(BaseModel):
+    """One flowchart picture (an SVG) in a function's table. The DOT is not sent."""
+    label: str                             # the function's signature
+    status: str                            # "drawn" | "too_large" | "missing"
+    image_url: Optional[str] = None        # asset path of the SVG, when drawn
+    width: Optional[int] = None            # CSS px, when drawn
+    height: Optional[int] = None
+    boxes: int                             # nodes in the chart
+    source_hash: str                       # short hash of the DOT (Compare's change check)
+
+
+class RenderFlowchartTable(BaseModel):
+    description: str
+    flowcharts: List[RenderFlowchart]
+    risk: str
+    capacity: str
+    input_name: str
+    output_name: str
+
+
 class RenderSection(BaseModel):
     id: str
     number: str
     title: str
     level: int
-    type: str                              # "richtext" | "table" | "diagram"
+    type: str                              # "richtext" | "table" | "diagram" | "flowchart_table" | …
     content: Optional[str] = None
     table: Optional[TableData] = None
     # Present only on fixture-backed ("pipeline") diagram sections:
     image_url: Optional[str] = None
     mermaid: Optional[str] = None
+    flowchart_table: Optional[RenderFlowchartTable] = None
     children: List["RenderSection"] = []
 
 
@@ -557,6 +552,20 @@ class TestConnectionResponse(BaseModel):
     default_branch: Optional[str] = None
     branches: List[str]
     message: str
+
+
+class LocalFolder(BaseModel):
+    name: str
+    path: str
+    git: bool                       # a git repository: it can be picked
+
+
+class LocalFoldersResponse(BaseModel):
+    path: str                       # "" = the top list (allowed folders, else drives)
+    parent: Optional[str] = None    # null at the top; "" = back to the top
+    folders: List[LocalFolder]
+    limited: bool                   # repositories.localRoots limits the picker
+    truncated: bool                 # more than 2,000 folders: the first ones by name
 
 
 class BrowseResponse(BaseModel):

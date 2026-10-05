@@ -199,9 +199,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--owner-email", default="admin@aspice.dev",
                     help="Seed user who owns the project (default admin@aspice.dev).")
     ap.add_argument("--status", default="approved",
-                    choices=["approved", "in_review", "never", "unchanged"],
+                    choices=["approved", "in_review"],
                     help="Document review status (default: approved). "
-                         "'approved' also marks the version/commit approved and the project complete.")
+                         "'approved' also marks the version/commit approved and the project complete, "
+                         "and records the approval (by the owner) in each document's review record.")
     args = ap.parse_args(argv)
 
     if not args.source.exists():
@@ -307,11 +308,19 @@ def main(argv: list[str] | None = None) -> int:
     if docs:
         pipeline_runner._make_sections(db, docs, now, out_root)
 
-    # _make_documents hardcodes status="in_review"; override to the requested status
-    # (default "approved") — mirrors the approve endpoint, which only sets doc.status.
+    # _make_documents writes status="in_review"; set the requested one. An approval is recorded
+    # as one: who and when on the document, and an event in its review record (REVIEW_APPROVE).
+    from api.services import review_workflow
     for d in docs:
         d.status = args.status
+        if args.status == "approved":
+            d.approved_by, d.approved_at = owner.id, now
         db.documents.update(d)
+        if args.status == "approved":
+            review_workflow.record(db, d, "approved", owner.id, comment="Imported as approved.",
+                                   payload={"imported": True})
+        else:
+            review_workflow.record(db, d, "generated", None, payload={"imported": True})
 
     version.docs_count = len(docs)
     db.versions.update(version)

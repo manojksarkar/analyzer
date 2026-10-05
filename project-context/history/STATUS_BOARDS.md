@@ -102,7 +102,8 @@
 >   `views/flowcharts.py` calls it instead of `mmdc` and now guards on `node` availability. **Scope =
 >   PNG/DOCX pipeline only** — behaviour/unit diagrams still use Mermaid (`render_mermaid_cached`/`mmdc`
 >   untouched); the **web-app still renders the `mermaid` string client-side, so its in-app flowchart
->   view is NOT yet ported to DOT** (open follow-up). Verified e2e via the engine CLI on `SampleCppProject`
+>   view is NOT yet ported to DOT** (open follow-up — **done 2026-09-30b**: server-drawn SVGs, see that
+>   dated note). Verified e2e via the engine CLI on `SampleCppProject`
 >   (`--no-llm`): 123 ✓ / 1 ✗ (pre-existing `_SOME_FUNCTION` cursor-resolve failure in `VoidAsVar.cpp`),
 >   JSON carries `digraph`, PNGs render with Return/End at the bottom and no crossings.
 >   **Reproducibility fixes (same day):** `package.json` now declares `@viz-js/viz` + `puppeteer` as real

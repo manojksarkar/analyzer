@@ -70,9 +70,11 @@ def _assert_components_in_model(model: dict, selected_components) -> None:
         f"{'is' if len(missing) == 1 else 'are'} not in this version's model.\n"
         f"  The model covers {len(known)} component(s)"
         + (f" in layer(s): {', '.join(layers)}.\n" if layers else ".\n")
-        + "  Phase 1 parses only the layers the ORIGINAL run selected, so a component\n"
-        "  outside them has nothing stored to render. Re-run `generate` with a scope\n"
-        "  that covers its layer, then re-export."
+        + "  Phase 1 parsed only the layers this version's runs selected, so a component\n"
+        "  outside them has nothing stored to render. `analyzer.py export --components\n"
+        "  <it>` adds a layer the version did not parse (it parses that layer with the\n"
+        "  model's and derives the model again), then makes its documents; or run\n"
+        "  `generate` with a scope that covers its layer, for a new version."
     )
 
 def _unit_names(model: dict, allowed_components=None) -> list:
@@ -193,6 +195,11 @@ def _load_model():
 
 
 
+#: Set when this run could not load the reviewers' corrections (`_with_text_overrides`): its
+#: views are built without them, so it must not vouch for them (`_record_derivation`).
+_OVERRIDES_UNAVAILABLE = False
+
+
 def _with_text_overrides(config):
     """`config` plus this version's reviewer corrections (`REQ-AP-05`).
 
@@ -216,8 +223,44 @@ def _with_text_overrides(config):
             print("[run_views] applying %d reviewer correction(s) to this run" % n)
         return out
     except Exception as exc:                       # noqa: BLE001 - see docstring
-        print("[run_views] could not load text overrides: %s" % exc)
+        global _OVERRIDES_UNAVAILABLE
+        _OVERRIDES_UNAVAILABLE = True
+        print("[run_views] WARNING: could not load the reviewers' corrections (%s): these views "
+              "are built without them, and are left marked stale so that an export re-derives "
+              "them first" % exc)
         return config
+
+
+def _check_model_corrections(model) -> None:
+    """Every correction in force must be in the model these views are built from. Phase 2 puts
+    them back last and never fails a run over it, so one can be missing (RF-1): this run puts it
+    back -- in `model` and in the stored model (`carry_forward.restore_missing_corrections`) --
+    and only if that fails are the views left unstamped, so the export guard does not call the
+    LLM's text up to date. Never fatal, like loading the corrections."""
+    global _OVERRIDES_UNAVAILABLE
+    try:
+        from core.run_context import version_id as _vid
+        from core.db import get_engine, is_database_configured
+        vid = _vid()
+        if not (vid and is_database_configured()):
+            return
+        from review.carry_forward import corrections_missing, restore_missing_corrections
+        with get_engine().connect() as cx:
+            missing = corrections_missing(cx, vid, model)
+        if missing:
+            with get_engine().begin() as cx:
+                n = restore_missing_corrections(cx, vid, model, missing)
+            print("[run_views] put back %d reviewer correction(s) the model had lost (Phase 2 "
+                  "could not re-apply them)" % n)
+            with get_engine().connect() as cx:
+                missing = corrections_missing(cx, vid, model)
+    except Exception as exc:                       # noqa: BLE001 - cannot tell: the cautious way
+        missing = [("?", str(exc))]
+    if missing:
+        _OVERRIDES_UNAVAILABLE = True
+        print("[run_views] WARNING: %d reviewer correction(s) are not in the model and could not "
+              "be put back (e.g. %s %s): these views print the LLM's text and are left marked "
+              "stale; `reexport --from-phase 2` re-derives the model" % (len(missing), *missing[0]))
 
 
 def _rebuilt_behaviour_rows(output_dir) -> list:
@@ -302,6 +345,12 @@ def _record_derivation(output_dir, ran, model, config, read_at, layer_filter,
         from core.run_context import version_id as _vid
         from core.db import is_database_configured
         if not ran or not (_vid() and is_database_configured()):
+            return
+        if _OVERRIDES_UNAVAILABLE:
+            # Built without the corrections: no stamp for these views, so the export guard asks
+            # for a re-derive instead of calling the LLM's text up to date (RF-1).
+            from review.export_guard import forget_derivation
+            forget_derivation(output_dir, ran)
             return
         if config.get("_analyzerSelectedUnits"):
             print("[run_views] --selected-unit narrowed this run; not recorded as a derivation")
@@ -454,6 +503,7 @@ def main():
     # runner, rather than inside a view: a view stays a pure function of (model, config) and
     # never opens a database of its own.
     config = _with_text_overrides(config)
+    _check_model_corrections(model)
 
     ran = run_views(model, output_dir, model_dir, config, doc_type=doc_type) or []
 

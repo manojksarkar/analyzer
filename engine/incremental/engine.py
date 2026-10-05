@@ -73,6 +73,67 @@ def _scope_label(scope: Dict[str, Any]) -> str:
     names = (scope or {}).get("names") or []
     return stype if (stype == "project" or not names) else f"{stype}:{','.join(names)}"
 
+
+
+def _scope_like(base_vid: str) -> Optional[Dict[str, Any]]:
+    """The scope a new version takes when its caller named none: the baseline's own -- and, for
+    a component scope, every component the baseline has documents for too, because `export` adds
+    components to a version after its run. A component scope keeps the parse to the layers of
+    those components -- the ones the version parsed, and any `export` added since (an export of
+    a component whose layer the version did not parse adds that layer). None when it cannot be
+    read."""
+    try:
+        from core.db import get_engine, is_database_configured
+        if not (base_vid and is_database_configured()):
+            return None
+        import sqlalchemy as sa
+        from api.db.postgres import schema as s
+        with get_engine().connect() as cx:
+            report = cx.execute(sa.select(s.versions.c.run_report)
+                                .where(s.versions.c.id == base_vid)).scalar() or {}
+        scope = (report or {}).get("scope") or {"type": "project"}
+        if scope.get("type") != "component":
+            return scope
+        from core.version_run import generated_components
+        names = list(dict.fromkeys(list(scope.get("names") or []) + generated_components(base_vid)))
+        return {"type": "component", "names": names} if names else scope
+    except Exception as exc:                       # noqa: BLE001 - the caller keeps its own
+        print(f"note: could not read the baseline's scope ({exc})", file=sys.stderr)
+        return None
+
+
+def finish_version(project_id: str, version_id: str, documents: Optional[list] = None,
+                   workspaces_root: Optional[str] = None) -> Dict[str, Any]:
+    """Close a version whose run was cut short and then finished by `analyzer.py resume`.
+
+    What `generate_full` / `generate_incremental` do after their last phase, minus what the
+    resume's own render already did (storing the output): the run identity, the reuse index a
+    later version reuses by, the run's incremental plan cleared (a stale one would narrow the
+    next run of this version), and the manifest closed at 'complete' -- which also closes
+    `versions.pipeline_status`, without which the version is refused as a baseline for good."""
+    from incremental.store import make_store
+    store = make_store(project_id, workspaces_root)
+    _persist_run_metadata(store, version_id, project_id)
+    _m = _orchestrator_model(store, version_id)
+    fps = compute_fingerprints(_m.get("hashes") or {}, _m.get("functions") or {},
+                               _m.get("edges") or {})
+    ridx = StoreReuseIndex(store)
+    ridx.put_many((fp, version_id, entity_key) for entity_key, fp in fps.items())
+    ridx.save()
+    try:
+        _write_plan(version_id, project_id, {})
+    except OSError:
+        pass
+    manifest = dict(store.read_manifest(version_id) or {})
+    manifest["status"] = "complete"
+    if documents is not None:
+        manifest["documents"] = documents
+    manifest["warnings"] = list(manifest.get("warnings") or []) + [
+        "finished by `analyzer.py resume` after the run was cut short"]
+    store.write_manifest(version_id, manifest)
+    return manifest
+
+
 # Output fields carried forward from a baseline function entry for reused fids.
 _CARRY_FIELDS = ("description", "behaviourInputName", "behaviourOutputName", "comment", "phases")
 
@@ -589,9 +650,16 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                          config_path: Optional[str] = None,
                          create_version: bool = False,
                          selected_units: Optional[List[str]] = None,
-                         doc_type: str = "swe3") -> Dict[str, Any]:
+                         doc_type: str = "swe3",
+                         model_only: bool = False,
+                         scope_from_baseline: bool = False) -> Dict[str, Any]:
     """Produce an incremental version. Falls back to a FULL generation when there is
     no usable baseline (first version / no ancestor).
+
+    `model_only`: stop after Phase 2 (`analyzer.py export` makes the documents later).
+    `scope_from_baseline`: the caller named no scope, so make what the baseline has -- its scope,
+    and for a component scope every component it has documents for, including those `export`
+    added after its own run (`_scope_like`). Without a baseline that is the whole project.
 
     `narrowed_parse` (M4.4, opt-in) re-parses only the affected TUs and merges them into
     the baseline's parser-level snapshot instead of re-parsing the whole project; it falls
@@ -634,10 +702,14 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                              no_llm=no_llm, version_id=version_id, force=force,
                              repo_url=repo_url, repo_token=repo_token, config_path=config_path,
                              create_version=create_version,
-                             selected_units=selected_units, doc_type=doc_type)
+                             selected_units=selected_units, doc_type=doc_type,
+                             model_only=model_only)
 
     base_vid = decision["chosenBaseVersionId"]           # real ver… id (from list_versions)
     base_commit = decision["chosenBaseCommit"]            # resolves the baseline's checkout dir
+    if scope_from_baseline:
+        scope = _scope_like(base_vid) or scope
+        print(f"scope: as the baseline {base_vid} has it -- {_scope_label(scope)}", flush=True)
     project = get_project(project_id)        # api/db/data/projects.json (no project.json)
     project_name = (project.get("name") or "").strip() or None
     from incremental.store import make_store
@@ -671,9 +743,12 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     else:
         store.write_config(version_id, cfg)
         vcfg_path = os.path.join(_adir, "config.json")
-    store.write_manifest(version_id, _manifest(
+    _m0 = _manifest(
         version_id, branch, target, scope, data_dict_id,
-        decision="incremental", regenerated=0, reused=0, status="running", warnings=decision["warnings"]))
+        decision="incremental", regenerated=0, reused=0, status="running", warnings=decision["warnings"],
+        doc_type=doc_type)
+    _m0["modelOnly"] = bool(model_only)     # `resume` keeps a model-only run model-only
+    store.write_manifest(version_id, _m0)
 
     dd_path = ws.datadict_path(data_dict_id) if data_dict_id and os.path.isfile(
         ws.datadict_path(data_dict_id)) else None
@@ -692,24 +767,26 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         m = _manifest(
             version_id, branch, target, scope, data_dict_id,
             decision="incremental", regenerated=0, reused=0, status="failed",
-            warnings=decision["warnings"] + [f"{stage} exited {rc}"])
+            warnings=decision["warnings"] + [f"{stage} exited {rc}"], doc_type=doc_type)
+        m["modelOnly"] = bool(model_only)
         store.write_manifest(version_id, m)     # close the lifecycle: 'failed', not mid-phase
         raise AnalyzerRunFailed(f"{stage} failed (exit {rc})", rc)
 
     # What this run is about to do, BEFORE the parse - see generate_full. A decision "full"
     # never reaches here: it delegated above and generate_full prints its own.
-    _stop = emit_run_summary(
+    _stop, _run_warnings = emit_run_summary(
         project_id=project_id, version_id=version_id, branch=branch, commit=target,
         scope=scope, doc_type=doc_type, cfg=cfg, no_llm=no_llm, data_dict_id=data_dict_id,
         data_dict_path=ws.datadict_path(data_dict_id) if data_dict_id else None,
         baseline=(f"{base_vid} @ {str(base_commit)[:10]} - incremental, "
                   f"{decision.get('changedFiles')} changed file(s)"),
-        config_path=config_path or vcfg_path, project_root=project_root, warnings=decision["warnings"])
+        config_path=config_path or vcfg_path, project_root=project_root, warnings=decision["warnings"],
+        checkout=repo_dir)
     if _stop:
         store.write_manifest(version_id, _manifest(
             version_id, branch, target, scope, data_dict_id,
             decision="incremental", regenerated=0, reused=0, status="failed",
-            warnings=decision["warnings"] + _stop))
+            warnings=_stop + _run_warnings, doc_type=doc_type))
         raise AnalyzerRunFailed("stopped before the parse: " + "; ".join(_stop), 2)
 
     # PHASE-SPLIT (M3.2) — produce the blank-skeleton model in model/ (Phase 1). This gives
@@ -929,14 +1006,19 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # Resume derive+views+export: Phase 2 summarizer skips the carried-forward reuse
     # set; Phase 3 flowcharts restricted to impacted files (rest carried forward).
     rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
-                       extra_args=["--from-phase", "2"], project_name=project_name,
+                       extra_args=["--from-phase", "2"]
+                       + (["--to-phase", "2"] if model_only else []),
+                       project_name=project_name,
                        doc_type=doc_type,
                        version_id=version_id, project_id=project_id,
                        # Only this invocation reaches Phase 3; the --to-phase 1 parses above
                        # have no views to narrow.
                        selected_units=selected_units)
-    if rc != 0:
+    # 3: some components' documents failed and run.py went on with the others. The version keeps
+    # what they made -- stored, recorded, closed -- and `resume` makes the failed ones again.
+    if rc not in (0, 3):
         _fail("derive+views+export", rc)
+    components_failed = rc == 3
 
     # The plan file has done its job (Phase 3 read it); remove so it isn't captured.
     try:
@@ -968,7 +1050,12 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     manifest = _manifest(version_id, branch, target, scope, data_dict_id,
                          decision="incremental", regenerated=len(regen_impact),
                          reused=len(plan["reused"]) + len(index_reused),
-                         status="complete", warnings=decision["warnings"])
+                         status="complete", warnings=_run_warnings
+                         + (["some components' documents failed (run.py exit 3); the others were made -- `analyzer.py resume` makes the failed ones again"] if components_failed else []),
+                         doc_type=doc_type)
+    manifest["modelOnly"] = bool(model_only)
+    if components_failed:
+        manifest["componentsFailed"] = True
     manifest["baselineVersionId"] = base_vid
     manifest["baselineCommit"] = decision["chosenBaseCommit"]
     manifest["documents"] = documents

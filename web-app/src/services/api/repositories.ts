@@ -1,4 +1,6 @@
 import { http } from '../../lib/http'
+import type { LocalFolders } from '../../types'
+import { ApiLocalFoldersSchema, mapLocalFolders } from '../mappers'
 
 export interface RepoTestResult {
   connected: boolean
@@ -22,6 +24,9 @@ export interface RepoUpload {
   kind: string
 }
 
+/** What a build-configuration upload is: a core's macros, data dictionary or compile commands. */
+export type UploadKind = 'preprocessor_definitions' | 'data_dictionary' | 'compile_commands'
+
 export const repositoriesApi = {
   testConnection: async (body: {
     repo_url: string
@@ -41,24 +46,29 @@ export const repositoriesApi = {
       message: r.message,
     }
   },
-  /** Browse the source tree rooted at `path` (full nested subtree). */
+  /** Browse the source tree rooted at `path` (full nested subtree). `refresh` fetches the
+   *  branch's current tip first — the tree every path is checked against. A POST, so the access
+   *  token travels in the body: in a URL it reached the server's access log, proxies and dev tools
+   *  (the API refuses a GET that carries one). */
   browse: async (
     repoUrl: string,
     ref?: string,
     path = '',
     accessToken?: string,
+    refresh = false,
   ): Promise<RepoEntry[]> => {
-    const r = await http.get<{ entries: RepoEntry[] }>('/repositories/browse', {
+    const r = await http.post<{ entries: RepoEntry[] }>('/repositories/browse', {
       repo_url: repoUrl,
-      ref,
+      ref: ref || undefined,
       path,
-      access_token: accessToken,
+      access_token: accessToken || undefined,
+      refresh,
     })
     return r.entries
   },
   upload: async (
     file: File,
-    kind: 'preprocessor_definitions' | 'data_dictionary',
+    kind: UploadKind,
   ): Promise<RepoUpload> => {
     const form = new FormData()
     form.append('file', file)
@@ -69,4 +79,10 @@ export const repositoriesApi = {
     )
     return { id: r.id, fileName: r.file_name, size: r.size, kind: r.kind }
   },
+  /** The subfolders of `path` on the server ArtiFex runs on, each marked when it is a git
+   *  repository - for a Local path repository's Browse. '' (sent as no `path` at all) is the top
+   *  list. 400 for a relative path, 403 outside the folders the server allows, 404 for no folder. */
+  localFolders: async (path = ''): Promise<LocalFolders> =>
+    mapLocalFolders(ApiLocalFoldersSchema.parse(
+      await http.get('/repositories/local-folders', { path: path || undefined }))),
 }

@@ -1,0 +1,201 @@
+import { useState } from 'react'
+import { Icon } from '../../../components/ui'
+import { cn } from '../../../lib/cn'
+import { parseSectionBody } from '../../../lib/markdown'
+import type { CompareBlock, DiffMark, DiffSegment } from '../../../types'
+import { MARK_MEANING, rowChange, signColumns } from '../helpers'
+
+/* ─── Inline highlight styling by change mark ───
+   Not by colour alone: added text is underlined, removed text struck through, changed text
+   dotted-underlined, and each says what it is to a screen reader. What it says is for the screen
+   reader only: `select-none` keeps "[added: …]" out of text copied from the page. */
+const SR_ONLY = 'sr-only select-none'
+const MARK_INLINE: Record<DiffMark, string> = {
+  none:   '',
+  add:    'bg-[rgba(0,165,114,.18)] text-on-tertiary-container rounded-[2px] px-px underline decoration-1 underline-offset-2',
+  del:    'bg-error-container text-error line-through rounded-[2px] px-px',
+  change: 'bg-[#fff1cc] text-[#92600a] rounded-[2px] px-px underline decoration-dotted decoration-1 underline-offset-2',
+}
+const MARK_CELL: Record<DiffMark, string> = {
+  none:   '',
+  add:    'bg-[rgba(0,165,114,.14)] underline decoration-1 underline-offset-2',
+  del:    'bg-error-container/70 line-through',
+  change: 'bg-[#fff4d6] underline decoration-dotted decoration-1 underline-offset-2',
+}
+
+/* ─── Inline word-level highlighted text ─── */
+function Segments({ segments }: { segments: DiffSegment[] }) {
+  if (!segments.length) return null
+  return (
+    <>
+      {segments.map((s, i) => {
+        if (s.mark === 'none') return <span key={i}>{s.text}</span>
+        const Tag = s.mark === 'add' ? 'ins' : s.mark === 'del' ? 'del' : 'span'
+        return (
+          <Tag key={i} className={MARK_INLINE[s.mark]}>
+            <span className={SR_ONLY}>[{MARK_MEANING[s.mark].label}: </span>{s.text}<span className={SR_ONLY}>]</span>
+          </Tag>
+        )
+      })}
+    </>
+  )
+}
+
+/* ─── A table row's change as a sign (+ ~ −) in its own column ─── */
+function RowMarker({ mark }: { mark: DiffMark }) {
+  if (mark === 'none') return <td className="w-6 px-1.5 py-2" />
+  const m = MARK_MEANING[mark]
+  return (
+    <td className="w-6 px-1.5 py-2 align-top text-center font-mono font-bold text-on-surface-variant" title={m.label}>
+      <span aria-hidden>{m.sign}</span><span className={SR_ONLY}>{m.label}</span>
+    </td>
+  )
+}
+
+/* ─── Mermaid / diagram block with a "changed" badge + source toggle ─── */
+function DiffDiagramBlock({ block }: { block: Extract<CompareBlock, { kind: 'diagram' }> }) {
+  const [showSrc, setShowSrc] = useState(false)
+  return (
+    <figure className={cn(
+      'bg-surface-container-low border rounded-lg overflow-hidden',
+      block.changed ? 'border-secondary/60' : 'border-outline-variant',
+    )}>
+      {block.imageUrl ? (
+        <img src={block.imageUrl} alt={block.caption ?? 'Diagram'} loading="lazy"
+             className="block w-full max-h-[400px] object-contain bg-white" />
+      ) : (
+        <div className="flex flex-col items-center justify-center text-center py-10 gap-2">
+          <Icon name="account_tree" size={32} className="text-outline-variant" />
+          <span className="font-mono text-caption text-on-surface-variant">{block.caption ?? 'Diagram'}</span>
+        </div>
+      )}
+      <figcaption className="flex items-center justify-between gap-2 px-3 py-2 border-t border-outline-variant bg-white">
+        <span className="flex items-center gap-1.5 font-mono text-label text-on-surface-variant truncate">
+          {block.changed && <span className="px-1.5 py-0.5 rounded bg-secondary/10 text-secondary font-semibold">diagram changed</span>}
+          <span className="truncate">{block.caption ?? 'Diagram'}</span>
+        </span>
+        {block.mermaid && (
+          <button onClick={() => setShowSrc((v) => !v)}
+                  className="flex items-center gap-1 flex-shrink-0 text-secondary hover:underline font-mono text-label">
+            <Icon name="code" size={12} />{showSrc ? 'Hide source' : 'View source'}
+          </button>
+        )}
+      </figcaption>
+      {showSrc && block.mermaid && (
+        <pre className="px-3 py-2 bg-surface-container-low border-t border-outline-variant overflow-x-auto font-mono text-label text-on-surface-variant whitespace-pre">{block.mermaid}</pre>
+      )}
+    </figure>
+  )
+}
+
+/* ─── One diff block (text | keyvalue | table | diagram) ───
+   `marked`: a table's sign column, decided with the other pane's (`signColumns`). */
+function DiffBlockView({ block, marked = false }: { block: CompareBlock; marked?: boolean }) {
+  if (block.kind === 'text') {
+    return (
+      <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">
+        <Segments segments={block.segments} />
+      </p>
+    )
+  }
+  if (block.kind === 'keyvalue') {
+    return (
+      <div className="flex items-baseline gap-2 text-sm">
+        <span className="font-mono text-caption text-on-surface-variant flex-shrink-0">{block.label}:</span>
+        <span className="text-on-surface"><Segments segments={block.segments} /></span>
+      </div>
+    )
+  }
+  if (block.kind === 'diagram') {
+    return <DiffDiagramBlock block={block} />
+  }
+  // table — with a marker column when any row or cell changed, here or in its counterpart
+  return (
+    <div className="overflow-x-auto border border-outline-variant rounded-lg">
+      <table className="w-full text-left text-xs">
+        <thead className="bg-surface-container text-on-surface-variant">
+          <tr>
+            {marked && <th className="w-6 px-1.5 py-2.5 border-b border-outline-variant"><span className={SR_ONLY}>Change</span></th>}
+            {block.headers.map((h, hi) => (
+              <th key={hi} className="px-3 py-2.5 border-b border-outline-variant font-semibold whitespace-nowrap">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {block.rows.map((r, ri) => {
+            const rowMark = block.rowMarks[ri] ?? 'none'
+            return (
+              <tr key={ri} className={cn('border-b border-[rgba(196,198,205,.6)]', rowMark !== 'none' && rowMark !== 'change' && MARK_CELL[rowMark])}>
+                {marked && <RowMarker mark={rowChange(rowMark, block.cellMarks[ri])} />}
+                {r.map((c, ci) => {
+                  const cellMark = block.cellMarks[ri]?.[ci] ?? 'none'
+                  return (
+                    <td key={ci} className={cn(
+                      'px-3 py-2 align-top',
+                      ci === 0 ? 'text-secondary font-mono text-caption' : 'text-on-surface-variant',
+                      MARK_CELL[cellMark],
+                    )}>{c}</td>
+                  )
+                })}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/* ─── A pane's stack of blocks (or an empty-side placeholder) ───
+   `signs`: each table's sign column by its order among the tables (`signColumns` of both panes,
+   so the two sides have the same columns); by default, decided from this pane alone. */
+export function BlocksPane({ blocks, emptyLabel, signs }: { blocks: CompareBlock[]; emptyLabel: string; signs?: boolean[] }) {
+  if (!blocks.length) {
+    return <p className="text-on-surface-variant italic text-sm">{emptyLabel}</p>
+  }
+  const columns = signs ?? signColumns(blocks)
+  let table = -1
+  return (
+    <div className="space-y-3">
+      {blocks.map((b, i) => <DiffBlockView key={i} block={b} marked={b.kind === 'table' && !!columns[++table]} />)}
+    </div>
+  )
+}
+
+/* ─── Flat-fallback markdown body → richtext / table blocks (legacy) ─── */
+export function SectionBody({ content }: { content: string }) {
+  const blocks = parseSectionBody(content)
+  if (blocks.length === 0) {
+    return <p className="text-on-surface-variant italic text-sm">No content.</p>
+  }
+  return (
+    <div className="space-y-3">
+      {blocks.map((b, i) =>
+        b.type === 'table' ? (
+          <div key={i} className="overflow-hidden border border-outline-variant rounded-lg">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-surface-container text-on-surface-variant">
+                <tr>
+                  {b.headers.map((h, hi) => (
+                    <th key={hi} className="px-3 py-2.5 border-b border-outline-variant font-semibold">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {b.rows.map((r, ri) => (
+                  <tr key={ri} className="border-b border-[rgba(196,198,205,.6)]">
+                    {r.map((c, ci) => (
+                      <td key={ci} className={cn('px-3 py-2', ci === 0 ? 'text-secondary font-mono text-caption' : 'text-on-surface-variant')}>{c}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p key={i} className="text-on-surface leading-relaxed text-sm whitespace-pre-line">{b.text}</p>
+        ),
+      )}
+    </div>
+  )
+}

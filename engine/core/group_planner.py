@@ -43,6 +43,10 @@ class RunPlan:
     label: str
     phases: List[Phase] = field(default_factory=list)
     runner_from_phase: int = 1
+    # The components whose documents this plan makes -- their output folder names, which are
+    # also `documents.group` and `version_components.component`. Empty for the model plan.
+    # run.py marks them generating / generated / failed around the plan (core.version_run).
+    components: List[str] = field(default_factory=list)
 
 
 def _resolve_group_name(groups: Dict[str, Any], requested: Optional[str]) -> Optional[str]:
@@ -390,6 +394,7 @@ def plan_runs(
                 label=f"Components: {', '.join(bundle)}",
                 phases=view_phases,
                 runner_from_phase=local_from,
+                components=[out_key],         # the folder its document lands in
             ))
         return plans
 
@@ -505,7 +510,8 @@ def plan_runs(
                 )
                 plans.append(RunPlan(label=f"Component: {comp}",
                                      phases=view_phases,
-                                     runner_from_phase=local_from))
+                                     runner_from_phase=local_from,
+                                     components=[comp]))
         else:
             g_safe = g.replace(" ", "-")
             out_key = output_name.replace(" ", "-") if output_name else g_safe
@@ -529,6 +535,7 @@ def plan_runs(
             )
             plans.append(RunPlan(label=f"Group: {g}",
                                  phases=view_phases,
-                                 runner_from_phase=local_from))
+                                 runner_from_phase=local_from,
+                                 components=[out_key]))
 
     return plans

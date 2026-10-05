@@ -77,6 +77,89 @@ def mmdc_path(project_root: str) -> str:
     return "mmdc"
 
 
+MERMAID_DOCKER_IMAGE = "minlag/mermaid-cli"
+_mermaid_in_docker = None
+
+
+def mermaid_in_docker(project_root: str) -> bool:
+    """True when a test drawing in the minlag/mermaid-cli docker image works here. Asked once
+    per process, and only when a diagram is about to be drawn.
+
+    The image brings its own Chromium, so it is tried first. Only an image already loaded is
+    tried -- nothing is pulled. A test DRAWING, not just "is the image there": a docker that
+    cannot mount or write this folder (SELinux, rootless docker, the analyzer itself in a
+    container) then falls back to local mmdc, instead of failing every diagram.
+    """
+    global _mermaid_in_docker
+    if _mermaid_in_docker is None:
+        _mermaid_in_docker = _docker_draws(project_root)
+        log(f"mermaid diagrams: docker image {MERMAID_DOCKER_IMAGE}" if _mermaid_in_docker
+            else "mermaid diagrams: local mmdc", component="render")
+    return _mermaid_in_docker
+
+
+def _docker_mmdc(in_path: str, out_path: str) -> list:
+    """`docker run` of mmdc for in_path -> out_path, in the same folder (mounted at /data).
+
+    As the calling user, so the PNG is ours. The image has its own puppeteer config, so ours
+    (which names a browser on THIS machine) is not passed.
+    """
+    cmd = ["docker", "run", "--rm"]
+    if hasattr(os, "getuid"):                     # POSIX; Docker Desktop on Windows maps it
+        cmd += ["-u", f"{os.getuid()}:{os.getgid()}"]
+    return cmd + ["-v", f"{os.path.dirname(os.path.abspath(in_path))}:/data", MERMAID_DOCKER_IMAGE,
+                  "-i", "/data/" + os.path.basename(in_path), "-o", "/data/" + os.path.basename(out_path)]
+
+
+def _docker_draws(project_root: str) -> bool:
+    import shutil
+    import subprocess
+    import tempfile
+    if not shutil.which("docker"):
+        return False
+    try:
+        if subprocess.run(["docker", "image", "inspect", MERMAID_DOCKER_IMAGE],
+                          capture_output=True, timeout=20).returncode != 0:
+            return False                          # not loaded, daemon down, or not ours to use
+        cache = os.path.join(project_root, _MMDC_CACHE_DIR)
+        os.makedirs(cache, exist_ok=True)
+        probe = tempfile.mkdtemp(prefix="docker-test-", dir=cache)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    try:
+        mmd, png = os.path.join(probe, "test.mmd"), os.path.join(probe, "test.png")
+        with open(mmd, "w", encoding="utf-8") as f:
+            f.write("graph TD; A-->B")
+        from core.subprocess_util import run_capture
+        r = run_capture(_docker_mmdc(mmd, png), timeout=120, shell=(os_type == "Windows"))
+        if r.returncode == 0 and os.path.isfile(png):
+            return True
+        _log_render_failure(f"docker image {MERMAID_DOCKER_IMAGE} is here, but a test drawing", r)
+        return False
+    except (OSError, subprocess.SubprocessError) as exc:
+        log(f"docker image {MERMAID_DOCKER_IMAGE} is here, but a test drawing could not run: {exc}",
+            component="render", err=True)
+        return False
+    finally:
+        shutil.rmtree(probe, ignore_errors=True)
+
+
+def mmdc_command(project_root: str, in_path: str, out_path: str, *,
+                 scale=None, puppeteer: bool = True) -> list:
+    """The command that renders the Mermaid file in_path to out_path, in the same folder:
+    docker when `mermaid_in_docker`, else local mmdc."""
+    if mermaid_in_docker(project_root):
+        cmd = _docker_mmdc(in_path, out_path)
+    else:
+        cmd = [mmdc_path(project_root), "-i", in_path, "-o", out_path]
+        pup = os.path.join(project_root, "engine", "config", "puppeteer-config.json")
+        if puppeteer and os.path.isfile(pup):
+            cmd += ["-p", pup]
+    if scale is not None:
+        cmd += ["--scale", str(scale)]
+    return cmd
+
+
 # Content-addressed Mermaid->PNG cache (M-A). mmdc is the slow primitive (~5-8s/call);
 # identical diagrams (same text + render opts) are rendered once and reused across
 # units / components / versions. Lives at <project_root>/.mmdc_cache; content-addressed,
@@ -114,19 +197,13 @@ def _run_mmdc(project_root: str, mermaid: str, png_path: str, *,
     True iff png_path exists afterward. The single place that shells out to mmdc."""
     import subprocess
     import tempfile
-    mmdc = mmdc_path(project_root)
     out_dir = os.path.dirname(png_path) or "."
     os.makedirs(out_dir, exist_ok=True)
     fd, mmd_path = tempfile.mkstemp(suffix=".mmd", dir=out_dir)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(mermaid or "")
-        cmd = [mmdc, "-i", mmd_path, "-o", png_path]
-        if scale is not None:
-            cmd += ["--scale", str(scale)]
-        pup = os.path.join(project_root, "engine", "config", "puppeteer-config.json")
-        if puppeteer and os.path.isfile(pup):
-            cmd += ["-p", pup]
+        cmd = mmdc_command(project_root, mmd_path, png_path, scale=scale, puppeteer=puppeteer)
         try:
             # Stops the whole tree at the timeout: through the shell, `subprocess.run` killed only
             # cmd.exe and then waited on the Chromium it had started -- an hour, once.
@@ -262,6 +339,72 @@ def render_dot_cached(project_root: str, dot: str, png_path: str, *,
         except OSError:
             pass
     return ok
+
+
+# Flowchart pictures for the web reader: DOT -> SVG, many charts per Node process
+# (engine/config/render_svg.mjs, viz-js, no browser). A typical flowchart takes about a
+# millisecond; a PNG above costs a headless browser per chart (~12 s), which is why PNGs are
+# Word's alone and gated by views.flowcharts while SVGs are drawn on every run. The size
+# limit, the box count and the content key live in core.flowchart_svg, which the web render
+# (api/services/doc_render.py) imports too.
+from core.flowchart_svg import (  # noqa: E402,F401
+    FLOWCHART_SVG_MAX_BOXES, count_dot_boxes, svg_content_key, svg_file_key,
+)
+
+
+def render_dot_svgs(project_root: str, jobs, *, batch: int = 200) -> dict:
+    """Draw [(dot, svg_path), ...] with engine/config/render_svg.mjs, `batch` charts per Node
+    process. Returns {svg_path: reason} for every chart NOT drawn -- {} means all were.
+
+    Never raises. A chart counts as drawn only if its file now carries its content key, so a
+    process that dies half way reports the rest as failed instead of leaving them unnoticed.
+    """
+    import json
+    import subprocess
+    import tempfile
+    jobs = [(dot, os.path.abspath(p)) for dot, p in jobs]
+    script = os.path.join(project_root, "engine", "config", "render_svg.mjs")
+    if not os.path.isfile(script):
+        return {p: f"renderer not found: {script}" for _, p in jobs}
+
+    failed: dict = {}
+    for start in range(0, len(jobs), max(1, batch)):
+        chunk = jobs[start:start + max(1, batch)]
+        payload = [{"dot": dot, "svg": p, "key": svg_content_key(dot)} for dot, p in chunk]
+        # The system temp dir, not the flowcharts dir: every *.json there is read as a
+        # unit's flowcharts, and a killed run would leave this one behind.
+        fd, jobs_path = tempfile.mkstemp(prefix="svg_jobs_", suffix=".json")
+        reported: dict = {}
+        why = ""
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(payload, f)
+            cmd = ["node", script, jobs_path]
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                                   errors="replace", timeout=60 + 5 * len(chunk),
+                                   check=False, shell=(os_type == "Windows"), cwd=project_root)
+                lines = [ln for ln in (r.stdout or "").splitlines() if ln.strip()]
+                try:
+                    summary = json.loads(lines[-1]) if lines else {}
+                except ValueError:
+                    summary = {}
+                reported = {e.get("svg"): e.get("error") or "draw failed"
+                            for e in (summary.get("failed") or []) if isinstance(e, dict)}
+                if r.returncode != 0:
+                    tail = " | ".join((r.stderr or "").strip().splitlines()[-5:])
+                    why = f"render_svg.mjs exited with code {r.returncode}: {tail}".strip()
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+                why = f"render_svg.mjs could not run: {type(exc).__name__}: {exc}"
+        finally:
+            try:
+                os.remove(jobs_path)
+            except OSError:
+                pass
+        for item, (dot, p) in zip(payload, chunk):
+            if svg_file_key(p) != item["key"]:
+                failed[p] = reported.get(p) or why or "not drawn"
+    return failed
 
 
 

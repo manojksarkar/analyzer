@@ -17,8 +17,10 @@ from typing import Any, Optional
 # ProjectStatus:      "not_run" | "running" | "in_review" | "complete" | "stale"
 # MemberRole:         "admin" | "developer"
 # MemberStatus:       "active" | "pending"
-# VersionStatus:      "draft" | "in_review" | "approved"
-# DocStatus:          "never" | "in_review" | "approved" | "unchanged"
+# VersionStatus:      "draft" | "in_review" | "approved"   (derived from the documents; see
+#                     api/services/review_workflow.py)
+# DocStatus:          "in_review" | "submitted" | "changes_requested" | "approved"
+#                     (docs/spec/REVIEW_APPROVE_API_SPEC.md §1; "never"/"unchanged" are legacy)
 # JobStatus:          "queued" | "running" | "paused" | "complete" | "failed" | "cancelled"
 # PhaseStatus:        "pending" | "running" | "done" | "failed"
 # Process:            "SYS.1" | "SYS.2" | "SWE.1" | "SWE.2" | "SWE.3"
@@ -119,6 +121,13 @@ class Version:
     base_path: Optional[str] = None
     project_name: Optional[str] = None
     parse_fingerprint: Optional[str] = None
+    # What the run that made this version warned about - a component path the checkout did not
+    # have, a dictionary it ran without. READ-ONLY: it comes from `versions.run_report`, which
+    # only the engine writes, so the API never writes it back (api/db/postgres/mappers.py).
+    warnings: list = field(default_factory=list)
+    # How the run that made it was asked for -- scope, document types, model only -- from the same
+    # `versions.run_report` (READ-ONLY, as `warnings`).
+    run_info: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -147,6 +156,14 @@ class AnalysisPhase:
 #: complete or failed like a generation -- so the ways a client already follows a job apply to it.
 #: It is never a project's "current" job, which stays its latest generation.
 REEXPORT_MODE = "reexport"
+#: Phases 3-4 for components a version has not generated yet (`analyzer.py export`), a job of
+#: its own -- staged generation.
+EXPORT_MODE = "export"
+#: Jobs that render an EXISTING version rather than generate one: never "the project's run".
+RENDER_MODES = (REEXPORT_MODE, EXPORT_MODE)
+
+#: A job in one of these is still going -- or was, when a server stopped under it.
+ACTIVE_JOB_STATUSES = ("queued", "running", "paused")
 
 
 @dataclass
@@ -196,10 +213,40 @@ class Document:
     subtitle: str
     layer: str
     group: str
-    status: str         # "never" | "in_review" | "approved" | "unchanged"
+    status: str         # DOC_STATUSES (review and approval)
     due_date: Optional[date]
     created_at: datetime
     updated_at: datetime
+    # Review and approval (docs/spec/REVIEW_APPROVE_API_SPEC.md). The review record itself is
+    # `ReviewEvent`s; these are the document's current state, so a list needs no event query.
+    review_comment: Optional[str] = None         # the reviewer's comment at the last submit
+    changes_comment: Optional[str] = None        # the admin's, at the last request for changes
+    approved_by: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    approval_comment: Optional[str] = None
+    docx_sha256: Optional[str] = None            # the Word file that was approved
+    approved_docx_path: Optional[str] = None     # the copy of it kept at approval
+    content_fingerprint: Optional[str] = None    # of the rendered content, at approval
+    carried_from: Optional[str] = None           # version id an unchanged approval came from
+
+
+#: A document's review states, in the order a document moves through them.
+DOC_STATUSES = ("in_review", "submitted", "changes_requested", "approved")
+
+
+@dataclass
+class ReviewEvent:
+    """One step of a document's review: who did what, when, and why. The review evidence."""
+    id: str
+    document_id: str
+    project_id: str
+    version_id: str
+    kind: str           # generated | carried | assigned | unassigned | claimed | submitted |
+                        # approved | changes_requested | reopened
+    actor_id: Optional[str]     # None: the run did it
+    at: datetime
+    comment: Optional[str] = None
+    payload: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -268,3 +315,4 @@ class Notification:
     message: str
     read_at: Optional[datetime]
     created_at: datetime
+    document_id: Optional[str] = None

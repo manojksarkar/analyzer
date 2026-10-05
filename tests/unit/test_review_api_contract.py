@@ -216,10 +216,10 @@ class TestTheDocumentedContractExists:
         assert not missing, (
             "documented in the API spec but not served: %s" % ", ".join("%s %s" % x for x in missing))
 
-    def test_the_spec_documents_eleven_endpoints(self):
+    def test_the_spec_documents_twelve_endpoints(self):
         """Was `== 9`, with an `R\\d` matcher that silently stopped at R9 -- "R10" matched "R1"
         and then failed on the literal `**`. So the newest endpoint was the one nobody compared."""
-        assert len(self._documented()) == 11
+        assert len(self._documented()) == 12
 
     def test_every_r_number_in_the_index_is_matched(self):
         """Guards the class of bug above: if a row is in the table but the matcher cannot read
@@ -363,8 +363,8 @@ class TestSwaggerNamesTheEndpointsTheWayTheSpecDoes:
                     out[(method.upper(), path)] = op
         return out
 
-    def test_all_eleven_are_published(self):
-        assert len(self._operations()) == 11
+    def test_all_twelve_are_published(self):
+        assert len(self._operations()) == 12
 
     def test_every_one_is_named_by_its_r_number(self):
         bad = {k: op.get("summary") for k, op in self._operations().items()
@@ -433,8 +433,10 @@ class TestSwaggerOffersTheValidSlotKinds:
         """422 naming the allowed values, rather than a 404 from deep in the service."""
         from fastapi.testclient import TestClient
         from api.main import app
-        with TestClient(app) as c:
-            r = c.get("/api/v1/projects/p1/versions/v1/overrides?slot_kind=notAKind")
+        # Not entered as a context manager: that runs the API's start-up, whose job sweep acts
+        # on the database config.local.json names -- a real one on a developer's machine.
+        c = TestClient(app)
+        r = c.get("/api/v1/projects/p1/versions/v1/overrides?slot_kind=notAKind")
         assert r.status_code in (401, 422), r.status_code
 
 

@@ -287,3 +287,37 @@ def render_png(project_root: str, fc_dir: str, item: Redrawn) -> bool:
     if os.path.isfile(png_path):
         _maybe_slice_tall_png(png_path)
     return True
+
+
+def draw_web_svgs(conn, version_id: str, flowchart_id: str, output_dir: str,
+                  project_root: str) -> dict:
+    """The web page's picture of one corrected flowchart -- drawn now, not by the next run.
+
+    The web reader shows a flowchart only when its SVG was drawn from the stored DOT
+    (`api/services/doc_render.py`, `_flowchart_entry`). A save rebuilds the DOT, so the page read
+    "not drawn for this run" after every label correction until a re-export. The Word picture
+    keeps its own path (`render_png`, the render queue).
+
+    Writes the stored unit JSON back to the version's output tree, then runs the pass Phase 3
+    runs on that directory (`views.flowcharts.write_flowchart_svgs`): it reads the JSON from disk
+    and draws only the charts whose SVG no longer matches -- the corrected one. A disk copy left
+    behind would also let the backfill tool (`tools/render_flowchart_pngs.py`), which reads disk,
+    redraw the old labels.
+
+    `{}` when the flowchart is not stored or the version has no output tree on this host; else
+    the pass's counts (`drawn`, `current`, `failed`, ...).
+    """
+    found = find_flowchart_row(conn, version_id, flowchart_id)
+    if not found:
+        return {}
+    rel_path, _unit_name, content = found
+    path = os.path.join(output_dir, rel_path.replace("/", os.sep))
+    if not os.path.isdir(os.path.dirname(path)):
+        return {}
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(content)
+    eng = os.path.join(_REPO_ROOT, "engine")
+    if eng not in sys.path:
+        sys.path.insert(0, eng)
+    from views.flowcharts import write_flowchart_svgs
+    return write_flowchart_svgs(project_root, os.path.dirname(path))

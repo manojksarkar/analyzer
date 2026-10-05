@@ -13,7 +13,7 @@ from sse_starlette.sse import EventSourceResponse
 from ..db.session import get_db
 from ..db.in_memory import InMemoryDatabase
 from ..middleware.auth import get_current_user, require_project_admin, require_project_member
-from ..models.domain import User, AnalysisJob, AnalysisPhase, REEXPORT_MODE
+from ..models.domain import User, AnalysisJob, AnalysisPhase, REEXPORT_MODE, EXPORT_MODE, RENDER_MODES
 from ..services.errors import not_found, conflict, bad_request
 from ..services import pipeline_runner
 from ..schemas import (
@@ -126,6 +126,10 @@ def start_job(
     version_name = (body.version_tag or "").strip()
     if not version_name:
         raise bad_request("A version name is required.")
+    if (body.mode or "").strip() == EXPORT_MODE:
+        raise bad_request("Components are added to a version with POST "
+                          "/projects/{project_id}/versions/{version_id}/documents/generate, "
+                          "not as a new job.")
     if (body.mode or "").strip() == REEXPORT_MODE:
         raise bad_request("A re-export is started with POST "
                           "/projects/{project_id}/versions/{version_id}/reexport, not as a new job.")
@@ -147,6 +151,10 @@ def start_job(
         if base is None:
             raise not_found("Version", f"'{ref}' in project '{project_id}'")
         reference_version_id = base.id
+    # A job's own data dictionary applies to every layer (`--data-dict`). The project's
+    # dictionaries reach the run through its cores - each layer takes its core's - so a job that
+    # names none adds none (services/project_cores.py; a project from before cores is one core).
+    data_dict_id = (body.data_dict_id or "").strip() or None
     # Prevent duplicate active jobs
     existing = db.jobs.get_current(project_id)
     if existing and existing.status in ("queued", "running", "paused"):
@@ -180,13 +188,14 @@ def start_job(
         started_at=now, completed_at=None, error_message=None,
         branch=branch, version_tag=version_name,
         mode=(body.mode or "auto"),
-        scope=body.scope, no_llm=bool(body.no_llm), data_dict_id=body.data_dict_id,
+        scope=body.scope, no_llm=bool(body.no_llm), data_dict_id=data_dict_id,
         narrowed_parse=bool(body.narrowed_parse),
     )
     # Reserve the version row (status 'draft') BEFORE inserting the job: analysis_jobs.version_id
     # is a FK to versions.id, so the job may only reference a version that already exists. The
     # engine writes its per-version rows under this same id, _make_version finalizes it at
-    # completion, and _mark_failed deletes the draft on failure — so a failed run leaves no orphan.
+    # completion, and a failed or cancelled run deletes its draft (_release_draft_version) — so it
+    # leaves no orphan.
     pipeline_runner._reserve_version(db, job, project)
     try:
         db.jobs.create(job)
@@ -266,10 +275,28 @@ def cancel_job(
     job = db.jobs.get(job_id)
     if not job or job.project_id != project_id:
         raise not_found("AnalysisJob", job_id)
+    if job.status in ("complete", "failed", "cancelled"):
+        # A page's view of the job can be seconds old: cancelling a run that has just stopped
+        # -- its work kept for `resume` -- would have deleted that work.
+        raise conflict("JOB_FINISHED", f"Job {job_id} has already ended ({job.status}).")
+    job = db.jobs.get(job_id)                 # as it is now: its run may have ended meanwhile
+    if job.status in ("complete", "failed", "cancelled"):
+        raise conflict("JOB_FINISHED", f"Job {job_id} has already ended ({job.status}).")
     job.status = "cancelled"
     job.completed_at = datetime.now(UTC)
     db.jobs.update(job)
     pipeline_runner.cancel_subprocess(job_id)
+    if not (pipeline_runner.job_alive(job_id) or pipeline_runner._reexport_alive(job_id)):
+        # Nothing here follows it -- a job a stopped server left, not followed again yet -- so
+        # its background run is stopped here, before anything else, or it would go on writing
+        # into a version being removed. Then the unfinished draft goes, as a runner thread does
+        # after a cancel; a re-export's or an export's version is never a draft of its own.
+        pipeline_runner.stop_background_run(job)
+        if getattr(job, "mode", None) not in RENDER_MODES:
+            pipeline_runner._release_draft_version(db, job)
+            # It may have finished unfollowed: then its version is whole and the job says so.
+            pipeline_runner._finish_if_it_finished(db, job)
+            job = db.jobs.get(job_id) or job
     return {"job": _job_dict(job)}
 
 
@@ -397,11 +424,11 @@ def list_functions(
     }
 
 
-def _start_reexport(db, version):
+def _start_reexport(db, version, components=None):
     """`pipeline_runner.start_reexport`, with its refusals as HTTP errors. A refusal caused by
     another job names it (`job_id`), so a client can follow that job instead of guessing."""
     try:
-        return pipeline_runner.start_reexport(db, version)
+        return pipeline_runner.start_reexport(db, version, components)
     except pipeline_runner.ReexportRefused as exc:
         detail = {"code": exc.code, "message": str(exc), "status": exc.status}
         if exc.job_id:
@@ -409,26 +436,34 @@ def _start_reexport(db, version):
         raise HTTPException(status_code=exc.status, detail=detail)
 
 
+class ReexportComponentsRequest(BaseModel):
+    components: Optional[list[str]] = None
+
+
 @router.post("/projects/{project_id}/versions/{version_id}/reexport", status_code=202,
              responses={202: {"model": ReexportVersionResponse}})
 def reexport_version(
     project_id: str,
     version_id: str,
+    body: Optional[ReexportComponentsRequest] = None,
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
-    """Re-export ONE version -- any version with a finished generation, not only the newest.
+    """Re-export ONE version -- any version with documents, not only the newest, whether the web
+    app or the command line made it.
 
     Starts a job of its own (`mode: "reexport"`) and answers with its id at once. Follow it like
     any job, `GET /jobs/{job_id}` or the `GET /jobs/{job_id}/events` stream: `status` goes
     queued -> running -> complete | failed (`error_message` says why). Refused with 409 and the
-    running job's id while one is already re-exporting this version.
+    running job's id while one is already re-exporting this version; 409 `NO_DOCUMENTS` when it
+    has none yet. Optional body `{"components": [...]}`: only those (each must have documents --
+    else 422 `INVALID_COMPONENTS`), e.g. the ones a layer added to the version left stale.
     """
     require_project_admin(project_id, current_user, db)
     version = db.versions.get(version_id)
     if not version or version.project_id != project_id:
         raise not_found("Version", version_id)
-    job = _start_reexport(db, version)
+    job = _start_reexport(db, version, (body.components if body else None) or None)
     return {"job_id": job.id, "status": job.status, "version_id": version.id}
 
 

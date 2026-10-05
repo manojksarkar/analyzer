@@ -101,7 +101,7 @@ workspaces/<projectId>/
   project's `layers`, repo ref, `currentDataDictId`), `repo/` (a real **full** clone via
   `git_service.clone_repo`, public/no-creds), and `datadict/dd-001.csv` (seeded from
   `engine/config/data_dictionary.csv`). Leaves `cache/`+`versions/` to the incremental engine. Default fixture =
-  `projectId=samplecpp`, repo `github.com/vishal9359/SampleCppProject` (branches `main` + `feature1/2/3`,
+  `projectId=samplecpp`, a separate SampleCppProject test repo (branches `main` + `feature1/2/3`,
   topology purpose-built for nearest/far/divergent-ancestor tests — see the repo's `README.md`). `workspaces/`
   is gitignored (data). (Both this seed script and `engine/git_service.py` were later removed.)
 - **M1 — version-producing FULL gen + substrate** — *in progress.*
@@ -476,6 +476,18 @@ workspaces/<projectId>/
   byte-identity (set-equal is the correctness bar today). After that: **M5** Postgres, **M6** object storage/dedup.
 - **Testing convention:** `_probe_*.py` (run once, delete) + end-to-end on `SampleCppProject`; run **LLM off**
   to validate the logic (hashing / diff / impact / reuse counts), LLM on only for the time-savings payoff.
+
+### 23.5b Staged generation (2026-10-02)
+
+`generate_full` / `generate_incremental(model_only=)` stop after Phase 2 (`--to-phase 2` on the second
+run.py call). `generate_incremental(scope_from_baseline=)` — the CLI's `generate` without `--scope` — takes
+the baseline's scope after the decision, and for a component scope adds every component the baseline has
+documents for (`_scope_like`; `export` adds components after a run, inside the parsed layers, so the parse
+stays the same layers); no baseline = project. `finish_version` closes a version `analyzer.py resume`
+completed: run metadata, reuse index, plan cleared, manifest `complete` (which closes
+`pipeline_status`). The CLI now sets `ANALYZER_VERSION_ID`, so a CLI run's phases write
+`pipeline_status` as a web job's do (they never did) — `resume` reads where it stopped. More in
+[API_AND_FRONTEND](API_AND_FRONTEND.md) "Staged generation".
 
 ### 23.6 Analyzer changes M1/M2 will make
 `run.py` (`--config`/`ANALYZER_CONFIG`, `--incremental`); `core/config.py` (honor `ANALYZER_CONFIG`);

@@ -730,7 +730,7 @@ def _merge_vertical_cells(table, col: int, start_row: int, end_row: int) -> None
 
 
 def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, config: dict,
-                              abbreviations: dict, units_data: dict = None) -> None:
+                              abbreviations: dict, units_data: dict = None) -> Dict[str, str]:
     """Add component-level table: Component | Unit | Description | Note.
 
     The Description is READ from the unit's stored `description` (REQ-PRE-01). It used to be
@@ -740,9 +740,13 @@ def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, c
 
     The deterministic join below stays as the fallback for a version generated before the
     move, or one where the LLM was unavailable.
+
+    Returns {unit_key: description} - what the table says for each unit, so the web app's
+    document shows the same text (export_docx writes it to unit_descriptions.json).
     """
+    written: Dict[str, str] = {}
     if not unit_rows:
-        return
+        return written
     table = doc.add_table(rows=1, cols=4)
     table.style = "Table Grid"
     hdr = table.rows[0].cells
@@ -840,11 +844,13 @@ def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, c
         row[3].text = str(note_text or NA)
         for c in row:
             _set_cell_font(c, font_small)
+        written[str(row_data[0])] = row[2].text
 
     # Merge Component column across all body rows (same component for the whole table).
     n = len(table.rows)
     if n > 2:
         _merge_vertical_cells(table, 0, 1, n - 1)
+    return written
 
 
 def export_docx(json_path: str = None, docx_path: str = None, selected_group: str | None = None, selected_components: list | None = None) -> Tuple[bool, Optional[str]]:
@@ -1027,6 +1033,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     n_components = len(sorted_components)
     _docx_progress = ProgressReporter("docx_exporter", total=n_components, logger=get_logger("docx_exporter"))
     _docx_progress.start()
+    unit_descriptions: Dict[str, str] = {}
     for sec_idx, component_name in enumerate(sorted_components, start=0):
         sec_num = sec_idx + 2
         # `component_name` is the layer-qualified id (`Layer1.Sample-Core`) - it keys
@@ -1077,7 +1084,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 _add_mermaid_as_text(doc, dep_mmd, font_small)
 
         # Module-level index table (Component/Unit/Description/Note)
-        _add_component_unit_table(
+        unit_descriptions.update(_add_component_unit_table(
             doc,
             component_display,
             unit_rows_component,
@@ -1085,7 +1092,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
             config=config,
             abbreviations=abbreviations,
             units_data=units_data,
-        )
+        ))
 
         unit_diag_dir = os.path.join(artifacts_dir, "unit_diagrams")
         for unit_idx, (unit_key, unit_name_display, interfaces) in enumerate(unit_rows_component, start=1):
@@ -1298,6 +1305,14 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     # Appendix A
     doc.add_heading("Appendix A. Design Guideline", level=1)
     _add_para(doc, "[Design guidelines.]")
+
+    # The Component/Unit table's descriptions, next to the views: the web app's document reads
+    # them instead of guessing (with AI on each is an LLM summary made only here).
+    try:
+        with open(os.path.join(artifacts_dir, "unit_descriptions.json"), "w", encoding="utf-8") as _fh:
+            json.dump(unit_descriptions, _fh, indent=2, ensure_ascii=False)
+    except OSError:
+        pass                        # the DOCX is the deliverable; the web view falls back
 
     os.makedirs(os.path.dirname(docx_path) or ".", exist_ok=True)
     doc.save(docx_path)

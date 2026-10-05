@@ -117,3 +117,84 @@ class TestFailFast:
         with pytest.raises(DatabaseUnavailable):
             require_database(UNREACHABLE)
         assert time.monotonic() - started < 30
+
+
+class TestARunWaitsForTheDatabase:
+    """A connection that timed out on a busy server failed a whole component of a run
+    (2026-10-04, `ConnectionTimeout` in Phase 3 under load). A run's engine tries again."""
+
+    def _engine(self, monkeypatch, behaviour):
+        import sqlalchemy as sa
+        from core import db as core_db
+        monkeypatch.setattr(core_db, "CONNECT_RETRIES", (0, 0, 0))
+        engine = sa.create_engine("sqlite://")
+        core_db.retry_connects(engine)
+        real, calls = engine.dialect.connect, []
+
+        def connect(*a, **k):
+            calls.append(1)
+            behaviour(len(calls))
+            return real(*a, **k)
+        monkeypatch.setattr(engine.dialect, "connect", connect)
+        return engine, calls
+
+    def test_a_connection_refused_twice_is_made_on_the_third_try(self, monkeypatch):
+        import sqlite3
+        import sqlalchemy as sa
+
+        def behaviour(n):
+            if n < 3:
+                raise sqlite3.OperationalError("connection timeout expired")
+        engine, calls = self._engine(monkeypatch, behaviour)
+        with engine.connect() as cx:
+            assert cx.execute(sa.text("select 1")).scalar() == 1
+        assert len(calls) == 3
+
+    def test_it_gives_up_after_the_last_wait(self, monkeypatch):
+        import sqlite3
+
+        def behaviour(n):
+            raise sqlite3.OperationalError("connection refused")
+        engine, calls = self._engine(monkeypatch, behaviour)
+        with pytest.raises(Exception, match="connection refused"):
+            engine.connect()
+        assert len(calls) == 4                              # the first try and three more
+
+    def test_anything_else_is_not_tried_again(self, monkeypatch):
+        def behaviour(n):
+            raise ValueError("a bug")
+        engine, calls = self._engine(monkeypatch, behaviour)
+        with pytest.raises(Exception, match="a bug"):
+            engine.connect()
+        assert len(calls) == 1
+
+    def test_twice_on_one_engine_is_one_listener(self, monkeypatch):
+        """A second listener would try every refused connection 5 x 5 times."""
+        import sqlite3
+        from core import db as core_db
+
+        def behaviour(n):
+            raise sqlite3.OperationalError("connection refused")
+        engine, calls = self._engine(monkeypatch, behaviour)
+        core_db.retry_connects(engine)
+        with pytest.raises(Exception, match="connection refused"):
+            engine.connect()
+        assert len(calls) == 4
+
+    def test_the_cli_s_engine_made_before_the_run_tries_again_too(self, monkeypatch):
+        """analyzer.py reads the database before it sets ANALYZER_VERSION_ID, so its engine was
+        made without retries -- and the run's own work used it (review 2026-10-04)."""
+        import sqlalchemy as sa
+        from core import db as core_db
+        engine = sa.create_engine("postgresql+psycopg://u@localhost/x")
+        monkeypatch.setattr(core_db, "_ENGINE", engine)
+        assert engine not in core_db._RETRYING
+        core_db.retry_connects_for_run()
+        assert engine in core_db._RETRYING
+
+    def test_the_writer_lock_s_own_engine_tries_again(self, monkeypatch):
+        import sqlalchemy as sa
+        from core import db as core_db
+        from core.version_run import _LockSession
+        lock = _LockSession(sa.create_engine("postgresql+psycopg://u@localhost/x"), "v1", "test")
+        assert lock._engine in core_db._RETRYING

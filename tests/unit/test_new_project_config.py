@@ -84,6 +84,18 @@ class TestResolveConfig:
     def test_no_config_gives_the_plain_defaults(self):
         assert NP._resolve_config(None)["layers"] == NP._load_defaults()["layers"]
 
+    def test_the_project_block_is_the_callers_or_none_never_the_samples(self, tmp_path):
+        """The defaults' `project` names SampleCppProject; merged under a config without one, the
+        project's own config.json - and a wizard import of it - would carry the sample's name."""
+        assert NP._load_defaults()["project"]["name"] == "SampleCppProject", "fixture assumption"
+        layers = {"layers": {"L": {"path": "L", "groups": {}}}}
+        assert "project" not in NP._resolve_config(_write(tmp_path, "a.json", json.dumps(layers)))
+        mine = {"name": "Brake ECU", "repository": "https://example.invalid/b.git"}
+        cfg = NP._resolve_config(_write(tmp_path, "b.json", json.dumps({**layers, "project": mine})))
+        assert cfg["project"] == mine, "the caller's block is taken whole, not merged with the sample's"
+        # onboarding the sample itself (--use-defaults) keeps the sample's block
+        assert NP._resolve_config(None)["project"]["name"] == "SampleCppProject"
+
     def test_the_db_password_never_reaches_a_workspace_file(self, tmp_path, monkeypatch):
         """config.local.json is overlaid for machine settings (llm creds), but the engine
         reaches Postgres through its own config — a workspace file has no business holding it."""

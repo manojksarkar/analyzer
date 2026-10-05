@@ -23,8 +23,8 @@ Options:
   --selected-component <name>
                        Export a DOCX for the named component only. Repeatable —
                        all named components must live in the same layer.
-  --component-per-docx One DOCX per component instead of one per group. Cannot be
-                       combined with --selected-component.
+  --component-per-docx One DOCX per component instead of one per group (also with
+                       --selected-component: one document each).
   --selected-unit <name>
                        Narrow Phase 3 to the named unit(s) — flowcharts are built
                        for those units only. Repeatable. A development aid: the
@@ -662,7 +662,9 @@ if selected_components_arg:
                 component="run", err=True)
             sys.exit(1)
         _resolved_components.append(_r)
-    selected_components_arg = _resolved_components
+    # Once each: `Math` and `Layer1.Math` name the same component, and a scope built from a
+    # version's documents (a new version made like its baseline) can carry both forms.
+    selected_components_arg = list(dict.fromkeys(_resolved_components))
     _comp_layers = {_c: _get_component_layer_name(cfg, _c) for _c in selected_components_arg}
     # Components from DIFFERENT layers in one run are allowed: ids are layer-qualified,
     # so the model keeps them apart, and every layer named here contributes its own
@@ -938,6 +940,62 @@ except ValueError as e:
     log(str(e), component="run", err=True)
     sys.exit(2)
 
+
+# Staged generation: every component whose documents this run makes is "waiting" from the start
+# of the call that makes them. Not before: a `--to-phase` below 3 makes none -- the incremental
+# engine's Phase-1-only call, or `generate --model-only`, which asks for no document at all.
+# A scratch model (the narrowed parse's partial pass) is not a version's run.
+def _doc_components(_plans) -> list:
+    return [c for _p in _plans for c in (getattr(_p, "components", None) or [])]
+
+
+def _makes_documents(_plan) -> bool:
+    """Whether this plan, as it will run, ends in an exporter -- a `--to-phase 3` run makes
+    views and no document, so it must not mark anything generated."""
+    _run = _plan.phases[max(0, _plan.runner_from_phase - 1):]
+    return any(os.path.basename(_ph.script) in ("docx_exporter.py", "swe4_exporter.py")
+               for _ph in _run)
+
+
+from core.run_context import version_id as _run_vid, scratch_model as _run_scratch
+_STATES_VID = None if (_run_scratch() or (to_phase is not None and to_phase < 4)) else _run_vid()
+if _STATES_VID:
+    from core.version_run import mark_components as _mark_components
+    _mark_components(_STATES_VID, _doc_components(plans), "waiting")
+else:
+    def _mark_components(*_a, **_k):
+        return None
+
+
+from contextlib import contextmanager as _contextmanager
+
+
+# A component whose documents failed. The run goes on with the others -- one component that
+# cannot be drawn must not cost the 39 behind it a run that lasts days -- and exits
+# EXIT_COMPONENTS_FAILED at the end, so the caller stores what succeeded and says what did not.
+EXIT_COMPONENTS_FAILED = 3
+_FAILED_PLANS: list = []
+
+
+@_contextmanager
+def _component_states(_plan):
+    """generating -> generated | failed around one plan's Phases 3-4, for its components. A
+    document plan that fails is recorded and the run goes on; the model plan, or a plan that
+    makes no document, still stops it."""
+    _docs = _plan.components if _makes_documents(_plan) else []
+    _mark_components(_STATES_VID, _docs, "generating")
+    try:
+        yield
+    except SystemExit as _exc:
+        _why = f"{_plan.label}: stopped with exit code {_exc.code} - see the run's log"
+        _mark_components(_STATES_VID, _docs, "failed", error=_why)
+        if not _docs or not _exc.code:
+            raise
+        _FAILED_PLANS.append(_why)
+        log(f"{_why}. Going on with the other components.", component="run", err=True)
+        return
+    _mark_components(_STATES_VID, _docs, "generated")
+
 def _restore_output_from_db(from_phase: int) -> None:
     """Write this version's stored view output back to `output/` before a run that re-renders it.
 
@@ -1037,7 +1095,8 @@ if to_phase is not None:
                  if _SCRIPT_PHASE.get(os.path.basename(ph.script), 99) <= to_phase]
         if _kept and _plan.runner_from_phase <= len(_kept):
             _filtered.append(_RunPlan(label=_plan.label, phases=_kept,
-                                      runner_from_phase=_plan.runner_from_phase))
+                                      runner_from_phase=_plan.runner_from_phase,
+                                      components=list(_plan.components)))
     plans = _filtered
     log(f"--to-phase {to_phase}: running {len(plans)} plan(s) up to phase {to_phase}.", component="run")
 
@@ -1073,7 +1132,8 @@ from core.db import finished_status_kept
 with finished_status_kept(from_phase >= 2):
     for plan in plans:
         log(plan.label, component="run")
-        total_time += runner.run(plan.phases, from_phase=plan.runner_from_phase)
+        with _component_states(plan):
+            total_time += runner.run(plan.phases, from_phase=plan.runner_from_phase)
 
 print(flush=True)
 log(f"Done. Total: {total_time:.2f}s", component="run")
@@ -1103,3 +1163,10 @@ except Exception as _exc:  # pragma: no cover — reporting must never fail a ru
 
 if _log_path:
     log(f"Full log: {_log_path}", component="run")
+
+if _FAILED_PLANS:
+    log(f"{len(_FAILED_PLANS)} document plan(s) failed; the other components' documents were "
+        f"made:", component="run", err=True)
+    for _why in _FAILED_PLANS:
+        log(f"  {_why}", component="run", err=True)
+    sys.exit(EXIT_COMPONENTS_FAILED)

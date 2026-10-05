@@ -47,6 +47,7 @@ export function RoleBadge({ role }: { role: 'admin' | 'developer' }) {
 }
 
 const PROCESS_COLORS: Record<string, { bg: string; color: string }> = {
+  'SWE.4': { bg: '#e0f5f1', color: '#00796b' },
   'SWE.3': { bg: '#e5eeff', color: '#0058be' },
   'SWE.2': { bg: '#eef2ff', color: '#4f46e5' },
   'SWE.1': { bg: '#f0fdf9', color: '#00a572' },

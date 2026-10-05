@@ -1,16 +1,20 @@
 # Frontend App
 
 Web client for the ASPICE doc-automation product. React 19 + Vite + TypeScript + Tailwind v4.
-Wired to the real FastAPI server in [`../../api`](../../api) (see [INTEGRATION_NOTES.md](INTEGRATION_NOTES.md));
+Wired to the real FastAPI server in [`../api`](../api) (see [INTEGRATION_NOTES.md](INTEGRATION_NOTES.md));
 the design mockups it ports live in [`../docs/ui-mockups/`](../docs/ui-mockups/).
 
 ## Run
 
+The app needs the API running (port 8000 by default) — setting that up, database included:
+[docs/SETUP.md](../docs/SETUP.md).
+
 ```bash
 npm install
-npm run dev      # http://localhost:5173
+npm run dev      # http://localhost:5173 — API at VITE_API_URL, default http://localhost:8000/api/v1
 npm run build    # type-check + production build — run before a PR
 npm run lint
+npm test         # unit tests (no backend needed)
 ```
 
 ## Structure

@@ -99,6 +99,12 @@ The banner also re-renders inside `flowchart_engine.py::run()` when Phase 3
 (flowchart engine) starts, because that engine can be invoked standalone — see
 §13.
 
+Each document plan names the components it makes (`RunPlan.components`: its output folder, =
+`documents.component`); run.py marks them `waiting` before `--to-phase` filters the plans (so the
+incremental engine's Phase-1-only call already shows them), then generating → generated | failed around
+each plan (`_component_states`; `engine/core/version_run.py`). Staged generation:
+[API_AND_FRONTEND](API_AND_FRONTEND.md) "Staged generation".
+
 ### Dispatch shapes (collapsed inside `plan_runs`)
 
 | Config state | CLI | Phase 1+2 parses | Phase 3+4 generates |

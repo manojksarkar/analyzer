@@ -136,6 +136,28 @@ def test_project_doc_counts_scoped_to_latest_version(client, auth_header):
     assert counts["total"] < all_total
 
 
+def test_projects_are_listed_most_recently_changed_first(client, auth_header):
+    """The list came in the database's own order, so rows swapped places between loads."""
+    projects = client.get("/api/v1/projects", headers=auth_header).json()["projects"]
+    stamps = [p["updated_at"] or p["created_at"] or "" for p in projects]
+    assert len(projects) > 1 and stamps == sorted(stamps, reverse=True)
+
+
+def test_a_run_s_draft_does_not_take_over_the_project_view(client, db, auth_header):
+    """A run's version is a draft with no documents until the run ends -- days, for a long run.
+    The project view counted the draft's documents (0) and named it the current version."""
+    import datetime
+    from api.models.domain import Version
+    before = client.get("/api/v1/projects/p1", headers=auth_header).json()["project"]
+    db.versions.create(Version(
+        id="verdraft01", project_id="p1", tag="v-running", commit_sha="d" * 40, branch="main",
+        description="Generating…", status="draft", docs_count=0, created_by="u1",
+        created_at=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)))
+    after = client.get("/api/v1/projects/p1", headers=auth_header).json()["project"]
+    assert after["current_version"] == before["current_version"] != "v-running"
+    assert after["doc_counts"] == before["doc_counts"]
+
+
 def test_search_projects(client, auth_header):
     r = client.get("/api/v1/projects/search?q=VCU", headers=auth_header)
     assert r.status_code == 200
@@ -175,6 +197,24 @@ def test_list_commits(client, auth_header):
     assert r.status_code == 200
     data = r.json()
     assert "commits" in data
+
+
+def test_commits_of_one_second_page_in_one_order(db):
+    """Author dates are whole seconds, so commits tie; with no tiebreaker a commit on a page
+    boundary came back on two pages and another on none (the web app reads every page)."""
+    import datetime
+    from api.models.domain import Commit
+    when = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+    shas = ["c%039d" % i for i in (5, 1, 4, 2, 3)]
+    for sha in shas:
+        db.commits.upsert(Commit(sha=sha, project_id="p1", branch="main", message="m",
+                                 author_name="a", author_email="a@x", committed_at=when,
+                                 has_version=False, version_id=None, doc_status="never"))
+    total = db.commits.list_for_project("p1", 1, 1000)[1]
+    pages = [c.sha for p in range(1, total + 1) for c in db.commits.list_for_project("p1", p, 1)[0]]
+    assert sorted(pages) == sorted(set(pages)) and set(shas) <= set(pages)
+    tied = [s for s in pages if s in shas]
+    assert tied == sorted(shas)
 
 
 def test_get_version(client, auth_header):

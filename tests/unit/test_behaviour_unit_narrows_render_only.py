@@ -51,7 +51,7 @@ def test_the_render_is_narrowed_by_unit():
     i = src.index("png = os.path.join(out_dir,")
     block = src[i:i + 1100]
     assert "allowed_units" in block
-    assert "run_cmd_base" in block
+    assert "mmdc_command(" in block
 
 
 def test_an_existing_png_is_reused_rather_than_rerendered():

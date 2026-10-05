@@ -8,6 +8,13 @@ export const ApiMemberSchema = z.object({
 })
 export type ApiMember = z.infer<typeof ApiMemberSchema>
 
+/** The web app's two roles. The server still accepts a third, `reviewer` (`analyzer.py grant
+ *  --role reviewer`), which can do what a developer can: it is one here -- passed through as is,
+ *  it was neither, and a reviewer lost Claim and the "My reviews" filter. */
+export function toUserRole(raw: string | null | undefined): UserRole {
+  return raw === 'admin' ? 'admin' : 'developer'
+}
+
 export function mapMember(m: ApiMember): TeamMember {
   const pal = avatarPalette(m.user_id || m.id)
   const pending = m.status === 'pending'
@@ -17,7 +24,7 @@ export function mapMember(m: ApiMember): TeamMember {
     name: m.name,
     initials: m.initials,
     email: m.email,
-    role: m.role as UserRole,
+    role: toUserRole(m.role),
     lastActive: pending ? 'Invited' : relativeTime(m.joined_at),
     avatarColor: pal.bg,
     avatarTextColor: pal.text,

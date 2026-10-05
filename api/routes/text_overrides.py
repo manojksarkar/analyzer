@@ -25,12 +25,13 @@ import sys
 from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import AfterValidator, BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field, StringConstraints, field_validator
 
 from ..db.in_memory import InMemoryDatabase
 from ..db.session import get_db
-from ..middleware.auth import get_current_user, require_project_member
+from ..middleware.auth import get_current_user, require_project_admin, require_project_member
 from ..models.domain import User
+from ..services import review_workflow
 
 _ENGINE_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "engine")
@@ -74,24 +75,31 @@ def _no_nul(value: str) -> str:
     return value
 
 
-#: Every text, label, bullet and id a save (R3, R6, R8) takes.
-NoNulStr = Annotated[str, AfterValidator(_no_nul)]
+#: Every id a save (R3, R6, R8) takes.
+NoNulStr = Annotated[str, StringConstraints(max_length=2_000), AfterValidator(_no_nul)]
+
+#: The longest text a correction may be. The page caps one at 2,000 characters (web-app
+#: editContext `MAX_TEXT`); this leaves room for that and keeps a document, and the database,
+#: from taking a 5 MB "correction" (RF-10). Longer is a 422 naming the field.
+MAX_TEXT = 10_000
+NoNulText = Annotated[str, StringConstraints(max_length=MAX_TEXT), AfterValidator(_no_nul)]
 
 
 class UpdateSlotRequest(BaseModel):
     slot_kind: SlotKind = Field(
         ..., description="which kind of text this is. nodeLabel -> R8, behaviourDescription -> R6")
     slot_key: NoNulStr = Field(..., description="from review.slot; never built by hand")
-    text: NoNulStr
+    text: NoNulText
 
 
 class UpdateFlowchartRequest(BaseModel):
     flowchart_id: NoNulStr = Field(
         ..., description="the flowchart's function id — `flowchartId` from R11 or R7; never "
                          "built by hand")
-    labels: Dict[NoNulStr, NoNulStr] = Field(
-        ..., description="{nodeId: new text} — ONLY the labels the reviewer changed. "
-                         "Node ids come from R7's `labels[].nodeId`.")
+    labels: Dict[NoNulStr, NoNulText] = Field(
+        ..., max_length=2_000,
+        description="{nodeId: new text} — ONLY the labels the reviewer changed. "
+                    "Node ids come from R7's `labels[].nodeId`.")
 
     # Without this Swagger renders a Dict[str, str] as {"additionalProp1": "string", ...},
     # which reads as three required fields with meaningless names.
@@ -103,7 +111,17 @@ class UpdateFlowchartRequest(BaseModel):
 class UpdateBehaviourRequest(BaseModel):
     function_id: NoNulStr
     external_caller_id: NoNulStr
-    bullets: List[NoNulStr]
+    bullets: List[NoNulText] = Field(..., max_length=500)
+
+    @field_validator("bullets")
+    @classmethod
+    def _one_text_in_all(cls, bullets: List[str]) -> List[str]:
+        """The bullets are ONE cell of the document, printed one per line: the limit on a
+        correction is on all of them together. Per bullet, 500 of 10,000 characters was a
+        5 MB cell (RF-10)."""
+        if sum(len(b) for b in bullets) + max(len(bullets) - 1, 0) > MAX_TEXT:
+            raise ValueError(f"the bullets together must be at most {MAX_TEXT} characters")
+        return bullets
 
 
 # ---------------------------------------------------------------------------
@@ -122,18 +140,25 @@ def _connection():
     """
     try:
         from core.db import get_engine, is_database_configured
-        if not is_database_configured():
-            raise RuntimeError("no database is configured")
-        return get_engine()
+        configured = is_database_configured()
+        if configured:
+            return get_engine()
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        # The error's own text (a driver message, a host name) is for the server log, not the
+        # caller (RF-9).
+        _log.error("review: the corrections' database cannot be reached: %s: %s",
+                   type(exc).__name__, exc)
+        raise HTTPException(status_code=503, detail=(
+            "the corrections' database cannot be reached; the server log has the detail"))
+    raise HTTPException(status_code=503, detail="no database is configured")
 
 
 def _swe4_deriver(cx, models):
     """`derive=` for a save: the saved component's SWE.4 specs, and the UT export built from
     them, re-derived from the stored rows in this transaction (`REQ-CS-04`) -- when the version
-    has SWE.4 output. One query of row paths when it has none, which is every version the web app
-    generates. See `review.swe4_rederive`."""
+    has SWE.4 output, as every web run since `--doc-type all` has. One query of row paths when it
+    has none (a version made before that, or a CLI run of SWE.3 alone). See
+    `review.swe4_rederive`."""
     from review.swe4_rederive import make_save_deriver
     return make_save_deriver(cx, models)
 
@@ -161,6 +186,10 @@ def _as_http(exc: Exception) -> HTTPException:
     if isinstance(exc, HTTPException):
         return exc
     if isinstance(exc, (OverrideError, catalog.NotScoped)):
+        code = getattr(exc, "code", None)
+        if code:
+            return HTTPException(status_code=exc.status,
+                                 detail={"code": code, "message": str(exc), "status": exc.status})
         return HTTPException(status_code=exc.status, detail=str(exc))
     if isinstance(exc, slot_mod.SlotKeyError):
         return HTTPException(status_code=400, detail=str(exc))
@@ -170,6 +199,13 @@ def _as_http(exc: Exception) -> HTTPException:
         return HTTPException(status_code=409, detail=(
             "another save of this text finished first; nothing was saved -- reload it and "
             "save again"))
+    from ..services.pipeline_runner import _db_unavailable
+    if _db_unavailable(exc):
+        _log.error("review: the corrections' database did not answer: %s: %s",
+                   type(exc).__name__, exc)
+        return HTTPException(status_code=503, detail=(
+            "the corrections' database cannot be reached; nothing was changed, and the server "
+            "log has the detail"))
     _log.exception("review route failed")
     return HTTPException(status_code=500, detail=(
         "the request failed because of an error on the server (%s); nothing was changed, and "
@@ -283,7 +319,47 @@ def _saved(res, slot_kind: str, slot_key: str) -> Dict[str, Any]:
             "viewsDerived": list(res.views_derived or ()),
             # What this correction invalidated. Returned so the UI can say that an edit changed
             # something the reviewer did not touch, rather than letting it appear unannounced.
-            "queuedForRegeneration": [{"slotKind": k, "slotKey": v} for k, v in queued]}
+            "queuedForRegeneration": [{"slotKind": k, "slotKey": v, "label": _readable(k, v)}
+                                      for k, v in queued]}
+
+
+def _readable(slot_kind: str, slot_key: str) -> str:
+    """A name a reviewer recognises for a slot -- the function's, the global's or the unit's --
+    so the UI can say WHICH texts a save queued without taking a key apart (keys are the server's
+    to read). The key itself when it names nothing simpler."""
+    from review import slot as slot_mod
+    try:
+        parts = slot_mod.parse(slot_kind, slot_key)
+    except Exception:                                   # noqa: BLE001 - a label, never an error
+        return slot_key
+    ident = parts.get("entity_key") or parts.get("function_id") or ""
+    if ident.count("|") >= 2:
+        return ident.split("|")[2]                      # Comp|Unit|name|params -> name
+    unit = parts.get("unit_key") or ""
+    if "|" in unit:
+        return unit.split("|")[1]                       # Comp|Unit -> Unit
+    return slot_key
+
+
+def _draw_web_svgs(db, project_id: str, version_id: str, flowchart_id: str) -> None:
+    """The web page's SVG of a flowchart a save just rebuilt (`review.rerender.draw_web_svgs`).
+
+    After the save's commit, and best effort: the correction is stored either way, and a
+    re-export draws the picture when this cannot -- no output tree on this host, or no Node."""
+    try:
+        from ..services.doc_render import commit_output_root
+        from ..services.settings import get_settings
+        from review.rerender import draw_web_svgs
+        version = db.versions.get(version_id)
+        out_root = commit_output_root(project_id, getattr(version, "commit_sha", None), version_id)
+        if out_root is None:
+            return
+        with _connection().connect() as cx:
+            draw_web_svgs(cx, version_id, flowchart_id, str(out_root),
+                          str(get_settings().repo_root))
+    except Exception as exc:                                       # noqa: BLE001 - see docstring
+        _log.warning("could not redraw the web picture of %s in %s: %s",
+                     flowchart_id, version_id, exc)
 
 
 def _flowchart_entry(cx, version_id: str, flowchart_id: str):
@@ -506,6 +582,9 @@ def update_slot(
     row. Answers the slot as it now is (`REQ-API-09`) and what the save did."""
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
+    # An approved document is locked (REVIEW_APPROVE_API_SPEC): reopen it first.
+    review_workflow.refuse_if_approved(db, project_id, version_id, body.slot_kind.value,
+                                       _key(body.slot_kind.value, body.slot_key))
     svc = _service()
     from review import catalog
     with _connection().begin() as cx:          # one transaction, REQ-AP-02
@@ -543,6 +622,9 @@ def update_flowchart_labels(
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
     flowchart_id = _flowchart_id(body.flowchart_id)
+    # The labels print in the component's SWE.3 and build its SWE.4 test steps: either approved
+    # locks them (REVIEW_APPROVE_API_SPEC).
+    review_workflow.refuse_if_approved(db, project_id, version_id, function_id=flowchart_id)
 
     svc = _service()
     with _connection().begin() as cx:
@@ -558,6 +640,8 @@ def update_flowchart_labels(
             nodes = _node_slots(cx, version_id, out.flowchart_id, entry, list(out.applied))
         except Exception as exc:
             raise _as_http(exc)
+    # The web page's picture, from the DOT the save just committed.
+    _draw_web_svgs(db, project_id, version_id, out.flowchart_id)
     return {"flowchartId": out.flowchart_id,
             "labels": [{**n, **_saved(out, n["slotKind"], n["slotKey"])} for n in nodes],
             "viewsDerived": list(out.views_derived),
@@ -584,6 +668,7 @@ def update_behaviour(
     (`REQ-API-09`) -- its bullets one per line in `text`, and as a list in `bullets`."""
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
+    review_workflow.refuse_if_approved(db, project_id, version_id, function_id=body.function_id)
     svc = _service()
     from review import catalog, slot as slot_mod
     with _connection().begin() as cx:
@@ -617,6 +702,7 @@ def undo_slot(
     _version(project_id, version_id)
     kind = slot_kind.value
     key = _key(kind, slot_key)
+    review_workflow.refuse_if_approved(db, project_id, version_id, kind, key)
     svc = _service()
     from review import catalog, slot as slot_mod
     with _connection().begin() as cx:
@@ -631,9 +717,40 @@ def undo_slot(
             raise _as_http(exc)
     body = {**now, **_saved(out, kind, key)}
     if kind == slot_mod.NODE_LABEL:
+        _draw_web_svgs(db, project_id, version_id, now["flowchartId"])
         body.update({"renderPending": out.render_pending, "renderJobs": list(out.render_jobs),
                      "dot": (entry or {}).get("flowchart") or ""})
     return body
+
+
+@router.delete(
+    "/projects/{project_id}/versions/{version_id}/overrides/orphans",
+    summary="R12 - discard orphaned corrections")
+def discard_orphans(
+    project_id: str,
+    version_id: str,
+    slot_kind: Optional[SlotKind] = Query(None, description="only this kind"),
+    slot_key: Optional[str] = Query(None, description="only this slot (with slot_kind); from an "
+                                                      "R1 response, never built by hand"),
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """Discard ORPHANED corrections -- written for code that has since changed, so never printed
+    and never applied -- with their history: every one of the version, those of one kind, or one
+    slot. A correction in force is never touched. Final, so project admins only; a later version
+    made from this one no longer carries them. Answers `{"discarded": n}`."""
+    require_project_admin(project_id, current_user, db)
+    _version(project_id, version_id)
+    if slot_key and not slot_kind:
+        raise HTTPException(status_code=400, detail="slot_key needs its slot_kind")
+    kind = slot_kind.value if slot_kind else None
+    key = _key(kind, slot_key) if slot_key else None
+    with _connection().begin() as cx:
+        try:
+            n = _service().discard_orphans(cx, version_id, slot_kind=kind, slot_key=key)
+        except Exception as exc:
+            raise _as_http(exc)
+    return {"discarded": n}
 
 
 @router.get(
@@ -698,25 +815,48 @@ def regeneration_queue(
 def export_readiness(
     project_id: str,
     version_id: str,
+    document_id: Optional[str] = Query(None, description="only this document's component and "
+                                                         "document type (REVIEW_APPROVE_API_SPEC A15)"),
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
     """`REQ-AP-04`. Whether exporting now would ship text a correction has already replaced, so
     the UI can say so before someone downloads a document that is quietly out of date.
 
-    About the documents the web app exports -- SWE.3. A SWE.4 document of a CLI-generated version
-    is exported from the CLI, which asks its own question (`analyzer.py reexport`)."""
+    About the documents the web app exports -- SWE.3, and SWE.4 when the version has it
+    (`pipeline_runner.export_doc_type`, the re-export's own question). A SWE.4 document of a
+    CLI-generated version is exported from the CLI, which asks its own question
+    (`analyzer.py reexport`)."""
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
     from review.export_guard import staleness
+    from ..services.pipeline_runner import export_doc_type
+    doc_type, component = export_doc_type(db, project_id, version_id), None
+    if document_id:
+        doc = db.documents.get(document_id)
+        if doc is None or doc.project_id != project_id or doc.version_id != version_id:
+            raise HTTPException(status_code=404, detail="no document %s in this version" % document_id)
+        doc_type, component = ("swe4" if doc.process == "SWE.4" else "swe3"), doc.group
     with _connection().connect() as cx:
-        st = staleness(cx, version_id, "swe3")
+        st = staleness(cx, version_id, doc_type, component=component)
         reexport = _latest_reexport(cx, version_id)
+        # WHICH documents are behind, when the version is: the per-component question A15 asks,
+        # for each component with a document. One version-wide `stale` marked every row of the
+        # Documents page "previous Word file" for one correction in one component.
+        stale_components = []
+        if st.is_stale and not document_id:
+            docs, _ = db.documents.list_for_project(project_id, version_id=version_id,
+                                                    per_page=1000)
+            from review.export_guard import stale_components as _behind
+            stale_components = _behind(cx, version_id, doc_type,
+                                       sorted({d.group for d in docs if d.group}))
     return {"stale": st.is_stale, "reason": st.reason, "explanation": st.explain(),
             # The version's latest re-export job, or null. How a page that was reloaded -- or
             # opened by someone else -- learns a re-export is already running, and follows that
             # job instead of offering to start a second one.
             "reexport": reexport,
+            # The components whose documents are behind (version-wide question only).
+            "staleComponents": stale_components,
             "overrideCount": st.override_count,
             # REQ-IM-02/03: a picture still being drawn blocks the export; one that failed does
             # not, but the UI must be able to say the image is out of date.

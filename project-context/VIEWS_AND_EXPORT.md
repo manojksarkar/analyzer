@@ -107,6 +107,11 @@ Full logic and layout rules: `docs/spec/SWE3_SPEC.md` — Unit Diagrams (REQ-UD-
 - Project root resolved from `dirname(model_dir)` (NOT `output_dir`) so
   grouped output paths work.
 - PNG rendered by `mmdc` (mermaid-cli). 60s timeout per diagram.
+- **Which mmdc (2026-10-01c).** Every mermaid render command is built by `utils.mmdc_command`
+  (`_run_mmdc` and the behaviour view alike): the `minlag/mermaid-cli` docker image when it is
+  loaded (never pulled) and a test drawing in it works (`utils.mermaid_in_docker`, once per
+  process), else local mmdc as `mmdc_path` finds it. The image's `latest` is mermaid 11, local is
+  10.9.5 — see the version caveats below.
 - Header uses the **ELK renderer** (`%%{init: {'flowchart': {'defaultRenderer': 'elk'}}}%%`).
   See **"ELK renderer everywhere"** below for the rationale and the version caveats.
 

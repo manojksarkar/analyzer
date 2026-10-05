@@ -14,7 +14,7 @@ from typing import Optional
 from ..models.domain import (
     User, Project, ProjectMember, Version, Commit, AnalysisJob,
     Document, DocumentSection, DocumentAssignment, Function,
-    CompareResult, DocumentDiff, Notification, AccessRequest,
+    CompareResult, DocumentDiff, Notification, AccessRequest, ReviewEvent,
 )
 
 
@@ -148,6 +148,10 @@ class IAnalysisJobRepository(ABC):
         """Every job for a version, newest first: its generation, and any re-exports."""
 
     @abstractmethod
+    def list_active(self) -> list[AnalysisJob]:
+        """Every job, of every project, still marked queued, running or paused."""
+
+    @abstractmethod
     def update(self, job: AnalysisJob) -> AnalysisJob: ...
 
 
@@ -163,7 +167,9 @@ class IDocumentRepository(ABC):
         query: Optional[str] = None,
         page: int = 1,
         per_page: int = 20,
-    ) -> tuple[list[Document], int]: ...
+    ) -> tuple[list[Document], int]:
+        """`assignee_id` is a user id -- the documents that user reviews -- or `"none"`: the
+        documents with no reviewer."""
 
     @abstractmethod
     def get(self, document_id: str) -> Optional[Document]: ...
@@ -172,7 +178,9 @@ class IDocumentRepository(ABC):
     def update(self, document: Document) -> Document: ...
 
     @abstractmethod
-    def get_stats(self, project_id: str, version_id: Optional[str] = None) -> dict: ...
+    def get_stats(self, project_id: str, version_id: Optional[str] = None) -> dict:
+        """`total`, one count per review state, `needs_reviewer` (not approved, no reviewer) and
+        `carried` (approved by carrying an unchanged document's approval forward)."""
 
     @abstractmethod
     def list_sections(self, document_id: str) -> list[DocumentSection]: ...
@@ -185,17 +193,48 @@ class IDocumentRepository(ABC):
 
 
 class IDocumentAssignmentRepository(ABC):
+    """A document's reviewer. One per document: `set_reviewer` replaces."""
+
     @abstractmethod
     def list_for_document(self, document_id: str) -> list[DocumentAssignment]: ...
 
     @abstractmethod
-    def assign(self, assignment: DocumentAssignment) -> DocumentAssignment: ...
+    def assign(self, assignment: DocumentAssignment) -> DocumentAssignment:
+        """Make `assignment.user_id` the reviewer -- the same as `set_reviewer`."""
+
+    @abstractmethod
+    def set_reviewer(self, assignment: DocumentAssignment) -> Optional[DocumentAssignment]:
+        """Replace the document's reviewer; returns the one it replaced, or None."""
+
+    @abstractmethod
+    def reviewers(self, document_ids: list[str]) -> dict[str, str]:
+        """`{document id: reviewer user id}` for those of `document_ids` that have one."""
 
     @abstractmethod
     def remove(self, document_id: str, user_id: str) -> None: ...
 
     @abstractmethod
     def batch_assign(self, assignments: list[DocumentAssignment]) -> None: ...
+
+
+class IReviewEventRepository(ABC):
+    """The review record: one event per step of a document's review."""
+
+    @abstractmethod
+    def add(self, event: ReviewEvent) -> ReviewEvent: ...
+
+    @abstractmethod
+    def list_for_document(self, document_id: str) -> list[ReviewEvent]:
+        """Newest first."""
+
+    @abstractmethod
+    def list_for_project(self, project_id: str, version_id: Optional[str] = None,
+                         document_id: Optional[str] = None, limit: int = 50) -> list[ReviewEvent]:
+        """Newest first."""
+
+    @abstractmethod
+    def last_for_documents(self, document_ids: list[str]) -> dict[str, ReviewEvent]:
+        """Each document's newest event."""
 
 
 class IFunctionRepository(ABC):
@@ -210,8 +249,11 @@ class IFunctionRepository(ABC):
 
     @abstractmethod
     def bulk_update_visibility(
-        self, function_ids: list[str], is_visible: bool
-    ) -> None: ...
+        self, function_ids: list[str], is_visible: bool, project_id: Optional[str] = None
+    ) -> int:
+        """Set visibility on those of `function_ids` that belong to `project_id` (all of them when
+        it is None); returns how many were updated."""
+        ...
 
 
 class ICompareRepository(ABC):
@@ -235,6 +277,13 @@ class ICompareRepository(ABC):
 class INotificationRepository(ABC):
     @abstractmethod
     def list_unread(self, user_id: str) -> list[Notification]: ...
+
+    @abstractmethod
+    def list_for_user(self, user_id: str, limit: int = 30) -> list[Notification]:
+        """Read and unread, newest first."""
+
+    @abstractmethod
+    def get(self, notification_id: str) -> Optional[Notification]: ...
 
     @abstractmethod
     def mark_read(self, notification_id: str) -> Notification: ...

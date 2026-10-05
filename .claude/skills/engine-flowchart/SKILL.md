@@ -100,8 +100,10 @@ Start context (read as needed, don't duplicate here):
   with `engine-dev`.
 - **Consumers of your output:** the DOCX exporter embeds the DOT-rendered PNGs; **SWE.4's deferred
   boundary/equivalence pass** borrows `CFGBuilder`. Behaviour diagrams are a *separate* view (→ `engine-behaviour`).
-  **Note:** the web-app still renders the persisted string client-side **as Mermaid**, so its in-app flowchart
-  view is NOT yet ported to DOT (open follow-up) — the DOCX/PNG path is DOT.
+  The **web reader shows server-drawn SVGs** — `views/flowcharts.write_flowchart_svgs`, every run, one Node
+  process (`engine/config/render_svg.mjs`); name / box count / 500-box limit / content key live in
+  `engine/core/flowchart_svg.py`, shared with `api/services/doc_render.py`. The DOT never reaches the browser.
+  Backfill old runs: `tools/render_flowchart_pngs.py --project ID | --all`.
 
 ## Before you finish
 - Structure change? The **CFG stays deterministic** — the LLM only labels; the CFG/topo + shape-count checks still pass (no LLM needed).

@@ -24,7 +24,8 @@ export function useCreateVersion(projectId: string) {
 export function useUpdateVersion(projectId: string) {
   const invalidate = useVersionsInvalidate(projectId)
   return useMutation({
-    mutationFn: ({ versionId, ...body }: { versionId: string; status?: string; description?: string }) =>
+    // A version's status follows its documents (A14): only the description is set here.
+    mutationFn: ({ versionId, ...body }: { versionId: string; description?: string }) =>
       versionsApi.update(projectId, versionId, body),
     onSuccess: () => { invalidate(); toast.success('Version updated') },
     onError: (e: Error) => toast.error('Update failed', e.message),

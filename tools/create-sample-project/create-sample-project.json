@@ -2,7 +2,7 @@
   "name": "SampleCppProject",
   "client": "Reference",
   "compliance_standard": "ISO_26262",
-  "repo_url": "https://github.com/vishal9359/SampleCppProject",
+  "repo_url": "https://example.invalid/SampleCppProject.git",
   "repo_provider": "github",
   "default_branch": "main",
   "access_token": null,
