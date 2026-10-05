@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>[PRODUCT NAME] — Versions</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Roboto:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<script id="tailwind-config">
+  /* Samsung Magician-style dark theme */
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#f4f5f7", "primary-container": "#26282e",
+          "on-primary": "#ffffff", "on-primary-container": "#8a8f9c",
+          "secondary": "#1d7bff", "secondary-container": "#3d8fff",
+          "on-secondary": "#ffffff", "on-secondary-container": "#ffffff",
+          "on-tertiary-container": "#1fae63",
+          "error": "#ff4d5a", "error-container": "#3a1d21", "on-error-container": "#ff8a93",
+          "surface": "#0e0f12", "background": "#0e0f12", "panel": "#15161a", "inverse": "#33363f",
+          "surface-container-lowest": "#1c1e23", "surface-container-low": "#23262d",
+          "surface-container": "#272a32", "surface-container-high": "#2e3139",
+          "surface-container-highest": "#363a44",
+          "on-surface": "#f2f3f5", "on-surface-variant": "#a3a7b1",
+          "outline": "#6b707c", "outline-variant": "#2c2f37",
+          "tertiary-container": "#10301f", "tertiary-fixed": "#6ff0b0",
+        },
+        borderRadius: { "DEFAULT": "6px", "lg": "8px", "xl": "14px", "2xl": "18px", "full": "9999px" },
+        spacing: {
+          "sidebar-width": "220px", "inspector-width": "400px",
+          "gutter": "16px", "container-padding": "24px",
+        },
+        fontFamily: {
+          "display-lg": ["Samsung Sharp Sans", "Poppins", "sans-serif"],
+          "headline-md": ["Samsung Sharp Sans", "Poppins", "sans-serif"],
+          "headline-sm": ["Samsung Sharp Sans", "Poppins", "sans-serif"],
+          "body-lg": ["SamsungOne", "Roboto", "sans-serif"], "body-md": ["SamsungOne", "Roboto", "sans-serif"],
+          "body-sm": ["SamsungOne", "Roboto", "sans-serif"],
+          "label-md": ["SamsungOne", "Roboto", "sans-serif"], "label-sm": ["SamsungOne", "Roboto", "sans-serif"],
+        },
+        fontSize: {
+          "display-lg":  ["32px", { lineHeight: "40px", letterSpacing: "-0.01em", fontWeight: "700" }],
+          "headline-md": ["24px", { lineHeight: "32px", letterSpacing: "-0.005em", fontWeight: "600" }],
+          "headline-sm": ["18px", { lineHeight: "24px", fontWeight: "600" }],
+          "body-lg":     ["16px", { lineHeight: "24px", fontWeight: "400" }],
+          "body-md":     ["14px", { lineHeight: "20px", fontWeight: "400" }],
+          "body-sm":     ["12px", { lineHeight: "16px", fontWeight: "400" }],
+          "label-md":    ["12px", { lineHeight: "16px", letterSpacing: "0.01em", fontWeight: "500" }],
+          "label-sm":    ["11px", { lineHeight: "14px", letterSpacing: "0.01em", fontWeight: "500" }],
+        },
+      }
+    }
+  }
+</script>
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle; line-height: 1;
+  }
+  .sym-fill { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2c2f37; border-radius: 10px; }
+
+  /* Sidebar collapse */
+  :root { --sw: 56px; }
+  body.nav-expanded { --sw: 220px; }
+  #app-sidebar { width: var(--sw); transition: width .2s cubic-bezier(.4,0,.2,1); }
+  #app-main    { margin-left: var(--sw); transition: margin-left .2s cubic-bezier(.4,0,.2,1); }
+  body:not(.nav-expanded) .nav-label,
+  body:not(.nav-expanded) .brand-text,
+  body:not(.nav-expanded) .user-info,
+  body:not(.nav-expanded) .more-btn-icon { display: none; }
+  body:not(.nav-expanded) .nav-item  { justify-content: center; padding-left: 0; padding-right: 0; gap: 0; }
+  body:not(.nav-expanded) .nav-active { border-left: none; }
+  body:not(.nav-expanded) .brand-header { flex-direction: column; align-items: center; gap: 6px; padding: 10px 8px; }
+  body:not(.nav-expanded) .user-btn  { justify-content: center; padding: 6px; gap: 0; }
+
+  /* Nav states */
+  .nav-default { color: #a3a7b1; }
+  .nav-default:hover { background: #1b2638; color: #f2f3f5; }
+  .nav-active { background: #0b0c0f; color: #ffffff; border-left: 2px solid #1d7bff; }
+  .nav-active .material-symbols-outlined { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+
+  /* Subbar pills */
+  .subbar-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid #2c2f37; border-radius: 6px; background: #1c1e23; transition: background .1s, border-color .1s; cursor: pointer; }
+  .subbar-pill:hover { background: #1b2638; border-color: #1d7bff; }
+
+  /* Dropdown */
+  .dropdown { position: absolute; top: calc(100% + 6px); left: 0; background: #1c1e23; border: 1px solid #2c2f37; border-radius: 8px; overflow: hidden; z-index: 200; box-shadow: 0 4px 20px rgba(0,0,0,0.24); }
+
+  /* Filter buttons */
+  .ver-filter-btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 6px; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: all .1s; color: #a3a7b1; }
+  .ver-filter-btn:hover { background: #1b2638; color: #1d7bff; }
+  .ver-filter-btn.active { background: #1b2a45; color: #1d7bff; border-color: #1d7bff; }
+  .ver-filter-count { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 99px; font-size: 10px; font-weight: 700; }
+  .ver-filter-btn.active .ver-filter-count { background: #1d7bff; color: white; }
+  .ver-filter-btn:not(.active) .ver-filter-count { background: #1b2a45; color: #1d7bff; }
+
+  /* Version rows */
+  .ver-row { display: flex; border-bottom: 1px solid #2c2f37; transition: background .1s; }
+  .ver-row:last-child { border-bottom: none; }
+  .ver-row:hover { background: #0e0f12; }
+  .ver-accent { width: 4px; flex-shrink: 0; }
+
+  /* Status pills */
+  .pill-in-review { display: inline-flex; align-items: center; gap: 3px; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 9px; font-weight: 700; background: #2c2414; color: #f5a524; border: 1px solid #6b4a12; padding: 0px 7px; border-radius: 99px; text-transform: uppercase; letter-spacing: .04em; }
+  .pill-approved  { display: inline-flex; align-items: center; gap: 3px; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 9px; font-weight: 700; background: #132a1f; color: #3ddc84; border: 1px solid #1f5a3a; padding: 0px 7px; border-radius: 99px; text-transform: uppercase; letter-spacing: .04em; }
+
+  /* SHA chip */
+  .sha-chip { font-family: 'SamsungOne','Roboto',sans-serif; font-size: 10px; font-weight: 500; background: #26282e; color: #a3a7b1; padding: 1px 6px; border-radius: 4px; }
+
+  /* Action buttons on version rows */
+  .ver-action-btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border: 1px solid #2c2f37; border-radius: 6px; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 10px; font-weight: 600; color: #a3a7b1; background: #1c1e23; transition: all .1s; white-space: nowrap; text-decoration: none; cursor: pointer; }
+  .ver-action-btn:hover { background: #1b2638; border-color: #1d7bff; color: #1d7bff; }
+  .ver-action-btn.primary { background: #1d7bff; border-color: #1d7bff; color: white; }
+  .ver-action-btn.primary:hover { background: #3d8fff; }
+
+  /* Commit timeline (untagged section) */
+  .commit-row { display: flex; gap: 0; padding: 0 16px; cursor: pointer; background: transparent; border: none; width: 100%; text-align: left; }
+  .commit-row:hover { background: #0e0f12; }
+
+  /* ── Samsung Magician dark theme layer (shared by every dark mockup) ── */
+  :root {
+    --mm-blue: #1d7bff; --mm-blue-hi: #3d8fff; --mm-navy: #1428a0;
+    --mm-grad: linear-gradient(135deg, #3d8fff 0%, #1d7bff 45%, #1428a0 100%);
+    --shadow-card: 0 1px 0 rgba(255,255,255,.04) inset, 0 10px 30px rgba(0,0,0,.45);
+    --shadow-pop: 0 18px 48px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.05);
+    --glow-blue: 0 0 0 1px rgba(29,123,255,.45), 0 6px 20px rgba(29,123,255,.35);
+    color-scheme: dark;
+  }
+  body {
+    font-family: 'SamsungOne', 'Roboto', 'Segoe UI', sans-serif;
+    background-image:
+      radial-gradient(900px 500px at 100% -10%, rgba(29,123,255,.16), transparent 60%),
+      radial-gradient(700px 420px at -10% 110%, rgba(20,40,160,.18), transparent 60%);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { font-family: 'Samsung Sharp Sans', 'Poppins', sans-serif; }
+  code, .mono { font-family: 'SamsungOne','Roboto',sans-serif !important; }
+  ::selection { background: rgba(29,123,255,.45); color: #fff; }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #3a3e48; border-radius: 10px; }
+  ::-webkit-scrollbar-thumb:hover { background: #4a4f5b; }
+
+  /* Signature surfaces: gradient CTA, glassy cards, glowing brand tile */
+  .bg-secondary { background-image: var(--mm-grad); box-shadow: 0 4px 14px rgba(29,123,255,.35); }
+  .hover\:bg-secondary-container:hover { background-image: linear-gradient(135deg, #5aa2ff 0%, #2d86ff 50%, #1c35b8 100%); box-shadow: var(--glow-blue); }
+  .rounded-xl.border.bg-surface-container-lowest,
+  .rounded-2xl.border.bg-surface-container-lowest { box-shadow: var(--shadow-card); background-image: linear-gradient(180deg, rgba(255,255,255,.025), transparent 120px); }
+  .brand-tile { background-image: var(--mm-grad); box-shadow: 0 0 18px rgba(29,123,255,.55); }
+  .bg-inverse { box-shadow: var(--shadow-pop); }
+  .mm-hero {
+    position: relative; overflow: hidden;
+    background:
+      radial-gradient(circle at 85% 90%, transparent 0 90px, rgba(93,162,255,.18) 91px 92px, transparent 93px 150px, rgba(93,162,255,.12) 151px 152px, transparent 153px 215px, rgba(93,162,255,.08) 216px 217px, transparent 218px),
+      radial-gradient(600px 380px at 85% 95%, rgba(61,143,255,.45), transparent 65%),
+      linear-gradient(160deg, #0a1240 0%, #10208a 55%, #1d55d8 100%);
+  }
+  #app-sidebar { background: linear-gradient(180deg, #17181d 0%, #121317 100%) !important; border-color: #24272e !important; }
+  header { background: rgba(21,22,26,.85) !important; backdrop-filter: blur(10px); border-color: #24272e !important; }
+  input::placeholder, textarea::placeholder { color: #6b707c !important; }
+
+  /* Form controls (beat the Tailwind forms plugin's light defaults) */
+  input[type='text'], input[type='search'], input[type='email'], input[type='password'],
+  input[type='url'], input[type='number'], input:not([type]), textarea, select {
+    background-color: transparent; color: #f2f3f5; border-color: #2c2f37;
+  }
+  input[type='text']:focus, input[type='search']:focus, input[type='email']:focus, input[type='password']:focus,
+  input[type='url']:focus, input[type='number']:focus, input:not([type]):focus, textarea:focus, select:focus {
+    border-color: #1d7bff; --tw-ring-color: rgba(29,123,255,.35);
+  }
+  input.bg-transparent { border: 0; padding: 0; box-shadow: none !important; }
+  select option { background: #1f2127; color: #f2f3f5; }
+  input[type='checkbox'], input[type='radio'] { background-color: #1c1e23; border: 1.5px solid #4a4f5b; color: #1d7bff; accent-color: #1d7bff; }
+  input[type='checkbox'] { border-radius: 4px; }
+  input[type='checkbox']:checked, input[type='radio']:checked { background-color: #1d7bff; border-color: #1d7bff; }
+  input[type='checkbox']:focus, input[type='radio']:focus { box-shadow: 0 0 0 3px rgba(29,123,255,.3); outline: none; }
+
+  /* Navigation */
+  .nav-item { position: relative; border-radius: 10px; }
+  .nav-default { color: #a3a7b1; }
+  .nav-default:hover { background: rgba(255,255,255,.05); color: #f2f3f5; }
+  .nav-active { background: linear-gradient(90deg, rgba(29,123,255,.22), rgba(29,123,255,.06)) !important; color: #ffffff !important; border-left: none !important; }
+  .nav-active::before { content: ''; position: absolute; left: -2px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: #3d8fff; box-shadow: 0 0 10px #1d7bff; }
+  .nav-active .material-symbols-outlined { color: #5aa2ff; font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  .outline-link.active { color: #5aa2ff; background: rgba(29,123,255,.12); font-weight: 500; }
+
+  /* Pills, dropdowns, tabs */
+  .subbar-pill { border-radius: 999px; background: #1c1e23; border-color: #2c2f37; }
+  .subbar-pill:hover { background: #23262d; border-color: #1d7bff; box-shadow: 0 0 0 3px rgba(29,123,255,.15); }
+  .dropdown { background: #1f2127; border-color: #2c2f37; border-radius: 12px; box-shadow: var(--shadow-pop); }
+  .proc-tab.active { color: #ffffff; border-bottom-color: #1d7bff; box-shadow: 0 6px 10px -6px rgba(29,123,255,.8); }
+
+  /* Status badges & process pills */
+  .badge { border-radius: 999px; }
+  .badge-approved { background: rgba(61,220,132,.12); color: #3ddc84; border-color: rgba(61,220,132,.35); }
+  .badge-review   { background: rgba(245,165,36,.12); color: #f5a524; border-color: rgba(245,165,36,.35); }
+  .badge-unchanged { background: rgba(255,255,255,.05); color: #8a8f9c; border-color: #2c2f37; }
+  .proc-pill { border-radius: 999px; }
+  .pill-swe3 { background: rgba(29,123,255,.16); color: #5aa2ff; }
+  .pill-swe2 { background: rgba(143,139,255,.16); color: #a8a5ff; }
+  .pill-swe1 { background: rgba(61,220,132,.14); color: #3ddc84; }
+  .pill-sys1 { background: rgba(177,140,255,.16); color: #c3a6ff; }
+  .pill-sys2 { background: rgba(255,138,61,.16); color: #ff9d5c; }
+  .proj-status-chip { border-radius: 999px; }
+  .proj-status-chip .s-dot { box-shadow: 0 0 6px currentColor; }
+
+  /* Progress */
+  .rev-bar { background: #2a2d35; }
+  .rev-bar-fill { background: linear-gradient(90deg, #1428a0, #1d7bff 60%, #5aa2ff); box-shadow: 0 0 10px rgba(29,123,255,.6); }
+  .rev-bar-fill.done { background: linear-gradient(90deg, #0f7a45, #3ddc84); box-shadow: 0 0 10px rgba(61,220,132,.5); }
+
+  /* Rows */
+  .doc-row:hover { background: rgba(255,255,255,.035); }
+  .doc-row.row-selected { background: rgba(29,123,255,.10); }
+</style>
+</head>
+
+<body class="bg-background text-on-surface overflow-hidden nav-expanded">
+
+<!-- ══════════════ SIDEBAR ══════════════ -->
+<aside id="app-sidebar" class="fixed left-0 top-0 h-screen bg-surface-container-lowest border-r border-outline-variant flex flex-col z-50 overflow-hidden">
+  <div class="brand-header flex items-center justify-between px-4 py-3.5 border-b border-outline-variant flex-shrink-0">
+    <a href="projects.html" class="flex items-center gap-3 min-w-0 flex-1">
+      <div class="w-8 h-8 brand-tile rounded-lg flex items-center justify-center flex-shrink-0">
+        <span class="material-symbols-outlined text-on-primary sym-fill" style="font-size:18px;">account_tree</span>
+      </div>
+      <div class="brand-text min-w-0 overflow-hidden">
+        <h1 class="text-primary font-bold tracking-tight whitespace-nowrap" style="font-family:Roboto;font-size:15px;line-height:1.2;">[PRODUCT NAME]</h1>
+        <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mt-0.5 whitespace-nowrap">Automotive Tier 1</p>
+      </div>
+    </a>
+    <button onclick="toggleSidebar()" class="w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors flex-shrink-0" title="Toggle sidebar">
+      <span class="material-symbols-outlined" id="sidebar-toggle-icon" style="font-size:18px;">chevron_left</span>
+    </button>
+  </div>
+
+  <nav class="flex-1 overflow-y-auto px-2 py-2">
+    <a href="projects.html" title="All Projects"
+       class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default mb-2">
+      <span class="material-symbols-outlined" style="font-size:18px;">arrow_back</span>
+      <span class="nav-label font-label-sm text-label-sm text-on-surface-variant">All Projects</span>
+    </a>
+    <p class="nav-label px-3 pb-1.5 font-label-sm text-on-surface-variant uppercase tracking-[.09em] truncate" style="font-size:10px;">VCU Engine Firmware</p>
+    <div class="space-y-0.5">
+      <a href="project-detail.html" title="Overview"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">home</span>
+        <span class="nav-label font-label-md text-label-md">Overview</span>
+      </a>
+      <a href="documents.html" title="Documents"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">description</span>
+        <span class="nav-label font-label-md text-label-md">Documents</span>
+      </a>
+      <a href="compare.html" title="Compare"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">compare_arrows</span>
+        <span class="nav-label font-label-md text-label-md">Compare</span>
+      </a>
+      <a href="versions.html" title="Versions"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-active">
+        <span class="material-symbols-outlined" style="font-size:20px;">local_offer</span>
+        <span class="nav-label font-label-md text-label-md">Versions</span>
+      </a>
+      <a href="team.html" title="Team"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">group</span>
+        <span class="nav-label font-label-md text-label-md">Team</span>
+      </a>
+    </div>
+  </nav>
+
+  <div class="px-2 pt-2 border-t border-outline-variant flex-shrink-0">
+    <a href="onboarding.html" title="Settings"
+       class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+      <span class="material-symbols-outlined" style="font-size:18px;">settings</span>
+      <span class="nav-label font-label-md text-label-md">Settings</span>
+    </a>
+  </div>
+  <div class="px-2 pb-3 pt-1 flex-shrink-0">
+    <button class="user-btn w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-container transition-colors text-left group" title="Engineering Lead">
+      <div class="w-9 h-9 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0">
+        <span class="text-on-secondary-container font-bold text-sm" id="user-initials" style="font-family:Roboto;">EL</span>
+      </div>
+      <div class="user-info flex-1 min-w-0">
+        <p class="font-label-md text-label-md text-on-surface truncate leading-tight" id="user-name">Engineering Lead</p>
+        <div class="flex items-center gap-1.5 mt-0.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-secondary" id="user-role-dot"></span>
+          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wide" id="user-role-label">Admin</p>
+        </div>
+      </div>
+      <span class="more-btn-icon material-symbols-outlined text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity" style="font-size:18px;">more_vert</span>
+    </button>
+  </div>
+</aside>
+
+<!-- ══════════════ APP MAIN ══════════════ -->
+<div id="app-main" class="h-screen flex flex-col">
+
+  <!-- ── TOP BAR ── -->
+  <header class="h-14 flex-shrink-0 flex items-center justify-between px-4 bg-surface-container-lowest border-b border-outline-variant z-40">
+    <nav class="flex items-center gap-1.5" aria-label="Breadcrumb">
+      <a href="projects.html"
+         class="w-7 h-7 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
+         title="Dashboard">
+        <span class="material-symbols-outlined sym-fill" style="font-size:18px;">hexagon</span>
+      </a>
+      <span class="text-outline-variant select-none">/</span>
+      <a href="project-detail.html"
+         class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:underline transition-colors whitespace-nowrap">
+        VCU Engine Firmware
+      </a>
+      <span class="text-outline-variant select-none">/</span>
+      <span class="font-label-md text-label-md text-on-surface">Versions</span>
+    </nav>
+    <div class="flex items-center gap-0.5">
+      <button class="relative p-2 hover:bg-surface-container rounded-lg transition-colors" title="Notifications">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
+        <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border-2 border-surface-container-lowest"></span>
+      </button>
+      <button class="p-2 hover:bg-surface-container rounded-lg transition-colors" title="Help">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">help</span>
+      </button>
+      <div class="w-px h-5 bg-outline-variant mx-1.5"></div>
+      <button class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors">
+        <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
+          <span class="text-on-secondary-container font-bold text-xs" id="topbar-initials" style="font-family:Roboto;">EL</span>
+        </div>
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">expand_more</span>
+      </button>
+      <div class="w-px h-5 bg-outline-variant mx-1"></div>
+      <div class="flex items-center rounded-full border border-outline-variant overflow-hidden" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:600;">
+        <button onclick="applyRole('admin')" id="role-btn-admin" class="px-2.5 py-1 transition-colors bg-secondary text-white">Admin</button>
+        <button onclick="applyRole('developer')" id="role-btn-dev" class="px-2.5 py-1 transition-colors text-on-surface-variant hover:bg-surface-container">Dev</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── SUBBAR ── -->
+  <div class="h-12 flex-shrink-0 flex items-center justify-between px-4 bg-surface-container-lowest border-b border-outline-variant z-30">
+    <div class="flex items-center gap-2">
+
+      <!-- Project switcher -->
+      <div class="relative" id="sb-project-wrap">
+        <button id="sb-project-btn" onclick="toggleSbProject()" class="subbar-pill">
+          <span class="material-symbols-outlined text-secondary sym-fill" style="font-size:14px;">folder</span>
+          <span class="font-label-md text-label-md text-on-surface" id="sb-project-name" style="font-size:12px;">VCU Engine Firmware</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="sb-project-chevron" style="font-size:13px;">expand_more</span>
+        </button>
+        <div id="sb-project-dropdown" class="hidden dropdown" style="min-width:264px;">
+          <div class="py-1.5">
+            <button onclick="switchSbProject('VCU Engine Firmware')" data-proj="VCU Engine Firmware"
+                    class="sb-proj-opt w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left" style="background:#1b2638;">
+              <span class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">VCU Engine Firmware</span>
+              <span class="ml-auto material-symbols-outlined text-secondary sb-proj-check" style="font-size:15px;">check</span>
+            </button>
+            <button onclick="switchSbProject('Brake Control Unit')" data-proj="Brake Control Unit"
+                    class="sb-proj-opt w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left">
+              <span class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Brake Control Unit</span>
+              <span class="ml-auto material-symbols-outlined text-outline-variant sb-proj-check" style="font-size:15px;opacity:0;">check</span>
+            </button>
+          </div>
+          <div class="border-t border-outline-variant">
+            <a href="projects-empty.html" class="flex items-center gap-2 px-3 py-2.5 hover:bg-surface-container-low transition-colors">
+              <span class="material-symbols-outlined text-secondary" style="font-size:14px;">add_circle</span>
+              <span class="font-label-md text-label-md text-secondary" style="font-size:12px;">New Project</span>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <span class="text-outline-variant select-none">·</span>
+
+      <!-- Commit chip -->
+      <div class="relative" id="commit-chip-wrap">
+        <button id="commit-chip-btn" onclick="toggleCommitPicker()" class="subbar-pill">
+          <span id="chip-icon-sym" class="material-symbols-outlined text-on-tertiary-container flex-shrink-0" style="font-size:13px;">sell</span>
+          <span id="chip-ref" class="text-on-surface font-semibold" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;">v1.2.0</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="chip-chevron" style="font-size:13px;">expand_more</span>
+        </button>
+        <div id="commit-picker" class="hidden absolute top-full left-0 mt-1.5 bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden" style="min-width:380px;z-index:200;box-shadow:0 4px 20px rgba(0,0,0,0.24);">
+          <div class="flex items-center border-b border-outline-variant px-3">
+            <button id="cp-tab-versions" onclick="switchPickerTab('versions')" class="px-1 py-2.5 mr-5 font-label-md text-label-md border-b-2 border-secondary text-secondary -mb-px transition-colors">Versions</button>
+            <button id="cp-tab-commits"  onclick="switchPickerTab('commits')"  class="px-1 py-2.5 font-label-md text-label-md border-b-2 border-transparent text-on-surface-variant hover:text-on-surface -mb-px transition-colors">Commits</button>
+          </div>
+          <div id="cp-panel-versions">
+            <div class="overflow-y-auto" style="max-height:280px;" id="cp-versions-list"></div>
+          </div>
+          <div id="cp-panel-commits" style="display:none;">
+            <div class="px-3 py-2 border-b border-outline-variant">
+              <div class="flex items-center gap-2 px-2 py-1.5 bg-surface-container-low border border-outline-variant rounded-lg">
+                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">search</span>
+                <input type="text" placeholder="Search commits…" oninput="filterPickerCommits(this.value)" class="flex-1 bg-transparent outline-none text-on-surface placeholder-outline" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;">
+              </div>
+            </div>
+            <div class="overflow-y-auto" style="max-height:240px;" id="cp-commits-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CONTENT AREA ── -->
+  <div class="flex-1 overflow-y-auto bg-transparent">
+    <div class="p-6" style="max-width:860px;margin:0 auto;">
+
+      <!-- Versions card -->
+      <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden mb-5">
+
+        <!-- Card header -->
+        <div class="px-5 py-4 border-b border-outline-variant flex items-center justify-between">
+          <div>
+            <h2 class="font-headline-sm text-headline-sm text-on-surface">Versions</h2>
+            <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" id="ver-subtitle">3 versions · VCU Engine Firmware</p>
+          </div>
+          <div class="flex items-center gap-1.5" id="ver-filters">
+            <button class="ver-filter-btn active" data-filter="all" onclick="setFilter('all')">All <span class="ver-filter-count" id="fc-all">3</span></button>
+            <button class="ver-filter-btn" data-filter="in_review" onclick="setFilter('in_review')">In Review <span class="ver-filter-count" id="fc-in-review">1</span></button>
+            <button class="ver-filter-btn" data-filter="approved" onclick="setFilter('approved')">Complete <span class="ver-filter-count" id="fc-complete">2</span></button>
+          </div>
+        </div>
+
+        <!-- Version rows -->
+        <div id="version-list"></div>
+
+        <!-- Empty state -->
+        <div id="ver-empty" class="hidden py-14 flex flex-col items-center text-center gap-3">
+          <div class="w-10 h-10 rounded-full bg-surface-container-low border border-outline-variant flex items-center justify-center">
+            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:20px;">local_offer</span>
+          </div>
+          <p class="font-label-md text-label-md text-on-surface-variant">No versions match this filter</p>
+        </div>
+
+      </div>
+
+      <!-- Untagged commits card -->
+      <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+        <div class="px-5 py-3.5 border-b border-outline-variant flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <h2 class="font-headline-sm text-headline-sm text-on-surface">Untagged Commits</h2>
+            <span id="untagged-count" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;background:#26282e;color:#a3a7b1;padding:2px 8px;border-radius:99px;"></span>
+          </div>
+          <p class="font-label-sm text-label-sm text-on-surface-variant">Commits without a version tag</p>
+        </div>
+        <div id="untagged-list" class="py-2"></div>
+      </div>
+
+    </div>
+  </div>
+</div><!-- /app-main -->
+
+<!-- ══════════════ SCRIPTS ══════════════ -->
+<script>
+let currentRole = 'admin';
+let activeFilter = 'all';
+
+const ROLES = {
+  admin:     { name: 'Engineering Lead', initials: 'EL' },
+  developer: { name: 'Bob Kumar',        initials: 'BK' },
+};
+
+const COMMITS = [
+  { sha: 'abc1234', msg: 'feat: add brake system FMEA table',         author: 'Manoj S.',   time: '2h ago',   current: false, version: null     },
+  { sha: 'f7e3b12', msg: 'fix: correct signal naming in CAN matrix',  author: 'Priya R.',   time: '5h ago',   current: false, version: null     },
+  { sha: 'd9a0c55', msg: 'docs: update SWE.3 traceability links',     author: 'Manoj S.',   time: '1d ago',   current: true,  version: 'v1.2.0' },
+  { sha: 'b2c841f', msg: 'refactor: split EngineControl component',   author: 'Arjun M.',   time: '2d ago',   current: false, version: 'v1.1.0' },
+  { sha: '3ef70a9', msg: 'feat: add ADAS perception group',            author: 'Priya R.',   time: '3d ago',   current: false, version: 'v1.0.0' },
+  { sha: '91c3d17', msg: 'fix: missing include path for diagnostics',  author: 'Manoj S.',   time: '4d ago',   current: false, version: null     },
+  { sha: '07fa8b2', msg: 'chore: update Clang config to 17',          author: 'Arjun M.',   time: '5d ago',   current: false, version: null     },
+];
+
+const VERSIONS = [
+  { tag: 'v1.2.0', sha: 'd9a0c55', desc: 'SWE.3 review draft — all groups',        date: 'Jun 15, 2026', status: 'in_review', docs: 45 },
+  { tag: 'v1.1.0', sha: 'b2c841f', desc: 'Engine + Brake subsystems complete',      date: 'Jun 10, 2026', status: 'approved',  docs: 40 },
+  { tag: 'v1.0.0', sha: '3ef70a9', desc: 'Initial ADAS SWE.3 baseline',             date: 'Jun 1, 2026',  status: 'approved',  docs: 35 },
+];
+
+// ── Filter counts ──
+function updateFilterCounts() {
+  document.getElementById('fc-all').textContent      = VERSIONS.length;
+  document.getElementById('fc-in-review').textContent = VERSIONS.filter(v => v.status === 'in_review').length;
+  document.getElementById('fc-complete').textContent  = VERSIONS.filter(v => v.status === 'approved').length;
+}
+
+// ── Set active filter ──
+function setFilter(f) {
+  activeFilter = f;
+  document.querySelectorAll('.ver-filter-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.filter === f);
+  });
+  renderVersionList();
+}
+
+// ── Version accent & pill ──
+function accentColor(s) {
+  return s === 'approved' ? '#3ddc84' : s === 'in_review' ? '#f5a524' : '#2c2f37';
+}
+function statusPill(s) {
+  if (s === 'in_review') return `<span class="pill-in-review"><span style="width:4px;height:4px;border-radius:50%;background:#f5a524;display:inline-block;"></span>In Review</span>`;
+  if (s === 'approved')  return `<span class="pill-approved"><span style="width:4px;height:4px;border-radius:50%;background:#3ddc84;display:inline-block;"></span>Approved</span>`;
+  return '';
+}
+
+// ── Render version list ──
+function renderVersionList() {
+  const filtered = activeFilter === 'all' ? VERSIONS : VERSIONS.filter(v => v.status === activeFilter);
+  const list = document.getElementById('version-list');
+  const empty = document.getElementById('ver-empty');
+  document.getElementById('ver-subtitle').textContent = `${VERSIONS.length} version${VERSIONS.length !== 1 ? 's' : ''} · VCU Engine Firmware`;
+
+  if (!filtered.length) {
+    list.innerHTML = '';
+    empty.classList.remove('hidden');
+    empty.classList.add('flex');
+    return;
+  }
+  empty.classList.add('hidden');
+  empty.classList.remove('flex');
+
+  const currentSha = (COMMITS.find(c => c.current) || {}).sha;
+
+  list.innerHTML = filtered.map(v => {
+    const isCurrent = v.sha === currentSha;
+    return `
+    <div class="ver-row" id="ver-${v.tag}" onclick="highlightVersion('${v.tag}')">
+      <div class="ver-accent" style="background:${accentColor(v.status)};"></div>
+      <div class="flex-1 px-5 py-4">
+        <div class="flex items-start justify-between gap-4">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2.5 flex-wrap mb-1.5">
+              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:15px;font-weight:700;color:#f2f3f5;">${v.tag}</span>
+              ${statusPill(v.status)}
+              ${isCurrent ? `<span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#1b2a45;color:#1d7bff;border:1px solid #2d4a80;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;">current</span>` : ''}
+            </div>
+            <p style="font-size:13px;color:#a3a7b1;margin-bottom:10px;line-height:1.5;">${v.desc}</p>
+            <div class="flex items-center gap-2.5 flex-wrap">
+              <span class="sha-chip">${v.sha.slice(0,7)}</span>
+              <span style="font-size:11px;color:#7c818c;">${v.docs} docs</span>
+              <span style="font-size:11px;color:#7c818c;">·</span>
+              <span style="font-size:11px;color:#7c818c;">${v.date}</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5 flex-shrink-0 pt-0.5">
+            <a href="documents.html" class="ver-action-btn primary" onclick="event.stopPropagation()">
+              <span class="material-symbols-outlined" style="font-size:13px;">description</span>
+              View docs
+            </a>
+            <a href="compare.html" class="ver-action-btn" onclick="event.stopPropagation()" title="Compare this version vs another">
+              <span class="material-symbols-outlined" style="font-size:13px;">compare_arrows</span>
+              Compare
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Render untagged commits ──
+function renderUntaggedCommits() {
+  const untagged = COMMITS.filter(c => !c.version);
+  document.getElementById('untagged-count').textContent = untagged.length;
+  const list = document.getElementById('untagged-list');
+  if (!untagged.length) {
+    list.innerHTML = `<div style="padding:24px 20px;font-size:12px;color:#7c818c;">All commits have version tags.</div>`;
+    return;
+  }
+  list.innerHTML = untagged.map((c, i) => {
+    const isLast = i === untagged.length - 1;
+    return `
+    <button class="commit-row" onclick="void(0)" onmouseover="this.style.background='#0e0f12'" onmouseout="this.style.background=''">
+      <div style="display:flex;flex-direction:column;align-items:center;width:20px;flex-shrink:0;padding-top:12px;">
+        <div style="width:8px;height:8px;border-radius:50%;background:#1c1e23;border:2px solid #2c2f37;flex-shrink:0;"></div>
+        ${!isLast ? `<div style="width:2px;flex:1;min-height:10px;background:#24272e;margin-top:3px;"></div>` : ''}
+      </div>
+      <div style="flex:1;min-width:0;padding:10px 0 10px 10px;border-bottom:${isLast ? 'none' : '1px solid #26282e'};">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+          <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;color:#a3a7b1;background:#26282e;padding:1px 5px;border-radius:4px;">${c.sha.slice(0,7)}</span>
+        </div>
+        <div style="font-size:12px;color:#f2f3f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:600px;margin-bottom:2px;">${c.msg}</div>
+        <div style="font-size:11px;color:#7c818c;">${c.author} · ${c.time}</div>
+      </div>
+    </button>`;
+  }).join('');
+}
+
+// ── Highlight / scroll to version row ──
+function highlightVersion(tag) {
+  const el = document.getElementById('ver-' + tag);
+  if (!el) return;
+  el.style.background = '#1b2638';
+  setTimeout(() => { el.style.background = ''; }, 900);
+}
+
+// ── Subbar: project switcher ──
+function toggleSbProject() {
+  const dd = document.getElementById('sb-project-dropdown');
+  const ch = document.getElementById('sb-project-chevron');
+  const open = !dd.classList.contains('hidden');
+  dd.classList.toggle('hidden', open);
+  ch.style.transform = open ? '' : 'rotate(180deg)';
+}
+function switchSbProject(name) {
+  document.getElementById('sb-project-name').textContent = name;
+  document.querySelectorAll('.sb-proj-opt').forEach(opt => {
+    const active = opt.dataset.proj === name;
+    opt.style.background = active ? '#1b2638' : '';
+    opt.querySelector('.sb-proj-check').style.opacity = active ? '1' : '0';
+  });
+  closeSbProject();
+}
+function closeSbProject() {
+  document.getElementById('sb-project-dropdown').classList.add('hidden');
+  document.getElementById('sb-project-chevron').style.transform = '';
+}
+
+// ── Subbar: commit chip picker ──
+function updateChip() {
+  const c = COMMITS.find(x => x.current);
+  if (!c) return;
+  const refEl  = document.getElementById('chip-ref');
+  const iconEl = document.getElementById('chip-icon-sym');
+  if (c.version) {
+    refEl.textContent  = c.version;
+    iconEl.textContent = 'sell';
+    iconEl.style.color = '#3ddc84';
+  } else {
+    refEl.textContent  = `main @ ${c.sha.slice(0,7)}`;
+    iconEl.textContent = 'alt_route';
+    iconEl.style.color = '';
+  }
+}
+
+function toggleCommitPicker() {
+  const picker  = document.getElementById('commit-picker');
+  const chevron = document.getElementById('chip-chevron');
+  const isHidden = picker.classList.contains('hidden');
+  picker.classList.toggle('hidden', !isHidden);
+  chevron.style.transform = isHidden ? 'rotate(180deg)' : '';
+  if (isHidden) { renderPickerCommits(''); renderPickerVersions(); switchPickerTab('versions'); }
+}
+
+function switchPickerTab(tab) {
+  const isCommits = tab === 'commits';
+  document.getElementById('cp-panel-commits').style.display  = isCommits ? '' : 'none';
+  document.getElementById('cp-panel-versions').style.display = isCommits ? 'none' : '';
+  const tabC = document.getElementById('cp-tab-commits');
+  const tabV = document.getElementById('cp-tab-versions');
+  tabC.classList.toggle('border-secondary', isCommits);
+  tabC.classList.toggle('text-secondary', isCommits);
+  tabC.classList.toggle('border-transparent', !isCommits);
+  tabC.classList.toggle('text-on-surface-variant', !isCommits);
+  tabV.classList.toggle('border-secondary', !isCommits);
+  tabV.classList.toggle('text-secondary', !isCommits);
+  tabV.classList.toggle('border-transparent', isCommits);
+  tabV.classList.toggle('text-on-surface-variant', isCommits);
+}
+
+function filterPickerCommits(val) { renderPickerCommits(val); }
+
+function renderPickerVersions() {
+  const list = document.getElementById('cp-versions-list');
+  const accentCol = s => s === 'approved' ? '#3ddc84' : s === 'in_review' ? '#f5a524' : '#2c2f37';
+  const pill = s => {
+    if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:8px;font-weight:700;background:#132a1f;color:#3ddc84;border:1px solid #1f5a3a;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#3ddc84;display:inline-block;"></span>Approved</span>`;
+    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:8px;font-weight:700;background:#2c2414;color:#f5a524;border:1px solid #6b4a12;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f5a524;display:inline-block;"></span>In Review</span>`;
+    return '';
+  };
+  const activeSha = (COMMITS.find(x => x.current) || {}).sha;
+  list.innerHTML = VERSIONS.map(v => {
+    const isActive = v.sha === activeSha;
+    return `
+    <button onclick="selectVersion('${v.tag}')" style="width:100%;display:flex;border:none;cursor:pointer;border-bottom:1px solid #24272e;text-align:left;background:${isActive ? '#1b2638' : 'transparent'};" onmouseover="if(!${isActive})this.style.background='#23262d'" onmouseout="if(!${isActive})this.style.background='${isActive ? '#1b2638' : 'transparent'}'">
+      <div style="width:3px;flex-shrink:0;background:${accentCol(v.status)};"></div>
+      <div style="flex:1;min-width:0;padding:11px 12px 10px 10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px;">
+          <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">
+            <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;font-weight:700;color:#f2f3f5;">${v.tag}</span>
+            ${pill(v.status)}
+          </div>
+          ${isActive ? '<span class="material-symbols-outlined" style="font-size:15px;color:#1d7bff;flex-shrink:0;">check</span>' : ''}
+        </div>
+        <div style="font-size:11px;color:#a3a7b1;margin-bottom:4px;line-height:1.4;">${v.desc}</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-family:'JetBrains Mono';font-size:10px;color:#7c818c;background:#26282e;padding:1px 5px;border-radius:4px;">${v.sha.slice(0,7)}</span>
+          <span style="font-size:10px;color:#7c818c;">${v.date}</span>
+          <span style="font-size:10px;color:#7c818c;">${v.docs} docs</span>
+        </div>
+      </div>
+    </button>`;
+  }).join('');
+}
+
+function renderPickerCommits(filter) {
+  filter = (filter || '').toLowerCase();
+  const filtered = COMMITS.filter(c => !filter ||
+    c.sha.includes(filter) || c.msg.toLowerCase().includes(filter) || c.author.toLowerCase().includes(filter));
+  const list = document.getElementById('cp-commits-list');
+  if (!filtered.length) {
+    list.innerHTML = `<div style="padding:24px 16px;text-align:center;font-size:12px;color:#7c818c;">No commits match</div>`;
+    return;
+  }
+  list.innerHTML = filtered.map((c, i) => {
+    const isLast   = i === filtered.length - 1;
+    const dotColor = c.version ? '#3ddc84' : c.current ? '#1d7bff' : '#2c2f37';
+    const dotFill  = (c.current || c.version) ? dotColor : 'white';
+    const vTag = c.version
+      ? `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:600;color:#3ddc84;background:#132a1f;border:1px solid #1f5a3a;padding:0px 6px;border-radius:99px;"><span class="material-symbols-outlined" style="font-size:10px;color:#3ddc84;">sell</span>${c.version}</span>`
+      : '';
+    const curBadge = c.current
+      ? `<span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:8px;font-weight:700;background:#1b2a45;color:#1d7bff;border:1px solid #2d4a80;padding:0px 5px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;">current</span>`
+      : '';
+    return `
+    <button onclick="selectCommit('${c.sha}')" style="width:100%;display:flex;gap:0;padding:0 12px;text-align:left;background:${c.current ? '#1b2638' : 'transparent'};border:none;cursor:pointer;" onmouseover="if(!${c.current})this.style.background='#23262d'" onmouseout="if(!${c.current})this.style.background='${c.current ? '#1b2638' : 'transparent'}'">
+      <div style="display:flex;flex-direction:column;align-items:center;width:18px;flex-shrink:0;padding-top:12px;">
+        <div style="width:9px;height:9px;border-radius:50%;background:${dotFill};border:2px solid ${dotColor};flex-shrink:0;"></div>
+        ${!isLast ? `<div style="width:2px;flex:1;min-height:10px;background:#24272e;margin-top:3px;"></div>` : ''}
+      </div>
+      <div style="flex:1;min-width:0;padding:10px 0 10px 8px;">
+        <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:2px;">
+          <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;color:#a3a7b1;background:#26282e;padding:1px 5px;border-radius:4px;">${c.sha.slice(0,7)}</span>
+          ${curBadge}${vTag}
+        </div>
+        <div style="font-size:11px;color:#f2f3f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:290px;">${c.msg}</div>
+        <div style="font-size:10px;color:#7c818c;margin-top:1px;">${c.author} · ${c.time}</div>
+      </div>
+    </button>`;
+  }).join('');
+}
+
+function selectVersion(tag) {
+  const v = VERSIONS.find(x => x.tag === tag);
+  if (v) selectCommit(v.sha);
+  // scroll to version row in list
+  setTimeout(() => highlightVersion(tag), 100);
+}
+
+function selectCommit(sha) {
+  document.getElementById('commit-picker').classList.add('hidden');
+  document.getElementById('chip-chevron').style.transform = '';
+  COMMITS.forEach(x => x.current = (x.sha === sha));
+  updateChip();
+}
+
+// ── Sidebar toggle ──
+function toggleSidebar() {
+  const expanded = document.body.classList.toggle('nav-expanded');
+  document.getElementById('sidebar-toggle-icon').textContent = expanded ? 'chevron_left' : 'chevron_right';
+}
+
+// ── Role toggle ──
+function applyRole(role) {
+  currentRole = role;
+  const isAdmin = role === 'admin';
+  document.getElementById('role-btn-admin').className = `px-2.5 py-1 transition-colors ${isAdmin ? 'bg-secondary text-white' : 'text-on-surface-variant hover:bg-surface-container'}`;
+  document.getElementById('role-btn-dev').className   = `px-2.5 py-1 transition-colors ${!isAdmin ? 'bg-secondary text-white' : 'text-on-surface-variant hover:bg-surface-container'}`;
+  document.getElementById('user-initials').textContent   = ROLES[role].initials;
+  document.getElementById('topbar-initials').textContent = ROLES[role].initials;
+  document.getElementById('user-name').textContent        = ROLES[role].name;
+  document.getElementById('user-role-label').textContent  = isAdmin ? 'Admin' : 'Developer';
+  document.getElementById('user-role-dot').style.background = isAdmin ? '#1d7bff' : '#3ddc84';
+}
+
+// ── Close dropdowns on outside click ──
+document.addEventListener('click', e => {
+  if (!document.getElementById('sb-project-wrap').contains(e.target)) closeSbProject();
+  if (!document.getElementById('commit-chip-wrap').contains(e.target)) {
+    document.getElementById('commit-picker').classList.add('hidden');
+    document.getElementById('chip-chevron').style.transform = '';
+  }
+});
+
+// ── Init ──
+updateFilterCounts();
+renderVersionList();
+renderUntaggedCommits();
+updateChip();
+</script>
+</body>
+</html>

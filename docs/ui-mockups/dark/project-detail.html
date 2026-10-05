@@ -1,0 +1,2790 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>[PRODUCT NAME] — VCU Engine Firmware</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Roboto:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<script id="tailwind-config">
+  /* Samsung Magician-style dark theme */
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#f4f5f7", "primary-container": "#26282e",
+          "on-primary": "#ffffff", "on-primary-container": "#8a8f9c",
+          "secondary": "#1d7bff", "secondary-container": "#3d8fff",
+          "on-secondary": "#ffffff", "on-secondary-container": "#ffffff",
+          "on-tertiary-container": "#1fae63",
+          "error": "#ff4d5a", "error-container": "#3a1d21", "on-error-container": "#ff8a93",
+          "surface": "#0e0f12", "background": "#0e0f12", "panel": "#15161a", "inverse": "#33363f",
+          "surface-container-lowest": "#1c1e23", "surface-container-low": "#23262d",
+          "surface-container": "#272a32", "surface-container-high": "#2e3139",
+          "surface-container-highest": "#363a44",
+          "on-surface": "#f2f3f5", "on-surface-variant": "#a3a7b1",
+          "outline": "#6b707c", "outline-variant": "#2c2f37",
+          "tertiary-container": "#10301f", "tertiary-fixed": "#6ff0b0",
+        },
+        borderRadius: { "DEFAULT": "6px", "lg": "8px", "xl": "14px", "2xl": "18px", "full": "9999px" },
+        spacing: {
+          "sidebar-width": "220px", "inspector-width": "400px",
+          "gutter": "16px", "container-padding": "24px",
+        },
+        fontFamily: {
+          "display-lg": ["Samsung Sharp Sans", "Poppins", "sans-serif"],
+          "headline-md": ["Samsung Sharp Sans", "Poppins", "sans-serif"],
+          "headline-sm": ["Samsung Sharp Sans", "Poppins", "sans-serif"],
+          "body-lg": ["SamsungOne", "Roboto", "sans-serif"], "body-md": ["SamsungOne", "Roboto", "sans-serif"],
+          "body-sm": ["SamsungOne", "Roboto", "sans-serif"],
+          "label-md": ["SamsungOne", "Roboto", "sans-serif"], "label-sm": ["SamsungOne", "Roboto", "sans-serif"],
+        },
+        fontSize: {
+          "display-lg":  ["32px", { lineHeight: "40px", letterSpacing: "-0.01em", fontWeight: "700" }],
+          "headline-md": ["24px", { lineHeight: "32px", letterSpacing: "-0.005em", fontWeight: "600" }],
+          "headline-sm": ["18px", { lineHeight: "24px", fontWeight: "600" }],
+          "body-lg":     ["16px", { lineHeight: "24px", fontWeight: "400" }],
+          "body-md":     ["14px", { lineHeight: "20px", fontWeight: "400" }],
+          "body-sm":     ["12px", { lineHeight: "16px", fontWeight: "400" }],
+          "label-md":    ["12px", { lineHeight: "16px", letterSpacing: "0.01em", fontWeight: "500" }],
+          "label-sm":    ["11px", { lineHeight: "14px", letterSpacing: "0.01em", fontWeight: "500" }],
+        },
+      }
+    }
+  }
+</script>
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle; line-height: 1;
+  }
+  .sym-fill { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2c2f37; border-radius: 10px; }
+  .nav-default { color: #a3a7b1; }
+  .nav-default:hover { background: #1b2638; color: #f2f3f5; }
+  .nav-active { background: #0b0c0f; color: #ffffff; border-left: 2px solid #1d7bff; }
+  .nav-active .material-symbols-outlined { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  .stat-card { transition: box-shadow .15s; }
+  .stat-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.16); }
+  .proc-row { transition: background .1s; cursor: pointer; }
+  .proc-row:hover { background: #0e0f12; }
+  .proc-row:hover .proc-arrow { opacity: 1; transform: translateX(2px); }
+  .proc-arrow { opacity: 0; transition: opacity .1s, transform .15s; }
+  .progress-track { height: 6px; background: #1b2a45; border-radius: 9999px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 9999px; transition: width .6s ease; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { animation: spin 1s linear infinite; }
+
+  @keyframes pulseRing {
+    0%   { box-shadow: 0 0 0 0 rgba(29,123,255,0.52); }
+    70%  { box-shadow: 0 0 0 7px rgba(29,123,255,0); }
+    100% { box-shadow: 0 0 0 0 rgba(29,123,255,0); }
+  }
+  .pulse-ring { animation: pulseRing 2s ease infinite; }
+
+  @keyframes slideInRight { from { transform: translateX(110%); opacity:0; } to { transform: translateX(0); opacity:1; } }
+  @keyframes slideOutRight { from { transform: translateX(0); opacity:1; } to { transform: translateX(110%); opacity:0; } }
+  .toast-in  { animation: slideInRight .3s ease forwards; }
+  .toast-out { animation: slideOutRight .3s ease forwards; }
+
+  .adv-body { overflow:hidden; max-height:0; transition:max-height .25s ease; }
+  .adv-body.open { max-height:120px; }
+  .fn-panel { position:fixed;top:0;right:0;height:100vh;width:70%;max-width:860px;background:#1c1e23;border-left:1px solid #2c2f37;z-index:60;transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column; }
+  .fn-panel.open { transform:translateX(0); }
+  .fn-backdrop { position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:59;opacity:0;pointer-events:none;transition:opacity .3s ease; }
+  .fn-backdrop.open { opacity:1;pointer-events:auto; }
+  .unit-body { overflow:hidden;max-height:0;transition:max-height .25s ease; }
+  .unit-body.open { max-height:800px; }
+
+  .phase-line { height: 2px; flex: 1; margin: 0 6px; margin-top: 11px; border-radius: 9999px; }
+  .subbar-pill { display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid #2c2f37;border-radius:6px;background:#1c1e23;transition:background .1s,border-color .1s;cursor:pointer; }
+  .subbar-pill:hover { background:#1b2638;border-color:#1d7bff; }
+  .dropdown { position:absolute;top:calc(100% + 6px);left:0;background:#1c1e23;border:1px solid #2c2f37;border-radius:8px;overflow:hidden;z-index:200;box-shadow:0 4px 20px rgba(0,0,0,0.24); }
+  .ph-done   { background: #3ddc84; }
+  .ph-active { background: #1d7bff; }
+  .ph-pending { background: #1b2a45; }
+
+  /* Collapsible sidebar */
+  :root { --sw: 220px; }
+  body.nav-collapsed { --sw: 56px; }
+  #app-sidebar { width: var(--sw); transition: width .2s cubic-bezier(.4,0,.2,1); }
+  #app-main    { margin-left: var(--sw); transition: margin-left .2s cubic-bezier(.4,0,.2,1); }
+  body.nav-collapsed .nav-label,
+  body.nav-collapsed .brand-text,
+  body.nav-collapsed .user-info,
+  body.nav-collapsed .more-btn-icon { display: none; }
+  body.nav-collapsed .nav-item     { justify-content: center; padding-left: 0; padding-right: 0; gap: 0; }
+  body.nav-collapsed .nav-active   { border-left: none; }
+  body.nav-collapsed .brand-header { flex-direction: column; align-items: center; gap: 6px; padding: 10px 8px; }
+  body.nav-collapsed .user-btn     { justify-content: center; padding: 6px; gap: 0; }
+
+  /* ── Samsung Magician dark theme layer (shared by every dark mockup) ── */
+  :root {
+    --mm-blue: #1d7bff; --mm-blue-hi: #3d8fff; --mm-navy: #1428a0;
+    --mm-grad: linear-gradient(135deg, #3d8fff 0%, #1d7bff 45%, #1428a0 100%);
+    --shadow-card: 0 1px 0 rgba(255,255,255,.04) inset, 0 10px 30px rgba(0,0,0,.45);
+    --shadow-pop: 0 18px 48px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.05);
+    --glow-blue: 0 0 0 1px rgba(29,123,255,.45), 0 6px 20px rgba(29,123,255,.35);
+    color-scheme: dark;
+  }
+  body {
+    font-family: 'SamsungOne', 'Roboto', 'Segoe UI', sans-serif;
+    background-image:
+      radial-gradient(900px 500px at 100% -10%, rgba(29,123,255,.16), transparent 60%),
+      radial-gradient(700px 420px at -10% 110%, rgba(20,40,160,.18), transparent 60%);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { font-family: 'Samsung Sharp Sans', 'Poppins', sans-serif; }
+  code, .mono { font-family: 'SamsungOne','Roboto',sans-serif !important; }
+  ::selection { background: rgba(29,123,255,.45); color: #fff; }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #3a3e48; border-radius: 10px; }
+  ::-webkit-scrollbar-thumb:hover { background: #4a4f5b; }
+
+  /* Signature surfaces: gradient CTA, glassy cards, glowing brand tile */
+  .bg-secondary { background-image: var(--mm-grad); box-shadow: 0 4px 14px rgba(29,123,255,.35); }
+  .hover\:bg-secondary-container:hover { background-image: linear-gradient(135deg, #5aa2ff 0%, #2d86ff 50%, #1c35b8 100%); box-shadow: var(--glow-blue); }
+  .rounded-xl.border.bg-surface-container-lowest,
+  .rounded-2xl.border.bg-surface-container-lowest { box-shadow: var(--shadow-card); background-image: linear-gradient(180deg, rgba(255,255,255,.025), transparent 120px); }
+  .brand-tile { background-image: var(--mm-grad); box-shadow: 0 0 18px rgba(29,123,255,.55); }
+  .bg-inverse { box-shadow: var(--shadow-pop); }
+  .mm-hero {
+    position: relative; overflow: hidden;
+    background:
+      radial-gradient(circle at 85% 90%, transparent 0 90px, rgba(93,162,255,.18) 91px 92px, transparent 93px 150px, rgba(93,162,255,.12) 151px 152px, transparent 153px 215px, rgba(93,162,255,.08) 216px 217px, transparent 218px),
+      radial-gradient(600px 380px at 85% 95%, rgba(61,143,255,.45), transparent 65%),
+      linear-gradient(160deg, #0a1240 0%, #10208a 55%, #1d55d8 100%);
+  }
+  #app-sidebar { background: linear-gradient(180deg, #17181d 0%, #121317 100%) !important; border-color: #24272e !important; }
+  header { background: rgba(21,22,26,.85) !important; backdrop-filter: blur(10px); border-color: #24272e !important; }
+  input::placeholder, textarea::placeholder { color: #6b707c !important; }
+
+  /* Form controls (beat the Tailwind forms plugin's light defaults) */
+  input[type='text'], input[type='search'], input[type='email'], input[type='password'],
+  input[type='url'], input[type='number'], input:not([type]), textarea, select {
+    background-color: transparent; color: #f2f3f5; border-color: #2c2f37;
+  }
+  input[type='text']:focus, input[type='search']:focus, input[type='email']:focus, input[type='password']:focus,
+  input[type='url']:focus, input[type='number']:focus, input:not([type]):focus, textarea:focus, select:focus {
+    border-color: #1d7bff; --tw-ring-color: rgba(29,123,255,.35);
+  }
+  input.bg-transparent { border: 0; padding: 0; box-shadow: none !important; }
+  select option { background: #1f2127; color: #f2f3f5; }
+  input[type='checkbox'], input[type='radio'] { background-color: #1c1e23; border: 1.5px solid #4a4f5b; color: #1d7bff; accent-color: #1d7bff; }
+  input[type='checkbox'] { border-radius: 4px; }
+  input[type='checkbox']:checked, input[type='radio']:checked { background-color: #1d7bff; border-color: #1d7bff; }
+  input[type='checkbox']:focus, input[type='radio']:focus { box-shadow: 0 0 0 3px rgba(29,123,255,.3); outline: none; }
+
+  /* Navigation */
+  .nav-item { position: relative; border-radius: 10px; }
+  .nav-default { color: #a3a7b1; }
+  .nav-default:hover { background: rgba(255,255,255,.05); color: #f2f3f5; }
+  .nav-active { background: linear-gradient(90deg, rgba(29,123,255,.22), rgba(29,123,255,.06)) !important; color: #ffffff !important; border-left: none !important; }
+  .nav-active::before { content: ''; position: absolute; left: -2px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: #3d8fff; box-shadow: 0 0 10px #1d7bff; }
+  .nav-active .material-symbols-outlined { color: #5aa2ff; font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  .outline-link.active { color: #5aa2ff; background: rgba(29,123,255,.12); font-weight: 500; }
+
+  /* Pills, dropdowns, tabs */
+  .subbar-pill { border-radius: 999px; background: #1c1e23; border-color: #2c2f37; }
+  .subbar-pill:hover { background: #23262d; border-color: #1d7bff; box-shadow: 0 0 0 3px rgba(29,123,255,.15); }
+  .dropdown { background: #1f2127; border-color: #2c2f37; border-radius: 12px; box-shadow: var(--shadow-pop); }
+  .proc-tab.active { color: #ffffff; border-bottom-color: #1d7bff; box-shadow: 0 6px 10px -6px rgba(29,123,255,.8); }
+
+  /* Status badges & process pills */
+  .badge { border-radius: 999px; }
+  .badge-approved { background: rgba(61,220,132,.12); color: #3ddc84; border-color: rgba(61,220,132,.35); }
+  .badge-review   { background: rgba(245,165,36,.12); color: #f5a524; border-color: rgba(245,165,36,.35); }
+  .badge-unchanged { background: rgba(255,255,255,.05); color: #8a8f9c; border-color: #2c2f37; }
+  .proc-pill { border-radius: 999px; }
+  .pill-swe3 { background: rgba(29,123,255,.16); color: #5aa2ff; }
+  .pill-swe2 { background: rgba(143,139,255,.16); color: #a8a5ff; }
+  .pill-swe1 { background: rgba(61,220,132,.14); color: #3ddc84; }
+  .pill-sys1 { background: rgba(177,140,255,.16); color: #c3a6ff; }
+  .pill-sys2 { background: rgba(255,138,61,.16); color: #ff9d5c; }
+  .proj-status-chip { border-radius: 999px; }
+  .proj-status-chip .s-dot { box-shadow: 0 0 6px currentColor; }
+
+  /* Progress */
+  .rev-bar { background: #2a2d35; }
+  .rev-bar-fill { background: linear-gradient(90deg, #1428a0, #1d7bff 60%, #5aa2ff); box-shadow: 0 0 10px rgba(29,123,255,.6); }
+  .rev-bar-fill.done { background: linear-gradient(90deg, #0f7a45, #3ddc84); box-shadow: 0 0 10px rgba(61,220,132,.5); }
+
+  /* Rows */
+  .doc-row:hover { background: rgba(255,255,255,.035); }
+  .doc-row.row-selected { background: rgba(29,123,255,.10); }
+
+  /* ── Shining cards: gradient edge highlight + periodic light sweep + deep shadow ── */
+  .rounded-xl.border.bg-surface-container-lowest:not(.absolute):not(.fixed):not([style*="position:absolute"]) {
+    position: relative;
+    background-image: linear-gradient(165deg, rgba(255,255,255,.045) 0%, rgba(255,255,255,0) 38%), linear-gradient(180deg, #1f2228 0%, #1a1c21 100%);
+    border-color: rgba(255,255,255,.06);
+    box-shadow: 0 1px 0 rgba(255,255,255,.07) inset, 0 -1px 0 rgba(0,0,0,.4) inset, 0 14px 34px rgba(0,0,0,.5), 0 2px 6px rgba(0,0,0,.35);
+    transition: box-shadow .25s ease, border-color .25s ease;
+  }
+  .rounded-xl.border.bg-surface-container-lowest:not(.absolute):not(.fixed):not([style*="position:absolute"])::before {
+    content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
+    background: linear-gradient(140deg, rgba(110,170,255,.55), rgba(255,255,255,.08) 28%, rgba(255,255,255,0) 55%, rgba(29,123,255,.28) 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+  }
+  .rounded-xl.border.bg-surface-container-lowest:not(.absolute):not(.fixed):not([style*="position:absolute"]):hover {
+    border-color: rgba(29,123,255,.28);
+    box-shadow: 0 1px 0 rgba(255,255,255,.08) inset, 0 16px 38px rgba(0,0,0,.55), 0 0 0 1px rgba(29,123,255,.12);
+  }
+
+  /* ── Magician-style gauge (one-time draw-in only) ── */
+  .mm-gauge { position: relative; width: 156px; height: 156px; flex-shrink: 0; }
+  .mm-gauge::before { content: ''; position: absolute; inset: 18px; border-radius: 50%; background: radial-gradient(circle, rgba(29,123,255,.14) 0%, rgba(29,123,255,0) 70%); }
+  .mm-gauge svg { position: relative; overflow: visible; }
+  .mm-arc { animation: mm-draw .9s cubic-bezier(.22,.9,.3,1) forwards; }
+  @keyframes mm-draw { to { stroke-dashoffset: 0; } }
+
+  .mm-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; background: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent), 0 0 10px var(--c); }
+
+  /* ── Glowing gradient bars with grow-in + shimmer ── */
+  .mm-bar { position: relative; height: 6px; border-radius: 99px; background: #262930; box-shadow: inset 0 1px 2px rgba(0,0,0,.6); overflow: hidden; }
+  .mm-bar.thin { height: 4px; }
+  .mm-bar-fill {
+    height: 100%; border-radius: 99px;
+    background: linear-gradient(90deg, var(--c2), var(--c1));
+    box-shadow: 0 0 8px color-mix(in srgb, var(--c1) 55%, transparent);
+    animation: mm-grow .8s cubic-bezier(.22,.9,.3,1) both; animation-delay: var(--d, 0s);
+  }
+  @keyframes mm-grow { from { width: 0; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mm-arc, .mm-bar-fill { animation-duration: .01s; animation-delay: 0s; }
+  }
+
+  /* ═════════ Responsive layout ═════════
+     ≥1280px  : reference desktop layout (nothing below applies)
+     <1280px  : same two-column layout, tighter (260px right track, 16px gaps, smaller gauge)
+     <900px   : right-hand cards move under the main column in two columns
+     <600px   : single column                                                    */
+  #kpi-cards { display: grid; grid-template-columns: minmax(0,1fr) 300px; gap: 1.5rem; align-items: stretch; }
+  .kpi-main { display: grid; grid-template-columns: minmax(0,1.55fr) minmax(0,1fr); gap: 1.5rem; }
+  .kpi-status { display: flex; align-items: center; gap: 28px; }
+  #right-sidebar { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; gap: 1.5rem; }
+  #docs-section { overflow-x: auto; }
+
+  @media (max-width: 1279px) {
+    .mm-content { padding: 20px !important; }
+    #right-sidebar h2 { font-size: 16px; line-height: 22px; }
+    #right-sidebar .fv-manage { padding: 6px 8px; }
+    #right-sidebar .fv-manage-label { display: none; }
+    #kpi-strip { margin-bottom: 1rem; }
+    #kpi-cards { grid-template-columns: minmax(0,1fr) 260px; gap: 1rem; }
+    .kpi-main { grid-template-columns: minmax(0,1.45fr) minmax(0,1fr); gap: 1rem; }
+    .kpi-status { gap: 20px; }
+    .kpi-status .mm-gauge, .kpi-status .mm-gauge svg { width: 128px; height: 128px; }
+    #content-row { gap: 1rem !important; }
+    #left-col, #right-sidebar { gap: 1rem !important; }
+    #right-sidebar { width: 260px; }
+    #docs-section th[style*="width:210px"] { width: 170px !important; }
+    #docs-section th[style*="width:160px"] { width: 120px !important; }
+  }
+  @media (max-width: 899px) {
+    /* Status + Assignment share a row; Project Info collapses to a one-line strip of four stats */
+    #kpi-cards { grid-template-columns: minmax(0,1fr); }
+    .kpi-main { grid-template-columns: minmax(0,1.4fr) minmax(0,1fr); }
+    .kpi-info { padding: 14px 20px; }
+    .kpi-info > p { margin-bottom: 8px; }
+    .kpi-info-rows { display: grid !important; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px !important; }
+    .kpi-info-rows > div { flex-direction: column; align-items: flex-start !important; gap: 4px; }
+    #right-sidebar h2 { font-size: 18px; }
+    #right-sidebar .fv-manage-label { display: inline; }
+    #right-sidebar .fv-manage { padding: 6px 12px; }
+    #content-row { flex-direction: column; }
+    #right-sidebar { width: auto; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); align-items: start; }
+    #last-actions-card { flex: none !important; }
+  }
+  @media (max-width: 599px) {
+    .kpi-main, #right-sidebar { grid-template-columns: minmax(0,1fr); }
+    .kpi-info-rows { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    #docs-section th:nth-child(3), #docs-section td:nth-child(3) { display: none; }
+    #docs-section th[style*="width:210px"] { width: auto !important; }
+  }
+  @media (max-width: 440px) {
+    .kpi-status { gap: 14px; padding: 16px; }
+    .kpi-status .mm-gauge, .kpi-status .mm-gauge svg { width: 104px; height: 104px; }
+    .kpi-status .mm-dot + span { font-size: 12px !important; }
+  }
+
+  /* Navigation: icon rail ≤1100px (opens as overlay), off-canvas drawer ≤640px */
+  .mm-menu-btn { display: none; }
+  #mm-nav-backdrop { display: none; position: fixed; inset: 0; z-index: 45; background: rgba(0,0,0,.55); backdrop-filter: blur(2px); }
+  @media (max-width: 1100px) {
+    :root { --sw: 64px; }
+    body:not(.nav-open) .nav-label,
+    body:not(.nav-open) .brand-text,
+    body:not(.nav-open) .user-info,
+    body:not(.nav-open) #role-chip-chevron { display: none; }
+    body:not(.nav-open) .nav-item  { justify-content: center; padding-left: 0; padding-right: 0; gap: 0; }
+    body:not(.nav-open) .brand-header { flex-direction: column; align-items: center; gap: 6px; padding: 10px 8px; }
+    body:not(.nav-open) #role-chip { justify-content: center; padding: 6px; gap: 0; }
+    body.nav-open #app-sidebar { width: 248px; box-shadow: 24px 0 60px rgba(0,0,0,.55); }
+    body.nav-open #mm-nav-backdrop { display: block; }
+  }
+  @media (max-width: 640px) {
+    #app-main { margin-left: 0; }
+    #app-sidebar { width: 264px !important; transform: translateX(-100%); transition: transform .25s cubic-bezier(.4,0,.2,1); }
+    body.nav-open #app-sidebar { transform: none; }
+    .mm-menu-btn { display: inline-flex; }
+    .hide-sm { display: none !important; }
+    .mm-header { padding-left: 8px; padding-right: 8px; }
+    .mm-content { padding-left: 16px !important; padding-right: 16px !important; padding-top: 16px !important; }
+    #kpi-strip { margin-bottom: 1rem; }
+    #kpi-cards, .kpi-main, #right-sidebar, #left-col { gap: 1rem !important; }
+    #content-row { gap: 1rem !important; }
+    .fn-panel { width: 100%; }
+    #commit-picker { min-width: 0 !important; width: calc(100vw - 32px); max-width: 380px; }
+    #toast { left: 16px; right: 16px; bottom: 16px; min-width: 0 !important; max-width: none !important; }
+  }
+
+  /* Sub-bar: wraps instead of overflowing */
+  @media (max-width: 900px) {
+    .mm-subbar { height: auto !important; min-height: 48px; flex-wrap: wrap; gap: 8px; padding-top: 8px; padding-bottom: 8px; }
+    .mm-subbar-left { flex-wrap: wrap; row-gap: 8px; }
+    .sb-sep { display: none; }
+    #sb-project-name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+    #chip-ref { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
+    .mm-subbar-right { margin-left: auto; }
+  }
+  @media (max-width: 480px) {
+    .cta-label { display: none; }
+    #sb-project-name { max-width: 110px; }
+  }
+</style>
+</head>
+
+<body class="bg-background text-on-surface font-body-md overflow-hidden">
+
+<!-- ══════════════ SIDEBAR ══════════════ -->
+<aside id="app-sidebar" class="fixed left-0 top-0 h-screen bg-surface-container-lowest border-r border-outline-variant flex flex-col z-50">
+  <div class="brand-header flex items-center justify-between px-4 py-3.5 border-b border-outline-variant">
+    <a href="projects.html" class="flex items-center gap-3 min-w-0 flex-1">
+      <div class="w-8 h-8 brand-tile rounded-lg flex items-center justify-center flex-shrink-0">
+        <span class="material-symbols-outlined text-on-primary" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">account_tree</span>
+      </div>
+      <div class="brand-text min-w-0 overflow-hidden">
+        <h1 class="text-primary font-bold tracking-tight whitespace-nowrap" style="font-family:Roboto;font-size:15px;line-height:1.2;">[PRODUCT NAME]</h1>
+        <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mt-0.5 whitespace-nowrap">Automotive Tier 1</p>
+      </div>
+    </a>
+    <button onclick="toggleSidebar()" class="w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors flex-shrink-0" title="Toggle sidebar">
+      <span class="material-symbols-outlined" id="sidebar-toggle-icon" style="font-size:18px;">chevron_left</span>
+    </button>
+  </div>
+
+  <nav class="flex-1 overflow-y-auto px-2 py-2">
+    <a href="projects.html" title="All Projects"
+       class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default mb-2">
+      <span class="material-symbols-outlined" style="font-size:18px;">arrow_back</span>
+      <span class="nav-label font-label-sm text-label-sm text-on-surface-variant">All Projects</span>
+    </a>
+    <div class="space-y-0.5 mt-1">
+      <a href="project-detail.html" title="Overview"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-active">
+        <span class="material-symbols-outlined" style="font-size:20px;">home</span>
+        <span class="nav-label font-label-md text-label-md">Overview</span>
+      </a>
+      <a href="documents.html" title="Documents"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">description</span>
+        <span class="nav-label font-label-md text-label-md">Documents</span>
+      </a>
+      <a href="compare.html" title="Compare"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">compare_arrows</span>
+        <span class="nav-label font-label-md text-label-md">Compare</span>
+      </a>
+      <a href="versions.html" title="Versions"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">local_offer</span>
+        <span class="nav-label font-label-md text-label-md">Versions</span>
+      </a>
+      <a href="team.html" title="Team"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">group</span>
+        <span class="nav-label font-label-md text-label-md">Team</span>
+      </a>
+    </div>
+  </nav>
+
+  <div class="px-2 pt-2 border-t border-outline-variant">
+    <a href="onboarding.html" title="Settings"
+       class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+      <span class="material-symbols-outlined" style="font-size:18px;">settings</span>
+      <span class="nav-label font-label-md text-label-md">Settings</span>
+    </a>
+  </div>
+  <div class="px-2 pb-3 pt-1" style="position:relative;">
+    <div id="role-switcher" style="position:relative;">
+      <button id="role-chip" onclick="toggleRoleMenu()"
+        class="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-container transition-colors text-left">
+        <div class="w-9 h-9 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0">
+          <span class="text-on-secondary-container font-bold text-sm" style="font-family:Roboto;">EL</span>
+        </div>
+        <div class="user-info flex-1 min-w-0">
+          <p class="font-label-md text-label-md text-on-surface truncate leading-tight">Engineering Lead</p>
+          <div class="flex items-center gap-1.5 mt-0.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+            <p id="role-chip-label" class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wide">Admin</p>
+          </div>
+        </div>
+        <span class="material-symbols-outlined text-on-surface-variant" id="role-chip-chevron" style="font-size:16px;transition:transform .15s;">unfold_more</span>
+      </button>
+      <div id="role-menu" class="hidden" style="position:absolute;bottom:calc(100% + 6px);left:0;right:0;background:#1c1e23;border:1px solid #24272e;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.26);z-index:400;overflow:hidden;">
+        <div style="padding:8px 12px 5px;font-size:10px;color:#8a8f9c;font-weight:600;text-transform:uppercase;letter-spacing:.07em;">Viewing as</div>
+        <button onclick="setRole('admin')"
+          style="width:100%;display:flex;align-items:center;gap:10px;padding:8px 12px;border:none;background:transparent;cursor:pointer;text-align:left;"
+          onmouseover="this.style.background='#23262d'" onmouseout="this.style.background='transparent'">
+          <span class="material-symbols-outlined" style="font-size:17px;color:#1d7bff;font-variation-settings:'FILL' 1;flex-shrink:0;">manage_accounts</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12px;font-weight:500;color:#f2f3f5;">Admin</div>
+            <div style="font-size:10px;color:#7c818c;">Full access — run, assign, manage</div>
+          </div>
+          <span id="role-check-admin" class="material-symbols-outlined" style="font-size:15px;color:#1d7bff;flex-shrink:0;">check</span>
+        </button>
+        <button onclick="setRole('developer')"
+          style="width:100%;display:flex;align-items:center;gap:10px;padding:8px 12px 12px;border:none;background:transparent;cursor:pointer;text-align:left;"
+          onmouseover="this.style.background='#23262d'" onmouseout="this.style.background='transparent'">
+          <span class="material-symbols-outlined" style="font-size:17px;color:#c3a6ff;font-variation-settings:'FILL' 1;flex-shrink:0;">code</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12px;font-weight:500;color:#f2f3f5;">Developer</div>
+            <div style="font-size:10px;color:#7c818c;">View only — no actions</div>
+          </div>
+          <span id="role-check-developer" class="material-symbols-outlined" style="font-size:15px;color:#1d7bff;flex-shrink:0;visibility:hidden;">check</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</aside>
+<div id="mm-nav-backdrop" onclick="toggleSidebar(false)"></div>
+
+
+<!-- ══════════════ MAIN ══════════════ -->
+<main id="app-main" class="h-screen flex flex-col">
+
+  <!-- ── TOP BAR ── -->
+  <header class="mm-header h-14 flex-shrink-0 flex items-center justify-between gap-2 px-4 bg-surface-container-lowest border-b border-outline-variant z-40">
+    <!-- Breadcrumb -->
+    <nav class="flex items-center gap-1.5 min-w-0" aria-label="Breadcrumb">
+      <button class="mm-menu-btn w-9 h-9 items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors flex-shrink-0"
+              onclick="toggleSidebar()" title="Menu" aria-label="Open navigation">
+        <span class="material-symbols-outlined" style="font-size:22px;">menu</span>
+      </button>
+      <a href="projects.html"
+         class="hide-sm w-7 h-7 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors flex-shrink-0"
+         title="Dashboard">
+        <span class="material-symbols-outlined sym-fill" style="font-size:18px;">hexagon</span>
+      </a>
+      <span class="hide-sm text-outline-variant select-none">/</span>
+      <span class="font-label-md text-label-md text-on-surface truncate" id="current-project-name">VCU Engine Firmware</span>
+      <span class="text-outline-variant select-none">/</span>
+      <span class="font-label-md text-label-md text-on-surface-variant whitespace-nowrap">Overview</span>
+    </nav>
+    <!-- Right actions -->
+    <div class="flex items-center gap-0.5 flex-shrink-0">
+      <button class="relative p-2 hover:bg-surface-container rounded-lg transition-colors" title="Notifications">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
+        <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border-2 border-surface-container-lowest"></span>
+      </button>
+      <button class="hide-sm p-2 hover:bg-surface-container rounded-lg transition-colors" title="Help">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">help</span>
+      </button>
+      <div class="hide-sm w-px h-5 bg-outline-variant mx-1.5"></div>
+      <button class="hide-sm flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors">
+        <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
+          <span class="text-on-secondary-container font-bold text-xs" style="font-family:Roboto;">EL</span>
+        </div>
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">expand_more</span>
+      </button>
+      <div class="hide-sm w-px h-5 bg-outline-variant mx-1"></div>
+      <div class="flex items-center rounded-full border border-outline-variant overflow-hidden" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:600;">
+        <button onclick="setRole('admin')" id="role-btn-admin" class="px-2.5 py-1 transition-colors bg-secondary text-white">Admin</button>
+        <button onclick="setRole('developer')" id="role-btn-dev" class="px-2.5 py-1 transition-colors text-on-surface-variant hover:bg-surface-container">Dev</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── SUBBAR ── -->
+  <div class="mm-subbar h-12 flex-shrink-0 flex items-center justify-between px-4 bg-surface-container-lowest border-b border-outline-variant z-30">
+    <div class="mm-subbar-left flex items-center gap-2 min-w-0">
+      <!-- Project switcher -->
+      <div class="relative" id="sb-project-wrap">
+        <button id="sb-project-btn" onclick="toggleSbProject()" class="subbar-pill">
+          <span class="material-symbols-outlined text-secondary sym-fill" style="font-size:14px;">folder</span>
+          <span class="font-label-md text-label-md text-on-surface" id="sb-project-name" style="font-size:12px;">VCU Engine Firmware</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="sb-project-chevron" style="font-size:13px;">expand_more</span>
+        </button>
+        <div id="sb-project-dropdown" class="hidden dropdown" style="min-width:264px;">
+          <div class="py-1.5">
+            <button onclick="switchSbProject('VCU Engine Firmware')" data-proj="VCU Engine Firmware"
+                    class="sb-proj-opt w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left" style="background:#1b2638;">
+              <span class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">VCU Engine Firmware</span>
+              <span class="ml-auto material-symbols-outlined text-secondary sb-proj-check" style="font-size:15px;">check</span>
+            </button>
+            <button onclick="switchSbProject('Brake Control Unit')" data-proj="Brake Control Unit"
+                    class="sb-proj-opt w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left">
+              <span class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Brake Control Unit</span>
+              <span class="ml-auto material-symbols-outlined text-outline-variant sb-proj-check" style="font-size:15px;opacity:0;">check</span>
+            </button>
+          </div>
+          <div class="border-t border-outline-variant">
+            <a href="onboarding.html" class="flex items-center gap-2 px-3 py-2.5 hover:bg-surface-container-low transition-colors">
+              <span class="material-symbols-outlined text-secondary" style="font-size:14px;">add_circle</span>
+              <span class="font-label-md text-label-md text-secondary" style="font-size:12px;">New Project</span>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <span class="sb-sep text-outline-variant select-none">·</span>
+
+      <!-- Commit chip with picker dropdown -->
+      <div class="relative" id="commit-chip-wrap">
+        <button id="commit-chip-btn" onclick="toggleCommitPicker()"
+                class="flex items-center gap-1.5 px-2.5 py-1.5 border border-outline-variant rounded-lg hover:bg-surface-container transition-colors"
+                style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:500;">
+          <span id="chip-icon-sym" class="material-symbols-outlined text-on-tertiary-container flex-shrink-0" style="font-size:13px;">alt_route</span>
+          <div id="chip-icon-spin" class="spin flex-shrink-0" style="display:none;width:11px;height:11px;border:1.5px solid #1d7bff;border-top-color:transparent;border-radius:9999px;"></div>
+          <span id="chip-ref" class="text-on-surface font-semibold">main @ abc1234</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="chip-chevron" style="font-size:13px;">expand_more</span>
+        </button>
+        <!-- Commit picker dropdown -->
+        <div id="commit-picker"
+             class="hidden absolute top-full left-0 mt-1.5 bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden"
+             style="min-width:380px;z-index:200;box-shadow:0 4px 20px rgba(0,0,0,0.24);">
+          <div class="flex items-center border-b border-outline-variant px-3">
+            <button id="cp-tab-versions" onclick="switchPickerTab('versions')"
+                    class="px-1 py-2.5 mr-5 font-label-md text-label-md border-b-2 border-secondary text-secondary -mb-px transition-colors">
+              Versions
+            </button>
+            <button id="cp-tab-commits" onclick="switchPickerTab('commits')"
+                    class="px-1 py-2.5 font-label-md text-label-md border-b-2 border-transparent text-on-surface-variant hover:text-on-surface -mb-px transition-colors">
+              Commits
+            </button>
+          </div>
+          <div id="cp-panel-versions">
+            <div class="overflow-y-auto" style="max-height:280px;" id="cp-versions-list"></div>
+          </div>
+          <div id="cp-panel-commits" style="display:none;">
+            <div class="px-3 py-2 border-b border-outline-variant">
+              <div class="flex items-center gap-2 px-2 py-1.5 bg-surface-container-low border border-outline-variant rounded-lg">
+                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">search</span>
+                <input type="text" placeholder="Search commits…" oninput="filterPickerCommits(this.value)"
+                       class="flex-1 bg-transparent outline-none text-on-surface placeholder-outline"
+                       style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;">
+              </div>
+            </div>
+            <div class="overflow-y-auto" style="max-height:240px;" id="cp-commits-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <span class="sb-sep text-outline-variant select-none">·</span>
+      <span id="sb-status-badge"></span>
+    </div>
+    <!-- Subbar CTAs -->
+    <div class="mm-subbar-right flex items-center gap-1.5">
+      <button id="cta-run" onclick="openRunConfig()"
+              class="flex items-center gap-2 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors"
+              style="display:none;font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;">
+        <span class="material-symbols-outlined" style="font-size:15px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">play_circle</span>
+        <span id="cta-run-label" class="cta-label">RUN ANALYSIS</span>
+      </button>
+      <button id="cta-cancel" onclick="cancelGeneration()"
+              class="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors"
+              style="display:none;border:1px solid #5a2328;color:#ff4d5a;background:transparent;font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:500;"
+              onmouseenter="this.style.background='#2e1a1d'" onmouseleave="this.style.background='transparent'">
+        <span class="material-symbols-outlined" style="font-size:15px;">stop_circle</span>
+        Cancel Job
+      </button>
+    </div>
+  </div>
+
+  <!-- Scrollable content -->
+  <div class="flex-1 overflow-y-auto bg-background">
+    <div class="mm-content px-container-padding py-6" style="max-width:1280px;">
+
+      <!-- ═══ EMPTY STATE BANNER ═══ -->
+      <div id="empty-banner" style="display:none;"
+           class="mb-7 rounded-xl border border-outline-variant bg-surface-container-lowest px-8 py-10 flex flex-col items-center text-center gap-5">
+        <div class="w-14 h-14 rounded-full bg-surface-container-low border border-outline-variant flex items-center justify-center">
+          <span class="material-symbols-outlined text-on-surface-variant" style="font-size:28px;">auto_awesome</span>
+        </div>
+        <div>
+          <h3 class="text-headline-sm text-on-surface">No documents generated yet</h3>
+          <p class="font-label-sm text-label-sm text-on-surface-variant mt-2" style="max-width:340px;">
+            Run analysis on <strong>main @ abc1234</strong> to generate ASPICE-compliant documents for all 5 processes.
+          </p>
+        </div>
+        <button onclick="openRunConfig()"
+                class="flex items-center gap-2 px-5 py-2.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-xl transition-colors"
+                style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;font-weight:700;letter-spacing:.04em;">
+          <span class="material-symbols-outlined" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">play_circle</span>
+          RUN ANALYSIS
+        </button>
+      </div>
+
+      <!-- ═══ GENERATION RUNNING PANEL ═══ -->
+      <div id="gen-panel" style="display:none;" class="mb-7 rounded-xl overflow-hidden border border-outline-variant">
+
+        <!-- Dark header -->
+        <div id="gen-header" class="px-5 py-4 flex items-center justify-between" style="background:#0b0c0f;">
+          <div class="flex items-center gap-3">
+            <div id="panel-spinner-wrap" class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 pulse-ring" style="border:2px solid #1d7bff;border-top-color:transparent;">
+              <div class="w-full h-full rounded-full spin" style="border:2px solid #1d7bff;border-top-color:transparent;border-radius:9999px;"></div>
+            </div>
+            <div>
+              <div class="flex items-center gap-2.5">
+                <p class="text-white font-semibold" style="font-family:Roboto;font-size:14px;" id="gen-header-title">Analysis Running</p>
+                <span id="gen-live-badge" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#1d7bff;color:#fff;padding:1px 7px;border-radius:3px;text-transform:uppercase;letter-spacing:.05em;">Live</span>
+              </div>
+              <div class="flex items-center gap-2 mt-0.5" style="color:#8a8f9c;">
+                <span class="material-symbols-outlined" style="font-size:12px;">source</span>
+                <p style="font-size:11px;font-family:'SamsungOne','Roboto',sans-serif;">Branch <span id="panel-branch" style="color:#4d9fff;">main</span></p>
+                <span style="color:#1e3045;">·</span>
+                <p style="font-size:11px;font-family:'SamsungOne','Roboto',sans-serif;">Commit <span id="panel-commit" style="color:#4d9fff;">abc1234</span></p>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-5">
+            <div class="text-right">
+              <p style="font-size:10px;font-family:'SamsungOne','Roboto',sans-serif;color:#a3a7b1;text-transform:uppercase;letter-spacing:.08em;">Started</p>
+              <p id="panel-started" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;color:#8a8f9c;">14:32</p>
+            </div>
+            <div class="text-right">
+              <p style="font-size:10px;font-family:'SamsungOne','Roboto',sans-serif;color:#a3a7b1;text-transform:uppercase;letter-spacing:.08em;">Elapsed</p>
+              <p id="panel-elapsed" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;color:#ffffff;">00:00:00</p>
+            </div>
+            <button onclick="cancelGeneration()"
+                    class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors font-label-sm text-label-sm"
+                    style="border:1px solid #4d2020;color:#ff7070;"
+                    onmouseenter="this.style.background='#1a0a0a'" onmouseleave="this.style.background='transparent'">
+              <span class="material-symbols-outlined" style="font-size:14px;">stop_circle</span>
+              Cancel Job
+            </button>
+          </div>
+        </div>
+
+        <!-- Phase steps -->
+        <div class="bg-surface-container-lowest px-6 pt-5 pb-3">
+          <div class="flex items-start">
+            <div class="flex flex-col items-center text-center" style="min-width:105px;">
+              <div id="ph1-icon" class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#3ddc84;">
+                <span class="material-symbols-outlined text-white" style="font-size:14px;font-variation-settings:'FILL' 1,'wght' 700,'GRAD' 0,'opsz' 24;">check</span>
+              </div>
+              <p id="ph1-name" class="mt-1.5 font-semibold text-on-surface" style="font-size:13px;">Parse C++</p>
+              <p id="ph1-time" class="mt-0.5" style="font-size:10px;color:#3ddc84;font-family:'SamsungOne','Roboto',sans-serif;">Done · 3m 12s</p>
+            </div>
+            <div id="line12" class="phase-line ph-done"></div>
+            <div class="flex flex-col items-center text-center" style="min-width:105px;">
+              <div id="ph2-icon" class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 pulse-ring" style="background:#1d7bff;">
+                <div class="spin" style="width:14px;height:14px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:9999px;"></div>
+              </div>
+              <p id="ph2-name" class="mt-1.5 font-semibold text-on-surface" style="font-size:13px;">Derive Model</p>
+              <p id="ph2-time" class="mt-0.5" style="font-size:10px;color:#1d7bff;font-family:'SamsungOne','Roboto',sans-serif;">Running...</p>
+            </div>
+            <div id="line23" class="phase-line ph-pending"></div>
+            <div class="flex flex-col items-center text-center" style="min-width:105px;">
+              <div id="ph3-icon" class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#1b2a45;">
+                <span style="font-size:13px;font-weight:600;color:#7c818c;">3</span>
+              </div>
+              <p id="ph3-name" class="mt-1.5 font-semibold" style="font-size:13px;color:#7c818c;">Run Views</p>
+              <p id="ph3-time" class="mt-0.5" style="font-size:10px;color:#2c2f37;font-family:'SamsungOne','Roboto',sans-serif;">Pending</p>
+            </div>
+            <div id="line34" class="phase-line ph-pending"></div>
+            <div class="flex flex-col items-center text-center" style="min-width:105px;">
+              <div id="ph4-icon" class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#1b2a45;">
+                <span style="font-size:13px;font-weight:600;color:#7c818c;">4</span>
+              </div>
+              <p id="ph4-name" class="mt-1.5 font-semibold" style="font-size:13px;color:#7c818c;">Export DOCX</p>
+              <p id="ph4-time" class="mt-0.5" style="font-size:10px;color:#2c2f37;font-family:'SamsungOne','Roboto',sans-serif;">Pending</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Activity row -->
+        <div class="bg-surface-container-lowest px-6 pb-5">
+          <div class="bg-surface-container-low border border-outline-variant rounded-lg px-4 py-3">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <span id="act-icon" class="material-symbols-outlined text-secondary" style="font-size:14px;">psychology</span>
+                <p id="act-text" class="font-label-sm text-label-sm text-on-surface">Enriching function descriptions with LLM...</p>
+              </div>
+              <span id="act-pct" class="font-label-md text-label-md text-secondary" style="font-family:'SamsungOne','Roboto',sans-serif">37%</span>
+            </div>
+            <div class="progress-track mb-2">
+              <div id="act-bar" class="progress-fill" style="width:37%;background:#1d7bff;"></div>
+            </div>
+            <div class="flex items-center justify-between">
+              <p id="act-sub" class="font-label-sm text-label-sm text-on-surface-variant">312 of 842 functions · LLM enrichment enabled</p>
+              <p id="act-eta" class="font-label-sm text-label-sm" style="color:#7c818c;font-family:'SamsungOne','Roboto',sans-serif">Est. ~4h 20m remaining</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 mt-2 px-1">
+            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">info</span>
+            <p class="font-label-sm text-label-sm text-on-surface-variant">Job runs on the server — switch branches or close this tab safely. Return any time to check progress.</p>
+          </div>
+        </div>
+
+      </div>
+      <!-- ═══ END GEN PANEL ═══ -->
+
+      <!-- ═══ STALE BANNER ═══ -->
+      <div id="stale-banner" style="display:none;" class="mb-6">
+        <div class="flex items-center gap-3 px-5 py-3.5 rounded-xl" style="background:#221d12;border:1px solid #6b4a12;">
+          <span class="material-symbols-outlined sym-fill flex-shrink-0" style="font-size:20px;color:#f5a524;">warning</span>
+          <div class="flex-1 min-w-0">
+            <p class="font-semibold text-on-surface" style="font-size:13px;"><span id="stale-commits-count">3</span> new commits since this analysis</p>
+            <p style="font-size:11px;color:#7c818c;font-family:'SamsungOne','Roboto',sans-serif;margin-top:2px;">Results may be outdated — re-run to analyze the latest code.</p>
+          </div>
+          <button onclick="openRunConfig()" class="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors flex-shrink-0"
+                  style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;">
+            <span class="material-symbols-outlined" style="font-size:14px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">play_circle</span>
+            Re-run
+          </button>
+        </div>
+      </div>
+
+      <!-- ═══ KPI STRIP (generated state only) ═══ -->
+      <div id="kpi-strip" class="mb-6" style="display:none;">
+        <div id="kpi-cards"></div>
+      </div>
+
+      <!-- ═══ CONTENT ROW: DOCS (left) + TEAM & HISTORY (right) ═══ -->
+      <div id="content-row" class="flex gap-6 mb-8 items-stretch" style="display:none;">
+
+        <!-- Left column: docs table + team -->
+        <div id="left-col" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1.5rem;">
+        <div id="docs-section" class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+          <div class="px-5 py-3.5 border-b border-outline-variant flex items-center justify-between">
+            <div>
+              <h2 id="docs-section-title" class="text-headline-sm text-on-surface">Documents</h2>
+              <p id="docs-section-subtitle" class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" style="display:none;"></p>
+            </div>
+            <a id="docs-section-link" href="documents.html" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#1d7bff;text-decoration:none;font-weight:500;"
+              onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+              View all
+              <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
+            </a>
+          </div>
+          <table class="w-full">
+            <thead id="docs-thead">
+              <tr class="bg-surface-container-low border-b border-outline-variant">
+                <th class="text-left px-5 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Process</th>
+                <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:210px;">Assignment</th>
+                <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:160px;">Team</th>
+                <th style="width:44px;"></th>
+              </tr>
+            </thead>
+            <tbody id="docs-tbody"></tbody>
+          </table>
+        </div>
+
+        <!-- Unassigned pool — developer only -->
+        <div id="unassigned-pool-card" class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden" style="display:none;">
+          <div class="px-5 py-3.5 border-b border-outline-variant flex items-center justify-between">
+            <div>
+              <h2 class="text-headline-sm text-on-surface">Available to Claim</h2>
+              <p id="pool-subtitle" class="font-label-sm text-label-sm text-on-surface-variant mt-0.5"></p>
+            </div>
+          </div>
+          <div id="pool-list"></div>
+        </div>
+
+        <!-- Team (always below documents) -->
+        <div id="team-card" class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+          <div class="px-5 py-3.5 border-b border-outline-variant flex items-center justify-between">
+            <h2 class="text-headline-sm text-on-surface">Team</h2>
+            <button class="flex items-center gap-1 px-2.5 py-1.5 border border-outline-variant hover:bg-surface-container text-on-surface-variant rounded-lg transition-colors font-label-sm text-label-sm">
+              <span class="material-symbols-outlined" style="font-size:14px;">person_add</span>
+              Add
+            </button>
+          </div>
+          <div class="divide-y divide-outline-variant">
+            <div class="flex items-center gap-3 px-5 py-2.5 hover:bg-surface-container-low transition-colors">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#1b2a45;"><span style="font-family:Roboto;font-size:10px;font-weight:700;color:#7fb2ff;">SC</span></div>
+              <div class="flex-1 min-w-0"><p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Sarah Chen</p></div>
+              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#1b2a45;color:#1d7bff;padding:1px 7px;border-radius:99px;text-transform:uppercase;">Admin</span>
+            </div>
+            <div class="flex items-center gap-3 px-5 py-2.5 hover:bg-surface-container-low transition-colors">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#2a1f45;"><span style="font-family:Roboto;font-size:10px;font-weight:700;color:#c3a6ff;">MW</span></div>
+              <div class="flex-1 min-w-0"><p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Marcus Webb</p></div>
+              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#26282e;color:#a3a7b1;padding:1px 7px;border-radius:99px;text-transform:uppercase;">Dev</span>
+            </div>
+            <div class="flex items-center gap-3 px-5 py-2.5 hover:bg-surface-container-low transition-colors">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#2e1a28;"><span style="font-family:Roboto;font-size:10px;font-weight:700;color:#ff7ab8;">AF</span></div>
+              <div class="flex-1 min-w-0"><p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Ana Ferreira</p></div>
+              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#26282e;color:#a3a7b1;padding:1px 7px;border-radius:99px;text-transform:uppercase;">Dev</span>
+            </div>
+            <div class="flex items-center gap-3 px-5 py-2.5 hover:bg-surface-container-low transition-colors">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#132a1f;"><span style="font-family:Roboto;font-size:10px;font-weight:700;color:#3ddc84;">LP</span></div>
+              <div class="flex-1 min-w-0"><p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Liam Park</p></div>
+              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#26282e;color:#a3a7b1;padding:1px 7px;border-radius:99px;text-transform:uppercase;">Dev</span>
+            </div>
+            <div class="flex items-center gap-3 px-5 py-2.5 hover:bg-surface-container-low transition-colors">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#2f1f14;"><span style="font-family:Roboto;font-size:10px;font-weight:700;color:#ff9d5c;">ZP</span></div>
+              <div class="flex-1 min-w-0"><p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Zara Patel</p></div>
+              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#1b2a45;color:#1d7bff;padding:1px 7px;border-radius:99px;text-transform:uppercase;">Admin</span>
+            </div>
+          </div>
+        </div>
+        </div><!-- end left-col -->
+
+        <!-- Right: role-aware sidebar -->
+        <div id="right-sidebar">
+
+          <!-- Review Queue (admin only) -->
+          <div id="review-queue-card" class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+            <div class="px-5 py-3.5 border-b border-outline-variant flex items-center justify-between">
+              <h2 class="text-headline-sm text-on-surface">Review Queue</h2>
+              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;background:#1b2a45;color:#1d7bff;padding:2px 10px;border-radius:99px;">3 pending</span>
+            </div>
+            <div class="divide-y divide-outline-variant">
+              <div class="px-5 py-3 flex items-center gap-3 hover:bg-surface-container-low transition-colors cursor-pointer" onclick="location.href='documents.html'">
+                <div class="flex-1 min-w-0">
+                  <p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Brake-FMEA — Detailed Design</p>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Assigned to you</p>
+                </div>
+                <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;background:#3a1d21;color:#ff4d5a;padding:2px 7px;border-radius:99px;flex-shrink:0;">Jun 20</span>
+              </div>
+              <div class="px-5 py-3 flex items-center gap-3 hover:bg-surface-container-low transition-colors cursor-pointer" onclick="location.href='documents.html'">
+                <div class="flex-1 min-w-0">
+                  <p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">System Architecture Document</p>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Ana Ferreira</p>
+                </div>
+                <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;background:#2c2414;color:#f5a524;padding:2px 7px;border-radius:99px;flex-shrink:0;">Jun 25</span>
+              </div>
+              <div class="px-5 py-3 flex items-center gap-3 hover:bg-surface-container-low transition-colors cursor-pointer" onclick="location.href='documents.html'">
+                <div class="flex-1 min-w-0">
+                  <p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Layer1-Sample — Detailed Design</p>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Marcus Webb</p>
+                </div>
+                <span style="font-size:10px;color:#7c818c;flex-shrink:0;">Jun 30</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Function Visibility card -->
+          <div id="fn-vis-card" class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden" style="display:none;">
+            <div class="px-5 py-3.5 border-b border-outline-variant flex items-center justify-between gap-3">
+              <div class="min-w-0">
+                <h2 class="text-headline-sm text-on-surface whitespace-nowrap">Function Visibility</h2>
+                <p id="fv-card-summary" class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">3 of 26 functions hidden from DOCX</p>
+              </div>
+              <button onclick="openFnPanel()" title="Manage function visibility"
+                class="fv-manage flex-shrink-0 flex items-center gap-1 px-3 py-1.5 border border-outline-variant rounded-lg hover:bg-surface-container transition-colors font-label-sm text-label-sm text-secondary">
+                <span class="fv-manage-label">Manage</span>
+                <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
+              </button>
+            </div>
+            <div class="px-5 py-3 flex items-center justify-between">
+              <div class="flex items-center gap-1.5">
+                <span class="material-symbols-outlined" style="font-size:14px;color:#ff4d5a;">visibility_off</span>
+                <span id="fv-card-hidden" class="font-label-md text-label-md" style="color:#ff4d5a;">3 hidden</span>
+              </div>
+              <span class="font-label-sm text-label-sm text-on-surface-variant">Last: v1.1.0</span>
+            </div>
+          </div>
+
+          <!-- Last Actions (both roles — content differs) -->
+          <div id="last-actions-card" class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden" style="flex:1;display:flex;flex-direction:column;">
+            <div class="px-5 py-3.5 border-b border-outline-variant">
+              <h2 class="text-headline-sm text-on-surface">Last Actions</h2>
+            </div>
+            <div id="last-actions-body" class="overflow-y-auto" style="flex:1;"></div>
+          </div>
+
+        </div><!-- end right sidebar -->
+      </div><!-- end content-row -->
+    </div>
+  </div>
+</main>
+
+
+<!-- ══════════════ ASSIGNEE PICKER ══════════════ -->
+<div id="assignee-picker" style="display:none;position:absolute;z-index:300;min-width:220px;background:#1c1e23;border:1px solid #24272e;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.24);overflow:hidden;">
+  <div style="padding:8px 10px;border-bottom:1px solid #24272e;">
+    <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:#26282e;border:1px solid #24272e;border-radius:8px;">
+      <span class="material-symbols-outlined" style="font-size:14px;color:#7c818c;">search</span>
+      <input id="assignee-search" type="text" placeholder="Search members…" oninput="renderAssigneePicker(this.value)"
+        style="flex:1;background:transparent;border:none;outline:none;font-size:12px;color:#f2f3f5;" />
+    </div>
+  </div>
+  <div id="assignee-picker-list" style="max-height:210px;overflow-y:auto;"></div>
+  <div style="padding:6px 12px;border-top:1px solid #24272e;display:flex;align-items:center;justify-content:space-between;">
+    <span id="assignee-picker-count" style="font-size:11px;color:#7c818c;"></span>
+    <button onclick="clearAssignees()" style="font-size:11px;color:#7c818c;background:none;border:none;cursor:pointer;padding:0;" onmouseover="this.style.color='#ff6b75'" onmouseout="this.style.color='#7c818c'">Clear all</button>
+  </div>
+</div>
+
+<!-- ══════════════ MODAL: RUN CONFIG ══════════════ -->
+<div id="run-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.85);">
+  <div class="bg-surface-container-lowest rounded-2xl w-full mx-4" style="max-width:468px;box-shadow:0 24px 64px rgba(0,0,0,0.56);">
+
+    <!-- Header -->
+    <div class="px-6 pt-6 pb-5 flex items-start justify-between">
+      <div>
+        <h3 class="text-on-surface font-semibold" style="font-family:Roboto;font-size:17px;line-height:1.25;">Run Analysis</h3>
+        <p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Analyze a commit and save it as a named version.</p>
+      </div>
+      <button onclick="closeRunModal()" class="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-surface-container transition-colors text-on-surface-variant flex-shrink-0 -mt-1 -mr-2">
+        <span class="material-symbols-outlined" style="font-size:19px;">close</span>
+      </button>
+    </div>
+
+    <!-- Source card -->
+    <div class="mx-6 mb-5 rounded-xl border border-outline-variant overflow-hidden">
+      <!-- Branch row -->
+      <div class="flex items-center gap-2.5 px-4 py-2.5 bg-surface-container-low border-b border-outline-variant">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:14px;">alt_route</span>
+        <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:11px;">Branch</span>
+        <span id="run-modal-branch" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;font-weight:700;color:#f2f3f5;"></span>
+        <span class="ml-auto font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;opacity:.5;letter-spacing:.04em;">FIXED</span>
+      </div>
+      <!-- Commit row -->
+      <div class="px-4 py-3">
+        <label class="font-label-sm text-label-sm text-on-surface-variant block mb-2" style="font-size:11px;">Commit</label>
+        <select id="run-modal-commit"
+          class="w-full rounded-lg px-3 py-2 text-on-surface bg-surface-container-lowest cursor-pointer focus:outline-none border border-outline-variant"
+          style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;"
+          onfocus="this.style.borderColor='#1d7bff'" onblur="this.style.borderColor='#2c2f37'">
+        </select>
+      </div>
+    </div>
+
+    <div class="px-6 space-y-4 pb-5">
+
+      <!-- Compare against -->
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <label class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:11px;">Compare against</label>
+          <span style="font-size:10px;color:#2c2f37;font-family:'SamsungOne','Roboto',sans-serif;">OPTIONAL</span>
+        </div>
+        <select id="run-modal-reference"
+          class="w-full border border-outline-variant rounded-lg px-3 py-2 text-on-surface bg-surface-container-lowest cursor-pointer focus:outline-none"
+          style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;"
+          onfocus="this.style.borderColor='#1d7bff'" onblur="this.style.borderColor='#2c2f37'">
+          <option value="">— None —</option>
+        </select>
+        <p class="font-label-sm text-label-sm text-on-surface-variant mt-1.5" style="font-size:11px;">Enables diff view between this run and the selected version.</p>
+      </div>
+
+      <!-- Version name -->
+      <div>
+        <label class="font-label-sm text-label-sm text-on-surface-variant block mb-2" style="font-size:11px;">Version name</label>
+        <div class="relative">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant" style="font-size:15px;">sell</span>
+          <input id="run-modal-new-version" type="text" placeholder="e.g. v1.3.0" autocomplete="off" spellcheck="false"
+            class="w-full border border-outline-variant rounded-lg pl-9 pr-3 py-2.5 bg-surface-container-lowest focus:outline-none"
+            style="font-family:'SamsungOne','Roboto',sans-serif;font-size:13px;font-weight:700;color:#1d7bff;letter-spacing:.03em;box-sizing:border-box;"
+            onfocus="this.style.borderColor='#1d7bff';this.style.background='#1b2638'"
+            onblur="this.style.borderColor='#2c2f37';this.style.background='#1c1e23'">
+        </div>
+      </div>
+
+      <!-- Pause checkbox -->
+      <label class="flex items-start gap-3 cursor-pointer group">
+        <input type="checkbox" id="pause-phase1" class="mt-0.5 rounded border-outline-variant text-secondary flex-shrink-0" style="width:15px;height:15px;">
+        <div>
+          <span class="font-label-sm text-label-sm text-on-surface group-hover:text-secondary transition-colors" style="font-size:12px;">Pause after Phase 1 to review function visibility</span>
+          <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" style="font-size:11px;">Lets you hide functions before diagrams and DOCX are generated.</p>
+        </div>
+      </label>
+
+      <!-- Advanced (collapsible) -->
+      <div>
+        <button onclick="toggleAdv()" class="flex items-center gap-2 w-full text-left py-0.5 group">
+          <span id="adv-ch" class="material-symbols-outlined transition-transform duration-200 text-on-surface-variant" style="font-size:14px;">chevron_right</span>
+          <span class="font-label-sm text-label-sm text-on-surface-variant group-hover:text-on-surface transition-colors" style="font-size:11px;letter-spacing:.05em;text-transform:uppercase;">Advanced</span>
+          <div class="flex-1 h-px bg-outline-variant ml-1"></div>
+        </button>
+        <div id="adv-body" class="adv-body">
+          <div class="pt-3 pl-5">
+            <label class="font-label-sm text-label-sm text-on-surface-variant block mb-2" style="font-size:11px;">Layer / Group</label>
+            <select class="w-full border border-outline-variant rounded-lg px-3 py-2 text-on-surface bg-surface-container-lowest cursor-pointer focus:outline-none"
+              style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;"
+              onfocus="this.style.borderColor='#1d7bff'" onblur="this.style.borderColor='#2c2f37'">
+              <option>All layers (default)</option>
+              <option>Layer1 — Sample</option>
+              <option>Layer1 — Full</option>
+              <option>Layer2 — Platform</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Warning -->
+      <div class="flex items-center gap-2.5 rounded-xl px-4 py-3" style="background:#1b2638;border:1px solid #2d4a80;">
+        <span class="material-symbols-outlined flex-shrink-0" style="font-size:15px;color:#1d7bff;">schedule</span>
+        <p class="font-label-sm text-label-sm" style="color:#9cc4ff;font-size:11px;">Analysis runs server-side and can take <strong>several hours</strong> — safe to navigate away.</p>
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="px-6 py-4 border-t border-outline-variant flex items-center justify-between">
+      <button onclick="closeRunModal()" class="px-4 py-2 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container rounded-lg transition-colors text-sm">Cancel</button>
+      <button onclick="startGeneration()"
+        class="flex items-center gap-2 px-5 py-2.5 bg-secondary text-on-secondary rounded-xl transition-colors"
+        style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;font-weight:700;letter-spacing:.04em;"
+        onmouseover="this.style.background='#5aa2ff'" onmouseout="this.style.background='#1d7bff'">
+        <span class="material-symbols-outlined sym-fill" style="font-size:16px;">rocket_launch</span>
+        START ANALYSIS
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════ MODAL: DELETE VERSION ══════════════ -->
+<div id="delete-version-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.85);">
+  <div class="bg-surface-container-lowest rounded-xl border border-outline-variant w-full mx-4" style="max-width:380px;box-shadow:0 8px 48px rgba(0,0,0,0.48);">
+    <div class="px-6 py-5 border-b border-outline-variant">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style="background:#3a1d21;">
+          <span class="material-symbols-outlined" style="font-size:20px;color:#ff4d5a;">delete_outline</span>
+        </div>
+        <div>
+          <h3 class="text-headline-sm text-on-surface">Delete version</h3>
+          <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">This action cannot be undone</p>
+        </div>
+      </div>
+    </div>
+    <div class="px-6 py-5">
+      <p class="font-body-md text-on-surface">Delete <strong id="delete-version-tag" style="font-family:'SamsungOne','Roboto',sans-serif;"></strong>? All documents and history tied to this version will be permanently removed.</p>
+    </div>
+    <div class="px-6 py-4 border-t border-outline-variant flex items-center justify-end gap-3">
+      <button onclick="closeDeleteVersionModal()" class="px-4 py-2 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container rounded-lg transition-colors">Cancel</button>
+      <button onclick="executeDeleteVersion()"
+              class="flex items-center gap-2 px-4 py-2.5 rounded-xl transition-colors"
+              style="background:#ff4d5a;color:#ffffff;font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;font-weight:700;letter-spacing:.04em;"
+              onmouseover="this.style.background='#ff8a93'" onmouseout="this.style.background='#ff4d5a'">
+        <span class="material-symbols-outlined" style="font-size:16px;">delete_forever</span>
+        DELETE VERSION
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════ FUNCTION VISIBILITY SLIDE-OVER ══════════════ -->
+<div id="fn-backdrop" class="fn-backdrop" onclick="closeFnPanel()"></div>
+<div id="fn-panel" class="fn-panel">
+  <!-- Panel header -->
+  <div class="flex items-center justify-between px-6 py-4 border-b border-outline-variant flex-shrink-0">
+    <div>
+      <h2 class="text-headline-sm text-on-surface">Function Visibility</h2>
+      <p id="fn-panel-summary" class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">26 functions · 3 hidden</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <button id="reexport-btn" onclick="startReexport()"
+        class="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-on-secondary"
+        style="background:#1d7bff;font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;">
+        <span class="material-symbols-outlined" style="font-size:15px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">upload</span>
+        Re-export DOCX
+      </button>
+      <button onclick="closeFnPanel()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
+        <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+      </button>
+    </div>
+  </div>
+  <!-- Search -->
+  <div class="px-6 py-3 border-b border-outline-variant flex-shrink-0">
+    <div class="flex items-center gap-2 px-3 py-2 bg-surface-container-low border border-outline-variant rounded-lg">
+      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">search</span>
+      <input id="fn-panel-search" type="text" placeholder="Search functions..."
+        oninput="renderFnPanel(this.value)"
+        class="flex-1 bg-transparent outline-none text-on-surface"
+        style="font-size:13px;">
+      <button onclick="document.getElementById('fn-panel-search').value='';renderFnPanel('');"
+        class="text-on-surface-variant hover:text-on-surface transition-colors"
+        style="display:none;" id="fn-search-clear">
+        <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+      </button>
+    </div>
+  </div>
+  <!-- Tree -->
+  <div class="flex-1 overflow-y-auto px-6 py-4" id="fn-panel-tree"></div>
+</div>
+
+
+<!-- ══════════════ MODAL: PHASE 1 FUNCTION REVIEW ══════════════ -->
+<div id="fn-review-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center" style="background:rgba(0,0,0,0.85);">
+  <div class="bg-surface-container-lowest rounded-xl border border-outline-variant w-full mx-4" style="max-width:560px;max-height:82vh;display:flex;flex-direction:column;box-shadow:0 8px 48px rgba(0,0,0,0.48);">
+    <!-- Header -->
+    <div class="px-6 py-5 border-b border-outline-variant flex-shrink-0">
+      <h3 class="text-headline-sm text-on-surface">Review functions before export</h3>
+      <p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Phase 1 complete · 26 functions discovered</p>
+    </div>
+    <!-- New functions banner -->
+    <div class="px-6 pt-4 flex-shrink-0">
+      <div class="flex items-center gap-2.5 px-4 py-2.5 rounded-lg" style="background:#221d12;border:1px solid #6b4a12;">
+        <span class="material-symbols-outlined sym-fill" style="font-size:16px;color:#f5a524;">new_releases</span>
+        <p class="font-label-sm text-label-sm" style="color:#ffc966;">3 new functions since v1.1.0 — review before continuing</p>
+      </div>
+    </div>
+    <!-- Search -->
+    <div class="px-6 pt-3 pb-1 flex-shrink-0">
+      <div class="flex items-center gap-2 px-3 py-2 bg-surface-container-low border border-outline-variant rounded-lg">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">search</span>
+        <input id="review-search" type="text" placeholder="Search functions..."
+          oninput="renderReviewTree(this.value)"
+          class="flex-1 bg-transparent outline-none text-on-surface"
+          style="font-size:12px;">
+      </div>
+    </div>
+    <!-- Tree -->
+    <div class="flex-1 overflow-y-auto px-6 py-3" id="review-tree"></div>
+    <!-- Footer -->
+    <div class="px-6 py-4 border-t border-outline-variant flex items-center justify-between flex-shrink-0">
+      <p id="review-hidden-count" class="font-label-sm text-label-sm text-on-surface-variant">3 hidden</p>
+      <div class="flex items-center gap-3">
+        <button onclick="cancelGeneration();document.getElementById('fn-review-modal').classList.add('hidden');"
+          class="px-4 py-2 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container rounded-lg transition-colors">
+          Cancel run
+        </button>
+        <button onclick="continueAfterReview()"
+          class="flex items-center gap-2 px-4 py-2.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-xl transition-colors"
+          style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;font-weight:700;letter-spacing:.04em;">
+          Continue
+          <span class="material-symbols-outlined" style="font-size:15px;">arrow_forward</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- Toast -->
+<div id="toast" class="hidden fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-4 py-3 bg-inverse rounded-xl" style="min-width:300px;max-width:380px;box-shadow:0 4px 24px rgba(0,0,0,0.64);">
+  <span id="toast-icon" class="material-symbols-outlined flex-shrink-0" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;color:#3ddc84;">check_circle</span>
+  <p id="toast-msg" class="font-label-sm text-label-sm text-white flex-1">Done.</p>
+  <button onclick="hideToast()" class="text-on-primary-container hover:text-white transition-colors flex-shrink-0">
+    <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+  </button>
+</div>
+
+<div class="fixed inset-0 pointer-events-none -z-10 opacity-[0.025]"
+     style="background-image:radial-gradient(#0b0c0f 0.5px,transparent 0.5px);background-size:24px 24px;"></div>
+
+<script>
+// ── Sidebar ──
+// ≤1100px the sidebar is an icon rail that opens as an overlay; ≤640px it is an off-canvas drawer
+const NARROW_NAV = window.matchMedia('(max-width: 1100px)');
+
+function toggleSidebar(force) {
+  const body = document.body;
+  if (NARROW_NAV.matches) {
+    body.classList.remove('nav-collapsed');
+    const open = body.classList.toggle('nav-open', force);
+    document.getElementById('sidebar-toggle-icon').textContent = open ? 'chevron_left' : 'chevron_right';
+    return;
+  }
+  const collapsed = body.classList.toggle('nav-collapsed', force === undefined ? undefined : !force);
+  document.getElementById('sidebar-toggle-icon').textContent = collapsed ? 'chevron_right' : 'chevron_left';
+}
+
+function syncNavMode() {
+  document.body.classList.remove('nav-open');
+  const collapsed = NARROW_NAV.matches || document.body.classList.contains('nav-collapsed');
+  document.getElementById('sidebar-toggle-icon').textContent = collapsed ? 'chevron_right' : 'chevron_left';
+}
+NARROW_NAV.addEventListener('change', syncNavMode);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.body.classList.contains('nav-open')) toggleSidebar(false);
+});
+document.addEventListener('DOMContentLoaded', syncNavMode);
+
+// ── Data ──
+const BRANCH = { label: 'main', commit: 'd9a0c55', version: 'v1.2.0', state: 'in_review', generatedAt: '1 day ago' };
+
+const COMMITS = [
+  { sha: 'abc1234', msg: 'feat: add brake system FMEA table',         author: 'Manoj S.',   time: '2h ago',   current: false, status: 'never',     version: null,     pageState: 'never',     newCommitsSince: 0 },
+  { sha: 'f7e3b12', msg: 'fix: correct signal naming in CAN matrix',  author: 'Priya R.',   time: '5h ago',   current: false, status: 'never',     version: null,     pageState: 'never',     newCommitsSince: 0 },
+  { sha: 'd9a0c55', msg: 'docs: update SWE.3 traceability links',     author: 'Manoj S.',   time: '1d ago',   current: true,  status: 'in_review', version: 'v1.2.0', pageState: 'in_review', newCommitsSince: 0 },
+  { sha: 'b2c841f', msg: 'refactor: split EngineControl component',   author: 'Arjun M.',   time: '2d ago',   current: false, status: 'approved',  version: 'v1.1.0', pageState: 'stale',     newCommitsSince: 3 },
+  { sha: '3ef70a9', msg: 'feat: add ADAS perception group',            author: 'Priya R.',   time: '3d ago',   current: false, status: 'approved',  version: 'v1.0.0', pageState: 'complete',  newCommitsSince: 0 },
+  { sha: '91c3d17', msg: 'fix: missing include path for diagnostics',  author: 'Manoj S.',   time: '4d ago',   current: false, status: 'never',     version: null,     pageState: 'never',     newCommitsSince: 0 },
+  { sha: '07fa8b2', msg: 'chore: update Clang config to 17',          author: 'Arjun M.',   time: '5d ago',   current: false, status: 'never',     version: null,     pageState: 'never',     newCommitsSince: 0 },
+];
+
+const VERSIONS = [
+  { tag: 'v1.2.0', sha: 'd9a0c55', desc: 'SWE.3 review draft — all groups',          date: '2026-06-15', status: 'in_review', docs: 45, hiddenFunctions: ['f3'] },
+  { tag: 'v1.1.0', sha: 'b2c841f', desc: 'Engine + Brake subsystems complete',        date: '2026-06-10', status: 'approved',  docs: 40, hiddenFunctions: ['f3', 'f7'] },
+  { tag: 'v1.0.0', sha: '3ef70a9', desc: 'Initial ADAS SWE.3 baseline',               date: '2026-06-01', status: 'approved',  docs: 35, hiddenFunctions: [] },
+];
+
+const TEAM_MEMBERS = [
+  { id: 'SC', name: 'Sarah Chen',   role: 'Admin',     bg: '#1b2a45', text: '#7fb2ff' },
+  { id: 'MW', name: 'Marcus Webb',  role: 'Developer', bg: '#2a1f45', text: '#c3a6ff' },
+  { id: 'AF', name: 'Ana Ferreira', role: 'Developer', bg: '#2e1a28', text: '#ff7ab8' },
+  { id: 'LP', name: 'Liam Park',    role: 'Developer', bg: '#132a1f', text: '#3ddc84' },
+  { id: 'ZP', name: 'Zara Patel',   role: 'Admin',     bg: '#2f1f14', text: '#ff9d5c' },
+  { id: 'AM', name: 'Arjun M.',     role: 'Developer', bg: '#2c2a14', text: '#ffc966' },
+  { id: 'MS', name: 'Manoj S.',     role: 'Developer', bg: '#12283a', text: '#5cc1ff' },
+];
+
+const DOCUMENTS = [
+  { id:1,  name: 'Layer1-Sample — Detailed Design',     process: 'SWE.3', version: 'v1.2.0', assignees: ['MS','SC'],       status: 'in_review', due: 'Jun 18', overdue: true },
+  { id:2,  name: 'Layer2-Engine — Detailed Design',     process: 'SWE.3', version: 'v1.2.0', assignees: [],                status: 'never',     due: '—'      },
+  { id:3,  name: 'Brake-FMEA — Detailed Design',        process: 'SWE.3', version: 'v1.2.0', assignees: ['MS'],            status: 'approved',  due: 'Jun 20' },
+  { id:4,  name: 'ADAS-Control — Detailed Design',      process: 'SWE.3', version: 'v1.2.0', assignees: ['ZP','LP'],       status: 'in_review', due: 'Jul 5'  },
+  { id:5,  name: 'Signal-Interface — Design',           process: 'SWE.3', version: 'v1.2.0', assignees: [],                status: 'never',     due: '—'      },
+  { id:6,  name: 'Powertrain — Detailed Design',        process: 'SWE.3', version: 'v1.2.0', assignees: ['AF'],            status: 'in_review', due: 'Jul 8'  },
+  { id:7,  name: 'CAN-Matrix — Detailed Design',        process: 'SWE.3', version: 'v1.1.0', assignees: ['AM','SC'],       status: 'approved',  due: 'Jun 18' },
+  { id:8,  name: 'Diagnostics — Detailed Design',       process: 'SWE.3', version: 'v1.1.0', assignees: ['SC','MW','LP'],  status: 'in_review', due: 'Jul 2'  },
+  { id:9,  name: 'SYS Requirements Specification',      process: 'SYS.1', version: 'v1.1.0', assignees: ['AM'],            status: 'never',     due: '—'      },
+  { id:10, name: 'System Architecture Document',        process: 'SYS.2', version: 'v1.1.0', assignees: ['AF'],            status: 'in_review', due: 'Jun 25' },
+  { id:11, name: 'SW Requirements Specification',       process: 'SWE.1', version: 'v1.0.0', assignees: ['MW'],            status: 'in_review', due: 'Jul 1'  },
+  { id:12, name: 'Detailed SW Design Specification',    process: 'SWE.2', version: 'v1.1.0', assignees: ['MS','ZP'],       status: 'approved',  due: 'Jun 15' },
+  { id:13, name: 'Interface Control Document',          process: 'SWE.2', version: 'v1.1.0', assignees: [],                status: 'in_review', due: 'Jul 3'  },
+];
+
+const PROCESSES = [
+  { key: 'SWE.3', label: 'Detailed Design' },
+  { key: 'SYS.1', label: 'Req. Elicitation' },
+  { key: 'SYS.2', label: 'System Architecture' },
+  { key: 'SWE.1', label: 'SW Requirements' },
+  { key: 'SWE.2', label: 'SW Architecture' },
+];
+
+const LAST_ACTIONS_ADMIN = [
+  { icon: 'check_circle', iconColor: '#3ddc84', text: 'Sarah C. approved CAN-Matrix',                time: '1d ago' },
+  { icon: 'play_circle',  iconColor: '#1d7bff', text: 'Manoj S. ran analysis — v1.2.0',             time: '3d ago' },
+  { icon: 'person_add',   iconColor: '#c3a6ff', text: 'Ana F. assigned to System Architecture',     time: '4d ago' },
+  { icon: 'sell',         iconColor: '#3ddc84', text: 'v1.1.0 tagged — Engine + Brake complete',    time: '6d ago' },
+  { icon: 'rate_review',  iconColor: '#f5a524', text: 'Liam P. submitted Diagnostics for review',  time: '1w ago' },
+];
+const LAST_ACTIONS_DEV = [
+  { icon: 'check_circle', iconColor: '#3ddc84', text: 'Sarah C. approved your Brake-FMEA',          time: '1d ago' },
+  { icon: 'play_circle',  iconColor: '#1d7bff', text: 'Analysis ran — v1.2.0 ready',                time: '3d ago' },
+  { icon: 'person_add',   iconColor: '#c3a6ff', text: 'Zara P. assigned you to Detailed SW Design', time: '5d ago' },
+  { icon: 'rate_review',  iconColor: '#f5a524', text: 'Ana F. submitted System Arch for review',    time: '1w ago' },
+];
+
+let pickerDocId = null;
+const CURRENT_DEV_ID = 'MS'; // developer persona for demo
+
+function memberAvatar(m, size) {
+  size = size || 26;
+  return `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${m.bg};border:2px solid #1c1e23;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">
+    <span style="font-family:Roboto;font-size:${Math.round(size*0.42)}px;font-weight:700;color:${m.text};">${m.id}</span>
+  </div>`;
+}
+
+function renderAssigneeCell(doc) {
+  const isAdmin = currentRole === 'admin';
+  if (!doc.assignees.length) {
+    if (!isAdmin) return `<span style="font-size:11px;color:#2c2f37;">—</span>`;
+    return `<button class="assignee-cell-btn" onclick="event.stopPropagation();openAssigneePicker(${doc.id},this)"
+      style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border:1.5px dashed #2c2f37;border-radius:99px;background:transparent;cursor:pointer;color:#7c818c;font-size:11px;"
+      onmouseover="this.style.borderColor='#1d7bff';this.style.color='#1d7bff'"
+      onmouseout="this.style.borderColor='#2c2f37';this.style.color='#7c818c'">
+      <span class="material-symbols-outlined" style="font-size:13px;">person_add</span>
+      Assign
+    </button>`;
+  }
+  const shown = doc.assignees.slice(0, 3);
+  const overflow = doc.assignees.length - 3;
+  const avatars = shown.map((id, i) => {
+    const m = TEAM_MEMBERS.find(x => x.id === id);
+    if (!m) return '';
+    return `<div title="${m.name}" style="margin-left:${i > 0 ? '-6px' : '0'};position:relative;z-index:${10-i};">${memberAvatar(m, 26)}</div>`;
+  }).join('');
+  const overflowChip = overflow > 0
+    ? `<div style="margin-left:-6px;width:26px;height:26px;border-radius:50%;background:#26282e;border:2px solid #1c1e23;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#a3a7b1;">+${overflow}</div>`
+    : '';
+  if (!isAdmin) {
+    return `<div style="display:flex;align-items:center;">${avatars}${overflowChip}</div>`;
+  }
+  return `<div style="display:flex;align-items:center;gap:4px;">
+    <div style="display:flex;align-items:center;" onclick="event.stopPropagation();openAssigneePicker(${doc.id},this)" title="Manage assignees" class="cursor-pointer">${avatars}${overflowChip}</div>
+    <button class="assignee-cell-btn" onclick="event.stopPropagation();openAssigneePicker(${doc.id},this)" title="Add assignee"
+      style="width:22px;height:22px;border-radius:50%;border:1.5px dashed #2c2f37;background:transparent;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;color:#7c818c;flex-shrink:0;"
+      onmouseover="this.style.borderColor='#1d7bff';this.style.color='#1d7bff'"
+      onmouseout="this.style.borderColor='#2c2f37';this.style.color='#7c818c'">
+      <span class="material-symbols-outlined" style="font-size:13px;">add</span>
+    </button>
+  </div>`;
+}
+
+function renderKpi() {
+  const container = document.getElementById('kpi-cards');
+  if (!container) return;
+
+  const total      = DOCUMENTS.length;
+  const approved   = DOCUMENTS.filter(d => d.status === 'approved').length;
+  const inReview   = DOCUMENTS.filter(d => d.status === 'in_review').length;
+  const notStarted = DOCUMENTS.filter(d => d.status === 'never').length;
+  const assigned   = DOCUMENTS.filter(d => d.assignees.length > 0).length;
+  const unassigned = total - assigned;
+  const assignPct  = total ? Math.round(assigned / total * 100) : 0;
+
+  // Magician-style gauge: centre (78,78), status arcs on r=52 with rounded caps and gaps
+  const C2 = 2 * Math.PI * 52;
+  const C_TICK = 2 * Math.PI * 40;
+  const ARC_GAP = 15;  // ≥ stroke width so rounded caps don't touch
+  const statusSegs = [
+    { n: approved,   stroke: 'url(#mmGreen)', c: '#3ddc84', c2: '#139c64', label: 'Approved' },
+    { n: inReview,   stroke: 'url(#mmAmber)', c: '#ffb43d', c2: '#e0701c', label: 'In Review' },
+    { n: notStarted, stroke: '#3a3e48',       c: '#6b707c', c2: '#3a3e48', label: 'Not started' },
+  ];
+  const liveSegs = statusSegs.filter(s => s.n > 0).length;
+  let arcStart = 0;
+  const arcs = statusSegs.map((s, i) => {
+    const arc = total ? s.n / total * C2 : 0;
+    const start = arcStart;
+    arcStart += arc;
+    if (!arc) return '';
+    const gap = liveSegs > 1 ? ARC_GAP : 0;
+    const len = Math.max(arc - gap, 0.01);
+    const rot = (start + gap / 2) / C2 * 360 - 90;
+    return `<circle class="mm-arc" cx="78" cy="78" r="52" fill="none" stroke="${s.stroke}" stroke-width="11" stroke-linecap="round"
+      transform="rotate(${rot.toFixed(2)} 78 78)" stroke-dasharray="${len.toFixed(2)} ${C2.toFixed(2)}" stroke-dashoffset="${len.toFixed(2)}"
+      ${i < 2 ? 'filter="url(#mmGlow)"' : ''} style="animation-delay:${(i * 0.15).toFixed(2)}s"/>`;
+  }).join('');
+
+  const legendRow = (s, i) => {
+    const pct = total ? Math.round(s.n / total * 100) : 0;
+    return `
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span class="mm-dot" style="--c:${s.c};"></span>
+                <span style="font-size:13px;color:#a3a7b1;">${s.label}</span>
+              </div>
+              <div style="display:flex;align-items:baseline;gap:8px;">
+                <span style="font-size:15px;font-weight:700;color:#f2f3f5;">${s.n}</span>
+                <span style="font-size:11px;color:#8a8f9c;min-width:32px;text-align:right;">${pct}%</span>
+              </div>
+            </div>
+            <div class="mm-bar thin"><div class="mm-bar-fill" style="width:${pct}%;--c1:${s.c};--c2:${s.c2};--d:${(0.15 + i * 0.1).toFixed(2)}s;"></div></div>
+          </div>`;
+  };
+
+  const donutCard = `
+    <div class="kpi-status bg-surface-container-lowest border border-outline-variant rounded-xl p-5">
+      <div class="mm-gauge">
+        <svg width="156" height="156" viewBox="0 0 156 156" aria-label="${approved} approved, ${inReview} in review, ${notStarted} not started of ${total} documents">
+          <defs>
+            <linearGradient id="mmGreen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8af7c0"/><stop offset="1" stop-color="#16a868"/></linearGradient>
+            <linearGradient id="mmAmber" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffd27a"/><stop offset="1" stop-color="#ee7d1e"/></linearGradient>
+            <radialGradient id="mmCore" cx="50%" cy="40%" r="60%"><stop offset="0" stop-color="#262a33"/><stop offset="1" stop-color="#16181d"/></radialGradient>
+            <filter id="mmGlow" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="2.6" result="b"/>
+              <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          <circle cx="78" cy="78" r="66" fill="none" stroke="rgba(29,123,255,.16)" stroke-width="1"/>
+          <circle cx="78" cy="78" r="52" fill="none" stroke="#23262d" stroke-width="11"/>
+          ${arcs}
+          <circle cx="78" cy="78" r="40" fill="none" stroke="#33363f" stroke-width="4"
+            stroke-dasharray="1.2 ${(C_TICK / 60 - 1.2).toFixed(3)}"/>
+          <circle cx="78" cy="78" r="35" fill="url(#mmCore)" stroke="rgba(255,255,255,.06)"/>
+          <text data-count="${total}" x="78" y="83" text-anchor="middle" font-size="28" font-weight="700" fill="#f2f3f5" font-family="Poppins,Roboto,sans-serif">${total}</text>
+          <text x="78" y="98" text-anchor="middle" font-size="8.5" fill="#8a8f9c" font-family="Roboto,sans-serif" letter-spacing="1.2">DOCUMENTS</text>
+        </svg>
+      </div>
+      <div style="flex:1;min-width:0;">
+        <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-3">Document Status</p>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          ${statusSegs.map(legendRow).join('')}
+        </div>
+      </div>
+    </div>`;
+
+  const versions = (window.VERSIONS || []);
+  const latestTag = versions.length ? versions[0].tag : 'v1.2.0';
+
+  const myDocs       = DOCUMENTS.filter(d => d.assignees.includes(CURRENT_DEV_ID));
+  const myAssigned   = myDocs.length;
+  const myInReview   = myDocs.filter(d => d.status === 'in_review').length;
+  const myApproved   = myDocs.filter(d => d.status === 'approved').length;
+  const myOverdue    = myDocs.filter(d => d.overdue).length;
+  const myPct        = total ? Math.round(myAssigned / total * 100) : 0;
+
+  const assignCardAdmin = `
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-5">
+      <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-3">Assignment</p>
+      <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:10px;">
+        <span data-count="${assigned}" style="font-family:'Samsung Sharp Sans','Poppins',sans-serif;font-size:32px;font-weight:700;color:#f2f3f5;line-height:1;">${assigned}</span>
+        <span style="font-size:13px;color:#8a8f9c;line-height:1;">/ ${total} assigned</span>
+      </div>
+      <div class="mm-bar" style="margin-bottom:10px;">
+        <div class="mm-bar-fill" style="width:${assignPct}%;${assignPct === 100 ? '--c1:#3ddc84;--c2:#139c64' : '--c1:#5aa2ff;--c2:#1428a0'};--d:.2s;"></div>
+      </div>
+      ${unassigned > 0
+        ? `<p style="font-size:12px;color:#f5a524;"><span style="font-weight:600;">${unassigned} docs</span> need an owner</p>`
+        : `<p style="font-size:12px;color:#3ddc84;font-weight:500;">All docs have owners</p>`}
+    </div>`;
+
+  const assignCardDev = `
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-5" style="${myOverdue > 0 ? 'border-color:#5a2328;' : ''}">
+      <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-3">My Assignments</p>
+      <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:10px;">
+        <span data-count="${myAssigned}" style="font-family:'Samsung Sharp Sans','Poppins',sans-serif;font-size:32px;font-weight:700;color:#f2f3f5;line-height:1;">${myAssigned}</span>
+        <span style="font-size:13px;color:#8a8f9c;line-height:1;">/ ${total} docs</span>
+      </div>
+      <div class="mm-bar" style="margin-bottom:10px;">
+        <div class="mm-bar-fill" style="width:${myPct}%;${myOverdue > 0 ? '--c1:#ff6b75;--c2:#b0202c' : '--c1:#5aa2ff;--c2:#1428a0'};--d:.2s;"></div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        ${myOverdue > 0 ? `<div style="display:flex;align-items:center;gap:5px;">
+          <span class="material-symbols-outlined" style="font-size:13px;color:#ff4d5a;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">warning</span>
+          <span style="font-size:11px;color:#ff4d5a;font-weight:600;">${myOverdue} overdue</span>
+        </div>` : ''}
+        <div style="display:flex;align-items:center;gap:5px;">
+          <span class="mm-dot" style="--c:#ffb43d;width:7px;height:7px;"></span>
+          <span style="font-size:11px;color:#7c818c;">${myInReview} in review</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;">
+          <span class="mm-dot" style="--c:#3ddc84;width:7px;height:7px;"></span>
+          <span style="font-size:11px;color:#7c818c;">${myApproved} approved</span>
+        </div>
+      </div>
+    </div>`;
+
+  const projectInfoCard = `
+    <div class="kpi-info bg-surface-container-lowest border border-outline-variant rounded-xl p-5">
+      <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-3">Project Info</p>
+      <div class="kpi-info-rows" style="display:flex;flex-direction:column;gap:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:12px;color:#7c818c;">Latest version</span>
+          <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;color:#1d7bff;background:#1b2a45;padding:2px 9px;border-radius:5px;">${latestTag}</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:12px;color:#7c818c;">Team members</span>
+          <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:13px;font-weight:700;color:#f2f3f5;">${TEAM_MEMBERS.length}</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:12px;color:#7c818c;">Processes</span>
+          <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:13px;font-weight:700;color:#f2f3f5;">${PROCESSES.length}</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:12px;color:#7c818c;">Versions</span>
+          <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:13px;font-weight:700;color:#f2f3f5;">${versions.length || 3}</span>
+        </div>
+      </div>
+    </div>`;
+
+  // Left track mirrors #left-col, right track mirrors the 300px #right-sidebar so card edges line up
+  container.innerHTML = `
+    <div class="kpi-main">
+      ${donutCard}
+      ${currentRole === 'developer' ? assignCardDev : assignCardAdmin}
+    </div>`
+    + projectInfoCard;
+  countUp(container);
+}
+
+function countUp(root) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  root.querySelectorAll('[data-count]').forEach(el => {
+    const target = Number(el.dataset.count);
+    const t0 = performance.now();
+    const step = now => {
+      const k = Math.min((now - t0) / 800, 1);
+      el.textContent = Math.round(target * (1 - Math.pow(1 - k, 3)));
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+}
+
+function renderUnassignedPool() {
+  const card     = document.getElementById('unassigned-pool-card');
+  const list     = document.getElementById('pool-list');
+  const subtitle = document.getElementById('pool-subtitle');
+  const pool = DOCUMENTS.filter(d => d.assignees.length === 0);
+  if (!pool.length) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = '';
+  subtitle.textContent = `${pool.length} document${pool.length !== 1 ? 's' : ''} without an owner`;
+  list.innerHTML = pool.map(doc => {
+    const proc = PROCESSES.find(p => p.key === doc.process);
+    return `
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid #24272e;">
+      <span class="material-symbols-outlined" style="font-size:18px;color:#2c2f37;flex-shrink:0;">description</span>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:500;color:#f2f3f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${doc.name}</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+          <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;color:#1d7bff;background:#1b2a45;padding:1px 7px;border-radius:4px;">${doc.process}</span>
+          <span style="font-size:11px;color:#7c818c;">${proc ? proc.label : ''}</span>
+        </div>
+      </div>
+      <button onclick="claimDoc(${doc.id})"
+        style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:8px;border:1px solid #1d7bff;background:#1c1e23;color:#1d7bff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;"
+        onmouseover="this.style.background='#1b2a45'" onmouseout="this.style.background='#1c1e23'">
+        <span class="material-symbols-outlined" style="font-size:14px;">add</span>
+        Claim
+      </button>
+    </div>`;
+  }).join('');
+}
+
+function claimDoc(docId) {
+  const doc = DOCUMENTS.find(d => d.id === docId);
+  if (!doc) return;
+  if (!doc.assignees.includes(CURRENT_DEV_ID)) doc.assignees.push(CURRENT_DEV_ID);
+  renderDocs();
+  renderKpi();
+  showToast('check_circle', `You've been assigned to "${doc.name}".`, '#3ddc84');
+}
+
+function renderLastActions() {
+  const body = document.getElementById('last-actions-body');
+  if (!body) return;
+  const actions = currentRole === 'developer' ? LAST_ACTIONS_DEV : LAST_ACTIONS_ADMIN;
+  body.innerHTML = actions.map(a => `
+    <div style="display:flex;align-items:flex-start;gap:10px;padding:12px 20px;border-bottom:1px solid #24272e;">
+      <span class="material-symbols-outlined" style="font-size:15px;color:${a.iconColor};flex-shrink:0;margin-top:1px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">${a.icon}</span>
+      <div style="flex:1;min-width:0;">
+        <p style="font-size:12px;color:#f2f3f5;line-height:1.4;">${a.text}</p>
+        <p style="font-size:10px;color:#8a8f9c;margin-top:2px;font-family:'SamsungOne','Roboto',sans-serif;">${a.time}</p>
+      </div>
+    </div>`).join('');
+}
+
+function renderDocs() {
+  const tbody  = document.getElementById('docs-tbody');
+  const thead  = document.getElementById('docs-thead');
+  const title  = document.getElementById('docs-section-title');
+  const sub    = document.getElementById('docs-section-subtitle');
+  const link   = document.getElementById('docs-section-link');
+  if (!tbody) return;
+
+  if (currentRole === 'developer') {
+    const myDocs = DOCUMENTS.filter(d => d.assignees.includes(CURRENT_DEV_ID));
+    title.textContent = 'My Documents';
+    sub.textContent   = `${myDocs.length} document${myDocs.length !== 1 ? 's' : ''} assigned to you`;
+    sub.style.display = '';
+    link.textContent  = '';
+    link.innerHTML    = 'All Documents <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>';
+
+    thead.innerHTML = `<tr class="bg-surface-container-low border-b border-outline-variant">
+      <th class="text-left px-5 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Document</th>
+      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:100px;">Process</th>
+      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:120px;">Status</th>
+      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:90px;">Due</th>
+      <th style="width:72px;"></th>
+    </tr>`;
+
+    const statusBadge = s => {
+      if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:4px;font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#132a1f;color:#3ddc84;border:1px solid #1f5a3a;padding:2px 9px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:5px;height:5px;border-radius:50%;background:#3ddc84;display:inline-block;"></span>Approved</span>`;
+      if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:4px;font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#2c2414;color:#f5a524;border:1px solid #6b4a12;padding:2px 9px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:5px;height:5px;border-radius:50%;background:#f5a524;display:inline-block;"></span>In Review</span>`;
+      return `<span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#26282e;color:#7c818c;border:1px solid #24272e;padding:2px 9px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;">Not Started</span>`;
+    };
+
+    tbody.innerHTML = myDocs.map(doc => {
+      const proc = PROCESSES.find(p => p.key === doc.process);
+      const rowBg = doc.overdue ? '#2e1a1d' : '';
+      const dueCl = doc.overdue ? '#ff4d5a' : doc.due === '—' ? '#2c2f37' : '#a3a7b1';
+      return `
+        <tr style="border-bottom:1px solid #24272e;cursor:pointer;${doc.overdue ? 'box-shadow:inset 3px 0 0 #ff4d5a;' : ''}" onclick="window.location.href='documents.html'"
+          onmouseover="this.style.background='${doc.overdue ? '#2e1a1d' : '#23262d'}'" onmouseout="this.style.background='${rowBg}'">
+          <td style="padding:13px 20px;background:${rowBg};">
+            <div style="font-size:13px;font-weight:500;color:#f2f3f5;line-height:1.3;">${doc.name}</div>
+            <div style="font-size:11px;color:#7c818c;margin-top:2px;">${proc ? proc.label : doc.process}</div>
+          </td>
+          <td style="padding:13px 16px;background:${rowBg};">
+            <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;color:#1d7bff;background:#1b2a45;padding:2px 8px;border-radius:5px;">${doc.process}</span>
+          </td>
+          <td style="padding:13px 16px;background:${rowBg};">${statusBadge(doc.status)}</td>
+          <td style="padding:13px 16px;background:${rowBg};font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:${dueCl};font-weight:${doc.overdue ? '600' : '400'};">${doc.overdue ? '⚠ ' : ''}${doc.due}</td>
+          <td style="padding:8px 12px;background:${rowBg};">
+            <div style="display:flex;align-items:center;gap:4px;">
+              <button onclick="event.stopPropagation()" title="Open"
+                style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid #24272e;border-radius:6px;background:#1c1e23;cursor:pointer;color:#7c818c;"
+                onmouseover="this.style.borderColor='#1d7bff';this.style.color='#1d7bff'"
+                onmouseout="this.style.borderColor='#24272e';this.style.color='#7c818c'">
+                <span class="material-symbols-outlined" style="font-size:14px;">open_in_new</span>
+              </button>
+              <button onclick="event.stopPropagation()" title="Download"
+                style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid #24272e;border-radius:6px;background:#1c1e23;cursor:pointer;color:#7c818c;"
+                onmouseover="this.style.borderColor='#1d7bff';this.style.color='#1d7bff'"
+                onmouseout="this.style.borderColor='#24272e';this.style.color='#7c818c'">
+                <span class="material-symbols-outlined" style="font-size:14px;">download</span>
+              </button>
+            </div>
+          </td>
+        </tr>`;
+    }).join('');
+
+    renderUnassignedPool();
+
+  } else {
+    document.getElementById('unassigned-pool-card').style.display = 'none';
+    title.textContent = 'Documents';
+    sub.style.display = 'none';
+    link.innerHTML    = 'View all <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>';
+
+    thead.innerHTML = `<tr class="bg-surface-container-low border-b border-outline-variant">
+      <th class="text-left px-5 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Process</th>
+      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:210px;">Assignment</th>
+      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:160px;">Team</th>
+      <th style="width:44px;"></th>
+    </tr>`;
+
+    tbody.innerHTML = PROCESSES.map((p, rowIdx) => {
+      const docs  = DOCUMENTS.filter(d => d.process === p.key);
+      if (!docs.length) return '';
+      const total      = docs.length;
+      const assigned   = docs.filter(d => d.assignees.length > 0).length;
+      const unassigned = total - assigned;
+      const pct        = Math.round(assigned / total * 100);
+      const barVars    = pct === 100 ? '--c1:#3ddc84;--c2:#139c64' : '--c1:#ffb43d;--c2:#e0701c';
+      const textColor  = pct === 100 ? '#3ddc84' : pct === 0 ? '#8a8f9c' : '#f5a524';
+
+      const allIds = [...new Set(docs.flatMap(d => d.assignees))];
+      const shown  = allIds.slice(0, 4);
+      const extra  = allIds.length - 4;
+      const avatarStack = shown.length === 0
+        ? `<span style="font-size:11px;color:#2c2f37;font-style:italic;">Unassigned</span>`
+        : `<div style="display:flex;align-items:center;">
+            ${shown.map((id, i) => {
+              const m = TEAM_MEMBERS.find(x => x.id === id);
+              return m ? `<div title="${m.name}" style="margin-left:${i>0?'-6px':'0'};position:relative;z-index:${10-i};">${memberAvatar(m,24)}</div>` : '';
+            }).join('')}
+            ${extra > 0 ? `<div style="margin-left:-6px;width:24px;height:24px;border-radius:50%;background:#26282e;border:2px solid #1c1e23;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#a3a7b1;">+${extra}</div>` : ''}
+          </div>`;
+
+      return `
+        <tr style="border-bottom:1px solid #24272e;cursor:pointer;" onclick="window.location.href='documents.html'"
+          onmouseover="this.style.background='#23262d'" onmouseout="this.style.background=''">
+          <td style="padding:13px 20px;">
+            <div style="display:flex;align-items:center;gap:9px;">
+              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;color:#1d7bff;background:#1b2a45;padding:2px 8px;border-radius:5px;flex-shrink:0;">${p.key}</span>
+              <div>
+                <div style="font-size:13px;font-weight:500;color:#f2f3f5;line-height:1.3;">${p.label}</div>
+                <div style="font-size:11px;color:#7c818c;">${total} doc${total !== 1 ? 's' : ''}</div>
+              </div>
+            </div>
+          </td>
+          <td style="padding:13px 16px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div class="mm-bar thin" style="flex:1;min-width:72px;">
+                <div class="mm-bar-fill" style="width:${pct}%;${barVars};--d:${(rowIdx * 0.06).toFixed(2)}s;"></div>
+              </div>
+              <span style="font-size:11px;color:${textColor};font-weight:600;white-space:nowrap;">${assigned} / ${total}</span>
+              ${unassigned > 0 ? `<span style="font-size:10px;color:#f5a524;background:#2c2414;border:1px solid #6b4a12;padding:0 6px;border-radius:99px;font-weight:600;white-space:nowrap;">${unassigned} left</span>` : ''}
+            </div>
+          </td>
+          <td style="padding:13px 16px;">${avatarStack}</td>
+          <td style="padding:8px 12px;">
+            <button onclick="event.stopPropagation();window.location.href='documents.html'"
+              style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid #24272e;border-radius:6px;background:#1c1e23;cursor:pointer;color:#7c818c;"
+              onmouseover="this.style.borderColor='#1d7bff';this.style.color='#1d7bff'"
+              onmouseout="this.style.borderColor='#24272e';this.style.color='#7c818c'">
+              <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
+            </button>
+          </td>
+        </tr>`;
+    }).join('');
+  }
+}
+
+// ── Assignee picker ──
+function openAssigneePicker(docId, anchor) {
+  pickerDocId = docId;
+  const picker = document.getElementById('assignee-picker');
+  const rect = anchor.getBoundingClientRect();
+  picker.style.display = 'block';
+  picker.style.top  = (rect.bottom + window.scrollY + 6) + 'px';
+  picker.style.left = Math.min(rect.left, window.innerWidth - 240) + 'px';
+  document.getElementById('assignee-search').value = '';
+  renderAssigneePicker('');
+}
+function closeAssigneePicker() {
+  document.getElementById('assignee-picker').style.display = 'none';
+  pickerDocId = null;
+}
+function renderAssigneePicker(filter) {
+  const doc = DOCUMENTS.find(d => d.id === pickerDocId);
+  if (!doc) return;
+  filter = (filter || '').toLowerCase();
+  const members = TEAM_MEMBERS.filter(m => !filter || m.name.toLowerCase().includes(filter) || m.id.toLowerCase().includes(filter));
+  const list = document.getElementById('assignee-picker-list');
+  list.innerHTML = members.map(m => {
+    const checked = doc.assignees.includes(m.id);
+    return `<button onclick="toggleAssignee('${m.id}')"
+      style="width:100%;display:flex;align-items:center;gap:10px;padding:8px 12px;border:none;background:${checked ? '#1b2638' : 'transparent'};cursor:pointer;text-align:left;"
+      onmouseover="this.style.background='${checked ? '#1b2638' : '#23262d'}'"
+      onmouseout="this.style.background='${checked ? '#1b2638' : 'transparent'}'">
+      ${memberAvatar(m, 28)}
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;color:#f2f3f5;font-weight:500;">${m.name}</div>
+        <div style="font-size:10px;color:#7c818c;">${m.role}</div>
+      </div>
+      ${checked ? '<span class="material-symbols-outlined" style="font-size:16px;color:#1d7bff;flex-shrink:0;">check</span>' : ''}
+    </button>`;
+  }).join('');
+  const count = doc.assignees.length;
+  document.getElementById('assignee-picker-count').textContent = count === 0 ? 'Unassigned' : `${count} assigned`;
+}
+function toggleAssignee(memberId) {
+  const doc = DOCUMENTS.find(d => d.id === pickerDocId);
+  if (!doc) return;
+  const idx = doc.assignees.indexOf(memberId);
+  if (idx === -1) doc.assignees.push(memberId);
+  else doc.assignees.splice(idx, 1);
+  renderDocs();
+  renderAssigneePicker(document.getElementById('assignee-search').value);
+}
+function clearAssignees() {
+  const doc = DOCUMENTS.find(d => d.id === pickerDocId);
+  if (!doc) return;
+  doc.assignees = [];
+  renderDocs();
+  renderAssigneePicker('');
+}
+document.addEventListener('click', e => {
+  const picker = document.getElementById('assignee-picker');
+  if (picker && !picker.contains(e.target)) closeAssigneePicker();
+});
+
+let runningJob = false;
+
+// ── Commit chip + picker ──
+function toggleCommitPicker() {
+  const picker = document.getElementById('commit-picker');
+  const chevron = document.getElementById('chip-chevron');
+  const isHidden = picker.classList.contains('hidden');
+  picker.classList.toggle('hidden', !isHidden);
+  chevron.style.transform = isHidden ? 'rotate(180deg)' : '';
+  if (isHidden) {
+    renderPickerCommits('');
+    renderPickerVersions();
+    switchPickerTab('versions');
+  }
+}
+
+document.addEventListener('click', e => {
+  if (!document.getElementById('commit-chip-wrap').contains(e.target))
+    document.getElementById('commit-picker').classList.add('hidden');
+  document.getElementById('chip-chevron').style.transform = '';
+  if (!document.getElementById('sb-project-wrap').contains(e.target)) closeSbProject();
+});
+
+function toggleSbProject() {
+  const dd = document.getElementById('sb-project-dropdown');
+  const ch = document.getElementById('sb-project-chevron');
+  const open = !dd.classList.contains('hidden');
+  dd.classList.toggle('hidden', open);
+  ch.style.transform = open ? '' : 'rotate(180deg)';
+}
+function switchSbProject(name) {
+  document.getElementById('sb-project-name').textContent = name;
+  document.getElementById('current-project-name').textContent = name;
+  document.querySelectorAll('.sb-proj-opt').forEach(opt => {
+    const active = opt.dataset.proj === name;
+    opt.style.background = active ? '#1b2638' : '';
+    opt.querySelector('.sb-proj-check').style.opacity = active ? '1' : '0';
+  });
+  closeSbProject();
+}
+function closeSbProject() {
+  document.getElementById('sb-project-dropdown').classList.add('hidden');
+  document.getElementById('sb-project-chevron').style.transform = '';
+}
+
+
+function switchPickerTab(tab) {
+  const isCommits = tab === 'commits';
+  document.getElementById('cp-panel-commits').style.display  = isCommits ? '' : 'none';
+  document.getElementById('cp-panel-versions').style.display = isCommits ? 'none' : '';
+  const tabC = document.getElementById('cp-tab-commits');
+  const tabV = document.getElementById('cp-tab-versions');
+  tabC.classList.toggle('border-secondary', isCommits);
+  tabC.classList.toggle('text-secondary',   isCommits);
+  tabC.classList.toggle('border-transparent', !isCommits);
+  tabC.classList.toggle('text-on-surface-variant', !isCommits);
+  tabV.classList.toggle('border-secondary', !isCommits);
+  tabV.classList.toggle('text-secondary',   !isCommits);
+  tabV.classList.toggle('border-transparent', isCommits);
+  tabV.classList.toggle('text-on-surface-variant', isCommits);
+}
+
+function filterPickerCommits(val) { renderPickerCommits(val); }
+
+function commitStatusBadge(c) {
+  if (c.current)               return `<span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#1b2a45;color:#1d7bff;padding:1px 7px;border-radius:3px;text-transform:uppercase;">current</span>`;
+  if (c.status === 'approved')  return `<span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#132a1f;color:#3ddc84;border:1px solid #1f5a3a;padding:1px 7px;border-radius:3px;text-transform:uppercase;">Approved</span>`;
+  if (c.status === 'in_review') return `<span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#2c2414;color:#f5a524;border:1px solid #6b4a12;padding:1px 7px;border-radius:3px;text-transform:uppercase;">In Review</span>`;
+  return `<span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;color:#7c818c;padding:1px 4px;">Not run</span>`;
+}
+
+function renderPickerCommits(filter) {
+  filter = (filter || '').toLowerCase();
+  const list = document.getElementById('cp-commits-list');
+  const filtered = COMMITS.filter(c =>
+    !filter || c.sha.includes(filter) || c.msg.toLowerCase().includes(filter) || c.author.toLowerCase().includes(filter)
+  );
+  if (!filtered.length) {
+    list.innerHTML = `<div style="padding:24px 16px;text-align:center;font-size:12px;color:#7c818c;">No commits match</div>`;
+    return;
+  }
+  list.innerHTML = filtered.map((c, i) => {
+    const isLast    = i === filtered.length - 1;
+    const dotColor  = c.version ? '#3ddc84' : c.current ? '#1d7bff' : '#2c2f37';
+    const dotBorder = c.current ? '2px solid #1d7bff' : c.version ? '2px solid #3ddc84' : '2px solid #2c2f37';
+    const dotFill   = (c.current || c.version) ? dotColor : 'white';
+    const versionTag = c.version
+      ? `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:600;color:#3ddc84;background:#132a1f;border:1px solid #1f5a3a;padding:0px 6px;border-radius:99px;">
+           <span class="material-symbols-outlined" style="font-size:10px;color:#3ddc84;">sell</span>${c.version}
+         </span>`
+      : '';
+    const stateMap = {
+      never:     { icon:'radio_button_unchecked', text:'Not Run',   color:'#7c818c', bg:'#26282e',  border:'#24272e' },
+      in_review: { icon:'rate_review',            text:'In Review', color:'#f5a524', bg:'#2c2414',  border:'#6b4a12' },
+      complete:  { icon:'check_circle',           text:'Complete',  color:'#3ddc84', bg:'#132a1f',  border:'#1f5a3a' },
+      stale:     { icon:'warning',                text:'Stale',     color:'#f5a524', bg:'#221d12',  border:'#6b4a12' },
+    };
+    const sm = stateMap[c.pageState];
+    const stateBadge = sm
+      ? `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:8px;font-weight:700;color:${sm.color};background:${sm.bg};border:1px solid ${sm.border};padding:0px 5px;border-radius:99px;white-space:nowrap;">
+           <span class="material-symbols-outlined sym-fill" style="font-size:9px;color:${sm.color};">${sm.icon}</span>${sm.text}
+         </span>`
+      : '';
+    return `
+    <button onclick="selectCommit('${c.sha}')" style="width:100%;display:flex;gap:0;padding:0 12px;text-align:left;background:${c.current ? '#1b2638' : 'transparent'};border:none;cursor:pointer;" onmouseover="if(!${c.current})this.style.background='#23262d'" onmouseout="if(!${c.current})this.style.background='transparent'">
+      <div style="display:flex;flex-direction:column;align-items:center;width:18px;flex-shrink:0;padding-top:12px;">
+        <div style="width:9px;height:9px;border-radius:50%;background:${dotFill};border:${dotBorder};flex-shrink:0;"></div>
+        ${!isLast ? `<div style="width:2px;flex:1;min-height:10px;background:#24272e;margin-top:3px;"></div>` : ''}
+      </div>
+      <div style="flex:1;min-width:0;padding:10px 0 10px 8px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:2px;">
+          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+            <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;color:#a3a7b1;background:#26282e;padding:1px 5px;border-radius:4px;">${c.sha.slice(0,7)}</span>
+            ${versionTag}
+            ${stateBadge}
+          </div>
+          ${c.current ? '<span class="material-symbols-outlined" style="font-size:14px;color:#1d7bff;flex-shrink:0;">check</span>' : ''}
+        </div>
+        <div style="font-size:11px;color:#f2f3f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:290px;">${c.msg}</div>
+        <div style="font-size:10px;color:#7c818c;margin-top:1px;">${c.author} · ${c.time}</div>
+      </div>
+    </button>`;
+  }).join('');
+}
+
+function renderPickerVersions() {
+  const list = document.getElementById('cp-versions-list');
+  const accentColor = s => s === 'approved' ? '#3ddc84' : s === 'in_review' ? '#f5a524' : '#2c2f37';
+  const pill = s => {
+    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:8px;font-weight:700;background:#2c2414;color:#f5a524;border:1px solid #6b4a12;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f5a524;display:inline-block;"></span>In Review</span>`;
+    return '';
+  };
+  const activeSha = (COMMITS.find(x => x.current) || {}).sha;
+  list.innerHTML = VERSIONS.map(v => {
+    const isActive = v.sha === activeSha;
+    return `
+    <button onclick="selectVersion('${v.tag}')" style="width:100%;display:flex;border:none;cursor:pointer;border-bottom:1px solid #24272e;text-align:left;background:${isActive ? '#1b2638' : 'transparent'};" onmouseover="if(!${isActive})this.style.background='#23262d'" onmouseout="if(!${isActive})this.style.background='${isActive ? '#1b2638' : 'transparent'}'">
+      <div style="width:3px;flex-shrink:0;background:${accentColor(v.status)};"></div>
+      <div style="flex:1;min-width:0;padding:11px 12px 10px 10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px;">
+          <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">
+            <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;font-weight:700;color:#f2f3f5;">${v.tag}</span>
+            ${pill(v.status)}
+          </div>
+          ${isActive ? '<span class="material-symbols-outlined" style="font-size:15px;color:#1d7bff;flex-shrink:0;">check</span>' : ''}
+        </div>
+        <div style="font-size:11px;color:#a3a7b1;margin-bottom:4px;line-height:1.4;">${v.desc}</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-family:'JetBrains Mono';font-size:10px;color:#7c818c;background:#26282e;padding:1px 5px;border-radius:4px;">${v.sha.slice(0,7)}</span>
+          <span style="font-size:10px;color:#7c818c;">${v.date}</span>
+          <span style="font-size:10px;color:#7c818c;">${v.docs} docs</span>
+        </div>
+      </div>
+    </button>`;
+  }).join('');
+}
+
+function selectCommit(sha) {
+  document.getElementById('commit-picker').classList.add('hidden');
+  document.getElementById('chip-chevron').style.transform = '';
+  const c = COMMITS.find(x => x.sha === sha);
+  if (!c) return;
+  COMMITS.forEach(x => x.current = (x.sha === sha));
+  BRANCH.commit = sha;
+  BRANCH.version = c.version || null;
+  BRANCH.state = c.pageState;
+  updateChip();
+  setState(c.pageState, c);
+  if (c.pageState !== 'never' && c.pageState !== 'running') {
+    renderKpi();
+    renderDocs();
+    renderLastActions();
+  }
+}
+
+function updateChip() {
+  const c = COMMITS.find(x => x.current);
+  if (!c) return;
+  const refEl  = document.getElementById('chip-ref');
+  const iconEl = document.getElementById('chip-icon-sym');
+  const version = c.version || (VERSIONS.length ? VERSIONS[0].tag : null);
+  if (version) {
+    refEl.textContent  = version;
+    iconEl.textContent = 'sell';
+    iconEl.style.color = '#3ddc84';
+  } else {
+    refEl.textContent  = `main @ ${c.sha.slice(0, 7)}`;
+    iconEl.textContent = 'alt_route';
+    iconEl.style.color = '';
+  }
+}
+
+function selectVersion(tag) {
+  const v = VERSIONS.find(x => x.tag === tag);
+  if (v) selectCommit(v.sha);
+}
+
+// ── Versions & Commits right panel ──
+function switchVcTab(tab) {
+  const isVersions = tab === 'versions';
+  const isCommits  = tab === 'commits';
+  const isRuns     = tab === 'runs';
+  document.getElementById('vc-panel-versions').style.display = isVersions ? '' : 'none';
+  document.getElementById('vc-panel-commits').style.display  = isCommits  ? '' : 'none';
+  document.getElementById('vc-panel-runs').style.display     = isRuns     ? '' : 'none';
+  if (isRuns) renderVcRuns();
+  const tabV = document.getElementById('vc-tab-versions');
+  const tabC = document.getElementById('vc-tab-commits');
+  const tabR = document.getElementById('vc-tab-runs');
+  [tabV, tabC, tabR].forEach(t => {
+    t.classList.remove('border-secondary','text-secondary');
+    t.classList.add('border-transparent','text-on-surface-variant');
+  });
+  const active = isVersions ? tabV : isCommits ? tabC : tabR;
+  active.classList.add('border-secondary','text-secondary');
+  active.classList.remove('border-transparent','text-on-surface-variant');
+}
+
+function renderVcRuns() {
+  const el = document.getElementById('vc-panel-runs');
+  if (el.innerHTML) return; // already rendered
+  const runs = [
+    { ok: true,  label: 'v2.4.1',  date: 'Jun 15', dur: '4h 22m', user: 'Manoj S.' },
+    { ok: true,  label: 'v2.4.0',  date: 'Jun 5',  dur: '1h 48m', user: 'Sarah C.' },
+    { ok: false, label: 'v2.3.9',  date: 'Jun 8',  dur: '—',      user: 'Arjun M.', note: 'Phase 2 failed' },
+    { ok: true,  label: 'v2.3.8',  date: 'May 29', dur: '3h 05m', user: 'Marcus W.' },
+    { ok: true,  label: 'v2.3.7',  date: 'May 20', dur: '2h 51m', user: 'Manoj S.' },
+  ];
+  el.innerHTML = runs.map(r => `
+    <div class="px-5 py-3.5 flex items-center gap-3">
+      <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:${r.ok ? '#132a1f' : '#3a1d21'};">
+        <span class="material-symbols-outlined" style="font-size:15px;color:${r.ok ? '#3ddc84' : '#ff4d5a'};font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">${r.ok ? 'check_circle' : 'cancel'}</span>
+      </div>
+      <div class="flex-1 min-w-0">
+        <p class="font-label-md text-label-md text-on-surface">${r.label}${r.note ? ` <span style="font-weight:400;color:#7c818c;">· ${r.note}</span>` : ''}</p>
+        <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">${r.date} · ${r.dur} · ${r.user}</p>
+      </div>
+      ${!r.ok ? `<button onclick="showToast('play_circle','Re-queued analysis','#1d7bff')" class="flex-shrink-0 text-secondary hover:underline" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:600;">retry →</button>` : ''}
+    </div>`).join('');
+}
+
+function renderVcVersions() {
+  const el = document.getElementById('vc-panel-versions');
+  if (!el) return;
+  const accentColor = s => s === 'approved' ? '#3ddc84' : s === 'in_review' ? '#f5a524' : '#2c2f37';
+  const pill = s => {
+    if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#132a1f;color:#3ddc84;border:1px solid #1f5a3a;padding:1px 7px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:5px;height:5px;border-radius:50%;background:#3ddc84;display:inline-block;"></span>Approved</span>`;
+    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#2c2414;color:#f5a524;border:1px solid #6b4a12;padding:1px 7px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:5px;height:5px;border-radius:50%;background:#f5a524;display:inline-block;"></span>In Review</span>`;
+    return '';
+  };
+  el.innerHTML = VERSIONS.map(v => {
+    const mid = 'vmenu-' + v.tag.replace(/[^a-zA-Z0-9]/g, '-');
+    return `
+    <div style="display:flex;border-bottom:1px solid #24272e;">
+      <div style="width:3px;flex-shrink:0;background:${accentColor(v.status)};"></div>
+      <div style="flex:1;padding:14px 14px 12px 12px;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:13px;font-weight:700;color:#f2f3f5;">${v.tag}</span>
+            ${pill(v.status)}
+          </div>
+          <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;margin-top:1px;">
+            <a href="compare.html" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;color:#1d7bff;text-decoration:none;"
+              onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+              Compare
+              <span class="material-symbols-outlined" style="font-size:11px;">open_in_new</span>
+            </a>
+            ${currentRole === 'admin' ? `<div style="position:relative;">
+              <button onclick="event.stopPropagation();toggleVersionMenu('${mid}')"
+                style="width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;border:none;background:transparent;cursor:pointer;border-radius:5px;color:#7c818c;"
+                onmouseover="this.style.background='#26282e'" onmouseout="this.style.background='transparent'">
+                <span class="material-symbols-outlined" style="font-size:17px;">more_vert</span>
+              </button>
+              <div id="${mid}" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#1c1e23;border:1px solid #24272e;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.24);min-width:140px;z-index:300;overflow:hidden;">
+                <button onclick="rerunVersion('${v.tag}')"
+                  style="width:100%;display:flex;align-items:center;gap:9px;padding:9px 14px;border:none;background:transparent;cursor:pointer;font-size:12px;color:#f2f3f5;text-align:left;"
+                  onmouseover="this.style.background='#23262d'" onmouseout="this.style.background='transparent'">
+                  <span class="material-symbols-outlined" style="font-size:15px;color:#1d7bff;">replay</span>
+                  Re-run
+                </button>
+                <div style="height:1px;background:#24272e;margin:0 10px;"></div>
+                <button onclick="closeVersionMenu();confirmDeleteVersion('${v.tag}')"
+                  style="width:100%;display:flex;align-items:center;gap:9px;padding:9px 14px;border:none;background:transparent;cursor:pointer;font-size:12px;color:#ff4d5a;text-align:left;"
+                  onmouseover="this.style.background='#2e1a1d'" onmouseout="this.style.background='transparent'">
+                  <span class="material-symbols-outlined" style="font-size:15px;">delete_outline</span>
+                  Delete
+                </button>
+              </div>
+            </div>` : ''}
+          </div>
+        </div>
+        <p style="font-size:12px;color:#a3a7b1;margin:0 0 6px;line-height:1.4;">${v.desc}</p>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-family:'JetBrains Mono';font-size:10px;color:#7c818c;background:#26282e;padding:1px 6px;border-radius:4px;">${v.sha.slice(0,7)}</span>
+          <span style="font-size:10px;color:#7c818c;">${v.date}</span>
+          <span style="font-size:10px;color:#7c818c;">${v.docs} docs</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderVcCommits() {
+  const el = document.getElementById('vc-panel-commits');
+  el.innerHTML = COMMITS.map((c, i) => {
+    const isLast = i === COMMITS.length - 1;
+    const dotColor  = c.version ? '#3ddc84' : c.current ? '#1d7bff' : '#2c2f37';
+    const dotBorder = c.current ? '2px solid #1d7bff' : c.version ? '2px solid #3ddc84' : '2px solid #2c2f37';
+    const dotFill   = (c.current || c.version) ? dotColor : 'white';
+    const lineColor = '#24272e';
+    const versionTag = c.version
+      ? `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:600;color:#3ddc84;background:#132a1f;border:1px solid #1f5a3a;padding:0px 6px;border-radius:99px;">
+           <span class="material-symbols-outlined" style="font-size:10px;color:#3ddc84;">sell</span>${c.version}
+         </span>`
+      : '';
+    return `
+    <div style="display:flex;gap:0;padding:0 16px;${c.current ? 'background:#1b2638;' : ''}">
+      <!-- Timeline spine -->
+      <div style="display:flex;flex-direction:column;align-items:center;width:20px;flex-shrink:0;padding-top:14px;">
+        <div style="width:10px;height:10px;border-radius:50%;background:${dotFill};border:${dotBorder};flex-shrink:0;"></div>
+        ${!isLast ? `<div style="width:2px;flex:1;min-height:12px;background:${lineColor};margin-top:3px;margin-bottom:0;"></div>` : ''}
+      </div>
+      <!-- Content -->
+      <div style="flex:1;min-width:0;padding:12px 0 12px 10px;">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px;">
+          <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;color:#a3a7b1;background:#26282e;padding:1px 5px;border-radius:4px;">${c.sha.slice(0,7)}</span>
+          ${versionTag}
+        </div>
+        <p style="font-size:12px;color:#f2f3f5;margin:0 0 2px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.msg}</p>
+        <p style="font-size:10px;color:#7c818c;margin:0;">${c.author} · ${c.time}</p>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── State management ──
+let currentState = 'in_review';
+
+function updateStatusBadge(state) {
+  const badge = document.getElementById('sb-status-badge');
+  const cfgs = {
+    never:     { icon: 'radio_button_unchecked', text: 'Not Run',   color: '#7c818c', bg: '#26282e', border: '#24272e' },
+    running:   { icon: 'sync',                   text: 'Running',   color: '#1d7bff', bg: '#1b2a45', border: '#2d4a80' },
+    in_review: { icon: 'rate_review',             text: 'In Review', color: '#f5a524', bg: '#2c2414', border: '#6b4a12' },
+    complete:  { icon: 'check_circle',            text: 'Complete',  color: '#3ddc84', bg: '#132a1f', border: '#1f5a3a' },
+    stale:     { icon: 'warning',                 text: 'Stale',     color: '#f5a524', bg: '#221d12', border: '#6b4a12' },
+  };
+  const cfg = cfgs[state] || cfgs.never;
+  badge.innerHTML = `<span class="material-symbols-outlined sym-fill" style="font-size:11px;color:${cfg.color};">${cfg.icon}</span>${cfg.text}`;
+  badge.style.cssText = `display:inline-flex;align-items:center;gap:4px;font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;color:${cfg.color};background:${cfg.bg};border:1px solid ${cfg.border};padding:2px 8px;border-radius:99px;white-space:nowrap;`;
+}
+
+function setState(state, commit) {
+  currentState = state;
+
+  const isNever    = state === 'never';
+  const isRunning  = state === 'running';
+  const isInReview = state === 'in_review';
+  const isComplete = state === 'complete';
+  const isStale    = state === 'stale';
+  const hasContent = isInReview || isComplete || isStale;
+  const isAdmin    = currentRole === 'admin';
+
+  document.getElementById('empty-banner').style.display  = isNever   ? '' : 'none';
+  document.getElementById('gen-panel').style.display     = isRunning  ? '' : 'none';
+  document.getElementById('stale-banner').style.display  = isStale    ? '' : 'none';
+  document.getElementById('kpi-strip').style.display     = hasContent ? 'block' : 'none';
+  document.getElementById('content-row').style.display   = hasContent ? 'flex'  : 'none';
+  document.getElementById('fn-vis-card').style.display   = hasContent ? ''      : 'none';
+
+  if (isStale && commit && commit.newCommitsSince) {
+    document.getElementById('stale-commits-count').textContent = commit.newCommitsSince;
+  }
+
+  // Subbar CTAs
+  document.getElementById('cta-run').style.display    = ((isNever || isStale || isComplete) && isAdmin) ? '' : 'none';
+  document.getElementById('cta-cancel').style.display = (isRunning && isAdmin) ? '' : 'none';
+  document.getElementById('cta-run-label').textContent = (isStale || isComplete) ? 'RE-RUN' : 'RUN ANALYSIS';
+
+
+  // Chip spinner
+  const sym  = document.getElementById('chip-icon-sym');
+  const spin = document.getElementById('chip-icon-spin');
+  sym.style.display  = isRunning ? 'none' : '';
+  spin.style.display = isRunning ? '' : 'none';
+
+  // Right sidebar cards
+  document.getElementById('review-queue-card').style.display = (hasContent && isAdmin) ? '' : 'none';
+  document.getElementById('last-actions-card').style.display = hasContent ? '' : 'none';
+  document.getElementById('team-card').style.display         = (hasContent && isAdmin) ? '' : 'none';
+
+  updateStatusBadge(state);
+}
+
+
+// ── Project switcher ──
+function toggleProjectDropdown() {
+  const dd = document.getElementById('project-dropdown');
+  const ch = document.getElementById('project-chevron');
+  const open = !dd.classList.contains('hidden');
+  dd.classList.toggle('hidden', open);
+  ch.style.transform = open ? '' : 'rotate(180deg)';
+}
+function switchProject(name) {
+  document.getElementById('current-project-name').textContent = name;
+  document.getElementById('name-display').textContent = name;
+  document.querySelectorAll('.proj-opt').forEach(o => {
+    const active = o.dataset.project === name;
+    o.style.background = active ? '#1b2638' : '';
+    o.querySelector('.proj-check').style.opacity = active ? '1' : '0';
+  });
+  document.getElementById('project-dropdown').classList.add('hidden');
+  document.getElementById('project-chevron').style.transform = '';
+}
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('project-selector-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    document.getElementById('project-dropdown').classList.add('hidden');
+    document.getElementById('project-chevron').style.transform = '';
+  }
+});
+
+
+
+// ── Advanced toggle ──
+function toggleAdv() {
+  const open = document.getElementById('adv-body').classList.toggle('open');
+  document.getElementById('adv-ch').style.transform = open ? 'rotate(90deg)' : '';
+}
+
+// ── Function Visibility ──
+const FUNCTION_TREE = [
+  { component: 'Core', unit: 'BrakeCtrl', id: 'u1', fns: [
+    { id: 'f1', name: 'BrakeCtrl_Run' },
+    { id: 'f2', name: 'BrakeCtrl_Init' },
+    { id: 'f3', name: 'BrakeCtrl_Diag' },
+    { id: 'f4', name: 'BrakeCtrl_Shutdown' },
+    { id: 'f5', name: 'BrakeCtrl_Reset' },
+    { id: 'f6', name: 'BrakeCtrl_GetStatus' },
+    { id: 'f7', name: 'BrakeCtrl_SetMode' },
+    { id: 'f8', name: 'BrakeCtrl_ReadSensor' },
+  ]},
+  { component: 'Core', unit: 'SensorFusion', id: 'u2', fns: [
+    { id: 'f9',  name: 'SensorFusion_Init' },
+    { id: 'f10', name: 'SensorFusion_Update' },
+    { id: 'f11', name: 'SensorFusion_GetOutput', isNew: true },
+    { id: 'f12', name: 'SensorFusion_Reset',     isNew: true },
+  ]},
+  { component: 'Lib', unit: 'LibUtils', id: 'u3', fns: [
+    { id: 'f13', name: 'LibUtils_Process' },
+    { id: 'f14', name: 'LibUtils_Reset' },
+    { id: 'f15', name: 'LibUtils_Validate' },
+    { id: 'f16', name: 'LibUtils_GetError' },
+    { id: 'f17', name: 'LibUtils_SetConfig' },
+  ]},
+  { component: 'Lib', unit: 'MathHelper', id: 'u4', fns: [
+    { id: 'f18', name: 'MathHelper_Sqrt' },
+    { id: 'f19', name: 'MathHelper_Clamp' },
+    { id: 'f20', name: 'MathHelper_Lerp', isNew: true },
+  ]},
+  { component: 'Util', unit: 'SensorCalib', id: 'u5', fns: [
+    { id: 'f21', name: 'SensorCalib_Init' },
+    { id: 'f22', name: 'SensorCalib_Run' },
+    { id: 'f23', name: 'SensorCalib_Validate' },
+    { id: 'f24', name: 'SensorCalib_GetOffset' },
+    { id: 'f25', name: 'SensorCalib_SetGain' },
+    { id: 'f26', name: 'SensorCalib_Reset' },
+  ]},
+];
+let _fnHidden = { f3: true, f18: true, f19: true };
+let _unitOpen  = {};
+const _newFnIds = new Set(['f11', 'f12', 'f20']);
+
+function _totalFns()  { return FUNCTION_TREE.reduce((s, u) => s + u.fns.length, 0); }
+function _hiddenCount(){ return Object.values(_fnHidden).filter(Boolean).length; }
+
+// ── Slide-over panel ──
+function openFnPanel() {
+  document.getElementById('fn-panel-search').value = '';
+  renderFnPanel('');
+  document.getElementById('fn-panel').classList.add('open');
+  document.getElementById('fn-backdrop').classList.add('open');
+}
+function closeFnPanel() {
+  document.getElementById('fn-panel').classList.remove('open');
+  document.getElementById('fn-backdrop').classList.remove('open');
+}
+
+function renderFnPanel(filter) {
+  const q = filter.trim().toLowerCase();
+  const byComp = {};
+  FUNCTION_TREE.forEach(u => { (byComp[u.component] = byComp[u.component] || []).push(u); });
+
+  let html = '';
+  Object.entries(byComp).forEach(([comp, units]) => {
+    const visibleUnits = q ? units.filter(u => u.fns.some(f => f.name.toLowerCase().includes(q))) : units;
+    if (!visibleUnits.length) return;
+    const compHidden = units.reduce((s, u) => s + u.fns.filter(f => _fnHidden[f.id]).length, 0);
+    const compTotal  = units.reduce((s, u) => s + u.fns.length, 0);
+
+    html += `<div class="mb-5">
+      <div class="flex items-center gap-2 mb-1.5 pb-1.5 border-b border-outline-variant">
+        <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.09em]" style="font-size:10px;font-weight:700;">${comp}</span>
+        <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;">${compTotal} fns${compHidden ? ` · ${compHidden} hidden` : ''}</span>
+      </div>`;
+
+    visibleUnits.forEach(unit => {
+      const hiddenCnt  = unit.fns.filter(f => _fnHidden[f.id]).length;
+      const allHidden  = hiddenCnt === unit.fns.length;
+      const isOpen     = !!_unitOpen[unit.id] || (q && unit.fns.some(f => f.name.toLowerCase().includes(q)));
+      const displayFns = q ? unit.fns.filter(f => f.name.toLowerCase().includes(q)) : unit.fns;
+
+      html += `<div class="mb-1">
+        <div class="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-surface-container-low transition-colors">
+          <button onclick="togglePanelUnit('${unit.id}')" class="flex items-center gap-2 flex-1 min-w-0 text-left">
+            <span id="pch-${unit.id}" class="material-symbols-outlined transition-transform duration-200" style="font-size:14px;color:#7c818c;transform:${isOpen ? 'rotate(90deg)' : ''};">chevron_right</span>
+            <span class="font-label-md text-label-md text-on-surface" style="font-size:12px;">${unit.unit}</span>
+            <span class="font-label-sm text-label-sm text-on-surface-variant ml-1" style="font-size:11px;">${unit.fns.length} fns${hiddenCnt ? ` · <span style="color:#ff4d5a;">${hiddenCnt} hidden</span>` : ''}</span>
+          </button>
+          <button onclick="${allHidden ? `showAllInUnit('${unit.id}')` : `hideAllInUnit('${unit.id}')`}"
+            class="px-2 py-0.5 rounded hover:bg-surface-container transition-colors flex-shrink-0"
+            style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;color:#7c818c;border:1px solid #24272e;">
+            ${allHidden ? 'show all' : 'hide all'}
+          </button>
+        </div>
+        <div id="unit-body-${unit.id}" class="unit-body${isOpen ? ' open' : ''}">
+          <div class="pl-8 pr-2 pb-1">
+            ${displayFns.map(fn => {
+              const hidden = !!_fnHidden[fn.id];
+              return `<div class="flex items-center justify-between py-1 px-2 rounded group hover:bg-surface-container-low">
+                <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;${hidden ? 'text-decoration:line-through;color:#8a8f9c;' : 'color:#f2f3f5;'}">${fn.name}()</span>
+                <button onclick="panelToggleFn('${fn.id}')"
+                  class="w-6 h-6 flex items-center justify-center rounded hover:bg-surface-container transition-colors opacity-0 group-hover:opacity-100"
+                  title="${hidden ? 'Show in output' : 'Hide from output'}">
+                  <span class="material-symbols-outlined" style="font-size:15px;color:${hidden ? '#ff4d5a' : '#2c2f37'};">${hidden ? 'visibility_off' : 'visibility'}</span>
+                </button>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>`;
+    });
+    html += '</div>';
+  });
+
+  document.getElementById('fn-panel-tree').innerHTML = html ||
+    '<p class="text-on-surface-variant font-label-sm text-label-sm py-6 text-center">No functions match your search.</p>';
+  updateFnCard();
+}
+
+function togglePanelUnit(uid) {
+  _unitOpen[uid] = !_unitOpen[uid];
+  renderFnPanel(document.getElementById('fn-panel-search').value);
+}
+function panelToggleFn(fid) {
+  _fnHidden[fid] = !_fnHidden[fid];
+  renderFnPanel(document.getElementById('fn-panel-search').value);
+}
+function hideAllInUnit(uid) {
+  const unit = FUNCTION_TREE.find(u => u.id === uid);
+  if (unit) { unit.fns.forEach(f => { _fnHidden[f.id] = true; }); }
+  renderFnPanel(document.getElementById('fn-panel-search').value);
+}
+function showAllInUnit(uid) {
+  const unit = FUNCTION_TREE.find(u => u.id === uid);
+  if (unit) { unit.fns.forEach(f => { delete _fnHidden[f.id]; }); }
+  renderFnPanel(document.getElementById('fn-panel-search').value);
+}
+
+function updateFnCard() {
+  const total  = _totalFns();
+  const hidden = _hiddenCount();
+  const sumEl  = document.getElementById('fv-card-summary');
+  const hidEl  = document.getElementById('fv-card-hidden');
+  const panEl  = document.getElementById('fn-panel-summary');
+  if (sumEl) sumEl.textContent = `${hidden} of ${total} functions hidden from DOCX`;
+  if (hidEl) { hidEl.textContent = hidden > 0 ? `${hidden} hidden` : 'All visible'; hidEl.style.color = hidden > 0 ? '#ff4d5a' : '#8a8f9c'; }
+  if (panEl) panEl.textContent = `${total} functions · ${hidden} hidden`;
+}
+
+function startReexport() {
+  const btn = document.getElementById('reexport-btn');
+  btn.disabled = true;
+  btn.style.background = '#7c818c';
+  btn.innerHTML = '<div class="spin" style="width:13px;height:13px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:9999px;"></div><span>Re-exporting...</span>';
+  setTimeout(() => {
+    btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:15px;font-variation-settings:\'FILL\' 1,\'wght\' 400,\'GRAD\' 0,\'opsz\' 24;">check_circle</span><span>Done</span>';
+    btn.style.background = '#3ddc84';
+    showToast('check_circle', 'DOCX re-exported with updated function visibility.', '#3ddc84');
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:15px;font-variation-settings:\'FILL\' 1,\'wght\' 400,\'GRAD\' 0,\'opsz\' 24;">upload</span><span>Re-export DOCX</span>';
+      btn.style.background = '#1d7bff';
+    }, 1800);
+  }, 2500);
+}
+
+// ── Post-Phase-1 review modal ──
+let _unitOpenReview = {};
+
+function showFnReviewModal() {
+  _unitOpenReview = {};
+  document.getElementById('review-search').value = '';
+  renderReviewTree('');
+  updateReviewCount();
+  document.getElementById('fn-review-modal').classList.remove('hidden');
+}
+
+function renderReviewTree(filter) {
+  const q = filter.trim().toLowerCase();
+  const byComp = {};
+  FUNCTION_TREE.forEach(u => { (byComp[u.component] = byComp[u.component] || []).push(u); });
+
+  let html = '';
+  Object.entries(byComp).forEach(([comp, units]) => {
+    const visibleUnits = q ? units.filter(u => u.fns.some(f => f.name.toLowerCase().includes(q))) : units;
+    if (!visibleUnits.length) return;
+
+    html += `<div class="mb-3"><p class="px-1 pb-1.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.09em]" style="font-size:10px;font-weight:700;">${comp}</p>`;
+
+    visibleUnits.forEach(unit => {
+      const hasNew     = unit.fns.some(f => _newFnIds.has(f.id));
+      const isOpen     = hasNew || !!_unitOpenReview[unit.id] || (q && unit.fns.some(f => f.name.toLowerCase().includes(q)));
+      const hiddenCnt  = unit.fns.filter(f => _fnHidden[f.id]).length;
+      const displayFns = q ? unit.fns.filter(f => f.name.toLowerCase().includes(q)) : unit.fns;
+
+      html += `<div class="mb-1.5 border border-outline-variant rounded-lg overflow-hidden">
+        <button onclick="toggleReviewUnit('${unit.id}')" class="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-container-low transition-colors">
+          <span class="material-symbols-outlined transition-transform duration-200" style="font-size:14px;color:#7c818c;transform:${isOpen ? 'rotate(90deg)' : ''};">chevron_right</span>
+          <span class="font-label-md text-label-md text-on-surface flex-1 text-left" style="font-size:12px;">${unit.unit}</span>
+          ${hasNew ? `<span style="font-size:9px;font-weight:700;background:#2c2a14;color:#ffc966;padding:1px 7px;border-radius:3px;font-family:'SamsungOne','Roboto',sans-serif;">NEW</span>` : ''}
+          ${hiddenCnt ? `<span class="font-label-sm text-label-sm" style="font-size:10px;color:#ff4d5a;margin-left:4px;">${hiddenCnt} hidden</span>` : ''}
+        </button>
+        <div id="rv-unit-${unit.id}" class="unit-body${isOpen ? ' open' : ''}">
+          <div class="border-t border-outline-variant">
+            ${displayFns.map(fn => {
+              const hidden  = !!_fnHidden[fn.id];
+              const isNewFn = _newFnIds.has(fn.id);
+              return `<div class="flex items-center justify-between py-1.5 px-4 group" style="${isNewFn ? 'background:#221d12;' : ''}">
+                <div class="flex items-center gap-2 min-w-0">
+                  ${isNewFn
+                    ? `<span class="material-symbols-outlined sym-fill flex-shrink-0" style="font-size:13px;color:#f5a524;">fiber_new</span>`
+                    : `<span style="width:17px;flex-shrink:0;"></span>`}
+                  <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;${hidden ? 'text-decoration:line-through;color:#8a8f9c;' : 'color:#f2f3f5;'}">${fn.name}()</span>
+                </div>
+                <button onclick="reviewToggleFn('${fn.id}')"
+                  class="w-6 h-6 flex items-center justify-center rounded hover:bg-surface-container transition-colors flex-shrink-0"
+                  style="opacity:${hidden ? '1' : '.35'};" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity='${hidden ? '1' : '.35'}'">
+                  <span class="material-symbols-outlined" style="font-size:15px;color:${hidden ? '#ff4d5a' : '#2c2f37'};">${hidden ? 'visibility_off' : 'visibility'}</span>
+                </button>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>`;
+    });
+    html += '</div>';
+  });
+
+  document.getElementById('review-tree').innerHTML = html ||
+    '<p class="text-on-surface-variant font-label-sm text-label-sm py-4 text-center">No functions match.</p>';
+}
+
+function toggleReviewUnit(uid) {
+  _unitOpenReview[uid] = !_unitOpenReview[uid];
+  renderReviewTree(document.getElementById('review-search').value);
+}
+function reviewToggleFn(fid) {
+  _fnHidden[fid] = !_fnHidden[fid];
+  renderReviewTree(document.getElementById('review-search').value);
+  updateReviewCount();
+}
+function updateReviewCount() {
+  const h = _hiddenCount();
+  document.getElementById('review-hidden-count').textContent = h > 0 ? `${h} hidden` : 'All visible';
+}
+function continueAfterReview() {
+  document.getElementById('fn-review-modal').classList.add('hidden');
+  updateFnCard();
+  advanceToPhase(2);
+  _phaseTimers.push(
+    setTimeout(() => advanceToPhase(3),  9000),
+    setTimeout(() => advanceToPhase(4), 18000),
+    setTimeout(() => finishGeneration(), 27000),
+  );
+}
+
+// ── Role switcher ──
+let currentRole = 'admin';
+
+function setRole(role) {
+  currentRole = role;
+  document.getElementById('role-chip-label').textContent = role === 'admin' ? 'Admin' : 'Developer';
+  document.getElementById('role-check-admin').style.visibility     = role === 'admin'     ? 'visible' : 'hidden';
+  document.getElementById('role-check-developer').style.visibility = role === 'developer' ? 'visible' : 'hidden';
+  // Sync topbar pills
+  document.getElementById('role-btn-admin').className = role === 'admin'
+    ? 'px-2.5 py-1 transition-colors bg-secondary text-white'
+    : 'px-2.5 py-1 transition-colors text-on-surface-variant hover:bg-surface-container';
+  document.getElementById('role-btn-dev').className = role === 'developer'
+    ? 'px-2.5 py-1 transition-colors bg-secondary text-white'
+    : 'px-2.5 py-1 transition-colors text-on-surface-variant hover:bg-surface-container';
+  closeRoleMenu();
+  const c = COMMITS.find(x => x.current);
+  setState(currentState, c);
+  renderKpi();
+  renderDocs();
+  renderLastActions();
+}
+function toggleRoleMenu() {
+  const menu = document.getElementById('role-menu');
+  const chevron = document.getElementById('role-chip-chevron');
+  const isHidden = menu.classList.contains('hidden');
+  menu.classList.toggle('hidden', !isHidden);
+  chevron.style.transform = isHidden ? 'rotate(180deg)' : '';
+}
+function closeRoleMenu() {
+  document.getElementById('role-menu').classList.add('hidden');
+  document.getElementById('role-chip-chevron').style.transform = '';
+}
+document.addEventListener('click', e => {
+  const sw = document.getElementById('role-switcher');
+  if (sw && !sw.contains(e.target)) closeRoleMenu();
+});
+
+// ── Version card kebab menu ──
+let _openVersionMenu = null;
+function toggleVersionMenu(id) {
+  const menu = document.getElementById(id);
+  if (!menu) return;
+  const isOpen = menu.style.display === 'block';
+  closeVersionMenu();
+  if (!isOpen) { menu.style.display = 'block'; _openVersionMenu = menu; }
+}
+function closeVersionMenu() {
+  if (_openVersionMenu) { _openVersionMenu.style.display = 'none'; _openVersionMenu = null; }
+}
+document.addEventListener('click', () => closeVersionMenu());
+
+function rerunVersion(tag) {
+  closeVersionMenu();
+  const v = VERSIONS.find(x => x.tag === tag);
+  openRunConfig();
+  if (!v) return;
+  const cSel = document.getElementById('run-modal-commit');
+  if (cSel) Array.from(cSel.options).forEach(o => { o.selected = o.value === v.sha; });
+}
+
+// ── Run modal ──
+function suggestNextVersion() {
+  if (!VERSIONS.length) return 'v1.0.0';
+  const m = VERSIONS[0].tag.match(/^v?(\d+)\.(\d+)\.(\d+)$/);
+  return m ? `v${m[1]}.${parseInt(m[2]) + 1}.0` : '';
+}
+
+function openRunConfig() {
+  document.getElementById('run-modal-branch').textContent = BRANCH.label;
+
+  const cSel = document.getElementById('run-modal-commit');
+  cSel.innerHTML = '';
+  COMMITS.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.sha;
+    const tag = c.version ? ` [${c.version}]` : '';
+    opt.textContent = `${c.sha.slice(0,7)}${tag}  ·  ${c.time}  —  ${c.msg}`;
+    if (c.current) opt.selected = true;
+    cSel.appendChild(opt);
+  });
+
+  const rSel = document.getElementById('run-modal-reference');
+  rSel.innerHTML = '<option value="">— None —</option>';
+  VERSIONS.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v.tag;
+    opt.textContent = `${v.tag}  ·  ${v.sha.slice(0,7)}  —  ${v.desc}`;
+    rSel.appendChild(opt);
+  });
+
+  document.getElementById('run-modal-new-version').value = suggestNextVersion();
+  document.getElementById('run-modal').classList.remove('hidden');
+}
+function closeRunModal() { document.getElementById('run-modal').classList.add('hidden'); }
+document.getElementById('run-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('run-modal')) closeRunModal();
+});
+
+// ── Generation ──
+let _elapsed = 0, _elapsedTick = null, _phaseTimers = [], _phase = 1;
+
+function formatElapsed(s) {
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0');
+}
+
+const PHASE_DATA = {
+  1: { icon:'manage_search', text:'Parsing C++ source files with libclang...', sub:'1,247 of 3,412 files · Layer1 + Layer2', pct:36, eta:'Est. ~6m remaining' },
+  2: { icon:'psychology',    text:'Enriching function descriptions with LLM...', sub:'312 of 842 functions · LLM enrichment enabled', pct:37, eta:'Est. ~4h 20m remaining' },
+  3: { icon:'polyline',      text:'Generating Mermaid flowcharts and diagrams...', sub:'28 of 41 components · CFG flowcharts + diagrams', pct:68, eta:'Est. ~18m remaining' },
+  4: { icon:'description',   text:'Building DOCX documents...', sub:'3 of 12 groups · Software Detailed Design', pct:25, eta:'Est. ~4m remaining' },
+};
+
+function startGeneration() {
+  closeRunModal();
+  runningJob = true;
+  document.getElementById('panel-branch').textContent = BRANCH.label;
+  document.getElementById('panel-commit').textContent = BRANCH.commit || 'HEAD';
+  const now = new Date();
+  document.getElementById('panel-started').textContent =
+    String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+
+  _elapsed = 0; _phase = 1;
+
+  document.getElementById('gen-header').style.background = '#0b0c0f';
+  document.getElementById('gen-header-title').textContent = 'Analysis Running';
+  document.getElementById('gen-live-badge').style.background = '#1d7bff';
+  document.getElementById('gen-live-badge').textContent = 'Live';
+  const sw = document.getElementById('panel-spinner-wrap');
+  sw.className = 'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 pulse-ring';
+  sw.style.cssText = 'border:2px solid #1d7bff;border-top-color:transparent;';
+  sw.innerHTML = '<div class="w-full h-full rounded-full spin" style="border:2px solid #1d7bff;border-top-color:transparent;border-radius:9999px;"></div>';
+
+  clearInterval(_elapsedTick);
+  _elapsedTick = setInterval(() => {
+    _elapsed++;
+    document.getElementById('panel-elapsed').textContent = formatElapsed(_elapsed);
+  }, 1000);
+
+  _phaseTimers.forEach(clearTimeout);
+  _phaseTimers = [];
+
+  const pauseAfterPhase1 = document.getElementById('pause-phase1') && document.getElementById('pause-phase1').checked;
+
+  if (pauseAfterPhase1) {
+    setPhActive(1);
+    setPhPending(2); setPhPending(3); setPhPending(4);
+    setLine('line12', 'ph-pending'); setLine('line23', 'ph-pending'); setLine('line34', 'ph-pending');
+    setActivity(1);
+    _phaseTimers.push(setTimeout(() => {
+      const m = Math.floor(_elapsed / 60), s = _elapsed % 60;
+      setPhDone(1, 'Done · ' + m + 'm ' + s + 's');
+      setLine('line12', 'ph-done');
+      showFnReviewModal();
+    }, 5000));
+  } else {
+    resetPhasesVisual();
+    setActivity(1);
+    _phaseTimers = [
+      setTimeout(() => advanceToPhase(2),  9000),
+      setTimeout(() => advanceToPhase(3), 18000),
+      setTimeout(() => advanceToPhase(4), 27000),
+      setTimeout(() => finishGeneration(), 36000),
+    ];
+  }
+
+  setState('running');
+}
+
+function resetPhasesVisual() {
+  setPhDone(1, 'Done · 3m 12s');
+  setPhActive(2);
+  setPhPending(3);
+  setPhPending(4);
+  setLine('line12', 'ph-done');
+  setLine('line23', 'ph-pending');
+  setLine('line34', 'ph-pending');
+}
+
+function setPhDone(n, label) {
+  const ic = document.getElementById('ph'+n+'-icon');
+  ic.style.background = '#3ddc84';
+  ic.className = 'w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0';
+  ic.innerHTML = '<span class="material-symbols-outlined text-white" style="font-size:14px;font-variation-settings:\'FILL\' 1,\'wght\' 700,\'GRAD\' 0,\'opsz\' 24;">check</span>';
+  const t = document.getElementById('ph'+n+'-time'); t.textContent = label; t.style.color = '#3ddc84';
+  document.getElementById('ph'+n+'-name').style.color = '#f2f3f5';
+}
+function setPhActive(n) {
+  const ic = document.getElementById('ph'+n+'-icon');
+  ic.style.background = '#1d7bff';
+  ic.className = 'w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 pulse-ring';
+  ic.innerHTML = '<div class="spin" style="width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:9999px;"></div>';
+  const t = document.getElementById('ph'+n+'-time'); t.textContent = 'Running...'; t.style.color = '#1d7bff';
+  document.getElementById('ph'+n+'-name').style.color = '#f2f3f5';
+}
+function setPhPending(n) {
+  const ic = document.getElementById('ph'+n+'-icon');
+  ic.style.background = '#1b2a45';
+  ic.className = 'w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0';
+  ic.innerHTML = '<span style="font-size:13px;font-weight:600;color:#7c818c;">'+n+'</span>';
+  const t = document.getElementById('ph'+n+'-time'); t.textContent = 'Pending'; t.style.color = '#2c2f37';
+  document.getElementById('ph'+n+'-name').style.color = '#7c818c';
+}
+function setLine(id, cls) {
+  document.getElementById(id).className = 'phase-line ' + cls;
+}
+function setActivity(phase) {
+  const d = PHASE_DATA[phase]; if (!d) return;
+  document.getElementById('act-icon').textContent = d.icon;
+  document.getElementById('act-icon').style.color = '#1d7bff';
+  document.getElementById('act-text').textContent = d.text;
+  document.getElementById('act-text').style.color = '#f2f3f5';
+  document.getElementById('act-sub').textContent  = d.sub;
+  document.getElementById('act-eta').textContent  = d.eta;
+  document.getElementById('act-pct').textContent  = d.pct + '%';
+  document.getElementById('act-pct').style.color  = '#1d7bff';
+  const bar = document.getElementById('act-bar');
+  bar.style.background = '#1d7bff'; bar.style.width = '2%';
+  setTimeout(() => { bar.style.width = d.pct + '%'; }, 80);
+}
+function advanceToPhase(n) {
+  const m = Math.floor(_elapsed/60), s = _elapsed%60;
+  setPhDone(n-1, 'Done · '+m+'m '+s+'s');
+  setLine('line'+(n-1)+n, 'ph-done');
+  setPhActive(n);
+  const nextLine = 'line'+n+(n+1);
+  if (document.getElementById(nextLine)) setLine(nextLine, 'ph-pending');
+  setActivity(n);
+  _phase = n;
+}
+
+function finishGeneration() {
+  clearInterval(_elapsedTick);
+  _phaseTimers.forEach(clearTimeout);
+  runningJob = false;
+
+  const m = Math.floor(_elapsed/60), s = _elapsed%60;
+  setPhDone(4, 'Done · '+m+'m '+s+'s');
+  setLine('line34', 'ph-done');
+
+  document.getElementById('act-icon').textContent = 'check_circle';
+  document.getElementById('act-icon').style.color = '#3ddc84';
+  document.getElementById('act-text').textContent = 'Analysis complete — all documents generated successfully.';
+  document.getElementById('act-text').style.color = '#3ddc84';
+  document.getElementById('act-sub').textContent  = '41 components · 12 groups · 5 DOCX documents produced';
+  document.getElementById('act-eta').textContent  = '';
+  document.getElementById('act-pct').textContent  = '100%';
+  document.getElementById('act-pct').style.color  = '#3ddc84';
+  document.getElementById('act-bar').style.width  = '100%';
+  document.getElementById('act-bar').style.background = '#3ddc84';
+
+  document.getElementById('gen-header').style.background = '#10301f';
+  document.getElementById('gen-header-title').textContent = 'Analysis Complete';
+  document.getElementById('gen-live-badge').style.background = '#3ddc84';
+  document.getElementById('gen-live-badge').textContent = 'Done';
+
+  const sw = document.getElementById('panel-spinner-wrap');
+  sw.style.cssText = 'background:#3ddc84;';
+  sw.className = 'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0';
+  sw.innerHTML = '<span class="material-symbols-outlined text-white" style="font-size:18px;font-variation-settings:\'FILL\' 1,\'wght\' 700,\'GRAD\' 0,\'opsz\' 24;">check_circle</span>';
+
+  BRANCH.state = 'in_review';
+  BRANCH.generatedAt = 'just now';
+
+  const c = COMMITS.find(x => x.current);
+  if (c) c.pageState = 'in_review';
+  setState('in_review', c);
+  renderKpi(); renderDocs(); renderLastActions();
+  showToast('check_circle', 'Analysis complete — documents ready for assignment.', '#3ddc84');
+}
+
+function cancelGeneration() {
+  clearInterval(_elapsedTick);
+  _phaseTimers.forEach(clearTimeout);
+  runningJob = false;
+  const c = COMMITS.find(x => x.current);
+  const prevState = (c && c.pageState !== 'running') ? c.pageState : 'never';
+  setState(prevState, c);
+  showToast('cancel', 'Analysis job cancelled.', '#f5a524');
+}
+
+// ── Toast ──
+let _toastTimer = null;
+function showToast(icon, msg, color) {
+  const el = document.getElementById('toast');
+  document.getElementById('toast-icon').textContent = icon;
+  document.getElementById('toast-icon').style.color = color || '#3ddc84';
+  document.getElementById('toast-msg').textContent = msg;
+  el.classList.remove('hidden','toast-out');
+  el.classList.add('toast-in');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(hideToast, 4500);
+}
+function hideToast() {
+  const el = document.getElementById('toast');
+  el.classList.remove('toast-in');
+  el.classList.add('toast-out');
+  setTimeout(() => el.classList.add('hidden'), 320);
+}
+
+// ── Delete version ──
+let _deleteVersionTag = null;
+
+function confirmDeleteVersion(tag) {
+  _deleteVersionTag = tag;
+  document.getElementById('delete-version-tag').textContent = tag;
+  document.getElementById('delete-version-modal').classList.remove('hidden');
+}
+
+function closeDeleteVersionModal() {
+  document.getElementById('delete-version-modal').classList.add('hidden');
+  _deleteVersionTag = null;
+}
+
+function executeDeleteVersion() {
+  if (!_deleteVersionTag) return;
+  const tag = _deleteVersionTag;
+  const idx = VERSIONS.findIndex(v => v.tag === tag);
+  if (idx !== -1) {
+    VERSIONS.splice(idx, 1);
+    COMMITS.forEach(c => { if (c.version === tag) c.version = null; });
+    renderVcVersions();
+    renderVcCommits();
+    updateChip();
+  }
+  closeDeleteVersionModal();
+  showToast('delete_outline', `Version ${tag} deleted.`, '#f5a524');
+}
+
+document.getElementById('delete-version-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('delete-version-modal')) closeDeleteVersionModal();
+});
+
+// ── Init ──
+const _initCommit = COMMITS.find(c => c.current);
+currentState = _initCommit ? _initCommit.pageState : 'in_review';
+updateChip();
+renderKpi();
+renderDocs();
+renderLastActions();
+setState(currentState, _initCommit);
+</script>
+</body>
+</html>
