@@ -24,6 +24,83 @@ there is no second way to do anything.
 
 ---
 
+## Quick reference
+
+By job, in the order you meet them. `myproj` is your project id, `v1` / `v2` version names, `<sha>`
+a full commit id. Each group links to its commands' sections below, the first time they appear, and
+`--help` on any command lists all its options.
+
+**Once, on a new server** — [`setup`](#setup) · [`doctor`, `check-llm`](#doctor-check-llm-check-datadict)
+```
+python analyzer.py setup        # create the database; after every pull, run it again: it upgrades
+python analyzer.py doctor       # clang, node, graphviz, browser installed?
+python analyzer.py check-llm    # does the LLM answer?
+```
+
+**Add people** — [`user`](#user)
+```
+python analyzer.py user add --email developer@company.com --name "Developer"   # prints a temporary password once
+python analyzer.py user password --email developer@company.com                # a new temporary password
+python analyzer.py user list
+```
+
+**Add a project** — [`check-datadict`](#doctor-check-llm-check-datadict) · [`onboard`](#onboard) · [`grant`](#grant)
+```
+python analyzer.py check-datadict data_dictionary.csv --layer Layer1   # catch dictionary errors before a run
+python analyzer.py onboard --project-id myproj --name "My Project" --source D:\code\my-cpp --config my-config.json --version-id v1 --commit <sha> --owner admin@company.com
+python analyzer.py grant --project-id myproj --email developer@company.com --role developer   # more people in the web app
+```
+
+**Make documents** — [`generate`](#generate)
+```
+python analyzer.py generate --project-id myproj --commit <sha> --version-id v1                     # the first version: a full run
+python analyzer.py generate --project-id myproj --commit <sha2> --version-id v2 --create-version   # later: reuses what did not change
+```
+
+| Add to `generate` | For |
+|---|---|
+| `--scope "component:Layer1.Math"` | only some of the project (also `layer:` and `group:`; see [Scoping](#scoping)) |
+| `--doc-type swe3` | one document type: `swe3`, `swe4` or `all` (the default) |
+| `--no-llm` | no LLM-written text: fast, for checking structure |
+| `--full` | parse everything, ignoring the earlier version |
+
+**A run that takes days** — [`export`](#export) · [`progress`, `components`](#progress-components) · [the whole story](#a-run-that-lasts-days). `--detach` runs it in the background
+on a frozen copy of the code: it survives closing the terminal and an API restart. The web app always
+starts its runs this way.
+```
+python analyzer.py generate --project-id myproj --commit <sha> --version-id v1 --model-only --detach         # parse + descriptions, in the background
+python analyzer.py export --project-id myproj --version-id v1 --components Layer1.Math,Layer2.Gpio --detach   # these components' documents (another layer is added to the version)
+python analyzer.py export --project-id myproj --version-id v1 --remaining --detach                             # all the others
+python analyzer.py progress --project-id myproj --version-id v1     # running or stopped, the stage, time left
+python analyzer.py components --project-id myproj --version-id v1   # each component and its documents
+```
+
+**When a run stops** — [`resume`](#resume) · [`report`](#status-check-report) · [what to check](#when-a-run-stops)
+```
+python analyzer.py progress --project-id myproj --version-id v1          # where it stopped
+python analyzer.py resume --project-id myproj --version-id v1 --detach   # carry on from there
+python analyzer.py report --version myproj.v1                            # what a run did: reuse, LLM calls, time
+```
+
+**Documents again** (after corrections, or a settings change) — [`reexport`](#reexport) · [`register`](#register)
+```
+python analyzer.py reexport --project-id myproj --version-id v1                                                # all the version's documents
+python analyzer.py reexport --project-id myproj --version-id v1 --from-phase auto --components Layer1.Math   # only these
+python analyzer.py register --project-id myproj --version-id v1   # put an older version's documents up for review
+```
+
+**Look after the server** — [`status`, `check`](#status-check-report) · [`llm-stats`](#llm-stats) · [`verify`](#verify)
+```
+python analyzer.py status                    # what the database holds
+python analyzer.py check --quiet             # only what is wrong
+python analyzer.py clean-runs --dry-run      # finished background runs' code copies that can go
+python analyzer.py clean-runs                # remove them (a week old by default: --keep-days)
+python analyzer.py llm-stats logs\llm_stats_A.json logs\llm_stats_B.json   # the LLM cost of two runs
+python analyzer.py verify --fast             # the correctness gates
+```
+
+---
+
 ## The whole thing, start to finish
 
 Six commands take you from an empty database to documents, and then to an incremental second
@@ -235,27 +312,11 @@ default**. The run log says so: `narrowed parse: 1 affected TU(s)`.
 
 ## Commands
 
-| Command | For |
-|---|---|
-| `setup` | create or upgrade the database schema |
-| `onboard` | register a project: row, workspace, config, first version |
-| `generate` | produce a version from a commit (Phases 1-4; `--model-only`: 1-2) |
-| `export` | make the documents of components a version has not generated yet (Phases 3-4, same version) |
-| `reexport` | make a version's documents again, from its stored model |
-| `resume` | finish a version whose run was cut short, from where it stopped |
-| `progress` | how far a version's run has got: running or stopped, the stage, time left |
-| `components` | a version's components and the state of their documents |
-| `clean-runs` | remove the frozen code copies (~10 MB each) of background runs that finished more than `--keep-days` (7) ago; `--dry-run` lists them. A run that stopped, died or had failed components keeps its copy for `resume --detach` |
-| `register` | record a version's documents for review and approval, without regenerating |
-| `user` | add a user account (and to a project), reset its password, list accounts |
-| `status` | what the database holds |
-| `check` | check the database, reporting only what is wrong |
-| `report` | a version's generation report |
-| `doctor` | check prerequisites (clang, node, graphviz, browser) |
-| `check-llm` | ask the LLM (gateway or Ollama) directly whether it answers |
-| `check-datadict` | validate a data-dictionary CSV before a run |
-| `llm-stats` | compare the LLM cost of two runs |
-| `verify` | run the correctness gates |
+Each command in detail. The [Quick reference](#quick-reference) lists them all by job.
+
+**`clean-runs`** removes the frozen code copies (~10 MB each) of background runs that finished
+more than `--keep-days` (7) ago; `--dry-run` lists them. A run that stopped, died or had failed
+components keeps its copy for `resume --detach`.
 
 ### `setup`
 
@@ -290,6 +351,9 @@ python analyzer.py onboard --project-id myproj --name "My Project" --source D:\c
 | `--config` | this project's config.json |
 | `--use-defaults` | use this repo's SAMPLE tree instead. An alternative to `--config`, never both. |
 | `--force-config` | replace a config that already exists |
+| `--owner EMAIL` | give this user access to the project in the web app. Default: every superuser, so the operator sees what was just created |
+| `--owner-all` | give **every** user access (a single-team internal server) |
+| `--owner-role` | the role they get: `admin` (default) or `developer` |
 | `--version-id` / `--commit` | also reserve the first version. Both or neither. The version id is a **name inside this project**: another project can have its own `v1`. It is stored under the id `<project>.<name>` (`myproj.v1`). |
 
 **A local path must be a git repository — for every run, not just incremental ones.** A plain
@@ -823,16 +887,33 @@ existed, or one whose run said `note: the documents could not be recorded for re
 admin can do the same from the API (`POST /projects/{id}/versions/{vid}/documents/register`). The
 rules: [REVIEW_APPROVE_API_SPEC](spec/REVIEW_APPROVE_API_SPEC.md) §4.
 
+### `grant`
+
+```
+python analyzer.py grant --project-id myproj --email developer@company.com --role developer
+python analyzer.py grant --project-id myproj --all
+```
+
+Gives an existing account access to a project, so the web app lists it and the API serves it to them.
+Access is per project: a project onboarded from the command line is visible only to the people granted
+it (`onboard --owner` grants one at once) and to superusers, who reach every project. `--role` is
+`admin` (default) or `developer`; `--all` grants every account in the database. To create an account
+first, see `user` below.
+
+There are two roles. A reviewer is not one: whoever is assigned a document reviews it (an admin
+assigns it, or a developer claims it). `--role reviewer` is still accepted, for older scripts, and acts
+as `developer`.
+
 ### `user`
 
 ```
-python analyzer.py user add --email priya@company.com --name "Priya Sharma" --project-id myproj
-python analyzer.py user password --email priya@company.com
+python analyzer.py user add --email developer@company.com --name "Developer" --project-id myproj
+python analyzer.py user password --email developer@company.com
 python analyzer.py user list
 ```
 
 Nothing else creates an account: there is no sign-up. `add` makes one and, with `--project-id`, an
-active member of that project (`--role developer` by default; `admin`, `reviewer`). Without
+active member of that project (`--role developer` by default, or `admin`). Without
 `--password` a temporary password is printed once; the person changes it after signing in. `password`
 sets a new one (temporary unless given). A project admin can also add a person from the web app's Team
 page, which creates the account the same way.
