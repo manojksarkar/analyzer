@@ -219,6 +219,20 @@ export interface ConfigPreview {
   repositoryChecked: boolean
 }
 
+/** A folder on the server ArtiFex runs on (GET /repositories/local-folders): `git` when it is a
+ *  git repository (holds `.git`). Paths use forward slashes. */
+export interface LocalFolder { name: string; path: string; git: boolean }
+/** One folder's subfolders. `path` '' is the top list (the server's drives or `/`, or the folders
+ *  it limits the picker to - `limited`), whose `parent` is null; a `parent` of '' goes back to it.
+ *  `truncated`: the server listed only the first folders. */
+export interface LocalFolders {
+  path: string
+  parent: string | null
+  folders: LocalFolder[]
+  limited: boolean
+  truncated: boolean
+}
+
 export interface Project {
   id: string
   name: string

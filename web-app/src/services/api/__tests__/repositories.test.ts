@@ -50,3 +50,26 @@ describe('repositoriesApi.browse', () => {
     expect(seen[0].body).toEqual({ repo_url: 'https://git.example/r.git', path: '', refresh: false })
   })
 })
+
+/* A Local path repository's Browse: GET /repositories/local-folders?path=, one folder at a time. */
+describe('repositoriesApi.localFolders', () => {
+  it('asks for a folder by its full path; the top list with no path', async () => {
+    const urls: string[] = []
+    server.use(mock.get(`${API_BASE_URL}/repositories/local-folders`, ({ request }) => {
+      urls.push(request.url)
+      const path = new URL(request.url).searchParams.get('path') ?? ''
+      return HttpResponse.json(path
+        ? { path, parent: 'D:/', folders: [{ name: 'vcu', path: `${path}/vcu`, git: true }], limited: false, truncated: true }
+        : { path: '', parent: null, folders: [{ name: 'D:/', path: 'D:/', git: false }] })
+    }))
+
+    expect(await repositoriesApi.localFolders('D:/src')).toEqual({
+      path: 'D:/src', parent: 'D:/', folders: [{ name: 'vcu', path: 'D:/src/vcu', git: true }], limited: false, truncated: true,
+    })
+    expect(await repositoriesApi.localFolders()).toEqual({
+      path: '', parent: null, folders: [{ name: 'D:/', path: 'D:/', git: false }], limited: false, truncated: false,
+    })
+    expect(new URL(urls[0]).searchParams.get('path')).toBe('D:/src')
+    expect(new URL(urls[1]).search).toBe('')
+  })
+})

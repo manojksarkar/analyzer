@@ -12,11 +12,12 @@ import { BranchPicker } from './components/BranchPicker'
 import { ConfigImport } from './components/ConfigImport'
 import { CoresReview, CoresStep, type FolderResult } from './components/CoresStep'
 import { Readiness, type ReadinessItem } from './components/Readiness'
+import { RepoBrowser } from './components/RepoBrowser'
 import { clearDraft, loadDraft, saveDraft } from './draft'
 import {
-  assignmentsOf, baseName, CORE_FILES, coreInput, coreProblems, draftToCores, draftToLayers, fitsCoreFile, indexTree,
-  matchFolder, newCore, nextCoreName, openWants, ownerOf, pathProblems, settingsSummary, typedDefines,
-  type Comp, type Core, type CoreFile, type Group, type Layer, type Member, type Role, type WantedFile,
+  assignmentsOf, baseName, cleanPath, CORE_FILES, coreInput, coreProblems, draftToCores, draftToLayers, fitsCoreFile, indexTree,
+  looksLocal, matchFolder, newCore, nextCoreName, openWants, ownerOf, pathProblems, settingsSummary, typedDefines,
+  type Comp, type Core, type CoreFile, type Group, type Layer, type Member, type RepoSource, type Role, type WantedFile,
 } from './helpers'
 
 // Rail entries — short title + sub, mirroring the design's step rail.
@@ -47,6 +48,9 @@ const STEP_HINTS = [
 ]
 
 const TREE_CB = 'w-3.5 h-3.5 accent-secondary cursor-pointer flex-shrink-0'
+// Step 1's repository switch: Git URL | Local path.
+const SEG_BTN = 'inline-flex items-center gap-1 px-2.5 py-[3px] rounded-[6px] font-mono text-caption font-semibold tracking-[.02em] text-on-surface-variant hover:text-on-surface transition-colors'
+const SEG_ON = 'bg-white text-secondary hover:text-secondary shadow-[0_1px_2px_rgba(4,22,39,.12)]'
 
 type TestTone = 'neutral' | 'error' | 'ok'
 
@@ -225,7 +229,7 @@ function WizardView({
   // token is never kept: that draft opens on step 1 to have it typed again, its later steps one
   // click away on the rail.
   const [draft] = useState(loadDraft)
-  const reenterToken = !!draft?.tokenUsed && !!draft.repoUrl
+  const reenterToken = !!draft?.tokenUsed && !!draft.repoUrl && draft.repoSource === 'url'
   // 1-based step + `done` set (steps advanced past) — drives the rail + bar.
   const [cur, setCur] = useState(() =>
     draft && !reenterToken ? Math.min(Math.max(Math.round(draft.step), 1), STEPS.length) : 1)
@@ -239,10 +243,25 @@ function WizardView({
 
   // ── Step 1: project & repository ──
   const [name, setName] = useState(draft?.name ?? '')
-  const [repoUrl, setRepoUrl] = useState(draft?.repoUrl ?? '')
+  // Where the repository is: a Git URL, or a local path - a git repository's folder on the server
+  // ArtiFex runs on. Each keeps its own text, so switching back and forth loses nothing.
+  const [repoSource, setRepoSource] = useState<RepoSource>(draft?.repoSource ?? 'url')
+  const [repoTexts, setRepoTexts] = useState<Record<RepoSource, string>>(() => {
+    const t: Record<RepoSource, string> = { url: '', local: '' }
+    if (draft) t[draft.repoSource] = draft.repoUrl
+    return t
+  })
+  const repoUrl = repoTexts[repoSource]
+  const setRepoUrl = (v: string) => setRepoTexts((p) => ({ ...p, [repoSource]: v }))
+  const isLocal = repoSource === 'local'
+  const repoInput = useRef<HTMLInputElement>(null)
+  const [browseOpen, setBrowseOpen] = useState(false)
   const [token, setToken] = useState('')
   const [showToken, setShowToken] = useState(false)
   const [tokenOpen, setTokenOpen] = useState(reenterToken)
+  // A folder on the server needs no token: none is sent for a local path (one typed under Git URL
+  // stays there).
+  const accessToken = isLocal ? '' : token.trim()
   const [branch, setBranch] = useState(draft?.branch ?? '')
   const [branches, setBranches] = useState<string[]>([])
   // The repository's default branch, tagged in the branch list.
@@ -339,14 +358,14 @@ function WizardView({
     onStepChange(cur)
   }, [cur, onStepChange])
   // Keep this tab's draft as it changes (draft.ts: never the token, nor the imported file's text).
-  const tokenUsed = tokenOpen || !!token
+  const tokenUsed = !isLocal && (tokenOpen || !!token)
   useEffect(() => {
     saveDraft({
-      step: cur, done: [...done], name, repoUrl, branch, tokenUsed, cores, layers, fileAssignments, members,
+      step: cur, done: [...done], name, repoSource, repoUrl, branch, tokenUsed, cores, layers, fileAssignments, members,
       imported: imported ? { fileName: imported.fileName, preview: imported.preview } : null,
       importKept, archEdited: archChanged,
     })
-  }, [cur, done, name, repoUrl, branch, tokenUsed, cores, layers, fileAssignments, members, imported, importKept, archChanged])
+  }, [cur, done, name, repoSource, repoUrl, branch, tokenUsed, cores, layers, fileAssignments, members, imported, importKept, archChanged])
   // A restored public repository is connected again by itself: its branches and files are not
   // kept, and steps 3 and 5 check every path against them. A private one waits for its token.
   useEffect(() => {
@@ -373,6 +392,26 @@ function WizardView({
     // An import checked against the old repository is not checked against this one.
     setImported((p) => (p?.preview.repositoryChecked ? { ...p, preview: { ...p.preview, repositoryChecked: false } } : p))
   }
+  /** Git URL | Local path. Each keeps its own text; a path typed under Git URL goes along to an
+   *  empty Local path (`carry` takes it along whatever Local path held - "Use Local path"). */
+  function switchSource(src: RepoSource, carry = false) {
+    if (src === repoSource) return
+    const typed = repoTexts[repoSource]
+    if (src === 'local' && looksLocal(typed) && (carry || !repoTexts.local)) setRepoTexts({ url: '', local: typed })
+    setRepoSource(src)
+    setErrs((p) => ({ ...p, repo: false }))
+    repoChanged()
+    repoInput.current?.focus()
+  }
+  /** Browse's "Use this repository": the path goes into the field, and the connection is tested
+   *  at once, so the branches load. */
+  function pickLocalRepo(path: string) {
+    setBrowseOpen(false)
+    setRepoUrl(path)
+    setErrs((p) => ({ ...p, repo: false }))
+    repoChanged()
+    void testConnection({ url: path })
+  }
   /** A branch picked: the tree is that branch's, and an imported config's paths are checked
    *  against it (paths differ between branches) - after the tree, which fetches the branch; the
    *  check then reuses it. */
@@ -386,12 +425,13 @@ function WizardView({
   }
   // Load the source tree for a specific branch/ref (architecture + folder pickers).
   // Re-run whenever the selected branch changes so the tree matches the branch.
-  async function loadRepoTree(ref: string) {
+  // `url`: the repository just tested, when the field's text is newer than this render.
+  async function loadRepoTree(ref: string, url = repoUrl) {
     const seq = ++treeSeq.current
     setRepoTreeLoading(true); setRepoTreeFailed(false)
     try {
       // refresh: the branch as it is now, not the snapshot cached when it was first opened.
-      const nodes = await repo.browse(repoUrl.trim(), ref || undefined, '', token.trim() || undefined, true)
+      const nodes = await repo.browse(url.trim(), ref || undefined, '', accessToken || undefined, true)
       if (seq !== treeSeq.current) return
       setRepoTree(nodes); setRepoTreeFor(ref)
     } catch {
@@ -402,10 +442,19 @@ function WizardView({
     }
   }
   /** `restoring`: the automatic test of a restored draft. If it fails (the network, the server),
-   *  the draft's branch is kept — in the page and so in the draft — for the next test to pick. */
-  async function testConnection(opts: { restoring?: boolean } = {}) {
+   *  the draft's branch is kept — in the page and so in the draft — for the next test to pick.
+   *  `url`: what to test when it was put in the field in this same event (Browse). A local path
+   *  is tested without its quotes (Explorer's "Copy as path"), and the field shows it so. */
+  async function testConnection(opts: { restoring?: boolean; url?: string } = {}) {
     const dropBranch = () => { if (!opts.restoring) setBranch('') }
-    if (!repoUrl.trim()) {
+    let typed = opts.url ?? repoUrl
+    if (isLocal) {
+      const clean = cleanPath(typed)
+      if (clean !== typed) setRepoUrl(clean)
+      typed = clean
+    }
+    const url = typed.trim()
+    if (!url) {
       setErrs((p) => ({ ...p, repo: true }))
       return
     }
@@ -413,8 +462,9 @@ function WizardView({
     setTestMsg({ text: 'Connecting…', tone: 'neutral' })
     try {
       const res = await repo.testConnection({
-        repo_url: repoUrl.trim(),
-        access_token: token.trim() || undefined,
+        repo_url: url,
+        ...(isLocal ? { repo_provider: 'local' } : {}),
+        access_token: accessToken || undefined,
       })
       if (!res.connected) {
         setTestState('idle')
@@ -431,10 +481,10 @@ function WizardView({
       setTestState('connected')
       setTestMsg({ text: res.message, tone: 'ok' })
       // Pre-fetch the source tree for the architecture + folder pickers.
-      await loadRepoTree(initialBranch)
+      await loadRepoTree(initialBranch, url)
       // An imported config's paths were taken as written: check them against this repository.
       if (imported && !imported.preview.repositoryChecked) {
-        await checkImportAgainstRepo(imported, initialBranch, !archEdited.current)
+        await checkImportAgainstRepo(imported, initialBranch, !archEdited.current, url)
       }
     } catch (e) {
       setTestState('idle')
@@ -465,14 +515,14 @@ function WizardView({
       setImportBusy(false)
     }
   }
-  async function checkImportAgainstRepo(imp: { text: string; fileName: string; preview: ConfigPreview }, ref: string, layersToo: boolean) {
+  async function checkImportAgainstRepo(imp: { text: string; fileName: string; preview: ConfigPreview }, ref: string, layersToo: boolean, url = repoUrl) {
     // Restored from a draft, the import has no file text to send: its paths are checked by step 3.
     if (!imp.text) return
     const seq = ++checkSeq.current
     setImportChecking(true)
     try {
       const preview = await repo.previewConfig({
-        text: imp.text, repo_url: repoUrl.trim(), branch: ref || undefined, access_token: token.trim() || undefined,
+        text: imp.text, repo_url: url.trim(), branch: ref || undefined, access_token: accessToken || undefined,
       })
       if (seq !== checkSeq.current) return                   // the user has moved on
       applyImport(preview, { project: false, layers: layersToo })
@@ -498,7 +548,14 @@ function WizardView({
         else keptNow.push('project name')
       }
       if (d.repoUrl && repoUrl.trim() !== d.repoUrl) {
-        if (!repoUrl.trim()) { setRepoUrl(d.repoUrl); repoChanged() }
+        if (!repoUrl.trim()) {
+          // A path in the config is a local path; a URL, a Git URL.
+          const src: RepoSource = looksLocal(d.repoUrl) ? 'local' : 'url'
+          const text = d.repoUrl
+          setRepoTexts((p) => ({ ...p, [src]: text }))
+          setRepoSource(src)
+          repoChanged()
+        }
         else keptNow.push('repository')
       }
       setImportKept(keptNow)
@@ -740,7 +797,7 @@ function WizardView({
     if (n === 1) {
       return [
         !name.trim() && 'Give the project a name',
-        !repoUrl.trim() && 'Enter the repository URL',
+        !repoUrl.trim() && (isLocal ? 'Enter the repository folder' : 'Enter the repository URL'),
         !!repoUrl.trim() && testState !== 'connected' && 'Test the connection to load the branches',
         testState === 'connected' && !branch && 'Pick a branch',
       ].filter((t): t is string => !!t)
@@ -782,10 +839,10 @@ function WizardView({
         name: name.trim(),
         client: '',
         compliance_standard: 'ISO_26262',
-        repo_url: repoUrl.trim(),
-        repo_provider: 'github',
+        repo_url: isLocal ? cleanPath(repoUrl) : repoUrl.trim(),
+        repo_provider: isLocal ? 'local' : 'github',
         default_branch: branch || undefined,
-        access_token: token.trim() || undefined,
+        access_token: accessToken || undefined,
         build_config: {
           ...(imported?.preview.draft.settings ?? {}),
           cores: cores.map(coreInput),
@@ -872,13 +929,52 @@ function WizardView({
                   <input className={`inp ${errs.name ? 'err' : ''}`} value={name} onChange={(e) => { setName(e.target.value); setErrs((p) => ({ ...p, name: false })) }} type="text" placeholder="e.g. VCU Engine Firmware" />
                 </div>
 
+                {/* Where the code is: a Git URL (any git server) or a local path - a git repository's
+                    folder on the server ArtiFex runs on. Either is read with git; a plain folder is
+                    refused by Test Connection. */}
                 <div>
-                  <div className="lbl">Repository URL <span className="req">*</span></div>
-                  <input className={`inp mono ${errs.repo ? 'err' : ''}`} value={repoUrl} onChange={(e) => { setRepoUrl(e.target.value); setErrs((p) => ({ ...p, repo: false })); repoChanged() }} type="text" placeholder="https://github.com/org/repo.git" />
+                  <div className="lbl">
+                    <span>{isLocal ? 'Repository folder' : 'Repository URL'}</span> <span className="req">*</span>
+                    <div role="radiogroup" aria-label="Where the repository is" className="ml-auto inline-flex p-0.5 gap-0.5 bg-surface-container-low border border-outline-variant rounded-xl">
+                      <button type="button" role="radio" aria-checked={!isLocal} onClick={() => switchSource('url')} className={cn(SEG_BTN, !isLocal && SEG_ON)}>
+                        <Icon name="link" size={14} />Git URL
+                      </button>
+                      <button type="button" role="radio" aria-checked={isLocal} onClick={() => switchSource('local')} className={cn(SEG_BTN, isLocal && SEG_ON)}>
+                        <Icon name="folder" size={14} />Local path
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Icon name={isLocal ? 'folder' : 'link'} size={16} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-outline pointer-events-none" />
+                      <input ref={repoInput} className={cn('inp mono with-icon', errs.repo && 'err')} value={repoUrl}
+                        onChange={(e) => { setRepoUrl(e.target.value); setErrs((p) => ({ ...p, repo: false })); repoChanged() }}
+                        type="text" spellCheck={false} aria-label={isLocal ? 'Repository folder' : 'Repository URL'}
+                        placeholder={isLocal ? 'D:/src/vcu-firmware' : 'https://github.com/org/repo.git'} />
+                    </div>
+                    {/* Pick the folder instead of typing it - from the SERVER's folders: a browser
+                        cannot give a full path from the user's own PC, and git runs on the server. */}
+                    {isLocal && (
+                      <button type="button" onClick={() => setBrowseOpen(true)} className="inline-flex items-center gap-1.5 px-3 flex-shrink-0 bg-white border border-outline-variant rounded-xl font-mono text-caption font-bold tracking-[.04em] text-on-surface-variant hover:bg-surface-container-low transition-colors">
+                        <Icon name="folder_open" size={16} />BROWSE…
+                      </button>
+                    )}
+                  </div>
+                  {isLocal ? (
+                    <p className="mt-1.5 text-caption text-on-surface-variant">
+                      A git repository on the server {APP_NAME} runs on — the folder that holds <code className="font-mono text-[10.5px]">.git</code>. Type its full path, or Browse.
+                    </p>
+                  ) : looksLocal(repoUrl) && (
+                    <p className="mt-1.5 text-caption text-[#8a5300]">
+                      This looks like a folder path, not a URL.{' '}
+                      <button type="button" onClick={() => switchSource('local', true)} className="text-secondary hover:underline font-medium">Use Local path</button>
+                    </p>
+                  )}
                 </div>
 
-                {/* Only a private repository needs a token: out of the way until asked for. */}
-                {tokenOpen || token ? (
+                {/* Only a private repository needs a token: out of the way until asked for. A folder
+                    on the server needs none. */}
+                {isLocal ? null : tokenOpen || token ? (
                   <div>
                     <div className="lbl">
                       Access Token
@@ -1310,9 +1406,9 @@ function WizardView({
                     <button onClick={() => setCur(1)} className="text-secondary hover:underline font-mono text-caption">Edit</button>
                   </div>
                   <div className="rev-row"><span>Name</span><span>{name.trim() || '—'}</span></div>
-                  <div className="rev-row"><span>Repository URL</span><span>{repoUrl.trim() || '—'}</span></div>
+                  <div className="rev-row"><span>{isLocal ? 'Repository folder' : 'Repository URL'}</span><span>{repoUrl.trim() || '—'}</span></div>
                   <div className="rev-row"><span>Branch</span><span>{branch || '—'}</span></div>
-                  <div className="rev-row"><span>Access Token</span><span>{token ? '••••••••' : 'Not set'}</span></div>
+                  <div className="rev-row"><span>Access Token</span><span>{accessToken ? '••••••••' : 'Not set'}</span></div>
                 </div>
 
                 {/* Cores */}
@@ -1541,6 +1637,11 @@ function WizardView({
             </div>
           </aside>
         </>
+      )}
+
+      {/* Local path: Browse - the server's folders; a git repository is picked */}
+      {browseOpen && isLocal && (
+        <RepoBrowser start={repoUrl} onUse={pickLocalRepo} onClose={() => setBrowseOpen(false)} />
       )}
     </div>
   )

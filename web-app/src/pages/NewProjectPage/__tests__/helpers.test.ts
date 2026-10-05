@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  assignmentsOf, baseName, coreInput, coreProblems, draftToCores, draftToLayers, fitsCoreFile, indexTree, matchFolder,
-  newCore, nextCoreName, openWants, ownerOf, pathProblems, settingsSummary, type WantedFile,
+  assignmentsOf, baseName, browseStart, cleanPath, coreInput, coreProblems, draftToCores, draftToLayers, fitsCoreFile,
+  folderCrumbs, indexTree, looksLocal, matchFolder, newCore, nextCoreName, openWants, ownerOf, pathProblems,
+  settingsSummary, type WantedFile,
 } from '../helpers'
 import type { DraftCore } from '../../../types'
 
@@ -219,5 +220,63 @@ describe('pathProblems', () => {
 
   it('takes the repository root as a layer folder', () => {
     expect(texts([layer('.', [{ name: 'Core', files: ['Layer1/Sample/Core'] }])])).toEqual([])
+  })
+})
+
+/* Step 1's repository is a Git URL or a local path: a git repository's folder on the server. */
+describe('cleanPath', () => {
+  it('drops blanks and the quotes of Explorer\'s "Copy as path"', () => {
+    expect(cleanPath('  "D:\\src\\vcu-firmware"  ')).toBe('D:\\src\\vcu-firmware')
+    expect(cleanPath("'/home/build/vcu'")).toBe('/home/build/vcu')
+    expect(cleanPath('D:/src/vcu')).toBe('D:/src/vcu')
+    expect(cleanPath('')).toBe('')
+  })
+})
+
+describe('looksLocal', () => {
+  it('a drive, a root, a share or a file:// link is a local path', () => {
+    for (const p of ['D:/src/vcu', 'd:\\src\\vcu', '/home/build/vcu', '\\\\server\\share\\vcu', 'file:///D:/src/vcu', ' "D:\\src" ']) {
+      expect(looksLocal(p)).toBe(true)
+    }
+  })
+  it('a URL, an ssh remote, a relative path or nothing is not', () => {
+    for (const p of ['https://github.com/org/repo.git', 'git@github.com:org/repo.git', 'src/vcu', 'D:', '', '  ']) {
+      expect(looksLocal(p)).toBe(false)
+    }
+  })
+})
+
+describe('browseStart', () => {
+  it('opens the folder above the path the field names, to pick that path there', () => {
+    expect(browseStart('D:/src/vcu-firmware')).toEqual({ folder: 'D:/src', pick: 'D:/src/vcu-firmware' })
+    expect(browseStart('"D:\\src\\vcu-firmware\\"')).toEqual({ folder: 'D:/src', pick: 'D:/src/vcu-firmware' })
+    expect(browseStart('D:/vcu')).toEqual({ folder: 'D:/', pick: 'D:/vcu' })
+    expect(browseStart('/home/build')).toEqual({ folder: '/home', pick: '/home/build' })
+    expect(browseStart('/vcu')).toEqual({ folder: '/', pick: '/vcu' })
+    expect(browseStart('file:///D:/src/vcu')).toEqual({ folder: 'D:/src', pick: 'D:/src/vcu' })
+  })
+  it('a drive or the root opens the top list; no full path, nothing', () => {
+    expect(browseStart('D:\\')).toEqual({ folder: '', pick: 'D:/' })
+    expect(browseStart('/')).toEqual({ folder: '', pick: '/' })
+    expect(browseStart('src/vcu')).toBeNull()
+    expect(browseStart('https://github.com/org/repo.git')).toBeNull()
+  })
+})
+
+describe('folderCrumbs', () => {
+  it('one part per folder from the drive or the root down', () => {
+    expect(folderCrumbs('D:/src/docs', null)).toEqual([
+      { name: 'D:', path: 'D:/' }, { name: 'src', path: 'D:/src' }, { name: 'docs', path: 'D:/src/docs' }])
+    expect(folderCrumbs('/home/build', null)).toEqual([
+      { name: '/', path: '/' }, { name: 'home', path: '/home' }, { name: 'build', path: '/home/build' }])
+    expect(folderCrumbs('', null)).toEqual([])
+  })
+  it('a folder the server limits the picker to is the first part, by its full path', () => {
+    const roots = [{ name: 'D:/src', path: 'D:/src' }, { name: 'E:/builds', path: 'E:/builds' }]
+    expect(folderCrumbs('D:/src/third_party/lwip', roots)).toEqual([
+      { name: 'D:/src', path: 'D:/src' }, { name: 'third_party', path: 'D:/src/third_party' },
+      { name: 'lwip', path: 'D:/src/third_party/lwip' }])
+    expect(folderCrumbs('D:/srcx', roots)).toEqual([{ name: 'D:', path: 'D:/' }, { name: 'srcx', path: 'D:/srcx' }])
+    expect(folderCrumbs('d:/SRC/lwip', roots)).toEqual([{ name: 'D:/src', path: 'D:/src' }, { name: 'lwip', path: 'D:/src/lwip' }])
   })
 })

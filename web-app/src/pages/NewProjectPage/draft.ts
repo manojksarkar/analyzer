@@ -1,5 +1,5 @@
 import type { ConfigPreview } from '../../types'
-import type { Core, Layer, Member } from './helpers'
+import { looksLocal, type Core, type Layer, type Member, type RepoSource } from './helpers'
 
 /* The wizard's draft, kept for this tab only (sessionStorage) so a reload does not start it over:
    the step and what was typed or picked. NEVER the access token, nor the imported file's text — a
@@ -13,6 +13,8 @@ export interface WizardDraft {
   /** Steps advanced past (the rail lets you go back to them). */
   done: number[]
   name: string
+  /** Git URL or local path: which one `repoUrl` is. */
+  repoSource: RepoSource
   repoUrl: string
   branch: string
   /** An access token was in use: the repository is private, and the token must be typed again. */
@@ -38,6 +40,8 @@ export function loadDraft(): WizardDraft | null {
       step: d.step,
       done: Array.isArray(d.done) ? d.done.filter((n) => typeof n === 'number') : [],
       name: d.name ?? '',
+      // A draft from before the switch: a path is a local path.
+      repoSource: d.repoSource === 'local' || d.repoSource === 'url' ? d.repoSource : looksLocal(d.repoUrl ?? '') ? 'local' : 'url',
       repoUrl: d.repoUrl ?? '',
       branch: d.branch ?? '',
       tokenUsed: !!d.tokenUsed,
@@ -57,7 +61,7 @@ export function loadDraft(): WizardDraft | null {
 /** Keep the draft. Only the fields named here are written, whatever else the caller holds. */
 export function saveDraft(d: WizardDraft): void {
   const kept: WizardDraft = {
-    step: d.step, done: d.done, name: d.name, repoUrl: d.repoUrl, branch: d.branch, tokenUsed: d.tokenUsed,
+    step: d.step, done: d.done, name: d.name, repoSource: d.repoSource, repoUrl: d.repoUrl, branch: d.branch, tokenUsed: d.tokenUsed,
     cores: d.cores, layers: d.layers, fileAssignments: d.fileAssignments, members: d.members,
     imported: d.imported ? { fileName: d.imported.fileName, preview: d.imported.preview } : null,
     importKept: d.importKept, archEdited: d.archEdited,

@@ -17,7 +17,7 @@ const KEY = 'artifex.newProject.draft.v1'
 const TOKEN = 'ghp_secret_never_kept'
 
 const draft = (over: Partial<WizardDraft> = {}): WizardDraft => ({
-  step: 2, done: [1], name: 'Brake ECU', repoUrl: 'https://example.invalid/brake.git', branch: 'dev',
+  step: 2, done: [1], name: 'Brake ECU', repoSource: 'url', repoUrl: 'https://example.invalid/brake.git', branch: 'dev',
   tokenUsed: false, cores: [], layers: [], fileAssignments: {}, members: [], imported: null,
   importKept: [], archEdited: false, ...over,
 })

@@ -230,6 +230,15 @@ def test_a_project_on_a_local_repository_is_stored_as_git_reads_it(client, auth_
     assert "repo_access_token" not in (project.build_config or {})
 
 
+def test_a_url_sent_as_local_is_stored_as_a_remote(client, auth_header, db):
+    body = {"name": "Remote ECU", "client": "T", "compliance_standard": "ASPICE_L2",
+            "repo_url": "https://github.com/org/ecu.git", "repo_provider": "local"}
+    r = client.post("/api/v1/projects", json=body, headers=auth_header)
+    assert r.status_code == 200, r.text
+    project = db.projects.get(r.json()["project"]["id"] if "project" in r.json() else r.json()["id"])
+    assert project.repo_provider == "github"
+
+
 def test_a_project_on_a_plain_folder_is_refused(client, auth_header, repos):
     body = {"name": "Plain", "client": "T", "compliance_standard": "ASPICE_L2",
             "repo_url": _p(repos["plain"]), "repo_provider": "local"}

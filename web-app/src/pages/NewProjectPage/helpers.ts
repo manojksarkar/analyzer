@@ -287,3 +287,60 @@ export function matchBranches(branches: string[], query: string): string[] {
   const q = query.trim().toLowerCase()
   return q ? branches.filter((b) => b.toLowerCase().includes(q)) : branches
 }
+
+/* ── Step 1: where the repository is - a Git URL, or a local path (a git repository's folder on
+   the server ArtiFex runs on) ── */
+
+export type RepoSource = 'url' | 'local'
+
+/** A typed path without what surrounds it: blanks, and the quotes Explorer's "Copy as path" adds. */
+export const cleanPath = (v: string) => (v || '').trim().replace(/^["']+|["']+$/g, '')
+
+/** A full path: a drive (`D:/`, `D:\`), a root (`/`), a share (`\\host`) or a `file://` link. */
+export const looksLocal = (v: string) => /^([A-Za-z]:[\\/]|\/|\\\\|file:\/\/)/.test(cleanPath(v))
+
+const isDrive = (p: string) => /^[A-Za-z]:$/.test(p)
+
+/** Where Browse opens for what the repository field holds: the folder above the path it names,
+ *  and that path, to pick if it is a git repository there. Forward slashes, as the server writes
+ *  them. Null when the field holds no full path: Browse opens on the server's top list. */
+export function browseStart(text: string): { folder: string; pick: string } | null {
+  if (!looksLocal(text)) return null
+  let p = cleanPath(text).replace(/^file:\/\//i, '')
+  if (/^\/[A-Za-z]:/.test(p)) p = p.slice(1)                // file:///D:/src → D:/src
+  p = p.replace(/\\/g, '/')
+  const path = p.replace(/\/+$/, '') || '/'
+  if (path === '/' || isDrive(path)) return { folder: '', pick: path === '/' ? '/' : `${path}/` }
+  const i = path.lastIndexOf('/')
+  const folder = i === 0 ? '/' : path.slice(0, i)
+  return { folder: isDrive(folder) ? `${folder}/` : folder, pick: path }
+}
+
+/** The Browse panel's breadcrumb for a folder of the server: one part per folder from its top-list
+ *  entry down. `roots` (the top list, once read) names where a part begins - the folders a server
+ *  limits the picker to are top-list entries named by their full path; without it, the drive or
+ *  `/` is the first part. A part is shown without its trailing slash (`D:`), `/` aside. */
+export function folderCrumbs(path: string, roots: { name: string; path: string }[] | null): { name: string; path: string }[] {
+  if (!path) return []
+  const show = (n: string) => (n.length > 1 ? n.replace(/\/+$/, '') : n)
+  // A Windows path in any case (the server answers in the case it was asked in).
+  const fold = (s: string) => (/^[A-Za-z]:/.test(s) ? s.toLowerCase() : s)
+  const under = (r: string) => {
+    const [p, q] = [fold(path), fold(r)]
+    return p === q || p.startsWith(q.endsWith('/') ? q : `${q}/`)
+  }
+  const root = (roots ?? []).filter((r) => under(r.path)).sort((a, b) => b.path.length - a.path.length)[0]
+  const first = root ? { name: show(root.name), path: root.path }
+    : (() => {
+        const m = /^([A-Za-z]:\/|\/)/.exec(path)
+        return m ? { name: show(m[1]), path: m[1] } : null
+      })()
+  if (!first) return [{ name: path, path }]
+  const out = [first]
+  let at = first.path
+  for (const seg of path.slice(first.path.length).split('/').filter(Boolean)) {
+    at = at.endsWith('/') ? `${at}${seg}` : `${at}/${seg}`
+    out.push({ name: seg, path: at })
+  }
+  return out
+}

@@ -56,6 +56,13 @@ version was made, `lib/versionRun.ts`). Review & update: R9 `staleComponents` ma
 downloads (`lib/reviewStatus.componentWordFileStale`); R12 `DELETE …/overrides/orphans` (admins) from
 the Corrections tab; R10 in the Corrections tab; a 409 `{code: VERSION_REGENERATING}` on a save.
 
+**A local repository (since 2026-10-05).** The wizard's step 1 takes a Git URL or a Local path -- a git
+repository's folder on the server (`NewProjectPage/helpers.looksLocal`, `cleanPath`); Browse lists the
+server's folders with `GET /repositories/local-folders?path=` (`{path, parent, folders: [{name, path,
+git}], limited, truncated}`; no `path` = the top list) in `components/RepoBrowser.tsx`. Test Connection
+answers a refused folder with `connected: false` and the reason; `POST /projects` stores a local path
+with `repo_provider` "local", whatever the client sends.
+
 ## Setup
 
 - Base URL: `VITE_API_URL` ([.env.example](.env.example)) — defaults to `http://localhost:8000/api/v1`.

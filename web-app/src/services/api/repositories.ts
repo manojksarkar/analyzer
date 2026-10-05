@@ -1,4 +1,6 @@
 import { http } from '../../lib/http'
+import type { LocalFolders } from '../../types'
+import { ApiLocalFoldersSchema, mapLocalFolders } from '../mappers'
 
 export interface RepoTestResult {
   connected: boolean
@@ -77,4 +79,10 @@ export const repositoriesApi = {
     )
     return { id: r.id, fileName: r.file_name, size: r.size, kind: r.kind }
   },
+  /** The subfolders of `path` on the server ArtiFex runs on, each marked when it is a git
+   *  repository - for a Local path repository's Browse. '' (sent as no `path` at all) is the top
+   *  list. 400 for a relative path, 403 outside the folders the server allows, 404 for no folder. */
+  localFolders: async (path = ''): Promise<LocalFolders> =>
+    mapLocalFolders(ApiLocalFoldersSchema.parse(
+      await http.get('/repositories/local-folders', { path: path || undefined }))),
 }

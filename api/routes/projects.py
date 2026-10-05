@@ -240,7 +240,9 @@ def create_project(
     # A local repository (a git repository's folder on the server) is checked as Test Connection
     # checks it -- the wizard cannot be relied on to have -- and stored as git will read it.
     from ..services import local_repos
-    repo_url, repo_provider = body.repo_url, body.repo_provider
+    # "local" is said by the address, not by the client: a URL sent as "local" is a remote.
+    repo_url = body.repo_url
+    repo_provider = body.repo_provider if body.repo_provider != "local" else "github"
     if (repo_url or "").strip() and local_repos.is_local(repo_url):
         why = local_repos.problem(repo_url)
         if why:
