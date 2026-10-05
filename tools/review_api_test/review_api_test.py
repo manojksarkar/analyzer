@@ -57,6 +57,9 @@ DEFAULT_OPTIONS = {
     "carry_forward": True,
     "report_file": "review_api_test_report.json",
 }
+#: Slot kinds renamed after configs were written with them: {old: new}. A config.json is the
+#: user's own copy of the example, git-ignored, so an older one still names them.
+RENAMED_KINDS = {"behaviourInputName": "inputName", "behaviourOutputName": "outputName"}
 
 
 class StopTest(Exception):
@@ -251,6 +254,7 @@ class ReviewApiTest:
     def __init__(self, api: Api, cfg: dict, checks: Checks, args):
         self.api, self.cfg, self.c = api, cfg, checks
         self.opt = dict(DEFAULT_OPTIONS, **(cfg.get("test") or {}))
+        self.opt["kinds"] = self._kinds(self.opt["kinds"], checks)
         stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
         #: Written into every corrected text, so a text is found only if THIS run wrote it.
         self.marker = "T" + stamp[-6:]
@@ -268,6 +272,24 @@ class ReviewApiTest:
         self.job_body = None
         self.flowchart = None
         self.base = ""
+
+    @staticmethod
+    def _kinds(kinds, checks) -> list:
+        """`test.kinds` under today's names. A renamed kind is tested under its new name, with a
+        note; an unknown one stops the test before anything is created -- the server would refuse
+        it with a 422 only at step 4, after the onboarding and the generation."""
+        out = []
+        for kind in kinds:
+            if kind in RENAMED_KINDS:
+                checks.note("test.kinds: %s is %s since 2026-10-05 -- tested under the new name; "
+                            "rename it in your config" % (kind, RENAMED_KINDS[kind]))
+                kind = RENAMED_KINDS[kind]
+            if kind not in ALL_KINDS:
+                raise StopTest("test.kinds names %r, which is not a slot kind; the kinds are %s"
+                               % (kind, ", ".join(ALL_KINDS)))
+            if kind not in out:
+                out.append(kind)
+        return out
 
     # ---- paths and small reads ----------------------------------------------------------------
     def P(self, path="") -> str:
