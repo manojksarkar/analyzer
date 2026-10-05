@@ -1,0 +1,3172 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ArtiFex — Get Started</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Roboto:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<script id="tailwind-config">
+  /* Samsung Magician-style dark theme */
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#f4f5f7", "primary-container": "#26282e",
+          "on-primary": "#ffffff", "on-primary-container": "#8a8f9c",
+          "secondary": "#1d7bff", "secondary-container": "#3d8fff",
+          "on-secondary": "#ffffff", "on-secondary-container": "#ffffff",
+          "on-tertiary-container": "#1fae63",
+          "error": "#ff4d5a", "error-container": "#3a1d21", "on-error-container": "#ff8a93",
+          "surface": "#0e0f12", "background": "#0e0f12", "panel": "#15161a", "inverse": "#33363f",
+          "surface-container-lowest": "#1c1e23", "surface-container-low": "#23262d",
+          "surface-container": "#272a32", "surface-container-high": "#2e3139",
+          "surface-container-highest": "#363a44",
+          "on-surface": "#f2f3f5", "on-surface-variant": "#a3a7b1",
+          "outline": "#6b707c", "outline-variant": "#2c2f37",
+          "tertiary-container": "#10301f", "tertiary-fixed": "#6ff0b0",
+        },
+        borderRadius: { "DEFAULT": "6px", "lg": "8px", "xl": "14px", "2xl": "18px", "full": "9999px" },
+        spacing: {
+          "sidebar-width": "220px", "inspector-width": "400px",
+          "gutter": "16px", "container-padding": "24px",
+        },
+        fontFamily: {
+          "display-lg": ["Samsung Sharp Sans", "Poppins", "sans-serif"],
+          "headline-md": ["Samsung Sharp Sans", "Poppins", "sans-serif"],
+          "headline-sm": ["Samsung Sharp Sans", "Poppins", "sans-serif"],
+          "body-lg": ["SamsungOne", "Roboto", "sans-serif"], "body-md": ["SamsungOne", "Roboto", "sans-serif"],
+          "body-sm": ["SamsungOne", "Roboto", "sans-serif"],
+          "label-md": ["SamsungOne", "Roboto", "sans-serif"], "label-sm": ["SamsungOne", "Roboto", "sans-serif"],
+        },
+        fontSize: {
+          "display-lg":  ["32px", { lineHeight: "40px", letterSpacing: "-0.01em", fontWeight: "700" }],
+          "headline-md": ["24px", { lineHeight: "32px", letterSpacing: "-0.005em", fontWeight: "600" }],
+          "headline-sm": ["18px", { lineHeight: "24px", fontWeight: "600" }],
+          "body-lg":     ["16px", { lineHeight: "24px", fontWeight: "400" }],
+          "body-md":     ["14px", { lineHeight: "20px", fontWeight: "400" }],
+          "body-sm":     ["12px", { lineHeight: "16px", fontWeight: "400" }],
+          "label-md":    ["12px", { lineHeight: "16px", letterSpacing: "0.01em", fontWeight: "500" }],
+          "label-sm":    ["11px", { lineHeight: "14px", letterSpacing: "0.01em", fontWeight: "500" }],
+        },
+      }
+    }
+  }
+</script>
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle; line-height: 1;
+  }
+  .sym-fill { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2c2f37; border-radius: 10px; }
+
+  /* ── Empty state choice cards (web-app ProjectsEmptyState) ── */
+  .choice-card { cursor: pointer; transition: background-color .15s; }
+  .choice-card-primary { border: 2px solid #1d7bff; }
+  .choice-card-primary:hover { background: rgba(29,123,255,0.08); }
+  .choice-card-plain { border: 1px solid #2c2f37; }
+  .choice-card-plain:hover { background: #1b2638; }
+
+  /* ── Toast (web-app components/ui/Toast: white card, slides in from the right, 4 s) ── */
+  @keyframes slideInRight  { from { transform: translateX(110%); opacity:0; } to { transform: translateX(0); opacity:1; } }
+  @keyframes fadeOut       { from { opacity:1; } to { opacity:0; } }
+  .toast-in  { animation: slideInRight .3s ease forwards; }
+  .toast-out { animation: fadeOut .2s ease forwards; }
+
+  /* ── Inputs ── */
+  .inp {
+    width: 100%; padding: 9px 12px;
+    background: #1c1e23; border: 1px solid #2c2f37; border-radius: 0.5rem;
+    font-family: Roboto, sans-serif; font-size: 14px; line-height: 20px;
+    color: #f2f3f5; outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .inp:focus { border-color: #1d7bff; box-shadow: 0 0 0 3px rgba(29,123,255,0.15); }
+  .inp::placeholder { color: #7c818c; }
+  .inp.mono { font-family: 'SamsungOne','Roboto',sans-serif; font-size: 12px; }
+  .inp.err  { border-color: #ff4d5a !important; box-shadow: 0 0 0 3px rgba(255,77,90,0.15) !important; }
+  textarea.inp { resize: none; }
+  select.inp { appearance: auto; }
+
+  /* ── Field label ── */
+  .lbl {
+    display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+    font-family: 'SamsungOne','Roboto',sans-serif; font-size: 12px; font-weight: 600;
+    letter-spacing: .02em; color: #f2f3f5;
+  }
+  .lbl .req { color: #ff4d5a; }
+
+  /* ── Help button ── */
+  .hbtn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #1b2638; border: 1px solid #2c2f37;
+    cursor: pointer; color: #a3a7b1; flex-shrink: 0;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .hbtn:hover { background: #1b2a45; border-color: #1d7bff; color: #1d7bff; }
+  .hbtn .material-symbols-outlined { font-size: 12px; }
+
+  /* ── Section card ── */
+  .card { background: #1c1e23; border: 1px solid #2c2f37; border-radius: 0.75rem; padding: 16px 18px; }
+  .card-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid #1b2638;
+  }
+  .card-head-l { display: flex; align-items: center; gap: 12px; }
+  .card-icon { width: 32px; height: 32px; border-radius: 0.5rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+  /* ── Tabs ── */
+  .tab-btn {
+    padding: 7px 14px; border-radius: 0.5rem;
+    font-family: 'SamsungOne','Roboto',sans-serif; font-size: 12px; font-weight: 500; letter-spacing: .02em;
+    border: 1px solid #2c2f37; background: #1c1e23; color: #a3a7b1; cursor: pointer; transition: all .15s;
+  }
+  .tab-btn.on { background: #1d7bff; border-color: #1d7bff; color: #fff; }
+
+  /* ── Drop zone ── */
+  .drop-zone {
+    border: 2px dashed #2c2f37; border-radius: 0.75rem;
+    padding: 24px 16px; text-align: center; background: #0e0f12;
+    cursor: pointer; transition: all .2s;
+  }
+  .drop-zone:hover, .drop-zone.dragover { border-color: #1d7bff; background: #1b2638; }
+  .drop-zone.has-file { border-style: solid; border-color: #3ddc84; background: #132a1f; }
+
+  /* ── Step 2: cores - one settings card per core ── */
+  .core-card { background: #1c1e23; border: 1px solid #2c2f37; border-radius: 0.75rem; overflow: hidden; }
+  .core-card-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #0e0f12; border-bottom: 1px solid #1b2a45; }
+  .core-chip-icon { width: 32px; height: 32px; border-radius: 0.5rem; background: #26282e; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .core-name { width: 100%; max-width: 240px; padding: 0 6px; margin-left: -6px; font: 600 14px/22px 'Roboto', sans-serif; color: #f2f3f5; background: transparent; border: 1px solid transparent; border-radius: 0.25rem; }
+  .core-name:hover { border-color: #2c2f37; background: #1c1e23; }
+  .core-name:focus { outline: none; border-color: #1d7bff; background: #1c1e23; box-shadow: 0 0 0 3px rgba(29,123,255,0.15); }
+  .core-uses { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 3px; font: 500 10px/16px 'SamsungOne','Roboto',sans-serif; color: #7c818c; }
+  .core-uses .layer-tag { padding: 0 6px; border-radius: 3px; background: #1b2a45; color: #1d7bff; font-weight: 600; }
+  .core-uses.none { color: #f5a524; }
+  .core-row { display: grid; grid-template-columns: 172px minmax(0, 1fr); gap: 16px; align-items: start; padding: 14px 16px; }
+  .core-row + .core-row { border-top: 1px solid #1b2638; }
+  .core-row-label { font: 600 12px/18px 'SamsungOne','Roboto',sans-serif; color: #f2f3f5; }
+  .core-row-help { margin-top: 2px; font: 400 11px/15px 'Roboto', sans-serif; color: #7c818c; }
+  .core-row-help code { font-family: 'SamsungOne','Roboto',sans-serif; font-size: 10.5px; }
+  .core-row-help .opt { font-weight: 600; color: #a3a7b1; }
+  .wanted-note { margin-top: 6px; font: 400 11px/15px 'Roboto', sans-serif; color: #ffc966; }
+  .upload-btn { width: 100%; min-height: 40px; display: flex; align-items: center; gap: 10px; padding: 8px 12px; text-align: left; background: #0e0f12; border: 1.5px dashed #2c2f37; border-radius: 0.5rem; cursor: pointer; transition: border-color .15s, background .15s; }
+  .upload-btn:hover, .upload-btn.dragover { border-color: #1d7bff; background: #1b2638; }
+  .upload-btn .t { font: 500 12px/16px 'Roboto', sans-serif; color: #f2f3f5; }
+  .upload-btn .s { margin-left: auto; white-space: nowrap; font: 400 11px/14px 'SamsungOne','Roboto',sans-serif; color: #7c818c; }
+  .upload-btn.wanted { border-color: #6b4a12; background: #221d12; }
+  .upload-btn.wanted .t { color: #ffc966; }
+  .file-pill { min-height: 40px; display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 12px; background: #132a1f; border: 1px solid rgba(61,220,132,0.45); border-radius: 0.5rem; }
+  .file-pill .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 12px/16px 'SamsungOne','Roboto',sans-serif; color: #f2f3f5; }
+  .file-pill .z { white-space: nowrap; font: 400 11px/14px 'SamsungOne','Roboto',sans-serif; color: #7c818c; }
+  .pill-btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: #7c818c; background: none; border: none; border-radius: 0.25rem; cursor: pointer; }
+  .pill-btn:hover { background: #1b2a45; color: #1d7bff; }
+  .pill-btn.del:hover { background: #3a1d21; color: #ff4d5a; }
+  .switch-link { margin-top: 6px; padding: 0; font: 500 11px/14px 'Roboto', sans-serif; color: #1d7bff; background: none; border: none; cursor: pointer; }
+  .switch-link:hover { text-decoration: underline; }
+  .macro-text { min-height: 76px; resize: vertical; }
+
+  /* ── Step 3: a layer's core ── */
+  .layer-core { display: flex; align-items: center; gap: 6px; flex-shrink: 0; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #7c818c; }
+  .layer-core-select { font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: #1d7bff; background-color: #1c1e23; background-size: 1.1em 1.1em; background-position: right 4px center; border: 1px solid #2c2f37; border-radius: 0.25rem; padding: 3px 24px 3px 6px; cursor: pointer; }
+
+  /* ── Step rail ── */
+  .step-li { position: relative; display: flex; gap: 14px; padding-bottom: 28px; }
+  .step-li:last-child { padding-bottom: 0; }
+  .step-li::before {
+    content: ''; position: absolute; left: 14px; top: 30px; bottom: 0;
+    width: 1px; background: #2c2f37;
+  }
+  .step-li:last-child::before { display: none; }
+  .step-dot {
+    width: 30px; height: 30px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; z-index: 1; position: relative;
+    font-family: 'SamsungOne','Roboto',sans-serif; font-size: 12px; font-weight: 600;
+    transition: all .2s;
+  }
+  .step-dot.pending { background: #1c1e23; border: 1.5px solid #2c2f37; color: #7c818c; }
+  .step-dot.active  { background: #1d7bff; border: 2px solid #1d7bff; color: #fff; box-shadow: 0 0 0 4px rgba(29,123,255,0.22); }
+  .step-dot.done    { background: #3ddc84; border: 2px solid #3ddc84; color: #fff; }
+
+  /* ── Layer / architecture ── */
+  .layer-block { border: 1px solid #2c2f37; border-radius: 0.5rem; overflow: hidden; }
+  .layer-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #1b2638; border-bottom: 1px solid #2c2f37; cursor: pointer; user-select: none; }
+  .layer-block.collapsed .layer-head { border-bottom: none; }   /* a collapsed layer is its head alone */
+  .layer-path-display { display: block; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; color: #7c818c; margin-top: 2px; cursor: pointer; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .layer-path-display:hover { color: #1d7bff; }
+  .layer-path-display.empty { color: #6b707c; }
+  .layer-path-input { display: block; font-family: 'SamsungOne','Roboto',sans-serif !important; font-size: 11px !important; line-height: 1.4; color: #1d7bff; background: none; border: none; border-bottom: 1px solid #1d7bff; outline: none; width: 100%; margin-top: 2px; padding: 0; }
+  .layer-body { padding: 4px 0 8px; }
+  .tree-group-row { display: flex; align-items: center; gap: 3px; padding: 3px 12px; border-radius: 3px; cursor: default; }
+  .tree-group-row:hover { background: #1b2a45; }
+  .tree-toggle { display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex-shrink: 0; color: #7c818c; background: none; border: none; cursor: pointer; border-radius: 2px; }
+  .tree-toggle:hover { background: #2e3139; color: #1d7bff; }
+  .tree-children { margin-left: 18px; padding-left: 8px; border-left: 1px solid #2c2f37; }
+  .add-group-btn { display: flex; align-items: center; gap: 3px; padding: 4px 12px; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 12px; font-weight: 600; color: #1d7bff; background: none; border: none; cursor: pointer; width: 100%; text-align: left; }
+  .add-group-btn:hover { color: #3d8fff; }
+  .inline-add-row { display: flex; align-items: center; gap: 4px; padding: 4px 12px; }
+  .inline-add-input { font-family: 'SamsungOne','Roboto',sans-serif !important; font-size: 11px !important; flex: 1; padding: 3px 8px; border: 1px solid #1d7bff; border-radius: 4px; outline: none; color: #f2f3f5; }
+  .inline-add-confirm { font-family: 'SamsungOne','Roboto',sans-serif; font-size: 10px; font-weight: 600; padding: 3px 10px; background: #1d7bff; color: #fff; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+  .inline-add-confirm:hover { background: #3d8fff; }
+  .inline-add-cancel { display: flex; align-items: center; background: none; border: none; cursor: pointer; color: #7c818c; padding: 2px; }
+  .inline-add-cancel:hover { color: #ff4d5a; }
+  .inc-paths-section { margin: 4px 8px 6px; background: #132a1f; border: 1px solid rgba(61,220,132,0.2); border-radius: 6px; padding: 6px 10px; }
+  .inc-paths-row { display: flex; gap: 10px; align-items: flex-start; }
+  .inc-paths-label { flex-shrink: 0; white-space: nowrap; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #3ddc84; padding-top: 5px; cursor: help; }
+  .inc-paths-content { flex: 1; min-width: 0; }
+  .inc-add-btn { display: inline-flex; align-items: center; gap: 3px; margin-top: 4px; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: #3ddc84; background: none; border: none; cursor: pointer; padding: 0; }
+  .inc-add-btn:hover { color: #1d7bff; }
+  .ext-path-row { display: flex; align-items: center; gap: 5px; border-bottom: 1px solid rgba(61,220,132,0.26); padding: 2px 0; margin-bottom: 1px; }
+  .ext-path-row:last-of-type { border-bottom: none; margin-bottom: 0; }
+  .ext-path-input { font-family: 'SamsungOne','Roboto',sans-serif !important; font-size: 11px !important; line-height: 1.3; color: #3ddc84; background: none; border: none; outline: none; flex: 1; min-width: 0; padding: 0; height: 18px; }
+  .ext-path-input:focus { color: #3ddc84; }
+  .ext-path-input::placeholder { color: #5f7d72; }
+  .ext-browse-btn { flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px; padding: 1px 5px; border: 1px solid rgba(61,220,132,0.45); border-radius: 3px; background: transparent; cursor: pointer; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 9px; font-weight: 700; letter-spacing: .04em; color: #3ddc84; }
+  .ext-browse-btn:hover { background: #1f5a3a; }
+
+  /* ── Review cards ── */
+  .rev-card { background: #1c1e23; border: 1px solid #2c2f37; border-radius: 0.75rem; overflow: hidden; }
+  .rev-card-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: #0e0f12; border-bottom: 1px solid #1b2638; }
+  .rev-row { display: flex; justify-content: space-between; gap: 8px; padding: 9px 16px; border-bottom: 1px solid #1b2638; font-size: 12px; }
+  .rev-row:last-child { border-bottom: none; }
+  .rev-row span:first-child { color: #a3a7b1; }
+  .rev-row span:last-child { font-family: 'SamsungOne','Roboto',sans-serif; font-weight: 500; color: #f2f3f5; text-align: right; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── Init overlay ── */
+  #init-overlay { display: none; position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,0.85); backdrop-filter: blur(4px); align-items: center; justify-content: center; }
+  #init-overlay.show { display: flex; }
+
+  /* ── Component sidebar ── */
+  .sidebar-folder-row { display:flex; align-items:center; gap:4px; padding:3px 4px; border-radius:4px; cursor:pointer; }
+  .sidebar-folder-row:hover { background:#1b2638; }
+  .sidebar-file-row { display:flex; align-items:center; gap:6px; padding:3px 4px; border-radius:4px; cursor:pointer; }
+  .sidebar-file-row:hover { background:#1b2638; }
+  .sidebar-file-row.assigned { cursor:default; opacity:.55; }
+  .sidebar-file-row.assigned:hover { background:transparent; }
+  .file-owner-tag { font-family:'SamsungOne','Roboto',sans-serif; font-size:9px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:1px 5px; background:#1b2a45; color:#1d7bff; border-radius:3px; white-space:nowrap; flex-shrink:0; }
+  .tree-comp-block { }
+  .tree-comp-row { display:flex; align-items:center; gap:3px; padding:2px 8px; border-radius:3px; cursor:default; }
+  .tree-comp-row:hover { background:#1b2a45; }
+  .comp-files { margin-left:16px; padding-left:8px; border-left:1px solid #2c2f37; }
+  .file-row { display:flex; align-items:center; gap:4px; font-family:'SamsungOne','Roboto',sans-serif; font-size:10px; color:#7c818c; padding:1px 6px; }
+  .sect-label { font-family:'SamsungOne','Roboto',sans-serif; font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#7c818c; }
+
+  /* ── Folder picker ── */
+  .fp-folder-row { display:flex; align-items:center; gap:5px; padding:4px 6px; border-radius:4px; cursor:pointer; user-select:none; }
+  .fp-folder-row:hover { background:#1b2638; }
+  .fp-folder-row.selected { background:#1b2a45; }
+  .fp-folder-row.selected .fp-name { color:#1d7bff; font-weight:600; }
+  .fp-children { margin-left:16px; border-left:1px solid #1b2a45; }
+
+  /* ── Repository source: Git URL | Local path (step 1) ── */
+  .seg { display: inline-flex; margin-left: auto; padding: 2px; gap: 2px; background: #1b2638; border: 1px solid #2c2f37; border-radius: .5rem; }
+  .seg-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border: none; border-radius: .375rem; background: none; cursor: pointer;
+             font: 600 11px/16px 'SamsungOne','Roboto',sans-serif; letter-spacing: .02em; color: #a3a7b1; transition: background .15s, color .15s; }
+  .seg-btn .material-symbols-outlined { font-size: 14px; }
+  .seg-btn:hover { color: #f2f3f5; }
+  .seg-btn.on { background: #1c1e23; color: #1d7bff; box-shadow: 0 1px 2px rgba(0,0,0,0.24); }
+
+  /* ── Local path: Browse - the server's folders ── */
+  .rb-browse { display: none; align-items: center; gap: 6px; padding: 0 12px; flex-shrink: 0; background: #1c1e23; border: 1px solid #2c2f37; border-radius: .5rem; cursor: pointer;
+               font: 700 11px/16px 'SamsungOne','Roboto',sans-serif; letter-spacing: .04em; color: #a3a7b1; transition: background .15s; }
+  .rb-browse:hover { background: #1b2638; }
+  .rb-crumb { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: none; border-radius: .25rem; background: none; cursor: pointer;
+              font: 500 11px/16px 'SamsungOne','Roboto',sans-serif; color: #1d7bff; }
+  .rb-crumb:hover { background: #1b2638; }
+  .rb-crumb:last-child { color: #f2f3f5; font-weight: 600; }
+  .rb-sep { color: #7c818c; font-size: 11px; }
+  .rb-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: .375rem; cursor: pointer; user-select: none;
+            font: 400 12px/18px 'SamsungOne','Roboto',sans-serif; color: #f2f3f5; }
+  .rb-row:hover { background: #1b2638; }
+  .rb-row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rb-row.picked { background: #1b2a45; color: #1d7bff; font-weight: 600; }
+  .rb-git { padding: 0 6px; border-radius: 3px; background: #1f5a3a; color: #3ddc84; font: 600 10px/16px 'SamsungOne','Roboto',sans-serif; }
+  .rb-empty { padding: 16px 10px; text-align: center; font: 400 12px/16px Roboto, sans-serif; color: #7c818c; }
+
+  /* ── Branch: one box - search and list (step 1) ── */
+  .bd-head  { padding: 6px 12px; font: 500 11px/16px 'SamsungOne','Roboto',sans-serif; color: #7c818c; border-bottom: 1px solid #1b2638; }
+  .bd-item  { display: flex; align-items: center; gap: 8px; padding: 7px 12px; cursor: pointer; font: 400 12px/18px 'SamsungOne','Roboto',sans-serif; color: #f2f3f5; }
+  .bd-item:hover, .bd-item.focused { background: #1b2638; }
+  .bd-item.picked { color: #1d7bff; font-weight: 600; }
+  .bd-item .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bd-item .tag { padding: 0 6px; border-radius: 3px; background: #1b2a45; color: #1d7bff; font-size: 10px; font-weight: 600; }
+  .bd-empty { padding: 10px 12px; font: 400 12px/16px Roboto, sans-serif; color: #7c818c; }
+
+  /* ── Member search dropdown ── */
+  .ms-item { display:flex; align-items:center; gap:10px; padding:8px 12px; cursor:pointer; transition:background .1s; }
+  .ms-item:hover, .ms-item.focused { background:#1b2638; }
+  .ms-item.ms-invite:hover, .ms-item.ms-invite.focused { background:#132a1f; }
+
+  /* ── Help tooltip ── */
+  #help-tip { display: none; position: fixed; z-index: 999; max-width: 260px; padding: 8px 12px; background: #0b0c0f; color: #1b2a45; font-family: Roboto,sans-serif; font-size: 12px; line-height: 1.5; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.25); pointer-events: none; }
+
+  /* ── Samsung Magician dark theme layer (shared by every dark mockup) ── */
+  :root {
+    --mm-blue: #1d7bff; --mm-blue-hi: #3d8fff; --mm-navy: #1428a0;
+    --mm-grad: linear-gradient(135deg, #3d8fff 0%, #1d7bff 45%, #1428a0 100%);
+    --shadow-card: 0 1px 0 rgba(255,255,255,.04) inset, 0 10px 30px rgba(0,0,0,.45);
+    --shadow-pop: 0 18px 48px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.05);
+    --glow-blue: 0 0 0 1px rgba(29,123,255,.45), 0 6px 20px rgba(29,123,255,.35);
+    color-scheme: dark;
+  }
+  body {
+    font-family: 'SamsungOne', 'Roboto', 'Segoe UI', sans-serif;
+    background-image:
+      radial-gradient(900px 500px at 100% -10%, rgba(29,123,255,.16), transparent 60%),
+      radial-gradient(700px 420px at -10% 110%, rgba(20,40,160,.18), transparent 60%);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { font-family: 'Samsung Sharp Sans', 'Poppins', sans-serif; }
+  code, .mono { font-family: 'SamsungOne','Roboto',sans-serif !important; }
+  ::selection { background: rgba(29,123,255,.45); color: #fff; }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #3a3e48; border-radius: 10px; }
+  ::-webkit-scrollbar-thumb:hover { background: #4a4f5b; }
+
+  /* Signature surfaces: gradient CTA, glassy cards, glowing brand tile */
+  .bg-secondary { background-image: var(--mm-grad); box-shadow: 0 4px 14px rgba(29,123,255,.35); }
+  .hover\:bg-secondary-container:hover { background-image: linear-gradient(135deg, #5aa2ff 0%, #2d86ff 50%, #1c35b8 100%); box-shadow: var(--glow-blue); }
+  .rounded-xl.border.bg-surface-container-lowest,
+  .rounded-2xl.border.bg-surface-container-lowest { box-shadow: var(--shadow-card); background-image: linear-gradient(180deg, rgba(255,255,255,.025), transparent 120px); }
+  .brand-tile { background-image: var(--mm-grad); box-shadow: 0 0 18px rgba(29,123,255,.55); }
+  .bg-inverse { box-shadow: var(--shadow-pop); }
+  .mm-hero {
+    position: relative; overflow: hidden;
+    background:
+      radial-gradient(circle at 85% 90%, transparent 0 90px, rgba(93,162,255,.18) 91px 92px, transparent 93px 150px, rgba(93,162,255,.12) 151px 152px, transparent 153px 215px, rgba(93,162,255,.08) 216px 217px, transparent 218px),
+      radial-gradient(600px 380px at 85% 95%, rgba(61,143,255,.45), transparent 65%),
+      linear-gradient(160deg, #0a1240 0%, #10208a 55%, #1d55d8 100%);
+  }
+  #app-sidebar { background: linear-gradient(180deg, #17181d 0%, #121317 100%) !important; border-color: #24272e !important; }
+  header { background: rgba(21,22,26,.85) !important; backdrop-filter: blur(10px); border-color: #24272e !important; }
+  input::placeholder, textarea::placeholder { color: #6b707c !important; }
+
+  /* Form controls (beat the Tailwind forms plugin's light defaults) */
+  input[type='text'], input[type='search'], input[type='email'], input[type='password'],
+  input[type='url'], input[type='number'], input:not([type]), textarea, select {
+    background-color: transparent; color: #f2f3f5; border-color: #2c2f37;
+  }
+  input[type='text']:focus, input[type='search']:focus, input[type='email']:focus, input[type='password']:focus,
+  input[type='url']:focus, input[type='number']:focus, input:not([type]):focus, textarea:focus, select:focus {
+    border-color: #1d7bff; --tw-ring-color: rgba(29,123,255,.35);
+  }
+  input.bg-transparent { border: 0; padding: 0; box-shadow: none !important; }
+  select option { background: #1f2127; color: #f2f3f5; }
+  input[type='checkbox'], input[type='radio'] { background-color: #1c1e23; border: 1.5px solid #4a4f5b; color: #1d7bff; accent-color: #1d7bff; }
+  input[type='checkbox'] { border-radius: 4px; }
+  input[type='checkbox']:checked, input[type='radio']:checked { background-color: #1d7bff; border-color: #1d7bff; }
+  input[type='checkbox']:focus, input[type='radio']:focus { box-shadow: 0 0 0 3px rgba(29,123,255,.3); outline: none; }
+
+  /* Navigation */
+  .nav-item { position: relative; border-radius: 10px; }
+  .nav-default { color: #a3a7b1; }
+  .nav-default:hover { background: rgba(255,255,255,.05); color: #f2f3f5; }
+  .nav-active { background: linear-gradient(90deg, rgba(29,123,255,.22), rgba(29,123,255,.06)) !important; color: #ffffff !important; border-left: none !important; }
+  .nav-active::before { content: ''; position: absolute; left: -2px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: #3d8fff; box-shadow: 0 0 10px #1d7bff; }
+  .nav-active .material-symbols-outlined { color: #5aa2ff; font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  .outline-link.active { color: #5aa2ff; background: rgba(29,123,255,.12); font-weight: 500; }
+
+  /* Pills, dropdowns, tabs */
+  .subbar-pill { border-radius: 999px; background: #1c1e23; border-color: #2c2f37; }
+  .subbar-pill:hover { background: #23262d; border-color: #1d7bff; box-shadow: 0 0 0 3px rgba(29,123,255,.15); }
+  .dropdown { background: #1f2127; border-color: #2c2f37; border-radius: 12px; box-shadow: var(--shadow-pop); }
+  .proc-tab.active { color: #ffffff; border-bottom-color: #1d7bff; box-shadow: 0 6px 10px -6px rgba(29,123,255,.8); }
+
+  /* Status badges & process pills */
+  .badge { border-radius: 999px; }
+  .badge-approved { background: rgba(61,220,132,.12); color: #3ddc84; border-color: rgba(61,220,132,.35); }
+  .badge-review   { background: rgba(245,165,36,.12); color: #f5a524; border-color: rgba(245,165,36,.35); }
+  .badge-unchanged { background: rgba(255,255,255,.05); color: #8a8f9c; border-color: #2c2f37; }
+  .proc-pill { border-radius: 999px; }
+  .pill-swe3 { background: rgba(29,123,255,.16); color: #5aa2ff; }
+  .pill-swe2 { background: rgba(143,139,255,.16); color: #a8a5ff; }
+  .pill-swe1 { background: rgba(61,220,132,.14); color: #3ddc84; }
+  .pill-sys1 { background: rgba(177,140,255,.16); color: #c3a6ff; }
+  .pill-sys2 { background: rgba(255,138,61,.16); color: #ff9d5c; }
+  .proj-status-chip { border-radius: 999px; }
+  .proj-status-chip .s-dot { box-shadow: 0 0 6px currentColor; }
+
+  /* Progress */
+  .rev-bar { background: #2a2d35; }
+  .rev-bar-fill { background: linear-gradient(90deg, #1428a0, #1d7bff 60%, #5aa2ff); box-shadow: 0 0 10px rgba(29,123,255,.6); }
+  .rev-bar-fill.done { background: linear-gradient(90deg, #0f7a45, #3ddc84); box-shadow: 0 0 10px rgba(61,220,132,.5); }
+
+  /* Rows */
+  .doc-row:hover { background: rgba(255,255,255,.035); }
+  .doc-row.row-selected { background: rgba(29,123,255,.10); }
+</style>
+</head>
+<body class="bg-background text-on-surface font-body-md overflow-hidden">
+
+<!-- ══════════════════════════════════════════
+     TOP BAR
+     ══════════════════════════════════════════ -->
+<header class="fixed top-0 left-0 right-0 h-14 bg-surface-container-lowest border-b border-outline-variant flex items-center justify-between px-6 z-50">
+  <!-- Brand: the ArtiFex mark (web-app components/ui/BrandMark.tsx) and wordmark (constants/branding.ts) -->
+  <a href="projects.html" class="flex items-center gap-3">
+    <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true" class="flex-shrink-0 text-secondary">
+      <g stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 8.5 2 16l3 7.5"/>
+        <path d="M27 8.5 30 16l-3 7.5"/>
+      </g>
+      <g stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M13.6 7 9.2 24"/>
+        <path d="M11 17.8h6.2"/>
+      </g>
+      <path fill="currentColor" d="M19.8 18.6C19.8 20.7 20.9 21.8 23 21.8 20.9 21.8 19.8 22.9 19.8 25 19.8 22.9 18.7 21.8 16.6 21.8 18.7 21.8 19.8 20.7 19.8 18.6Z"/>
+    </svg>
+    <div>
+      <h1 class="text-primary font-bold tracking-tight" style="font-family:Roboto;font-size:20px;line-height:1.2;">ArtiFex</h1>
+      <p class="text-on-surface-variant uppercase mt-0.5" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:500;line-height:16px;letter-spacing:.08em;">Crafted from Code</p>
+    </div>
+  </a>
+
+  <!-- Step counter (hidden in empty state) -->
+  <div id="wiz-step-counter" class="absolute left-1/2 -translate-x-1/2 hidden">
+    <span class="font-label-md text-label-md text-on-surface-variant" id="step-counter-text">Step 1 of 5</span>
+  </div>
+
+  <div class="flex items-center gap-0.5">
+    <button class="p-2 hover:bg-surface-container rounded-lg transition-colors" aria-label="Notifications">
+      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
+    </button>
+    <div class="w-px h-5 bg-outline-variant mx-1.5"></div>
+    <button class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors">
+      <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
+        <span class="text-on-secondary-container font-bold text-xs" style="font-family:Roboto;">EL</span>
+      </div>
+      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">expand_more</span>
+    </button>
+  </div>
+</header>
+
+
+<!-- ══════════════════════════════════════════
+     VIEW: EMPTY STATE (default) - the Projects page with no project yet
+     (web-app pages/ProjectsPage: its heading, and ProjectsEmptyState where the table goes)
+     ══════════════════════════════════════════ -->
+<div id="view-empty" class="fixed inset-0 pt-14 overflow-y-auto">
+  <div class="px-6 py-6 mx-auto" style="max-width:1280px;">
+
+    <!-- Page heading. No New Project / Request Access buttons while there is no project: the two
+         cards below are the way in. -->
+    <div class="flex items-center justify-between mb-5">
+      <div>
+        <h1 class="text-on-surface" style="font-family:Roboto;font-size:24px;font-weight:600;line-height:32px;letter-spacing:-0.01em;">Projects</h1>
+        <p class="text-on-surface-variant mt-0.5" style="font-size:12px;line-height:16px;">System-wide · 0 projects</p>
+      </div>
+    </div>
+
+    <!-- Where the projects table goes -->
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden mb-6">
+      <div class="flex flex-col items-center justify-center text-center px-6 py-16">
+        <div class="w-16 h-16 bg-secondary-container flex items-center justify-center mb-6" style="border-radius:.75rem;">
+          <span class="material-symbols-outlined sym-fill text-secondary" style="font-size:32px;">folder_open</span>
+        </div>
+        <h2 class="text-on-surface mb-2" style="font-family:Roboto;font-size:18px;font-weight:600;line-height:28px;letter-spacing:-0.01em;">No projects yet</h2>
+        <p class="text-on-surface-variant mb-8" style="font-size:13px;line-height:1.6;max-width:440px;">
+          Create a new project to start generating compliance documentation, or request access to an existing workspace.
+        </p>
+
+        <!-- Choice cards -->
+        <div class="grid grid-cols-2 gap-4 w-full" style="max-width:520px;">
+
+          <!-- New Project - opens the wizard -->
+          <button onclick="showWizard()" class="choice-card choice-card-primary flex flex-col items-center gap-3 p-6 bg-surface-container-lowest rounded-xl text-center">
+            <div class="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center">
+              <span class="material-symbols-outlined text-white" style="font-size:20px;">add</span>
+            </div>
+            <div>
+              <p class="text-on-surface mb-1" style="font-size:14px;line-height:20px;font-weight:600;">New Project</p>
+              <p class="text-on-surface-variant" style="font-size:12px;line-height:1.5;">Connect a C++ repository and generate your first compliance artifacts.</p>
+            </div>
+            <span class="mt-auto flex items-center gap-1 text-secondary" style="font-size:12px;line-height:16px;font-weight:600;">
+              Get started
+              <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
+            </span>
+          </button>
+
+          <!-- Request Access - a message, no dialog: a project admin adds people from Team -->
+          <button onclick="requestAccess()" class="choice-card choice-card-plain flex flex-col items-center gap-3 p-6 bg-surface-container-lowest rounded-xl text-center">
+            <div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center">
+              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:20px;">lock</span>
+            </div>
+            <div>
+              <p class="text-on-surface mb-1" style="font-size:14px;line-height:20px;font-weight:600;">Request Access</p>
+              <p class="text-on-surface-variant" style="font-size:12px;line-height:1.5;">Ask an admin to add you to an existing project workspace.</p>
+            </div>
+            <span class="mt-auto flex items-center gap-1 text-on-surface-variant" style="font-size:12px;line-height:16px;font-weight:600;">
+              Send request
+              <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
+            </span>
+          </button>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════
+     VIEW: WIZARD (hidden until New Project)
+     ══════════════════════════════════════════ -->
+<div id="view-wizard" class="fixed inset-0 pt-14 hidden" style="display:none;">
+<div class="h-full flex">
+
+  <!-- STEP RAIL -->
+  <aside class="w-60 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex flex-col overflow-y-auto">
+    <div class="px-4 pt-4 pb-3 border-b border-outline-variant">
+      <div class="flex items-center justify-between mb-1.5">
+        <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.10em]">Setup Progress</p>
+        <button onclick="cancelWizard()" class="text-on-surface-variant hover:text-on-surface transition-colors" title="Cancel">
+          <span class="material-symbols-outlined" style="font-size:18px;">close</span>
+        </button>
+      </div>
+      <div class="flex items-center gap-3 mt-2">
+        <div class="flex-1 bg-surface-container rounded-full overflow-hidden" style="height:5px;">
+          <div class="bg-secondary h-full rounded-full transition-all duration-500" id="progress-bar" style="width:0%"></div>
+        </div>
+        <span class="font-label-sm text-label-sm text-on-surface-variant whitespace-nowrap" id="progress-label">0 / 5</span>
+      </div>
+    </div>
+    <div class="flex-1 px-4 py-5">
+      <div id="step-rail"></div>
+    </div>
+    <div class="px-4 pb-4">
+      <div class="flex items-start gap-2.5 p-3 bg-surface-container-low border border-outline-variant rounded-xl">
+        <span class="material-symbols-outlined text-secondary flex-shrink-0 mt-0.5" style="font-size:14px;">admin_panel_settings</span>
+        <p class="font-label-sm text-label-sm text-on-surface-variant leading-snug">Admin-only setup. Developers gain access after initialization.</p>
+      </div>
+    </div>
+  </aside>
+
+  <!-- FORM AREA -->
+  <div class="flex-1 flex flex-col overflow-hidden bg-background">
+    <div class="flex-1 overflow-y-auto" id="form-scroll">
+
+
+      <!-- ══ STEP 1 — PROJECT & REPOSITORY ══ -->
+      <div id="step-1" class="max-w-2xl mx-auto px-6 py-6 space-y-5">
+        <div class="pb-4 border-b border-outline-variant">
+          <h2 class="text-headline-md text-on-surface mb-1">Project &amp; Repository</h2>
+          <p class="text-body-md text-on-surface-variant">Name the project and connect your source repository.</p>
+        </div>
+
+        <div class="card space-y-4">
+          <div>
+            <div class="lbl">Project Name <span class="req">*</span></div>
+            <input class="inp" id="s1-name" type="text" placeholder="e.g. VCU Engine Firmware"
+                   oninput="this.classList.remove('err')">
+          </div>
+
+          <!-- Where the code is: a Git URL (GitHub, GitLab, any git server) or a local path - a git
+               repository's folder on the server ArtiFex runs on. Either is read with git: branches,
+               files, commits. A plain folder is refused: it must be a git repository. -->
+          <div>
+            <div class="lbl">
+              <span id="repo-label">Repository URL</span> <span class="req">*</span>
+              <div class="seg" role="radiogroup" aria-label="Where the repository is">
+                <button type="button" id="src-url" class="seg-btn on" role="radio" aria-checked="true" onclick="setRepoSource('url')">
+                  <span class="material-symbols-outlined">link</span>Git URL
+                </button>
+                <button type="button" id="src-local" class="seg-btn" role="radio" aria-checked="false" onclick="setRepoSource('local')">
+                  <span class="material-symbols-outlined">folder</span>Local path
+                </button>
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <div style="position:relative;flex:1;">
+                <span id="repo-icon" class="material-symbols-outlined" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:16px;color:#7c818c;pointer-events:none;">link</span>
+                <input class="inp mono" id="s1-repo" type="text" placeholder="https://github.com/org/repo.git" style="padding-left:34px;"
+                       spellcheck="false" oninput="this.classList.remove('err'); repoTyped();">
+              </div>
+              <!-- Local path: pick the folder instead of typing it - from the SERVER's folders (a
+                   browser cannot give a full path from the reviewer's own PC, and git runs on the
+                   server). -->
+              <button type="button" id="repo-browse" class="rb-browse" onclick="openRepoBrowser()">
+                <span class="material-symbols-outlined" style="font-size:16px;">folder_open</span>BROWSE…
+              </button>
+            </div>
+            <!-- Local path: where the folder must be, and what it must be. -->
+            <p id="repo-local-hint" class="hidden mt-1.5 text-on-surface-variant" style="font-size:11px;line-height:16px;">
+              A git repository on the server ArtiFex runs on — the folder that holds
+              <code style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10.5px;">.git</code>. Type its full path, or Browse.
+            </p>
+            <!-- Git URL chosen, but a folder path typed: say so, one click to switch. -->
+            <p id="repo-looks-local" class="hidden mt-1.5" style="font-size:11px;line-height:16px;color:#ffc966;">
+              This looks like a folder path, not a URL.
+              <button type="button" class="text-secondary hover:underline font-medium" onclick="setRepoSource('local')">Use Local path</button>
+            </p>
+          </div>
+
+          <!-- Only a private repository needs a token: a link until asked for. -->
+          <button type="button" id="token-link" onclick="openToken()" class="flex items-center gap-1 text-secondary hover:underline" style="font-size:11px;">
+            <span class="material-symbols-outlined" style="font-size:13px;">lock</span>Private repository? Add an access token
+          </button>
+          <div id="token-field" class="hidden">
+          <div>
+            <div class="lbl">
+              Access Token
+              <span class="ml-auto font-label-sm text-label-sm text-on-surface-variant normal-case tracking-normal" style="font-weight:400;">Optional — for private repos</span>
+            </div>
+            <div class="relative">
+              <input class="inp mono pr-10" id="s1-token" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                     oninput="repoChanged()">
+              <button type="button" onclick="toggleToken()"
+                      class="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors">
+                <span class="material-symbols-outlined" id="token-eye" style="font-size:17px;">visibility_off</span>
+              </button>
+            </div>
+          </div>
+          </div>
+
+          <!-- Test connection row -->
+          <div class="flex items-center gap-3 pt-1">
+            <button id="test-conn-btn" onclick="testConnection()"
+                    class="flex items-center gap-1.5 px-4 py-2 border border-outline-variant rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors flex-shrink-0"
+                    style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#a3a7b1;">
+              <span class="material-symbols-outlined" style="font-size:15px;">wifi_tethering</span>
+              Test Connection
+            </button>
+            <span id="test-conn-status" class="text-body-sm" style="font-size:12px;"></span>
+          </div>
+
+          <!-- Branch — shown after successful test. ONE box: it shows the picked branch; a click (or
+               the chevron) opens every branch, typing filters them (a repository can have hundreds),
+               arrows + Enter pick. Esc or leaving the box keeps the branch picked before. -->
+          <div id="branch-field" class="hidden">
+            <div style="height:1px;background:#1b2638;margin-bottom:16px;"></div>
+            <div class="lbl">Branch <span class="req">*</span></div>
+            <div style="position:relative;">
+              <span class="material-symbols-outlined" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:16px;color:#7c818c;pointer-events:none;">call_split</span>
+              <input class="inp mono" id="s1-branch-box" type="text" autocomplete="off" spellcheck="false"
+                     role="combobox" aria-label="Branch" aria-autocomplete="list" aria-expanded="false" aria-controls="branch-dd"
+                     placeholder="Search or pick a branch…" style="padding-left:34px;padding-right:34px;"
+                     onfocus="branchOpen()" onclick="branchOpen()" oninput="branchFilter()"
+                     onmouseup="branchMouseUp(event)" onkeydown="branchKey(event)" onblur="setTimeout(branchClose, 150)">
+              <span class="material-symbols-outlined" id="branch-chevron" onmousedown="event.preventDefault(); branchToggle()"
+                    style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:20px;color:#7c818c;cursor:pointer;transition:transform .15s;">expand_more</span>
+              <div id="branch-dd" role="listbox" aria-label="Branches"
+                   style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#1c1e23;border:1px solid #2c2f37;border-radius:0.5rem;box-shadow:0 4px 16px rgba(0,0,0,0.24);max-height:248px;overflow-y:auto;z-index:200;"></div>
+            </div>
+            <input type="hidden" id="s1-branch" value="">
+          </div>
+        </div>
+
+        <!-- Start from a config file (optional) - what `analyzer.py onboard --config` reads. One row:
+             before an import a dashed invitation; after it the file, what it filled and how much
+             needs the user (and in which step), with the full report in a popup. The name and the
+             repository are filled only when empty. Simulated here (importConfig); the app posts the
+             file to POST /projects/config/preview and re-checks it against the repository. -->
+        <div id="import-row"></div>
+        <input type="file" id="import-file" accept=".json,.jsonc" class="hidden" onchange="importConfig(this)">
+        <div id="import-modal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.8);align-items:center;justify-content:center;" onclick="if (event.target === this) closeImportModal()">
+          <div style="width:100%;max-width:640px;background:#1c1e23;border-radius:1rem;padding:24px;box-shadow:0 8px 40px rgba(0,0,0,0.36);">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px;">
+              <div>
+                <p id="import-modal-title" style="font-size:16px;font-weight:600;color:#f2f3f5;"></p>
+                <p style="font-size:12px;color:#a3a7b1;margin-top:2px;">Items that need your attention are dealt with in the step named beside them.</p>
+              </div>
+              <button onclick="closeImportModal()" style="background:none;border:none;cursor:pointer;color:#a3a7b1;padding:4px;"><span class="material-symbols-outlined" style="font-size:20px;">close</span></button>
+            </div>
+            <div id="import-modal-body" style="max-height:60vh;overflow-y:auto;display:grid;gap:18px;"></div>
+          </div>
+        </div>
+      </div><!-- /step-1 -->
+
+
+      <!-- ══ STEP 2 — CORES ══ -->
+      <!-- One core = one build of the firmware: its macros (-D set), data dictionary and compile
+           commands - what the engine reads as cores.<Core>. Every layer picks its core in step 3
+           (layers.<Layer>.cores), so its files parse with that core's macros and include paths.
+           The cards are drawn by renderCores(). -->
+      <div id="step-2" class="hidden max-w-2xl mx-auto px-6 py-6 space-y-4">
+        <div class="pb-4 border-b border-outline-variant">
+          <h2 class="text-headline-md text-on-surface mb-1">Cores</h2>
+          <p class="text-body-md text-on-surface-variant">A core is one build of the firmware, with its own macros, data dictionary and compile commands. Each layer picks its core in the next step.</p>
+        </div>
+
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-secondary" style="font-size:17px;">memory</span>
+            <span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-[.08em]">Cores <span id="cores-count"></span></span>
+          </div>
+          <button onclick="addCore()"
+                  class="flex items-center gap-1.5 px-3 py-1.5 text-secondary border border-outline-variant rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors">
+            <span class="material-symbols-outlined" style="font-size:15px;">add</span> Add Core
+          </button>
+        </div>
+
+        <div id="cores-list" class="space-y-3"></div>
+
+        <div class="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
+          <span class="material-symbols-outlined text-secondary flex-shrink-0" style="font-size:18px;">info</span>
+          <p class="text-body-sm text-on-surface-variant">Layers built the same way share a core. A layer with no core is parsed without macros or a data dictionary. Paths inside a compile_commands.json come from the build machine and are mapped onto the repository automatically.</p>
+        </div>
+      </div><!-- /step-2 -->
+
+
+      <!-- ══ STEP 3 — ARCHITECTURE ══ -->
+      <div id="step-3" class="hidden max-w-2xl mx-auto px-6 py-6 space-y-4">
+        <div class="pb-4 border-b border-outline-variant">
+          <h2 class="text-headline-md text-on-surface mb-1">Architecture Mapping</h2>
+          <p class="text-body-md text-on-surface-variant">Map layers and groups. Components are discovered automatically from source folders.</p>
+        </div>
+
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-secondary" style="font-size:17px;">account_tree</span>
+            <span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-[.08em]">Project Architecture</span>
+          </div>
+          <button onclick="showAddLayer()"
+                  class="flex items-center gap-1.5 px-3 py-1.5 text-secondary border border-outline-variant rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors">
+            <span class="material-symbols-outlined" style="font-size:15px;">add</span> Add Layer
+          </button>
+        </div>
+
+        <div id="arch-tree" class="space-y-2">
+
+          <!-- empty state hint -->
+          <div id="arch-empty" class="flex flex-col items-center justify-center py-10 text-center">
+            <span class="material-symbols-outlined text-on-surface-variant mb-3" style="font-size:36px;opacity:.35;">account_tree</span>
+            <p class="font-label-md text-label-md text-on-surface-variant" style="font-size:12px;">No layers yet.</p>
+            <p class="text-body-sm text-on-surface-variant mt-1" style="font-size:12px;">Click <strong>Add Layer</strong> to start mapping your architecture.</p>
+          </div>
+
+        </div><!-- /arch-tree -->
+
+        <!-- Add layer inline form -->
+        <div id="add-layer-row" class="hidden p-4 bg-surface-container-low border-2 border-dashed border-secondary rounded-xl space-y-3">
+          <div>
+            <div class="lbl" style="margin-bottom:4px;">Layer Name</div>
+            <input class="inp mono" id="new-layer-name" type="text" placeholder="E.G. MIDDLEWARE_LAYER" style="text-transform:uppercase;">
+          </div>
+          <div>
+            <div class="lbl" style="margin-bottom:4px;">Layer Root Path</div>
+            <div class="flex gap-2">
+              <input class="inp mono flex-1" id="new-layer-path" type="text" placeholder="/path/to/layer/root">
+              <button type="button" onclick="openFolderPicker('new-layer-path')"
+                      class="flex items-center gap-1.5 px-3 border border-outline-variant rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant flex-shrink-0"
+                      style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;">
+                <span class="material-symbols-outlined" style="font-size:16px;">folder_open</span>
+                BROWSE
+              </button>
+            </div>
+          </div>
+          <div>
+            <div class="lbl" style="margin-bottom:4px;">Core</div>
+            <select class="inp mono" id="new-layer-core"></select>
+            <p class="text-body-sm text-on-surface-variant" style="font-size:11px;margin-top:4px;">Its files parse with this core's macros and include paths, and take its data dictionary.</p>
+          </div>
+          <div class="flex gap-2 pt-1">
+            <button onclick="confirmAddLayer()" class="px-4 py-2 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md hover:bg-secondary-container transition-colors">Add Layer</button>
+            <button onclick="cancelAddLayer()" class="px-4 py-2 border border-outline-variant text-on-surface-variant rounded-lg font-label-md text-label-md hover:bg-surface-container transition-colors">Cancel</button>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
+          <span class="material-symbols-outlined text-secondary flex-shrink-0" style="font-size:18px;">info</span>
+          <p class="text-body-sm text-on-surface-variant">Layer root path is scanned by Clang. Groups define logical modules. Components map to physical source folders.</p>
+        </div>
+        <!-- One click removes a whole layer or group: it can be undone for 10 s. -->
+        <div id="undo-bar" role="status" style="display:none;position:sticky;bottom:12px;z-index:10;align-items:center;gap:12px;padding:10px 16px;background:#0b0c0f;color:#fff;border-radius:.5rem;box-shadow:0 4px 16px rgba(0,0,0,0.5);">
+          <span class="material-symbols-outlined" style="font-size:16px;opacity:.7;">delete</span>
+          <span class="undo-label" style="flex:1;font-size:12px;"></span>
+          <button onclick="undoRemove()" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#8ab4ff;background:none;border:none;cursor:pointer;">Undo</button>
+          <button onclick="LAST_REMOVED = null; renderUndo();" aria-label="Dismiss" style="background:none;border:none;color:#fff;opacity:.7;cursor:pointer;"><span class="material-symbols-outlined" style="font-size:15px;">close</span></button>
+        </div>
+      </div><!-- /step-3 -->
+
+
+      <!-- ══ STEP 4 — TEAM ══ -->
+      <div id="step-4" class="hidden max-w-2xl mx-auto px-6 py-6 space-y-4">
+        <div class="pb-4 border-b border-outline-variant">
+          <h2 class="text-headline-md text-on-surface mb-1">Team & Access</h2>
+          <p class="text-body-md text-on-surface-variant">Add team members and assign their role. More members can be added later from Project Settings.</p>
+        </div>
+
+        <!-- Member list -->
+        <div class="card">
+          <!-- Header row -->
+          <div class="flex items-center gap-3 pb-3 mb-1 border-b border-outline-variant"
+               style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7c818c;">
+            <div style="width:28px;flex-shrink:0;"></div>
+            <span class="flex-1">Member</span>
+            <span style="width:120px;flex-shrink:0;">Role</span>
+            <span style="width:24px;flex-shrink:0;"></span>
+          </div>
+
+          <!-- Self row (pinned, not removable) -->
+          <div class="flex items-center gap-3 py-2.5">
+            <div class="w-7 h-7 rounded-full bg-primary-container flex items-center justify-center flex-shrink-0">
+              <span class="font-bold text-on-primary-container" style="font-family:Roboto;font-size:11px;">EL</span>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="font-label-md text-label-md text-on-surface" style="font-size:12px;">Emma Lewis <span class="text-on-surface-variant" style="font-weight:400;">(you)</span></p>
+              <p class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;">emma.lewis@company.com</p>
+            </div>
+            <div style="width:120px;flex-shrink:0;">
+              <span style="display:inline-block;font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;background:#26282e;color:#8a8f9c;border-radius:3px;">Admin</span>
+            </div>
+            <div style="width:24px;flex-shrink:0;"></div>
+          </div>
+
+          <!-- Dynamic member list -->
+          <div id="member-list"></div>
+
+          <!-- Add row -->
+          <div class="pt-3 mt-1 border-t border-outline-variant">
+            <div id="add-member-collapsed">
+              <button onclick="openAddMember()"
+                      class="flex items-center gap-2 text-secondary hover:text-secondary-container transition-colors"
+                      style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;">
+                <span class="material-symbols-outlined" style="font-size:16px;">person_add</span>
+                Add / Invite member
+              </button>
+            </div>
+            <div id="add-member-form" class="hidden space-y-3">
+              <!-- Search combobox -->
+              <div style="position:relative;">
+                <div class="flex gap-2">
+                  <div style="position:relative;flex:1;">
+                    <span class="material-symbols-outlined" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:16px;color:#7c818c;pointer-events:none;">search</span>
+                    <input class="inp" id="member-search" type="text" autocomplete="off"
+                           placeholder="Search by name or email…"
+                           style="padding-left:32px;"
+                           oninput="memberSearchFilter(this.value)"
+                           onfocus="memberSearchOpen()"
+                           onblur="setTimeout(memberSearchClose,150)"
+                           onkeydown="memberSearchKey(event)">
+                  </div>
+                  <select class="inp" id="invite-role-select" style="width:130px;flex-shrink:0;">
+                    <option value="Developer">Developer</option>
+                    <option value="Admin">Admin</option>
+                  </select>
+                </div>
+                <div id="member-search-dd"
+                     style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:140px;background:#1c1e23;border:1px solid #2c2f37;border-radius:0.5rem;box-shadow:0 4px 16px rgba(0,0,0,0.24);max-height:200px;overflow-y:auto;z-index:200;"></div>
+              </div>
+              <div class="flex gap-2">
+                <button onclick="closeAddMember()"
+                        class="px-4 py-2 border border-outline-variant rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- What each role may do: on request, not in the way. -->
+        <button type="button" onclick="toggleRoles(this)" class="flex items-center gap-1 text-secondary hover:underline" style="font-size:11px;">
+          <span class="material-symbols-outlined" style="font-size:14px;">help</span><span>What can each role do?</span>
+        </button>
+        <div id="role-legend" class="grid grid-cols-2 gap-3" style="display:none;">
+          <div class="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
+            <div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center flex-shrink-0">
+              <span class="material-symbols-outlined text-on-primary-container sym-fill" style="font-size:16px;">manage_accounts</span>
+            </div>
+            <div>
+              <p class="font-label-md text-label-md text-on-surface" style="font-size:12px;font-weight:600;">Admin</p>
+              <p class="text-body-sm text-on-surface-variant" style="font-size:11px;margin-top:2px;line-height:1.5;">Creates project, manages config, runs analysis, approves &amp; publishes docs</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
+            <div class="w-8 h-8 rounded-lg bg-secondary-container flex items-center justify-center flex-shrink-0">
+              <span class="material-symbols-outlined text-secondary sym-fill" style="font-size:16px;">engineering</span>
+            </div>
+            <div>
+              <p class="font-label-md text-label-md text-on-surface" style="font-size:12px;font-weight:600;">Developer</p>
+              <p class="text-body-sm text-on-surface-variant" style="font-size:11px;margin-top:2px;line-height:1.5;">Requests analysis runs, reviews &amp; edits assigned documents</p>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /step-4 -->
+
+
+      <!-- ══ STEP 5 — REVIEW & INITIALIZE ══ -->
+      <div id="step-5" class="hidden max-w-2xl mx-auto px-6 py-6 space-y-4">
+        <div class="pb-4 border-b border-outline-variant">
+          <h2 class="text-headline-md text-on-surface mb-1">Review & Initialize</h2>
+          <p class="text-body-md text-on-surface-variant">Confirm every setting before the first analysis run.</p>
+        </div>
+
+        <!-- Is the project ready: what must be fixed (blocks), what it would miss (warns) - then the details. -->
+        <div id="r-ready"></div>
+        <p style="padding-top:8px;font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7c818c;">Details</p>
+
+        <!-- Project Basics -->
+        <div class="rev-card">
+          <div class="rev-card-head">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">source_environment</span>
+              <span class="font-label-md text-label-md text-on-surface" style="font-weight:600;">Project &amp; Repository</span>
+            </div>
+            <button onclick="goToStep(1)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
+          </div>
+          <div class="rev-row"><span>Name</span><span id="r-name">—</span></div>
+          <div class="rev-row"><span id="r-repo-label">Repository URL</span><span id="r-repo">—</span></div>
+          <div class="rev-row"><span>Branch</span><span id="r-branch">—</span></div>
+          <div class="rev-row"><span>Access Token</span><span id="r-token">—</span></div>
+        </div>
+
+        <!-- Cores -->
+        <div class="rev-card">
+          <div class="rev-card-head">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">memory</span>
+              <span class="font-label-md text-label-md text-on-surface" style="font-weight:600;">Cores</span>
+            </div>
+            <button onclick="goToStep(2)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
+          </div>
+          <div id="r-cores"></div>
+        </div>
+
+        <!-- Architecture -->
+        <div class="rev-card">
+          <div class="rev-card-head">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">account_tree</span>
+              <span class="font-label-md text-label-md text-on-surface" style="font-weight:600;">Architecture</span>
+            </div>
+            <button onclick="goToStep(3)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
+          </div>
+          <div class="rev-row"><span>Layers</span><span id="r-layers">—</span></div>
+          <button type="button" onclick="toggleReviewTree(this)" class="w-full flex items-center gap-1.5 text-secondary hover:bg-surface-container-low" style="padding:10px 16px;border-top:1px solid #2c2f37;font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;text-align:left;">
+            <span class="material-symbols-outlined" style="font-size:15px;">expand_more</span><span>Show every layer, group and component</span>
+          </button>
+          <div id="r-arch-tree" class="border-t border-outline-variant divide-y divide-outline-variant" style="display:none;"></div>
+        </div>
+
+        <!-- Team -->
+        <div class="rev-card">
+          <div class="rev-card-head">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">group</span>
+              <span class="font-label-md text-label-md text-on-surface" style="font-weight:600;">Team</span>
+            </div>
+            <button onclick="goToStep(4)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
+          </div>
+          <div class="rev-row"><span>Members</span><span id="r-team">—</span></div>
+          <div id="r-team-list"></div>
+        </div>
+
+      </div><!-- /step-5 -->
+
+
+    </div><!-- /form-scroll -->
+
+    <!-- ACTION BAR -->
+    <div class="h-16 flex-shrink-0 bg-surface-container-lowest border-t border-outline-variant flex items-center justify-between px-8 gap-4">
+      <!-- What this step needs, or what still stops it. (Nothing is saved until Initialize.) -->
+      <div id="step-hint" class="flex items-center gap-1.5 text-on-surface-variant" style="min-width:0;"></div>
+      <div class="flex items-center gap-3">
+        <button id="back-btn" onclick="doBack()"
+                class="flex items-center gap-2 px-5 py-2.5 border border-outline-variant rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors invisible">
+          <span class="material-symbols-outlined" style="font-size:16px;">arrow_back</span> Back
+        </button>
+        <button id="continue-btn" onclick="doContinue()"
+                class="flex items-center gap-2 px-6 py-2.5 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md hover:bg-secondary-container active:scale-[.98] transition-all">
+          Continue <span class="material-symbols-outlined" style="font-size:16px;">arrow_forward</span>
+        </button>
+      </div>
+    </div>
+
+  </div><!-- /form-area -->
+
+</div>
+</div><!-- /view-wizard -->
+
+
+<!-- ══════════════════════════════════════════
+     TOAST - Request Access answers with one, as the web app does
+     ══════════════════════════════════════════ -->
+<div id="toast" role="status" class="hidden fixed bottom-4 right-4 z-[100] flex items-start gap-3 p-4 rounded-xl border border-outline-variant bg-surface-container-lowest"
+     style="width:320px;box-shadow:0 4px 24px rgba(0,0,0,0.24);">
+  <span class="material-symbols-outlined sym-fill mt-0.5 flex-shrink-0" style="font-size:18px;color:#1d7bff;" aria-hidden="true">info</span>
+  <div class="flex-1 min-w-0">
+    <p id="toast-title" class="text-on-surface" style="font-size:14px;font-weight:600;"></p>
+    <p id="toast-msg" class="text-on-surface-variant mt-0.5" style="font-size:12px;"></p>
+  </div>
+  <button onclick="hideToast()" aria-label="Dismiss" class="text-on-surface-variant hover:text-on-surface transition-colors flex-shrink-0">
+    <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+  </button>
+</div>
+
+
+<!-- ══════════════════════════════════════════
+     INIT OVERLAY
+     ══════════════════════════════════════════ -->
+<div id="init-overlay">
+  <div class="bg-surface-container-lowest rounded-2xl p-8 w-full mx-4 text-center space-y-4" style="max-width:360px;">
+    <div class="w-14 h-14 rounded-2xl bg-secondary-container flex items-center justify-center mx-auto" id="init-icon">
+      <span class="material-symbols-outlined text-on-secondary-container" style="font-size:28px;">rocket_launch</span>
+    </div>
+    <h3 class="text-headline-sm text-on-surface" id="init-title">Initializing project…</h3>
+    <p class="text-body-sm text-on-surface-variant" id="init-sub">Saving configuration…</p>
+    <div class="w-full bg-surface-container rounded-full overflow-hidden" style="height:6px;">
+      <div class="bg-secondary h-full rounded-full transition-all duration-700" id="init-bar" style="width:0%"></div>
+    </div>
+    <p class="font-label-sm text-label-sm text-on-surface-variant" id="init-pct">0%</p>
+  </div>
+</div>
+
+
+<!-- Dot grid -->
+<div class="fixed inset-0 pointer-events-none -z-10 opacity-[.025]"
+     style="background-image:radial-gradient(#0b0c0f 0.5px,transparent 0.5px);background-size:24px 24px;"></div>
+
+<!-- Help tooltip -->
+<div id="help-tip"></div>
+
+
+<script>
+// ════════════════════════════════════════
+// State
+// ════════════════════════════════════════
+var cur = 1;
+var done = new Set();
+
+var STEPS = [
+  { title: 'Project & Repository', sub: 'Name, source path' },
+  { title: 'Cores',                sub: 'Macros & dictionary per core' },
+  { title: 'Architecture',         sub: 'Layers & groups' },
+  { title: 'Team & Access',        sub: 'Optional · add people later' },
+  { title: 'Review & Initialize',  sub: 'Confirm & create project' },
+];
+// The action bar's note for each step: what is required, and what can be left out.
+var STEP_HINTS = [
+  'Name, repository and branch are required',
+  'Optional - a layer with no core is parsed without macros',
+  'At least one component is required',
+  'Optional - people can be added later from Team',
+  'Nothing is created until you initialize',
+];
+// Steps where Continue was tried: their problems show inside the step from then on.
+var attempted = new Set();
+
+// ════════════════════════════════════════
+// View switching
+// ════════════════════════════════════════
+function showWizard() {
+  document.getElementById('view-empty').style.display = 'none';
+  var wiz = document.getElementById('view-wizard');
+  wiz.style.display = '';
+  wiz.classList.remove('hidden');
+  document.getElementById('wiz-step-counter').classList.remove('hidden');
+  goToStep(1);
+}
+
+function cancelWizard() {
+  document.getElementById('view-wizard').style.display = 'none';
+  document.getElementById('view-empty').style.display = '';
+  document.getElementById('wiz-step-counter').classList.add('hidden');
+}
+
+// ════════════════════════════════════════
+// Request Access: a message, as the web app (no dialog, nothing sent)
+// ════════════════════════════════════════
+function requestAccess() {
+  showToast('Request access', 'Ask your workspace administrator to add you to a project.');
+}
+
+var toastTimer = null;
+function showToast(title, msg) {
+  clearTimeout(toastTimer);
+  var el = document.getElementById('toast');
+  document.getElementById('toast-title').textContent = title;
+  document.getElementById('toast-msg').textContent = msg;
+  el.classList.remove('hidden', 'toast-out');
+  el.classList.add('toast-in');
+  toastTimer = setTimeout(hideToast, 4000);
+}
+function hideToast() {
+  var el = document.getElementById('toast');
+  el.classList.remove('toast-in');
+  el.classList.add('toast-out');
+  setTimeout(function() { el.classList.add('hidden'); }, 200);
+}
+
+// ════════════════════════════════════════
+// Wizard navigation
+// ════════════════════════════════════════
+function goToStep(n) {
+  for (var i = 1; i <= 5; i++) {
+    var el = document.getElementById('step-' + i);
+    if (el) el.classList.toggle('hidden', i !== n);
+  }
+  cur = n;
+  if (n === 2) renderCores();              // 'Used by' follows the layers
+  if (n === 3) refreshLayerCoreSelects();  // the pickers follow the cores
+  if (n === 5) populateReview();
+
+  document.getElementById('step-counter-text').textContent = 'Step ' + n + ' of 5';
+
+  var back = document.getElementById('back-btn');
+  back.classList.toggle('invisible', n === 1);
+
+  var btn = document.getElementById('continue-btn');
+  if (n === 5) {
+    btn.innerHTML = '<span class="material-symbols-outlined sym-fill" style="font-size:16px;">rocket_launch</span> Initialize Project';
+    btn.style.background = '#3ddc84';
+    btn.style.color = '#fff';
+  } else {
+    btn.innerHTML = 'Continue <span class="material-symbols-outlined" style="font-size:16px;">arrow_forward</span>';
+    btn.style.background = '';
+    btn.style.color = '';
+  }
+
+  renderRail();
+  updateBar();
+  renderStepState();
+  var scroll = document.getElementById('form-scroll');
+  if (scroll) scroll.scrollTop = 0;
+}
+
+function doBack() {
+  if (cur > 1) goToStep(cur - 1);
+  else cancelWizard();
+}
+
+function doContinue() {
+  if (!validate(cur)) return;
+  if (cur < 5) {
+    done.add(cur);
+    updateBar();
+    goToStep(cur + 1);
+  } else {
+    initProject();
+  }
+}
+
+// ════════════════════════════════════════
+// Step rail
+// ════════════════════════════════════════
+function renderRail() {
+  var rail = document.getElementById('step-rail');
+  rail.innerHTML = STEPS.map(function(s, i) {
+    var n = i + 1;
+    var cls = done.has(n) ? 'done' : n === cur ? 'active' : 'pending';
+    var icon = cls === 'done'
+      ? '<span class="material-symbols-outlined sym-fill" style="font-size:14px;">check</span>' : n;
+    var titleColor = n === cur ? '#1d7bff' : done.has(n) ? '#f2f3f5' : '#a3a7b1';
+    var bad = n <= 3 && (attempted.has(n) || done.has(n)) && issuesFor(n).length > 0;
+    var subColor   = bad ? '#ff4d5a' : n === cur ? '#1d7bff' : '#7c818c';
+    var clickable  = (n < cur || done.has(n)) ? 'cursor-pointer' : '';
+    return '<div class="step-li ' + clickable + '" onclick="railClick(' + n + ')">'
+      + '<div class="step-dot ' + cls + '">' + icon
+      + (bad ? '<span style="position:absolute;top:-2px;right:-2px;width:10px;height:10px;border-radius:50%;background:#ff4d5a;border:2px solid #1c1e23;"></span>' : '')
+      + '</div>'
+      + '<div style="padding-top:3px;">'
+      + '<p class="font-label-md text-label-md" style="color:' + titleColor + ';font-weight:' + (n===cur?'600':'500') + ';line-height:1.2;">' + s.title + '</p>'
+      + '<p class="font-label-sm text-label-sm" style="color:' + subColor + ';margin-top:2px;">' + (bad ? 'Needs a fix' : s.sub) + '</p>'
+      + '</div></div>';
+  }).join('');
+}
+
+function railClick(n) { if (n < cur || done.has(n)) goToStep(n); }
+
+function updateBar() {
+  var pct = Math.round((done.size / 5) * 100);
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = done.size + ' / 5';
+}
+
+// ════════════════════════════════════════
+// Validation
+// ════════════════════════════════════════
+// What stops each step, worked out when asked. It shows inside the step once Continue was tried
+// there (not in a toast that is gone before it is read), and marks the step in the rail.
+function issuesFor(n) {
+  var out = [];
+  if (n === 1) {
+    var repo = document.getElementById('s1-repo').value.trim();
+    var connected = !document.getElementById('branch-field').classList.contains('hidden');
+    if (!document.getElementById('s1-name').value.trim()) out.push('Give the project a name');
+    if (!repo) out.push(REPO_SOURCE === 'local' ? 'Enter the repository folder' : 'Enter the repository URL');
+    if (repo && !connected) out.push('Test the connection to load the branches');
+    if (connected && !document.getElementById('s1-branch').value) out.push('Pick a branch');
+  }
+  if (n === 2) {
+    var seen = {};
+    CORES.forEach(function(c, i) {
+      var nm = (c.name || '').trim().toLowerCase();
+      if (!nm) out.push('Core ' + (i + 1) + ' has no name');
+      else if (seen[nm]) out.push('Two cores are called ' + c.name.trim());
+      seen[nm] = true;
+    });
+  }
+  if (n === 3 && !document.querySelector('#arch-tree .tree-comp-block')) out.push('No component yet - a run needs at least one');
+  return out;
+}
+
+function validate(n) {
+  if (n === 1) {
+    var name = document.getElementById('s1-name'), repo = document.getElementById('s1-repo');
+    name.classList.toggle('err', !name.value.trim());
+    repo.classList.toggle('err', !repo.value.trim());
+    if (repo.value.trim() && document.getElementById('branch-field').classList.contains('hidden')) {
+      var st = document.getElementById('test-conn-status');
+      st.style.color = '#ff4d5a';
+      st.textContent = 'Test the connection first to load branches.';
+    }
+  }
+  // The last step re-checks every step before it and takes the user to the first that needs a fix.
+  var bad = (n === 5 ? [1, 2, 3] : [n]).filter(function(k) { return issuesFor(k).length; })[0];
+  if (!bad) return true;
+  attempted.add(bad);
+  if (bad !== cur) goToStep(bad); else { renderStepState(); renderRail(); }
+  var scroll = document.getElementById('form-scroll');
+  if (scroll) scroll.scrollTop = 0;
+  return false;
+}
+
+// Live, as in the app: a step's problems follow what the user types.
+function refreshStepState() { if (attempted.size) { renderStepState(); renderRail(); } }
+document.addEventListener('input', refreshStepState);
+document.addEventListener('change', refreshStepState);
+
+// The problems banner inside the current step, the action bar's note, and step 4's button.
+function renderStepState() {
+  var step = document.getElementById('step-' + cur);
+  if (!step) return;
+  var box = step.querySelector('.step-issues');
+  if (!box) {
+    box = document.createElement('div');
+    box.className = 'step-issues';
+    step.insertBefore(box, step.children[1]);
+  }
+  var items = attempted.has(cur) ? issuesFor(cur) : [];
+  var many = (items.length === 1 ? 'One thing' : items.length + ' things');
+  box.innerHTML = !items.length ? '' : '<div role="alert" style="padding:14px;background:#3a1d21;border:1px solid #ff4d5a;border-radius:.75rem;">'
+    + '<p style="display:flex;align-items:center;gap:8px;font-family:\'SamsungOne\',\'Roboto\',sans-serif;font-size:12px;font-weight:600;color:#ff8a93;">'
+    + '<span class="material-symbols-outlined sym-fill" style="font-size:15px;color:#ff4d5a;">error</span>' + many + ' to fix before you continue</p>'
+    + '<ul style="margin:8px 0 0 24px;list-style:disc;display:grid;gap:4px;">'
+    + items.map(function(t) { return '<li style="font-size:12px;color:#ff8a93;line-height:1.45;">' + escHtml(t) + '</li>'; }).join('')
+    + '</ul></div>';
+  var hint = document.getElementById('step-hint');
+  hint.innerHTML = items.length
+    ? '<span class="material-symbols-outlined sym-fill" style="font-size:14px;color:#ff4d5a;">error</span>'
+      + '<span class="font-label-sm text-label-sm" style="color:#ff4d5a;">' + many + ' to fix in this step</span>'
+    : '<span class="material-symbols-outlined" style="font-size:14px;">info</span>'
+      + '<span class="font-label-sm text-label-sm text-on-surface-variant" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + STEP_HINTS[cur - 1] + '</span>';
+  if (cur === 4) {
+    document.getElementById('continue-btn').innerHTML = (members.length ? 'Continue' : 'Skip for now')
+      + ' <span class="material-symbols-outlined" style="font-size:16px;">arrow_forward</span>';
+  }
+}
+
+// ════════════════════════════════════════
+// Step 2: Cores
+// ════════════════════════════════════════
+// One core = one build: macros (a file, or typed -D lines), a data dictionary (CSV) and an
+// optional compile_commands.json. Each layer names its core in step 3.
+var CORES = [];
+var _coreSeq = 0;
+
+function addCore(name) {
+  _coreSeq++;
+  CORES.push({ id: 'core' + _coreSeq, name: name || ('Core' + _coreSeq), macroMode: 'upload',
+               macroFile: null, macroText: '', ddFile: null, ccFile: null });
+  renderCores();
+  refreshLayerCoreSelects();
+}
+function coreById(id) { return CORES.filter(function(c) { return c.id === id; })[0]; }
+function removeCore(id) {
+  CORES = CORES.filter(function(c) { return c.id !== id; });
+  renderCores();
+  refreshLayerCoreSelects();
+}
+function renameCore(id, input) {
+  var c = coreById(id);
+  if (!c) return;
+  c.name = input.value.trim() || c.name;
+  input.value = c.name;
+  refreshLayerCoreSelects();
+}
+function setMacroMode(id, mode) { var c = coreById(id); if (c) { c.macroMode = mode; renderCores(); } }
+function setMacroText(id, ta)   { var c = coreById(id); if (c) c.macroText = ta.value; }
+function setCoreFile(id, kind, f) {
+  var c = coreById(id);
+  if (c && f) { c[kind] = { name: f.name, size: f.size }; renderCores(); }
+}
+function coreFileChosen(id, kind, inp) { setCoreFile(id, kind, inp.files && inp.files[0]); }
+function coreFileDrop(e, id, kind) {
+  e.preventDefault(); e.currentTarget.classList.remove('dragover');
+  setCoreFile(id, kind, e.dataTransfer.files[0]);
+}
+function clearCoreFile(id, kind) { var c = coreById(id); if (c) { c[kind] = null; renderCores(); } }
+
+// The names of the layers (step 3) whose core is `coreId` ('' = no core).
+function layersUsing(coreId) {
+  return Array.from(document.querySelectorAll('#arch-tree .layer-block')).filter(function(b) {
+    var sel = b.querySelector('.layer-core-select');
+    return (sel ? sel.value : '') === coreId;
+  }).map(function(b) { return (b.querySelector('.layer-head .font-bold') || {}).textContent || '—'; });
+}
+
+// One control per input: an upload button, or - once there is a file - a pill with its name,
+// size, Replace and Remove. A file an imported config names but the repository lacks asks for
+// itself by name (amber).
+function fileControl(c, kind, accept, types, icon) {
+  var f = c[kind];
+  var exp = (c.expected || {})[kind];
+  var input = '<input type="file" class="hidden" id="' + c.id + '-' + kind + '" accept="' + accept + '"'
+    + ' onchange="coreFileChosen(\'' + c.id + '\',\'' + kind + '\',this)">';
+  var pick = 'document.getElementById(\'' + c.id + '-' + kind + '\').click()';
+  if (f) {
+    return '<div class="file-pill">'
+      + '<span class="material-symbols-outlined sym-fill" style="font-size:18px;color:#3ddc84;">' + icon + '</span>'
+      + '<span class="n" title="' + escHtml(f.name) + '">' + escHtml(f.name) + '</span>'
+      + '<span class="z">' + (f.size / 1024).toFixed(1) + ' KB</span>'
+      + '<button class="pill-btn" onclick="' + pick + '" title="Replace"><span class="material-symbols-outlined" style="font-size:17px;">swap_horiz</span></button>'
+      + '<button class="pill-btn del" onclick="clearCoreFile(\'' + c.id + '\',\'' + kind + '\')" title="Remove"><span class="material-symbols-outlined" style="font-size:17px;">close</span></button>'
+      + '</div>' + input;
+  }
+  return '<button class="upload-btn' + (exp ? ' wanted' : '') + '" onclick="' + pick + '"'
+    + ' ondragover="event.preventDefault();this.classList.add(\'dragover\');" ondragleave="this.classList.remove(\'dragover\');"'
+    + ' ondrop="coreFileDrop(event,\'' + c.id + '\',\'' + kind + '\')">'
+    + '<span class="material-symbols-outlined" style="font-size:18px;color:' + (exp ? '#f5a524' : '#7c818c') + ';">upload_file</span>'
+    + '<span class="t">' + (exp ? 'Upload <b>' + escHtml(exp) + '</b>' : 'Choose a file or drop it here') + '</span>'
+    + (exp ? '' : '<span class="s">' + types + '</span>')
+    + '</button>'
+    + (exp ? '<div class="wanted-note">The imported config names it; the repository does not have it.</div>' : '')
+    + input;
+}
+
+function macrosControl(c) {
+  if (c.macroMode === 'manual') {
+    return '<textarea class="inp mono macro-text" rows="3" placeholder="_CONFIG_CMCORE=1&#10;PLATFORM=QNX" oninput="setMacroText(\'' + c.id + '\',this)">'
+      + escHtml(c.macroText) + '</textarea>'
+      + '<div class="flex items-center justify-between gap-3">'
+      + '<span class="core-row-help" style="margin-top:6px;">One per line: KEY or KEY=VALUE</span>'
+      + '<button class="switch-link" onclick="setMacroMode(\'' + c.id + '\',\'upload\')">Upload a file instead</button></div>';
+  }
+  return fileControl(c, 'macroFile', '.json,.csv', '.json · .csv', 'data_object')
+    + '<button class="switch-link" onclick="setMacroMode(\'' + c.id + '\',\'manual\')">Type them instead</button>';
+}
+
+function coreRow(label, help, optional, control) {
+  return '<div class="core-row"><div>'
+    + '<div class="core-row-label">' + label + '</div>'
+    + '<div class="core-row-help">' + (optional ? '<span class="opt">Optional</span> · ' : '') + help + '</div></div>'
+    + '<div class="min-w-0">' + control + '</div></div>';
+}
+
+// A core's optional inputs stay out of the way until they have a file, a config asks for one, or
+// the user adds one.
+var OPENED_INPUTS = {};
+function showsInput(c, kind) { return !!c[kind] || !!(c.expected || {})[kind] || !!OPENED_INPUTS[c.id + ':' + kind]; }
+function openInput(id, kind) { OPENED_INPUTS[id + ':' + kind] = true; renderCores(); }
+function optionalLinks(c) {
+  var links = [['ddFile', 'Data dictionary'], ['ccFile', 'Compile commands']].filter(function(k) { return !showsInput(c, k[0]); });
+  if (!links.length) return '';
+  return '<div style="display:flex;align-items:center;gap:16px;padding:10px 16px;border-top:1px solid #1b2638;">'
+    + '<span style="font-family:\'SamsungOne\',\'Roboto\',sans-serif;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#7c818c;">Optional</span>'
+    + links.map(function(k) {
+        return '<button class="switch-link" style="margin-top:0;display:flex;align-items:center;gap:3px;" onclick="openInput(\'' + c.id + '\',\'' + k[0] + '\')">'
+          + '<span class="material-symbols-outlined" style="font-size:13px;">add</span>' + k[1] + '</button>';
+      }).join('')
+    + '</div>';
+}
+
+function renderCores() {
+  var list = document.getElementById('cores-list');
+  if (!list) return;
+  var count = document.getElementById('cores-count');
+  if (count) count.textContent = CORES.length ? '· ' + CORES.length : '';
+  if (!CORES.length) {
+    list.innerHTML = '<div class="flex flex-col items-center justify-center py-10 text-center">'
+      + '<span class="material-symbols-outlined text-on-surface-variant mb-3" style="font-size:36px;opacity:.35;">memory</span>'
+      + '<p class="font-label-md text-label-md text-on-surface-variant" style="font-size:12px;">No cores.</p>'
+      + '<p class="text-body-sm text-on-surface-variant mt-1" style="font-size:12px;">Every layer is parsed without macros or a data dictionary. Click <strong>Add Core</strong> to add one.</p></div>';
+    return;
+  }
+  list.innerHTML = CORES.map(function(c) {
+    var used = layersUsing(c.id);
+    return '<div class="core-card">'
+      + '<div class="core-card-head">'
+      +   '<div class="core-chip-icon"><span class="material-symbols-outlined" style="font-size:17px;color:#8a8f9c;">memory</span></div>'
+      +   '<div class="flex-1 min-w-0">'
+      +     '<input class="core-name" value="' + escHtml(c.name) + '" onchange="renameCore(\'' + c.id + '\',this)" aria-label="Core name" title="Rename the core">'
+      +     '<div class="core-uses' + (used.length ? '' : ' none') + '">'
+      +       (used.length
+                ? 'Used by ' + used.map(function(l) { return '<span class="layer-tag">' + escHtml(l) + '</span>'; }).join('')
+                : 'No layer uses it yet · pick it for a layer in step 3')
+      +     '</div>'
+      +   '</div>'
+      +   '<button onclick="removeCore(\'' + c.id + '\')" class="pill-btn del" title="Remove the core">'
+      +   '<span class="material-symbols-outlined" style="font-size:18px;">delete</span></button>'
+      + '</div>'
+      + coreRow('Macros', 'The <code>-D</code> set for this build', false, macrosControl(c))
+      + (showsInput(c, 'ddFile') ? coreRow('Data dictionary', 'Signal names, units, ranges', true, fileControl(c, 'ddFile', '.csv', '.csv', 'menu_book')) : '')
+      + (showsInput(c, 'ccFile') ? coreRow('Compile commands', 'Include paths from the build', true, fileControl(c, 'ccFile', '.json', 'compile_commands.json', 'terminal')) : '')
+      + optionalLinks(c)
+      + '</div>';
+  }).join('');
+}
+
+// Every layer's Core picker (step 3): the cores as they are now, each layer keeping its choice.
+function coreOptions(selected) {
+  return '<option value="">No core</option>' + CORES.map(function(c) {
+    return '<option value="' + c.id + '"' + (c.id === selected ? ' selected' : '') + '>' + escHtml(c.name) + '</option>';
+  }).join('');
+}
+function refreshLayerCoreSelects() {
+  document.querySelectorAll('.layer-core-select').forEach(function(sel) {
+    sel.innerHTML = coreOptions(coreById(sel.value) ? sel.value : '');
+  });
+  var add = document.getElementById('new-layer-core');
+  if (add) add.innerHTML = coreOptions(coreById(add.value) ? add.value : (CORES[0] ? CORES[0].id : ''));
+}
+
+// ════════════════════════════════════════
+// Step 4: Architecture helpers
+// ════════════════════════════════════════
+// ════════════════════════════════════════
+// Step 1: Import config (simulated)
+// ════════════════════════════════════════
+// The app posts the file to POST /projects/config/preview, which reads it the way the engine
+// does and reports what it filled, what needs the user, and what it skipped. Here the sample
+// project's config stands in for whatever file is picked: two cores, three layers.
+var IMPORTED = null;          // the imported file's name
+var IMPORT_KEPT = [];         // what the config named but the user's own value was kept for
+var IMPORT_CHECKED = false;   // checked against the connected repository
+var IMPORT_CHECKING = false;
+
+var SAMPLE_IMPORT = {
+  name: 'Brake ECU', repo: 'https://github.com/org/brake-ecu.git',
+  cores: [
+    { name: 'Core1', macros: 'macros.core1.json', dd: 'data_dictionary.core1.csv', cc: 'compile_commands.core1.json' },
+    { name: 'Core2', macros: 'macros.core2.json', dd: 'data_dictionary.core2.csv', cc: null },
+  ],
+  layers: [
+    { name: 'Layer1', path: 'Layer1', core: 'Core1', groups: [
+      { name: 'My Sample', components: [
+        { name: 'Sample Core', files: ['Layer1/Sample/Core'] },
+        { name: 'Lib',         files: ['Layer1/Sample/Lib'] },
+        { name: 'Util',        files: ['Layer1/Sample/Util'] } ] },
+      { name: 'Support', components: [
+        { name: 'Math', files: ['Layer1/Math'] },
+        { name: 'App',  files: ['Layer1/App/Main.cpp'] } ] } ] },
+    { name: 'Layer2', path: 'Layer2', core: 'Core2', groups: [
+      { name: 'Platform', components: [
+        { name: 'Gpio', files: ['Layer2/Platform/Gpio'] },
+        { name: 'Uart', files: ['Layer2/Platform/Uart'] },
+        { name: 'Spi',  files: ['Layer2/Platform/Spi'] } ] } ] },
+    { name: 'Layer3', path: 'Layer3', core: null, groups: [
+      { name: 'Diag', components: [
+        { name: 'Diag', files: ['Layer3/Diag'] } ] } ] },
+  ],
+};
+
+function importConfig(inp) {
+  var f = inp.files && inp.files[0];
+  inp.value = '';
+  if (!f) return;
+  IMPORTED = f.name;
+  // The name and the repository are filled only when empty: what the user typed wins.
+  IMPORT_KEPT = [];
+  var nameEl = document.getElementById('s1-name'), repoEl = document.getElementById('s1-repo');
+  if (!nameEl.value.trim()) nameEl.value = SAMPLE_IMPORT.name;
+  else if (nameEl.value.trim() !== SAMPLE_IMPORT.name) IMPORT_KEPT.push('project name');
+  if (!repoEl.value.trim()) {                       // a new repository: connect again
+    repoEl.value = SAMPLE_IMPORT.repo;
+    REPO_SOURCE = looksLocal(SAMPLE_IMPORT.repo) ? 'local' : 'url';   // a path in the config: Local path
+    showRepoSource();
+    repoChanged();
+  }
+  else if (repoEl.value.trim() !== SAMPLE_IMPORT.repo) IMPORT_KEPT.push('repository');
+  // Step 2: one card per core. Their files are read from the repository once it is connected.
+  CORES = []; _coreSeq = 0;
+  SAMPLE_IMPORT.cores.forEach(function(c) { addCore(c.name); });
+  // Step 3: every layer with its core, groups and components - the whole layer configuration
+  document.querySelectorAll('#arch-tree .layer-block').forEach(function(b) { b.remove(); });
+  fileAssignments = {};
+  var empty = document.getElementById('arch-empty');
+  if (empty) empty.style.display = 'none';
+  SAMPLE_IMPORT.layers.forEach(function(l) {
+    var core = CORES.filter(function(c) { return c.name === l.core; })[0];
+    var block = layerEl(l.name, l.path, core ? core.id : '');
+    var groups = block.querySelector('.groups-container');
+    (l.groups || []).forEach(function(g) {
+      var grp = groupEl(g.name);
+      var children = grp.querySelector('.tree-children');
+      var addBtn = children.querySelector('.add-group-btn');
+      g.components.forEach(function(c) {
+        c.files.forEach(function(f) { fileAssignments[f] = c.name; });
+        children.insertBefore(componentEl(c.name, c.files, true), addBtn);
+      });
+      groups.appendChild(grp);
+    });
+    collapseLayer(block);                          // a real config lists dozens of components
+    document.getElementById('arch-tree').appendChild(block);
+  });
+  renderImportReport();
+  // Already connected: check the config against that repository - the one the project uses.
+  if (!document.getElementById('branch-field').classList.contains('hidden')) checkImportAgainstRepo();
+}
+
+// Test Connection found the repository: check the import against the branch.
+function checkImportAgainstRepo() {
+  IMPORT_CHECKING = true;
+  renderImportReport();
+  setTimeout(function() {
+    IMPORT_CHECKING = false;
+    IMPORT_CHECKED = true;
+    SAMPLE_IMPORT.cores.forEach(function(sc) {
+      var c = CORES.filter(function(x) { return x.name === sc.name; })[0];
+      if (!c) return;
+      // Found in the repository: read in as uploads - never over a file the user chose.
+      if (!c.macroFile && c.macroMode === 'upload') c.macroFile = { name: sc.macros, size: 1260 };
+      if (!c.ddFile) c.ddFile = { name: sc.dd, size: 3480 };
+      // Not in the repository: step 2 asks for it.
+      c.expected = sc.cc ? { ccFile: sc.cc } : {};
+    });
+    renderCores();
+    renderImportReport();
+  }, 900);
+}
+
+function importCounts() {
+  var layers = SAMPLE_IMPORT.layers, groups = 0, comps = 0;
+  layers.forEach(function(l) { (l.groups || []).forEach(function(g) { groups++; comps += g.components.length; }); });
+  return layers.length + ' layers, ' + groups + ' groups, ' + comps + ' components';
+}
+
+function importItems() {
+  var items = [['filled', 'Project: name, repository.']];
+  if (!IMPORT_CHECKED) {
+    items.push(['filled', 'Cores: `Core1`, `Core2` (step 2).']);
+    items.push(['filled', 'Architecture: ' + importCounts() + ', each layer with its core: Layer1 → Core1, Layer2 → Core2, Layer3 → no core.']);
+    items.push(['check', 'The cores\' files and every path are checked against the repository once it is connected (Test Connection).']);
+  } else {
+    items.push(['filled', 'Core1: `macros.core1.json` and `data_dictionary.core1.csv`, read from the repository.']);
+    items.push(['check', 'Core1: upload `compile_commands.core1.json` in step 2. The repository has no file `build/compile_commands.core1.json`.']);
+    items.push(['filled', 'Core2: `macros.core2.json` and `data_dictionary.core2.csv`, read from the repository.']);
+    items.push(['filled', 'Architecture: ' + importCounts() + ', each layer with its core. Every path is on branch `' + (document.getElementById('s1-branch').value || 'main') + '`.']);
+  }
+  items.push(['skipped', '`clang.llvmLibPath`: a path on the machine that wrote the file. The server uses its own.']);
+  return items;
+}
+
+function codeText(t) {
+  return escHtml(t).split('`').map(function(p, i) {
+    return i % 2 ? '<code style="font-family:\'SamsungOne\',\'Roboto\',sans-serif;font-size:11px;background:#1b2638;padding:0 4px;border-radius:3px;">' + p + '</code>' : p;
+  }).join('');
+}
+
+var IMPORT_LEVEL = {
+  check:   ['error',        '#f5a524', 'Needs your attention'],
+  filled:  ['check_circle', '#3ddc84', 'Filled in'],
+  skipped: ['block',        '#7c818c', 'Not used'],
+};
+// Where the wizard deals with what a report item is about.
+function importWhere(t) {
+  if (/^Project/.test(t)) return 'Step 1';
+  if (/^Core|cores'/.test(t)) return 'Step 2 · Cores';
+  if (/^Architecture/.test(t)) return 'Step 3 · Architecture';
+  if (/^`clang|^Document/.test(t)) return 'Step 5 · Review';
+  return '';
+}
+var MONO = 'font-family:\'SamsungOne\',\'Roboto\',sans-serif;';
+function importBtn(label, icon, onclick, primary) {
+  return '<button type="button" onclick="' + onclick + '" style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:.5rem;background:#1c1e23;cursor:pointer;flex-shrink:0;'
+    + MONO + 'font-size:11px;font-weight:600;border:1px solid ' + (primary ? '#1d7bff;color:#1d7bff;' : '#6b707c;color:#a3a7b1;') + '">'
+    + '<span class="material-symbols-outlined" style="font-size:14px;">' + icon + '</span>' + label + '</button>';
+}
+// Step 1's import: one row - an invitation before an import, a summary after it.
+function renderImportReport() {
+  var row = document.getElementById('import-row');
+  if (!IMPORTED) {
+    row.innerHTML = '<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border:1px dashed #2c2f37;border-radius:.75rem;background:#1c1e23;">'
+      + '<span class="material-symbols-outlined text-secondary" style="font-size:18px;flex-shrink:0;">settings_suggest</span>'
+      + '<div style="flex:1;min-width:0;"><p style="font-size:14px;color:#f2f3f5;">Have a config file? <span style="color:#a3a7b1;">Optional</span></p>'
+      + '<p style="font-size:11px;color:#a3a7b1;margin-top:2px;">Fills the cores and the architecture from the config <span style="' + MONO + '">analyzer.py onboard --config</span> reads. The access token is never read from it.</p></div>'
+      + importBtn('Import config', 'upload_file', "document.getElementById('import-file').click()", true)
+      + '</div>';
+    return;
+  }
+  var items = importItems();
+  var of = function(level) { return items.filter(function(i) { return i[0] === level; }); };
+  var where = {};
+  of('check').forEach(function(i) { var w = (importWhere(i[1]) || 'Other').split(' · ').pop(); where[w] = (where[w] || 0) + 1; });
+  var whereText = Object.keys(where).map(function(w) { return where[w] + ' in ' + w; }).join(', ');
+  var branch = document.getElementById('s1-branch').value;
+  var state = IMPORT_CHECKING ? '<span style="color:#a3a7b1;">checking paths on ' + escHtml(branch || 'main') + '…</span>'
+    : IMPORT_CHECKED ? '' : '<span style="color:#a3a7b1;">paths are checked after Test Connection</span>';
+  var n = of('check').length;
+  row.innerHTML = '<div style="padding:12px 16px;border:1px solid #2c2f37;border-radius:.75rem;background:#1c1e23;">'
+    + '<div style="display:flex;align-items:center;gap:12px;">'
+    + '<span class="material-symbols-outlined text-secondary" style="font-size:18px;flex-shrink:0;">description</span>'
+    + '<div style="flex:1;min-width:0;">'
+    + '<p style="' + MONO + 'font-size:12px;font-weight:600;color:#f2f3f5;">' + escHtml(IMPORTED) + '</p>'
+    + '<p style="display:flex;flex-wrap:wrap;gap:2px 12px;margin-top:2px;font-size:11px;">'
+    + '<span style="color:#3ddc84;">✓ ' + of('filled').length + ' filled</span>'
+    + (n ? '<span style="color:#f5a524;">⚠ ' + n + ' need' + (n === 1 ? 's' : '') + ' attention' + (whereText ? ' (' + whereText + ')' : '') + '</span>' : '')
+    + (of('skipped').length ? '<span style="color:#7c818c;">' + of('skipped').length + ' not used</span>' : '')
+    + state + '</p></div>'
+    + importBtn('View details', 'list_alt', 'openImportModal()', false)
+    + importBtn('Replace', 'swap_horiz', "document.getElementById('import-file').click()", false)
+    + '</div>'
+    + (IMPORT_KEPT.length ? '<p style="margin:8px 0 0 30px;font-size:11px;color:#a3a7b1;">Kept your ' + IMPORT_KEPT.join(' and ') + '; the config\'s were not used.</p>' : '')
+    + '</div>';
+  // The popup: what needs attention first, then what was filled, then what was not used.
+  document.getElementById('import-modal-title').textContent = 'What ' + IMPORTED + ' filled in';
+  document.getElementById('import-modal-body').innerHTML = ['check', 'filled', 'skipped'].map(function(level) {
+    var list = of(level);
+    if (!list.length) return '';
+    var lv = IMPORT_LEVEL[level];
+    return '<section><p style="margin-bottom:8px;' + MONO + 'font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#a3a7b1;">' + lv[2] + ' · ' + list.length + '</p>'
+      + '<ul style="display:grid;gap:8px;">' + list.map(function(i) {
+          return '<li style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#f2f3f5;">'
+            + '<span class="material-symbols-outlined sym-fill" style="font-size:14px;color:' + lv[1] + ';flex-shrink:0;margin-top:1px;">' + lv[0] + '</span>'
+            + '<span style="flex:1;line-height:1.45;">' + codeText(i[1]) + '</span>'
+            + '<span style="flex-shrink:0;' + MONO + 'font-size:9px;color:#7c818c;white-space:nowrap;margin-top:1px;">' + importWhere(i[1]) + '</span></li>';
+        }).join('') + '</ul></section>';
+  }).join('');
+}
+function openImportModal()  { document.getElementById('import-modal').style.display = 'flex'; }
+function closeImportModal() { document.getElementById('import-modal').style.display = 'none'; }
+renderImportReport();
+
+addCore('Core1');
+
+function toggleLayer(head) {
+  var block = head.closest('.layer-block');
+  var icon  = head.querySelector('.material-symbols-outlined');
+  var body  = block.querySelector('.layer-body');
+  if (!body) {
+    body = document.createElement('div');
+    body.className = 'layer-body';
+    body.innerHTML = '<div class="groups-container"></div>'
+      + '<button onclick="addGroup(this)" class="add-group-btn"><span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Group</button>'
+      + libPathLink();
+    block.appendChild(body);
+    icon.textContent = 'keyboard_arrow_down';
+    return;
+  }
+  var open = icon.textContent.trim() === 'keyboard_arrow_down';
+  body.style.display = open ? 'none' : '';
+  icon.textContent = open ? 'keyboard_arrow_right' : 'keyboard_arrow_down';
+  block.classList.toggle('collapsed', open);
+}
+function collapseLayer(block) {
+  var body = block.querySelector('.layer-body');
+  if (body) body.style.display = 'none';
+  block.querySelector('.layer-head .material-symbols-outlined').textContent = 'keyboard_arrow_right';
+  block.classList.add('collapsed');
+}
+
+// Lib paths are optional: a link until the layer has one.
+function libPathLink() {
+  return '<button onclick="openLibPaths(this)" class="add-group-btn" style="color:#7c818c;" title="External include paths (-I flags) for this layer.">'
+    + '<span class="material-symbols-outlined" style="font-size:12px;">add</span> Lib path <span style="font-weight:400;">(optional)</span></button>';
+}
+function openLibPaths(btn) {
+  var sec = document.createElement('div');
+  sec.className = 'inc-paths-section';
+  sec.innerHTML = '<div class="inc-paths-row"><div class="inc-paths-label" title="External include paths (-I flags) for this layer.">Lib Paths</div>'
+    + '<div class="inc-paths-content"><div class="ext-paths-list"></div>'
+    + '<button onclick="addExtPath(this)" class="inc-add-btn"><span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle;">add</span> Add path</button>'
+    + '</div></div>';
+  btn.replaceWith(sec);
+  addExtPath(sec.querySelector('.inc-add-btn'));
+}
+
+// A layer's head says what it holds, so it can stay collapsed.
+function refreshLayerSummaries() {
+  document.querySelectorAll('#arch-tree .layer-block').forEach(function(b) {
+    var g = b.querySelectorAll('.tree-group').length, c = b.querySelectorAll('.tree-comp-block').length;
+    var t = '· ' + g + ' group' + (g !== 1 ? 's' : '') + ' · ' + c + ' component' + (c !== 1 ? 's' : '');
+    var s = b.querySelector('.layer-summary');
+    if (s && s.textContent !== t) s.textContent = t;      // unchanged text: no new mutation
+  });
+}
+new MutationObserver(refreshLayerSummaries).observe(document.getElementById('arch-tree'), { childList: true, subtree: true });
+
+// One click removes a whole layer or group: keep it, so it can be undone for a while.
+var LAST_REMOVED = null, _undoTimer = null;
+function removeWithUndo(el, label, assignments) {
+  LAST_REMOVED = { el: el, parent: el.parentNode, next: el.nextSibling, label: label,
+                   assignments: assignments || Object.assign({}, fileAssignments) };
+  el.remove();
+  renderUndo();
+  clearTimeout(_undoTimer);
+  _undoTimer = setTimeout(function() { LAST_REMOVED = null; renderUndo(); }, 10000);
+}
+function undoRemove() {
+  if (!LAST_REMOVED) return;
+  LAST_REMOVED.parent.insertBefore(LAST_REMOVED.el, LAST_REMOVED.next);
+  fileAssignments = LAST_REMOVED.assignments;
+  var empty = document.getElementById('arch-empty');
+  if (empty) empty.style.display = 'none';
+  LAST_REMOVED = null;
+  renderUndo();
+}
+function renderUndo() {
+  var bar = document.getElementById('undo-bar');
+  if (!LAST_REMOVED) { bar.style.display = 'none'; return; }
+  bar.querySelector('.undo-label').textContent = LAST_REMOVED.label;
+  bar.style.display = 'flex';
+}
+function plural(n, w) { return n + ' ' + w + (n !== 1 ? 's' : ''); }
+
+function addGroup(btn) {
+  var block    = btn.closest('.layer-block');
+  var container = block.querySelector('.groups-container');
+  if (!container) return;
+  if (container.querySelector('.inline-add-row')) return;
+  var row = document.createElement('div');
+  row.className = 'inline-add-row';
+  row.innerHTML = '<input class="inline-add-input" type="text" placeholder="Group name…" autocomplete="off">'
+    + '<button class="inline-add-confirm" onclick="confirmAddGroup(this)">Add</button>'
+    + '<button class="inline-add-cancel" onclick="this.closest(\'.inline-add-row\').remove()">'
+    + '<span class="material-symbols-outlined" style="font-size:14px;">close</span></button>';
+  container.appendChild(row);
+  var inp = row.querySelector('.inline-add-input');
+  inp.focus();
+  inp.onkeydown = function(e) {
+    if (e.key === 'Enter') confirmAddGroup(row.querySelector('.inline-add-confirm'));
+    if (e.key === 'Escape') row.remove();
+  };
+}
+
+// A group: its row (toggle, name, remove) and its components, with an Add Component button.
+function groupEl(name) {
+  var grp = document.createElement('div');
+  grp.className = 'tree-group';
+  grp.innerHTML = '<div class="tree-group-row">'
+    + '<button onclick="toggleTreeGroup(this)" class="tree-toggle"><span class="material-symbols-outlined" style="font-size:14px;">keyboard_arrow_down</span></button>'
+    + '<span class="material-symbols-outlined text-secondary" style="font-size:14px;">folder_open</span>'
+    + '<span class="font-label-md text-on-surface flex-1" style="font-size:13px;">' + escHtml(name) + '</span>'
+    + '<button onclick="removeGroup(this)" class="p-1 text-on-surface-variant hover:text-error transition-colors"><span class="material-symbols-outlined" style="font-size:14px;">close</span></button>'
+    + '</div>'
+    + '<div class="tree-children">'
+    + '<button onclick="addComponent(this)" class="add-group-btn" style="padding-left:20px;">'
+    + '<span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Component</button>'
+    + '</div>';
+  return grp;
+}
+
+function confirmAddGroup(btn) {
+  var row  = btn.closest('.inline-add-row');
+  var name = row.querySelector('.inline-add-input').value.trim();
+  if (!name) { row.querySelector('.inline-add-input').focus(); return; }
+  row.replaceWith(groupEl(name));
+}
+
+function removeGroup(btn) {
+  var g = btn.closest('.tree-group');
+  var name = ((g.querySelector('.tree-group-row .flex-1') || {}).textContent || 'group').trim();
+  removeWithUndo(g, 'Removed group ' + name + ' (' + plural(g.querySelectorAll('.tree-comp-block').length, 'component') + ')');
+}
+
+var _compTarget = null;
+var fileAssignments = {}; // { filename: componentName }
+
+function addComponent(btn) {
+  openCompSidebar(btn);
+}
+
+function sidebarFileRowClick(e, row) {
+  if (row.classList.contains('assigned')) return;
+  if (e.target.tagName !== 'INPUT') row.querySelector('input').click();
+}
+
+function openCompSidebar(btn) {
+  _compTarget = btn.closest('.tree-children') || null;
+  var pathEl    = btn.closest('.layer-block') && btn.closest('.layer-block').querySelector('.layer-path-display');
+  var layerPath = (pathEl && !pathEl.classList.contains('empty')) ? pathEl.textContent : '';
+  document.getElementById('sidebar-layer-path').textContent = 'Layer root: ' + (layerPath || '—');
+  document.getElementById('sidebar-comp-name').value = '';
+
+  // Reset all rows, then mark assigned ones as disabled
+  document.querySelectorAll('#comp-sidebar .sidebar-file-row').forEach(function(row) {
+    var fname = row.dataset.filename;
+    var cb    = row.querySelector('.file-cb');
+    var tag   = row.querySelector('.file-owner-tag');
+    var owner = fileAssignments[fname];
+    cb.checked = false; cb.indeterminate = false;
+    if (owner) {
+      cb.disabled = true;
+      row.classList.add('assigned');
+      if (tag) { tag.textContent = owner; tag.style.display = ''; }
+    } else {
+      cb.disabled = false;
+      row.classList.remove('assigned');
+      if (tag) tag.style.display = 'none';
+    }
+  });
+  // Sync folder indeterminate states
+  document.querySelectorAll('#comp-sidebar .folder-cb').forEach(function(cb) { cb.checked = false; cb.indeterminate = false; });
+
+  document.getElementById('sidebar-selected-count').textContent = '0 files selected';
+  document.getElementById('comp-sidebar').classList.remove('hidden');
+  document.getElementById('comp-sidebar-backdrop').classList.remove('hidden');
+  document.getElementById('sidebar-comp-name').focus();
+}
+
+function closeCompSidebar() {
+  document.getElementById('comp-sidebar').classList.add('hidden');
+  document.getElementById('comp-sidebar-backdrop').classList.add('hidden');
+  _compTarget = null;
+}
+
+// A component: its row (toggle, name, remove) and its files or folders. An imported config lists
+// dozens of components, so those start collapsed.
+function componentEl(name, files, collapsed) {
+  var open = files.length > 0 && !collapsed;
+  var block = document.createElement('div');
+  block.className = 'tree-comp-block';
+  block.dataset.compName = name;
+  block.innerHTML = '<div class="tree-comp-row">'
+    + '<button onclick="toggleCompFiles(this)" class="tree-toggle">'
+    + '<span class="material-symbols-outlined" style="font-size:13px;">' + (open ? 'keyboard_arrow_down' : 'keyboard_arrow_right') + '</span></button>'
+    + '<span class="material-symbols-outlined text-secondary" style="font-size:13px;opacity:.6;">folder</span>'
+    + '<span class="font-label-md text-on-surface flex-1" style="font-size:13px;">' + escHtml(name) + '</span>'
+    + (collapsed && files.length ? '<span class="font-label-sm text-label-sm text-on-surface-variant" style="margin-right:4px;">' + files.length + (files.length === 1 ? ' path' : ' paths') + '</span>' : '')
+    + '<button onclick="removeComponent(this)" class="p-1 text-on-surface-variant hover:text-error transition-colors">'
+    + '<span class="material-symbols-outlined" style="font-size:13px;">close</span></button>'
+    + '</div>'
+    + '<div class="comp-files' + (open ? '' : ' hidden') + '">'
+    + files.map(function(f) {
+        return '<div class="file-row" data-filename="' + escHtml(f) + '">'
+          + '<span class="material-symbols-outlined" style="font-size:12px;color:#6b707c;">' + (/\.[a-z]+$/i.test(f) ? 'description' : 'folder') + '</span>'
+          + escHtml(f) + '</div>';
+      }).join('')
+    + '</div>';
+  return block;
+}
+
+function confirmAddComponent() {
+  var name = document.getElementById('sidebar-comp-name').value.trim();
+  if (!name) { document.getElementById('sidebar-comp-name').focus(); return; }
+
+  var files = Array.from(document.querySelectorAll('#comp-sidebar .file-cb:checked')).map(function(cb) {
+    var row = cb.closest('.sidebar-file-row');
+    return row ? row.dataset.filename : '';
+  }).filter(Boolean);
+
+  // Register file assignments
+  files.forEach(function(f) { fileAssignments[f] = name; });
+
+  var block = componentEl(name, files, false);
+  if (_compTarget) {
+    var addBtn = _compTarget.querySelector('.add-group-btn');
+    if (addBtn) _compTarget.insertBefore(block, addBtn);
+    else _compTarget.appendChild(block);
+  }
+  closeCompSidebar();
+}
+
+function removeComponent(btn) {
+  var block = btn.closest('.tree-comp-block');
+  var before = Object.assign({}, fileAssignments);
+  // Unregister all files owned by this component
+  block.querySelectorAll('.file-row[data-filename]').forEach(function(row) {
+    delete fileAssignments[row.dataset.filename];
+  });
+  removeWithUndo(block, 'Removed component ' + (block.dataset.compName || ''), before);
+}
+
+function toggleCompFiles(btn) {
+  var block = btn.closest('.tree-comp-block');
+  var files = block.querySelector('.comp-files');
+  var icon  = btn.querySelector('.material-symbols-outlined');
+  var open  = icon.textContent.trim() === 'keyboard_arrow_down';
+  files.classList.toggle('hidden', open);
+  icon.textContent = open ? 'keyboard_arrow_right' : 'keyboard_arrow_down';
+}
+
+function updateSidebarCount() {
+  var count = document.querySelectorAll('#comp-sidebar .file-cb:checked').length;
+  document.getElementById('sidebar-selected-count').textContent = count + ' file' + (count !== 1 ? 's' : '') + ' selected';
+}
+
+function syncFolderCb(block) {
+  var cb = block.querySelector(':scope > .sidebar-folder-row > .folder-cb');
+  if (!cb) return;
+  var fileCbs = Array.from(block.querySelectorAll('.file-cb'));
+  var checked = fileCbs.filter(function(c) { return c.checked; }).length;
+  cb.indeterminate = checked > 0 && checked < fileCbs.length;
+  cb.checked = checked === fileCbs.length && fileCbs.length > 0;
+}
+
+function sidebarToggleFile(cb) {
+  updateSidebarCount();
+  var block = cb.closest('.sidebar-folder-block');
+  while (block) {
+    syncFolderCb(block);
+    var parent = block.parentElement;
+    block = parent ? parent.closest('.sidebar-folder-block') : null;
+  }
+}
+
+function sidebarToggleFolder(cb) {
+  var block    = cb.closest('.sidebar-folder-block');
+  var children = block.querySelector('.sidebar-folder-children');
+  block.querySelectorAll('.file-cb, .folder-cb').forEach(function(c) {
+    if (c !== cb) { c.checked = cb.checked; c.indeterminate = false; }
+  });
+  if (cb.checked && children.classList.contains('hidden')) {
+    children.classList.remove('hidden');
+    var icon       = block.querySelector(':scope > .sidebar-folder-row .tree-toggle .material-symbols-outlined');
+    var folderIcon = block.querySelector(':scope > .sidebar-folder-row .material-symbols-outlined:not(.tree-toggle .material-symbols-outlined)');
+    if (icon) icon.textContent = 'keyboard_arrow_down';
+    if (folderIcon) folderIcon.textContent = 'folder_open';
+  }
+  updateSidebarCount();
+  var parentBlock = block.parentElement ? block.parentElement.closest('.sidebar-folder-block') : null;
+  if (parentBlock) syncFolderCb(parentBlock);
+}
+
+function toggleSidebarFolder(btn) {
+  var block    = btn.closest('.sidebar-folder-block');
+  var children = block.querySelector('.sidebar-folder-children');
+  var icon     = btn.querySelector('.material-symbols-outlined');
+  if (!children) return;
+  children.classList.toggle('hidden');
+  var open = !children.classList.contains('hidden');
+  icon.textContent = open ? 'keyboard_arrow_down' : 'keyboard_arrow_right';
+  var folderIcon = btn.parentElement.querySelectorAll('.material-symbols-outlined')[2];
+  if (folderIcon) folderIcon.textContent = open ? 'folder_open' : 'folder';
+}
+
+function toggleTreeGroup(btn) {
+  var group    = btn.closest('.tree-group');
+  var children = group.querySelector('.tree-children');
+  var icon     = btn.querySelector('.material-symbols-outlined');
+  var folderIcon = btn.closest('.tree-group-row').querySelectorAll('.material-symbols-outlined')[1];
+  var open     = icon.textContent.trim() === 'keyboard_arrow_down';
+  children.style.display = open ? 'none' : '';
+  icon.textContent = open ? 'keyboard_arrow_right' : 'keyboard_arrow_down';
+  if (folderIcon) folderIcon.textContent = open ? 'folder' : 'folder_open';
+}
+
+function showAddLayer() {
+  refreshLayerCoreSelects();
+  document.getElementById('add-layer-row').classList.remove('hidden');
+  document.getElementById('new-layer-name').focus();
+}
+function cancelAddLayer() {
+  document.getElementById('add-layer-row').classList.add('hidden');
+  document.getElementById('new-layer-name').value = '';
+  document.getElementById('new-layer-path').value = '';
+}
+function removeLayer(btn) {
+  var b = btn.closest('.layer-block');
+  var name = (b.querySelector('.layer-head .font-bold') || {}).textContent || 'layer';
+  removeWithUndo(b, 'Removed layer ' + name + ' (' + plural(b.querySelectorAll('.tree-comp-block').length, 'component') + ')');
+  if (!document.querySelector('#arch-tree .layer-block')) {
+    var empty = document.getElementById('arch-empty');
+    if (empty) empty.style.display = '';
+  }
+}
+// A layer: its head (name, root path, core, remove) and body (groups, lib paths).
+function layerEl(name, path, coreId) {
+  var block = document.createElement('div');
+  block.className = 'layer-block';
+  block.innerHTML = '<div class="layer-head" onclick="toggleLayer(this)">'
+    + '<span class="material-symbols-outlined" style="font-size:15px;color:#a3a7b1;">keyboard_arrow_down</span>'
+    + '<div class="flex-1 min-w-0">'
+    + '<div class="font-label-md font-bold text-on-surface" style="font-size:13px;line-height:1.3;">' + escHtml(name) + '</div>'
+    + '<div style="display:flex;align-items:baseline;gap:6px;min-width:0;">'
+    + '<span class="layer-path-display' + (path ? '' : ' empty') + '" onclick="event.stopPropagation();startEditPath(this)">' + (path ? escHtml(path) : 'Set root path…') + '</span>'
+    + '<span class="layer-summary" style="font-family:\'SamsungOne\',\'Roboto\',sans-serif;font-size:11px;color:#7c818c;white-space:nowrap;"></span>'
+    + '</div>'
+    + '</div>'
+    + '<label class="layer-core" onclick="event.stopPropagation()">Core'
+    + '<select class="layer-core-select">' + coreOptions(coreId) + '</select></label>'
+    + '<button onclick="event.stopPropagation();removeLayer(this);" class="p-1 text-on-surface-variant hover:text-error transition-colors"><span class="material-symbols-outlined" style="font-size:15px;">close</span></button>'
+    + '</div>'
+    + '<div class="layer-body">'
+    + '<div class="groups-container"></div>'
+    + '<button onclick="addGroup(this)" class="add-group-btn"><span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Group</button>'
+    + libPathLink()
+    + '</div>';
+  return block;
+}
+
+function confirmAddLayer() {
+  var name = document.getElementById('new-layer-name').value.trim().toUpperCase().replace(/\s+/g,'_');
+  var path = document.getElementById('new-layer-path').value.trim();
+  var coreId = document.getElementById('new-layer-core').value;
+  if (!name) { document.getElementById('new-layer-name').focus(); return; }
+  var empty = document.getElementById('arch-empty');
+  if (empty) empty.style.display = 'none';
+  document.getElementById('arch-tree').appendChild(layerEl(name, path, coreId));
+  cancelAddLayer();
+}
+
+function startEditPath(span) {
+  var val = span.classList.contains('empty') ? '' : span.textContent;
+
+  // Wrapper: input + browse icon
+  var wrap = document.createElement('span');
+  wrap.style.cssText = 'display:flex;align-items:center;gap:4px;';
+  wrap.onclick = function(e) { e.stopPropagation(); };
+
+  var inp = document.createElement('input');
+  inp.className = 'layer-path-input';
+  inp.style.flex = '1';
+  inp.type = 'text'; inp.value = val; inp.placeholder = 'root path';
+  inp.onkeydown = function(e) { if (e.key === 'Enter' || e.key === 'Escape') commitPath(); };
+
+  var browseBtn = document.createElement('button');
+  browseBtn.type = 'button';
+  browseBtn.title = 'Browse folder';
+  browseBtn.style.cssText = 'flex-shrink:0;background:none;border:none;cursor:pointer;color:#1d7bff;padding:0;display:flex;align-items:center;';
+  browseBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:13px;">folder_open</span>';
+  browseBtn.onclick = function(e) {
+    e.stopPropagation();
+    openFolderPicker(inp); // pass the input element directly
+  };
+
+  function commitPath() {
+    var v = inp.value.trim();
+    span.textContent = v || 'Set root path…';
+    span.classList.toggle('empty', !v);
+    wrap.replaceWith(span);
+  }
+
+  inp.onblur = function() { setTimeout(commitPath, 150); };
+
+  wrap.appendChild(inp);
+  wrap.appendChild(browseBtn);
+  span.replaceWith(wrap);
+  inp.focus(); inp.select();
+}
+
+function addExtPath(btn) {
+  var list = btn.closest('.inc-paths-section').querySelector('.ext-paths-list');
+  if (!list) return;
+  var row = document.createElement('div');
+  row.className = 'ext-path-row';
+  row.innerHTML = '<span class="material-symbols-outlined" style="font-size:13px;color:#3ddc84;flex-shrink:0;">folder_open</span>'
+    + '<input class="ext-path-input" type="text" placeholder="/path/to/include">'
+    + '<button type="button" class="ext-browse-btn" onclick="openFolderPicker(this.closest(\'.ext-path-row\').querySelector(\'.ext-path-input\'))">'
+    + '<span class="material-symbols-outlined" style="font-size:11px;">folder_open</span>BROWSE</button>'
+    + '<button onclick="removeExtPath(this)" style="display:flex;align-items:center;background:none;border:none;cursor:pointer;padding:0;color:#7c818c;" onmouseover="this.style.color=\'#ff4d5a\'" onmouseout="this.style.color=\'#7c818c\'">'
+    + '<span class="material-symbols-outlined" style="font-size:13px;line-height:1;">close</span></button>';
+  list.appendChild(row);
+  row.querySelector('.ext-path-input').focus();
+}
+function removeExtPath(btn) { btn.closest('.ext-path-row').remove(); }
+
+// ════════════════════════════════════════
+// Step 4: Team members
+// ════════════════════════════════════════
+var members = []; // { email: string, role: 'Admin'|'Developer' }
+
+function openAddMember() {
+  document.getElementById('add-member-collapsed').classList.add('hidden');
+  document.getElementById('add-member-form').classList.remove('hidden');
+  document.getElementById('member-search').focus();
+}
+
+function closeAddMember() {
+  document.getElementById('add-member-form').classList.add('hidden');
+  document.getElementById('add-member-collapsed').classList.remove('hidden');
+  document.getElementById('member-search').value = '';
+  document.getElementById('invite-role-select').value = 'Developer';
+  memberSearchClose();
+}
+
+function addMember() {
+  var inp   = document.getElementById('invite-email-input');
+  var email = (inp.value || '').trim().toLowerCase();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    inp.classList.add('err'); inp.focus(); return;
+  }
+  inp.classList.remove('err');
+  if (members.some(function(m) { return m.email === email; })) {
+    inp.value = ''; closeAddMember(); return;
+  }
+  var role = document.getElementById('invite-role-select').value;
+  members.push({ email: email, role: role });
+  closeAddMember();
+  renderMemberList();
+}
+
+function setMemberRole(email, role) {
+  var m = members.find(function(m) { return m.email === email; });
+  if (m) { m.role = role; renderMemberList(); }
+}
+
+function removeMember(email) {
+  members = members.filter(function(m) { return m.email !== email; });
+  renderMemberList();
+}
+
+// Simulated existing users in the org
+var KNOWN_USERS = [
+  { name: 'Alex Chen',      email: 'alex.chen@company.com' },
+  { name: 'Priya Sharma',   email: 'priya.sharma@company.com' },
+  { name: 'Marcus Bauer',   email: 'marcus.bauer@company.com' },
+  { name: 'Sophie Dubois',  email: 'sophie.dubois@company.com' },
+  { name: 'Raj Patel',      email: 'raj.patel@company.com' },
+  { name: 'Lena Fischer',   email: 'lena.fischer@company.com' },
+];
+
+var memberSearchFocusIdx = -1;
+
+function memberSearchOpen() {
+  memberSearchFilter(document.getElementById('member-search').value);
+}
+
+function memberSearchClose() {
+  document.getElementById('member-search-dd').style.display = 'none';
+  memberSearchFocusIdx = -1;
+}
+
+function memberSearchFilter(q) {
+  var dd  = document.getElementById('member-search-dd');
+  var raw = (q || '').trim();
+  var ql  = raw.toLowerCase();
+
+  var alreadyAdded = members.map(function(m) { return m.email; });
+  alreadyAdded.push('emma.lewis@company.com'); // self
+
+  var matches = ql
+    ? KNOWN_USERS.filter(function(u) {
+        return !alreadyAdded.includes(u.email) &&
+               (u.name.toLowerCase().includes(ql) || u.email.toLowerCase().includes(ql));
+      })
+    : KNOWN_USERS.filter(function(u) { return !alreadyAdded.includes(u.email); });
+
+  memberSearchFocusIdx = -1;
+  var html = matches.map(function(u, i) {
+    var ini = (u.name.split(' ').map(function(p) { return p[0]; }).join('').slice(0,2)).toUpperCase();
+    // Use single-quoted attribute so JSON.stringify double quotes don't break HTML
+    return "<div class='ms-item' data-idx='" + i + "'"
+      + " onmousedown='memberSearchSelect(" + JSON.stringify(u.email) + "," + JSON.stringify(u.name) + ")'>"
+      + '<div class="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center flex-shrink-0" style="font-family:Roboto;font-size:10px;font-weight:700;color:#1d7bff;">' + ini + '</div>'
+      + '<div class="flex-1 min-w-0">'
+      + '<p style="font-size:13px;color:#f2f3f5;line-height:1.3;">' + escHtml(u.name) + '</p>'
+      + '<p style="font-size:11px;color:#7c818c;font-family:\'JetBrains Mono\',monospace;">' + escHtml(u.email) + '</p>'
+      + '</div></div>';
+  }).join('');
+
+  // Invite-by-email fallback when no exact match and input looks like email
+  var isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw);
+  var exactMatch = KNOWN_USERS.some(function(u) { return u.email.toLowerCase() === ql; });
+  if (raw && isEmail && !exactMatch && !alreadyAdded.includes(raw.toLowerCase())) {
+    html += "<div class='ms-item ms-invite' onmousedown='memberSearchSelect(" + JSON.stringify(raw.toLowerCase()) + ", null)'>"
+      + '<span class="material-symbols-outlined" style="font-size:16px;color:#3ddc84;flex-shrink:0;">mail</span>'
+      + '<div class="flex-1 min-w-0">'
+      + '<p style="font-size:13px;color:#f2f3f5;">Send invite to <strong>' + escHtml(raw) + '</strong></p>'
+      + '<p style="font-size:11px;color:#7c818c;">Not yet in the organisation</p>'
+      + '</div></div>';
+  }
+
+  if (!html) {
+    html = '<p style="padding:10px 12px;font-size:12px;color:#7c818c;">No matches — type a full email to invite</p>';
+  }
+
+  dd.innerHTML = html;
+  dd.style.display = 'block';
+}
+
+function memberSearchSelect(email, name) {
+  var role = document.getElementById('invite-role-select').value;
+  var pending = !name; // no name means invite-by-email
+  if (!members.some(function(m) { return m.email === email; })) {
+    members.push({ name: name, email: email, role: role, pending: pending });
+    renderMemberList();
+  }
+  document.getElementById('member-search').value = '';
+  memberSearchClose();
+  closeAddMember();
+}
+
+function memberSearchKey(e) {
+  var dd    = document.getElementById('member-search-dd');
+  var items = dd.querySelectorAll('.ms-item');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    memberSearchFocusIdx = Math.min(memberSearchFocusIdx + 1, items.length - 1);
+    items.forEach(function(el, i) { el.classList.toggle('focused', i === memberSearchFocusIdx); });
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    memberSearchFocusIdx = Math.max(memberSearchFocusIdx - 1, 0);
+    items.forEach(function(el, i) { el.classList.toggle('focused', i === memberSearchFocusIdx); });
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (memberSearchFocusIdx >= 0 && items[memberSearchFocusIdx]) {
+      items[memberSearchFocusIdx].dispatchEvent(new MouseEvent('mousedown'));
+    }
+  } else if (e.key === 'Escape') {
+    closeAddMember();
+  }
+}
+
+function nameInitials(m) {
+  if (m.name) {
+    return m.name.split(' ').map(function(p) { return p[0]; }).join('').slice(0,2).toUpperCase();
+  }
+  var parts = m.email.split('@')[0].split(/[\._\-]/);
+  return (parts.length >= 2 ? parts[0][0] + parts[1][0] : m.email.slice(0,2)).toUpperCase();
+}
+
+function renderMemberList() {
+  if (cur === 4) setTimeout(renderStepState, 0);
+  var list = document.getElementById('member-list');
+  if (!members.length) { list.innerHTML = ''; return; }
+  list.innerHTML = members.map(function(m) {
+    var ini     = nameInitials(m);
+    var isAdmin = m.role === 'Admin';
+    var avatarBg  = isAdmin ? '#26282e' : '#1b2a45';
+    var avatarClr = isAdmin ? '#8a8f9c' : '#1d7bff';
+    var label     = m.name || m.email;
+    var sub       = m.pending
+      ? (m.name ? m.email + ' · Invite pending' : 'Invite pending')
+      : m.email;
+    return '<div class="flex items-center gap-3 py-2.5 border-t border-outline-variant">'
+      + '<div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:' + avatarBg + ';">'
+      + '<span style="font-family:Roboto;font-size:11px;font-weight:700;color:' + avatarClr + ';">' + escHtml(ini) + '</span></div>'
+      + '<div class="flex-1 min-w-0">'
+      + '<p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">' + escHtml(label) + '</p>'
+      + '<p class="font-label-sm text-label-sm text-on-surface-variant truncate" style="font-size:10px;">' + escHtml(sub) + '</p>'
+      + '</div>'
+      + '<div style="width:120px;flex-shrink:0;">'
+      + '<select onchange="setMemberRole(' + JSON.stringify(m.email) + ', this.value)" '
+      + 'style="font-family:\'JetBrains Mono\';font-size:10px;font-weight:600;letter-spacing:.04em;padding:3px 6px;border:1px solid #2c2f37;border-radius:4px;background:#1c1e23;color:#f2f3f5;outline:none;width:100%;">'
+      + '<option value="Developer"' + (m.role === 'Developer' ? ' selected' : '') + '>Developer</option>'
+      + '<option value="Admin"' + (m.role === 'Admin' ? ' selected' : '') + '>Admin</option>'
+      + '</select>'
+      + '</div>'
+      + '<div style="width:24px;flex-shrink:0;">'
+      + '<button onclick="removeMember(' + JSON.stringify(m.email) + ')" class="text-on-surface-variant hover:text-error transition-colors">'
+      + '<span class="material-symbols-outlined" style="font-size:16px;">close</span></button>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ════════════════════════════════════════
+// Step 6: Review
+// ════════════════════════════════════════
+function rTeamRow(name, email, role, pending, isYou) {
+  var displayName = name || email;
+  var initials = displayName.split(' ').map(function(w) { return w[0] || ''; }).join('').substring(0, 2).toUpperCase();
+  var avatarBg  = role === 'Admin' ? '#26282e' : '#1d7bff';
+  var roleBg    = role === 'Admin' ? '#26282e' : '#1b2a45';
+  var roleColor = role === 'Admin' ? '#8a8f9c' : '#1d7bff';
+  return '<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid #1b2638;">'
+    + '<div style="width:30px;height:30px;border-radius:50%;background:' + avatarBg + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;">'
+    + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;font-weight:700;color:#fff;letter-spacing:.04em;">' + initials + '</span>'
+    + '</div>'
+    + '<div style="flex:1;min-width:0;">'
+    + '<div style="font-family:Roboto,sans-serif;font-size:12px;font-weight:500;color:#f2f3f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+    + escHtml(displayName) + (isYou ? ' <span style="color:#7c818c;font-weight:400;">(you)</span>' : '') + '</div>'
+    + '<div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#7c818c;margin-top:1px;">' + escHtml(email) + '</div>'
+    + '</div>'
+    + '<span style="flex-shrink:0;font-family:\'JetBrains Mono\',monospace;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:3px;background:' + roleBg + ';color:' + roleColor + ';">' + escHtml(role) + '</span>'
+    + (pending ? '<span style="flex-shrink:0;font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#7c818c;background:#0e0f12;border:1px solid #2c2f37;padding:2px 6px;border-radius:3px;margin-left:4px;">Invited</span>' : '')
+    + '</div>';
+}
+
+// Step 5, first: is the project ready - `error` blocks creating it, `warn` is what it would miss.
+function renderReadiness(items) {
+  var errors = items.filter(function(i) { return i[0] === 'error'; }).length;
+  var warns  = items.filter(function(i) { return i[0] === 'warn'; }).length;
+  var LOOK = { ok: ['check_circle', '#3ddc84'], warn: ['error', '#f5a524'], error: ['cancel', '#ff4d5a'] };
+  var MONO = 'font-family:\'SamsungOne\',\'Roboto\',sans-serif;';
+  document.getElementById('r-ready').innerHTML = '<div style="border:1px solid ' + (errors ? '#ff4d5a' : '#2c2f37') + ';border-radius:.75rem;background:#1c1e23;overflow:hidden;">'
+    + '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #2c2f37;background:' + (errors ? '#3a1d21' : '#132a1f') + ';">'
+    + '<span class="material-symbols-outlined sym-fill" style="font-size:18px;color:' + (errors ? '#ff4d5a' : '#3ddc84') + ';">' + (errors ? 'block' : 'rocket_launch') + '</span>'
+    + '<div><p style="font-size:14px;font-weight:600;color:' + (errors ? '#ff8a93' : '#f2f3f5') + ';">'
+    + (errors ? (errors === 1 ? 'One thing' : errors + ' things') + ' to fix before the project can be created' : 'Ready to create') + '</p>'
+    + (warns ? '<p style="font-size:11px;color:#a3a7b1;margin-top:2px;">' + (warns === 1 ? 'One thing' : warns + ' things') + ' it would miss - fine to create now and fix later.</p>' : '')
+    + '</div></div>'
+    + items.map(function(i) {
+        var lk = LOOK[i[0]];
+        return '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 16px;border-top:1px solid #1b2638;">'
+          + '<span class="material-symbols-outlined sym-fill" style="font-size:16px;color:' + lk[1] + ';flex-shrink:0;margin-top:1px;">' + lk[0] + '</span>'
+          + '<div style="flex:1;min-width:0;"><p style="font-size:12px;color:#f2f3f5;">' + escHtml(i[1]) + '</p>'
+          + (i[2] ? '<p style="font-size:11px;color:#a3a7b1;margin-top:2px;">' + codeText(i[2]) + '</p>' : '') + '</div>'
+          + (i[3] && i[0] !== 'ok' ? '<button onclick="goToStep(' + i[3] + ')" style="flex-shrink:0;background:none;border:none;cursor:pointer;' + MONO + 'font-size:11px;font-weight:600;color:#1d7bff;">Fix in step ' + i[3] + '</button>' : '')
+          + '</div>';
+      }).join('')
+    + '</div>';
+}
+
+function populateReview() {
+  // ── Readiness ──
+  var ready = [];
+  var s1 = issuesFor(1), s2 = issuesFor(2), s3 = issuesFor(3);
+  var nLayers = document.querySelectorAll('#arch-tree .layer-block').length;
+  var nComps = document.querySelectorAll('#arch-tree .tree-comp-block').length;
+  ready.push(s1.length ? ['error', 'Project and repository', s1.join(' · '), 1]
+    : ['ok', 'Repository connected · branch ' + (document.getElementById('s1-branch').value || 'main')]);
+  ready.push(s3.length ? ['error', 'Architecture', s3.join(' · '), 3] : ['ok', plural(nLayers, 'layer') + ', ' + plural(nComps, 'component')]);
+  ready.push(s2.length ? ['error', 'Cores', s2.join(' · '), 2]
+    : CORES.length ? ['ok', plural(CORES.length, 'core') + ': ' + CORES.map(function(c) { return c.name; }).join(', ')]
+      : ['warn', 'No cores', 'Every layer is parsed without macros or a data dictionary.', 2]);
+  var pending = [], pendingMacros = {};
+  CORES.forEach(function(c) {
+    var e = c.expected || {};
+    ['macroFile', 'ddFile', 'ccFile'].forEach(function(k) {
+      if (e[k] && !c[k]) { pending.push(c.name + ': ' + e[k]); if (k === 'macroFile') pendingMacros[c.id] = true; }
+    });
+  });
+  if (pending.length) ready.push(['warn', plural(pending.length, 'file') + ' the config names ' + (pending.length === 1 ? 'is' : 'are') + ' not uploaded', pending.join(' · '), 2]);
+  var noMacros = CORES.filter(function(c) {
+    return !pendingMacros[c.id] && (c.macroMode === 'manual' ? !c.macroText.trim() : !c.macroFile);
+  }).map(function(c) { return c.name; });
+  if (noMacros.length) ready.push(['warn', noMacros.join(', ') + ': no macros', 'Its layers parse without their -D flags, so #if branches may be read the wrong way.', 2]);
+  var noCore = CORES.length ? layersUsing('') : [];
+  if (noCore.length) ready.push(['warn', noCore.join(', ') + ': no core', 'Parsed without macros or a data dictionary.', 3]);
+  ready.push(['ok', members.length ? 'You and ' + plural(members.length, 'member') : 'Just you - people can be added later from Team']);
+  renderReadiness(ready);
+
+  // ── Project & Repository ──
+  document.getElementById('r-name').textContent   = document.getElementById('s1-name').value || '—';
+  document.getElementById('r-repo').textContent   = document.getElementById('s1-repo').value || '—';
+  document.getElementById('r-repo-label').textContent = REPO_SOURCE === 'local' ? 'Repository folder' : 'Repository URL';
+  document.getElementById('r-branch').textContent = document.getElementById('s1-branch').value || '—';
+  var tok = document.getElementById('s1-token').value;
+  document.getElementById('r-token').textContent  = tok ? '••••••••' : 'Not set';
+
+  // ── Cores ──
+  var mono = 'font-family:\'SamsungOne\',\'Roboto\',sans-serif;';
+  var coreRows = CORES.map(function(c) {
+    var typed = c.macroText.split('\n').map(function(l) { return l.trim(); }).filter(Boolean).length;
+    var macros = c.macroMode === 'manual' ? typed + ' typed' : (c.macroFile ? c.macroFile.name : 'no macros');
+    var used = layersUsing(c.id);
+    return '<div style="padding:10px 16px;border-bottom:1px solid #1b2638;">'
+      + '<div style="display:flex;align-items:center;gap:6px;">'
+      + '<span class="material-symbols-outlined text-secondary" style="font-size:14px;">memory</span>'
+      + '<span style="' + mono + 'font-size:11px;font-weight:700;color:#f2f3f5;">' + escHtml(c.name) + '</span>'
+      + '<span style="margin-left:auto;' + mono + 'font-size:10px;color:' + (used.length ? '#a3a7b1' : '#f5a524') + ';">'
+      + (used.length ? 'used by ' + used.map(escHtml).join(', ') : 'no layer uses it') + '</span></div>'
+      + '<div style="margin:4px 0 0 20px;' + mono + 'font-size:10px;color:#7c818c;">'
+      + escHtml(macros) + ' · ' + escHtml(c.ddFile ? c.ddFile.name : 'no dictionary') + ' · '
+      + escHtml(c.ccFile ? c.ccFile.name : 'no compile commands') + '</div></div>';
+  }).join('');
+  var noCore = layersUsing('');
+  if (noCore.length) {
+    coreRows += '<div style="padding:10px 16px;' + mono + 'font-size:10px;color:#7c818c;">No core: '
+      + noCore.map(escHtml).join(', ') + '</div>';
+  }
+  document.getElementById('r-cores').innerHTML = coreRows
+    || '<div style="padding:12px 16px;' + mono + 'font-size:11px;color:#7c818c;">No cores</div>';
+
+  // ── Architecture ──
+  var layers = document.querySelectorAll('#arch-tree .layer-block');
+  var totalComps = 0;
+  layers.forEach(function(b) { totalComps += b.querySelectorAll('.tree-comp-block').length; });
+  document.getElementById('r-layers').textContent = layers.length + ' layer' + (layers.length !== 1 ? 's' : '')
+    + ' · ' + totalComps + ' component' + (totalComps !== 1 ? 's' : '');
+
+  var archOut = document.getElementById('r-arch-tree');
+  var rows = '';
+  layers.forEach(function(block) {
+    var lName  = (block.querySelector('.layer-head .font-bold') || {}).textContent || '—';
+    var pathEl = block.querySelector('.layer-path-display');
+    var lPath  = (pathEl && !pathEl.classList.contains('empty')) ? pathEl.textContent.trim() : null;
+    var groups = block.querySelectorAll('.tree-group');
+    var coreSel = block.querySelector('.layer-core-select');
+    var core    = coreSel ? coreById(coreSel.value) : null;
+
+    rows += '<div style="padding:10px 16px;">';
+    // Layer row
+    rows += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">'
+      + '<span class="material-symbols-outlined text-secondary" style="font-size:14px;">layers</span>'
+      + '<span style="font-family:\'SamsungOne\',\'Roboto\',sans-serif;font-size:11px;font-weight:700;color:#f2f3f5;">' + escHtml(lName) + '</span>'
+      + (lPath ? '<span style="font-family:\'SamsungOne\',\'Roboto\',sans-serif;font-size:9px;color:#7c818c;margin-left:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escHtml(lPath) + '</span>' : '')
+      + '<span style="margin-left:auto;font-family:\'SamsungOne\',\'Roboto\',sans-serif;font-size:9px;font-weight:600;padding:2px 7px;border-radius:3px;'
+      + (core ? 'background:#1b2a45;color:#1d7bff;">' + escHtml(core.name) : 'background:#26282e;color:#7c818c;">no core') + '</span>'
+      + '</div>';
+
+    // Lib paths for this layer
+    var libPaths = Array.from(block.querySelectorAll('.ext-paths-list .ext-path-row .ext-path-input'))
+      .map(function(inp) { return inp.value.trim(); }).filter(Boolean);
+    if (libPaths.length) {
+      rows += '<div style="display:flex;align-items:center;gap:4px;margin-left:16px;margin-bottom:4px;flex-wrap:wrap;gap:4px;">';
+      libPaths.forEach(function(p) {
+        rows += '<span style="display:inline-flex;align-items:center;gap:3px;background:#132a1f;border:1px solid rgba(61,220,132,0.26);border-radius:4px;padding:2px 7px;font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#3ddc84;">'
+          + '<span class="material-symbols-outlined" style="font-size:10px;color:#3ddc84;">folder</span>' + escHtml(p) + '</span>';
+      });
+      rows += '</div>';
+    }
+
+    if (!groups.length) {
+      rows += '<div style="margin-left:20px;font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#7c818c;">No groups defined</div>';
+    }
+
+    groups.forEach(function(group) {
+      var gNameEl = group.querySelector('.tree-group-row .flex-1');
+      var gName   = gNameEl ? gNameEl.textContent.trim() : '—';
+      var comps   = group.querySelectorAll('.tree-comp-block');
+
+      // Group row
+      rows += '<div style="margin-left:16px;border-left:2px solid #1b2a45;padding-left:8px;margin-top:4px;">';
+      rows += '<div style="display:flex;align-items:center;gap:5px;padding:3px 0;">'
+        + '<span class="material-symbols-outlined text-secondary" style="font-size:13px;">folder_open</span>'
+        + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;font-weight:600;color:#f2f3f5;">' + escHtml(gName) + '</span>'
+        + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#7c818c;margin-left:4px;">' + comps.length + ' comp' + (comps.length !== 1 ? 's' : '') + '</span>'
+        + '</div>';
+
+      if (!comps.length) {
+        rows += '<div style="margin-left:18px;font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#6b707c;padding:2px 0;">No components</div>';
+      }
+
+      comps.forEach(function(comp) {
+        var cName = comp.dataset.compName || '—';
+        var files = Array.from(comp.querySelectorAll('.file-row[data-filename]')).map(function(r) { return r.dataset.filename; });
+
+        // Component row
+        rows += '<div style="margin-left:16px;border-left:2px solid #1b2638;padding-left:8px;margin-top:3px;">';
+        rows += '<div style="display:flex;align-items:center;gap:5px;padding:2px 0;">'
+          + '<span class="material-symbols-outlined" style="font-size:12px;color:#1d7bff;opacity:.75;">folder</span>'
+          + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#f2f3f5;">' + escHtml(cName) + '</span>'
+          + (files.length ? '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#1d7bff;background:#1b2a45;padding:1px 5px;border-radius:3px;margin-left:4px;">' + files.length + ' file' + (files.length !== 1 ? 's' : '') + '</span>' : '')
+          + '</div>';
+
+        // File rows
+        files.forEach(function(f) {
+          rows += '<div style="margin-left:18px;display:flex;align-items:center;gap:4px;padding:1px 0;">'
+            + '<span class="material-symbols-outlined" style="font-size:11px;color:#6b707c;">description</span>'
+            + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#a3a7b1;">' + escHtml(f) + '</span>'
+            + '</div>';
+        });
+        rows += '</div>';
+      });
+      rows += '</div>';
+    });
+    rows += '</div>';
+  });
+  archOut.innerHTML = rows || '<p style="padding:12px 16px;font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#7c818c;">No layers defined.</p>';
+
+  // ── Team ──
+  var adminCount = 1 + members.filter(function(m) { return m.role === 'Admin'; }).length;
+  var devCount   = members.filter(function(m) { return m.role === 'Developer'; }).length;
+  var total      = 1 + members.length;
+  var teamParts  = [total + ' member' + (total !== 1 ? 's' : '')];
+  if (adminCount) teamParts.push(adminCount + ' admin' + (adminCount !== 1 ? 's' : ''));
+  if (devCount)   teamParts.push(devCount + ' developer' + (devCount !== 1 ? 's' : ''));
+  document.getElementById('r-team').textContent = teamParts.join(' · ');
+
+  var teamHtml = rTeamRow('Emma Lewis', 'emma.lewis@company.com', 'Admin', false, true);
+  members.forEach(function(m) {
+    teamHtml += rTeamRow(m.name, m.email, m.role, m.pending, false);
+  });
+  document.getElementById('r-team-list').innerHTML = teamHtml;
+}
+
+// ════════════════════════════════════════
+// Initialize project
+// ════════════════════════════════════════
+function initProject() {
+  var overlay = document.getElementById('init-overlay');
+  overlay.classList.add('show');
+  var bar  = document.getElementById('init-bar');
+  var pct  = document.getElementById('init-pct');
+  var sub  = document.getElementById('init-sub');
+  var seq  = [
+    [15, 'Saving project configuration…'],
+    [35, 'Scanning source path…'],
+    [58, 'Running Clang parser (Phase 1)…'],
+    [78, 'Applying architecture mapping…'],
+    [100,'Done! Opening project…']
+  ];
+  var i = 0;
+  var tick = setInterval(function() {
+    if (i >= seq.length) { clearInterval(tick); return; }
+    var step = seq[i++];
+    bar.style.width = step[0] + '%';
+    pct.textContent = step[0] + '%';
+    sub.textContent = step[1];
+    if (step[0] === 100) {
+      document.getElementById('init-icon').innerHTML = '<span class="material-symbols-outlined sym-fill" style="font-size:28px;color:#3ddc84;">check_circle</span>';
+      document.getElementById('init-icon').style.background = 'rgba(61,220,132,0.2)';
+      document.getElementById('init-title').textContent = 'Project created!';
+      setTimeout(function() { window.location.href = 'project-detail.html'; }, 900);
+    }
+  }, 900);
+}
+
+function openToken() {
+  document.getElementById('token-link').classList.add('hidden');
+  document.getElementById('token-field').classList.remove('hidden');
+  document.getElementById('s1-token').focus();
+}
+function toggleRoles(btn) {
+  var l = document.getElementById('role-legend');
+  var open = l.style.display === 'none';
+  l.style.display = open ? '' : 'none';
+  btn.querySelector('.material-symbols-outlined').textContent = open ? 'expand_less' : 'help';
+}
+function toggleReviewTree(btn) {
+  var t = document.getElementById('r-arch-tree');
+  var open = t.style.display === 'none';
+  t.style.display = open ? '' : 'none';
+  btn.querySelector('.material-symbols-outlined').textContent = open ? 'expand_less' : 'expand_more';
+  btn.querySelector('span:last-child').textContent = open ? 'Hide the layers' : 'Show every layer, group and component';
+}
+
+function toggleToken() {
+  var inp  = document.getElementById('s1-token');
+  var icon = document.getElementById('token-eye');
+  if (inp.type === 'password') { inp.type = 'text'; icon.textContent = 'visibility'; }
+  else                         { inp.type = 'password'; icon.textContent = 'visibility_off'; }
+}
+
+// ════════════════════════════════════════
+// Step 1: repo connection + branch fetch
+// ════════════════════════════════════════
+// The sample repository's branches and its default branch.
+var SAMPLE_BRANCHES = ['main', 'develop', 'release/v1.0', 'release/v1.1', 'release/v1.2', 'release/v2.0',
+  'feature/aspice-docs', 'feature/can-stack', 'feature/bootloader-update', 'feature/diag-dtc',
+  'hotfix/ftl-wear-level', 'hotfix/watchdog-reset', 'experimental/flash-trace', 'ci/clang-tidy'];
+var SAMPLE_DEFAULT_BRANCH = 'main';
+var BRANCHES = [];
+
+var branchShown = [];      // what the list shows now
+var branchFocus = -1;      // the row the arrows are on
+var branchSelectOnUp = false;   // a click that opened the box: its mouseup must not undo the selection
+
+function branchIsOpen() { return document.getElementById('branch-dd').style.display === 'block'; }
+
+// The list for `q` (empty: every branch). The row under the arrows: the picked branch when the
+// whole list shows, the first match while typing (Enter picks it).
+function renderBranchList(q) {
+  var picked = document.getElementById('s1-branch').value;
+  var ql = q.trim().toLowerCase();
+  branchShown = ql ? BRANCHES.filter(function(b) { return b.toLowerCase().indexOf(ql) >= 0; }) : BRANCHES.slice();
+  branchFocus = ql ? (branchShown.length ? 0 : -1) : branchShown.indexOf(picked);
+  var html = ql ? '<div class="bd-head">' + branchShown.length + ' of ' + BRANCHES.length + ' branches</div>' : '';
+  if (!branchShown.length) html += '<div class="bd-empty">No branch matches “' + escHtml(q.trim()) + '”</div>';
+  html += branchShown.map(function(b, i) {
+    var on = b === picked;
+    return '<div class="bd-item' + (on ? ' picked' : '') + (i === branchFocus ? ' focused' : '') + '" role="option"'
+      + ' aria-selected="' + on + '" data-i="' + i + '" onmousedown="event.preventDefault(); branchPick(' + i + ')">'
+      + '<span class="nm">' + escHtml(b) + '</span>'
+      + (b === SAMPLE_DEFAULT_BRANCH ? '<span class="tag">default</span>' : '')
+      + (on ? '<span class="material-symbols-outlined" style="font-size:16px;">check</span>' : '')
+      + '</div>';
+  }).join('');
+  var dd = document.getElementById('branch-dd');
+  dd.innerHTML = html;
+  dd.style.display = 'block';
+  document.getElementById('s1-branch-box').setAttribute('aria-expanded', 'true');
+  document.getElementById('branch-chevron').style.transform = 'translateY(-50%) rotate(180deg)';
+  branchScroll();
+}
+
+// The focused row in view - by scrolling the list alone (scrollIntoView would scroll the page too).
+function branchScroll() {
+  var dd = document.getElementById('branch-dd');
+  var row = dd.querySelector('.bd-item.focused');
+  if (!row) return;
+  if (row.offsetTop < dd.scrollTop) dd.scrollTop = row.offsetTop;
+  else if (row.offsetTop + row.offsetHeight > dd.scrollTop + dd.clientHeight) dd.scrollTop = row.offsetTop + row.offsetHeight - dd.clientHeight;
+}
+
+// Opening shows every branch, whatever the box says; the text is selected, so typing replaces it.
+function branchOpen() {
+  if (branchIsOpen() || !BRANCHES.length) return;
+  document.getElementById('s1-branch-box').select();
+  branchSelectOnUp = true;
+  renderBranchList('');
+}
+function branchMouseUp(e) {
+  if (branchSelectOnUp) { e.preventDefault(); branchSelectOnUp = false; }
+}
+function branchToggle() {
+  if (branchIsOpen()) { branchClose(); return; }
+  var box = document.getElementById('s1-branch-box');
+  if (document.activeElement !== box) box.focus(); else branchOpen();
+}
+function branchFilter() { renderBranchList(document.getElementById('s1-branch-box').value); }
+
+// Closing keeps the branch picked before: text typed and not picked is dropped.
+function branchClose() {
+  document.getElementById('branch-dd').style.display = 'none';
+  document.getElementById('s1-branch-box').setAttribute('aria-expanded', 'false');
+  document.getElementById('branch-chevron').style.transform = 'translateY(-50%)';
+  document.getElementById('s1-branch-box').value = document.getElementById('s1-branch').value;
+}
+
+function branchPick(i) {
+  var b = branchShown[i];
+  if (!b) return;
+  var changed = b !== document.getElementById('s1-branch').value;
+  document.getElementById('s1-branch').value = b;
+  branchClose();
+  if (changed) branchPicked();
+}
+
+function branchKey(e) {
+  branchSelectOnUp = false;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!branchIsOpen()) { branchOpen(); return; }
+    if (!branchShown.length) return;
+    var step = e.key === 'ArrowDown' ? 1 : -1;
+    branchFocus = Math.max(0, Math.min(branchShown.length - 1, branchFocus + step));
+    document.querySelectorAll('#branch-dd .bd-item').forEach(function(el, i) { el.classList.toggle('focused', i === branchFocus); });
+    branchScroll();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (branchIsOpen() && branchFocus >= 0) branchPick(branchFocus);
+  } else if (e.key === 'Escape') {
+    if (branchIsOpen()) { e.preventDefault(); branchClose(); }
+  }
+}
+
+// Paths differ between branches: an imported config is checked again against the one picked.
+function branchPicked() {
+  document.getElementById('s1-branch-box').classList.remove('err');
+  refreshStepState();
+  if (document.getElementById('s1-branch').value && IMPORTED) { IMPORT_CHECKED = false; checkImportAgainstRepo(); }
+}
+
+// ════════════════════════════════════════
+// Step 1: where the repository is - a Git URL, or a local path (a git repository on the server)
+// ════════════════════════════════════════
+var REPO_SOURCE = 'url';
+var REPO_TEXT = { url: '', local: '' };   // what was typed under each choice: switching back finds it
+
+// A full path: a drive (D:/ or D:\), a root (/), a share (\\host) or a file:// link.
+function looksLocal(v) { return /^([A-Za-z]:[\\/]|\/|\\\\|file:\/\/)/.test(cleanPath(v)); }
+// Explorer's "Copy as path" adds quotes: they go.
+function cleanPath(v) { return (v || '').trim().replace(/^["']+|["']+$/g, ''); }
+
+// The switch, the label, the placeholder, the hint and the token link, for REPO_SOURCE.
+function showRepoSource() {
+  var local = REPO_SOURCE === 'local';
+  [['src-url', !local], ['src-local', local]].forEach(function(b) {
+    var el = document.getElementById(b[0]);
+    el.classList.toggle('on', b[1]);
+    el.setAttribute('aria-checked', String(b[1]));
+  });
+  document.getElementById('repo-label').textContent = local ? 'Repository folder' : 'Repository URL';
+  document.getElementById('s1-repo').placeholder = local ? 'D:/src/vcu-firmware' : 'https://github.com/org/repo.git';
+  document.getElementById('repo-icon').textContent = local ? 'folder' : 'link';
+  document.getElementById('repo-local-hint').classList.toggle('hidden', !local);
+  document.getElementById('repo-browse').style.display = local ? 'inline-flex' : 'none';
+  document.getElementById('repo-looks-local').classList.add('hidden');
+  // A folder on the server needs no access token.
+  var tokenTyped = !!document.getElementById('s1-token').value;
+  document.getElementById('token-link').classList.toggle('hidden', local || tokenTyped);
+  document.getElementById('token-field').classList.toggle('hidden', local || !tokenTyped);
+}
+
+function setRepoSource(src) {
+  if (src === REPO_SOURCE) return;
+  var el = document.getElementById('s1-repo');
+  REPO_TEXT[REPO_SOURCE] = el.value;
+  // A path typed under Git URL goes along to Local path.
+  var carry = src === 'local' && looksLocal(el.value) && !REPO_TEXT.local;
+  el.value = carry ? el.value : REPO_TEXT[src];
+  if (carry) REPO_TEXT.url = '';
+  REPO_SOURCE = src;
+  el.classList.remove('err');
+  showRepoSource();
+  repoChanged();
+  el.focus();
+}
+
+function repoTyped() {
+  var v = document.getElementById('s1-repo').value;
+  document.getElementById('repo-looks-local').classList.toggle('hidden', !(REPO_SOURCE === 'url' && looksLocal(v)));
+  repoChanged();
+}
+
+// ════════════════════════════════════════
+// Local path: Browse - the server's folders, one folder at a time; only a git repository is picked
+// ════════════════════════════════════════
+// The server's disk, simulated. `_git`: the folder holds .git. The real list comes from the server,
+// one folder per request (folder names only, and whether each is a git repository).
+var SERVER_FS = {
+  'C:': { 'Program Files': {}, 'Users': { 'build': { 'checkouts': { 'vcu-firmware': { _git: true } } } }, 'Windows': {} },
+  'D:': {
+    'src': {
+      'adas-fusion': { _git: true }, 'brake-ecu': { _git: true }, 'vcu-firmware': { _git: true },
+      'docs': { 'manuals': {}, 'specs': {} },
+      'third_party': { 'freertos': { _git: true }, 'lwip': { _git: true } },
+    },
+    'builds': { '2026-10-01': {}, '2026-10-04': {} },
+  },
+};
+var RB_PATH = [];     // the folder shown: [] = the server's drives; ['D:', 'src'] = D:/src
+var RB_PICKED = '';   // the repository picked, a full path
+
+function rbNode(parts) { var n = SERVER_FS; parts.forEach(function(p) { n = n && n[p]; }); return n; }
+function rbJoin(parts) { return parts.length ? parts[0] + '/' + parts.slice(1).join('/') : ''; }
+function rbChildren(parts) {
+  return Object.keys(rbNode(parts) || {}).filter(function(k) { return k !== '_git'; })
+    .sort(function(a, b) { return a.toLowerCase() < b.toLowerCase() ? -1 : 1; });
+}
+
+// Opens where the box points when that folder is there (a repository: picked, in its folder);
+// else at the drives.
+function openRepoBrowser() {
+  var parts = cleanPath(document.getElementById('s1-repo').value).replace(/\\/g, '/').split('/').filter(Boolean);
+  while (parts.length && !rbNode(parts)) parts.pop();
+  RB_PICKED = '';
+  if (parts.length && rbNode(parts)._git) { RB_PICKED = rbJoin(parts); parts.pop(); }
+  RB_PATH = parts;
+  renderRepoBrowser();
+  document.getElementById('repo-browser').classList.remove('hidden');
+  document.getElementById('repo-browser-backdrop').classList.remove('hidden');
+}
+function closeRepoBrowser() {
+  document.getElementById('repo-browser').classList.add('hidden');
+  document.getElementById('repo-browser-backdrop').classList.add('hidden');
+}
+function rbOpen(i) { RB_PATH = RB_PATH.concat([rbChildren(RB_PATH)[i]]); RB_PICKED = ''; renderRepoBrowser(); }
+// Marked in place, not redrawn: a double-click's second click must land on the same row.
+function rbPick(i) { RB_PICKED = rbJoin(RB_PATH.concat([rbChildren(RB_PATH)[i]])); rbMarkPicked(); }
+function rbCrumb(n) { RB_PATH = RB_PATH.slice(0, n); RB_PICKED = ''; renderRepoBrowser(); }
+
+// The repository goes into the box, and Test Connection runs: its branches load at once.
+function confirmRepoBrowser() {
+  if (!RB_PICKED) return;
+  var el = document.getElementById('s1-repo');
+  el.value = RB_PICKED;
+  el.classList.remove('err');
+  closeRepoBrowser();
+  repoTyped();
+  testConnection();
+}
+
+function renderRepoBrowser() {
+  document.getElementById('rb-crumbs').innerHTML =
+    '<button class="rb-crumb" onclick="rbCrumb(0)"><span class="material-symbols-outlined" style="font-size:14px;">dns</span>This server</button>'
+    + RB_PATH.map(function(p, i) {
+      return '<span class="rb-sep">›</span><button class="rb-crumb" onclick="rbCrumb(' + (i + 1) + ')">' + escHtml(p) + '</button>';
+    }).join('');
+  var rows = rbChildren(RB_PATH).map(function(name, i) {
+    var node = rbNode(RB_PATH.concat([name]));
+    if (!RB_PATH.length) {
+      return '<div class="rb-row" onclick="rbOpen(' + i + ')"><span class="material-symbols-outlined" style="font-size:16px;color:#7c818c;">hard_drive</span>'
+        + '<span class="nm">' + escHtml(name) + '</span><span class="material-symbols-outlined" style="font-size:16px;color:#7c818c;">chevron_right</span></div>';
+    }
+    if (node._git) {
+      return '<div class="rb-row" data-path="' + escHtml(rbJoin(RB_PATH.concat([name]))) + '" onclick="rbPick(' + i + ')" ondblclick="rbPick(' + i + '); confirmRepoBrowser()">'
+        + '<span class="material-symbols-outlined" style="font-size:16px;color:#3ddc84;">source</span>'
+        + '<span class="nm">' + escHtml(name) + '</span><span class="rb-git">git</span>'
+        + '<span class="material-symbols-outlined rb-check" style="font-size:16px;visibility:hidden;">check</span></div>';
+    }
+    return '<div class="rb-row" onclick="rbOpen(' + i + ')"><span class="material-symbols-outlined text-secondary" style="font-size:16px;">folder</span>'
+      + '<span class="nm">' + escHtml(name) + '/</span><span class="material-symbols-outlined" style="font-size:16px;color:#7c818c;">chevron_right</span></div>';
+  });
+  document.getElementById('rb-list').innerHTML = rows.join('') || '<div class="rb-empty">No folders here</div>';
+  rbMarkPicked();
+}
+
+// The picked repository: its row, the footer, and "Use this repository".
+function rbMarkPicked() {
+  document.querySelectorAll('#rb-list .rb-row[data-path]').forEach(function(r) {
+    var on = r.getAttribute('data-path') === RB_PICKED;
+    r.classList.toggle('picked', on);
+    r.querySelector('.rb-check').style.visibility = on ? 'visible' : 'hidden';
+  });
+  var picked = document.getElementById('rb-picked');
+  picked.textContent = RB_PICKED || 'Pick a git repository';
+  picked.style.color = RB_PICKED ? '#f2f3f5' : '#7c818c';
+  var use = document.getElementById('rb-use');
+  use.disabled = !RB_PICKED;
+  use.style.opacity = RB_PICKED ? '' : '0.5';
+  use.style.cursor = RB_PICKED ? '' : 'not-allowed';
+}
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && !document.getElementById('repo-browser').classList.contains('hidden')) closeRepoBrowser();
+});
+
+function connectFailed(msg) {
+  var statusEl = document.getElementById('test-conn-status');
+  statusEl.style.color = '#ff4d5a';
+  statusEl.innerHTML = '<span style="vertical-align:middle;font-size:14px;margin-right:3px;" class="material-symbols-outlined sym-fill">error</span> ' + escHtml(msg);
+}
+
+// What the server answers for a local path - simulated here: a path with "missing" in it does
+// not exist on the server, one with "notgit" is a plain folder; anything else is a repository.
+function localAnswer(p) {
+  if (!looksLocal(p)) return 'Give the full path of the folder, e.g. D:/src/vcu-firmware.';
+  if (/missing/i.test(p)) return 'No folder ' + p + ' on the server.';
+  if (/notgit/i.test(p)) return p + ' is not a git repository (it has no .git): pick the repository\'s root folder.';
+  return '';
+}
+
+function repoChanged() {
+  // Reset test state when URL or token changes
+  var statusEl = document.getElementById('test-conn-status');
+  statusEl.textContent = '';
+  statusEl.style.color = '';
+  document.getElementById('branch-field').classList.add('hidden');
+  BRANCHES = [];
+  document.getElementById('s1-branch').value = '';
+  if (branchIsOpen()) branchClose();
+  document.getElementById('s1-branch-box').value = '';
+  // An import checked against the old repository is not checked against this one.
+  if (typeof IMPORTED !== 'undefined' && IMPORTED) { IMPORT_CHECKED = false; IMPORT_CHECKING = false; renderImportReport(); }
+}
+
+function testConnection() {
+  var repoEl = document.getElementById('s1-repo');
+  if (REPO_SOURCE === 'local') repoEl.value = cleanPath(repoEl.value);
+  var url = repoEl.value.trim();
+  if (!url) {
+    document.getElementById('s1-repo').classList.add('err');
+    document.getElementById('s1-repo').focus();
+    return;
+  }
+  var btn      = document.getElementById('test-conn-btn');
+  var statusEl = document.getElementById('test-conn-status');
+
+  btn.disabled = true;
+  btn.style.opacity = '0.6';
+  statusEl.style.color = '#a3a7b1';
+  statusEl.textContent = 'Connecting…';
+
+  // Simulate async branch fetch (replace with real API call)
+  setTimeout(function() {
+    btn.disabled = false;
+    btn.style.opacity = '';
+    var refused = REPO_SOURCE === 'local' ? localAnswer(url) : '';
+    if (refused) { connectFailed(refused); return; }
+
+    // Simulate success with the sample repository's branches; the default branch is picked.
+    var branches = SAMPLE_BRANCHES;
+    BRANCHES = branches.slice();
+    var first = BRANCHES.indexOf(SAMPLE_DEFAULT_BRANCH) >= 0 ? SAMPLE_DEFAULT_BRANCH : (BRANCHES[0] || '');
+    document.getElementById('s1-branch').value = first;
+    document.getElementById('s1-branch-box').value = first;
+
+    document.getElementById('branch-field').classList.remove('hidden');
+    refreshStepState();
+    statusEl.style.color = '#3ddc84';
+    statusEl.innerHTML = '<span style="vertical-align:middle;font-size:14px;margin-right:3px;" class="material-symbols-outlined sym-fill">check_circle</span> Connected · ' + branches.length + ' branches found';
+    if (IMPORTED && !IMPORT_CHECKED) checkImportAgainstRepo();   // the imported config, against this branch
+  }, 1200);
+}
+
+// ════════════════════════════════════════
+// ════════════════════════════════════════
+// Folder picker
+// ════════════════════════════════════════
+var _fpTarget   = null; // string id OR input element
+var _fpSelected = null; // currently selected path string
+
+var FP_TREE = [
+  { name: 'src', path: '/src', children: [
+    { name: 'application', path: '/src/application', children: [
+      { name: 'torque',       path: '/src/application/torque',       children: [] },
+      { name: 'diagnostics',  path: '/src/application/diagnostics',  children: [] },
+      { name: 'scheduler',    path: '/src/application/scheduler',    children: [] },
+    ]},
+    { name: 'middleware', path: '/src/middleware', children: [
+      { name: 'can',   path: '/src/middleware/can',   children: [] },
+      { name: 'os',    path: '/src/middleware/os',    children: [] },
+      { name: 'crypto',path: '/src/middleware/crypto',children: [] },
+    ]},
+    { name: 'drivers', path: '/src/drivers', children: [
+      { name: 'gpio',  path: '/src/drivers/gpio',  children: [] },
+      { name: 'uart',  path: '/src/drivers/uart',  children: [] },
+    ]},
+  ]},
+  { name: 'include', path: '/include', children: [
+    { name: 'autosar',  path: '/include/autosar',  children: [] },
+    { name: 'platform', path: '/include/platform', children: [] },
+  ]},
+  { name: 'test', path: '/test', children: [
+    { name: 'unit',        path: '/test/unit',        children: [] },
+    { name: 'integration', path: '/test/integration', children: [] },
+  ]},
+];
+
+function openFolderPicker(target) {
+  _fpTarget   = target;
+  _fpSelected = null;
+  document.getElementById('fp-selected-label').textContent = 'No folder selected';
+  renderFpTree();
+  document.getElementById('folder-picker').classList.remove('hidden');
+  document.getElementById('folder-picker-backdrop').classList.remove('hidden');
+}
+
+function closeFolderPicker() {
+  document.getElementById('folder-picker').classList.add('hidden');
+  document.getElementById('folder-picker-backdrop').classList.add('hidden');
+  _fpTarget = null;
+}
+
+function confirmFolderPicker() {
+  if (!_fpSelected) { return; }
+  if (typeof _fpTarget === 'string') {
+    var el = document.getElementById(_fpTarget);
+    if (el) el.value = _fpSelected;
+  } else if (_fpTarget && _fpTarget.tagName === 'INPUT') {
+    _fpTarget.value = _fpSelected;
+    _fpTarget.dispatchEvent(new Event('input'));
+  }
+  closeFolderPicker();
+}
+
+function fpSelectFolder(path, rowEl) {
+  _fpSelected = path;
+  document.getElementById('fp-selected-label').textContent = path;
+  document.querySelectorAll('#fp-tree .fp-folder-row').forEach(function(r) {
+    r.classList.remove('selected');
+  });
+  rowEl.classList.add('selected');
+}
+
+function renderFpTree() {
+  var container = document.getElementById('fp-tree');
+  container.innerHTML = renderFpNodes(FP_TREE, true);
+}
+
+function renderFpNodes(nodes, expanded) {
+  return nodes.map(function(node) {
+    var hasChildren = node.children && node.children.length > 0;
+    var childrenHtml = hasChildren ? renderFpNodes(node.children, false) : '';
+    var pathAttr = node.path.replace(/'/g, "\\'");
+    return '<div class="fp-node">'
+      + "<div class='fp-folder-row' onclick='fpRowClick(event,this,\"" + pathAttr + "\"," + (hasChildren ? 'true' : 'false') + ")'>"
+      + '<button class="tree-toggle" onclick="event.stopPropagation();fpToggle(this)" style="' + (hasChildren ? '' : 'visibility:hidden;') + '">'
+      + '<span class="material-symbols-outlined" style="font-size:14px;">' + (expanded ? 'keyboard_arrow_down' : 'keyboard_arrow_right') + '</span></button>'
+      + '<span class="material-symbols-outlined text-secondary" style="font-size:15px;">' + (expanded ? 'folder_open' : 'folder') + '</span>'
+      + '<span class="fp-name" style="font-family:\'JetBrains Mono\';font-size:11px;color:#f2f3f5;flex:1;">' + escHtml(node.name) + '/</span>'
+      + '</div>'
+      + (hasChildren ? '<div class="fp-children"' + (expanded ? '' : ' style="display:none;"') + '>' + childrenHtml + '</div>' : '')
+      + '</div>';
+  }).join('');
+}
+
+function fpRowClick(e, row, path, hasChildren) {
+  if (e.target.closest('.tree-toggle')) return;
+  fpSelectFolder(path, row);
+  // Auto-expand on click if has children
+  if (hasChildren) {
+    var children = row.nextElementSibling;
+    if (children && children.classList.contains('fp-children') && children.style.display === 'none') {
+      fpToggle(row.querySelector('.tree-toggle'));
+    }
+  }
+}
+
+function fpToggle(btn) {
+  var node     = btn.closest('.fp-node');
+  var children = node.querySelector(':scope > .fp-children');
+  var icon     = btn.querySelector('.material-symbols-outlined');
+  var folderIcon = btn.parentElement.querySelectorAll('.material-symbols-outlined')[1];
+  if (!children) return;
+  var open = children.style.display !== 'none';
+  children.style.display = open ? 'none' : '';
+  icon.textContent       = open ? 'keyboard_arrow_right' : 'keyboard_arrow_down';
+  if (folderIcon) folderIcon.textContent = open ? 'folder' : 'folder_open';
+}
+
+// ════════════════════════════════════════
+// Help tooltips
+// ════════════════════════════════════════
+(function() {
+  var tip    = document.getElementById('help-tip');
+  var active = null;
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.hbtn');
+    if (btn) {
+      e.stopPropagation();
+      if (active === btn) { tip.style.display = 'none'; active = null; return; }
+      active = btn;
+      tip.textContent = btn.getAttribute('title') || '';
+      tip.style.display = 'block';
+      var r = btn.getBoundingClientRect();
+      var tw = 260, th = tip.offsetHeight || 60;
+      var left = r.left + r.width / 2 - tw / 2;
+      var top  = r.bottom + 8;
+      if (left + tw > window.innerWidth - 8) left = window.innerWidth - tw - 8;
+      if (left < 8) left = 8;
+      if (top + th > window.innerHeight - 8) top = r.top - th - 8;
+      tip.style.left = left + 'px';
+      tip.style.top  = top  + 'px';
+    } else {
+      tip.style.display = 'none';
+      active = null;
+    }
+  });
+})();
+</script>
+
+<!-- ══ LOCAL PATH: THE SERVER'S FOLDERS (Browse) ══ -->
+<div id="repo-browser-backdrop" class="hidden fixed inset-0 z-[99]" style="background:rgba(0,0,0,0.5);" onclick="closeRepoBrowser()"></div>
+<div id="repo-browser" role="dialog" aria-label="Choose a git repository on the server"
+     class="hidden fixed top-0 right-0 h-screen bg-surface-container-lowest border-l border-outline-variant z-[100] flex flex-col" style="width:380px;box-shadow:-4px 0 24px rgba(0,0,0,0.24);">
+  <div class="flex items-center justify-between px-5 py-4 border-b border-outline-variant flex-shrink-0">
+    <div>
+      <h3 class="text-headline-sm text-on-surface" style="font-size:14px;">Choose a repository</h3>
+      <p class="text-on-surface-variant mt-0.5" style="font-size:11px;line-height:16px;">Folders on the server ArtiFex runs on. Only a git repository can be picked.</p>
+    </div>
+    <button onclick="closeRepoBrowser()" aria-label="Close" class="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-colors">
+      <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+    </button>
+  </div>
+  <!-- Where we are: each part goes back there -->
+  <div id="rb-crumbs" class="flex flex-wrap items-center gap-0.5 px-4 py-2.5 border-b border-outline-variant flex-shrink-0"></div>
+  <!-- The folder's folders: a plain one opens, a git repository is picked (double-click: picked and used) -->
+  <div id="rb-list" class="flex-1 overflow-y-auto px-2 py-2"></div>
+  <div class="px-4 py-3 border-t border-outline-variant flex-shrink-0 space-y-2.5">
+    <p id="rb-picked" style="font:500 11px/16px 'SamsungOne','Roboto',sans-serif;color:#7c818c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Pick a git repository</p>
+    <div class="flex gap-3">
+      <button onclick="closeRepoBrowser()" class="px-4 py-2 border border-outline-variant text-on-surface-variant rounded-lg font-label-md text-label-md hover:bg-surface-container transition-colors">Cancel</button>
+      <button id="rb-use" onclick="confirmRepoBrowser()" class="flex-1 py-2 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md hover:bg-secondary-container transition-colors">Use this repository</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ FOLDER PICKER SIDEBAR ══ -->
+<div id="folder-picker-backdrop" class="hidden fixed inset-0 z-[99]" style="background:rgba(0,0,0,0.5);" onclick="closeFolderPicker()"></div>
+<div id="folder-picker" class="hidden fixed top-0 right-0 h-screen bg-surface-container-lowest border-l border-outline-variant z-[100] flex flex-col" style="width:320px;box-shadow:-4px 0 24px rgba(0,0,0,0.24);">
+  <div class="flex items-center justify-between px-5 py-4 border-b border-outline-variant flex-shrink-0">
+    <div>
+      <h3 class="text-headline-sm text-on-surface" style="font-size:14px;">Select Folder</h3>
+      <p class="text-body-sm text-on-surface-variant mt-0.5" id="fp-selected-label" style="font-size:11px;font-family:'SamsungOne','Roboto',sans-serif;">No folder selected</p>
+    </div>
+    <button onclick="closeFolderPicker()" class="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-colors">
+      <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+    </button>
+  </div>
+  <div class="flex-1 overflow-y-auto px-3 py-3" id="fp-tree">
+    <!-- Folder tree — simulated repo structure -->
+  </div>
+  <div class="px-4 py-3 border-t border-outline-variant flex gap-3 flex-shrink-0">
+    <button onclick="closeFolderPicker()" class="px-4 py-2 border border-outline-variant text-on-surface-variant rounded-lg font-label-md text-label-md hover:bg-surface-container transition-colors">Cancel</button>
+    <button onclick="confirmFolderPicker()" class="flex-1 py-2 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md hover:bg-secondary-container transition-colors">Select Folder</button>
+  </div>
+</div>
+
+<!-- ══ COMPONENT FILE-SELECT SIDEBAR ══ -->
+<div id="comp-sidebar-backdrop" class="hidden fixed inset-0 z-[99]" style="background:rgba(0,0,0,0.5);" onclick="closeCompSidebar()"></div>
+<div id="comp-sidebar" class="hidden fixed top-0 right-0 h-screen bg-surface-container-lowest border-l border-outline-variant z-[100] flex flex-col" style="width:340px;box-shadow:-4px 0 24px rgba(0,0,0,0.24);">
+  <!-- Header -->
+  <div class="flex items-center justify-between px-5 py-4 border-b border-outline-variant flex-shrink-0">
+    <div>
+      <h3 class="text-headline-sm text-on-surface" style="font-size:14px;">Add Component</h3>
+      <p class="text-body-sm text-on-surface-variant mt-0.5" style="font-size:11px;font-family:'SamsungOne','Roboto',sans-serif;" id="sidebar-layer-path">Layer root: —</p>
+    </div>
+    <button onclick="closeCompSidebar()" class="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-colors">
+      <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+    </button>
+  </div>
+  <!-- Component name -->
+  <div class="px-4 py-3 border-b border-outline-variant flex-shrink-0">
+    <div class="lbl" style="margin-bottom:6px;">Component Name <span class="req">*</span></div>
+    <input class="inp" id="sidebar-comp-name" type="text" placeholder="e.g. TorqueManager">
+  </div>
+  <!-- File tree -->
+  <div class="flex-1 overflow-y-auto px-3 py-3">
+    <div class="sect-label mb-2">Select files / folders</div>
+    <div id="sidebar-file-tree">
+      <!-- src/ -->
+      <div class="sidebar-folder-block">
+        <div class="sidebar-folder-row" onclick="if(!event.target.closest('.tree-toggle')&&event.target.tagName!=='INPUT')this.querySelector('.folder-cb').click()">
+          <button onclick="event.stopPropagation();toggleSidebarFolder(this)" class="tree-toggle"><span class="material-symbols-outlined" style="font-size:14px;">keyboard_arrow_down</span></button>
+          <input type="checkbox" class="folder-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFolder(this)">
+          <span class="material-symbols-outlined text-secondary" style="font-size:15px;">folder_open</span>
+          <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">src/</span>
+        </div>
+        <div class="sidebar-folder-children pl-5">
+          <div class="sidebar-file-row" data-filename="torque_manager.cpp" onclick="sidebarFileRowClick(event,this)">
+            <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
+            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span class="file-name" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">torque_manager.cpp</span>
+            <span class="file-owner-tag" style="display:none;"></span>
+          </div>
+          <div class="sidebar-file-row" data-filename="torque_manager.h" onclick="sidebarFileRowClick(event,this)">
+            <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
+            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span class="file-name" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">torque_manager.h</span>
+            <span class="file-owner-tag" style="display:none;"></span>
+          </div>
+          <div class="sidebar-file-row" data-filename="efficiency_optimizer.cpp" onclick="sidebarFileRowClick(event,this)">
+            <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
+            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span class="file-name" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">efficiency_optimizer.cpp</span>
+            <span class="file-owner-tag" style="display:none;"></span>
+          </div>
+          <div class="sidebar-file-row" data-filename="efficiency_optimizer.h" onclick="sidebarFileRowClick(event,this)">
+            <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
+            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span class="file-name" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">efficiency_optimizer.h</span>
+            <span class="file-owner-tag" style="display:none;"></span>
+          </div>
+          <!-- diagnostics/ -->
+          <div class="sidebar-folder-block">
+            <div class="sidebar-folder-row" onclick="if(!event.target.closest('.tree-toggle')&&event.target.tagName!=='INPUT')this.querySelector('.folder-cb').click()">
+              <button onclick="event.stopPropagation();toggleSidebarFolder(this)" class="tree-toggle"><span class="material-symbols-outlined" style="font-size:14px;">keyboard_arrow_right</span></button>
+              <input type="checkbox" class="folder-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFolder(this)">
+              <span class="material-symbols-outlined text-secondary" style="font-size:15px;">folder</span>
+              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">diagnostics/</span>
+            </div>
+            <div class="sidebar-folder-children pl-5 hidden">
+              <div class="sidebar-file-row" data-filename="fault_logger.cpp" onclick="sidebarFileRowClick(event,this)">
+                <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
+                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+                <span class="file-name" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">fault_logger.cpp</span>
+                <span class="file-owner-tag" style="display:none;"></span>
+              </div>
+              <div class="sidebar-file-row" data-filename="fault_logger.h" onclick="sidebarFileRowClick(event,this)">
+                <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
+                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+                <span class="file-name" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">fault_logger.h</span>
+                <span class="file-owner-tag" style="display:none;"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- include/ -->
+      <div class="sidebar-folder-block">
+        <div class="sidebar-folder-row" onclick="if(!event.target.closest('.tree-toggle')&&event.target.tagName!=='INPUT')this.querySelector('.folder-cb').click()">
+          <button onclick="event.stopPropagation();toggleSidebarFolder(this)" class="tree-toggle"><span class="material-symbols-outlined" style="font-size:14px;">keyboard_arrow_right</span></button>
+          <input type="checkbox" class="folder-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFolder(this)">
+          <span class="material-symbols-outlined text-secondary" style="font-size:15px;">folder</span>
+          <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">include/</span>
+        </div>
+        <div class="sidebar-folder-children pl-5 hidden">
+          <div class="sidebar-file-row" data-filename="app_types.h" onclick="sidebarFileRowClick(event,this)">
+            <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
+            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span class="file-name" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">app_types.h</span>
+            <span class="file-owner-tag" style="display:none;"></span>
+          </div>
+          <div class="sidebar-file-row" data-filename="config.h" onclick="sidebarFileRowClick(event,this)">
+            <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
+            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span class="file-name" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">config.h</span>
+            <span class="file-owner-tag" style="display:none;"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- Footer -->
+  <div class="px-4 py-3 border-t border-outline-variant flex items-center gap-3 flex-shrink-0">
+    <span class="sect-label flex-1" id="sidebar-selected-count" style="text-transform:none;letter-spacing:0;font-size:11px;font-weight:400;">0 files selected</span>
+    <button onclick="closeCompSidebar()" class="px-3 py-2 border border-outline-variant text-on-surface-variant rounded-lg font-label-md text-label-md hover:bg-surface-container transition-colors">Cancel</button>
+    <button onclick="confirmAddComponent()" class="px-4 py-2 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md hover:bg-secondary-container transition-colors">Add</button>
+  </div>
+</div>
+
+</body>
+</html>
