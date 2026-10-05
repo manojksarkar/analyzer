@@ -304,7 +304,8 @@ function ProjectSwitcher({ projectName, canRename }: { projectName: string; canR
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden min-w-[260px] z-[200] shadow-[0_4px_20px_rgba(4,22,39,.12)]">
+        // Capped: a project with no standard shows its repository, and a local path stretched the menu.
+        <div className="absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden min-w-[260px] w-max max-w-[min(400px,calc(100vw-32px))] z-[200] shadow-[0_4px_20px_rgba(4,22,39,.12)]">
           <div className="px-3 py-2 border-b border-outline-variant">
             <span className="text-on-surface-variant uppercase font-mono text-label font-bold tracking-[.08em]">Switch project</span>
           </div>
