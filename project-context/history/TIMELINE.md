@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-05p | R3's 501 for a behaviour row or a flowchart label names the route that saves it (R6, R8) | [13](13-2026-10-05c.md) |
 | 2026-10-05o | A project's own settings win over this machine's config.local.json: a `clang` block there switched an imported project's include-path walk off on every run | [13](13-2026-10-05c.md) |
 | 2026-10-05n | Rename moves to the Projects page: an admin's row menu, not the project menu on every page; the dialog warns of a name already used | [13](13-2026-10-05c.md) |
 | 2026-10-05m | A project's admins rename it from the project menu; the server takes a name trimmed, never blank or over 120 characters, and a status only the app knows | [13](13-2026-10-05c.md) |

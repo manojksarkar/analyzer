@@ -108,7 +108,7 @@ check, the ids, and the slots the run corrected with every text saved on each.
 | 7 Correct again | `firstEdit` false, `previousText` = the first correction, `llmText` still the LLM's; R5 has both |
 | 8 Two saves at once | both 200; the slot holds one of the two; the winner's `previousText` is the other's text; R5 keeps both |
 | 9 Undo | back to the LLM's text with `canUndo` false, like a save; 409 where the LLM wrote nothing; a second undo changes nothing; 409 on a slot nobody corrected |
-| 10 Mistakes | 422 empty or camelCase body, 404 unknown slot, 400 malformed key, 501 node label through R3, 400/422/404 on R8's bad inputs (a bad node saves nothing), 404 unknown flowchart / version, 422 unknown kind; a NUL character (`\u0000`) in R3's text, an R6 bullet or an R8 label is 422 and saves nothing — PostgreSQL cannot store one |
+| 10 Mistakes | 422 empty or camelCase body, 404 unknown slot, 400 malformed key, 501 behaviour row or node label through R3 naming R6 / R8 with the ids, 400/422/404 on R8's bad inputs (a bad node saves nothing), 404 unknown flowchart / version, 422 unknown kind; a NUL character (`\u0000`) in R3's text, an R6 bullet or an R8 label is 422 and saves nothing — PostgreSQL cannot store one |
 | 11 Re-export | R9 stale → re-export job completes → R9 clean; every document downloads; the Word file carries each printed correction and none of the undone ones; struct descriptions reach the page |
 | 12 After export | a new correction: not a first edit, the LLM's text kept; R9 stale again |
 | 13 Next version | generated from this one (same commit), incremental; every correction carried, in force and printed |
