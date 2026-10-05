@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html class="dark" lang="en">
 <head>
+<script src="../theme-toggle.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>[PRODUCT NAME] — VCU Engine Firmware</title>
@@ -81,7 +82,7 @@
   .spin { animation: spin 1s linear infinite; }
 
   @keyframes pulseRing {
-    0%   { box-shadow: 0 0 0 0 rgba(29,123,255,0.52); }
+    0%   { box-shadow: 0 0 0 0 rgba(29,123,255,0.3); }
     70%  { box-shadow: 0 0 0 7px rgba(29,123,255,0); }
     100% { box-shadow: 0 0 0 0 rgba(29,123,255,0); }
   }
@@ -171,7 +172,7 @@
     --mm-grad: linear-gradient(135deg, #3d8fff 0%, #1d7bff 45%, #1428a0 100%);
     --shadow-card: 0 1px 0 rgba(255,255,255,.04) inset, 0 10px 30px rgba(0,0,0,.45);
     --shadow-pop: 0 18px 48px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.05);
-    --glow-blue: 0 0 0 1px rgba(29,123,255,.45), 0 6px 20px rgba(29,123,255,.35);
+    --glow-blue: 0 0 0 1px rgba(29,123,255,.3), 0 6px 22px rgba(29,123,255,.2);
     color-scheme: dark;
   }
   body {
@@ -192,11 +193,11 @@
   ::-webkit-scrollbar-thumb:hover { background: #4a4f5b; }
 
   /* Signature surfaces: gradient CTA, glassy cards, glowing brand tile */
-  .bg-secondary { background-image: var(--mm-grad); box-shadow: 0 4px 14px rgba(29,123,255,.35); }
+  .bg-secondary { background-image: var(--mm-grad); box-shadow: 0 4px 16px rgba(29,123,255,.2); }
   .hover\:bg-secondary-container:hover { background-image: linear-gradient(135deg, #5aa2ff 0%, #2d86ff 50%, #1c35b8 100%); box-shadow: var(--glow-blue); }
   .rounded-xl.border.bg-surface-container-lowest,
   .rounded-2xl.border.bg-surface-container-lowest { box-shadow: var(--shadow-card); background-image: linear-gradient(180deg, rgba(255,255,255,.025), transparent 120px); }
-  .brand-tile { background-image: var(--mm-grad); box-shadow: 0 0 18px rgba(29,123,255,.55); }
+  .brand-tile { background-image: var(--mm-grad); box-shadow: 0 0 20px rgba(29,123,255,.28); }
   .bg-inverse { box-shadow: var(--shadow-pop); }
   .mm-hero {
     position: relative; overflow: hidden;
@@ -230,7 +231,7 @@
   .nav-default { color: #a3a7b1; }
   .nav-default:hover { background: rgba(255,255,255,.05); color: #f2f3f5; }
   .nav-active { background: linear-gradient(90deg, rgba(29,123,255,.22), rgba(29,123,255,.06)) !important; color: #ffffff !important; border-left: none !important; }
-  .nav-active::before { content: ''; position: absolute; left: -2px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: #3d8fff; box-shadow: 0 0 10px #1d7bff; }
+  .nav-active::before { content: ''; position: absolute; left: -2px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: #3d8fff; box-shadow: 0 0 10px rgba(29,123,255,.45); }
   .nav-active .material-symbols-outlined { color: #5aa2ff; font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
   .outline-link.active { color: #5aa2ff; background: rgba(29,123,255,.12); font-weight: 500; }
 
@@ -238,7 +239,7 @@
   .subbar-pill { border-radius: 999px; background: #1c1e23; border-color: #2c2f37; }
   .subbar-pill:hover { background: #23262d; border-color: #1d7bff; box-shadow: 0 0 0 3px rgba(29,123,255,.15); }
   .dropdown { background: #1f2127; border-color: #2c2f37; border-radius: 12px; box-shadow: var(--shadow-pop); }
-  .proc-tab.active { color: #ffffff; border-bottom-color: #1d7bff; box-shadow: 0 6px 10px -6px rgba(29,123,255,.8); }
+  .proc-tab.active { color: #ffffff; border-bottom-color: #1d7bff; box-shadow: 0 6px 12px -6px rgba(29,123,255,.4); }
 
   /* Status badges & process pills */
   .badge { border-radius: 999px; }
@@ -252,12 +253,12 @@
   .pill-sys1 { background: rgba(177,140,255,.16); color: #c3a6ff; }
   .pill-sys2 { background: rgba(255,138,61,.16); color: #ff9d5c; }
   .proj-status-chip { border-radius: 999px; }
-  .proj-status-chip .s-dot { box-shadow: 0 0 6px currentColor; }
+  .proj-status-chip .s-dot { box-shadow: 0 0 6px color-mix(in srgb, currentColor 45%, transparent); }
 
   /* Progress */
   .rev-bar { background: #2a2d35; }
-  .rev-bar-fill { background: linear-gradient(90deg, #1428a0, #1d7bff 60%, #5aa2ff); box-shadow: 0 0 10px rgba(29,123,255,.6); }
-  .rev-bar-fill.done { background: linear-gradient(90deg, #0f7a45, #3ddc84); box-shadow: 0 0 10px rgba(61,220,132,.5); }
+  .rev-bar-fill { background: linear-gradient(90deg, #1428a0, #1d7bff 60%, #5aa2ff); box-shadow: 0 0 10px rgba(29,123,255,.3); }
+  .rev-bar-fill.done { background: linear-gradient(90deg, #0f7a45, #3ddc84); box-shadow: 0 0 10px rgba(61,220,132,.25); }
 
   /* Rows */
   .doc-row:hover { background: rgba(255,255,255,.035); }
@@ -279,26 +280,26 @@
   }
   .rounded-xl.border.bg-surface-container-lowest:not(.absolute):not(.fixed):not([style*="position:absolute"]):hover {
     border-color: rgba(29,123,255,.28);
-    box-shadow: 0 1px 0 rgba(255,255,255,.08) inset, 0 16px 38px rgba(0,0,0,.55), 0 0 0 1px rgba(29,123,255,.12);
+    box-shadow: 0 1px 0 rgba(255,255,255,.08) inset, 0 16px 38px rgba(0,0,0,.55), 0 0 0 1px rgba(29,123,255,.08);
   }
 
   /* ── Magician-style gauge (one-time draw-in only) ── */
   .mm-gauge { position: relative; width: 156px; height: 156px; flex-shrink: 0; }
-  .mm-gauge::before { content: ''; position: absolute; inset: 18px; border-radius: 50%; background: radial-gradient(circle, rgba(29,123,255,.24) 0%, rgba(29,123,255,0) 70%); }
+  .mm-gauge::before { content: ''; position: absolute; inset: 18px; border-radius: 50%; background: radial-gradient(circle, rgba(29,123,255,.13) 0%, rgba(29,123,255,0) 70%); }
   .mm-gauge svg { position: relative; overflow: visible; }
   /* Magician "Good" health ring: arcs draw in once, then the colours flow round them
      (rotating gradients), a halo in their own colours breathes */
   .mm-gauge::before { animation: mm-core-breathe 2.8s ease-in-out infinite; }
-  @keyframes mm-core-breathe { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+  @keyframes mm-core-breathe { 0%, 100% { opacity: .45; } 50% { opacity: .8; } }
   .mm-arc { animation: mm-draw .9s cubic-bezier(.22,.9,.3,1) forwards; animation-delay: var(--d, 0s); }
   .mm-halo {
     animation: mm-draw .9s cubic-bezier(.22,.9,.3,1) forwards, mm-breathe 2.8s ease-in-out infinite;
     animation-delay: var(--d, 0s), 0s;
   }
   @keyframes mm-draw { to { stroke-dashoffset: 0; } }
-  @keyframes mm-breathe { 0%, 100% { opacity: .18; } 50% { opacity: .7; } }
+  @keyframes mm-breathe { 0%, 100% { opacity: .1; } 50% { opacity: .38; } }
 
-  .mm-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; background: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent), 0 0 10px var(--c); }
+  .mm-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; background: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 12%, transparent), 0 0 10px color-mix(in srgb, var(--c) 45%, transparent); }
 
   /* ── Glowing gradient bars with grow-in + shimmer ── */
   .mm-bar { position: relative; height: 6px; border-radius: 99px; background: #262930; box-shadow: inset 0 1px 2px rgba(0,0,0,.6); overflow: hidden; }
@@ -306,14 +307,14 @@
   .mm-bar-fill {
     height: 100%; border-radius: 99px;
     background: linear-gradient(90deg, var(--c2), var(--c1));
-    box-shadow: 0 0 8px color-mix(in srgb, var(--c1) 55%, transparent);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--c1) 28%, transparent);
     animation: mm-grow .8s cubic-bezier(.22,.9,.3,1) both; animation-delay: var(--d, 0s);
   }
   @keyframes mm-grow { from { width: 0; } }
 
   @media (prefers-reduced-motion: reduce) {
     .mm-arc, .mm-bar-fill { animation-duration: .01s; animation-delay: 0s; animation-iteration-count: 1; }
-    .mm-halo { animation: mm-draw .01s forwards; opacity: .4; }
+    .mm-halo { animation: mm-draw .01s forwards; opacity: .22; }
     .mm-gauge::before { animation: none; }
   }
 
@@ -1567,8 +1568,9 @@ function renderKpi() {
             </linearGradient>`).join('')}
             <radialGradient id="mmCore" cx="50%" cy="40%" r="60%"><stop offset="0" stop-color="#262a33"/><stop offset="1" stop-color="#16181d"/></radialGradient>
             <filter id="mmGlow" x="-30%" y="-30%" width="160%" height="160%">
-              <feGaussianBlur stdDeviation="2.6" result="b"/>
-              <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              <feGaussianBlur stdDeviation="3" result="b"/>
+              <feComponentTransfer in="b" result="bs"><feFuncA type="linear" slope=".5"/></feComponentTransfer>
+              <feMerge><feMergeNode in="bs"/><feMergeNode in="SourceGraphic"/></feMerge>
             </filter>
             <filter id="mmHalo" filterUnits="userSpaceOnUse" x="-12" y="-12" width="180" height="180">
               <feGaussianBlur stdDeviation="4"/>
