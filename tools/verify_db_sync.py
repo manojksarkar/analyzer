@@ -55,7 +55,7 @@ FUNCTIONS = {
            # survive, because each phase reads the model the other one wrote.
            "params": [{"name": "a", "type": "int"}, {"name": "b", "type": "int"}],
            "parameters": [{"name": "a", "type": "int"}, {"name": "b", "type": "int"}],
-           "behaviourInputName": "a", "behaviourOutputName": "sum",
+           "inputName": "a", "outputName": "sum",
            "addressTakenByUnits": ["Other"],
            "readsGlobalIds": ["g1"], "writesGlobalIds": ["g1"],
            "readsGlobalIdsTransitive": ["g1"], "writesGlobalIdsTransitive": ["g1"],
@@ -75,7 +75,7 @@ GLOBALS = {"g1": {"name": "g_count", "file": "src/calc.cpp", "line": 3, "unit": 
 # location columns, so they are checked by the row counts rather than by value.
 FN_VERBATIM = ("qualifiedName", "className", "visibility", "direction", "directionReason",
                "interfaceId", "returnType", "returnExpr", "params", "parameters",
-               "behaviourInputName", "behaviourOutputName", "addressTakenByUnits",
+               "inputName", "outputName", "addressTakenByUnits",
                "readsGlobalIds", "writesGlobalIds", "readsGlobalIdsTransitive",
                "writesGlobalIdsTransitive", "description", "callsIds", "calledByIds",
                "syntheticFromVarDecl")

@@ -292,7 +292,7 @@ carries the qualified display form. Don't collapse the two.
 Three genuine short-name collisions were fixed alongside (wrong-function bugs, not
 cosmetics): `doc_render` looked flowcharts up by short name although they are keyed by
 `qualifiedName`, so **class methods silently got no flowchart in the web preview**;
-behaviour Input/Output labels were resolved by first short-name match within a unit, so
+Input/Output names were resolved by first short-name match within a unit, so
 both `apply` sections got the first one's labels; and hiding was matched against a
 short-name-per-unit set, so hiding one `apply` suppressed every `apply` in the unit. All
 three now key on the fid or `qualifiedName`. Behaviour rows carry `currentFunctionId` and

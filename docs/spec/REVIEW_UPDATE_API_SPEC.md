@@ -46,8 +46,8 @@ Seven **slot kinds** (`REQ-ED-01`). Every request names one:
 | `slot_kind` | what it is | how it is saved |
 |---|---|---|
 | `description` | a function's or global's description | R3 |
-| `behaviourInputName` | the behaviour table's input name | R3 |
-| `behaviourOutputName` | the behaviour table's output name | R3 |
+| `inputName` | a function's input name — printed in its flowchart table and in the Dynamic Behaviour table | R3 |
+| `outputName` | a function's output name — the same two tables | R3 |
 | `unitDescription` | a unit's description | R3 |
 | `structDescription` | a struct's, class's or union's description — the information column of its unit header row | R3 |
 | `behaviourDescription` | a Dynamic Behaviour row — a **list** of bullets, edited as one block | **R6** |
@@ -62,6 +62,11 @@ for this version, and the ids that route takes, read from the `slot_key` you sen
 { "detail": "A Dynamic Behaviour row is not saved with this route. Save it with R6: PUT /api/v1/projects/p1/versions/ver1a2b3c4d/overrides/behaviour, with function_id 'Layer1.Sample-Core|CoreGateway|gatewayMean|int,int,int', external_caller_id 'Layer1.Lib|Lib|libMeanOf|int,int,int', and bullets: the row's lines, as a list of strings. Reading it (R2), undoing it (R4) and its history (R5) do take slot_kind behaviourDescription and this slot_key." }
 ```
 
+**Renamed on 2026-10-05.** `inputName` / `outputName` were `behaviourInputName` /
+`behaviourOutputName`. The flowchart table prints these names too, so they were never only about
+Dynamic Behaviour. The old values are refused like any unknown kind (422). A database upgrade renames
+corrections already stored under them (migration `0015_input_output_names`, or `analyzer.py setup`).
+
 `slot_kind` is an **enum** everywhere it appears, so Swagger offers these seven as a dropdown and
 anything else is refused by validation with **422** naming the allowed values. On R1 it is an
 optional filter — omit it for every correction in the version.
@@ -75,7 +80,7 @@ in the UI (`REQ-ID-01`). Take it from an R1/R2/R7 response and send it back unch
 
 | `slot_kind` | shape of `slot_key` |
 |---|---|
-| `description`, `behaviourInputName`, `behaviourOutputName` | the entity key |
+| `description`, `inputName`, `outputName` | the entity key |
 | `structDescription` | the type's data-dictionary key, e.g. `AddOperation` or `NS::Wrapped` |
 | `unitDescription` | the unit key, `Component\|Unit` |
 | `behaviourDescription` | `functionId` + `U+0001` + `externalCallerId` |
@@ -166,7 +171,7 @@ A project onboarded with `analyzer.py onboard` cannot be run from the web app ei
 | 3 | R9 `GET /versions/{versionId}/export-readiness` | the banner: `stale: true` means corrections are not in the Word file yet |
 | 4 | R1 `GET /versions/{versionId}/overrides` | optional: mark corrected items. Fetch once, index by `slotKey` |
 
-### Flow 2 — correct a text: `description`, `behaviourInputName`, `behaviourOutputName`, `unitDescription`, `structDescription`
+### Flow 2 — correct a text: `description`, `inputName`, `outputName`, `unitDescription`, `structDescription`
 
 | step | call | why |
 |---|---|---|
@@ -988,7 +993,7 @@ the UI must refetch after a save:
 | kind | on the page after a save | in the Word file |
 |---|---|---|
 | `description` | next page load — the stored interface table is patched | after re-export |
-| `behaviourInputName`, `behaviourOutputName` | next page load — read from the model | after re-export |
+| `inputName`, `outputName` | next page load — read from the model | after re-export |
 | `behaviourDescription` | next page load — the stored behaviour row is written | after re-export |
 | `nodeLabel` | next page load **when the UI draws the DOT** (§3a, *Drawing a flowchart*): the payload's DOT is read from the database, and R8 rebuilt it. The PNG (`image_url`) changes only after the owed render (next re-export), so a page that shows the PNG shows the old label until then. Today's web-app does, and prints the DOT as text only when no PNG exists | after re-export |
 | `unitDescription` | next page load — the Component/Unit table reads the stored description from the model, as the Word file does | after re-export |
@@ -1090,7 +1095,7 @@ where it is listed:
 |---|---|---|
 | `label` | string | a display name — the function, unit or type |
 | `component` / `unit` | string \| null | for `structDescription`: the first unit that shows it, or `null` when no document of this version does |
-| `shownIn` | string[] | **every kind**: the unit keys (`Layer1.Cross\|Dispatch`) whose SWE.3 document prints this text, read from the version's stored views. `[]` = no document of this version shows it — the save works and nobody will see it. `description`: the units whose interface table lists the function or global. `behaviourInputName` / `behaviourOutputName`: those units where the function's flowchart was drawn, plus the units whose Dynamic Behaviour rows show it. `unitDescription`: the unit, when it has a section. `structDescription`: the units whose unit header table shows it. `behaviourDescription`: its own unit. A hidden function is shown nowhere |
+| `shownIn` | string[] | **every kind**: the unit keys (`Layer1.Cross\|Dispatch`) whose SWE.3 document prints this text, read from the version's stored views. `[]` = no document of this version shows it — the save works and nobody will see it. `description`: the units whose interface table lists the function or global. `inputName` / `outputName`: those units where the function's flowchart was drawn, plus the units whose Dynamic Behaviour rows show it. `unitDescription`: the unit, when it has a section. `structDescription`: the units whose unit header table shows it. `behaviourDescription`: its own unit. A hidden function is shown nowhere |
 | `kindOfType` | string | `structDescription` only: `struct`, `class` or `union` |
 | `artifact` | string | where a model-backed slot lives: `functions`, `globalVariables`, `units` or `dataDictionary` |
 

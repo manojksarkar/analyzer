@@ -137,11 +137,11 @@ model_deriver.py  main()
   ┌─ Step 4: Behaviour Names (static) ─────────────────────────────────┐
   │ _enrich_behaviour_names(functions_data, global_vars_data)          │
   │     for each function:                                             │
-  │         behaviourInputName ← main param, or first written global,  │
-  │                               or first read global, or function name│
-  │         behaviourOutputName ← return expr identifier, or non-      │
-  │                                primitive return type, or written   │
-  │                                global, or function name            │
+  │         inputName ← main param, or first written global,           │
+  │                      or first read global, or function name        │
+  │         outputName ← return expr identifier, or non-               │
+  │                       primitive return type, or written            │
+  │                       global, or function name                     │
   │         _readable_label(name) → strips g_/s_/t_ prefixes,         │
   │                                  replaces _ with space             │
   └────────────────────────────────────────────────────────────────────┘
@@ -160,7 +160,7 @@ model_deriver.py  main()
   │                              return_expr, draft_input,             │
   │                              draft_output, config, abbreviations)  │
   │             → LLM call via llm_client.py                          │
-  │         updates: f["behaviourInputName"], f["behaviourOutputName"] │
+  │         updates: f["inputName"], f["outputName"]                   │
   └────────────────────────────────────────────────────────────────────┘
 
   ┌─ Step 6: LLM Summarization (--llm-summarize only) ─────────────────┐
@@ -264,7 +264,7 @@ model_deriver.py  main()
 
   Persists enriched data:
       writes model/functions.json   (enriched: +interfaceId, +description,
-                                     +behaviourInputName, +behaviourOutputName,
+                                     +inputName, +outputName,
                                      +phases, +readsGlobalIdsTransitive, ...)
       writes model/globalVariables.json
 ```
@@ -866,7 +866,7 @@ model/functions.json
     {functionKey: {qualifiedName, location:{file,line,endLine},
                    parameters, returnType, callsIds[], calledByIds[],
                    comment, description, interfaceId, phases[],
-                   behaviourInputName, behaviourOutputName,
+                   inputName, outputName,
                    readsGlobalIdsTransitive[], writesGlobalIdsTransitive[]}}
     written by: parser.py (raw), model_deriver.py (enriched)
     read by:    flowchart_engine.py (as --interface-json)

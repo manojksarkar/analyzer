@@ -52,8 +52,8 @@ Almost all are never edited, so the design must be cheap when a version has **ze
 | kind | appears in |
 |---|---|
 | function description | 1.2 Scope table · interface table *Information* · per-function *Requirements* · SWE.4 intro |
-| behaviour input name | per-function table · Dynamic Behaviour table |
-| behaviour output name | same |
+| input name (`inputName`) | per-function table · Dynamic Behaviour table |
+| output name (`outputName`) | same |
 | behaviour description | Dynamic Behaviour *Requirements* + the behaviour diagram arrows |
 | unit description | 1.2 Scope table (see [REQ-PRE-01](#req-pre-01--unit-and-struct-descriptions-must-be-stored-first)) |
 | struct description | unit header table (see [REQ-PRE-01](#req-pre-01--unit-and-struct-descriptions-must-be-stored-first)) |

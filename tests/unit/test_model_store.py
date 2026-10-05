@@ -82,7 +82,7 @@ def test_functions_roundtrip_real_model():
         assert l.get("returnType") == o.get("returnType")
         assert l.get("description") == o.get("description")
         assert l.get("parameters") == o.get("parameters")
-        assert l.get("behaviourInputName") == o.get("behaviourInputName")
+        assert l.get("inputName") == o.get("inputName")
         # graph (semantic sets)
         assert _norm(l["callsIds"]) == _norm(o.get("callsIds")), f"callsIds {fid}"
         assert _norm(l["calledByIds"]) == _norm(o.get("calledByIds")), f"calledByIds {fid}"
@@ -318,3 +318,88 @@ def test_file_and_db_agree_on_component_unit_order():
         src = fh.read()
     assert 'sorted(u for u in units_data if u.split(KEY_SEP)[0] == m)' in src, \
         "components.json must write its unit list sorted, to match load_components()"
+
+
+class TestTheRenamedInputOutputNames:
+    """A function's input and output names were `behaviourInputName` / `behaviourOutputName`
+    until 2026-10-05, and every version stored before then keeps them so: its payload is a
+    content-addressed blob that other versions share, so it is not rewritten. It is READ under
+    the new names (REVIEW_UPDATE_HANDOVER §4.34) -- or an old version prints an empty Input Name
+    and Output Name, with no error anywhere."""
+
+    FID = "Sample-Core|Core|pump|int"
+    OLD = {"returnType": "int", "description": "Runs the pump.",
+           "behaviourInputName": "Old input", "behaviourOutputName": "Old output"}
+
+    def _stored_as(self, cx, payload, version_id=VID):
+        """Point FID's row at a blob holding exactly `payload`, as a version stored before the
+        rename holds it -- `persist_functions` itself writes today's names only."""
+        from sqlalchemy import select, update
+        ch = model_store._content_hash(payload)
+        model_store._insert_blobs(cx, {ch: ("function", payload)})
+        eid = cx.execute(select(s.entities.c.entity_id)
+                         .where(s.entities.c.entity_key == self.FID)).scalar_one()
+        cx.execute(update(s.entity_versions)
+                   .where(s.entity_versions.c.version_id == version_id,
+                          s.entity_versions.c.entity_id == eid).values(content_hash=ch))
+
+    def _engine(self, payload, *, second_version=None):
+        eng = _fk_engine()
+        with eng.begin() as cx:
+            if second_version:
+                cx.execute(insert(s.versions), {
+                    "id": second_version, "project_id": PID, "version": "v2",
+                    "created_at": datetime.datetime.now(datetime.timezone.utc)})
+            for vid in (VID, second_version) if second_version else (VID,):
+                model_store.persist_functions(cx, PID, vid, {self.FID: {"qualifiedName": "pump"}})
+                self._stored_as(cx, payload, vid)
+        return eng
+
+    def _stored_payload(self, eng, version_id=VID):
+        from sqlalchemy import select
+        ev, cb = s.entity_versions, s.content_blobs
+        with eng.connect() as cx:
+            return cx.execute(select(cb.c.payload)
+                              .select_from(ev.join(cb, cb.c.content_hash == ev.c.content_hash))
+                              .where(ev.c.version_id == version_id)).scalar_one()
+
+    def test_an_old_payload_is_read_under_the_new_names(self):
+        eng = self._engine(self.OLD)
+        with eng.connect() as cx:
+            fn = model_store.load_functions(cx, VID)[self.FID]
+        assert (fn["inputName"], fn["outputName"]) == ("Old input", "Old output")
+        assert "behaviourInputName" not in fn and "behaviourOutputName" not in fn
+        assert fn["description"] == "Runs the pump."
+
+    def test_where_both_are_stored_the_new_name_wins(self):
+        eng = self._engine({**self.OLD, "inputName": "New input"})
+        with eng.connect() as cx:
+            fn = model_store.load_functions(cx, VID)[self.FID]
+        assert fn["inputName"] == "New input" and fn["outputName"] == "Old output"
+
+    def test_a_correction_rewrites_the_function_under_the_new_names_only(self):
+        """One key per field: the old name beside the new would be read back as the old
+        text the moment the new one was absent."""
+        eng = self._engine(self.OLD)
+        with eng.begin() as cx:
+            model_store.set_entity_field(cx, VID, self.FID, "inputName", "Reviewed", "function")
+        stored = self._stored_payload(eng)
+        assert stored["inputName"] == "Reviewed" and stored["outputName"] == "Old output"
+        assert "behaviourInputName" not in stored and "behaviourOutputName" not in stored
+        with eng.connect() as cx:
+            fn = model_store.load_functions(cx, VID)[self.FID]
+        assert (fn["inputName"], fn["outputName"]) == ("Reviewed", "Old output")
+
+    def test_the_shared_blob_is_left_as_it_is(self):
+        """Another version pointing at the same old blob reads exactly as before the correction."""
+        eng = self._engine(self.OLD, second_version="ver-other")
+        with eng.begin() as cx:
+            model_store.set_entity_field(cx, VID, self.FID, "inputName", "Reviewed", "function")
+        assert self._stored_payload(eng, "ver-other") == self.OLD
+        with eng.connect() as cx:
+            assert model_store.load_functions(cx, "ver-other")[self.FID]["inputName"] == "Old input"
+
+    def test_today_stores_the_new_names_only(self):
+        fields = model_store._FN_PAYLOAD_FIELDS
+        assert "inputName" in fields and "outputName" in fields
+        assert "behaviourInputName" not in fields and "behaviourOutputName" not in fields

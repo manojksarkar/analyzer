@@ -116,7 +116,7 @@ class TestWhatDoesNotCascade:
             [(slot.UNIT_DESCRIPTION, slot.for_unit(UNIT))]
 
     @pytest.mark.parametrize("kind", [slot.UNIT_DESCRIPTION, slot.STRUCT_DESCRIPTION,
-                                      slot.BEHAVIOUR_INPUT_NAME, slot.BEHAVIOUR_OUTPUT_NAME,
+                                      slot.INPUT_NAME, slot.OUTPUT_NAME,
                                       slot.BEHAVIOUR_DESCRIPTION, slot.NODE_LABEL])
     def test_every_other_kind_cascades_to_nothing(self, conn, kind):
         assert cascade.dependents_of(conn, "v1", kind, "anything") == []

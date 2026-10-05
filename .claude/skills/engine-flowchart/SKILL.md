@@ -80,7 +80,7 @@ Start context (read as needed, don't duplicate here):
 - **Full parse, selective *work*.** The call graph is always complete, so impact analysis can't go stale;
   the win is skipping unchanged **LLM work** — the `EntityCache` under `<repo>/.flowchart_cache` (composite
   source+callee hash) reuses unchanged descriptions, and this engine carries per-version output snapshots
-  forward (`_CARRY_FIELDS`: description, behaviourInputName, behaviourOutputName, comment, phases).
+  forward (`_CARRY_FIELDS`: description, inputName, outputName, comment, phases).
 - **Its own model files** (constants in [core/model_io.py](engine/core/model_io.py), deliberately **not** in
   `ALL_MODEL_NAMES`): `HASHES`, `EDGES`, `TU_INCLUDES`, `ENTITY_FILES`, `FUNC_KEYS`, `OVERRIDE_PAIRS` —
   produced by Phase 1 for change detection/impact. The main pipeline ignores them.

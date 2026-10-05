@@ -713,7 +713,7 @@ Requirements cell contains:
    per unit via a `rendered_private_fids` set so the same private helper isn't
    embedded twice.
 
-Input/Output Name = `behaviourInputName` / `behaviourOutputName` from
+Input/Output Name = `inputName` / `outputName` from
 `functions.json`. Risk = `"Medium"` (hardcoded). Capacity(Density) =
 `"Common"` (hardcoded).
 

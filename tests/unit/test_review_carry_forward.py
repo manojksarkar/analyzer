@@ -560,8 +560,8 @@ class TestChangedCodeGetsFreshText:
     """`REQ-VR-01` for the function kinds, as node labels already had it. Carried as live, the
     correction claimed to be in force over the fresh LLM text the new code received."""
 
-    @pytest.mark.parametrize("kind", [slot.DESCRIPTION, slot.BEHAVIOUR_INPUT_NAME,
-                                      slot.BEHAVIOUR_OUTPUT_NAME])
+    @pytest.mark.parametrize("kind", [slot.DESCRIPTION, slot.INPUT_NAME,
+                                      slot.OUTPUT_NAME])
     def test_it_is_kept_but_not_applied(self, conn, kind):
         _override(conn, "v3", kind, slot.for_entity(kind, FID))
         _seed_version(conn, "v4", source_hash="h2")
@@ -572,8 +572,8 @@ class TestChangedCodeGetsFreshText:
                            .where(s.text_overrides.c.version_id == "v4")).first()
         assert row.human_text == "Corrected."                 # kept (REQ-ID-03)
 
-    @pytest.mark.parametrize("kind", [slot.DESCRIPTION, slot.BEHAVIOUR_INPUT_NAME,
-                                      slot.BEHAVIOUR_OUTPUT_NAME])
+    @pytest.mark.parametrize("kind", [slot.DESCRIPTION, slot.INPUT_NAME,
+                                      slot.OUTPUT_NAME])
     def test_unchanged_code_still_carries_it(self, conn, kind):
         _override(conn, "v3", kind, slot.for_entity(kind, FID))
         _seed_version(conn, "v4", source_hash="h1")
@@ -584,18 +584,18 @@ class TestCorrectionsGoBackIntoTheRebuiltModel:
     """`apply_live_corrections`: what Phase 2 calls once it has rebuilt the model."""
 
     def _model(self):
-        return {"functions": {FID: {"description": "llm d", "behaviourInputName": "llm in",
-                                    "behaviourOutputName": "llm out"}},
+        return {"functions": {FID: {"description": "llm d", "inputName": "llm in",
+                                    "outputName": "llm out"}},
                 "globalVariables": {},
                 "units": {UNIT: {"name": "UnitA", "description": "llm unit"}},
                 "dataDictionary": {STRUCT: dict(GG, description="llm struct")}}
 
     def _all(self, conn):
         for kind, key in [(slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, FID)),
-                          (slot.BEHAVIOUR_INPUT_NAME,
-                           slot.for_entity(slot.BEHAVIOUR_INPUT_NAME, FID)),
-                          (slot.BEHAVIOUR_OUTPUT_NAME,
-                           slot.for_entity(slot.BEHAVIOUR_OUTPUT_NAME, FID)),
+                          (slot.INPUT_NAME,
+                           slot.for_entity(slot.INPUT_NAME, FID)),
+                          (slot.OUTPUT_NAME,
+                           slot.for_entity(slot.OUTPUT_NAME, FID)),
                           (slot.UNIT_DESCRIPTION, slot.for_unit(UNIT)),
                           (slot.STRUCT_DESCRIPTION,
                            slot.for_entity(slot.STRUCT_DESCRIPTION, STRUCT))]:
@@ -607,8 +607,8 @@ class TestCorrectionsGoBackIntoTheRebuiltModel:
         changed = cf.apply_live_corrections(conn, "v3", model)
         f = model["functions"][FID]
         assert f["description"] == "human description"
-        assert f["behaviourInputName"] == "human behaviourInputName"
-        assert f["behaviourOutputName"] == "human behaviourOutputName"
+        assert f["inputName"] == "human inputName"
+        assert f["outputName"] == "human outputName"
         assert model["units"][UNIT]["description"] == "human unitDescription"
         assert model["dataDictionary"][STRUCT]["description"] == "human structDescription"
         assert changed == {"functions": 3, "units": 1, "dataDictionary": 1}

@@ -74,7 +74,7 @@ def _scope_label(scope: Dict[str, Any]) -> str:
     return stype if (stype == "project" or not names) else f"{stype}:{','.join(names)}"
 
 # Output fields carried forward from a baseline function entry for reused fids.
-_CARRY_FIELDS = ("description", "behaviourInputName", "behaviourOutputName", "comment", "phases")
+_CARRY_FIELDS = ("description", "inputName", "outputName", "comment", "phases")
 
 
 def plan_incremental(baseline_hashes: Dict[str, str],

@@ -38,13 +38,12 @@ SLOT_FIELDS = ("slotKind", "slotKey", "text", "llmText", "humanText", "isOverrid
                "isOrphaned", "canUndo", "updatedBy", "updatedAt")
 SAVE_FIELDS = ("previousText", "firstEdit", "viewsDerived", "queuedForRegeneration")
 #: Saved one slot at a time through R3. The other two kinds have routes of their own (R6, R8).
-R3_KINDS = ("description", "behaviourInputName", "behaviourOutputName", "unitDescription",
-            "structDescription")
+R3_KINDS = ("description", "inputName", "outputName", "unitDescription", "structDescription")
 ALL_KINDS = R3_KINDS + ("behaviourDescription", "nodeLabel")
 #: On the document page straight after a save (API spec, "When a correction becomes visible").
 #: A struct description reaches the page with the next re-export.
-PAGE_AFTER_SAVE = ("description", "behaviourInputName", "behaviourOutputName",
-                   "behaviourDescription", "nodeLabel", "unitDescription")
+PAGE_AFTER_SAVE = ("description", "inputName", "outputName", "behaviourDescription", "nodeLabel",
+                   "unitDescription")
 FINISHED = ("complete", "failed", "cancelled")
 
 DEFAULT_OPTIONS = {

@@ -45,6 +45,19 @@ def _maint_dsn(raw: str) -> tuple[str, str]:
     return maint, target_db
 
 
+def _migration(name: str):
+    """The Alembic revision `alembic/versions/<name>.py`, loaded as a module.
+
+    Loaded by path: a revision's file name starts with its number, so it cannot be imported.
+    """
+    import importlib.util
+    path = os.path.join(_ROOT, "alembic", "versions", name + ".py")
+    spec = importlib.util.spec_from_file_location("migration_" + name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _add_missing_columns(eng, metadata):
     """Add columns the schema declares but the live tables lack. Returns (added, blocked).
 
@@ -247,6 +260,19 @@ def main() -> int:
             "UPDATE versions SET pipeline_status = 'complete' "
             "WHERE pipeline_status IN ('parsing','deriving','viewing','exporting') "
             "  AND status IS NOT NULL AND status <> 'draft'")).rowcount
+
+        # The input/output-name slot kinds were renamed on 2026-10-05: `behaviourInputName` /
+        # `behaviourOutputName` became `inputName` / `outputName`. Stored corrections, their
+        # history and the regeneration queue carry the kind as data, so a database Alembic never
+        # stamped is renamed here -- by migration 0015's own statements, not a copy of them.
+        m0015 = _migration("0015_input_output_names")
+        renamed = 0
+        for old, new in m0015.RENAMED.items():
+            for sql in m0015.statements(old, new):
+                renamed += cx.execute(text(sql), {"old": old, "new": new}).rowcount
+        if renamed:
+            print(f"renamed the stored slot kinds behaviourInputName -> inputName, "
+                  f"behaviourOutputName -> outputName ({renamed} row(s))")
     if n:
         print(f"repaired {n} version row(s) stranded mid-phase -> 'complete' "
               f"(they are baseline-eligible again; reuse will work on the next run)")

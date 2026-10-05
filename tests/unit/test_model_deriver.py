@@ -8,7 +8,7 @@ Functions covered:
   _readable_label          — identifier → human label
   _propagate_global_access — transitive global reads/writes along call graph
   _enrich_interfaces       — sets interfaceId on functions and globals
-  _enrich_behaviour_names  — sets behaviourInputName / behaviourOutputName
+  _enrich_behaviour_names  — sets inputName / outputName
 """
 import os
 import sys
@@ -163,7 +163,7 @@ class TestEnrichBehaviourNames:
             "returnType": "void", "returnExpr": "",
             "qualifiedName": "setSpeed",
         })
-        assert "Speed" in f["behaviourInputName"]
+        assert "Speed" in f["inputName"]
 
     def test_uses_return_expr_as_output(self):
         f = self._run({
@@ -171,7 +171,7 @@ class TestEnrichBehaviourNames:
             "returnType": "int", "returnExpr": "sum",
             "qualifiedName": "compute",
         })
-        assert "Sum" in f["behaviourOutputName"]
+        assert "Sum" in f["outputName"]
 
     def test_uses_global_read_when_no_params(self):
         gvars = {"g1": {"qualifiedName": "g_temperature"}}
@@ -181,7 +181,7 @@ class TestEnrichBehaviourNames:
             "readsGlobalIds": ["g1"],
             "qualifiedName": "getTemp",
         }, gvars)
-        assert "Temperature" in f["behaviourInputName"]
+        assert "Temperature" in f["inputName"]
 
     def test_fallback_to_function_name(self):
         f = self._run({
@@ -189,8 +189,8 @@ class TestEnrichBehaviourNames:
             "returnType": "void", "returnExpr": "",
             "qualifiedName": "MyClass::doWork",
         })
-        assert "DoWork" in f["behaviourInputName"] or "input" in f["behaviourInputName"].lower()
-        assert "DoWork" in f["behaviourOutputName"] or "result" in f["behaviourOutputName"].lower()
+        assert "DoWork" in f["inputName"] or "input" in f["inputName"].lower()
+        assert "DoWork" in f["outputName"] or "result" in f["outputName"].lower()
 
     def test_short_param_name_skipped(self):
         """Single-char param 'n' should be skipped — falls through to global or fallback."""
@@ -200,7 +200,7 @@ class TestEnrichBehaviourNames:
             "qualifiedName": "loopSum",
         })
         # returnExpr "sum" should win for output
-        assert "Sum" in f["behaviourOutputName"]
+        assert "Sum" in f["outputName"]
 
     def test_output_uses_non_primitive_return_type(self):
         f = self._run({
@@ -208,12 +208,12 @@ class TestEnrichBehaviourNames:
             "returnType": "SensorData", "returnExpr": "",
             "qualifiedName": "getData",
         })
-        assert "SensorData" in f["behaviourOutputName"] or "Sensordata" in f["behaviourOutputName"]
+        assert "SensorData" in f["outputName"] or "Sensordata" in f["outputName"]
 
     def test_fields_always_set(self):
         f = self._run({"parameters": [], "returnType": "void", "returnExpr": "", "qualifiedName": "f"})
-        assert f.get("behaviourInputName")
-        assert f.get("behaviourOutputName")
+        assert f.get("inputName")
+        assert f.get("outputName")
 
     def test_return_true_literal_output_is_true_false(self):
         """`return TRUE;` must not leak the branch literal 'True' — show TRUE/FALSE."""
@@ -222,7 +222,7 @@ class TestEnrichBehaviourNames:
             "returnType": "BOOL32", "returnExpr": "TRUE",
             "qualifiedName": "isReady",
         })
-        assert f["behaviourOutputName"] == "TRUE/FALSE"
+        assert f["outputName"] == "TRUE/FALSE"
 
     def test_return_false_literal_output_is_true_false(self):
         f = self._run({
@@ -230,7 +230,7 @@ class TestEnrichBehaviourNames:
             "returnType": "bool", "returnExpr": "FALSE",
             "qualifiedName": "check",
         })
-        assert f["behaviourOutputName"] == "TRUE/FALSE"
+        assert f["outputName"] == "TRUE/FALSE"
 
     def test_non_boolean_return_literal_unchanged(self):
         """A real return identifier must not be rewritten to TRUE/FALSE."""
@@ -238,8 +238,8 @@ class TestEnrichBehaviourNames:
             "parameters": [], "returnType": "int", "returnExpr": "status",
             "qualifiedName": "getStatus",
         })
-        assert f["behaviourOutputName"] != "TRUE/FALSE"
-        assert "Status" in f["behaviourOutputName"]
+        assert f["outputName"] != "TRUE/FALSE"
+        assert "Status" in f["outputName"]
 
     def test_this_arrow_names_the_member_not_this(self):
         """`return this->s_mark;` (tokens joined by spaces) names the member."""
@@ -247,7 +247,7 @@ class TestEnrichBehaviourNames:
             "parameters": [], "returnType": "int", "returnExpr": "this -> s_mark",
             "qualifiedName": "ViaCounters::getAndBump",
         })
-        assert f["behaviourOutputName"] == "Mark"
+        assert f["outputName"] == "Mark"
 
     @pytest.mark.parametrize("expr, rtype", [("this", "ViaCounters *"), ("* this", "ViaCounters &")])
     def test_returning_the_object_itself_falls_back_to_the_function_name(self, expr, rtype):
@@ -256,7 +256,7 @@ class TestEnrichBehaviourNames:
             "parameters": [], "returnType": rtype, "returnExpr": expr,
             "qualifiedName": "ViaCounters::self",
         })
-        assert f["behaviourOutputName"] == "Self result"
+        assert f["outputName"] == "Self result"
 
 
 # ---------------------------------------------------------------------------

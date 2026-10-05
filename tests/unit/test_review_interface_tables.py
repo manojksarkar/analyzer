@@ -152,8 +152,8 @@ class TestThroughTheSave:
 
     def test_a_behaviour_name_patches_nothing(self, conn):
         """Also read from the model, and not present in the interface tables at all."""
-        out = svc.apply_override(conn, "v1", slot.BEHAVIOUR_INPUT_NAME,
-                                 slot.for_entity(slot.BEHAVIOUR_INPUT_NAME, FN), "Timer value",
+        out = svc.apply_override(conn, "v1", slot.INPUT_NAME,
+                                 slot.for_entity(slot.INPUT_NAME, FN), "Timer value",
                                  models=svc.ModelAccess(artifacts=_model()))
         assert out.tables_patched == 0
 

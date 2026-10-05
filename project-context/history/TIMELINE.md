@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-05b | A function's input and output names are `inputName` / `outputName` -- in the model, as review slot kinds and in the API -- not `behaviourInputName` / `behaviourOutputName` | [11](11-2026-09-29e.md) |
 | 2026-10-05 | R3's 501 for a behaviour row or a flowchart label names the route that saves it (R6, R8) | [11](11-2026-09-29e.md) |
 | 2026-10-03b | A job's scope is checked when it is requested, and a failed or cancelled job gives its version tag back | [11](11-2026-09-29e.md) |
 | 2026-10-03 | The sample has Dynamic Behaviour under the default filter: Sample Core gains two units, CoreGateway and CoreStats, and Lib calls in | [11](11-2026-09-29e.md) |

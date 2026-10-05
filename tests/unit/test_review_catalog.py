@@ -38,9 +38,9 @@ def _model():
     return {
         "functions": {
             FN: {"name": "doThing", "description": "Does the thing.",
-                 "behaviourInputName": "in", "behaviourOutputName": "out"},
+                 "inputName": "in", "outputName": "out"},
             FN2: {"name": "other", "description": "Other.",
-                  "behaviourInputName": "", "behaviourOutputName": ""},
+                  "inputName": "", "outputName": ""},
         },
         "globalVariables": {GLOBAL: {"name": "g_count", "description": "A counter."}},
         "units": {"Comp|UnitA": {"name": "UnitA", "description": "Unit A."},
@@ -93,7 +93,7 @@ class TestTheModelBackedKinds:
 
     def test_behaviour_names_are_functions_only(self, conn, models):
         """A global has no behaviour row, so offering one would be a slot that cannot be saved."""
-        page = catalog.list_slots(conn, "v1", slot.BEHAVIOUR_INPUT_NAME, models=models)
+        page = catalog.list_slots(conn, "v1", slot.INPUT_NAME, models=models)
         assert set(_keys(page)) == {FN, FN2}
 
     def test_the_text_is_the_one_a_save_would_replace(self, conn, models):
@@ -102,14 +102,14 @@ class TestTheModelBackedKinds:
         row = next(i for i in page.items if i["slotKey"] == FN)
         assert row["text"] == "Does the thing."
 
-        page = catalog.list_slots(conn, "v1", slot.BEHAVIOUR_INPUT_NAME, models=models)
+        page = catalog.list_slots(conn, "v1", slot.INPUT_NAME, models=models)
         row = next(i for i in page.items if i["slotKey"] == FN)
         assert row["text"] == "in", "the same key must read a DIFFERENT field per kind"
 
     def test_an_empty_slot_is_still_listed(self, conn, models):
-        """`behaviourOutputName` is legitimately blank on a function that writes nothing, and a
+        """`outputName` is legitimately blank on a function that writes nothing, and a
         reviewer may be filling it in for the first time -- hiding it would hide the edit."""
-        page = catalog.list_slots(conn, "v1", slot.BEHAVIOUR_OUTPUT_NAME, models=models)
+        page = catalog.list_slots(conn, "v1", slot.OUTPUT_NAME, models=models)
         row = next(i for i in page.items if i["slotKey"] == FN2)
         assert row["text"] == "" and row["isOverridden"] is False
 
@@ -221,13 +221,13 @@ class TestEveryRowSaysWhereItsTextIsShown:
         self._documents(conn)
         _store(conn, "G/behaviour_diagrams/_behaviour_pngs.json", {"_docxRows": {"Comp": {
             "UnitB": [{"currentFunctionId": FN2, "externalCallerId": "X|Y|z|"}]}}})
-        assert self._shown(conn, models, slot.BEHAVIOUR_INPUT_NAME) == {
+        assert self._shown(conn, models, slot.INPUT_NAME) == {
             FN: ["Comp|UnitA"], FN2: ["Comp|UnitB"]}
 
     def test_without_a_drawn_flowchart_behaviour_names_are_not_shown(self, conn, models):
         """Flowcharts off: a published function's section is its description paragraph only."""
         self._documents(conn, drawn=False)
-        assert self._shown(conn, models, slot.BEHAVIOUR_OUTPUT_NAME)[FN] == []
+        assert self._shown(conn, models, slot.OUTPUT_NAME)[FN] == []
 
     def test_a_unit_is_shown_when_it_has_a_section(self, conn, models):
         self._documents(conn)

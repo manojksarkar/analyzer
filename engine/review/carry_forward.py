@@ -262,7 +262,7 @@ def _still_applies(row, target: _Target, baseline: _Target) -> Optional[str]:
             return "that type's definition changed"
         return None
 
-    # A function or a global: a description, or a behaviour input/output name.
+    # A function or a global: a description, or an input/output name.
     if entity not in target.hashes:
         return "that entity is not in the new version"
     if baseline.hashes.get(entity) != target.hashes.get(entity):
@@ -495,7 +495,7 @@ def apply_live_corrections(conn, version_id: str, model: Dict[str, Any]) -> Dict
       * `units` is built afresh and every unit description re-generated;
       * the data dictionary of a NEW version comes from its own parse, so its struct
         descriptions are generated again;
-      * behaviour input/output names are recomputed for every function a run derives -- all of
+      * input/output names are recomputed for every function a run derives -- all of
         them on `reexport --from-phase 2`.
 
     So the text is put back last, through the same resolver a save writes through. Only

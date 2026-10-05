@@ -78,7 +78,7 @@ def test_behaviour_names_cached(tmp_path, monkeypatch):
     args = ("int f(){return 1;}", [], [], [], "int", "1", "", "")
     r1 = le.get_behaviour_names(*args, _CFG)
     r2 = le.get_behaviour_names(*args, _CFG)
-    assert r1 == r2 == {"behaviourInputName": "the input", "behaviourOutputName": "the output"}
+    assert r1 == r2 == {"inputName": "the input", "outputName": "the output"}
     assert calls["n"] == 1                                  # cached -> one LLM call
 
 

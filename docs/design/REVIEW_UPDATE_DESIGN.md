@@ -83,7 +83,7 @@ One row per overridden slot. This is what readers consult, so it must be a singl
 | column | notes |
 |---|---|
 | `version_id` | FK → `versions.id`, `ondelete=CASCADE`. Overrides are version-scoped (`REQ-ST-02`) |
-| `slot_kind` | `description` / `behaviourInputName` / `behaviourOutputName` / `behaviourDescription` / `unitDescription` / `structDescription` / `nodeLabel` |
+| `slot_kind` | `description` / `inputName` / `outputName` / `behaviourDescription` / `unitDescription` / `structDescription` / `nodeLabel` |
 | `slot_key` | the addressing string — see [§3](#3-slot-addressing) |
 | `llm_text` | the original. Never overwritten after the first override (`REQ-ST-03`) |
 | `human_text` | the current human text |
@@ -147,8 +147,8 @@ apply ahead of the code. `0010_text_overrides` creates the three tables; `0011_s
 | `slot_kind` | `slot_key` | source of the id |
 |---|---|---|
 | `description` | `entity_key` | `entities.entity_key`, unique per project |
-| `behaviourInputName` | `entity_key` | same |
-| `behaviourOutputName` | `entity_key` | same |
+| `inputName` | `entity_key` | same |
+| `outputName` | `entity_key` | same |
 | `structDescription` | `entity_key` (kind=`type`) — only a struct, class or union the unit header table describes (`utils.is_described_record`) | same |
 | `unitDescription` | `unit_key` | `model_units.unit_key` = `Component\|Unit` |
 | `behaviourDescription` | `<functionId>` ␁ `<externalCallerId>` | the `_docxRows` entry — **both entity keys**, see `REQ-ID-01` |
@@ -337,7 +337,7 @@ key. No LLM, no parse, no subprocess.
 | slot kind | views re-derived |
 |---|---|
 | `description` | `interfaceTables` and `testSpecs` for the function's component (a SWE.4 spec copies the description) |
-| `behaviourInputName/OutputName` | `interfaceTables` for the function's component |
+| `inputName` / `outputName` | `interfaceTables` for the function's component |
 | `unitDescription` | `interfaceTables` for that component |
 | `structDescription` | `unitHeaders` — the unit header table shows it for struct, class and union rows |
 | `behaviourDescription` | `behaviourDiagram` rows for that component |
@@ -797,7 +797,7 @@ would be the second copy this design exists to avoid.
 **Putting the five back after Phase 2.** "Carried there by the engine's own `carry_forward_globals`"
 was true of function descriptions only. Phase 2 rebuilds the rest from scratch: `units` is built
 afresh and every unit description generated again, a new version's data dictionary comes from its
-own parse, and behaviour input/output names are recomputed for every function a run derives — all
+own parse, and input/output names are recomputed for every function a run derives — all
 of them on `reexport --from-phase 2`. Measured on the sample: v1 corrected, v2 generated from it,
 and v2 printed the LLM's unit and struct text while the records still claimed to be in force; a
 Phase-2 re-derive of v1 printed computed behaviour names and an empty unit description.

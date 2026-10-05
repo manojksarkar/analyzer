@@ -112,8 +112,8 @@ def test_behaviour_names_set(sample_functions):
     for fid, f in sample_functions.items():
         if (f.get("visibility") or "").lower() == "private":
             continue
-        assert (f.get("behaviourInputName") or "").strip(), f"{fid}: behaviourInputName empty"
-        assert (f.get("behaviourOutputName") or "").strip(), f"{fid}: behaviourOutputName empty"
+        assert (f.get("inputName") or "").strip(), f"{fid}: inputName empty"
+        assert (f.get("outputName") or "").strip(), f"{fid}: outputName empty"
 
 
 # ---------------------------------------------------------------------------

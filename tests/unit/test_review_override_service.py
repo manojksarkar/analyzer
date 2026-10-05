@@ -33,8 +33,8 @@ def _model():
     return {
         "functions": {FID: {"qualifiedName": "ns::GCM_SetGcStartTime",
                             "description": "Sets the time.",
-                            "behaviourInputName": "Timer value",
-                            "behaviourOutputName": "Status"}},
+                            "inputName": "Timer value",
+                            "outputName": "Status"}},
         "globalVariables": {GID: {"qualifiedName": "ns::gRetryCount",
                                   "description": "Counts retries."}},
         "units": {UNIT: {"name": "UnitA", "description": "Manages GC."}},
@@ -119,10 +119,10 @@ class TestTheModelIsWritten:
 
     def test_a_behaviour_name_lands_on_its_own_field(self, conn):
         m = svc.ModelAccess(artifacts=_model())
-        _apply(conn, m, slot.BEHAVIOUR_INPUT_NAME,
-               slot.for_entity(slot.BEHAVIOUR_INPUT_NAME, FID), "GC timer value")
+        _apply(conn, m, slot.INPUT_NAME,
+               slot.for_entity(slot.INPUT_NAME, FID), "GC timer value")
         fn = m.artifact("functions")[FID]
-        assert fn["behaviourInputName"] == "GC timer value"
+        assert fn["inputName"] == "GC timer value"
         assert fn["description"] == "Sets the time.", "the description was not the target"
 
     def test_only_the_touched_artifact_is_written_back(self, conn):

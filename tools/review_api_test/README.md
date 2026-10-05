@@ -3,7 +3,7 @@
 One script that does what a user and the web app would do, and checks every answer:
 
 1. signs in, **onboards a project** (`POST /projects`) and **generates a version** (`POST /projects/{id}/jobs`, then follows the job);
-2. corrects **every kind** of LLM-written text — `description`, `behaviourInputName`, `behaviourOutputName`, `unitDescription`, `structDescription` (R3), a Dynamic Behaviour row (R6), flowchart labels (R8);
+2. corrects **every kind** of LLM-written text — `description`, `inputName`, `outputName`, `unitDescription`, `structDescription` (R3), a Dynamic Behaviour row (R6), flowchart labels (R8);
 3. reads everything back through **every route** (R1, R2, R5, R7, R9, R10, R11) and the document page;
 4. corrects again, sends **two saves of one slot at the same moment**, **undoes**, and tries the **mistakes a client can make** (empty text, camelCase body, wrong keys, unknown nodes …);
 5. **re-exports** the version and opens the **Word file** to find the corrections;

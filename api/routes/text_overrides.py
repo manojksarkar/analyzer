@@ -542,11 +542,11 @@ def update_slot(
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
-    """`REQ-API-03`. One slot per call: `description`, `behaviourInputName`,
-    `behaviourOutputName`, `unitDescription` and `structDescription`. A Dynamic Behaviour row
-    (`behaviourDescription`) is saved with R6 and a flowchart label (`nodeLabel`) with R8: sent
-    here, either answers 501 naming that route and what to send it. Answers the slot as it now is
-    (`REQ-API-09`) and what the save did."""
+    """`REQ-API-03`. One slot per call: `description`, `inputName`, `outputName`,
+    `unitDescription` and `structDescription`. A Dynamic Behaviour row (`behaviourDescription`) is
+    saved with R6 and a flowchart label (`nodeLabel`) with R8: sent here, either answers 501
+    naming that route and what to send it. Answers the slot as it now is (`REQ-API-09`) and what
+    the save did."""
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
     elsewhere = _saved_by_another_route(project_id, version_id, body.slot_kind.value,

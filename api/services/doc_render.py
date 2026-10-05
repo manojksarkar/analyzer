@@ -845,8 +845,8 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
 
                 # Input / output names (mirrors docx_exporter)
                 fn_data = (functions_data.get(fid) or {}) if fid else {}
-                input_name = (fn_data.get("behaviourInputName") or "").strip()
-                output_name = (fn_data.get("behaviourOutputName") or "").strip()
+                input_name = (fn_data.get("inputName") or "").strip()
+                output_name = (fn_data.get("outputName") or "").strip()
                 if not input_name:
                     lbl = _readable_label(func_name)
                     input_name = (lbl + " input").strip() if lbl else ""
@@ -918,8 +918,8 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                         _beh_f = f
                         break
                 if _beh_f is not None:
-                    input_label = (_beh_f.get("behaviourInputName") or "").strip()
-                    output_label = (_beh_f.get("behaviourOutputName") or "").strip()
+                    input_label = (_beh_f.get("inputName") or "").strip()
+                    output_label = (_beh_f.get("outputName") or "").strip()
                 if not input_label:
                     lbl = _readable_label(current_fn)
                     input_label = (lbl + " input").strip() if lbl else "Behaviour input"

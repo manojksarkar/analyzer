@@ -61,13 +61,13 @@ class TestPlanIncremental:
 
 class TestCarryForward:
     def test_copies_outputs_for_reused_only(self):
-        base = {"a": {"description": "good A", "behaviourInputName": "in"},
+        base = {"a": {"description": "good A", "inputName": "in"},
                 "b": {"description": "good B"}}
         targ = {"a": {"description": ""}, "b": {"description": ""}}
         n = carry_forward_descriptions({"a"}, targ, base)      # reuse only a
         assert n == 1
         assert targ["a"]["description"] == "good A"
-        assert targ["a"]["behaviourInputName"] == "in"
+        assert targ["a"]["inputName"] == "in"
         assert targ["b"]["description"] == ""                 # b not reused -> untouched
 
     def test_missing_baseline_entry_skipped(self):
