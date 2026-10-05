@@ -83,7 +83,7 @@ version you do not need, or let it generate a fresh one (the default).
 | `generate.version_id` | empty = generate a version from `start_job`; set = test that version |
 | `generate.start_job` | **the body of `POST /api/v1/projects/{projectId}/jobs`**. `commit_sha: "latest"` = the newest commit the server lists for the project (`generate.branch` narrows it) |
 | `generate.poll_seconds`, `timeout_minutes` | how the jobs are followed |
-| `test.kinds` | the slot kinds to correct (all seven by default) |
+| `test.kinds` | the slot kinds to correct (all seven by default). `behaviourInputName` / `behaviourOutputName`, from a config written before 2026-10-05, are tested as `inputName` / `outputName`, with a note; any other unknown kind stops the test before it starts |
 | `test.slots_per_kind` | how many slots of each kind (default 2) |
 | `test.concurrent_saves`, `negative_checks`, `check_page`, `reexport`, `check_word`, `carry_forward` | switch a part off with `false` |
 | `test.report_file` | where the JSON report goes |
