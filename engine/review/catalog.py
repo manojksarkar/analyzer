@@ -49,8 +49,7 @@ class NotScoped(Exception):
 
 
 #: Kinds whose entity key starts `Component|Unit|`, so unit and component filters apply.
-_SCOPED_BY_KEY = (slot.DESCRIPTION, slot.BEHAVIOUR_INPUT_NAME, slot.BEHAVIOUR_OUTPUT_NAME,
-                  slot.UNIT_DESCRIPTION)
+_SCOPED_BY_KEY = (slot.DESCRIPTION, slot.INPUT_NAME, slot.OUTPUT_NAME, slot.UNIT_DESCRIPTION)
 
 
 def _scope_of(entity_key: str):
@@ -361,7 +360,7 @@ def _shown_for(kind: str, entity_key: str, entry: Dict[str, Any], where: _Placem
     listed = where.listed.get(entity_key, [])
     if kind == slot.DESCRIPTION:
         return list(listed)
-    # behaviour input/output names: printed in a published function's flowchart table (so only
+    # input/output names: printed in a published function's flowchart table (so only
     # where it was drawn), and in the Dynamic Behaviour rows that show the function.
     shown = [u for u in listed if u in where.drawn_units]
     return shown + [u for u in where.in_behaviour.get(entity_key, []) if u not in shown]

@@ -2920,8 +2920,8 @@ const SLOTS = {
                history: [{ by: 'Alice Chen', at: '29 Sep 16:40',
                            text: 'Stores the driver\u2019s target deceleration [m/s\u00b2] for the next control cycle; values above 12 are clamped.' }] },
   'd:valve': { kind: 'description', cascade: 'the unit description of BrakeCtrl', llm: 'PWM duty cycle for the four solenoid valves [0\u2013100 %].' },
-  'i:run':   { kind: 'behaviourInputName', llm: 'Brake request and wheel speeds' },
-  'o:run':   { kind: 'behaviourOutputName', llm: 'Valve duty cycles' },
+  'i:run':   { kind: 'inputName', llm: 'Brake request and wheel speeds' },
+  'o:run':   { kind: 'outputName', llm: 'Valve duty cycles' },
   'b:run':   { kind: 'behaviourDescription', list: true,
                llm: ['Scheduler_Task5ms calls BrakeCtrl_Run every 5 ms.', 'BrakeCtrl_Run reads the wheel speeds and writes g_valveCmd.'] },
 };
@@ -3442,7 +3442,7 @@ function setOutlineQuery(v) { outlineQuery = v; renderOutline(); }
 
 // ── Corrections tab ──────────────────────────────────────────────────────────
 const KIND_LABEL = { description: 'Description', unitDescription: 'Unit description', structDescription: 'Struct description',
-                     behaviourInputName: 'Input name', behaviourOutputName: 'Output name', behaviourDescription: 'Behaviour' };
+                     inputName: 'Input name', outputName: 'Output name', behaviourDescription: 'Behaviour' };
 const ORPHANS = [{ kind: 'Description', where: 'BrakeCtrl_LegacyPump', by: 'Alice Chen', at: '12 Sep 10:05',
                    text: 'Keeps the valve table of the 2019 pump for the old ECU variant.' }];
 function renderCorrections() {

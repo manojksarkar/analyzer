@@ -2,5 +2,5 @@
   "commit_sha": "<full 40-character commit id>",
   "version_tag": "v1",
   "mode": "full",
-  "scope": { "type": "group", "names": ["Layer1.Full"] }
+  "scope": { "type": "component", "names": ["Layer1.Sample Core"] }
 }

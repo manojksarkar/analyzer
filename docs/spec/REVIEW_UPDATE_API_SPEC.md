@@ -46,15 +46,26 @@ Seven **slot kinds** (`REQ-ED-01`). Every request names one:
 | `slot_kind` | what it is | how it is saved |
 |---|---|---|
 | `description` | a function's or global's description | R3 |
-| `behaviourInputName` | the behaviour table's input name | R3 |
-| `behaviourOutputName` | the behaviour table's output name | R3 |
+| `inputName` | a function's input name — printed in its flowchart table and in the Dynamic Behaviour table | R3 |
+| `outputName` | a function's output name — the same two tables | R3 |
 | `unitDescription` | a unit's description | R3 |
 | `structDescription` | a struct's, class's or union's description — the information column of its unit header row | R3 |
 | `behaviourDescription` | a Dynamic Behaviour row — a **list** of bullets, edited as one block | **R6** |
 | `nodeLabel` | one flowchart node's label | **R8** |
 
 The last two are rejected by R3 with **501**. They are produced by Phase 3 rather than stored in the
-model, so they have their own save paths.
+model, so they have their own save paths. R3 still lists them, because its `slot_kind` is the one
+list R2, R4 and R5 take, where all seven are valid. Its 501 says which route to use, the route's path
+for this version, and the ids that route takes, read from the `slot_key` you sent:
+
+```json
+{ "detail": "A Dynamic Behaviour row is not saved with this route. Save it with R6: PUT /api/v1/projects/p1/versions/ver1a2b3c4d/overrides/behaviour, with function_id 'Layer1.Sample-Core|CoreGateway|gatewayMean|int,int,int', external_caller_id 'Layer1.Lib|Lib|libMeanOf|int,int,int', and bullets: the row's lines, as a list of strings. Reading it (R2), undoing it (R4) and its history (R5) do take slot_kind behaviourDescription and this slot_key." }
+```
+
+**Renamed on 2026-10-05.** `inputName` / `outputName` were `behaviourInputName` /
+`behaviourOutputName`. The flowchart table prints these names too, so they were never only about
+Dynamic Behaviour. The old values are refused like any unknown kind (422). A database upgrade renames
+corrections already stored under them (migration `0017_input_output_names`, or `analyzer.py setup`).
 
 `slot_kind` is an **enum** everywhere it appears, so Swagger offers these seven as a dropdown and
 anything else is refused by validation with **422** naming the allowed values. On R1 it is an
@@ -69,7 +80,7 @@ in the UI (`REQ-ID-01`). Take it from an R1/R2/R7 response and send it back unch
 
 | `slot_kind` | shape of `slot_key` |
 |---|---|
-| `description`, `behaviourInputName`, `behaviourOutputName` | the entity key |
+| `description`, `inputName`, `outputName` | the entity key |
 | `structDescription` | the type's data-dictionary key, e.g. `AddOperation` or `NS::Wrapped` |
 | `unitDescription` | the unit key, `Component\|Unit` |
 | `behaviourDescription` | `functionId` + `U+0001` + `externalCallerId` |
@@ -169,7 +180,7 @@ each text a reviewer can correct, built by the server — the client still never
 | where in the page payload | slot kind |
 |---|---|
 | `table.cell_slots[row][col]` — same shape as `table.rows`, `null` for a cell that is not correctable | Component/Unit table: `unitDescription`; unit header: `structDescription` (a record row); unit interface "Information": `description` |
-| `flowchart_table.description_slot`, `.input_name_slot`, `.output_name_slot` | `description`, `behaviourInputName`, `behaviourOutputName` |
+| `flowchart_table.description_slot`, `.input_name_slot`, `.output_name_slot` | `description`, `inputName`, `outputName` |
 | `content_slot` on a function section without a flowchart | `description` |
 | `behavior_table.description_slot` (with `bullets`, `functionId`, `externalCallerId`), `.input_name_slot`, `.output_name_slot` | `behaviourDescription` (R6), the two names |
 | `flowchart_table.flowcharts[].flowchart_id`, `.editable` | the `flowchart_id` R7/R8 take; `editable` = the chart has a stored graph |
@@ -178,7 +189,7 @@ The slot's `text` is its own text: where it is empty the page prints a stand-in 
 descriptions' join, "X input", "-"), which is not the slot's. The web app's reader edits these in
 place (`web-app/src/pages/DocumentInspectorPage/`).
 
-### Flow 2 — correct a text: `description`, `behaviourInputName`, `behaviourOutputName`, `unitDescription`, `structDescription`
+### Flow 2 — correct a text: `description`, `inputName`, `outputName`, `unitDescription`, `structDescription`
 
 | step | call | why |
 |---|---|---|
@@ -304,8 +315,26 @@ rather than typing one — Swagger URL-encodes it for you.
 
 | pair | runs | use it to try |
 |---|---|---|
-| `api_create_project.sample_full.example.json` + `api_start_job.sample_full.example.json` | group `Full`, the shipped defaults | every kind but `behaviourDescription`. Only `opsAdd`/`opsSub` are published in this scope, so most function slots show `shownIn: []` |
-| `api_create_project.sample_behaviour.example.json` + `api_start_job.sample_behaviour.example.json` | group `Layer1.My Sample`, one behaviour diagram per external caller (`views.sequenceDiagrams.filterMode: all_callers`) | `behaviourDescription` (R6): 18 rows. The default filter draws none on the sample |
+| `api_create_project.sample_full.example.json` + `api_start_job.sample_full.example.json` | group `Layer1.Full`, the shipped defaults | every kind but `behaviourDescription`. Only `opsAdd`/`opsSub` are published in this scope, so most function slots show `shownIn: []` |
+| `api_create_project.sample_full.example.json` + `api_start_job.sample_core.example.json` | component `Layer1.Sample Core`, the shipped defaults | `behaviourDescription` (R6) under the default filter: the 2 rows of the `CoreGateway` fixture |
+| `api_create_project.sample_behaviour.example.json` + `api_start_job.sample_behaviour.example.json` | group `Layer1.My Sample`, one behaviour diagram per external caller (`views.sequenceDiagrams.filterMode: all_callers`) | `behaviourDescription` (R6): one row per external caller |
+
+**A job's `scope` names groups and components by their LAYER-QUALIFIED id** —
+`{"type": "group", "names": ["Layer1.My Sample"]}`, `{"type": "component", "names": ["Layer1.Sample
+Core"]}`; a layer by its name, `{"type": "layer", "names": ["Layer1"]}`. The sample's two layers both
+have a group `My Sample` with a component `Sample Core`, so the bare names are ambiguous. `POST
+/projects/{projectId}/jobs` checks the scope against the project's layers, with the engine's own
+resolver, before it reserves anything; a name it cannot place is **400**, and nothing is created:
+
+```json
+{ "detail": { "code": "INVALID_SCOPE", "status": 400,
+              "message": "Group 'My Sample' is ambiguous - 2 layers use that name: Layer1.My Sample, Layer2.My Sample. Qualify it with the layer (e.g. 'Layer1.My Sample'), or select the layer instead.",
+              "candidates": ["Layer1.My Sample", "Layer2.My Sample"] } }
+```
+
+`candidates` is the matches of an ambiguous name, or every valid name when it matches none. A
+version tag is taken only by a job that is running or finished: a failed or cancelled job gives
+its tag back.
 
 **To run the whole contract against a server** — onboard, generate, every correction, every
 read, undo, the mistakes, the re-export and the Word file — use `tools/review_api_test/` (its
@@ -558,7 +587,7 @@ touch, on the next run. An unannounced change reads as a bug.
 | 404 | the slot does not resolve in this version |
 | 409 | a run is regenerating this version and replaced the model while the save was writing it. Nothing was saved — save again once the run has finished. The one 409 with a code: `{"detail": {"code": "VERSION_REGENERATING", "message", "status": 409}}` |
 | 422 | empty or whitespace-only `text`; a NUL character (`\u0000`) in `text` or `slot_key`; or a `snake_case` field is missing |
-| 501 | `slot_kind` is `nodeLabel` or `behaviourDescription` — use R8 / R6 |
+| 501 | `slot_kind` is `nodeLabel` or `behaviourDescription`. `detail` names the route to use (R8 / R6), its path for this version and what to send it, with the ids read from your `slot_key` (§1). Nothing is saved |
 | 401 / 403 / 500 / 503 | see §16 |
 
 ---
@@ -987,7 +1016,7 @@ the UI must refetch after a save:
 | kind | on the page after a save | in the Word file |
 |---|---|---|
 | `description` | next page load — the stored interface table is patched | after re-export |
-| `behaviourInputName`, `behaviourOutputName` | next page load — read from the model | after re-export |
+| `inputName`, `outputName` | next page load — read from the model | after re-export |
 | `behaviourDescription` | next page load — the stored behaviour row is written | after re-export |
 | `nodeLabel` | next page load. The web page draws each flowchart as an SVG on the server (`image_url`, no DOT in the payload); R8, and R4 of a label, redraw that chart's SVG once the save has committed (`review.rerender.draw_web_svgs`), and the asset is served `no-cache`. Best effort: with no output tree or no Node on the API host the chart reads "not drawn" until the next re-export. The Word PNG still waits for the owed render | after re-export |
 | `unitDescription` | next page load — the Component/Unit table reads the stored description from the model, as the Word file does | after re-export |
@@ -1089,7 +1118,7 @@ where it is listed:
 |---|---|---|
 | `label` | string | a display name — the function, unit or type |
 | `component` / `unit` | string \| null | for `structDescription`: the first unit that shows it, or `null` when no document of this version does |
-| `shownIn` | string[] | **every kind**: the unit keys (`Layer1.Cross\|Dispatch`) whose SWE.3 document prints this text, read from the version's stored views. `[]` = no document of this version shows it — the save works and nobody will see it. `description`: the units whose interface table lists the function or global. `behaviourInputName` / `behaviourOutputName`: those units where the function's flowchart was drawn, plus the units whose Dynamic Behaviour rows show it. `unitDescription`: the unit, when it has a section. `structDescription`: the units whose unit header table shows it. `behaviourDescription`: its own unit. A hidden function is shown nowhere |
+| `shownIn` | string[] | **every kind**: the unit keys (`Layer1.Cross\|Dispatch`) whose SWE.3 document prints this text, read from the version's stored views. `[]` = no document of this version shows it — the save works and nobody will see it. `description`: the units whose interface table lists the function or global. `inputName` / `outputName`: those units where the function's flowchart was drawn, plus the units whose Dynamic Behaviour rows show it. `unitDescription`: the unit, when it has a section. `structDescription`: the units whose unit header table shows it. `behaviourDescription`: its own unit. A hidden function is shown nowhere |
 | `kindOfType` | string | `structDescription` only: `struct`, `class` or `union` |
 | `artifact` | string | where a model-backed slot lives: `functions`, `globalVariables`, `units` or `dataDictionary` |
 
@@ -1178,7 +1207,7 @@ Error bodies are `{"detail": "…"}`, except 401 (an object, §4) and 422 from s
 | 409 | undo with no LLM original to restore, or of an orphaned correction; a flowchart with no stored graph; stored output that cannot be read; a save that met a run regenerating the version (nothing saved — save again once it has finished; `detail.code` `VERSION_REGENERATING`, the others are a string) |
 | 422 | empty or whitespace-only text (`REQ-ST-06`); a NUL character (`\u0000`) anywhere in a save's body (R3, R6, R8) — PostgreSQL cannot store one, and `loc` names the field; or a request body/query field missing — **check `snake_case` first** (§4) |
 | 500 | a fault on the server, not in the request. `detail` names only the kind of error; the server log has the rest. Nothing was changed |
-| 501 | a slot kind with no save path on that endpoint (`nodeLabel`, `behaviourDescription` on R3) |
+| 501 | a slot kind with no save path on that endpoint (`nodeLabel`, `behaviourDescription` on R3); `detail` names the route that saves it (R8, R6) |
 | 503 | no database configured — corrections live nowhere else, so the write is refused rather than dropped |
 
 A **4xx is always about the request**: fix it before sending it again. A 500 is not — send the same

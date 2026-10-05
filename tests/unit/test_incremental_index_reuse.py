@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 
 from incremental.engine import carry_forward_from_index
 
-_FIELDS = ("description", "behaviourInputName", "behaviourOutputName")
+_FIELDS = ("description", "inputName", "outputName")
 
 
 def _src_loader(by_version):
@@ -27,12 +27,12 @@ class TestCarryForwardFromIndex:
         target = {"C|U|a|": {"qualifiedName": "a"}}
         fps = {"C|U|a|": "fp_a"}
         index = {"fp_a": {"versionId": "v1", "entityKey": "C|U|a|"}}
-        src = {"v1": {"C|U|a|": {"description": "desc-from-v1", "behaviourInputName": "in"}}}
+        src = {"v1": {"C|U|a|": {"description": "desc-from-v1", "inputName": "in"}}}
         reused = carry_forward_from_index(["C|U|a|"], fps, target, index, "v3",
                                           _src_loader(src), _FIELDS)
         assert reused == {"C|U|a|": "v1"}
         assert target["C|U|a|"]["description"] == "desc-from-v1"
-        assert target["C|U|a|"]["behaviourInputName"] == "in"
+        assert target["C|U|a|"]["inputName"] == "in"
 
     def test_no_index_hit_is_skipped(self):
         target = {"C|U|a|": {}}

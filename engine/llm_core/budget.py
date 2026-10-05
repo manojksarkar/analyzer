@@ -69,7 +69,7 @@ TASK_RATIOS: Dict[str, Dict[str, float]] = {
         "output_reserve":   0.05,
     },
 
-    # Phase 2 — behaviour input/output names
+    # Phase 2 — input/output names
     "behaviour_names": {
         "system_prompt":    0.05,
         "few_shot":         0.10,

@@ -38,7 +38,7 @@ regeneration, and carries into the next version. Seven kinds of text are editabl
 
 ### 2.1 Alembic — check the head is still linear
 
-This branch adds **six** migrations on top of `0008`:
+The feature added **six** migrations on top of `0008`; three more followed it:
 
 ```
 0008_class_name_and_llm_timing   (already on develop)
@@ -48,12 +48,26 @@ This branch adds **six** migrations on top of `0008`:
               └─ 0012_regeneration_queue   regeneration_queue
                   └─ 0013_render_jobs          render_jobs
                       └─ 0014_users_is_superuser   users.is_superuser
+                          └─ 0015_review_approval      review and approval (develop)
+                              └─ 0016_staged_generation    staged generation (develop)
+                                  └─ 0017_input_output_names   data only: two slot kinds renamed
 ```
 
-The chain is linear: `alembic heads` prints `0014_users_is_superuser (head)`. **A branch cut from
+The chain is linear: `alembic heads` prints `0017_input_output_names (head)`. **A branch cut from
 `develop` before PR #70 that adds its own `0009` gets two heads**, and `alembic upgrade head` refuses:
-re-point that branch's migration at `0014` and renumber it. All six migrations here are additive (new
-tables, new columns) and touch nothing existing.
+re-point that branch's migration at the head and renumber it. The six migrations of the feature are
+additive (new tables, new columns) and touch nothing existing; `0017` changes no table at all.
+
+`0017` renames two slot kinds where they are stored as data (2026-10-05): `behaviourInputName` /
+`behaviourOutputName` became `inputName` / `outputName`, in `text_overrides.slot_kind`,
+`text_override_history.slot_kind` and `regeneration_queue.slot_kind` / `source_slot_kind`.
+`analyzer.py setup` runs the migration's own `statements` (its step 6, before it stamps the
+head) for a database Alembic never stamped.
+A slot with rows under both names -- the new code saved a correction before the upgrade -- is
+merged the way a second save works: the newer row keeps the reviewer's words and takes the
+original LLM text from the older, which goes; the history becomes one list, oldest first.
+**Upgrade the database before the new code serves a reviewer.** A stored function's payload keeps
+the old keys -- see §4.34.
 
 `0014` only adds the column, `false` for everyone. Nobody is promoted — not the seeded
 `admin@aspice.dev` login, whose password is published — and a superuser is made on purpose:
@@ -584,6 +598,26 @@ is printed).
 through R1, R2, R7 and R11, equals what R3, R6 and R8 answered); `test_review_catalog.py::TestOneShapeForASlot`,
 `::TestReadingAnySlot`.
 
+### 4.34 A function stored under an old field name is read under the new one
+
+A function's input and output names were `behaviourInputName` / `behaviourOutputName` until
+2026-10-05, and every version generated before then stores them so: a function's payload is a
+content-addressed blob shared between versions, so it is not rewritten. `model_store.load_functions`
+reads every payload through `_current_fn_payload`, which moves an old key to its new name, and
+`set_entity_field` rewrites a corrected function under the new names only. Every model reader goes
+through `load_functions` -- the API's page, the exporter, the incremental engine's reuse, a layer
+added to a version (`incremental.extend.capture`). The one other code that reads a payload
+straight from `content_blobs` is a writer, `incremental.extend._set_fields`, and it reads a
+function through `_current_fn_payload` too. A reader that took one raw would see the old key, and
+an old version would print an empty Input Name, with no error.
+
+→ `test_model_store.py::TestTheRenamedInputOutputNames` (an old payload loads under the new
+names; where both are stored the new one wins; a correction stores the new name only and leaves
+the shared blob alone); `test_db_setup_upgrade.py::TestMigration0017RenamesTheInputOutputNameKinds`
+(the stored kinds, both names on one slot, up and down, `setup` identical to the migration);
+`test_review_overrides_api.py::TestTheInputAndOutputNames` (the old names are a 422 on every route);
+`test_extend_layers.py::test_a_function_stored_under_the_old_names_is_written_under_the_new`.
+
 ---
 
 ## 5. Defects this branch found in existing code
@@ -614,7 +648,7 @@ directories under the bare group name.
 ## 6. Verifying after the merge
 
 ```
-python -m alembic heads                           # exactly one: 0014_users_is_superuser
+python -m alembic heads                           # exactly one: 0017_input_output_names
 python -m pytest tests/unit tests/api tests/e2e   # 3777 passed, 83 skipped (PR #70, 2026-09-30)
 ```
 
@@ -637,7 +671,7 @@ anything in `engine/review/`, repeat it: the unit suite passed throughout, and d
 After the rebase the same was repeated on develop's code: a `layer:Layer1` web job (11 documents in
 75 s), every kind corrected and carried into an incremental v2, the CLI re-derive
 (`reexport --from-phase 2`), two CLI projects that both have a `v1`, and the Dynamic Behaviour rows
-from `engine/config/api_*.sample_behaviour.example.json` (18 rows). **Not yet run on PostgreSQL.**
+from `engine/config/api_*.sample_behaviour.example.json` (18 rows then). **Not yet run on PostgreSQL.**
 
 The review tests specifically:
 
@@ -726,13 +760,15 @@ ones a document prints (`[]` = none), read from the stored output (§4.20).
 - **The rule changes** (e.g. publish by the whole model): only `model_deriver` changes;
   `shownIn` follows by itself.
 
-### 8.3 The default behaviour filter draws no Dynamic Behaviour on the sample — `RU-3`
+### 8.3 The default behaviour filter draws little Dynamic Behaviour — `RU-3`
 
 The shipped profile has `views.behaviourDiagram` off (develop's VW-9). With it on,
 `views.sequenceDiagrams.filterMode` is still absent from `config.defaults.json`, so
-`generator._get_filter_mode` uses `skip_within_unit` — which draws no row on `SampleCppProject`;
-`all_callers` draws 18 for `Layer1.My Sample`. The branch changes no default: to exercise
-`behaviourDescription` corrections it ships `engine/config/api_*.sample_behaviour.example.json`.
+`generator._get_filter_mode` uses `skip_within_unit`: a row only for a function called from another
+component that calls into another unit of its own. Until 2026-10-03 nothing on `SampleCppProject`
+qualified; the fixture's `CoreGateway` (`SampleCppProject/Layer1/Sample/Core/CoreGateway.h`) now gives 2 rows in the "Sample Core" document, under
+a component or a group scope. `all_callers` draws one row per external caller
+(`engine/config/api_*.sample_behaviour.example.json`). No default is changed.
 
 - **Default as meant:** nothing to do.
 - **Change it:** set `views.sequenceDiagrams.filterMode` in `config.defaults.json` (with VW-9's

@@ -45,6 +45,19 @@ def _maint_dsn(raw: str) -> tuple[str, str]:
     return maint, target_db
 
 
+def _migration(name: str):
+    """The Alembic revision `alembic/versions/<name>.py`, loaded as a module.
+
+    Loaded by path: a revision's file name starts with its number, so it cannot be imported.
+    """
+    import importlib.util
+    path = os.path.join(_ROOT, "alembic", "versions", name + ".py")
+    spec = importlib.util.spec_from_file_location("migration_" + name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _add_missing_columns(eng, metadata):
     """Add columns the schema declares but the live tables lack. Returns (added, blocked).
 
@@ -295,7 +308,20 @@ def main() -> int:
     if fixed["events"]:
         print(f"review: recorded {fixed['events']} approval(s) made before the review record")
 
-    # 6. stamp the migration head (RF-4). `create_all` builds every table without Alembic, so a
+    # 6. the input/output-name slot kinds (0017; idempotent). `behaviourInputName` /
+    # `behaviourOutputName` became `inputName` / `outputName` on 2026-10-05; corrections, their
+    # history and the regeneration queue carry the kind as DATA, which `create_all` never touches.
+    # Migration 0017's own statements, not a copy of them -- and before the stamp, which would
+    # otherwise put a database at 0017 that still holds the old names.
+    m0017 = _migration("0017_input_output_names")
+    with eng.begin() as cx:
+        renamed = sum(cx.execute(text(sql), {"old": old, "new": new}).rowcount
+                      for old, new in m0017.RENAMED.items() for sql in m0017.statements(old, new))
+    if renamed:
+        print(f"renamed the stored slot kinds behaviourInputName -> inputName, "
+              f"behaviourOutputName -> outputName ({renamed} row(s))")
+
+    # 7. stamp the migration head (RF-4). `create_all` builds every table without Alembic, so a
     # database made or upgraded here had no `alembic_version` -- and the next `alembic upgrade
     # head` started from the first migration and failed on a table that already exists. Stamped
     # only now, when the schema is the head's: a later migration then applies on top of it.
@@ -331,8 +357,14 @@ def _alembic_chain():
 #: The newest migration with a step setup does not repeat: 0006 puts a foreign key on a table that
 #: already exists (`create_all` adds tables, `_add_missing_columns` columns, neither a
 #: constraint). Every later one adds tables with their indexes, or columns, or repairs rows as
-#: step 5 does -- so a database stamped at it or after it is at the head once setup has run.
+#: steps 5 and 6 do -- so a database stamped at it or after it is at the head once setup has run.
 LAST_NOT_REPEATED = "0006_reuse_index_fk"
+
+#: Revisions that were renumbered, {old id: new id}. `0017_input_output_names` was
+#: `0015_input_output_names` on branch review_update_v4 before it was rebased onto develop, whose
+#: own 0015 and 0016 came first; a database `alembic upgrade head` stamped there is at 0017's
+#: schema once setup has run, and was otherwise left at an id no checkout has.
+RENUMBERED = {"0015_input_output_names": "0017_input_output_names"}
 
 
 def _stamp_head(eng) -> str:
@@ -351,6 +383,7 @@ def _stamp_head(eng) -> str:
     if inspect(eng).has_table("alembic_version"):
         with eng.connect() as cx:
             current = [r[0] for r in cx.execute(text("SELECT version_num FROM alembic_version"))]
+        current = [RENUMBERED.get(c, c) for c in current]
     if current:
         if len(current) > 1 or current[0] not in chain:
             return (f"migrations: alembic_version is at {', '.join(current)}, which this checkout "

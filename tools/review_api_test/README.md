@@ -3,7 +3,7 @@
 One script that does what a user and the web app would do, and checks every answer:
 
 1. signs in, **onboards a project** (`POST /projects`) and **generates a version** (`POST /projects/{id}/jobs`, then follows the job);
-2. corrects **every kind** of LLM-written text — `description`, `behaviourInputName`, `behaviourOutputName`, `unitDescription`, `structDescription` (R3), a Dynamic Behaviour row (R6), flowchart labels (R8);
+2. corrects **every kind** of LLM-written text — `description`, `inputName`, `outputName`, `unitDescription`, `structDescription` (R3), a Dynamic Behaviour row (R6), flowchart labels (R8);
 3. reads everything back through **every route** (R1, R2, R5, R7, R9, R10, R11) and the document page;
 4. corrects again, sends **two saves of one slot at the same moment**, **undoes**, and tries the **mistakes a client can make** (empty text, camelCase body, wrong keys, unknown nodes …);
 5. **re-exports** the version and opens the **Word file** to find the corrections;
@@ -44,7 +44,8 @@ python tools/review_api_test/review_api_test.py --make-sample-repo C:/work/sampl
 ```
 
 It prints the path to put in `onboard.create_project.repo_url`. `config.example.json` is already set
-up for the sample: groups `My Sample` (Dynamic Behaviour rows — `filterMode: all_callers`) and
+up for the sample: groups `My Sample` (Dynamic Behaviour rows — `filterMode: all_callers`; the
+default filter gives the 2 rows of Sample Core's `CoreGateway`) and
 `Full` (struct, class and union descriptions), so all seven kinds get corrected.
 
 ### Re-running on something that exists
@@ -54,7 +55,7 @@ Two ready configs — copy one to `config.json`, then fill in your server, login
 | file | what it tests |
 |---|---|
 | `config.existing-version.example.json` | **a version you already have** — only `project_id` and `version_id`. Step 13 (the next version) is skipped. The test's corrections stay on that version |
-| `config.existing-project.example.json` | **a new version in a project you already have** — `project_id`, and a `start_job` body. For `scope`, copy what your first job used: `GET /api/v1/projects/{projectId}/jobs/current` → `job.scope` |
+| `config.existing-project.example.json` | **a new version in a project you already have** — `project_id`, and a `start_job` body. For `scope`, copy what your first job used: `GET /api/v1/projects/{projectId}/jobs/current` → `job.scope`. Groups and components by their layer-qualified id (`Layer1.Sample Core`): a bare name two layers share is refused, 400 `INVALID_SCOPE` |
 
 The ids: `GET /api/v1/projects` → `projects[].id` (`p…`); `GET /api/v1/projects/{projectId}/versions`
 → `id` (`ver…` — the id, not the `tag`). Or pass them on the command line instead:
@@ -82,7 +83,7 @@ version you do not need, or let it generate a fresh one (the default).
 | `generate.version_id` | empty = generate a version from `start_job`; set = test that version |
 | `generate.start_job` | **the body of `POST /api/v1/projects/{projectId}/jobs`**. `commit_sha: "latest"` = the newest commit the server lists for the project (`generate.branch` narrows it) |
 | `generate.poll_seconds`, `timeout_minutes` | how the jobs are followed |
-| `test.kinds` | the slot kinds to correct (all seven by default) |
+| `test.kinds` | the slot kinds to correct (all seven by default). `behaviourInputName` / `behaviourOutputName`, from a config written before 2026-10-05, are tested as `inputName` / `outputName`, with a note; any other unknown kind stops the test before it starts |
 | `test.slots_per_kind` | how many slots of each kind (default 2) |
 | `test.concurrent_saves`, `negative_checks`, `check_page`, `reexport`, `check_word`, `carry_forward` | switch a part off with `false` |
 | `test.report_file` | where the JSON report goes |
@@ -107,7 +108,7 @@ check, the ids, and the slots the run corrected with every text saved on each.
 | 7 Correct again | `firstEdit` false, `previousText` = the first correction, `llmText` still the LLM's; R5 has both |
 | 8 Two saves at once | both 200; the slot holds one of the two; the winner's `previousText` is the other's text; R5 keeps both |
 | 9 Undo | back to the LLM's text with `canUndo` false, like a save; 409 where the LLM wrote nothing; a second undo changes nothing; 409 on a slot nobody corrected |
-| 10 Mistakes | 422 empty or camelCase body, 404 unknown slot, 400 malformed key, 501 node label through R3, 400/422/404 on R8's bad inputs (a bad node saves nothing), 404 unknown flowchart / version, 422 unknown kind; a NUL character (`\u0000`) in R3's text, an R6 bullet or an R8 label is 422 and saves nothing — PostgreSQL cannot store one |
+| 10 Mistakes | 422 empty or camelCase body, 404 unknown slot, 400 malformed key, 501 behaviour row or node label through R3 naming R6 / R8 with the ids, 400/422/404 on R8's bad inputs (a bad node saves nothing), 404 unknown flowchart / version, 422 unknown kind; a NUL character (`\u0000`) in R3's text, an R6 bullet or an R8 label is 422 and saves nothing — PostgreSQL cannot store one |
 | 11 Re-export | R9 stale → re-export job completes → R9 clean; every document downloads; the Word file carries each printed correction and none of the undone ones; struct descriptions reach the page |
 | 12 After export | a new correction: not a first edit, the LLM's text kept; R9 stale again |
 | 13 Next version | generated from this one (same commit), incremental; every correction carried, in force and printed |

@@ -41,8 +41,11 @@ from typing import Dict, Iterable, Tuple
 # kinds
 # ---------------------------------------------------------------------------
 DESCRIPTION = "description"
-BEHAVIOUR_INPUT_NAME = "behaviourInputName"
-BEHAVIOUR_OUTPUT_NAME = "behaviourOutputName"
+#: A function's input and output names. They are printed in its flowchart table and in the
+#: Dynamic Behaviour table, so they are not a behaviour-diagram thing: until 2026-10-05 they were
+#: `behaviourInputName` / `behaviourOutputName`, in the model and as slot kinds alike.
+INPUT_NAME = "inputName"
+OUTPUT_NAME = "outputName"
 BEHAVIOUR_DESCRIPTION = "behaviourDescription"
 UNIT_DESCRIPTION = "unitDescription"
 STRUCT_DESCRIPTION = "structDescription"
@@ -51,8 +54,8 @@ NODE_LABEL = "nodeLabel"
 #: Every kind a reviewer may edit (REQ-ED-01). Ordered as the spec lists them.
 ALL_KINDS: Tuple[str, ...] = (
     DESCRIPTION,
-    BEHAVIOUR_INPUT_NAME,
-    BEHAVIOUR_OUTPUT_NAME,
+    INPUT_NAME,
+    OUTPUT_NAME,
     BEHAVIOUR_DESCRIPTION,
     UNIT_DESCRIPTION,
     STRUCT_DESCRIPTION,
@@ -62,8 +65,8 @@ ALL_KINDS: Tuple[str, ...] = (
 #: kind -> the part names its key carries, in key order.
 _PARTS: Dict[str, Tuple[str, ...]] = {
     DESCRIPTION:           ("entity_key",),
-    BEHAVIOUR_INPUT_NAME:  ("entity_key",),
-    BEHAVIOUR_OUTPUT_NAME: ("entity_key",),
+    INPUT_NAME:            ("entity_key",),
+    OUTPUT_NAME:           ("entity_key",),
     STRUCT_DESCRIPTION:    ("entity_key",),
     UNIT_DESCRIPTION:      ("unit_key",),
     BEHAVIOUR_DESCRIPTION: ("function_id", "external_caller_id"),

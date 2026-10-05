@@ -13,7 +13,7 @@
       "version_tag": "api-test-{timestamp}",
       "mode": "full",
       "no_llm": false,
-      "scope": { "type": "component", "names": ["<same as your first job>"] }
+      "scope": { "type": "component", "names": ["<layer-qualified, as your first job: e.g. Layer1.Sample Core>"] }
     },
     "branch": "main"
   }

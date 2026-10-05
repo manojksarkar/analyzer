@@ -66,7 +66,7 @@ def review_db(monkeypatch):
         model_store.persist_model(
             cx, PROJECT, VERSION,
             functions={FID: {"qualifiedName": "ns::doThing", "description": "Does the thing.",
-                             "behaviourInputName": "Input", "behaviourOutputName": "Output"}},
+                             "inputName": "Input", "outputName": "Output"}},
             globals={}, datadict={}, edges={"typeUsers": {}, "macroUsers": {}},
             hashes={}, units={}, components={}, summaries={})
         cx.execute(insert(s.version_output_files).values(
@@ -247,12 +247,68 @@ class TestUpdatingASlot:
         assert r.status_code == 404
 
     def test_a_node_label_through_this_route_is_501(self, client, review_db, auth_header):
-        """It has no model field; R8 is its route. A 501 says so instead of pretending."""
+        """It has no model field; R8 is its route. A 501 says so instead of pretending -- and
+        names R8, its path and what to send it, read from the key."""
         from review import slot
         r = client.put(BASE + "/overrides/slot", headers=auth_header,
                        json={"slot_kind": slot.NODE_LABEL,
                              "slot_key": slot.for_node(FID, "n1"), "text": "Words."})
         assert r.status_code == 501
+        detail = r.json()["detail"]
+        assert "R8: PUT " + BASE + "/flowcharts/labels" in detail
+        assert "flowchart_id %r" % FID in detail and "node 'n1'" in detail
+
+
+class TestR3NamesTheRouteThatSavesABehaviourRow:
+    """What a reviewer tried: R3 with `slot_kind: behaviourDescription`. R3 offers the kind --
+    its `slot_kind` is the one list of seven that R2, R4 and R5 take -- but a Dynamic Behaviour
+    row is saved with R6. The 501 used to explain only why ("its text lives in Phase-3 view
+    output, not the model"); it now says which route, its path and the two ids R6 takes."""
+
+    def _put(self, client, auth_header, key):
+        from review import slot
+        return client.put(BASE + "/overrides/slot", headers=auth_header,
+                          json={"slot_kind": slot.BEHAVIOUR_DESCRIPTION, "slot_key": key,
+                                "text": "start calls doThing\ndoThing returns"})
+
+    def test_501_naming_r6_with_the_ids_from_the_key(self, client, review_db, auth_header):
+        from review import slot
+        r = self._put(client, auth_header, slot.for_behaviour_row(FID, CALLER))
+        assert r.status_code == 501, r.text
+        detail = r.json()["detail"]
+        assert "R6: PUT " + BASE + "/overrides/behaviour" in detail
+        assert "function_id %r" % FID in detail
+        assert "external_caller_id %r" % CALLER in detail
+        assert "bullets" in detail
+
+    def test_nothing_is_saved(self, client, review_db, auth_header):
+        from review import slot
+        self._put(client, auth_header, slot.for_behaviour_row(FID, CALLER))
+        assert client.get(BASE + "/overrides", headers=auth_header).json()["total"] == 0
+
+    def test_the_key_as_swagger_shows_it_is_read_too(self, client, review_db, auth_header):
+        r = self._put(client, auth_header, FID + "\\u0001" + CALLER)
+        assert r.status_code == 501
+        assert "external_caller_id %r" % CALLER in r.json()["detail"]
+
+    def test_a_malformed_key_still_names_the_route(self, client, review_db, auth_header):
+        """The route is the answer whatever the key; the ids then come from R11."""
+        r = self._put(client, auth_header, "not a behaviour key")
+        assert r.status_code == 501
+        detail = r.json()["detail"]
+        assert "R6: PUT " + BASE + "/overrides/behaviour" in detail
+        assert "from R11" in detail
+
+    def test_r6_then_saves_it(self, client, review_db, auth_header):
+        """The body the message describes is one R6 takes."""
+        r = client.put(BASE + "/overrides/behaviour", headers=auth_header,
+                       json={"function_id": FID, "external_caller_id": CALLER,
+                             "bullets": ["start calls doThing", "doThing returns"]})
+        assert r.status_code == 200, r.text
+
+    def test_the_route_says_so_in_swagger(self):
+        from api.routes.text_overrides import update_slot
+        assert "saved with R6" in update_slot.__doc__ and "with R8" in update_slot.__doc__
 
     def test_a_slot_nobody_corrected_reads_as_uncorrected(self, client, review_db, auth_header):
         """R2 reads a SLOT, not a correction (`REQ-API-02`): a 404 here used to mean "not
@@ -269,6 +325,59 @@ class TestUpdatingASlot:
         r = client.get(BASE + "/overrides/slot", headers=auth_header,
                        params={"slot_kind": "description", "slot_key": "No|Such|fn|"})
         assert r.status_code == 404 and "R11" in r.json()["detail"]
+
+
+class TestTheInputAndOutputNames:
+    """`inputName` / `outputName` were `behaviourInputName` / `behaviourOutputName` until
+    2026-10-05: a function's input and output names are printed in its flowchart table as well as
+    in Dynamic Behaviour. The new names are the kinds; the old ones are refused like any unknown
+    kind, by every route that takes one (REVIEW_UPDATE_API_SPEC §1)."""
+
+    @pytest.mark.parametrize("kind,llm", [("inputName", "Input"), ("outputName", "Output")])
+    def test_r3_saves_it_and_r2_reads_it_back(self, client, review_db, auth_header, kind, llm):
+        r = client.put(BASE + "/overrides/slot", headers=auth_header,
+                       json={"slot_kind": kind, "slot_key": FID, "text": "Pump request"})
+        assert r.status_code == 200, r.text
+        assert r.json()["slotKind"] == kind and r.json()["llmText"] == llm
+        got = client.get(BASE + "/overrides/slot", headers=auth_header,
+                         params={"slot_kind": kind, "slot_key": FID}).json()
+        assert got["humanText"] == got["text"] == "Pump request" and got["isOverridden"]
+
+    def test_the_model_field_has_the_new_name(self, client, review_db, auth_header):
+        client.put(BASE + "/overrides/slot", headers=auth_header,
+                   json={"slot_kind": "inputName", "slot_key": FID, "text": "Pump request"})
+        from core import model_store
+        with review_db.connect() as cx:
+            fn = model_store.load_functions(cx, VERSION)[FID]
+        assert fn["inputName"] == "Pump request" and fn["outputName"] == "Output"
+        assert "behaviourInputName" not in fn and "behaviourOutputName" not in fn
+
+    @pytest.mark.parametrize("old", ["behaviourInputName", "behaviourOutputName"])
+    @pytest.mark.parametrize("route", ["R1", "R2", "R3", "R4", "R5", "R11"])
+    def test_an_old_name_is_422(self, client, review_db, auth_header, old, route):
+        query = {"slot_kind": old, "slot_key": FID}
+        r = {"R1": lambda: client.get(BASE + "/overrides", headers=auth_header,
+                                      params={"slot_kind": old}),
+             "R2": lambda: client.get(BASE + "/overrides/slot", headers=auth_header,
+                                      params=query),
+             "R3": lambda: client.put(BASE + "/overrides/slot", headers=auth_header,
+                                      json={**query, "text": "Words."}),
+             "R4": lambda: client.delete(BASE + "/overrides/slot", headers=auth_header,
+                                         params=query),
+             "R5": lambda: client.get(BASE + "/overrides/history", headers=auth_header,
+                                      params=query),
+             "R11": lambda: client.get(BASE + "/slots", headers=auth_header,
+                                       params={"slot_kind": old})}[route]()
+        assert r.status_code == 422, r.text
+        assert "slot_kind" in r.text
+
+    def test_swagger_offers_the_new_names_only(self, client):
+        """The live Swagger (`/openapi.json`) builds `SlotKind` from `slot.ALL_KINDS`."""
+        schema = client.get("/openapi.json").json()
+        kinds = schema["components"]["schemas"]["SlotKind"]["enum"]
+        assert {"inputName", "outputName"} <= set(kinds)
+        text = json.dumps(schema)
+        assert "behaviourInputName" not in text and "behaviourOutputName" not in text
 
 
 class TestTheOverlayList:
@@ -1237,7 +1346,7 @@ class TestDiscardingOrphans:
                 {"version_id": VERSION, "slot_kind": "description", "slot_key": FID,
                  "llm_text": "old", "human_text": "Corrected, old code.", "is_orphaned": True,
                  "updated_at": now},
-                {"version_id": VERSION, "slot_kind": "behaviourInputName", "slot_key": FID,
+                {"version_id": VERSION, "slot_kind": "inputName", "slot_key": FID,
                  "llm_text": "in", "human_text": "Pump input", "is_orphaned": False,
                  "updated_at": now}])
             cx.execute(insert(s.text_override_history).values(
@@ -1255,12 +1364,12 @@ class TestDiscardingOrphans:
                               .where(s.text_overrides.c.version_id == VERSION)).fetchall()
             hist = cx.execute(select(s.text_override_history.c.slot_kind)
                               .where(s.text_override_history.c.version_id == VERSION)).fetchall()
-        assert [r.slot_kind for r in left] == ["behaviourInputName"] and hist == []
+        assert [r.slot_kind for r in left] == ["inputName"] and hist == []
 
     def test_one_slot_only(self, client, review_db, auth_header):
         self._seed(review_db)
         r = client.delete(BASE + "/overrides/orphans", headers=auth_header,
-                          params={"slot_kind": "behaviourInputName", "slot_key": FID})
+                          params={"slot_kind": "inputName", "slot_key": FID})
         assert r.status_code == 200 and r.json() == {"discarded": 0}, "in force: untouched"
         r = client.delete(BASE + "/overrides/orphans", headers=auth_header,
                           params={"slot_kind": "description", "slot_key": FID})

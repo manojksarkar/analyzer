@@ -357,7 +357,7 @@ export interface TestSummary {
 /* ── Review & update: texts a reviewer can correct ── */
 
 export type SlotKind =
-  | 'description' | 'behaviourInputName' | 'behaviourOutputName' | 'behaviourDescription'
+  | 'description' | 'inputName' | 'outputName' | 'behaviourDescription'
   | 'unitDescription' | 'structDescription' | 'nodeLabel'
 
 /** One correctable text, in the shape every review route returns it (API spec §5 `Slot`), and

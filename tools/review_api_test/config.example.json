@@ -73,7 +73,7 @@
 
   "test": {
     "_kinds": "The slot kinds to correct. All seven by default.",
-    "kinds": ["description", "behaviourInputName", "behaviourOutputName", "unitDescription",
+    "kinds": ["description", "inputName", "outputName", "unitDescription",
               "structDescription", "behaviourDescription", "nodeLabel"],
     "slots_per_kind": 2,
     "concurrent_saves": true,

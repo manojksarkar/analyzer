@@ -131,7 +131,11 @@ def _set_fields(cx, version_id: str, key: str, fields: Dict[str, Any], kinds) ->
                ent.c.kind.in_(kinds))).first()
     if row is None or row.payload is None:
         return False
-    payload = dict(row.payload)
+    # Under today's field names, as `set_entity_field` reads it: a function stored before
+    # `inputName` / `outputName` were renamed keeps its own value, and is rewritten without the
+    # old key (REVIEW_UPDATE_HANDOVER §4.34).
+    payload = (ms._current_fn_payload(row.payload) if row.kind == "function"
+               else dict(row.payload))
     todo = {f: v for f, v in fields.items() if payload.get(f) in (None, "", [])}
     if not todo:
         return True

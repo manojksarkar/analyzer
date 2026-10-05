@@ -190,7 +190,7 @@ Copy `config.local.json.example` → `config.local.json` and fill in `db` + `llm
 
     // ── optional fields ──
     "descriptions":      false,           // enable LLM function descriptions (Phase 2)
-    "behaviourNames":    false,           // enable LLM behaviour input/output names
+    "behaviourNames":    false,           // enable LLM input/output names (inputName / outputName)
     "summarize":         false,           // false = suppress Phase 2 hierarchy summarization
     // SECRETS below → put in config.local.json (gitignored), NOT here. baseUrl also if private.
     "apiKey":            "",              // openai bearer; prefer env LLM_API_KEY

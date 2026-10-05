@@ -10,6 +10,8 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-05q | A function's input and output names are `inputName` / `outputName` -- in the model, as review slot kinds and in the API -- not `behaviourInputName` / `behaviourOutputName` | [13](13-2026-10-05c.md) |
+| 2026-10-05p | R3's 501 for a behaviour row or a flowchart label names the route that saves it (R6, R8) | [13](13-2026-10-05c.md) |
 | 2026-10-05o | A project's own settings win over this machine's config.local.json: a `clang` block there switched an imported project's include-path walk off on every run | [13](13-2026-10-05c.md) |
 | 2026-10-05n | Rename moves to the Projects page: an admin's row menu, not the project menu on every page; the dialog warns of a name already used | [13](13-2026-10-05c.md) |
 | 2026-10-05m | A project's admins rename it from the project menu; the server takes a name trimmed, never blank or over 120 characters, and a status only the app knows | [13](13-2026-10-05c.md) |
@@ -31,6 +33,8 @@
 | 2026-10-04c | The wizard's developer search no longer calls the API without end; a run's code copy waits out a file another process holds, and two runs started in one second no longer share a folder | [11](11-2026-09-29e.md) |
 | 2026-10-04b | A database error no longer reaches the caller; a late cancel is finished on every path; a web re-export waits out a correction instead of refusing; a run's every engine tries a timed-out connection again; setup stamps only a migration it knows | [11](11-2026-09-29e.md) |
 | 2026-10-04 | Background runs hardened after a review: a database blip at a run's end no longer deletes its work or leaves the job unfollowed; cancel, export and a recycled process id are safe; each version keeps its own config. Small API fixes: Globals count, the draft no longer takes over the project view, projects sorted, the last admin stays | [11](11-2026-09-29e.md) |
+| 2026-10-03b | A job's scope is checked when it is requested: a bare name two layers share is refused, 400 `INVALID_SCOPE` with the candidates | [13](13-2026-10-05c.md) |
+| 2026-10-03 | The sample has Dynamic Behaviour under the default filter: Sample Core gains two units, CoreGateway and CoreStats, and Lib calls in | [13](13-2026-10-05c.md) |
 | 2026-10-02c | A web run goes on when the API restarts: it runs in the background like `--detach`, the API follows it and follows it again after a restart; a run that dies keeps its version for `resume` | [11](11-2026-09-29e.md) |
 | 2026-10-02b | `analyzer.py generate` makes SWE.3 and SWE.4 by default (`--doc-type all`), like a web run | [11](11-2026-09-29e.md) |
 | 2026-10-02 | Staged generation: one model per version, documents per component, any number of runs; a long run survives the API and code changes; one writer per version; `resume` after a crash | [11](11-2026-09-29e.md) |

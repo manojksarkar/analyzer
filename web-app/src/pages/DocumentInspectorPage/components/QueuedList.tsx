@@ -6,8 +6,8 @@ import { slotRef } from '../outline'
 /* R10, read-only: this document's texts the next run rewrites, because a correction they were
    written from has changed (API spec §15) — the version's others only counted. Recorded at save
    time, drained by a run — nothing clears them on a timer. A text is matched by its kind and its
-   whole key against the page's slots (a function's description and its behaviour names share a
-   key) and the key shown as the server gave it — never taken apart. */
+   whole key against the page's slots (a function's description and its input and output names
+   share a key) and the key shown as the server gave it — never taken apart. */
 
 /** A key for the eye: a behaviour row's and a node label's keys join their two ids with U+0001,
  *  shown as a visible mark. */

@@ -36,7 +36,7 @@ if _REPO_ROOT not in sys.path:
 from api.db.postgres import schema as s   # noqa: E402
 
 _FN_PAYLOAD_FIELDS = (
-    "returnType", "returnExpr", "description", "behaviourInputName", "behaviourOutputName",
+    "returnType", "returnExpr", "description", "inputName", "outputName",
     "parameters", "phases", "readsGlobalIdsTransitive", "writesGlobalIdsTransitive",
     # `params` is Phase 1's spelling; Phase 2 reads it, normalises it to `parameters` and
     # pops it (model_deriver.py:449,1180). Storing only `parameters` therefore stored the
@@ -178,6 +178,29 @@ def persist_functions(conn, project_id, version_id, functions, hashes=None):
         insert_chunked(conn, s.model_edges, edges)
 
 
+#: Function payload keys renamed after versions were stored with them: {old: new}. A stored
+#: payload is a content-addressed blob shared between versions, so it is not rewritten -- it is
+#: read through `_current_fn_payload`, and nothing above this module sees an old name.
+#: 2026-10-05: a function's input and output names were `behaviourInputName` /
+#: `behaviourOutputName`; they are printed in its flowchart table, not only in Dynamic Behaviour.
+_RENAMED_FN_FIELDS = {"behaviourInputName": "inputName", "behaviourOutputName": "outputName"}
+
+
+def _current_fn_payload(payload) -> dict:
+    """A stored function payload under today's field names.
+
+    A key stored under an old name moves to its new one. Where both are there -- a version stored
+    before the rename and corrected after it (`set_entity_field` writes the new name) -- the new
+    one is the correction, and it wins.
+    """
+    out = dict(payload or {})
+    for old, new in _RENAMED_FN_FIELDS.items():
+        if old in out:
+            value = out.pop(old)
+            out.setdefault(new, value)
+    return out
+
+
 def load_functions(conn, version_id) -> Dict[str, dict]:
     funcs: Dict[str, dict] = {}
     for r in _entity_rows(conn, version_id, "function"):
@@ -188,7 +211,7 @@ def load_functions(conn, version_id) -> Dict[str, dict]:
               "direction": r.direction, "directionReason": r.direction_reason,
               "visibility": r.visibility, "interfaceId": r.interface_id, "isVisible": r.is_visible,
               "callsIds": [], "calledByIds": [], "readsGlobalIds": [], "writesGlobalIds": []}
-        fn.update(r.payload or {})
+        fn.update(_current_fn_payload(r.payload))
         funcs[r.entity_key] = fn
     me = s.model_edges
     # By edge_id, which is insertion order, which is the order the parser discovered the
@@ -541,7 +564,9 @@ def set_entity_field(conn, version_id, entity_key, field, value, kinds) -> None:
     if row is None or row.payload is None:
         raise ModelRowMissing("%s %r is not in version %s" % ("/".join(kinds), entity_key,
                                                                version_id))
-    payload = dict(row.payload)
+    # A function stored before a field was renamed is rewritten under today's names, so the
+    # corrected blob carries one key for the field, not the old one beside the new.
+    payload = _current_fn_payload(row.payload) if row.kind == "function" else dict(row.payload)
     payload[field] = value
     ch = _content_hash(payload)
     _insert_blobs(conn, {ch: (_BLOB_KIND.get(row.kind, row.kind), payload)})

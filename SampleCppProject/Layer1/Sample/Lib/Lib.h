@@ -14,3 +14,6 @@ PUBLIC int libLinearScale(int v, int from_max, int to_max);   // normalize then 
 PRIVATE int libClamp(int v, int lo, int hi);   // private range guard
 PRIVATE int libSign(int v);                    // -1 / 0 / +1
 PRIVATE int libBound(int v, int max);          // calls libClamp
+
+PUBLIC int libRecordSample(int total, int sample);              // Lib -> Sample Core (Dynamic Behaviour fixture)
+PUBLIC int libMeanOf(int total, int count, int lastSample);     // Lib -> Sample Core (Dynamic Behaviour fixture)

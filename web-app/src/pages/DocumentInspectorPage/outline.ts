@@ -163,7 +163,7 @@ export function undoneInWordFile(undone: Slot[], wordFileStale: boolean): Slot[]
 }
 
 /** One slot of a version, by kind and key: a key alone may name two kinds (a function's
- *  description and its behaviour names share one). */
+ *  description and its input and output names share one). */
 export const slotRef = (kind: string, key: string): string => `${kind}:${key}`
 
 /** Corrections in force per unit key, for the outline's counts. */
@@ -229,8 +229,8 @@ export function flowOrder(dot: string): Map<string, number> {
 
 export const SLOT_KIND_LABEL: Record<string, string> = {
   description: 'Description',
-  behaviourInputName: 'Input name',
-  behaviourOutputName: 'Output name',
+  inputName: 'Input name',
+  outputName: 'Output name',
   behaviourDescription: 'Behaviour',
   unitDescription: 'Unit description',
   structDescription: 'Struct description',

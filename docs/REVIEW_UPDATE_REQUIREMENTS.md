@@ -26,8 +26,8 @@ the design must be cheap when a version has zero overrides.
 | # | slot kind | appears in |
 |---|---|---|
 | 1.1 | function description | 1.2 Scope table, interface table, per-function Requirements, SWE.4 intro |
-| 1.2 | behaviour input name | per-function table, Dynamic Behaviour table |
-| 1.3 | behaviour output name | same |
+| 1.2 | input name (`inputName`) | per-function table, Dynamic Behaviour table |
+| 1.3 | output name (`outputName`) | same |
 | 1.4 | behaviour description | Dynamic Behaviour Requirements + the behaviour diagram arrows — **a list, edited as one block** |
 | 1.5 | unit description | 1.2 Scope table — *needs prerequisite 10.1* |
 | 1.6 | struct description | unit header table — *needs prerequisite 10.1* |

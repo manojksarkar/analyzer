@@ -9,8 +9,8 @@ is how a module ends up knowing both and being the only place that can answer ei
 | kind | artifact | entry | field |
 |---|---|---|---|
 | `description` | `functions`, else `globalVariables` | `entity_key` | `description` |
-| `behaviourInputName` | `functions` | `entity_key` | `behaviourInputName` |
-| `behaviourOutputName` | `functions` | `entity_key` | `behaviourOutputName` |
+| `inputName` | `functions` | `entity_key` | `inputName` |
+| `outputName` | `functions` | `entity_key` | `outputName` |
 | `unitDescription` | `units` | `unit_key` | `description` |
 | `structDescription` | `dataDictionary` | `entity_key` | `description` |
 
@@ -70,8 +70,8 @@ class Location(NamedTuple):
 #: kind -> (artifacts to search in order, field). Order matters for `description`.
 _HOMES: Dict[str, Tuple[Tuple[str, ...], str]] = {
     slot.DESCRIPTION:           ((_FUNCTIONS, _GLOBALS), "description"),
-    slot.BEHAVIOUR_INPUT_NAME:  ((_FUNCTIONS,), "behaviourInputName"),
-    slot.BEHAVIOUR_OUTPUT_NAME: ((_FUNCTIONS,), "behaviourOutputName"),
+    slot.INPUT_NAME:            ((_FUNCTIONS,), "inputName"),
+    slot.OUTPUT_NAME:           ((_FUNCTIONS,), "outputName"),
     slot.UNIT_DESCRIPTION:      ((_UNITS,), "description"),
     slot.STRUCT_DESCRIPTION:    ((_DATA_DICTIONARY,), "description"),
 }
@@ -147,7 +147,7 @@ def _require_described_record(data_dictionary: Dict[str, Any], entry_key: str) -
 def read_text(model: Dict[str, Any], kind: str, key: str) -> str:
     """The text currently in the model for this slot. `""` when the field is unset.
 
-    An unset field is not an error: `behaviourOutputName` is legitimately absent on a function
+    An unset field is not an error: `outputName` is legitimately absent on a function
     that writes nothing, and the reviewer may be filling it in for the first time.
     """
     loc = locate(model, kind, key)

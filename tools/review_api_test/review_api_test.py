@@ -38,13 +38,12 @@ SLOT_FIELDS = ("slotKind", "slotKey", "text", "llmText", "humanText", "isOverrid
                "isOrphaned", "canUndo", "updatedBy", "updatedAt")
 SAVE_FIELDS = ("previousText", "firstEdit", "viewsDerived", "queuedForRegeneration")
 #: Saved one slot at a time through R3. The other two kinds have routes of their own (R6, R8).
-R3_KINDS = ("description", "behaviourInputName", "behaviourOutputName", "unitDescription",
-            "structDescription")
+R3_KINDS = ("description", "inputName", "outputName", "unitDescription", "structDescription")
 ALL_KINDS = R3_KINDS + ("behaviourDescription", "nodeLabel")
 #: On the document page straight after a save (API spec, "When a correction becomes visible").
 #: A struct description reaches the page with the next re-export.
-PAGE_AFTER_SAVE = ("description", "behaviourInputName", "behaviourOutputName",
-                   "behaviourDescription", "nodeLabel", "unitDescription")
+PAGE_AFTER_SAVE = ("description", "inputName", "outputName", "behaviourDescription", "nodeLabel",
+                   "unitDescription")
 FINISHED = ("complete", "failed", "cancelled")
 
 DEFAULT_OPTIONS = {
@@ -58,6 +57,9 @@ DEFAULT_OPTIONS = {
     "carry_forward": True,
     "report_file": "review_api_test_report.json",
 }
+#: Slot kinds renamed after configs were written with them: {old: new}. A config.json is the
+#: user's own copy of the example, git-ignored, so an older one still names them.
+RENAMED_KINDS = {"behaviourInputName": "inputName", "behaviourOutputName": "outputName"}
 
 
 class StopTest(Exception):
@@ -252,6 +254,7 @@ class ReviewApiTest:
     def __init__(self, api: Api, cfg: dict, checks: Checks, args):
         self.api, self.cfg, self.c = api, cfg, checks
         self.opt = dict(DEFAULT_OPTIONS, **(cfg.get("test") or {}))
+        self.opt["kinds"] = self._kinds(self.opt["kinds"], checks)
         stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
         #: Written into every corrected text, so a text is found only if THIS run wrote it.
         self.marker = "T" + stamp[-6:]
@@ -269,6 +272,24 @@ class ReviewApiTest:
         self.job_body = None
         self.flowchart = None
         self.base = ""
+
+    @staticmethod
+    def _kinds(kinds, checks) -> list:
+        """`test.kinds` under today's names. A renamed kind is tested under its new name, with a
+        note; an unknown one stops the test before anything is created -- the server would refuse
+        it with a 422 only at step 4, after the onboarding and the generation."""
+        out = []
+        for kind in kinds:
+            if kind in RENAMED_KINDS:
+                checks.note("test.kinds: %s is %s since 2026-10-05 -- tested under the new name; "
+                            "rename it in your config" % (kind, RENAMED_KINDS[kind]))
+                kind = RENAMED_KINDS[kind]
+            if kind not in ALL_KINDS:
+                raise StopTest("test.kinds names %r, which is not a slot kind; the kinds are %s"
+                               % (kind, ", ".join(ALL_KINDS)))
+            if kind not in out:
+                out.append(kind)
+        return out
 
     # ---- paths and small reads ----------------------------------------------------------------
     def P(self, path="") -> str:
@@ -886,9 +907,6 @@ class ReviewApiTest:
         if node_t:
             fid = node_t["flowchartId"]
             cases += [
-                ("R3 cannot save a node label (501) -- R8 does", "PUT", "/overrides/slot",
-                 {"json": {"slot_kind": "nodeLabel", "slot_key": node_t["key"], "text": "x"}},
-                 501),
                 ("R8 with no labels is 400", "PUT", "/flowcharts/labels",
                  {"json": {"flowchart_id": fid, "labels": {}}}, 400),
                 ("R8 with an empty label is 422", "PUT", "/flowcharts/labels",
@@ -914,6 +932,21 @@ class ReviewApiTest:
         for name, method, path, kwargs, code in cases:
             r = self.api.call(method, self.V(path), **kwargs)
             self.c.check(name, r.status_code == code, (r.status_code, short(r.text)))
+
+        # R3 offers all seven kinds but saves five: a behaviour row and a flowchart label have
+        # routes of their own, and the 501 must say which -- its path, with the ids from the key.
+        for t, route, path in ((beh_t, "R6", "/overrides/behaviour"),
+                               (node_t, "R8", "/flowcharts/labels")):
+            if not t:
+                continue
+            r = self.api.call("PUT", self.V("/overrides/slot"), json={
+                "slot_kind": t["kind"], "slot_key": t["key"], "text": "x"})
+            detail = str(body_of(r).get("detail") or "")
+            self.c.check("R3 cannot save a %s (501) and names %s, its path and the ids"
+                         % (t["kind"], route),
+                         r.status_code == 501 and ("%s: PUT /api/v1%s" % (route, self.V(path)))
+                         in detail and repr(t.get("functionId") or t.get("flowchartId")) in detail,
+                         (r.status_code, short(detail)))
 
         # A NUL character: PostgreSQL cannot store one in text or JSONB, so a save carrying it
         # was a 500 there -- and SQLite stored it. Each save refuses it (422) and stores nothing.

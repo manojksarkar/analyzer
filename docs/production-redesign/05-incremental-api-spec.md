@@ -19,10 +19,11 @@
 > the project's `layers` config, the data-dictionary upload). This spec **assumes a project already
 > exists** and you have its `projectId`. Onboarding endpoints are **not** specified here.
 >
-> **Implementation status:** ✅ **all endpoints below (G0, G1, G2, 1–15) are implemented** in
-> [engine/main.py](../../engine/main.py); the git operations live in `engine/git_service.py` +
-> `src/incremental/git_ops.py` (clone, fetch, checkout, branch/commit listing, ancestry, diff). The
-> spec remains the **contract** the UI is built against.
+> **Implementation status:** these endpoints were implemented in `engine/main.py`, a standalone
+> service that no longer exists: the API server in `api/` replaced it. **Starting a generation is
+> `POST /api/v1/projects/{projectId}/jobs`**, documented in §5.2 below with its current request
+> body; the rest of this document is the record of the original contract. The scope object (§1)
+> is current.
 
 ---
 
@@ -61,11 +62,16 @@
 ### The `scope` object (used by generate / preview)
 Selects how much of the project the document covers:
 ```jsonc
-{ "type": "project" }                                   // whole project (all layers)
-{ "type": "layer",     "names": ["Layer1"] }            // one or more layers
-{ "type": "group",     "names": ["My Sample"] }         // one or more groups
-{ "type": "component", "names": ["Gpio", "Uart"] }      // one or more components
+{ "type": "project" }                                          // whole project (all layers)
+{ "type": "layer",     "names": ["Layer1"] }                   // one or more layers, by name
+{ "type": "group",     "names": ["Layer1.My Sample"] }         // one or more groups
+{ "type": "component", "names": ["Layer1.Sample Core"] }       // one or more components
 ```
+Groups and components are named by their **layer-qualified id**, `<Layer>.<Name>`: two layers may
+use the same name (SampleCppProject's Layer1 and Layer2 both have `My Sample` / `Sample Core`), and
+a bare name that matches two is refused, **400 `INVALID_SCOPE`** with the `candidates`. A bare name
+only one layer uses still resolves; case and spaces never decide (`layer1.my sample` is
+`Layer1.My Sample`).
 
 ---
 
@@ -188,70 +194,74 @@ auto-chosen nearest-ancestor baseline).
 - *not the nearest* → "v-N is the nearest ancestor and will be faster."
 **Errors:** 400 (bad commit/base), 404 (unknown project), 409 (commit not in repo).
 
-### 2. POST `/projects/{projectId}/generate`
-Start a generation. Returns immediately with a `jobId` (poll #6/#9) and the `versionId` being produced.
+### 2. POST `/projects/{projectId}/jobs` — start a generation
+
+Was `POST /projects/{projectId}/generate` (camelCase body, `engine/main.py`). Project **admin** only.
+Returns **202** at once; follow the job with `GET /projects/{projectId}/jobs/{jobId}` or the
+`GET …/jobs/{jobId}/events` stream. Request and response fields are `snake_case`
+(`api/routes/jobs.py` `StartJobRequest`).
+
 **Request fields**
 
 | Field | Type | Required | Default | Meaning |
 |---|---|---|---|---|
-| `branch` | string | **yes** | — | Branch the commit is on (recorded on the version). |
-| `commit` | string | **yes** | — | Target commit SHA to generate for. |
-| `scope` | object | no | `{"type":"project"}` | What to generate — see **scope object** below. |
+| `commit_sha` | string | **yes** | — | Full 40-character commit id to generate for. The branch is the commit's (else the project's default). |
+| `version_tag` | string | **yes** | — | The version's name, **new in the project**: a used one is 409 `VERSION_EXISTS`. A failed or cancelled job frees its tag. |
+| `scope` | object | no | whole project | What to generate — the **scope object**, §1. Groups and components by their layer-qualified id. |
 | `mode` | string | no | `"auto"` | `"auto"` = incremental when a baseline ancestor exists, else full; `"full"` = force a full generation. |
-| `baseVersionId` | string | no | `null` | Explicit baseline to diff against (e.g. `"v1"`). Omit/null = auto nearest-ancestor. **Quote it** (`"v1"`, not `v1`). |
-| `dataDictId` | string | no | project's current | Data dictionary to use; omit = the project's current one. |
-| `noLlm` | bool | no | `false` | `true` = fully **LLM-free** run (no descriptions / behaviour names / flowchart labels / struct summaries) — deterministic; for timing tests / offline runs. |
+| `reference_version_id` | string | no | `null` | Explicit baseline, one of this project's versions (its id or tag). Omit = nearest ancestor. |
+| `data_dict_id` | string | no | `null` | An uploaded data dictionary to merge in. |
+| `no_llm` | bool | no | `false` | `true` = fully **LLM-free** run (no descriptions / behaviour names / flowchart labels / struct summaries) — deterministic; for timing tests / offline runs. |
+| `narrowed_parse` | bool | no | `true` | `false` = re-parse everything in an incremental run. |
 
-**scope object** (one of):
-
-| Scope | JSON |
-|---|---|
-| Whole project | `{ "type": "project" }` |
-| One layer | `{ "type": "layer", "names": ["Layer1"] }` |
-| One group | `{ "type": "group", "names": ["Support"] }` |
-| One or more components | `{ "type": "component", "names": ["Math", "App"] }` |
-
-**Request body — examples**
+**Request body — examples** (SampleCppProject's architecture: `engine/config/api_start_job.*.example.json`)
 
 *Auto (incremental if a baseline ancestor exists, else full), whole project:*
 ```json
-{ "branch": "main", "commit": "a12b34c", "scope": { "type": "project" }, "mode": "auto" }
+{ "commit_sha": "<full 40-character commit id>", "version_tag": "v1", "mode": "auto" }
 ```
 *Incremental against a specific baseline, one group:*
 ```json
-{ "branch": "main", "commit": "a12b34c", "scope": { "type": "group", "names": ["Support"] }, "baseVersionId": "v1" }
+{ "commit_sha": "<full 40-character commit id>", "version_tag": "v2",
+  "scope": { "type": "group", "names": ["Layer1.Support"] }, "reference_version_id": "v1" }
 ```
-*Force a full generation (ignore any baseline):*
+*Force a full generation, one component:*
 ```json
-{ "branch": "main", "commit": "a12b34c", "scope": { "type": "project" }, "mode": "full" }
+{ "commit_sha": "<full 40-character commit id>", "version_tag": "v1", "mode": "full",
+  "scope": { "type": "component", "names": ["Layer1.Sample Core"] } }
 ```
 *LLM-free run (deterministic; for timing tests), one group:*
 ```json
-{ "branch": "main", "commit": "a12b34c", "scope": { "type": "group", "names": ["Support"] }, "noLlm": true }
+{ "commit_sha": "<full 40-character commit id>", "version_tag": "v1", "mode": "full",
+  "scope": { "type": "group", "names": ["Layer1.My Sample"] }, "no_llm": true }
 ```
-*Explicit data dictionary + selected components:*
+*Explicit data dictionary + several components:*
 ```json
-{ "branch": "main", "commit": "a12b34c", "scope": { "type": "component", "names": ["Math", "App"] }, "dataDictId": "dd-002" }
+{ "commit_sha": "<full 40-character commit id>", "version_tag": "v3",
+  "scope": { "type": "component", "names": ["Layer1.Math", "Layer1.App"] }, "data_dict_id": "dd-002" }
 ```
 
-> **JSON gotcha (422):** every string value must be quoted — `"baseVersionId": "v1"`, **not** `"baseVersionId": v1`. An unquoted/bare value makes the body invalid JSON and the API returns **422 Unprocessable Entity** before the handler runs. In Postman use **Body → raw → JSON**.
+> **JSON gotcha (422):** every string value must be quoted — `"version_tag": "v1"`, **not** `"version_tag": v1`. An unquoted/bare value makes the body invalid JSON and the API returns **422 Unprocessable Entity** before the handler runs. In Postman use **Body → raw → JSON**.
 
-**200**
+**202**
 ```json
-{
-  "versionId": "v-7",
-  "jobId": "gen_4f7a1b8e2c9d",
-  "decision": "incremental",            // what it actually did: "incremental" | "full"
-  "baselineVersionId": "v-4",           // null when full
-  "baselineCommit": "9f3c1a…",
-  "dataDictId": "dd-002",
-  "warnings": []
-}
+{ "job_id": "job4f7a1b8e", "status": "queued" }
 ```
-**Notes:** the **data dictionary file is uploaded by a separate (onboarding) API**; here you only
-*reference* one by `dataDictId` (or omit to use the project's current). A data-dict-only change
-re-runs only the cheap document assembly, not the LLM.
-**Errors:** 400 (bad scope/commit/base/dataDictId), 404 (unknown project), 409 (commit not in repo).
+The job (`GET …/jobs/{jobId}` → `{"job": {…}}`) carries `version_id` (the generated `ver…` id),
+`version_tag`, `status` (`queued` → `running` → `complete` | `failed` | `cancelled`), `phase`,
+`error_message`, and once done `decision` (`incremental` | `full`).
+
+**Errors**
+
+| Code | When |
+|---|---|
+| 400 `VALIDATION_ERROR` | no `version_tag`; `mode: "reexport"` or `"export"` (each has its own route) |
+| 400 `INVALID_SCOPE` | a scope name that matches nothing, or two layers (`candidates` lists the choices); an unknown scope `type` |
+| 403 | not a project admin |
+| 404 | unknown project; a `reference_version_id` that is not one of this project's versions |
+| 409 `VERSION_EXISTS` | `version_tag` used by a version that is running or finished |
+| 409 `JOB_ALREADY_RUNNING` | the project has a job queued or running |
+| 409 `NO_ARCHITECTURE` | the project was onboarded with `analyzer.py onboard` — generate it with `analyzer.py generate` |
 
 ---
 

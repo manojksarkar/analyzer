@@ -545,7 +545,7 @@ def get_behaviour_names(
     """Ask LLM for short human-readable Input Name and Output Name. Uses abbreviations.
     globals_read: list of globals this function reads (input side).
     globals_written: list of globals this function writes (output side).
-    Returns {"behaviourInputName": str, "behaviourOutputName": str}; may be empty if parse fails.
+    Returns {"inputName": str, "outputName": str}; may be empty if parse fails.
     """
     if not source:
         return {}
@@ -598,9 +598,9 @@ Output Name: <short phrase>"""
     for line in raw.split("\n"):
         line = line.strip()
         if line.lower().startswith("input name:"):
-            result["behaviourInputName"] = line[11:].strip()
+            result["inputName"] = line[11:].strip()
         elif line.lower().startswith("output name:"):
-            result["behaviourOutputName"] = line[12:].strip()
+            result["outputName"] = line[12:].strip()
     return result
 
 

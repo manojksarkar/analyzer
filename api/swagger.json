@@ -2188,7 +2188,7 @@
           "pause_after_phase1": { "type": "boolean", "default": false },
           "layer_filter": { "type": "string", "nullable": true },
           "mode": { "type": "string", "enum": ["auto", "full"], "default": "auto", "description": "auto = pick nearest-ancestor completed version as the incremental baseline; full = force a full generation" },
-          "scope": { "type": "object", "nullable": true, "description": "{\"type\": \"project|group|component\", \"names\": [...]} - maps to run.py --selected-group / --selected-component (exclusive with layer_filter)" },
+          "scope": { "type": "object", "nullable": true, "description": "{\"type\": \"project|layer|group|component\", \"names\": [...]} - groups and components by their LAYER-QUALIFIED id (\"Layer1.My Sample\", \"Layer1.Sample Core\"), a layer by its name; a name matching nothing or two layers is 400 INVALID_SCOPE with candidates, before anything is reserved. Maps to run.py --selected-layer / --selected-group / --selected-component (exclusive with layer_filter)" },
           "no_llm": { "type": "boolean", "default": false, "description": "Disable LLM descriptions/behaviour/summaries" },
           "data_dict_id": { "type": "string", "nullable": true, "description": "Resolved to workspaces/<projectId>/datadict/<id>.csv" },
           "narrowed_parse": { "type": "boolean", "default": false, "description": "M4.4 opt-in: re-parse only affected TUs and merge into the baseline parser snapshot (large repos)" }

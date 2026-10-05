@@ -44,7 +44,7 @@ export const reviewApi = {
       slot ? { slot_kind: slot.kind, slot_key: slot.key } : undefined)
     return r?.discarded ?? 0
   },
-  /** R3: save one text (description, a behaviour name, a unit or struct description). */
+  /** R3: save one text (description, an input or output name, a unit or struct description). */
   saveSlot: async (pid: string, vid: string, kind: SlotKind, key: string, text: string): Promise<SlotSaveResult> =>
     mapSlotSave(await http.put<ApiSlotSave>(`${base(pid, vid)}/overrides/slot`,
       { slot_kind: kind, slot_key: key, text })),
