@@ -79,6 +79,9 @@ function RolePill({ role }: { role: 'admin' | 'developer' }) {
 
 /* ─── Standard badge ────────────────────────────────────────────────── */
 function StandardBadge({ standard }: { standard: string }) {
+  // None (a project `analyzer.py onboard` wrote): a dash like the row's other empty cells, not an
+  // empty pill.
+  if (!standard) return <span className="text-on-surface-variant font-mono text-caption">—</span>
   const isAspiceL3 = standard === 'ASPICE L3'
   return (
     <span
@@ -103,10 +106,12 @@ function VersionBadge({ version }: { version: string | null }) {
 }
 
 /* ─── Project row ───────────────────────────────────────────────────── */
-export function ProjectRow({ project, onNavigate, onTeam }: {
+export function ProjectRow({ project, onNavigate, onTeam, onRename }: {
   project: Project; onNavigate: (id: string) => void
   /** Opens the project's Team page (an admin adds people there). */
   onTeam: (id: string) => void
+  /** Opens the page's Rename dialog for this project (its admins). */
+  onRename?: (project: Project) => void
 }) {
   // Role is per-project now (project.userRole from the API's my_role).
   const isAdmin = project.userRole === 'admin'
@@ -122,6 +127,8 @@ export function ProjectRow({ project, onNavigate, onTeam }: {
 
   const configItem = { label: 'Download config', icon: 'download', onClick: () => { void downloadConfig(project.name) } }
   const adminItems = [
+    // A rename is rare: it lives here, not on the project's own pages.
+    ...(onRename ? [{ label: 'Rename', icon: 'edit', onClick: () => onRename(project) }] : []),
     configItem,
     { label: 'Delete',   icon: 'delete',       variant: 'danger' as const, onClick: onDelete },
   ]

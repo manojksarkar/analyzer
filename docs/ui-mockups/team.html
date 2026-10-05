@@ -287,13 +287,6 @@
               <span class="font-label-md text-label-md text-secondary" style="font-size:12px;">New Project</span>
             </a>
           </div>
-          <!-- The project's admins rename it here (the app shows this item to them only). -->
-          <div class="border-t border-outline-variant">
-            <button type="button" onclick="openRenameProject()" class="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left">
-              <span class="material-symbols-outlined text-secondary" style="font-size:15px;">edit</span>
-              <span class="font-label-md text-label-md text-secondary" style="font-size:12px;">Rename this project</span>
-            </button>
-          </div>
         </div>
       </div>
 
@@ -875,113 +868,6 @@ document.getElementById('invite-modal').addEventListener('click', function(e) {
 // ── Init ──
 renderTeamTable();
 updateChip();
-</script>
-<!-- ══ RENAME PROJECT - the project menu's last item (web-app components/shell/RenameProjectDialog.tsx) ══ -->
-<style>
-  #rp-name { width: 100%; height: 40px; padding: 0 12px; border: 1px solid #c4c6cd; border-radius: 12px; background: #fff;
-             font: 400 14px/20px Inter, sans-serif; color: #0b1c30; outline: none; transition: border-color .15s, box-shadow .15s; }
-  #rp-name:focus { border-color: #0058be; box-shadow: 0 0 0 2px rgba(0,88,190,.35); }
-  #rp-name.err { border-color: #ba1a1a; }
-  #rp-name.err:focus { box-shadow: 0 0 0 2px rgba(186,26,26,.35); }
-  .rp-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; cursor: pointer;
-            font: 500 12px/16px 'JetBrains Mono', monospace; transition: background .15s, opacity .15s; }
-  .rp-btn:disabled { opacity: .5; cursor: not-allowed; }
-  .rp-outline { border: 1px solid #c4c6cd; background: #fff; color: #0b1c30; }
-  .rp-outline:hover { background: #e5eeff; }
-  .rp-primary { border: 1px solid #0058be; background: #0058be; color: #fff; }
-  .rp-primary:hover:not(:disabled) { background: #2170e4; }
-</style>
-<div id="rp-dialog" class="hidden fixed inset-0 z-[300] flex items-center justify-center" style="background:rgba(4,22,39,.4);"
-     onclick="if (event.target === this) closeRenameProject()">
-  <form onsubmit="submitRenameProject(event)" role="dialog" aria-label="Rename project" class="bg-white w-full p-6"
-        style="max-width:440px;margin:0 16px;border-radius:12px;box-shadow:0 8px 40px rgba(4,22,39,.18);">
-    <div class="flex items-center justify-between" style="margin-bottom:12px;">
-      <h3 style="font:600 16px/24px Inter,sans-serif;color:#0b1c30;">Rename project</h3>
-      <button type="button" onclick="closeRenameProject()" aria-label="Close" style="padding:4px;border-radius:8px;color:#44474c;">
-        <span class="material-symbols-outlined" style="font-size:20px;">close</span>
-      </button>
-    </div>
-    <label for="rp-name" style="display:block;margin-bottom:6px;font:600 11px/16px 'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:#44474c;">Project name</label>
-    <input id="rp-name" type="text" autocomplete="off" oninput="renameProjectCheck()">
-    <p id="rp-error" class="hidden" role="alert" style="margin-top:4px;align-items:center;gap:4px;font:400 12px/16px Inter,sans-serif;color:#ba1a1a;">
-      <span class="material-symbols-outlined" style="font-size:12px;">error</span><span id="rp-error-text"></span>
-    </p>
-    <p style="margin-top:12px;font:400 11px/1.6 Inter,sans-serif;color:#44474c;">
-      Documents already made keep the name they were made with, on their cover and in their
-      introduction. A re-export or a new run uses the new name.
-    </p>
-    <div class="flex justify-end gap-2" style="margin:16px -24px 0;padding:16px 24px 0;border-top:1px solid #c4c6cd;">
-      <button type="button" class="rp-btn rp-outline" onclick="closeRenameProject()">Cancel</button>
-      <button type="submit" id="rp-submit" class="rp-btn rp-primary">
-        <span class="material-symbols-outlined" style="font-size:14px;">edit</span>Rename
-      </button>
-    </div>
-  </form>
-</div>
-<div id="rp-toast" role="status" class="hidden fixed z-[400] flex items-start gap-3 p-4 bg-white"
-     style="right:16px;bottom:16px;width:320px;border:1px solid #c4c6cd;border-radius:12px;box-shadow:0 4px 24px rgba(4,22,39,.12);">
-  <span class="material-symbols-outlined" style="font-size:18px;color:#00a572;margin-top:2px;font-variation-settings:'FILL' 1;">check_circle</span>
-  <div style="flex:1;min-width:0;">
-    <p id="rp-toast-title" style="font:600 14px/20px Inter,sans-serif;color:#0b1c30;"></p>
-    <p id="rp-toast-msg" style="margin-top:2px;font:400 12px/16px Inter,sans-serif;color:#44474c;"></p>
-  </div>
-</div>
-<script>
-// ── Rename project: the project menu's last item (the app offers it to the project's admins) ──
-function openRenameProject() {
-  var dd = document.getElementById('sb-project-dropdown');
-  if (dd) dd.classList.add('hidden');
-  var ch = document.getElementById('sb-project-chevron');
-  if (ch) ch.style.transform = '';
-  var cur = document.getElementById('sb-project-name').textContent.trim();
-  var box = document.getElementById('rp-name');
-  box.value = cur;
-  box.setAttribute('data-current', cur);
-  document.getElementById('rp-dialog').classList.remove('hidden');
-  renameProjectCheck();
-  box.focus();
-  box.select();
-}
-function closeRenameProject() { document.getElementById('rp-dialog').classList.add('hidden'); }
-// A blank or over-long name says why (once the text is not the current name) and is not sent;
-// neither is the same name.
-function renameProjectCheck() {
-  var box = document.getElementById('rp-name');
-  var cur = box.getAttribute('data-current');
-  var next = box.value.trim();
-  var why = !next ? 'A project needs a name.' : next.length > 120 ? 'A project name is at most 120 characters.' : '';
-  var show = !!why && box.value !== cur;
-  var err = document.getElementById('rp-error');
-  err.classList.toggle('hidden', !show);
-  err.style.display = show ? 'flex' : '';
-  document.getElementById('rp-error-text').textContent = why;
-  box.classList.toggle('err', show);
-  document.getElementById('rp-submit').disabled = !!why || next === cur;
-}
-function submitRenameProject(e) {
-  e.preventDefault();
-  if (document.getElementById('rp-submit').disabled) return;
-  var box = document.getElementById('rp-name');
-  var old = box.getAttribute('data-current');
-  var next = box.value.trim();
-  // The new name everywhere it shows on the page at once (the menu, the breadcrumb, the sidebar).
-  document.querySelectorAll('body *').forEach(function(el) {
-    if (el.children.length === 0 && el.textContent.trim() === old && !el.closest('#rp-dialog')) el.textContent = next;
-  });
-  closeRenameProject();
-  rpToast('Project renamed', 'Documents already made keep their name; a re-export uses "' + next + '".');
-}
-var rpToastTimer = null;
-function rpToast(title, msg) {
-  clearTimeout(rpToastTimer);
-  document.getElementById('rp-toast-title').textContent = title;
-  document.getElementById('rp-toast-msg').textContent = msg;
-  document.getElementById('rp-toast').classList.remove('hidden');
-  rpToastTimer = setTimeout(function() { document.getElementById('rp-toast').classList.add('hidden'); }, 4000);
-}
-document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape' && !document.getElementById('rp-dialog').classList.contains('hidden')) closeRenameProject();
-});
 </script>
 </body>
 </html>

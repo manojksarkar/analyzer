@@ -36,3 +36,19 @@ describe('ProjectRow: Add team members', () => {
     expect(screen.queryByRole('button', { name: /Add team members/ })).not.toBeInTheDocument()
   })
 })
+
+describe('ProjectRow: no standard', () => {
+  it('shows a dash, not an empty pill', () => {
+    const project = {
+      id: 'p9', name: 'CLI Project', icon: 'memory', standard: '', latestVersion: null, inReviewCount: 0,
+      progress: 0, lastRun: null, pageState: 'complete', team: [], userRole: 'admin',
+    } as unknown as Project
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <table><tbody><ProjectRow project={project} onNavigate={() => {}} onTeam={() => {}} /></tbody></table>
+      </QueryClientProvider>,
+    )
+    const cells = screen.getAllByRole('cell')
+    expect(cells[1]).toHaveTextContent('—')
+  })
+})

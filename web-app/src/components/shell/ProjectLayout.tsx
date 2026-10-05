@@ -65,7 +65,6 @@ export function ProjectLayout({ breadcrumbLabel, breadcrumbParentLabel, breadcru
         <Topbar breadcrumbs={breadcrumbs} />
         <Subbar
           projectName={project?.name ?? '…'}
-          canRename={project?.userRole === 'admin'}
           selectedVersion={latestVersion}
           selectedCommit={latestCommit}
           statusBadge={

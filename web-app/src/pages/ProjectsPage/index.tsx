@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useProjects } from '../../hooks/useProjects'
 import { useAuthStore } from '../../store/auth'
@@ -5,6 +6,7 @@ import { Dropdown, DropdownTrigger, DropdownContent, Icon, BrandMark, TableSkele
 import { NotificationBell } from '../../components/shell/NotificationBell'
 import { ProjectRow } from './components/ProjectRow'
 import { ProjectsEmptyState } from './components/ProjectsEmptyState'
+import { RenameProjectDialog } from './components/RenameProjectDialog'
 import { APP_NAME, APP_TAGLINE } from '../../constants/branding'
 
 /* Column headers — width baked into the class so no inline style is needed. */
@@ -26,6 +28,9 @@ export function ProjectsPage() {
   const isEmpty = !isLoading && !isError && (projects?.length ?? 0) === 0
   const requestAccess = () =>
     toast.info('Request access', 'Ask your workspace administrator to add you to a project.')
+  // The project being renamed (a row's menu). The dialog is the page's, not the row's: a click in
+  // it would reach the row and open the project.
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null)
 
   return (
     <div className="h-screen flex flex-col overflow-hidden relative">
@@ -150,6 +155,7 @@ export function ProjectsPage() {
                           project={project}
                           onNavigate={(id) => navigate(`/projects/${id}/overview`)}
                           onTeam={(id) => navigate(`/projects/${id}/team`)}
+                          onRename={(p) => setRenaming({ id: p.id, name: p.name })}
                         />
                       ))}
                 </tbody>
@@ -157,6 +163,13 @@ export function ProjectsPage() {
             )}
             {isLoading && <TableSkeleton rows={5} cols={8} />}
           </div>
+          {renaming && (
+            <RenameProjectDialog
+              project={renaming}
+              otherNames={(projects ?? []).filter((p) => p.id !== renaming.id).map((p) => p.name)}
+              onClose={() => setRenaming(null)}
+            />
+          )}
         </div>
       </div>
     </div>
