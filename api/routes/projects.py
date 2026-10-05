@@ -177,6 +177,14 @@ def preview_config(
     tree = None
     note = None
     url = (body.repo_url or "").strip()
+    from ..services import local_repos
+    if url and local_repos.is_local(url):
+        # A local repository: read as git reads it, and only when it may be one.
+        why = local_repos.problem(url)
+        if why:
+            note, url = f"The repository could not be read ({why}), so paths were not checked.", ""
+        else:
+            url = local_repos.clean(url)
     if url:
         try:
             # The branch as it is now: a reused clone is refreshed, and read at the fetched tip.
@@ -229,15 +237,24 @@ def create_project(
     problems = core_problems(body.build_config, body.architecture_layers)
     if problems:
         raise bad_request(" ".join(problems))
+    # A local repository (a git repository's folder on the server) is checked as Test Connection
+    # checks it -- the wizard cannot be relied on to have -- and stored as git will read it.
+    from ..services import local_repos
+    repo_url, repo_provider = body.repo_url, body.repo_provider
+    if (repo_url or "").strip() and local_repos.is_local(repo_url):
+        why = local_repos.problem(repo_url)
+        if why:
+            raise bad_request(why)
+        repo_url, repo_provider = local_repos.clean(repo_url), "local"
     build_config = dict(body.build_config)
-    if body.access_token:
+    if body.access_token and repo_provider != "local":
         build_config["repo_access_token"] = body.access_token
     project = Project(
         id=f"p{uuid.uuid4().hex[:8]}",
         org_id="org1",
         name=body.name, client=body.client,
         compliance_standard=body.compliance_standard,
-        repo_url=body.repo_url, repo_provider=body.repo_provider,
+        repo_url=repo_url, repo_provider=repo_provider,
         default_branch=body.default_branch,
         build_config=build_config,
         architecture_layers=body.architecture_layers,

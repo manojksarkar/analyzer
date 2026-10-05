@@ -256,6 +256,31 @@
   .fp-folder-row.selected .fp-name { color:#0058be; font-weight:600; }
   .fp-children { margin-left:16px; border-left:1px solid #e5eeff; }
 
+  /* ── Repository source: Git URL | Local path (step 1) ── */
+  .seg { display: inline-flex; margin-left: auto; padding: 2px; gap: 2px; background: #eff4ff; border: 1px solid #c4c6cd; border-radius: .5rem; }
+  .seg-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border: none; border-radius: .375rem; background: none; cursor: pointer;
+             font: 600 11px/16px 'JetBrains Mono', monospace; letter-spacing: .02em; color: #44474c; transition: background .15s, color .15s; }
+  .seg-btn .material-symbols-outlined { font-size: 14px; }
+  .seg-btn:hover { color: #0b1c30; }
+  .seg-btn.on { background: #fff; color: #0058be; box-shadow: 0 1px 2px rgba(4,22,39,.12); }
+
+  /* ── Local path: Browse - the server's folders ── */
+  .rb-browse { display: none; align-items: center; gap: 6px; padding: 0 12px; flex-shrink: 0; background: #fff; border: 1px solid #c4c6cd; border-radius: .5rem; cursor: pointer;
+               font: 700 11px/16px 'JetBrains Mono', monospace; letter-spacing: .04em; color: #44474c; transition: background .15s; }
+  .rb-browse:hover { background: #eff4ff; }
+  .rb-crumb { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: none; border-radius: .25rem; background: none; cursor: pointer;
+              font: 500 11px/16px 'JetBrains Mono', monospace; color: #0058be; }
+  .rb-crumb:hover { background: #eff4ff; }
+  .rb-crumb:last-child { color: #0b1c30; font-weight: 600; }
+  .rb-sep { color: #74777d; font-size: 11px; }
+  .rb-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: .375rem; cursor: pointer; user-select: none;
+            font: 400 12px/18px 'JetBrains Mono', monospace; color: #0b1c30; }
+  .rb-row:hover { background: #eff4ff; }
+  .rb-row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rb-row.picked { background: #e5eeff; color: #0058be; font-weight: 600; }
+  .rb-git { padding: 0 6px; border-radius: 3px; background: #d6f5ea; color: #006e45; font: 600 10px/16px 'JetBrains Mono', monospace; }
+  .rb-empty { padding: 16px 10px; text-align: center; font: 400 12px/16px Inter, sans-serif; color: #74777d; }
+
   /* ── Branch: one box - search and list (step 1) ── */
   .bd-head  { padding: 6px 12px; font: 500 11px/16px 'JetBrains Mono', monospace; color: #74777d; border-bottom: 1px solid #eff4ff; }
   .bd-item  { display: flex; align-items: center; gap: 8px; padding: 7px 12px; cursor: pointer; font: 400 12px/18px 'JetBrains Mono', monospace; color: #0b1c30; }
@@ -439,10 +464,44 @@
                    oninput="this.classList.remove('err')">
           </div>
 
+          <!-- Where the code is: a Git URL (GitHub, GitLab, any git server) or a local path - a git
+               repository's folder on the server ArtiFex runs on. Either is read with git: branches,
+               files, commits. A plain folder is refused: it must be a git repository. -->
           <div>
-            <div class="lbl">Repository URL <span class="req">*</span></div>
-            <input class="inp mono" id="s1-repo" type="text" placeholder="https://github.com/org/repo.git"
-                   oninput="this.classList.remove('err'); repoChanged();">
+            <div class="lbl">
+              <span id="repo-label">Repository URL</span> <span class="req">*</span>
+              <div class="seg" role="radiogroup" aria-label="Where the repository is">
+                <button type="button" id="src-url" class="seg-btn on" role="radio" aria-checked="true" onclick="setRepoSource('url')">
+                  <span class="material-symbols-outlined">link</span>Git URL
+                </button>
+                <button type="button" id="src-local" class="seg-btn" role="radio" aria-checked="false" onclick="setRepoSource('local')">
+                  <span class="material-symbols-outlined">folder</span>Local path
+                </button>
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <div style="position:relative;flex:1;">
+                <span id="repo-icon" class="material-symbols-outlined" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:16px;color:#74777d;pointer-events:none;">link</span>
+                <input class="inp mono" id="s1-repo" type="text" placeholder="https://github.com/org/repo.git" style="padding-left:34px;"
+                       spellcheck="false" oninput="this.classList.remove('err'); repoTyped();">
+              </div>
+              <!-- Local path: pick the folder instead of typing it - from the SERVER's folders (a
+                   browser cannot give a full path from the reviewer's own PC, and git runs on the
+                   server). -->
+              <button type="button" id="repo-browse" class="rb-browse" onclick="openRepoBrowser()">
+                <span class="material-symbols-outlined" style="font-size:16px;">folder_open</span>BROWSE…
+              </button>
+            </div>
+            <!-- Local path: where the folder must be, and what it must be. -->
+            <p id="repo-local-hint" class="hidden mt-1.5 text-on-surface-variant" style="font-size:11px;line-height:16px;">
+              A git repository on the server ArtiFex runs on — the folder that holds
+              <code style="font-family:'JetBrains Mono';font-size:10.5px;">.git</code>. Type its full path, or Browse.
+            </p>
+            <!-- Git URL chosen, but a folder path typed: say so, one click to switch. -->
+            <p id="repo-looks-local" class="hidden mt-1.5" style="font-size:11px;line-height:16px;color:#8a5300;">
+              This looks like a folder path, not a URL.
+              <button type="button" class="text-secondary hover:underline font-medium" onclick="setRepoSource('local')">Use Local path</button>
+            </p>
           </div>
 
           <!-- Only a private repository needs a token: a link until asked for. -->
@@ -751,7 +810,7 @@
             <button onclick="goToStep(1)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
           </div>
           <div class="rev-row"><span>Name</span><span id="r-name">—</span></div>
-          <div class="rev-row"><span>Repository URL</span><span id="r-repo">—</span></div>
+          <div class="rev-row"><span id="r-repo-label">Repository URL</span><span id="r-repo">—</span></div>
           <div class="rev-row"><span>Branch</span><span id="r-branch">—</span></div>
           <div class="rev-row"><span>Access Token</span><span id="r-token">—</span></div>
         </div>
@@ -1029,7 +1088,7 @@ function issuesFor(n) {
     var repo = document.getElementById('s1-repo').value.trim();
     var connected = !document.getElementById('branch-field').classList.contains('hidden');
     if (!document.getElementById('s1-name').value.trim()) out.push('Give the project a name');
-    if (!repo) out.push('Enter the repository URL');
+    if (!repo) out.push(REPO_SOURCE === 'local' ? 'Enter the repository folder' : 'Enter the repository URL');
     if (repo && !connected) out.push('Test the connection to load the branches');
     if (connected && !document.getElementById('s1-branch').value) out.push('Pick a branch');
   }
@@ -1316,7 +1375,12 @@ function importConfig(inp) {
   var nameEl = document.getElementById('s1-name'), repoEl = document.getElementById('s1-repo');
   if (!nameEl.value.trim()) nameEl.value = SAMPLE_IMPORT.name;
   else if (nameEl.value.trim() !== SAMPLE_IMPORT.name) IMPORT_KEPT.push('project name');
-  if (!repoEl.value.trim()) { repoEl.value = SAMPLE_IMPORT.repo; repoChanged(); }   // a new repository: connect again
+  if (!repoEl.value.trim()) {                       // a new repository: connect again
+    repoEl.value = SAMPLE_IMPORT.repo;
+    REPO_SOURCE = looksLocal(SAMPLE_IMPORT.repo) ? 'local' : 'url';   // a path in the config: Local path
+    showRepoSource();
+    repoChanged();
+  }
   else if (repoEl.value.trim() !== SAMPLE_IMPORT.repo) IMPORT_KEPT.push('repository');
   // Step 2: one card per core. Their files are read from the repository once it is connected.
   CORES = []; _coreSeq = 0;
@@ -2169,6 +2233,7 @@ function populateReview() {
   // ── Project & Repository ──
   document.getElementById('r-name').textContent   = document.getElementById('s1-name').value || '—';
   document.getElementById('r-repo').textContent   = document.getElementById('s1-repo').value || '—';
+  document.getElementById('r-repo-label').textContent = REPO_SOURCE === 'local' ? 'Repository folder' : 'Repository URL';
   document.getElementById('r-branch').textContent = document.getElementById('s1-branch').value || '—';
   var tok = document.getElementById('s1-token').value;
   document.getElementById('r-token').textContent  = tok ? '••••••••' : 'Not set';
@@ -2468,6 +2533,175 @@ function branchPicked() {
   if (document.getElementById('s1-branch').value && IMPORTED) { IMPORT_CHECKED = false; checkImportAgainstRepo(); }
 }
 
+// ════════════════════════════════════════
+// Step 1: where the repository is - a Git URL, or a local path (a git repository on the server)
+// ════════════════════════════════════════
+var REPO_SOURCE = 'url';
+var REPO_TEXT = { url: '', local: '' };   // what was typed under each choice: switching back finds it
+
+// A full path: a drive (D:/ or D:\), a root (/), a share (\\host) or a file:// link.
+function looksLocal(v) { return /^([A-Za-z]:[\\/]|\/|\\\\|file:\/\/)/.test(cleanPath(v)); }
+// Explorer's "Copy as path" adds quotes: they go.
+function cleanPath(v) { return (v || '').trim().replace(/^["']+|["']+$/g, ''); }
+
+// The switch, the label, the placeholder, the hint and the token link, for REPO_SOURCE.
+function showRepoSource() {
+  var local = REPO_SOURCE === 'local';
+  [['src-url', !local], ['src-local', local]].forEach(function(b) {
+    var el = document.getElementById(b[0]);
+    el.classList.toggle('on', b[1]);
+    el.setAttribute('aria-checked', String(b[1]));
+  });
+  document.getElementById('repo-label').textContent = local ? 'Repository folder' : 'Repository URL';
+  document.getElementById('s1-repo').placeholder = local ? 'D:/src/vcu-firmware' : 'https://github.com/org/repo.git';
+  document.getElementById('repo-icon').textContent = local ? 'folder' : 'link';
+  document.getElementById('repo-local-hint').classList.toggle('hidden', !local);
+  document.getElementById('repo-browse').style.display = local ? 'inline-flex' : 'none';
+  document.getElementById('repo-looks-local').classList.add('hidden');
+  // A folder on the server needs no access token.
+  var tokenTyped = !!document.getElementById('s1-token').value;
+  document.getElementById('token-link').classList.toggle('hidden', local || tokenTyped);
+  document.getElementById('token-field').classList.toggle('hidden', local || !tokenTyped);
+}
+
+function setRepoSource(src) {
+  if (src === REPO_SOURCE) return;
+  var el = document.getElementById('s1-repo');
+  REPO_TEXT[REPO_SOURCE] = el.value;
+  // A path typed under Git URL goes along to Local path.
+  var carry = src === 'local' && looksLocal(el.value) && !REPO_TEXT.local;
+  el.value = carry ? el.value : REPO_TEXT[src];
+  if (carry) REPO_TEXT.url = '';
+  REPO_SOURCE = src;
+  el.classList.remove('err');
+  showRepoSource();
+  repoChanged();
+  el.focus();
+}
+
+function repoTyped() {
+  var v = document.getElementById('s1-repo').value;
+  document.getElementById('repo-looks-local').classList.toggle('hidden', !(REPO_SOURCE === 'url' && looksLocal(v)));
+  repoChanged();
+}
+
+// ════════════════════════════════════════
+// Local path: Browse - the server's folders, one folder at a time; only a git repository is picked
+// ════════════════════════════════════════
+// The server's disk, simulated. `_git`: the folder holds .git. The real list comes from the server,
+// one folder per request (folder names only, and whether each is a git repository).
+var SERVER_FS = {
+  'C:': { 'Program Files': {}, 'Users': { 'build': { 'checkouts': { 'vcu-firmware': { _git: true } } } }, 'Windows': {} },
+  'D:': {
+    'src': {
+      'adas-fusion': { _git: true }, 'brake-ecu': { _git: true }, 'vcu-firmware': { _git: true },
+      'docs': { 'manuals': {}, 'specs': {} },
+      'third_party': { 'freertos': { _git: true }, 'lwip': { _git: true } },
+    },
+    'builds': { '2026-10-01': {}, '2026-10-04': {} },
+  },
+};
+var RB_PATH = [];     // the folder shown: [] = the server's drives; ['D:', 'src'] = D:/src
+var RB_PICKED = '';   // the repository picked, a full path
+
+function rbNode(parts) { var n = SERVER_FS; parts.forEach(function(p) { n = n && n[p]; }); return n; }
+function rbJoin(parts) { return parts.length ? parts[0] + '/' + parts.slice(1).join('/') : ''; }
+function rbChildren(parts) {
+  return Object.keys(rbNode(parts) || {}).filter(function(k) { return k !== '_git'; })
+    .sort(function(a, b) { return a.toLowerCase() < b.toLowerCase() ? -1 : 1; });
+}
+
+// Opens where the box points when that folder is there (a repository: picked, in its folder);
+// else at the drives.
+function openRepoBrowser() {
+  var parts = cleanPath(document.getElementById('s1-repo').value).replace(/\\/g, '/').split('/').filter(Boolean);
+  while (parts.length && !rbNode(parts)) parts.pop();
+  RB_PICKED = '';
+  if (parts.length && rbNode(parts)._git) { RB_PICKED = rbJoin(parts); parts.pop(); }
+  RB_PATH = parts;
+  renderRepoBrowser();
+  document.getElementById('repo-browser').classList.remove('hidden');
+  document.getElementById('repo-browser-backdrop').classList.remove('hidden');
+}
+function closeRepoBrowser() {
+  document.getElementById('repo-browser').classList.add('hidden');
+  document.getElementById('repo-browser-backdrop').classList.add('hidden');
+}
+function rbOpen(i) { RB_PATH = RB_PATH.concat([rbChildren(RB_PATH)[i]]); RB_PICKED = ''; renderRepoBrowser(); }
+// Marked in place, not redrawn: a double-click's second click must land on the same row.
+function rbPick(i) { RB_PICKED = rbJoin(RB_PATH.concat([rbChildren(RB_PATH)[i]])); rbMarkPicked(); }
+function rbCrumb(n) { RB_PATH = RB_PATH.slice(0, n); RB_PICKED = ''; renderRepoBrowser(); }
+
+// The repository goes into the box, and Test Connection runs: its branches load at once.
+function confirmRepoBrowser() {
+  if (!RB_PICKED) return;
+  var el = document.getElementById('s1-repo');
+  el.value = RB_PICKED;
+  el.classList.remove('err');
+  closeRepoBrowser();
+  repoTyped();
+  testConnection();
+}
+
+function renderRepoBrowser() {
+  document.getElementById('rb-crumbs').innerHTML =
+    '<button class="rb-crumb" onclick="rbCrumb(0)"><span class="material-symbols-outlined" style="font-size:14px;">dns</span>This server</button>'
+    + RB_PATH.map(function(p, i) {
+      return '<span class="rb-sep">›</span><button class="rb-crumb" onclick="rbCrumb(' + (i + 1) + ')">' + escHtml(p) + '</button>';
+    }).join('');
+  var rows = rbChildren(RB_PATH).map(function(name, i) {
+    var node = rbNode(RB_PATH.concat([name]));
+    if (!RB_PATH.length) {
+      return '<div class="rb-row" onclick="rbOpen(' + i + ')"><span class="material-symbols-outlined" style="font-size:16px;color:#74777d;">hard_drive</span>'
+        + '<span class="nm">' + escHtml(name) + '</span><span class="material-symbols-outlined" style="font-size:16px;color:#74777d;">chevron_right</span></div>';
+    }
+    if (node._git) {
+      return '<div class="rb-row" data-path="' + escHtml(rbJoin(RB_PATH.concat([name]))) + '" onclick="rbPick(' + i + ')" ondblclick="rbPick(' + i + '); confirmRepoBrowser()">'
+        + '<span class="material-symbols-outlined" style="font-size:16px;color:#006e45;">source</span>'
+        + '<span class="nm">' + escHtml(name) + '</span><span class="rb-git">git</span>'
+        + '<span class="material-symbols-outlined rb-check" style="font-size:16px;visibility:hidden;">check</span></div>';
+    }
+    return '<div class="rb-row" onclick="rbOpen(' + i + ')"><span class="material-symbols-outlined text-secondary" style="font-size:16px;">folder</span>'
+      + '<span class="nm">' + escHtml(name) + '/</span><span class="material-symbols-outlined" style="font-size:16px;color:#74777d;">chevron_right</span></div>';
+  });
+  document.getElementById('rb-list').innerHTML = rows.join('') || '<div class="rb-empty">No folders here</div>';
+  rbMarkPicked();
+}
+
+// The picked repository: its row, the footer, and "Use this repository".
+function rbMarkPicked() {
+  document.querySelectorAll('#rb-list .rb-row[data-path]').forEach(function(r) {
+    var on = r.getAttribute('data-path') === RB_PICKED;
+    r.classList.toggle('picked', on);
+    r.querySelector('.rb-check').style.visibility = on ? 'visible' : 'hidden';
+  });
+  var picked = document.getElementById('rb-picked');
+  picked.textContent = RB_PICKED || 'Pick a git repository';
+  picked.style.color = RB_PICKED ? '#0b1c30' : '#74777d';
+  var use = document.getElementById('rb-use');
+  use.disabled = !RB_PICKED;
+  use.style.opacity = RB_PICKED ? '' : '0.5';
+  use.style.cursor = RB_PICKED ? '' : 'not-allowed';
+}
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && !document.getElementById('repo-browser').classList.contains('hidden')) closeRepoBrowser();
+});
+
+function connectFailed(msg) {
+  var statusEl = document.getElementById('test-conn-status');
+  statusEl.style.color = '#ba1a1a';
+  statusEl.innerHTML = '<span style="vertical-align:middle;font-size:14px;margin-right:3px;" class="material-symbols-outlined sym-fill">error</span> ' + escHtml(msg);
+}
+
+// What the server answers for a local path - simulated here: a path with "missing" in it does
+// not exist on the server, one with "notgit" is a plain folder; anything else is a repository.
+function localAnswer(p) {
+  if (!looksLocal(p)) return 'Give the full path of the folder, e.g. D:/src/vcu-firmware.';
+  if (/missing/i.test(p)) return 'No folder ' + p + ' on the server.';
+  if (/notgit/i.test(p)) return p + ' is not a git repository (it has no .git): pick the repository\'s root folder.';
+  return '';
+}
+
 function repoChanged() {
   // Reset test state when URL or token changes
   var statusEl = document.getElementById('test-conn-status');
@@ -2483,7 +2717,9 @@ function repoChanged() {
 }
 
 function testConnection() {
-  var url = document.getElementById('s1-repo').value.trim();
+  var repoEl = document.getElementById('s1-repo');
+  if (REPO_SOURCE === 'local') repoEl.value = cleanPath(repoEl.value);
+  var url = repoEl.value.trim();
   if (!url) {
     document.getElementById('s1-repo').classList.add('err');
     document.getElementById('s1-repo').focus();
@@ -2501,6 +2737,8 @@ function testConnection() {
   setTimeout(function() {
     btn.disabled = false;
     btn.style.opacity = '';
+    var refused = REPO_SOURCE === 'local' ? localAnswer(url) : '';
+    if (refused) { connectFailed(refused); return; }
 
     // Simulate success with the sample repository's branches; the default branch is picked.
     var branches = SAMPLE_BRANCHES;
@@ -2663,6 +2901,32 @@ function fpToggle(btn) {
   });
 })();
 </script>
+
+<!-- ══ LOCAL PATH: THE SERVER'S FOLDERS (Browse) ══ -->
+<div id="repo-browser-backdrop" class="hidden fixed inset-0 z-[99]" style="background:rgba(4,22,39,.25);" onclick="closeRepoBrowser()"></div>
+<div id="repo-browser" role="dialog" aria-label="Choose a git repository on the server"
+     class="hidden fixed top-0 right-0 h-screen bg-white border-l border-outline-variant z-[100] flex flex-col" style="width:380px;box-shadow:-4px 0 24px rgba(4,22,39,.12);">
+  <div class="flex items-center justify-between px-5 py-4 border-b border-outline-variant flex-shrink-0">
+    <div>
+      <h3 class="text-headline-sm text-on-surface" style="font-size:14px;">Choose a repository</h3>
+      <p class="text-on-surface-variant mt-0.5" style="font-size:11px;line-height:16px;">Folders on the server ArtiFex runs on. Only a git repository can be picked.</p>
+    </div>
+    <button onclick="closeRepoBrowser()" aria-label="Close" class="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-colors">
+      <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+    </button>
+  </div>
+  <!-- Where we are: each part goes back there -->
+  <div id="rb-crumbs" class="flex flex-wrap items-center gap-0.5 px-4 py-2.5 border-b border-outline-variant flex-shrink-0"></div>
+  <!-- The folder's folders: a plain one opens, a git repository is picked (double-click: picked and used) -->
+  <div id="rb-list" class="flex-1 overflow-y-auto px-2 py-2"></div>
+  <div class="px-4 py-3 border-t border-outline-variant flex-shrink-0 space-y-2.5">
+    <p id="rb-picked" style="font:500 11px/16px 'JetBrains Mono',monospace;color:#74777d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Pick a git repository</p>
+    <div class="flex gap-3">
+      <button onclick="closeRepoBrowser()" class="px-4 py-2 border border-outline-variant text-on-surface-variant rounded-lg font-label-md text-label-md hover:bg-surface-container transition-colors">Cancel</button>
+      <button id="rb-use" onclick="confirmRepoBrowser()" class="flex-1 py-2 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md hover:bg-secondary-container transition-colors">Use this repository</button>
+    </div>
+  </div>
+</div>
 
 <!-- ══ FOLDER PICKER SIDEBAR ══ -->
 <div id="folder-picker-backdrop" class="hidden fixed inset-0 z-[99]" style="background:rgba(4,22,39,.25);" onclick="closeFolderPicker()"></div>

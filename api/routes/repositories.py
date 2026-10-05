@@ -7,6 +7,9 @@ Backs the new-project wizard's repository step:
                                           access token goes in the JSON body
   * GET  /repositories/browse           — the same for a public repository; refuses a
                                           token in the query string (URLs reach logs)
+  * GET  /repositories/local-folders    — the server's folders, one at a time, for picking a
+                                          LOCAL repository (a git repository's folder on the
+                                          server); limited by `repositories.localRoots`
   * POST /repositories/uploads          — upload a build-config file (defs / data dict)
 
 Branch lists and the source tree are produced by api.services.repo_git, which
@@ -21,15 +24,15 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 from ..middleware.auth import get_current_user
 from ..models.domain import User
-from ..services import repo_git
+from ..services import local_repos, repo_git
 from ..services.errors import bad_request
 from ..services.settings import get_settings
-from ..schemas import TestConnectionResponse, BrowseResponse, UploadResponse
+from ..schemas import TestConnectionResponse, BrowseResponse, LocalFoldersResponse, UploadResponse
 
 router = APIRouter(prefix="/repositories", tags=["repositories"])
 
@@ -149,6 +152,27 @@ def browse(
             "Send the access token in the body of POST /repositories/browse, not in the URL: "
             "a URL is written to server and proxy logs.")
     return _browse(repo_url, ref, path, None, refresh)
+
+
+_LOCAL_CODES = {400: "VALIDATION_ERROR", 403: "FORBIDDEN", 404: "NOT_FOUND"}
+
+
+@router.get("/local-folders", responses={200: {"model": LocalFoldersResponse}})
+def local_folders(
+    path: str = Query("", description="A folder's full path on the server; empty: the top list"),
+    current_user: User = Depends(get_current_user),
+):
+    """One folder's folders on the server, for picking a LOCAL repository in the wizard's Browse
+    panel: names only, and `git` -- whether each is a git repository (only those can be picked).
+    `path` "" is the top list: the folders `repositories.localRoots` (engine/config/
+    config.local.json) limits the picker to, else the server's drives. 400 for a relative path,
+    403 outside the allowed folders (or unreadable), 404 for no such folder."""
+    try:
+        return local_repos.list_folders(path)
+    except local_repos.LocalPathError as exc:
+        raise HTTPException(status_code=exc.status, detail={
+            "code": _LOCAL_CODES.get(exc.status, "VALIDATION_ERROR"), "message": str(exc),
+            "status": exc.status})
 
 
 @router.post("/uploads", status_code=201, responses={201: {"model": UploadResponse}})

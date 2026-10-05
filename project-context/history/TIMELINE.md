@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-05k | A project's repository can be a local path (a git repository's folder on the server): checks, a folder-listing route, `repositories.localRoots`; the mockup's switch and Browse panel | [13](13-2026-10-05c.md) |
 | 2026-10-05j | The New Project wizard's branch is one box to search and pick in; the Get Started mockup follows the built Projects page | [13](13-2026-10-05c.md) |
 | 2026-10-05i | Review & approval smoke-tested in a browser (7 of 7 steps); a `reviewer` membership is a developer in the web app; the Overview of a project it cannot read says so | [13](13-2026-10-05c.md) |
 | 2026-10-05h | Web, from the review of 2026-10-05g: Compare's removed-document address, Compare's reads before the shown version is known, a pick made while a document loads, Esc in the reviewer menu | [13](13-2026-10-05c.md) |

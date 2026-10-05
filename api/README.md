@@ -198,7 +198,8 @@ All endpoints except `/auth/signin` and `/auth/refresh` require
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/repositories/test-connection` | Reach the repository; list its branches |
+| POST | `/repositories/test-connection` | Reach the repository; list its branches. `repo_url` is a Git URL or a **local path** — a git repository's folder on the server (`D:/src/x`, `/srv/x`, `file://…`, quotes from "Copy as path" dropped); a relative path, a missing folder, a plain folder or one outside `repositories.localRoots` answers `connected: false` with the reason |
+| GET | `/repositories/local-folders` | The server's folders, one at a time, for picking a local repository: `?path=` (empty: the top list — the folders `repositories.localRoots` in `engine/config/config.local.json` allows, else the drives) → `{path, parent, folders: [{name, path, git}], limited, truncated}`. 400 relative, 403 outside the allowed folders, 404 missing |
 | POST | `/repositories/browse` | The branch's file tree (cached blobless clone); body `{repo_url, ref?, path?, access_token?, refresh?}`. `refresh: true` first fetches the branch's current tip — the tree the wizard checks every path against. A private repository's token goes here, in the body |
 | GET | `/repositories/browse` | The same for a public repository (`repo_url`, `ref`, `path`, `refresh` in the query). A query with `access_token` is refused (400): a URL is written to access logs |
 | POST | `/repositories/uploads` | Upload data dictionary (`.csv`/`.xlsx`) or macros (`.csv`/`.json`) |

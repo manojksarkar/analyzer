@@ -554,6 +554,20 @@ class TestConnectionResponse(BaseModel):
     message: str
 
 
+class LocalFolder(BaseModel):
+    name: str
+    path: str
+    git: bool                       # a git repository: it can be picked
+
+
+class LocalFoldersResponse(BaseModel):
+    path: str                       # "" = the top list (allowed folders, else drives)
+    parent: Optional[str] = None    # null at the top; "" = back to the top
+    folders: List[LocalFolder]
+    limited: bool                   # repositories.localRoots limits the picker
+    truncated: bool                 # more than 2,000 folders: the first ones by name
+
+
 class BrowseResponse(BaseModel):
     repo_url: str
     ref: Optional[str] = None

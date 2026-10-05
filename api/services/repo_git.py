@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from . import git_cli
+from . import git_cli, local_repos
 
 # Project root (…/analyzer) — used only to locate the transient clone cache.
 _ROOT = Path(__file__).resolve().parents[2]
@@ -85,8 +85,16 @@ def test_connection(repo_url: str, access_token: Optional[str] = None) -> dict[s
     if not url:
         return {"connected": False, "default_branch": None, "branches": [],
                 "message": "Repository URL is required."}
+    creds = _creds(access_token)
+    if local_repos.is_local(url):
+        # A git repository's folder on the server: said plainly when it is not one (git's own
+        # answer ended "...and the repository exists."), and no token is sent.
+        why = local_repos.problem(url)
+        if why:
+            return {"connected": False, "default_branch": None, "branches": [], "message": why}
+        url, creds = local_repos.clean(url), ("", "")
     try:
-        res = git_cli.ls_remote(url, *_creds(access_token))
+        res = git_cli.ls_remote(url, *creds)
     except git_cli.GitError as exc:
         return {"connected": False, "default_branch": None, "branches": [],
                 "message": _friendly(str(exc))}
@@ -209,6 +217,8 @@ def _friendly(msg: str) -> str:
     low = msg.lower()
     if "authentication failed" in low or "could not read username" in low:
         return "Authentication failed — check the access token."
+    if "does not appear to be a git repository" in low:
+        return "Not a git repository — check the URL or the folder."
     if "repository not found" in low or "not found" in low:
         return "Repository not found — check the URL (and token for private repos)."
     if "could not resolve host" in low or "unable to access" in low or "timed out" in low:
