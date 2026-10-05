@@ -13,7 +13,7 @@ changes nothing in the document.
 | slot kind | view |
 |---|---|
 | `description` | `interfaceTables` **and** `testSpecs` (a SWE.4 spec copies it) |
-| `behaviourInputName`, `behaviourOutputName`, `unitDescription` | `interfaceTables` |
+| `inputName`, `outputName`, `unitDescription` | `interfaceTables` |
 | `structDescription` | `unitHeaders` (the unit header table's information column) |
 | `behaviourDescription` | `behaviourDiagram` |
 | `nodeLabel` | `flowcharts`, `testSpecs` (`REQ-CS-04`) **and** `utExport` |
@@ -45,8 +45,8 @@ VIEWS_BY_KIND: Dict[str, Tuple[str, ...]] = {
     # testSpecs too: a SWE.4 spec carries a copy of its function's description
     # (views/test_specs.py), and the SWE.4 exporter prints that copy.
     slot.DESCRIPTION:           ("interfaceTables", "testSpecs"),
-    slot.BEHAVIOUR_INPUT_NAME:  ("interfaceTables",),
-    slot.BEHAVIOUR_OUTPUT_NAME: ("interfaceTables",),
+    slot.INPUT_NAME:            ("interfaceTables",),
+    slot.OUTPUT_NAME:           ("interfaceTables",),
     slot.UNIT_DESCRIPTION:      ("interfaceTables",),
     # The unit header table is a Phase-3 view of its own (views/unit_headers.py), and its
     # information column for a struct, class or union row is this stored description.

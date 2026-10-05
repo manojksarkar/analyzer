@@ -514,7 +514,7 @@ injecting the entire 4-level BFS call graph at once.
 | Call type | Where | Trigger | Purpose |
 |-----------|-------|---------|---------|
 | Function description | `llm_client.py` | Phase 2, undocumented functions | `description` field in functions.json |
-| Behaviour names | `llm_client.py` | Phase 2, poor static names | `behaviourInputName`, `behaviourOutputName` |
+| Input/output names | `llm_client.py` | Phase 2, poor static names | `inputName`, `outputName` |
 | Function summary | `project_scanner.HierarchySummarizer` | Phase 2 + `--llm-summarize` | Function-level comment for knowledge_base |
 | Phase breakdown | `project_scanner.HierarchySummarizer` | Phase 2 + `--llm-summarize` | `phases[]` in functions.json |
 | File summary | `project_scanner.HierarchySummarizer` | Phase 2 + `--llm-summarize` | `file_summaries` in knowledge_base |

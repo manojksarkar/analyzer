@@ -515,7 +515,7 @@ class _Slots:
                           self._rows.get((kind, key)))
 
     def entity(self, kind: str, entity_key: Optional[str], text: Optional[str]) -> Optional[dict]:
-        """description, behaviourInputName, behaviourOutputName, structDescription."""
+        """description, inputName, outputName, structDescription."""
         return self._make(kind, lambda: self._slot.for_entity(kind, entity_key or ""), text)
 
     def unit(self, unit_key: str, text: Optional[str]) -> Optional[dict]:
@@ -992,8 +992,8 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
 
                 # Input / output names (mirrors docx_exporter)
                 fn_data = (functions_data.get(fid) or {}) if fid else {}
-                input_name = (fn_data.get("behaviourInputName") or "").strip()
-                output_name = (fn_data.get("behaviourOutputName") or "").strip()
+                input_name = (fn_data.get("inputName") or "").strip()
+                output_name = (fn_data.get("outputName") or "").strip()
                 if not input_name:
                     lbl = _readable_label(func_name)
                     input_name = (lbl + " input").strip() if lbl else ""
@@ -1025,9 +1025,9 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                             "output_name": output_name,
                             "description_slot": description_slot,
                             "input_name_slot": slots.entity(
-                                "behaviourInputName", fid, fn_data.get("behaviourInputName")),
+                                "inputName", fid, fn_data.get("inputName")),
                             "output_name_slot": slots.entity(
-                                "behaviourOutputName", fid, fn_data.get("behaviourOutputName")),
+                                "outputName", fid, fn_data.get("outputName")),
                         },
                     ))
                 else:
@@ -1081,8 +1081,8 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                         beh_fid = fid
                         break
                 if _beh_f is not None:
-                    input_label = (_beh_f.get("behaviourInputName") or "").strip()
-                    output_label = (_beh_f.get("behaviourOutputName") or "").strip()
+                    input_label = (_beh_f.get("inputName") or "").strip()
+                    output_label = (_beh_f.get("outputName") or "").strip()
                 if not input_label:
                     lbl = _readable_label(current_fn)
                     input_label = (lbl + " input").strip() if lbl else "Behaviour input"
@@ -1119,9 +1119,9 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                         "description_slot": slots.behaviour(
                             current_fid, row.get("externalCallerId"), bullets),
                         "input_name_slot": slots.entity(
-                            "behaviourInputName", beh_fid, beh_names.get("behaviourInputName")),
+                            "inputName", beh_fid, beh_names.get("inputName")),
                         "output_name_slot": slots.entity(
-                            "behaviourOutputName", beh_fid, beh_names.get("behaviourOutputName")),
+                            "outputName", beh_fid, beh_names.get("outputName")),
                     },
                 ))
                 dyn_idx += 1

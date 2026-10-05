@@ -101,12 +101,12 @@ class TestTheInterfaceTable:
 
 class TestAFunctionSection:
     def test_its_texts_carry_their_slots(self, tmp_path):
-        model = _Model(functions={FID: {"behaviourInputName": "Operand",
-                                        "behaviourOutputName": ""}})
+        model = _Model(functions={FID: {"inputName": "Operand",
+                                        "outputName": ""}})
         ft = _section(_render(tmp_path, model=model),
                       lambda s: s["type"] == "flowchart_table")["flowchart_table"]
         assert ft["description_slot"]["slotKey"] == FID
-        assert ft["input_name_slot"]["slotKind"] == "behaviourInputName"
+        assert ft["input_name_slot"]["slotKind"] == "inputName"
         assert ft["input_name_slot"]["text"] == "Operand"
         # the page prints a stand-in; the slot is honestly empty
         assert ft["output_name"].endswith(" result")
@@ -171,7 +171,7 @@ class TestABehaviourRow:
         rows = [{"currentFunctionName": "libAdd", "currentFunctionId": FID,
                  "externalCallerId": CALLER, "externalUnitFunction": "App - main",
                  "behaviorDescription": ["main calls libAdd.", "libAdd adds."]}]
-        model = _Model(functions={FID: {"behaviourInputName": "Operand"}})
+        model = _Model(functions={FID: {"inputName": "Operand"}})
         bt = _section(_render(tmp_path, behaviour=rows, model=model),
                       lambda s: s["type"] == "behavior_table")["behavior_table"]
         slot = bt["description_slot"]

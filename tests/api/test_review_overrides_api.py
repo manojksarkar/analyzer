@@ -66,7 +66,7 @@ def review_db(monkeypatch):
         model_store.persist_model(
             cx, PROJECT, VERSION,
             functions={FID: {"qualifiedName": "ns::doThing", "description": "Does the thing.",
-                             "behaviourInputName": "Input", "behaviourOutputName": "Output"}},
+                             "inputName": "Input", "outputName": "Output"}},
             globals={}, datadict={}, edges={"typeUsers": {}, "macroUsers": {}},
             hashes={}, units={}, components={}, summaries={})
         cx.execute(insert(s.version_output_files).values(
@@ -325,6 +325,59 @@ class TestR3NamesTheRouteThatSavesABehaviourRow:
         r = client.get(BASE + "/overrides/slot", headers=auth_header,
                        params={"slot_kind": "description", "slot_key": "No|Such|fn|"})
         assert r.status_code == 404 and "R11" in r.json()["detail"]
+
+
+class TestTheInputAndOutputNames:
+    """`inputName` / `outputName` were `behaviourInputName` / `behaviourOutputName` until
+    2026-10-05: a function's input and output names are printed in its flowchart table as well as
+    in Dynamic Behaviour. The new names are the kinds; the old ones are refused like any unknown
+    kind, by every route that takes one (REVIEW_UPDATE_API_SPEC §1)."""
+
+    @pytest.mark.parametrize("kind,llm", [("inputName", "Input"), ("outputName", "Output")])
+    def test_r3_saves_it_and_r2_reads_it_back(self, client, review_db, auth_header, kind, llm):
+        r = client.put(BASE + "/overrides/slot", headers=auth_header,
+                       json={"slot_kind": kind, "slot_key": FID, "text": "Pump request"})
+        assert r.status_code == 200, r.text
+        assert r.json()["slotKind"] == kind and r.json()["llmText"] == llm
+        got = client.get(BASE + "/overrides/slot", headers=auth_header,
+                         params={"slot_kind": kind, "slot_key": FID}).json()
+        assert got["humanText"] == got["text"] == "Pump request" and got["isOverridden"]
+
+    def test_the_model_field_has_the_new_name(self, client, review_db, auth_header):
+        client.put(BASE + "/overrides/slot", headers=auth_header,
+                   json={"slot_kind": "inputName", "slot_key": FID, "text": "Pump request"})
+        from core import model_store
+        with review_db.connect() as cx:
+            fn = model_store.load_functions(cx, VERSION)[FID]
+        assert fn["inputName"] == "Pump request" and fn["outputName"] == "Output"
+        assert "behaviourInputName" not in fn and "behaviourOutputName" not in fn
+
+    @pytest.mark.parametrize("old", ["behaviourInputName", "behaviourOutputName"])
+    @pytest.mark.parametrize("route", ["R1", "R2", "R3", "R4", "R5", "R11"])
+    def test_an_old_name_is_422(self, client, review_db, auth_header, old, route):
+        query = {"slot_kind": old, "slot_key": FID}
+        r = {"R1": lambda: client.get(BASE + "/overrides", headers=auth_header,
+                                      params={"slot_kind": old}),
+             "R2": lambda: client.get(BASE + "/overrides/slot", headers=auth_header,
+                                      params=query),
+             "R3": lambda: client.put(BASE + "/overrides/slot", headers=auth_header,
+                                      json={**query, "text": "Words."}),
+             "R4": lambda: client.delete(BASE + "/overrides/slot", headers=auth_header,
+                                         params=query),
+             "R5": lambda: client.get(BASE + "/overrides/history", headers=auth_header,
+                                      params=query),
+             "R11": lambda: client.get(BASE + "/slots", headers=auth_header,
+                                       params={"slot_kind": old})}[route]()
+        assert r.status_code == 422, r.text
+        assert "slot_kind" in r.text
+
+    def test_swagger_offers_the_new_names_only(self, client):
+        """The live Swagger (`/openapi.json`) builds `SlotKind` from `slot.ALL_KINDS`."""
+        schema = client.get("/openapi.json").json()
+        kinds = schema["components"]["schemas"]["SlotKind"]["enum"]
+        assert {"inputName", "outputName"} <= set(kinds)
+        text = json.dumps(schema)
+        assert "behaviourInputName" not in text and "behaviourOutputName" not in text
 
 
 class TestTheOverlayList:
@@ -1293,7 +1346,7 @@ class TestDiscardingOrphans:
                 {"version_id": VERSION, "slot_kind": "description", "slot_key": FID,
                  "llm_text": "old", "human_text": "Corrected, old code.", "is_orphaned": True,
                  "updated_at": now},
-                {"version_id": VERSION, "slot_kind": "behaviourInputName", "slot_key": FID,
+                {"version_id": VERSION, "slot_kind": "inputName", "slot_key": FID,
                  "llm_text": "in", "human_text": "Pump input", "is_orphaned": False,
                  "updated_at": now}])
             cx.execute(insert(s.text_override_history).values(
@@ -1311,12 +1364,12 @@ class TestDiscardingOrphans:
                               .where(s.text_overrides.c.version_id == VERSION)).fetchall()
             hist = cx.execute(select(s.text_override_history.c.slot_kind)
                               .where(s.text_override_history.c.version_id == VERSION)).fetchall()
-        assert [r.slot_kind for r in left] == ["behaviourInputName"] and hist == []
+        assert [r.slot_kind for r in left] == ["inputName"] and hist == []
 
     def test_one_slot_only(self, client, review_db, auth_header):
         self._seed(review_db)
         r = client.delete(BASE + "/overrides/orphans", headers=auth_header,
-                          params={"slot_kind": "behaviourInputName", "slot_key": FID})
+                          params={"slot_kind": "inputName", "slot_key": FID})
         assert r.status_code == 200 and r.json() == {"discarded": 0}, "in force: untouched"
         r = client.delete(BASE + "/overrides/orphans", headers=auth_header,
                           params={"slot_kind": "description", "slot_key": FID})

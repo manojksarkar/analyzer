@@ -80,7 +80,7 @@ describe('the render carries each text’s slot', () => {
           children: [],
           flowchart_table: { description: 'Adds.', risk: 'Medium', capacity: 'Common', input_name: 'x', output_name: 'y',
             flowcharts: [{ label: 'int f()', image_url: 'a.svg', flowchart_id: 'C|U|f|int', editable: true }],
-            description_slot: slot, input_name_slot: { ...slot, slotKind: 'behaviourInputName', text: '' }, output_name_slot: null } },
+            description_slot: slot, input_name_slot: { ...slot, slotKind: 'inputName', text: '' }, output_name_slot: null } },
       ],
     }
     expect(ApiRichDocumentSchema.safeParse(doc).success).toBe(true)
@@ -88,7 +88,7 @@ describe('the render carries each text’s slot', () => {
     expect(table.table?.cellSlots?.[0][1]?.key).toBe('C|U|f|int')
     expect(table.table?.cellSlots?.[0][0]).toBeNull()
     expect(fn.flowchartTable?.descriptionSlot?.text).toBe('Adds.')
-    expect(fn.flowchartTable?.inputNameSlot?.kind).toBe('behaviourInputName')
+    expect(fn.flowchartTable?.inputNameSlot?.kind).toBe('inputName')
     expect(fn.flowchartTable?.outputNameSlot).toBeNull()
     expect(fn.flowchartTable?.flowcharts[0].editable).toBe(true)
   })

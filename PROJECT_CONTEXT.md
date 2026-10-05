@@ -154,7 +154,9 @@ The big shifts since most of §1–§24 were written. Each names its dated entry
   (2026-09-30b); `start-app` (2026-09-30c). A re-export writes every document the version has
   (2026-09-30h); a corrected flowchart label redraws the web page's SVG at once (2026-09-30i).
 - **Review & update** — reviewers correct LLM-written text (2026-09-16 → 2026-09-29); see
-  [Current state](#current-state).
+  [Current state](#current-state). A function's input and output names are `inputName` /
+  `outputName`, as model fields and slot kinds; until 2026-10-05q they were `behaviourInputName` /
+  `behaviourOutputName`, and stored data is renamed by migration `0017` or `analyzer.py setup`.
 - **Tools.** `tools/doccheck/` compares two generated documents by content (2026-09-22), on five levels
   with P1–P4 priorities, SWE.3 against SWE.4 as a pair (2026-09-26);
   `tools/audit_project.py` audits what a project stored (2026-09-05c).

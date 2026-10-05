@@ -119,7 +119,7 @@ into the next version. Code: `engine/review/`. What: [REVIEW_UPDATE_SPEC](docs/s
 test that catches it: [REVIEW_UPDATE_HANDOVER §4](docs/design/REVIEW_UPDATE_HANDOVER.md).
 
 - **Seven editable kinds** (`review/slot.py` `ALL_KINDS`). Five live in the model (`resolver._HOMES`):
-  `description` (function or global), `behaviourInputName`, `behaviourOutputName`, `unitDescription`
+  `description` (function or global), `inputName`, `outputName`, `unitDescription`
   (`units[].description`), `structDescription` (a struct/class/union's data-dictionary entry). Two are
   Phase-3 output (`phase3_overrides.APPLIED_AT_DERIVE`): `nodeLabel`, `behaviourDescription`.
 - **New LLM-written text = a new slot kind**, or no reviewer can correct it: add it to `ALL_KINDS`, give it

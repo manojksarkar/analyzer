@@ -275,8 +275,8 @@ class TestTheDeriver:
 
     def test_a_kind_swe4_does_not_print_re_derives_nothing(self, conn):
         derive = rd.make_save_deriver(conn, TestWhereItDoesNothing._never)
-        for kind in (slot.UNIT_DESCRIPTION, slot.BEHAVIOUR_INPUT_NAME,
-                     slot.BEHAVIOUR_OUTPUT_NAME, slot.STRUCT_DESCRIPTION,
+        for kind in (slot.UNIT_DESCRIPTION, slot.INPUT_NAME,
+                     slot.OUTPUT_NAME, slot.STRUCT_DESCRIPTION,
                      slot.BEHAVIOUR_DESCRIPTION):
             assert derive(version_id="v1", slot_kind=kind, location=None) == [], kind
 

@@ -39,8 +39,8 @@ def _fn(file, line, **kw):
 
 
 def _layer1(described=True):
-    d = (lambda text: {"description": text, "behaviourInputName": text + " in",
-                       "behaviourOutputName": text + " out"}) if described else (lambda text: {})
+    d = (lambda text: {"description": text, "inputName": text + " in",
+                       "outputName": text + " out"}) if described else (lambda text: {})
     return {
         ADD: _fn("Layer1/Math/Utils.cpp", 1, qn="add", **d("Adds"), callsIds=[], calledByIds=[]),
         SUB: _fn("Layer1/Math/Utils.cpp", 9, qn="sub", **d("Subtracts")),
@@ -99,8 +99,8 @@ def _reparse_with_layer2(eng):
 class TestTheTextTheVersionHadComesBack:
     def test_captured_then_put_back_on_the_entities_still_there(self, db):
         saved = extend.capture(VERSION)
-        assert saved["functions"][ADD] == {"description": "Adds", "behaviourInputName": "Adds in",
-                                           "behaviourOutputName": "Adds out"}
+        assert saved["functions"][ADD] == {"description": "Adds", "inputName": "Adds in",
+                                           "outputName": "Adds out"}
         assert saved["units"] == {"Layer1.Math|Utils": "Math helpers"}
         _reparse_with_layer2(db)
         n = extend.restore_text(VERSION, saved)
@@ -109,7 +109,7 @@ class TestTheTextTheVersionHadComesBack:
             fns = model_store.load_functions(cx, VERSION)
             gl = model_store.load_globals(cx, VERSION)
         assert fns[ADD]["description"] == "Adds"
-        assert fns[SUB]["behaviourOutputName"] == "Subtracts out"
+        assert fns[SUB]["outputName"] == "Subtracts out"
         assert not fns[GPIO].get("description"), "the new layer is left for Phase 2"
         assert gl[G_SPEED]["description"] == "The speed"
 
@@ -120,6 +120,35 @@ class TestTheTextTheVersionHadComesBack:
         extend.restore_text(VERSION, saved)
         with db.connect() as cx:
             assert model_store.load_functions(cx, VERSION)[ADD]["description"] == "Newer"
+
+    def test_a_function_stored_under_the_old_names_is_written_under_the_new(self, db):
+        """`inputName` / `outputName` were `behaviourInputName` / `behaviourOutputName` until
+        2026-10-05 (REVIEW_UPDATE_HANDOVER §4.34). An entity whose stored payload still has an old
+        key keeps its own value, as with any filled field, and the payload put back carries the
+        new names only."""
+        from sqlalchemy import select, update
+        saved = extend.capture(VERSION)
+        _reparse_with_layer2(db)
+        old = {"parameters": [], "behaviourInputName": "Own input"}
+        with db.begin() as cx:
+            ch = model_store._content_hash(old)
+            model_store._insert_blobs(cx, {ch: ("function", old)})
+            eid = cx.execute(select(s.entities.c.entity_id)
+                             .where(s.entities.c.entity_key == ADD)).scalar_one()
+            cx.execute(update(s.entity_versions)
+                       .where(s.entity_versions.c.version_id == VERSION,
+                              s.entity_versions.c.entity_id == eid).values(content_hash=ch))
+        extend.restore_text(VERSION, saved)
+        with db.connect() as cx:
+            payload = cx.execute(
+                select(s.content_blobs.c.payload).select_from(s.entity_versions.join(
+                    s.content_blobs,
+                    s.content_blobs.c.content_hash == s.entity_versions.c.content_hash))
+                .where(s.entity_versions.c.version_id == VERSION,
+                       s.entity_versions.c.entity_id == eid)).scalar_one()
+        assert payload["inputName"] == "Own input" and payload["outputName"] == "Adds out"
+        assert payload["description"] == "Adds"
+        assert "behaviourInputName" not in payload
 
 
 class TestThePlanForPhase2:

@@ -115,8 +115,8 @@ function quote(s: string, max = 80): string {
 /** A slot kind in words, one and many. */
 const KIND_WORDS: Record<string, [string, string]> = {
   description: ['description', 'descriptions'],
-  behaviourInputName: ['input name', 'input names'],
-  behaviourOutputName: ['output name', 'output names'],
+  inputName: ['input name', 'input names'],
+  outputName: ['output name', 'output names'],
   behaviourDescription: ['behaviour row', 'behaviour rows'],
   unitDescription: ['unit description', 'unit descriptions'],
   structDescription: ['struct description', 'struct descriptions'],

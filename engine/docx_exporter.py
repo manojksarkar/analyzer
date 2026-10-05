@@ -1208,9 +1208,9 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                         )
 
                 if flowcharts_list:
-                    input_label = (functions_data.get(iface.get("functionId")) or {}).get("behaviourInputName") or \
+                    input_label = (functions_data.get(iface.get("functionId")) or {}).get("inputName") or \
                         (_readable_label(func_name) + " input").strip() if func_name else ""
-                    output_label = (functions_data.get(iface.get("functionId")) or {}).get("behaviourOutputName") or \
+                    output_label = (functions_data.get(iface.get("functionId")) or {}).get("outputName") or \
                         (_readable_label(func_name) + " result").strip() if func_name else ""
                     _add_flowchart_table(doc, func_display, iface.get("description", ""),
                         input_label, output_label, flowcharts_list, font_small)
@@ -1246,7 +1246,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 if ext:
                     subheader += f" ({ext})"
                 doc.add_heading(f"{sec_num}.2.{beh_idx} {subheader}", level=3)
-                # Prefer precomputed behaviourInputName / behaviourOutputName from model_deriver.
+                # Prefer precomputed inputName / outputName from model_deriver.
                 # Resolve by fid — matching on the short name within the unit returns the FIRST
                 # function that happens to share it, so two same-named methods both got the
                 # first one's labels.
@@ -1269,8 +1269,8 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                             _beh_f = f
                             break
                     if _beh_f is not None:
-                        input_label = (_beh_f.get("behaviourInputName") or "").strip()
-                        output_label = (_beh_f.get("behaviourOutputName") or "").strip()
+                        input_label = (_beh_f.get("inputName") or "").strip()
+                        output_label = (_beh_f.get("outputName") or "").strip()
                 except Exception:
                     input_label = input_label or ""
                     output_label = output_label or ""

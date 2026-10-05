@@ -648,7 +648,7 @@ field_access_reads = defaultdict(set)
 # parameter's TYPE, which wrongly asserted "Successfully updated" for pointers a
 # function merely reads or calls through.
 param_writes = defaultdict(set)
-# First non-trivial return expression per function (for behaviour output naming)
+# First non-trivial return expression per function (for its output name)
 function_return_expr = {}
 
 # Track already-processed function keys to avoid redundant visits from header includes
@@ -2414,7 +2414,7 @@ def build_metadata():
             functions_dict[fid]["syntheticFromVarDecl"] = True
         if f.get("declarationOnly"):
             functions_dict[fid]["declarationOnly"] = True
-        # Attach first return expression text if available (for behaviour output naming)
+        # Attach first return expression text if available (for its output name)
         ret_expr = function_return_expr.get(func_key)
         if ret_expr:
             functions_dict[fid]["returnExpr"] = ret_expr

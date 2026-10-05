@@ -4,8 +4,8 @@ description: >-
   The behaviour-diagram developer role (one engineer's domain) — Mermaid SEQUENCE diagrams showing how
   external units/components call into a unit. Load this BEFORE editing engine/behaviour_diagram/
   (SequenceDiagramGenerator, CallChainTracer, MermaidBuilder, the CallDescriptionGenerator LLM path, the
-  diagram selector) or its Phase-3 view engine/views/behaviour_diagram.py. Distinct from the behaviour-NAME
-  derivation (behaviourInputName/OutputName, in model_deriver → engine-dev) and the flowchart/CFG engine
+  diagram selector) or its Phase-3 view engine/views/behaviour_diagram.py. Distinct from the input/output-NAME
+  derivation (inputName/outputName, in model_deriver → engine-dev) and the flowchart/CFG engine
   (→ engine-flowchart).
 ---
 
@@ -67,7 +67,7 @@ Start context (read as needed, don't duplicate here):
 
 ## 3. Boundaries
 
-- **Behaviour *diagrams* (here) ≠ behaviour *names*.** `behaviourInputName` / `behaviourOutputName` (and
+- **Behaviour *diagrams* (here) ≠ input/output *names*.** `inputName` / `outputName` (and
   direction) are derived in `model_deriver` → **`engine-dev`**; this package doesn't use them.
 - **Not the flowchart/CFG** control-flow diagrams (→ `engine-flowchart`). Both render Mermaid + PNG, but
   these are *sequence* diagrams of cross-unit calls, not intra-function control flow.

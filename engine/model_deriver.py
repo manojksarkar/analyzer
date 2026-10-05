@@ -878,7 +878,7 @@ def _propagate_global_access(functions_data: dict):
 
 
 def _enrich_behaviour_names(functions_data: dict, global_variables_data: dict, only_fids=None):
-    """Populate behaviourInputName / behaviourOutputName statically from params, globals, returnType.
+    """Populate inputName / outputName statically from params, globals, returnType.
 
     Incremental (M3.2): when only_fids is given, skip functions not in it so the
     reuse set keeps its carried-forward (baseline) behaviour names."""
@@ -955,14 +955,14 @@ def _enrich_behaviour_names(functions_data: dict, global_variables_data: dict, o
         if out_label.strip().lower() in ("true", "false"):
             out_label = "TRUE/FALSE"
 
-        f["behaviourInputName"] = in_label
-        f["behaviourOutputName"] = out_label
+        f["inputName"] = in_label
+        f["outputName"] = out_label
 
 
 def _static_behaviour_name_is_poor(f: dict) -> bool:
     """True if we should ask LLM to improve Input/Output names (generic or function-name fallback)."""
-    inp = (f.get("behaviourInputName") or "").strip()
-    out = (f.get("behaviourOutputName") or "").strip()
+    inp = (f.get("inputName") or "").strip()
+    out = (f.get("outputName") or "").strip()
     if not inp or not out:
         return True
     if inp.endswith(" input") or inp.endswith(" result"):
@@ -979,7 +979,7 @@ def _enrich_behaviour_names_llm(
     config: dict,
     only_fids=None,
 ):
-    """Use LLM to improve behaviourInputName/behaviourOutputName when static names are poor. Uses abbreviations.
+    """Use LLM to improve inputName/outputName when static names are poor. Uses abbreviations.
 
     Incremental (M3.2): when only_fids is given, only impacted functions are sent to
     the LLM — the dominant Phase-2 cost — and the reuse set keeps its carried names."""
@@ -1033,16 +1033,16 @@ def _enrich_behaviour_names_llm(
         globals_written = _globals_list(writes_ids)
         return_type = (f.get("returnType") or "").strip()
         return_expr = (f.get("returnExpr") or "").strip()
-        draft_input = (f.get("behaviourInputName") or "").strip()
-        draft_output = (f.get("behaviourOutputName") or "").strip()
+        draft_input = (f.get("inputName") or "").strip()
+        draft_output = (f.get("outputName") or "").strip()
         res = get_behaviour_names(
             source, params, globals_read, globals_written, return_type, return_expr,
             draft_input, draft_output, config, abbreviations,
         )
-        if res.get("behaviourInputName"):
-            f["behaviourInputName"] = res["behaviourInputName"]
-        if res.get("behaviourOutputName"):
-            f["behaviourOutputName"] = res["behaviourOutputName"]
+        if res.get("inputName"):
+            f["inputName"] = res["inputName"]
+        if res.get("outputName"):
+            f["outputName"] = res["outputName"]
         qn = (f.get("qualifiedName") or "").split("::")[-1]
         progress.step(label=qn or fid)
     progress.done()
@@ -1498,13 +1498,13 @@ def main():
     # LLM polish for poor static names (uses abbreviations)
     _enrich_behaviour_names_llm(base_path, functions_data, global_variables_data, config, only_fids=only_fids)
     # Re-assert the boolean Output Name after the LLM step so a `TRUE`/`FALSE` literal
-    # cannot be reintroduced. behaviourOutputName is the single source for the behaviour
+    # cannot be reintroduced. outputName is the single source for the behaviour
     # table, the flowchart table's Output Name row, and the function output name.
     for _fid, _f in functions_data.items():
         if only_fids is not None and _fid not in only_fids:
             continue
-        if (_f.get("behaviourOutputName") or "").strip().lower() in ("true", "false"):
-            _f["behaviourOutputName"] = "TRUE/FALSE"
+        if (_f.get("outputName") or "").strip().lower() in ("true", "false"):
+            _f["outputName"] = "TRUE/FALSE"
 
     # LLM summarization (--llm-summarize only): phases + file/component/project hierarchy.
     # Runs before _enrich_from_llm so that phases are in functions_data when knowledge_base
