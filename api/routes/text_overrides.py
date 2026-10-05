@@ -191,6 +191,46 @@ def _key(slot_kind: str, slot_key: str) -> str:
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+def _saved_by_another_route(project_id: str, version_id: str, slot_kind: str,
+                            slot_key: str) -> Optional[str]:
+    """The 501 detail for a kind R3 does not save -- naming the route that does, and what to send
+    it -- or None for the five kinds R3 saves.
+
+    A Dynamic Behaviour row (R6) and a flowchart label (R8) are made in Phase 3 and live in the
+    stored view output, not in the model R3 writes (`resolver.VIEW_ONLY_KINDS`). R3 still offers
+    them: its `slot_kind` is the one list of seven that R2, R4 and R5 take, where all seven are
+    valid. The refusal used to come from the service, after the save lock and a model read, and
+    explained only why: "... its text lives in Phase-3 view output, not the model". A reviewer who
+    sent a behaviour row here was left to find R6 in the spec. Now the answer says which route,
+    its path for this version, and the ids it takes, read from the slot key the caller sent.
+    """
+    from review import slot as slot_mod
+    if slot_kind not in (slot_mod.BEHAVIOUR_DESCRIPTION, slot_mod.NODE_LABEL):
+        return None
+    base = "/api/v1/projects/%s/versions/%s" % (project_id, version_id)
+    try:
+        parts = slot_mod.parse(slot_kind, slot_mod.from_request(slot_kind, slot_key))
+    except slot_mod.SlotKeyError:
+        parts = {}                                 # still say which route; the ids come from R11
+    also = (" Reading it (R2), undoing it (R4) and its history (R5) do take slot_kind %s and %s."
+            % (slot_kind, "this slot_key" if parts else "the slot's slotKey from R11"))
+    if slot_kind == slot_mod.BEHAVIOUR_DESCRIPTION:
+        ids = ("function_id %r, external_caller_id %r"
+               % (parts["function_id"], parts["external_caller_id"]) if parts else
+               "function_id and external_caller_id -- the row's functionId and externalCallerId "
+               "from R11 (GET %s/slots?slot_kind=behaviourDescription)" % base)
+        return ("A Dynamic Behaviour row is not saved with this route. Save it with R6: PUT "
+                "%s/overrides/behaviour, with %s, and bullets: the row's lines, as a list of "
+                "strings.%s" % (base, ids, also))
+    target = ("flowchart_id %r and labels mapping node %r to its new text"
+              % (parts["entity_key"], parts["node_id"]) if parts else
+              "flowchart_id (flowchartId from R11 or R7) and labels mapping each node id to its "
+              "new text")
+    return ("A flowchart label is not saved with this route. Save it with R8: PUT "
+            "%s/flowcharts/labels, with %s -- only the labels you change, several in one call."
+            "%s" % (base, target, also))
+
+
 def _flowchart_id(value: str) -> str:
     """The flowchart id the caller sent, or 400 naming the mistake -- above all one node's key
     sent for the whole flowchart. See `slot.flowchart_id_from_request`."""
@@ -502,10 +542,17 @@ def update_slot(
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
-    """`REQ-API-03`. One slot per call, for the kinds that are not a flowchart or a behaviour
-    row. Answers the slot as it now is (`REQ-API-09`) and what the save did."""
+    """`REQ-API-03`. One slot per call: `description`, `behaviourInputName`,
+    `behaviourOutputName`, `unitDescription` and `structDescription`. A Dynamic Behaviour row
+    (`behaviourDescription`) is saved with R6 and a flowchart label (`nodeLabel`) with R8: sent
+    here, either answers 501 naming that route and what to send it. Answers the slot as it now is
+    (`REQ-API-09`) and what the save did."""
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
+    elsewhere = _saved_by_another_route(project_id, version_id, body.slot_kind.value,
+                                        body.slot_key)
+    if elsewhere:
+        raise HTTPException(status_code=501, detail=elsewhere)
     svc = _service()
     from review import catalog
     with _connection().begin() as cx:          # one transaction, REQ-AP-02

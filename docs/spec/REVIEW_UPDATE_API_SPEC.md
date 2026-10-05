@@ -54,7 +54,13 @@ Seven **slot kinds** (`REQ-ED-01`). Every request names one:
 | `nodeLabel` | one flowchart node's label | **R8** |
 
 The last two are rejected by R3 with **501**. They are produced by Phase 3 rather than stored in the
-model, so they have their own save paths.
+model, so they have their own save paths. R3 still lists them, because its `slot_kind` is the one
+list R2, R4 and R5 take, where all seven are valid. Its 501 says which route to use, the route's path
+for this version, and the ids that route takes, read from the `slot_key` you sent:
+
+```json
+{ "detail": "A Dynamic Behaviour row is not saved with this route. Save it with R6: PUT /api/v1/projects/p1/versions/ver1a2b3c4d/overrides/behaviour, with function_id 'Layer1.Sample-Core|CoreGateway|gatewayMean|int,int,int', external_caller_id 'Layer1.Lib|Lib|libMeanOf|int,int,int', and bullets: the row's lines, as a list of strings. Reading it (R2), undoing it (R4) and its history (R5) do take slot_kind behaviourDescription and this slot_key." }
+```
 
 `slot_kind` is an **enum** everywhere it appears, so Swagger offers these seven as a dropdown and
 anything else is refused by validation with **422** naming the allowed values. On R1 it is an
@@ -556,7 +562,7 @@ touch, on the next run. An unannounced change reads as a bug.
 | 404 | the slot does not resolve in this version |
 | 409 | a run is regenerating this version and replaced the model while the save was writing it. Nothing was saved — save again once the run has finished |
 | 422 | empty or whitespace-only `text`; a NUL character (`\u0000`) in `text` or `slot_key`; or a `snake_case` field is missing |
-| 501 | `slot_kind` is `nodeLabel` or `behaviourDescription` — use R8 / R6 |
+| 501 | `slot_kind` is `nodeLabel` or `behaviourDescription`. `detail` names the route to use (R8 / R6), its path for this version and what to send it, with the ids read from your `slot_key` (§1). Nothing is saved |
 | 401 / 403 / 500 / 503 | see §16 |
 
 ---
@@ -1173,7 +1179,7 @@ Error bodies are `{"detail": "…"}`, except 401 (an object, §4) and 422 from s
 | 409 | undo with no LLM original to restore, or of an orphaned correction; a flowchart with no stored graph; stored output that cannot be read; a save that met a run regenerating the version (nothing saved — save again once it has finished) |
 | 422 | empty or whitespace-only text (`REQ-ST-06`); a NUL character (`\u0000`) anywhere in a save's body (R3, R6, R8) — PostgreSQL cannot store one, and `loc` names the field; or a request body/query field missing — **check `snake_case` first** (§4) |
 | 500 | a fault on the server, not in the request. `detail` names only the kind of error; the server log has the rest. Nothing was changed |
-| 501 | a slot kind with no save path on that endpoint (`nodeLabel`, `behaviourDescription` on R3) |
+| 501 | a slot kind with no save path on that endpoint (`nodeLabel`, `behaviourDescription` on R3); `detail` names the route that saves it (R8, R6) |
 | 503 | no database configured — corrections live nowhere else, so the write is refused rather than dropped |
 
 A **4xx is always about the request**: fix it before sending it again. A 500 is not — send the same

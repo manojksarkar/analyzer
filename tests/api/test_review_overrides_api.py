@@ -173,12 +173,68 @@ class TestUpdatingASlot:
         assert r.status_code == 404
 
     def test_a_node_label_through_this_route_is_501(self, client, review_db, auth_header):
-        """It has no model field; R8 is its route. A 501 says so instead of pretending."""
+        """It has no model field; R8 is its route. A 501 says so instead of pretending -- and
+        names R8, its path and what to send it, read from the key."""
         from review import slot
         r = client.put(BASE + "/overrides/slot", headers=auth_header,
                        json={"slot_kind": slot.NODE_LABEL,
                              "slot_key": slot.for_node(FID, "n1"), "text": "Words."})
         assert r.status_code == 501
+        detail = r.json()["detail"]
+        assert "R8: PUT " + BASE + "/flowcharts/labels" in detail
+        assert "flowchart_id %r" % FID in detail and "node 'n1'" in detail
+
+
+class TestR3NamesTheRouteThatSavesABehaviourRow:
+    """What a reviewer tried: R3 with `slot_kind: behaviourDescription`. R3 offers the kind --
+    its `slot_kind` is the one list of seven that R2, R4 and R5 take -- but a Dynamic Behaviour
+    row is saved with R6. The 501 used to explain only why ("its text lives in Phase-3 view
+    output, not the model"); it now says which route, its path and the two ids R6 takes."""
+
+    def _put(self, client, auth_header, key):
+        from review import slot
+        return client.put(BASE + "/overrides/slot", headers=auth_header,
+                          json={"slot_kind": slot.BEHAVIOUR_DESCRIPTION, "slot_key": key,
+                                "text": "start calls doThing\ndoThing returns"})
+
+    def test_501_naming_r6_with_the_ids_from_the_key(self, client, review_db, auth_header):
+        from review import slot
+        r = self._put(client, auth_header, slot.for_behaviour_row(FID, CALLER))
+        assert r.status_code == 501, r.text
+        detail = r.json()["detail"]
+        assert "R6: PUT " + BASE + "/overrides/behaviour" in detail
+        assert "function_id %r" % FID in detail
+        assert "external_caller_id %r" % CALLER in detail
+        assert "bullets" in detail
+
+    def test_nothing_is_saved(self, client, review_db, auth_header):
+        from review import slot
+        self._put(client, auth_header, slot.for_behaviour_row(FID, CALLER))
+        assert client.get(BASE + "/overrides", headers=auth_header).json()["total"] == 0
+
+    def test_the_key_as_swagger_shows_it_is_read_too(self, client, review_db, auth_header):
+        r = self._put(client, auth_header, FID + "\\u0001" + CALLER)
+        assert r.status_code == 501
+        assert "external_caller_id %r" % CALLER in r.json()["detail"]
+
+    def test_a_malformed_key_still_names_the_route(self, client, review_db, auth_header):
+        """The route is the answer whatever the key; the ids then come from R11."""
+        r = self._put(client, auth_header, "not a behaviour key")
+        assert r.status_code == 501
+        detail = r.json()["detail"]
+        assert "R6: PUT " + BASE + "/overrides/behaviour" in detail
+        assert "from R11" in detail
+
+    def test_r6_then_saves_it(self, client, review_db, auth_header):
+        """The body the message describes is one R6 takes."""
+        r = client.put(BASE + "/overrides/behaviour", headers=auth_header,
+                       json={"function_id": FID, "external_caller_id": CALLER,
+                             "bullets": ["start calls doThing", "doThing returns"]})
+        assert r.status_code == 200, r.text
+
+    def test_the_route_says_so_in_swagger(self):
+        from api.routes.text_overrides import update_slot
+        assert "saved with R6" in update_slot.__doc__ and "with R8" in update_slot.__doc__
 
     def test_a_slot_nobody_corrected_reads_as_uncorrected(self, client, review_db, auth_header):
         """R2 reads a SLOT, not a correction (`REQ-API-02`): a 404 here used to mean "not
