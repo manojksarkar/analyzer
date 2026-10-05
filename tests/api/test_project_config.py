@@ -86,6 +86,66 @@ def test_overlay_does_not_mutate_stored_config(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# What the project says wins over this machine's config.local.json
+# ---------------------------------------------------------------------------
+# Office, 2026-10-05: a project imported with `clang.includePathsFromProjectWalk: true` ran with it
+# off -- set true in the workspace file, the next generate wrote it false again. config.local.json
+# is laid over every run's config, and a `clang` block in it (the walk off) beat the project's
+# own setting, while the version's record said on.
+
+def _machine(tmp_path, local):
+    cfg_dir = tmp_path / "engine" / "config"
+    _write_json(cfg_dir / "config.defaults.json", {
+        "clang": {"llvmLibPath": "C:/LLVM/bin/libclang.dll", "includePathsFromProjectWalk": False,
+                  "clangArgs": ["--target=arm-none-eabi"]},
+        "llm": {"provider": "openai", "descriptions": True},
+        "views": {"flowcharts": False},
+    })
+    _write_json(cfg_dir / "config.local.json", local)
+
+
+def test_the_project_s_clang_setting_wins_over_this_machine_s_file(tmp_path, monkeypatch):
+    _machine(tmp_path, {"clang": {"includePathsFromProjectWalk": False, "llvmLibPath": "D:/LLVM/bin/libclang.dll"},
+                        "views": {"flowcharts": False}})
+    monkeypatch.setattr(pr, "get_settings", lambda: SimpleNamespace(repo_root=tmp_path))
+    project = _project(build_config={"clang": {"includePathsFromProjectWalk": True}, "views": {"flowcharts": True}})
+    out_path, analysis_cfg = pr._write_project_config(project, tmp_path / "ws")
+    written = json.loads(out_path.read_text(encoding="utf-8"))
+    assert written["clang"]["includePathsFromProjectWalk"] is True          # the run does what the project says
+    assert analysis_cfg["clang"]["includePathsFromProjectWalk"] is True     # and its record says the same
+    assert written["views"]["flowcharts"] is True
+    assert written["clang"]["llvmLibPath"] == "D:/LLVM/bin/libclang.dll"   # this machine's LLVM still
+
+
+def test_what_the_project_leaves_unsaid_this_machine_s_file_still_sets(tmp_path, monkeypatch):
+    _machine(tmp_path, {"clang": {"clangArgs": ["--target=x86_64-pc-linux"]}})
+    monkeypatch.setattr(pr, "get_settings", lambda: SimpleNamespace(repo_root=tmp_path))
+    out_path, _ = pr._write_project_config(_project(build_config={"clang": {"includePathsFromProjectWalk": True}}),
+                                           tmp_path / "ws")
+    written = json.loads(out_path.read_text(encoding="utf-8"))
+    assert written["clang"]["clangArgs"] == ["--target=x86_64-pc-linux"]
+    assert written["clang"]["includePathsFromProjectWalk"] is True
+
+
+def test_a_project_cannot_point_the_run_at_another_machine_s_llvm(tmp_path, monkeypatch):
+    _machine(tmp_path, {"clang": {"llvmLibPath": "D:/LLVM/bin/libclang.dll"}})
+    monkeypatch.setattr(pr, "get_settings", lambda: SimpleNamespace(repo_root=tmp_path))
+    project = _project(build_config={"clang": {"llvmLibPath": "E:/elsewhere/libclang.dll"}})
+    out_path, _ = pr._write_project_config(project, tmp_path / "ws")
+    assert json.loads(out_path.read_text(encoding="utf-8"))["clang"]["llvmLibPath"] == "D:/LLVM/bin/libclang.dll"
+
+
+def test_a_no_llm_run_and_the_project_s_switches_beat_this_machine_s_file(tmp_path, monkeypatch):
+    _machine(tmp_path, {"llm": {"descriptions": True, "behaviourNames": True, "baseUrl": "https://gw/v1"}})
+    monkeypatch.setattr(pr, "get_settings", lambda: SimpleNamespace(repo_root=tmp_path))
+    out_path, _ = pr._write_project_config(_project(), tmp_path / "ws", no_llm=True)
+    llm = json.loads(out_path.read_text(encoding="utf-8"))["llm"]
+    assert (llm["descriptions"], llm["behaviourNames"], llm["baseUrl"]) == (False, False, "https://gw/v1")
+    out_path, _ = pr._write_project_config(_project(build_config={"llm": {"descriptions": False}}), tmp_path / "ws2")
+    assert json.loads(out_path.read_text(encoding="utf-8"))["llm"]["descriptions"] is False
+
+
+# ---------------------------------------------------------------------------
 # Name collisions — refused before the engine ever sees the config
 # ---------------------------------------------------------------------------
 

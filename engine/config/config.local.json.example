@@ -3,6 +3,13 @@
   // fill in real values. `config.local.json` is gitignored, so credentials never get committed.
   // It is merged over `config.defaults.json`; keep only the keys you want to override here.
   //
+  // A project's runs (web or `analyzer.py`): what the PROJECT sets wins over this file -- its
+  // `clang` settings (e.g. includePathsFromProjectWalk, clangArgs), `views`, `docx` and its LLM
+  // on/off switches. This file brings this machine's own: the LLM connection, where LLVM is
+  // (`clang.llvmLibPath`, `clang.clangIncludePath`), and a default for what a project leaves unset.
+  // Do not copy config.defaults.json here: a copied `clang` block once switched a project's
+  // include-path walk off on every run.
+  //
   // Database connection. Used by the API server and the db tools when DATABASE_URL is NOT set
   // in the environment (env var still wins if present). Resolution order:
   //   DATABASE_URL env  ->  this `db` section  ->  the compose default (localhost).

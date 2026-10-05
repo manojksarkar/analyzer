@@ -975,6 +975,27 @@ class TestAfterTheSecondReview:
         assert runtime["llm"] == {"apiKey": "NEW", "descriptions": False}
         assert "db" not in runtime and runtime["layers"] == {"L1": {}}
 
+    def test_a_resume_keeps_the_version_s_own_clang_views_and_docx(self, tmp_path, monkeypatch):
+        """Office, 2026-10-05: a `clang` block in this machine's config.local.json (the walk off)
+        turned a version's `includePathsFromProjectWalk: true` off. The version runs as it began;
+        this machine still brings where ITS LLVM is."""
+        import json
+        import analyzer
+        local = tmp_path / "engine" / "config" / "config.local.json"
+        local.parent.mkdir(parents=True)
+        local.write_text(json.dumps({"clang": {"includePathsFromProjectWalk": False,
+                                               "llvmLibPath": "D:/LLVM/bin/libclang.dll"},
+                                     "views": {"flowcharts": False}, "docx": {"toc": False}}), encoding="utf-8")
+        monkeypatch.setenv("ANALYZER_DATA_ROOT", str(tmp_path))
+        vcfg = tmp_path / "ver1" / "config.json"
+        vcfg.parent.mkdir()
+        vcfg.write_text(json.dumps({"clang": {"includePathsFromProjectWalk": True,
+                                              "llvmLibPath": "C:/old/libclang.dll"},
+                                    "views": {"flowcharts": True}, "docx": {"toc": True}}), encoding="utf-8")
+        runtime = json.loads(open(analyzer._with_current_secrets(str(vcfg)), encoding="utf-8").read())
+        assert runtime["clang"] == {"includePathsFromProjectWalk": True, "llvmLibPath": "D:/LLVM/bin/libclang.dll"}
+        assert runtime["views"] == {"flowcharts": True} and runtime["docx"] == {"toc": True}
+
     def test_the_periodic_pass_only_follows_runs_again(self, sql_db, draft, tmp_path, monkeypatch):
         """A job with no background run may be queued or starting: only start-up decides those."""
         from api.services import pipeline_runner as pr

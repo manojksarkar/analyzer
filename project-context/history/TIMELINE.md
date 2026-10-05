@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-05o | A project's own settings win over this machine's config.local.json: a `clang` block there switched an imported project's include-path walk off on every run | [13](13-2026-10-05c.md) |
 | 2026-10-05n | Rename moves to the Projects page: an admin's row menu, not the project menu on every page; the dialog warns of a name already used | [13](13-2026-10-05c.md) |
 | 2026-10-05m | A project's admins rename it from the project menu; the server takes a name trimmed, never blank or over 120 characters, and a status only the app knows | [13](13-2026-10-05c.md) |
 | 2026-10-05l | The web wizard takes a local repository: Git URL / Local path in step 1, and a Browse panel of the server's folders | [13](13-2026-10-05c.md) |

@@ -1170,6 +1170,33 @@ def _load_base_config(base_path: Path) -> dict:
         return {}
 
 
+# This machine's own entries in a `clang` block -- where ITS LLVM is: a project's never win over them.
+_MACHINE_CLANG_KEYS = ("llvmLibPath", "clangIncludePath")
+# The LLM switches a project or a run (--no-llm) sets; the rest of `llm` -- the gateway, the key,
+# the model, the rate limit -- is this machine's.
+_LLM_SWITCHES = ("descriptions", "behaviourNames")
+
+
+def _project_settings_win(cfg: dict, bc: dict, no_llm: bool) -> None:
+    """What the project says wins over this machine's config.local.json, laid over the run's
+    config for ITS settings -- the LLM connection, the LLVM install -- and as a default for what
+    the project leaves unsaid. A `clang` block there (the defaults' copied in, the walk off) turned
+    a project's `includePathsFromProjectWalk: true` off on every run, while the version's record
+    (`versions.resolved_config`) still said on; editing the workspace file did not help, as every
+    run writes it again."""
+    for key in ("clang", "views", "docx"):
+        own = bc.get(key)
+        if isinstance(own, dict):
+            cfg.setdefault(key, {}).update(
+                {k: v for k, v in own.items() if not (key == "clang" and k in _MACHINE_CLANG_KEYS)})
+    llm = bc.get("llm") if isinstance(bc.get("llm"), dict) else {}
+    switches = {k: llm[k] for k in _LLM_SWITCHES if k in llm}
+    if no_llm:
+        switches.update(descriptions=False, behaviourNames=False)
+    if switches:
+        cfg.setdefault("llm", {}).update(switches)
+
+
 def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = False) -> tuple[Path, dict]:
     """Materialize the workspace config.json the engine runs with, and return it alongside the
     NON-SECRET analysis config that is stored per version (versions.resolved_config).
@@ -1251,6 +1278,7 @@ def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = F
             local.pop("db", None)
             local.pop("auth", None)        # the API server's own setting; no engine reads it
             _deep_merge(cfg, local)
+            _project_settings_win(cfg, bc, no_llm)
         except Exception:                            # best-effort: run with the non-secret config
             pass
 

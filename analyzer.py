@@ -640,6 +640,10 @@ def _render_version(a, *, scope, command: str, after=None, before=None):
 
 #: A run's own LLM switches (`--no-llm`), which this machine's local config never overrides.
 _RUN_SWITCHES = ("descriptions", "behaviourNames")
+#: The sections of a version's config that are its analysis settings: this machine's local config
+#: does not override them, except where ITS LLVM is (`_MACHINE_CLANG_KEYS`).
+_VERSION_SECTIONS = ("clang", "views", "docx")
+_MACHINE_CLANG_KEYS = ("llvmLibPath", "clangIncludePath")
 
 
 def _with_current_secrets(cfg_path: str) -> str:
@@ -666,9 +670,16 @@ def _with_current_secrets(cfg_path: str) -> str:
         local.pop("db", None)
         local.pop("auth", None)
         kept = {k: (cfg.get("llm") or {})[k] for k in _RUN_SWITCHES if k in (cfg.get("llm") or {})}
+        # The version's analysis settings stay as its run began: a `clang` block in this machine's
+        # file (the walk off) turned a version's includePathsFromProjectWalk off at every resume,
+        # export and re-export. This machine still brings its LLVM install and its connection.
+        own = {k: json.loads(json.dumps(cfg[k])) for k in _VERSION_SECTIONS if isinstance(cfg.get(k), dict)}
         _deep_merge(cfg, local)
         if kept:
             cfg.setdefault("llm", {}).update(kept)
+        for key, section in own.items():
+            cfg.setdefault(key, {}).update(
+                {k: v for k, v in section.items() if not (key == "clang" and k in _MACHINE_CLANG_KEYS)})
         out = os.path.join(os.path.dirname(cfg_path), "config.runtime.json")
         with open(out, "w", encoding="utf-8") as fh:
             json.dump(cfg, fh, indent=2)
