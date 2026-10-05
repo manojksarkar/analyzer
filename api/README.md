@@ -187,7 +187,7 @@ All endpoints except `/auth/signin` and `/auth/refresh` require
 | POST | `/projects/config/preview` | Fill the New Project wizard from a config file (creates nothing) |
 | GET | `/projects/search` | Search discoverable projects |
 | GET | `/projects/:id` | Project detail + KPIs |
-| PATCH | `/projects/:id` | Update project (admin) |
+| PATCH | `/projects/:id` | Update project (admin): `name` (a rename -- trimmed; blank or over 120 characters is 400; documents already made keep the name they were made with until a re-export), `client`, `status` (only `not_run`, `running`, `in_review`, `complete`, `stale`) |
 | DELETE | `/projects/:id` | Delete project (admin) |
 | GET | `/projects/:id/config` | The project as a config file, for `analyzer.py onboard --config` (member; never the token) |
 | POST | `/projects/:id/access-requests` | Request access |

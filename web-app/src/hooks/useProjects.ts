@@ -164,10 +164,11 @@ export function useUpdateProject(projectId: string) {
   return useMutation({
     mutationFn: (body: { name?: string; client?: string; status?: string }) =>
       projectsApi.update(projectId, body),
-    onSuccess: () => {
+    onSuccess: (p, body) => {
       qc.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
       qc.invalidateQueries({ queryKey: projectKeys.all })
-      toast.success('Project updated')
+      if (body.name) toast.success('Project renamed', `Documents already made keep their name; a re-export uses "${p.name}".`)
+      else toast.success('Project updated')
     },
     onError: (e: Error) => toast.error('Update failed', e.message),
   })

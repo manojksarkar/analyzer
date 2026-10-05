@@ -8,6 +8,7 @@ import { cn } from '../../lib/cn'
 import { relativeTime } from '../../lib/format'
 import { STATUS_META, approvalLabel, pageStateStatus } from '../../lib/reviewStatus'
 import { describeVersionRun } from '../../lib/versionRun'
+import { RenameProjectDialog } from './RenameProjectDialog'
 import type { Version, Commit, PageState } from '../../types'
 
 /* ─── Commit timeline dot colours (fill + border) ─── */
@@ -272,11 +273,12 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
 }
 
 /* ─── Project switcher dropdown ─── */
-function ProjectSwitcher({ projectName }: { projectName: string }) {
+function ProjectSwitcher({ projectName, canRename }: { projectName: string; canRename?: boolean }) {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
   const { data: projects, isLoading: projectsLoading } = useProjects()
   const [open, setOpen] = useState(false)
+  const [renaming, setRenaming] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -331,7 +333,21 @@ function ProjectSwitcher({ projectName }: { projectName: string }) {
               })
             )}
           </div>
+          {/* The project's admins rename it here: the menu is on every page of the project. */}
+          {canRename && projectId && (
+            <div className="border-t border-outline-variant">
+              <button
+                onClick={() => { setOpen(false); setRenaming(true) }}
+                className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-[#f8f9fa] transition-colors font-mono text-xs text-secondary"
+              >
+                <Icon name="edit" size={15} />Rename this project
+              </button>
+            </div>
+          )}
         </div>
+      )}
+      {renaming && projectId && (
+        <RenameProjectDialog projectId={projectId} name={projectName} onClose={() => setRenaming(false)} />
       )}
     </div>
   )
@@ -339,6 +355,8 @@ function ProjectSwitcher({ projectName }: { projectName: string }) {
 
 interface SubbarProps {
   projectName: string
+  /** The user may rename the project (its admins): the project menu offers it. */
+  canRename?: boolean
   selectedVersion?: Version
   selectedCommit?: Commit
   statusBadge?: ReactNode
@@ -347,11 +365,11 @@ interface SubbarProps {
   ctaSlotRef?: (el: HTMLDivElement | null) => void
 }
 
-export function Subbar({ projectName, selectedVersion, selectedCommit, statusBadge, cta, ctaSlotRef }: SubbarProps) {
+export function Subbar({ projectName, canRename, selectedVersion, selectedCommit, statusBadge, cta, ctaSlotRef }: SubbarProps) {
   return (
     <div className="h-12 flex-shrink-0 flex items-center justify-between px-4 bg-white border-b border-outline-variant z-20">
       <div className="flex items-center gap-2">
-        <ProjectSwitcher projectName={projectName} />
+        <ProjectSwitcher projectName={projectName} canRename={canRename} />
 
         {(selectedVersion ?? selectedCommit) && (
           <>

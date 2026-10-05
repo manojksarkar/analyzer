@@ -39,6 +39,11 @@ class CreateProjectRequest(BaseModel):
     team: list[dict[str, str]] = []
 
 
+MAX_PROJECT_NAME = 120
+# What a project's `status` may be (the web app's page states; `not_run` is its "never").
+PROJECT_STATUSES = {"not_run", "running", "in_review", "complete", "stale"}
+
+
 class UpdateProjectRequest(BaseModel):
     name: Optional[str] = None
     client: Optional[str] = None
@@ -218,6 +223,12 @@ def create_project(
     db: InMemoryDatabase = Depends(get_db),
 ):
     now = datetime.now(UTC)
+    # The name as a rename takes it: trimmed, not blank, not too long.
+    name = (body.name or "").strip()
+    if not name:
+        raise bad_request("A project needs a name.")
+    if len(name) > MAX_PROJECT_NAME:
+        raise bad_request(f"A project name is at most {MAX_PROJECT_NAME} characters.")
     # Every team member needs an account, checked BEFORE anything is written: a membership row
     # references users.id, and an unknown address (stored as "pending_<email>") failed that
     # foreign key after the project row existed -- a 500 that left a half-created project.
@@ -254,7 +265,7 @@ def create_project(
     project = Project(
         id=f"p{uuid.uuid4().hex[:8]}",
         org_id="org1",
-        name=body.name, client=body.client,
+        name=name, client=body.client,
         compliance_standard=body.compliance_standard,
         repo_url=repo_url, repo_provider=repo_provider,
         default_branch=body.default_branch,
@@ -345,11 +356,23 @@ def update_project(
     if not project:
         raise not_found("Project", project_id)
     require_project_admin(project_id, current_user, db)
-    if body.name:
-        project.name = body.name
-    if body.client:
-        project.client = body.client
-    if body.status:
+    # A rename: trimmed, and never blank or longer than a name -- a name of spaces was taken.
+    # Documents already made keep the name they were made with (their cover, Purpose and Scope,
+    # and the web page that reads like them); a re-export or a new run prints the new one.
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise bad_request("A project needs a name.")
+        if len(name) > MAX_PROJECT_NAME:
+            raise bad_request(f"A project name is at most {MAX_PROJECT_NAME} characters.")
+        project.name = name
+    if body.client is not None and body.client.strip():
+        project.client = body.client.strip()
+    # Only a state the app knows: any text was taken, and a page in an unknown state shows nothing.
+    if body.status is not None:
+        if body.status not in PROJECT_STATUSES:
+            raise bad_request(f"Unknown project status {body.status!r}: one of "
+                              f"{', '.join(sorted(PROJECT_STATUSES))}.")
         project.status = body.status
     project.updated_at = datetime.now(UTC)
     db.projects.update(project)

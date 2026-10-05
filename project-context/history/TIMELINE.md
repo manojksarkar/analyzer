@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-05m | A project's admins rename it from the project menu; the server takes a name trimmed, never blank or over 120 characters, and a status only the app knows | [13](13-2026-10-05c.md) |
 | 2026-10-05l | The web wizard takes a local repository: Git URL / Local path in step 1, and a Browse panel of the server's folders | [13](13-2026-10-05c.md) |
 | 2026-10-05k | A project's repository can be a local path (a git repository's folder on the server): checks, a folder-listing route, `repositories.localRoots`; the mockup's switch and Browse panel | [13](13-2026-10-05c.md) |
 | 2026-10-05j | The New Project wizard's branch is one box to search and pick in; the Get Started mockup follows the built Projects page | [13](13-2026-10-05c.md) |
