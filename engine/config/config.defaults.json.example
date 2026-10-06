@@ -307,6 +307,17 @@
   },
 
   // -------------------------------------------------------------------------
+  // logs - the superusers' live log (GET /api/v1/admin/logs and its stream;
+  // docs/spec/LIVE_LOGS_SPEC.md). Read on every request: no restart needed.
+  // -------------------------------------------------------------------------
+  "logs": {
+    "liveLines": 500,     // lines a tail returns when the request names none
+    "maxLines": 2000,     // the most a request may ask for; more is cut to this
+    "level": "INFO",      // lowest level shown by default; "DEBUG" shows every line
+    "keepDays": 30        // days of logs/live/<date>/ folders kept; older are deleted
+  },
+
+  // -------------------------------------------------------------------------
   // docx - boilerplate for the exported documents. {project_name} is
   // substituted at export time.
   // -------------------------------------------------------------------------

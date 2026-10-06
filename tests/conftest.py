@@ -19,6 +19,15 @@ from tests.e2e_paths import (                                    # noqa: E402
     PROJECT_ROOT, SAMPLE_PROJECT, E2E_PID, E2E_VID, E2E_VERSION_ID, MODEL_DIR, GROUP,
 )
 
+# The suite's own process writes no live log (docs/design/LIVE_LOGS_DESIGN.md), and an API it
+# starts reads none: the tests' lines would land among the machine's real runs. The tests of
+# the live log itself point a handler and a reader at a temporary folder.
+if os.path.join(PROJECT_ROOT, "engine") not in sys.path:
+    sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
+from core import logging_setup as _logging_setup                  # noqa: E402
+
+_logging_setup.LIVE_LOG_ENABLED = False
+
 # Stores pipeline failure message if it failed; None means success or skipped.
 _pipeline_failure = None
 

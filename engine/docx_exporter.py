@@ -29,6 +29,8 @@ from docx_common import (
 # runs, and an incremental run silently emits only the diagrams it regenerated.
 from core.run_context import apply_cli_run_context as _apply_run_context
 sys.argv = _apply_run_context(sys.argv)
+from core.logging_setup import start_phase_logging as _start_phase_logging  # noqa: E402
+_start_phase_logging()     # this step in the live log (docs/design/LIVE_LOGS_DESIGN.md)
 
 _p = _paths()
 PROJECT_ROOT = _p.project_root

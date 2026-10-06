@@ -196,6 +196,20 @@ def require_project_admin(
         )
 
 
+def require_superuser(current_user: User = Depends(get_current_user)) -> User:
+    """FastAPI dependency: the signed-in user, or 403 unless they are a superuser.
+
+    For what spans every project -- the live log (docs/spec/LIVE_LOGS_SPEC.md REQ-LL-09). No
+    membership row can stand in for it: a project admin is admin of THEIR projects only.
+    """
+    if not getattr(current_user, "is_superuser", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "FORBIDDEN", "message": "Superuser required.", "status": 403},
+        )
+    return current_user
+
+
 def require_project_member(
     project_id: str,
     current_user: User,

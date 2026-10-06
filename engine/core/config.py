@@ -492,6 +492,23 @@ def app_config(*, refresh: bool = False) -> Dict[str, Any]:
         return _CACHED
 
 
+#: The live log's settings when config names none (docs/spec/LIVE_LOGS_SPEC.md REQ-LL-14).
+LOGS_DEFAULTS = {"liveLines": 500, "maxLines": 2000, "level": "INFO", "keepDays": 30}
+
+
+def logs_config() -> Dict[str, Any]:
+    """The `logs` section, read afresh on every call (a changed `level` needs no restart),
+    over `LOGS_DEFAULTS`. A broken config file falls back to the defaults."""
+    out = dict(LOGS_DEFAULTS)
+    try:
+        section = load_config(paths().src_dir).get("logs") or {}
+    except Exception:                                   # noqa: BLE001
+        section = {}
+    if isinstance(section, dict):
+        out.update({k: v for k, v in section.items() if k in LOGS_DEFAULTS})
+    return out
+
+
 def llm_config() -> Dict[str, Any]:
     """Return the resolved LLM config block (env vars override JSON values).
 

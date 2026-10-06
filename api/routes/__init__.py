@@ -11,11 +11,12 @@ from .repositories import router as repositories_router
 from .users import router as users_router
 from .text_overrides import router as text_overrides_router
 from .version_components import router as version_components_router
+from .admin_logs import router as admin_logs_router
 
 __all__ = [
     "auth_router", "projects_router", "commits_versions_router",
     "jobs_router", "documents_router", "team_router",
     "compare_router", "functions_router", "notifications_router",
     "repositories_router", "users_router", "text_overrides_router",
-    "version_components_router",
+    "version_components_router", "admin_logs_router",
 ]

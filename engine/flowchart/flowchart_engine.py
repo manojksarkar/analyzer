@@ -173,6 +173,8 @@ def _parse_args() -> EngineConfig:
     try:
         from core.logging_setup import configure_logging
         configure_logging(quiet=args.quiet, verbose=args.verbose)
+        from core.logging_setup import start_phase_logging
+        start_phase_logging()   # what it prints reaches the live log too
     except Exception:
         # Last-resort fallback when core.logging_setup is unavailable: install a
         # single basic handler so logs still appear (no duplicate-handler risk

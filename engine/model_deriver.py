@@ -15,6 +15,8 @@ from core.run_context import apply_cli_run_context
 # (e.g. in main()) it would be stale, the plan would not be found, and Phase 2 would
 # silently re-enrich everything instead of only the impact set — reuse lost, no error.
 sys.argv = apply_cli_run_context(sys.argv)
+from core.logging_setup import start_phase_logging as _start_phase_logging  # noqa: E402
+_start_phase_logging()     # this step in the live log (docs/design/LIVE_LOGS_DESIGN.md)
 
 _p = _paths()
 SCRIPT_DIR = _p.src_dir

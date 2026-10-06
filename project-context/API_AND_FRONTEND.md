@@ -524,3 +524,36 @@ A project's `repo_url` is a remote URL or a local folder on the server; the wiza
 ---
 
 _End of file._
+
+### Live logs for superusers (2026-10-06)
+
+Contract [LIVE_LOGS_SPEC](../docs/spec/LIVE_LOGS_SPEC.md) (`REQ-LL-01…15`), how
+[LIVE_LOGS_DESIGN](../docs/design/LIVE_LOGS_DESIGN.md). Backend only; no page yet.
+
+- **Writing.** `core/logging_setup.py` `LiveLogHandler`, installed by `configure_logging` in every
+  process: one JSON line per record, at DEBUG, to `<data root>/logs/live/<YYYY-MM-DD>/<source>-<pid>.jsonl`
+  -- one file per process (concurrent appends to one file are unsafe on Windows). `source` is
+  `engine`, or `server` in the API (`set_live_source` at the top of `api/main.py`, before the routes
+  import engine modules -- the API has always configured engine logging by importing them). Fields:
+  `ts` (ms, local offset), `level`, `logger`, `message` (+ traceback), `pid`, `project`/`version`
+  (`core.run_context`), `step` by script name (`parser.py` Parse … `swe4_exporter.py` Export SWE.4,
+  `flowchart_engine.py` Views), `components` (`--allowed-components`), and the request's ids
+  (`REQUEST_CONTEXT` contextvar). Each step script calls `start_phase_logging()` (logging
+  configured; its prints copied to the live log; only when the process IS that step), and
+  `--version-id`/`--project-id` come from argv where `core.run_context` has none (swe4_exporter).
+- **Request lines.** `api/middleware/request_log.py` (plain ASGI): one line per POST/PUT/PATCH/DELETE
+  and per status >= 400 or exception, never the query string; `api.request` does not propagate (live
+  log only). Sets `REQUEST_CONTEXT` from the path (`projects/`, `versions/`, `jobs/job…`).
+- **Reading.** `api/services/live_logs.py` `LiveLogReader`, one thread started at API startup: polls
+  today's and yesterday's folders every second (offset per file, partial last line held), masks
+  (`Masker`: URL passwords, Authorization/Bearer, `api_key|token|password=`, the configured DB password,
+  LLM key and custom-header values), gives engine records `job`/`run` from `db.jobs.list_for_version`
+  by time (one writer per version makes it exact), sorts each batch by `ts`, keeps 20 000 in a deque
+  with `seq`. Startup backfill from file ends; daily retention by `logs.keepDays`.
+- **Routes** (`api/routes/admin_logs.py`, `require_superuser`): `GET /admin/logs` (tail; `lines`
+  default `logs.liveLines` 500, cut to `logs.maxLines` 2000), `POST /admin/logs/ticket` (60 s,
+  single use), `GET /admin/logs/stream?ticket=&after=` (SSE `log` / `gap`, ping 15 s). Config
+  `logs` in `config.defaults.json`, read per request (`core.config.logs_config`).
+- **Gotchas.** `seq` restarts with the API (a stale `after` gets `gap`). The test suite's process sets
+  `LIVE_LOG_ENABLED = False` (`tests/conftest.py`): its default handler writes nothing and no reader
+  starts; a handler given a folder still writes. Only `logging` records reach the stream, not `print()`.
