@@ -4,6 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from './lib/queryClient'
 import { ProjectLayout } from './components/shell/ProjectLayout'
 import { ProtectedRoute } from './routes/ProtectedRoute'
+import { SuperuserRoute } from './routes/SuperuserRoute'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { ToastProvider } from './components/ui/Toast'
 import { Button } from './components/ui'
@@ -19,6 +20,7 @@ const DocumentInspectorPage = lazy(() => import('./pages/DocumentInspectorPage')
 const ComparePage         = lazy(() => import('./pages/ComparePage').then((m) => ({ default: m.ComparePage })))
 const VersionsPage        = lazy(() => import('./pages/VersionsPage').then((m) => ({ default: m.VersionsPage })))
 const TeamPage            = lazy(() => import('./pages/TeamPage').then((m) => ({ default: m.TeamPage })))
+const LiveLogsPage        = lazy(() => import('./pages/LiveLogsPage').then((m) => ({ default: m.LiveLogsPage })))
 const NotFoundPage        = lazy(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })))
 
 function PageSpinner() {
@@ -168,6 +170,18 @@ export default function App() {
               >
                 <Route index element={<TeamPage />} />
               </Route>
+
+              {/* Superusers: every project's runs and the API (docs/spec/LIVE_LOGS_SPEC.md) */}
+              <Route
+                path="/admin/logs"
+                element={
+                  <ProtectedRoute>
+                    <SuperuserRoute>
+                      <LiveLogsPage />
+                    </SuperuserRoute>
+                  </ProtectedRoute>
+                }
+              />
 
               {/* Fallbacks */}
               <Route path="/" element={<Navigate to="/projects" replace />} />

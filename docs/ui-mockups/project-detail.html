@@ -464,6 +464,14 @@
               <p style="font-size:10px;font-family:'JetBrains Mono';color:#44474c;text-transform:uppercase;letter-spacing:.08em;">Elapsed</p>
               <p id="panel-elapsed" style="font-family:'JetBrains Mono';font-size:12px;color:#ffffff;">00:00:00</p>
             </div>
+            <!-- Superusers: this run in Live logs -->
+            <a href="live-logs.html?job=jobd46b0548" title="This run in Live logs (superusers)"
+               class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors font-label-sm text-label-sm"
+               style="border:1px solid #1e3045;color:#8192a7;text-decoration:none;"
+               onmouseenter="this.style.color='#ffffff'" onmouseleave="this.style.color='#8192a7'">
+              <span class="material-symbols-outlined" style="font-size:14px;">terminal</span>
+              Logs
+            </a>
             <button onclick="cancelGeneration()"
                     class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors font-label-sm text-label-sm"
                     style="border:1px solid #4d2020;color:#ff7070;"
@@ -566,6 +574,7 @@
           <p style="flex:1 1 300px;min-width:0;font-family:Inter,sans-serif;font-size:13px;color:#44474c;"><span style="font-weight:600;color:#0b1c30;">Generating documents</span> · 11 of 54 components done · drawing flowcharts, 38 of 112 · started 2 hours ago</p>
           <span aria-hidden="true" style="width:140px;height:6px;border-radius:99px;background:#e8eaed;overflow:hidden;flex-shrink:0;"><span style="display:block;height:100%;width:20.4%;border-radius:99px;background:#0058be;"></span></span>
           <button type="button" onclick="openComponents()" style="display:inline-flex;align-items:center;padding:6px 12px;border-radius:6px;border:1px solid #c4c6cd;background:#fff;font-family:Inter,sans-serif;font-size:12px;font-weight:600;color:#0b1c30;white-space:nowrap;cursor:pointer;text-decoration:none;">View components</button>
+          <a href="live-logs.html?job=jobd46b0548" title="This run in Live logs (superusers)" style="display:inline-flex;align-items:center;gap:4px;padding:6px 4px;font-family:Inter,sans-serif;font-size:12px;font-weight:600;color:#0058be;white-space:nowrap;text-decoration:none;"><span class="material-symbols-outlined" style="font-size:15px;">terminal</span>Logs</a>
           <!-- Admin: stop the web job at work on this version (asks first: what is finished stays) -->
           <button type="button" title="Stop making these documents? Components already finished keep their documents; the rest show as Stopped." style="border:none;background:none;padding:6px 4px;font-family:Inter,sans-serif;font-size:12px;font-weight:600;color:#ba1a1a;cursor:pointer;">Stop</button>
         </div>

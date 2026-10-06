@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { versionComponentsApi } from '../services/api'
 import { projectKeys } from './useProjects'
 import { toast } from '../components/ui/Toast'
@@ -54,6 +54,20 @@ export function useProjectRuns(projectId: string) {
     queryFn: () => versionComponentsApi.runs(projectId),
     enabled: !!projectId,
     refetchInterval: (q) => runsPollMs(q.state.data),
+  })
+}
+
+/** The runs of many projects at once (Live logs: every project a superuser sees), each read on
+ *  the same key and schedule as `useProjectRuns`. Newest progress first. */
+export function useAllProjectRuns(projectIds: string[]) {
+  return useQueries({
+    queries: projectIds.map((id) => ({
+      queryKey: projectKeys.runs(id),
+      queryFn: () => versionComponentsApi.runs(id),
+      refetchInterval: (q: { state: { data?: ProjectRun[] } }) => runsPollMs(q.state.data),
+    })),
+    combine: (results) => results.flatMap((r, i) =>
+      (r.data ?? []).map((run) => ({ projectId: projectIds[i], run }))),
   })
 }
 

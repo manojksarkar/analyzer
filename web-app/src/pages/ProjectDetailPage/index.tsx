@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useProject, useDocuments, useTeam, useCommits, useVersions } from '../../hooks/useProjects'
 import { useCurrentJob, useStartJob, useCancelJob, useJobEvents } from '../../hooks/useJobs'
 import { useProjectViewState } from '../../hooks/useProjectViewState'
@@ -10,6 +10,7 @@ import { GenerationBanner } from '../../components/run/GenerationBanner'
 import { useVersionComponents } from '../../hooks/useVersionComponents'
 import { generationBannerShown } from '../../lib/versionComponents'
 import { cn } from '../../lib/cn'
+import { liveLogsHref } from '../../lib/liveLogs'
 import { failedLoad } from '../../lib/failedLoad'
 import { LoadError } from '../../components/LoadError'
 import { useAuthStore } from '../../store/auth'
@@ -52,6 +53,7 @@ export function ProjectDetailPage() {
   const navigate = useNavigate()
 
   const meId = useAuthStore((s) => s.user?.id ?? '')
+  const isSuperuser = useAuthStore((s) => !!s.user?.isSuperuser)
 
   const projectQuery = useProject(projectId ?? '')
   const { data: project } = projectQuery
@@ -240,6 +242,13 @@ export function ProjectDetailPage() {
                   <p className="text-label font-mono text-outline uppercase tracking-[0.08em]">Elapsed</p>
                   <p className="font-mono text-xs text-white">{fmtClock(job.elapsedSeconds)}</p>
                 </div>
+                {isSuperuser && (
+                  <Link to={liveLogsHref(projectId ?? '', job.versionId, job.id)} title="This run in Live logs"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors border border-outline text-on-primary-container hover:text-white font-mono text-caption font-medium">
+                    <Icon name="terminal" size={14} />
+                    Logs
+                  </Link>
+                )}
                 {isAdmin && (
                   <button
                     onClick={() => setStopJobId(job.id)}

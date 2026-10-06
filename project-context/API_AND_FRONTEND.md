@@ -528,7 +528,8 @@ _End of file._
 ### Live logs for superusers (2026-10-06)
 
 Contract [LIVE_LOGS_SPEC](../docs/spec/LIVE_LOGS_SPEC.md) (`REQ-LL-01…15`), how
-[LIVE_LOGS_DESIGN](../docs/design/LIVE_LOGS_DESIGN.md). Backend only; no page yet.
+[LIVE_LOGS_DESIGN](../docs/design/LIVE_LOGS_DESIGN.md). The page (2026-10-06i): mockup
+`docs/ui-mockups/live-logs.html` (+ `dark/`), bullet **Page** below.
 
 - **Writing.** `core/logging_setup.py` `LiveLogHandler`, installed by `configure_logging` in every
   process: one JSON line per record, at DEBUG, to `<data root>/logs/live/<YYYY-MM-DD>/<source>-<pid>.jsonl`
@@ -557,3 +558,18 @@ Contract [LIVE_LOGS_SPEC](../docs/spec/LIVE_LOGS_SPEC.md) (`REQ-LL-01…15`), ho
 - **Gotchas.** `seq` restarts with the API (a stale `after` gets `gap`). The test suite's process sets
   `LIVE_LOG_ENABLED = False` (`tests/conftest.py`): its default handler writes nothing and no reader
   starts; a handler given a folder still writes. Only `logging` records reach the stream, not `print()`.
+- **Page** (`web-app/src/pages/LiveLogsPage/`, route `/admin/logs`, `routes/SuperuserRoute.tsx`). One
+  page for every project; reached from the account menu (`components/shell/UserMenu.tsx`, the one menu
+  of every top bar: "Live logs" when `user.isSuperuser` -- `is_superuser` added to the auth user,
+  `api/routes/auth.py _user_to_dict`) and from a run's **Logs** link (Overview's running job, the
+  generation banner on Overview and Documents; `lib/liveLogs.ts liveLogsHref`: `?project&version&job`).
+  The filters live in the address. A run with a job is asked for by `job` alone (an API line about a
+  job names its project, not always its version). `hooks/useLiveLogs.ts`: tail as a read (never
+  refetched on its own), stream with a new ticket per EventSource and `after` = last `seq` seen,
+  250 ms batching, the cap = the tail's `lines`, backoff 1/2/5/10/30 s on `onerror`, `gap` = read the
+  tail again, 401/403 on the ticket = Stopped. The **Runs** list is NOT from the loaded lines (a quiet
+  run scrolls out of the last 500): it is `GET /projects/{pid}/runs` for every project
+  (`useAllProjectRuns`), amber when no progress for 10 min ("Quiet for 17 h") or stopped. Names, not
+  ids: projects from `useProjects`, version tags from `useVersionTags` (on `projectKeys.versions`).
+  Steps are dividers when one run/version is shown; levels: All | Warnings & errors + Debug.
+  `HomeTopbar` is the Projects page's top bar, shared.

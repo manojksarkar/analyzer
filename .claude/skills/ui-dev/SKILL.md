@@ -30,7 +30,8 @@ src/
 ├── pages/         one screen each; a big screen is a folder (see below)
 ├── components/
 │   ├── ui/        design-system primitives (Icon, Text, Card, Button, Badge, …)
-│   └── shell/     Sidebar, Topbar, Subbar, ProjectLayout
+│   └── shell/     Sidebar, Topbar, Subbar, ProjectLayout, HomeTopbar (pages outside a project),
+│                  UserMenu (the one account menu: Live logs for superusers, Sign out)
 ├── hooks/         React Query read + mutation hooks — the ONLY way the UI gets data
 ├── services/      api/ (HTTP calls) + mappers/ (wire ⇄ FE types) — one file per domain
 ├── store/         Zustand (auth, ui)

@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<script src="theme-toggle.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ArtiFex — Live logs</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#041627", "primary-container": "#1a2b3c",
+          "on-primary": "#ffffff", "on-primary-container": "#8192a7",
+          "secondary": "#0058be", "secondary-container": "#2170e4",
+          "on-secondary": "#ffffff", "on-secondary-container": "#fefcff",
+          "on-tertiary-container": "#00a572",
+          "error": "#ba1a1a", "error-container": "#ffdad6", "on-error-container": "#93000a",
+          "surface": "#f8f9ff", "background": "#f8f9ff",
+          "surface-container-lowest": "#ffffff", "surface-container-low": "#eff4ff",
+          "surface-container": "#e5eeff", "surface-container-high": "#dce9ff",
+          "surface-container-highest": "#d3e4fe",
+          "on-surface": "#0b1c30", "on-surface-variant": "#44474c",
+          "outline": "#74777d", "outline-variant": "#c4c6cd",
+        },
+        fontFamily: { "body-md": ["Inter"] },
+        fontSize: { "body-md": ["14px", { lineHeight: "20px", fontWeight: "400" }] },
+      }
+    }
+  }
+</script>
+<style>
+  :root {
+    --ui: Inter, sans-serif; --head: Inter, sans-serif; --label: 'JetBrains Mono', monospace;
+    --card: #ffffff; --line: #c4c6cd; --hair: #eef1f6; --hover: #f8f9ff; --head-bg: #eff4ff;
+    --log-text: #0b1c30;
+    --text: #0b1c30; --sub: #44474c; --muted: #74777d;
+    --accent: #0058be; --accent-bg: #eff4ff; --accent-line: #b9cdf5;
+    --ok: #00a572; --warn: #b45309; --warn-bg: #fffbeb; --err: #ba1a1a; --err-bg: #ffdad6;
+    --chip: #f3f4f6; --mark: #fde68a; --menu-shadow: 0 4px 16px rgba(4,22,39,.12);
+  }
+  .brand-name { color: #041627; }
+</style>
+<style>
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; line-height: 1; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 10px; }
+  body { font-family: var(--ui); }
+
+  /* ── Account menu (web-app Topbar and the Projects page header): "Live logs" for a superuser ── */
+  .acct-menu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 220px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--menu-shadow); overflow: hidden; display: none; z-index: 60; }
+  .acct-menu.open { display: block; }
+  .acct-who { padding: 10px 14px; border-bottom: 1px solid var(--hair); }
+  .acct-who b { display: block; font-size: 13px; font-weight: 600; color: var(--text); }
+  .acct-who span { font-size: 11px; color: var(--muted); }
+  .acct-item { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 14px; font-size: 13px; color: var(--text); text-decoration: none; cursor: pointer; background: none; border: 0; text-align: left; }
+  .acct-item:hover { background: var(--hover); }
+  .acct-item.on { color: var(--accent); font-weight: 600; }
+  .acct-item.danger { color: var(--err); }
+  .acct-sep { height: 1px; background: var(--hair); margin: 3px 0; }
+
+  /* ── Heading + connection status ── */
+  .page-title { font-family: var(--head); font-size: 24px; font-weight: 600; line-height: 32px; letter-spacing: -0.01em; color: var(--text); }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--sub); }
+  .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .status.live { color: var(--ok); }
+  .status.live .dot { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+  .status.reconnecting { color: var(--warn); }
+  .status.reconnecting .dot { background: var(--warn); }
+  .status a { color: var(--accent); cursor: pointer; margin-left: 4px; }
+  .status a:hover { text-decoration: underline; }
+
+  /* ── Filters ── */
+  .flabel { font-family: var(--label); font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .sel { appearance: none; -webkit-appearance: none; height: 32px; max-width: 220px; padding: 0 28px 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2374777d' stroke-width='1.5' fill='none'/%3E%3C/svg%3E") no-repeat right 10px center; font-size: 13px; color: var(--text); cursor: pointer; }
+  .sel:disabled { color: var(--muted); cursor: not-allowed; }
+  .sel:focus, .search input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .seg { display: inline-flex; height: 32px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--card); }
+  .seg button { padding: 0 12px; font-size: 13px; color: var(--sub); border-right: 1px solid var(--line); white-space: nowrap; }
+  .seg button:last-child { border-right: 0; }
+  .seg button.on { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+  .check { display: inline-flex; align-items: center; gap: 6px; height: 32px; font-size: 13px; color: var(--sub); cursor: pointer; user-select: none; }
+  .check input { width: 15px; height: 15px; border-radius: 4px; border-color: var(--line); background-color: var(--card); color: var(--accent); }
+  .check.off { opacity: .45; cursor: not-allowed; }
+  .search { position: relative; }
+  .search input { height: 32px; width: 220px; padding: 0 10px 0 32px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); font-size: 13px; color: var(--text); }
+  .search input::placeholder { color: var(--muted); }
+  .search .material-symbols-outlined { position: absolute; left: 9px; top: 8px; font-size: 16px; color: var(--muted); }
+  .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--sub); cursor: pointer; user-select: none; }
+  .switch .knob { width: 30px; height: 18px; border-radius: 99px; background: var(--line); position: relative; transition: background .15s; }
+  .switch .knob::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .15s; }
+  .switch.on .knob { background: var(--accent); }
+  .switch.on .knob::after { transform: translateX(12px); }
+  .btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); font-size: 13px; color: var(--sub); text-decoration: none; }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── Runs: one row per run seen in the loaded lines ── */
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .colhead { height: 32px; display: flex; align-items: center; padding: 0 14px; background: var(--head-bg); border-bottom: 1px solid var(--line); flex-shrink: 0; }
+  .rail { width: 252px; flex-shrink: 0; border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .rail-list { flex: 1; min-height: 0; overflow-y: auto; }
+  .run { display: block; width: 100%; text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--hair); cursor: pointer; }
+  .run:hover { background: var(--hover); }
+  .run.on { background: var(--accent-bg); box-shadow: inset 3px 0 0 var(--accent); }
+  .rname { display: block; font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rsub { display: block; font-size: 12px; color: var(--sub); margin-top: 1px; }
+  .rstat { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .rstat .d { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .rstat.live .d { background: var(--ok); }
+  .rstat.quiet { color: var(--warn); }
+  .rstat.quiet .d { background: var(--warn); }
+  .rerr { margin-left: auto; color: var(--err); font-size: 11px; }
+  .rail-note { padding: 10px 14px; font-size: 11px; line-height: 16px; color: var(--muted); border-top: 1px solid var(--hair); }
+
+  /* ── The lines ── */
+  .lr { display: grid; grid-template-columns: 94px 70px minmax(0, 1fr); column-gap: 12px; padding: 6px 16px; border-bottom: 1px solid var(--hair); align-items: start; }
+  .lr:hover { background: var(--hover); }
+  .lt { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--sub); line-height: 20px; white-space: nowrap; }
+  .lb { justify-self: start; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .03em; line-height: 18px; padding: 0 6px; border-radius: 4px; margin-top: 1px; }
+  .lb.DEBUG { color: var(--muted); border: 1px solid var(--line); }
+  .lb.WARNING { color: var(--warn); background: var(--warn-bg); }
+  .lb.ERROR { color: var(--err); background: var(--err-bg); }
+  .lb.CRITICAL { color: #fff; background: var(--err); }
+  .lm pre { margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 400; line-height: 20px; color: var(--log-text); white-space: pre-wrap; word-break: break-word; }
+  /* a line shows exactly what was written: no ligatures (-> and === stay as typed) */
+  .lt, .lb, .lm pre { font-variant-ligatures: none; font-feature-settings: 'liga' 0, 'calt' 0; }
+  .lm mark { background: var(--mark); color: inherit; border-radius: 2px; }
+  .lm .fold { font-size: 12px; color: var(--accent); cursor: pointer; }
+  .lm .fold:hover { text-decoration: underline; }
+  .ctx { margin-top: 2px; font-size: 11px; line-height: 16px; color: var(--muted); }
+  .ctx a { color: var(--sub); cursor: pointer; }
+  .ctx a:hover { color: var(--accent); text-decoration: underline; }
+  .divider { display: flex; align-items: center; gap: 10px; padding: 10px 16px 4px; font-family: var(--label); font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+  .divider::after { content: ''; flex: 1; height: 1px; background: var(--accent-line); }
+  .new-pill { position: absolute; left: 50%; bottom: 46px; transform: translateX(-50%); display: none; align-items: center; gap: 6px; height: 30px; padding: 0 14px; border-radius: 99px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; box-shadow: var(--menu-shadow); }
+  .new-pill.show { display: inline-flex; }
+  .foot { height: 36px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); flex-shrink: 0; }
+  .empty { padding: 56px 16px; text-align: center; color: var(--muted); font-size: 13px; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 10px 16px; border-radius: 10px; background: var(--text); color: var(--card); font-size: 13px; box-shadow: var(--menu-shadow); display: none; z-index: 80; }
+  .toast.show { display: block; }
+</style>
+</head>
+
+<body class="bg-background text-on-surface font-body-md overflow-hidden">
+
+<!-- ══════════════════════════════════════════
+     TOP BAR - as on the Projects page. A superuser's account menu has "Live logs"; everyone else
+     still sees only Sign out.
+     ══════════════════════════════════════════ -->
+<header class="fixed top-0 left-0 right-0 h-14 bg-surface-container-lowest border-b border-outline-variant flex items-center justify-between px-6 z-50">
+  <a href="projects.html" class="flex items-center gap-3">
+    <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true" class="flex-shrink-0 text-secondary">
+      <g stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8.5 2 16l3 7.5"/><path d="M27 8.5 30 16l-3 7.5"/></g>
+      <g stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M13.6 7 9.2 24"/><path d="M11 17.8h6.2"/></g>
+      <path fill="currentColor" d="M19.8 18.6C19.8 20.7 20.9 21.8 23 21.8 20.9 21.8 19.8 22.9 19.8 25 19.8 22.9 18.7 21.8 16.6 21.8 18.7 21.8 19.8 20.7 19.8 18.6Z"/>
+    </svg>
+    <div>
+      <h1 class="brand-name font-bold tracking-tight" style="font-family:var(--head);font-size:20px;line-height:1.2;">ArtiFex</h1>
+      <p class="text-on-surface-variant uppercase mt-0.5" style="font-family:var(--label);font-size:11px;font-weight:500;line-height:16px;letter-spacing:.08em;">Crafted from Code</p>
+    </div>
+  </a>
+  <div class="flex items-center gap-0.5">
+    <button class="p-2 hover:bg-surface-container rounded-lg transition-colors" aria-label="Notifications">
+      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
+    </button>
+    <div class="w-px h-5 bg-outline-variant mx-1.5"></div>
+    <div class="relative">
+      <button onclick="toggleAcct(event)" class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors" aria-haspopup="menu">
+        <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
+          <span class="text-on-secondary-container font-bold text-xs">AD</span>
+        </div>
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">expand_more</span>
+      </button>
+      <div id="acct" class="acct-menu" role="menu">
+        <div class="acct-who"><b>Admin</b><span>admin@company.com</span></div>
+        <a class="acct-item on" href="live-logs.html" role="menuitem"><span class="material-symbols-outlined" style="font-size:18px;">terminal</span>Live logs</a>
+        <div class="acct-sep"></div>
+        <button class="acct-item danger" role="menuitem" onclick="showToast('Signed out (mockup).')"><span class="material-symbols-outlined" style="font-size:18px;">logout</span>Sign out</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ══════════════════════════════════════════
+     LIVE LOGS (web-app pages/LiveLogsPage, route /admin/logs, superusers only). One page for
+     every project and version; a run's "Logs" link (Overview, the generation banner) opens it
+     filtered to that run: live-logs.html?job=jobd46b0548. The address follows the filters.
+     API: GET /admin/logs (the tail) -> POST /admin/logs/ticket -> EventSource /admin/logs/stream
+     Mockup states: #menu, #reconnecting, #stopped, #gap, #superusers-only
+     ══════════════════════════════════════════ -->
+<div id="page" class="fixed inset-0 pt-14 flex flex-col">
+  <div class="w-full mx-auto px-6 pt-5" style="max-width:1480px;">
+    <a href="projects.html" class="inline-flex items-center gap-1 text-on-surface-variant hover:text-secondary" style="font-size:12px;">
+      <span class="material-symbols-outlined" style="font-size:15px;">arrow_back</span>All projects
+    </a>
+    <div class="flex items-center gap-3 mt-1">
+      <h2 class="page-title">Live logs</h2>
+      <span id="status" class="status live"><span class="dot"></span><span id="status-text">Live</span></span>
+    </div>
+    <p class="text-on-surface-variant mt-0.5" style="font-size:13px;">Every project's runs and the API, newest at the bottom.</p>
+
+    <div class="flex flex-wrap items-end gap-3 mt-4">
+      <label class="flex flex-col gap-1"><span class="flabel">Project</span>
+        <select id="f-project" class="sel" onchange="pickProject(this.value)"></select></label>
+      <label class="flex flex-col gap-1"><span class="flabel">Version</span>
+        <select id="f-version" class="sel" onchange="pickVersion(S.project, this.value)"></select></label>
+      <div class="flex flex-col gap-1"><span class="flabel">Show</span>
+        <div class="flex items-center gap-3">
+          <div class="seg" id="f-show">
+            <button class="on" data-v="all" onclick="setShow('all')">All</button>
+            <button data-v="warn" onclick="setShow('warn')">Warnings &amp; errors</button>
+          </div>
+          <label id="f-debug-wrap" class="check"><input id="f-debug" type="checkbox" onchange="setDebug(this.checked)">Debug</label>
+        </div></div>
+      <div class="flex flex-col gap-1"><span class="flabel">Source</span>
+        <div class="seg" id="f-source">
+          <button class="on" data-v="" onclick="setSource('')">All</button>
+          <button data-v="server" onclick="setSource('server')">API</button>
+          <button data-v="engine" onclick="setSource('engine')">Engine</button>
+        </div></div>
+      <div class="flex flex-col gap-1"><span class="flabel">Search</span>
+        <div class="search"><span class="material-symbols-outlined">search</span>
+          <input id="f-q" type="search" placeholder="Search the loaded lines" oninput="S.q = this.value; render()"></div></div>
+      <div class="flex items-center gap-4 ml-auto" style="height:32px;">
+        <span id="f-follow" class="switch on" onclick="setFollow(!S.follow)" role="switch" aria-checked="true"><span class="knob"></span>Follow</span>
+        <button class="btn" onclick="clearView()"><span class="material-symbols-outlined" style="font-size:16px;">clear_all</span>Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex-1 min-h-0 w-full mx-auto px-6 pt-4 pb-6" style="max-width:1480px;">
+    <div class="card h-full flex">
+      <!-- Runs: from the loaded lines (project / version scope), newest first -->
+      <aside class="rail">
+        <div class="colhead"><span class="flabel">Runs</span></div>
+        <div id="rail" class="rail-list"></div>
+        <p class="rail-note">From the loaded lines. A run turns amber when it has written nothing for 10 minutes.</p>
+      </aside>
+      <div class="flex-1 min-w-0 flex flex-col relative">
+        <div class="colhead" style="display:grid;grid-template-columns:94px 70px minmax(0,1fr);column-gap:12px;padding:0 16px;">
+          <span class="flabel">Time</span><span class="flabel">Level</span><span class="flabel" id="msg-head">Message</span>
+        </div>
+        <div id="log" class="flex-1 min-h-0 overflow-y-auto" onscroll="onLogScroll()"></div>
+        <button id="new-pill" class="new-pill" onclick="setFollow(true)">
+          <span class="material-symbols-outlined" style="font-size:16px;">arrow_downward</span><span id="new-pill-text">3 new lines</span>
+        </button>
+        <div class="foot"><span id="foot-left"></span><span id="foot-right"></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Not a superuser (403): the menu entry and the Logs links are hidden, so only a typed address lands here -->
+<div id="forbidden" class="fixed inset-0 pt-14 items-center justify-center" style="display:none;">
+  <div class="text-center">
+    <span class="material-symbols-outlined text-outline" style="font-size:40px;">lock</span>
+    <h2 class="page-title mt-3" style="font-size:18px;line-height:28px;">Superusers only</h2>
+    <p class="text-on-surface-variant mt-1" style="font-size:13px;">Live logs show every project's runs.</p>
+    <a href="projects.html" class="btn mt-5" style="display:inline-flex;">All projects</a>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+// ── Names: the API sends ids; the web app already holds the projects, and loads version tags
+const NAMES = { p76a65b41: 'VCU Engine Firmware', p3147d31b: 'Gateway Core', pfc66bf4b: 'Sample Core' };
+const TAGS = { ver48561e59: 'v1.2.0', ver1f02aa71: 'v1.1.0', ver2b07c9d1: 'v0.4.0', verc81e2a04: 'v2.1' };
+const VERSIONS_OF = { p76a65b41: ['ver48561e59', 'ver1f02aa71'], p3147d31b: ['ver2b07c9d1'], pfc66bf4b: ['verc81e2a04'] };
+const RUN_LABEL = { generate: 'Generate', export: 'Export', reexport: 'Word file update', resume: 'Resume', cli: 'Command line' };
+// An API line names its job but not the run type: take it from the job's engine lines
+const runOf = job => (ALL.find(x => x.job === job && x.run) || {}).run;
+
+// ── Sample records, in the API's shape (docs/spec/LIVE_LOGS_SPEC.md)
+const NOW0 = Date.parse('2026-10-06T10:42:00.000+05:30');
+const ALL = [];
+let jit = 0;   // milliseconds, so the times read like real ones
+function add(minAgo, o) { jit = (jit * 7 + 113) % 997; ALL.push(Object.assign({ ts: NOW0 - minAgo * 60e3 + jit, pid: o.source === 'server' ? 4120 : 7832 }, o)); }
+const TB = 'Flowchart labels failed for GwRoute_Dispatch: the LLM did not answer\nTraceback (most recent call last):\n  File "engine/flowchart/llm/label_generator.py", line 233, in generate\n    labels = self._batch(nodes)\n  File "engine/flowchart/llm/label_generator.py", line 181, in _batch\n    raise LabelError("no response after 2 attempts")\n  File "engine/flowchart/llm/label_generator.py", line 140, in _call\n    return self._client.generate(system, prompt, kind="label")\nengine.flowchart.llm.label_generator.LabelError: no response after 2 attempts';
+const GW = { project: 'p3147d31b', version: 'ver2b07c9d1', job: 'jobb19c2e07', run: 'export' };
+const GWE = Object.assign({ pid: 6610, step: 'Views', components: ['Layer2.Gateway'] }, GW);
+const CLI = { project: 'pfc66bf4b', version: 'verc81e2a04', pid: 9120, step: 'Export SWE.3', components: ['Layer1.Sample Core'] };
+const VCU = { project: 'p76a65b41', version: 'ver48561e59', job: 'jobd46b0548', run: 'generate' };
+// Gateway Core: an export that went quiet 17 hours ago, after the LLM stopped answering
+add(1046, { source: 'server', level: 'INFO', logger: 'db', message: 'Connected to postgresql://analyzer:***@db-01:5432/analyzer' });
+add(1045, { source: 'server', level: 'INFO', logger: 'api.request', message: 'POST /api/v1/projects/p3147d31b/versions/ver2b07c9d1/export -> 202 (52 ms)', project: GW.project, version: GW.version, job: GW.job });
+add(1044.9, { source: 'server', level: 'INFO', logger: 'pipeline_runner', message: 'Job jobb19c2e07 runs in the background (pid 6610)', project: GW.project, version: GW.version, job: GW.job });
+add(1044, Object.assign({ source: 'engine', level: 'INFO', logger: 'orchestration', message: '[3/4] === Phase 3: Run views ===' }, GWE));
+add(1040, Object.assign({ source: 'engine', level: 'INFO', logger: 'flowcharts', message: 'Drawing 112 flowcharts' }, GWE));
+add(1032, Object.assign({ source: 'engine', level: 'WARNING', logger: 'llm_client', message: 'LLM (openai/model) HTTP 503: An invalid response was received from the upstream server (attempt 1/2)' }, GWE));
+add(1027, Object.assign({ source: 'engine', level: 'WARNING', logger: 'llm_client', message: 'LLM (openai/model) HTTP 503: An invalid response was received from the upstream server (attempt 2/2)' }, GWE));
+add(1026.9, Object.assign({ source: 'engine', level: 'ERROR', logger: 'flowchart.labels', message: TB }, GWE));
+add(1026, Object.assign({ source: 'engine', level: 'INFO', logger: 'flowchart.labels', message: 'Batch 41/112: 18 nodes, 1 LLM call' }, GWE));
+// Sample Core: a command-line export that finished (no job, no run)
+add(42, Object.assign({ source: 'engine', level: 'INFO', logger: 'run', message: 'Command-line export: 1 component (Layer1.Sample Core)' }, CLI));
+add(41, Object.assign({ source: 'engine', level: 'INFO', logger: 'orchestration', message: '[4/4] === Phase 4: Export DOCX ===' }, CLI));
+add(39, Object.assign({ source: 'engine', level: 'INFO', logger: 'docx_exporter', message: 'Wrote software_detailed_design_Sample-Core.docx (212 functions, 4.1 MB)' }, CLI));
+add(38.5, Object.assign({ source: 'engine', level: 'INFO', logger: 'run', message: 'Run finished: 1 component, 0 failed (3 min 40 s)' }, CLI));
+// VCU Engine Firmware: a web generation, live
+add(27, { source: 'server', level: 'INFO', logger: 'api.request', message: 'POST /api/v1/auth/signin -> 200 (88 ms)' });
+add(26.8, { source: 'server', level: 'INFO', logger: 'api.request', message: 'GET /api/v1/projects -> 200 (14 ms)' });
+add(26, { source: 'server', level: 'INFO', logger: 'api.request', message: 'POST /api/v1/projects/p76a65b41/jobs -> 202 (41 ms)', project: VCU.project, job: VCU.job });
+add(25.9, { source: 'server', level: 'INFO', logger: 'pipeline_runner', message: 'Job jobd46b0548 runs in the background (pid 7832)', project: VCU.project, version: VCU.version, job: VCU.job });
+add(25.8, Object.assign({ source: 'engine', level: 'INFO', logger: 'orchestration', message: '[1/4] === Phase 1: Parse C++ source ===', step: 'Parse' }, VCU));
+add(25.7, Object.assign({ source: 'engine', level: 'INFO', logger: 'parser', message: 'Parsing 214 translation units (Layer1)', step: 'Parse' }, VCU));
+add(25.6, Object.assign({ source: 'engine', level: 'DEBUG', logger: 'parser', message: 'TU 1/214 src/ftl/FtlMap.cpp (182 ms)', step: 'Parse' }, VCU));
+add(24, Object.assign({ source: 'engine', level: 'WARNING', logger: 'parser', message: 'Hint: missing include - check --include-path-layer', step: 'Parse' }, VCU));
+add(22.5, Object.assign({ source: 'engine', level: 'INFO', logger: 'parser', message: 'Parsed 214 of 214 files in 3 min 12 s', step: 'Parse' }, VCU));
+add(22.4, Object.assign({ source: 'engine', level: 'INFO', logger: 'orchestration', message: '[2/4] === Phase 2: Derive model ===', step: 'Derive' }, VCU));
+add(22.3, Object.assign({ source: 'engine', level: 'INFO', logger: 'model_deriver', message: '1,284 functions, 312 globals, 41 units', step: 'Derive' }, VCU));
+add(15, Object.assign({ source: 'engine', level: 'INFO', logger: 'progress', message: 'LLM-description: 60/1284 (5%)', step: 'Derive' }, VCU));
+add(8, { source: 'server', level: 'INFO', logger: 'api.request', message: 'GET /api/v1/projects/p76a65b41/jobs/jobd46b0548 -> 200 (9 ms)', project: VCU.project, job: VCU.job });
+add(6, Object.assign({ source: 'engine', level: 'WARNING', logger: 'llm_client', message: 'LLM (openai/model) HTTP 503: An invalid response was received from the upstream server (attempt 1/2)', step: 'Derive' }, VCU));
+add(1, Object.assign({ source: 'engine', level: 'INFO', logger: 'progress', message: 'LLM-description: 120/1284 (9%)', step: 'Derive' }, VCU));
+ALL.sort((a, b) => a.ts - b.ts);
+let seq = 18100;
+ALL.forEach(r => { r.seq = ++seq; });
+
+// What the open stream sends next (cycled), all from the live generation
+let llm = 120, clockMs = NOW0;
+const NEXT = [
+  () => ({ source: 'server', level: 'INFO', logger: 'api.request', message: 'GET /api/v1/projects/p76a65b41/jobs/jobd46b0548 -> 200 (8 ms)', project: VCU.project, job: VCU.job }),
+  () => Object.assign({ source: 'engine', level: 'DEBUG', logger: 'llm_client', message: 'description call 3.1 s (612 tokens in, 74 out)', step: 'Derive' }, VCU),
+  () => Object.assign({ source: 'engine', level: 'INFO', logger: 'progress', message: `LLM-description: ${llm += 20}/1284 (${Math.round(llm / 12.84)}%)`, step: 'Derive' }, VCU),
+  () => Object.assign({ source: 'engine', level: 'WARNING', logger: 'llm_client', message: 'LLM (openai/model) HTTP 503: An invalid response was received from the upstream server (attempt 1/2)', step: 'Derive' }, VCU),
+  () => ({ source: 'server', level: 'INFO', logger: 'api.request', message: 'GET /api/v1/projects/p76a65b41/documents -> 200 (31 ms)', project: VCU.project }),
+  () => Object.assign({ source: 'engine', level: 'INFO', logger: 'progress', message: `LLM-description: ${llm += 20}/1284 (${Math.round(llm / 12.84)}%)`, step: 'Derive' }, VCU),
+];
+
+// ── Page state. Server filters (project, version, job, level, source) reload the tail and open a
+// new stream; client controls (search, follow, clear) only redraw.
+const LEVELS = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'];
+const S = { project: '', version: '', job: '', sel: 'all', show: 'all', debug: false, source: '', lines: 500,
+            q: '', follow: true, clearedAt: 0, unseen: 0 };
+const open = new Set();
+let loaded = [];
+const level = () => S.show === 'warn' ? 'WARNING' : S.debug ? 'DEBUG' : 'INFO';
+
+function passScope(r) {
+  if (S.project && r.project !== S.project) return false;
+  if (S.version && r.version !== S.version) return false;
+  return true;
+}
+function passServer(r) {
+  if (LEVELS.indexOf(r.level) < LEVELS.indexOf(level())) return false;
+  if (S.source && r.source !== S.source) return false;
+  // A run is asked for by its job alone: the API's lines about a job carry no version
+  if (S.job) return r.job === S.job;
+  return passScope(r);
+}
+function reload() {
+  loaded = ALL.filter(passServer).slice(-S.lines);
+  S.unseen = 0;
+  syncUrl(); paintFilters(); render(true);
+}
+function syncUrl() {
+  const q = new URLSearchParams();
+  if (S.job) q.set('job', S.job);
+  else { if (S.project) q.set('project', S.project); if (S.version) q.set('version', S.version); }
+  if (S.show === 'warn') q.set('level', 'WARNING'); else if (S.debug) q.set('level', 'DEBUG');
+  if (S.source) q.set('source', S.source);
+  const s = q.toString();
+  try { history.replaceState(null, '', location.pathname + (s ? '?' + s : '') + location.hash); } catch (e) {}
+}
+
+// ── Filters
+function paintFilters() {
+  const p = document.getElementById('f-project'), v = document.getElementById('f-version');
+  p.innerHTML = `<option value="">All projects</option>` +
+    Object.keys(NAMES).map(id => `<option value="${id}"${id === S.project ? ' selected' : ''}>${NAMES[id]}</option>`).join('');
+  v.disabled = !S.project;
+  v.innerHTML = `<option value="">${S.project ? 'All versions' : 'Pick a project'}</option>` +
+    (VERSIONS_OF[S.project] || []).map(id => `<option value="${id}"${id === S.version ? ' selected' : ''}>${TAGS[id]}</option>`).join('');
+  document.querySelectorAll('#f-show button').forEach(b => b.classList.toggle('on', b.dataset.v === S.show));
+  document.querySelectorAll('#f-source button').forEach(b => b.classList.toggle('on', b.dataset.v === S.source));
+  const dw = document.getElementById('f-debug-wrap'), d = document.getElementById('f-debug');
+  d.checked = S.debug; d.disabled = S.show === 'warn'; dw.classList.toggle('off', S.show === 'warn');
+}
+function pickProject(id) { S.project = id; S.version = ''; S.job = ''; S.sel = 'all'; reload(); }
+function pickVersion(p, id) { S.project = p; S.version = id; S.job = ''; S.sel = 'all'; reload(); }
+function setShow(v) { S.show = v; reload(); }
+function setDebug(on) { S.debug = on; reload(); }
+function setSource(v) { S.source = v; reload(); }
+
+// ── Runs: grouped from the scope's lines (one per job; a command-line run by its version)
+function runs() {
+  const m = new Map();
+  for (const r of ALL) {
+    if (!passScope(r) || (!r.job && !(r.source === 'engine' && r.version))) continue;
+    const key = r.job || 'cli:' + r.version;
+    let e = m.get(key);
+    if (!e) m.set(key, e = { key, job: r.job || '', project: r.project, version: r.version, run: r.job ? '' : 'cli', step: '', errors: 0, done: false, last: r });
+    e.last = r;
+    if (r.run) e.run = r.run;
+    if (r.step) e.step = r.step;
+    if (r.version) e.version = r.version;
+    if (r.level === 'ERROR' || r.level === 'CRITICAL') e.errors++;
+    if (/^(Job \S+ finished|Run finished)/.test(r.message)) e.done = true;
+  }
+  return [...m.values()].sort((a, b) => b.last.ts - a.last.ts);
+}
+const now = () => ALL[ALL.length - 1].ts;
+function dur(ms) {
+  const m = Math.round(ms / 60e3);
+  return m < 60 ? `${m} min` : `${Math.round(m / 60)} h`;
+}
+function runStatus(e) {
+  if (e.done) return ['', `Finished ${hhmm(e.last.ts)}`];
+  const idle = now() - e.last.ts;
+  if (idle > 10 * 60e3) return ['quiet', `Quiet for ${dur(idle)}`];
+  return ['live', `${e.step || 'Starting'} · ${idle < 60e3 ? 'just now' : dur(idle) + ' ago'}`];
+}
+function paintRail() {
+  const list = runs();
+  const all = `<button class="run${S.sel === 'all' ? ' on' : ''}" onclick="selectRun('all')">` +
+    `<span class="rname">All runs</span><span class="rsub">${S.project ? (NAMES[S.project] + (S.version ? ' · ' + TAGS[S.version] : '')) : 'Every project'}</span></button>`;
+  document.getElementById('rail').innerHTML = all + list.map(e => {
+    const [cls, text] = runStatus(e);
+    return `<button class="run${S.sel === e.key ? ' on' : ''}" onclick="selectRun('${e.key}')" title="${e.job || 'command line'} · ${e.version}">` +
+      `<span class="rname">${NAMES[e.project] || e.project}</span>` +
+      `<span class="rsub">${TAGS[e.version] || e.version} · ${RUN_LABEL[e.run] || 'Run'}</span>` +
+      `<span class="rstat ${cls}"><span class="d"></span>${text}${e.errors ? `<span class="rerr">${e.errors} error${e.errors === 1 ? '' : 's'}</span>` : ''}</span></button>`;
+  }).join('');
+}
+function selectRun(key) {
+  S.sel = key;
+  if (key === 'all') S.job = '';
+  else {
+    const e = runs().find(x => x.key === key);
+    S.project = e.project; S.version = e.version; S.job = e.job;
+  }
+  reload();
+}
+
+// ── Lines
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function hl(text) {
+  const t = esc(text);
+  if (!S.q.trim()) return t;
+  const q = esc(S.q.trim()).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return t.replace(new RegExp(q, 'gi'), m => `<mark>${m}</mark>`);
+}
+const local = ms => new Date(ms + 5.5 * 3600e3).toISOString();
+const hhmmss = ms => local(ms).slice(11, 23);
+const hhmm = ms => local(ms).slice(11, 16);
+const full = ms => local(ms).replace('T', ' ').slice(0, 23) + ' +05:30';
+const FOLD = 5;
+function row(r, one) {
+  const lines = r.message.split('\n');
+  const long = lines.length > FOLD && !open.has(r.seq);
+  const fold = lines.length > FOLD
+    ? `<span class="fold" onclick="toggleFold(${r.seq})">${open.has(r.seq) ? 'Show less' : `Show ${lines.length - FOLD} more lines`}</span>` : '';
+  // Context: who wrote it, then (across runs only) where. Names are links that narrow the view.
+  const ctx = [`${r.source === 'server' ? 'API' : 'Engine'} · ${esc(r.logger)}`];
+  if (!one) {
+    if (r.project) ctx.push(`<a onclick="pickProject('${r.project}')" title="${r.project}">${NAMES[r.project] || r.project}</a>`);
+    if (r.version) ctx.push(`<a onclick="pickVersion('${r.project}','${r.version}')" title="${r.version}">${TAGS[r.version] || r.version}</a>`);
+    if (r.job) ctx.push(`<a onclick="selectRun('${r.job}')" title="${r.job}">${RUN_LABEL[r.run || runOf(r.job)] || 'Run'}</a>`);
+    if (r.step) ctx.push(r.step);
+  }
+  if (r.components) ctx.push(r.components.join(', '));
+  return `<div class="lr"><span class="lt" title="${full(r.ts)}">${hhmmss(r.ts)}</span>` +
+    `<span>${r.level === 'INFO' ? '' : `<span class="lb ${r.level}">${r.level}</span>`}</span>` +
+    `<div class="lm" title="pid ${r.pid}"><pre>${hl(long ? lines.slice(0, FOLD).join('\n') : r.message)}</pre>${fold}` +
+    `<div class="ctx">${ctx.join(' · ')}</div></div></div>`;
+}
+function shown() {
+  const q = S.q.trim().toLowerCase();
+  return loaded.filter(r => r.seq > S.clearedAt && (!q || (r.message + ' ' + r.logger).toLowerCase().includes(q)));
+}
+function render(toBottom) {
+  const el = document.getElementById('log'), rows = shown(), one = S.sel !== 'all';
+  let h = '', step = '';
+  for (const r of rows) {
+    // One run: its steps become dividers instead of a filter
+    if (one && r.source === 'engine' && r.step && r.step !== step) { step = r.step; h += `<div class="divider">${step}</div>`; }
+    h += row(r, one);
+  }
+  el.innerHTML = h || `<div class="empty">${S.clearedAt && !S.q ? 'Cleared. New lines appear here as they arrive.' : 'No lines match. New ones appear here as they arrive.'}</div>`;
+  if (toBottom || S.follow) { programmatic = true; el.scrollTop = el.scrollHeight; }
+  document.getElementById('foot-left').textContent = `${rows.length.toLocaleString()} line${rows.length === 1 ? '' : 's'}`;
+  document.getElementById('foot-right').textContent = `Keeps the last ${S.lines.toLocaleString()}`;
+  document.getElementById('new-pill').classList.toggle('show', !S.follow && S.unseen > 0);
+  document.getElementById('new-pill-text').textContent = `${S.unseen} new line${S.unseen === 1 ? '' : 's'}`;
+  paintRail();
+}
+function toggleFold(s) { open.has(s) ? open.delete(s) : open.add(s); render(); }
+function clearView() { S.clearedAt = seq; S.unseen = 0; render(true); }
+
+// ── Follow: stay at the newest line; scrolling up pauses it, the pill resumes it
+let programmatic = false;
+function setFollow(on) {
+  S.follow = on;
+  if (on) S.unseen = 0;
+  const sw = document.getElementById('f-follow');
+  sw.classList.toggle('on', on); sw.setAttribute('aria-checked', on);
+  render(on);
+}
+function onLogScroll() {
+  if (programmatic) { programmatic = false; return; }
+  const el = document.getElementById('log');
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+  if (atBottom !== S.follow) setFollow(atBottom);
+}
+
+// ── The stream: a new line every ~1.2 s while Live
+let streaming = true, k = 0;
+function tick() {
+  if (!streaming) return;
+  clockMs += 1200;
+  const r = Object.assign({ ts: clockMs, seq: ++seq, pid: 7832 }, NEXT[k++ % NEXT.length]());
+  if (r.source === 'server') r.pid = 4120;
+  ALL.push(r);
+  if (passServer(r)) {
+    loaded.push(r);
+    if (loaded.length > S.lines) loaded.shift();
+    if (!S.follow && shown().includes(r)) S.unseen++;
+  }
+  render();
+}
+setInterval(tick, 1200);
+
+function setStatus(kind, text) {
+  document.getElementById('status').className = 'status ' + kind;
+  document.getElementById('status-text').innerHTML = text;
+}
+function reconnect(after) {
+  streaming = false;
+  let n = after;
+  setStatus('reconnecting', `Reconnecting in ${n} s`);
+  const t = setInterval(() => {
+    if (--n > 0) return setStatus('reconnecting', `Reconnecting in ${n} s`);
+    clearInterval(t); streaming = true; setStatus('live', 'Live');
+  }, 1000);
+}
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 3200);
+}
+function toggleAcct(e) { e.stopPropagation(); document.getElementById('acct').classList.toggle('open'); }
+document.addEventListener('click', () => document.getElementById('acct').classList.remove('open'));
+
+// ── Start: filters from the address (a run's Logs link: ?job=…), the tail, then the stream
+const Q = new URLSearchParams(location.search);
+if (Q.get('job')) {
+  const e = runs().find(x => x.job === Q.get('job'));
+  if (e) { S.sel = e.key; S.job = e.job; S.project = e.project; S.version = e.version; }
+} else {
+  S.project = Q.get('project') || ''; S.version = Q.get('version') || '';
+}
+if (Q.get('level') === 'WARNING') S.show = 'warn';
+if (Q.get('level') === 'DEBUG') S.debug = true;
+S.source = Q.get('source') || '';
+reload();
+const H = location.hash;
+if (H === '#reconnecting') reconnect(5);
+if (H === '#stopped') { streaming = false; setStatus('stopped', 'Stopped<a onclick="streaming = true; setStatus(\'live\', \'Live\')">Reconnect</a>'); }
+if (H === '#gap') setTimeout(() => { reload(); showToast('Some lines were missed. The list was reloaded.'); }, 2500);
+if (H === '#menu') document.getElementById('acct').classList.add('open');
+if (H === '#superusers-only') {
+  streaming = false;
+  document.getElementById('page').style.display = 'none';
+  document.getElementById('forbidden').style.display = 'flex';
+}
+</script>
+</body>
+</html>

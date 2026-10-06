@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom'
-import { useAuthStore } from '../../store/auth'
-import { Dropdown, DropdownTrigger, DropdownContent, Icon } from '../ui'
+import { Icon } from '../ui'
 import { NotificationBell } from './NotificationBell'
 import { ThemeToggle } from './ThemeToggle'
+import { UserMenu } from './UserMenu'
 
 interface BreadcrumbItem {
   label: string
@@ -14,8 +14,6 @@ interface TopbarProps {
 }
 
 export function Topbar({ breadcrumbs }: TopbarProps) {
-  const { user, signOut } = useAuthStore()
-
   return (
     <header className="h-14 flex-shrink-0 flex items-center justify-between px-4 bg-surface-container-lowest border-b border-outline-variant z-30">
       {/* Breadcrumb */}
@@ -62,28 +60,7 @@ export function Topbar({ breadcrumbs }: TopbarProps) {
 
         <div className="w-px h-5 bg-outline-variant mx-1.5" aria-hidden />
 
-        {/* User avatar + dropdown */}
-        <Dropdown>
-          <DropdownTrigger asChild>
-            <button
-              className="flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors"
-              aria-label={`User menu — ${user?.name}`}
-            >
-              <div className="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
-                {user?.initials
-                  ? <span className="text-on-secondary-container font-bold text-xs font-sans">{user.initials}</span>
-                  : <Icon name="person" size={16} className="text-on-secondary-container" />}
-              </div>
-              <Icon name="expand_more" size={16} className="text-on-surface-variant" />
-            </button>
-          </DropdownTrigger>
-          {/* Profile is not built yet, so it is not offered (ui-review #36). */}
-          <DropdownContent
-            items={[
-              { label: 'Sign out',  icon: 'logout', variant: 'danger', onClick: signOut },
-            ]}
-          />
-        </Dropdown>
+        <UserMenu />
       </div>
     </header>
   )

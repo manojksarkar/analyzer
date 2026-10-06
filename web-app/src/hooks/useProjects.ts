@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   projectsApi, versionsApi, documentsApi, teamApi, commitsApi,
   type CreateProjectInput, type DocumentFilters,
@@ -77,6 +77,19 @@ export function useProject(id: string) {
 
 export function useVersions(projectId: string) {
   return useQuery({ queryKey: projectKeys.versions(projectId), queryFn: () => versionsApi.list(projectId), enabled: !!projectId })
+}
+
+/** Version id -> tag across several projects (Live logs names a line's version by its tag), on the
+ *  same key as `useVersions`, so a project already read is not read again. */
+export function useVersionTags(projectIds: string[]): Record<string, string> {
+  return useQueries({
+    queries: projectIds.map((id) => ({ queryKey: projectKeys.versions(id), queryFn: () => versionsApi.list(id) })),
+    combine: (results) => {
+      const tags: Record<string, string> = {}
+      for (const r of results) for (const v of r.data ?? []) if (v.id) tags[v.id] = v.tag
+      return tags
+    },
+  })
 }
 
 /** Every document of ONE version that matches `filters` — all pages: the lists, KPIs, approval bar

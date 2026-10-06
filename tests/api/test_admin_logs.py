@@ -93,6 +93,11 @@ class TestOnlySuperusers:
         assert [r["message"] for r in body["records"]] == ["line 0", "line 1", "line 2"]
         assert body["cursor"] == 3 and body["level"] == "INFO"
 
+    def test_the_web_app_is_told_who_is_one(self, client, auth_header, dev_header, superuser):
+        """The menu entry and the Logs links show by `is_superuser` on the signed-in user."""
+        assert client.get("/api/v1/auth/me", headers=auth_header).json()["user"]["is_superuser"] is True
+        assert client.get("/api/v1/auth/me", headers=dev_header).json()["user"]["is_superuser"] is False
+
 
 class TestTheTail:
     def test_500_by_default_and_never_more_than_2000(self, client, reader, auth_header, superuser):

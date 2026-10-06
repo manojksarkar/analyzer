@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-06i | Live logs, the page: one page for every project, reached from the account menu or a run's Logs link, names instead of ids, a Runs list where a quiet run turns amber | [14](14-2026-10-05r.md) |
 | 2026-10-06h | Dark theme, document pictures: flowcharts and diagrams are dark too; edit mode puts a pencil on every text a reviewer can correct; the dark mockup's flowchart, its editor and its comment boxes readable again | [14](14-2026-10-05r.md) |
 | 2026-10-06g | A live log for superusers: the API's and every engine run's log lines in one stream, the last 500 and then live | [14](14-2026-10-05r.md) |
 | 2026-10-06f | The web app has a dark and a light theme: dark by default, a sun/moon toggle, the dark mockups' Samsung-style palette, light unchanged, no red for a state | [14](14-2026-10-05r.md) |

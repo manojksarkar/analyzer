@@ -1,14 +1,11 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useProjects } from '../../hooks/useProjects'
-import { useAuthStore } from '../../store/auth'
-import { Dropdown, DropdownTrigger, DropdownContent, Icon, BrandMark, TableSkeleton, toast } from '../../components/ui'
-import { NotificationBell } from '../../components/shell/NotificationBell'
-import { ThemeToggle } from '../../components/shell/ThemeToggle'
+import { Icon, TableSkeleton, toast } from '../../components/ui'
+import { HomeTopbar } from '../../components/shell/HomeTopbar'
 import { ProjectRow } from './components/ProjectRow'
 import { ProjectsEmptyState } from './components/ProjectsEmptyState'
 import { RenameProjectDialog } from './components/RenameProjectDialog'
-import { APP_NAME, APP_TAGLINE } from '../../constants/branding'
 
 /* Column headers — width baked into the class so no inline style is needed. */
 const COLUMNS = [
@@ -25,7 +22,6 @@ const COLUMNS = [
 export function ProjectsPage() {
   const navigate = useNavigate()
   const { data: projects, isLoading, isError } = useProjects()
-  const { user, signOut } = useAuthStore()
   const isEmpty = !isLoading && !isError && (projects?.length ?? 0) === 0
   const requestAccess = () =>
     toast.info('Request access', 'Ask your workspace administrator to add you to a project.')
@@ -44,50 +40,7 @@ export function ProjectsPage() {
       />
 
       {/* ── Top bar ── */}
-      <header className="h-14 flex-shrink-0 flex items-center justify-between px-6 bg-surface-container-lowest border-b border-outline-variant z-40">
-        {/* Brand */}
-        <div className="flex items-center gap-3">
-          <BrandMark size={32} className="flex-shrink-0 text-secondary" />
-          <div>
-            <h1 className="text-primary font-bold tracking-tight font-sans text-xl leading-[1.2]">
-              {APP_NAME}
-            </h1>
-            <p className="text-on-surface-variant uppercase mt-0.5 font-mono text-caption font-medium tracking-[0.08em]">
-              {APP_TAGLINE}
-            </p>
-          </div>
-        </div>
-
-        {/* Right */}
-        <div className="flex items-center gap-0.5">
-          <ThemeToggle />
-          <NotificationBell />
-
-          <div className="w-px h-5 bg-outline-variant mx-1.5" aria-hidden />
-
-          <Dropdown>
-            <DropdownTrigger asChild>
-              <button
-                className="flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors"
-                aria-label={`User menu — ${user?.name}`}
-              >
-                <div className="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
-                  {user?.initials
-                    ? <span className="text-on-secondary-container font-bold text-xs font-sans">{user.initials}</span>
-                    : <Icon name="person" size={16} className="text-on-secondary-container" />}
-                </div>
-                <Icon name="expand_more" size={16} className="text-on-surface-variant" />
-              </button>
-            </DropdownTrigger>
-            {/* Profile is not built yet, so it is not offered (ui-review #36, #37). */}
-            <DropdownContent
-              items={[
-                { label: 'Sign out', icon: 'logout', variant: 'danger', onClick: signOut },
-              ]}
-            />
-          </Dropdown>
-        </div>
-      </header>
+      <HomeTopbar />
 
       {/* ── Scrollable content ── */}
       <div className="flex-1 overflow-y-auto">

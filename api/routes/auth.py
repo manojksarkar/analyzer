@@ -54,6 +54,8 @@ def _user_to_dict(user: User, role_in_project: str | None = None) -> dict:
         "initials": user.initials,
         "avatar_url": user.avatar_url,
         "created_at": user.created_at.isoformat(),
+        # The web app shows superuser-only screens (Live logs) by it; the API checks it anyway.
+        "is_superuser": bool(getattr(user, "is_superuser", False)),
     }
     if role_in_project:
         d["role_in_project"] = role_in_project

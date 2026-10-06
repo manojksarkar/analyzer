@@ -8,6 +8,46 @@ export interface AuthUser {
   /** No longer global — role is per-project (see Project.userRole). Kept
    *  optional so legacy reads don't break; always undefined from the API. */
   role?: UserRole
+  /** Sees every project and the server's Live logs. False from an API that does not say. */
+  isSuperuser?: boolean
+}
+
+/** Live logs (docs/spec/LIVE_LOGS_SPEC.md): one line of the API or of an engine run. */
+export type LogLevel = 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL'
+export type LogSource = 'server' | 'engine'
+export interface LogRecord {
+  seq: number
+  /** Server local time with its offset, as sent (`2026-10-06T10:15:03.420+05:30`). */
+  ts: string
+  level: LogLevel
+  source: LogSource
+  logger: string
+  /** As written: newlines kept, a traceback inside; secrets already masked. */
+  message: string
+  pid: number | null
+  project: string | null
+  version: string | null
+  job: string | null
+  /** generate | export | reexport | resume — engine lines of a web run. */
+  run: string | null
+  /** Parse | Derive | Views | Export SWE.3 | Export SWE.4 */
+  step: string | null
+  components: string[]
+}
+/** What the tail and the stream are asked for (server filters). */
+export interface LogFilters {
+  level: LogLevel
+  source?: LogSource
+  project?: string
+  version?: string
+  job?: string
+}
+export interface LogTail {
+  records: LogRecord[]
+  /** The newest `seq` the server holds: the stream continues after it. */
+  cursor: number
+  lines: number
+  level: LogLevel
 }
 
 /** Returned by authApi.signIn — user plus the JWT pair. */
