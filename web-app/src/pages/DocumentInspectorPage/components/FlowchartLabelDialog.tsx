@@ -64,7 +64,7 @@ export function FlowchartLabelDialog({
       <div className="-mx-6 border-y border-outline-variant grid grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] md:grid-cols-[minmax(0,1fr)_360px] md:grid-rows-[minmax(0,1fr)] h-[70vh] min-h-0">
         <div className="min-w-0 min-h-0 overflow-auto bg-surface p-4 border-b md:border-b-0 md:border-r border-outline-variant">
           {chart.imageUrl
-            ? <img src={chart.imageUrl} alt={`Flowchart of ${chart.label}`} className="block mx-auto max-w-full h-auto" />
+            ? <img src={chart.imageUrl} alt={`Flowchart of ${chart.label}`} className="doc-picture block mx-auto max-w-full h-auto bg-white" />
             : <Text variant="caption" className="font-mono">No picture for this run.</Text>}
         </div>
         <div className="min-w-0 min-h-0 overflow-y-auto px-4 py-3">

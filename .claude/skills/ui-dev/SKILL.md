@@ -86,6 +86,9 @@ sizes, or spacing inline — use the token utilities or a `ui/` primitive.
   state: "Changes requested" is violet, a failure amber; red is for genuine errors only. The toggle:
   `components/shell/ThemeToggle.tsx`, `store/theme.ts` (`localStorage.theme`, default dark), set
   before paint by the inline script in `index.html`.
+- **A document picture** (flowchart, unit or behaviour diagram — any server-drawn `<img>`) is the one
+  `bg-white`: the `<img>` carries `doc-picture bg-white`, and a frame around it `bg-picture`. In dark,
+  `.doc-picture` inverts it (dark ground, light lines, hue kept); the Word file is unchanged.
 - **Radius:** 4→`rounded-lg`, 8→`rounded-xl`, 12→`rounded-2xl`, pill→`rounded-full`; others arbitrary
   `rounded-[6px]`.
 

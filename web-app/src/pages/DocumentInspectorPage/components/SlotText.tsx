@@ -137,25 +137,37 @@ function SlotEditor({ slot, display, list, edit, className }: {
   const corrected = isCorrected(slot)
   return (
     <div data-slot-key={slot.key} className={className}>
-      <textarea
-        ref={ref}
-        value={draft}
-        rows={1}
-        readOnly={edit.locked}
-        placeholder={slot.text ? undefined : display}
-        aria-label="Correct this text"
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => { void commit() }}
-        onKeyDown={onKeyDown}
-        className={cn(
-          'block w-full resize-none overflow-hidden rounded-[3px] px-1.5 py-0.5 -mx-1.5',
-          'bg-surface-container-lowest outline-dashed outline-1 outline-secondary/50 outline-offset-0',
-          'hover:outline-solid hover:outline-secondary hover:bg-surface-container-low',
-          'focus:outline-2 focus:outline-solid focus:outline-secondary focus:bg-surface-container-lowest',
-          'placeholder:text-outline placeholder:italic',
-          edit.locked && 'outline-outline-variant cursor-not-allowed bg-transparent',
+      {/* A pencil marks every text a reviewer can correct; it steps aside while you type, and a
+          held document shows none. Clicks go through it to the box. */}
+      <div className="relative">
+        <textarea
+          ref={ref}
+          value={draft}
+          rows={1}
+          readOnly={edit.locked}
+          placeholder={slot.text ? undefined : display}
+          aria-label="Correct this text"
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => { void commit() }}
+          onKeyDown={onKeyDown}
+          className={cn(
+            'peer block w-full resize-none overflow-hidden rounded-[3px] px-1.5 py-0.5 -mx-1.5',
+            !edit.locked && 'pr-6',
+            'bg-surface-container-lowest outline-dashed outline-1 outline-secondary/50 outline-offset-0',
+            'hover:outline-solid hover:outline-secondary hover:bg-surface-container-low',
+            'focus:outline-2 focus:outline-solid focus:outline-secondary focus:bg-surface-container-lowest',
+            'placeholder:text-outline placeholder:italic',
+            edit.locked && 'outline-outline-variant cursor-not-allowed bg-transparent',
+          )}
+        />
+        {!edit.locked && (
+          <Icon
+            name="edit"
+            size={14}
+            className="absolute top-[3px] right-2.5 pointer-events-none text-outline peer-hover:text-secondary peer-focus:hidden"
+          />
         )}
-      />
+      </div>
       <div className="mt-1 font-mono text-label text-outline flex flex-wrap items-center gap-x-1.5">
         {state === 'saving' && <span>Saving…</span>}
         {message && <span className={state === 'error' ? 'text-error font-semibold' : 'text-error'}>{message}</span>}
