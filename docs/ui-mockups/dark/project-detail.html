@@ -170,7 +170,7 @@
   /* ── Samsung Magician dark theme layer (shared by every dark mockup) ── */
   :root {
     --mm-blue: #1d7bff; --mm-blue-hi: #3d8fff; --mm-navy: #1428a0;
-    --mm-grad: linear-gradient(135deg, #3d8fff 0%, #1d7bff 45%, #1428a0 100%);
+    --mm-grad: linear-gradient(135deg, #3d8fff 0%, #1d7bff 50%, #1853ce 100%);
     --shadow-card: 0 1px 0 rgba(255,255,255,.04) inset, 0 10px 30px rgba(0,0,0,.45);
     --shadow-pop: 0 18px 48px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.05);
     --glow-blue: 0 0 0 1px rgba(29,123,255,.3), 0 6px 22px rgba(29,123,255,.2);
@@ -195,7 +195,7 @@
 
   /* Signature surfaces: gradient CTA, glassy cards, glowing brand tile */
   .bg-secondary { background-image: var(--mm-grad); box-shadow: 0 4px 16px rgba(29,123,255,.2); }
-  .hover\:bg-secondary-container:hover { background-image: linear-gradient(135deg, #5aa2ff 0%, #2d86ff 50%, #1c35b8 100%); box-shadow: var(--glow-blue); }
+  .hover\:bg-secondary-container:hover { background-image: linear-gradient(135deg, #509cff 0%, #2d86ff 50%, #1e5ed7 100%); box-shadow: var(--glow-blue); }
   .rounded-xl.border.bg-surface-container-lowest,
   .rounded-2xl.border.bg-surface-container-lowest { box-shadow: var(--shadow-card); background-image: linear-gradient(180deg, rgba(255,255,255,.025), transparent 120px); }
   .brand-tile { background-image: var(--mm-grad); box-shadow: 0 0 20px rgba(29,123,255,.28); }
@@ -205,7 +205,7 @@
     background:
       radial-gradient(circle at 85% 90%, transparent 0 90px, rgba(93,162,255,.18) 91px 92px, transparent 93px 150px, rgba(93,162,255,.12) 151px 152px, transparent 153px 215px, rgba(93,162,255,.08) 216px 217px, transparent 218px),
       radial-gradient(600px 380px at 85% 95%, rgba(61,143,255,.45), transparent 65%),
-      linear-gradient(160deg, #0a1240 0%, #10208a 55%, #1d55d8 100%);
+      linear-gradient(160deg, #0d195e 0%, #122594 55%, #1c49ca 100%);
   }
   #app-sidebar { background: linear-gradient(180deg, #17181d 0%, #121317 100%) !important; border-color: #24272e !important; }
   header { background: rgba(21,22,26,.85) !important; backdrop-filter: blur(10px); border-color: #24272e !important; }
@@ -258,8 +258,8 @@
 
   /* Progress */
   .rev-bar { background: #2a2d35; }
-  .rev-bar-fill { background: linear-gradient(90deg, #1428a0, #1d7bff 60%, #5aa2ff); box-shadow: 0 0 10px rgba(29,123,255,.3); }
-  .rev-bar-fill.done { background: linear-gradient(90deg, #0f7a45, #3ddc84); box-shadow: 0 0 10px rgba(61,220,132,.25); }
+  .rev-bar-fill { background: linear-gradient(90deg, #1856d3, #1d7bff 60%, #4796ff); box-shadow: 0 0 10px rgba(29,123,255,.3); }
+  .rev-bar-fill.done { background: linear-gradient(90deg, #22a862, #3ddc84); box-shadow: 0 0 10px rgba(61,220,132,.25); }
 
   /* Rows */
   .doc-row:hover { background: rgba(255,255,255,.035); }
@@ -1523,10 +1523,10 @@ const REVIEW_STATES = {
 const REVIEW_ORDER = ['approved', 'submitted', 'changes_requested', 'in_review'];
 // Dark theme: the glow colours of each state - gauge arc gradient (hi -> lo) and bar gradient (c2 -> c1)
 const MM_GRAD = {
-  approved:          { id: 'mmGreen', hi: '#8af7c0', lo: '#16a868', c1: '#3ddc84', c2: '#139c64' },
-  submitted:         { id: 'mmBlue',  hi: '#9cc4ff', lo: '#1d55d8', c1: '#5aa2ff', c2: '#1428a0' },
-  changes_requested: { id: 'mmViolet', hi: '#d9c8ff', lo: '#7046e0', c1: '#b18cff', c2: '#6a3fd1' },
-  in_review:         { id: 'mmAmber', hi: '#ffd27a', lo: '#ee7d1e', c1: '#ffb43d', c2: '#e0701c' },
+  approved:          { id: 'mmGreen', hi: '#6eedab', lo: '#26b970', c1: '#3ddc84', c2: '#23b46d' },
+  submitted:         { id: 'mmBlue',  hi: '#86baff', lo: '#337aeb', c1: '#5aa2ff', c2: '#3069d4' },
+  changes_requested: { id: 'mmViolet', hi: '#cdb5ff', lo: '#8c65ea', c1: '#b18cff', c2: '#8a63e5' },
+  in_review:         { id: 'mmAmber', hi: '#ffcb6d', lo: '#f3932a', c1: '#ffb43d', c2: '#ec8d29' },
 };
 
 const PROCESSES = [
@@ -1851,7 +1851,7 @@ function renderKpi() {
         <span style="font-size:13px;color:#8a8f9c;line-height:1;">/ ${total} have a reviewer</span>
       </div>
       <div class="mm-bar" style="margin-bottom:10px;">
-        <div class="mm-bar-fill" style="width:${assignPct}%;${needs === 0 ? '--c1:#3ddc84;--c2:#139c64' : '--c1:#5aa2ff;--c2:#1428a0'};--d:.2s;"></div>
+        <div class="mm-bar-fill" style="width:${assignPct}%;${needs === 0 ? '--c1:#3ddc84;--c2:#23b46d' : '--c1:#5aa2ff;--c2:#3069d4'};--d:.2s;"></div>
       </div>
       ${needs > 0
         ? `<p style="font-size:12px;color:#f5a524;"><span style="font-weight:600;">${needs} ${needs === 1 ? 'needs' : 'need'} a reviewer</span> · see the review queue</p>`
