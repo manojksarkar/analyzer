@@ -73,7 +73,7 @@ Body, every field optional:
 | field | meaning |
 |---|---|
 | `scope` | `"out_of_date"` — the components whose Word files are out of date (§4.3's rule), computed by the server. `"all"` — every component with documents, out of date or not (*Rebuild all*). Absent: `"all"`, as before this contract (existing callers). The web app always sends it. |
-| `components` | layer-qualified ids (a document's `group`). With `out_of_date`: only these, of the out-of-date ones. With `all`: exactly these (each must have documents, else 422 `INVALID_COMPONENTS`) — the Components panel's stale strip. |
+| `components` | layer-qualified ids (a document's `group`; the config's spelling — spaces, any case — is read as it, e.g. `Layer1.Sample Core` = `Layer1.Sample-Core`). Each must have documents in the version, else 422 `INVALID_COMPONENTS` (both scopes). With `out_of_date`: only these, of the out-of-date ones. With `all`: exactly these. |
 | `document_id` | the document the caller has open (the reader, a row's download). Must be a document of this version (else 404). It widens a developer's bound by its component (below). |
 
 **Who.** An admin (or superuser): any scope. A developer or reviewer: `out_of_date` only, within the
@@ -102,7 +102,7 @@ Follow the job with `GET /projects/{project_id}/jobs/{job_id}` (or `/events`): `
 | 409 | `REEXPORT_RUNNING` | `job_id`, `kind` (`update` \| `rebuild` \| `export` \| `resume`), `scope` (`out_of_date` \| `all` \| `export` -- a Components → Generate export and a resume are `export`), `components` | another update, an export or a resume runs for this version and does not cover the request. Offer *Try again* once it ends |
 | 409 | `VERSION_BUSY` | `writer` (§4.2, snake_case) | another process holds the version: a generation, a CLI run |
 | 409 | `NO_DOCUMENTS`, `VERSION_NOT_READY` | `job_id` (the latter) | as before |
-| 422 | `INVALID_COMPONENTS` | | `scope: "all"` naming a component with no documents |
+| 422 | `INVALID_COMPONENTS` | `components` | a component with no documents in the version (either scope) |
 | 422 | `VALIDATION_ERROR` | | `scope` other than `out_of_date` or `all` |
 
 The running update is looked for **before** the writer: an update holds the version's writer lock too, and

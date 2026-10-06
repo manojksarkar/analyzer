@@ -420,7 +420,7 @@ class TestWebRunLocking:
         from api.services import pipeline_runner as pr
         locks, seen = [], {}
         monkeypatch.setattr(pr, "_version_writer", lambda *a: locks.append(a))
-        monkeypatch.setattr(pr, "_reexport_from_phase", lambda vid, doc_type="swe3": 4)
+        monkeypatch.setattr(pr, "_reexport_from_phase", lambda vid, doc_type="swe3", components=None: 4)
         monkeypatch.setattr(pr, "export_doc_type", lambda db, pid, vid: "all")
         monkeypatch.setattr(pr, "_execute_detached",
                             lambda db, job_id, cmd, **kw: seen.update(cmd=cmd, kw=kw) or False)

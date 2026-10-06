@@ -452,6 +452,13 @@ def apply_override(conn,
     # --- the views ---------------------------------------------------------
     views = list(derive(version_id=version_id, slot_kind=slot_kind, location=location) or ()) \
         if derive else []
+    if tables_patched and "interfaceTables" not in views:
+        # `patch_interface_tables` above brought the view's copy into step in EVERY stored
+        # directory: the interface tables are current for this component, and stamped so.
+        # Unstamped, the export guard called them behind after every description save, and each
+        # Word-file update re-ran Phase 3 for it -- every flowchart of the component redrawn
+        # (416 s for 28 charts in the real-app test of 2026-10-06) where Phase 4 was enough.
+        views.append("interfaceTables")
     _stamp_derivations(conn, version_id, views, stamp,
                        _component_of_id(next(iter(slot.parse(slot_kind, slot_key).values()), "")))
 

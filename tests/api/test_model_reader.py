@@ -84,6 +84,19 @@ def test_falls_back_to_disk_when_pg_empty(tmp_path):
     assert r.has_pg() is False
 
 
+def test_a_model_saved_before_the_rename_is_read_under_the_new_names(tmp_path):
+    """`functions.json` saved before 2026-10-05 says `behaviourInputName` / `behaviourOutputName`;
+    the page reads `inputName` / `outputName` (an imported project, a version with no model in
+    the database), so the disk fallback renames them as the stored model does."""
+    db = SimpleNamespace()
+    old = {"L1|Core|doWork": {"qualifiedName": "Core::doWork",
+                              "behaviourInputName": "Speed", "behaviourOutputName": "Torque"}}
+    (tmp_path / "functions.json").write_text(json.dumps(old), encoding="utf-8")
+    fn = ModelReader(db, "ver1", tmp_path).load("functions")["L1|Core|doWork"]
+    assert (fn.get("inputName"), fn.get("outputName")) == ("Speed", "Torque")
+    assert "behaviourInputName" not in fn and "behaviourOutputName" not in fn
+
+
 def test_no_sql_engine_uses_disk(tmp_path):
     db = SimpleNamespace()                         # in-memory/json backend
     (tmp_path / "units.json").write_text('{"L1|Core": {"name": "Core"}}', encoding="utf-8")

@@ -135,6 +135,28 @@ class TestThroughTheSave:
         assert out.tables_patched == 1
         assert _stored(conn)[UNIT]["entries"][0]["description"] == "Human words."
 
+    def test_the_patched_tables_are_stamped_current_for_the_component(self, conn):
+        """Patched in every stored directory, the interface tables are as current as a Phase 3
+        would make them: stamped at the save. Unstamped, the export guard called them behind,
+        and every Word-file update after a description save re-ran Phase 3 -- all of the
+        component's flowcharts redrawn (416 s for 28 in the real-app test of 2026-10-06)."""
+        svc.apply_override(conn, "v1", slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, FN),
+                           "Human words.", models=svc.ModelAccess(artifacts=_model()), now=NOW)
+        stamps = conn.execute(sa.select(s.view_derivations.c.view_name,
+                                        s.view_derivations.c.group_name,
+                                        s.view_derivations.c.derived_at)
+                              .where(s.view_derivations.c.version_id == "v1")).fetchall()
+        tables = [r for r in stamps if r.view_name == "interfaceTables"]
+        assert tables and all(r.group_name.casefold() == "comp" for r in tables), stamps
+        assert all(r.derived_at.replace(tzinfo=datetime.timezone.utc) >= NOW for r in tables)
+
+    def test_a_unit_description_stamps_no_interface_tables(self, conn):
+        """Only a description's copy is patched; nothing else claims the tables are current."""
+        svc.apply_override(conn, "v1", slot.UNIT_DESCRIPTION, slot.for_unit(UNIT),
+                           "Human unit text.", models=svc.ModelAccess(artifacts=_model()), now=NOW)
+        assert not conn.execute(sa.select(s.view_derivations)
+                                .where(s.view_derivations.c.view_name == "interfaceTables")).first()
+
     def test_correcting_a_global_updates_it_too(self, conn):
         out = svc.apply_override(conn, "v1", slot.DESCRIPTION,
                                  slot.for_entity(slot.DESCRIPTION, GLOBAL), "Human global.",

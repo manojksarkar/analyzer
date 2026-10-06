@@ -155,6 +155,14 @@ def start_job(
     # The scope, resolved now as the run will resolve it -- an unknown or ambiguous name used to
     # be accepted and to stop the run in Phase 1, after the version tag had been taken.
     problem = pipeline_runner.scope_problem(project.architecture_layers, body.scope)
+    # `layer_filter` is what the run selects when the scope names nothing (no scope, a project
+    # scope, empty names -- `_build_cmd`): checked the same way, before the tag is taken.
+    named = body.scope.get("names") if isinstance(body.scope, dict) else None
+    stype = (body.scope.get("type") if isinstance(body.scope, dict) else None) or "project"
+    layer_filter = (body.layer_filter or "").strip()
+    if not problem and layer_filter and (stype == "project" or not named):
+        problem = pipeline_runner.scope_problem(project.architecture_layers,
+                                                {"type": "layer", "names": [layer_filter]})
     if problem:
         message, candidates = problem
         raise HTTPException(status_code=400, detail={

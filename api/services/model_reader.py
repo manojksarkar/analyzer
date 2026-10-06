@@ -110,9 +110,18 @@ class ModelReader:
         if not p.exists():
             return {}
         try:
-            return json.loads(p.read_text(encoding="utf-8"))
+            data = json.loads(p.read_text(encoding="utf-8"))
         except Exception:                                # unreadable / malformed -> empty
             return {}
+        if name == "functions" and isinstance(data, dict):
+            # A model saved before 2026-10-05 names a function's input/output names
+            # `behaviourInputName` / `behaviourOutputName`; the renderers read `inputName` /
+            # `outputName` -- the same renaming a stored model gets (model_store).
+            _engine_on_path()
+            from core.model_store import _current_fn_payload     # type: ignore[import]
+            data = {fid: _current_fn_payload(fn) if isinstance(fn, dict) else fn
+                    for fid, fn in data.items()}
+        return data
 
     # -- public ----------------------------------------------------------------
     def load(self, name: str) -> dict:

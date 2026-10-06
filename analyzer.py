@@ -434,7 +434,8 @@ def cmd_register(a) -> int:
 
 
 
-def _refuse_stale_export(version_id: str, doc_type: str = None, *, quiet: bool = False) -> int:
+def _refuse_stale_export(version_id: str, doc_type: str = None, *, quiet: bool = False,
+                         components=None) -> int:
     """0 if this version's `doc_type` documents are safe to export only (REQ-AP-04), 2 if they
     would ship stale text (said on stderr unless `quiet`).
 
@@ -449,8 +450,20 @@ def _refuse_stale_export(version_id: str, doc_type: str = None, *, quiet: bool =
         from core.db import get_engine, is_database_configured
         if not is_database_configured():
             return 0
-        from review.export_guard import StaleExport, assert_exportable
+        from review.export_guard import StaleExport, assert_exportable, stale_components
         with get_engine().connect() as cx:
+            if components:
+                # A run by component writes only those components' documents: only THEIR
+                # corrections can make it ship old text. Asked of the whole version, a correction
+                # in another component sent every update through Phase 3 -- every flowchart of
+                # the component redrawn (416 s for 28 charts) for a description change elsewhere.
+                behind = stale_components(cx, version_id, doc_type, components)
+                if not behind:
+                    return 0
+                if not quiet:
+                    print(f"corrections newer than the views of: {', '.join(behind)}",
+                          file=sys.stderr)
+                return 2
             assert_exportable(cx, version_id, doc_type)
     except ImportError:
         return 0
@@ -582,16 +595,19 @@ def _render_version(a, *, scope, command: str, after=None, before=None):
     # because the answer depends on it.
     doc_type = a.doc_type or (store.read_manifest(a.version_id) or {}).get("docType") or "swe3"
     forced = bool(getattr(a, "force", False))
+    # A run by component is judged on its components alone (`_refuse_stale_export`).
+    named = (list((scope or {}).get("names") or [])
+             if (scope or {}).get("type") == "component" else None)
     if a.from_phase >= 4 and not forced:
         if getattr(a, "_views_when_stale", False) \
-                and _refuse_stale_export(a.version_id, doc_type, quiet=True):
+                and _refuse_stale_export(a.version_id, doc_type, quiet=True, components=named):
             # `--from-phase auto`: the web app judged "export only" when the job was made; a
             # correction saved while it waited made that stale. The views are made again
             # instead of the re-export refused.
             print("a correction is newer than the views: making them again first (phase 3).")
             a.from_phase = 3
         else:
-            rc = _refuse_stale_export(a.version_id, doc_type)
+            rc = _refuse_stale_export(a.version_id, doc_type, components=named)
             if rc:
                 return rc, None
 

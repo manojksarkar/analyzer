@@ -242,6 +242,16 @@ class TestTheMigrationStamp:
         from db_setup import _alembic_head
         assert self._stamped(tmp_path, "0015_input_output_names")[1] == [_alembic_head()]
 
+    def test_the_word_file_updates_revision_stamped_before_its_rebase_moves_to_the_head(self, tmp_path):
+        """`0018_word_file_updates` was `0017_word_file_updates` before its branch was rebased
+        onto develop, whose own 0017 renames the input/output-name kinds. A database a build
+        from before the rebase stamped there has 0018's columns but not 0017's rename: setup
+        renames, and the stamp moves to the head -- not left where `alembic upgrade head` fails
+        with "Can't locate revision"."""
+        from db_setup import _alembic_head
+        said, stamp = self._stamped(tmp_path, "0017_word_file_updates")
+        assert stamp == [_alembic_head()] and "left as it is" not in said
+
 
 # ---------------------------------------------------------------------------
 # 0017: two slot kinds renamed where they are stored as data

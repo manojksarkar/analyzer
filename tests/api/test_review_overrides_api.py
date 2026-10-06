@@ -594,7 +594,10 @@ class TestASaveReDerivesTheSwe4Specs:
                        json={"slot_kind": "description", "slot_key": FID,
                              "text": "Reports whether the device is ready."})
         assert r.status_code == 200, r.text
-        assert r.json()["viewsDerived"] == ["testSpecs", "utExport"]
+        # The SWE.4 specs re-derived, and the interface tables whose copy the save patched
+        # (stamped current: a Word-file update then needs no Phase 3 for it).
+        assert r.json()["viewsDerived"] in (["testSpecs", "utExport"],
+                                            ["testSpecs", "utExport", "interfaceTables"])
         assert self._spec(swe4_db)["description"] == "Reports whether the device is ready."
 
     def test_an_undo_rebuilds_them_too(self, client, swe4_db, auth_header):

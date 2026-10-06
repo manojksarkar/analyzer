@@ -127,6 +127,40 @@ class TestOtherMistakes:
         assert "Layer1.My Sample" in r.json()["detail"]["candidates"]
 
 
+class TestTheLayerFilterIsCheckedToo:
+    """`layer_filter` is what a run selects when the scope names nothing. An unknown one was
+    accepted with 202, the tag reserved, and the run stopped in Phase 1."""
+
+    def _start(self, client, auth_header, pid, layer_filter, scope=None):
+        body = {"commit_sha": "8b3e313f892f2b3baea252d98f0b083015622e98", "version_tag": "v1",
+                "mode": "full", "scope": scope, "layer_filter": layer_filter}
+        with patch("api.services.pipeline_runner.start") as start:
+            r = client.post(f"/api/v1/projects/{pid}/jobs", headers=auth_header, json=body)
+        return r, start
+
+    @pytest.mark.parametrize("scope", [None, {"type": "project"}, {"type": "group", "names": []}],
+                             ids=["none", "project", "empty-names"])
+    def test_an_unknown_layer_is_refused(self, client, db, auth_header, scope):
+        pid = _project(db)
+        r, start = self._start(client, auth_header, pid, "Nope", scope)
+        assert r.status_code == 400, r.text
+        assert r.json()["detail"]["code"] == "INVALID_SCOPE"
+        assert "No layer 'Nope'" in r.json()["detail"]["message"]
+        start.assert_not_called()
+
+    def test_a_known_layer_is_accepted(self, client, db, auth_header):
+        pid = _project(db)
+        r, start = self._start(client, auth_header, pid, "Layer1")
+        assert r.status_code == 202, r.text
+        start.assert_called_once()
+
+    def test_a_scope_with_names_wins_and_the_filter_is_not_read(self, client, db, auth_header):
+        pid = _project(db)
+        r, _ = self._start(client, auth_header, pid, "Nope",
+                           {"type": "group", "names": ["Layer1.My Sample"]})
+        assert r.status_code == 202, r.text
+
+
 def test_the_check_is_the_engines(monkeypatch):
     """The API asks the engine's resolvers, so it agrees with the run by construction --
     a resolver that answered differently would be seen here."""

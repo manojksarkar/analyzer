@@ -75,8 +75,10 @@ def _aware(dt: Optional[datetime]) -> Optional[datetime]:
 
 
 def _iso(dt: Optional[datetime]) -> Optional[str]:
+    """ISO-8601 in UTC, as the contract says -- a value read back from Postgres carries the
+    session's offset (+05:30 here), not UTC."""
     dt = _aware(dt)
-    return dt.isoformat() if dt else None
+    return dt.astimezone(UTC).isoformat() if dt else None
 
 
 def version_documents(db: Any, version: Any) -> list:
@@ -442,6 +444,20 @@ def start_update(db: Any, version: Any, user: Any, *, scope: Optional[str],
                                       "update the out-of-date ones (scope out_of_date).")
     docs = version_documents(db, version)
     asked = list(dict.fromkeys(c for c in (components or []) if c)) or None
+    if asked:
+        # A component as the config spells it ("Layer1.Sample Core") or in another case is its
+        # documents' group ("Layer1.Sample-Core"), as run_views compares them; a name with no
+        # document in the version (a typo, a bare name) is said so, as the `all` scope does --
+        # not filtered away into "up to date", nor a 403.
+        by_ident = {d.group.strip().replace(" ", "-").casefold(): d.group for d in docs}
+        mapped = [by_ident.get(c.strip().replace(" ", "-").casefold()) for c in asked]
+        unknown = [c for c, m in zip(asked, mapped) if m is None]
+        asked = list(dict.fromkeys(m for m in mapped if m)) or None
+        if unknown:
+            raise _http(422, "INVALID_COMPONENTS",
+                        "No documents in version '%s' for: %s. Name a component as its documents "
+                        "do (e.g. Layer1.My-Sample)." % (version.id, ", ".join(unknown)),
+                        components=unknown)
     if not admin:
         reviews = db.assignments.reviewers([d.id for d in docs])
         bound = {d.group for d in docs if reviews.get(d.id) == user.id}

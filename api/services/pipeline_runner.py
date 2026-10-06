@@ -3012,7 +3012,16 @@ def export_doc_type(db: Any, project_id: str, version_id: Optional[str]) -> str:
     return "all" if total else "swe3"
 
 
-def _reexport_from_phase(version_id: Optional[str], doc_type: str = "swe3") -> int:
+def _scoped_components(job: Any) -> Optional[list]:
+    """The components a job writes when its scope names them, else None (a whole version)."""
+    scope = getattr(job, "scope", None) or {}
+    if isinstance(scope, dict) and scope.get("type") == "component":
+        return list(scope.get("names") or []) or None
+    return None
+
+
+def _reexport_from_phase(version_id: Optional[str], doc_type: str = "swe3",
+                         components: Optional[list] = None) -> int:
     """4 normally; 3 when a reviewer's correction is newer than the last derivation.
 
     `REQ-AP-04` says an export must verify rather than assume. The CLI answers by refusing and
@@ -3039,8 +3048,19 @@ def _reexport_from_phase(version_id: Optional[str], doc_type: str = "swe3") -> i
         from core.db import get_engine, is_database_configured     # type: ignore[import]
         if not is_database_configured():
             return 4
-        from review.export_guard import staleness                  # type: ignore[import]
+        from review.export_guard import staleness, stale_components  # type: ignore[import]
         with get_engine().connect() as cx:
+            if components:
+                # An update by component writes only those components' documents: only their
+                # corrections decide. Asked of the whole version, a correction in another
+                # component sent the update through Phase 3 -- every flowchart of the component
+                # redrawn (416 s for 28 charts) for a description change elsewhere.
+                behind = stale_components(cx, version_id, doc_type, components)
+                if not behind:
+                    return 4
+                _log.info("re-export: %s has corrections newer than the views of %s, so this run "
+                          "re-derives them first (phase 3)", version_id, ", ".join(behind))
+                return 3
             # Asked about what this re-export writes (`export_doc_type`): SWE.3, and SWE.4 when
             # the version has it -- a node-label correction re-derives the SWE.4 specs at save
             # time, so that document is behind as well.
@@ -3076,7 +3096,8 @@ def _do_reexport(db: Any, job_id: str) -> bool:
         # document of a large version takes hours, and as a child of this server it died with
         # every restart.
         doc_type = export_doc_type(db, job.project_id, job.version_id)
-        return _reexport_detached(db, job_id, _reexport_from_phase(job.version_id, doc_type),
+        return _reexport_detached(db, job_id, _reexport_from_phase(job.version_id, doc_type,
+                                                                   _scoped_components(job)),
                                   doc_type)
 
     root = get_settings().repo_root
@@ -3144,7 +3165,8 @@ def _do_reexport(db: Any, job_id: str) -> bool:
     # Both documents of a version that has both: a web run writes SWE.4 beside SWE.3, and a
     # re-export that rewrote only SWE.3 left the SWE.4 Word file with the old labels.
     doc_type = export_doc_type(db, job.project_id, getattr(job, "version_id", None))
-    from_phase = _reexport_from_phase(getattr(job, "version_id", None), doc_type)
+    from_phase = _reexport_from_phase(getattr(job, "version_id", None), doc_type,
+                                      _scoped_components(job))
     if from_phase > 3 and _stale_in_scope(db, job):
         # A layer added to the version since changed these components' model: their views are
         # older than it, and an export alone would print them again (`analyzer.py reexport` goes

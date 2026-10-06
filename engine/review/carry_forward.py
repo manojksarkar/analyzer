@@ -49,6 +49,7 @@ import datetime
 import json
 import os
 import sys
+from types import SimpleNamespace
 from typing import Any, Dict, Iterable, List, Mapping, NamedTuple, Optional, Set
 
 from sqlalchemy import insert, select, update
@@ -315,6 +316,12 @@ def _carry_rows(conn, baseline_version_id: str, target_version_id: str, target: 
     carried = orphaned = 0
     reasons = []
     for row in src:
+        if row.slot_kind in slot.RENAMED_KINDS:
+            # A baseline still under the old kind names (its database not upgraded yet): carried
+            # under the new name -- judged under the old one, `slot.parse` refused it and the
+            # correction was orphaned for good, even after setup renamed it.
+            row = SimpleNamespace(**dict(row._mapping))
+            row.slot_kind = slot.RENAMED_KINDS[row.slot_kind]
         if (row.slot_kind, row.slot_key) in existing:
             continue
         why = _still_applies(row, target, baseline)

@@ -151,6 +151,10 @@ test that catches it: [REVIEW_UPDATE_HANDOVER §4](docs/design/REVIEW_UPDATE_HAN
 - **A save re-derives the SWE.4 rows** (`review/swe4_rederive.py`) through `test_specs.build`,
   `test_steps.cfgs_from_entries` and `ut_export.build`. Changing those views? Keep `run` a thin
   `build` + write, or a save and a run stop agreeing — `test_review_swe4_rederive.py` checks it.
+- **A description save stamps `interfaceTables`** for its component (it patched the copy in every stored
+  directory, `rerender.patch_interface_tables`), and an update by component is judged on its components
+  (`export_guard.stale_components`): a description correction needs Phase 4 only. A save that patches a
+  view in only some directories must not stamp it (`stamp_saved`'s rule) — `test_review_interface_tables.py`.
 
 - **Review and approval** (assign, submit, approve — [REVIEW_APPROVE_API_SPEC](docs/spec/REVIEW_APPROVE_API_SPEC.md))
   is API-side, but two engine-side things carry it: `analyzer.py generate` records the version's
