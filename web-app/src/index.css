@@ -48,6 +48,8 @@
      numbers, the undo bar, a dialog's scrim); the selected item of a nav or a toggle; the sign-in
      brand panel. */
   --color-page: #eff4ff;
+  /* The frame of a document picture: the colour its white ground shows as (`.doc-picture`). */
+  --color-picture: #ffffff;
   --color-inverse: #041627;
   --color-selected: #041627;
   --color-hero: #041627;
@@ -153,6 +155,7 @@
   --color-state-busy-line: #2d4a80;
   --color-hairline: #24272e;
   --color-page: #0e0f12;
+  --color-picture: #1a1a1a;
   --color-inverse: #0b0c0f;
   --color-selected: #1b2a45;
   --color-hero: #122594;
@@ -185,6 +188,12 @@
 /* A browser without color-mix() (the office's, Chrome 99–110) paints a translucent token
    (`border-outline-variant/60`) from its light value. In dark that would be a light patch: these
    are the ones the app uses on a dark-sensitive token. */
+/* A document picture (flowchart, unit or behaviour diagram) is drawn once by the server, on white
+   and in the Word file's colours, and an <img> cannot take the theme's. Dark turns it around: dark
+   ground, light lines and text, the boxes' hue kept (hue-rotate undoes the invert's). White comes
+   out #1a1a1a, the dark `--color-picture`. The Word file is unchanged. */
+:root[data-theme="dark"] .doc-picture { filter: invert(.9) hue-rotate(180deg); }
+
 @supports not (color: color-mix(in lab, red, red)) {
   :root[data-theme="dark"] .border-outline-variant\/60 { border-color: rgb(44 47 55 / .6); }
   :root[data-theme="dark"] .text-on-surface-variant\/60,

@@ -217,6 +217,10 @@
   body.editing .ed:hover { outline: 1px solid #1d7bff; background: #1b2638; }
   body.editing .ed:focus { outline: 2px solid #1d7bff; background: #1c1e23; }
   body.editing.locked .ed { outline-color: #2c2f37; cursor: not-allowed; background: transparent; }
+  body.editing .ed { position: relative; padding-right: 22px; }
+  body.editing .ed::after { content: 'edit'; position: absolute; top: 1px; right: 2px; font: normal 15px/1 'Material Symbols Outlined'; font-feature-settings: 'liga'; color: #7c818c; pointer-events: none; }
+  body.editing .ed:hover::after { color: #1d7bff; }
+  body.editing .ed:focus::after, body.editing.locked .ed::after { display: none; }
   .ed-meta { display: none; margin-top: 5px; font: 500 10px/14px 'SamsungOne','Roboto',sans-serif; color: #7c818c; }
   body.editing .ed-meta:not(:empty) { display: block; }
   .ed-meta a { color: #1d7bff; cursor: pointer; }
@@ -274,14 +278,14 @@
   body.editing .fc-edit { display: inline-flex; }
   body.editing.locked .fc-edit { opacity: .4; pointer-events: none; }
   .fc-pic { display: flex; justify-content: center; padding: 12px; background: #1c1e23; }
-  .fcs .shape { fill: #fff; stroke: #a3a7b1; stroke-width: 1.2; }
+  .fcs .shape { fill: #1c1e23; stroke: #a3a7b1; stroke-width: 1.2; }
   .fcs .shape.term { fill: #1b2a45; }
   .fcs .nd.hl .shape { stroke: #1d7bff; stroke-width: 2.4; fill: #1b2638; }
   .fcs text { font-family: Roboto, sans-serif; font-size: 11px; fill: #f2f3f5; }
   .fcs .elab { font-size: 10px; fill: #7c818c; }
   .fcs .edge { stroke: #7c818c; stroke-width: 1.2; fill: none; }
   .fcs .badge { fill: #f4f5f7; }
-  .fcs .badge-t { fill: #fff; font-size: 9px; font-weight: 600; }
+  .fcs .badge-t { fill: #0e0f12; font-size: 9px; font-weight: 600; }
   .fc-modal { position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; }
   .fc-modal.hidden { display: none; }
   .fc-dialog { width: min(980px, 94vw); max-height: 90vh; background: #1c1e23; border-radius: 12px; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.6); overflow: hidden; }
@@ -291,7 +295,7 @@
   .fc-hint { font-size: 11px; color: #a3a7b1; margin-bottom: 6px; }
   .fc-row { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid #24272e; }
   .fc-num { flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: #0b0c0f; color: #fff; font: 600 10px/20px 'SamsungOne','Roboto',sans-serif; text-align: center; }
-  .fc-row textarea { width: 100%; resize: vertical; min-height: 40px; border: 1px solid #2c2f37; border-radius: 6px; padding: 6px 8px; font-size: 12px; font-family: Roboto; }
+  .fc-row textarea { width: 100%; resize: vertical; min-height: 40px; border: 1px solid #2c2f37; border-radius: 6px; padding: 6px 8px; font-size: 12px; font-family: Roboto; background: #1c1e23; color: #f2f3f5; }
   .fc-row textarea:focus { outline: 2px solid #1d7bff; border-color: #1d7bff; }
   .fc-row.changed textarea { border-color: #1d7bff; background: #1b2638; }
   .fc-row .fc-fixed { font-size: 12px; color: #a3a7b1; padding-top: 1px; }
@@ -385,7 +389,7 @@
   .rv-btn.o:hover:not(:disabled) { background: #1b2638; }
   .rv-why { font-size: 11px; color: #f5a524; margin-top: 5px; line-height: 1.4; }
   .rv-note { font-size: 11px; color: #a3a7b1; margin-top: 6px; line-height: 1.4; }
-  textarea.rv-ta { width: 100%; resize: vertical; min-height: 64px; border: 1px solid #2c2f37; border-radius: 6px; padding: 6px 8px; font: 12px/1.45 Roboto; }
+  textarea.rv-ta { width: 100%; resize: vertical; min-height: 64px; border: 1px solid #2c2f37; border-radius: 6px; padding: 6px 8px; font: 12px/1.45 Roboto; background: #1c1e23; color: #f2f3f5; }
   textarea.rv-ta:focus { outline: 2px solid #1d7bff; border-color: #1d7bff; }
   .tl { position: relative; padding: 0 0 12px 16px; }
   .tl::before { content: ''; position: absolute; left: 2px; top: 5px; width: 7px; height: 7px; border-radius: 50%; background: #2c2f37; }

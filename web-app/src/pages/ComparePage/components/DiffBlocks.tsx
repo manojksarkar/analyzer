@@ -62,7 +62,7 @@ function DiffDiagramBlock({ block }: { block: Extract<CompareBlock, { kind: 'dia
     )}>
       {block.imageUrl ? (
         <img src={block.imageUrl} alt={block.caption ?? 'Diagram'} loading="lazy"
-             className="block w-full max-h-[400px] object-contain bg-surface-container-lowest" />
+             className="doc-picture block w-full max-h-[400px] object-contain bg-white" />
       ) : (
         <div className="flex flex-col items-center justify-center text-center py-10 gap-2">
           <Icon name="account_tree" size={32} className="text-outline-variant" />

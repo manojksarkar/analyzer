@@ -50,9 +50,9 @@ function DiagramImage({ src, title }: { src: string; title: string }) {
         onClick={() => setOpen(true)}
         title="Open full size"
         aria-label={`Open ${title} full size`}
-        className="group relative block w-full bg-white focus-visible:outline-2 focus-visible:outline-secondary"
+        className="group relative block w-full bg-picture focus-visible:outline-2 focus-visible:outline-secondary"
       >
-        <img src={src} alt={title} loading="lazy" className="block w-full max-h-[440px] object-contain bg-white" />
+        <img src={src} alt={title} loading="lazy" className="doc-picture block w-full max-h-[440px] object-contain bg-white" />
         <span className="absolute top-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container-lowest border border-outline-variant text-on-surface-variant opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity">
           <Icon name="open_in_full" size={13} />
           <span className="font-mono text-label">Open</span>

@@ -25,7 +25,7 @@ export function FlowchartFigure({ chart }: { chart: FlowchartEntry }) {
         onClick={() => setOpen(true)}
         title="Open full size"
         aria-label={`Open the flowchart of ${chart.label} full size`}
-        className="group relative block max-w-full bg-white border border-outline-variant rounded-lg overflow-hidden hover:border-secondary focus-visible:border-secondary transition-colors"
+        className="group relative block max-w-full bg-picture border border-outline-variant rounded-lg overflow-hidden hover:border-secondary focus-visible:border-secondary transition-colors"
       >
         <img
           src={chart.imageUrl}
@@ -34,7 +34,7 @@ export function FlowchartFigure({ chart }: { chart: FlowchartEntry }) {
           decoding="async"
           width={size?.width}
           height={size?.height}
-          className="block max-w-full h-auto max-h-[480px] object-contain"
+          className="doc-picture block max-w-full h-auto max-h-[480px] object-contain bg-white"
         />
         <span className="absolute top-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container-lowest border border-outline-variant text-on-surface-variant opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity">
           <Icon name="open_in_full" size={13} />
@@ -200,7 +200,7 @@ export function ImageViewer({ title, description, alt, src, width, height, onClo
                 setLoaded({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })
               }
             }}
-            className={cn('absolute left-0 top-0 max-w-none bg-white shadow-[0_1px_4px_rgba(4,22,39,.08)]', !view && 'invisible')}
+            className={cn('doc-picture absolute left-0 top-0 max-w-none bg-white shadow-[0_1px_4px_rgba(4,22,39,.08)]', !view && 'invisible')}
             // eslint-disable-next-line no-restricted-syntax -- position and size follow the reader's zoom and pan
             style={view && w && h ? { transform: `translate(${view.x}px, ${view.y}px)`, width: w * view.scale, height: h * view.scale } : undefined}
           />

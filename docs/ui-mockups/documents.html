@@ -212,6 +212,10 @@
   body.editing .ed:hover { outline: 1px solid #0058be; background: #eff4ff; }
   body.editing .ed:focus { outline: 2px solid #0058be; background: #fff; }
   body.editing.locked .ed { outline-color: #c4c6cd; cursor: not-allowed; background: transparent; }
+  body.editing .ed { position: relative; padding-right: 22px; }
+  body.editing .ed::after { content: 'edit'; position: absolute; top: 1px; right: 2px; font: normal 15px/1 'Material Symbols Outlined'; font-feature-settings: 'liga'; color: #74777d; pointer-events: none; }
+  body.editing .ed:hover::after { color: #0058be; }
+  body.editing .ed:focus::after, body.editing.locked .ed::after { display: none; }
   .ed-meta { display: none; margin-top: 5px; font: 500 10px/14px 'JetBrains Mono'; color: #74777d; }
   body.editing .ed-meta:not(:empty) { display: block; }
   .ed-meta a { color: #0058be; cursor: pointer; }
