@@ -18,6 +18,8 @@ Environment overrides:
 from __future__ import annotations
 
 import atexit
+import contextvars
+import json as _json
 import logging
 import os
 import sys
@@ -114,6 +116,11 @@ def configure_logging(
                 _FILE_HANDLER = file_handler
             except OSError:
                 log_file_path = ""
+
+        # ---- live log (docs/design/LIVE_LOGS_DESIGN.md) ----
+        global _LIVE_HANDLER
+        _LIVE_HANDLER = LiveLogHandler()
+        root.addHandler(_LIVE_HANDLER)
 
         # Quiet noisy third-party loggers a bit
         logging.getLogger("urllib3").setLevel(logging.WARNING)
@@ -218,3 +225,224 @@ def get_logger(name: str) -> logging.Logger:
 def current_log_file() -> Optional[str]:
     """Path to the active log file, or None if file logging is disabled."""
     return _LOG_FILE_PATH
+
+
+# ---------------------------------------------------------------------------
+# Live log (docs/spec/LIVE_LOGS_SPEC.md, docs/design/LIVE_LOGS_DESIGN.md)
+#
+# Every process also writes its records, one JSON object per line, to its OWN file:
+# <data root>/logs/live/<YYYY-MM-DD>/<source>-<pid>.jsonl. One file per process, so no two
+# processes ever append to one file (Windows does not make that safe); the API reads them all
+# (api/services/live_logs.py). Always at DEBUG: the level a reader sees is chosen when reading.
+# ---------------------------------------------------------------------------
+
+#: `engine` for every process but the API, which calls `set_live_source("server")`.
+_LIVE_SOURCE = "engine"
+#: False turns this process's live log off (the test suite's own process, for one): its default
+#: handler writes nothing and the API starts no reader. A handler given its own folder still writes.
+LIVE_LOG_ENABLED = True
+#: What the API request being handled names -- `{"project": .., "version": .., "job": ..}` --
+#: set by api/middleware/request_log.py; every record logged while it runs carries it.
+REQUEST_CONTEXT: "contextvars.ContextVar[Optional[dict]]" = contextvars.ContextVar(
+    "live_log_request", default=None)
+
+#: Which step of a run a process is, by the script it runs (each phase is its own process).
+_STEP_BY_SCRIPT = {"parser.py": "Parse", "model_deriver.py": "Derive", "run_views.py": "Views",
+                   "flowchart_engine.py": "Views",          # started by Phase 3's flowcharts view
+                   "docx_exporter.py": "Export SWE.3", "swe4_exporter.py": "Export SWE.4"}
+
+
+_LIVE_HANDLER: Optional["LiveLogHandler"] = None
+
+
+def live_handler() -> Optional["LiveLogHandler"]:
+    """The process's live-log handler (one per process, so one open file), configuring logging
+    if nothing has yet. For a logger that does not propagate to the root -- uvicorn's own, the
+    API's request lines -- but must reach the live log."""
+    if not _CONFIGURED:
+        configure_logging()
+    return _LIVE_HANDLER
+
+
+def note_request_ids(**ids) -> None:
+    """Add ids to the API request being handled: a route that CREATES a job names it here, so
+    the request's own line (and every later one) carries the job and version its path could not.
+    Outside a request it does nothing."""
+    ctx = REQUEST_CONTEXT.get()
+    if ctx is not None:
+        ctx.update({k: v for k, v in ids.items() if v})
+
+
+def set_live_source(source: str) -> None:
+    """Mark this process's live-log records: `engine` (the default) or `server` (the API)."""
+    global _LIVE_SOURCE
+    _LIVE_SOURCE = source
+
+
+def live_log_root() -> str:
+    """`<data root>/logs/live` -- the same folder for every process on this machine (a detached
+    run is handed the data root, so it writes here too, not into its code copy)."""
+    try:
+        from .paths import paths
+        return os.path.join(paths().data_root, "logs", "live")
+    except Exception:                                   # noqa: BLE001 - never stop logging
+        return os.path.join(_logs_root(), "live")
+
+
+def _process_context(argv=None) -> dict:
+    """`step` and `components` of this process, from its own command line."""
+    argv = list(sys.argv if argv is None else argv)
+    out = {}
+    step = _STEP_BY_SCRIPT.get(os.path.basename(argv[0] if argv else ""))
+    if step:
+        out["step"] = step
+    if "--allowed-components" in argv:
+        i = argv.index("--allowed-components")
+        if i + 1 < len(argv):
+            comps = [c.strip() for c in argv[i + 1].split(",") if c.strip()]
+            if comps:
+                out["components"] = comps
+    return out
+
+
+def _argv_ids(argv=None) -> dict:
+    """`project` and `version` from this process's own command line -- for a phase that reads
+    `--version-id` itself instead of through `core.run_context` (swe4_exporter.py)."""
+    argv = list(sys.argv if argv is None else argv)
+    out = {}
+    for flag, key in (("--project-id", "project"), ("--version-id", "version")):
+        if flag in argv and argv.index(flag) + 1 < len(argv):
+            out[key] = argv[argv.index(flag) + 1]
+    return out
+
+
+class _PrintsToLiveLog:
+    """`sys.stdout` that also sends each printed line to the live log (INFO, logger = the script):
+    the phases print much of their progress, which would otherwise never reach it. The console
+    gets exactly what it got before; `logs/run_<date>.log` gets nothing new."""
+
+    def __init__(self, stream, logger_name: str):
+        self._stream = stream
+        self._name = logger_name
+        self._pending = ""
+        self._lock = threading.Lock()
+
+    def write(self, text):
+        written = self._stream.write(text)
+        try:
+            with self._lock:
+                lines = (self._pending + text).split("\n")
+                self._pending = lines.pop()
+            handler = _LIVE_HANDLER
+            for line in lines:
+                line = line.rstrip("\r")
+                if line.strip() and handler is not None:
+                    handler.handle(logging.LogRecord(self._name, logging.INFO, "", 0, line,
+                                                     None, None))
+        except Exception:                               # noqa: BLE001 - printing never fails on us
+            pass
+        return written
+
+    def flush(self):
+        return self._stream.flush()
+
+    def __getattr__(self, name):                        # encoding, isatty, reconfigure, buffer ...
+        return getattr(self._stream, name)
+
+
+def start_phase_logging() -> None:
+    """For a run's step process (parser.py, model_deriver.py, ...): logging configured as the
+    first `get_logger` would configure it -- a phase that logged only through `logging.getLogger`
+    wrote nowhere -- and what it prints sent to the live log too.
+
+    Only in the step's own process: these modules are also imported by the API and the tests,
+    whose `sys.stdout` must stay theirs. Configured logging is left as it is (a `--quiet` the
+    process set stays)."""
+    if not _process_context().get("step"):
+        return
+    if not _CONFIGURED:
+        configure_logging()
+    if not isinstance(sys.stdout, _PrintsToLiveLog) and sys.stdout is not None:
+        name = os.path.splitext(os.path.basename(sys.argv[0] if sys.argv else ""))[0] or "print"
+        sys.stdout = _PrintsToLiveLog(sys.stdout, name)
+
+
+class LiveLogHandler(logging.Handler):
+    """Writes each record as one JSON line to this process's live-log file.
+
+    The file is chosen per record -- a new one when the local date or the process's source
+    changes -- and kept open. A failure to write is swallowed: a log line must never stop a run.
+    """
+
+    def __init__(self, root: Optional[str] = None):
+        super().__init__(level=logging.DEBUG)
+        self._root = root
+        self._path: Optional[str] = None
+        self._stream = None
+        self._process = _process_context()
+        self._argv_ids = _argv_ids()
+
+    def _target(self, when: datetime) -> str:
+        day = when.strftime("%Y-%m-%d")
+        return os.path.join(self._root or live_log_root(), day,
+                            "%s-%d.jsonl" % (_LIVE_SOURCE, os.getpid()))
+
+    def record_dict(self, record: logging.LogRecord) -> dict:
+        when = datetime.fromtimestamp(record.created).astimezone()
+        message = record.getMessage()
+        if record.exc_info:
+            message += "\n" + logging.Formatter().formatException(record.exc_info)
+        elif record.exc_text:
+            message += "\n" + record.exc_text
+        if record.stack_info:
+            message += "\n" + record.stack_info
+        out = {"ts": when.isoformat(timespec="milliseconds"), "level": record.levelname,
+               "source": _LIVE_SOURCE, "logger": record.name, "message": message,
+               "pid": os.getpid()}
+        try:
+            from . import run_context
+            if run_context.project_id():
+                out["project"] = run_context.project_id()
+            if run_context.version_id():
+                out["version"] = run_context.version_id()
+        except Exception:                               # noqa: BLE001
+            pass
+        for key, value in self._argv_ids.items():
+            out.setdefault(key, value)
+        out.update(self._process)
+        for key, value in (REQUEST_CONTEXT.get() or {}).items():
+            if value:
+                out[key] = value
+        return out
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if self._root is None and not LIVE_LOG_ENABLED:     # a handler given a folder still writes
+            return
+        try:
+            line = _json.dumps(self.record_dict(record), ensure_ascii=False, default=str)
+            path = self._target(datetime.now().astimezone())
+            if path != self._path:
+                self._close_stream()
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                self._stream = open(path, "a", encoding="utf-8", newline="\n")
+                self._path = path
+            self._stream.write(line + "\n")             # one write: the line is whole or absent
+            self._stream.flush()
+        except Exception:                               # noqa: BLE001 - see the class docstring
+            pass
+
+    def _close_stream(self) -> None:
+        if self._stream is not None:
+            try:
+                self._stream.close()
+            except Exception:                           # noqa: BLE001
+                pass
+        self._stream, self._path = None, None
+
+    def close(self) -> None:
+        self.acquire()
+        try:
+            self._close_stream()
+        finally:
+            self.release()
+        super().close()

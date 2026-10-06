@@ -22,12 +22,22 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 
-from .routes import (
+from .db.session import _engine_on_path
+
+_engine_on_path()
+from core import logging_setup as _logging_setup  # noqa: E402
+
+# This process's live-log records are the API's (docs/design/LIVE_LOGS_DESIGN.md §2). Before
+# the routes are imported: importing the engine's modules configures logging.
+_logging_setup.set_live_source("server")
+
+from .middleware.request_log import RequestLogMiddleware  # noqa: E402
+from .routes import (  # noqa: E402
     auth_router, projects_router, commits_versions_router,
     jobs_router, documents_router, team_router,
     compare_router, functions_router, notifications_router,
     repositories_router, users_router, text_overrides_router,
-    version_components_router,
+    version_components_router, admin_logs_router,
 )
 
 # ---------------------------------------------------------------------------
@@ -189,6 +199,20 @@ async def _db_startup_check() -> None:
         _sweep_until_done(_db)
     _watch_jobs(_db)
 
+@app.on_event("startup")
+async def _live_log_startup() -> None:
+    """The live log (docs/design/LIVE_LOGS_DESIGN.md): uvicorn's own messages -- start-up,
+    errors -- reach it too, and the reader starts following the files. uvicorn's logger does not
+    propagate to the root when uvicorn configured it; its access lines stay out either way (the
+    request middleware writes the API's own)."""
+    import logging
+    handler = _logging_setup.live_handler()
+    uvicorn_log = logging.getLogger("uvicorn")
+    if handler is not None and not uvicorn_log.propagate and handler not in uvicorn_log.handlers:
+        uvicorn_log.addHandler(handler)
+    from .services import live_logs
+    live_logs.start_reader()
+
 # ---------------------------------------------------------------------------
 # Self-hosted API docs — Swagger UI / ReDoc assets are served from api/static/
 # instead of a public CDN, so /docs and /redoc work on networks (e.g. office
@@ -220,6 +244,9 @@ async def custom_redoc_html():
 # ---------------------------------------------------------------------------
 # CORS (permissive for local dev — tighten for production)
 # ---------------------------------------------------------------------------
+
+# One live-log line per API call that changes something or fails (LIVE_LOGS_SPEC REQ-LL-03).
+app.add_middleware(RequestLogMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -294,6 +321,8 @@ app.include_router(users_router,             prefix=PREFIX)
 app.include_router(text_overrides_router,    prefix=PREFIX)
 # Staged generation -- a version's components and the documents still to make
 app.include_router(version_components_router, prefix=PREFIX)
+# The live log for superusers (docs/spec/LIVE_LOGS_SPEC.md)
+app.include_router(admin_logs_router,        prefix=PREFIX)
 
 # ---------------------------------------------------------------------------
 # Health check

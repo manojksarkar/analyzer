@@ -243,6 +243,7 @@ def start_job(
             except Exception:                              # best-effort cleanup
                 pass
         raise
+    pipeline_runner.note_request_job(job)
     pipeline_runner.start(db, job.id)
     return {"job_id": job.id, "status": job.status}
 

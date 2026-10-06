@@ -22,6 +22,8 @@ from typing import Optional, Tuple
 
 from utils import KEY_SEP, display_name
 from core.paths import paths as _paths
+from core.logging_setup import start_phase_logging as _start_phase_logging  # noqa: E402
+_start_phase_logging()     # this step in the live log (docs/design/LIVE_LOGS_DESIGN.md)
 from docx_common import (
     load_abbreviations, load_model_json, set_cell_font, add_para, add_toc, build_cover_page,
 )

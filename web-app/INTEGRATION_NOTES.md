@@ -173,3 +173,20 @@ Access, Forgot password, SSO, Profile, Help). See the per-page TODO column below
 - **Two document-detail endpoints.**
   - `GET …/documents/{id}` → flat detail `{ …meta, sections:[{key,title,order,content,review_state,…}], review_progress }` — drives the inspector's **review tracker** + the list's status. Seeded, no real data.
   - `GET …/documents/{id}/render` → rich `{ cover, toc, sections:[{id,number,title,level,type,content,table,image_url,mermaid,children}], meta:{…,source,layers,components,units_total,functions_total,globals_total} }` — drives the inspector **body**. Built from the version's own pipeline output (`workspaces/<pid>/versions/<ver>/output/<component>/`) and the model and views in the database (`meta.source: "pipeline"`); the synthesized `source: "model"` payload is only the fallback when that output is missing (the seeded demo documents). Diagrams stream from `…/documents/{id}/assets/{path}` (**unauthenticated**, like SSE).
+
+## Live logs (backend ready; no page yet)
+
+Superusers only ([LIVE_LOGS_SPEC](../docs/spec/LIVE_LOGS_SPEC.md)). A page shows the API's and every
+engine run's log lines, live:
+
+1. `GET /api/v1/admin/logs?lines=&level=&source=&project=&version=&job=&step=` with the bearer
+   token -> `{records, cursor, lines, level}`, oldest first.
+2. `POST /api/v1/admin/logs/ticket` (bearer) -> `{ticket, expiresIn: 60}`.
+3. `new EventSource('/api/v1/admin/logs/stream?ticket=<t>&after=<cursor>&<same filters>')` -> `log`
+   events (`data` = one record, `lastEventId` = its `seq`) and `gap` (reload step 1).
+4. On error: a new ticket, and a new `EventSource` with `after=<last seq seen>` -- a ticket opens
+   one stream.
+
+A record: `seq, ts, level, source (server|engine), logger, message, pid` and, when known, `project,
+version, job, run (generate|export|reexport|resume), step (Parse|Derive|Views|Export SWE.3|Export
+SWE.4), components`. 401 without sign-in, 403 for anyone not a superuser.

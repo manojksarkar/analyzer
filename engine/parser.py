@@ -42,6 +42,8 @@ _log = get_logger("parser")
 # project path — an unconsumed flag would be mistaken for a positional (doc 09, C11b).
 from core.run_context import apply_cli_run_context as _apply_run_context
 sys.argv = _apply_run_context(sys.argv)
+from core.logging_setup import start_phase_logging as _start_phase_logging  # noqa: E402
+_start_phase_logging()     # this step in the live log (docs/design/LIVE_LOGS_DESIGN.md)
 
 _p = _paths()
 # Captured now: a module-level `for _p in _mod_paths:` below rebinds _p to a string,

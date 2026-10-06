@@ -116,6 +116,16 @@ def _elapsed_since(started_at: Optional[datetime], now: Optional[datetime] = Non
 # Public API
 # ---------------------------------------------------------------------------
 
+def note_request_job(job: Any) -> None:
+    """Name the job a request created on that request's live-log line (LIVE_LOGS_SPEC
+    REQ-LL-03): `POST .../jobs -> 202` then carries the job and version its engine lines carry."""
+    try:
+        from core.logging_setup import note_request_ids
+        note_request_ids(job=getattr(job, "id", None), version=getattr(job, "version_id", None))
+    except Exception:                                   # noqa: BLE001 - a log line only
+        pass
+
+
 def start(db: Any, job_id: str) -> None:
     """Kick off the real pipeline on a daemon thread (returns immediately)."""
     t = threading.Thread(target=_run, args=(db, job_id), daemon=True, name=f"job-{job_id}")
@@ -374,6 +384,7 @@ def start_update(db: Any, version: Any, components: Optional[list] = None, *,
                              name=f"reexport-{job.id}")
         _reexport_threads[job.id] = t
         t.start()
+    note_request_job(job)
     return job, False, writes
 
 
@@ -3348,6 +3359,7 @@ def start_export(db: Any, version: Any, components: list, *,
                              name=f"export-{job.id}")
         _reexport_threads[job.id] = t
         t.start()
+    note_request_job(job)
     return job
 
 
@@ -3488,6 +3500,7 @@ def start_resume(db: Any, version: Any, *, started_by: Optional[str] = None) -> 
             with _LOCK:
                 _job_threads[job.id] = t
         t.start()
+    note_request_job(job)
     return job
 
 

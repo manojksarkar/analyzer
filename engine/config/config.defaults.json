@@ -156,6 +156,12 @@
   "ui": {
     "theme": "Light"
   },
+  "logs": {
+    "liveLines": 500,
+    "maxLines": 2000,
+    "level": "INFO",
+    "keepDays": 30
+  },
   "docx": {
     "introduction": {
       "purpose": "This document provides the Software Detailed Design (SDD) for the {project_name} software. It describes the internal structure, interfaces, and behaviour of each software component. The document is intended for software engineers responsible for implementation and verification of the {project_name} system.",
