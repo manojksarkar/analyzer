@@ -14,6 +14,11 @@ from typing import Dict, List, Optional
 
 import clang.cindex as ci
 
+# engine/core, on the path in this process: flowchart_engine.py puts engine/ there before it
+# imports this package. The same constant Phase 1 parses with, so the CFGs and the model's
+# call edges come from the same AST.
+from core.clang_options import PARSE_KEEP_GOING
+
 logger = logging.getLogger(__name__)
 
 
@@ -85,6 +90,7 @@ class TranslationUnitParser:
         ci.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
         | ci.TranslationUnit.PARSE_INCOMPLETE
         | ci.TranslationUnit.PARSE_SKIP_FUNCTION_BODIES
+        | PARSE_KEEP_GOING
     )
 
     # How many parsed TUs to keep. Small on purpose: functions are processed grouped by
@@ -175,6 +181,7 @@ class TranslationUnitParser:
             options = (
                 ci.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
                 | ci.TranslationUnit.PARSE_INCOMPLETE
+                | PARSE_KEEP_GOING
             )
             tu = self._index.parse(abs_path, args=args, options=options)
             if tu is None:

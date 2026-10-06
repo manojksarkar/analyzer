@@ -6,6 +6,9 @@ import { useProjectViewState } from '../../hooks/useProjectViewState'
 import { DashboardSkeleton, Icon, Text } from '../../components/ui'
 import { SubbarCta } from '../../components/shell/SubbarCta'
 import { StopRunDialog } from '../../components/run/StopRunDialog'
+import { GenerationBanner } from '../../components/run/GenerationBanner'
+import { useVersionComponents } from '../../hooks/useVersionComponents'
+import { generationBannerShown } from '../../lib/versionComponents'
 import { cn } from '../../lib/cn'
 import { failedLoad } from '../../lib/failedLoad'
 import { LoadError } from '../../components/LoadError'
@@ -88,6 +91,25 @@ export function ProjectDetailPage() {
     startJob.mutate(body, { onSuccess: () => setRunOpen(false) })
 
   const showContent = ['in_review', 'complete', 'stale'].includes(pageState) || (running && !!doneVersion)
+  // Staged generation's banner: the version on screen — the one under the KPI strip, or, with no
+  // documents yet, the picked version when it has a model to make them from (a model-first run).
+  const bannerVersion = showContent ? (running ? doneVersion : viewVersion) : pageState === 'never' ? viewVersion : undefined
+  const bannerNeedsModel = !showContent
+  const bannerVid = bannerVersion?.id
+  const { data: bannerData } = useVersionComponents(projectId ?? '', bannerVid)
+  const bannerShown = !!bannerVid && generationBannerShown(bannerData, { needsModel: bannerNeedsModel })
+  const banner = bannerVid && project && (
+    <GenerationBanner
+      key={bannerVid}
+      projectId={projectId ?? ''}
+      versionId={bannerVid}
+      versionTag={bannerVersion?.tag}
+      isAdmin={isAdmin}
+      layers={project.architectureLayers}
+      needsModel={bannerNeedsModel}
+      className="mb-6"
+    />
+  )
 
   return (
     <div className="flex-1 overflow-y-auto bg-background">
@@ -122,7 +144,10 @@ export function ProjectDetailPage() {
 
         {/* ══ OTHER RUNS — at work or cut short, not the web job below (a CLI run too) ══ */}
         {projectId && (
-          <OtherRuns projectId={projectId} exceptVersionId={pageState === 'running' && job ? job.versionId : null} />
+          <OtherRuns
+            projectId={projectId}
+            exceptVersionIds={[pageState === 'running' && job ? job.versionId : null, bannerShown ? bannerVid : null]}
+          />
         )}
 
         {/* ══ THE RUN FINISHED, WITH WARNINGS — e.g. a component path the checkout did not have ══ */}
@@ -133,6 +158,7 @@ export function ProjectDetailPage() {
         {/* ══ EMPTY STATE (not yet analysed) ══ */}
         {pageState === 'never' && (
           <>
+            {banner}
             <div className="mb-6 rounded-xl border border-outline-variant bg-white px-8 py-10 flex flex-col items-center text-center gap-5">
               <div className="w-14 h-14 rounded-full bg-surface-container-low border border-outline-variant flex items-center justify-center">
                 <Icon name="auto_awesome" size={28} className="text-on-surface-variant" />
@@ -304,6 +330,9 @@ export function ProjectDetailPage() {
             </button>
           </div>
         )}
+
+        {/* ══ GENERATION — components without documents, a run at work or stopped (one row) ══ */}
+        {showContent && banner}
 
         {/* ══ GENERATED CONTENT — KPI strip + docs + sidebar (matches project-detail.html) ══ */}
         {running && doneVersion && project && (

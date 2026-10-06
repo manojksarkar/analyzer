@@ -92,7 +92,7 @@ never set by hand. An approved document is **locked**: no corrections to the tex
 | A12 | `GET D`, `GET D/{doc}` | member | Documents, with `reviewer` and `review` |
 | A13 | `GET D/stats` | member | Counts per state |
 | A14 | `GET /projects/{project_id}/versions`, `GET V` | member | Versions, status derived, with `review` counts |
-| A15 | `GET V/export-readiness?document_id=` | member | R9 for one document's component and type |
+| A15 | `GET V/export-readiness?document_id=` | member | R9 for one document: is its Word file out of date, and why |
 | A16 | `GET /notifications`, `PATCH /notifications/{id}/read` | the user | Notifications, read ones included on request |
 | A17 | `POST V/documents/register` | admin | Record the version's Word files that have no document yet, and open their review |
 | A18 | `GET /reviews/mine` | the user | The documents the caller reviews, across their projects |
@@ -131,17 +131,28 @@ A document of another project is skipped with `NOT_FOUND`. One notification to t
 ### A5 — submit for approval
 
 **Request body** `{"comment": "Checked every function; corrected 3 texts."}` — required, 1–2,000 characters.
-**200** `{"document": Document}`. Event `submitted`; notification to the admins (not the actor).
+**200** `{"document": Document, "word_file": {"state", "job_id", "blocked_by"}}`. Event `submitted`;
+notification to the admins (not the actor).
 **403** neither its reviewer nor an admin · **409** `WRONG_STATE` (not In review / Changes requested) or
 `NO_REVIEWER` · **422** empty or too long.
+
+**Its Word file is updated for the approval** ([WORD_FILE_UPDATES §4.4](../design/WORD_FILE_UPDATES.md#44-a5--submit-for-approval)).
+After the submit, when the document's Word file is out of date, the server starts the update of its
+component (`reason: "submit"`, started by the submitter). `word_file.state`: `up_to_date` (nothing to do) ·
+`updating` (`job_id`: started now, or a running update already covers it) · `out_of_date` (it could not
+start: `blocked_by` says what holds the version — `kind` `generation` \| `update` \| `rebuild` \| `export` \|
+`resume` \| `other`, `job_id`, `components`, `message`; the file stays out of date until that run ends).
+A refusal never fails the submit.
 
 ### A6 — approve
 
 **Request body** `{"comment": "Corrections read well."}` — optional, ≤ 2,000 characters.
 **200** `{"document": Document}`. Keeps a copy of the Word file and its SHA-256; records the content
 fingerprint (for carrying the approval forward, §4). Event `approved`; notification to the reviewer.
-**409** `WRONG_STATE` (not Ready for approval / In review) · **409** `STALE_EXPORT` — the Word file lacks
-corrections (R9 for this document's component and type); `message` says why; re-export first.
+**409** `WRONG_STATE` (not Ready for approval / In review) · **409** `STALE_EXPORT` — its Word file is out of
+date (A15: a correction it prints saved after the file was written, a layer added since, a picture being
+drawn); `message`, and `why`, `corrections`, `pictures`, `layer` as in R9's `outOfDate`; update it first ·
+**409** `WORD_FILE_UPDATING` — an update of its component is running (`job_id`); approve once it ends.
 
 ### A7 — request changes
 
@@ -159,8 +170,9 @@ notification to the reviewer. **409** `WRONG_STATE` (not Approved) · **422** em
 
 **Request body** `{"document_ids": ["d1", "d2", "d3"], "comment": null}` — `document_ids` required (1–500).
 **200** `{"approved": ["d1"], "skipped": [{"document_id": "d2", "code": "WRONG_STATE", "message": "…"}]}`.
-Only Ready-for-approval documents are approved here (never In review); each as A6, one event each.
-The old body `{"version_id"}` is refused (**422**).
+Only Ready-for-approval documents are approved here (never In review); each as A6, one event each. A
+skipped one carries A6's refusal: `code` `STALE_EXPORT` with `why`, `corrections`, `pictures`, `layer`, or
+`WORD_FILE_UPDATING` with `job_id`. The old body `{"version_id"}` is refused (**422**).
 
 ### A10 / A11 — the record
 
@@ -184,15 +196,21 @@ null}`; `status` is derived (§1); `carried_from` names the versions carried app
 
 ### A15 — export readiness for one document
 
-`GET V/export-readiness?document_id={doc}` — the R9 answer (same body as without it) for that document's
-component and document type only. Without `document_id`: unchanged, the whole version.
+`GET V/export-readiness?document_id={doc}` — the R9 answer (same body as without it) for that one document:
+`outOfDate` holds it when its Word file is out of date (or is `[]`), `approvedKept` likewise, `stale` says
+which, `writer` and `reexport` as for the version. The rule is the Word file's own
+([WORD_FILE_UPDATES §4.3](../design/WORD_FILE_UPDATES.md#43-the-rule--when-a-word-file-is-out-of-date)) and
+the same Approve uses. Without `document_id`: the whole version (REVIEW_UPDATE_API_SPEC §14).
 
 ### A16 — notifications
 
 `GET /notifications?all=true&limit=30` — read ones included (newest first); without `all`, unread only, as
 before. Each: `{"id", "type", "message", "project_id", "document_id", "read_at", "created_at"}`. `type` is
 `review_assigned`, `review_unassigned`, `review_claimed`, `review_submitted`, `review_approved`,
-`review_changes_requested`, `review_reopened`, `review_back_in_review`.
+`review_changes_requested`, `review_reopened`, `review_back_in_review`, and for Word file updates
+`word_files_updated` (to the update's starter: "Word files updated: Brake Controller in v1.2.0.") and
+`word_files_update_failed` (to the starter, and to the admins when Submit started it: "Update failed:
+Brake Controller in v1.2.0 — <why>."). [WORD_FILE_UPDATES §4.7](../design/WORD_FILE_UPDATES.md#47-notifications--a16).
 `PATCH /notifications/{id}/read` — **404** unless it is the caller's.
 
 ### A17 — record a version's documents
@@ -277,6 +295,10 @@ names no component: any approved document of the version). Reopen it first.
   `kept_reviewer_from`), and that reviewer is notified once per run (`review_back_in_review`).
 - **The approved Word file** is copied when approved (`…/versions/<ver>/approved/<doc id>/<file name>`); downloads
   of an approved document (`GET D/{doc}/download`, the export-all zip) serve that copy, so a later
-  re-export cannot change what was approved. Reopening drops the copy from use (the file stays).
+  update cannot change what was approved. When the copy is missing the working file is served only if its
+  SHA-256 is `docx_sha256`; otherwise **409** `APPROVED_FILE_MISSING` (the zip: `document_ids`). Reopening
+  drops the copy from use (the file stays).
+- **Corrections while an update runs**: R3, R4, R6 and R8 answer **409** `WORD_FILE_UPDATING` (`job_id`,
+  `components`) for a text whose component an update is writing now; every other component stays editable.
 - **Version and project status** are written on every approval and reopen too — the version
   `approved` / `in_review`, and the project `complete` / `in_review` when it is the project's latest version.

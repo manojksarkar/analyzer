@@ -16,6 +16,8 @@ export const ApiVersionComponentSchema = z.object({
   in_model: z.boolean(),
   /** Absent from an older API, which listed only the parsed layers' components. */
   layer_parsed: z.boolean().optional(),
+  /** Its group in the version's configuration; absent from an older API. */
+  group: z.string().nullable().optional(),
   error: z.string().nullable().optional(),
   documents: z.array(z.object({ id: z.string(), process: z.string(), status: z.string() })),
 })
@@ -86,6 +88,7 @@ export function mapVersionComponents(r: ApiVersionComponents): VersionComponents
       state: asState(c.state),
       inModel: c.in_model,
       layerParsed: c.layer_parsed ?? true,
+      group: c.group ?? null,
       error: c.error ?? null,
       documents: c.documents.map((d) => ({ id: d.id, process: d.process, status: d.status as ReviewStatus })),
     })),

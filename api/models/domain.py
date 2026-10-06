@@ -201,6 +201,10 @@ class AnalysisJob:
                                         # engine defaults to it too; this field is the opt-OUT.
     regenerated: Optional[int] = None   # incremental accounting, set by the worker
     reused: Optional[int] = None
+    # Who started it (a user id) and why: `update` | `rebuild` | `submit` | `export` | `resume`,
+    # None for a generation (docs/design/WORD_FILE_UPDATES.md). An update's end is told to them.
+    started_by: Optional[str] = None
+    reason: Optional[str] = None
 
 
 @dataclass
@@ -228,6 +232,10 @@ class Document:
     approved_docx_path: Optional[str] = None     # the copy of it kept at approval
     content_fingerprint: Optional[str] = None    # of the rendered content, at approval
     carried_from: Optional[str] = None           # version id an unchanged approval came from
+    # When the run that wrote its working Word file started (docs/design/WORD_FILE_UPDATES.md
+    # §4.3). Read here, never written back by `update`: the run's capture and the registry set
+    # it (`set_word_file_at`), and a document read before a capture must not put it back.
+    word_file_at: Optional[datetime] = None
 
 
 #: A document's review states, in the order a document moves through them.

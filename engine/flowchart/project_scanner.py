@@ -56,6 +56,7 @@ if _SRC_DIR not in sys.path:
 
 import clang.cindex as ci
 
+from core.clang_options import PARSE_KEEP_GOING
 from llm_core import tokens as token_counter
 
 from pkb.knowledge import (
@@ -101,12 +102,14 @@ _CONTAINER_KINDS = frozenset({
 # Parse options:
 #   PARSE_DETAILED_PROCESSING_RECORD  — expose MACRO_DEFINITION cursors
 #   PARSE_INCOMPLETE                  — tolerate missing headers/types
+#   PARSE_KEEP_GOING (core)           — keep instantiating templates past a missing #include
 #
 #   PARSE_SKIP_FUNCTION_BODIES is intentionally NOT included so that
 #   CALL_EXPR nodes inside bodies are visible for call-graph extraction.
 _PARSE_OPTIONS = (
     ci.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
     | ci.TranslationUnit.PARSE_INCOMPLETE
+    | PARSE_KEEP_GOING
 )
 
 _DEFAULT_EXTENSIONS = {".cpp", ".h", ".hpp", ".cc", ".cxx", ".hh", ".h++"}

@@ -36,6 +36,14 @@ describe('mapVersionComponents', () => {
     expect(v.counts).toEqual({ stale: 1, not_requested: 1 })
   })
 
+  it("maps each component's group (from the version's config); null when an older API does not say", () => {
+    const v = mapVersionComponents(ApiVersionComponentsSchema.parse({
+      ...BODY,
+      components: [{ ...BODY.components[0], group: 'My Sample' }, { ...BODY.components[0], group: null }, BODY.components[0]],
+    }))
+    expect(v.components.map((c) => c.group)).toEqual(['My Sample', null, null])
+  })
+
   it('an unknown state reads as not generated, and a missing run as none', () => {
     const v = mapVersionComponents(ApiVersionComponentsSchema.parse({
       ...BODY, components: [{ ...BODY.components[0], state: 'weird' }], run: null,

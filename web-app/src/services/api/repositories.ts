@@ -7,6 +7,9 @@ export interface RepoTestResult {
   defaultBranch: string | null
   branches: string[]
   message: string
+  /** The URL the server connected to: a Bitbucket page address comes back as its clone URL.
+   *  Absent from an older server. */
+  repoUrl?: string
 }
 
 /** A node in the repository source tree (folders carry `children`). */
@@ -38,12 +41,14 @@ export const repositoriesApi = {
       default_branch: string | null
       branches: string[]
       message: string
+      repo_url?: string | null
     }>('/repositories/test-connection', body)
     return {
       connected: r.connected,
       defaultBranch: r.default_branch,
       branches: r.branches,
       message: r.message,
+      ...(r.repo_url ? { repoUrl: r.repo_url } : {}),
     }
   },
   /** Browse the source tree rooted at `path` (full nested subtree). `refresh` fetches the

@@ -198,11 +198,13 @@ All endpoints except `/auth/signin` and `/auth/refresh` require
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/repositories/test-connection` | Reach the repository; list its branches. `repo_url` is a Git URL or a **local path** — a git repository's folder on the server (`D:/src/x`, `/srv/x`, `file://…`, quotes from "Copy as path" dropped); a relative path, a missing folder, a plain folder or one outside `repositories.localRoots` answers `connected: false` with the reason |
+| POST | `/repositories/test-connection` | Reach the repository; list its branches. `repo_url` is a Git URL or a **local path** — a git repository's folder on the server (`D:/src/x`, `/srv/x`, `file://…`, quotes from "Copy as path" dropped); a relative path, a missing folder, a plain folder or one outside `repositories.localRoots` answers `connected: false` with the reason. The answer's `repo_url` is the URL git was given, on success and failure alike: a Bitbucket **page address** becomes its clone URL (`…[/ctx]/projects/VCU/repos/fw[/browse…]` → `…[/ctx]/scm/vcu/fw.git`, `…/users/<name>/repos/<repo>` → `…/scm/~<name>/<repo>.git`, `bitbucket.org/<ws>/<repo>/src/…` → `bitbucket.org/<ws>/<repo>.git`), a local path the path as git reads it. Browse, `POST /projects/config/preview` and `POST /projects` read a page address the same way. A refused sign-in says "Authentication failed — this repository needs an access token." (none sent) or "Authentication failed — check the access token." (one sent) |
 | GET | `/repositories/local-folders` | The server's folders, one at a time, for picking a local repository: `?path=` (empty: the top list — the folders `repositories.localRoots` in `engine/config/config.local.json` allows, else the drives) → `{path, parent, folders: [{name, path, git}], limited, truncated}`. 400 relative, 403 outside the allowed folders, 404 missing |
 | POST | `/repositories/browse` | The branch's file tree (cached blobless clone); body `{repo_url, ref?, path?, access_token?, refresh?}`. `refresh: true` first fetches the branch's current tip — the tree the wizard checks every path against. A private repository's token goes here, in the body |
 | GET | `/repositories/browse` | The same for a public repository (`repo_url`, `ref`, `path`, `refresh` in the query). A query with `access_token` is refused (400): a URL is written to access logs |
 | POST | `/repositories/uploads` | Upload data dictionary (`.csv`/`.xlsx`) or macros (`.csv`/`.json`) |
+
+**How the access token reaches git** is read from the URL alone (`incremental.clone.git_auth`, every clone, fetch and ls-remote): Bitbucket Data Center (`…/scm/…`) gets `Authorization: Bearer <token>` and `bitbucket.org` gets `Authorization: Basic base64("x-token-auth:<token>")`, as a header passed through git's environment and scoped to the repository's host (never the command line, the URL or `.git/config`); any other HTTPS host gets the token in the URL as before; SSH URLs and local paths get none. `POST /projects` stores `repo_provider: "bitbucket"` for a Bitbucket URL. Design: [docs/design/BITBUCKET_SUPPORT.md](../docs/design/BITBUCKET_SUPPORT.md).
 
 ### Commits & Versions
 
@@ -232,7 +234,7 @@ All endpoints except `/auth/signin` and `/auth/refresh` require
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/projects/:id/versions/:versionId/components` | Every component: in the model or not, its state (`stale` included), documents, the version's run |
+| GET | `/projects/:id/versions/:versionId/components` | Every component: in the model or not, its group (from the version's config), its state (`stale` included), documents, the version's run |
 | POST | `/projects/:id/versions/:versionId/documents/generate` | Make components' documents into the version (admin); a component of a layer the model lacks adds the layer (`added_layers`) |
 | POST | `/projects/:id/versions/:versionId/resume` | Carry on a run that was cut short (admin) |
 | POST | `/projects/:id/versions/:versionId/reexport` | Re-export (admin) -- any version with documents, web- or CLI-made; optional `{"components": [...]}` |

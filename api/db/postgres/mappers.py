@@ -36,7 +36,10 @@ _RENAMES: dict[type, dict[str, str]] = {
 # Fields read from the database but never written by the API. `Version.warnings` is derived
 # from `versions.run_report`, the manifest only the engine writes: writing it back from an
 # object read before the run finished would erase what the run reported.
-_READ_ONLY: dict[type, set] = {Version: {"warnings", "run_info"}}
+_READ_ONLY: dict[type, set] = {Version: {"warnings", "run_info"},
+                               # Set by a run's capture and the registry (`set_word_file_at`);
+                               # a document read before a capture must not put the old time back.
+                               Document: {"word_file_at"}}
 
 
 def to_row(obj: Any) -> dict:

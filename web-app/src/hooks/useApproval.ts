@@ -2,10 +2,12 @@ import { useMutation, useQueries, useQuery, useQueryClient, type QueryClient } f
 import { approvalApi, reviewApi } from '../services/api'
 import { projectKeys } from './useProjects'
 import { notifKeys } from './useNotifications'
-import { reexportActive } from './useReview'
+import { readinessPollMs } from '../lib/wordFiles'
+import { mapWordFileRefusal } from '../services/mappers'
 import { toast } from '../components/ui/Toast'
 import { ApiError } from '../lib/http'
-import type { Document, ExportReadiness } from '../types'
+import { cap, outOfDateWhy, submitBlockedSentence, type Wording } from '../lib/wordFiles'
+import type { Document, ExportReadiness, SubmitWordFile } from '../types'
 
 /* Review and approval (docs/spec/REVIEW_APPROVE_API_SPEC.md): reads A10, A11, A15 and the
    mutations A1–A9. A mutation can change the document, its version's status (approved when every
@@ -32,13 +34,14 @@ export function useReviewEvents(projectId: string, versionId?: string, limit = 5
   })
 }
 
-/** A15: R9 for one document's component and type, polled while a re-export runs. */
+/** A15: R9 for one document, polled while an update writes Word files (Approve turns on when its
+ *  file is written). */
 export function useDocumentReadiness(projectId: string, versionId: string | undefined, docId: string | undefined) {
   return useQuery({
     queryKey: projectKeys.documentReadiness(projectId, versionId ?? '', docId ?? ''),
     queryFn: () => reviewApi.readiness(projectId, versionId as string, docId),
     enabled: !!projectId && !!versionId && !!docId,
-    refetchInterval: (q) => (reexportActive(q.state.data) ? 2500 : false),
+    refetchInterval: (q) => readinessPollMs(q.state.data),
   })
 }
 
@@ -67,7 +70,8 @@ export function useDocumentsReadiness(projectId: string, docs: Pick<Document, 'i
 /** The 409 / 422 codes of the review routes, in words (A1–A9). */
 const CODE_MESSAGES: Record<string, string> = {
   WRONG_STATE: 'Its state changed since this page read it. The page now shows where it is.',
-  STALE_EXPORT: 'Its Word file does not have every correction yet: re-export first, then approve.',
+  STALE_EXPORT: 'Its Word file is out of date.',
+  WORD_FILE_UPDATING: 'Its Word file is updating.',
   DOCUMENT_APPROVED: 'It is approved, so it is locked. An admin reopens it first.',
   HAS_REVIEWER: 'Someone already reviews it.',
   NO_REVIEWER: 'It needs a reviewer first.',
@@ -79,8 +83,13 @@ export function approvalErrorMessage(e: unknown): string {
   if (e instanceof ApiError) {
     const known = e.code ? CODE_MESSAGES[e.code] : undefined
     if (known) {
-      // STALE_EXPORT's message says why (which corrections are missing); keep it.
-      return e.code === 'STALE_EXPORT' && e.message ? `${known} ${e.message}` : known
+      // STALE_EXPORT says why (A6: `why`, `corrections`, `pictures`, `layer`), as R9 does.
+      if (e.code === 'STALE_EXPORT') {
+        // An older server sends no `why`: its message says it.
+        const why = outOfDateWhy(mapWordFileRefusal(e.extra))
+        return why ? `${known} ${cap(why)}.` : e.message ? `${known} ${e.message}` : known
+      }
+      return known
     }
     if (e.status === 403) return 'You cannot do this on this document.'
     return e.message
@@ -102,6 +111,12 @@ export function invalidateReview(qc: QueryClient, projectId: string) {
   qc.invalidateQueries({ queryKey: projectKeys.detail(projectId), exact: true })
   qc.invalidateQueries({ queryKey: projectKeys.lists })
   qc.invalidateQueries({ queryKey: notifKeys.all })
+  // R9 of every version (an approval moves a file to "Approved, not changed"; Submit can start an
+  // update): only its readiness reads, not the corrections lists beside them.
+  qc.invalidateQueries({
+    queryKey: [...projectKeys.detail(projectId), 'review'],
+    predicate: (q) => q.queryKey[4] === 'readiness',
+  })
 }
 
 /** A toast: its title, its line, and whether it is news rather than a success. */
@@ -175,11 +190,22 @@ export function useClaimDocument(projectId: string) {
     })
 }
 
-/** A5: In review / Changes requested → Ready for approval, with what the reviewer checked. */
+/** What Submit says (A5's `word_file`): its Word file had every correction; it is updating now
+ *  (the server started it, no second dialog); or a run held the version, so it stays out of date
+ *  until that ends — the submit went through all the same. */
+export function submitSaid(wordFile: SubmitWordFile | null, words: Wording): Said {
+  if (!wordFile || wordFile.state === 'up_to_date') return ['Submitted for approval.', 'The admins are notified.']
+  if (wordFile.state === 'updating') return ['Submitted.', 'Its Word file is updating.']
+  return ['Submitted.', submitBlockedSentence(wordFile.blockedBy, words)]
+}
+
+/** A5: In review / Changes requested → Ready for approval, with what the reviewer checked. When its
+ *  Word file is out of date the server starts its update; R9 is read again (invalidateReview), so
+ *  the reader shows *Updating…*. `words` names the version and components in the toast. */
 export function useSubmitForApproval(projectId: string) {
   return useReviewMutation(projectId,
-    ({ docId, comment }: { docId: string; comment: string }) => approvalApi.submit(projectId, docId, comment),
-    { title: 'Not submitted', success: () => ['Submitted for approval.', 'The admins are notified.'] })
+    ({ docId, comment }: { docId: string; comment: string; words: Wording }) => approvalApi.submit(projectId, docId, comment),
+    { title: 'Not submitted', success: (r, v) => submitSaid(r.wordFile, v.words) })
 }
 
 /** A6: approve one document (from Ready for approval, or directly from In review). */
@@ -218,8 +244,10 @@ export function useApproveDocuments(projectId: string) {
     {
       title: 'Not approved',
       success: (r) => {
+        // A9: each skipped one carries A6's refusal — its code in words where it has some.
+        const said = r.skipped.map((s) => CODE_MESSAGES[s.code] ?? s.message).filter(Boolean)[0]
         const skipped = r.skipped.length
-          ? ` ${plural(r.skipped.length, 'document')} skipped: ${r.skipped.map((s) => s.message).filter(Boolean)[0] ?? 'not ready for approval'}.`
+          ? ` ${plural(r.skipped.length, 'document')} skipped: ${(said ?? 'not ready for approval').replace(/\.$/, '')}.`
           : ''
         return r.done.length
           ? [`Approved ${plural(r.done.length, 'document')}.`, `Each is locked, and its reviewer is notified.${skipped}`]

@@ -138,6 +138,33 @@ def finish_version(project_id: str, version_id: str, documents: Optional[list] =
 _CARRY_FIELDS = ("description", "inputName", "outputName", "comment", "phases")
 
 
+_DEPENDENCY_FIELDS = ("callsIds", "readsGlobalIds", "writesGlobalIds")
+
+
+def dependencies_moved(target_functions: Dict[str, dict],
+                       baseline_functions: Dict[str, dict]) -> Set[str]:
+    """Pure: the functions whose calls or global accesses differ from the baseline's.
+
+    `classify` sees source hashes only, and the impact BFS assumes a function's edges move only
+    when some source does. A change to how the code is PARSED breaks that: an include path that
+    starts resolving, or libclang's KeepGoing (2026-10-05), which turned template calls after a
+    missing #include from lost into edges. Every hash stays the same, the impact set came out
+    empty, and the run carried the baseline's descriptions, behaviour names and unit diagrams
+    forward, written for a call graph the model no longer has.
+
+    On an ordinary run this adds nothing: a call set that moved because its own source, a
+    callee's key or a deleted callee moved is seeded already. Order is not a move.
+    """
+    moved: Set[str] = set()
+    for fid, tf in target_functions.items():
+        bf = baseline_functions.get(fid)
+        if bf is None:
+            continue
+        if any(set(tf.get(k) or ()) != set(bf.get(k) or ()) for k in _DEPENDENCY_FIELDS):
+            moved.add(fid)
+    return moved
+
+
 def plan_incremental(baseline_hashes: Dict[str, str],
                      target_hashes: Dict[str, str],
                      target_functions: Dict[str, dict],
@@ -154,11 +181,13 @@ def plan_incremental(baseline_hashes: Dict[str, str],
         if bf:
             deleted_callers += list(bf.get("calledByIds") or [])
     changed_seed = cls["changed"] | cls["new"]
+    # Calls or global accesses that moved with no source change: the parse changed.
+    deps_moved = dependencies_moved(target_functions, baseline_functions)
     impact = impact_set(changed_seed, target_functions, target_edges,
-                        extra_seed_functions=deleted_callers)
+                        extra_seed_functions=deleted_callers + sorted(deps_moved))
     reused = set(target_functions) - impact
     return {"classify": cls, "impact": impact, "reused": reused,
-            "deletedCallers": set(deleted_callers)}
+            "deletedCallers": set(deleted_callers), "depsMoved": deps_moved}
 
 
 def carry_forward_descriptions(reused_fids: Iterable[str],
@@ -550,11 +579,12 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
     changed = [p for _s, p in status]
     affected = affected_tus(changed, tu_includes)
     deleted = {p for s, p in status if s == "D"}
-    if not affected:                       # no TU changed -> merged skeleton == baseline
-        _write_parse_artifacts(model_dir, base_model, version_id=version_id,
-                               project_id=project_id)
-        log.info("narrowed parse: 0 affected TU(s) — reused the baseline skeleton")
-        return True
+    # No affected TU still runs the partial parse, over NO files: it parses nothing, but its
+    # metadata carries this run's parse fingerprint, and the gate below is the only thing that
+    # notices the baseline was parsed with other flags. Reusing the baseline skeleton straight
+    # away skipped the gate, so regenerating an unchanged commit -- the way to apply a new
+    # analyzer to code that has not moved -- kept a skeleton parsed with the old include paths,
+    # defines or parse options (libclang's KeepGoing, 2026-10-05).
 
     listfile = os.path.join(model_dir, ".affected_tus.txt")
     os.makedirs(model_dir, exist_ok=True)
@@ -585,12 +615,19 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
     base_fp = _baseline_parse_fingerprint(base_fingerprint, base_model)
     part_fp = (partial.get("metadata") or {}).get("parseFingerprint")
     if base_fp and part_fp and base_fp != part_fp:
-        log.info("narrowed parse: parse fingerprint changed (clang flags / std / toolchain) — full parse")
+        log.info("narrowed parse: parse fingerprint changed (clang flags / std / toolchain / "
+                 "parse options) — full parse")
         # The caller runs a FULL parse next, which rewrites these anyway in file mode; in
         # database mode nothing would, so a partial model would survive as the version's
         # on-disk skeleton. Clear it either way — the partial is never valid on its own.
         _clear_scratch_parse_files(model_dir)
         return False
+    if not affected:                       # no TU changed -> merged skeleton == baseline
+        _write_parse_artifacts(model_dir, base_model, version_id=version_id,
+                               project_id=project_id)
+        _clear_scratch_parse_files(model_dir)
+        log.info("narrowed parse: 0 affected TU(s) — reused the baseline skeleton")
+        return True
     # Drop (use fresh for) the files that were actually re-parsed: the affected TUs + any
     # CHANGED header (refreshed via the including TUs) + deletions. NOT every file the
     # partial transitively saw — those were only partially parsed, so keep their baseline.
@@ -869,6 +906,11 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # Precise impact (classify + reverse-BFS over the fresh model) drives ALL reuse:
     # function descriptions/behaviour-names/summaries (Phase 2) AND flowcharts (Phase 3).
     plan = plan_incremental(base_hashes, target_hashes, target_functions, target_edges, base_functions)
+    if plan["depsMoved"]:
+        from core.logging_setup import get_logger as _gl
+        _gl("incremental").info(
+            f"{len(plan['depsMoved'])} function(s) call or use other things than in the baseline "
+            f"although their source is the same (the parse changed) — regenerated with their callers")
 
     # Impacted GLOBALS = changed/new globals + globals used by impacted functions.
     cls = plan["classify"]

@@ -47,11 +47,15 @@ interface ErrorEnvelope {
 export class ApiError extends Error {
   status: number
   code?: string
-  constructor(message: string, status: number, code?: string) {
+  /** The error object's other fields, as the server sent them (snake_case): a 409's `job_id`,
+   *  `components`, `writer`, … Empty when the body had none. */
+  extra: Record<string, unknown>
+  constructor(message: string, status: number, code?: string, extra: Record<string, unknown> = {}) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
+    this.extra = extra
   }
 }
 
@@ -96,6 +100,7 @@ function buildUrl(path: string, params?: QueryParams): string {
 async function parseError(res: Response): Promise<ApiError> {
   let message = res.statusText || `Request failed (${res.status})`
   let code: string | undefined
+  let extra: Record<string, unknown> = {}
   try {
     const body = (await res.json()) as ErrorEnvelope
     const detail = body.detail
@@ -104,10 +109,17 @@ async function parseError(res: Response): Promise<ApiError> {
     else if (typeof detail === 'string') message = detail
     else if (Array.isArray(detail)) message = validationMessage(detail) ?? message
     code = env?.code
+    if (env) {
+      const rest: Record<string, unknown> = { ...env }
+      delete rest.code
+      delete rest.message
+      delete rest.status
+      extra = rest
+    }
   } catch {
     /* non-JSON body — keep the status-derived message */
   }
-  return new ApiError(message, res.status, code)
+  return new ApiError(message, res.status, code, extra)
 }
 
 /** Exchange the stored refresh token for a fresh access token. */

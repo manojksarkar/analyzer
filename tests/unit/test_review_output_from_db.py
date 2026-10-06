@@ -56,7 +56,8 @@ class TestTheCaptureNoLongerSwallowsFailures:
     def test_what_landed_is_verified(self):
         """A returned count is not proof: it counts rows offered, not rows that survived. The
         cheap check is files-on-disk against rows-written."""
-        assert "_verify_output_capture(version_id, output_dir, stored)" in _src(self.SRC)
+        # `components`: a run that stored only the components it rebuilt counts only their files.
+        assert "_verify_output_capture(version_id, output_dir, stored, components)" in _src(self.SRC)
 
 
 class TestTheVerifier:

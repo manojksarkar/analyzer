@@ -1,17 +1,20 @@
 """
-Self-contained git CLI wrapper for the API server.
+Git CLI wrapper for the API server.
 
-A thin, dependency-free wrapper over the system ``git`` executable — the only
-place the API talks to git. It is intentionally **independent of the analyzer
-backend** (`engine/git_service.py`); the API does not import from `engine/`.
+A thin wrapper over the system ``git`` executable — the only place the API talks to git.
+How an access token reaches git is the engine's one rule, ``incremental.clone.git_auth``
+(docs/design/BITBUCKET_SUPPORT.md D1): the clone itself is the engine's
+(``shallow_clone`` delegates), and ``ls_remote`` / ``fetch`` take their URL and environment
+from the same function.
 
 Conventions (mirrors the rest of the platform):
 * **`shell=False`** — git args carry URLs/credentials; routing them through a
   shell would mangle `%`, `&`, `^` and risk exposing the token. The git
   executable is resolved via ``shutil.which`` so no shell is needed.
-* HTTPS credentials are injected into the clone/fetch URL, and the clone's
-  ``origin`` is immediately reset to the credential-free URL so the token is
-  never persisted on disk. Tokens are scrubbed from any error text.
+* A token goes where ``git_auth`` says: a Bitbucket one in an ``Authorization`` header passed
+  through the environment, any other HTTPS host's in the clone/fetch URL. A clone's ``origin``
+  is reset to the credential-free URL, so the token is never persisted on disk, and tokens are
+  scrubbed from any error text.
 * ``GIT_TERMINAL_PROMPT=0`` makes auth failures fail fast instead of hanging.
 """
 from __future__ import annotations
@@ -21,7 +24,6 @@ import shutil
 import subprocess
 import sys
 from typing import Dict, List, Optional
-from urllib.parse import quote, urlsplit, urlunsplit
 
 from .settings import get_settings
 
@@ -89,15 +91,20 @@ def _stop_tree(proc: subprocess.Popen) -> None:
         pass
 
 
-def _run(args: List[str], cwd: Optional[str] = None) -> subprocess.CompletedProcess:
+def _run(args: List[str], cwd: Optional[str] = None,
+         extra_env: Optional[Dict[str, str]] = None) -> subprocess.CompletedProcess:
     """`git <args>`, stopped -- the whole process tree -- once it has run longer than its limit
     (`TIMEOUTS`), and then answered as a failure (exit `TIMED_OUT`) like any other, so every
     caller's handling of a failed git command applies. The message never carries the arguments:
-    a clone URL can hold a token."""
+    a clone URL can hold a token. `extra_env` is merged over `quiet_env()` (what `git_auth`
+    returns for a token sent as a header)."""
     cmd = [_git_exe(), *args]
     limit = _timeout(args)
+    env = quiet_env()
+    if extra_env:
+        env.update(extra_env)
     proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            text=True, env=quiet_env(), shell=False)
+                            text=True, env=env, shell=False)
     try:
         out, err = proc.communicate(timeout=limit)
     except subprocess.TimeoutExpired:
@@ -121,44 +128,34 @@ def _check(proc: subprocess.CompletedProcess, what: str) -> subprocess.Completed
 
 
 # ---------------------------------------------------------------------------
-# Credential-injected URLs (HTTPS only; other schemes pass through untouched)
+# Credentials: the engine's one rule (incremental.clone.git_auth)
 # ---------------------------------------------------------------------------
 
-def _auth_url(clone_url: str, username: str, token: str) -> str:
-    parts = urlsplit(clone_url)
-    if parts.scheme not in ("http", "https") or not (username or token):
-        return clone_url
-    host = parts.hostname or ""
-    netloc = f"{quote(username, safe='')}:{quote(token, safe='')}@{host}"
-    if parts.port:
-        netloc += f":{parts.port}"
-    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
-
-
-def _clean_url(clone_url: str) -> str:
-    parts = urlsplit(clone_url)
-    if parts.scheme not in ("http", "https"):
-        return clone_url
-    host = parts.hostname or ""
-    netloc = f"{host}:{parts.port}" if parts.port else host
-    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+def _clone_module():
+    """`incremental.clone` -- the platform's clone primitive and its credential rule."""
+    src_dir = str(get_settings().repo_root / "engine")
+    if src_dir not in sys.path:
+        sys.path.insert(0, src_dir)
+    from incremental import clone  # type: ignore[import]
+    return clone
 
 
 # ---------------------------------------------------------------------------
 # Remote / read-only operations used by the new-project wizard
 # ---------------------------------------------------------------------------
 
-def ls_remote(clone_url: str, username: str = "", token: str = "") -> Dict:
+def ls_remote(clone_url: str, token: str = "") -> Dict:
     """List a remote's branches without cloning — the real connection test.
 
     `git ls-remote --symref <url> HEAD "refs/heads/*"` → branch heads + the
     symbolic HEAD (default branch). Returns
     `{defaultBranch, branches:[{name, lastCommit}]}`. Raises GitError on any
     failure (token scrubbed from the message)."""
-    auth = _auth_url(clone_url, username, token)
-    proc = _run(["ls-remote", "--symref", auth, "HEAD", "refs/heads/*"])
+    clone = _clone_module()
+    git_url, env = clone.git_auth(clone_url, token)
+    proc = _run(["ls-remote", "--symref", git_url, "HEAD", "refs/heads/*"], extra_env=env or None)
     if proc.returncode != 0:
-        msg = proc.stderr.strip().replace(auth, _clean_url(clone_url))
+        msg = clone.scrub(proc.stderr.strip(), clone_url, token)
         raise GitError(f"git ls-remote failed (exit {proc.returncode}): {msg}")
 
     default_branch: Optional[str] = None
@@ -183,7 +180,7 @@ def ls_remote(clone_url: str, username: str = "", token: str = "") -> Dict:
 
 
 def shallow_clone(
-    clone_url: str, username: str, token: str, dest_dir: str,
+    clone_url: str, dest_dir: str, *, token: str = "",
     ref: Optional[str] = None, depth: int = 1, blobless: bool = False,
 ) -> None:
     """Shallow single-branch clone for read-only use (tree browsing needs ``depth=1``;
@@ -193,30 +190,26 @@ def shallow_clone(
     ``blobless=True`` requests a partial clone (no file contents) — used for tree browsing,
     which only needs path names, so the whole repo's blobs are never downloaded.
 
-    Delegates to the platform's single clone primitive (``src/incremental/clone``), so the
+    Delegates to the platform's single clone primitive (``engine/incremental/clone``), so the
     API, the per-commit job checkout, and the standalone engine all share ONE
     implementation. Re-raised as ``git_cli.GitError`` to preserve this module's error type."""
-    src_dir = str(get_settings().repo_root / "engine")
-    if src_dir not in sys.path:
-        sys.path.insert(0, src_dir)
-    from incremental.clone import shallow_clone as _shared  # type: ignore[import]
+    clone = _clone_module()
     from incremental.git_ops import GitError as _EngineGitError  # type: ignore[import]
     try:
-        _shared(clone_url, dest_dir, ref=ref, depth=depth, username=username, token=token,
-                blobless=blobless)
+        clone.shallow_clone(clone_url, dest_dir, ref=ref, depth=depth, token=token,
+                            blobless=blobless)
     except _EngineGitError as exc:
         raise GitError(str(exc))
 
 
 def fetch(
-    repo_dir: str, clone_url: str, username: str, token: str,
-    ref: str, depth: int = 50,
+    repo_dir: str, clone_url: str, ref: str, *, token: str = "", depth: int = 50,
 ) -> None:
     """Update a cached shallow clone's ``origin/<ref>`` to the current remote tip.
 
-    Fetches from ``origin`` with the credential-injected URL supplied for this one
-    command (``-c remote.origin.url=...``), so private repos keep working without
-    persisting the token, and stays shallow (``--depth``) to match the clone.
+    Fetches from ``origin`` with the URL ``git_auth`` gives supplied for this one
+    command (``-c remote.origin.url=...``) and its environment, so private repos keep working
+    without persisting the token, and stays shallow (``--depth``) to match the clone.
     Through ``origin`` - not the bare URL - because a blobless clone's filter belongs
     to that remote: fetching the URL downloaded the content of every file the new
     commits added or changed. Without
@@ -225,12 +218,13 @@ def fetch(
     branch = (ref or "").strip()
     if not branch:
         return
-    auth = _auth_url(clone_url, username, token)
-    proc = _run(["-C", repo_dir, "-c", f"remote.origin.url={auth}", "fetch",
+    clone = _clone_module()
+    git_url, env = clone.git_auth(clone_url, token)
+    proc = _run(["-C", repo_dir, "-c", f"remote.origin.url={git_url}", "fetch",
                  "--depth", str(int(depth)), "origin",
-                 f"+refs/heads/{branch}:refs/remotes/origin/{branch}"])
+                 f"+refs/heads/{branch}:refs/remotes/origin/{branch}"], extra_env=env or None)
     if proc.returncode != 0:
-        msg = proc.stderr.strip().replace(auth, _clean_url(clone_url))
+        msg = clone.scrub(proc.stderr.strip(), clone_url, token)
         raise GitError(f"git fetch failed (exit {proc.returncode}): {msg}")
 
 

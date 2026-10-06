@@ -1314,8 +1314,9 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     except OSError:
         pass                        # the DOCX is the deliverable; the web view falls back
 
-    os.makedirs(os.path.dirname(docx_path) or ".", exist_ok=True)
-    doc.save(docx_path)
+    # Whole or not at all: a download or an approval never meets a half-written file.
+    from docx_common import save_docx
+    save_docx(doc, docx_path)
     return (True, docx_path)
 
 

@@ -1,8 +1,12 @@
 import { useState } from 'react'
 import { Button, Icon, Modal, Text } from '../../../components/ui'
 import { useApproveDocument, useReopenDocument, useRequestChanges } from '../../../hooks/useApproval'
+import { useUpdateWordFiles } from '../../../hooks/useWordFiles'
 import { cn } from '../../../lib/cn'
-import type { Document } from '../../../types'
+import {
+  cap, failureFor, isUpdating, outOfDateWhy, ownOutOfDate, updateBlocked, type Wording,
+} from '../../../lib/wordFiles'
+import type { Document, ExportReadiness } from '../../../types'
 import { MAX_COMMENT } from '../review'
 
 /* The reader's three review dialogs (documents.html renderModal): approve (an optional comment;
@@ -56,15 +60,89 @@ function Note({ icon, children, className }: { icon: string; children: React.Rea
   )
 }
 
+/** The Approve dialog's Word file line (documents.html renderModal 'approve'): up to date; out of
+ *  date, with *Update file* — this dialog's link starts it, no second dialog; updating; or the
+ *  update its starter saw fail, with *Try again*. While a run holds the version, it says when. */
+function WordFileLine({ projectId, versionId, doc, readiness, readinessFailed, meId, words }: {
+  projectId: string
+  versionId: string
+  doc: Document
+  readiness: ExportReadiness | undefined
+  readinessFailed?: boolean
+  meId: string
+  words: Wording
+}) {
+  const update = useUpdateWordFiles(projectId, versionId, words)
+  if (!readiness) {
+    // A15 not read yet, or failed closed: never "up to date" without its answer.
+    return readinessFailed ? (
+      <p className="flex items-start gap-1.5 text-error">
+        <Icon name="error" size={14} className="mt-[3px] flex-shrink-0" />Can’t tell if its Word file is up to date.
+      </p>
+    ) : (
+      <p className="flex items-start gap-1.5 text-on-surface-variant">
+        <Icon name="progress_activity" size={14} className="mt-[3px] flex-shrink-0 animate-spin" />Checking its Word file…
+      </p>
+    )
+  }
+  const own = ownOutOfDate(readiness, doc)
+  if (isUpdating(readiness, doc) || update.isPending) {
+    return (
+      <p className="flex items-start gap-1.5 text-[#92400e]">
+        <Icon name="autorenew" size={14} className="mt-[3px] flex-shrink-0" />Updating its Word file…
+      </p>
+    )
+  }
+  if (!own) {
+    return (
+      <p className="flex items-start gap-1.5">
+        <Icon name="description" size={14} className="mt-[3px] flex-shrink-0" />Its Word file is up to date.
+      </p>
+    )
+  }
+  const failed = failureFor(readiness, meId, doc, true)
+  const why = doc.group ? updateBlocked(readiness, [doc.group], words) : ''
+  return (
+    <>
+      <p className="flex items-start gap-1.5 text-[#92400e]">
+        <Icon name={failed ? 'error' : 'warning'} size={14} className="mt-[3px] flex-shrink-0" />
+        <span>
+          {failed ? 'Update failed.' : 'Its Word file is out of date.'}
+          {!why && (
+            <>
+              {' '}
+              <button
+                type="button"
+                title={failed ? failed.why : cap(outOfDateWhy(own))}
+                onClick={() => update.mutate({ request: { scope: 'out_of_date', components: [own.component], documentId: doc.id } })}
+                className="text-secondary font-semibold hover:underline"
+              >
+                {failed ? 'Try again' : 'Update file'}
+              </button>
+            </>
+          )}
+        </span>
+      </p>
+      {why && <p className="text-on-surface-variant">{why}</p>}
+    </>
+  )
+}
+
 export function ApproveDialog({
-  projectId, doc, corrections, blocked, onClose, onDone,
+  projectId, versionId, doc, corrections, readiness, readinessFailed, meId, words, onClose, onDone,
 }: {
   projectId: string
+  versionId: string
   doc: Document
   /** Corrections in force in this document (null: not counted here). */
   corrections: number | null
-  /** Why it cannot be approved now (the Word file, a re-export); null when it can. */
-  blocked: string | null
+  /** A15: R9 for this document — whether its Word file is out of date, or updating. */
+  readiness: ExportReadiness | undefined
+  /** A15 answered an error (it fails closed). */
+  readinessFailed?: boolean
+  /** The signed-in user (a failed update is shown to its starter). */
+  meId: string
+  words: Wording
   onClose: () => void
   /** After the approval (edit mode closes: the document is locked). */
   onDone?: () => void
@@ -72,6 +150,9 @@ export function ApproveDialog({
   const approve = useApproveDocument(projectId)
   const [comment, setComment] = useState('')
   const direct = doc.status === 'in_review'
+  // Approve turns on when A15 says its Word file is up to date — not before A15 has answered, not
+  // when it failed: what is approved is that file, and its hash.
+  const waiting = !readiness || isUpdating(readiness, doc) || !!ownOutOfDate(readiness, doc)
   return (
     <Modal open onClose={onClose} title={`Approve ${docLabel(doc)}`} className="max-w-[460px]">
       <div className="-mt-3 space-y-3">
@@ -88,10 +169,8 @@ export function ApproveDialog({
               <Icon name="edit_note" size={14} />{corrections} correction{corrections === 1 ? '' : 's'}
             </p>
           )}
-          <p className="flex items-start gap-1.5">
-            <Icon name="description" size={14} className="mt-[3px] flex-shrink-0" />
-            {blocked ? <span className="text-[#b45309]">{blocked}.</span> : 'The Word file is up to date. Its hash is recorded with the approval.'}
-          </p>
+          <WordFileLine projectId={projectId} versionId={versionId} doc={doc} readiness={readiness}
+            readinessFailed={readinessFailed} meId={meId} words={words} />
         </div>
         <CommentBox id="approve-comment" label="Comment (optional)" value={comment} onChange={setComment}
           placeholder="Anything the record should say" />
@@ -104,7 +183,7 @@ export function ApproveDialog({
         <Button
           size="sm"
           loading={approve.isPending}
-          disabled={!!blocked}
+          disabled={waiting}
           onClick={() => approve.mutate({ docId: doc.id, comment: comment.trim() || null }, { onSuccess: () => { onDone?.(); onClose() } })}
           className="bg-[#00a572] hover:bg-[#008a5f] disabled:bg-[#00a572]/40"
         >

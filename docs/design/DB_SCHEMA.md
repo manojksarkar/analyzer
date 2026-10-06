@@ -159,6 +159,14 @@ erDiagram
         jsonb  run_report "manifest.json, verbatim"
         text   report "report.txt"
     }
+    analysis_jobs {
+        string id PK
+        string version_id FK
+        string mode "auto|full (a generation)|reexport|export"
+        jsonb  scope "type component: its names, else the whole version"
+        string started_by "user id - NULL: a generation"
+        string reason "update|rebuild|submit|export|resume - NULL: a generation"
+    }
     version_output_files {
         string version_id PK
         string rel_path PK "e.g. Layer1.Diag/interface_tables.json"
@@ -176,6 +184,7 @@ erDiagram
         string approved_docx_path "the copy kept at approval"
         string content_fingerprint "carries an approval to an unchanged next version"
         string carried_from "version id the approval came from"
+        timestamptz word_file_at "when the run that wrote its Word file started"
     }
     document_review_events {
         string id PK
@@ -189,11 +198,12 @@ erDiagram
     version_components {
         string version_id PK
         string component PK "its output dir = documents.component"
-        string state "waiting|generating|generated|failed"
+        string state "waiting|generating|generated|failed|stale"
         timestamptz requested_at
         timestamptz started_at
         timestamptz finished_at
         text error
+        jsonb stale_layers "stale: the layers added since"
     }
     version_runs {
         string version_id PK
@@ -216,6 +226,14 @@ asked for; a component of the model with no row and no documents is "not request
 when read (`api/services/version_components.py`). `version_runs` is the latest run; whether it is
 still alive is a Postgres advisory lock its process holds (`engine/core/version_run.py`), never a
 column ([CLI_COMMANDS](../CLI_COMMANDS.md#a-run-that-lasts-days)).
+
+Word file updates (migration 0018, [WORD_FILE_UPDATES](WORD_FILE_UPDATES.md)). `documents.word_file_at`
+is when the run that wrote the document's working Word file **started**: a correction it prints, saved
+after that, is not in the file — what "out of date" means (`engine/review/word_files.py`). A run sets
+it as its output is stored, for the .docx files it wrote; a newly recorded document takes its file's
+time; NULL (recorded before 0018) falls back to the file's time on disk. `version_components.stale_layers`
+names the layers whose addition made a `stale` component stale. `analysis_jobs.started_by` and `.reason`
+say who started a job and why — an update's end is told to its starter. All three are nullable.
 
 ## ER — access & inputs
 
@@ -300,9 +318,11 @@ An export refuses to ship old wording (`engine/review/export_guard.py`): it is *
 correction is newer than the derivation, **for the correction's own component**, of a view its text
 reaches and the exported document prints. `view_derivations` holds one row per (version, view,
 component) — `group_name` is the component, in `layer1.sample-core` form — and is rebuilt at every
-capture from the `_derivations.json` records Phase 3 stores with its output (a save that re-derives
-SWE.4 rows marks those records too). Rows with `view_name = '*'`, written before 2026-09-29, are
-ignored.
+capture from the `_derivations.json` records stored with the output, once the rows are stored (a save
+that re-derives SWE.4 rows marks those records too). A re-export, export or resume by component
+replaces only its components' rows, so the others' records and stamps stand. Rows with
+`view_name = '*'`, written before 2026-09-29, are ignored. The guard is the CLI's backstop; whether a
+document's Word file is out of date is `documents.word_file_at`'s question (above).
 
 ---
 
@@ -530,9 +550,11 @@ ORDER BY updated_at DESC;
 ### Review and approval — who approved what
 
 ```sql
--- A version's review: each document's state, its reviewer, who approved it and when
+-- A version's review: each document's state, its reviewer, who approved it and when, and when
+-- its working Word file was written (a correction saved after word_file_at is not in it)
 SELECT d.process, d.component, d.status, a.user_id AS reviewer,
-       d.approved_by, d.approved_at, d.carried_from, left(d.docx_sha256, 12) AS docx
+       d.approved_by, d.approved_at, d.carried_from, left(d.docx_sha256, 12) AS docx,
+       d.word_file_at
 FROM documents d LEFT JOIN document_assignments a ON a.document_id = d.id
 WHERE d.version_id = 'f1' ORDER BY d.component, d.process;
 
@@ -544,9 +566,14 @@ FROM document_review_events WHERE document_id = 'doc1a2b3c4d' ORDER BY at;
 ### Staged generation — which components, which run
 
 ```sql
--- A version's components: what each run asked for, how it went
-SELECT component, state, requested_at, started_at, finished_at, error
+-- A version's components: what each run asked for, how it went (stale_layers: a stale one's cause)
+SELECT component, state, requested_at, started_at, finished_at, error, stale_layers
 FROM version_components WHERE version_id = 'f1' ORDER BY component;
+
+-- Its update jobs, newest first: who started each and why
+SELECT id, status, reason, started_by, scope, started_at, completed_at, error_message
+FROM analysis_jobs WHERE version_id = 'f1' AND mode IN ('reexport', 'export')
+ORDER BY started_at DESC;
 
 -- Its latest run and how far it got (alive or not is the advisory lock, not this row)
 SELECT command, pid, host, outcome, stage, done, total, progress_at, log_path

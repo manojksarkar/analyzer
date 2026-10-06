@@ -72,8 +72,8 @@ export const reviewApi = {
       { flowchart_id: flowchartId, labels })
     return r.labels.map(mapSlotSave)
   },
-  /** R9: do the Word files have every correction? And the latest re-export. With a document,
-   *  only that document's component and type (REVIEW_APPROVE_API_SPEC A15). */
+  /** R9: which Word files are out of date, what holds the version, and the latest update. With a
+   *  document, only that document (REVIEW_APPROVE_API_SPEC A15). */
   readiness: async (pid: string, vid: string, documentId?: string): Promise<ExportReadiness> =>
     mapExportReadiness(await http.get<ApiExportReadiness>(`${base(pid, vid)}/export-readiness`,
       { document_id: documentId })),
@@ -81,11 +81,5 @@ export const reviewApi = {
    *  Not paged. */
   regenerationQueue: async (pid: string, vid: string): Promise<QueuedRegeneration[]> =>
     mapRegenerationQueue(await http.get<ApiRegenerationQueue>(`${base(pid, vid)}/regeneration-queue`)),
-  /** Re-export the version's Word files (admin) -- every document, or only `components` (the
-   *  stale ones). Follow it through R9's `reexport`. */
-  reexport: async (pid: string, vid: string, components?: string[]): Promise<{ jobId: string }> => {
-    const r = await http.post<{ job_id: string }>(`${base(pid, vid)}/reexport`,
-      components?.length ? { components } : undefined)
-    return { jobId: r.job_id }
-  },
+  // Updating the Word files (POST V/reexport) is services/api/wordFiles.ts.
 }

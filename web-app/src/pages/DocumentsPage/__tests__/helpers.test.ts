@@ -20,47 +20,63 @@ describe('bulkApprovePlan', () => {
 
   it('takes only Ready for approval when the version is up to date; skips the rest, saying why', () => {
     const plan = bulkApprovePlan([ready, inReview, approved, ready2], {
-      versionReadiness: r9(false), readinessById: {}, reexporting: false,
+      versionReadiness: r9(false), readinessById: {},
     })
     expect(plan.ready.map((d) => d.id)).toEqual(['a', 'b'])
     expect(plan.skipped.map((s) => [s.doc.id, s.reason])).toEqual([
       ['c', 'not ready for approval'], ['d', 'already approved'],
     ])
     expect(plan.checking).toEqual([])
+    expect(plan.behind).toEqual([])
   })
 
-  it('checks each document when the version is stale: one with missing corrections is skipped', () => {
+  it('R9 lists the out-of-date Word files: those are behind (offered the update), the rest ready', () => {
     const plan = bulkApprovePlan([ready, ready2], {
-      versionReadiness: r9(true), readinessById: { a: r9(false), b: r9(true) }, reexporting: false,
+      versionReadiness: { ...r9(true), outOfDate: [{ documentId: 'b', component: 'L1.B', name: 'b', docType: 'SWE.3',
+        why: ['corrections'], corrections: 1, pictures: 0, layer: null, updating: false }] },
+      readinessById: {},
     })
     expect(plan.ready.map((d) => d.id)).toEqual(['a'])
-    expect(plan.skipped).toEqual([{ doc: ready2, reason: 'its Word file is missing corrections' }])
+    expect(plan.behind.map((d) => d.id)).toEqual(['b'])
+    expect(plan.checking).toEqual([])
+  })
+
+  it('an older API: checks each document when the version is stale; an out-of-date one is behind', () => {
+    const plan = bulkApprovePlan([ready, ready2], {
+      versionReadiness: r9(true), readinessById: { a: r9(false), b: r9(true) },
+    })
+    expect(plan.ready.map((d) => d.id)).toEqual(['a'])
+    expect(plan.behind).toEqual([ready2])
   })
 
   it('one rule, `stale`: a picture owed for a flowchart its Word file does not embed does not block', () => {
     // The server folds an owed picture into `stale` when the document embeds the flowcharts.
     expect(bulkApprovePlan([ready], {
-      versionReadiness: r9(true), readinessById: { a: r9(false, 1) }, reexporting: false,
+      versionReadiness: r9(true), readinessById: { a: r9(false, 1) },
     }).ready.map((d) => d.id)).toEqual(['a'])
     const plan = bulkApprovePlan([ready], {
-      versionReadiness: r9(true), readinessById: { a: r9(true, 1) }, reexporting: false,
+      versionReadiness: r9(true), readinessById: { a: r9(true, 1) },
     })
     expect(plan.ready).toEqual([])
-    expect(plan.skipped[0].reason).toBe('its Word file is missing corrections')
+    expect(plan.behind).toEqual([ready])
   })
 
   it('waits for a document whose check has not come back, and skips one that failed', () => {
     const plan = bulkApprovePlan([ready, ready2], {
-      versionReadiness: r9(true), readinessById: {}, failed: new Set(['b']), reexporting: false,
+      versionReadiness: r9(true), readinessById: {}, failed: new Set(['b']),
     })
     expect(plan.checking).toEqual([ready])
     expect(plan.skipped).toEqual([{ doc: ready2, reason: 'its Word file could not be checked' }])
   })
 
-  it('approves nothing while a re-export runs', () => {
-    const plan = bulkApprovePlan([ready], { versionReadiness: r9(false), readinessById: {}, reexporting: true })
-    expect(plan.ready).toEqual([])
-    expect(plan.skipped[0].reason).toBe('a re-export is running')
+  it('a document whose Word file an update writes now is behind, not ready', () => {
+    const plan = bulkApprovePlan([mk('a', 'submitted', { group: 'L1.A' }), mk('b', 'submitted', { group: 'L1.B' })], {
+      versionReadiness: { ...r9(false), outOfDate: [], reexport: { jobId: 'j1', status: 'running', startedAt: null,
+        completedAt: null, errorMessage: null, components: ['L1.A'], componentsDone: 0 } },
+      readinessById: {},
+    })
+    expect(plan.behind.map((d) => d.id)).toEqual(['a'])
+    expect(plan.ready.map((d) => d.id)).toEqual(['b'])
   })
 })
 

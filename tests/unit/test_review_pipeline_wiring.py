@@ -130,8 +130,13 @@ class TestEveryPieceHasACaller:
                                                    "staleness"),
         # Phase 3 records what it rebuilt; the capture stamps it, with the rows it vouches for.
         "export_guard.record_derivation": ("engine/run_views.py", "record_derivation"),
-        "export_guard.stamp_recorded_derivations": ("engine/incremental/store.py",
-                                                    "stamp_recorded_derivations"),
+        # From the STORED records, so a run that stored only the components it rebuilt keeps
+        # the others' stamps (WORD_FILE_UPDATES S4a).
+        "export_guard.stamp_stored_derivations": ("engine/incremental/store.py",
+                                                  "stamp_stored_derivations"),
+        # When each Word file was written, and the one rule that reads it (WORD_FILE_UPDATES).
+        "word_files.record_word_files": ("engine/incremental/store.py", "record_word_files"),
+        "word_files.states": ("api/services/word_files.py", "states(cx, version.id"),
         # A save re-derives the component's SWE.4 specs from the stored rows (REQ-CS-04).
         "swe4_rederive.make_save_deriver": ("api/routes/text_overrides.py",
                                             "make_save_deriver"),

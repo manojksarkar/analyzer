@@ -5,11 +5,11 @@ import { http, HttpResponse } from 'msw'
 import { server } from '../../test/server'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { API_BASE_URL, ApiError } from '../../lib/http'
-import type { ExportReadiness, Slot, SlotSaveResult } from '../../types'
+import type { Slot, SlotSaveResult } from '../../types'
 import { projectKeys } from '../useProjects'
 import {
   describeQueued, describeSave, isRegenerating, patchOverrides, saveErrorMessage, saveFailedNote,
-  useDiscardOrphans, useReexportFinished, useReexportVersion, useSaveSlot, useVersionOverrides,
+  useDiscardOrphans, useSaveSlot, useVersionOverrides,
 } from '../useReview'
 
 /* Review & update: what the page says after a save, and after a save that failed
@@ -29,6 +29,11 @@ describe('a refused save, in words', () => {
     const noGraph = new ApiError('the flowchart has no stored graph — re-derive the version', 409)
     expect(isRegenerating(noGraph)).toBe(false)
     expect(saveErrorMessage(noGraph)).toBe('the flowchart has no stored graph — re-derive the version')
+  })
+  it('an update writing its component (409 WORD_FILE_UPDATING): corrections wait until it is done', () => {
+    const updating = new ApiError('An update is writing it.', 409, 'WORD_FILE_UPDATING', { job_id: 'j1', components: ['L1.A'] })
+    expect(saveErrorMessage(updating)).toBe('Corrections wait until the update is done.')
+    expect(saveFailedNote(updating)).toBe('Corrections wait until the update is done. Your text is still here.')
   })
   it('under the box: a refusal (4xx) is not invited to retry; a fault (5xx, no answer) is', () => {
     const refused = saveFailedNote(new ApiError('text: must not contain the NUL character', 422))
@@ -86,26 +91,9 @@ describe('patchOverrides (R1 after a save, without reading every page again)', (
   })
 })
 
-describe('useReexportFinished', () => {
-  it('when a re-export ends, reads the documents and the version’s review reads (R9, R10, R1) again', () => {
-    const client = new QueryClient()
-    const spy = vi.spyOn(client, 'invalidateQueries')
-    const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client }, children)
-    const r9 = (status: string): ExportReadiness => ({
-      stale: false, explanation: null, overrideCount: 0, pendingRenders: 0, failedRenders: 0,
-      reexport: { jobId: 'j1', status, startedAt: null, completedAt: null, errorMessage: null },
-    })
-    const { rerender } = renderHook(({ r }) => useReexportFinished('p1', 'v1', r), { wrapper, initialProps: { r: r9('running') } })
-    expect(spy).not.toHaveBeenCalled()
-    rerender({ r: r9('complete') })
-    expect(spy).toHaveBeenCalledWith({ queryKey: ['projects', 'p1', 'documents'] })
-    expect(spy).toHaveBeenCalledWith({ queryKey: projectKeys.review('p1', 'v1') })
-  })
-})
-
 /* Review findings on 6c5863b: a discard left the edit boxes' orphan notes (the renders were not
-   read again); a re-export did not show in the Overview's runs; a save racing a read of R1 was
-   undone by that read's older answer. */
+   read again); a save racing a read of R1 was undone by that read's older answer. (What an
+   update of the Word files reads again is in useWordFiles.test.) */
 describe('after a mutation, what is read again', () => {
   const API = `${API_BASE_URL}/projects/p1/versions/v1`
   const wire = (key: string, text: string) => ({
@@ -125,15 +113,6 @@ describe('after a mutation, what is read again', () => {
     await act(async () => { await result.current.mutateAsync() })
     expect(spy).toHaveBeenCalledWith({ queryKey: projectKeys.review('p1', 'v1') })
     expect(spy).toHaveBeenCalledWith({ queryKey: projectKeys.documentRenders('p1') })
-  })
-
-  it('a re-export reads R9 and the project’s runs again', async () => {
-    server.use(http.post(`${API}/reexport`, () => HttpResponse.json({ job_id: 'j1', status: 'queued' }, { status: 202 })))
-    const { client, result } = mount(() => useReexportVersion('p1', 'v1'))
-    const spy = vi.spyOn(client, 'invalidateQueries')
-    await act(async () => { await result.current.mutateAsync() })
-    expect(spy).toHaveBeenCalledWith({ queryKey: projectKeys.exportReadiness('p1', 'v1') })
-    expect(spy).toHaveBeenCalledWith({ queryKey: projectKeys.runs('p1') })
   })
 
   it('a save stops a read of R1 begun before it: the older answer does not undo the save', async () => {

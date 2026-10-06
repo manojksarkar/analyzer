@@ -6,7 +6,7 @@ import { useUpdateProject } from '../../../hooks/useProjects'
    Projects page: a rename is rare, so it is not on the project's own pages. The new name shows
    everywhere at once. Documents already made keep the name they were made with -- on their
    cover and in their introduction, in the Word file and on the page, which reads like it --
-   until a re-export or a new run. Opened by the page, not inside the row: a click in a dialog
+   until their Word files are rebuilt, or a new run. Opened by the page, not inside the row: a click in a dialog
    the row owned would reach the row and open the project. */
 
 // The server's limit (api/routes/projects.py MAX_PROJECT_NAME).
@@ -53,7 +53,7 @@ export function RenameProjectDialog({ project, otherNames, onClose }: {
         )}
         <Text as="p" variant="caption" className="mt-3 leading-relaxed">
           Documents already made keep the name they were made with, on their cover and in their
-          introduction. A re-export or a new run uses the new name.
+          introduction. Rebuilding their Word files, or a new run, uses the new name.
         </Text>
         <div className="flex justify-end gap-2 pt-4 mt-4 -mx-6 px-6 border-t border-outline-variant">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>Cancel</Button>

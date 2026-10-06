@@ -123,6 +123,8 @@ export const Envelopes = {
   repoTest: z.object({
     connected: z.boolean(), default_branch: z.string().nullable(),
     branches: z.array(z.string()), message: z.string(),
+    // The URL connected to (a Bitbucket page address → its clone URL); absent from an older server.
+    repo_url: z.string().nullable().optional(),
   }),
   repoEntries: z.object({ entries: z.array(z.unknown()) }),
   repoUpload: z.object({

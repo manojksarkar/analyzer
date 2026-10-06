@@ -76,10 +76,8 @@ export function ConfigImport({ fileName, preview, busy, onPick, archChanged, bra
       <div className="flex items-center gap-3 px-4 py-3 border border-dashed border-outline-variant rounded-xl bg-white">
         <Icon name="settings_suggest" size={18} className="text-secondary flex-shrink-0" />
         <div className="flex-1 min-w-0">
-          <p className="text-sm text-on-surface">Have a config file? <span className="text-on-surface-variant">Optional</span></p>
-          <p className="text-caption text-on-surface-variant mt-0.5">
-            Fills the project, repository, cores and architecture from the config <code className="font-mono">analyzer.py onboard --config</code> reads. The access token is never read from it: type it below.
-          </p>
+          <p className="text-sm text-on-surface">Have a config file?</p>
+          <p className="text-caption text-on-surface-variant mt-0.5">Fills the project, repository, cores and architecture.</p>
         </div>
         {button(busy ? 'Reading…' : 'Import config', busy ? 'progress_activity' : 'upload_file', () => inputRef.current?.click(), true)}
         {pick}

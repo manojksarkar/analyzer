@@ -72,18 +72,46 @@ def complete(conn, job_id: int, *, error: str = "",
                          finished_at=now or datetime.datetime.now(datetime.timezone.utc)))
 
 
-def counts(conn, version_id: str) -> Counts:
-    """How many of this version's renders are outstanding, and how many gave up.
+def counts(conn, version_id: str, component: Optional[str] = None) -> Counts:
+    """How many of this version's renders are outstanding, and how many gave up -- of one
+    `component`'s flowcharts when it is given (the first part of `flowchart_id`, compared in
+    `export_guard.component_id` form): one picture being drawn puts its own component's Word file
+    out of date, not every component's.
 
     One grouped query: the export asks this on every download, and a version nobody has corrected
     has no rows at all.
     """
+    if component is not None:
+        c = by_component(conn, version_id).get(_component_key(component), Counts(0, 0))
+        return c
     rows = conn.execute(
         select(s.render_jobs.c.status, func.count())
         .where(s.render_jobs.c.version_id == version_id)
         .group_by(s.render_jobs.c.status)).fetchall()
     by_status = {r[0]: int(r[1]) for r in rows}
     return Counts(pending=by_status.get(PENDING, 0), failed=by_status.get(FAILED, 0))
+
+
+def _component_key(name: str) -> str:
+    from review.export_guard import component_id
+    return component_id(name)
+
+
+def by_component(conn, version_id: str) -> dict:
+    """`{component (component_id form): Counts}` of this version's outstanding and failed renders,
+    per component -- the first part of the flowchart's function id. One query; a version with no
+    corrected label has no rows."""
+    out: dict = {}
+    for fid, status, n in conn.execute(
+            select(s.render_jobs.c.flowchart_id, s.render_jobs.c.status, func.count())
+            .where(s.render_jobs.c.version_id == version_id,
+                   s.render_jobs.c.status.in_((PENDING, FAILED)))
+            .group_by(s.render_jobs.c.flowchart_id, s.render_jobs.c.status)).fetchall():
+        comp = _component_key((fid or "").split("|", 1)[0])
+        pending, failed = out.get(comp, Counts(0, 0))
+        out[comp] = Counts(pending + (int(n) if status == PENDING else 0),
+                           failed + (int(n) if status == FAILED else 0))
+    return out
 
 
 def pending_jobs(conn, version_id: Optional[str] = None) -> Sequence:

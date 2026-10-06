@@ -16,11 +16,11 @@ const run = (over: Record<string, unknown>) => ({
   stage_started_at: null, progress_at: null, ...over,
 })
 
-function setup(runs: object[], exceptVersionId: string | null = null) {
+function setup(runs: object[], exceptVersionIds: string[] = []) {
   server.use(http.get(`${API_BASE_URL}/projects/p1/runs`, () => HttpResponse.json({ runs })))
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <OtherRuns projectId="p1" exceptVersionId={exceptVersionId} />
+      <OtherRuns projectId="p1" exceptVersionIds={exceptVersionIds} />
     </QueryClientProvider>,
   )
 }
@@ -39,8 +39,19 @@ describe('OtherRuns (the Overview)', () => {
   })
 
   it('not the web job the Overview shows already', async () => {
-    setup([run({ version_id: 'ver9', version_tag: 'v2', command: 'generate' }), run({})], 'ver9')
+    setup([run({ version_id: 'ver9', version_tag: 'v2', command: 'generate' }), run({})], ['ver9'])
     expect(await screen.findByText(/Running export into v1\.0\.0/)).toBeInTheDocument()
     expect(screen.queryByText(/into v2/)).toBeNull()
+  })
+
+  it("nor the run of the version on screen, which its Generation banner shows", async () => {
+    setup([
+      run({ version_id: 'ver9', version_tag: 'v2', command: 'generate' }),
+      run({ version_id: 'ver7', version_tag: 'v1.5', command: 'export' }),
+      run({}),
+    ], ['ver9', 'ver7'])
+    expect(await screen.findByText(/Running export into v1\.0\.0/)).toBeInTheDocument()
+    expect(screen.queryByText(/into v2/)).toBeNull()
+    expect(screen.queryByText(/into v1\.5/)).toBeNull()
   })
 })

@@ -51,9 +51,11 @@ The feature added **six** migrations on top of `0008`; three more followed it:
                           └─ 0015_review_approval      review and approval (develop)
                               └─ 0016_staged_generation    staged generation (develop)
                                   └─ 0017_input_output_names   data only: two slot kinds renamed
+                                      └─ 0018_word_file_updates    documents.word_file_at, analysis_jobs.started_by/reason,
+                                                                   version_components.stale_layers
 ```
 
-The chain is linear: `alembic heads` prints `0017_input_output_names (head)`. **A branch cut from
+The chain is linear: `alembic heads` prints `0018_word_file_updates (head)`. **A branch cut from
 `develop` before PR #70 that adds its own `0009` gets two heads**, and `alembic upgrade head` refuses:
 re-point that branch's migration at the head and renumber it. The six migrations of the feature are
 additive (new tables, new columns) and touch nothing existing; `0017` changes no table at all.
@@ -228,7 +230,8 @@ while the page keeps showing the LLM's words — with nothing failing.
 
 It used to be `except Exception: pass`, noted "best-effort: disk output is intact" — and the disk
 being intact is what made it dangerous. The document served from the database, or from another
-node, kept the previous render while that machine looked correct.
+node, kept the previous render while that machine looked correct. A capture by component checks
+only its components' files against the rows it stored (`_verify_output_capture(…, components)`).
 
 → `tests/unit/test_review_output_from_db.py::TestTheCaptureNoLongerSwallowsFailures`.
 
@@ -291,9 +294,12 @@ code, and an edit there is a first edit that captures it. Undoing an orphan itse
 
 Phase 3 leaves a record in each output directory (`_derivations.json`): the views it ran, for which
 components and document types, from inputs read when. `capture_output` replaces the version's
-`view_derivations` rows with what the stored records say, in the transaction that replaces the
-output rows. Remove either end and the export guard has no baseline, so the first correction to any
-version makes it permanently unexportable. Stamp "the whole version" instead — as this feature did
+`view_derivations` rows with what the stored records say (`export_guard.stamp_stored_derivations`:
+the `_derivations.json` rows of `version_output_files`, read after the rows are stored, in the same
+transaction). Read them from the disk instead and a run that stored only the components it rebuilt
+(§7) loses the stamp of a save made meanwhile in another component: the disk holds that record as
+the run restored it, before the save. Remove either end and the export guard has no baseline, so
+the first correction to any version makes it permanently unexportable. Stamp "the whole version" instead — as this feature did
 until 2026-09-29 — and a SWE.3 re-derive waves a stale SWE.4 export through: reproduced, a label
 corrected, the SWE.3 re-export, then an export-only `--doc-type all` shipped the old Test Step.
 
@@ -302,7 +308,9 @@ version whose only corrections are orphans — a component renamed — is unexpo
 nothing records a derivation for a component that no longer exists.
 
 → `tests/unit/test_review_export_guard.py::TestTheRecord`, `::TestDocumentTypes`,
-`::TestAnOrphanIsNotACorrection`; `test_review_pipeline_wiring.py` for the two call sites.
+`::TestAnOrphanIsNotACorrection`;
+`test_word_files.py::TestARunStoresOnlyWhatItRebuilt::test_the_stamps_come_from_the_stored_records`;
+`test_review_pipeline_wiring.py` for the two call sites.
 
 ### 4.10 A model write from the API must reach its one row, in the request's transaction
 
@@ -510,11 +518,22 @@ that: the review routes (`_version()`), the CLI `reexport`, and the start-job ba
 A save that re-derives rows stamps them and marks the stored record (`saved`, per component —
 `export_guard.stamp_saved`). The next capture rebuilds the stamps from the records: a run that
 restored the marked record keeps the stamp; a run that overwrote the save's rows overwrote its mark
-with them, and the correction reads as stale again — the truth. Merge stamps at capture instead of
-replacing them, and a correction saved while a run was building is vouched for by rows that no
-longer carry it.
+with them, and the correction reads as stale again — the truth. A run by component stores only the
+components it rebuilt (`persist_output_files(groups=)`), plus the component directories the database
+has never stored (a run cut short after making them; `word_files.unstored_dirs`), and a `reexport
+--scope group:/layer:` the components run.py asked for or started -- so another component's record —
+mark included — is left as it was, and so is its stamp, which the capture rebuilds from the STORED
+records (`stamp_stored_derivations`). Merge stamps at capture instead of replacing them,
+and a correction saved while a run was building is vouched for by rows that no longer carry it;
+store every component from a run by component, and a save made meanwhile in another one is reverted.
 
-→ `test_review_export_guard.py::TestASaveThatReDerives`.
+→ `test_review_export_guard.py::TestASaveThatReDerives`;
+`test_word_files.py::TestARunStoresOnlyWhatItRebuilt` (`::test_a_save_in_another_component_survives`,
+`::test_reexport_export_and_resume_say_what_they_rebuilt`, `::test_a_generation_still_stores_everything`);
+`tests/api/test_reexport_isolation.py::TestReexportPersistsItsOutput::test_reexport_captures_output_back_into_the_store`
+(the web re-export passes its components); `test_word_files.py::TestAResumeStoresWhatTheDeadRunMade`,
+`::TestAGroupOrLayerRunStoresItsComponents` (2026-10-06 review: a resume left the dead run's
+components unstored, and a group or layer re-export stored the whole version).
 
 ### 4.26 The save-time SWE.4 re-derive is Phase 3's build, byte for byte
 
@@ -648,7 +667,7 @@ directories under the bare group name.
 ## 6. Verifying after the merge
 
 ```
-python -m alembic heads                           # exactly one: 0017_input_output_names
+python -m alembic heads                           # exactly one: 0018_word_file_updates
 python -m pytest tests/unit tests/api tests/e2e   # 3777 passed, 83 skipped (PR #70, 2026-09-30)
 ```
 
@@ -702,13 +721,23 @@ Consequences worth knowing:
   interface-table copy, the flowchart JSON, the behaviour row) and not stamped, so the web app's
   re-export still runs Phase 3 after any correction. A stamp is per (view, component), not per
   output directory: a component in two documents of one version counts the newest derivation.
-- **A save made while a run is building can be lost.** A run that started before it writes its
-  whole model back at the end of Phase 2 and replaces every output row at capture. The export guard
-  then reports the correction as stale (§4.25) and the next run applies it again from the override
+- **A save made while a run is building can be lost — now only to a run that stores the whole
+  version.** Fixed for `reexport`, `export` and `resume` by component (2026-10-05,
+  [WORD_FILE_UPDATES](WORD_FILE_UPDATES.md) S4a): they store only the components they rebuilt
+  (`persist_output_files(groups=)`), so a save in another component survives the run, stamps
+  included (§4.25); a save in a component being written is refused, 409 `WORD_FILE_UPDATING` (a
+  web update or export, or a CLI run holding the version), checked again under the version's save
+  lock; an update sets the time its Word files hold "what was saved before" while holding that lock
+  (`word_files.wait_for_saves`), so a save under way is either in what it reads or newer than its
+  files (2026-10-06). A `reexport --scope group:/layer:` stores the components run.py asked for or
+  started; a resume or export also stores the directories a cut-short run made and never stored. A
+  generation and `resume`'s "close" action still replace every output row at capture, and a run
+  that re-derives still writes the whole model back at the end of Phase 2, by component or not.
+  The correction then reads as out of date and the next run applies it again from the override
   table — but between the two the document does not carry it. (A save no longer does this to anyone
   else: it writes one row, saves of a version take turns, and a save that finds its row replaced by
-  a run fails with 409 — §4.10. Coordinating a save with a *run* would need the run to take the
-  same lock for the length of Phase 2; not done.)
+  a run fails with 409 — §4.10. Coordinating a save with a run that re-derives would need the run to
+  take the same lock for the length of Phase 2; not done.)
 - **Both queues are drained by a run, not a timer.** A pending picture is drawn when a host with
   the output tree captures a version's output; a queued regeneration is rebuilt by Phase 2 or
   Phase 3. Between a correction and the next run the work is *owed and reported* — which is why

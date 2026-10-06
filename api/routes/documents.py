@@ -81,15 +81,48 @@ def _project(db, project_id: str):
     return project
 
 
+class ApprovedFileMissing(Exception):
+    """An approved document whose kept Word file is not here, and whose working file is not the
+    approved one."""
+
+
 def _docx_for(db, project_id: str, doc):
     """The Word file a download serves: the copy kept at approval for an approved document
-    (a later re-export cannot change what was approved), else the version's own."""
+    (a later update cannot change what was approved), else the version's own.
+
+    An approved document whose kept copy is missing gets the working file only when it IS the
+    approved file (its SHA-256 is `docx_sha256`); otherwise `ApprovedFileMissing` -- never a file
+    that may differ from what was approved (WORD_FILE_UPDATES §4.8)."""
     kept = rw.approved_docx(doc)
     if kept is not None:
         return kept
     version = db.versions.get(doc.version_id) if doc.version_id else None
     out_root = doc_render.commit_output_root(project_id, version.commit_sha, version.id) if version else None
-    return doc_render.find_docx(doc.group, out_root, doc.process)
+    working = doc_render.find_docx(doc.group, out_root, doc.process)
+    if doc.status == "approved":
+        if working is None or not doc.docx_sha256 or _sha256(working) != doc.docx_sha256:
+            raise ApprovedFileMissing(doc.id)
+    return working
+
+
+def _sha256(path) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _approved_missing(docs) -> HTTPException:
+    names = ", ".join(rw.label(d) for d in docs[:5]) + (" and %d more" % (len(docs) - 5)
+                                                      if len(docs) > 5 else "")
+    return HTTPException(status_code=409, detail={
+        "code": "APPROVED_FILE_MISSING", "status": 409,
+        "document_ids": [d.id for d in docs],
+        "message": "The approved Word file of %s is not on this server, and the current file is "
+                   "not the one that was approved. Restore the kept copy, or reopen and approve "
+                   "again." % names})
 
 
 # ---------------------------------------------------------------------------
@@ -370,6 +403,16 @@ def download_export_all(
         raise not_found("Project", project_id)
     require_project_member(project_id, current_user, db)
     docs, _ = db.documents.list_for_project(project_id, version_id=version_id, per_page=1000)
+    # An approved document whose approved file is not here fails the archive by name, before
+    # anything is written (WORD_FILE_UPDATES §4.8).
+    missing = []
+    for doc in docs:
+        try:
+            _docx_for(db, project_id, doc)
+        except ApprovedFileMissing:
+            missing.append(doc)
+    if missing:
+        raise _approved_missing(missing)
 
     # Built in a temporary file, not in memory, with the files STORED: a version of a large
     # project holds dozens of Word files of tens of MB each (every flowchart is a picture), so the
@@ -416,7 +459,10 @@ def download_document(
         raise not_found("Project", project_id)
     require_project_member(project_id, current_user, db)
     doc = _document(db, project_id, doc_id)
-    docx = _docx_for(db, project_id, doc)
+    try:
+        docx = _docx_for(db, project_id, doc)
+    except ApprovedFileMissing:
+        raise _approved_missing([doc])
     if docx is not None:
         # The file's own name: `doc.name` is the component, which its SWE.3 and SWE.4
         # documents share. (An approved copy keeps it: approved/<doc id>/<file name>.)
@@ -537,11 +583,17 @@ def submit_review(
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
-    """A5 — its reviewer (or an admin) submits it for approval, saying what was checked."""
+    """A5 — its reviewer (or an admin) submits it for approval, saying what was checked.
+
+    When its Word file is out of date the update of its component starts too, for the approval
+    (`word_file`; docs/design/WORD_FILE_UPDATES.md §4.4). A refusal there -- another update, a
+    generation holding the version -- is reported in `word_file`, and the submit stands."""
     require_project_member(project_id, current_user, db)
     doc = _document(db, project_id, doc_id)
     rw.submit(db, doc, current_user, rw.clean_text(body.comment, "A comment", required=True))
-    return {"document": rw.document_view(db, doc)}
+    from ..services.word_files import submit_word_file
+    view = rw.document_view(db, doc)            # read before the update's thread starts
+    return {"document": view, "word_file": submit_word_file(db, doc, current_user)}
 
 
 @router.post("/projects/{project_id}/documents/{doc_id}/approve")
@@ -618,7 +670,11 @@ def approve_several(
             approved.append(doc_id)
         except HTTPException as exc:
             detail = exc.detail if isinstance(exc.detail, dict) else {"code": "ERROR", "message": str(exc.detail)}
-            skipped.append({"document_id": doc_id, "code": detail.get("code"), "message": detail.get("message")})
+            # A6's refusal as it is: STALE_EXPORT's why / corrections / pictures / layer,
+            # WORD_FILE_UPDATING's job_id (WORD_FILE_UPDATES §4.5).
+            extra = {k: v for k, v in detail.items() if k not in ("code", "message", "status")}
+            skipped.append({"document_id": doc_id, "code": detail.get("code"),
+                            "message": detail.get("message"), **extra})
     return {"approved": approved, "skipped": skipped}
 
 
@@ -725,7 +781,10 @@ def export_document(
         raise not_found("Project", project_id)
     require_project_member(project_id, current_user, db)
     doc = _document(db, project_id, doc_id)
-    docx = _docx_for(db, project_id, doc)
+    try:
+        docx = _docx_for(db, project_id, doc)
+    except ApprovedFileMissing:
+        raise _approved_missing([doc])
     if docx is not None:
         return FileResponse(
             docx,

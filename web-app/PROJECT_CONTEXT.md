@@ -98,11 +98,14 @@ Review and approval: a document has one reviewer; a version is approved when all
 `due_date`). `projectKeys.detail` prefixes every project key, so invalidate it with `exact: true`; review
 mutations do not refetch rendered pages.
 
-Staged generation: a version's documents are made per component by any number of runs. The Documents
-page's **Components** panel (`pages/DocumentsPage/components/ComponentsPanel.tsx`, `hooks/useVersionComponents.ts`)
-lists every component of the version's layers by state, shows the latest run (progress, or STOPPED with the
-`analyzer.py resume` command), and lets an admin generate the ones without documents. Versions and projects
-the CLI made can have null fields: the mappers tolerate them (one null used to empty the whole list).
+Staged generation: a version's documents are made per component by any number of runs. One conditional
+row, `components/run/GenerationBanner.tsx` (Overview and Documents), shows while something is missing,
+running, stopped or out of date (the run's progress, or the `analyzer.py resume` command); **View
+components** opens `components/run/ComponentsDrawer.tsx` (a right sheet, `ui/Drawer.tsx`; chips by layer
+and group), where an admin picks the ones without documents and Generates. Rules in
+`lib/versionComponents.ts`, data in `hooks/useVersionComponents.ts`. It replaced
+`DocumentsPage/components/ComponentsPanel.tsx` (2026-10-05). Versions and projects the CLI made can have
+null fields: the mappers tolerate them (one null used to empty the whole list).
 
 ---
 

@@ -4,7 +4,7 @@ import { relativeTime } from '../../../lib/format'
 import type { ProjectRun } from '../../../types'
 
 /* The project's other runs, at work now or cut short — whichever front door started them: a web
-   job the Overview does not show (a Components → Generate, a re-export), or `analyzer.py
+   job the Overview does not show (a Components → Generate, a Word file update), or `analyzer.py
    generate | export | reexport | resume` on the server (`--detach`), which the Overview could not
    see at all (GET /projects/{pid}/runs). Read again every 15 s while one is alive. */
 
@@ -14,13 +14,14 @@ function progress(r: ProjectRun): string {
   return ` — stage ${r.stage.replace(/-/g, ' ')}${r.total ? ` ${r.done ?? 0}/${r.total}${pct !== null ? ` (${pct}%)` : ''}` : ''}`
 }
 
-export function OtherRuns({ projectId, exceptVersionId }: {
+export function OtherRuns({ projectId, exceptVersionIds = [] }: {
   projectId: string
-  /** The version whose web job the Overview shows already (its running card). */
-  exceptVersionId?: string | null
+  /** The versions whose run the Overview shows already: the web job's (its running card) and the
+   *  version on screen (its Generation banner). */
+  exceptVersionIds?: (string | null | undefined)[]
 }) {
   const { data } = useProjectRuns(projectId)
-  const runs = (data ?? []).filter((r) => r.versionId !== exceptVersionId)
+  const runs = (data ?? []).filter((r) => !exceptVersionIds.includes(r.versionId))
   if (!runs.length) return null
   return (
     <div className="mb-6 space-y-2" aria-label="Other runs">

@@ -3,6 +3,9 @@ import type {
   ExportReadiness, FlowchartLabels, QueuedRegeneration, QueuedSlot, Slot, SlotHistoryEntry, SlotKind,
   SlotSaveResult,
 } from '../../types'
+import {
+  ApiReexportExtrasSchema, ApiWordFileReadinessSchema, mapReexportExtras, mapWordFileReadiness,
+} from './wordFiles'
 
 /* Review & update (docs/spec/REVIEW_UPDATE_API_SPEC.md). Unlike the rest of the API these
    routes answer in camelCase, and every one returns a slot in ONE shape (§5 `Slot`) — which the
@@ -90,17 +93,16 @@ export const ApiExportReadinessSchema = z.object({
   failedRenders: z.number(),
   /** When the version's oldest derived output was written: the Word files are no older. */
   oldestDerivationAt: z.string().nullable().optional(),
+  // Word file updates (mappers/wordFiles.ts): optional, as an older API sends none of them.
+  ...ApiWordFileReadinessSchema.omit({ reexport: true }).shape,
   reexport: z.object({
     jobId: z.string(), status: z.string(),
     startedAt: z.string().nullable().optional(), completedAt: z.string().nullable().optional(),
     errorMessage: z.string().nullable().optional(),
+    ...ApiReexportExtrasSchema.shape,
   }).nullable(),
 })
 export type ApiExportReadiness = z.infer<typeof ApiExportReadinessSchema>
-
-export const ApiReexportStartSchema = z.object({
-  job_id: z.string(), status: z.string(), version_id: z.string().optional(),
-})
 
 export function mapSlot(s: ApiSlot): Slot {
   return {
@@ -175,12 +177,15 @@ export function mapExportReadiness(r: ApiExportReadiness): ExportReadiness {
     pendingRenders: r.pendingRenders,
     failedRenders: r.failedRenders,
     oldestDerivationAt: r.oldestDerivationAt ?? null,
+    // Word file updates: which files are out of date, what holds the version (mappers/wordFiles.ts).
+    ...mapWordFileReadiness(r),
     reexport: r.reexport ? {
       jobId: r.reexport.jobId,
       status: r.reexport.status,
       startedAt: r.reexport.startedAt ?? null,
       completedAt: r.reexport.completedAt ?? null,
       errorMessage: r.reexport.errorMessage ?? null,
+      ...mapReexportExtras(r.reexport),
     } : null,
   }
 }

@@ -53,7 +53,7 @@ describe('mapRegenerationQueue (R10)', () => {
 })
 
 describe('mapExportReadiness (R9)', () => {
-  it('maps staleness and the latest re-export', () => {
+  it('maps staleness and the latest update', () => {
     const api = {
       stale: true, reason: 'overrides newer', explanation: 'x', overrideCount: 3, pendingRenders: 0, failedRenders: 1,
       reexport: { jobId: 'j1', status: 'running', startedAt: '2026-09-30T20:00:00Z', completedAt: null, errorMessage: null },

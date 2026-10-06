@@ -11,6 +11,7 @@ from collections import defaultdict
 from clang import cindex
 
 from core.paths import paths as _paths
+from core.clang_options import PARSE_KEEP_GOING
 from core.config import (
     DEFAULT_VISIBILITY_MACROS,
     app_config as _app_config,
@@ -523,6 +524,34 @@ def clang_args_for(file_path: str) -> list:
 
 
 index = cindex.Index.create()
+
+# The options of BOTH parses of every TU (parse_file, parse_calls_and_globals): one value, so
+# the two passes see the same AST and the parse fingerprint hashes what was actually used.
+# KeepGoing (core.clang_options): without it a missing #include stops template instantiation
+# for the rest of the file, and every call on a class-template member after it is lost.
+_TU_PARSE_OPTIONS = cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD | PARSE_KEEP_GOING
+
+
+def _fingerprint_args() -> list:
+    """What `parseFingerprint` hashes besides the toolchain: every arg any TU could be parsed
+    with, then the parse options.
+
+    Every arg, not just the global set: the per-layer include dirs and defines moved out of
+    CLANG_ARGS into clang_args_for, and a fingerprint that ignored them would let an include-path
+    or macro change slip past the narrowed-parse gate. Sorted so it does not depend on layer order.
+
+    The options shape the AST as much as the args do: KeepGoing turned template calls after a
+    missing #include from lost into edges, so a baseline parsed without it must fail the gate, or
+    a narrowed parse re-parses only the changed files and keeps the lost calls everywhere else.
+    Not a clang argument; spelled so it cannot be mistaken for one.
+    """
+    args = list(CLANG_ARGS)
+    for lname in sorted(_LAYER_INCLUDE_ARGS):
+        args += _LAYER_INCLUDE_ARGS[lname]
+    for scope in sorted(_MACRO_ARGS_BY_SCOPE):
+        args += _MACRO_ARGS_BY_SCOPE[scope]
+    args.append(f"--parse-options=0x{_TU_PARSE_OPTIONS:x}")
+    return args
 
 
 def _make_overridden_lookup():
@@ -2258,7 +2287,7 @@ def parse_file(path):
     rel = _rel_path(path)
     _defs_before = len(functions)
     try:
-        tu = index.parse(path, args=clang_args_for(path), options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
+        tu = index.parse(path, args=clang_args_for(path), options=_TU_PARSE_OPTIONS)
         _capture_tu_includes(tu, path)  # incremental (M4.0): per-TU include closure
         visit_definitions(tu.cursor)
         visit_type_definitions(tu.cursor)
@@ -2342,7 +2371,7 @@ def parse_calls_and_globals(path):
         # clang_args_for, not CLANG_ARGS: both walks must see the same defines and include
         # dirs as the definition pass, or a layer-gated #ifdef makes them disagree about
         # which globals a function touches.
-        tu = index.parse(path, args=clang_args_for(path), options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
+        tu = index.parse(path, args=clang_args_for(path), options=_TU_PARSE_OPTIONS)
         visit_calls(tu.cursor)
         # BOTH visitors, on the one parse. Collapsing the two passes into this function
         # dropped this call, and with it every global read/write in the model: direction
@@ -3125,21 +3154,14 @@ def main():
     # WHAT goes in and WHAT comes out are two separate corrections, and the fingerprint is
     # wrong without either one.
     #
-    # WHAT GOES IN — every arg any TU could be parsed with, not just the global set: the
-    # per-layer include dirs and defines moved out of CLANG_ARGS into clang_args_for, and a
-    # fingerprint that ignored them would let an include-path or macro change slip past the
-    # narrowed-parse gate. Sorted so it does not depend on layer order.
+    # WHAT GOES IN — every arg any TU could be parsed with, and the parse options
+    # (_fingerprint_args).
     #
     # WHAT COMES OUT — base_path folds the commit-keyed checkout root out of the -I paths.
     # Without it the fingerprint changes on EVERY commit, so the gate refuses every time and
     # a narrowed parse never runs at all.
-    _fp_args = list(CLANG_ARGS)
-    for _lname in sorted(_LAYER_INCLUDE_ARGS):
-        _fp_args += _LAYER_INCLUDE_ARGS[_lname]
-    for _scope in sorted(_MACRO_ARGS_BY_SCOPE):
-        _fp_args += _MACRO_ARGS_BY_SCOPE[_scope]
     meta_header["parseFingerprint"] = parse_fingerprint(
-        _fp_args, std="", toolchain=str(_toolchain), base_path=base_path)
+        _fingerprint_args(), std="", toolchain=str(_toolchain), base_path=base_path)
     from core.model_io import (write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY,
                                HASHES, EDGES, TU_INCLUDES, ENTITY_FILES, FUNC_KEYS, OVERRIDE_PAIRS,
                                ADDRESS_TAKEN)

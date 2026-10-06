@@ -138,8 +138,8 @@ export function isCorrected(s: Slot): boolean {
 }
 
 /** This document's corrections out of the version's (R1): the ones it prints, the undone ones
- *  (R4: the page prints the LLM's text again, but the Word file keeps the correction until a
- *  re-export, and R9 still counts it), and the orphans of its component. */
+ *  (R4: the page prints the LLM's text again, but the Word file keeps the correction until it
+ *  is updated, and R9 still counts it), and the orphans of its component. */
 export function docCorrections(all: Slot[], sections: RichSection[], group: string): {
   inForce: Slot[]; undone: Slot[]; orphans: Slot[]
 } {
@@ -155,7 +155,7 @@ export function docCorrections(all: Slot[], sections: RichSection[], group: stri
 }
 
 /** The undone corrections to list as "not in the Word file yet": every one of the document while
- *  its Word file is stale, none once it is not. Not cut off by time: a re-export can be partial
+ *  its Word file is stale, none once it is not. Not cut off by time: an update can be partial
  *  (some components only), and R9's `oldestDerivationAt` is the version's, not the component's —
  *  so no time says which undo a given Word file already has. */
 export function undoneInWordFile(undone: Slot[], wordFileStale: boolean): Slot[] {

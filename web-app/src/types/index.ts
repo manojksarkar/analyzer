@@ -30,7 +30,7 @@ export type PageState = 'never' | 'running' | 'in_review' | 'complete' | 'stale'
 /** Staged generation: a version's model covers whole layers, its documents are made per component,
  *  by any number of runs (`GET …/versions/{vid}/components`). `stopped` = it was waiting or being
  *  made when its run died; `stale` = it has documents, but a layer added to the model since
- *  changed what they say (a re-export makes them again); `not_requested` = nobody asked for it yet. */
+ *  changed what they say (an update of their Word files makes them again); `not_requested` = nobody asked for it yet. */
 export type ComponentState =
   'generated' | 'generating' | 'waiting' | 'stopped' | 'failed' | 'stale' | 'not_requested'
 
@@ -45,6 +45,10 @@ export interface VersionComponent {
   /** Its layer is in the model. false: named by the version's config in a layer the model lacks
    *  yet — Generate adds that layer (parse + descriptions) before making its documents. */
   layerParsed: boolean
+  /** Its group in the version's own configuration (`My Sample`). null / absent: the API did not
+   *  say (an older API, or a component no configuration names) — the drawer then matches the
+   *  project's architecture. */
+  group?: string | null
   error: string | null
   documents: { id: string; process: string; status: ReviewStatus }[]
 }
@@ -431,7 +435,48 @@ export interface FlowchartLabels {
   dot: string
 }
 
-/** R9: whether the version's Word files have every correction, and its latest re-export. */
+/* ── Word file updates (docs/design/WORD_FILE_UPDATES.md §4) ── */
+
+/** Why a Word file is out of date (R9 `outOfDate[].why`): a correction it prints saved after it
+ *  was written, a layer added to the version since, a corrected flowchart picture being drawn. */
+export type OutOfDateReason = 'corrections' | 'layerAdded' | 'pictures'
+
+/** R9 `outOfDate[]` / `approvedKept[]`: one document whose Word file is out of date. An update of
+ *  its `component` brings it up to date (its SWE.3 and SWE.4 together). */
+export interface OutOfDateFile {
+  documentId: string
+  /** Layer-qualified (a document's `group`). */
+  component: string
+  /** The component's name as the documents show it. */
+  name: string
+  docType: string
+  why: OutOfDateReason[]
+  corrections: number
+  pictures: number
+  /** The layer `layerAdded` names; null when that is not a reason, or not recorded. */
+  layer: string | null
+  /** A running update (or export) has its component in scope. Always false in `approvedKept`. */
+  updating: boolean
+}
+
+/** What holds the version now (R9 `writer`, A5's `blocked_by`): while set, no update starts. */
+export type WriterKind = 'generation' | 'update' | 'rebuild' | 'export' | 'resume' | 'other'
+
+export interface VersionWriter {
+  kind: WriterKind
+  jobId: string | null
+  command: string | null
+  since: string | null
+  /** An update's or export's components; null for a whole-version run. */
+  components: string[] | null
+  componentsDone: number | null
+  componentsTotal: number | null
+  startedBy: UserRef | null
+  /** The server's sentence (A5's `blocked_by.message`), when it sends one. */
+  message?: string | null
+}
+
+/** R9: whether the version's Word files have every correction, and its latest update. */
 export interface ExportReadiness {
   stale: boolean
   /** The components (documents' `group`) whose Word files are behind, when the version is —
@@ -443,13 +488,52 @@ export interface ExportReadiness {
   failedRenders: number
   /** When the version's oldest derived output was written (null: an older API, or none yet). */
   oldestDerivationAt?: string | null
+  /** The not-approved documents whose Word file is out of date, by name then type. Absent: an
+   *  API from before Word file updates. */
+  outOfDate?: OutOfDateFile[]
+  /** Approved documents that would be out of date: their kept file is the approved one. */
+  approvedKept?: OutOfDateFile[]
+  /** What holds the version now, or null. */
+  writer?: VersionWriter | null
   reexport: {
     jobId: string
     status: string
     startedAt: string | null
     completedAt: string | null
     errorMessage: string | null
+    /** `out_of_date` (an update) or `all` (a rebuild). */
+    scope?: string | null
+    /** `update` | `rebuild` | `submit`. */
+    reason?: string | null
+    /** The components it writes. */
+    components?: string[]
+    /** Of those, how many it has written. */
+    componentsDone?: number
+    /** Of those, the ones that failed in it: their Word files were not written. Every one failed:
+     *  the update is `failed`; some: it is `complete`, with these. */
+    componentsFailed?: string[]
+    /** Only its starter is shown "Update failed" with Try again. */
+    startedBy?: UserRef | null
   } | null
+}
+
+/** `POST V/reexport`'s answer: started (202), joined a running one that covers it, or nothing
+ *  out of date (`status: 'up_to_date'`, `jobId: null`). */
+export interface WordFileUpdateStart {
+  jobId: string | null
+  status: string
+  versionId: string | null
+  scope: string | null
+  components: string[]
+  joined: boolean
+}
+
+/** A5's `word_file`: what Submit did to the document's Word file. */
+export interface SubmitWordFile {
+  state: 'up_to_date' | 'updating' | 'out_of_date'
+  jobId: string | null
+  /** `out_of_date`: what held the version, so the update could not start. */
+  blockedBy: VersionWriter | null
 }
 
 export interface RichTable {

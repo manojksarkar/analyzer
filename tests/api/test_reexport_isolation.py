@@ -178,9 +178,11 @@ class TestReexportPersistsItsOutput:
 
     def test_reexport_captures_output_back_into_the_store(self):
         src = _source("api/services/pipeline_runner.py")
-        assert "_capture_reexport_output(db, job, adir)" in src
+        assert "_capture_reexport_output(db, job, adir, since=since)" in src
         assert "def _capture_reexport_output" in src
-        assert "store.capture_output(version_id, str(adir / \"output\"))" in src
+        # Only the components it wrote (WORD_FILE_UPDATES S4a), and when it started (S0).
+        assert ("store.capture_output(version_id, str(adir / \"output\"), components=comps, "
+                "since=since)") in src
 
     def test_capture_is_skipped_without_a_version_id(self):
         """A legacy commit-keyed run has nothing version-scoped to update, and must not raise."""

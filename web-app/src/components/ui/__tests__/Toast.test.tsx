@@ -15,10 +15,10 @@ describe('toast', () => {
     expect(() => {
       toast.success('Saved')
       toast.error('Approve failed', 'STALE_EXPORT')
-      toast.info('Re-export queued')
+      toast.info('Update queued')
     }).not.toThrow()
     const { toasts } = useToastStore.getState()
-    expect(toasts.map((t) => t.title)).toEqual(['Saved', 'Approve failed', 'Re-export queued'])
+    expect(toasts.map((t) => t.title)).toEqual(['Saved', 'Approve failed', 'Update queued'])
     expect(new Set(toasts.map((t) => t.id)).size).toBe(3)
   })
 

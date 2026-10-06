@@ -320,6 +320,10 @@ class _DocRepo(_Base, IDocumentRepository):
                 cx.execute(insert(sec).values(**row))
         return section
 
+    def set_word_file_at(self, document_id, at):
+        self._exec(update(s.documents).where(s.documents.c.id == document_id)
+                   .values(word_file_at=at))
+
 
 class _AssignRepo(_Base, IDocumentAssignmentRepository):
     def list_for_document(self, document_id):

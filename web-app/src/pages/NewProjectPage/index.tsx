@@ -16,7 +16,7 @@ import { RepoBrowser } from './components/RepoBrowser'
 import { clearDraft, loadDraft, saveDraft } from './draft'
 import {
   assignmentsOf, baseName, cleanPath, CORE_FILES, coreInput, coreProblems, draftToCores, draftToLayers, fitsCoreFile, indexTree,
-  looksLocal, matchFolder, newCore, nextCoreName, openWants, ownerOf, pathProblems, settingsSummary, typedDefines,
+  isSignInFailure, isSshUrl, looksLocal, matchFolder, newCore, nextCoreName, openWants, ownerOf, pathProblems, settingsSummary, typedDefines,
   type Comp, type Core, type CoreFile, type Group, type Layer, type Member, type RepoSource, type Role, type WantedFile,
 } from './helpers'
 
@@ -48,7 +48,7 @@ const STEP_HINTS = [
 ]
 
 const TREE_CB = 'w-3.5 h-3.5 accent-secondary cursor-pointer flex-shrink-0'
-// Step 1's repository switch: Git URL | Local path.
+// Step 1's repository switch: Remote | Local.
 const SEG_BTN = 'inline-flex items-center gap-1 px-2.5 py-[3px] rounded-[6px] font-mono text-caption font-semibold tracking-[.02em] text-on-surface-variant hover:text-on-surface transition-colors'
 const SEG_ON = 'bg-white text-secondary hover:text-secondary shadow-[0_1px_2px_rgba(4,22,39,.12)]'
 
@@ -229,7 +229,7 @@ function WizardView({
   // token is never kept: that draft opens on step 1 to have it typed again, its later steps one
   // click away on the rail.
   const [draft] = useState(loadDraft)
-  const reenterToken = !!draft?.tokenUsed && !!draft.repoUrl && draft.repoSource === 'url'
+  const reenterToken = !!draft?.tokenUsed && !!draft.repoUrl && draft.repoSource === 'url' && !isSshUrl(draft.repoUrl)
   // 1-based step + `done` set (steps advanced past) — drives the rail + bar.
   const [cur, setCur] = useState(() =>
     draft && !reenterToken ? Math.min(Math.max(Math.round(draft.step), 1), STEPS.length) : 1)
@@ -243,7 +243,7 @@ function WizardView({
 
   // ── Step 1: project & repository ──
   const [name, setName] = useState(draft?.name ?? '')
-  // Where the repository is: a Git URL, or a local path - a git repository's folder on the server
+  // Where the repository is: Remote (a URL), or Local - a git repository's folder on the server
   // ArtiFex runs on. Each keeps its own text, so switching back and forth loses nothing.
   const [repoSource, setRepoSource] = useState<RepoSource>(draft?.repoSource ?? 'url')
   const [repoTexts, setRepoTexts] = useState<Record<RepoSource, string>>(() => {
@@ -256,12 +256,14 @@ function WizardView({
   const isLocal = repoSource === 'local'
   const repoInput = useRef<HTMLInputElement>(null)
   const [browseOpen, setBrowseOpen] = useState(false)
+  const tokenInput = useRef<HTMLInputElement>(null)
   const [token, setToken] = useState('')
   const [showToken, setShowToken] = useState(false)
-  const [tokenOpen, setTokenOpen] = useState(reenterToken)
-  // A folder on the server needs no token: none is sent for a local path (one typed under Git URL
-  // stays there).
-  const accessToken = isLocal ? '' : token.trim()
+  // The token field is there for every remote URL but an SSH one (the server's own key signs in);
+  // a folder on the server needs none either. Where the field is hidden no token is sent (one typed
+  // before stays in the field).
+  const tokenShown = !isLocal && !isSshUrl(repoUrl)
+  const accessToken = tokenShown ? token.trim() : ''
   const [branch, setBranch] = useState(draft?.branch ?? '')
   const [branches, setBranches] = useState<string[]>([])
   // The repository's default branch, tagged in the branch list.
@@ -358,7 +360,8 @@ function WizardView({
     onStepChange(cur)
   }, [cur, onStepChange])
   // Keep this tab's draft as it changes (draft.ts: never the token, nor the imported file's text).
-  const tokenUsed = !isLocal && (tokenOpen || !!token)
+  // A restored draft still waiting for its token stays one, so another reload asks for it again.
+  const tokenUsed = tokenShown && (reenterToken || !!token)
   useEffect(() => {
     saveDraft({
       step: cur, done: [...done], name, repoSource, repoUrl, branch, tokenUsed, cores, layers, fileAssignments, members,
@@ -367,9 +370,11 @@ function WizardView({
     })
   }, [cur, done, name, repoSource, repoUrl, branch, tokenUsed, cores, layers, fileAssignments, members, imported, importKept, archChanged])
   // A restored public repository is connected again by itself: its branches and files are not
-  // kept, and steps 3 and 5 check every path against them. A private one waits for its token.
+  // kept, and steps 3 and 5 check every path against them. A private one waits for its token, in
+  // the token field.
   useEffect(() => {
-    if (draft?.repoUrl && !reenterToken) void testConnection({ restoring: true })
+    if (reenterToken) tokenInput.current?.focus()
+    else if (draft?.repoUrl) void testConnection({ restoring: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, for the draft this page opened with
   }, [])
   // An undo is offered for a while, not forever.
@@ -392,8 +397,8 @@ function WizardView({
     // An import checked against the old repository is not checked against this one.
     setImported((p) => (p?.preview.repositoryChecked ? { ...p, preview: { ...p.preview, repositoryChecked: false } } : p))
   }
-  /** Git URL | Local path. Each keeps its own text; a path typed under Git URL goes along to an
-   *  empty Local path (`carry` takes it along whatever Local path held - "Use Local path"). */
+  /** Remote | Local. Each keeps its own text; a path typed under Remote goes along to an empty
+   *  Local (`carry` takes it along whatever Local held - "Switch to Local"). */
   function switchSource(src: RepoSource, carry = false) {
     if (src === repoSource) return
     const typed = repoTexts[repoSource]
@@ -466,10 +471,16 @@ function WizardView({
         ...(isLocal ? { repo_provider: 'local' } : {}),
         access_token: accessToken || undefined,
       })
+      // The URL the server used goes into the box: a Bitbucket page address
+      // (…/projects/VCU/repos/x/browse) comes back as its clone URL (…/scm/vcu/x.git).
+      const used = !isLocal && res.repoUrl ? res.repoUrl : url
+      if (used !== url) setRepoUrl(used)
       if (!res.connected) {
         setTestState('idle')
         setTestMsg({ text: res.message || 'Could not connect to the repository.', tone: 'error' })
         setBranches([]); dropBranch(); setRepoTree([])
+        // No token, or a wrong one: the token is what to fix.
+        if (isSignInFailure(res.message)) tokenInput.current?.focus()
         return
       }
       // An imported config's branch wins when the repository has it.
@@ -481,10 +492,10 @@ function WizardView({
       setTestState('connected')
       setTestMsg({ text: res.message, tone: 'ok' })
       // Pre-fetch the source tree for the architecture + folder pickers.
-      await loadRepoTree(initialBranch, url)
+      await loadRepoTree(initialBranch, used)
       // An imported config's paths were taken as written: check them against this repository.
       if (imported && !imported.preview.repositoryChecked) {
-        await checkImportAgainstRepo(imported, initialBranch, !archEdited.current, url)
+        await checkImportAgainstRepo(imported, initialBranch, !archEdited.current, used)
       }
     } catch (e) {
       setTestState('idle')
@@ -549,7 +560,7 @@ function WizardView({
       }
       if (d.repoUrl && repoUrl.trim() !== d.repoUrl) {
         if (!repoUrl.trim()) {
-          // A path in the config is a local path; a URL, a Git URL.
+          // A path in the config is Local; a URL, Remote.
           const src: RepoSource = looksLocal(d.repoUrl) ? 'local' : 'url'
           const text = d.repoUrl
           setRepoTexts((p) => ({ ...p, [src]: text }))
@@ -839,8 +850,8 @@ function WizardView({
         name: name.trim(),
         client: '',
         compliance_standard: 'ISO_26262',
+        // No `repo_provider`: the server reads it from the URL (a folder is a local repository).
         repo_url: isLocal ? cleanPath(repoUrl) : repoUrl.trim(),
-        repo_provider: isLocal ? 'local' : 'github',
         default_branch: branch || undefined,
         access_token: accessToken || undefined,
         build_config: {
@@ -929,18 +940,18 @@ function WizardView({
                   <input className={`inp ${errs.name ? 'err' : ''}`} value={name} onChange={(e) => { setName(e.target.value); setErrs((p) => ({ ...p, name: false })) }} type="text" placeholder="e.g. VCU Engine Firmware" />
                 </div>
 
-                {/* Where the code is: a Git URL (any git server) or a local path - a git repository's
-                    folder on the server ArtiFex runs on. Either is read with git; a plain folder is
-                    refused by Test Connection. */}
+                {/* Where the code is: Remote - a URL (Bitbucket, GitHub, GitLab, any git server) - or
+                    Local - a git repository's folder on the server ArtiFex runs on. Either is read
+                    with git; a plain folder is refused by Test Connection. */}
                 <div>
                   <div className="lbl">
                     <span>{isLocal ? 'Repository folder' : 'Repository URL'}</span> <span className="req">*</span>
                     <div role="radiogroup" aria-label="Where the repository is" className="ml-auto inline-flex p-0.5 gap-0.5 bg-surface-container-low border border-outline-variant rounded-xl">
                       <button type="button" role="radio" aria-checked={!isLocal} onClick={() => switchSource('url')} className={cn(SEG_BTN, !isLocal && SEG_ON)}>
-                        <Icon name="link" size={14} />Git URL
+                        <Icon name="link" size={14} />Remote
                       </button>
                       <button type="button" role="radio" aria-checked={isLocal} onClick={() => switchSource('local')} className={cn(SEG_BTN, isLocal && SEG_ON)}>
-                        <Icon name="folder" size={14} />Local path
+                        <Icon name="folder" size={14} />Local
                       </button>
                     </div>
                   </div>
@@ -950,7 +961,7 @@ function WizardView({
                       <input ref={repoInput} className={cn('inp mono with-icon', errs.repo && 'err')} value={repoUrl}
                         onChange={(e) => { setRepoUrl(e.target.value); setErrs((p) => ({ ...p, repo: false })); repoChanged() }}
                         type="text" spellCheck={false} aria-label={isLocal ? 'Repository folder' : 'Repository URL'}
-                        placeholder={isLocal ? 'D:/src/vcu-firmware' : 'https://github.com/org/repo.git'} />
+                        placeholder={isLocal ? 'D:/src/vcu-firmware' : 'https://bitbucket.company.com/scm/vcu/vcu-firmware.git'} />
                     </div>
                     {/* Pick the folder instead of typing it - from the SERVER's folders: a browser
                         cannot give a full path from the user's own PC, and git runs on the server. */}
@@ -960,37 +971,29 @@ function WizardView({
                       </button>
                     )}
                   </div>
-                  {isLocal ? (
-                    <p className="mt-1.5 text-caption text-on-surface-variant">
-                      A git repository on the server {APP_NAME} runs on — the folder that holds <code className="font-mono text-[10.5px]">.git</code>. Type its full path, or Browse.
-                    </p>
-                  ) : looksLocal(repoUrl) && (
+                  {/* Remote, but a folder path typed: say so, one click to switch. */}
+                  {!isLocal && looksLocal(repoUrl) && (
                     <p className="mt-1.5 text-caption text-[#8a5300]">
                       This looks like a folder path, not a URL.{' '}
-                      <button type="button" onClick={() => switchSource('local', true)} className="text-secondary hover:underline font-medium">Use Local path</button>
+                      <button type="button" onClick={() => switchSource('local', true)} className="text-secondary hover:underline font-medium">Switch to Local</button>
                     </p>
                   )}
                 </div>
 
-                {/* Only a private repository needs a token: out of the way until asked for. A folder
-                    on the server needs none. */}
-                {isLocal ? null : tokenOpen || token ? (
+                {/* The access token, with every remote URL but an SSH one (the server's own key signs
+                    in); a folder on the server needs none. How it is sent is the server's to read
+                    from the URL. */}
+                {tokenShown && (
                   <div>
-                    <div className="lbl">
-                      Access Token
-                      <span className="ml-auto text-on-surface-variant font-mono text-caption font-normal tracking-normal normal-case">Optional — for private repos</span>
-                    </div>
+                    <div className="lbl">Access Token</div>
                     <div className="relative">
-                      <input autoFocus={!token} className="inp mono pr-10" value={token} onChange={(e) => { setToken(e.target.value); repoChanged() }} type={showToken ? 'text' : 'password'} placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" />
+                      <input ref={tokenInput} className="inp mono pr-10" value={token} onChange={(e) => { setToken(e.target.value); repoChanged() }}
+                        type={showToken ? 'text' : 'password'} aria-label="Access Token" placeholder="Paste the access token" autoComplete="off" />
                       <button type="button" onClick={() => setShowToken((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors">
                         <Icon name={showToken ? 'visibility' : 'visibility_off'} size={17} />
                       </button>
                     </div>
                   </div>
-                ) : (
-                  <button type="button" onClick={() => setTokenOpen(true)} className="group -mt-1 flex items-center gap-1 text-caption text-secondary">
-                    <Icon name="lock" size={13} /><span className="group-hover:underline">Private repository? Add an access token</span>
-                  </button>
                 )}
 
                 {/* Test connection */}

@@ -46,14 +46,19 @@ def _timeout(args: List[str]) -> float:
     return LOCAL_TIMEOUT
 
 
-def _run(args: List[str]) -> subprocess.CompletedProcess:
+def _run(args: List[str], extra_env: Optional[Dict[str, str]] = None) -> subprocess.CompletedProcess:
     """`git <args>`, never prompting, and stopped -- with every process beneath it -- once it has
     run longer than its limit; then a failure (exit `TIMED_OUT`) like any other. The message
-    never carries the arguments: a clone URL can hold a token."""
+    never carries the arguments: a clone URL can hold a token.
+
+    `extra_env` is merged over git's environment: how `clone.git_auth` hands git a credential
+    that must not be in the arguments (an `Authorization` header, as `GIT_CONFIG_*`)."""
     env = dict(os.environ)
     env["GIT_TERMINAL_PROMPT"] = "0"           # no username/password prompt on a console
     env["GCM_INTERACTIVE"] = "never"           # Git Credential Manager: no login window
     env.setdefault("GIT_SSH_COMMAND", "ssh -o BatchMode=yes")
+    if extra_env:
+        env.update(extra_env)
     cmd = [_git_exe(), *args]
     limit = _timeout(args)
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,

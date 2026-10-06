@@ -190,6 +190,8 @@ def preview_config(
             note, url = f"The repository could not be read ({why}), so paths were not checked.", ""
         else:
             url = local_repos.clean(url)
+    elif url:
+        url = repo_git.clone_url(url)              # a Bitbucket page address: its clone URL
     if url:
         try:
             # The branch as it is now: a reused clone is refreshed, and read at the fetched tip.
@@ -198,8 +200,9 @@ def preview_config(
                                              refresh=True)
             tree = git_cli.list_tree(str(clone), repo_git.tree_ref(clone, branch))
         except git_cli.GitError as exc:
-            note = (f"The repository could not be read ({repo_git._friendly(str(exc))}), so "
-                    f"paths were not checked.")
+            why = repo_git._friendly(str(exc),
+                                     token_sent=repo_git.token_sent(url, body.access_token))
+            note = f"The repository could not be read ({why}), so paths were not checked."
     result = project_config.preview(cfg, tree_nodes=tree)
     if note:
         result["report"].insert(0, {"level": "check", "text": note, "topic": "repository"})
@@ -250,7 +253,7 @@ def create_project(
         raise bad_request(" ".join(problems))
     # A local repository (a git repository's folder on the server) is checked as Test Connection
     # checks it -- the wizard cannot be relied on to have -- and stored as git will read it.
-    from ..services import local_repos
+    from ..services import local_repos, repo_git
     # "local" is said by the address, not by the client: a URL sent as "local" is a remote.
     repo_url = body.repo_url
     repo_provider = body.repo_provider if body.repo_provider != "local" else "github"
@@ -259,6 +262,12 @@ def create_project(
         if why:
             raise bad_request(why)
         repo_url, repo_provider = local_repos.clean(repo_url), "local"
+    else:
+        # A Bitbucket page address is stored as its clone URL, and a Bitbucket URL says
+        # "bitbucket" whatever the client sent (display only: git_auth reads the URL itself).
+        repo_url = repo_git.clone_url(repo_url)
+        if repo_git.is_bitbucket(repo_url):
+            repo_provider = "bitbucket"
     build_config = dict(body.build_config)
     if body.access_token and repo_provider != "local":
         build_config["repo_access_token"] = body.access_token

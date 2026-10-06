@@ -160,6 +160,10 @@ class TestEveryAdditiveMigrationIsCovered:
     @pytest.mark.parametrize("table,column", [
         ("model_units", "description"),          # 0009 -- the one that broke
         ("text_overrides", "slot_shape"),        # 0011 -- survived only because its table is new
+        ("documents", "word_file_at"),           # 0018 -- Word file updates
+        ("analysis_jobs", "started_by"),         # 0018
+        ("analysis_jobs", "reason"),             # 0018
+        ("version_components", "stale_layers"),  # 0018
     ])
     def test_a_missing_column_from_any_branch_migration_is_added(self, tmp_path, table, column):
         eng = sa.create_engine(

@@ -343,8 +343,9 @@ def export_test_specs(json_path: str = None, docx_path: str = None,
 
     doc.add_heading("Appendix A. Reference", level=1)
 
-    os.makedirs(os.path.dirname(os.path.abspath(docx_path)), exist_ok=True)
-    doc.save(docx_path)
+    # Whole or not at all: a download or an approval never meets a half-written file.
+    from docx_common import save_docx
+    save_docx(doc, docx_path)
     from utils import log
     log("%s (%d components, %d function specs, %d dynamic behaviour specs)"
         % (docx_path, len(sorted_components), spec_total, dyn_total),

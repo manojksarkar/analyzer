@@ -191,6 +191,11 @@ class IDocumentRepository(ABC):
     @abstractmethod
     def update_section(self, section: DocumentSection) -> DocumentSection: ...
 
+    @abstractmethod
+    def set_word_file_at(self, document_id: str, at) -> None:
+        """When the run that wrote the document's working Word file started
+        (docs/design/WORD_FILE_UPDATES.md). Written only here: `update` leaves it alone."""
+
 
 class IDocumentAssignmentRepository(ABC):
     """A document's reviewer. One per document: `set_reviewer` replaces."""

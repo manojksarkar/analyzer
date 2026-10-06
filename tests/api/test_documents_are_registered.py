@@ -73,6 +73,23 @@ class TestOneDocumentPerComponentDocx:
         docs = _register(db, tmp_path, ["Layer1.Stale", "Layer3.Lib"])
         assert docs == []
 
+    def test_it_knows_when_its_word_file_was_written(self, db, tmp_path):
+        """WORD_FILE_UPDATES S0: the run stored its output before the document existed, so the
+        file's own time is its `word_file_at` -- read back from the database, not the object."""
+        import os
+        docs = _register(db, tmp_path, ["Layer1.Lib"])
+        path = tmp_path / "output" / "Layer1.Lib" / "software_detailed_design_Layer1.Lib.docx"
+        written = datetime.datetime.fromtimestamp(os.path.getmtime(path), datetime.timezone.utc)
+        stored = db.documents.get(docs[0].id).word_file_at
+        if stored.tzinfo is None:                       # SQLite hands back naive datetimes
+            stored = stored.replace(tzinfo=datetime.timezone.utc)
+        assert stored == written
+        # An update of the document leaves it alone: only a run's capture moves it.
+        d = db.documents.get(docs[0].id)
+        d.word_file_at = None
+        db.documents.update(d)
+        assert db.documents.get(docs[0].id).word_file_at is not None
+
 
 BOTH = ("software_detailed_design", "software_unit_test_specification")
 

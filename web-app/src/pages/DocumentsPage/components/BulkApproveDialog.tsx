@@ -1,23 +1,29 @@
 import { Button, Icon, Modal, Text } from '../../../components/ui'
+import { plural } from '../../../lib/wordFiles'
 import type { BulkApprovePlan } from '../helpers'
 
-/* Approve several (A9): only the selected documents that are Ready for approval and whose Word
-   file has every correction. The dialog names how many that is, and how many are skipped. */
+/* Approve several (A9; documents.html renderModal 'bulk'): only the selected documents that are
+   Ready for approval and whose Word file is up to date. The ones whose file is out of date are
+   named with *Update them* — this dialog's link starts the update, no second dialog; while a run
+   holds the version, it says when instead. The rest are not ready for approval. */
 
 const docLabel = (d: { name: string; process: string }) => `${d.name} (${d.process})`
 
 export function BulkApproveDialog({
-  plan, busy, onConfirm, onClose,
+  plan, busy, onConfirm, onClose, update,
 }: {
   plan: BulkApprovePlan
   busy: boolean
   onConfirm: () => void
   onClose: () => void
+  /** The out-of-date files' update: every one of them updating already (`going`), why it cannot
+   *  start now (`blocked`), or how to start it. */
+  update: { going: boolean; blocked: string; onUpdate: () => void }
 }) {
   const n = plan.ready.length
-  const skip = plan.skipped.length
+  const behind = plan.behind.length
+  const other = plan.skipped.length
   const checking = plan.checking.length
-  const reasons = [...new Set(plan.skipped.map((s) => s.reason))]
   return (
     <Modal open onClose={onClose} title={`Approve ${n} document${n === 1 ? '' : 's'}`} className="max-w-[460px]">
       <div className="-mt-3 space-y-3 text-xs text-on-surface">
@@ -32,9 +38,19 @@ export function BulkApproveDialog({
             Checking the Word file of {checking} document{checking === 1 ? '' : 's'}…
           </p>
         )}
-        {skip > 0 && (
-          <p className="text-caption text-[#b45309] leading-snug">
-            {skip} other selected document{skip === 1 ? ' is' : 's are'} skipped: {reasons.join(', or ')}.
+        {behind > 0 && (
+          <p className="text-caption text-[#b45309] leading-snug" title={plan.behind.map(docLabel).join(', ')}>
+            {plural(behind, 'Word file')} {behind === 1 ? 'is' : 'are'} out of date.{' '}
+            {update.going ? 'Updating…' : update.blocked ? update.blocked : (
+              <button type="button" onClick={update.onUpdate} className="text-secondary font-semibold hover:underline">
+                Update {behind === 1 ? 'it' : 'them'}
+              </button>
+            )}
+          </p>
+        )}
+        {other > 0 && (
+          <p className="text-caption text-[#b45309] leading-snug" title={plan.skipped.map((s) => `${docLabel(s.doc)}: ${s.reason}`).join('\n')}>
+            {plural(other, 'other selected document')} {other === 1 ? 'is' : 'are'} not ready for approval.
           </p>
         )}
         <Text as="p" variant="caption" className="leading-snug">

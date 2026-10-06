@@ -389,11 +389,17 @@ def progress(stage: str, done: int, total: int, stage_started: Optional[float] =
 # ---------------------------------------------------------------------------
 
 def mark_components(version_id: Optional[str], components: Iterable[str], state: str, *,
-                    error: Optional[str] = None) -> None:
+                    error: Optional[str] = None, layers: Optional[Iterable[str]] = None) -> None:
     """Move components to `state` (waiting | generating | generated | failed | stale).
 
     `stale` keeps when the documents were made (`finished_at`): they exist, only the model has
-    moved on since."""
+    moved on since. `layers`: for `stale`, the layer(s) whose addition moved it -- what its Word
+    files say ("HAL_LAYER added since", docs/design/WORD_FILE_UPDATES.md). They are added to any
+    already recorded (`[]` when none is named: still "a layer was added") and KEPT through waiting,
+    generating and failed -- an update that is cut short, fails or is cancelled has not made the
+    documents again -- until the component is `generated`, which clears them. Readers judge
+    "layer added" by `stale_layers` being set, whatever the state. A database `setup` has not
+    upgraded yet still records every state (without the layers)."""
     comps = [c for c in dict.fromkeys(components or ()) if c]
     if not version_id or not comps or state not in STATES:
         return
@@ -408,24 +414,55 @@ def mark_components(version_id: Optional[str], components: Iterable[str], state:
         "failed": {"finished_at": now, "error": (error or "")[:2000] or None},
         "stale": {"error": None},
     }[state]
-    try:
-        from sqlalchemy import and_, insert, select, update
-        s = _schema()
-        t = s.version_components
-        with eng.begin() as cx:
-            for c in comps:
-                key = and_(t.c.version_id == version_id, t.c.component == c)
-                current = cx.execute(select(t.c.state).where(key)).scalar()
-                if current is None:
-                    cx.execute(insert(t).values(version_id=version_id, component=c,
-                                                **{"requested_at": now, "state": state,
-                                                   **stamps}))
-                elif not (state == "waiting" and current == "waiting"):
-                    # Asked for again while still waiting (the incremental engine starts run.py
-                    # twice): keep when it was first asked for.
-                    cx.execute(update(t).where(key).values(state=state, **stamps))
-    except Exception as exc:                     # noqa: BLE001
-        _note("component states could not be recorded", exc)
+    names = list(dict.fromkeys(l for l in layers or () if l))
+    for with_layers in ((True, False) if state in ("stale", "generated") else (False,)):
+        try:
+            _write_states(eng, version_id, comps, state, now, stamps,
+                          layers=names if with_layers else None, with_layers=with_layers)
+            return
+        except Exception as exc:                 # noqa: BLE001
+            if not with_layers or state not in ("stale", "generated"):
+                _note("component states could not be recorded", exc)
+                return
+
+
+def _write_states(eng, version_id: str, comps: list, state: str, now, stamps: dict, *,
+                  layers: Optional[list] = None, with_layers: bool = False) -> None:
+    from sqlalchemy import and_, insert, select, update
+    s = _schema()
+    t = s.version_components
+    with eng.begin() as cx:
+        for c in comps:
+            key = and_(t.c.version_id == version_id, t.c.component == c)
+            row = cx.execute(select(t).where(key)).first() if with_layers else \
+                cx.execute(select(t.c.state).where(key)).first()
+            current = row.state if row is not None else None
+            values = dict(stamps)
+            if with_layers:
+                if state == "generated":
+                    values["stale_layers"] = None          # made again: the layer is in them now
+                else:                                       # stale: add to what is recorded
+                    before = list((row._mapping.get("stale_layers") if row is not None else None)
+                                  or [])
+                    values["stale_layers"] = list(dict.fromkeys(before + list(layers or [])))
+            if current is None:
+                cx.execute(insert(t).values(version_id=version_id, component=c,
+                                            **{"requested_at": now, "state": state, **values}))
+            elif not (state == "waiting" and current == "waiting"):
+                # Asked for again while still waiting (the incremental engine starts run.py
+                # twice): keep when it was first asked for.
+                cx.execute(update(t).where(key).values(state=state, **values))
+
+
+def layer_added(row: Optional[Dict[str, Any]]) -> Optional[list]:
+    """The layers a component's documents are older than -- `[]` when not named -- or None when
+    none: `stale_layers` set (kept until it is `generated` again), or the state `stale` itself (a
+    row written before 0018, or on a database without the column)."""
+    if not row:
+        return None
+    if row.get("stale_layers") is not None:
+        return list(row.get("stale_layers") or [])
+    return [] if row.get("state") == "stale" else None
 
 
 def generated_components(version_id: str) -> list:

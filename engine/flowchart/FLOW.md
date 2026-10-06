@@ -54,7 +54,7 @@ parser.py  top-level (script body)
 
   walk MODULE_BASE_PATH:
       for each .cpp / .h / .hpp file:
-          parse file with libclang (PARSE_DETAILED_PROCESSING_RECORD)
+          parse file with libclang (PARSE_DETAILED_PROCESSING_RECORD | PARSE_KEEP_GOING)
           traverse AST:
               FUNCTION_DECL / CXX_METHOD / CONSTRUCTOR / DESTRUCTOR
                   → extract: qualifiedName, returnType, params,
@@ -453,6 +453,9 @@ tu_parser.get_tu_full(abs_path)
     else:
         index.parse(abs_path, args=[-std=c++14, -x c++, -I...])
             options: PARSE_DETAILED_PROCESSING_RECORD | PARSE_INCOMPLETE
+                     | PARSE_KEEP_GOING (0x200, engine/core/clang_options.py —
+                       the same flag Phase 1 parses with, so a missing #include
+                       does not stop template instantiation for the rest of the TU)
             NOTE: PARSE_SKIP_FUNCTION_BODIES is NOT set
                   → function bodies are fully parsed for CFG traversal
         _log_diagnostics(): logs clang errors/warnings

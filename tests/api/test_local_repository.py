@@ -191,7 +191,7 @@ def test_the_files_the_commits_and_a_runs_clone_come_from_the_local_repository(r
     assert {e["path"] for e in repo_git.browse(path, "dev")["entries"]} == {"main.cpp"}
     assert [c["message"] for c in repo_git.list_commits(path, "main")][:1] == ["init"]
     dest = tmp_path / "checkout"
-    git_cli.shallow_clone(path, "", "", str(dest), ref="release/v1", depth=50)
+    git_cli.shallow_clone(path, str(dest), ref="release/v1", depth=50)
     assert (dest / "main.cpp").is_file()
 
 

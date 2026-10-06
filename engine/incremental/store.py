@@ -68,7 +68,8 @@ def _same_dir(a: str, b: str) -> bool:
     return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 
 
-def _verify_output_capture(version_id: str, output_dir: str, stored: int) -> None:
+def _verify_output_capture(version_id: str, output_dir: str, stored: int,
+                           components=None) -> None:
     """Check that what is on disk actually reached the database (`REQ-PRE-02`).
 
     `persist_output_files` returning a count is not proof: it counts rows it *offered*, and a
@@ -84,7 +85,10 @@ def _verify_output_capture(version_id: str, output_dir: str, stored: int) -> Non
 
     if not os.path.isdir(output_dir):
         return
-    on_disk = sum(1 for root, _d, files in os.walk(output_dir) for f in files
+    tops = ([os.path.join(output_dir, c) for c in components] if components is not None
+            else [output_dir])
+    on_disk = sum(1 for top in tops if os.path.isdir(top)
+                  for root, _d, files in os.walk(top) for f in files
                   if f.lower().endswith(_OUTPUT_TEXT_EXTS))
     if on_disk != stored:
         from core.logging_setup import get_logger
@@ -153,12 +157,40 @@ def _stamp_derivation(cx, version_id: str, output_dir: str) -> None:
     that claimed a derivation for every view of every group whatever Phase 3 had done, including
     nothing at all on an export-only run.
 
+    Read from the STORED records, after the rows are stored (WORD_FILE_UPDATES S4a): a run that
+    stored only the components it rebuilt left the others' records -- with the `saved` marks of
+    corrections made while it ran -- and their stamps stand. After a full capture the stored
+    records are the files on disk.
+
     Kept out of `persist_output_files` on purpose: that function's job is the rows, and the guard
     is a separate fact about when they were produced. Imported inside the call so `engine/review/`
     is not a load-time dependency of the store.
     """
-    from review.export_guard import stamp_recorded_derivations
-    stamp_recorded_derivations(cx, version_id, output_dir)
+    from review.export_guard import stamp_stored_derivations
+    stamp_stored_derivations(cx, version_id)
+
+
+def _record_word_files(engine, version_id: str, output_dir: str, since, components) -> None:
+    """`documents.word_file_at` for the Word files this run wrote (WORD_FILE_UPDATES S0).
+
+    Its own transaction, right after the capture's, and never fatal: on a database `setup` has
+    not upgraded yet (no `word_file_at`) the documents keep falling back to their file's time,
+    and the capture itself must not fail over it."""
+    if since is None:
+        return
+    from core.logging_setup import get_logger
+    try:
+        from review.word_files import record_word_files
+        with engine.begin() as cx:
+            n = record_word_files(cx, version_id, output_dir, since, components)
+        if n:
+            get_logger("incremental").info("word files: %d document(s) of version %s written "
+                                           "by this run", n, version_id)
+    except Exception as exc:                                 # noqa: BLE001 - see docstring
+        get_logger("incremental").warning(
+            "word files: could not record when version %s's Word files were written (%s: %s); "
+            "run `python analyzer.py setup` if the database is older than migration 0018",
+            version_id, type(exc).__name__, exc)
 
 
 class ArtifactStore(ABC):
@@ -222,9 +254,11 @@ class ArtifactStore(ABC):
         """
         return False
 
-    def capture_output(self, version_id: str, output_dir: str) -> List[str]:
+    def capture_output(self, version_id: str, output_dir: str, *, components=None,
+                       since=None) -> List[str]:
         """Copy the run's rendered output/ into the version and collect every .docx into
-        documents/. Returns the captured document filenames (sorted)."""
+        documents/. Returns the captured document filenames (sorted). `components` and `since`
+        are the database store's (`PgStore.capture_output`)."""
         d = self.artifact_dir(version_id)
         dst = os.path.join(d, "output")
         # When the run rendered STRAIGHT into the version dir (--output-root, doc 09 B1)
@@ -406,22 +440,42 @@ class PgStore(ArtifactStore):
         self.proj_root = os.path.join(root, project_id)   # see FileStore: created on demand
         self._reuse = PgReuseIndex(engine, project_id)
 
-    def capture_output(self, version_id: str, output_dir: str) -> List[str]:
+    def capture_output(self, version_id: str, output_dir: str, *, components=None,
+                       since=None) -> List[str]:
         """Capture rendered output to the version's disk area (base behaviour — readers/DOCX still
         use files) AND persist the text/JSON view files to Postgres (PG-5a), so the API can read
         interface tables / flowchart + unit mermaid / behaviour rows from the DB. PNG/DOCX stay as
-        files. The DB write is best-effort — a hiccup must not fail a run that already has its docs."""
+        files. The DB write is best-effort — a hiccup must not fail a run that already has its docs.
+
+        `components`: the component directories this run rebuilt (`reexport`, `export`, `resume`
+        by component): only their rows are replaced, so a correction saved meanwhile in another
+        component survives (WORD_FILE_UPDATES S4a). None: the whole version, as a generation.
+        `since`: when the run started -- each document whose Word file it wrote gets it as its
+        `word_file_at` (S0). None: the start of the version's current run (`version_runs`, while it
+        is `running`: the run storing this output), so a generation's files get theirs too.
+
+        By component, the directories the database has never stored are stored as well: a run cut
+        short after making them and before its one capture (a generation stores at its end) left
+        them on disk alone, and a `resume` that makes the rest must not leave them out. Storing
+        them replaces no row, so it can revert no correction."""
         captured = super().capture_output(version_id, output_dir)
         try:
             from incremental.model_store import persist_output_files
+            from review.word_files import run_start, unstored_dirs
             with self.engine.begin() as cx:
-                stored = persist_output_files(cx, version_id, output_dir)
+                if since is None:
+                    since = run_start(cx, version_id)
+                if components is not None:
+                    components = list(dict.fromkeys(
+                        list(components) + unstored_dirs(cx, version_id, output_dir)))
+                stored = persist_output_files(cx, version_id, output_dir, groups=components)
                 # REQ-AP-04's baseline: when this version's output was last derived. Recorded
                 # here because this is the one point Phase-3 output reaches the database, so
                 # every ordinary run has a baseline -- not only versions somebody corrected --
                 # and in the same transaction, so the stamps always describe the rows stored.
                 _stamp_derivation(cx, version_id, output_dir)
-            _verify_output_capture(version_id, output_dir, stored)
+            _record_word_files(self.engine, version_id, output_dir, since, components)
+            _verify_output_capture(version_id, output_dir, stored, components)
         except Exception as exc:
             # NOT swallowed. This used to be `except Exception: pass` under the note
             # "best-effort: disk output is intact" -- and the disk IS intact, which is exactly

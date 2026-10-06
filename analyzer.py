@@ -467,6 +467,37 @@ def _refuse_stale_export(version_id: str, doc_type: str = None, *, quiet: bool =
     return 0
 
 
+def _run_since(version_id: str):
+    """Now, taken while holding the version's save lock (`review.word_files.wait_for_saves`), or
+    plain now without a database."""
+    import datetime as _dt
+    try:
+        from core.db import get_engine, is_database_configured
+        if is_database_configured():
+            from review.word_files import wait_for_saves
+            return wait_for_saves(get_engine(), version_id)
+    except Exception as exc:                        # noqa: BLE001 -- then as the clock says
+        print(f"note: could not wait for saves under way ({type(exc).__name__}: {exc})",
+              file=sys.stderr)
+    return _dt.datetime.now(_dt.timezone.utc)
+
+
+def _touched_since(version_id: str, since):
+    """The components a run since `since` asked for or started, or None (then the whole version
+    is stored, as before)."""
+    try:
+        from core.db import get_engine, is_database_configured
+        if not is_database_configured():
+            return None
+        from review.word_files import components_touched_since
+        with get_engine().connect() as cx:
+            return components_touched_since(cx, version_id, since) or None
+    except Exception as exc:                        # noqa: BLE001
+        print(f"note: could not read which components this run made ({type(exc).__name__}: "
+              f"{exc}); storing the whole version", file=sys.stderr)
+        return None
+
+
 def _render_version(a, *, scope, command: str, after=None, before=None):
     """Phases `a.from_phase`..4 of a version from its STORED model, into that same version --
     the work behind `reexport`, `export` and `resume`. Returns (exit code, the documents stored).
@@ -599,11 +630,18 @@ def _render_version(a, *, scope, command: str, after=None, before=None):
 
     os.environ["ANALYZER_VERSION_ID"] = a.version_id      # the phases' progress marks (as generate)
     _retry_connects_for_run()
+    # What this run rebuilds, stored alone (WORD_FILE_UPDATES S4a): by component, only those
+    # components' rows are replaced, so a correction saved meanwhile in another one is kept.
+    rebuilt = (list(scope.get("names") or []) or None) if scope.get("type") == "component" else None
     from core.version_run import VersionBusy, writing
     try:
         with writing(a.version_id, command=command, argv=getattr(a, "_argv", None),
                      log_path=os.environ.get("ANALYZER_RUN_LOG"),
                      code_dir=os.environ.get("ANALYZER_RUN_CODE")) as run:
+            # When this run starts reading, with the writer lock held (the hold refuses new saves
+            # in what a CLI run asks for) and every save under way committed first: its Word files
+            # hold what was saved before this (WORD_FILE_UPDATES §4.3).
+            since = _run_since(a.version_id)
             if before is not None:
                 rc = before(cfg, own_cfg, checkout, doc_type)
                 if rc:
@@ -613,14 +651,20 @@ def _render_version(a, *, scope, command: str, after=None, before=None):
             # what they made, and report the failure.
             if rc not in (0, 3):
                 return run.ok(rc), None
+            if rebuilt is None:
+                # A group or layer scope: the components run.py asked for or started -- stored
+                # alone like any other, not the whole version (WORD_FILE_UPDATES S4a).
+                rebuilt = _touched_since(a.version_id, since)
             # Capture the re-rendered views back into the database. Without this a re-export
             # updated `output/` on THIS machine and left `version_output_files` holding the
             # previous render — so the document served from the database, or from any other
             # node, silently stayed stale. The API's re-export path has always done this
             # (`_capture_reexport_output`); the CLI's did not.
             try:
-                docs = store.capture_output(a.version_id, os.path.join(adir, "output"))
-                print(f"stored: {len(docs or [])} document(s) + the re-rendered views")
+                docs = store.capture_output(a.version_id, os.path.join(adir, "output"),
+                                            components=rebuilt, since=since)
+                print(f"stored: {len(docs or [])} document(s) + the re-rendered views"
+                      + (f" of {len(rebuilt)} component(s)" if rebuilt else ""))
             except Exception as exc:
                 print(f"WARNING: the documents were rebuilt on disk but could not be stored "
                       f"({exc}). The database still holds the previous render.",
@@ -829,7 +873,15 @@ def cmd_reexport(a) -> int:
     # than it, and an export alone would print them again -- and call them generated. Any stale
     # one in what this re-exports, or in the version when the scope is not by component.
     named = set((scope or {}).get("names") or []) if (scope or {}).get("type") == "component" else None
-    stale = [c["component"] for c in view if c["state"] == "stale"
+    # A layer added since is remembered through a failed or cancelled re-export, until the
+    # component is generated again (`version_run.layer_added`), not only while it reads `stale`.
+    from core.version_run import component_rows, layer_added
+    try:
+        rows = component_rows(a.version_id)
+    except Exception:                                # noqa: BLE001 -- the view's states, as before
+        rows = {}
+    stale = [c["component"] for c in view
+             if (c["state"] == "stale" or layer_added(rows.get(c["component"])) is not None)
              and (named is None or c["component"] in named)]
     if stale and a.from_phase >= 4:
         if getattr(a, "_views_when_stale", False):
@@ -944,7 +996,7 @@ def _layers_adder(a, *, parse_layers, new_layers, added, documented):
             return rc
         stale = extend.changed_components(a.version_id, saved, docs)
         if stale:
-            mark_components(a.version_id, stale, "stale")
+            mark_components(a.version_id, stale, "stale", layers=news)
             print(f"stale: {', '.join(stale)} -- {', '.join(news)} changed what their "
                   f"documents are made from; `reexport --components {','.join(stale)}` makes "
                   f"them again")

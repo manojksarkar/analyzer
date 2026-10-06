@@ -18,7 +18,7 @@ const FINAL = 'This cannot be undone, and later versions will not carry them.'
 
 /* This document's corrections (R1), newest first; a click goes to the text. Undone ones — the
    page prints the LLM's text again — are listed apart while the Word file still has them (R9
-   counts them until a re-export), so the banner's count and this list agree. The ones whose code
+   counts them until it is updated), so the banner's count and this list agree. The ones whose code
    changed since are kept but no longer printed — listed apart, greyed; an admin may discard them
    (R12). Below them, what the next run rewrites (`children`). */
 export function CorrectionsTab({
@@ -143,7 +143,7 @@ function Card({ slot, userName, orphan, undone }: {
       </p>
       <p className="font-mono text-label text-outline mt-1">
         {orphan && 'The code changed, so it is kept but not printed. '}
-        {undone && 'Back to the LLM’s text on the page; the Word file keeps the correction until a re-export. '}
+        {undone && 'Back to the LLM’s text on the page. The Word file keeps the correction until it is updated. '}
         {who || 'Someone'}{slot.updatedAt ? ` · ${formatShortDate(slot.updatedAt)}` : ''}
       </p>
     </>

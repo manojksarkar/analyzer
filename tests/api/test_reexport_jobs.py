@@ -65,6 +65,23 @@ def _version(db, pid, tag="v1", *, generation="complete", minutes_ago=0):
     return vid
 
 
+def _documents(db, pid, vid, groups, *, reviewer=None, status="in_review"):
+    """A SWE.3 and a SWE.4 document per component; `reviewer` reviews them all."""
+    from api.models.domain import Document, DocumentAssignment
+    now = datetime.datetime.now(UTC)
+    out = []
+    for g in groups:
+        for process in ("SWE.3", "SWE.4"):
+            d = Document(id=_uid("doc"), project_id=pid, version_id=vid, process=process,
+                         name=g.split(".", 1)[-1], subtitle="", layer="L1", group=g,
+                         status=status, due_date=None, created_at=now, updated_at=now)
+            db.documents.update(d)
+            if reviewer:
+                db.assignments.set_reviewer(DocumentAssignment(_uid("a"), d.id, reviewer, "u1", now))
+            out.append(d)
+    return out
+
+
 class _Engine:
     """Stands in for `_do_reexport`: holds until released, then succeeds, fails or raises."""
 
@@ -188,17 +205,35 @@ class TestItIsAJobOfItsOwn:
 
 
 class TestOneAtATime:
-    def test_a_second_request_is_refused_naming_the_running_job(self, client, db, auth_header,
-                                                                monkeypatch):
+    def test_a_second_request_the_running_one_covers_joins_it(self, client, db, auth_header,
+                                                               monkeypatch):
+        """No queue (WORD_FILE_UPDATES D6): the same request again follows the running job."""
         pid = _project(db)
         vid = _version(db, pid)
         engine = _Engine(monkeypatch)
         first = _start(client, auth_header, pid, vid).json()["job_id"]
         assert engine.entered.wait(10)
         r = _start(client, auth_header, pid, vid)
+        assert r.status_code == 200, r.text
+        assert r.json()["job_id"] == first and r.json()["joined"] is True
+        assert len([j for j in db.jobs.list_for_version(vid) if j.mode == REEXPORT_MODE]) == 1
+        engine.finish(first)
+
+    def test_one_it_does_not_cover_is_refused_naming_the_running_job(self, client, db,
+                                                                      auth_header, monkeypatch):
+        pid = _project(db)
+        vid = _version(db, pid)
+        _documents(db, pid, vid, ["L1.A", "L1.B"])
+        engine = _Engine(monkeypatch)
+        first = client.post(f"/api/v1/projects/{pid}/versions/{vid}/reexport", headers=auth_header,
+                            json={"scope": "all", "components": ["L1.A"]}).json()["job_id"]
+        assert engine.entered.wait(10)
+        r = client.post(f"/api/v1/projects/{pid}/versions/{vid}/reexport", headers=auth_header,
+                        json={"scope": "all", "components": ["L1.B"]})
         assert r.status_code == 409, r.text
-        assert r.json()["detail"]["code"] == "REEXPORT_RUNNING"
-        assert r.json()["detail"]["job_id"] == first
+        d = r.json()["detail"]
+        assert (d["code"], d["job_id"], d["components"], d["scope"]) == \
+            ("REEXPORT_RUNNING", first, ["L1.A"], "all")
         engine.finish(first)
 
     def test_once_it_has_finished_another_may_start(self, client, db, auth_header, monkeypatch):
@@ -351,3 +386,305 @@ class TestAReexportRegistersMissingDocuments:
         r = _start(client, auth_header, pid, vid)
         engine.finish(r.json()["job_id"])
         assert db.documents.list_for_project(pid, version_id=vid, per_page=50)[1] == 0
+
+
+# ---------------------------------------------------------------------------
+# Word file updates (docs/design/WORD_FILE_UPDATES.md §4.1): the scope, who, the job's starter
+# ---------------------------------------------------------------------------
+def _out_of_date(monkeypatch, groups):
+    """Make these components' documents out of date (the rule itself: tests/unit/test_word_files.py)."""
+    import os
+    import sys
+    eng = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                       "engine")
+    if eng not in sys.path:
+        sys.path.insert(0, eng)
+    from review.word_files import FileState, UP_TO_DATE
+    from api.services import word_files
+
+    def states(db, version, docs=None, **k):
+        docs = word_files.version_documents(db, version) if docs is None else docs
+        return {d.id: (FileState(True, ("corrections",), 2, 0, None)
+                       if d.group in groups else UP_TO_DATE) for d in docs}
+    monkeypatch.setattr(word_files, "file_states", states)
+
+
+def _update(client, header, pid, vid, **body):
+    return client.post(f"/api/v1/projects/{pid}/versions/{vid}/reexport", headers=header, json=body)
+
+
+class TestTheUpdateScope:
+    def test_nothing_out_of_date_starts_nothing(self, client, db, auth_header, monkeypatch):
+        pid = _project(db)
+        vid = _version(db, pid)
+        _documents(db, pid, vid, ["L1.A"])
+        _out_of_date(monkeypatch, set())
+        _Engine(monkeypatch)
+        r = _update(client, auth_header, pid, vid, scope="out_of_date")
+        assert r.status_code == 200, r.text
+        assert r.json() == {"job_id": None, "status": "up_to_date", "version_id": vid,
+                            "scope": "out_of_date", "components": [], "joined": False}
+        assert not [j for j in db.jobs.list_for_version(vid) if j.mode == REEXPORT_MODE]
+
+    def test_an_admin_updates_what_is_out_of_date_and_is_its_starter(self, client, db,
+                                                                      auth_header, monkeypatch):
+        pid = _project(db)
+        vid = _version(db, pid)
+        _documents(db, pid, vid, ["L1.A", "L1.B", "L1.C"])
+        _out_of_date(monkeypatch, {"L1.A", "L1.C"})
+        engine = _Engine(monkeypatch)
+        r = _update(client, auth_header, pid, vid, scope="out_of_date")
+        assert r.status_code == 202, r.text
+        body = r.json()
+        assert (body["scope"], body["components"], body["joined"]) == \
+            ("out_of_date", ["L1.A", "L1.C"], False)
+        job = _job(client, auth_header, pid, body["job_id"])
+        assert job["reason"] == "update" and job["started_by"]["user_id"] == "u1"
+        assert job["scope"]["names"] == ["L1.A", "L1.C"]
+        engine.finish(body["job_id"])
+
+    def test_a_developer_updates_the_documents_they_review(self, client, db, dev_header,
+                                                          monkeypatch):
+        pid = _project(db)
+        vid = _version(db, pid)
+        _documents(db, pid, vid, ["L1.A"], reviewer="u2")
+        _documents(db, pid, vid, ["L1.B"], reviewer="u3")
+        _out_of_date(monkeypatch, {"L1.A", "L1.B"})
+        engine = _Engine(monkeypatch)
+        r = _update(client, dev_header, pid, vid, scope="out_of_date")
+        assert r.status_code == 202, r.text
+        assert r.json()["components"] == ["L1.A"]
+        engine.finish(r.json()["job_id"])
+
+    def test_and_the_one_they_have_open(self, client, db, dev_header, monkeypatch):
+        pid = _project(db)
+        vid = _version(db, pid)
+        other = _documents(db, pid, vid, ["L1.B"], reviewer="u3")
+        _out_of_date(monkeypatch, {"L1.B"})
+        engine = _Engine(monkeypatch)
+        r = _update(client, dev_header, pid, vid, scope="out_of_date", components=["L1.B"],
+                    document_id=other[0].id)
+        assert r.status_code == 202, r.text
+        assert r.json()["components"] == ["L1.B"]
+        engine.finish(r.json()["job_id"])
+
+    def test_not_others(self, client, db, dev_header, monkeypatch):
+        pid = _project(db)
+        vid = _version(db, pid)
+        _documents(db, pid, vid, ["L1.A"], reviewer="u2")
+        _documents(db, pid, vid, ["L1.B"], reviewer="u3")
+        _out_of_date(monkeypatch, {"L1.A", "L1.B"})
+        _Engine(monkeypatch)
+        r = _update(client, dev_header, pid, vid, scope="out_of_date", components=["L1.A", "L1.B"])
+        assert r.status_code == 403, r.text
+        assert r.json()["detail"]["code"] == "NOT_YOUR_DOCUMENTS"
+        assert r.json()["detail"]["components"] == ["L1.B"]
+
+    def test_rebuild_all_is_for_admins(self, client, db, dev_header, monkeypatch):
+        pid = _project(db)
+        vid = _version(db, pid)
+        _documents(db, pid, vid, ["L1.A"], reviewer="u2")
+        _Engine(monkeypatch)
+        assert _update(client, dev_header, pid, vid, scope="all").status_code == 403
+        assert _update(client, dev_header, pid, vid).status_code == 403     # absent = all
+
+    def test_a_document_of_another_version_is_404(self, client, db, auth_header, monkeypatch):
+        pid = _project(db)
+        vid, other = _version(db, pid, "v1"), _version(db, pid, "v2")
+        doc = _documents(db, pid, other, ["L1.A"])[0]
+        _Engine(monkeypatch)
+        r = _update(client, auth_header, pid, vid, scope="out_of_date", document_id=doc.id)
+        assert r.status_code == 404
+
+    def test_a_writer_holding_the_version_is_named(self, client, db, auth_header, monkeypatch):
+        """S5b: VERSION_BUSY says what holds the version."""
+        from api.services import word_files
+        pid = _project(db)
+        vid = _version(db, pid)
+        _documents(db, pid, vid, ["L1.A"])
+        _out_of_date(monkeypatch, {"L1.A"})
+        _Engine(monkeypatch)
+        monkeypatch.setattr(pr, "version_writer_busy", lambda db, v: "analyzer generate")
+        held = {"kind": "generation", "job_id": None, "command": "generate"}
+        monkeypatch.setattr(word_files, "writer", lambda db, v, snake=False: held)
+        r = _update(client, auth_header, pid, vid, scope="out_of_date")
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "VERSION_BUSY"
+        assert r.json()["detail"]["writer"] == held
+
+
+class TestTheStarterIsTold:
+    def _finished(self, client, db, header, monkeypatch, outcome):
+        pid = _project(db)
+        vid = _version(db, pid)
+        docs = _documents(db, pid, vid, ["L1.Brake"], reviewer="u2")
+        _out_of_date(monkeypatch, {"L1.Brake"})
+        engine = _Engine(monkeypatch, outcome=outcome)
+        engine.release.set()
+        r = _update(client, header, pid, vid, scope="out_of_date", document_id=docs[0].id)
+        assert r.status_code == 202, r.text
+        engine.finish(r.json()["job_id"])
+        return docs[0]
+
+    def test_a_finished_update(self, client, db, dev_header, monkeypatch):
+        doc = self._finished(client, db, dev_header, monkeypatch, "ok")
+        mine = [n for n in db.notifications.list_unread("u2") if n.document_id == doc.id]
+        assert [n.type for n in mine] == ["word_files_updated"]
+        assert mine[0].message == "Word files updated: Brake in v1."
+
+    def test_a_failed_one(self, client, db, dev_header, monkeypatch):
+        doc = self._finished(client, db, dev_header, monkeypatch, "fail")
+        mine = [n for n in db.notifications.list_unread("u2") if n.document_id == doc.id]
+        assert [n.type for n in mine] == ["word_files_update_failed"]
+        assert mine[0].message == "Update failed: Brake in v1 \u2014 run.py exited with code 2."
+        assert not [n for n in db.notifications.list_unread("u1") if n.document_id == doc.id], \
+            "a button's update tells only its starter"
+
+
+class TestAStaleComponentIsMadeAgainFromItsViews:
+    """SA: the in-process re-export (no background runs) went to Phase 4 alone for a component a
+    layer added since had made stale -- printing its old views again."""
+
+    def test_its_scope_is_asked(self, db, monkeypatch):
+        from types import SimpleNamespace
+        from api.services import version_components
+        monkeypatch.setattr(version_components, "state_rows", lambda eng, vid: {
+            "L1.A": {"state": "stale"}, "L1.B": {"state": "generated"}})
+        job = lambda names: SimpleNamespace(version_id="v", scope={"type": "component",
+                                                                   "names": names})
+        assert pr._stale_in_scope(db, job(["L1.A"])) is True
+        assert pr._stale_in_scope(db, job(["L1.B"])) is False
+        assert pr._stale_in_scope(db, SimpleNamespace(version_id="v", scope=None)) is True
+
+    def test_the_in_process_path_asks_it(self):
+        import inspect
+        src = inspect.getsource(pr._do_reexport)
+        assert "if from_phase > 3 and _stale_in_scope(db, job):" in src
+
+
+class TestR9SaysWhatHoldsTheVersion:
+    def test_an_update_at_work(self, client, db, auth_header, monkeypatch):
+        if not hasattr(db, "_engine"):
+            pytest.skip("R9 finds the version in the engine database, which the in-memory "
+                        "backend leaves empty")
+        pid = _project(db)
+        vid = _version(db, pid)
+        _documents(db, pid, vid, ["L1.A", "L1.B"])
+        _out_of_date(monkeypatch, {"L1.A"})
+        engine = _Engine(monkeypatch)
+        job_id = _update(client, auth_header, pid, vid, scope="out_of_date").json()["job_id"]
+        assert engine.entered.wait(10)
+        body = client.get(f"/api/v1/projects/{pid}/versions/{vid}/export-readiness",
+                          headers=auth_header).json()
+        w = body["writer"]
+        assert (w["kind"], w["jobId"], w["components"], w["componentsTotal"]) ==             ("update", job_id, ["L1.A"], 1)
+        assert w["startedBy"]["userId"] == "u1"
+        assert [e["updating"] for e in body["outOfDate"]] == [True, True]   # its SWE.3 and SWE.4
+        rx = body["reexport"]
+        assert (rx["jobId"], rx["scope"], rx["reason"], rx["components"]) ==             (job_id, "out_of_date", "update", ["L1.A"])
+        engine.finish(job_id)
+        body = client.get(f"/api/v1/projects/{pid}/versions/{vid}/export-readiness",
+                          headers=auth_header).json()
+        assert body["writer"] is None and body["reexport"]["status"] == "complete"
+
+
+# ---------------------------------------------------------------------------
+# The review of 2026-10-06: findings 7, 8b, 8c
+# ---------------------------------------------------------------------------
+def _states_after_the_run(monkeypatch, failed):
+    """`version_components` as run.py leaves it: `failed` components failed just now."""
+    from api.services import word_files
+
+    def rows(db, version_id):
+        now = datetime.datetime.now(UTC)
+        return {c: {"state": "failed", "finished_at": now, "error": "%s: render failed" % c}
+                for c in failed}
+    monkeypatch.setattr(word_files, "_state_rows", rows)
+
+
+class TestAFailedComponentIsNotUpdated:
+    """Finding 7. run.py exits 3 when a component fails and goes on with the others: the job
+    was `complete` and the starter told "Word files updated" for a file never written."""
+
+    def _run(self, client, db, header, monkeypatch, groups, failed):
+        pid = _project(db)
+        vid = _version(db, pid)
+        docs = _documents(db, pid, vid, groups, reviewer="u2")
+        _out_of_date(monkeypatch, set(groups))
+        _states_after_the_run(monkeypatch, failed)
+        engine = _Engine(monkeypatch)
+        engine.release.set()
+        r = _update(client, header, pid, vid, scope="out_of_date", document_id=docs[0].id)
+        assert r.status_code == 202, r.text
+        engine.finish(r.json()["job_id"])
+        notes = [n for n in db.notifications.list_unread("u2") if n.document_id == docs[0].id]
+        return _job(client, header, pid, r.json()["job_id"]), notes
+
+    def test_when_every_one_failed_the_update_failed(self, client, db, dev_header, monkeypatch):
+        job, notes = self._run(client, db, dev_header, monkeypatch, ["L1.Brake"], ["L1.Brake"])
+        assert job["status"] == "failed" and "L1.Brake" in job["error_message"]
+        assert [(n.type, n.message) for n in notes] == [
+            ("word_files_update_failed",
+             "Update failed: Brake in v1 \u2014 L1.Brake: render failed.")]
+
+    def test_when_some_failed_each_is_told_as_it_ended(self, client, db, dev_header, monkeypatch):
+        job, notes = self._run(client, db, dev_header, monkeypatch, ["L1.A", "L1.B"], ["L1.B"])
+        assert job["status"] == "complete" and "failed: L1.B" in job["activity_detail"]
+        assert sorted((n.type, n.message) for n in notes) == [
+            ("word_files_update_failed", "Update failed: B in v1 \u2014 L1.B: render failed."),
+            ("word_files_updated", "Word files updated: A in v1.")]
+
+
+class TestARunningExportOrResumeIsNamedAsSuch:
+    """Finding 8: a running export or resume was refused as an update, `scope: out_of_date`."""
+
+    def test_an_export_at_work(self, client, db, auth_header, monkeypatch):
+        import threading
+        pid = _project(db)
+        vid = _version(db, pid)
+        _documents(db, pid, vid, ["L1.A"])
+        _out_of_date(monkeypatch, {"L1.A"})
+        _Engine(monkeypatch)
+        db.jobs.create(AnalysisJob(
+            id=_uid("jobexp"), project_id=pid, commit_sha="a" * 40, version_id=vid,
+            reference_version_id=None, status="running", pause_after_phase1=False,
+            layer_filter=None, phase=3, phase_pct=0, current_activity="", activity_detail="",
+            elapsed_seconds=0, eta_seconds=None, phases=[], started_at=datetime.datetime.now(UTC),
+            completed_at=None, error_message=None, branch="main", version_tag="v1",
+            mode="export", scope={"type": "component", "names": ["L1.New"]}, reason="export"))
+        export = [j for j in db.jobs.list_for_version(vid) if j.mode == "export"][0]
+        hold = threading.Event()
+        t = threading.Thread(target=hold.wait, args=(20,), daemon=True)
+        t.start()
+        pr._reexport_threads[export.id] = t
+        try:
+            r = _update(client, auth_header, pid, vid, scope="out_of_date")
+            assert r.status_code == 409, r.text
+            d = r.json()["detail"]
+            assert (d["code"], d["scope"], d["kind"], d["job_id"], d["components"]) == \
+                ("REEXPORT_RUNNING", "export", "export", export.id, ["L1.New"])
+            assert "rendered by an export" in d["message"]
+        finally:
+            hold.set()
+            pr._reexport_threads.pop(export.id, None)
+
+
+class TestUnreadableStatesFailClosed:
+    """Finding 8: an error reading `version_components` read as "nothing stale, nothing held"."""
+
+    def test_the_word_file_rule_raises(self, db, monkeypatch):
+        from api.services import version_components, word_files
+
+        def broken(engine, version_id):
+            raise RuntimeError("database gone")
+        monkeypatch.setattr(version_components, "state_rows", broken)
+        with pytest.raises(RuntimeError):
+            word_files.stale_layers(db, "v")
+
+    def test_the_in_process_reexport_makes_the_views_again(self, db, monkeypatch):
+        from types import SimpleNamespace
+        from api.services import version_components
+
+        def broken(engine, version_id):
+            raise RuntimeError("database gone")
+        monkeypatch.setattr(version_components, "state_rows", broken)
+        assert pr._stale_in_scope(db, SimpleNamespace(version_id="v", scope=None)) is True

@@ -11,9 +11,15 @@ describe('approvalErrorMessage', () => {
     expect(approvalErrorMessage(new ApiError('x', 409, 'NO_REVIEWER'))).toBe('It needs a reviewer first.')
     expect(approvalErrorMessage(new ApiError('x', 422, 'NOT_A_MEMBER'))).toMatch(/not an active member/)
   })
-  it("keeps STALE_EXPORT's reason", () => {
+  it("says why STALE_EXPORT refused: from its fields (A6), else the server's message", () => {
+    expect(approvalErrorMessage(new ApiError('stale', 409, 'STALE_EXPORT',
+      { why: ['corrections', 'layerAdded'], corrections: 3, pictures: 0, layer: 'HAL_LAYER' })))
+      .toBe('Its Word file is out of date. 3 corrections not in it, HAL_LAYER added since.')
     expect(approvalErrorMessage(new ApiError('3 corrections are not in it.', 409, 'STALE_EXPORT')))
-      .toBe('Its Word file does not have every correction yet: re-export first, then approve. 3 corrections are not in it.')
+      .toBe('Its Word file is out of date. 3 corrections are not in it.')
+  })
+  it('an update writing its file (409 WORD_FILE_UPDATING)', () => {
+    expect(approvalErrorMessage(new ApiError('x', 409, 'WORD_FILE_UPDATING', { job_id: 'j1' }))).toBe('Its Word file is updating.')
   })
   it("falls back to the server's message", () => {
     expect(approvalErrorMessage(new ApiError('Comment is too long', 422))).toBe('Comment is too long')

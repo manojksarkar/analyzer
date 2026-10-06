@@ -13,11 +13,12 @@ export interface WizardDraft {
   /** Steps advanced past (the rail lets you go back to them). */
   done: number[]
   name: string
-  /** Git URL or local path: which one `repoUrl` is. */
+  /** Remote (a URL) or Local (a folder on the server): which one `repoUrl` is. */
   repoSource: RepoSource
   repoUrl: string
   branch: string
-  /** An access token was in use: the repository is private, and the token must be typed again. */
+  /** An access token was in use (never the token itself): the restored draft opens on step 1 and
+   *  asks for it again. */
   tokenUsed: boolean
   cores: Core[]
   layers: Layer[]

@@ -80,21 +80,36 @@ describe('NewProjectPage across a reload', { timeout: 60_000 }, () => {
   it('a reload keeps what was typed, never the token, and asks for the token again', async () => {
     const first = setup()
     fireEvent.change(await screen.findByPlaceholderText('e.g. VCU Engine Firmware'), { target: { value: 'Brake ECU' } })
-    fireEvent.change(screen.getByPlaceholderText('https://github.com/org/repo.git'), { target: { value: 'https://example.invalid/brake.git' } })
-    fireEvent.click(screen.getByText('Private repository? Add an access token'))
-    fireEvent.change(screen.getByPlaceholderText('ghp_xxxxxxxxxxxxxxxxxxxx'), { target: { value: TOKEN } })
+    fireEvent.change(screen.getByPlaceholderText('https://bitbucket.company.com/scm/vcu/vcu-firmware.git'), { target: { value: 'https://example.invalid/brake.git' } })
+    fireEvent.change(screen.getByLabelText('Access Token'), { target: { value: TOKEN } })
     await waitFor(() => expect(loadDraft()?.name).toBe('Brake ECU'))
     expect(sessionStorage.getItem(KEY)).not.toContain(TOKEN)
     expect(loadDraft()).toMatchObject({ repoUrl: 'https://example.invalid/brake.git', tokenUsed: true })
 
     first.unmount()                                           // the reload
-    const { calls } = setup()
+    const second = setup()
     expect(await screen.findByDisplayValue('Brake ECU')).toBeInTheDocument()
     expect(screen.getByDisplayValue('https://example.invalid/brake.git')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('ghp_xxxxxxxxxxxxxxxxxxxx')).toHaveValue('')
+    expect(screen.getByLabelText('Access Token')).toHaveValue('')
+    await waitFor(() => expect(screen.getByLabelText('Access Token')).toHaveFocus())     // asks for it there
     expect(screen.getByText(/Enter the access token again/)).toBeInTheDocument()
     await new Promise((r) => setTimeout(r, 300))
-    expect(calls.filter((c) => c.endsWith('/repositories/test-connection'))).toEqual([])   // waits for the token
+    expect(second.calls.filter((c) => c.endsWith('/repositories/test-connection'))).toEqual([])   // waits for the token
+
+    // Reloaded again before the token is typed: still asked for.
+    expect(loadDraft()).toMatchObject({ step: 1, tokenUsed: true })
+    second.unmount()
+    setup()
+    expect(await screen.findByText(/Enter the access token again/)).toBeInTheDocument()
+  })
+
+  it('a restored SSH URL asks for no token: no field, and it connects again by itself', async () => {
+    saveDraft(draft({ step: 1, repoUrl: 'git@bitbucket.company.com:vcu/brake.git', tokenUsed: true }))
+    const { calls } = setup()
+    expect(await screen.findByDisplayValue('git@bitbucket.company.com:vcu/brake.git')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Access Token')).toBeNull()
+    await waitFor(() => expect(calls.filter((c) => c.endsWith('/repositories/test-connection'))).toHaveLength(1))
+    expect(screen.queryByText(/Enter the access token again/)).toBeNull()
   })
 
   it('opens on the step it was on, and connects a public repository again by itself', async () => {

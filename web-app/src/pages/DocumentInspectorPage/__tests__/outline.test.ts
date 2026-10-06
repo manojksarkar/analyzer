@@ -86,7 +86,7 @@ describe('corrections of this document', () => {
   it('keeps the ones it prints, and its component’s orphans — an undone one apart', () => {
     const { inForce, undone, orphans } = docCorrections(all, doc, 'C')
     expect(inForce.map((s) => s.key)).toEqual([`${U}|libAdd|int`, 'Acc'])
-    // Undone: not in force on the page, but the Word file has it until a re-export (R9 counts it).
+    // Undone: not in force on the page, but the Word file has it until it is updated (R9 counts it).
     expect(undone.map((s) => s.key)).toEqual([U])
     expect(orphans.map((s) => s.key)).toEqual([`${U}|gone|`])
   })
@@ -129,8 +129,8 @@ describe('flowOrder (a flowchart’s boxes as its arrows run)', () => {
   })
 })
 
-/* "Undone — not in the Word file yet": cut off at the last re-export's end (or the version's oldest
-   derivation), it hid undos a partial re-export never wrote. Every undone correction of the
+/* "Undone — not in the Word file yet": cut off at the last update's end (or the version's oldest
+   derivation), it hid undos a partial update never wrote. Every undone correction of the
    document is listed while its Word file is stale. */
 describe('undone corrections the Word file may still carry', () => {
   const undo = (key: string, updatedAt: string | null) =>

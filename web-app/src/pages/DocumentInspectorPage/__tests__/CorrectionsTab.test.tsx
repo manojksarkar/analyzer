@@ -10,7 +10,7 @@ import { QueuedList } from '../components/QueuedList'
 import type { Slot } from '../../../types'
 
 /* The Corrections tab: corrections in force, undone ones the Word file still carries (R9 counts
-   them until a re-export), orphans — which an admin may discard (R12) — and this document's
+   them until it is updated), orphans — which an admin may discard (R12) — and this document's
    queue for the next run (R10). */
 
 const slot = (key: string, over: Partial<Slot> = {}): Slot => ({
@@ -36,7 +36,7 @@ describe('CorrectionsTab', () => {
     const section = screen.getByRole('region', { name: 'Undone corrections' })
     expect(within(section).getByText('Undone — not in the Word file yet (1)')).toBeInTheDocument()
     expect(within(section).getByText('Subtracts.')).toBeInTheDocument()
-    expect(within(section).getByText(/the Word file keeps the correction until a re-export/)).toBeInTheDocument()
+    expect(within(section).getByText(/The Word file keeps the correction until it is updated/)).toBeInTheDocument()
   })
 
   it('no undone section when there are none to show (the Word file is up to date)', () => {

@@ -38,6 +38,42 @@
     baked into the global `CLANG_ARGS`. Sample: `engine/config/macros.csv`
     (`VOID,void`).
 
+### Parse options — KeepGoing on every parse (2026-10-06)
+
+Both parses of a TU (`parse_file`, `parse_calls_and_globals`) pass one value, `_TU_PARSE_OPTIONS` =
+`PARSE_DETAILED_PROCESSING_RECORD | PARSE_KEEP_GOING`. `PARSE_KEEP_GOING` is `0x200`
+(`CXTranslationUnit_KeepGoing`), named in [`engine/core/clang_options.py`](../engine/core/clang_options.py)
+because the Python bindings (18.1.1) have no constant for it. The flowchart engine ORs the same
+constant into its three parses: `ast_engine/parser.py` (`TranslationUnitParser._PARSE_OPTIONS` for
+`get_tu`, and `get_tu_full`) and `project_scanner.py` (`_PARSE_OPTIONS`). So the model and the CFGs
+come from the same AST. It is always on, with no config switch.
+
+- **Why.** Without it, the first fatal error in a TU (a missing `#include`) stops template
+  instantiation for the rest of the file. A call on a class-template member then comes back as a
+  `CALL_EXPR` with an empty spelling and no `referenced` cursor, so `visit_calls` has neither a key
+  nor a name to resolve. The edge is lost, the global read through it is lost too, and an `auto`
+  return type stays `auto`. With it, the missing include is an error (severity 3) instead of a
+  fatal one (4), clang carries on, and later missing includes are reported too. Plain functions,
+  globals and calls come out the same either way. Measured on libclang 21.1.8.
+- **What it moves.** On code with missing includes it adds call edges and global reads through
+  templates. Source/Destination, publication, In/Out direction, unit and behaviour diagrams and
+  SWE.4 can change, and the per-TU clang error counts in the parse report go up. On
+  SampleCppProject nothing moves: its includes all resolve, and its only clang errors
+  (`unknown type name 'VOID'`) are not fatal. The whole-sample before/after (28 components,
+  56 documents; model, views and DOCX) was identical apart from `parseFingerprint`.
+- **The fingerprint carries it.** `_fingerprint_args()` ends with `--parse-options=0x201`, so
+  `parseFingerprint` changes and a narrowed parse never merges onto a baseline parsed without
+  KeepGoing: the first incremental run after the change parses in full. A narrowed parse with no
+  affected TU still runs the partial parse, over no files, to get this run's fingerprint
+  (`incremental/engine.py` `_try_narrowed_parse`). Before, it reused the baseline skeleton without
+  asking, so regenerating an unchanged commit kept the old parse.
+- **The plan regenerates what moved.** `plan_incremental` adds to the impact every function whose
+  `callsIds`, `readsGlobalIds` or `writesGlobalIds` differ from the baseline's
+  (`dependencies_moved`, `plan["depsMoved"]`, logged). Without that, a full parse with new edges and
+  unchanged source hashes carried descriptions, behaviour names and unit diagrams forward. On an
+  ordinary run it adds nothing, because a call set that moved with its source is seeded already.
+  Tests: `tests/unit/test_parse_keep_going.py`.
+
 ### Visibility detection (`_detect_visibility`, `_function_visibility`, `_global_visibility`)
 
 Two sources, annotation first. **Phase 1 is the only place visibility is recorded**, and so the
@@ -75,6 +111,9 @@ configured folder prefixes (case-insensitive after `os.path.normcase`).
 > migrating `is_project_file` to use it is open work.
 
 ### Three traversal passes (`main`)
+
+Two parses per TU: `parse_file` (pass 1), then `parse_calls_and_globals`, which runs passes 2 and 3
+on one parse. Both use `_TU_PARSE_OPTIONS` (see Parse options above).
 
 1. `parse_file` → `visit_definitions` + `visit_type_definitions` — collects
    functions, globals, and type declarations.

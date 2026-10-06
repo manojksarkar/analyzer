@@ -105,19 +105,22 @@ def test_connection(
     body: TestConnectionRequest,
     current_user: User = Depends(get_current_user),
 ):
-    """Real connection test: `git ls-remote` against the URL, returning its branches."""
+    """Real connection test: `git ls-remote` against the URL, returning its branches, and in
+    `repo_url` the URL used -- a Bitbucket page address becomes its clone URL."""
     return repo_git.test_connection(body.repo_url, body.access_token)
 
 
 def _browse(repo_url: str, ref: Optional[str], path: str, access_token: Optional[str],
             refresh: bool) -> dict:
-    """The tree under ``path`` (real depth-1 clone), for both browse routes."""
+    """The tree under ``path`` (real depth-1 clone), for both browse routes. A Bitbucket page
+    address is read at its clone URL (``repo_git.browse``)."""
     if not (repo_url or "").strip():
         raise bad_request("A repository URL is required to browse.")
     try:
         return repo_git.browse(repo_url, ref, path, access_token, refresh=refresh)
     except repo_git.git_cli.GitError as exc:
-        raise bad_request(repo_git._friendly(str(exc)))
+        raise bad_request(repo_git._friendly(
+            str(exc), token_sent=repo_git.token_sent(repo_url, access_token)))
 
 
 @router.post("/browse", responses={200: {"model": BrowseResponse}})

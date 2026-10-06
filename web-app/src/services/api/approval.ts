@@ -1,8 +1,8 @@
 import { http } from '../../lib/http'
-import type { Document, ReviewEvent } from '../../types'
+import type { Document, ReviewEvent, SubmitWordFile } from '../../types'
 import {
-  mapDocument, mapReviewEvent, mapSkipped,
-  type ApiDocument, type ApiReviewEvent, type Skipped,
+  mapDocument, mapReviewEvent, mapSkipped, mapSubmitWordFile,
+  type ApiDocument, type ApiReviewEvent, type ApiSubmitWordFile, type Skipped,
 } from '../mappers'
 
 /* Review and approval (docs/spec/REVIEW_APPROVE_API_SPEC.md, routes A1–A11). A document has one
@@ -30,9 +30,13 @@ export const approvalApi = {
   /** A4: a developer becomes the reviewer of a document that has none. */
   claim: (pid: string, docId: string): Promise<Document> =>
     one(http.post(`${docs(pid)}/${docId}/assignments/self`)),
-  /** A5: In review / Changes requested → Ready for approval. The comment is required. */
-  submit: (pid: string, docId: string, comment: string): Promise<Document> =>
-    one(http.post(`${docs(pid)}/${docId}/submit-review`, { comment })),
+  /** A5: In review / Changes requested → Ready for approval. The comment is required. The answer
+   *  says what Submit did to the document's Word file (`word_file`; null from an older API). */
+  submit: async (pid: string, docId: string, comment: string): Promise<{ document: Document; wordFile: SubmitWordFile | null }> => {
+    const r = await http.post<{ document: ApiDocument; word_file?: ApiSubmitWordFile | null }>(
+      `${docs(pid)}/${docId}/submit-review`, { comment })
+    return { document: mapDocument(r.document), wordFile: mapSubmitWordFile(r.word_file) }
+  },
   /** A6: Ready for approval (or In review: direct) → Approved. */
   approve: (pid: string, docId: string, comment: string | null): Promise<Document> =>
     one(http.post(`${docs(pid)}/${docId}/approve`, { comment })),

@@ -1,27 +1,22 @@
-import { useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { reviewApi, slotId } from '../services/api'
 import { projectKeys } from './useProjects'
+import { readinessPollMs } from '../lib/wordFiles'
 import { toast } from '../components/ui/Toast'
 import { ApiError } from '../lib/http'
-import type { ExportReadiness, QueuedSlot, Slot, SlotSaveResult } from '../types'
+import type { QueuedSlot, Slot, SlotSaveResult } from '../types'
 
 /* Review & update: correct the LLM's wording in a version's documents. A save changes the page
-   (after its render is read again) but not the Word file: R9 says what a re-export still owes. */
+   (after its render is read again) but not the Word file: R9 says which Word files are out of
+   date until they are updated. */
 
-const REEXPORT_ACTIVE = ['queued', 'running']
-
-export function reexportActive(r: ExportReadiness | undefined): boolean {
-  return !!r?.reexport && REEXPORT_ACTIVE.includes(r.reexport.status)
-}
-
-/** R9, polled while a re-export runs. */
+/** R9, polled while an update writes Word files (and slowly while a run holds the version). */
 export function useExportReadiness(projectId: string, versionId: string | undefined) {
   return useQuery({
     queryKey: projectKeys.exportReadiness(projectId, versionId ?? ''),
     queryFn: () => reviewApi.readiness(projectId, versionId as string),
     enabled: !!projectId && !!versionId,
-    refetchInterval: (q) => (reexportActive(q.state.data) ? 2500 : false),
+    refetchInterval: (q) => readinessPollMs(q.state.data),
   })
 }
 
@@ -163,23 +158,35 @@ export function isRegenerating(e: unknown): boolean {
 export const REGENERATING_MESSAGE =
   'A run is regenerating this version — nothing was saved. Save again once it has finished.'
 
+/** The save met an update writing its component's Word file: nothing was saved, and corrections
+ *  there wait until it ends (409 `WORD_FILE_UPDATING`; WORD_FILE_UPDATES D5). Every other
+ *  component stays editable. */
+export function isWordFileUpdating(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 409 && e.code === 'WORD_FILE_UPDATING'
+}
+
+export const WORD_FILE_UPDATING_MESSAGE = 'Corrections wait until the update is done.'
+
 /** A save refused because a document printing the text is approved (REVIEW_APPROVE_API_SPEC
- *  "Corrections on an approved document"), or because a run is regenerating the version. Any
- *  other refusal says what the server said. */
+ *  "Corrections on an approved document"), because a run is regenerating the version, or because
+ *  an update writes its component's Word file. Any other refusal says what the server said. */
 export function saveErrorMessage(e: Error): string {
   if (e instanceof ApiError && e.status === 409) {
     if (e.code === 'DOCUMENT_APPROVED') {
       return 'A document that prints this text is approved, so it is locked. An admin can reopen it. Nothing was saved.'
     }
     if (isRegenerating(e)) return REGENERATING_MESSAGE
+    if (isWordFileUpdating(e)) return WORD_FILE_UPDATING_MESSAGE
   }
   return e.message
 }
 
 /** Under a box whose save failed. A refusal (4xx) comes back the same if sent again, so only a
- *  fault (5xx, no answer) is invited to retry; a regenerating run, once it has finished. */
+ *  fault (5xx, no answer) is invited to retry; a regenerating run, once it has finished; an
+ *  update, once it is done. */
 export function saveFailedNote(e: unknown): string {
   if (isRegenerating(e)) return `${REGENERATING_MESSAGE} Your text is still here.`
+  if (isWordFileUpdating(e)) return `${WORD_FILE_UPDATING_MESSAGE} Your text is still here.`
   if (e instanceof ApiError && e.status >= 400 && e.status < 500) {
     const why = saveErrorMessage(e).trim()
     return `Not saved: ${why}${/[.!?]$/.test(why) ? '' : '.'} Your text is still here.`
@@ -187,28 +194,38 @@ export function saveFailedNote(e: unknown): string {
   return 'Not saved — your text is still here. Leave the box again to retry.'
 }
 
-function useSaveError(projectId: string, title: string) {
+function useSaveError(projectId: string, versionId: string, title: string) {
   const qc = useQueryClient()
   return (e: Error) => {
     // Approved meanwhile: read the documents again, so the page locks.
     if (e instanceof ApiError && e.code === 'DOCUMENT_APPROVED') {
       qc.invalidateQueries({ queryKey: projectKeys.documentsAll(projectId), predicate: (q) => q.queryKey[3] !== 'render' })
     }
+    // An update started meanwhile: read R9 again, so the edit bar holds and says why.
+    if (isWordFileUpdating(e)) qc.invalidateQueries({ queryKey: projectKeys.exportReadiness(projectId, versionId) })
     toast.error(title, saveErrorMessage(e))
   }
 }
 
+/** Every correction save of a version (R3, R4, R6, R8): `useIsMutating` with it says whether one
+ *  is still under way. Each stays pending until the reads it changes (R9 among them) are asked
+ *  again, so "no save pending, R9 not fetching" means R9 has every save. */
+export const correctionSaveKey = (projectId: string, versionId: string) =>
+  ['review', 'save', projectId, versionId] as const
+
 /** R3, or R6 for a behaviour row's bullets. */
 export function useSaveSlot(projectId: string, versionId: string) {
   const after = useAfterSave(projectId, versionId)
-  const onError = useSaveError(projectId, 'Not saved')
+  const onError = useSaveError(projectId, versionId, 'Not saved')
   return useMutation({
+    mutationKey: correctionSaveKey(projectId, versionId),
     mutationFn: ({ slot, text }: { slot: Slot; text: string }) =>
       slot.kind === 'behaviourDescription'
         ? reviewApi.saveBehaviour(projectId, versionId, slot.functionId ?? '', slot.externalCallerId ?? '',
           text.split('\n').map((l) => l.replace(/^\s*[•-]\s*/, '').trim()).filter(Boolean))
         : reviewApi.saveSlot(projectId, versionId, slot.kind, slot.key, text),
-    onSuccess: (r) => { void after([r]); toast.success('Saved', describeSave(r)) },
+    // Pending until R9 and the others are read again (Done editing waits for that).
+    onSuccess: async (r) => { toast.success('Saved', describeSave(r)); await after([r]) },
     onError,
   })
 }
@@ -216,10 +233,14 @@ export function useSaveSlot(projectId: string, versionId: string) {
 /** R4: back to the LLM's wording. */
 export function useUndoSlot(projectId: string, versionId: string) {
   const after = useAfterSave(projectId, versionId)
-  const onError = useSaveError(projectId, 'Undo failed')
+  const onError = useSaveError(projectId, versionId, 'Undo failed')
   return useMutation({
+    mutationKey: correctionSaveKey(projectId, versionId),
     mutationFn: (slot: Slot) => reviewApi.undo(projectId, versionId, slot.kind, slot.key),
-    onSuccess: (r) => { void after([r]); toast.success('Back to the LLM’s text', 'The history keeps your correction.') },
+    onSuccess: async (r) => {
+      toast.success('Back to the LLM’s text', 'The history keeps your correction.')
+      await after([r])
+    },
     onError,
   })
 }
@@ -227,61 +248,23 @@ export function useUndoSlot(projectId: string, versionId: string) {
 /** R8: one flowchart's changed labels, saved together. */
 export function useSaveFlowchartLabels(projectId: string, versionId: string) {
   const after = useAfterSave(projectId, versionId)
-  const onError = useSaveError(projectId, 'Labels not saved')
+  const onError = useSaveError(projectId, versionId, 'Labels not saved')
   return useMutation({
+    mutationKey: correctionSaveKey(projectId, versionId),
     mutationFn: ({ flowchartId, labels }: { flowchartId: string; labels: Record<string, string> }) =>
       reviewApi.saveFlowchartLabels(projectId, versionId, flowchartId, labels),
-    onSuccess: (saved) => {
-      void after(saved)
+    onSuccess: async (saved) => {
       const n = saved.length
       toast.success(`Saved ${n} label${n === 1 ? '' : 's'}`,
         'The picture is redrawn, and the SWE.4 test steps use the new wording.')
+      await after(saved)
     },
     onError,
   })
 }
 
-/** Re-export the version's Word files (admin). R9 follows it. */
-export function useReexportVersion(projectId: string, versionId: string) {
-  const qc = useQueryClient()
-  // R9 follows the re-export; the Overview's runs list it (a web job it shows nowhere else).
-  const refresh = () => {
-    qc.invalidateQueries({ queryKey: projectKeys.exportReadiness(projectId, versionId) })
-    qc.invalidateQueries({ queryKey: projectKeys.runs(projectId) })
-  }
-  return useMutation({
-    mutationFn: (components?: string[] | void) =>
-      reviewApi.reexport(projectId, versionId, components || undefined),
-    onSuccess: () => { refresh(); toast.info('Re-export started', 'The Word files are being rebuilt with the corrections.') },
-    onError: (e: Error) => {
-      if (e instanceof ApiError && e.status === 409 && e.code === 'REEXPORT_RUNNING') {
-        refresh()
-        toast.info('A re-export is already running')
-      } else {
-        toast.error('Re-export failed to start', e.message)
-      }
-    },
-  })
-}
-
-/** When a re-export ends, the downloads and the pages change: read them again — the documents,
- *  and the version's review reads (R9, R10, R1: a re-export re-derives, which can drain the queue
- *  and settle undone corrections) — and say so. */
-export function useReexportFinished(projectId: string, versionId: string, readiness: ExportReadiness | undefined) {
-  const qc = useQueryClient()
-  const prev = useRef<string | undefined>(undefined)
-  const status = readiness?.reexport?.status
-  const error = readiness?.reexport?.errorMessage
-  useEffect(() => {
-    const was = prev.current
-    prev.current = status
-    if (!was || !REEXPORT_ACTIVE.includes(was) || !status || REEXPORT_ACTIVE.includes(status)) return
-    qc.invalidateQueries({ queryKey: ['projects', projectId, 'documents'] })
-    if (versionId) qc.invalidateQueries({ queryKey: projectKeys.review(projectId, versionId) })
-    if (status === 'complete') toast.success('Re-export finished', 'Download now gives the corrected Word files.')
-    else toast.error('Re-export failed', error ?? undefined)
-  }, [status, error, projectId, versionId, qc])
-}
+/* Updating the Word files — starting one, following it, saying when it ends — is
+   hooks/useWordFiles.ts (WORD_FILE_UPDATES). */
 
 /** R12 (admins): discard orphaned corrections — one slot, or every one of the version. Final. */
 export function useDiscardOrphans(projectId: string, versionId: string) {

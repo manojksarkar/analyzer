@@ -122,7 +122,7 @@ are node labels), and a correction is stored under (version, kind, key). Sending
 | **R6** | PUT | `/projects/{projectId}/versions/{versionId}/overrides/behaviour` | Correct one Dynamic Behaviour row |
 | **R7** | GET | `/projects/{projectId}/versions/{versionId}/flowcharts/labels` | Every node label of one flowchart (`?flowchart_id=`) |
 | **R8** | PUT | `/projects/{projectId}/versions/{versionId}/flowcharts/labels` | Correct a flowchart, one call |
-| **R9** | GET | `/projects/{projectId}/versions/{versionId}/export-readiness` | Would exporting now ship stale text? |
+| **R9** | GET | `/projects/{projectId}/versions/{versionId}/export-readiness` | Which Word files are out of date, and what holds the version |
 | **R10** | GET | `/projects/{projectId}/versions/{versionId}/regeneration-queue` | Slots needing regeneration because a correction invalidated them |
 | **R11** | GET | `/projects/{projectId}/versions/{versionId}/slots` | What **can** be edited — the slots themselves, with their text and key |
 | **R12** | DELETE | `/projects/{projectId}/versions/{versionId}/overrides/orphans` | Discard orphaned corrections — all, of one `slot_kind`, or one slot (`slot_kind` + `slot_key`); project admins only; answers `{"discarded": n}`. A correction in force is never touched; nothing restores a discarded one, and later versions no longer carry it |
@@ -156,9 +156,8 @@ whichever call returned it. A save answers with the slot as it now is, so the ed
 second request. Nothing is pushed, though: what *other* reviewers save appears on the next read.
 
 **Which versions.** R1–R11 work on any version. The document page (`/documents/{docId}/render`) and
-the re-export button need a job row and document rows, which only a run started from the web app
-writes. A version generated with `analyzer.py generate` has neither: correct it with these
-endpoints, then export with `python analyzer.py reexport --project-id <p> --version-id <v>`.
+the update (Flow 6) need the version's document rows, which every run records — the web app's and
+`analyzer.py generate` alike (`analyzer.py register` for a version made before that).
 A project onboarded with `analyzer.py onboard` cannot be run from the web app either:
 `POST /jobs` answers **409 `NO_ARCHITECTURE`**, because its layers live in
 `workspaces/<p>/config.json` rather than the database, and a run would replace that file.
@@ -169,7 +168,7 @@ A project onboarded with `analyzer.py onboard` cannot be run from the web app ei
 |---|---|---|
 | 1 | `GET /documents?version_id={versionId}` | the version's documents, one per component; `documents[].id` is the `docId` |
 | 2 | `GET /documents/{docId}/render` | the page. **Every text a reviewer can correct carries its `Slot`** (see *The page carries each text's slot* below) — its key and state, so no R11 lookup is needed from the page |
-| 3 | R9 `GET /versions/{versionId}/export-readiness` | the banner: `stale: true` means corrections are not in the Word file yet |
+| 3 | R9 `GET /versions/{versionId}/export-readiness?document_id={docId}` | the banner: `outOfDate` holds the document when its Word file lacks a correction, a layer added since, or a picture (§14) |
 | 4 | R1 `GET /versions/{versionId}/overrides` | optional: mark corrected items. Fetch once, index by `slotKey` |
 
 ### The page carries each text's slot
@@ -200,7 +199,7 @@ place (`web-app/src/pages/DocumentInspectorPage/`).
 
 For `structDescription` the same `unit=` filter returns the structs, classes and unions that unit's
 **unit header table** shows; match a row on the page by `label` (the type name). The corrected text
-reaches the page and the Word file with the next re-export (§14).
+reaches the page and the Word file with the next update (§3a Flow 6).
 
 ### Flow 3 — correct a Dynamic Behaviour row
 
@@ -226,18 +225,22 @@ reaches the page and the Word file with the next re-export (§14).
 | R4 `DELETE /versions/{versionId}/overrides/slot?slot_kind=…&slot_key=…` | back to the LLM's text. A flowchart label is undone per node, with that node's `slotKey` from R7; a behaviour row with the `slotKey` from R11. Offer Undo exactly where the slot says `canUndo: true`. The answer is the slot as it now is (for a node label, with the rebuilt `dot`) |
 | R5 `GET /versions/{versionId}/overrides/history?slot_kind=…&slot_key=…` | every edit of that one slot, oldest first |
 
-### Flow 6 — put the corrections into the Word file
+### Flow 6 — update the Word files
+
+The design and its words: [WORD_FILE_UPDATES](../design/WORD_FILE_UPDATES.md) (the contract is its §4).
+The UI never says "re-export": the thing is the Word file, the action is **Update**.
 
 | step | call | why |
 |---|---|---|
-| 1 | R9 | `stale: true`: show "N corrections are not in the Word file yet" and a Re-export button. `pendingRenders` = flowchart pictures the re-export redraws. `reexport.status` `queued` or `running`: one is already under way — follow `reexport.jobId` (step 3) instead of offering the button |
-| 2 | `POST /versions/{versionId}/reexport` | project **admin** only — show the button when `GET /projects/{projectId}` gives `my_role: "admin"`. **Any** version, not only the newest. Answers **202** `{"job_id", "status": "queued", "version_id"}` at once; the server re-derives first when the version is stale. **409 `REEXPORT_RUNNING`** while one is running for this version — its `detail.job_id` is the job to follow |
-| 3 | `GET /jobs/{job_id}` every few seconds, or the stream `GET /jobs/{job_id}/events` | `status` goes `queued` → `running` → `complete`, or `failed` with `error_message` saying why. Keep the button disabled until then. The job has `mode: "reexport"` and phases 3 and 4 only (3 is `skipped` when there was nothing to re-derive). Jobs answer in snake_case (§4) |
-| 4 | R9 again | `stale: false` and `reexport.status: "complete"` |
+| 1 | R9 (`?document_id=` in the reader) | `outOfDate[]`: the Word files that are out of date, each with `why` (`corrections`, `layerAdded`, `pictures`) and its counts. `writer` set: a run holds the version — no update can start, say what holds it. `reexport.status` `queued`/`running`: one is under way (`components`, `componentsDone`); `failed` with `startedBy` the caller: *Update failed* with *Try again* |
+| 2 | `POST /versions/{versionId}/reexport` with `{"scope": "out_of_date", "components": [...], "document_id": "..."}` | **any member** for `out_of_date`: an admin every component; a developer the components of the documents they review plus `document_id`'s (403 `NOT_YOUR_DOCUMENTS` beyond). `{"scope": "all"}` = *Rebuild all*, admins only. **202** `{"job_id", "status": "queued", "version_id", "scope", "components", "joined": false}`; **200** `joined: true` when a running update covers the request (follow its `job_id`); **200** `{"job_id": null, "status": "up_to_date", …}` when nothing asked for is out of date. **409 `REEXPORT_RUNNING`** (`job_id`, `scope`, `components`) when another update runs that does not cover it; **409 `VERSION_BUSY`** (`writer`) when a generation or a CLI run holds the version. The server re-derives first when it must |
+| 3 | `GET /jobs/{job_id}` every few seconds, or `GET /jobs/{job_id}/events` | `queued` → `running` → `complete`, or `failed` with `error_message`. The job has `mode: "reexport"`, `reason`, `started_by`, phases 3 and 4. Jobs answer in snake_case (§4). A save in a component being updated answers 409 `WORD_FILE_UPDATING` until it ends; every other component stays editable |
+| 4 | R9 again | the components it wrote are gone from `outOfDate` |
 | 5 | `GET /documents/{docId}/download` | the new Word file. Until step 3 says `complete`, the previous one |
 
-Nothing exports on its own. `GET /jobs/current` is the project's latest *generation*; a re-export is
-never "current", so follow it by its own `job_id`.
+Nothing updates after a save. Submit for approval (REVIEW_APPROVE_API_SPEC A5) starts the update of its
+document's component itself. `GET /jobs/current` is the project's latest *generation*; an update is never
+"current", so follow it by its own `job_id`.
 
 ### Flow 7 — needs attention (optional panel)
 
@@ -921,59 +924,73 @@ and R5 still work on a single `nodeLabel` slot key.
 
 `GET /projects/{projectId}/versions/{versionId}/export-readiness`
 
-Whether exporting now would ship text a correction has already replaced (`REQ-AP-04`). **Call it
-before offering a download.** It asks about the documents a re-export writes: SWE.3, and SWE.4
-when the version has SWE.4 documents (`pipeline_runner.export_doc_type` — every web run writes both).
-Only the views those documents print count: on a version with SWE.3 alone, a label on a flowchart
-SWE.3 does not embed (`views.flowcharts` off, the default) does not make it stale. A SWE.4 document
-of a CLI-generated version is exported from the CLI, which asks its own question
-(`analyzer.py reexport --doc-type swe4`).
+**Which Word files are out of date** (`REQ-AP-04`), and what holds the version. **Call it before
+offering a download or an update.** Out of date means the Word file itself, one rule for R9, A15 and
+Approve ([WORD_FILE_UPDATES §4.3](../design/WORD_FILE_UPDATES.md#43-the-rule--when-a-word-file-is-out-of-date)):
+a correction it prints saved after that .docx was written (`documents.word_file_at`), a layer added to
+the version since, or a corrected flowchart picture of its component still being drawn. Only the views a
+document prints count: a label on a flowchart SWE.3 does not embed (`views.flowcharts` off, the default)
+puts that component's SWE.4 out of date and not its SWE.3.
 
-No parameters.
+Optional query `document_id` (REVIEW_APPROVE_API_SPEC A15): the same answer for that one document.
 
 **Response 200**
 
 | field | type | notes |
 |---|---|---|
-| `stale` | boolean | `true` ⇒ the views need re-deriving before a download is honest |
-| `staleComponents` | string[] | when the version is `stale`: the components (a document's `group`) whose documents are behind — the per-document question A15 answers, for each. `[]` when nothing is, and always for a `document_id` question. Mark only those rows' downloads |
+| `outOfDate` | object[] | every **not approved** document whose Word file is out of date, by name then type: `documentId`, `component` (its `group`), `name`, `docType` (`SWE.3` \| `SWE.4`), `why` (one or more of `corrections`, `layerAdded`, `pictures`), `corrections` and `pictures` (the counts behind them), `layer` (the layer `layerAdded` names, or `null`), `updating` (a running update or export has its component in scope). An update of the `component` brings it up to date |
+| `approvedKept` | object[] | approved documents that would be out of date — their kept Word file is the approved one and is not changed ("Approved, not changed"). The same fields but `updating` |
+| `writer` | object \| null | what holds the version now, `null` when nothing does: `kind` (`generation` \| `update` \| `rebuild` \| `export` \| `resume` \| `other`), `jobId` (a job of this server, or `null`), `command`, `since`, `components` (an update's or export's, else `null`), `componentsDone` / `componentsTotal` (`null` when not known), `startedBy` (`{userId, name, initials}` or `null`). While it is set no update starts — say what to wait for |
+| `stale` | boolean | `outOfDate` is not empty (for `document_id`: that document is out of date). A version with no documents recorded answers the older question — would an export-only run ship stale text |
+| `staleComponents` | string[] | the components of `outOfDate`, sorted. `[]` for a `document_id` question |
 | `reason` | string | short, always present: `"up to date"`, `"no corrections"`, or the reason it is stale |
 | `explanation` | string | one line fit to show as-is, including any failed renders |
 | `overrideCount` | integer | corrections in force in this version. Orphans are not counted and never make a version stale: they are not printed. Nor are corrections in a component that has no document in the version (when the version has document rows): no Word file prints them, and no re-export could derive them |
-| `pendingRenders` | integer | pictures still owed — **any of these makes it stale** |
+| `pendingRenders` | integer | pictures still owed — version-wide; for `document_id`, its component's |
 | `failedRenders` | integer | renders that gave up — reported, **does not block** |
 | `newestOverrideAt` | string \| null | ISO-8601 UTC |
 | `oldestDerivationAt` | string \| null | ISO-8601 UTC; `null` when the views were never derived |
-| `reexport` | object \| null | the version's newest **re-export job**, `null` when it was never re-exported. `status` `queued` or `running` means one is under way: follow its `jobId` instead of starting another (§3a Flow 6) |
+| `reexport` | object \| null | the version's newest **update job** (`mode: "reexport"`), `null` when it never had one. `status` `queued` or `running`: one is under way — follow its `jobId` instead of starting another (§3a Flow 6) |
 | `reexport.jobId` | string | follow it with `GET /jobs/{jobId}` or `GET /jobs/{jobId}/events` |
 | `reexport.status` | string | `queued` \| `running` \| `complete` \| `failed` \| `cancelled` |
 | `reexport.startedAt` / `completedAt` | string \| null | ISO-8601 UTC |
-| `reexport.errorMessage` | string \| null | why it failed |
+| `reexport.errorMessage` | string \| null | why it failed — *Update failed — …* |
+| `reexport.scope` / `reason` | string \| null | `out_of_date` \| `all`; `update` \| `rebuild` \| `submit` |
+| `reexport.components` | string[] | the components it writes |
+| `reexport.componentsDone` | integer | of those, how many it has written — *Updating Word files… 1 of 2* |
+| `reexport.componentsFailed` | string[] | of those, the ones that failed in it: their Word files were not written (still in `outOfDate`), and the starter is told *Update failed* for them. When every one failed the job is `failed` |
+| `reexport.startedBy` | object \| null | `{userId, name, initials}`: only the starter is shown *Update failed* with *Try again* |
 
 ```json
 {
   "stale": true,
-  "reason": "a correction is newer than the derived output",
-  "explanation": "a correction is newer than the derived output (3 correction(s) in this version)",
+  "staleComponents": ["Layer1.Brake-Controller"],
+  "outOfDate": [
+    {"documentId": "docc1442", "component": "Layer1.Brake-Controller", "name": "Brake Controller",
+     "docType": "SWE.3", "why": ["corrections"], "corrections": 2, "pictures": 0, "layer": null,
+     "updating": false},
+    {"documentId": "docc1443", "component": "Layer1.Brake-Controller", "name": "Brake Controller",
+     "docType": "SWE.4", "why": ["corrections"], "corrections": 2, "pictures": 0, "layer": null,
+     "updating": false}
+  ],
+  "approvedKept": [],
+  "writer": null,
+  "reason": "a correction is newer than the Word file",
+  "explanation": "2 Word file(s) are out of date (3 correction(s) in this version)",
   "overrideCount": 3,
-  "pendingRenders": 1,
+  "pendingRenders": 0,
   "failedRenders": 0,
   "newestOverrideAt": "2026-09-18T09:14:22Z",
   "oldestDerivationAt": "2026-09-18T08:02:10Z",
-  "reexport": { "jobId": "job3c9e1f20", "status": "running",
-                "startedAt": "2026-09-18T09:20:03Z", "completedAt": null, "errorMessage": null }
+  "reexport": {"jobId": "job3c9e1f20", "status": "complete", "startedAt": "2026-09-18T09:20:03Z",
+               "completedAt": "2026-09-18T09:24:41Z", "errorMessage": null, "scope": "out_of_date",
+               "reason": "update", "components": ["Layer1.Util"], "componentsDone": 1,
+               "startedBy": {"userId": "u2", "name": "Developer B", "initials": "DB"}}
 }
 ```
 
-**What the UI should do with `stale: true`** — nothing special. Re-export through the normal
-endpoint: the server now **re-derives first** rather than refusing, so a download taken afterwards
-is correct. R9 is for telling the reviewer *why* this one will take longer than usual. (The CLI
-refuses instead and prints `reexport --from-phase 3`; the difference is deliberate — see
-[DESIGN §13.3](../design/REVIEW_UPDATE_DESIGN.md#133-the-export-guard-lives-in-runpy-not-only-in-analyzerpy).)
-
-**`pendingRenders` also makes a version stale** (`REQ-IM-02`), even when every sentence is current:
-an export now would carry the new wording and the old picture — when the SWE.3 document embeds the
-flowcharts at all.
+**`pictures`** (`REQ-IM-02`): a corrected flowchart picture still being drawn puts its component's
+SWE.3 out of date — when that SWE.3 embeds the flowcharts at all — however current the sentences are.
 
 **`failedRenders` does not block.** A render that gave up cannot be waited for, and blocking would
 make one unrenderable flowchart permanently unexportable. It appears in `explanation` instead, so a
@@ -981,30 +998,44 @@ document goes out with somebody knowing the image is out of date rather than nob
 
 ### How the Word document gets the corrections
 
-**Nothing exports automatically.** A save (R3/R6/R8) updates the database in the same request and
-never starts an export. The Word file changes only when someone runs a re-export:
+**Nothing updates automatically after a save.** A save (R3/R6/R8) updates the database in the same
+request. The Word file changes when someone updates it (§3a Flow 6), or when its document is
+submitted for approval (REVIEW_APPROVE_API_SPEC A5):
 
 ```
-POST /api/v1/projects/{projectId}/versions/{versionId}/reexport   (project admin; 202, runs in the background)
+POST /api/v1/projects/{projectId}/versions/{versionId}/reexport   (any member, within their documents; 202, runs in the background)
 ```
 
-A re-export is **a job of its own** (`mode: "reexport"`): follow it by the `job_id` it answers with,
-one at a time per version (§3a Flow 6). The older `POST /projects/{projectId}/jobs/{jobId}/reexport`
-does the same for the version that job produced, and answers with the new job's id.
+Body (snake_case): `{"scope": "out_of_date" | "all", "components": [...], "document_id": "..."}`, every
+field optional. **Who may start it**:
 
-The server decides how much to rebuild — R9's question, asked for you: when the version is stale it
-re-derives the views first (Phase 3: corrected text into the view rows, owed flowchart pictures
-drawn), then exports; otherwise it exports only.
+| scope | admin | developer / reviewer |
+|---|---|---|
+| `out_of_date` | every component whose Word files are out of date | the components of the documents of this version they review, plus `document_id`'s; `components` beyond that is **403** `NOT_YOUR_DOCUMENTS` |
+| `all` (*Rebuild all*; the default when `scope` is absent) | every component with documents, or exactly `components` | **403** |
+
+An update is **a job of its own** (`mode: "reexport"`, `reason`, `started_by`): follow it by the
+`job_id` it answers with. One per version: a request a running update covers **joins** it (200,
+`joined: true`); any other is refused, **409 `REEXPORT_RUNNING`** with the running one's `job_id`,
+`scope` and `components`. While a generation or a CLI run holds the version: **409 `VERSION_BUSY`** with
+`writer`. Nothing out of date in what was asked: **200** `{"job_id": null, "status": "up_to_date"}`.
+The older `POST /projects/{projectId}/jobs/{jobId}/reexport` is `scope: "all"`, admins only. The full
+answer and error table: [WORD_FILE_UPDATES §4.1](../design/WORD_FILE_UPDATES.md#41-update-the-word-files--post-vreexport).
+
+The server decides how much to rebuild: when a correction is newer than the derived views, or a layer
+made a component stale, it re-derives the views first (Phase 3: corrected text into the view rows, owed
+flowchart pictures drawn), then exports; otherwise it exports only. It stores **only the components it
+wrote**, so a correction saved meanwhile in another component is kept.
 
 **Download serves the stored file as it is.** `GET .../documents/{docId}/download` neither rebuilds
-nor checks staleness, so a download taken after corrections and before a re-export is the OLD
-document. That is what R9 is for in the UI:
+nor checks, so a download taken after corrections and before an update is the previous file. That is
+what R9 is for in the UI:
 
 | R9 says | the UI shows |
 |---|---|
-| `stale: false` | the normal Download button |
-| `stale: true` | "N corrections are not in the Word file yet" + a Re-export action, and Download marked as the previous version |
-| `pendingRenders > 0` | "N flowchart pictures will be redrawn by the re-export" |
+| the document is not in `outOfDate` | the normal Download |
+| it is in `outOfDate` | why, with *Update*; the download offers *Corrected file* (updated first) or *Current file* |
+| `writer` is set | no update can start: say what holds the version |
 | `failedRenders > 0` | a warning that those pictures are out of date |
 
 ### When a correction becomes visible
@@ -1204,7 +1235,7 @@ Error bodies are `{"detail": "…"}`, except 401 (an object, §4) and 422 from s
 | 401 | missing, malformed or non-access Bearer token |
 | 403 | not a member of the project |
 | 404 | a version that is not one of the project's (every endpoint; a tag sent instead of the id is answered with the id — §3), or an unknown slot, flowchart, or node named in a flowchart save |
-| 409 | undo with no LLM original to restore, or of an orphaned correction; a flowchart with no stored graph; stored output that cannot be read; a save that met a run regenerating the version (nothing saved — save again once it has finished; `detail.code` `VERSION_REGENERATING`, the others are a string) |
+| 409 | undo with no LLM original to restore, or of an orphaned correction; a flowchart with no stored graph; stored output that cannot be read; a save that met a run regenerating the version (nothing saved — save again once it has finished; `detail.code` `VERSION_REGENERATING`); a save (R3, R4, R6, R8) whose component an update is writing now (nothing saved — save again when it ends; `detail.code` `WORD_FILE_UPDATING`, with `job_id` and `components`); a text an approved document prints (`DOCUMENT_APPROVED`). The other 409s are a string |
 | 422 | empty or whitespace-only text (`REQ-ST-06`); a NUL character (`\u0000`) anywhere in a save's body (R3, R6, R8) — PostgreSQL cannot store one, and `loc` names the field; or a request body/query field missing — **check `snake_case` first** (§4) |
 | 500 | a fault on the server, not in the request. `detail` names only the kind of error; the server log has the rest. Nothing was changed |
 | 501 | a slot kind with no save path on that endpoint (`nodeLabel`, `behaviourDescription` on R3); `detail` names the route that saves it (R8, R6) |

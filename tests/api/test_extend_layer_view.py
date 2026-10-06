@@ -66,6 +66,31 @@ class TestTheConfigsComponents:
         assert gpio["layer"] == "Layer2" and gpio["name"] == "Gpio" and gpio["documents"] == []
         assert counts(view) == {"not_requested": 4}
 
+    def test_each_component_names_its_group_from_the_version_s_config(self, sql_db, version,
+                                                                      workspaces):
+        """`group` comes from the version's resolved_config -- not the project's current config
+        nor a config file -- spelled as configured; a component it does not name has None."""
+        import json
+        own = workspaces / "p1" / "versions" / version.id / "config.json"
+        own.parent.mkdir(parents=True)
+        own.write_text(json.dumps({"layers": {
+            "Layer1": {"groups": {"Renamed": {"Math": ["m"], "App": ["a"]}}},
+            "Layer2": {"groups": {"Renamed": {"Gpio": ["g"], "Uart": ["u"]}}},
+            "Layer9": {"groups": {"N": {"New": ["n"]}}}}}), encoding="utf-8")
+        from api.services.version_components import components_view
+        by = _by_id(components_view(sql_db, version, alive=False))
+        assert {c: v["group"] for c, v in by.items()} == {
+            "Layer1.App": "G1", "Layer1.Math": "G1", "Layer2.Gpio": "G2", "Layer2.Uart": "G2",
+            "Layer9.New": None}
+
+    def test_a_spaced_name_and_group_keep_their_spelling(self, sql_db, version):
+        from api.services.version_components import config_groups
+        version.resolved_config = {"layers": {"Layer1": {"groups": {"My Sample": {
+            "Sample Core": ["c"]}}}, "Bad": "not a layer"}}
+        assert config_groups(version) == {"Layer1.Sample-Core": "My Sample"}
+        version.resolved_config = None
+        assert config_groups(version) == {}
+
     def test_a_row_gives_its_state(self, sql_db, version):
         """An export that adds Layer2, cut short before the layer was in: its components wait."""
         from api.services.version_components import components_view
