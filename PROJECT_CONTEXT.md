@@ -90,6 +90,9 @@ newer entry and the code win.
   engine log lines, tail + SSE, read from per-process files under `logs/live/`. Built; the web page
   is next. [LIVE_LOGS_SPEC](docs/spec/LIVE_LOGS_SPEC.md), [LIVE_LOGS_DESIGN](docs/design/LIVE_LOGS_DESIGN.md),
   [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Live logs".
+- **Demo branch `demo/fast-components` — never merge it** (2026-10-06j): `llm.onlyRequestedComponents`,
+  the LLM describes only the components asked for (a tenth of the calls); wording can differ from a
+  full run. For the office demo of several components across layers.
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
 - The status boards that used to head this file (2026-07-20, 2026-08-14) are kept, unchanged, in

@@ -1021,6 +1021,50 @@ def cmd_reexport(a) -> int:
     return rc
 
 
+def _chain_before(first, second):
+    """Two `before` hooks of `_render_version`, one after the other; the first non-zero exit stops."""
+    if first is None:
+        return second
+    def before(cfg, own_cfg, checkout, doc_type):
+        return first(cfg, own_cfg, checkout, doc_type) or second(cfg, own_cfg, checkout, doc_type)
+    return before
+
+
+def _requested_describer(a, *, model_layers, todo):
+    """Demo (`llm.onlyRequestedComponents`): `before` for an export. The model describes only the
+    components asked for, so an export of one more runs Phase 2 again first -- over every layer
+    of the version's model (Phase 2 places each file in its component by the whole config), with
+    the components marked `waiting` (Phase 2 reads the requested ones from those rows). Text
+    already there is kept; the code-based part takes minutes. 0, or Phase 2's exit code."""
+    def before(cfg, own_cfg, checkout, doc_type):
+        from incremental.store import make_store
+        from incremental.generate import scope_to_args
+        from core.version_run import mark_components
+        adir = make_store(a.project_id).artifact_dir(a.version_id)
+        mark_components(a.version_id, todo, "waiting")
+        common = ["--config", cfg, "--version-id", a.version_id, "--project-id", a.project_id,
+                  "--model-root", os.path.join(adir, "model"),
+                  "--output-root", os.path.join(adir, "output"), "--doc-type", doc_type]
+        try:
+            from incremental.project_db import get_project
+            pname = ((get_project(a.project_id) or {}).get("name") or "").strip()
+        except Exception:                           # noqa: BLE001
+            pname = ""
+        if pname:
+            common += ["--project-name", pname]
+        if own_cfg and _llm_off(cfg):
+            common.append("--no-llm-summarize")
+        print(f"describing {', '.join(todo)} first: Phase 2 over {', '.join(model_layers)}, the LLM "
+              f"only for the components asked for", flush=True)
+        run_py = os.path.join(_ROOT, "engine", "run.py")
+        layers = scope_to_args({"type": "layer", "names": list(model_layers)})
+        rc = _script(run_py, common + layers + ["--from-phase", "2", "--to-phase", "2", checkout])
+        if rc:
+            print(f"the model (Phase 2) failed (exit {rc}); nothing was exported", file=sys.stderr)
+        return rc
+    return before
+
+
 def _layers_adder(a, *, parse_layers, new_layers, added, documented):
     """`before` for `_render_version`: add `new_layers` to the version's model, under its writer
     lock (engine/incremental/extend.py has the why of each step). Phase 1 parses every layer of
@@ -1206,6 +1250,13 @@ def cmd_export(a) -> int:
         documented = [c["component"] for c in view if c["in_model"] and has_documents(c)]
         before = _layers_adder(a, parse_layers=sorted(set(model_layers) | set(new_layers)),
                                new_layers=new_layers, added=added, documented=documented)
+    # Demo: the model describes only the components asked for, so these get their text first.
+    from core.config import app_config as _app_config
+    if ((_app_config().get("llm") or {}).get("onlyRequestedComponents")):
+        from incremental.staged import layers_to_add as _layers_to_add
+        _layers_now = sorted({c.split(".", 1)[0] for c in in_model}
+                             | set(_layers_to_add(view, added) if added else []))
+        before = _chain_before(before, _requested_describer(a, model_layers=_layers_now, todo=todo))
 
     def _maybe_close(docs):
         # A version whose own run was cut short stays unfinished (never a baseline) until

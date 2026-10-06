@@ -250,6 +250,9 @@
     // point of the tool. Turn them off for one run with --no-llm; do not make
     // that the default.
     "descriptions": true,
+    // Demo branch only: the LLM describes only the components whose documents are asked for
+    // (their version_components rows); parse and the code-based model still cover whole layers.
+    "onlyRequestedComponents": true,
     "behaviourNames": true,
     // Separate from descriptions - also switchable with --no-llm-summarize.
     "summarize": false,

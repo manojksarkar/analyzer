@@ -744,7 +744,8 @@ def _reapply_corrections(functions_data: dict, global_variables_data: dict, unit
         return {}
 
 
-def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data: dict, config: dict, only_globals=None):
+def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data: dict, config: dict, only_globals=None,
+                     only_fids=None):
     """LLM enrichment for descriptions only. Direction comes from parser (global read/write analysis).
 
     Incremental (M3.2): function descriptions already skip when already present (the
@@ -798,7 +799,7 @@ def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data
 
     # Rich enrichment path — budget-aware with degradation ladder
     desc = enrich_functions_rich(functions_data, base_path, config, knowledge=knowledge,
-                                 regenerate=_regenerate)
+                                 only=only_fids, regenerate=_regenerate)
     for key, f in functions_data.items():
         if desc.get(key, {}).get("description"):
             f["description"] = desc[key]["description"]
@@ -1233,7 +1234,7 @@ def _iface_items_for_unit(unit_key: str, units_data: dict, functions_data: dict,
 
 def _enrich_unit_and_struct_descriptions(units_data: dict, functions_data: dict,
                                          global_variables_data: dict, data_dict: dict,
-                                         config: dict) -> tuple:
+                                         config: dict, in_scope=None, base_path: str = "") -> tuple:
     """Generate and STORE the unit and struct descriptions. Returns (n_units, n_structs).
 
     Both used to be produced at render time and stored in no model field -- `get_unit_description`
@@ -1264,6 +1265,8 @@ def _enrich_unit_and_struct_descriptions(units_data: dict, functions_data: dict,
     for unit_key, unit in units_data.items():
         if unit.get("description"):
             continue                      # carried forward from a baseline -- do not re-pay
+        if in_scope is not None and not in_scope(unit_key):
+            continue                      # demo: a component nobody asked for
         fn_items, gv_items = _iface_items_for_unit(
             unit_key, units_data, functions_data, global_variables_data)
         if not (fn_items or gv_items):
@@ -1286,6 +1289,8 @@ def _enrich_unit_and_struct_descriptions(units_data: dict, functions_data: dict,
         entry = data_dict[key]
         if entry.get("description"):
             continue
+        if in_scope is not None and not in_scope(_unit_of(entry, base_path)):
+            continue                      # demo: a record of a component nobody asked for
         name = entry.get("name") or entry.get("qualifiedName") or ""
         fields = entry.get("fields") or []
         if not name:
@@ -1299,6 +1304,25 @@ def _enrich_unit_and_struct_descriptions(units_data: dict, functions_data: dict,
             n_structs += 1
 
     return n_units, n_structs
+
+
+def _llm_scope(config: dict):
+    """Demo (`llm.onlyRequestedComponents`): the components whose documents this version was asked
+    for, as a predicate on a key (`component|unit|...`). None = no limit: the switch is off, or
+    the version names none (a run that makes no document, a database that keeps no rows)."""
+    if not (config.get("llm") or {}).get("onlyRequestedComponents"):
+        return None, []
+    try:
+        from core.run_context import version_id as _vid
+        from core.version_run import requested_components
+        from core.config import name_ident
+        names = requested_components(_vid())
+    except Exception:                                   # noqa: BLE001 - no limit then
+        return None, []
+    if not names:
+        return None, []
+    wanted = {name_ident(n) for n in names}
+    return (lambda key: name_ident((key or "").split(KEY_SEP, 1)[0]) in wanted), names
 
 
 def _generate_knowledge_base(
@@ -1502,6 +1526,19 @@ def main():
     if _plan is not None:
         print(f"  incremental: enriching {len(only_fids or [])} function(s) + "
               f"{len(only_globals or [])} global(s); reusing the rest")
+    # Demo: the LLM describes only the requested components -- what has no text yet. What a
+    # component already has (an earlier run, a baseline) is kept, its names too.
+    _in_scope, _scope_names = _llm_scope(config)
+    _fn_only = None
+    if _in_scope is not None:
+        _want_f = {k for k, f in functions_data.items() if _in_scope(k) and not f.get("description")}
+        _want_g = {k for k, g in global_variables_data.items() if _in_scope(k) and not g.get("description")}
+        only_fids = _want_f if only_fids is None else (only_fids & _want_f)
+        only_globals = _want_g if only_globals is None else (only_globals & _want_g)
+        _fn_only = only_fids
+        print(f"  LLM limited to {len(_scope_names)} requested component(s): {len(only_fids)} of "
+              f"{len(functions_data)} function(s), {len(only_globals)} of {len(global_variables_data)} "
+              f"global(s) to describe", flush=True)
 
     # Static behaviour names (Input Name / Output Name) from params/globals/returnType
     _enrich_behaviour_names(functions_data, global_variables_data, only_fids=only_fids)
@@ -1528,7 +1565,8 @@ def main():
         from core.model_io import artifact_location as _where
         print(f"  summaries -> {_where('summaries')}")
 
-    _enrich_from_llm(base_path, functions_data, global_variables_data, config, only_globals=only_globals)
+    _enrich_from_llm(base_path, functions_data, global_variables_data, config, only_globals=only_globals,
+                     only_fids=_fn_only)
 
     # Functions: In/Out direction by precedence (roadmap 3.17):
     #   1. Name match — Set (write) tested FIRST, then Get (read). "Set dominates" mirrors the
@@ -1620,7 +1658,8 @@ def main():
     _queued_units = (_take_regeneration_queue(_unit_model, (UNIT_DESCRIPTION,))
                      if (config.get("llm") or {}).get("descriptions", True) else [])
     _n_units, _n_structs = _enrich_unit_and_struct_descriptions(
-        units_data, functions_data, global_variables_data, data_dict, config)
+        units_data, functions_data, global_variables_data, data_dict, config,
+        in_scope=_in_scope, base_path=base_path)
     _retire_regeneration_queue(_queued_units, _unit_model)
 
     # Last text step: the reviewers' corrections go back over whatever the steps above rebuilt.

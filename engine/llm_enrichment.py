@@ -1081,6 +1081,9 @@ def enrich_functions_rich(
 ) -> dict:
     """Budget-aware function description enrichment with optional two-pass.
 
+    `only` (demo): describe these functions alone, in the order a full run would; the others keep
+    no description, and a described function sees them by signature only.
+
     Pass 1 (always): bottom-up order, each function sees callee descriptions.
     Pass 2 (when enrichment.twoPassDescriptions=true): same order, but now
     both callee AND caller descriptions from Pass 1 are available. Uses a

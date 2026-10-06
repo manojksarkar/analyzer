@@ -121,6 +121,7 @@
   },
   "llm": {
     "descriptions": true,
+    "onlyRequestedComponents": true,
     "behaviourNames": true,
     "summarize": false,
     "provider": "ollama",

@@ -426,6 +426,27 @@ def mark_components(version_id: Optional[str], components: Iterable[str], state:
                 return
 
 
+def requested_components(version_id: Optional[str]) -> Optional[list]:
+    """The components whose documents were asked for in this version: every `version_components`
+    row, whatever its state (run.py marks a run's components `waiting` before Phase 2 starts).
+    None when it cannot tell -- no version, no database, no row: the LLM is then not limited."""
+    if not version_id:
+        return None
+    eng = _engine()
+    if eng is None:
+        return None
+    try:
+        from sqlalchemy import select
+        t = _schema().version_components
+        with eng.connect() as cx:
+            names = sorted({r[0] for r in cx.execute(
+                select(t.c.component).where(t.c.version_id == version_id))})
+    except Exception as exc:                     # noqa: BLE001 - never stop a run over it
+        _note("the requested components could not be read", exc)
+        return None
+    return names or None
+
+
 def _write_states(eng, version_id: str, comps: list, state: str, now, stamps: dict, *,
                   layers: Optional[list] = None, with_layers: bool = False) -> None:
     from sqlalchemy import and_, insert, select, update

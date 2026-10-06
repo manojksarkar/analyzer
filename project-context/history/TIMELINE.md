@@ -18,6 +18,7 @@
 | 2026-10-07c | A stopped run says which components did not get their documents and why, and an admin resumes it from the web | [14](14-2026-10-05r.md) |
 | 2026-10-07b | Live logs became a panel docked on every page -- no page to go to and come back from | [14](14-2026-10-05r.md) |
 | 2026-10-07 | Live logs: a failed run has a Logs link, and a job's own lines name the job -- "Checkout failed" was written with no job id | [14](14-2026-10-05r.md) |
+| 2026-10-06j | Demo branch `demo/fast-components` (never merged): the LLM describes only the components whose documents are asked for -- a tenth of the LLM calls, every table, id, flowchart and diagram as a full run | [14](14-2026-10-05r.md) |
 | 2026-10-06i | Live logs, the page: one page for every project, reached from the account menu or a run's Logs link, names instead of ids, a Runs list where a quiet run turns amber | [14](14-2026-10-05r.md) |
 | 2026-10-06k | Proposed: fast Word-file updates -- an update exports from the stored data after rewriting only the LLM texts whose prompt holds a corrected one; measured on Sample Core | [14](14-2026-10-05r.md) |
 | 2026-10-06h | Dark theme, document pictures: flowcharts and diagrams are dark too; edit mode puts a pencil on every text a reviewer can correct; the dark mockup's flowchart, its editor and its comment boxes readable again | [14](14-2026-10-05r.md) |
