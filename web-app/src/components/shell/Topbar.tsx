@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { useAuthStore } from '../../store/auth'
 import { Dropdown, DropdownTrigger, DropdownContent, Icon } from '../ui'
 import { NotificationBell } from './NotificationBell'
+import { ThemeToggle } from './ThemeToggle'
 
 interface BreadcrumbItem {
   label: string
@@ -16,7 +17,7 @@ export function Topbar({ breadcrumbs }: TopbarProps) {
   const { user, signOut } = useAuthStore()
 
   return (
-    <header className="h-14 flex-shrink-0 flex items-center justify-between px-4 bg-white border-b border-outline-variant z-30">
+    <header className="h-14 flex-shrink-0 flex items-center justify-between px-4 bg-surface-container-lowest border-b border-outline-variant z-30">
       {/* Breadcrumb */}
       <nav aria-label="Breadcrumb">
         <ol className="flex items-center gap-1.5">
@@ -54,6 +55,8 @@ export function Topbar({ breadcrumbs }: TopbarProps) {
 
       {/* Right actions */}
       <div className="flex items-center gap-0.5">
+        <ThemeToggle />
+
         {/* Notifications */}
         <NotificationBell />
 

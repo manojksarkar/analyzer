@@ -39,7 +39,7 @@ export function BulkApproveDialog({
           </p>
         )}
         {behind > 0 && (
-          <p className="text-caption text-[#b45309] leading-snug" title={plan.behind.map(docLabel).join(', ')}>
+          <p className="text-caption text-warn leading-snug" title={plan.behind.map(docLabel).join(', ')}>
             {plural(behind, 'Word file')} {behind === 1 ? 'is' : 'are'} out of date.{' '}
             {update.going ? 'Updating…' : update.blocked ? update.blocked : (
               <button type="button" onClick={update.onUpdate} className="text-secondary font-semibold hover:underline">
@@ -49,7 +49,7 @@ export function BulkApproveDialog({
           </p>
         )}
         {other > 0 && (
-          <p className="text-caption text-[#b45309] leading-snug" title={plan.skipped.map((s) => `${docLabel(s.doc)}: ${s.reason}`).join('\n')}>
+          <p className="text-caption text-warn leading-snug" title={plan.skipped.map((s) => `${docLabel(s.doc)}: ${s.reason}`).join('\n')}>
             {plural(other, 'other selected document')} {other === 1 ? 'is' : 'are'} not ready for approval.
           </p>
         )}
@@ -64,7 +64,7 @@ export function BulkApproveDialog({
           loading={busy}
           disabled={n === 0 || checking > 0}
           onClick={onConfirm}
-          className="bg-[#00a572] hover:bg-[#008a5f] disabled:bg-[#00a572]/40"
+          className="bg-on-tertiary-container hover:bg-[#008a5f] disabled:bg-on-tertiary-container/40"
         >
           <Icon name="check_circle" size={14} />Approve {n}
         </Button>

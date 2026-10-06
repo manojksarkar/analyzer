@@ -4,8 +4,8 @@ import { cn } from '../../../lib/cn'
 import type { ConfigPreview, ConfigReportItem, ConfigReportLevel, ConfigReportTopic } from '../../../types'
 
 const LEVEL: Record<ConfigReportLevel, { icon: string; cls: string; title: string }> = {
-  check:   { icon: 'error',        cls: 'text-[#b45309]', title: 'Needs your attention' },
-  filled:  { icon: 'check_circle', cls: 'text-[#00a572]', title: 'Filled in' },
+  check:   { icon: 'error',        cls: 'text-warn', title: 'Needs your attention' },
+  filled:  { icon: 'check_circle', cls: 'text-success', title: 'Filled in' },
   skipped: { icon: 'block',        cls: 'text-outline',   title: 'Not used' },
 }
 
@@ -73,7 +73,7 @@ export function ConfigImport({ fileName, preview, busy, onPick, archChanged, bra
 
   if (!preview || !fileName) {
     return (
-      <div className="flex items-center gap-3 px-4 py-3 border border-dashed border-outline-variant rounded-xl bg-white">
+      <div className="flex items-center gap-3 px-4 py-3 border border-dashed border-outline-variant rounded-xl bg-surface-container-lowest">
         <Icon name="settings_suggest" size={18} className="text-secondary flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-sm text-on-surface">Have a config file?</p>
@@ -86,15 +86,15 @@ export function ConfigImport({ fileName, preview, busy, onPick, archChanged, bra
   }
 
   return (
-    <div className="px-4 py-3 border border-outline-variant rounded-xl bg-white">
+    <div className="px-4 py-3 border border-outline-variant rounded-xl bg-surface-container-lowest">
       <div className="flex items-center gap-3">
         <Icon name="description" size={18} className="text-secondary flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="font-mono text-xs font-semibold text-on-surface truncate">{fileName}</p>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-caption">
-            <span className="flex items-center gap-1 text-[#00a572]"><Icon name="check_circle" size={13} fill />{of('filled').length} filled</span>
+            <span className="flex items-center gap-1 text-success"><Icon name="check_circle" size={13} fill />{of('filled').length} filled</span>
             {attention.length > 0 && (
-              <span className="flex items-center gap-1 text-[#b45309]"><Icon name="error" size={13} fill />
+              <span className="flex items-center gap-1 text-warn"><Icon name="error" size={13} fill />
                 {attention.length} need{attention.length === 1 ? 's' : ''} attention{whereCounts && ` (${whereCounts})`}
               </span>
             )}

@@ -25,11 +25,11 @@ import { StopRunDialog } from './StopRunDialog'
 
 const ICON: Record<GenerationRow['kind'], { name: string; tone: string }> = {
   running: { name: 'autorenew', tone: 'text-secondary animate-spin' },
-  stopped: { name: 'warning', tone: 'text-[#b45309]' },
+  stopped: { name: 'warning', tone: 'text-warn' },
   missing: { name: 'widgets', tone: 'text-on-surface-variant' },
 }
 const BAR: Record<GenerationRow['kind'], string> = {
-  running: 'bg-secondary', stopped: 'bg-amber', missing: 'bg-[#00a572]',
+  running: 'bg-secondary', stopped: 'bg-amber', missing: 'bg-success',
 }
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
@@ -86,7 +86,7 @@ export function GenerationBanner({ projectId, versionId, versionTag, isAdmin, la
   )
   if (!data || !summary) {
     return wordRowEl ? (
-      <div className={cn('bg-white border border-outline-variant rounded-xl', className)}>{wordRowEl}</div>
+      <div className={cn('bg-surface-container-lowest border border-outline-variant rounded-xl', className)}>{wordRowEl}</div>
     ) : null
   }
   const { total, withDocs } = summary
@@ -108,7 +108,7 @@ export function GenerationBanner({ projectId, versionId, versionTag, isAdmin, la
       ? <><b className="font-semibold text-on-surface">Generation stopped</b> {relativeTime(row.at)} before it finished · {done} done</>
       : <><b className="font-semibold text-on-surface">{plural(row.cutShort, 'component')} stopped or failed</b> · {done} done</>
     extra = (
-      <code className="block mt-1 font-mono text-label text-[#92400e] bg-[#fef3c7] px-1.5 py-0.5 rounded-[3px] break-all select-all">
+      <code className="block mt-1 font-mono text-label text-state-warn bg-highlight px-1.5 py-0.5 rounded-[3px] break-all select-all">
         python analyzer.py resume --project-id {projectId} --version-id {versionId} --detach
       </code>
     )
@@ -119,7 +119,7 @@ export function GenerationBanner({ projectId, versionId, versionTag, isAdmin, la
   return (
     <>
       {(row || wordRowEl) && (
-        <div role="status" aria-label="Generation" className={cn('bg-white border border-outline-variant rounded-xl divide-y divide-hairline', className)}>
+        <div role="status" aria-label="Generation" className={cn('bg-surface-container-lowest border border-outline-variant rounded-xl divide-y divide-hairline', className)}>
           {row && (
             <div className="flex items-center flex-wrap gap-x-3.5 gap-y-2 px-4 py-2.5">
               <Icon name={ICON[row.kind].name} size={18} className={cn('flex-shrink-0', ICON[row.kind].tone)} />
@@ -127,12 +127,12 @@ export function GenerationBanner({ projectId, versionId, versionTag, isAdmin, la
                 <p>{text}</p>
                 {extra}
               </div>
-              <span className="block w-[140px] h-1.5 rounded-full bg-[#e8eaed] overflow-hidden flex-shrink-0" aria-hidden>
+              <span className="block w-[140px] h-1.5 rounded-full bg-track overflow-hidden flex-shrink-0" aria-hidden>
                 {/* eslint-disable-next-line no-restricted-syntax -- the share done is data-driven */}
                 <span className={cn('block h-full rounded-full', BAR[row.kind])} style={{ width: `${total ? (100 * withDocs) / total : 0}%` }} />
               </span>
               <Button variant="outline" size="sm" onClick={() => setOpened(true)}
-                className="flex-shrink-0 h-auto py-1.5 rounded-[6px] bg-white whitespace-nowrap">
+                className="flex-shrink-0 h-auto py-1.5 rounded-[6px] bg-surface-container-lowest whitespace-nowrap">
                 View components
               </Button>
               {!compact && isAdmin && data.job && row.kind === 'running' && (
@@ -140,7 +140,7 @@ export function GenerationBanner({ projectId, versionId, versionTag, isAdmin, la
                   type="button"
                   onClick={() => setStopping(true)}
                   title="Stop making these documents? Components already finished keep their documents; the rest show as Stopped."
-                  className="flex-shrink-0 px-1 py-1.5 text-xs font-semibold text-error hover:underline"
+                  className="flex-shrink-0 px-1 py-1.5 text-xs font-semibold text-warn hover:underline"
                 >
                   Stop
                 </button>

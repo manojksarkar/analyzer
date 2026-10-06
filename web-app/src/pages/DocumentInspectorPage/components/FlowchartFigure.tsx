@@ -36,7 +36,7 @@ export function FlowchartFigure({ chart }: { chart: FlowchartEntry }) {
           height={size?.height}
           className="block max-w-full h-auto max-h-[480px] object-contain"
         />
-        <span className="absolute top-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/90 border border-outline-variant text-on-surface-variant opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity">
+        <span className="absolute top-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container-lowest border border-outline-variant text-on-surface-variant opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity">
           <Icon name="open_in_full" size={13} />
           <span className="font-mono text-label">Open</span>
         </span>

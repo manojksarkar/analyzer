@@ -14,7 +14,7 @@ function AvatarStack({ members, max = 3 }: { members: TeamMember[]; max?: number
         <div
           key={m.id}
           title={m.name}
-          className="w-[26px] h-[26px] rounded-full border-2 border-white inline-flex items-center justify-center relative flex-shrink-0 font-sans text-micro font-bold"
+          className="w-[26px] h-[26px] rounded-full border-2 border-surface-container-lowest inline-flex items-center justify-center relative flex-shrink-0 font-sans text-micro font-bold"
           // eslint-disable-next-line no-restricted-syntax -- avatar colour + stacking offset are data-driven
           style={{ background: m.avatarColor, color: m.avatarTextColor, zIndex: visible.length - i, marginLeft: i > 0 ? -8 : 0 }}
           aria-hidden
@@ -26,7 +26,7 @@ function AvatarStack({ members, max = 3 }: { members: TeamMember[]; max?: number
       {overflow > 0 && (
         <div
           title={`+${overflow} more`}
-          className="w-[26px] h-[26px] rounded-full border-2 border-white inline-flex items-center justify-center relative flex-shrink-0 font-sans text-micro font-bold bg-[#f3f4f6] text-on-surface-variant z-0 -ml-2"
+          className="w-[26px] h-[26px] rounded-full border-2 border-surface-container-lowest inline-flex items-center justify-center relative flex-shrink-0 font-sans text-micro font-bold bg-muted text-on-surface-variant z-0 -ml-2"
           aria-label={`+${overflow} more`}
         >
           +{overflow}
@@ -43,8 +43,8 @@ function ProjectIcon({ project }: { project: Project }) {
 
   if (project.icon === 'warning' || isStale) {
     return (
-      <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-[#fff8e6] border border-amber">
-        <Icon name="warning" size={18} className="text-[#d97706]" />
+      <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-state-warn-bg border border-amber">
+        <Icon name="warning" size={18} className="text-caution" />
       </div>
     )
   }
@@ -69,7 +69,7 @@ function RolePill({ role }: { role: 'admin' | 'developer' }) {
     <span
       className={cn(
         'font-mono text-micro font-bold rounded-full tracking-[0.04em] uppercase px-[7px] py-px',
-        isAdmin ? 'bg-surface-container text-secondary' : 'bg-[#f3f4f6] text-on-surface-variant',
+        isAdmin ? 'bg-surface-container text-secondary' : 'bg-muted text-on-surface-variant',
       )}
     >
       {isAdmin ? 'ADMIN' : 'DEV'}
@@ -87,7 +87,7 @@ function StandardBadge({ standard }: { standard: string }) {
     <span
       className={cn(
         'font-mono text-label font-bold px-[7px] py-0.5 rounded-[3px] uppercase whitespace-nowrap',
-        isAspiceL3 ? 'bg-[#e5f7f0] text-[#00a572]' : 'bg-surface-container text-secondary',
+        isAspiceL3 ? 'bg-state-done-bg text-success' : 'bg-surface-container text-secondary',
       )}
     >
       {standard}
@@ -99,7 +99,7 @@ function StandardBadge({ standard }: { standard: string }) {
 function VersionBadge({ version }: { version: string | null }) {
   if (!version) return <span className="text-on-surface-variant font-mono text-caption">—</span>
   return (
-    <span className="font-mono text-label font-bold bg-[#f3f4f6] text-on-surface-variant border border-outline-variant px-[7px] py-0.5 rounded-[3px]">
+    <span className="font-mono text-label font-bold bg-muted text-on-surface-variant border border-outline-variant px-[7px] py-0.5 rounded-[3px]">
       {version}
     </span>
   )
@@ -139,7 +139,7 @@ export function ProjectRow({ project, onNavigate, onTeam, onRename }: {
 
   return (
     <tr
-      className={cn('project-row border-b border-outline-variant last:border-0 cursor-pointer', isStale && 'bg-[#fffcf5]')}
+      className={cn('project-row border-b border-outline-variant last:border-0 cursor-pointer', isStale && 'bg-warn-bg/50')}
       onClick={() => onNavigate(project.id)}
     >
       {/* Name + icon */}
@@ -188,7 +188,7 @@ export function ProjectRow({ project, onNavigate, onTeam, onRename }: {
       {/* Last Run */}
       <td className="px-4 py-3.5 whitespace-nowrap">
         {project.lastRun ? (
-          <span className={cn('font-mono text-caption', isStale ? 'text-[#d97706]' : 'text-on-surface-variant')}>{project.lastRun}</span>
+          <span className={cn('font-mono text-caption', isStale ? 'text-caution' : 'text-on-surface-variant')}>{project.lastRun}</span>
         ) : (
           <span className="text-on-surface-variant font-mono text-caption">—</span>
         )}

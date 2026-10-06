@@ -63,12 +63,12 @@ export function CompareSectionSkeleton({ rows = 3 }: { rows?: number }) {
     <div className="grid grid-cols-2 items-stretch">
       {Array.from({ length: rows }).map((_, i) => (
         <Fragment key={i}>
-          <div className="bg-white border-r border-b border-outline-variant/60 px-8 py-6 space-y-3">
+          <div className="bg-surface-container-lowest border-r border-b border-outline-variant/60 px-8 py-6 space-y-3">
             <Skeleton className="h-5 w-1/3" />
             <Skeleton className="h-3 w-full" />
             <Skeleton className="h-3 w-5/6" />
           </div>
-          <div className="bg-white border-b border-outline-variant/60 px-8 py-6 space-y-3">
+          <div className="bg-surface-container-lowest border-b border-outline-variant/60 px-8 py-6 space-y-3">
             <Skeleton className="h-5 w-1/3" />
             <Skeleton className="h-3 w-full" />
             <Skeleton className="h-3 w-4/6" />

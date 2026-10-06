@@ -66,7 +66,7 @@ export function TeamPage() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-surface-container-low">
+    <div className="flex-1 overflow-y-auto bg-page">
       <div className="p-6 max-w-[860px] mx-auto">
 
         {/* ── Members card ── */}
@@ -114,8 +114,8 @@ export function TeamPage() {
                       <tr
                         key={m.id}
                         className={cn(
-                          'border-b border-outline-variant last:border-0 transition-colors hover:bg-[#f8f9ff]',
-                          m.pending && 'bg-[#fafafa]',
+                          'border-b border-outline-variant last:border-0 transition-colors hover:bg-surface',
+                          m.pending && 'bg-surface',
                         )}
                       >
                         {/* Member */}
@@ -158,7 +158,7 @@ export function TeamPage() {
                               {m.pending && (
                                 <button
                                   onClick={() => inviteMember.mutate({ email: m.email, role: m.role })}
-                                  className="inline-flex items-center gap-1 transition-colors hover:border-secondary hover:text-secondary px-2 py-[3px] border border-outline-variant rounded-md font-mono text-label font-semibold text-on-surface-variant bg-white"
+                                  className="inline-flex items-center gap-1 transition-colors hover:border-secondary hover:text-secondary px-2 py-[3px] border border-outline-variant rounded-md font-mono text-label font-semibold text-on-surface-variant bg-surface-container-lowest"
                                 >
                                   <Icon name="how_to_reg" size={12} />Activate
                                 </button>
@@ -197,7 +197,7 @@ export function TeamPage() {
           </div>
           <div>
             {ACCESS.map((a) => (
-              <div key={a.role} className="flex items-start gap-3 px-5 py-3 border-b border-[#f3f4f6]">
+              <div key={a.role} className="flex items-start gap-3 px-5 py-3 border-b border-muted">
                 <span className="flex flex-shrink-0 mt-px"><RolePill role={a.role} /></span>
                 <Text as="p" variant="caption" className="font-mono leading-relaxed">{a.perms}</Text>
               </div>

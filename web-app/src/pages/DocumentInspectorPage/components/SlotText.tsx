@@ -149,9 +149,9 @@ function SlotEditor({ slot, display, list, edit, className }: {
         onKeyDown={onKeyDown}
         className={cn(
           'block w-full resize-none overflow-hidden rounded-[3px] px-1.5 py-0.5 -mx-1.5',
-          'bg-[#fbfcff] outline-dashed outline-1 outline-[#8aa4d6] outline-offset-0',
+          'bg-surface-container-lowest outline-dashed outline-1 outline-secondary/50 outline-offset-0',
           'hover:outline-solid hover:outline-secondary hover:bg-surface-container-low',
-          'focus:outline-2 focus:outline-solid focus:outline-secondary focus:bg-white',
+          'focus:outline-2 focus:outline-solid focus:outline-secondary focus:bg-surface-container-lowest',
           'placeholder:text-outline placeholder:italic',
           edit.locked && 'outline-outline-variant cursor-not-allowed bg-transparent',
         )}

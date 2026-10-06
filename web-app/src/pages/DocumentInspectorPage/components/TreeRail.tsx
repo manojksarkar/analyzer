@@ -3,7 +3,7 @@ import { Icon } from '../../../components/ui'
 /* The document list, folded: a thin rail that opens it again. */
 export function TreeRail({ onOpen }: { onOpen: () => void }) {
   return (
-    <aside className="w-8 flex-shrink-0 bg-white border-r border-outline-variant flex flex-col items-center pt-2">
+    <aside className="w-8 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex flex-col items-center pt-2">
       <button
         type="button"
         onClick={onOpen}

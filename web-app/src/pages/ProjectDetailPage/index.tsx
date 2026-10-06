@@ -24,13 +24,13 @@ import { PHASE_UI, fmtClock, fmtEta, fmtStart, phaseTime } from './helpers'
 /* ─── Phase step (running panel) ─── */
 type PhaseStatus = 'done' | 'active' | 'pending'
 function PhaseStep({ n, label, status, time }: { n: number; label: string; status: PhaseStatus; time: string }) {
-  const timeColor = status === 'done' ? 'text-[#00a572]' : status === 'active' ? 'text-secondary' : 'text-outline-variant'
+  const timeColor = status === 'done' ? 'text-success' : status === 'active' ? 'text-secondary' : 'text-outline-variant'
   return (
     <div className="flex flex-col items-center text-center min-w-[105px]">
       <div
         className={cn(
           'w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0',
-          status === 'done' ? 'bg-[#00a572]' : status === 'active' ? 'bg-secondary' : 'bg-surface-container',
+          status === 'done' ? 'bg-on-tertiary-container' : status === 'active' ? 'bg-secondary' : 'bg-surface-container',
         )}
       >
         {status === 'done' ? (
@@ -159,7 +159,7 @@ export function ProjectDetailPage() {
         {pageState === 'never' && (
           <>
             {banner}
-            <div className="mb-6 rounded-xl border border-outline-variant bg-white px-8 py-10 flex flex-col items-center text-center gap-5">
+            <div className="mb-6 rounded-xl border border-outline-variant bg-surface-container-lowest px-8 py-10 flex flex-col items-center text-center gap-5">
               <div className="w-14 h-14 rounded-full bg-surface-container-low border border-outline-variant flex items-center justify-center">
                 <Icon name="auto_awesome" size={28} className="text-on-surface-variant" />
               </div>
@@ -189,7 +189,7 @@ export function ProjectDetailPage() {
         {pageState === 'running' && job && (
           <div className="mb-7 rounded-xl overflow-hidden border border-outline-variant">
             {/* Dark header */}
-            <div className="px-5 py-4 flex items-center justify-between bg-primary">
+            <div className="px-5 py-4 flex items-center justify-between bg-inverse">
               <div className="flex items-center gap-3">
                 {/* A queued job waits for a free worker: it must not look like it is running. */}
                 <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 border-2 border-secondary border-t-transparent">
@@ -244,7 +244,7 @@ export function ProjectDetailPage() {
                   <button
                     onClick={() => setStopJobId(job.id)}
                     disabled={cancelJob.isPending}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60 border border-[#4d2020] text-[#ff7070] font-mono text-caption font-medium"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60 border border-amber/40 text-amber hover:bg-amber/10 font-mono text-caption font-medium"
                   >
                     <Icon name="stop_circle" size={14} />
                     Cancel Job
@@ -254,12 +254,12 @@ export function ProjectDetailPage() {
             </div>
 
             {/* Phase steps (driven by the live job) */}
-            <div className="bg-white px-6 pt-5 pb-3">
+            <div className="bg-surface-container-lowest px-6 pt-5 pb-3">
               <div className="flex items-start">
                 {job.phases.map((p, i) => (
                   <Fragment key={p.number}>
                     {i > 0 && (
-                      <div className={cn('flex-1 h-0.5 rounded-full mt-3.5 mx-1.5', p.status !== 'pending' ? 'bg-[#00a572]' : 'bg-surface-container')} />
+                      <div className={cn('flex-1 h-0.5 rounded-full mt-3.5 mx-1.5', p.status !== 'pending' ? 'bg-success' : 'bg-surface-container')} />
                     )}
                     <PhaseStep n={p.number} label={p.name} status={PHASE_UI[p.status]} time={phaseTime(p)} />
                   </Fragment>
@@ -268,7 +268,7 @@ export function ProjectDetailPage() {
             </div>
 
             {/* Activity row */}
-            <div className="bg-white px-6 pb-5">
+            <div className="bg-surface-container-lowest px-6 pb-5">
               <div className="bg-surface-container-low border border-outline-variant rounded-lg px-4 py-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
@@ -308,8 +308,8 @@ export function ProjectDetailPage() {
 
         {/* ══ STALE BANNER ══ */}
         {pageState === 'stale' && (
-          <div className="mb-6 flex items-center gap-3 px-5 py-3.5 rounded-xl bg-[#fffbeb] border border-amber">
-            <Icon name="warning" size={20} fill className="flex-shrink-0 text-[#d97706]" />
+          <div className="mb-6 flex items-center gap-3 px-5 py-3.5 rounded-xl bg-warn-bg border border-amber">
+            <Icon name="warning" size={20} fill className="flex-shrink-0 text-caution" />
             <div className="flex-1 min-w-0">
               {/* The count is the version's own (it said "3" for every version). */}
               <p className="font-semibold text-on-surface text-body">

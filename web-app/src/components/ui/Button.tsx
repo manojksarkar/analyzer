@@ -14,7 +14,8 @@ const variantClasses: Record<ButtonVariant, string> = {
   primary:   'bg-secondary text-white hover:bg-[#0046a0] focus-visible:ring-secondary disabled:bg-secondary/40',
   secondary: 'bg-surface-container text-on-surface hover:bg-surface-container-low border border-outline-variant focus-visible:ring-secondary',
   ghost:     'text-on-surface-variant hover:bg-surface-container hover:text-on-surface focus-visible:ring-secondary',
-  danger:    'bg-error text-white hover:bg-[#960d0d] focus-visible:ring-error disabled:bg-error/40',
+  // Stop a run, remove a member: an amber outline, not a red fill (the error colour is for errors).
+  danger:    'border border-amber text-warn bg-surface-container-lowest hover:bg-warn-bg focus-visible:ring-amber',
   outline:   'border border-outline-variant text-on-surface hover:bg-surface-container focus-visible:ring-secondary',
 }
 

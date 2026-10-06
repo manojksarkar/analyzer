@@ -119,7 +119,7 @@ function JumpCard({ slot, onJump, children }: { slot: Slot; onJump: (slot: Slot)
     <button
       type="button"
       onClick={() => onJump(slot)}
-      className="block w-full text-left border border-outline-variant rounded-xl px-2.5 py-2 mb-2 bg-white hover:border-secondary hover:bg-surface transition-colors"
+      className="block w-full text-left border border-outline-variant rounded-xl px-2.5 py-2 mb-2 bg-surface-container-lowest hover:border-secondary hover:bg-surface transition-colors"
     >
       {children}
     </button>

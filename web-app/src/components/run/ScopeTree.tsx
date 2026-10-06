@@ -84,7 +84,7 @@ export function ScopeTree({ layers, ticked, onChange }: {
           className="text-caption text-secondary hover:underline disabled:text-outline-variant disabled:no-underline">None</button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-1 bg-white border border-outline-variant rounded-xl">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-1 bg-surface-container-lowest border border-outline-variant rounded-xl">
         <Row state={tickState(all, ticked)} name="All components" count={plural(total, 'component')} icon="select_all" onTick={() => tick(all)} disabled={!total} />
         {layers.map((l) => {
           const lKeys = layerKeys(l)

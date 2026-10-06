@@ -117,5 +117,5 @@ function highlight(text: string, q: string): React.ReactNode {
   if (!q) return text
   const i = text.toLowerCase().indexOf(q)
   if (i < 0) return text
-  return <>{text.slice(0, i)}<mark className="bg-[#fef3c7] text-inherit rounded-sm">{text.slice(i, i + q.length)}</mark>{text.slice(i + q.length)}</>
+  return <>{text.slice(0, i)}<mark className="bg-highlight text-inherit rounded-sm">{text.slice(i, i + q.length)}</mark>{text.slice(i + q.length)}</>
 }

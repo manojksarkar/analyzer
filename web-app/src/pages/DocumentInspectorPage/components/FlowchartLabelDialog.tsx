@@ -84,7 +84,7 @@ export function FlowchartLabelDialog({
             const isChanged = valueOf(s).trim() !== s.text.trim()
             return (
               <div key={s.key} className="flex gap-2.5 py-2 border-b border-surface-container last:border-0">
-                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary text-white font-mono text-label leading-5 text-center">{i + 1}</span>
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-inverse text-white font-mono text-label leading-5 text-center">{i + 1}</span>
                 <div className="flex-1 min-w-0">
                   <textarea
                     value={valueOf(s)}
@@ -96,7 +96,7 @@ export function FlowchartLabelDialog({
                     onChange={(e) => setDraft((d) => ({ ...d, [s.nodeId ?? '']: e.target.value }))}
                     className={cn(
                       'w-full resize-y rounded-lg border px-2 py-1.5 text-xs text-on-surface outline-none',
-                      isChanged ? 'border-secondary bg-surface-container-low' : 'border-outline-variant bg-white',
+                      isChanged ? 'border-secondary bg-surface-container-low' : 'border-outline-variant bg-surface-container-lowest',
                       focused === s.key && 'ring-2 ring-secondary',
                     )}
                   />

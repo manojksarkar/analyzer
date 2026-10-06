@@ -79,10 +79,10 @@ export function ReviewTab({
     : !readiness ? (readinessFailed
       ? <span className="text-error" title="Its Word file could not be checked.">Can’t tell</span>
       : <span className="text-outline">…</span>)
-      : isUpdating(readiness, doc) ? <span className="text-[#b45309]">Updating…</span>
+      : isUpdating(readiness, doc) ? <span className="text-warn">Updating…</span>
         : failed ? (
           <WordState
-            state={<span className="text-error" title={failed.why}>Update failed</span>}
+            state={<span className="text-warn" title={failed.why}>Update failed</span>}
             act={retry?.kind === 'here' ? (
               <WordAct label="Try again" blocked={blocked}
                 onClick={() => onUpdate({ components: failed.rebuild ? null : failed.components, rebuild: failed.rebuild })} />
@@ -96,11 +96,11 @@ export function ReviewTab({
           />
         ) : stale && own ? (
           <WordState
-            state={<span className="text-[#b45309]" title={cap(outOfDateWhy(own))}>Out of date ({outOfDateWhy(own, true)})</span>}
+            state={<span className="text-warn" title={cap(outOfDateWhy(own))}>Out of date ({outOfDateWhy(own, true)})</span>}
             act={<WordAct label="Update" blocked={blocked} title="Updates its SWE.3 and SWE.4"
               onClick={() => onUpdate({ components: doc.group ? [doc.group] : null })} />}
           />
-        ) : <span className="text-[#00a572]">Up to date</span>
+        ) : <span className="text-success">Up to date</span>
 
   /* ── the one action ── */
   let body: React.ReactNode
@@ -114,7 +114,7 @@ export function ReviewTab({
       body = (
         <>
           <Box tone="ok">
-            <span className="block font-mono text-label font-semibold uppercase tracking-[0.06em] text-[#00a572] mb-0.5">Approved</span>
+            <span className="block font-mono text-label font-semibold uppercase tracking-[0.06em] text-success mb-0.5">Approved</span>
             {carried
               ? <>In {carried.tag}. The content is unchanged in {versionTag}, so the approval carries.</>
               : <>By {by?.name ?? 'an admin'}{at ? ` · ${formatDateTime(at)}` : ''}</>}
@@ -177,7 +177,7 @@ export function ReviewTab({
         <>
           {doc.status === 'changes_requested' && backComment && (
             <Box tone="bad" className="mb-2.5">
-              <span className="block font-mono text-label font-semibold uppercase tracking-[0.06em] text-error mb-0.5">
+              <span className="block font-mono text-label font-semibold uppercase tracking-[0.06em] text-violet mb-0.5">
                 Changes requested{back ? ` · ${formatDateTime(back.at)}` : ''}
               </span>
               “{backComment}”
@@ -231,7 +231,7 @@ export function ReviewTab({
               <button type="button" onClick={onAssign} className="text-secondary font-mono text-label font-semibold hover:underline flex-shrink-0">Change</button>
             )}
           </>
-        ) : <span className="text-[#b45309] font-semibold">Needs a reviewer</span>}
+        ) : <span className="text-warn font-semibold">Needs a reviewer</span>}
       </Row>
       <Row k="Word file">{word}</Row>
 
@@ -291,9 +291,9 @@ function Row({ k, children }: { k: string; children: React.ReactNode }) {
 }
 
 const BOX_TONE = {
-  ok: 'bg-[#f0fdf9] border-[#86efac] text-[#065f46]',
-  info: 'bg-surface-container-low border-[#b9cdf5] text-on-surface',
-  bad: 'bg-[#fff1f0] border-[#f5a3a3] text-on-surface',
+  ok: 'bg-state-done-bg border-success-line text-state-done',
+  info: 'bg-surface-container-low border-info-line text-on-surface',
+  bad: 'bg-violet-bg border-violet-line text-on-surface',
 } as const
 
 function Box({ tone, className, children }: { tone: keyof typeof BOX_TONE; className?: string; children: React.ReactNode }) {
@@ -310,14 +310,14 @@ function Note({ icon, children }: { icon?: string; children: React.ReactNode }) 
 }
 
 function Why({ children }: { children: React.ReactNode }) {
-  return <p className="text-caption text-[#b45309] leading-[1.4] mt-1">{children}</p>
+  return <p className="text-caption text-warn leading-[1.4] mt-1">{children}</p>
 }
 
 const BUTTON_TONE = {
   primary: { variant: 'primary', cls: 'bg-secondary text-white hover:bg-secondary-container border-transparent' },
-  ok: { variant: 'primary', cls: 'bg-[#00a572] text-white hover:bg-[#008a5f] disabled:bg-[#00a572]/40 border-transparent' },
-  bad: { variant: 'outline', cls: 'bg-white text-error border-[#f5a3a3] hover:bg-[#fff1f0]' },
-  outline: { variant: 'outline', cls: 'bg-white text-on-surface border-outline-variant hover:bg-surface-container-low' },
+  ok: { variant: 'primary', cls: 'bg-on-tertiary-container text-white hover:bg-[#008a5f] disabled:bg-on-tertiary-container/40 border-transparent' },
+  bad: { variant: 'outline', cls: 'bg-surface-container-lowest text-violet border-violet-line hover:bg-violet-bg' },
+  outline: { variant: 'outline', cls: 'bg-surface-container-lowest text-on-surface border-outline-variant hover:bg-surface-container-low' },
 } as const
 
 function ActionButton({ tone, icon, label, onClick, loading, disabledWhy }: {

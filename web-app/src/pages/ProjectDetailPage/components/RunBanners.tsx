@@ -12,9 +12,9 @@ export function RunWarningsBanner({ version }: { version: Version }) {
   const n = version.warnings.length
   const shown = open ? version.warnings : version.warnings.slice(0, 3)
   return (
-    <div role="status" className="mb-6 rounded-xl border border-amber bg-[#fff8e6] px-5 py-4">
+    <div role="status" className="mb-6 rounded-xl border border-amber bg-state-warn-bg px-5 py-4">
       <div className="flex items-start gap-3">
-        <Icon name="warning" size={20} fill className="flex-shrink-0 text-[#d97706] mt-0.5" />
+        <Icon name="warning" size={20} fill className="flex-shrink-0 text-caution mt-0.5" />
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-on-surface text-body">
             The run that made {version.tag} reported {n} warning{n === 1 ? '' : 's'}
@@ -70,7 +70,7 @@ export function FailedRunBanner({ job, isAdmin, onRerun }: { job: AnalysisJob; i
                 {open ? 'Hide details' : 'Show details'}
               </button>
               {open && (
-                <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-white border border-outline-variant p-3 text-caption font-mono text-on-surface-variant whitespace-pre-wrap">{details}</pre>
+                <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-surface-container-lowest border border-outline-variant p-3 text-caption font-mono text-on-surface-variant whitespace-pre-wrap">{details}</pre>
               )}
             </>
           )}

@@ -24,7 +24,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'flex-shrink-0 flex flex-col bg-white border-r border-outline-variant transition-[width] duration-200 ease-[cubic-bezier(.4,0,.2,1)] overflow-hidden',
+        'flex-shrink-0 flex flex-col bg-surface-container-lowest border-r border-outline-variant transition-[width] duration-200 ease-[cubic-bezier(.4,0,.2,1)] overflow-hidden',
         collapsed ? 'w-14' : 'w-[220px]',
       )}
       aria-label="Project navigation"
@@ -99,7 +99,7 @@ export function Sidebar() {
                 cn(
                   'nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150',
                   isActive
-                    ? cn('nav-active bg-primary text-white', !collapsed && 'border-l-2 border-secondary')
+                    ? cn('nav-active bg-selected text-white', !collapsed && 'border-l-2 border-secondary')
                     : 'nav-default text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface',
                   collapsed && 'justify-center px-0',
                 )

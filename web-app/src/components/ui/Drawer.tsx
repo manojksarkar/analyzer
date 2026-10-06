@@ -31,7 +31,7 @@ export function Drawer({ open, onClose, title, description, header, footer, chil
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay data-scrim className="fixed inset-0 z-50 bg-primary/32 animate-in fade-in-0" />
+        <Dialog.Overlay data-scrim className="fixed inset-0 z-50 bg-inverse/32 animate-in fade-in-0" />
         <Dialog.Content
           // Radix hides the rest of the page from assistive tech; say it is modal too.
           aria-modal="true"
@@ -51,7 +51,7 @@ export function Drawer({ open, onClose, title, description, header, footer, chil
           // Radix names the description itself when there is one; none, and it must not ask.
           {...(description ? {} : { 'aria-describedby': undefined })}
           className={cn(
-            'fixed z-50 inset-y-0 right-0 w-[min(640px,100%)] bg-white flex flex-col',
+            'fixed z-50 inset-y-0 right-0 w-[min(640px,100%)] bg-surface-container-lowest flex flex-col',
             'shadow-[-8px_0_24px_rgba(4,22,39,.14)] focus:outline-none',
             className,
           )}

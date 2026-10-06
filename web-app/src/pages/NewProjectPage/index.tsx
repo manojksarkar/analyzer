@@ -4,6 +4,7 @@ import { useCreateProject } from '../../hooks/useProjects'
 import { useRepositoryWizard } from '../../hooks/useRepositoryWizard'
 import { useAuthStore } from '../../store/auth'
 import { CodeText, Icon, BrandMark, toast } from '../../components/ui'
+import { ThemeToggle } from '../../components/shell/ThemeToggle'
 import { cn } from '../../lib/cn'
 import { APP_NAME, APP_TAGLINE } from '../../constants/branding'
 import type { CreateProjectInput, RepoEntry, OrgUser } from '../../services/api'
@@ -50,7 +51,7 @@ const STEP_HINTS = [
 const TREE_CB = 'w-3.5 h-3.5 accent-secondary cursor-pointer flex-shrink-0'
 // Step 1's repository switch: Remote | Local.
 const SEG_BTN = 'inline-flex items-center gap-1 px-2.5 py-[3px] rounded-[6px] font-mono text-caption font-semibold tracking-[.02em] text-on-surface-variant hover:text-on-surface transition-colors'
-const SEG_ON = 'bg-white text-secondary hover:text-secondary shadow-[0_1px_2px_rgba(4,22,39,.12)]'
+const SEG_ON = 'bg-surface-container-lowest text-secondary hover:text-secondary shadow-[0_1px_2px_rgba(4,22,39,.12)]'
 
 type TestTone = 'neutral' | 'error' | 'ok'
 
@@ -114,7 +115,7 @@ function memberInitials(m: { name?: string; email: string }) {
 /* ─── Shared header ─────────────────────────────────────────────────── */
 function PageHeader({ step, onBack, backLabel }: { step: number; onBack: () => void; backLabel: string }) {
   return (
-    <header className="h-14 flex-shrink-0 flex items-center justify-between px-6 bg-white border-b border-outline-variant z-40">
+    <header className="h-14 flex-shrink-0 flex items-center justify-between px-6 bg-surface-container-lowest border-b border-outline-variant z-40">
       <div className="flex items-center gap-3">
         <BrandMark size={32} className="flex-shrink-0 text-secondary" />
         <div>
@@ -129,10 +130,13 @@ function PageHeader({ step, onBack, backLabel }: { step: number; onBack: () => v
         </span>
       </div>
 
-      <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-on-surface-variant hover:text-on-surface transition-colors">
-        <Icon name="arrow_back" size={18} />
-        {backLabel}
-      </button>
+      <div className="flex items-center gap-3">
+        <ThemeToggle />
+        <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-on-surface-variant hover:text-on-surface transition-colors">
+          <Icon name="arrow_back" size={18} />
+          {backLabel}
+        </button>
+      </div>
     </header>
   )
 }
@@ -143,7 +147,7 @@ function StepRail({
 }: { cur: number; done: Set<number>; issues: Set<number>; onClose: () => void; onGo: (n: number) => void }) {
   const pct = Math.round((done.size / STEPS.length) * 100)
   return (
-    <aside className="w-60 flex-shrink-0 bg-white border-r border-outline-variant flex flex-col overflow-y-auto">
+    <aside className="w-60 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex flex-col overflow-y-auto">
       <div className="px-4 pt-4 pb-3 border-b border-outline-variant">
         <div className="flex items-center justify-between mb-1.5">
           <p className="text-on-surface-variant uppercase font-mono text-caption font-medium tracking-[0.10em]">Setup Progress</p>
@@ -171,7 +175,7 @@ function StepRail({
                 {state === 'done'
                   ? <Icon name="check" size={14} fill />
                   : n}
-                {issues.has(n) && <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-error border-2 border-white" />}
+                {issues.has(n) && <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-error border-2 border-surface-container-lowest" />}
               </div>
               <div className="pt-[3px]">
                 <p className={cn('font-mono text-xs leading-[1.2]', n === cur ? 'text-secondary font-semibold' : done.has(n) ? 'text-on-surface font-medium' : 'text-on-surface-variant font-medium')}>{s.title}</p>
@@ -912,7 +916,7 @@ function WizardView({
     return out
   })()
   const isLast = cur === STEPS.length
-  const testMsgCls = testMsg?.tone === 'error' ? 'text-error' : testMsg?.tone === 'ok' ? 'text-[#00a572]' : 'text-on-surface-variant'
+  const testMsgCls = testMsg?.tone === 'error' ? 'text-error' : testMsg?.tone === 'ok' ? 'text-success' : 'text-on-surface-variant'
 
   return (
     <div className="flex-1 overflow-hidden flex">
@@ -966,14 +970,14 @@ function WizardView({
                     {/* Pick the folder instead of typing it - from the SERVER's folders: a browser
                         cannot give a full path from the user's own PC, and git runs on the server. */}
                     {isLocal && (
-                      <button type="button" onClick={() => setBrowseOpen(true)} className="inline-flex items-center gap-1.5 px-3 flex-shrink-0 bg-white border border-outline-variant rounded-xl font-mono text-caption font-bold tracking-[.04em] text-on-surface-variant hover:bg-surface-container-low transition-colors">
+                      <button type="button" onClick={() => setBrowseOpen(true)} className="inline-flex items-center gap-1.5 px-3 flex-shrink-0 bg-surface-container-lowest border border-outline-variant rounded-xl font-mono text-caption font-bold tracking-[.04em] text-on-surface-variant hover:bg-surface-container-low transition-colors">
                         <Icon name="folder_open" size={16} />BROWSE…
                       </button>
                     )}
                   </div>
                   {/* Remote, but a folder path typed: say so, one click to switch. */}
                   {!isLocal && looksLocal(repoUrl) && (
-                    <p className="mt-1.5 text-caption text-[#8a5300]">
+                    <p className="mt-1.5 text-caption text-state-warn">
                       This looks like a folder path, not a URL.{' '}
                       <button type="button" onClick={() => switchSource('local', true)} className="text-secondary hover:underline font-medium">Switch to Local</button>
                     </p>
@@ -1068,7 +1072,7 @@ function WizardView({
                     {problems.length > 8 && <p className="mt-1.5 ml-6 text-xs text-on-error-container">…and {problems.length - 8} more, marked below.</p>}
                   </div>
                 ) : (
-                  <p className="flex items-center gap-2 font-mono text-caption text-[#00a572]">
+                  <p className="flex items-center gap-2 font-mono text-caption text-success">
                     <Icon name="check_circle" size={14} fill />
                     Every path is on branch {branch}.
                   </p>
@@ -1152,7 +1156,7 @@ function WizardView({
                                             const issue = pathIssue(layer.id, c.id, f)
                                             return (
                                               <div key={f} className={cn('file-row', issue && 'err')} title={issue?.replace(/`/g, '') ?? f}>
-                                                <Icon name={treeIndex.get(f) === 'folder' ? 'folder' : 'description'} size={12} className={issue ? 'text-error' : 'text-[#b0b3b8]'} />{f.split('/').pop()}
+                                                <Icon name={treeIndex.get(f) === 'folder' ? 'folder' : 'description'} size={12} className={issue ? 'text-error' : 'text-faint'} />{f.split('/').pop()}
                                                 {issue && <span className="ml-1.5 font-mono text-micro">not usable</span>}
                                               </div>
                                             )
@@ -1194,7 +1198,7 @@ function WizardView({
                               <div className="inc-paths-content">
                                 {layer.libPaths.map((p, idx) => (
                                   <div key={idx} className="ext-path-row">
-                                    <Icon name="folder_open" size={13} className="text-[#00a572] flex-shrink-0" />
+                                    <Icon name="folder_open" size={13} className="text-success flex-shrink-0" />
                                     <input className={cn('ext-path-input', pathIssue(layer.id, '', p) && 'err')} title={pathIssue(layer.id, '', p)?.replace(/`/g, '')} value={p} placeholder="/path/to/include" onChange={(e) => { markArchEdited(); patchLayer(layer.id, (l) => ({ ...l, libPaths: l.libPaths.map((x, i) => i === idx ? e.target.value : x) })) }} />
                                     <button type="button" className="ext-browse-btn" onClick={() => openFolderPicker({ kind: 'lib-path', layerId: layer.id, index: idx })}>
                                       <Icon name="folder_open" size={11} />BROWSE
@@ -1218,7 +1222,7 @@ function WizardView({
                 </div>
 
                 {lastRemoved && (
-                  <div role="status" className="sticky bottom-3 z-10 flex items-center gap-3 px-4 py-2.5 bg-primary text-white rounded-lg shadow-[0_4px_16px_rgba(4,22,39,.25)]">
+                  <div role="status" className="sticky bottom-3 z-10 flex items-center gap-3 px-4 py-2.5 bg-inverse text-white rounded-lg shadow-[0_4px_16px_rgba(4,22,39,.25)]">
                     <Icon name="delete" size={16} className="opacity-70" />
                     <span className="flex-1 text-xs">{lastRemoved.label}</span>
                     <button type="button" onClick={undoRemove} className="font-mono text-caption font-bold uppercase tracking-[.06em] text-[#8ab4ff] hover:text-white">Undo</button>
@@ -1303,7 +1307,7 @@ function WizardView({
                           <p className="text-on-surface-variant truncate font-mono text-label">{m.email}</p>
                         </div>
                         <div className="w-[120px] flex-shrink-0">
-                          <select value={m.role} onChange={(e) => setMembers((prev) => prev.map((x) => x.email === m.email ? { ...x, role: e.target.value as Role } : x))} className="font-mono text-label font-semibold tracking-[.04em] px-1.5 py-[3px] border border-outline-variant rounded-lg bg-white text-on-surface outline-none w-full">
+                          <select value={m.role} onChange={(e) => setMembers((prev) => prev.map((x) => x.email === m.email ? { ...x, role: e.target.value as Role } : x))} className="font-mono text-label font-semibold tracking-[.04em] px-1.5 py-[3px] border border-outline-variant rounded-lg bg-surface-container-lowest text-on-surface outline-none w-full">
                             <option value="Developer">Developer</option>
                             <option value="Admin">Admin</option>
                           </select>
@@ -1332,13 +1336,13 @@ function WizardView({
                               <Icon name="search" size={16} className="absolute left-[9px] top-1/2 -translate-y-1/2 text-outline pointer-events-none" />
                               <input className="inp with-icon" value={search} onChange={(e) => setSearch(e.target.value)} onFocus={() => setSearchOpen(true)} onBlur={() => window.setTimeout(() => setSearchOpen(false), 150)} type="text" autoComplete="off" placeholder="Search by name or email…" />
                             </div>
-                            <select className="w-[120px] flex-shrink-0 px-2 border border-outline-variant rounded-lg bg-white text-on-surface outline-none font-mono text-label font-semibold tracking-[.04em]" value={inviteRole} onChange={(e) => setInviteRole(e.target.value as Role)}>
+                            <select className="w-[120px] flex-shrink-0 px-2 border border-outline-variant rounded-lg bg-surface-container-lowest text-on-surface outline-none font-mono text-label font-semibold tracking-[.04em]" value={inviteRole} onChange={(e) => setInviteRole(e.target.value as Role)}>
                               <option value="Developer">Developer</option>
                               <option value="Admin">Admin</option>
                             </select>
                           </div>
                           {searchOpen && (
-                            <div className="absolute top-[calc(100%+4px)] left-0 right-[128px] bg-white border border-outline-variant rounded-lg shadow-[0_4px_16px_rgba(4,22,39,.12)] max-h-[200px] overflow-y-auto z-[200]">
+                            <div className="absolute top-[calc(100%+4px)] left-0 right-[128px] bg-surface-container-lowest border border-outline-variant rounded-lg shadow-[0_4px_16px_rgba(4,22,39,.12)] max-h-[200px] overflow-y-auto z-[200]">
                               {searchMatches.map((u) => (
                                 <div key={u.email} className="ms-item" onMouseDown={() => selectMember(u.email, u.name)}>
                                   <div className="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center flex-shrink-0 font-sans text-label font-bold text-secondary">{initialsOf(u.name)}</div>
@@ -1444,7 +1448,7 @@ function WizardView({
                   <div className="rev-row"><span>Layers</span><span>{layers.length} layer{layers.length !== 1 ? 's' : ''} · {totalComps} component{totalComps !== 1 ? 's' : ''}</span></div>
                   <div className="rev-row">
                     <span>Paths</span>
-                    <span className={treeReady && !problems.length ? 'text-[#00a572]' : 'text-error'}>
+                    <span className={treeReady && !problems.length ? 'text-success' : 'text-error'}>
                       {!treeReady ? 'not checked: the repository could not be read'
                         : problems.length ? `${problems.length} to fix in step 3`
                           : `all on branch ${branch}`}
@@ -1469,8 +1473,8 @@ function WizardView({
                             {layer.libPaths.filter(Boolean).length > 0 && (
                               <div className="flex items-center flex-wrap gap-1 ml-4 mb-1">
                                 {layer.libPaths.filter(Boolean).map((p, i) => (
-                                  <span key={i} className="inline-flex items-center gap-[3px] bg-[#f0faf6] border border-[rgba(0,165,114,.2)] rounded-lg px-[7px] py-0.5 font-mono text-micro text-[#006e45]">
-                                    <Icon name="folder" size={10} className="text-[#00a572]" />{p}
+                                  <span key={i} className="inline-flex items-center gap-[3px] bg-state-done-bg border border-[rgba(0,165,114,.2)] rounded-lg px-[7px] py-0.5 font-mono text-micro text-state-done">
+                                    <Icon name="folder" size={10} className="text-success" />{p}
                                   </span>
                                 ))}
                               </div>
@@ -1485,7 +1489,7 @@ function WizardView({
                                   <span className="font-mono text-micro text-outline ml-1">{g.comps.length} comp{g.comps.length !== 1 ? 's' : ''}</span>
                                 </div>
                                 {g.comps.length === 0 ? (
-                                  <div className="ml-[18px] font-mono text-label text-[#b0b3b8] py-0.5">No components</div>
+                                  <div className="ml-[18px] font-mono text-label text-faint py-0.5">No components</div>
                                 ) : g.comps.map((c) => (
                                   <div key={c.id} className="ml-4 border-l-2 border-surface-container-low pl-2 mt-[3px]">
                                     <div className="flex items-center gap-[5px] py-0.5">
@@ -1495,7 +1499,7 @@ function WizardView({
                                     </div>
                                     {c.files.map((f) => (
                                       <div key={f} className="ml-[18px] flex items-center gap-1 py-px">
-                                        <Icon name="description" size={11} className="text-[#b0b3b8]" />
+                                        <Icon name="description" size={11} className="text-faint" />
                                         <span className="font-mono text-micro text-on-surface-variant">{f.split('/').pop()}</span>
                                       </div>
                                     ))}
@@ -1549,7 +1553,7 @@ function WizardView({
         </div>
 
         {/* Action bar */}
-        <div className="h-16 flex-shrink-0 bg-white border-t border-outline-variant flex items-center justify-between px-8 gap-4">
+        <div className="h-16 flex-shrink-0 bg-surface-container-lowest border-t border-outline-variant flex items-center justify-between px-8 gap-4">
           {/* What this step needs - or what still stops it. (Nothing is saved until Initialize.) */}
           {attempted.has(cur) && issuesFor(cur).length > 0 ? (
             <div className="flex items-center gap-1.5 text-error min-w-0">
@@ -1582,7 +1586,7 @@ function WizardView({
       {compPanel && (
         <>
           <div className="fixed inset-0 z-[99] bg-[rgba(4,22,39,.25)]" onClick={closeCompPanel} />
-          <aside className="fixed top-0 right-0 h-screen bg-white border-l border-outline-variant z-[100] flex flex-col w-[340px] shadow-[-4px_0_24px_rgba(4,22,39,.12)]">
+          <aside className="fixed top-0 right-0 h-screen bg-surface-container-lowest border-l border-outline-variant z-[100] flex flex-col w-[340px] shadow-[-4px_0_24px_rgba(4,22,39,.12)]">
             <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant flex-shrink-0">
               <div>
                 <h3 className="text-on-surface font-sans text-sm font-semibold">Add Component</h3>
@@ -1618,7 +1622,7 @@ function WizardView({
       {fpTarget && (
         <>
           <div className="fixed inset-0 z-[99] bg-[rgba(4,22,39,.25)]" onClick={() => setFpTarget(null)} />
-          <aside className="fixed top-0 right-0 h-screen bg-white border-l border-outline-variant z-[100] flex flex-col w-[320px] shadow-[-4px_0_24px_rgba(4,22,39,.12)]">
+          <aside className="fixed top-0 right-0 h-screen bg-surface-container-lowest border-l border-outline-variant z-[100] flex flex-col w-[320px] shadow-[-4px_0_24px_rgba(4,22,39,.12)]">
             <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant flex-shrink-0">
               <div className="min-w-0">
                 <h3 className="text-on-surface font-sans text-sm font-semibold">Select Folder</h3>

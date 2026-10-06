@@ -9,11 +9,11 @@ import type { ComponentState, VersionComponent } from '../../types'
 const CHIP: Record<ComponentState, { word: string; icon: string | null; tone: string; spin?: boolean }> = {
   generated: { word: 'Has documents', icon: 'check', tone: 'bg-state-done-bg border-state-done-line text-state-done' },
   stale: { word: 'Out of date', icon: 'history', tone: 'bg-state-warn-bg border-state-warn-line text-state-warn' },
-  generating: { word: 'In progress', icon: 'autorenew', tone: 'bg-white border-state-busy-line text-secondary', spin: true },
-  waiting: { word: 'Queued', icon: 'schedule', tone: 'bg-white border-hairline text-on-surface-variant' },
+  generating: { word: 'In progress', icon: 'autorenew', tone: 'bg-surface-container-lowest border-state-busy-line text-secondary', spin: true },
+  waiting: { word: 'Queued', icon: 'schedule', tone: 'bg-surface-container-lowest border-hairline text-on-surface-variant' },
   stopped: { word: 'Stopped', icon: 'pause_circle', tone: 'bg-state-warn-bg border-state-warn-line text-state-warn' },
-  failed: { word: 'Failed', icon: 'error', tone: 'bg-state-fail-bg border-state-fail-line text-error' },
-  not_requested: { word: 'Not started', icon: null, tone: 'bg-white border-outline-variant text-on-surface-variant' },
+  failed: { word: 'Failed', icon: 'error', tone: 'bg-state-warn-bg border-amber text-warn' },
+  not_requested: { word: 'Not started', icon: null, tone: 'bg-surface-container-lowest border-outline-variant text-on-surface-variant' },
 }
 
 /** The legend's order. */

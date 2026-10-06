@@ -12,8 +12,8 @@ import type { Version, Commit, PageState } from '../../types'
 
 /* ─── Commit timeline dot colours (fill + border) ─── */
 function commitDotClass(commit: Commit, isCurrent: boolean): string {
-  const fill = commit.versionTag ? 'bg-[#00a572]' : isCurrent ? 'bg-secondary' : 'bg-white'
-  const border = isCurrent ? 'border-secondary' : commit.versionTag ? 'border-[#00a572]' : 'border-outline-variant'
+  const fill = commit.versionTag ? 'bg-success' : isCurrent ? 'bg-secondary' : 'bg-surface-container-lowest'
+  const border = isCurrent ? 'border-secondary' : commit.versionTag ? 'border-success' : 'border-outline-variant'
   return cn(fill, border)
 }
 
@@ -45,7 +45,7 @@ function VersionRow({ version, isActive, onSelect }: { version: Version; isActiv
       onClick={onSelect}
       className={cn(
         'w-full flex border-b border-outline-variant text-left transition-colors cursor-pointer',
-        isActive ? 'bg-[#f5f8ff]' : 'hover:bg-[#f8f9fa]',
+        isActive ? 'bg-tint' : 'hover:bg-surface',
       )}
     >
       <div className={cn('w-[3px] flex-shrink-0', version.status === 'draft' ? 'bg-outline-variant' : STATUS_META[version.status].dot)} aria-hidden />
@@ -63,7 +63,7 @@ function VersionRow({ version, isActive, onSelect }: { version: Version; isActiv
           return made ? <div className="font-mono text-label text-outline mb-1 truncate" title="How this version was made">{made}</div> : null
         })()}
         <div className="flex items-center gap-2">
-          <span className="font-mono text-label text-outline bg-[#f3f4f6] px-[5px] py-px rounded-lg">{version.shortSha}</span>
+          <span className="font-mono text-label text-outline bg-muted px-[5px] py-px rounded-lg">{version.shortSha}</span>
           <span className="text-label text-outline">{version.date}</span>
           <VersionProgress version={version} />
         </div>
@@ -81,7 +81,7 @@ function VersionProgress({ version }: { version: Version }) {
   if (version.status === 'approved') {
     return <span className="text-label text-outline">{r.documents} docs{r.approvedBy ? ` · by ${r.approvedBy.name}` : ''}</span>
   }
-  return <span className="text-label text-[#b45309]">{r.approved} of {r.documents} approved</span>
+  return <span className="text-label text-warn">{r.approved} of {r.documents} approved</span>
 }
 
 /* ─── Commit row (timeline) ─── */
@@ -89,18 +89,18 @@ function CommitRow({ commit, isCurrent, isLast, onSelect }: { commit: Commit; is
   return (
     <button
       onClick={onSelect}
-      className={cn('w-full flex text-left px-3 cursor-pointer', isCurrent ? 'bg-[#f5f8ff]' : 'hover:bg-[#f8f9fa]')}
+      className={cn('w-full flex text-left px-3 cursor-pointer', isCurrent ? 'bg-tint' : 'hover:bg-surface')}
     >
       <div className="flex flex-col items-center flex-shrink-0 w-[18px] pt-3" aria-hidden>
         <div className={cn('w-[9px] h-[9px] rounded-full border-2 flex-shrink-0', commitDotClass(commit, isCurrent))} />
-        {!isLast && <div className="w-0.5 flex-1 min-h-2.5 bg-[#e2e3e8] mt-[3px]" />}
+        {!isLast && <div className="w-0.5 flex-1 min-h-2.5 bg-hairline mt-[3px]" />}
       </div>
       <div className="flex-1 min-w-0 py-2.5 pl-2">
         <div className="flex items-center justify-between gap-1.5 mb-0.5">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="font-mono text-label font-semibold text-on-surface-variant bg-[#f3f4f6] px-[5px] py-px rounded-lg">{commit.shortSha}</span>
+            <span className="font-mono text-label font-semibold text-on-surface-variant bg-muted px-[5px] py-px rounded-lg">{commit.shortSha}</span>
             {commit.versionTag && (
-              <span className="inline-flex items-center gap-0.5 font-mono text-micro font-semibold text-[#00a572] bg-[#f0fdf9] border border-[#86efac] px-1.5 rounded-full">
+              <span className="inline-flex items-center gap-0.5 font-mono text-micro font-semibold text-success bg-state-done-bg border border-success-line px-1.5 rounded-full">
                 <Icon name="sell" size={10} />{commit.versionTag}
               </span>
             )}
@@ -188,7 +188,7 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden min-w-[380px] z-[200] shadow-[0_4px_20px_rgba(4,22,39,.12)]">
+        <div className="absolute top-full left-0 mt-1.5 bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden min-w-[380px] z-[200] shadow-[0_4px_20px_rgba(4,22,39,.12)]">
           {/* Tabs */}
           <div className="flex items-center border-b border-outline-variant px-3">
             <button
@@ -292,7 +292,7 @@ function ProjectSwitcher({ projectName }: { projectName: string }) {
     <div className="relative" ref={wrapRef}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-1.5 px-2.5 py-[5px] border border-outline-variant rounded-md bg-white transition-colors hover:bg-surface-container-low hover:border-secondary font-mono text-xs"
+        className="inline-flex items-center gap-1.5 px-2.5 py-[5px] border border-outline-variant rounded-md bg-surface-container-lowest transition-colors hover:bg-surface-container-low hover:border-secondary font-mono text-xs"
         aria-haspopup="true"
         aria-expanded={open}
       >
@@ -303,7 +303,7 @@ function ProjectSwitcher({ projectName }: { projectName: string }) {
 
       {open && (
         // Capped: a project with no standard shows its repository, and a local path stretched the menu.
-        <div className="absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden min-w-[260px] w-max max-w-[min(400px,calc(100vw-32px))] z-[200] shadow-[0_4px_20px_rgba(4,22,39,.12)]">
+        <div className="absolute top-full left-0 mt-1.5 bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden min-w-[260px] w-max max-w-[min(400px,calc(100vw-32px))] z-[200] shadow-[0_4px_20px_rgba(4,22,39,.12)]">
           <div className="px-3 py-2 border-b border-outline-variant">
             <span className="text-on-surface-variant uppercase font-mono text-label font-bold tracking-[.08em]">Switch project</span>
           </div>
@@ -319,7 +319,7 @@ function ProjectSwitcher({ projectName }: { projectName: string }) {
                   <button
                     key={p.id}
                     onClick={() => { setOpen(false); if (!active) navigate(`/projects/${p.id}/overview`) }}
-                    className={cn('w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors', active ? 'bg-surface-container-low' : 'hover:bg-[#f8f9fa]')}
+                    className={cn('w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors', active ? 'bg-surface-container-low' : 'hover:bg-surface')}
                   >
                     <Icon name="folder" size={15} fill className="text-secondary flex-shrink-0" />
                     <div className="flex-1 min-w-0">
@@ -350,7 +350,7 @@ interface SubbarProps {
 
 export function Subbar({ projectName, selectedVersion, selectedCommit, statusBadge, cta, ctaSlotRef }: SubbarProps) {
   return (
-    <div className="h-12 flex-shrink-0 flex items-center justify-between px-4 bg-white border-b border-outline-variant z-20">
+    <div className="h-12 flex-shrink-0 flex items-center justify-between px-4 bg-surface-container-lowest border-b border-outline-variant z-20">
       <div className="flex items-center gap-2">
         <ProjectSwitcher projectName={projectName} />
 

@@ -51,9 +51,9 @@ export const toast = {
 }
 
 const iconMap: Record<ToastVariant, { name: string; color: string }> = {
-  default: { name: 'info', color: '#0058be' },
-  success: { name: 'check_circle', color: '#00a572' },
-  error:   { name: 'error', color: '#ba1a1a' },
+  default: { name: 'info', color: 'var(--color-secondary)' },
+  success: { name: 'check_circle', color: 'var(--color-success)' },
+  error:   { name: 'error', color: 'var(--color-error)' },
 }
 
 export function ToastProvider() {
@@ -70,7 +70,7 @@ export function ToastProvider() {
             onOpenChange={(open) => !open && dismiss(t.id)}
             duration={t.action ? 8000 : 4000}
             className={cn(
-              'flex items-start gap-3 p-4 rounded-xl border border-outline-variant bg-white',
+              'flex items-start gap-3 p-4 rounded-xl border border-outline-variant bg-surface-container-lowest',
               'shadow-[0_4px_24px_rgba(4,22,39,.12)]',
               'data-[state=open]:animate-in data-[state=open]:slide-in-from-right-full',
               'data-[state=closed]:animate-out data-[state=closed]:fade-out-80',

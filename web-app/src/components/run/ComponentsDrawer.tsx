@@ -19,7 +19,7 @@ const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 
 function Bar({ share, className }: { share: number; className: string }) {
   return (
-    <span className="block w-14 h-1 rounded-full bg-[#e8eaed] overflow-hidden flex-shrink-0" aria-hidden>
+    <span className="block w-14 h-1 rounded-full bg-track overflow-hidden flex-shrink-0" aria-hidden>
       {/* eslint-disable-next-line no-restricted-syntax -- the share done is data-driven */}
       <span className={cn('block h-full', className)} style={{ width: `${Math.round(100 * share)}%` }} />
     </span>
@@ -92,7 +92,7 @@ export function ComponentsDrawer({ projectId, versionId, versionTag, data, isAdm
               onClick={() => setWithoutOnly(only)}
               className={cn(
                 'px-2.5 py-[5px] rounded-[6px] text-xs font-medium text-on-surface-variant whitespace-nowrap',
-                withoutOnly === only && 'bg-white text-on-surface shadow-[0_1px_2px_rgba(4,22,39,.12)]',
+                withoutOnly === only && 'bg-surface-container-lowest text-on-surface shadow-[0_1px_2px_rgba(4,22,39,.12)]',
               )}
             >
               {label}
@@ -159,7 +159,7 @@ export function ComponentsDrawer({ projectId, versionId, versionTag, data, isAdm
           const isFolded = folded.has(l.layer)
           const name = l.layer || 'No layer'
           return (
-            <section key={l.layer || '—'} aria-label={name} className="px-6 py-3.5 border-t border-[#eef0f3] first:border-t-0">
+            <section key={l.layer || '—'} aria-label={name} className="px-6 py-3.5 border-t border-muted first:border-t-0">
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -172,7 +172,7 @@ export function ComponentsDrawer({ projectId, versionId, versionTag, data, isAdm
                   <span className="font-mono text-xs font-bold text-on-surface truncate">{name}</span>
                 </button>
                 <span className="text-xs text-outline whitespace-nowrap">{done} of {all.length}</span>
-                <Bar share={all.length ? done / all.length : 0} className="bg-[#00a572]" />
+                <Bar share={all.length ? done / all.length : 0} className="bg-success" />
                 <span className="flex-1" />
                 {selectable.length > 0 && (
                   <button

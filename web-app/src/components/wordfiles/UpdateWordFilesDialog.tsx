@@ -51,12 +51,12 @@ export function UpdateWordFilesDialog({
     <Modal open onClose={onClose} title={`${rebuild ? 'Rebuild' : 'Update'} ${plural(count, 'Word file')}`} className="max-w-[460px]">
       <div className="-mt-3 space-y-2">
         {!rebuild && (
-          <div className="rounded-xl border border-[#b9cdf5] bg-surface-container-low px-3 py-2.5 text-xs text-on-surface leading-[1.7] max-h-[150px] overflow-auto">
+          <div className="rounded-xl border border-info-line bg-surface-container-low px-3 py-2.5 text-xs text-on-surface leading-[1.7] max-h-[150px] overflow-auto">
             {writes.length ? (
               <ul aria-label="Word files it writes">
                 {writes.map((f) => (
                   <li key={f.documentId}>
-                    {fileLabel(f)} <span className="text-[#92400e]">· {outOfDateWhy(f)}</span>
+                    {fileLabel(f)} <span className="text-state-warn">· {outOfDateWhy(f)}</span>
                   </li>
                 ))}
               </ul>

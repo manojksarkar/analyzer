@@ -39,7 +39,7 @@ export function QueuedList({ projectId, versionId, slotRefs }: {
       )}
       {data && !items.length && <Text as="p" variant="caption" className="font-mono">Nothing queued in this document.</Text>}
       {items.map((q) => (
-        <div key={`${q.slotKind}:${q.slotKey}`} className="border border-outline-variant rounded-xl px-2.5 py-2 mb-2 bg-white">
+        <div key={`${q.slotKind}:${q.slotKey}`} className="border border-outline-variant rounded-xl px-2.5 py-2 mb-2 bg-surface-container-lowest">
           <div className="flex items-baseline justify-between gap-2">
             <span className="font-mono text-label font-semibold uppercase tracking-[0.04em] text-on-surface-variant">
               {kindWords(q.slotKind)}

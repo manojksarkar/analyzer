@@ -26,7 +26,7 @@ export function StopRunDialog({ job, versionTag, busy, onConfirm, onClose }: {
             and those waiting show as <b>Stopped</b>, and can be generated again later.
           </p>
         ) : (
-          <p className="leading-relaxed text-[#991b1b]">
+          <p className="leading-relaxed text-state-warn">
             The run stops now and <b>this version is removed</b>, with everything made so far. To keep
             what is made, let it finish.
           </p>

@@ -109,7 +109,7 @@ export function RunAnalysisModal({
                   {commitsLoading ? 'Loading commits…' : 'No commits available to analyze yet.'}
                 </p>
               ) : (
-                <select value={commitSha} onChange={(e) => setPickedSha(e.target.value)} className={cn('w-full rounded-lg px-3 py-2 text-on-surface bg-white cursor-pointer focus:outline-none border border-outline-variant', SELECT_CLS)}>
+                <select value={commitSha} onChange={(e) => setPickedSha(e.target.value)} className={cn('w-full rounded-lg px-3 py-2 text-on-surface bg-surface-container-lowest cursor-pointer focus:outline-none border border-outline-variant', SELECT_CLS)}>
                   {cs.map((c) => (
                     <option key={c.sha} value={c.sha}>
                       {c.shortSha}{c.versionTag ? ` [${c.versionTag}]` : ''} · {c.relativeTime} — {c.message}
@@ -126,7 +126,7 @@ export function RunAnalysisModal({
               <label className={cn('text-on-surface-variant', FIELD_LABEL)}>Compare against</label>
               <span className="text-label text-outline-variant font-mono">OPTIONAL</span>
             </div>
-            <select value={referenceId} onChange={(e) => setReferenceId(e.target.value)} className={cn('w-full border border-outline-variant rounded-lg px-3 py-2 text-on-surface bg-white cursor-pointer focus:outline-none', SELECT_CLS)}>
+            <select value={referenceId} onChange={(e) => setReferenceId(e.target.value)} className={cn('w-full border border-outline-variant rounded-lg px-3 py-2 text-on-surface bg-surface-container-lowest cursor-pointer focus:outline-none', SELECT_CLS)}>
               <option value="">— None —</option>
               {refVersions.map((v) => (
                 <option key={v.id} value={v.id}>{v.tag} · {v.shortSha} — {v.description}</option>
@@ -142,7 +142,7 @@ export function RunAnalysisModal({
               <Icon name="sell" size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
               <input value={versionName} onChange={(e) => setVersionName(e.target.value)} type="text" placeholder="e.g. v1.3.0" autoComplete="off" spellCheck={false}
                 aria-label="Version name" aria-invalid={nameProblem ? 'true' : undefined} aria-describedby={nameProblem ? nameHintId : undefined}
-                className={cn('w-full border rounded-lg pl-9 pr-3 py-2.5 bg-white focus:outline-none font-mono text-body font-bold text-secondary tracking-[.03em] box-border',
+                className={cn('w-full border rounded-lg pl-9 pr-3 py-2.5 bg-surface-container-lowest focus:outline-none font-mono text-body font-bold text-secondary tracking-[.03em] box-border',
                   nameProblem ? 'border-error' : 'border-outline-variant')} />
             </div>
             {nameProblem && <p id={nameHintId} className={cn('text-error mt-1.5', FIELD_LABEL)}>{nameProblem}</p>}
@@ -151,7 +151,7 @@ export function RunAnalysisModal({
           {/* Advanced options: opens the second column */}
           <button type="button" onClick={() => setAdvOpen((v) => !v)}
             className={cn('w-full flex items-center gap-2 pl-3 pr-2.5 py-[9px] border rounded-xl text-left transition-colors',
-              advOpen ? 'border-secondary bg-surface text-secondary' : 'border-outline-variant bg-white text-on-surface-variant hover:border-secondary hover:text-secondary')}>
+              advOpen ? 'border-secondary bg-surface text-secondary' : 'border-outline-variant bg-surface-container-lowest text-on-surface-variant hover:border-secondary hover:text-secondary')}>
             <Icon name="tune" size={16} />
             <span className="flex-shrink-0 font-mono text-xs font-semibold">Advanced options</span>
             <span title={changed.join(' · ') || 'Every component, LLM on'}
@@ -163,9 +163,9 @@ export function RunAnalysisModal({
           </button>
 
           {/* Warning */}
-          <div className="flex items-center gap-2.5 rounded-xl px-4 py-3 bg-[#f0f4ff] border border-[#c7d8ff]">
+          <div className="flex items-center gap-2.5 rounded-xl px-4 py-3 bg-tint border border-info-line">
             <Icon name="schedule" size={15} className="flex-shrink-0 text-secondary" />
-            <p className="text-[#0b2e6b] text-caption">Analysis runs server-side and can take <strong>several hours</strong> — safe to navigate away.</p>
+            <p className="text-on-surface text-caption">Analysis runs server-side and can take <strong>several hours</strong> — safe to navigate away.</p>
           </div>
         </div>
 

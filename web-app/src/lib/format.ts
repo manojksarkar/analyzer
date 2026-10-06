@@ -60,18 +60,14 @@ export function shortSha(sha?: string | null): string {
 
 /**
  * Deterministic avatar palette derived from a stable seed (user id / initials).
- * Mirrors the hand-picked colors the mock data used so the UI looks identical.
+ * Mirrors the hand-picked colors the mock data used so the UI looks identical. Each colour is a
+ * CSS variable (index.css `--hue-*`), so an avatar follows the light or the dark theme.
  */
-const AVATAR_PALETTE: { bg: string; text: string }[] = [
-  { bg: '#e0f2fe', text: '#0369a1' },
-  { bg: '#dbeafe', text: '#1e40af' },
-  { bg: '#fce7f3', text: '#be185d' },
-  { bg: '#fef9c3', text: '#92400e' },
-  { bg: '#f3e8ff', text: '#7c3aed' },
-  { bg: '#fff7ed', text: '#c2410c' },
-  { bg: '#ecfdf5', text: '#065f46' },
-  { bg: '#e0f2ff', text: '#0058be' },
-]
+const AVATAR_HUES = ['sky', 'blue', 'pink', 'yellow', 'violet', 'orange', 'green', 'brand']
+const AVATAR_PALETTE: { bg: string; text: string }[] = AVATAR_HUES.map((h) => ({
+  bg: `var(--hue-${h}-bg)`,
+  text: `var(--hue-${h}-ink)`,
+}))
 
 export function avatarPalette(seed: string): { bg: string; text: string } {
   let hash = 0
