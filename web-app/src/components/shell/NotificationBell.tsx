@@ -17,8 +17,15 @@ const TYPE_ICON: Record<string, { icon: string; cls: string }> = {
   review_changes_requested: { icon: 'undo',            cls: 'text-error' },
   review_reopened:          { icon: 'lock_open',       cls: 'text-[#b45309]' },
   review_back_in_review:    { icon: 'rate_review',     cls: 'text-[#b45309]' },
+  // Word file updates (WORD_FILE_UPDATES §4.7): to the update's starter, and to the admins when
+  // an update that Submit started failed.
+  word_files_updated:       { icon: 'task_alt',        cls: 'text-[#00a572]' },
+  word_files_update_failed: { icon: 'error',           cls: 'text-error' },
 }
 const OTHER = { icon: 'circle_notifications', cls: 'text-secondary' }
+/** Word-file notifications open the document itself (its banner says the file's state); review
+ *  ones open its Review tab: what happened, and what next. */
+const WORD_FILE_TYPES = new Set(['word_files_updated', 'word_files_update_failed'])
 
 /**
  * Notifications bell + dropdown, shared by the Topbar and the Projects header. Read ones are
@@ -49,7 +56,7 @@ export function NotificationBell() {
     if (n.documentId) {
       setOpen(false)
       // A review notification opens the document on its Review tab: what happened, and what next.
-      navigate(`/projects/${n.projectId}/documents/${n.documentId}?tab=review`)
+      navigate(`/projects/${n.projectId}/documents/${n.documentId}${WORD_FILE_TYPES.has(n.type) ? '' : '?tab=review'}`)
     }
   }
 

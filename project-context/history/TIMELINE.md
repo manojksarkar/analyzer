@@ -10,6 +10,14 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-06d | Word file updates, the web app: eleven review fixes (the hold covers a resume, Try again only within reach, the watcher never misses an end, polling eased for long exports, fail-closed "Can't tell") and the server's partial-failure answers | [14](14-2026-10-05r.md) |
+| 2026-10-06c | Word file updates, the server: eight review fixes -- a resume stores what the dead run made, "layer added" survives a failed update, saves under way are in or out cleanly, structs placed per component, a Word file waits for its reader, partial failures reported, every run dates its files by its start, unreadable states fail closed | [14](14-2026-10-05r.md) |
+| 2026-10-06b | Every TU is parsed with libclang's KeepGoing flag: a missing #include no longer loses the calls on template members after it; the parse fingerprint carries the options, and an incremental run regenerates functions whose calls moved | [14](14-2026-10-05r.md) |
+| 2026-10-06 | Word file updates, the web app: the confirm dialog, the reader's banner, Corrected file / Current file, the Generation banner's Word-files row, Download All, the Review tab row, Approve's Update file, Submit's toast, the bell; no "re-export" on screen | [14](14-2026-10-05r.md) |
+| 2026-10-05u | Word file updates, the server: "out of date" means the Word file (one rule for R9, A15, Approve and the update), runs store only the components they rebuilt, developers update what they review, saves in a component being written wait, Submit starts the update; migration 0018 | [14](14-2026-10-05r.md) |
+| 2026-10-05t | The Components panel becomes a Generation banner (one row, only while something is missing, running, stopped or out of date) and a Components drawer (layer → group → chips; pick and Generate); the API gives each component its `group` | [14](14-2026-10-05r.md) |
+| 2026-10-05s | The reader's Edit flowchart dialog stays inside the screen: a tall or wide chart scrolls in its pane instead of spilling out of the modal | [14](14-2026-10-05r.md) |
+| 2026-10-05r | Bitbucket repositories: the token in an `Authorization` header through git's environment, a page address turned into its clone URL, two sign-in messages, wizard step 1 Remote \| Local with the token field always there; no machine credential helper for Bitbucket | [14](14-2026-10-05r.md) |
 | 2026-10-05q | A function's input and output names are `inputName` / `outputName` -- in the model, as review slot kinds and in the API -- not `behaviourInputName` / `behaviourOutputName` | [13](13-2026-10-05c.md) |
 | 2026-10-05p | R3's 501 for a behaviour row or a flowchart label names the route that saves it (R6, R8) | [13](13-2026-10-05c.md) |
 | 2026-10-05o | A project's own settings win over this machine's config.local.json: a `clang` block there switched an imported project's include-path walk off on every run | [13](13-2026-10-05c.md) |

@@ -258,21 +258,13 @@ def fingerprint(db: Any, project: Any, doc: Any) -> Optional[str]:
     return hashlib.sha256(text.encode("utf-8")).hexdigest() if text else None
 
 
-def export_staleness(doc: Any):
-    """R9 for this document's component and document type; None when it cannot be asked here
-    (no engine database: the in-memory test seam, where no correction exists either)."""
-    if doc.process not in ("SWE.3", "SWE.4"):
-        return None
-    try:
-        import core.db as core_db
-        from review.export_guard import staleness
-    except ImportError:
-        return None
-    if not core_db.is_database_configured():
-        return None
-    with core_db.get_engine().connect() as cx:
-        return staleness(cx, doc.version_id, "swe4" if doc.process == "SWE.4" else "swe3",
-                         component=doc.group)
+def word_file_state(db: Any, doc: Any):
+    """`(FileState or None, updating, job id)` for the document's Word file -- the rule of
+    docs/design/WORD_FILE_UPDATES.md §4.3 (A15's), and whether an update is writing its component
+    now. The state is None when it cannot be asked here (no engine database: the in-memory test
+    seam, where no correction exists either)."""
+    from .word_files import approval_state
+    return approval_state(db, doc)
 
 
 # ---------------------------------------------------------------------------
@@ -361,10 +353,20 @@ def approve(db: Any, project: Any, doc: Any, actor: Any, comment: Optional[str],
         raise conflict("WRONG_STATE", "%s is %s, not %s." % (
             label(doc), _state(doc),
             "ready for approval" if only_ready else "ready for approval or in review"))
-    st = export_staleness(doc)
-    if st is not None and st.is_stale:
-        raise conflict("STALE_EXPORT", "The Word file of %s does not have every correction yet "
-                       "(%s). Re-export, then approve." % (label(doc), st.reason))
+    # The approval records the Word file (its hash, a kept copy): it must be the current one.
+    # Approve turns on in the web app once the update is done (WORD_FILE_UPDATES §4.5).
+    st, updating, job_id = word_file_state(db, doc)
+    if updating:
+        raise HTTPException(status_code=409, detail={
+            "code": "WORD_FILE_UPDATING", "status": 409, "job_id": job_id,
+            "message": "The Word file of %s is being updated now; approve it when that is done."
+                       % label(doc)})
+    if st is not None and st.out_of_date:
+        raise HTTPException(status_code=409, detail={
+            "code": "STALE_EXPORT", "status": 409, "why": list(st.why),
+            "corrections": st.corrections, "pictures": st.pictures, "layer": st.layer,
+            "message": "The Word file of %s is out of date (%s). Update it, then approve."
+                       % (label(doc), _why_text(st))})
     version = db.versions.get(doc.version_id)
     path, sha = freeze_docx(project, version, doc)
     direct = doc.status == "in_review"
@@ -379,6 +381,19 @@ def approve(db: Any, project: Any, doc: Any, actor: Any, comment: Optional[str],
     notify(db, [reviewer_id(db, doc)], doc.project_id, doc, N_APPROVED,
            "%s approved %s." % (actor.name, _in(doc, db)), skip=actor.id)
     roll_up(db, version)
+
+
+def _why_text(st: Any) -> str:
+    """`2 corrections not in it, HAL_LAYER added since` -- the mockup's words."""
+    bits = []
+    if st.corrections:
+        bits.append("%d correction%s not in it" % (st.corrections, "" if st.corrections == 1 else "s"))
+    if "layerAdded" in st.why:
+        bits.append("%s added since" % (st.layer or "a layer"))
+    if st.pictures:
+        bits.append("%d flowchart picture%s still being drawn"
+                    % (st.pictures, "" if st.pictures == 1 else "s"))
+    return ", ".join(bits) or "out of date"
 
 
 def request_changes(db: Any, doc: Any, actor: Any, comment: str) -> None:

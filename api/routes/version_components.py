@@ -140,9 +140,9 @@ def resume_version(project_id: str, version_id: str,
     require_project_admin(project_id, current_user, db)
     version = _version(db, project_id, version_id)
     try:
-        job = pipeline_runner.start_resume(db, version)
+        job = pipeline_runner.start_resume(db, version, started_by=current_user.id)
     except pipeline_runner.ReexportRefused as exc:
-        detail = {"code": exc.code, "message": str(exc), "status": exc.status}
+        detail = {"code": exc.code, "message": str(exc), "status": exc.status, **exc.extra}
         if exc.job_id:
             detail["job_id"] = exc.job_id
         raise HTTPException(status_code=exc.status, detail=detail)
@@ -188,9 +188,10 @@ def generate_components(project_id: str, version_id: str, body: GenerateComponen
                        f"{', '.join(skipped) or 'none'}. A re-export makes them again.")
     added = list(vc._staged().layers_to_add(view, todo))
     try:
-        job = pipeline_runner.start_export(db, version, todo, added_layers=added)
+        job = pipeline_runner.start_export(db, version, todo, added_layers=added,
+                                           started_by=current_user.id)
     except pipeline_runner.ReexportRefused as exc:
-        detail = {"code": exc.code, "message": str(exc), "status": exc.status}
+        detail = {"code": exc.code, "message": str(exc), "status": exc.status, **exc.extra}
         if exc.job_id:
             detail["job_id"] = exc.job_id
         raise HTTPException(status_code=exc.status, detail=detail)

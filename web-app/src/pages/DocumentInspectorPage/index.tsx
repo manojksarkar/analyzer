@@ -1,21 +1,32 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { useDocument, useDocuments, useDocumentRender, useTeam, useProject } from '../../hooks/useProjects'
+import { useIsFetching, useIsMutating } from '@tanstack/react-query'
+import {
+  projectKeys, useDocument, useDocuments, useDocumentRender, useTeam, useProject,
+} from '../../hooks/useProjects'
 import { useFollowDocumentVersion, useProjectViewState } from '../../hooks/useProjectViewState'
 import { useDownloadDoc } from '../../hooks/useDocumentMutations'
 import { useDocumentEvents, useDocumentReadiness } from '../../hooks/useApproval'
 import {
-  reexportActive, useDiscardOrphans, useExportReadiness, useSaveSlot, useUndoSlot, useVersionOverrides,
+  correctionSaveKey, useDiscardOrphans, useExportReadiness, useSaveSlot, useUndoSlot, useVersionOverrides,
 } from '../../hooks/useReview'
+import { useJustUpdated, useWordFilesWatcher } from '../../hooks/useWordFiles'
 import { useAuthStore } from '../../store/auth'
 import { useUIStore } from '../../store/ui'
 import { DocTreePanel } from '../../components/shell/DocTreePanel'
 import { SubbarCta } from '../../components/shell/SubbarCta'
 import { AssignReviewerDialog } from '../../components/review/AssignReviewerDialog'
+import { UpdateWordFilesDialog } from '../../components/wordfiles/UpdateWordFilesDialog'
+import { WordFileMenu } from '../../components/wordfiles/WordFileMenu'
 import {
   groupDocsByProcess, buildReviewerOptions, docxFileName, documentSubtitle, matchesReviewer,
 } from '../../lib/docTree'
-import { componentWordFileStale, wordFileOutOfDate } from '../../lib/reviewStatus'
+import { componentWordFileStale } from '../../lib/reviewStatus'
+import {
+  cap, componentNamer, editHold, isUpdating, outOfDateFiles, outOfDateWhy, readerBanner,
+  retryOf, updateBlocked,
+  type FailedUpdate, type UpdateAsk, type Wording,
+} from '../../lib/wordFiles'
 import { Card, Icon, Skeleton, Text, toast } from '../../components/ui'
 import { LoadError } from '../../components/LoadError'
 import { cn } from '../../lib/cn'
@@ -30,14 +41,15 @@ import { RightPanel, type PanelTab } from './components/RightPanel'
 import { OutlineTab } from './components/OutlineTab'
 import { CorrectionsTab } from './components/CorrectionsTab'
 import { QueuedList } from './components/QueuedList'
-import { EditBar, ReadinessBanner, ReviewStateBanner } from './components/ReviewBars'
+import { EditBar, ReviewStateBanner, type EditHold } from './components/ReviewBars'
+import { WordFileBanner } from './components/WordFileBanner'
 import { FlowchartLabelDialog } from './components/FlowchartLabelDialog'
 import { TreeRail } from './components/TreeRail'
 import { EditContext, type EditApi } from './editContext'
 import {
   buildOutline, docCorrections, docSlots, outlineIds, slotRef, undoneInWordFile, unitCorrectionCounts,
 } from './outline'
-import { isMine, whyNot, type ReviewCtx } from './review'
+import { isMine, type ReviewCtx } from './review'
 import { useScrollSpy } from './useScrollSpy'
 
 type ReviewDialog = 'assign' | 'approve' | 'changes' | 'reopen'
@@ -72,7 +84,7 @@ export function DocumentInspectorPage() {
   const versionId = doc?.versionId ?? ''
 
   const downloadDoc = useDownloadDoc(pid)
-  const { data: readiness } = useExportReadiness(pid, versionId || undefined)
+  const { data: readiness, isError: readinessFailed } = useExportReadiness(pid, versionId || undefined)
   // Review and approval: R9 for this document alone (the Approve guard), and its record.
   const { data: docReadiness, isError: docReadinessFailed } = useDocumentReadiness(pid, versionId || undefined, doc?.id)
   const { data: events } = useDocumentEvents(pid, doc?.id)
@@ -124,7 +136,47 @@ export function DocumentInspectorPage() {
   const names = useMemo(() => new Map((team ?? []).map((m) => [m.userId ?? m.id, m.name])), [team])
   const userName = useCallback((id: string | null) => (id ? names.get(id) ?? '' : ''), [names])
   const nameOf = useCallback((id: string) => names.get(id), [names])
-  const locked = pageState === 'running' || reexportActive(readiness)
+
+  // Word files (WORD_FILE_UPDATES): the version's tag and its components' names for what the
+  // screens say; the end of an update said once for the page; what an update just wrote.
+  const versionTag = rich?.cover.version ?? doc?.version ?? ''
+  const outOfDateNamed = readiness?.outOfDate
+  const words: Wording = useMemo(
+    () => ({ versionTag, nameOf: componentNamer(railDocs ?? [], outOfDateNamed ?? []) }),
+    [versionTag, railDocs, outOfDateNamed])
+  useWordFilesWatcher(pid, versionId, readiness, { meId, words })
+  const justUpdated = useJustUpdated(versionId || undefined)
+  const [ask, setAsk] = useState<UpdateAsk | null>(null)
+  /** Every update a button starts on its own asks first; while nothing can start, it says why. */
+  const askUpdate = useCallback((a: UpdateAsk) => {
+    const why = updateBlocked(readiness, a.rebuild ? null : a.components, words, !!a.rebuild)
+    if (why) toast.info(why)
+    else setAsk(a)
+  }, [readiness, words])
+
+  // Done editing: when this Word file is out of date, say so with the way to update it — a
+  // suggestion, never an update started on its own (WORD_FILE_UPDATES D7). Said once the saves
+  // the Done click set off (the box's blur) have settled and R9 has been read again: before, R9
+  // would not have the last correction yet.
+  const suggestWanted = useRef(false)
+  const saving = useIsMutating({ mutationKey: correctionSaveKey(pid, versionId) })
+  const checking = useIsFetching({ queryKey: projectKeys.exportReadiness(pid, versionId) })
+  useEffect(() => {
+    if (!suggestWanted.current || saving > 0 || checking > 0 || !doc) return
+    suggestWanted.current = false
+    const stale = doc.status !== 'approved'
+      && outOfDateFiles(readiness, railDocs ?? []).some((f) => f.documentId === doc.id)
+    if (!stale || isUpdating(readiness, doc)) return
+    const group = doc.group ?? ''
+    const why = updateBlocked(readiness, [group], words)
+    toast.info('Word file out of date.', why || undefined,
+      why ? undefined : { label: 'Update', onClick: () => askUpdate({ components: [group] }) })
+  })
+  // Corrections wait while an update writes this document's component (409 WORD_FILE_UPDATING);
+  // every other document stays editable. A run rebuilding the version pauses editing too.
+  const hold: EditHold = (doc && (editHold(readiness, doc) ?? editHold(docReadiness, doc)))
+    ?? (pageState === 'running' ? 'run' : null)
+  const locked = hold !== null
   // Approved: locked. No corrections, so no edit mode, until an admin reopens it.
   const approved = doc?.status === 'approved'
   const isEditing = editing && canEdit && !approved
@@ -220,25 +272,37 @@ export function DocumentInspectorPage() {
   // The document's own version (its cover says the same), not the Subbar's pick.
   const refLabel = rich?.cover.version ?? doc.version
   // An approved document downloads the Word file that was approved (a copy is kept), so a later
-  // correction elsewhere in the version does not make it out of date. Otherwise: behind when R9
-  // names its component (`staleComponents`).
+  // correction elsewhere in the version does not make it out of date. Otherwise: out of date when
+  // R9 lists it (`outOfDate`, WORD_FILE_UPDATES §4.3).
   const wordStale = componentWordFileStale(readiness, doc.group)
-  const docStale = !approved && wordStale
+  const files = outOfDateFiles(readiness, allRailDocs)
+  const own = approved ? undefined : files.find((f) => f.documentId === doc.id)
+  const docStale = !!own
   // Undone corrections the Word file may still carry: every one, while it is stale (R9 counts them).
   const undoneShown = undoneInWordFile(corrections.undone, wordStale)
   const versionOrphans = (overrides ?? []).filter((s) => s.isOrphaned).length
-  const reviewCtx: ReviewCtx = {
-    isAdmin: !!isAdmin,
-    meId,
-    wordFileStale: wordFileOutOfDate(docReadiness),
-    reexporting: reexportActive(readiness) || reexportActive(docReadiness),
-  }
+  const reviewCtx: ReviewCtx = { isAdmin: !!isAdmin, meId }
   const changesEvent = events?.find((e) => e.kind === 'changes_requested')
   const docCorrectionCount = isSwe4 || !canEdit ? null : corrections.inForce.length
   function openReview() {
     setTab('review')
     if (panelCollapsed) togglePanel()
   }
+
+  /* ── Word files: every update a button starts on its own asks first (the confirm dialog); while
+     nothing can start, the button says why instead. ── */
+  const fileName = docxFileName(doc)
+  const group = doc.group ?? ''
+  const myDocIds = allRailDocs.filter((d) => !!meId && d.reviewer?.userId === meId).map((d) => d.id)
+  const banner = readerBanner({
+    readiness, readinessFailed, doc, docs: allRailDocs, isAdmin: !!isAdmin, meId, myDocIds, justUpdated, words,
+  })
+  const dlBlocked = docStale ? updateBlocked(readiness, [group], words) : ''
+  // Try again from the Review tab: here when this role's update reaches the failed components (the
+  // components of the documents they review, plus this one), else from the document that does.
+  const reviewedGroups = [...new Set(allRailDocs.filter((d) => myDocIds.includes(d.id)).map((d) => d.group ?? '').filter(Boolean))]
+  const retryFor = (f: FailedUpdate) =>
+    retryOf(f, { isAdmin: !!isAdmin, reviewed: reviewedGroups, openGroup: doc.group, docs: allRailDocs })
 
   const tabs: PanelTab[] = [
     { id: 'outline', label: 'Outline' },
@@ -255,7 +319,11 @@ export function DocumentInspectorPage() {
       {canEdit && (
         <SubbarCta>
           <button
-            onClick={() => setEditing((v) => !v)}
+            onClick={() => {
+              // Done: the suggestion waits for the box's save and R9's next read (the effect above).
+              if (isEditing) suggestWanted.current = true
+              setEditing((v) => !v)
+            }}
             aria-pressed={isEditing}
             disabled={approved}
             title={approved ? 'Approved: locked. An admin can reopen it.' : undefined}
@@ -288,7 +356,7 @@ export function DocumentInspectorPage() {
 
       {/* ── Document canvas ── */}
       <main ref={setCanvasEl} className="flex-1 overflow-y-auto bg-surface-container-low">
-        {isEditing && <EditBar locked={locked} />}
+        {isEditing && <EditBar hold={hold} />}
         {/* The reading column: room for the tables at a laptop's width (paddings grow on a wide
             screen only), capped so a wide screen does not stretch the lines; prose keeps its own
             measure (Sections). */}
@@ -304,7 +372,15 @@ export function DocumentInspectorPage() {
             onOpenReview={openReview}
           />
           {versionId && (
-            <ReadinessBanner projectId={pid} versionId={versionId} readiness={readiness} isAdmin={!!isAdmin} />
+            <WordFileBanner
+              projectId={pid}
+              state={banner}
+              isAdmin={!!isAdmin}
+              rebuildBlocked={updateBlocked(readiness, null, words, true)}
+              failedRenders={readiness?.failedRenders ?? 0}
+              onAsk={askUpdate}
+              onDownload={() => downloadDoc(doc.id, fileName)}
+            />
           )}
           <div className="bg-white rounded-xl border border-outline-variant overflow-hidden shadow-[0_1px_4px_rgba(4,22,39,.06)]">
 
@@ -328,20 +404,43 @@ export function DocumentInspectorPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <button
-                    onClick={() => downloadDoc(doc.id, docxFileName(doc))}
-                    title={docStale ? 'This Word file does not have the latest corrections yet: re-export first.' : undefined}
-                    className="relative flex items-center gap-1.5 px-3 py-2 bg-secondary hover:bg-secondary-container text-white rounded-lg transition-colors font-mono text-caption font-medium"
-                  >
-                    <Icon name="download" size={15} />
-                    DOCX
-                    {docStale && (
-                      <>
-                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber border-2 border-white" aria-hidden />
-                        <span className="sr-only"> (out of date: re-export first)</span>
-                      </>
-                    )}
-                  </button>
+                  {/* Out of date: a small menu — the corrected file (updated first, after the
+                      confirm) or the current file as it is. Otherwise a plain download. */}
+                  {own ? (
+                    <WordFileMenu
+                      label="Download"
+                      trigger={(
+                        <button
+                          type="button"
+                          title={`Out of date: ${outOfDateWhy(own)}`}
+                          className="relative flex items-center gap-1.5 px-3 py-2 bg-secondary hover:bg-secondary-container text-white rounded-lg transition-colors font-mono text-caption font-medium"
+                        >
+                          <Icon name="download" size={15} />
+                          DOCX
+                          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber border-2 border-white" aria-hidden />
+                          <span className="sr-only"> (out of date)</span>
+                        </button>
+                      )}
+                      items={[
+                        {
+                          icon: 'sync', label: 'Corrected file', sub: dlBlocked || 'Updated first', disabled: !!dlBlocked,
+                          onSelect: () => askUpdate({ components: [group], download: { docId: doc.id, fileName } }),
+                        },
+                        {
+                          icon: 'download', label: 'Current file', sub: cap(outOfDateWhy(own)),
+                          onSelect: () => { void downloadDoc(doc.id, fileName) },
+                        },
+                      ]}
+                    />
+                  ) : (
+                    <button
+                      onClick={() => downloadDoc(doc.id, fileName)}
+                      className="relative flex items-center gap-1.5 px-3 py-2 bg-secondary hover:bg-secondary-container text-white rounded-lg transition-colors font-mono text-caption font-medium"
+                    >
+                      <Icon name="download" size={15} />
+                      DOCX
+                    </button>
+                  )}
                   {!isUnchanged && (
                     <button
                       onClick={() => navigate(`/projects/${pid}/compare?doc=${doc.id}`)}
@@ -391,7 +490,6 @@ export function DocumentInspectorPage() {
           <ReviewTab
             key={doc.id}
             projectId={pid}
-            versionId={versionId}
             doc={doc}
             versionTag={refLabel}
             ctx={reviewCtx}
@@ -400,11 +498,14 @@ export function DocumentInspectorPage() {
             corrections={docCorrectionCount}
             isSwe3={!isSwe4}
             nameOf={nameOf}
+            words={words}
             onAssign={() => setDialog('assign')}
             onApprove={() => setDialog('approve')}
             onChanges={() => setDialog('changes')}
             onReopen={() => setDialog('reopen')}
             onSubmitted={() => setEditing(false)}
+            onUpdate={askUpdate}
+            retryFor={retryFor}
           />
         ) : activeTab === 'corr' ? (
           <CorrectionsTab
@@ -436,11 +537,29 @@ export function DocumentInspectorPage() {
       {dialog === 'approve' && (
         <ApproveDialog
           projectId={pid}
+          versionId={versionId}
           doc={doc}
           corrections={docCorrectionCount}
-          blocked={whyNot('approve', doc, reviewCtx)}
+          readiness={docReadiness}
+          readinessFailed={docReadinessFailed}
+          meId={meId}
+          words={words}
           onClose={() => setDialog(null)}
           onDone={() => setEditing(false)}
+        />
+      )}
+
+      {/* ── Word files: what an update writes, asked before it starts ── */}
+      {ask && versionId && (
+        <UpdateWordFilesDialog
+          projectId={pid}
+          versionId={versionId}
+          ask={ask}
+          files={files}
+          rebuildCount={allRailDocs.filter((d) => d.status !== 'approved').length}
+          documentId={doc.id}
+          words={words}
+          onClose={() => setAsk(null)}
         />
       )}
       {dialog === 'changes' && <RequestChangesDialog projectId={pid} doc={doc} onClose={() => setDialog(null)} />}

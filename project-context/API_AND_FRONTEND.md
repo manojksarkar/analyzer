@@ -313,15 +313,27 @@ generated yet), `reexport` (again), `resume` (after a crash). Human guide:
   {components}` → 202, a job `mode: "export"` (`RENDER_MODES` = reexport + export: never "the project's
   run") running `analyzer.py export`; 422 `INVALID_COMPONENTS`, 409 `NO_MODEL` / `NOTHING_TO_GENERATE` /
   `VERSION_BUSY` / `EXPORT_RUNNING`; `POST …/versions/{vid}/resume` (below).
-- **Web** — Documents page `ComponentsPanel` (per layer: state, documents' review status; the run strip:
-  progress, or STOPPED with the `resume` command; an admin ticks components without documents →
-  Generate). Data: `services/api/versionComponents.ts`, mapper, `hooks/useVersionComponents.ts`
-  (polls every 10 s while something is being made; re-reads the documents when one finishes). **Stop**
-  (admin, 2026-10-02c): `GET …/components` names the web job at work on the version (`job`: id, mode,
-  status — a Components → Generate job is never `jobs/current`, so the Overview's Cancel missed it); the
-  run strip's Stop asks first (`StopRunDialog`: an export keeps what is finished, the version's own run is
-  removed) and calls `POST /jobs/{id}/cancel` (`useCancelJob`). An API that does not send `job` shows no
-  Stop.
+- **Web** (2026-10-05t; was the Documents page's `ComponentsPanel`, now gone) — one conditional row,
+  `components/run/GenerationBanner.tsx`, above the Overview's KPI strip and above the Documents card (also
+  on the Documents page's "running, no documents yet" state; on the Overview's "no documents yet" state for
+  a picked version that has a model — the model-first run). It shows only while a component has no
+  documents, a run or web job is at work, a run stopped, or a component is out of date: at work it names
+  the run by `run.command`, the stage in words (`lib/versionComponents.ts runActivity`) and when it
+  started; stopped, the `resume … --detach` command; out of date, a second row (`StaleRow.tsx`, replaced
+  by task 1's Word-files row). Everything generated and nothing running → nothing. The Documents page's
+  row is compact (no stage, start time or Stop). "View components" opens `ComponentsDrawer.tsx` (a right
+  sheet, `ui/Drawer.tsx`; `?components=1` opens it): the Architecture view's layout, layer → group →
+  chips (`ComponentChip.tsx`), one word per state — Has documents, Out of date, In progress, Queued,
+  Stopped, Failed, Not started — a search and "Without documents"; an admin picks chips (or a layer's
+  with "Select N") and Generates (`POST …/documents/generate`), a developer reads it. A chip's group is the
+  API's `group` (the version's `resolved_config`, `version_components.config_groups`), else the project's
+  architecture. Other Runs skips the version the banner shows (`exceptVersionIds`). Data:
+  `services/api/versionComponents.ts`, mapper, `hooks/useVersionComponents.ts` (polls every 10 s while
+  something is being made; re-reads the documents when one finishes). **Stop** (admin, 2026-10-02c, on
+  the Overview's row): `GET …/components` names the web job at work on the version (`job`: id, mode,
+  status — a Components → Generate job is never `jobs/current`); Stop asks first (`StopRunDialog`: an
+  export keeps what is finished, the version's own run is removed) and calls `POST /jobs/{id}/cancel`
+  (`useCancelJob`). An API that does not send `job` shows no Stop.
 - **Exit 3 = partial success**: run.py goes on past a component that fails and exits 3; the CLI and the
   web jobs (`_execute_subprocess(partial_ok)`) store, record and keep what the others made.
 - **Web re-export** re-renders every component the version has documents for (`_reexport_scope`), one
@@ -439,6 +451,75 @@ step is a `ReviewEvent` (the review evidence) and notifies who it concerns. Cont
   admin no longer passes `require_project_admin`; a notification is marked read only by its owner;
   approve-all takes document ids (by version it approved every version's documents).
 - **Tests** — `tests/api/test_review_approve.py` (both backends).
+
+### Word file updates — "out of date" means the Word file (2026-10-05u)
+
+Contract and screens: [WORD_FILE_UPDATES.md](../docs/design/WORD_FILE_UPDATES.md) (§4); mockup
+`docs/ui-mockups/documents.html`. The web app never says "re-export": *Update*, *Update all*, *Rebuild
+all Word files…* (admin).
+
+- **The rule** — `engine/review/word_files.py`: a document's Word file is out of date when a correction in
+  its component is newer than `documents.word_file_at`, a layer added since changed it
+  (`version_components.stale_layers`), or one of its component's pictures is still being drawn
+  (`render_queue.by_component`). One answer for R9 (`outOfDate[]`, `approvedKept[]`, `writer`), A15,
+  Approve / bulk approve (`STALE_EXPORT` with `why`) and the update's scope. `word_file_at` is set when a
+  run's output is stored, for the .docx files it wrote (`record_word_files`); a document recorded before
+  0018 uses its file's time.
+- **Partial capture** — re-export, export and resume by component store only the components they rebuilt
+  (`model_store.persist_output_files(groups=)`, `incremental/store.py`); stamps are recomputed from the
+  stored records. A save in another component survives a run. Generation, resume's "close" and re-exports
+  not scoped by component still store the whole version.
+- **Update** — `POST …/versions/{vid}/reexport {scope: "out_of_date" | "all", components?, document_id?}`
+  (`api/services/word_files.start_update`): a developer reaches the documents they review plus the one
+  named; `all` (and no `scope`) is admin-only. A running update is found before the writer lock: covered →
+  200 `joined`; else 409 `REEXPORT_RUNNING` (job, scope, components); `VERSION_BUSY` carries `writer`.
+  While a component is being written, its corrections answer 409 `WORD_FILE_UPDATING` (R3/R4/R6/R8; web
+  jobs and a CLI run holding the version). Submit (A5) starts its component's update and answers
+  `word_file {state, job_id, blocked_by}`; a refusal never fails the submit.
+- **Jobs and notifications** — `analysis_jobs.started_by`, `.reason`; `word_files_updated` /
+  `word_files_update_failed` to the starter (and the admins when a Submit-started update fails).
+- **Files** — `.docx` written whole (`docx_common.save_docx`: temp + `os.replace`); an approved document
+  whose kept copy is missing answers 409 `APPROVED_FILE_MISSING` unless the working file's SHA-256 matches.
+- **Migration 0018** (`documents.word_file_at`, `analysis_jobs.started_by` / `reason`,
+  `version_components.stale_layers`): run `analyzer.py setup` after pulling.
+- **Web** (2026-10-06) — rules and the mockup's words in `lib/wordFiles.ts`; data `services/api/wordFiles.ts`,
+  `services/mappers/wordFiles.ts`, `hooks/useWordFiles.ts` (the update mutation; one end-of-update watcher
+  per page: toast, bell refresh, a download that was waiting), `store/wordFiles.ts`. Screens:
+  `components/wordfiles/UpdateWordFilesDialog.tsx` (the confirm, every update a button starts on its own;
+  in-dialog buttons and Submit start without a second one), `WordFileMenu.tsx` (*Corrected file* /
+  *Current file*), `WordFilesRow.tsx` (the Generation banner's second row, on the Overview and the
+  Documents page — it replaced task 3's `StaleRow`), `DownloadAllDialog.tsx` (*As they are* / *Corrected
+  files*); the reader's `WordFileBanner.tsx` (every state; *Update failed* only to its starter; an admin's
+  ⋯ *Rebuild all Word files…*), the edit hold for the component being updated, the Review tab's *Word
+  file* row, Approve's *Update file*, Submit's toast from `word_file`, the bell's two kinds, bulk approve's
+  *Update them*. No user-visible "re-export" is left.
+
+### Repositories — where a project's code comes from (2026-10-05k, 2026-10-05r)
+
+A project's `repo_url` is a remote URL or a local folder on the server; the wizard's step 1 is
+**Remote | Local**. Design: [BITBUCKET_SUPPORT.md](../docs/design/BITBUCKET_SUPPORT.md).
+
+- **Local** — `api/services/local_repos.py` (`is_local`, `clean`, `problem`, `list_folders`;
+  `repositories.localRoots` in config.local.json); `GET /repositories/local-folders` feeds the wizard's
+  Browse panel. No token is ever sent; `repo_provider` "local".
+- **How a token reaches git** — one rule, `engine/incremental/clone.git_auth(url, token)`, used by every
+  remote git call (wizard, config preview, a job's checkout, the CLI's `resolve_project_repo`): SSH and
+  local → none; `bitbucket.org` → `Authorization: Basic x-token-auth:…`; an http(s) `/scm/` path (Data
+  Center) → `Bearer`; any other host → the token as the URL's user name, as always. A header goes through
+  `GIT_CONFIG_*` scoped to the repository's host, never argv / URL / `.git/config`; for Bitbucket URLs git
+  also asks no credential helper and no askpass, token or not. Errors pass through `clone.scrub`.
+- **Page address → clone URL** — `repo_git.clone_url` (Data Center `projects/…/repos/…` and
+  `users/…/repos/…`, Cloud `bitbucket.org/<ws>/<repo>/…`), applied in test-connection (its answer's
+  `repo_url` is the URL used; the wizard puts it in the box), browse, the config preview and create.
+- **Messages** — `repo_git._friendly(msg, token_sent=)`: "Authentication failed — this repository needs an
+  access token." / "… — check the access token."; the wizard moves the cursor to the token field.
+- **`projects.repo_provider`** is set by the server from the URL on create ("bitbucket", "local", else as
+  before) — display only; nothing reads it to decide how to sign in. The token stays in
+  `build_config.repo_access_token`, in plain text (study 03 wants it encrypted).
+- **The wizard's clone cache** (`workspaces/_wizard/<hash>`) is keyed by URL, branch, depth, blobless
+  and the token: a clone made with a token is never served to a request without it.
+- **Open:** the office check T0 (BITBUCKET_SUPPORT.md); T7 replace a project's token, T8 a CA bundle, T9
+  a CLI token.
 
 ---
 

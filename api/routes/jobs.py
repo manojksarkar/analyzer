@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import AsyncIterator, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
@@ -60,7 +61,14 @@ class StartJobRequest(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _job_dict(job: AnalysisJob) -> dict:
+def _started_by(job: AnalysisJob, db) -> Optional[dict]:
+    """Who started the job, as a user ref -- or None (a generation, or a job from before 0018)."""
+    uid = getattr(job, "started_by", None)
+    u = db.users.get_by_id(uid) if (uid and db is not None) else None
+    return {"user_id": u.id, "name": u.name, "initials": u.initials} if u is not None else None
+
+
+def _job_dict(job: AnalysisJob, db=None) -> dict:
     return {
         "id": job.id,
         "status": job.status,
@@ -94,6 +102,10 @@ def _job_dict(job: AnalysisJob) -> dict:
         "started_at": job.started_at.isoformat(),
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
         "error_message": job.error_message,
+        # Who started it and why (docs/design/WORD_FILE_UPDATES.md §4.1): an update's
+        # `update` | `rebuild` | `submit`, an export's `export` | `resume`; null for a generation.
+        "started_by": _started_by(job, db),
+        "reason": getattr(job, "reason", None),
     }
 
 
@@ -258,7 +270,7 @@ def get_current_job(
     job = db.jobs.get_current(project_id)
     if not job:
         return {"job": None}
-    return {"job": _job_dict(job)}
+    return {"job": _job_dict(job, db)}
 
 
 @router.get("/projects/{project_id}/jobs/{job_id}",
@@ -275,7 +287,7 @@ def get_job(
     job = db.jobs.get(job_id)
     if not job or job.project_id != project_id:
         raise not_found("AnalysisJob", job_id)
-    return {"job": _job_dict(job)}
+    return {"job": _job_dict(job, db)}
 
 
 @router.post("/projects/{project_id}/jobs/{job_id}/cancel",
@@ -312,7 +324,7 @@ def cancel_job(
             # It may have finished unfollowed: then its version is whole and the job says so.
             pipeline_runner._finish_if_it_finished(db, job)
             job = db.jobs.get(job_id) or job
-    return {"job": _job_dict(job)}
+    return {"job": _job_dict(job, db)}
 
 
 @router.post("/projects/{project_id}/jobs/{job_id}/resume",
@@ -333,7 +345,7 @@ def resume_job(
     job.status = "running"
     db.jobs.update(job)
     pipeline_runner.signal_resume(job_id)
-    return {"job": _job_dict(job)}
+    return {"job": _job_dict(job, db)}
 
 
 # ---------------------------------------------------------------------------
@@ -439,24 +451,32 @@ def list_functions(
     }
 
 
-def _start_reexport(db, version, components=None):
+def _start_reexport(db, version, components=None, *, started_by=None):
     """`pipeline_runner.start_reexport`, with its refusals as HTTP errors. A refusal caused by
     another job names it (`job_id`), so a client can follow that job instead of guessing."""
     try:
-        return pipeline_runner.start_reexport(db, version, components)
+        return pipeline_runner.start_reexport(db, version, components, started_by=started_by,
+                                              reason="rebuild")
     except pipeline_runner.ReexportRefused as exc:
-        detail = {"code": exc.code, "message": str(exc), "status": exc.status}
+        detail = {"code": exc.code, "message": str(exc), "status": exc.status, **exc.extra}
         if exc.job_id:
             detail["job_id"] = exc.job_id
         raise HTTPException(status_code=exc.status, detail=detail)
 
 
 class ReexportComponentsRequest(BaseModel):
+    """docs/design/WORD_FILE_UPDATES.md §4.1. Every field optional."""
+    # `out_of_date`: the components whose Word files are out of date (the server's own rule);
+    # `all`: every component with documents (Rebuild all, admins). Absent: `all`, as before.
+    scope: Optional[str] = None
     components: Optional[list[str]] = None
+    # The document the caller has open: a developer may update its component too.
+    document_id: Optional[str] = None
 
 
 @router.post("/projects/{project_id}/versions/{version_id}/reexport", status_code=202,
-             responses={202: {"model": ReexportVersionResponse}})
+             responses={202: {"model": ReexportVersionResponse},
+                        200: {"model": ReexportVersionResponse}})
 def reexport_version(
     project_id: str,
     version_id: str,
@@ -464,22 +484,32 @@ def reexport_version(
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
-    """Re-export ONE version -- any version with documents, not only the newest, whether the web
-    app or the command line made it.
+    """Update ONE version's Word files -- any version with documents, not only the newest,
+    whether the web app or the command line made it (docs/design/WORD_FILE_UPDATES.md §4.1).
 
-    Starts a job of its own (`mode: "reexport"`) and answers with its id at once. Follow it like
-    any job, `GET /jobs/{job_id}` or the `GET /jobs/{job_id}/events` stream: `status` goes
-    queued -> running -> complete | failed (`error_message` says why). Refused with 409 and the
-    running job's id while one is already re-exporting this version; 409 `NO_DOCUMENTS` when it
-    has none yet. Optional body `{"components": [...]}`: only those (each must have documents --
-    else 422 `INVALID_COMPONENTS`), e.g. the ones a layer added to the version left stale.
+    Body `{"scope": "out_of_date" | "all", "components": [...], "document_id": "..."}`, every
+    field optional. `out_of_date`: the components whose Word files are out of date (of
+    `components`, when given) -- any member: an admin all of them, a developer those of the
+    documents they review plus `document_id`'s (403 `NOT_YOUR_DOCUMENTS` beyond). `all` (the
+    default): every component with documents, or exactly `components` -- admins only.
+
+    202 with a new job (`mode: "reexport"`); 200 `joined: true` when a running update covers the
+    request (follow its `job_id`); 200 `{"job_id": null, "status": "up_to_date"}` when nothing
+    asked for is out of date. 409 `REEXPORT_RUNNING` (`job_id`, `scope`, `components`) while
+    another update or export of the version runs; 409 `VERSION_BUSY` (`writer`) while a
+    generation or a command-line run holds it; 409 `NO_DOCUMENTS` / `VERSION_NOT_READY`; 422
+    `INVALID_COMPONENTS`. Follow the job with `GET /jobs/{job_id}` or its `/events` stream.
     """
-    require_project_admin(project_id, current_user, db)
+    require_project_member(project_id, current_user, db)
     version = db.versions.get(version_id)
     if not version or version.project_id != project_id:
         raise not_found("Version", version_id)
-    job = _start_reexport(db, version, (body.components if body else None) or None)
-    return {"job_id": job.id, "status": job.status, "version_id": version.id}
+    from ..services import word_files
+    status, out = word_files.start_update(
+        db, version, current_user, scope=(body.scope if body else None),
+        components=(body.components if body else None) or None,
+        document_id=(body.document_id if body else None) or None)
+    return JSONResponse(status_code=status, content=out)
 
 
 @router.post("/projects/{project_id}/jobs/{job_id}/reexport",
@@ -500,5 +530,5 @@ def reexport(
     version = db.versions.get(job.version_id) if job.version_id else None
     if not version:
         raise not_found("Version", job.version_id or "(none)")
-    started = _start_reexport(db, version)
+    started = _start_reexport(db, version, started_by=current_user.id)
     return {"message": "Re-export queued.", "job_id": started.id}

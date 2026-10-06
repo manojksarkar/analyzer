@@ -241,14 +241,38 @@ class TestFlow:
         assert client.post("%s/%s/approve" % (proj.base, d.id), headers=h["eve"]).status_code == 403
 
     def test_a_word_file_without_every_correction_is_not_approved(self, client, h, proj, monkeypatch):
+        """WORD_FILE_UPDATES §4.5: out of date by the Word file's own rule, saying why."""
+        from review.word_files import FileState
         d = proj.doc("submitted", "u2")
-
-        class Stale:
-            is_stale, reason = True, "a correction is newer than the derived output"
-        monkeypatch.setattr(rw, "export_staleness", lambda doc: Stale())
+        monkeypatch.setattr(rw, "word_file_state", lambda db, doc: (
+            FileState(True, ("corrections", "layerAdded"), 2, 0, "HAL_LAYER"), False, None))
         r = client.post("%s/%s/approve" % (proj.base, d.id), headers=h["alice"])
         assert r.status_code == 409 and _code(r) == "STALE_EXPORT"
-        assert "newer than the derived output" in r.json()["detail"]["message"]
+        detail = r.json()["detail"]
+        assert (detail["why"], detail["corrections"], detail["layer"]) == \
+            (["corrections", "layerAdded"], 2, "HAL_LAYER")
+        assert "2 corrections not in it, HAL_LAYER added since" in detail["message"]
+        assert proj.get(d).status == "submitted"
+
+    def test_nor_one_being_updated(self, client, h, proj, monkeypatch):
+        d = proj.doc("submitted", "u2")
+        monkeypatch.setattr(rw, "word_file_state", lambda db, doc: (None, True, "jobupd1"))
+        r = client.post("%s/%s/approve" % (proj.base, d.id), headers=h["alice"])
+        assert r.status_code == 409 and _code(r) == "WORD_FILE_UPDATING"
+        assert r.json()["detail"]["job_id"] == "jobupd1"
+
+    def test_approve_several_says_why_a_file_was_skipped(self, client, h, proj, monkeypatch):
+        from review.word_files import FileState
+        ready, behind = proj.doc("submitted", "u2"), proj.doc("submitted", "u3")
+        monkeypatch.setattr(rw, "word_file_state", lambda db, doc: (
+            (FileState(True, ("corrections",), 1, 0, None) if doc.id == behind.id else None),
+            False, None))
+        r = client.post(proj.base + "/approve-all", headers=h["alice"],
+                        json={"document_ids": [ready.id, behind.id]})
+        assert r.json()["approved"] == [ready.id]
+        skipped = r.json()["skipped"][0]
+        assert (skipped["document_id"], skipped["code"], skipped["why"], skipped["corrections"]) == \
+            (behind.id, "STALE_EXPORT", ["corrections"], 1)
 
     def test_reopen_needs_a_reason_and_keeps_the_reviewer(self, client, h, proj, db):
         d = proj.doc("approved", "u2", approved_by="u1", approved_at=NOW, docx_sha256="ab" * 32)
@@ -278,6 +302,64 @@ class TestFlow:
         # It approved every document of every version when the version was empty (B7).
         r = client.post(proj.base + "/approve-all", json={"version_id": ""}, headers=h["alice"])
         assert r.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# A5: submit updates the document's Word file (docs/design/WORD_FILE_UPDATES.md §4.4)
+# ---------------------------------------------------------------------------
+class TestSubmitUpdatesTheWordFile:
+    def _out_of_date(self, monkeypatch, doc):
+        from review.word_files import FileState, UP_TO_DATE
+        from api.services import word_files
+        monkeypatch.setattr(word_files, "file_states", lambda db, v, docs=None, **k: {
+            d.id: (FileState(True, ("corrections",), 1, 0, None) if d.id == doc.id else UP_TO_DATE)
+            for d in (docs if docs is not None else word_files.version_documents(db, v))})
+
+    def _submit(self, client, h, proj, d):
+        r = client.post("%s/%s/submit-review" % (proj.base, d.id), json={"comment": "Checked."},
+                        headers=h["bob"])
+        assert r.status_code == 200, r.text
+        assert r.json()["document"]["status"] == "submitted"
+        return r.json()["word_file"]
+
+    def test_an_up_to_date_file_starts_nothing(self, client, h, proj):
+        d = proj.doc(reviewer="u2")
+        assert self._submit(client, h, proj, d) == {"state": "up_to_date", "job_id": None,
+                                                     "blocked_by": None}
+
+    def test_an_out_of_date_one_is_updated_by_the_submitter(self, client, h, proj, monkeypatch):
+        from api.services import pipeline_runner as pr
+        d = proj.doc(reviewer="u2", group="L1.Brake")
+        self._out_of_date(monkeypatch, d)
+        asked = {}
+
+        def start(db, version, comps, **kw):
+            asked.update(comps=comps, **kw)
+            return type("J", (), {"id": "jobsub1", "status": "queued", "mode": "reexport",
+                                  "reason": "submit"})(), False, comps
+        monkeypatch.setattr(pr, "start_update", start)
+        assert self._submit(client, h, proj, d) == {"state": "updating", "job_id": "jobsub1",
+                                                    "blocked_by": None}
+        assert asked == {"comps": ["L1.Brake"], "started_by": "u2", "reason": "submit",
+                         "document_id": d.id}
+
+    def test_a_refusal_never_fails_the_submit(self, client, h, proj, monkeypatch):
+        """D8: another update (that does not cover it) holds the version -- the submit stands,
+        and its answer says what to wait for."""
+        from api.services import pipeline_runner as pr
+        d = proj.doc(reviewer="u2", group="L1.Brake")
+        self._out_of_date(monkeypatch, d)
+
+        def busy(db, version, comps, **kw):
+            raise pr.ReexportRefused(409, "REEXPORT_RUNNING", "being updated by job jobx", "jobx",
+                                     extra={"kind": "update", "scope": "out_of_date",
+                                            "components": ["L1.Other"]})
+        monkeypatch.setattr(pr, "start_update", busy)
+        wf = self._submit(client, h, proj, d)
+        assert wf["state"] == "out_of_date" and wf["job_id"] is None
+        assert (wf["blocked_by"]["kind"], wf["blocked_by"]["job_id"],
+                wf["blocked_by"]["components"]) == ("update", "jobx", ["L1.Other"])
+        assert proj.get(d).status == "submitted"
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +490,28 @@ class TestLocked:
         with pytest.raises(Exception) as exc:
             rw.refuse_if_approved(proj.db, proj.id, proj.vid, function_id="Layer1.Lib|lib|libAdd")
         assert exc.value.status_code == 409
+
+    def test_a_missing_kept_copy_is_an_error_not_the_working_file(self, client, h, proj, tmp_path,
+                                                                    monkeypatch):
+        """WORD_FILE_UPDATES §4.8: the working file may be one an update wrote after approval."""
+        import hashlib
+        from api.services import doc_render
+        out = tmp_path / "out"
+        working = out / "L1.W" / "software_detailed_design_L1.W.docx"
+        working.parent.mkdir(parents=True)
+        working.write_bytes(b"PK-rewritten-since")
+        monkeypatch.setattr(doc_render, "commit_output_root", lambda *a, **k: out)
+        d = proj.doc("approved", "u2", group="L1.W", approved_docx_path=str(tmp_path / "gone.docx"),
+                     docx_sha256=hashlib.sha256(b"PK-the-approved-bytes").hexdigest())
+        r = client.get("%s/%s/download" % (proj.base, d.id), headers=h["bob"])
+        assert r.status_code == 409 and _code(r) == "APPROVED_FILE_MISSING", r.text
+        r = client.get(proj.base + "/export-all/download", params={"version_id": proj.vid},
+                       headers=h["bob"])
+        assert r.status_code == 409 and r.json()["detail"]["document_ids"] == [d.id]
+        # The working file IS the approved one: its hash says so, and it is served.
+        working.write_bytes(b"PK-the-approved-bytes")
+        r = client.get("%s/%s/download" % (proj.base, d.id), headers=h["bob"])
+        assert r.status_code == 200 and r.content == b"PK-the-approved-bytes"
 
     def test_downloads_of_an_approved_document_serve_the_copy_kept(self, client, h, proj, tmp_path):
         kept = tmp_path / proj.id / "software_detailed_design_L1.Kept.docx"

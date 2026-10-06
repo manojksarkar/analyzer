@@ -5,7 +5,8 @@ import type { FlowchartEntry, Slot } from '../../types'
 export interface EditApi {
   /** Edit mode is on: correctable texts become boxes. */
   editing: boolean
-  /** A run or a re-export is going: the boxes are read-only until it ends. */
+  /** A run rebuilds the version, or an update writes this document's Word file: the boxes are
+   *  read-only until it ends. */
   locked: boolean
   projectId: string
   versionId: string

@@ -288,7 +288,7 @@ export function matchBranches(branches: string[], query: string): string[] {
   return q ? branches.filter((b) => b.toLowerCase().includes(q)) : branches
 }
 
-/* ── Step 1: where the repository is - a Git URL, or a local path (a git repository's folder on
+/* ── Step 1: where the repository is - Remote (a URL), or Local (a git repository's folder on
    the server ArtiFex runs on) ── */
 
 export type RepoSource = 'url' | 'local'
@@ -298,6 +298,14 @@ export const cleanPath = (v: string) => (v || '').trim().replace(/^["']+|["']+$/
 
 /** A full path: a drive (`D:/`, `D:\`), a root (`/`), a share (`\\host`) or a `file://` link. */
 export const looksLocal = (v: string) => /^([A-Za-z]:[\\/]|\/|\\\\|file:\/\/)/.test(cleanPath(v))
+
+/** An SSH remote (`ssh://…`, `git@host:…`): the server's own SSH key signs in, so no access token
+ *  is asked for or sent. */
+export const isSshUrl = (v: string) => /^ssh:\/\/|^[\w.-]+@[\w.-]+:/i.test((v || '').trim())
+
+/** Test Connection's answer when the repository refused the sign-in (no token, or a wrong one):
+ *  the token is what to fix. */
+export const isSignInFailure = (message: string) => /^Authentication failed\b/.test((message || '').trim())
 
 const isDrive = (p: string) => /^[A-Za-z]:$/.test(p)
 

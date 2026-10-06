@@ -334,6 +334,10 @@ schema lacks, repairs rows earlier code left wrong, and stores the LLM unit and 
 versions generated before Phase 2 stored them, from their own earlier output, so a re-export keeps
 that wording. `alembic upgrade head` cannot build a fresh database; do not mix the two.
 
+Word file updates (2026-10-05) bring one: migration 0018 adds when each document's Word file was
+written, who started a job and why, and which layer made a component stale. Run `setup` after pulling
+them.
+
 ### `onboard`
 
 Every flag it takes, in one line:

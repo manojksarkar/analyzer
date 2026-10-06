@@ -16,6 +16,69 @@ PROJECT_ROOT = _p.project_root
 MODEL_DIR = _p.model_dir
 
 
+#: How long `save_docx` waits for a reader to let go of the file it replaces (Windows), and the
+#: first pause between tries (doubling).
+REPLACE_WAIT_SECONDS = 8.0
+REPLACE_FIRST_PAUSE = 0.05
+
+
+def save_docx(doc, docx_path: str) -> None:
+    """Write `doc` to `docx_path` whole or not at all: into a temporary file beside it, then
+    `os.replace` (atomic on one volume). A reader -- a download, Approve copying the file to keep
+    it -- never meets a half-written Word file, and a write that fails leaves the previous file as
+    it was (docs/design/WORD_FILE_UPDATES.md, SD).
+
+    On Windows a file another process (or thread) has open cannot be replaced: Python opens files
+    without FILE_SHARE_DELETE, so a download being served, or a copy being taken, holds it. The
+    replace is tried again with a growing pause for `REPLACE_WAIT_SECONDS`, then fails with the
+    reason -- the previous file untouched, never a torn one. The new file takes the old one's
+    permissions (`mkstemp` makes 0600 on POSIX), or the umask's for a first file."""
+    import tempfile
+    import time
+    folder = os.path.dirname(os.path.abspath(docx_path)) or "."
+    os.makedirs(folder, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".~", suffix=".docx.tmp", dir=folder)   # never a *.docx
+    os.close(fd)
+    try:
+        doc.save(tmp)
+        _same_mode(tmp, docx_path)
+        deadline = time.monotonic() + REPLACE_WAIT_SECONDS
+        pause = REPLACE_FIRST_PAUSE
+        while True:
+            try:
+                os.replace(tmp, docx_path)
+                return
+            except PermissionError as exc:
+                if time.monotonic() >= deadline:
+                    raise PermissionError(
+                        exc.errno, "%s is held open by a reader (a download, an approval's "
+                        "copy) and could not be replaced within %.0f s; the previous file is as it "
+                        "was -- update it again once the reader is done"
+                        % (docx_path, REPLACE_WAIT_SECONDS), docx_path) from exc
+                time.sleep(pause)
+                pause = min(pause * 2, 1.0)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _same_mode(tmp: str, target: str) -> None:
+    """`tmp` gets `target`'s permission bits, or -- no target yet -- the umask's for a new file
+    (0666 & ~umask), as a plain `open(path, "wb")` would have made it."""
+    import shutil
+    if os.path.exists(target):
+        shutil.copymode(target, tmp)
+        return
+    if os.name == "nt":
+        return                                  # mkstemp's file is writable; no bits to set
+    mask = os.umask(0)
+    os.umask(mask)
+    os.chmod(tmp, 0o666 & ~mask)
+
+
 # ---------------------------------------------------------------------------
 # Model / config loading
 # ---------------------------------------------------------------------------

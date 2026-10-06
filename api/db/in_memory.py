@@ -597,6 +597,9 @@ class _InMemDocRepo(IDocumentRepository):
         return copy.deepcopy(self._store.get(document_id))
 
     def update(self, document):
+        # `word_file_at` is written by `set_word_file_at` only, as on the SQL backend.
+        old = self._store.get(document.id)
+        document.word_file_at = old.word_file_at if old is not None else None
         self._store[document.id] = document
         return copy.deepcopy(document)
 
@@ -633,6 +636,11 @@ class _InMemDocRepo(IDocumentRepository):
                 return copy.deepcopy(section)
         secs.append(section)
         return copy.deepcopy(section)
+
+    def set_word_file_at(self, document_id, at):
+        d = self._store.get(document_id)
+        if d is not None:
+            d.word_file_at = at
 
 
 class _InMemAssignRepo(IDocumentAssignmentRepository):

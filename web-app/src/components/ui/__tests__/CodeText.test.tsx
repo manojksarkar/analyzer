@@ -33,7 +33,7 @@ describe('messages from the API', () => {
 
   it('a toast shows its backticked parts as code', async () => {
     render(<ToastProvider />)
-    act(() => { toast.error('Re-export refused', 'No documents in this version. `Generate` makes them.') })
+    act(() => { toast.error('Update refused', 'No documents in this version. `Generate` makes them.') })
     expect((await screen.findByText('Generate')).tagName).toBe('CODE')
   })
 

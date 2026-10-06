@@ -110,6 +110,7 @@ def new_documents(db: Any, project: Any, version: Any, now: Optional[datetime] =
         return []
     known = {(d.process, d.group) for d in version_docs(db, version)}
     comps = component_dirs(project, version, out_root)
+    run = _latest_run(db, version)
     new: list = []
     for d in sorted(out_root.iterdir()):
         if not d.is_dir():
@@ -125,8 +126,64 @@ def new_documents(db: Any, project: Any, version: Any, now: Optional[datetime] =
                 process=process, name=disp, subtitle=subtitle, layer=lname, group=d.name,
                 status="in_review", due_date=None, created_at=now, updated_at=now)
             db.documents.update(doc)
+            # When the run that wrote its Word file started (WORD_FILE_UPDATES §4.3): the run
+            # stored its output before the document existed, so it is worked out here.
+            written = _word_file_time(run, d, doc_render.find_docx(d.name, out_root, process))
+            if written is not None:
+                db.documents.set_word_file_at(doc.id, written)
+                doc.word_file_at = written
             new.append(doc)
     return new
+
+
+def _file_time(path: Optional[Path]) -> Optional[datetime]:
+    """A file's modification time, UTC; None when it cannot be read."""
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime, UTC) if path is not None else None
+    except OSError:
+        return None
+
+
+def _aware(dt: Optional[datetime]) -> Optional[datetime]:
+    return dt if (dt is None or dt.tzinfo) else dt.replace(tzinfo=UTC)
+
+
+def _latest_run(db: Any, version: Any) -> Optional[dict]:
+    """The version's latest run (`version_runs`): its start and end. None without one."""
+    try:
+        from .pipeline_runner import _version_run_module
+        eng = getattr(db, "_engine", None)
+        vr = _version_run_module() if eng is not None else None
+        return vr.run_row(version.id, engine=eng) if vr is not None else None
+    except Exception:                                   # noqa: BLE001 -- then the files say
+        return None
+
+
+def _word_file_time(run: Optional[dict], comp_dir: Path, docx: Optional[Path]) -> Optional[datetime]:
+    """When the run that wrote `docx` started -- a correction saved after it is not in the file:
+
+    1. the version's latest run, when the file was written while it ran (a generation, an export,
+       a resume registering what it made);
+    2. else when the run that derived the directory read its inputs (its derivation record: a run
+       cut short before it stored and recorded, whose files a later run registers);
+    3. else the file's own time -- no run start is known."""
+    mtime = _file_time(docx)
+    if mtime is None:
+        return None
+    if run:
+        start, end = _aware(run.get("started_at")), _aware(run.get("finished_at"))
+        if start is not None and start <= mtime and (end is None or mtime <= end):
+            return start
+    try:
+        from .word_files import _engine_path
+        _engine_path()
+        from review.word_files import read_at
+        at = read_at(str(comp_dir))
+    except Exception:                                   # noqa: BLE001 -- the file's time
+        at = None
+    if at is not None and at <= mtime:
+        return at
+    return mtime
 
 
 def register_documents(db: Any, project: Any, version: Any, *, now: Optional[datetime] = None,

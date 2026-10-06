@@ -228,7 +228,7 @@ class TestRoutes:
         mark_components(version.id, ["Layer1.Math"], "generated")
         started = {}
 
-        def fake_start(db, v, comps, added_layers=None):
+        def fake_start(db, v, comps, added_layers=None, **kw):
             started.update(version=v.id, components=comps, added_layers=added_layers)
             return type("J", (), {"id": "jobexport1", "status": "queued"})()
 
@@ -278,7 +278,7 @@ class TestRoutes:
         from api.services import pipeline_runner as pr
         started = {}
 
-        def fake_start(db, v, comps, added_layers=None):
+        def fake_start(db, v, comps, added_layers=None, **kw):
             started.update(components=comps, added_layers=added_layers)
             return type("J", (), {"id": "jobexport2", "status": "queued"})()
 
@@ -307,7 +307,7 @@ class TestRoutes:
                                                                 monkeypatch):
         from api.services import pipeline_runner as pr
 
-        def busy(db, v, comps, added_layers=None):
+        def busy(db, v, comps, added_layers=None, **kw):
             raise pr.ReexportRefused(409, "VERSION_BUSY", "being written by analyzer generate")
 
         monkeypatch.setattr(pr, "start_export", busy)

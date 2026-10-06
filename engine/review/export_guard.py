@@ -360,8 +360,16 @@ def _judge(conn, version_id: str, rows, doc_types, component: Optional[str],
     # unrenderable flowchart permanently unexportable -- the cure worse than the disease. It is
     # reported instead, through `failed_renders` and `explain()`, so the document goes out with
     # somebody knowing the picture is stale rather than nobody.
-    from review.render_queue import counts as _render_counts
-    renders = _cached(cache, "renders", lambda: _render_counts(conn, version_id))
+    # Asked about one component, only ITS pictures count: one being drawn put every component
+    # behind (WORD_FILE_UPDATES S0b).
+    from review.render_queue import Counts as _Counts, by_component as _by_component, \
+        counts as _render_counts
+    if component:
+        renders = _cached(cache, "renders_by_component",
+                          lambda: _by_component(conn, version_id)).get(
+            component_id(component), _Counts(0, 0))
+    else:
+        renders = _cached(cache, "renders", lambda: _render_counts(conn, version_id))
 
     stamps = _cached(cache, "stamps", lambda: _derivation_stamps(conn, version_id))
 
@@ -630,8 +638,25 @@ def stamp_recorded_derivations(conn, version_id: str, output_root: str) -> int:
     stamp survives exactly when its mark did (`stamp_saved`). An export-only run leaves the records
     as they were, so it changes no stamp -- it rebuilt nothing.
     """
+    return _replace_stamps(conn, version_id,
+                           stamps_from_records(rec for _dir, rec in _records_under(output_root)))
+
+
+def stamp_stored_derivations(conn, version_id: str) -> int:
+    """Replace this version's `view_derivations` rows with what its STORED records say -- every
+    `_derivations.json` row of `version_output_files`. Returns the rows written.
+
+    What the capture calls once it has stored the output (WORD_FILE_UPDATES S4a): a run that
+    rebuilt some components replaced only their rows, records included, so the other components'
+    records -- with the `saved` marks of corrections made while it ran -- keep their stamps. After a
+    full capture the stored records ARE the ones on disk, so this is `stamp_recorded_derivations`.
+    """
+    return _replace_stamps(conn, version_id,
+                           stamps_from_records(rec for _p, rec in _stored_records(conn, version_id)))
+
+
+def _replace_stamps(conn, version_id: str, stamps) -> int:
     vd = s.view_derivations
-    stamps = stamps_from_records(rec for _dir, rec in _records_under(output_root))
     conn.execute(delete(vd).where(vd.c.version_id == version_id))
     if stamps:
         conn.execute(insert(vd), [{"version_id": version_id, "view_name": view,

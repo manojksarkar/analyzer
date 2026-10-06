@@ -3,28 +3,30 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useProject, useDocuments, useCommits, useTeam, useVersions } from '../../hooks/useProjects'
 import { useDownloadAll, useDownloadDoc } from '../../hooks/useDocumentMutations'
 import { useApproveDocuments, useClaimDocument, useDocumentsReadiness } from '../../hooks/useApproval'
-import { reexportActive, useExportReadiness } from '../../hooks/useReview'
+import { useUpdateWordFiles, useVersionWordFiles } from '../../hooks/useWordFiles'
 import { SubbarCta } from '../../components/shell/SubbarCta'
 import { useProjectViewState } from '../../hooks/useProjectViewState'
 import { useAuthStore } from '../../store/auth'
-import { Card, Icon, Skeleton, TableSkeleton, Text } from '../../components/ui'
+import { Card, Icon, Skeleton, TableSkeleton, Text, toast } from '../../components/ui'
 import { LoadError } from '../../components/LoadError'
 import { failedLoad } from '../../lib/failedLoad'
 import { DocTreePanel } from '../../components/shell/DocTreePanel'
 import { AssignReviewerDialog } from '../../components/review/AssignReviewerDialog'
+import { DownloadAllDialog } from '../../components/wordfiles/DownloadAllDialog'
+import { UpdateWordFilesDialog } from '../../components/wordfiles/UpdateWordFilesDialog'
 import { NEEDS_REVIEWER, buildReviewerOptions, docxFileName, groupDocsByProcess, shownProcesses } from '../../lib/docTree'
 import { cn } from '../../lib/cn'
-import { componentWordFileStale, wordFileOutOfDate } from '../../lib/reviewStatus'
+import { wordFileOutOfDate } from '../../lib/reviewStatus'
+import {
+  componentsOf, downloadAllChoice, isUpdating, outOfDateFiles, plural, updateBlocked, type UpdateAsk,
+} from '../../lib/wordFiles'
 import type { Document, ReviewStatus } from '../../types'
 import { bulkApprovePlan, filterDocuments } from './helpers'
 import { DocRow } from './components/DocRow'
 import { VersionApprovalBar } from './components/VersionApprovalBar'
 import { BulkApproveDialog } from './components/BulkApproveDialog'
 import { StatusFilter } from './components/StatusFilter'
-import { ComponentsPanel } from './components/ComponentsPanel'
-
-/** Download All while the version's Word files lack corrections (R9 `stale`). */
-const PREVIOUS_WORD_FILES = 'Previous Word files — the corrections are not in them yet'
+import { GenerationBanner } from '../../components/run/GenerationBanner'
 
 // Fixed layout, widths including the cells' padding: the actions column holds four icon buttons
 // (~120px), Status the widest badge ("Ready for approval"). Declared narrower a column took its
@@ -79,6 +81,9 @@ export function DocumentsPage() {
   const [assigneeFilter, setAssigneeFilter] = useState<string | null>(null)
   const [assignFor, setAssignFor] = useState<Document[] | null>(null)
   const [bulkOpen, setBulkOpen] = useState(false)
+  // Word files: an update a row's *Corrected file* asks for; Download all's choice.
+  const [ask, setAsk] = useState<UpdateAsk | null>(null)
+  const [downloadAllOpen, setDownloadAllOpen] = useState(false)
 
   const effectiveAssignee = assigneeFilter ?? (isDeveloper ? meId : '')
 
@@ -98,25 +103,37 @@ export function DocumentsPage() {
   const allSelected = selectedDocs.length === filtered.length && filtered.length > 0
   const someSelected = selectedDocs.length > 0 && !allSelected
 
-  // Approve…: only Ready for approval with an up-to-date Word file (R9). The version's R9 says
-  // so for all at once; when it is stale, each candidate's own (A15) is read as the dialog opens.
-  // Every role reads it: Download says when it gives the previous Word file — a row when R9 names
-  // its component (`staleComponents`), Download All when it names one of a document not approved.
-  const { data: versionReadiness, isError: versionReadinessFailed } =
-    useExportReadiness(pid, viewVersion?.id)
-  // Download All: the approved documents' files are the approved ones; another's is the previous
-  // one when R9 names its component — the same test as its row's Download.
-  const allStale = all.some((d) => d.status !== 'approved' && componentWordFileStale(versionReadiness, d.group))
+  // Word files (R9, every role): which are out of date (`outOfDate`) — a row's download offers the
+  // corrected file or the current one; Download all, the corrected files or the files as they
+  // are; Approve… takes only Ready for approval with an up-to-date file and offers the update of
+  // the rest. An API from before `outOfDate` says only `stale`: then each candidate's own R9 (A15)
+  // is read as the bulk dialog opens.
+  const versionId = viewVersion?.id ?? ''
+  const wf = useVersionWordFiles(pid, viewVersion?.id, viewVersion?.tag ?? '')
+  const { readiness: versionReadiness, readinessFailed: versionReadinessFailed, words } = wf
+  const update = useUpdateWordFiles(pid, versionId, words)
+  const files = outOfDateFiles(versionReadiness, all)
+  const fileOf = (d: Document) => (d.status !== 'approved' ? files.find((f) => f.documentId === d.id) : undefined)
   const candidates = selectedDocs.filter((d) => d.status === 'submitted')
   const perDoc = useDocumentsReadiness(pid, candidates,
-    bulkOpen && (versionReadinessFailed || wordFileOutOfDate(versionReadiness)))
+    bulkOpen && !versionReadiness?.outOfDate && (versionReadinessFailed || wordFileOutOfDate(versionReadiness)))
   const plan = bulkApprovePlan(selectedDocs, {
     versionReadiness,
     readinessById: perDoc.byId,
     failed: perDoc.failed,
-    reexporting: reexportActive(versionReadiness),
   })
   const approveLabel = plan.ready.length && !plan.checking.length ? `Approve ${plan.ready.length}…` : 'Approve…'
+  const behindComps = componentsOf(plan.behind.map((d) => ({ component: d.group ?? '' })).filter((c) => c.component))
+  const zipName = `${project?.name ?? pid}-${viewVersion?.tag ?? ''}.zip`
+  /** Every update a button starts on its own asks first; while nothing can start, it says why. */
+  function askUpdate(a: UpdateAsk) {
+    const why = updateBlocked(versionReadiness, a.rebuild ? null : a.components, words, !!a.rebuild)
+    if (why) toast.info(why)
+    else setAsk(a)
+  }
+  function downloadAllNow() {
+    if (versionId) downloadAll.mutate({ versionId, fileName: zipName })
+  }
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -225,8 +242,11 @@ export function DocumentsPage() {
     return (
       <div className="flex-1 overflow-y-auto bg-surface-container-low">
         <div className="p-6">
-          {/* Staged generation: once the model is built, which components are being made. */}
-          {viewVersion?.id && <ComponentsPanel key={viewVersion.id} projectId={pid} versionId={viewVersion.id} isAdmin={!!isAdmin} />}
+          {/* Staged generation: once the model is built, how far the documents have got. */}
+          {viewVersion?.id && (
+            <GenerationBanner key={viewVersion.id} projectId={pid} versionId={viewVersion.id} versionTag={viewVersion.tag}
+              isAdmin={!!isAdmin} layers={project?.architectureLayers} compact className="mb-4" />
+          )}
           <Card className="overflow-hidden">
             <div className="py-20 flex flex-col items-center text-center gap-5">
               <div className="w-16 h-16 rounded-2xl bg-surface-container-low border border-outline-variant flex items-center justify-center">
@@ -257,18 +277,19 @@ export function DocumentsPage() {
       {/* The page's Subbar action (mockup: "Download All") — every DOCX of the viewed version. */}
       {viewVersion?.id && all.length > 0 && (
         <SubbarCta>
+          {/* Out of date: the corrected files, or the files as they are (asked in a dialog). */}
           <button
-            onClick={() => downloadAll.mutate({ versionId: viewVersion.id!, fileName: `${project?.name ?? pid}-${viewVersion.tag}.zip` })}
+            onClick={() => (files.length ? setDownloadAllOpen(true) : downloadAllNow())}
             disabled={downloadAll.isPending}
-            title={allStale ? `Download all: ${PREVIOUS_WORD_FILES}` : undefined}
+            title={files.length ? `${plural(files.length, 'file')} ${files.length === 1 ? 'is' : 'are'} out of date` : undefined}
             className="relative flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container rounded-lg transition-colors text-on-secondary font-mono text-caption font-bold tracking-[0.04em] disabled:opacity-60"
           >
             <Icon name="download" size={14} />
             {downloadAll.isPending ? 'PREPARING…' : 'DOWNLOAD ALL'}
-            {allStale && (
+            {files.length > 0 && (
               <>
                 <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber border-2 border-white" aria-hidden />
-                <span className="sr-only">{PREVIOUS_WORD_FILES}</span>
+                <span className="sr-only"> ({plural(files.length, 'file')} out of date)</span>
               </>
             )}
           </button>
@@ -316,8 +337,11 @@ export function DocumentsPage() {
           </div>
         )}
 
-        {/* Staged generation: the version's components and the documents still to make. */}
-        {viewVersion?.id && <ComponentsPanel key={viewVersion.id} projectId={pid} versionId={viewVersion.id} isAdmin={!!isAdmin} />}
+        {/* Staged generation: components without documents, a run at work or stopped (one row). */}
+        {viewVersion?.id && (
+          <GenerationBanner key={viewVersion.id} projectId={pid} versionId={viewVersion.id} versionTag={viewVersion.tag}
+            isAdmin={!!isAdmin} layers={project?.architectureLayers} compact className="mb-4" />
+        )}
 
         <Card className="overflow-hidden">
 
@@ -456,12 +480,18 @@ export function DocumentsPage() {
                       meId={meId}
                       nameOf={nameOf}
                       claimPending={claim.isPending}
-                      wordFileStale={componentWordFileStale(versionReadiness, doc.group)}
+                      wordFile={fileOf(doc)}
+                      updating={isUpdating(versionReadiness, doc)}
+                      correctedBlocked={fileOf(doc) && doc.group ? updateBlocked(versionReadiness, [doc.group], words) : ''}
                       onToggle={() => toggle(doc.id)}
                       onOpen={() => openDoc(doc)}
                       onReview={() => openDoc(doc, true)}
                       onCompare={() => navigate(`/projects/${projectId}/compare?doc=${doc.id}`)}
                       onDownload={() => downloadDoc(doc.id, docxFileName(doc))}
+                      onCorrected={() => askUpdate({
+                        components: doc.group ? [doc.group] : null,
+                        download: { docId: doc.id, fileName: docxFileName(doc) },
+                      })}
                       onAssign={() => setAssignFor([doc])}
                       onClaim={() => claim.mutate(doc.id)}
                     />
@@ -512,6 +542,37 @@ export function DocumentsPage() {
           busy={approveMany.isPending}
           onConfirm={approveSelected}
           onClose={() => setBulkOpen(false)}
+          update={{
+            going: plan.behind.length > 0 && plan.behind.every((d) => isUpdating(versionReadiness, d)),
+            blocked: behindComps.length ? updateBlocked(versionReadiness, behindComps, words) : '',
+            // This dialog's link starts it: no second dialog.
+            onUpdate: () => update.mutate({ request: { scope: 'out_of_date', components: behindComps } }),
+          }}
+        />
+      )}
+      {/* ── Word files: a row's Corrected file asks first; Download all chooses ── */}
+      {ask && versionId && (
+        <UpdateWordFilesDialog
+          projectId={pid}
+          versionId={versionId}
+          ask={ask}
+          files={files}
+          rebuildCount={all.filter((d) => d.status !== 'approved').length}
+          documentId={ask.download?.docId}
+          words={words}
+          onClose={() => setAsk(null)}
+        />
+      )}
+      {downloadAllOpen && versionId && (
+        <DownloadAllDialog
+          projectId={pid}
+          versionId={versionId}
+          choice={downloadAllChoice({ readiness: versionReadiness, docs: all, isAdmin: !!isAdmin, myDocIds: wf.myDocIds, words })}
+          isAdmin={!!isAdmin}
+          fileName={zipName}
+          words={words}
+          onAsIs={downloadAllNow}
+          onClose={() => setDownloadAllOpen(false)}
         />
       )}
     </div>

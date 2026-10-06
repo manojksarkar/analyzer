@@ -762,23 +762,129 @@ class TestExportReadiness:
         assert r.status_code == 200
         assert asked == ["all"]
 
-    def test_it_names_the_components_whose_documents_are_behind(self, client, review_db,
-                                                                 auth_header, db, monkeypatch):
-        """One version-wide `stale` marked every row "previous Word file" for one correction in
-        one component."""
-        from types import SimpleNamespace
+    @staticmethod
+    def _docs(db, monkeypatch, *specs):
+        """The version's documents: (id, component, process, status, word_file_at)."""
+        from api.models.domain import Document
+        now = datetime.datetime.now(datetime.timezone.utc)
+        docs = []
+        for did, comp, process, status, written in specs:
+            d = Document(id=did, project_id=PROJECT, version_id=VERSION, process=process,
+                         name=comp, subtitle="", layer="", group=comp, status=status,
+                         due_date=None, created_at=now, updated_at=now)
+            d.word_file_at = written
+            docs.append(d)
+        by_id = {d.id: d for d in docs}
+        monkeypatch.setattr(type(db.documents), "list_for_project",
+                            lambda self, pid, version_id=None, per_page=20, **k: (docs, len(docs)))
+        monkeypatch.setattr(type(db.documents), "get", lambda self, did: by_id.get(did))
+        return docs
+
+    def test_it_names_the_word_files_that_are_out_of_date(self, client, review_db, auth_header,
+                                                          db, monkeypatch):
+        """WORD_FILE_UPDATES §4.2. One version-wide `stale` marked every row "previous Word file"
+        for one correction in one component; per document, a file written after the correction
+        has it."""
+        long_ago = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+        later = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
         client.put(BASE + "/overrides/slot", headers=auth_header,
                    json={"slot_kind": "description", "slot_key": FID, "text": "Corrected."})
-        docs = [SimpleNamespace(group="Sample-Core"), SimpleNamespace(group="Other")]
-        monkeypatch.setattr(type(db.documents), "list_for_project",
-                            lambda self, pid, version_id=None, per_page=20, **k: (docs, 2))
+        self._docs(db, monkeypatch, ("d3", "Sample-Core", "SWE.3", "in_review", long_ago),
+                   ("d4", "Sample-Core", "SWE.4", "in_review", later),
+                   ("o3", "Other", "SWE.3", "in_review", long_ago),
+                   ("k3", "Sample-Core", "SWE.3", "approved", long_ago))
         body = client.get(BASE + "/export-readiness", headers=auth_header).json()
         assert body["stale"] is True and body["staleComponents"] == ["Sample-Core"]
+        assert [(e["documentId"], e["docType"], e["why"], e["corrections"], e["updating"])
+                for e in body["outOfDate"]] == [("d3", "SWE.3", ["corrections"], 1, False)]
+        assert [e["documentId"] for e in body["approvedKept"]] == ["k3"]
+        assert body["writer"] is None
+
+    def test_one_document_is_asked_about_alone(self, client, review_db, auth_header, db,
+                                               monkeypatch):
+        """A15: the reader's banner and Approve ask about one document."""
+        long_ago = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+        later = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
+        client.put(BASE + "/overrides/slot", headers=auth_header,
+                   json={"slot_kind": "description", "slot_key": FID, "text": "Corrected."})
+        self._docs(db, monkeypatch, ("d3", "Sample-Core", "SWE.3", "in_review", long_ago),
+                   ("d4", "Sample-Core", "SWE.4", "in_review", later))
+        one = client.get(BASE + "/export-readiness", headers=auth_header,
+                         params={"document_id": "d4"}).json()
+        assert one["stale"] is False and one["outOfDate"] == [] and one["staleComponents"] == []
+        one = client.get(BASE + "/export-readiness", headers=auth_header,
+                         params={"document_id": "d3"}).json()
+        assert one["stale"] is True and [e["documentId"] for e in one["outOfDate"]] == ["d3"]
 
     def test_nothing_is_behind_when_the_version_is_not_stale(self, client, review_db,
                                                              auth_header):
         body = client.get(BASE + "/export-readiness", headers=auth_header).json()
         assert body["staleComponents"] == []
+
+
+class TestCorrectionsWhileAnUpdateWritesTheirComponent:
+    """WORD_FILE_UPDATES §4.6: the update's capture replaces its components' rows, so a save
+    there waits; every other component stays editable."""
+
+    @pytest.fixture
+    def updating(self, db, monkeypatch):
+        from types import SimpleNamespace
+        from api.services import word_files
+        monkeypatch.setattr(type(db.versions), "get", lambda self, vid: SimpleNamespace(
+            id=vid, project_id=PROJECT, commit_sha=None, tag="v1"))
+        job = SimpleNamespace(id="jobupd1", mode="reexport", reason="update",
+                              scope={"type": "component", "names": ["Sample-Core"]})
+
+        def set_(components):
+            monkeypatch.setattr(word_files, "updating_components",
+                                lambda db, version: {c.lower(): job for c in components})
+        return set_
+
+    def test_a_save_in_the_component_being_updated_waits(self, client, review_db, auth_header,
+                                                         updating):
+        updating(["Sample-Core"])
+        r = client.put(BASE + "/overrides/slot", headers=auth_header,
+                       json={"slot_kind": "description", "slot_key": FID, "text": "Later."})
+        assert r.status_code == 409, r.text
+        d = r.json()["detail"]
+        assert (d["code"], d["job_id"], d["components"]) == \
+            ("WORD_FILE_UPDATING", "jobupd1", ["Sample-Core"])
+        r = _save_labels(client, auth_header, {"n1": "Later."})
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "WORD_FILE_UPDATING"
+
+    def test_one_in_another_component_goes_through(self, client, review_db, auth_header,
+                                                   updating):
+        updating(["Layer9.Elsewhere"])
+        r = client.put(BASE + "/overrides/slot", headers=auth_header,
+                       json={"slot_kind": "description", "slot_key": FID, "text": "Now."})
+        assert r.status_code == 200, r.text
+
+
+class TestTheHoldIsCheckedAgainUnderTheSaveLock:
+    """Finding 3. A save that passed the hold before an update's job existed, and reached the
+    version's save lock after the update took it, landed in rows the update's capture replaces."""
+
+    def test_a_job_that_appears_meanwhile_refuses_it(self, client, review_db, auth_header, db,
+                                                     monkeypatch):
+        from types import SimpleNamespace
+        from sqlalchemy import func
+        from api.services import word_files
+        monkeypatch.setattr(type(db.versions), "get", lambda self, vid: SimpleNamespace(
+            id=vid, project_id=PROJECT, commit_sha=None, tag="v1"))
+        job = SimpleNamespace(id="jobupd2", mode="reexport", reason="update",
+                              scope={"type": "component", "names": ["Sample-Core"]})
+        calls = []
+
+        def updating(db_, version):
+            calls.append(1)
+            return {} if len(calls) == 1 else {"sample-core": job}
+        monkeypatch.setattr(word_files, "updating_components", updating)
+        r = client.put(BASE + "/overrides/slot", headers=auth_header,
+                       json={"slot_kind": "description", "slot_key": FID, "text": "Racing."})
+        assert r.status_code == 409 and r.json()["detail"]["job_id"] == "jobupd2", r.text
+        assert len(calls) == 2
+        with review_db.connect() as cx:
+            assert cx.execute(select(func.count()).select_from(s.text_overrides)).scalar() == 0
 
 
 class TestNoDatabase:

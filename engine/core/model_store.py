@@ -373,17 +373,30 @@ def dump_output_files_to_dir(conn, version_id, out_dir) -> int:
     return n
 
 
-def persist_output_files(conn, version_id, output_dir) -> int:
+def persist_output_files(conn, version_id, output_dir, groups=None) -> int:
     """Store every TEXT file under `output_dir` as one `version_output_files` row, so the API can
     read the Phase-3 views (interface tables / flowchart + unit mermaid / behaviour rows) from
     Postgres instead of a disk snapshot. Binary artifacts (PNG/DOCX) are skipped — they stay as
-    files (D-14). Idempotent: replaces any rows already stored for this version. Returns the count."""
-    conn.execute(delete(s.version_output_files)
-                 .where(s.version_output_files.c.version_id == version_id))
+    files (D-14). Idempotent: replaces any rows already stored for this version. Returns the count.
+
+    `groups`: only these top-level directories -- the components a re-export, export or resume
+    rebuilt (WORD_FILE_UPDATES S4a). Their rows are replaced and every other row is left as it
+    is, so a correction saved meanwhile in another component is not reverted. None: the whole
+    version, as a generation stores it."""
+    vof = s.version_output_files
+    if groups is not None:
+        groups = [g for g in dict.fromkeys(groups) if g]
+        if not groups:
+            return 0
+        conn.execute(delete(vof).where(vof.c.version_id == version_id,
+                                       vof.c.group_name.in_(groups)))
+    else:
+        conn.execute(delete(vof).where(vof.c.version_id == version_id))
     if not output_dir or not os.path.isdir(output_dir):
         return 0
+    tops = ([os.path.join(output_dir, g) for g in groups] if groups is not None else [output_dir])
     rows = []
-    for root, _, files in os.walk(output_dir):
+    for root, _, files in (w for top in tops if os.path.isdir(top) for w in os.walk(top)):
         for fn in files:
             if not fn.lower().endswith(_OUTPUT_TEXT_EXTS):
                 continue

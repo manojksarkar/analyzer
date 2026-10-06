@@ -71,6 +71,16 @@ newer entry and the code win.
   them (2026-10-04e). For the office's multi-day run — guide
   [CLI_COMMANDS](docs/CLI_COMMANDS.md#a-run-that-lasts-days), detail
   [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Staged generation".
+- **Bitbucket repositories** (2026-10-05r, branch `feat/cli-wordfiles-bitbucket-components`, not
+  committed): one rule for how a token reaches git (`engine/incremental/clone.git_auth`: a header for
+  Bitbucket), a page address turned into its clone URL, wizard step 1 Remote | Local. Waits on the
+  office check T0 — [BITBUCKET_SUPPORT.md](docs/design/BITBUCKET_SUPPORT.md);
+  [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Repositories".
+- **Word file updates** (2026-10-05u, same branch, not committed): "out of date" means the Word file —
+  one rule (`engine/review/word_files.py`) for R9, A15, Approve and the update; runs by component store
+  only what they rebuilt; developers update what they review; migration **0018** (`analyzer.py setup`).
+  The web screens follow the mockup (2026-10-06). [WORD_FILE_UPDATES.md](docs/design/WORD_FILE_UPDATES.md);
+  [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Word file updates".
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
 - The status boards that used to head this file (2026-07-20, 2026-08-14) are kept, unchanged, in
@@ -202,7 +212,8 @@ so neighbouring files can overlap by a few days — search the date tag.
 | File | Entries |
 |---|---|
 | [TIMELINE.md](project-context/history/TIMELINE.md) | **every dated change in one line, newest first — start here** |
-| [13-2026-10-05c.md](project-context/history/13-2026-10-05c.md) | from 2026-10-05c — **the newest: new entries go at the top** |
+| [14-2026-10-05r.md](project-context/history/14-2026-10-05r.md) | from 2026-10-05r — **the newest: new entries go at the top** |
+| [13-2026-10-05c.md](project-context/history/13-2026-10-05c.md) | 2026-10-05c … 2026-10-05q; at its end, `review_update_v4`'s 2026-10-03 … 2026-10-03b |
 | [11-2026-09-29e.md](project-context/history/11-2026-09-29e.md) | 2026-09-29e … 2026-10-05b |
 | [12-2026-09-29-web-app.md](project-context/history/12-2026-09-29-web-app.md) | the web app branch `integrate/ui-v5`, 2026-09-29 … 2026-09-30f (13 entries), written beside files 10–11 and closed when it merged develop (2026-09-30g) |
 | [10-2026-09-26.md](project-context/history/10-2026-09-26.md) | 2026-09-26e … 2026-09-29d; at its end, develop's 2026-09-25 … 2026-09-26 (merged 2026-09-29) |

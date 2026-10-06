@@ -99,11 +99,14 @@ def select_baseline(repo_dir: str,
     is_nearest = bool(auto_commit) and chosen_commit == auto_commit
     if chosen_commit == target_commit:
         # Asked for explicitly, so honour it -- but say what it means. Zero changed files
-        # is not "nothing to do": it makes the new version a copy of the named one.
+        # is not "nothing to do": it makes the new version a copy of the named one -- unless
+        # the parse settings changed since (the parse fingerprint gate, decided later in the
+        # run), which parses everything again.
         warnings.append(
             f"base {override_version_id} is AT the target commit - no files differ, so "
             f"nothing will be re-parsed or regenerated and this version will be a copy "
-            f"of {override_version_id}")
+            f"of {override_version_id}, unless the parse settings changed since (then the "
+            f"whole code base is parsed again)")
     if not is_anc:
         warnings.append(
             f"base {override_version_id} is not an ancestor of the target - this run will be "

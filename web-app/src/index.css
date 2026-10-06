@@ -34,6 +34,18 @@
   --color-outline: #74777d;
   --color-outline-variant: #c4c6cd;
   --color-amber: #f59e0b;
+  /* Staged generation: a component's state (the Components drawer's chips and legend, the
+     Generation banner). Text, background, border. */
+  --color-state-done: #065f46;
+  --color-state-done-bg: #f0fdf9;
+  --color-state-done-line: #a7f3d0;
+  --color-state-warn: #92400e;
+  --color-state-warn-bg: #fff8e6;
+  --color-state-warn-line: #fcd34d;
+  --color-state-fail-bg: #fff1f0;
+  --color-state-fail-line: #f5a3a3;
+  --color-state-busy-line: #bfcfff;
+  --color-hairline: #e2e3e8;
 
   --spacing-sidebar-width: 220px;
   --spacing-sidebar-collapsed: 56px;

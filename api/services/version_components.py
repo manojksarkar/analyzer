@@ -16,7 +16,8 @@ State of a component, first rule that applies:
 The components come from the stored model (`model_components`: every component of the layers
 Phase 1 parsed), the version's configuration (`config_components`: those of layers the model
 lacks too -- `export` adds such a layer), the rows and the documents together, so nothing that
-has a state is missing. Each entry says `in_model` and `layer_parsed` (its layer is in the model).
+has a state is missing. Each entry says `in_model` and `layer_parsed` (its layer is in the model),
+and `group`: its group in the version's own configuration (`resolved_config`), or None.
 """
 from __future__ import annotations
 
@@ -97,6 +98,30 @@ def config_components(db: Any, version: Any) -> List[str]:
         return []
 
 
+def config_groups(version: Any) -> Dict[str, str]:
+    """`{component: group}` from the version's own configuration (`versions.resolved_config`,
+    not the project's current one): the group each component is configured under, spelled as
+    configured (`My Sample`). {} when it names none or cannot be read -- the view then says
+    `group: None`."""
+    out: Dict[str, str] = {}
+    try:
+        layers = (getattr(version, "resolved_config", None) or {}).get("layers")
+        if not isinstance(layers, dict):
+            return out
+        from .document_registry import _qualified_dir
+        for lname, layer in layers.items():
+            groups = layer.get("groups") if isinstance(layer, dict) else None
+            for gname, comps in (groups.items() if isinstance(groups, dict) else ()):
+                for cname in (comps if isinstance(comps, dict) else ()):
+                    if cname:
+                        out.setdefault(_qualified_dir(str(lname), str(cname)), str(gname))
+    except Exception as exc:                        # noqa: BLE001 - see the docstring
+        _log.warning("version %s: its configuration's groups could not be read (%s: %s)",
+                     getattr(version, "id", "?"), type(exc).__name__, exc)
+        return {}
+    return out
+
+
 def components_view(db: Any, version: Any, *, alive: Optional[bool] = None,
                     all_components: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """Every component of `version`, sorted by layer then name.
@@ -112,6 +137,7 @@ def components_view(db: Any, version: Any, *, alive: Optional[bool] = None,
         all_components = config_components(db, version)
     configured = {c for c in all_components or () if c}
     parsed_layers = {_split(c)[0] for c in comps}
+    groups = config_groups(version)
     from .review_workflow import version_docs
     docs: Dict[str, list] = {}
     for d in version_docs(db, version):
@@ -129,6 +155,8 @@ def components_view(db: Any, version: Any, *, alive: Optional[bool] = None,
         layer, name = _split(c)
         out.append({
             "component": c, "layer": layer, "name": name, "state": state,
+            # Its group in the version's configuration (`My Sample`); None when it names none.
+            "group": groups.get(c),
             "in_model": c in comps,
             # Whether its layer is in the model: False for a layer `export` must add first.
             "layer_parsed": c in comps or (bool(layer) and layer in parsed_layers),

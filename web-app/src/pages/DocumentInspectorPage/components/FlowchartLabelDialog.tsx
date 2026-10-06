@@ -57,14 +57,17 @@ export function FlowchartLabelDialog({
   }
 
   return (
-    <Modal open onClose={close} title={`Edit flowchart — ${chart.label}`} className="max-w-5xl w-[94vw]">
-      <div className="-mx-6 border-y border-outline-variant grid grid-cols-1 md:grid-cols-[1fr_360px] max-h-[70vh] min-h-[320px]">
-        <div className="overflow-auto bg-surface p-4 border-b md:border-b-0 md:border-r border-outline-variant flex justify-center items-start">
+    // The dialog never outgrows the screen: a column of header, body and footer, the body taking
+    // what is left. The body's tracks start at 0 (`minmax(0, …)`), not at the picture's size, so a
+    // tall or wide chart scrolls inside its pane instead of stretching the dialog past its edges.
+    <Modal open onClose={close} title={`Edit flowchart — ${chart.label}`} className="max-w-5xl w-[94vw] max-h-[calc(100vh-32px)] flex flex-col">
+      <div className="-mx-6 border-y border-outline-variant grid grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] md:grid-cols-[minmax(0,1fr)_360px] md:grid-rows-[minmax(0,1fr)] h-[70vh] min-h-0">
+        <div className="min-w-0 min-h-0 overflow-auto bg-surface p-4 border-b md:border-b-0 md:border-r border-outline-variant">
           {chart.imageUrl
-            ? <img src={chart.imageUrl} alt={`Flowchart of ${chart.label}`} className="block max-w-full h-auto" />
+            ? <img src={chart.imageUrl} alt={`Flowchart of ${chart.label}`} className="block mx-auto max-w-full h-auto" />
             : <Text variant="caption" className="font-mono">No picture for this run.</Text>}
         </div>
-        <div className="overflow-y-auto px-4 py-3">
+        <div className="min-w-0 min-h-0 overflow-y-auto px-4 py-3">
           <Text as="p" variant="caption" className="mb-2">
             Box labels, in the order the code runs them. The shape and the arrows come from the code and stay as they are.
           </Text>

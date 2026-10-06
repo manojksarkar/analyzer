@@ -191,11 +191,15 @@ def signal_resume(job_id: str) -> None:
 
 class ReexportRefused(Exception):
     """Why a re-export cannot start now. `status` and `code` are the HTTP answer; `job_id` names
-    the job that is in the way, so a client can follow it instead of starting another."""
+    the job that is in the way, so a client can follow it instead of starting another. `extra`:
+    more fields for the answer's `detail` -- the running update's `scope` and `components`, the
+    `writer` holding the version (docs/design/WORD_FILE_UPDATES.md §4.1)."""
 
-    def __init__(self, status: int, code: str, message: str, job_id: Optional[str] = None):
+    def __init__(self, status: int, code: str, message: str, job_id: Optional[str] = None,
+                 extra: Optional[dict] = None):
         super().__init__(message)
         self.status, self.code, self.job_id = status, code, job_id
+        self.extra = dict(extra or {})
 
 
 _REEXPORT_ACTIVE = ("queued", "running")
@@ -210,8 +214,44 @@ def _reexport_alive(job_id: str) -> bool:
     return t is not None and t.is_alive()
 
 
-def start_reexport(db: Any, version: Any, components: Optional[list] = None) -> AnalysisJob:
-    """Re-export `version` as a job of its own, and return that job.
+def start_reexport(db: Any, version: Any, components: Optional[list] = None, *,
+                   started_by: Optional[str] = None, reason: Optional[str] = None,
+                   document_id: Optional[str] = None) -> AnalysisJob:
+    """`start_update`'s job: a new one, or the running one that covers the request."""
+    return start_update(db, version, components, started_by=started_by, reason=reason,
+                        document_id=document_id)[0]
+
+
+def _render_job_running(db: Any, job: Any, writer_alive: Optional[bool]) -> bool:
+    """Whether a re-export or export job of this server is at work: its thread here lives, or --
+    a background run nobody follows yet, after a restart -- the version's writer lock is held."""
+    return _reexport_alive(job.id) or bool(writer_alive)
+
+
+#: What a running render job is doing to the version, in a refusal's words (`job_kind`).
+_DOING = {"update": "updated", "rebuild": "rebuilt", "export": "rendered by an export",
+          "resume": "resumed"}
+
+
+def _covers(running_names: list, wanted: list) -> bool:
+    """Whether a running update's components take in every one of `wanted`."""
+    return set(wanted) <= set(running_names)
+
+
+def start_update(db: Any, version: Any, components: Optional[list] = None, *,
+                 started_by: Optional[str] = None, reason: Optional[str] = None,
+                 document_id: Optional[str] = None) -> tuple:
+    """Update (re-export) `version`'s Word files as a job of its own: `(job, joined,
+    components)` -- `components`, the ones it writes, worked out BEFORE its thread starts: on a
+    database shared by threads (SQLite in the tests) a read after that could end the thread's
+    first write.
+
+    `joined` is True when an update already running for the version covers every component asked
+    for -- that job is returned, and nothing new starts (WORD_FILE_UPDATES D6: no queue).
+    `started_by` (a user id) and `reason` (`update` | `rebuild` | `submit`) are recorded on the job;
+    `document_id`, the document the request named, goes in its scope -- its end tells the starter.
+
+    Re-export `version` as a job of its own, and return that job.
 
     A re-export used to reuse the version's GENERATION job and never change its status, which
     stayed `complete`: polling it, or its live stream, said "finished" before anything ran, and
@@ -268,25 +308,40 @@ def start_reexport(db: Any, version: Any, components: Optional[list] = None) -> 
                     f"Not re-exportable -- no documents in version '{version.id}': "
                     f"{', '.join(missing)}. `Generate` makes them.")
             scope = {"type": "component", "names": list(dict.fromkeys(components))}
-        busy = version_writer_busy(db, version.id)
-        if busy:
-            raise ReexportRefused(
-                409, "VERSION_BUSY",
-                f"Version '{version.id}' is being written by {busy}. Wait for it to finish, "
-                f"then re-export.")
-        # An export renders the version too: whichever of the two took the lock second would
-        # fail on it, so one waits for the other here.
+        # The running update or export FIRST, then the writer: an update holds the version's
+        # writer lock as well, and only this answer says which job it is (WORD_FILE_UPDATES S5b).
+        # An export renders the version too: whichever of the two took the lock second would fail
+        # on it, so one waits for the other here.
         running = next((j for j in jobs if getattr(j, "mode", None) in RENDER_MODES
                         and j.status in _REEXPORT_ACTIVE), None)
         if running is not None:
-            if _reexport_alive(running.id):
+            alive = None if _reexport_alive(running.id) else version_writer_alive(db, version.id)
+            if _render_job_running(db, running, alive):
+                from .word_files import (all_components, job_components, job_kind,
+                                         job_scope_name)
+                theirs = job_components(db, version, running)
+                wanted = ((scope or {}).get("names") if (scope or {}).get("type") == "component"
+                          else None) or all_components(db, version)
+                if getattr(running, "mode", None) == REEXPORT_MODE and _covers(theirs, wanted):
+                    return running, True, theirs
+                kind = job_kind(running)
                 raise ReexportRefused(
                     409, "REEXPORT_RUNNING",
-                    f"Version '{version.id}' is already being re-exported by job {running.id}. "
-                    f"Follow that job rather than starting another on the same folder.",
-                    running.id)
+                    f"Version '{version.id}' is already being "
+                    f"{_DOING.get(kind, 'updated')} by job {running.id}"
+                    f"{' (' + ', '.join(theirs) + ')' if theirs else ''}. Follow that job, and "
+                    f"update again when it ends.", running.id,
+                    extra={"scope": job_scope_name(running), "kind": kind,
+                           "components": theirs})
             _mark_failed(db, running.id, "Interrupted: the API server stopped while this "
                                          "re-export was running. Start it again.")
+        busy = version_writer_busy(db, version.id)
+        if busy:
+            from .word_files import writer as _writer
+            raise ReexportRefused(
+                409, "VERSION_BUSY",
+                f"Version '{version.id}' is being written by {busy}. Wait for it to finish, "
+                f"then update.", extra={"writer": _writer(db, version, snake=True)})
         # How the version was generated is how it is re-rendered: same LLM switch, same data
         # dictionary, same document title. A command-line version has no job to say so: the
         # re-export (`analyzer.py reexport`) reads all of that from the version's own record.
@@ -307,15 +362,19 @@ def start_reexport(db: Any, version: Any, components: Optional[list] = None) -> 
             branch=gen.branch, version_tag=gen.version_tag,
             # Every document it HAS, which since `export` can be more than its generation's
             # scope (`_reexport_scope`) -- or the components asked for.
-            mode=REEXPORT_MODE, scope=scope,
+            mode=REEXPORT_MODE,
+            scope=(dict(scope, document_id=document_id) if (scope and document_id) else scope),
             no_llm=gen.no_llm,
-            data_dict_id=gen.data_dict_id, narrowed_parse=gen.narrowed_parse)
+            data_dict_id=gen.data_dict_id, narrowed_parse=gen.narrowed_parse,
+            started_by=started_by, reason=reason)
+        from .word_files import job_components
+        writes = job_components(db, version, job)
         db.jobs.create(job)
         t = threading.Thread(target=_run_reexport, args=(db, job.id), daemon=True,
                              name=f"reexport-{job.id}")
         _reexport_threads[job.id] = t
         t.start()
-    return job
+    return job, False, writes
 
 
 def get_log_lines(job_id: str, after_idx: int) -> tuple[list[str], int]:
@@ -894,6 +953,19 @@ def version_writer_busy(db: Any, version_id: str) -> Optional[str]:
         return None
 
 
+def version_writer_alive(db: Any, version_id: str) -> Optional[bool]:
+    """True: a process holds the version's writer lock. False: none does. None: this database
+    cannot tell (SQLite, the in-memory backend)."""
+    eng = getattr(db, "_engine", None)
+    vr = _version_run_module() if eng is not None else None
+    if vr is None:
+        return None
+    try:
+        return vr.alive(version_id, engine=eng)
+    except Exception:                                # noqa: BLE001 - cannot tell
+        return None
+
+
 def _scope_to_cli(scope: Any) -> str:
     """Map a scope dict {type, names} to the engine's --scope string
     (project | layer:L | group:G | component:C1,C2)."""
@@ -1117,14 +1189,13 @@ def _checkout(project: Any, commit_sha: str, checkout_dir: Path, job_id: str) ->
     bc = project.build_config or {}
     token = bc.get("repo_access_token") or bc.get("access_token") or ""
     token = (token or "").strip()
-    username = token  # PAT goes in username position for GitHub/GitLab
-    password = ""
 
     checkout_dir.mkdir(parents=True, exist_ok=True)
 
-    # Shallow clone — enough depth to reach the target commit
+    # Shallow clone — enough depth to reach the target commit. How the token reaches git is
+    # read from the URL (incremental.clone.git_auth): a header for Bitbucket, else the URL.
     git_cli.shallow_clone(
-        project.repo_url, username, password, str(checkout_dir),
+        project.repo_url, str(checkout_dir), token=token,
         ref=project.default_branch or "main",
         depth=50,
     )
@@ -2345,6 +2416,7 @@ def _refollow(db: Any, job_id: str, run: dict, render: bool) -> None:
         if render:
             with _REEXPORT_LOCK:
                 _reexport_threads.pop(job_id, None)
+            _tell_end(db, job_id)
 
 
 def _marker_phase(line: str) -> int:
@@ -2888,7 +2960,7 @@ def _load_and_register_functions(db: Any, job: Any, version_id: str) -> None:
 # Re-export
 # ---------------------------------------------------------------------------
 
-def _capture_reexport_output(db: Any, job: Any, adir) -> None:
+def _capture_reexport_output(db: Any, job: Any, adir, since: Optional[datetime] = None) -> None:
     """Persist a re-export's freshly rendered output back into the store.
 
     Generation reaches this through the incremental orchestrator's `store.capture_output`;
@@ -2899,10 +2971,16 @@ def _capture_reexport_output(db: Any, job: Any, adir) -> None:
 
     Best-effort: the .docx has already been produced on disk at this point, so a store hiccup
     must not fail an otherwise successful job.
+
+    Only the components the job wrote are stored (WORD_FILE_UPDATES S4a): a correction saved in
+    another component while it ran is kept. `since`: when it started -- the documents whose Word
+    file it wrote are stamped with it (`documents.word_file_at`).
     """
     version_id = getattr(job, "version_id", None)
     if not version_id:
         return                       # legacy commit-keyed run: nothing version-scoped to update
+    scope = getattr(job, "scope", None) or {}
+    comps = (list(scope.get("names") or []) or None) if scope.get("type") == "component" else None
     try:
         import sys as _sys
         engine_dir = str(get_settings().repo_root / "engine")
@@ -2911,7 +2989,7 @@ def _capture_reexport_output(db: Any, job: Any, adir) -> None:
         from incremental.store import make_store          # type: ignore[import]
         store = make_store(job.project_id,
                            workspaces_root=str(get_settings().repo_root / "workspaces"))
-        store.capture_output(version_id, str(adir / "output"))
+        store.capture_output(version_id, str(adir / "output"), components=comps, since=since)
     except Exception as exc:                              # pragma: no cover - never fail here
         _log.warning("re-export: could not persist rendered output for %s: %s", version_id, exc)
 
@@ -3067,6 +3145,11 @@ def _do_reexport(db: Any, job_id: str) -> bool:
     # re-export that rewrote only SWE.3 left the SWE.4 Word file with the old labels.
     doc_type = export_doc_type(db, job.project_id, getattr(job, "version_id", None))
     from_phase = _reexport_from_phase(getattr(job, "version_id", None), doc_type)
+    if from_phase > 3 and _stale_in_scope(db, job):
+        # A layer added to the version since changed these components' model: their views are
+        # older than it, and an export alone would print them again (`analyzer.py reexport` goes
+        # back to Phase 3 for the same reason).
+        from_phase = 3
 
     arch_layers = project.architecture_layers or []
     # The model is rows, so Phase 4 needs the version id to find it. This used to ASK whether
@@ -3084,14 +3167,50 @@ def _do_reexport(db: Any, job_id: str) -> bool:
             if p.number < from_phase and p.status == "pending":
                 p.status = "skipped"
         db.jobs.update(job)
+    # Its Word files hold what was saved before this: taken with the job visible (the hold
+    # refuses new saves in its components) and every save under way committed first.
+    since = _update_since(job.version_id)
     if not _execute_subprocess(db, job_id, cmd, phase_start=from_phase):
         return False
     # Re-persist the re-rendered views (C0). The document render now reads interface
     # tables / flowcharts / behaviour rows from Postgres when they are there, so a
     # re-export that only rewrote FILES would leave the stored copies stale and appear to
     # have had no effect. capture_output also re-collects the .docx into documents/.
-    _capture_reexport_output(db, job, adir)
+    _capture_reexport_output(db, job, adir, since=since)
     return True
+
+
+def _update_since(version_id: Optional[str]) -> datetime:
+    """`review.word_files.wait_for_saves` on the engine's database; plain now without one."""
+    try:
+        engine_dir = str(get_settings().repo_root / "engine")
+        if engine_dir not in sys.path:
+            sys.path.insert(0, engine_dir)
+        from core.db import get_engine, is_database_configured     # type: ignore[import]
+        if version_id and is_database_configured():
+            from review.word_files import wait_for_saves             # type: ignore[import]
+            return wait_for_saves(get_engine(), version_id)
+    except Exception as exc:                                       # noqa: BLE001
+        _log.warning("re-export: could not wait for saves under way on %s: %s", version_id, exc)
+    return _now()
+
+
+def _stale_in_scope(db: Any, job: Any) -> bool:
+    """Whether a layer added to the version since changed the model of a component this re-export
+    writes (`version_run.layer_added`: kept through a failed or cancelled update) -- the whole
+    version when the scope is not by component. True when it cannot be read: Phase 3 then makes
+    the views again, which is slower and never wrong."""
+    try:
+        from .version_components import state_rows
+        rows = state_rows(getattr(db, "_engine", None), job.version_id)
+        vr = _version_run_module()
+        stale = {c for c, r in rows.items() if vr.layer_added(r) is not None}
+    except Exception:                                  # noqa: BLE001 - see docstring
+        return True
+    scope = getattr(job, "scope", None) or {}
+    if scope.get("type") == "component" and scope.get("names"):
+        return bool(stale & set(scope["names"]))
+    return bool(stale)
 
 
 def _reexport_detached(db: Any, job_id: str, first_phase: int, doc_type: str) -> bool:
@@ -3137,7 +3256,8 @@ def _reexport_scope(db: Any, version: Any, generation_scope: Optional[dict]) -> 
 
 
 def start_export(db: Any, version: Any, components: list, *,
-                 added_layers: Optional[list] = None) -> AnalysisJob:
+                 added_layers: Optional[list] = None,
+                 started_by: Optional[str] = None) -> AnalysisJob:
     """Make the documents of `components` -- not generated yet -- into `version`, as a job of its
     own (`mode: "export"`, phases 3 and 4), and return it.
 
@@ -3153,19 +3273,26 @@ def start_export(db: Any, version: Any, components: list, *,
     Raises ReexportRefused.
     """
     with _REEXPORT_LOCK:
-        busy = version_writer_busy(db, version.id)
-        if busy:
-            raise ReexportRefused(
-                409, "VERSION_BUSY",
-                f"Version '{version.id}' is being written by {busy}. Wait for it to finish.")
+        # The running render job first, then the writer (WORD_FILE_UPDATES S5b): it holds the
+        # writer lock too, and only this answer names it.
         jobs = db.jobs.list_for_version(version.id)
         running = next((j for j in jobs if getattr(j, "mode", None) in RENDER_MODES
                         and j.status in _REEXPORT_ACTIVE), None)
         if running is not None and _reexport_alive(running.id):
+            from .word_files import job_components, job_kind
             raise ReexportRefused(
                 409, "EXPORT_RUNNING",
                 f"Version '{version.id}' is already being rendered by job {running.id}. Follow "
-                f"that job, then add these.", running.id)
+                f"that job, then add these.", running.id,
+                extra={"kind": job_kind(running),
+                       "components": job_components(db, version, running)})
+        busy = version_writer_busy(db, version.id)
+        if busy:
+            from .word_files import writer as _writer
+            raise ReexportRefused(
+                409, "VERSION_BUSY",
+                f"Version '{version.id}' is being written by {busy}. Wait for it to finish.",
+                extra={"writer": _writer(db, version, snake=True)})
         # The version's own run, alive in this server: on SQLite there is no lock to say so, and
         # a resumed run holds none for the moment before it starts. Whichever stored last would
         # replace the other's documents.
@@ -3192,7 +3319,8 @@ def start_export(db: Any, version: Any, components: list, *,
             phases=[AnalysisPhase(n, name, "pending", None) for n, name in _PHASES if n >= first],
             started_at=_now(), completed_at=None, error_message=None,
             branch=(generation.branch if generation else None) or version.branch or "main",
-            version_tag=version.tag, mode=EXPORT_MODE, scope=scope)
+            version_tag=version.tag, mode=EXPORT_MODE, scope=scope,
+            started_by=started_by, reason="export")
         db.jobs.create(job)
         t = threading.Thread(target=_run_export, args=(db, job.id), daemon=True,
                              name=f"export-{job.id}")
@@ -3259,7 +3387,7 @@ class ResumeRefused(ReexportRefused):
     """Why a version cannot be resumed now (HTTP status, code, message)."""
 
 
-def start_resume(db: Any, version: Any) -> AnalysisJob:
+def start_resume(db: Any, version: Any, *, started_by: Optional[str] = None) -> AnalysisJob:
     """Carry on a version whose run stopped before it finished, from the web app: `analyzer.py
     resume`, in the background, followed as a job (staged generation, C4).
 
@@ -3327,7 +3455,8 @@ def start_resume(db: Any, version: Any) -> AnalysisJob:
                         if n >= first],
                 started_at=_now(), completed_at=None, error_message=None,
                 branch=(generation.branch if generation else None) or version.branch or "main",
-                version_tag=version.tag, mode=EXPORT_MODE, scope=None)
+                version_tag=version.tag, mode=EXPORT_MODE, scope=None,
+                started_by=started_by, reason="resume")
             db.jobs.create(job)
         t = threading.Thread(target=_run_resume, args=(db, job.id, render, first), daemon=True,
                              name=f"resume-{job.id}")
@@ -3395,8 +3524,37 @@ def _run_reexport(db: Any, job_id: str) -> None:
         _mark_failed(db, job_id, f"Re-export error: {exc}")
     finally:
         _cleanup_state(job_id)
+        # Told before the thread leaves the list: whoever waits on the thread (a test's join, a
+        # shutdown) then finds the notifications written, not about to be.
+        _tell_end(db, job_id)
         with _REEXPORT_LOCK:
             _reexport_threads.pop(job_id, None)
+
+
+def _tell_end(db: Any, job_id: str) -> None:
+    """The update's starter is told how it ended (WORD_FILE_UPDATES S6). Never raises."""
+    try:
+        from .word_files import tell_update_end
+        tell_update_end(db, job_id)
+    except Exception as exc:                  # noqa: BLE001 - a notification, not the job
+        _log.warning("job %s: its end could not be told: %s", job_id, exc)
+
+
+def _failed_in_update(db: Any, job: Any):
+    """For an update (`mode: "reexport"`): `({component: why} that failed in it, [the others])`;
+    None for any other job, or when the component states cannot be read (then as before)."""
+    if job is None or getattr(job, "mode", None) != REEXPORT_MODE or not job.version_id:
+        return None
+    try:
+        from .word_files import failed_components, job_components
+        version = db.versions.get(job.version_id)
+        if version is None:
+            return None
+        failed = failed_components(db, version, job)
+        return failed, [c for c in job_components(db, version, job) if c not in failed]
+    except Exception as exc:                  # noqa: BLE001 - see docstring
+        _log.warning("job %s: its components' states could not be read: %s", job.id, exc)
+        return None
 
 
 def _register_missing_documents(db: Any, job_id: str) -> int:
@@ -3430,11 +3588,24 @@ def _register_missing_documents(db: Any, job_id: str) -> int:
 def _complete_reexport(db: Any, job_id: str) -> None:
     now = _now()
     job = db.jobs.get(job_id)
+    failed = _failed_in_update(db, job)
+    if failed is not None and failed[0] and not failed[1]:
+        # Every component of the update failed (exit 3 made it a "partial success"): nothing was
+        # written, and the job says so -- R9's `reexport.status`, the starter's notification.
+        names = sorted(failed[0])
+        job.status = "failed"
+        job.error_message = ("Update failed: %s -- %s" % (", ".join(names),
+                             next(iter(failed[0].values()))))[:4000]
+        job.completed_at = now
+        job.elapsed_seconds = _elapsed_since(job.started_at, now)
+        db.jobs.update(job)
+        return
     job.status = "complete"
     job.phase = 4
     job.phase_pct = 100
     job.current_activity = "Done"
-    job.activity_detail = "Re-exported"
+    job.activity_detail = ("Re-exported; failed: %s" % ", ".join(sorted(failed[0]))
+                           if failed is not None and failed[0] else "Re-exported")
     job.eta_seconds = 0
     job.completed_at = now
     job.elapsed_seconds = _elapsed_since(job.started_at, now)

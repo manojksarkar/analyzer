@@ -31,7 +31,7 @@ from ..db.in_memory import InMemoryDatabase
 from ..db.session import get_db
 from ..middleware.auth import get_current_user, require_project_admin, require_project_member
 from ..models.domain import User
-from ..services import review_workflow
+from ..services import review_workflow, word_files
 
 _ENGINE_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "engine")
@@ -309,23 +309,29 @@ def _version(project_id: str, version_id: str) -> None:
                         detail=f"no version '{version_id}' in project '{project_id}'.{hint}")
 
 
-def _latest_reexport(cx, version_id: str) -> Optional[Dict[str, Any]]:
-    """The newest re-export job of a version, shaped for R9, or None when it was never
-    re-exported. Read from `analysis_jobs` directly, on the connection R9 already holds."""
+def _latest_reexport(cx, version_id: str, db=None, version=None) -> Optional[Dict[str, Any]]:
+    """The newest re-export (update) job of a version, shaped for R9, or None when it never had
+    one. Read from `analysis_jobs` directly, on the connection R9 already holds. With `db` and
+    `version`: also its `scope`, `reason`, `components`, `componentsDone` and `startedBy`
+    (docs/design/WORD_FILE_UPDATES.md §4.2)."""
     from sqlalchemy import select
     from ..db.postgres import schema as s
     from ..models.domain import REEXPORT_MODE
     j = s.analysis_jobs
     r = cx.execute(select(j.c.id, j.c.status, j.c.started_at, j.c.completed_at,
-                          j.c.error_message)
+                          j.c.error_message, j.c.scope, j.c.reason, j.c.started_by)
                    .where(j.c.version_id == version_id, j.c.mode == REEXPORT_MODE)
                    .order_by(j.c.started_at.desc()).limit(1)).first()
     if r is None:
         return None
-    return {"jobId": r.id, "status": r.status,
-            "startedAt": r.started_at.isoformat() if r.started_at else None,
-            "completedAt": r.completed_at.isoformat() if r.completed_at else None,
-            "errorMessage": r.error_message}
+    out = {"jobId": r.id, "status": r.status,
+           "startedAt": r.started_at.isoformat() if r.started_at else None,
+           "completedAt": r.completed_at.isoformat() if r.completed_at else None,
+           "errorMessage": r.error_message}
+    if db is not None and version is not None:
+        from ..services import word_files
+        out.update(word_files.reexport_extra(db, version, r))
+    return out
 
 
 def _models_for(version_id: str, project_id: str, kinds):
@@ -361,6 +367,20 @@ def _saved(res, slot_kind: str, slot_key: str) -> Dict[str, Any]:
             # something the reviewer did not touch, rather than letting it appear unannounced.
             "queuedForRegeneration": [{"slotKind": k, "slotKey": v, "label": _readable(k, v)}
                                       for k, v in queued]}
+
+
+def _hold_under_lock(cx, db, project_id: str, version_id: str, slot_kind=None, slot_key=None,
+                     *, function_id=None) -> None:
+    """The update hold again, now holding the version's save lock (WORD_FILE_UPDATES §4.6).
+
+    An update takes that lock once its job is visible, and only then sets the time its Word
+    files hold what was saved before (`word_files.wait_for_saves`). A save that passed the first
+    check before the job existed, and reaches the lock after, is refused here -- else the update's
+    capture would replace what it writes. One that took the lock first is committed before the
+    update reads anything. Taking the lock again later in the same transaction costs nothing."""
+    _service()._serialize_saves(cx, version_id)
+    word_files.refuse_if_updating(db, project_id, version_id, slot_kind, slot_key,
+                                  function_id=function_id)
 
 
 def _readable(slot_kind: str, slot_key: str) -> str:
@@ -634,10 +654,16 @@ def update_slot(
     # An approved document is locked (REVIEW_APPROVE_API_SPEC): reopen it first.
     review_workflow.refuse_if_approved(db, project_id, version_id, body.slot_kind.value,
                                        _key(body.slot_kind.value, body.slot_key))
+    # Its component's Word file is being written now: the update's capture would replace what
+    # this save writes (WORD_FILE_UPDATES §4.6).
+    word_files.refuse_if_updating(db, project_id, version_id, body.slot_kind.value,
+                                  _key(body.slot_kind.value, body.slot_key))
     svc = _service()
     from review import catalog
     with _connection().begin() as cx:          # one transaction, REQ-AP-02
         try:
+            _hold_under_lock(cx, db, project_id, version_id, body.slot_kind.value,
+                             _key(body.slot_kind.value, body.slot_key))
             # The repository is built from (version, project): an API process has no
             # "current run", so there is none installed, and `model_repo.repository()` would
             # raise. The model write then joins THIS transaction (REQ-AP-02).
@@ -674,10 +700,12 @@ def update_flowchart_labels(
     # The labels print in the component's SWE.3 and build its SWE.4 test steps: either approved
     # locks them (REVIEW_APPROVE_API_SPEC).
     review_workflow.refuse_if_approved(db, project_id, version_id, function_id=flowchart_id)
+    word_files.refuse_if_updating(db, project_id, version_id, function_id=flowchart_id)
 
     svc = _service()
     with _connection().begin() as cx:
         try:
+            _hold_under_lock(cx, db, project_id, version_id, function_id=flowchart_id)
             # Read only if the version has SWE.4 specs to re-derive: a label is not a model field.
             models = svc.ModelAccess(version_id=version_id, project_id=project_id)
             out = svc.apply_flowchart_overrides(cx, version_id, flowchart_id, dict(body.labels),
@@ -718,10 +746,12 @@ def update_behaviour(
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
     review_workflow.refuse_if_approved(db, project_id, version_id, function_id=body.function_id)
+    word_files.refuse_if_updating(db, project_id, version_id, function_id=body.function_id)
     svc = _service()
     from review import catalog, slot as slot_mod
     with _connection().begin() as cx:
         try:
+            _hold_under_lock(cx, db, project_id, version_id, function_id=body.function_id)
             out = svc.apply_behaviour_override(cx, version_id, body.function_id,
                                                body.external_caller_id, list(body.bullets),
                                                user_id=current_user.id)
@@ -752,10 +782,12 @@ def undo_slot(
     kind = slot_kind.value
     key = _key(kind, slot_key)
     review_workflow.refuse_if_approved(db, project_id, version_id, kind, key)
+    word_files.refuse_if_updating(db, project_id, version_id, kind, key)
     svc = _service()
     from review import catalog, slot as slot_mod
     with _connection().begin() as cx:
         try:
+            _hold_under_lock(cx, db, project_id, version_id, kind, key)
             models = svc.ModelAccess(version_id=version_id, project_id=project_id)
             out = svc.undo_override(cx, version_id, kind, key, models=models,
                                     user_id=current_user.id, derive=_swe4_deriver(cx, models))
@@ -869,37 +901,59 @@ def export_readiness(
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
-    """`REQ-AP-04`. Whether exporting now would ship text a correction has already replaced, so
-    the UI can say so before someone downloads a document that is quietly out of date.
+    """`REQ-AP-04`. Which Word files are out of date, and what holds the version
+    (docs/design/WORD_FILE_UPDATES.md §4.2) -- so the UI can say so before someone downloads a
+    document that is quietly out of date, and offer the update.
 
-    About the documents the web app exports -- SWE.3, and SWE.4 when the version has it
-    (`pipeline_runner.export_doc_type`, the re-export's own question). A SWE.4 document of a
-    CLI-generated version is exported from the CLI, which asks its own question
-    (`analyzer.py reexport`)."""
+    "Out of date" is the Word FILE's: a correction it prints saved after it was written, a layer
+    added since, a picture of its component still being drawn -- the one rule A15 and Approve use
+    (`api/services/word_files.py`). A version with no documents recorded answers the older
+    question, whether an export-only run would ship stale text (`export_guard.staleness`), about
+    the documents the web app exports (`pipeline_runner.export_doc_type`)."""
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)
+    from types import SimpleNamespace
     from review.export_guard import staleness
+    from ..services import word_files
     from ..services.pipeline_runner import export_doc_type
-    doc_type, component = export_doc_type(db, project_id, version_id), None
+    doc_type, component, doc = export_doc_type(db, project_id, version_id), None, None
     if document_id:
         doc = db.documents.get(document_id)
         if doc is None or doc.project_id != project_id or doc.version_id != version_id:
             raise HTTPException(status_code=404, detail="no document %s in this version" % document_id)
         doc_type, component = ("swe4" if doc.process == "SWE.4" else "swe3"), doc.group
+    version = db.versions.get(version_id) or SimpleNamespace(
+        id=version_id, project_id=project_id, commit_sha=None, tag=version_id)
     with _connection().connect() as cx:
         st = staleness(cx, version_id, doc_type, component=component)
-        reexport = _latest_reexport(cx, version_id)
-        # WHICH documents are behind, when the version is: the per-component question A15 asks,
-        # for each component with a document. One version-wide `stale` marked every row of the
-        # Documents page "previous Word file" for one correction in one component.
-        stale_components = []
-        if st.is_stale and not document_id:
-            docs, _ = db.documents.list_for_project(project_id, version_id=version_id,
-                                                    per_page=1000)
-            from review.export_guard import stale_components as _behind
-            stale_components = _behind(cx, version_id, doc_type,
-                                       sorted({d.group for d in docs if d.group}))
-    return {"stale": st.is_stale, "reason": st.reason, "explanation": st.explain(),
+        reexport = _latest_reexport(cx, version_id, db, version)
+    files = word_files.readiness(db, version, doc)
+    stale, reason, explanation = st.is_stale, st.reason, st.explain()
+    stale_components: List[str] = []
+    if files["hasDocuments"]:
+        # The Word files' own answer. One version-wide `stale` marked every row of the Documents
+        # page "previous Word file" for one correction in one component; the stamps said a SWE.4
+        # file was current while it was the old one.
+        behind = files["outOfDate"]
+        stale = bool(behind)
+        if not document_id:
+            stale_components = sorted({e["component"] for e in behind if e["component"]})
+        whys = sorted({w for e in behind for w in e["why"]})
+        reason = ("up to date" if not behind else
+                  "; ".join({"corrections": "a correction is newer than the Word file",
+                             "layerAdded": "a layer was added to the version since",
+                             "pictures": "a corrected flowchart picture is still being drawn"}[w]
+                            for w in whys))
+        explanation = ("up to date" if not behind else
+                       "%d Word file(s) are out of date: %s" % (len(behind), reason))
+        if st.failed_renders:
+            explanation += "; %d flowchart image(s) could not be drawn and are out of date" \
+                           % st.failed_renders
+    return {"stale": stale, "reason": reason, "explanation": explanation,
+            # Which Word files are out of date, and why (WORD_FILE_UPDATES §4.2).
+            "outOfDate": files["outOfDate"], "approvedKept": files["approvedKept"],
+            # What holds the version now -- no update starts while it is set.
+            "writer": files["writer"],
             # The version's latest re-export job, or null. How a page that was reloaded -- or
             # opened by someone else -- learns a re-export is already running, and follows that
             # job instead of offering to start a second one.

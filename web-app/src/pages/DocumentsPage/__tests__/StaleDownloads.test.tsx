@@ -1,11 +1,14 @@
-import { describe, expect, it } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { http, HttpResponse } from 'msw'
 import { server } from '../../../test/server'
 import { API_BASE_URL } from '../../../lib/http'
 import { SubbarCtaProvider } from '../../../components/shell/SubbarCta'
+import { useAuthStore } from '../../../store/auth'
+import { useWordFilesStore } from '../../../store/wordFiles'
 import project from '../../../test/fixtures/captured/project.json'
 import commits from '../../../test/fixtures/captured/commits.json'
 import versions from '../../../test/fixtures/captured/versions.json'
@@ -13,14 +16,21 @@ import documents from '../../../test/fixtures/captured/documents.json'
 import members from '../../../test/fixtures/captured/members.json'
 import { DocumentsPage } from '..'
 
-/* Download serves the stored Word file as it is (REVIEW_UPDATE_API_SPEC §14): after corrections
-   and before a re-export it is the previous one. The Documents page says so — for every role, as
-   the reader does: on a row's Download when R9 names its component (`staleComponents`), on
-   Download All when the version is behind at all. */
+/* Download serves the stored Word file as it is (REVIEW_UPDATE_API_SPEC §14): when R9 lists a
+   document's file as out of date (WORD_FILE_UPDATES W3), its row's download offers the corrected
+   file (updated first) or the current one; Download all, the corrected files or the files as they
+   are. An approved document's file is the approved one: never marked. */
 
-function setup(stale: boolean, staleComponents?: string[]) {
+const rows = documents.documents.length
+const behind = (documentId: string, component: string, name: string) => ({
+  documentId, component, name, docType: 'SWE.3', why: ['corrections'], corrections: 2, pictures: 0, layer: null, updating: false,
+})
+
+function setup(opts: { role?: 'admin' | 'developer'; outOfDate?: object[]; writer?: object | null } = {}) {
+  const { role = 'developer', outOfDate = [], writer = null } = opts
+  const sent: unknown[] = []
   server.use(
-    http.get(`${API_BASE_URL}/projects/p1`, () => HttpResponse.json({ project: { ...project.project, my_role: 'developer' } })),
+    http.get(`${API_BASE_URL}/projects/p1`, () => HttpResponse.json({ project: { ...project.project, my_role: role } })),
     http.get(`${API_BASE_URL}/projects/p1/versions`, () => HttpResponse.json(versions)),
     http.get(`${API_BASE_URL}/projects/p1/commits`, () => HttpResponse.json(commits)),
     http.get(`${API_BASE_URL}/projects/p1/members`, () => HttpResponse.json(members)),
@@ -30,9 +40,18 @@ function setup(stale: boolean, staleComponents?: string[]) {
     http.get(`${API_BASE_URL}/projects/p1/versions/:vid/components`, ({ params }) =>
       HttpResponse.json({ version_id: params.vid, components: [], counts: {}, run: null })),
     http.get(`${API_BASE_URL}/projects/p1/versions/:vid/export-readiness`, () => HttpResponse.json({
-      stale, reason: stale ? 'a correction is newer than the derived output' : 'up to date', explanation: '',
-      overrideCount: stale ? 2 : 0, pendingRenders: 0, failedRenders: 0, newestOverrideAt: null,
-      oldestDerivationAt: null, reexport: null, ...(staleComponents ? { staleComponents } : {}) })),
+      stale: outOfDate.length > 0, reason: '', explanation: '', overrideCount: 2, pendingRenders: 0, failedRenders: 0,
+      newestOverrideAt: null, oldestDerivationAt: null, reexport: null, outOfDate, approvedKept: [], writer })),
+    // A download waiting for an update follows its job (still running here).
+    http.get(`${API_BASE_URL}/projects/p1/jobs/:jobId`, ({ params }) => HttpResponse.json({ job: {
+      id: params.jobId, status: 'running', phase: 4, phase_pct: 10, current_activity: '', activity_detail: '',
+      elapsed_seconds: 1, eta_seconds: null, phases: [], commit_sha: 'abc1234', branch: 'main', version_id: 'ver3',
+      mode: 'reexport', started_at: null, completed_at: null, error_message: null,
+    } })),
+    http.post(`${API_BASE_URL}/projects/p1/versions/:vid/reexport`, async ({ request }) => {
+      sent.push(await request.json())
+      return HttpResponse.json({ job_id: 'job1', status: 'queued', version_id: 'ver3', scope: 'out_of_date', components: [], joined: false }, { status: 202 })
+    }),
   )
   const slot = document.createElement('div')
   document.body.appendChild(slot)
@@ -48,41 +67,59 @@ function setup(stale: boolean, staleComponents?: string[]) {
       </SubbarCtaProvider>
     </QueryClientProvider>,
   )
-  return slot
+  return { slot, sent, user: userEvent.setup() }
 }
 
-const STALE_ROW = 'Download DOCX: Previous Word file — the corrections are not in it yet'
-const all = documents.documents.length
+afterEach(() => {
+  useAuthStore.setState({ user: null })
+  useWordFilesStore.setState({ pending: {}, justUpdated: {} })
+})
 
-describe('DocumentsPage: Download while the Word files lack corrections', { timeout: 30_000 }, () => {
-  it('marks only the rows of the components R9 names — not an approved one — and Download All', async () => {
-    // `Full` has an in-review SWE.3 (doc1) and an approved one (doc7, its approved file).
-    const slot = setup(true, ['Full'])
-    const stale = await screen.findAllByRole('button', { name: STALE_ROW })
-    expect(stale).toHaveLength(1)
-    expect(screen.getAllByRole('button', { name: 'Download DOCX' })).toHaveLength(all - 1)
-    const downloadAll = within(slot).getByRole('button', { name: /DOWNLOAD ALL/ })
-    expect(downloadAll).toHaveAttribute('title', 'Download all: Previous Word files — the corrections are not in them yet')
-    // Said to a screen reader as text, not as a label on a plain span.
-    expect(within(downloadAll).getByText('Previous Word files — the corrections are not in them yet')).toHaveClass('sr-only')
+describe('DocumentsPage: Word files out of date', { timeout: 60_000 }, () => {
+  it("marks only the rows R9 lists; a row's Corrected file asks first, then updates its component", async () => {
+    const { sent, user } = setup({ outOfDate: [behind('doc1', 'Full', 'Full')] })
+    const dl = await screen.findByRole('button', { name: /Download DOCX \(out of date: 2 corrections not in it\)/ })
+    expect(screen.getAllByRole('button', { name: 'Download DOCX' })).toHaveLength(rows - 1)
+    await user.click(dl)
+    await user.click(await screen.findByRole('menuitem', { name: /Corrected file/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Update 1 Word file' })
+    expect(within(dialog).getByText('The download starts when it is done.')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: /^Update$/ }))
+    // The document in hand counts as the one open: a developer may update it.
+    await waitFor(() => expect(sent).toEqual([{ scope: 'out_of_date', components: ['Full'], document_id: 'doc1' }]))
+    await waitFor(() => expect(useWordFilesStore.getState().pending.job1?.[0]).toMatchObject({ docId: 'doc1' }))
   })
 
-  it('Download All is not marked when R9 names only components whose documents are all approved', async () => {
-    // `Global`'s two documents are approved: their Word files are the approved ones.
-    const slot = setup(true, ['Global'])
-    expect(await screen.findAllByRole('button', { name: 'Download DOCX' })).toHaveLength(all)
-    expect(within(slot).getByRole('button', { name: /DOWNLOAD ALL/ })).not.toHaveAttribute('title')
+  it("Download all: the files as they are, or the corrected ones — a developer's reach is the ones they review", async () => {
+    useAuthStore.setState({ user: { id: 'u2', email: 'developer@company.com', name: 'Bob' } as never })
+    const { slot, sent, user } = setup({ outOfDate: [behind('doc1', 'Full', 'Full'), behind('doc2', 'Access', 'Access')] })
+    const all = await within(slot).findByRole('button', { name: /DOWNLOAD ALL/ })
+    await waitFor(() => expect(all).toHaveAttribute('title', '2 files are out of date'))
+    await user.click(all)
+    const dialog = await screen.findByRole('dialog', { name: 'Download all Word files' })
+    expect(within(dialog).getByText('2 files are out of date.')).toBeInTheDocument()
+    expect(within(dialog).getByText('You can update the 1 you review.')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'As they are' })).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: /Corrected files/ }))
+    await waitFor(() => expect(sent).toEqual([{ scope: 'out_of_date', components: ['Full'] }]))
+    await waitFor(() => expect(useWordFilesStore.getState().pending.job1?.[0]).toMatchObject({ versionId: 'ver3' }))
   })
 
-  it('an API that does not say which components: every row but the approved ones', async () => {
-    setup(true)
-    const approved = documents.documents.filter((d) => d.status === 'approved').length
-    expect(await screen.findAllByRole('button', { name: STALE_ROW })).toHaveLength(all - approved)
+  it('while a generation holds the version, Corrected files is off and the dialog says when', async () => {
+    const { slot, user } = setup({ role: 'admin', outOfDate: [behind('doc1', 'Full', 'Full')], writer: {
+      kind: 'generation', jobId: 'j5', command: 'generate', since: null, components: null, componentsDone: null,
+      componentsTotal: null, startedBy: null } })
+    const all = await within(slot).findByRole('button', { name: /DOWNLOAD ALL/ })
+    await waitFor(() => expect(all).toHaveAttribute('title', '1 file is out of date'))
+    await user.click(all)
+    const dialog = await screen.findByRole('dialog', { name: 'Download all Word files' })
+    expect(within(dialog).getByText('Update after the generation of v1.2.0 ends.')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: /Corrected files/ })).toBeDisabled()
   })
 
   it('says nothing when the Word files are up to date', async () => {
-    const slot = setup(false)
-    expect(await screen.findAllByRole('button', { name: 'Download DOCX' })).toHaveLength(documents.documents.length)
-    expect(within(slot).getByRole('button', { name: /DOWNLOAD ALL/ })).not.toHaveAttribute('title')
+    const { slot } = setup()
+    expect(await screen.findAllByRole('button', { name: 'Download DOCX' })).toHaveLength(rows)
+    expect(await within(slot).findByRole('button', { name: /DOWNLOAD ALL/ })).not.toHaveAttribute('title')
   })
 })

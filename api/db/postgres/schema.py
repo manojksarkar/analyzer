@@ -209,6 +209,11 @@ analysis_jobs = Table(
     Column("narrowed_parse", Boolean, default=True),   # opt-OUT since narrowed parse landed
     Column("regenerated", Integer),
     Column("reused", Integer),
+    # Who started it, and why (0018; docs/design/WORD_FILE_UPDATES.md): the user an update's
+    # end is told to, and `update` | `rebuild` | `submit` | `export` | `resume` (NULL: a
+    # generation). No foreign key: a job outlives the account that started it.
+    Column("started_by", String),
+    Column("reason", String),
     Index("ix_jobs_project", "project_id"),
 )
 
@@ -256,6 +261,11 @@ documents = Table(
     Column("approved_docx_path", String),   # the copy of it kept at approval
     Column("content_fingerprint", String),  # of the rendered content, at approval
     Column("carried_from", String),         # version id an unchanged approval came from
+    # When the run that wrote this document's working Word file STARTED (0018): a correction it
+    # prints saved after this is not in the file (docs/design/WORD_FILE_UPDATES.md §4.3). Set as
+    # that run's output is stored (`engine/review/word_files.record_word_files`) and when the
+    # document is recorded; NULL for a document recorded before 0018 (the file's time is used).
+    _ts("word_file_at"),
     Index("ix_documents_version", "version_id"),
 )
 
@@ -309,11 +319,14 @@ version_components = Table(
     "version_components", metadata,
     Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), primary_key=True),
     Column("component", String, primary_key=True),   # its output folder = documents.group
-    Column("state", String, nullable=False),          # waiting|generating|generated|failed
+    Column("state", String, nullable=False),          # waiting|generating|generated|failed|stale
     _ts("requested_at"),
     _ts("started_at"),
     _ts("finished_at"),
     Column("error", Text),
+    # `stale`: the layer(s) whose addition changed this component's model (0018) -- what its
+    # Word files say ("HAL_LAYER added since"). NULL in every other state.
+    Column("stale_layers", _JSONB),
 )
 
 # The version's latest writing run and how far it got. Whether it is still ALIVE is the

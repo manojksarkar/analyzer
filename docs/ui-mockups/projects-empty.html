@@ -257,7 +257,7 @@
   .fp-folder-row.selected .fp-name { color:#0058be; font-weight:600; }
   .fp-children { margin-left:16px; border-left:1px solid #e5eeff; }
 
-  /* ── Repository source: Git URL | Local path (step 1) ── */
+  /* ── Repository source: Remote | Local (step 1) ── */
   .seg { display: inline-flex; margin-left: auto; padding: 2px; gap: 2px; background: #eff4ff; border: 1px solid #c4c6cd; border-radius: .5rem; }
   .seg-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border: none; border-radius: .375rem; background: none; cursor: pointer;
              font: 600 11px/16px 'JetBrains Mono', monospace; letter-spacing: .02em; color: #44474c; transition: background .15s, color .15s; }
@@ -465,7 +465,7 @@
                    oninput="this.classList.remove('err')">
           </div>
 
-          <!-- Where the code is: a Git URL (GitHub, GitLab, any git server) or a local path - a git
+          <!-- Where the code is: a URL (Bitbucket, GitHub, GitLab, any git server) or a local path - a git
                repository's folder on the server ArtiFex runs on. Either is read with git: branches,
                files, commits. A plain folder is refused: it must be a git repository. -->
           <div>
@@ -473,17 +473,17 @@
               <span id="repo-label">Repository URL</span> <span class="req">*</span>
               <div class="seg" role="radiogroup" aria-label="Where the repository is">
                 <button type="button" id="src-url" class="seg-btn on" role="radio" aria-checked="true" onclick="setRepoSource('url')">
-                  <span class="material-symbols-outlined">link</span>Git URL
+                  <span class="material-symbols-outlined">link</span>Remote
                 </button>
                 <button type="button" id="src-local" class="seg-btn" role="radio" aria-checked="false" onclick="setRepoSource('local')">
-                  <span class="material-symbols-outlined">folder</span>Local path
+                  <span class="material-symbols-outlined">folder</span>Local
                 </button>
               </div>
             </div>
             <div class="flex gap-2">
               <div style="position:relative;flex:1;">
                 <span id="repo-icon" class="material-symbols-outlined" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:16px;color:#74777d;pointer-events:none;">link</span>
-                <input class="inp mono" id="s1-repo" type="text" placeholder="https://github.com/org/repo.git" style="padding-left:34px;"
+                <input class="inp mono" id="s1-repo" type="text" placeholder="https://bitbucket.company.com/scm/vcu/vcu-firmware.git" style="padding-left:34px;"
                        spellcheck="false" oninput="this.classList.remove('err'); repoTyped();">
               </div>
               <!-- Local path: pick the folder instead of typing it - from the SERVER's folders (a
@@ -493,37 +493,28 @@
                 <span class="material-symbols-outlined" style="font-size:16px;">folder_open</span>BROWSE…
               </button>
             </div>
-            <!-- Local path: where the folder must be, and what it must be. -->
-            <p id="repo-local-hint" class="hidden mt-1.5 text-on-surface-variant" style="font-size:11px;line-height:16px;">
-              A git repository on the server ArtiFex runs on — the folder that holds
-              <code style="font-family:'JetBrains Mono';font-size:10.5px;">.git</code>. Type its full path, or Browse.
-            </p>
-            <!-- Git URL chosen, but a folder path typed: say so, one click to switch. -->
+            <!-- URL chosen, but a folder path typed: say so, one click to switch. -->
             <p id="repo-looks-local" class="hidden mt-1.5" style="font-size:11px;line-height:16px;color:#8a5300;">
               This looks like a folder path, not a URL.
-              <button type="button" class="text-secondary hover:underline font-medium" onclick="setRepoSource('local')">Use Local path</button>
+              <button type="button" class="text-secondary hover:underline font-medium" onclick="setRepoSource('local')">Switch to Local</button>
             </p>
           </div>
 
-          <!-- Only a private repository needs a token: a link until asked for. -->
-          <button type="button" id="token-link" onclick="openToken()" class="flex items-center gap-1 text-secondary hover:underline" style="font-size:11px;">
-            <span class="material-symbols-outlined" style="font-size:13px;">lock</span>Private repository? Add an access token
-          </button>
-          <div id="token-field" class="hidden">
-          <div>
-            <div class="lbl">
-              Access Token
-              <span class="ml-auto font-label-sm text-label-sm text-on-surface-variant normal-case tracking-normal" style="font-weight:400;">Optional — for private repos</span>
-            </div>
+          <!-- The access token: shown with a URL; not with a local path, nor with an ssh:// or git@ URL
+               (the server's own SSH key signs in). How it is sent is read from the URL, never asked:
+               Bitbucket Data Center (/scm/) as a Bearer token, bitbucket.org with the username
+               x-token-auth, GitHub and GitLab as before. A Bitbucket page address
+               (…/projects/VCU/repos/vcu-firmware/browse) becomes its clone URL on Test Connection. -->
+          <div id="token-field">
+            <div class="lbl">Access Token</div>
             <div class="relative">
-              <input class="inp mono pr-10" id="s1-token" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+              <input class="inp mono pr-10" id="s1-token" type="password" placeholder="Paste the access token"
                      oninput="repoChanged()">
               <button type="button" onclick="toggleToken()"
                       class="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors">
                 <span class="material-symbols-outlined" id="token-eye" style="font-size:17px;">visibility_off</span>
               </button>
             </div>
-          </div>
           </div>
 
           <!-- Test connection row -->
@@ -961,6 +952,7 @@ function showWizard() {
   wiz.classList.remove('hidden');
   document.getElementById('wiz-step-counter').classList.remove('hidden');
   goToStep(1);
+  showTokenField();
 }
 
 function cancelWizard() {
@@ -1487,8 +1479,8 @@ function renderImportReport() {
   if (!IMPORTED) {
     row.innerHTML = '<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border:1px dashed #c4c6cd;border-radius:.75rem;background:#fff;">'
       + '<span class="material-symbols-outlined text-secondary" style="font-size:18px;flex-shrink:0;">settings_suggest</span>'
-      + '<div style="flex:1;min-width:0;"><p style="font-size:14px;color:#0b1c30;">Have a config file? <span style="color:#44474c;">Optional</span></p>'
-      + '<p style="font-size:11px;color:#44474c;margin-top:2px;">Fills the cores and the architecture from the config <span style="' + MONO + '">analyzer.py onboard --config</span> reads. The access token is never read from it.</p></div>'
+      + '<div style="flex:1;min-width:0;"><p style="font-size:14px;color:#0b1c30;">Have a config file?</p>'
+      + '<p style="font-size:11px;color:#44474c;margin-top:2px;">Fills the project, repository, cores and architecture.</p></div>'
       + importBtn('Import config', 'upload_file', "document.getElementById('import-file').click()", true)
       + '</div>';
     return;
@@ -2398,11 +2390,6 @@ function initProject() {
   }, 900);
 }
 
-function openToken() {
-  document.getElementById('token-link').classList.add('hidden');
-  document.getElementById('token-field').classList.remove('hidden');
-  document.getElementById('s1-token').focus();
-}
 function toggleRoles(btn) {
   var l = document.getElementById('role-legend');
   var open = l.style.display === 'none';
@@ -2535,7 +2522,7 @@ function branchPicked() {
 }
 
 // ════════════════════════════════════════
-// Step 1: where the repository is - a Git URL, or a local path (a git repository on the server)
+// Step 1: where the repository is - a URL, or a local path (a git repository on the server)
 // ════════════════════════════════════════
 var REPO_SOURCE = 'url';
 var REPO_TEXT = { url: '', local: '' };   // what was typed under each choice: switching back finds it
@@ -2554,22 +2541,18 @@ function showRepoSource() {
     el.setAttribute('aria-checked', String(b[1]));
   });
   document.getElementById('repo-label').textContent = local ? 'Repository folder' : 'Repository URL';
-  document.getElementById('s1-repo').placeholder = local ? 'D:/src/vcu-firmware' : 'https://github.com/org/repo.git';
+  document.getElementById('s1-repo').placeholder = local ? 'D:/src/vcu-firmware' : 'https://bitbucket.company.com/scm/vcu/vcu-firmware.git';
   document.getElementById('repo-icon').textContent = local ? 'folder' : 'link';
-  document.getElementById('repo-local-hint').classList.toggle('hidden', !local);
   document.getElementById('repo-browse').style.display = local ? 'inline-flex' : 'none';
   document.getElementById('repo-looks-local').classList.add('hidden');
-  // A folder on the server needs no access token.
-  var tokenTyped = !!document.getElementById('s1-token').value;
-  document.getElementById('token-link').classList.toggle('hidden', local || tokenTyped);
-  document.getElementById('token-field').classList.toggle('hidden', local || !tokenTyped);
+  showTokenField();
 }
 
 function setRepoSource(src) {
   if (src === REPO_SOURCE) return;
   var el = document.getElementById('s1-repo');
   REPO_TEXT[REPO_SOURCE] = el.value;
-  // A path typed under Git URL goes along to Local path.
+  // A path typed under Remote goes along to Local.
   var carry = src === 'local' && looksLocal(el.value) && !REPO_TEXT.local;
   el.value = carry ? el.value : REPO_TEXT[src];
   if (carry) REPO_TEXT.url = '';
@@ -2583,7 +2566,44 @@ function setRepoSource(src) {
 function repoTyped() {
   var v = document.getElementById('s1-repo').value;
   document.getElementById('repo-looks-local').classList.toggle('hidden', !(REPO_SOURCE === 'url' && looksLocal(v)));
+  showTokenField();
   repoChanged();
+}
+
+// ════════════════════════════════════════
+// URL: the host, read from the address - it says how the access token is sent (never asked)
+// ════════════════════════════════════════
+function repoHost(v) {
+  var u = (v || '').trim();
+  if (REPO_SOURCE !== 'url' || !u || looksLocal(u)) return null;
+  if (/^ssh:\/\/|^[\w.-]+@[\w.-]+:/i.test(u)) return { name: 'SSH', ssh: true };     // the server's SSH key
+  if (/^https?:\/\/(www\.)?bitbucket\.org\//i.test(u)) return { name: 'Bitbucket Cloud' };
+  if (/\/scm\/|\/(projects|users)\/[^/]+\/repos\//i.test(u)) return { name: 'Bitbucket Data Center' };
+  return { name: 'Git server' };
+}
+
+// A Bitbucket Data Center page address -> the repository's clone URL ('' for anything else):
+//   https://host[/ctx]/projects/VCU/repos/vcu-firmware/browse/src -> https://host[/ctx]/scm/vcu/vcu-firmware.git
+//   https://host/users/developer/repos/tools                       -> https://host/scm/~developer/tools.git
+function bitbucketCloneUrl(v) {
+  var m = /^(https?:\/\/[^?#]+?)\/(projects|users)\/([^/?#]+)\/repos\/([^/?#]+)/i.exec((v || '').trim());
+  if (!m) return '';
+  return m[1] + '/scm/' + (m[2].toLowerCase() === 'users' ? '~' : '') + m[3].toLowerCase() + '/' + m[4] + '.git';
+}
+
+// No token box for a folder on the server, nor for an SSH URL.
+function showTokenField() {
+  var host = repoHost(document.getElementById('s1-repo').value);
+  document.getElementById('token-field').classList.toggle('hidden', REPO_SOURCE === 'local' || !!(host && host.ssh));
+}
+
+// What a private repository answers - simulated: Bitbucket asks for a token (its repositories
+// here are private), and a token with "bad" in it is refused.
+function authAnswer(host) {
+  var tok = document.getElementById('s1-token').value.trim();
+  if (/^Bitbucket/.test(host.name) && !tok) return 'Authentication failed — this repository needs an access token.';
+  if (/bad/i.test(tok)) return 'Authentication failed — check the access token.';
+  return '';
 }
 
 // ════════════════════════════════════════
@@ -2720,6 +2740,9 @@ function repoChanged() {
 function testConnection() {
   var repoEl = document.getElementById('s1-repo');
   if (REPO_SOURCE === 'local') repoEl.value = cleanPath(repoEl.value);
+  // A Bitbucket page address: its clone URL goes into the box, and is what is connected to.
+  var clone = REPO_SOURCE === 'url' ? bitbucketCloneUrl(repoEl.value) : '';
+  if (clone) repoEl.value = clone;
   var url = repoEl.value.trim();
   if (!url) {
     document.getElementById('s1-repo').classList.add('err');
@@ -2740,6 +2763,10 @@ function testConnection() {
     btn.style.opacity = '';
     var refused = REPO_SOURCE === 'local' ? localAnswer(url) : '';
     if (refused) { connectFailed(refused); return; }
+    // A private repository without a token, or with a wrong one: the token field opens.
+    var host = repoHost(url);
+    var authFailed = host && !host.ssh ? authAnswer(host) : '';
+    if (authFailed) { connectFailed(authFailed); document.getElementById('s1-token').focus(); return; }
 
     // Simulate success with the sample repository's branches; the default branch is picked.
     var branches = SAMPLE_BRANCHES;

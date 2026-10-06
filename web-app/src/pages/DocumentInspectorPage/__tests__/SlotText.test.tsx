@@ -75,7 +75,7 @@ describe('SlotText (a text a reviewer can correct)', () => {
     expect(edit.undo).toHaveBeenCalledWith(corrected)
   })
 
-  it('is read-only while a run or re-export is going', () => {
+  it('is read-only while a run or an update of its Word file is going', () => {
     renderWith(api({ locked: true }))
     expect(screen.getByRole('textbox')).toHaveAttribute('readonly')
   })

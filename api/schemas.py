@@ -213,6 +213,12 @@ class PhaseView(BaseModel):
     duration_seconds: Optional[float] = None
 
 
+class JobStarterView(BaseModel):
+    user_id: str
+    name: str
+    initials: Optional[str] = None
+
+
 class JobView(BaseModel):
     id: str
     status: str
@@ -233,6 +239,10 @@ class JobView(BaseModel):
     # "auto" | "full" for a generation; "reexport" for a re-export, a job of its own whose
     # phases are 3 and 4 only (3 is "skipped" when there was nothing to re-derive).
     mode: Optional[str] = None
+    # Who started it, and why: update | rebuild | submit | export | resume; null for a generation
+    # (docs/design/WORD_FILE_UPDATES.md §4.1).
+    started_by: Optional[JobStarterView] = None
+    reason: Optional[str] = None
 
 
 class StartJobResponse(BaseModel):
@@ -241,9 +251,13 @@ class StartJobResponse(BaseModel):
 
 
 class ReexportVersionResponse(BaseModel):
-    job_id: str             # the re-export job: follow it with GET /jobs/{job_id} or /events
-    status: str             # "queued"
+    """docs/design/WORD_FILE_UPDATES.md §4.1."""
+    job_id: Optional[str] = None  # the update job to follow (GET /jobs/{job_id}); null: up_to_date
+    status: str             # "queued" | "running" (joined) | "up_to_date"
     version_id: str
+    scope: Optional[str] = None             # "out_of_date" | "all"
+    components: List[str] = []              # the components it writes
+    joined: bool = False                    # a running update already covered the request
 
 
 class JobResponse(BaseModel):
@@ -552,6 +566,9 @@ class TestConnectionResponse(BaseModel):
     default_branch: Optional[str] = None
     branches: List[str]
     message: str
+    # The URL git was given, on success and failure alike: a Bitbucket page address becomes its
+    # clone URL, a local path the path as git reads it. The wizard puts it in the box.
+    repo_url: str
 
 
 class LocalFolder(BaseModel):

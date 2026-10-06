@@ -7,8 +7,8 @@ import type { Document } from '../../../types'
 const bob = { userId: 'u2', name: 'Bob Kumar', initials: 'BK' }
 const doc = (status: Document['status'], reviewer: typeof bob | null = bob) => ({ status, reviewer })
 
-const admin: ReviewCtx = { isAdmin: true, meId: 'u1', wordFileStale: false, reexporting: false }
-const dev: ReviewCtx = { isAdmin: false, meId: 'u2', wordFileStale: false, reexporting: false }   // Bob
+const admin: ReviewCtx = { isAdmin: true, meId: 'u1' }
+const dev: ReviewCtx = { isAdmin: false, meId: 'u2' }   // Bob
 const otherDev: ReviewCtx = { ...dev, meId: 'u3' }
 
 describe('reviewAction — admin', () => {
@@ -25,11 +25,9 @@ describe('reviewAction — admin', () => {
     expect(a.kind).toBe('decide')
     expect(a.approveBlocked).toBeNull()
   })
-  it('ready, but the Word file lacks corrections: Approve is off, and says why', () => {
-    expect(reviewAction(doc('submitted'), { ...admin, wordFileStale: true }).approveBlocked)
-      .toBe('Re-export first: the approved Word file must have every correction')
-    expect(reviewAction(doc('submitted'), { ...admin, reexporting: true }).approveBlocked)
-      .toBe('Wait for the re-export to finish')
+  it('Approve… stays on whatever the Word file says: its dialog offers to update it first (D10)', () => {
+    expect(reviewAction(doc('submitted'), admin).approveBlocked).toBeNull()
+    expect(reviewAction(doc('in_review'), admin).approveBlocked).toBeNull()
   })
   it('in review: submit for its reviewer, or approve directly', () => {
     const a = reviewAction(doc('in_review'), admin)

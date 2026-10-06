@@ -155,9 +155,25 @@ test that catches it: [REVIEW_UPDATE_HANDOVER §4](docs/design/REVIEW_UPDATE_HAN
 - **Review and approval** (assign, submit, approve — [REVIEW_APPROVE_API_SPEC](docs/spec/REVIEW_APPROVE_API_SPEC.md))
   is API-side, but two engine-side things carry it: `analyzer.py generate` records the version's
   documents for review at its end (`_register_for_review` → `api/services/document_registry.py`;
-  `analyzer.py register` by hand), and approving a document asks `export_guard.staleness(…, component=)`
-  whether ITS Word file has every correction. Keep both: a CLI run that records no documents has nothing
-  to review, and a guard asked for the whole version blocks every approval while any component is stale.
+  `analyzer.py register` by hand), and **"out of date" is the Word file's, by one rule** —
+  `review/word_files.py` `states`: a correction it prints saved after `documents.word_file_at` (when the
+  run that wrote the .docx started), a layer added since (`version_components` `stale`), or a picture of
+  its component still being drawn. Approve, R9/A15, the update's scope and Submit ask it (through
+  `api/services/word_files.py`), not `export_guard.staleness` — that stays the CLI's export backstop; its
+  stamps called a SWE.4 file current while the .docx was the old one. Keep both: a CLI run that records
+  no documents has nothing to review, and a second rule makes Approve and R9 disagree
+  ([WORD_FILE_UPDATES](docs/design/WORD_FILE_UPDATES.md) §4.3).
+- **A run by component stores only what it rebuilt.** `capture_output(components=, since=)` →
+  `persist_output_files(groups=)` replaces those components' rows only; the stamps are rebuilt from the
+  stored records (`stamp_stored_derivations`), and `record_word_files` sets `word_file_at` for the .docx
+  it wrote. `reexport`, `export`, `resume` by component and the web re-export pass both; a generation
+  passes neither (the whole version). A new capture of some components that passes none reverts a save
+  made meanwhile in another one (`test_word_files.py::TestARunStoresOnlyWhatItRebuilt`).
+- **A Word file is written whole:** `docx_common.save_docx` (temp file, then `os.replace`) in both
+  exporters, never `doc.save(path)` — a download, or Approve keeping the file, must not meet half of one.
+- **`analysis_jobs.started_by` / `.reason`** (migration 0018): who started a job and why (`update`,
+  `rebuild`, `submit`, `export`, `resume`; NULL for a generation) — an update's end is told to its
+  starter. A new kind of job sets both.
 
 ## Definition of done — every output-rule change
 

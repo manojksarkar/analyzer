@@ -16,8 +16,8 @@ import { LAST_ADMIN_REASON, asksBeforeRoleChange, isLastAdmin, type MemberChange
 
 // Two roles, no reviewer role: whoever is assigned to a document reviews it (REVIEW_APPROVE_DESIGN).
 const ACCESS = [
-  { role: 'admin' as UserRole, perms: 'Run analysis · Re-export · Manage team · Assign reviewers · Approve, request changes, reopen documents · Configure project settings' },
-  { role: 'developer' as UserRole, perms: "View and download documents · Correct the LLM's text · Review the documents assigned to them · Submit for approval · Claim an unassigned document" },
+  { role: 'admin' as UserRole, perms: 'Run analysis · Update and rebuild Word files · Manage team · Assign reviewers · Approve, request changes, reopen documents · Configure project settings' },
+  { role: 'developer' as UserRole, perms: "View and download documents · Correct the LLM's text · Review the documents assigned to them · Update their Word files · Submit for approval · Claim an unassigned document" },
 ]
 
 export function TeamPage() {

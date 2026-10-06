@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   assignmentsOf, baseName, browseStart, cleanPath, coreInput, coreProblems, draftToCores, draftToLayers, fitsCoreFile,
-  folderCrumbs, indexTree, looksLocal, matchFolder, newCore, nextCoreName, openWants, ownerOf, pathProblems,
+  folderCrumbs, indexTree, isSignInFailure, isSshUrl, looksLocal, matchFolder, newCore, nextCoreName, openWants, ownerOf, pathProblems,
   settingsSummary, type WantedFile,
 } from '../helpers'
 import type { DraftCore } from '../../../types'
@@ -223,7 +223,7 @@ describe('pathProblems', () => {
   })
 })
 
-/* Step 1's repository is a Git URL or a local path: a git repository's folder on the server. */
+/* Step 1's repository is Remote (a URL) or Local: a git repository's folder on the server. */
 describe('cleanPath', () => {
   it('drops blanks and the quotes of Explorer\'s "Copy as path"', () => {
     expect(cleanPath('  "D:\\src\\vcu-firmware"  ')).toBe('D:\\src\\vcu-firmware')
@@ -243,6 +243,34 @@ describe('looksLocal', () => {
     for (const p of ['https://github.com/org/repo.git', 'git@github.com:org/repo.git', 'src/vcu', 'D:', '', '  ']) {
       expect(looksLocal(p)).toBe(false)
     }
+  })
+})
+
+/* The access token is asked for with every remote URL but an SSH one: the server's key signs in. */
+describe('isSshUrl', () => {
+  it('ssh:// and user@host: remotes are SSH', () => {
+    for (const u of ['ssh://git@bitbucket.company.com:7999/vcu/vcu-firmware.git', 'SSH://host/repo.git',
+      'git@bitbucket.org:team/repo.git', 'git@github.com:org/repo.git', 'build.bot@git.company-x.com:vcu/repo.git',
+      '  git@host:repo.git  ']) {
+      expect(isSshUrl(u)).toBe(true)
+    }
+  })
+  it('an http(s) URL, a page address, a folder or nothing is not', () => {
+    for (const u of ['https://bitbucket.company.com/scm/vcu/vcu-firmware.git', 'https://github.com/org/repo.git',
+      'https://user@bitbucket.company.com/scm/vcu/repo.git', 'https://host/projects/VCU/repos/vcu-firmware/browse',
+      'D:/src/vcu-firmware', 'D:\\src\\vcu', '/home/build/vcu', 'file:///D:/src/vcu', '', '  ']) {
+      expect(isSshUrl(u)).toBe(false)
+    }
+  })
+})
+
+describe('isSignInFailure', () => {
+  it("the server's two sign-in answers, and nothing else", () => {
+    expect(isSignInFailure('Authentication failed — this repository needs an access token.')).toBe(true)
+    expect(isSignInFailure('Authentication failed — check the access token.')).toBe(true)
+    expect(isSignInFailure('Could not reach the remote — check the URL and your network.')).toBe(false)
+    expect(isSignInFailure('Repository not found — check the URL (and token for private repos).')).toBe(false)
+    expect(isSignInFailure('')).toBe(false)
   })
 })
 

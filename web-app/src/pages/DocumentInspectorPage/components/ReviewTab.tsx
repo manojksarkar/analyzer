@@ -1,24 +1,27 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Avatar, Button, Icon, StatusBadge, Text } from '../../../components/ui'
 import { useClaimDocument, useDocumentEvents, useSubmitForApproval } from '../../../hooks/useApproval'
-import { useReexportVersion } from '../../../hooks/useReview'
 import { cn } from '../../../lib/cn'
 import { formatDateTime } from '../../../lib/format'
-import { describeEvent, eventMeta, shortHash, wordFileOutOfDate } from '../../../lib/reviewStatus'
+import { describeEvent, eventMeta, shortHash } from '../../../lib/reviewStatus'
+import {
+  cap, failureFor, isUpdating, outOfDateWhy, ownOutOfDate, updateBlocked,
+  type FailedUpdate, type Retry, type UpdateAsk, type Wording,
+} from '../../../lib/wordFiles'
 import type { Document, ExportReadiness, ReviewEvent } from '../../../types'
 import { MAX_COMMENT, reviewAction, type ReviewCtx } from '../review'
 
 /* The reader's Review tab (documents.html renderReviewTab): the document's state, its reviewer,
-   whether its Word file has every correction (R9 for its component and type), the one action
-   this role can take now, and the activity that is the review record (A10). Every document has
-   it, SWE.3 and SWE.4 alike. */
+   whether its Word file has every correction (A15: R9 for this document), the one action this
+   role can take now, and the activity that is the review record (A10). Every document has it,
+   SWE.3 and SWE.4 alike. */
 
 export function ReviewTab({
-  projectId, versionId, doc, versionTag, ctx, readiness, readinessFailed, corrections, isSwe3, nameOf,
-  onAssign, onApprove, onChanges, onReopen, onSubmitted,
+  projectId, doc, versionTag, ctx, readiness, readinessFailed, corrections, isSwe3, nameOf, words,
+  onAssign, onApprove, onChanges, onReopen, onSubmitted, onUpdate, retryFor = () => ({ kind: 'here' }),
 }: {
   projectId: string
-  versionId: string
   doc: Document
   /** The document's version, as its cover names it. */
   versionTag: string
@@ -31,17 +34,23 @@ export function ReviewTab({
   corrections: number | null
   isSwe3: boolean
   nameOf: (userId: string) => string | undefined
+  /** The version's tag and its components' names, for what the Word file row and Submit say. */
+  words: Wording
   onAssign: () => void
   onApprove: () => void
   onChanges: () => void
   onReopen: () => void
   /** After a submit: edit mode closes. */
   onSubmitted: () => void
+  /** Update (or Try again): the confirm dialog says what it writes. */
+  onUpdate: (ask: UpdateAsk) => void
+  /** Whether a failed update's Try again reaches from here, or from which document (lib/wordFiles
+   *  retryOf). An admin's always does. */
+  retryFor?: (f: FailedUpdate) => Retry
 }) {
   const { data: events, isLoading: eventsLoading } = useDocumentEvents(projectId, doc.id)
   const claim = useClaimDocument(projectId)
   const submit = useSubmitForApproval(projectId)
-  const reexport = useReexportVersion(projectId, versionId)
   const [comment, setComment] = useState('')
   const [nudge, setNudge] = useState(false)
 
@@ -53,32 +62,45 @@ export function ReviewTab({
   function doSubmit() {
     const c = comment.trim()
     if (!c) { setNudge(true); return }
-    submit.mutate({ docId: doc.id, comment: c }, { onSuccess: () => { setComment(''); setNudge(false); onSubmitted() } })
+    submit.mutate({ docId: doc.id, comment: c, words }, { onSuccess: () => { setComment(''); setNudge(false); onSubmitted() } })
   }
 
-  /* ── the Word file: up to date, missing corrections, or being rebuilt ── */
-  const word = ctx.reexporting ? <span className="text-[#b45309]">re-exporting…</span>
-    : !readiness ? <span className="text-outline">{readinessFailed ? 'not checked' : '…'}</span>
-      : wordFileOutOfDate(readiness) ? (
-        <>
-          <span className="text-[#b45309]" title={readiness.explanation ?? undefined}>
-            {readiness.pendingRenders && !readiness.overrideCount
-              ? `${readiness.pendingRenders} picture${readiness.pendingRenders === 1 ? '' : 's'} missing`
-              : 'corrections missing'}
-          </span>
-          {ctx.isAdmin && (
-            <button
-              type="button"
-              disabled={reexport.isPending}
-              onClick={() => reexport.mutate()}
-              title="Re-export the version's Word files"
-              className="text-secondary font-mono text-label font-semibold hover:underline disabled:opacity-50"
-            >
-              Re-export
-            </button>
-          )}
-        </>
-      ) : <span className="text-[#00a572]">up to date</span>
+  /* ── the Word file: Up to date · Out of date (why) Update · Updating… · Update failed Try again ·
+     Approved. Update and Try again are off, the reason in their tooltip, while nothing can start. ── */
+  const own = ownOutOfDate(readiness, doc)
+  const stale = !!own
+  const failed = failureFor(readiness, ctx.meId, doc, stale)
+  const retry = failed ? retryFor(failed) : null
+  const blocked = stale && doc.group ? updateBlocked(readiness, [doc.group], words) : ''
+  const kept = readiness?.approvedKept?.some((f) => f.documentId === doc.id)
+  const word = doc.status === 'approved'
+    ? <span title={kept ? 'A later correction is not in it. Reopen to take it.' : undefined}>Approved</span>
+    // A15 failed closed: never "Up to date" from an error.
+    : !readiness ? (readinessFailed
+      ? <span className="text-error" title="Its Word file could not be checked.">Can’t tell</span>
+      : <span className="text-outline">…</span>)
+      : isUpdating(readiness, doc) ? <span className="text-[#b45309]">Updating…</span>
+        : failed ? (
+          <WordState
+            state={<span className="text-error" title={failed.why}>Update failed</span>}
+            act={retry?.kind === 'here' ? (
+              <WordAct label="Try again" blocked={blocked}
+                onClick={() => onUpdate({ components: failed.rebuild ? null : failed.components, rebuild: failed.rebuild })} />
+            ) : retry?.kind === 'open' ? (
+              // A developer's update from a document they do not review reaches it only from there.
+              <Link to={`/projects/${projectId}/documents/${retry.docId}`} title="Open it to try again"
+                className="text-secondary font-mono text-label font-semibold hover:underline">
+                Open {retry.label}
+              </Link>
+            ) : null}
+          />
+        ) : stale && own ? (
+          <WordState
+            state={<span className="text-[#b45309]" title={cap(outOfDateWhy(own))}>Out of date ({outOfDateWhy(own, true)})</span>}
+            act={<WordAct label="Update" blocked={blocked} title="Updates its SWE.3 and SWE.4"
+              onClick={() => onUpdate({ components: doc.group ? [doc.group] : null })} />}
+          />
+        ) : <span className="text-[#00a572]">Up to date</span>
 
   /* ── the one action ── */
   let body: React.ReactNode
@@ -239,6 +261,23 @@ function TimelineItem({ e, last, nameOf, meId }: {
       {sha && <p className="font-mono text-label text-outline mt-0.5 break-all">Word file sha256 {shortHash(sha)}</p>}
       <p className="font-mono text-label text-outline mt-0.5">{formatDateTime(e.at)}</p>
     </li>
+  )
+}
+
+/** A Word file state with its action under it (the panel is narrow). */
+function WordState({ state, act }: { state: React.ReactNode; act: React.ReactNode }) {
+  return <span className="flex flex-col items-end gap-px">{state}{act}</span>
+}
+
+/** Update / Try again: a link, or off with its reason in the tooltip. */
+function WordAct({ label, blocked, title, onClick }: { label: string; blocked: string; title?: string; onClick: () => void }) {
+  if (blocked) {
+    return <span title={blocked} className="font-mono text-label font-semibold text-outline-variant cursor-not-allowed">{label}</span>
+  }
+  return (
+    <button type="button" onClick={onClick} title={title} className="text-secondary font-mono text-label font-semibold hover:underline">
+      {label}
+    </button>
   )
 }
 

@@ -11,10 +11,6 @@ export interface ReviewCtx {
   isAdmin: boolean
   /** The signed-in user's id. */
   meId: string
-  /** R9 for this document's component and type: its Word file lacks corrections. */
-  wordFileStale: boolean
-  /** A re-export of the version is running. */
-  reexporting: boolean
 }
 
 export type ReviewVerb = 'assign' | 'claim' | 'submit' | 'approve' | 'changes' | 'reopen'
@@ -42,10 +38,10 @@ export function whyNot(verb: ReviewVerb, doc: Doc, ctx: ReviewCtx): string | nul
       if (!doc.reviewer) return 'It needs a reviewer first'
       return admin || isMine(doc, ctx) ? null : 'Only its reviewer submits it'
     case 'approve':
+      // A Word file out of date (or updating) does not turn Approve… off: its dialog offers to
+      // update it first, and Approve turns on when that is done (WORD_FILE_UPDATES D10).
       if (!admin) return 'Only an admin approves'
-      if (doc.status !== 'submitted' && doc.status !== 'in_review') return 'It is not waiting for approval'
-      if (ctx.reexporting) return 'Wait for the re-export to finish'
-      return ctx.wordFileStale ? 'Re-export first: the approved Word file must have every correction' : null
+      return doc.status !== 'submitted' && doc.status !== 'in_review' ? 'It is not waiting for approval' : null
     case 'changes':
       if (!admin) return 'Only an admin requests changes'
       return doc.status !== 'submitted' ? 'Only a document ready for approval' : null
