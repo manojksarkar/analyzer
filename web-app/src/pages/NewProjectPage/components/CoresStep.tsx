@@ -24,7 +24,7 @@ function FolderFill({ open, result, busy, onPick }: {
   useEffect(() => { input.current?.setAttribute('webkitdirectory', '') }, [])
   const left = [...(result?.missing ?? []), ...(result?.unsure ?? [])]
   return (
-    <div className="p-3.5 border border-dashed border-outline-variant rounded-xl bg-white">
+    <div className="p-3.5 border border-dashed border-outline-variant rounded-xl bg-surface-container-lowest">
       <div className="flex items-center gap-3">
         <Icon name="folder_open" size={18} className="text-secondary flex-shrink-0" />
         <div className="flex-1 min-w-0">
@@ -49,15 +49,15 @@ function FolderFill({ open, result, busy, onPick }: {
       </div>
       {result && !busy && (
         <div className="mt-2 ml-[30px] space-y-0.5 text-caption">
-          <p className="flex items-center gap-1 text-[#00a572]">
+          <p className="flex items-center gap-1 text-success">
             <Icon name="check_circle" size={13} fill />
             <span><b className="font-mono">{result.folder}</b>: {result.added} file{result.added === 1 ? '' : 's'} added</span>
           </p>
           {result.missing.length > 0 && (
-            <p className="text-[#b45309]">Not in it: {result.missing.join(', ')}</p>
+            <p className="text-warn">Not in it: {result.missing.join(', ')}</p>
           )}
           {result.unsure.length > 0 && (
-            <p className="text-[#b45309]">More than one file fits, so none was taken: {result.unsure.join(', ')}</p>
+            <p className="text-warn">More than one file fits, so none was taken: {result.unsure.join(', ')}</p>
           )}
           {left.length > 0 && <p className="text-on-surface-variant">Upload {left.length === 1 ? 'it' : 'them'} below.</p>}
         </div>
@@ -89,7 +89,7 @@ function FileControl({ slot, file, want, icon, busy, onPick, onClear }: {
     return (
       <>
         <div className="file-pill">
-          <Icon name={icon} size={18} fill className="text-[#00a572]" />
+          <Icon name={icon} size={18} fill className="text-success" />
           <span className="n" title={file.fileName}>{file.fileName}</span>
           <span className="z">{(file.size / 1024).toFixed(1)} KB</span>
           <button type="button" className="pill-btn" onClick={choose} disabled={busy} title="Replace">
@@ -293,7 +293,7 @@ export function CoresReview({ cores, layers }: { cores: Core[]; layers: Layer[] 
             <div className="flex items-center gap-1.5">
               <Icon name="memory" size={14} className="text-secondary" />
               <span className="font-mono text-caption font-bold text-on-surface">{c.name.trim() || '—'}</span>
-              <span className={cn('ml-auto font-mono text-label', used.length ? 'text-on-surface-variant' : 'text-[#b45309]')}>
+              <span className={cn('ml-auto font-mono text-label', used.length ? 'text-on-surface-variant' : 'text-warn')}>
                 {used.length ? `used by ${used.join(', ')}` : 'no layer uses it'}
               </span>
             </div>

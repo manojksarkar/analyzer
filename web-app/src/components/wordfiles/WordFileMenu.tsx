@@ -31,7 +31,7 @@ export function WordFileMenu({ trigger, items, label }: {
           align="end"
           sideOffset={4}
           aria-label={label}
-          className="z-50 w-60 bg-white rounded-xl border border-outline-variant shadow-[0_4px_16px_rgba(4,22,39,.14)] p-1"
+          className="z-50 w-60 bg-surface-container-lowest rounded-xl border border-outline-variant shadow-[0_4px_16px_rgba(4,22,39,.14)] p-1"
         >
           {items.map((item) => (
             <DropdownMenu.Item

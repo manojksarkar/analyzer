@@ -35,7 +35,7 @@ export function WordFilesRow({
   }
 
   let icon = 'warning'
-  let tone = 'text-[#b45309]'
+  let tone = 'text-warn'
   let text: React.ReactNode
   let action: React.ReactNode = null
   if (state.kind === 'unknown') {
@@ -51,7 +51,7 @@ export function WordFilesRow({
     const f = state.failure
     const retry = state.retry
     icon = 'error'
-    tone = 'text-error'
+    tone = 'text-warn'
     text = (
       <>
         <b className="font-semibold text-on-surface">Update failed</b> — {f.why}
@@ -104,7 +104,7 @@ function RowButton({ label, blocked, onClick }: { label: string; blocked: string
     // The tooltip sits on a wrapper: a disabled button gets no pointer events.
     <span title={blocked || undefined} className="flex-shrink-0">
       <Button variant="outline" size="sm" disabled={!!blocked} onClick={onClick}
-        className="h-auto py-1.5 rounded-[6px] bg-white whitespace-nowrap">
+        className="h-auto py-1.5 rounded-[6px] bg-surface-container-lowest whitespace-nowrap">
         {label}
       </Button>
     </span>

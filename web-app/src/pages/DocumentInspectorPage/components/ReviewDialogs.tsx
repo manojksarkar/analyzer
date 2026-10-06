@@ -88,7 +88,7 @@ function WordFileLine({ projectId, versionId, doc, readiness, readinessFailed, m
   const own = ownOutOfDate(readiness, doc)
   if (isUpdating(readiness, doc) || update.isPending) {
     return (
-      <p className="flex items-start gap-1.5 text-[#92400e]">
+      <p className="flex items-start gap-1.5 text-state-warn">
         <Icon name="autorenew" size={14} className="mt-[3px] flex-shrink-0" />Updating its Word file…
       </p>
     )
@@ -104,7 +104,7 @@ function WordFileLine({ projectId, versionId, doc, readiness, readinessFailed, m
   const why = doc.group ? updateBlocked(readiness, [doc.group], words) : ''
   return (
     <>
-      <p className="flex items-start gap-1.5 text-[#92400e]">
+      <p className="flex items-start gap-1.5 text-state-warn">
         <Icon name={failed ? 'error' : 'warning'} size={14} className="mt-[3px] flex-shrink-0" />
         <span>
           {failed ? 'Update failed.' : 'Its Word file is out of date.'}
@@ -156,7 +156,7 @@ export function ApproveDialog({
   return (
     <Modal open onClose={onClose} title={`Approve ${docLabel(doc)}`} className="max-w-[460px]">
       <div className="-mt-3 space-y-3">
-        <div className="rounded-xl border border-[#b9cdf5] bg-surface-container-low px-3 py-2.5 text-xs text-on-surface leading-[1.7]">
+        <div className="rounded-xl border border-info-line bg-surface-container-low px-3 py-2.5 text-xs text-on-surface leading-[1.7]">
           <p className="flex items-start gap-1.5">
             <Icon name="person" size={14} className="mt-[3px] flex-shrink-0" />
             <span>
@@ -185,7 +185,7 @@ export function ApproveDialog({
           loading={approve.isPending}
           disabled={waiting}
           onClick={() => approve.mutate({ docId: doc.id, comment: comment.trim() || null }, { onSuccess: () => { onDone?.(); onClose() } })}
-          className="bg-[#00a572] hover:bg-[#008a5f] disabled:bg-[#00a572]/40"
+          className="bg-on-tertiary-container hover:bg-[#008a5f] disabled:bg-on-tertiary-container/40"
         >
           <Icon name="check_circle" size={14} />Approve
         </Button>
@@ -214,7 +214,7 @@ export function RequestChangesDialog({ projectId, doc, onClose }: { projectId: s
           loading={send.isPending}
           disabled={!comment.trim()}
           onClick={() => send.mutate({ docId: doc.id, comment: comment.trim() }, { onSuccess: onClose })}
-          className="border-[#f5a3a3] text-error hover:bg-[#fff1f0]"
+          className="border-violet-line text-violet hover:bg-violet-bg"
         >
           <Icon name="undo" size={14} />Request changes
         </Button>

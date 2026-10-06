@@ -40,7 +40,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             aria-invalid={!!error}
             aria-describedby={error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined}
             className={cn(
-              'w-full h-10 rounded-xl border bg-white text-sm text-on-surface placeholder:text-on-surface-variant/60',
+              'w-full h-10 rounded-xl border bg-surface-container-lowest text-sm text-on-surface placeholder:text-on-surface-variant/60',
               'transition-colors focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary',
               error ? 'border-error focus:ring-error' : 'border-outline-variant',
               leadingIcon ? 'pl-9' : 'pl-3',

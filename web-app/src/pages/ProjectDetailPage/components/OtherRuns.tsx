@@ -28,7 +28,7 @@ export function OtherRuns({ projectId, exceptVersionIds = [] }: {
       {runs.map((r) => {
         const what = `${r.command || 'run'} into ${r.versionTag}`
         return r.alive ? (
-          <div key={r.versionId} role="status" className="flex items-center gap-3 px-4 py-3 rounded-xl border border-outline-variant bg-white">
+          <div key={r.versionId} role="status" className="flex items-center gap-3 px-4 py-3 rounded-xl border border-outline-variant bg-surface-container-lowest">
             <Icon name="autorenew" size={16} className="text-secondary animate-spin flex-shrink-0" />
             <p className="flex-1 min-w-0 font-mono text-caption text-on-surface">
               <b className="font-semibold">Running {what}</b>{progress(r)}
@@ -37,15 +37,15 @@ export function OtherRuns({ projectId, exceptVersionIds = [] }: {
             </p>
           </div>
         ) : (
-          <div key={r.versionId} role="status" className="flex items-start gap-3 px-4 py-3 rounded-xl border bg-[#fffbeb] border-[#fcd34d]">
-            <Icon name="warning" size={16} className="text-[#b45309] flex-shrink-0 mt-px" />
+          <div key={r.versionId} role="status" className="flex items-start gap-3 px-4 py-3 rounded-xl border bg-warn-bg border-state-warn-line">
+            <Icon name="warning" size={16} className="text-warn flex-shrink-0 mt-px" />
             <div className="min-w-0">
-              <p className="font-mono text-caption text-[#92400e]">
+              <p className="font-mono text-caption text-state-warn">
                 <b className="font-semibold">Stopped:</b> {what} stopped
                 {r.progressAt || r.startedAt ? ` ${relativeTime(r.progressAt ?? r.startedAt)}` : ''} before it finished
                 {progress(r)}. Resume it on the server:
               </p>
-              <code className="block mt-1 font-mono text-label text-[#92400e] bg-[#fef3c7] px-1.5 py-0.5 rounded-[3px] break-all select-all">
+              <code className="block mt-1 font-mono text-label text-state-warn bg-highlight px-1.5 py-0.5 rounded-[3px] break-all select-all">
                 python analyzer.py resume --project-id {projectId} --version-id {r.versionId} --detach
               </code>
             </div>

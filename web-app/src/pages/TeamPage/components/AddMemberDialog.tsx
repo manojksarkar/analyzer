@@ -117,7 +117,7 @@ export function AddMemberDialog({
                 else if (newAddress) setPicked(newPerson(newAddress))
               }}
               placeholder="Search people, or type an email"
-              className="w-full h-11 px-3 border border-outline-variant rounded-xl bg-white focus:outline-none focus:border-secondary text-sm"
+              className="w-full h-11 px-3 border border-outline-variant rounded-xl bg-surface-container-lowest focus:outline-none focus:border-secondary text-sm"
             />
             <div className="mt-2 max-h-[264px] overflow-y-auto space-y-1.5 pr-0.5">
               {isLoading && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-11" />)}

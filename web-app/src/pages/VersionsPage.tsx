@@ -57,7 +57,7 @@ export function VersionsPage() {
   ]
 
   return (
-    <div className="flex-1 overflow-y-auto bg-surface-container-low">
+    <div className="flex-1 overflow-y-auto bg-page">
       <div className="p-6 max-w-[860px] mx-auto">
 
         {/* ── Versions card ── */}
@@ -127,7 +127,7 @@ export function VersionsPage() {
           <div className="px-5 py-3.5 border-b border-outline-variant flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <Text as="h2" variant="heading" className="text-on-surface">Untagged Commits</Text>
-              {!commitsLoading && <span className="font-mono text-label font-bold bg-[#f3f4f6] text-on-surface-variant px-2 py-0.5 rounded-full">{untagged.length}</span>}
+              {!commitsLoading && <span className="font-mono text-label font-bold bg-muted text-on-surface-variant px-2 py-0.5 rounded-full">{untagged.length}</span>}
             </div>
             <Text as="p" variant="caption" className="font-mono">Commits without a version tag</Text>
           </div>
@@ -140,13 +140,13 @@ export function VersionsPage() {
               untagged.map((c, i, arr) => (
                 <button key={c.sha} onClick={() => tagCommit(c)} title="Tag this commit as a version" className="w-full text-left flex transition-colors hover:bg-surface-container-low px-4">
                   <div className="flex flex-col items-center w-5 flex-shrink-0 pt-3">
-                    <div className="w-2 h-2 rounded-full bg-white border-2 border-outline-variant flex-shrink-0" aria-hidden />
-                    {i < arr.length - 1 && <div className="w-0.5 flex-1 min-h-2.5 bg-[#e2e3e8] mt-[3px]" aria-hidden />}
+                    <div className="w-2 h-2 rounded-full bg-surface-container-lowest border-2 border-outline-variant flex-shrink-0" aria-hidden />
+                    {i < arr.length - 1 && <div className="w-0.5 flex-1 min-h-2.5 bg-hairline mt-[3px]" aria-hidden />}
                   </div>
-                  <div className={cn('flex-1 min-w-0 pl-2.5 py-2.5', i < arr.length - 1 && 'border-b border-[#f3f4f6]')}>
+                  <div className={cn('flex-1 min-w-0 pl-2.5 py-2.5', i < arr.length - 1 && 'border-b border-muted')}>
                     {/* Mockup: SHA chip + one truncated line of message, then "author · time". */}
                     <div className="flex items-center gap-2.5 mb-1 min-w-0">
-                      <span className="font-mono text-label font-medium bg-[#f3f4f6] text-on-surface-variant px-1.5 py-px rounded flex-shrink-0">{c.shortSha}</span>
+                      <span className="font-mono text-label font-medium bg-muted text-on-surface-variant px-1.5 py-px rounded flex-shrink-0">{c.shortSha}</span>
                       <Text as="p" variant="body" className="text-xs text-on-surface truncate" title={c.message}>{c.message}</Text>
                     </div>
                     <Text as="p" variant="caption" className="text-outline">{c.author} · {c.relativeTime}</Text>
@@ -178,7 +178,7 @@ function VersionRow({ v, isCurrent, last, running, onView, onCompare }: { v: Ver
   const made = describeVersionRun(v.run)
   return (
     // The last row has no bottom border: the card's own edge closes it (it was doubled).
-    <div className={cn('flex transition-colors hover:bg-[#f8f9ff]', !last && 'border-b border-outline-variant')}>
+    <div className={cn('flex transition-colors hover:bg-surface', !last && 'border-b border-outline-variant')}>
       {/* status accent bar */}
       <div className={cn('w-1 flex-shrink-0', v.status === 'draft' ? 'bg-outline-variant' : STATUS_META[status].dot)} aria-hidden />
       <div className="flex-1 px-5 py-4">
@@ -188,7 +188,7 @@ function VersionRow({ v, isCurrent, last, running, onView, onCompare }: { v: Ver
               <Text variant="title" className="font-mono font-bold text-on-surface">{v.tag}</Text>
               <StatusBadge status={status} size="sm" />
               {isCurrent && (
-                <span className="uppercase font-mono text-micro font-bold bg-surface-container text-secondary border border-[#bfcfff] px-1.5 rounded-full tracking-[0.04em]">current</span>
+                <span className="uppercase font-mono text-micro font-bold bg-surface-container text-secondary border border-state-busy-line px-1.5 rounded-full tracking-[0.04em]">current</span>
               )}
             </div>
             <Text as="p" variant="body" className="text-on-surface-variant mb-2 leading-[1.5]">{v.description}</Text>
@@ -196,7 +196,7 @@ function VersionRow({ v, isCurrent, last, running, onView, onCompare }: { v: Ver
             {/* Each "·" goes with the item after it: when the line wraps, it moves down with that
                 item instead of dangling at the end of the line above. */}
             <div className="flex items-center gap-x-2.5 gap-y-1 flex-wrap">
-              <span className="font-mono text-label font-medium bg-[#f3f4f6] text-on-surface-variant px-1.5 py-px rounded">{v.shortSha}</span>
+              <span className="font-mono text-label font-medium bg-muted text-on-surface-variant px-1.5 py-px rounded">{v.shortSha}</span>
               <Text variant="caption" className="text-outline">{v.docsCount} docs</Text>
               <MetaItem><Text variant="caption" className="text-outline">{v.date}</Text></MetaItem>
               {made && (
@@ -211,7 +211,7 @@ function VersionRow({ v, isCurrent, last, running, onView, onCompare }: { v: Ver
               <Icon name="description" size={13} aria-hidden />
               View docs
             </button>
-            <button onClick={onCompare} className="inline-flex items-center gap-1 transition-colors hover:border-secondary hover:text-secondary px-2.5 py-[5px] border border-outline-variant rounded-md font-mono text-label font-semibold text-on-surface-variant bg-white whitespace-nowrap">
+            <button onClick={onCompare} className="inline-flex items-center gap-1 transition-colors hover:border-secondary hover:text-secondary px-2.5 py-[5px] border border-outline-variant rounded-md font-mono text-label font-semibold text-on-surface-variant bg-surface-container-lowest whitespace-nowrap">
               <Icon name="compare_arrows" size={13} aria-hidden />
               Compare
             </button>
@@ -230,7 +230,7 @@ function ReviewLine({ v }: { v: Version }) {
   if (v.status === 'approved') {
     return (
       <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
-        <Icon name="verified" size={14} fill className="text-[#00a572]" />
+        <Icon name="verified" size={14} fill className="text-success" />
         <span className="text-xs text-on-surface">
           Approved{r.approvedBy ? <> by <b className="font-semibold">{r.approvedBy.name}</b></> : ''}
           {r.approvedAt ? ` · ${formatDate(r.approvedAt)}` : ''}
@@ -243,9 +243,9 @@ function ReviewLine({ v }: { v: Version }) {
   return (
     <div className="mb-2.5">
       <div className="flex items-center gap-2.5">
-        <div className="w-[140px] h-1 rounded-full bg-[#fde7b0] overflow-hidden flex-shrink-0" title={`${pct}% of documents approved`}>
+        <div className="w-[140px] h-1 rounded-full bg-amber/30 overflow-hidden flex-shrink-0" title={`${pct}% of documents approved`}>
           {/* eslint-disable-next-line no-restricted-syntax -- the approved share is data-driven */}
-          <span className="block h-full bg-[#00a572]" style={{ width: `${pct}%` }} />
+          <span className="block h-full bg-success" style={{ width: `${pct}%` }} />
         </div>
         <span className="text-xs text-on-surface"><b className="font-semibold">{r.approved} of {r.documents}</b> documents approved</span>
       </div>

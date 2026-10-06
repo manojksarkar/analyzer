@@ -38,7 +38,7 @@ const docPath = (projectId: string, d: Pick<Document, 'id'>, review = false) =>
 function StateBar({ docs, className }: { docs: Document[]; className?: string }) {
   const c = reviewCounts(docs)
   return (
-    <div className={cn('rounded-full bg-[#e8eaed] overflow-hidden flex', className)}>
+    <div className={cn('rounded-full bg-track overflow-hidden flex', className)}>
       {REVIEW_ORDER.filter((k) => c[k]).map((k) => (
         <div
           key={k}
@@ -62,14 +62,15 @@ function Donut({ docs }: { docs: Document[] }) {
   return (
     <svg width="136" height="136" viewBox="0 0 136 136" role="img" aria-label={`${c.approved} of ${c.total} approved`}>
       <g transform="rotate(-90 68 68)">
-        <circle cx="68" cy="68" r="52" fill="none" stroke="#e8eaed" strokeWidth="14" />
+        <circle cx="68" cy="68" r="52" fill="none" className="stroke-track" strokeWidth="14" />
         {REVIEW_ORDER.map((k, i) => (
-          <circle key={k} cx="68" cy="68" r="52" fill="none" stroke={STATUS_META[k].hex} strokeWidth="14"
+          // eslint-disable-next-line no-restricted-syntax -- a state's colour (a theme variable) on a data-driven arc
+          <circle key={k} cx="68" cy="68" r="52" fill="none" style={{ stroke: STATUS_META[k].hex }} strokeWidth="14"
             strokeDasharray={`${lens[i].toFixed(2)} ${C.toFixed(2)}`} strokeDashoffset={(-starts[i]).toFixed(2)} />
         ))}
       </g>
-      <text x="68" y="63" textAnchor="middle" fontSize="30" fontWeight="700" fill="#0b1c30" fontFamily="Inter,sans-serif">{c.approved}</text>
-      <text x="68" y="81" textAnchor="middle" fontSize="11" fill="#9aa0a6" fontFamily="Inter,sans-serif">of {c.total} approved</text>
+      <text x="68" y="63" textAnchor="middle" fontSize="30" fontWeight="700" className="fill-on-surface" fontFamily="Inter,sans-serif">{c.approved}</text>
+      <text x="68" y="81" textAnchor="middle" fontSize="11" className="fill-faint" fontFamily="Inter,sans-serif">of {c.total} approved</text>
     </svg>
   )
 }
@@ -93,7 +94,7 @@ export function KpiStrip({ documents, version, versions, team, isAdmin, meId }: 
       </div>
       <div className="flex items-center gap-2">
         <span className="font-mono text-title font-bold text-on-surface">{c[k]}</span>
-        <span className="text-caption text-[#9aa0a6] min-w-9 text-right">{pct(c[k], c.total)}%</span>
+        <span className="text-caption text-faint min-w-9 text-right">{pct(c[k], c.total)}%</span>
       </div>
     </div>
   )
@@ -108,7 +109,7 @@ export function KpiStrip({ documents, version, versions, team, isAdmin, meId }: 
 
   return (
     <div className="mb-6 grid grid-cols-[2fr_1fr_1fr] gap-4 items-stretch">
-      <div className="bg-white border border-outline-variant rounded-xl p-6 flex items-center gap-8">
+      <div className="bg-surface-container-lowest border border-outline-variant rounded-xl p-6 flex items-center gap-8">
         <div className="flex-shrink-0"><Donut docs={documents} /></div>
         <div className="flex-1">
           <div className="flex items-center justify-between gap-2 mb-4">
@@ -122,32 +123,32 @@ export function KpiStrip({ documents, version, versions, team, isAdmin, meId }: 
       </div>
 
       {isAdmin ? (
-        <div className="bg-white border border-outline-variant rounded-xl p-5">
+        <div className="bg-surface-container-lowest border border-outline-variant rounded-xl p-5">
           <p className={cn('text-on-surface-variant uppercase mb-3', KPI_LABEL)}>Reviewers</p>
           <div className="flex items-baseline gap-1 mb-2.5">
             <span className="font-mono text-[32px] font-bold text-on-surface leading-none">{withReviewer}</span>
-            <span className="text-body text-[#9aa0a6] leading-none">/ {c.total} have a reviewer</span>
+            <span className="text-body text-faint leading-none">/ {c.total} have a reviewer</span>
           </div>
-          <div className="h-1.5 rounded-full bg-[#e8eaed] overflow-hidden mb-2.5">
+          <div className="h-1.5 rounded-full bg-track overflow-hidden mb-2.5">
             {/* eslint-disable-next-line no-restricted-syntax -- progress width is data-driven */}
-            <div className={cn('h-full rounded-full', c.needsReviewer === 0 ? 'bg-[#00a572]' : 'bg-secondary')} style={{ width: `${pct(withReviewer, c.total)}%` }} />
+            <div className={cn('h-full rounded-full', c.needsReviewer === 0 ? 'bg-success' : 'bg-secondary')} style={{ width: `${pct(withReviewer, c.total)}%` }} />
           </div>
           {c.needsReviewer > 0
-            ? <p className="text-xs text-[#b45309]"><span className="font-semibold">{c.needsReviewer} {c.needsReviewer === 1 ? 'needs' : 'need'} a reviewer</span> · see the review queue</p>
-            : <p className="text-xs text-[#00a572] font-medium">Every open document has a reviewer</p>}
+            ? <p className="text-xs text-warn"><span className="font-semibold">{c.needsReviewer} {c.needsReviewer === 1 ? 'needs' : 'need'} a reviewer</span> · see the review queue</p>
+            : <p className="text-xs text-success font-medium">Every open document has a reviewer</p>}
         </div>
       ) : (
-        <div className="bg-white border border-outline-variant rounded-xl p-5">
+        <div className="bg-surface-container-lowest border border-outline-variant rounded-xl p-5">
           <p className={cn('text-on-surface-variant uppercase mb-3', KPI_LABEL)}>My reviews</p>
           <div className="flex items-baseline gap-1 mb-2.5">
             <span className="font-mono text-[32px] font-bold text-on-surface leading-none">{mine.length}</span>
-            <span className="text-body text-[#9aa0a6] leading-none">/ {c.total} documents</span>
+            <span className="text-body text-faint leading-none">/ {c.total} documents</span>
           </div>
           <StateBar docs={mine} className="h-1.5 mb-2.5" />
           <div className="flex gap-x-3 gap-y-1 flex-wrap">
             {(['changes_requested', 'in_review', 'submitted', 'approved'] as const).filter((k) => myCount[k]).map((k) => (
               k === 'changes_requested' ? (
-                <span key={k} className="flex items-center gap-1 text-caption text-error font-semibold">
+                <span key={k} className="flex items-center gap-1 text-caption text-violet font-semibold">
                   <Icon name="undo" size={13} />{myCount[k]} changes requested
                 </span>
               ) : (
@@ -161,7 +162,7 @@ export function KpiStrip({ documents, version, versions, team, isAdmin, meId }: 
         </div>
       )}
 
-      <div className="bg-white border border-outline-variant rounded-xl p-5">
+      <div className="bg-surface-container-lowest border border-outline-variant rounded-xl p-5">
         <p className={cn('text-on-surface-variant uppercase mb-3', KPI_LABEL)}>Project Info</p>
         <div className="flex flex-col gap-2.5">
           {infoRow('Latest version', versions?.[0]?.tag ?? '—', true)}
@@ -177,7 +178,7 @@ export function KpiStrip({ documents, version, versions, team, isAdmin, meId }: 
 /* Admin: per process, the approval of its documents and who reviews them. */
 export function AdminDocsCard({ documents, go, projectId }: { documents: Document[]; go: Nav; projectId: string }) {
   return (
-    <div className="bg-white border border-outline-variant rounded-xl overflow-hidden">
+    <div className="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
       <div className="px-5 py-3.5 border-b border-outline-variant flex items-center justify-between">
         <Text as="h2" variant="heading" className="text-on-surface">Documents</Text>
         <a onClick={(e) => { e.preventDefault(); go(`/projects/${projectId}/documents`) }} href="#" className="hover:underline inline-flex items-center gap-1 text-xs text-secondary font-medium">
@@ -236,7 +237,7 @@ export function AdminDocsCard({ documents, go, projectId }: { documents: Documen
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <StateBar docs={docs} className="flex-1 h-[5px] min-w-[72px]" />
-                    <span className={cn('text-caption font-semibold whitespace-nowrap', c.approved === total ? 'text-[#00a572]' : 'text-on-surface-variant')}>{c.approved} / {total} approved</span>
+                    <span className={cn('text-caption font-semibold whitespace-nowrap', c.approved === total ? 'text-success' : 'text-on-surface-variant')}>{c.approved} / {total} approved</span>
                   </div>
                   {(c.submitted > 0 || c.needsReviewer > 0) && (
                     <div className="flex gap-1 flex-wrap mt-1.5">
@@ -247,11 +248,11 @@ export function AdminDocsCard({ documents, go, projectId }: { documents: Documen
                 </td>
                 <td className="px-4 py-3">
                   {shown.length === 0
-                    ? (c.needsReviewer ? <span className="text-caption text-[#b45309] italic">Needs a reviewer</span> : <span className="text-caption text-outline-variant">—</span>)
+                    ? (c.needsReviewer ? <span className="text-caption text-warn italic">Needs a reviewer</span> : <span className="text-caption text-outline-variant">—</span>)
                     : (
                       <div className="flex items-center">
-                        {shown.map((r, i) => <Avatar key={r.userId} person={r} size={24} className={cn('border-2 border-white', i > 0 && '-ml-1.5')} />)}
-                        {extra > 0 && <div className="-ml-1.5 w-6 h-6 rounded-full bg-[#f3f4f6] border-2 border-white flex items-center justify-center text-micro font-bold text-on-surface-variant">+{extra}</div>}
+                        {shown.map((r, i) => <Avatar key={r.userId} person={r} size={24} className={cn('border-2 border-surface-container-lowest', i > 0 && '-ml-1.5')} />)}
+                        {extra > 0 && <div className="-ml-1.5 w-6 h-6 rounded-full bg-muted border-2 border-surface-container-lowest flex items-center justify-center text-micro font-bold text-on-surface-variant">+{extra}</div>}
                       </div>
                     )}
                 </td>
@@ -275,7 +276,7 @@ export function MyReviewsCard({ documents, meId, go, projectId }: { documents: D
   const downloadDoc = useDownloadDoc(projectId)
   const open = (doc: Document) => go(docPath(projectId, doc, doc.status !== 'approved'))
   return (
-    <div className="bg-white border border-outline-variant rounded-xl overflow-hidden">
+    <div className="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
       <div className="px-5 py-3.5 border-b border-outline-variant flex items-center justify-between">
         <div>
           <Text as="h2" variant="heading" className="text-on-surface">My reviews</Text>
@@ -320,15 +321,15 @@ export function MyReviewsCard({ documents, meId, go, projectId }: { documents: D
                       <>
                         <div className={cn('text-xs leading-[1.35]', needsMe ? 'text-on-surface font-semibold' : 'text-outline')}>{NEXT_STEP[doc.status]}</div>
                         {doc.status === 'changes_requested' && doc.review.changesComment && (
-                          <div className="text-caption leading-[1.35] text-error mt-[3px] line-clamp-2">“{doc.review.changesComment}”</div>
+                          <div className="text-caption leading-[1.35] text-violet mt-[3px] line-clamp-2">“{doc.review.changesComment}”</div>
                         )}
                       </>
                     )}
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-1">
-                      <button onClick={(e) => { e.stopPropagation(); open(doc) }} title="Open" className="flex items-center justify-center w-7 h-7 border border-[#e2e3e8] rounded-md bg-white text-outline hover:border-secondary hover:text-secondary"><Icon name="open_in_new" size={14} /></button>
-                      <button onClick={(e) => { e.stopPropagation(); void downloadDoc(doc.id, docxFileName(doc)) }} title="Download" className="flex items-center justify-center w-7 h-7 border border-[#e2e3e8] rounded-md bg-white text-outline hover:border-secondary hover:text-secondary"><Icon name="download" size={14} /></button>
+                      <button onClick={(e) => { e.stopPropagation(); open(doc) }} title="Open" className="flex items-center justify-center w-7 h-7 border border-hairline rounded-md bg-surface-container-lowest text-outline hover:border-secondary hover:text-secondary"><Icon name="open_in_new" size={14} /></button>
+                      <button onClick={(e) => { e.stopPropagation(); void downloadDoc(doc.id, docxFileName(doc)) }} title="Download" className="flex items-center justify-center w-7 h-7 border border-hairline rounded-md bg-surface-container-lowest text-outline hover:border-secondary hover:text-secondary"><Icon name="download" size={14} /></button>
                     </div>
                   </td>
                 </tr>
@@ -346,7 +347,7 @@ export function ClaimPoolCard({ documents, onClaim, claiming }: { documents: Doc
   const pool = documents.filter((d) => !d.reviewer && d.status !== 'approved')
   if (!pool.length) return null
   return (
-    <div className="bg-white border border-outline-variant rounded-xl overflow-hidden">
+    <div className="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
       <div className="px-5 py-3.5 border-b border-outline-variant">
         <Text as="h2" variant="heading" className="text-on-surface">Available to claim</Text>
         <Text as="p" variant="caption" className="font-mono mt-0.5">
@@ -355,7 +356,7 @@ export function ClaimPoolCard({ documents, onClaim, claiming }: { documents: Doc
       </div>
       <div>
         {pool.map((doc) => (
-          <div key={doc.id} className="flex items-center gap-3 px-5 py-3 border-b border-[#e2e3e8] last:border-0">
+          <div key={doc.id} className="flex items-center gap-3 px-5 py-3 border-b border-hairline last:border-0">
             <Icon name="description" size={18} className="text-outline-variant flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="text-body font-medium text-on-surface truncate">{doc.name}</div>
@@ -364,7 +365,7 @@ export function ClaimPoolCard({ documents, onClaim, claiming }: { documents: Doc
                 <span className="text-caption text-outline">{doc.subtitle ?? ''}</span>
               </div>
             </div>
-            <button onClick={() => onClaim(doc.id)} disabled={claiming} className="inline-flex items-center gap-[5px] px-3 py-[5px] rounded-lg border border-secondary bg-white text-secondary text-xs font-semibold whitespace-nowrap flex-shrink-0 hover:bg-surface-container-low disabled:opacity-50">
+            <button onClick={() => onClaim(doc.id)} disabled={claiming} className="inline-flex items-center gap-[5px] px-3 py-[5px] rounded-lg border border-secondary bg-surface-container-lowest text-secondary text-xs font-semibold whitespace-nowrap flex-shrink-0 hover:bg-surface-container-low disabled:opacity-50">
               <Icon name="front_hand" size={14} />Claim
             </button>
           </div>
@@ -382,7 +383,7 @@ export function ReviewQueueCard({ documents, go, projectId, onAssign }: {
   const q = reviewQueues(documents)
   const open = q.ready.length + q.needsReviewer.length + q.changes.length
   return (
-    <div className="bg-white border border-outline-variant rounded-xl overflow-hidden">
+    <div className="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
       <div className="px-4 py-3.5 border-b border-outline-variant flex items-center justify-between">
         <Text as="h2" variant="heading" className="text-on-surface">Review Queue</Text>
         <span className="font-mono text-label font-bold bg-surface-container text-secondary px-2.5 py-0.5 rounded-full">{open ? `${open} to act on` : 'All clear'}</span>
@@ -407,7 +408,7 @@ export function ReviewQueueCard({ documents, go, projectId, onAssign }: {
         row={(d) => (
           <QueueRow key={d.id} doc={d} onOpen={() => go(docPath(projectId, d, true))}
             sub={<>Back with <span className="text-on-surface-variant font-medium">{d.reviewer?.name ?? 'its reviewer'}</span>{d.review.changesComment ? <>: “{d.review.changesComment}”</> : ''}</>}
-            action={<button onClick={(e) => { e.stopPropagation(); go(docPath(projectId, d, true)) }} className="flex-shrink-0 px-[11px] py-1 rounded-md border border-outline-variant bg-white text-on-surface-variant text-caption font-semibold hover:border-secondary hover:text-secondary">Open</button>} />
+            action={<button onClick={(e) => { e.stopPropagation(); go(docPath(projectId, d, true)) }} className="flex-shrink-0 px-[11px] py-1 rounded-md border border-outline-variant bg-surface-container-lowest text-on-surface-variant text-caption font-semibold hover:border-secondary hover:text-secondary">Open</button>} />
         )} />
     </div>
   )
@@ -420,14 +421,14 @@ function QueueSection({ first, title, status, icon, docs, row }: {
   const m = STATUS_META[status]
   return (
     <>
-      <div className={cn('flex items-center gap-[7px] px-4 py-[9px] bg-surface border-b border-[#e2e3e8]', !first && 'border-t')}>
+      <div className={cn('flex items-center gap-[7px] px-4 py-[9px] bg-surface border-b border-hairline', !first && 'border-t')}>
         <Icon name={icon} size={15} className={m.text} />
         <span className="text-xs font-semibold text-on-surface">{title}</span>
         <span className={cn('ml-auto font-mono text-label font-bold px-2 rounded-full border', m.badge)}>{docs.length}</span>
       </div>
       {docs.length
         ? <div className="divide-y divide-outline-variant">{docs.map(row)}</div>
-        : <p className="px-4 py-2.5 text-caption text-[#9aa0a6]">Nothing here.</p>}
+        : <p className="px-4 py-2.5 text-caption text-faint">Nothing here.</p>}
     </>
   )
 }
@@ -458,7 +459,7 @@ export function LastActionsCard({ events, documents, versions, isAdmin, meId, na
   const lines = foldRunEvents(shown).slice(0, 6)
   const tagOf = (vid: string) => versions?.find((v) => v.id === vid)?.tag ?? 'the version'
   return (
-    <div className="bg-white border border-outline-variant rounded-xl overflow-hidden flex-1 flex flex-col">
+    <div className="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden flex-1 flex flex-col">
       <div className="px-4 py-3.5 border-b border-outline-variant">
         <Text as="h2" variant="heading" className="text-on-surface">Last Actions</Text>
       </div>
@@ -482,13 +483,13 @@ export function LastActionsCard({ events, documents, versions, isAdmin, meId, na
           }
           const sha = e.kind === 'approved' && typeof e.payload.docx_sha256 === 'string' ? e.payload.docx_sha256 : null
           return (
-            <div key={e.id} className="flex items-start gap-2.5 px-4 py-3 border-b border-[#f0f1f3]">
+            <div key={e.id} className="flex items-start gap-2.5 px-4 py-3 border-b border-muted">
               <Icon name={k.icon} size={15} fill className={cn('flex-shrink-0 mt-px', k.text)} />
               <div className="flex-1 min-w-0">
                 <p className="text-xs text-on-surface leading-[1.4]">{actor && <b className="font-semibold">{actor} </b>}{text}</p>
                 {e.comment && <p title={e.comment} className="text-caption text-on-surface-variant leading-[1.35] mt-[3px] truncate">“{e.comment}”</p>}
                 {sha && <p className="text-label text-outline mt-0.5 font-mono">Word file sha256 {shortHash(sha)}</p>}
-                <p className="text-label text-[#9aa0a6] mt-0.5 font-mono">{relativeTime(e.at)}</p>
+                <p className="text-label text-faint mt-0.5 font-mono">{relativeTime(e.at)}</p>
               </div>
             </div>
           )

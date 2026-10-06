@@ -31,7 +31,7 @@ export function StatusFilter({
         aria-haspopup="true"
         aria-expanded={open}
         className={cn(
-          'flex items-center gap-1.5 px-3 py-2 border rounded-lg bg-white hover:bg-surface-container-low transition-colors font-mono text-caption font-medium',
+          'flex items-center gap-1.5 px-3 py-2 border rounded-lg bg-surface-container-lowest hover:bg-surface-container-low transition-colors font-mono text-caption font-medium',
           value.size ? 'border-secondary text-secondary' : 'border-outline-variant text-on-surface-variant',
         )}
       >
@@ -40,7 +40,7 @@ export function StatusFilter({
         <Icon name="expand_more" size={13} />
       </button>
       {open && (
-        <div className="absolute right-0 bg-white border border-outline-variant rounded-lg overflow-hidden top-[calc(100%+6px)] z-[200] shadow-[0_4px_20px_rgba(4,22,39,.12)] min-w-[200px]">
+        <div className="absolute right-0 bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden top-[calc(100%+6px)] z-[200] shadow-[0_4px_20px_rgba(4,22,39,.12)] min-w-[200px]">
           <div className="py-1.5">
             {REVIEW_STATUSES.map((key) => (
               <button

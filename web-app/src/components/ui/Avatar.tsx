@@ -18,7 +18,7 @@ export function Avatar({
     return (
       <span
         title={title}
-        className={cn('inline-flex items-center justify-center rounded-full flex-shrink-0 border border-dashed border-outline-variant bg-white text-outline', className)}
+        className={cn('inline-flex items-center justify-center rounded-full flex-shrink-0 border border-dashed border-outline-variant bg-surface-container-lowest text-outline', className)}
         // eslint-disable-next-line no-restricted-syntax -- the avatar's size is the caller's
         style={{ width: size, height: size }}
       >

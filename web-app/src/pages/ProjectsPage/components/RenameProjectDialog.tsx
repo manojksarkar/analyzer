@@ -47,7 +47,7 @@ export function RenameProjectDialog({ project, otherNames, onClose }: {
           error={value !== project.name && problem ? problem : undefined}
         />
         {taken && (
-          <p className="mt-1 flex items-center gap-1 text-xs text-[#b45309]" role="status">
+          <p className="mt-1 flex items-center gap-1 text-xs text-warn" role="status">
             <Icon name="info" size={12} />Another project is already called “{next}”.
           </p>
         )}

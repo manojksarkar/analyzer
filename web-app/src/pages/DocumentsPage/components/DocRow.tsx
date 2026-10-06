@@ -66,7 +66,7 @@ export function DocRow({
     )
   } else if (isDeveloper && doc.reviewer?.userId === meId) {
     action = (
-      <span title="You review it" className="p-1.5 flex items-center text-[#00a572]">
+      <span title="You review it" className="p-1.5 flex items-center text-success">
         <Icon name="how_to_reg" size={15} />
       </span>
     )
@@ -104,14 +104,14 @@ export function DocRow({
           {doc.reviewer ? (
             <span className="text-on-surface truncate font-mono text-caption">{doc.reviewer.name}</span>
           ) : (
-            <span className="text-[#b45309] text-caption font-semibold truncate" title="Nobody reviews it yet">Needs a reviewer</span>
+            <span className="text-warn text-caption font-semibold truncate" title="Nobody reviews it yet">Needs a reviewer</span>
           )}
         </div>
       </td>
       <td className="px-3 py-3.5">
         <StatusBadge status={doc.status} />
         {carried && (
-          <p className="font-mono text-label text-[#00a572] mt-[3px]" title={`Content unchanged since ${carried.tag}`}>from {carried.tag}</p>
+          <p className="font-mono text-label text-success mt-[3px]" title={`Content unchanged since ${carried.tag}`}>from {carried.tag}</p>
         )}
       </td>
       <td className="px-3 py-3.5 text-caption text-on-surface-variant leading-[1.35]">
@@ -128,7 +128,7 @@ export function DocRow({
         <div className="flex items-center gap-1">
           <RowButton icon="open_in_new" title="View" onClick={onOpen} className="text-secondary" />
           {updating && doc.status !== 'approved' ? (
-            <span title="Updating…" role="img" aria-label="Updating…" className="p-1.5 flex items-center text-[#b45309]">
+            <span title="Updating…" role="img" aria-label="Updating…" className="p-1.5 flex items-center text-warn">
               <Icon name="autorenew" size={15} className="animate-spin" />
             </span>
           ) : stale ? (
@@ -142,7 +142,7 @@ export function DocRow({
                   className="relative p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant"
                 >
                   <Icon name="download" size={15} />
-                  <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-amber border border-white" aria-hidden />
+                  <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-amber border border-surface-container-lowest" aria-hidden />
                 </button>
               )}
               items={[

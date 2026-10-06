@@ -24,7 +24,7 @@ export function DropdownContent({ items, align = 'end' }: DropdownContentProps) 
         align={align}
         sideOffset={4}
         className={cn(
-          'z-50 min-w-[160px] bg-white rounded-xl border border-outline-variant',
+          'z-50 min-w-[160px] bg-surface-container-lowest rounded-xl border border-outline-variant',
           'shadow-[0_4px_24px_rgba(4,22,39,.12)] p-1',
           'animate-in fade-in-0 zoom-in-95',
         )}

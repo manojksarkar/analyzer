@@ -124,14 +124,14 @@ describe('ComparePage: the linked document, the reference, the change marks', { 
     const { details } = setup({ path: '/projects/p1/compare?doc=doc8' })
     expect((await screen.findAllByRole('heading', { name: 'Pedal' })).length).toBe(2)
     expect(details).toEqual(['doc8'])
-    expect(screen.getByRole('button', { name: 'All' })).toHaveClass('bg-primary')
+    expect(screen.getByRole('button', { name: 'All' })).toHaveClass('bg-selected')
   })
 
   it('?doc= of a changed document opens it under Diff', async () => {
     const { details } = setup({ path: '/projects/p1/compare?doc=doc9' })
     expect((await screen.findAllByRole('heading', { name: 'Brake' })).length).toBe(2)
     expect(details).toEqual(['doc9'])
-    expect(screen.getByRole('button', { name: 'Diff' })).toHaveClass('bg-primary')
+    expect(screen.getByRole('button', { name: 'Diff' })).toHaveClass('bg-selected')
   })
 
   it('the reference is the version before by default, and any older one can be picked', async () => {

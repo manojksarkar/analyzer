@@ -142,7 +142,7 @@ export function ComparePage() {
 
   if (pageFailed) {
     return (
-      <div className="flex-1 overflow-y-auto bg-surface-container-low">
+      <div className="flex-1 overflow-y-auto bg-page">
         <LoadError what="the comparison" error={pageFailed.error} retrying={pageFailed.retrying} onRetry={pageFailed.retry} />
       </div>
     )
@@ -163,8 +163,8 @@ export function ComparePage() {
             is read: it said "Nothing to compare yet" while the versions loaded. */}
         {(viewLoading && !versions) || holding || (docsLoading && !compareDocs) || paramPending ? (
           /* ─── Loading the diff list ─── */
-          <div className="flex-1 overflow-y-auto bg-surface-container-low">
-            <div className="bg-white border-b border-outline-variant px-8 pt-7 pb-5 space-y-3">
+          <div className="flex-1 overflow-y-auto bg-page">
+            <div className="bg-surface-container-lowest border-b border-outline-variant px-8 pt-7 pb-5 space-y-3">
               <Skeleton className="h-3 w-40" />
               <Skeleton className="h-7 w-1/2" />
             </div>
@@ -172,7 +172,7 @@ export function ComparePage() {
           </div>
         ) : !activeDocId ? (
           /* ─── Empty state ─── */
-          <div className="flex-1 flex items-center justify-center p-8 bg-surface-container-low overflow-y-auto">
+          <div className="flex-1 flex items-center justify-center p-8 bg-page overflow-y-auto">
             <div className="text-center max-w-[480px]">
               <div className="w-16 h-16 rounded-2xl bg-surface-container flex items-center justify-center mx-auto mb-5">
                 <Icon name="difference" size={32} className="text-on-surface-variant" />
@@ -198,7 +198,7 @@ export function ComparePage() {
                   <button
                     key={d.documentId}
                     onClick={() => selectDoc(d.documentId)}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 bg-white border border-outline-variant rounded-lg hover:border-secondary transition-colors text-left"
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 bg-surface-container-lowest border border-outline-variant rounded-lg hover:border-secondary transition-colors text-left"
                   >
                     <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', DIFF_BADGE[d.diffType].dot)} aria-hidden />
                     <span className="text-on-surface text-sm flex-1 truncate">{d.name}</span>
@@ -215,10 +215,10 @@ export function ComparePage() {
             {/* Single scroller — the 2-col grid keeps each section's two sides the
                 same height, so they scroll together AND stay aligned even when one
                 side has much more content (the shorter side gets filler whitespace). */}
-            <div className="flex-1 overflow-y-auto bg-surface-container-low min-h-0">
+            <div className="flex-1 overflow-y-auto bg-page min-h-0">
               <div className="grid grid-cols-2 items-stretch">
                 {/* Sticky pane headers */}
-                <div className="sticky top-0 z-10 bg-white border-b border-r border-outline-variant px-4 py-2 flex items-center gap-2">
+                <div className="sticky top-0 z-10 bg-surface-container-lowest border-b border-r border-outline-variant px-4 py-2 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-outline-variant flex-shrink-0" aria-hidden />
                   <span className="text-on-surface font-mono text-xs font-medium">Reference</span>
                   <ReferencePicker options={referenceOptions} value={baselineVersion} fallback={baselineShort} onPick={(r) => setParam('ref', r)} />
@@ -226,7 +226,7 @@ export function ComparePage() {
                     <span className="w-1.5 h-1.5 rounded-sm bg-secondary inline-block" aria-hidden />{total} changed
                   </span>
                 </div>
-                <div className="sticky top-0 z-10 bg-white border-b border-outline-variant px-4 py-2 flex items-center gap-2">
+                <div className="sticky top-0 z-10 bg-surface-container-lowest border-b border-outline-variant px-4 py-2 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full flex-shrink-0 bg-on-tertiary-container" aria-hidden />
                   <span className="text-on-surface font-mono text-xs font-medium">Current</span>
                   {isLatest && <span className="px-2 py-0.5 rounded uppercase font-mono text-micro font-bold bg-on-tertiary-container text-white">Latest</span>}
@@ -235,7 +235,7 @@ export function ComparePage() {
                     <button
                       onClick={() => setChangesOnly((v) => !v)}
                       className={cn('flex items-center gap-1 px-2 py-0.5 rounded border font-mono text-label transition-colors',
-                        changesOnly ? 'bg-primary text-white border-primary' : 'border-outline-variant text-on-surface-variant hover:bg-surface-container-low')}
+                        changesOnly ? 'bg-selected text-white border-selected' : 'border-outline-variant text-on-surface-variant hover:bg-surface-container-low')}
                       title="Show only changed sections"
                     >
                       <Icon name="filter_alt" size={11} />Changes only
@@ -249,12 +249,12 @@ export function ComparePage() {
                 </div>
 
                 {/* Document title row (one cell per side) */}
-                <div className="bg-white border-r border-b border-outline-variant/60 px-8 pt-7 pb-5">
+                <div className="bg-surface-container-lowest border-r border-b border-outline-variant/60 px-8 pt-7 pb-5">
                   <p className="text-on-surface-variant uppercase mb-1 font-mono text-caption tracking-[0.1em]">{baselineShort}</p>
                   <h1 className="text-primary font-semibold font-sans text-2xl">{docTitle}</h1>
                   <p className="text-on-surface-variant mt-0.5 text-xs">{docSubtitle}</p>
                 </div>
-                <div className="bg-white border-b border-outline-variant/60 px-8 pt-7 pb-5">
+                <div className="bg-surface-container-lowest border-b border-outline-variant/60 px-8 pt-7 pb-5">
                   <p className="text-on-surface-variant uppercase mb-1 font-mono text-caption tracking-[0.1em]">{currentShort}</p>
                   <h1 className="text-primary font-semibold font-sans text-2xl">{docTitle}</h1>
                   <p className="text-on-surface-variant mt-0.5 text-xs">{docSubtitle}</p>
@@ -263,14 +263,14 @@ export function ComparePage() {
                 {/* Per-section rows — grid auto-row height = the taller side, so the
                     two cells of a row start at the same Y (filler on the shorter one). */}
                 {detailFailed ? (
-                  <div className="col-span-2 bg-white px-8 py-6">
+                  <div className="col-span-2 bg-surface-container-lowest px-8 py-6">
                     <LoadError compact what="this document's changes" error={detailFailed.error}
                                retrying={detailFailed.retrying} onRetry={detailFailed.retry} />
                   </div>
                 ) : detailLoading && sections.length === 0 ? (
                   <div className="col-span-2"><CompareSectionSkeleton /></div>
                 ) : visibleSections.length === 0 ? (
-                  <div className="col-span-2 bg-white px-8 py-16 text-center text-on-surface-variant font-mono text-caption">
+                  <div className="col-span-2 bg-surface-container-lowest px-8 py-16 text-center text-on-surface-variant font-mono text-caption">
                     {changesOnly ? 'No changed sections' : 'No content'}
                   </div>
                 ) : (
@@ -282,7 +282,7 @@ export function ComparePage() {
                     return (
                       <Fragment key={s.key}>
                         {/* Reference cell */}
-                        <div className={cn('bg-white border-r border-b border-outline-variant/60 px-8 py-6',
+                        <div className={cn('bg-surface-container-lowest border-r border-b border-outline-variant/60 px-8 py-6',
                           s.diffType === 'removed' ? 'bg-error-container/20' : changed && 'opacity-90')}>
                           <div className="flex items-baseline gap-2 mb-3">
                             {s.number && <span className="font-mono text-caption text-outline flex-shrink-0">{s.number}</span>}
@@ -293,7 +293,7 @@ export function ComparePage() {
                             : <SectionBody content={s.baselineText ?? ''} />}
                         </div>
                         {/* Current cell */}
-                        <div className={cn('bg-white border-b border-outline-variant/60 px-8 py-6 transition-all', sectionAccent(s.diffType))}>
+                        <div className={cn('bg-surface-container-lowest border-b border-outline-variant/60 px-8 py-6 transition-all', sectionAccent(s.diffType))}>
                           <div className="flex items-baseline gap-2 min-w-0 mb-3">
                             {s.number && <span className="font-mono text-caption text-outline flex-shrink-0">{s.number}</span>}
                             <h2 className={cn('text-primary font-semibold font-sans', headingSize)}>{s.title}</h2>

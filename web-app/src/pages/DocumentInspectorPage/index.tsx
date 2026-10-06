@@ -54,11 +54,12 @@ import { useScrollSpy } from './useScrollSpy'
 
 type ReviewDialog = 'assign' | 'approve' | 'changes' | 'reopen'
 
-/** Bring a text into view and flash it, so the eye finds it. */
+/** Bring a text into view and flash it, so the eye finds it (in the theme's highlight colour). */
 function reveal(el: Element | null | undefined) {
   if (!el) return
   el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  el.animate?.([{ backgroundColor: '#fde68a' }, { backgroundColor: 'transparent' }], { duration: 1800 })
+  const flash = getComputedStyle(document.documentElement).getPropertyValue('--color-highlight').trim() || '#fde68a'
+  el.animate?.([{ backgroundColor: flash }, { backgroundColor: 'transparent' }], { duration: 1800 })
 }
 
 export function DocumentInspectorPage() {
@@ -220,7 +221,7 @@ export function DocumentInspectorPage() {
 
   if (isLoading) {
     return (
-      <div className="flex-1 overflow-y-auto bg-surface-container-low">
+      <div className="flex-1 overflow-y-auto bg-page">
         <div className="max-w-3xl mx-auto px-6 py-8 space-y-4">
           <Skeleton className="h-10 w-2/3" />
           <Skeleton className="h-4 w-1/3" />
@@ -233,7 +234,7 @@ export function DocumentInspectorPage() {
   // A failed read is not "not found": say what failed, and offer Retry. Only the API's 404 is.
   if (!doc && docQuery.isError && !isNotFound(docQuery.error)) {
     return (
-      <div className="flex-1 overflow-y-auto bg-surface-container-low">
+      <div className="flex-1 overflow-y-auto bg-page">
         <div className="p-6">
           <Card>
             <LoadError what="the document" error={docQuery.error} retrying={docQuery.isFetching}
@@ -246,7 +247,7 @@ export function DocumentInspectorPage() {
 
   if (!doc) {
     return (
-      <div className="flex-1 overflow-y-auto bg-surface-container-low">
+      <div className="flex-1 overflow-y-auto bg-page">
         <div className="p-6">
           <Card className="py-20 flex flex-col items-center text-center gap-4">
             <Icon name="error_outline" size={32} className="text-on-surface-variant" />
@@ -329,7 +330,7 @@ export function DocumentInspectorPage() {
             title={approved ? 'Approved: locked. An admin can reopen it.' : undefined}
             className={cn(
               'flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors font-mono text-caption font-bold tracking-[0.04em] border disabled:opacity-45 disabled:cursor-not-allowed',
-              isEditing ? 'bg-secondary border-secondary text-on-secondary hover:bg-secondary-container' : 'border-secondary text-secondary bg-white hover:bg-surface-container-low',
+              isEditing ? 'bg-secondary border-secondary text-on-secondary hover:bg-secondary-container' : 'border-secondary text-secondary bg-surface-container-lowest hover:bg-surface-container-low',
             )}
           >
             <Icon name={approved ? 'lock' : isEditing ? 'check' : 'edit'} size={14} />
@@ -355,7 +356,7 @@ export function DocumentInspectorPage() {
       )}
 
       {/* ── Document canvas ── */}
-      <main ref={setCanvasEl} className="flex-1 overflow-y-auto bg-surface-container-low">
+      <main ref={setCanvasEl} className="flex-1 overflow-y-auto bg-page">
         {isEditing && <EditBar hold={hold} />}
         {/* The reading column: room for the tables at a laptop's width (paddings grow on a wide
             screen only), capped so a wide screen does not stretch the lines; prose keeps its own
@@ -382,7 +383,7 @@ export function DocumentInspectorPage() {
               onDownload={() => downloadDoc(doc.id, fileName)}
             />
           )}
-          <div className="bg-white rounded-xl border border-outline-variant overflow-hidden shadow-[0_1px_4px_rgba(4,22,39,.06)]">
+          <div className="bg-surface-container-lowest rounded-xl border border-outline-variant overflow-hidden shadow-[0_1px_4px_rgba(4,22,39,.06)]">
 
             {/* Cover header */}
             <div className="px-5 pt-8 pb-6 2xl:px-8 2xl:pt-10 2xl:pb-8 border-b border-outline-variant">
@@ -417,7 +418,7 @@ export function DocumentInspectorPage() {
                         >
                           <Icon name="download" size={15} />
                           DOCX
-                          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber border-2 border-white" aria-hidden />
+                          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber border-2 border-surface-container-lowest" aria-hidden />
                           <span className="sr-only"> (out of date)</span>
                         </button>
                       )}

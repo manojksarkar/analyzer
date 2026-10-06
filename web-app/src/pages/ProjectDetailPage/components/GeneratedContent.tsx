@@ -16,7 +16,7 @@ type Nav = (to: string) => void
 
 function TeamCard({ team, teamLoading, go, projectId }: { team?: TeamMember[]; teamLoading: boolean; go: Nav; projectId: string }) {
   return (
-    <div className="bg-white border border-outline-variant rounded-xl overflow-hidden">
+    <div className="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
       <div className="px-4 py-3.5 border-b border-outline-variant flex items-center justify-between">
         <Text as="h2" variant="heading" className="text-on-surface">Team</Text>
         <button onClick={() => go(`/projects/${projectId}/team`)} className="flex items-center gap-1 px-2.5 py-1.5 border border-outline-variant hover:bg-surface-container text-on-surface-variant rounded-lg transition-colors font-mono text-caption font-medium">
@@ -46,7 +46,7 @@ function FunctionVisibilityCard({ projectId, job, latestVersion }: { projectId: 
   const { data, isLoading } = useJobFunctions(projectId, finished?.id)
   const summary = data?.summary
   return (
-    <div className="bg-white border border-outline-variant rounded-xl overflow-hidden">
+    <div className="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
       <div className="px-4 py-3.5 border-b border-outline-variant flex items-center justify-between">
         <div>
           <Text as="h2" variant="heading" className="text-on-surface">Function Visibility</Text>
@@ -66,8 +66,8 @@ function FunctionVisibilityCard({ projectId, job, latestVersion }: { projectId: 
       </div>
       <div className="px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-1.5">
-          <Icon name={summary?.hidden ? 'visibility_off' : 'visibility'} size={14} className={summary?.hidden ? 'text-error' : 'text-on-surface-variant'} />
-          <span className={cn('font-mono text-xs', summary?.hidden ? 'text-error' : 'text-on-surface-variant')}>{summary ? `${summary.hidden} hidden` : '—'}</span>
+          <Icon name={summary?.hidden ? 'visibility_off' : 'visibility'} size={14} className={summary?.hidden ? 'text-warn' : 'text-on-surface-variant'} />
+          <span className={cn('font-mono text-xs', summary?.hidden ? 'text-warn' : 'text-on-surface-variant')}>{summary ? `${summary.hidden} hidden` : '—'}</span>
         </div>
         <span className="text-on-surface-variant font-mono text-caption">Last: {latestVersion}</span>
       </div>

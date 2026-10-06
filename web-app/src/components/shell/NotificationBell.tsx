@@ -9,18 +9,18 @@ import type { AppNotification } from '../../types'
 
 /* A review notification's icon and colour (REVIEW_APPROVE_API_SPEC A16 `type`). */
 const TYPE_ICON: Record<string, { icon: string; cls: string }> = {
-  review_assigned:          { icon: 'person_add',      cls: 'text-[#7c3aed]' },
-  review_unassigned:        { icon: 'person_remove',   cls: 'text-[#7c3aed]' },
-  review_claimed:           { icon: 'front_hand',      cls: 'text-[#7c3aed]' },
+  review_assigned:          { icon: 'person_add',      cls: 'text-violet' },
+  review_unassigned:        { icon: 'person_remove',   cls: 'text-violet' },
+  review_claimed:           { icon: 'front_hand',      cls: 'text-violet' },
   review_submitted:         { icon: 'pending_actions', cls: 'text-secondary' },
-  review_approved:          { icon: 'check_circle',    cls: 'text-[#00a572]' },
-  review_changes_requested: { icon: 'undo',            cls: 'text-error' },
-  review_reopened:          { icon: 'lock_open',       cls: 'text-[#b45309]' },
-  review_back_in_review:    { icon: 'rate_review',     cls: 'text-[#b45309]' },
+  review_approved:          { icon: 'check_circle',    cls: 'text-success' },
+  review_changes_requested: { icon: 'undo',            cls: 'text-violet' },
+  review_reopened:          { icon: 'lock_open',       cls: 'text-warn' },
+  review_back_in_review:    { icon: 'rate_review',     cls: 'text-warn' },
   // Word file updates (WORD_FILE_UPDATES §4.7): to the update's starter, and to the admins when
   // an update that Submit started failed.
-  word_files_updated:       { icon: 'task_alt',        cls: 'text-[#00a572]' },
-  word_files_update_failed: { icon: 'error',           cls: 'text-error' },
+  word_files_updated:       { icon: 'task_alt',        cls: 'text-success' },
+  word_files_update_failed: { icon: 'error',           cls: 'text-warn' },
 }
 const OTHER = { icon: 'circle_notifications', cls: 'text-secondary' }
 /** Word-file notifications open the document itself (its banner says the file's state); review
@@ -71,14 +71,14 @@ export function NotificationBell() {
       >
         <Icon name="notifications" size={22} className="text-on-surface-variant" />
         {unread > 0 && (
-          <span className="absolute top-0.5 right-0 min-w-4 h-4 px-1 rounded-full bg-error text-white border-2 border-white box-content font-sans text-micro font-bold leading-4 text-center" aria-hidden>
+          <span className="absolute top-0.5 right-0 min-w-4 h-4 px-1 rounded-full bg-error text-white border-2 border-surface-container-lowest box-content font-sans text-micro font-bold leading-4 text-center" aria-hidden>
             {unread > 9 ? '9+' : unread}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden top-full z-[200] w-[340px] shadow-[0_4px_20px_rgba(4,22,39,.12)]">
+        <div className="absolute right-0 mt-1.5 bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden top-full z-[200] w-[340px] shadow-[0_4px_20px_rgba(4,22,39,.12)]">
           <div className="px-4 py-2.5 border-b border-outline-variant flex items-center justify-between">
             <span className="text-on-surface font-semibold text-body">Notifications</span>
             {unread > 0 && (
@@ -106,7 +106,7 @@ export function NotificationBell() {
                     title={n.documentId ? 'Open the document' : undefined}
                     className={cn(
                       'w-full text-left px-4 py-3 border-b border-outline-variant last:border-0 hover:bg-surface-container-low transition-colors flex gap-3',
-                      isUnread ? 'bg-[#f5f8ff]' : 'bg-white',
+                      isUnread ? 'bg-tint' : 'bg-surface-container-lowest',
                     )}
                   >
                     <Icon name={t.icon} size={16} fill className={cn('flex-shrink-0 mt-0.5', isUnread ? t.cls : 'text-outline')} />

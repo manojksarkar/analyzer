@@ -6,6 +6,7 @@ import { useId, useState } from 'react'
 import { useAuthStore } from '../store/auth'
 import { ApiError } from '../lib/http'
 import { Icon, BrandMark, toast } from '../components/ui'
+import { ThemeToggle } from '../components/shell/ThemeToggle'
 import { cn } from '../lib/cn'
 import { APP_NAME, APP_TAGLINE } from '../constants/branding'
 
@@ -18,7 +19,7 @@ type FormValues = z.infer<typeof schema>
 
 const FEATURES = ['ASPICE Ready', 'End-to-End Traceability', 'Enterprise Security']
 
-const INPUT_CLS = 'w-full h-11 px-3 bg-white border border-outline-variant rounded-xl font-sans text-sm text-on-surface placeholder:text-outline outline-none focus:border-secondary focus:shadow-[0_0_0_3px_rgba(0,88,190,0.12)]'
+const INPUT_CLS = 'w-full h-11 px-3 bg-surface-container-lowest border border-outline-variant rounded-xl font-sans text-sm text-on-surface placeholder:text-outline outline-none focus:border-secondary focus:shadow-[0_0_0_3px_rgba(0,88,190,0.12)]'
 const LABEL_CLS = 'block font-mono text-caption font-medium tracking-[0.08em] uppercase text-on-surface-variant mb-1.5'
 
 /** Turn any sign-in failure into a clear, user-facing message. */
@@ -69,9 +70,10 @@ export function SignInPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-background">
-      <div className="w-full max-w-5xl bg-white border border-outline-variant rounded-xl overflow-hidden grid lg:grid-cols-[1fr_1.1fr] shadow-[0_4px_32px_rgba(4,22,39,.10)]">
+      <ThemeToggle floating />
+      <div className="w-full max-w-5xl bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden grid lg:grid-cols-[1fr_1.1fr] shadow-[0_4px_32px_rgba(4,22,39,.10)]">
         {/* Left Panel */}
-        <div className="hidden lg:flex flex-col justify-between p-12 bg-primary text-white">
+        <div className="hidden lg:flex flex-col justify-between p-12 bg-hero text-white">
           <div>
             {/* Logo */}
             <div className="flex items-center gap-3">
@@ -126,7 +128,7 @@ export function SignInPage() {
               type="button"
               disabled
               title="Company SSO is not available yet"
-              className="w-full flex items-center justify-center gap-2.5 h-11 rounded-xl border border-outline-variant bg-white transition-colors mb-5 opacity-60 cursor-not-allowed font-sans text-body font-medium text-on-surface"
+              className="w-full flex items-center justify-center gap-2.5 h-11 rounded-xl border border-outline-variant bg-surface-container-lowest transition-colors mb-5 opacity-60 cursor-not-allowed font-sans text-body font-medium text-on-surface"
             >
               <Icon name="domain" size={18} className="text-on-surface-variant" />
               Continue with Company SSO

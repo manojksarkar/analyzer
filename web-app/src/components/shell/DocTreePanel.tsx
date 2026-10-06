@@ -95,7 +95,7 @@ export function DocTreePanel({
   }
 
   return (
-    <aside className="w-60 flex-shrink-0 bg-white border-r border-outline-variant flex flex-col">
+    <aside className="w-60 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex flex-col">
       {/* Panel header */}
       <div className="px-3 py-2.5 border-b border-outline-variant flex-shrink-0 flex items-center justify-between">
         <Text variant="label" className="block text-on-surface-variant tracking-[0.1em]">Documents</Text>
@@ -121,7 +121,7 @@ export function DocTreePanel({
           aria-expanded={open}
           aria-label={`Reviewer filter: ${label}`}
           className={cn(
-            'w-full flex items-center gap-2 px-2.5 py-1.5 border rounded-lg bg-white hover:bg-surface-container-low transition-colors font-mono text-caption font-medium',
+            'w-full flex items-center gap-2 px-2.5 py-1.5 border rounded-lg bg-surface-container-lowest hover:bg-surface-container-low transition-colors font-mono text-caption font-medium',
             effectiveAssignee ? 'border-secondary text-secondary' : 'border-outline-variant text-on-surface-variant',
           )}
         >
@@ -130,7 +130,7 @@ export function DocTreePanel({
           <Icon name="expand_more" size={13} className={cn('transition-transform', open && 'rotate-180')} />
         </button>
         {open && (
-          <div className="absolute left-2 right-2 top-[calc(100%-4px)] bg-white border border-outline-variant rounded-lg overflow-hidden z-[200] shadow-[0_4px_20px_rgba(4,22,39,.12)]">
+          <div className="absolute left-2 right-2 top-[calc(100%-4px)] bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden z-[200] shadow-[0_4px_20px_rgba(4,22,39,.12)]">
             <div className="py-1.5 max-h-[260px] overflow-y-auto">
               {isDeveloper && meId && (
                 <>
@@ -151,7 +151,7 @@ export function DocTreePanel({
               </button>
               <button
                 onClick={() => { onPickAssignee(NEEDS_REVIEWER); setOpen(false) }}
-                className={cn('w-full text-left px-3 py-2 hover:bg-surface-container-low font-mono text-caption text-[#b45309]', effectiveAssignee === NEEDS_REVIEWER && 'bg-surface-container-low')}
+                className={cn('w-full text-left px-3 py-2 hover:bg-surface-container-low font-mono text-caption text-warn', effectiveAssignee === NEEDS_REVIEWER && 'bg-surface-container-low')}
               >
                 Needs a reviewer
               </button>

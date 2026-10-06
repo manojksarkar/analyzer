@@ -69,9 +69,9 @@ export function ReviewStateBanner({
 }
 
 const STATE_TONE = {
-  ok: { box: 'bg-[#f0fdf9] border-[#86efac] text-[#065f46]', icon: 'text-[#00a572]', act: 'border-[#86efac] text-[#065f46]' },
-  bad: { box: 'bg-[#fff1f0] border-[#f5a3a3] text-on-error-container', icon: 'text-error', act: 'border-[#f5a3a3] text-error' },
-  info: { box: 'bg-surface-container-low border-[#b9cdf5] text-on-surface', icon: 'text-secondary', act: 'border-[#8ab0f0] text-secondary' },
+  ok: { box: 'bg-state-done-bg border-success-line text-state-done', icon: 'text-success', act: 'border-success-line text-state-done' },
+  bad: { box: 'bg-violet-bg border-violet-line text-on-surface', icon: 'text-violet', act: 'border-violet-line text-violet' },
+  info: { box: 'bg-surface-container-low border-info-line text-on-surface', icon: 'text-secondary', act: 'border-secondary-container/50 text-secondary' },
 } as const
 
 function StateBanner({ tone, icon, action, children }: {
@@ -94,7 +94,7 @@ function BannerAction({ tone, icon, label, onClick }: {
     <button
       type="button"
       onClick={onClick}
-      className={cn('ml-auto flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-[5px] rounded-lg border bg-white font-mono text-label font-semibold hover:opacity-90', STATE_TONE[tone].act)}
+      className={cn('ml-auto flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-[5px] rounded-lg border bg-surface-container-lowest font-mono text-label font-semibold hover:opacity-90', STATE_TONE[tone].act)}
     >
       {icon && <Icon name={icon} size={13} />}
       {label}
@@ -110,7 +110,7 @@ export type EditHold = 'update' | 'rebuild' | 'run' | null
 /** The sticky line that says edit mode is on, and how it works — or what it waits for. */
 export function EditBar({ hold }: { hold: EditHold }) {
   return (
-    <div className="sticky top-0 z-10 flex items-center gap-2.5 px-6 py-2 bg-surface-container-low border-b border-[#b9cdf5]">
+    <div className="sticky top-0 z-10 flex items-center gap-2.5 px-6 py-2 bg-surface-container-low border-b border-info-line">
       <Icon name={hold === 'update' || hold === 'rebuild' ? 'hourglass_top' : 'edit_note'} size={18} className="text-secondary" />
       <p className="flex-1 text-caption text-on-surface">
         {hold === 'update' ? (
@@ -122,8 +122,8 @@ export function EditBar({ hold }: { hold: EditHold }) {
         ) : (
           <>
             <b>Editing.</b> Click an outlined text to correct it — it saves when you leave the box
-            (<kbd className="font-mono text-label border border-outline-variant border-b-2 rounded px-1 bg-white">Enter</kbd>;
-            {' '}<kbd className="font-mono text-label border border-outline-variant border-b-2 rounded px-1 bg-white">Esc</kbd> cancels).
+            (<kbd className="font-mono text-label border border-outline-variant border-b-2 rounded px-1 bg-surface-container-lowest">Enter</kbd>;
+            {' '}<kbd className="font-mono text-label border border-outline-variant border-b-2 rounded px-1 bg-surface-container-lowest">Esc</kbd> cancels).
             Text that comes from the code stays as it is. Flowcharts: <b>Edit flowchart</b> on each one.
           </>
         )}

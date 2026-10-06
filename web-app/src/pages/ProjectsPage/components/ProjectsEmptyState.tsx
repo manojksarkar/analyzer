@@ -25,7 +25,7 @@ export function ProjectsEmptyState({
         {/* New Project — leads to the create wizard */}
         <button
           onClick={onNewProject}
-          className="group flex flex-col items-center gap-3 p-6 bg-white border-2 border-secondary rounded-xl hover:bg-secondary/5 transition-colors text-center"
+          className="group flex flex-col items-center gap-3 p-6 bg-surface-container-lowest border-2 border-secondary rounded-xl hover:bg-secondary/5 transition-colors text-center"
         >
           <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center">
             <Icon name="add" size={20} className="text-white" />
@@ -45,7 +45,7 @@ export function ProjectsEmptyState({
         {/* Request Access — inline action (no navigation) */}
         <button
           onClick={onRequestAccess}
-          className="group flex flex-col items-center gap-3 p-6 bg-white border border-outline-variant rounded-xl hover:bg-surface-container-low transition-colors text-center"
+          className="group flex flex-col items-center gap-3 p-6 bg-surface-container-lowest border border-outline-variant rounded-xl hover:bg-surface-container-low transition-colors text-center"
         >
           <div className="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center">
             <Icon name="lock" size={20} className="text-on-surface-variant" />

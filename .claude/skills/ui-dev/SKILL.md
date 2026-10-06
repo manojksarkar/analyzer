@@ -74,8 +74,18 @@ sizes, or spacing inline — use the token utilities or a `ui/` primitive.
   `cn()` takes it for a colour and drops it beside `text-<colour>`.
 - **Colour:** use the semantic `@theme` colours — `text-on-surface`, `text-on-surface-variant`,
   `text-outline`, `text-secondary`, `bg-surface`, `bg-surface-container*`, `border-outline-variant`,
-  `bg-amber`. A recurring colour with no token should *become* a token (add to `@theme`); a one-off may
-  use an arbitrary utility `bg-[#hex]` — but **arbitrary ≠ inline style** (it's still a class).
+  `bg-amber`, and the status ones: `success`, `warn`, `caution`, `violet`, `muted`, `faint`, `track`,
+  `tint`, `info-line`, `highlight`, `page`, `inverse`, `selected`, `hero`. A recurring colour with no
+  token should *become* a token (add to `@theme` **and** to the dark block); a one-off may use an
+  arbitrary utility — but **arbitrary ≠ inline style** (it's still a class).
+- **Two themes (2026-10-06):** light is `@theme`, dark redefines the same variables under
+  `:root[data-theme="dark"]` in `index.css` (dark mockups' palette, `docs/ui-mockups/dark/`). So **no
+  hex in a component, and no `bg-white`** (use `bg-surface-container-lowest`): a hard-coded colour does
+  not switch. A data-driven colour reads `var(--color-…)`. "Primary" flips to near-white in dark — a
+  dark fill under white text is `bg-inverse` (or `bg-selected` for the active nav item). No red for a
+  state: "Changes requested" is violet, a failure amber; red is for genuine errors only. The toggle:
+  `components/shell/ThemeToggle.tsx`, `store/theme.ts` (`localStorage.theme`, default dark), set
+  before paint by the inline script in `index.html`.
 - **Radius:** 4→`rounded-lg`, 8→`rounded-xl`, 12→`rounded-2xl`, pill→`rounded-full`; others arbitrary
   `rounded-[6px]`.
 

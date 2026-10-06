@@ -133,7 +133,7 @@ export function BranchPicker({ branches, value, defaultBranch, invalid, onPick }
           id={listId}
           role="listbox"
           aria-label="Branches"
-          className="absolute top-[calc(100%+4px)] inset-x-0 z-20 max-h-[248px] overflow-y-auto bg-white border border-outline-variant rounded-xl shadow-[0_4px_16px_rgba(4,22,39,.12)]"
+          className="absolute top-[calc(100%+4px)] inset-x-0 z-20 max-h-[248px] overflow-y-auto bg-surface-container-lowest border border-outline-variant rounded-xl shadow-[0_4px_16px_rgba(4,22,39,.12)]"
         >
           {typed && (
             <div className="px-3 py-1.5 border-b border-surface-container-low font-mono text-caption text-outline">

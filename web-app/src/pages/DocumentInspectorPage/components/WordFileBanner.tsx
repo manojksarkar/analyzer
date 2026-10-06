@@ -14,10 +14,10 @@ import { fileLabel, plural, type ReaderBanner, type UpdateAsk } from '../../../l
    out in lib/wordFiles.ts (readerBanner). */
 
 const TONE = {
-  warn: { box: 'bg-[#fffbeb] border-[#fcd34d]', text: 'text-[#92400e]', icon: 'text-[#b45309]' },
-  info: { box: 'bg-[#fffbeb] border-[#fcd34d]', text: 'text-[#92400e]', icon: 'text-secondary' },
-  ok: { box: 'bg-[#f0fdf9] border-[#86efac]', text: 'text-[#065f46]', icon: 'text-[#00a572]' },
-  bad: { box: 'bg-[#fff1f0] border-[#f5a3a3]', text: 'text-[#93000a]', icon: 'text-error' },
+  warn: { box: 'bg-warn-bg border-state-warn-line', text: 'text-state-warn', icon: 'text-warn' },
+  info: { box: 'bg-warn-bg border-state-warn-line', text: 'text-state-warn', icon: 'text-secondary' },
+  ok: { box: 'bg-state-done-bg border-success-line', text: 'text-state-done', icon: 'text-success' },
+  bad: { box: 'bg-error-container/40 border-error/30', text: 'text-on-error-container', icon: 'text-error' },
 } as const
 
 export function WordFileBanner({
@@ -39,7 +39,7 @@ export function WordFileBanner({
     <WordFileMenu
       label="More"
       trigger={(
-        <button type="button" aria-label="More" title="More" className="p-1 rounded-lg text-[#92400e] hover:bg-[#fde68a55] flex-shrink-0">
+        <button type="button" aria-label="More" title="More" className="p-1 rounded-lg text-state-warn hover:bg-highlight flex-shrink-0">
           <Icon name="more_vert" size={18} />
         </button>
       )}
@@ -78,7 +78,7 @@ export function WordFileBanner({
       const retry = state.retry
       return (
         <Banner
-          tone="bad"
+          tone="warn"
           icon="error"
           lines={retry.kind === 'open' || (retry.kind === 'here' && state.blocked) ? (
             <>
@@ -178,7 +178,7 @@ function Banner({ tone, icon, spin, lines, action, children }: {
       <Icon name={icon} size={18} className={cn('flex-shrink-0', t.icon, spin && 'animate-spin')} />
       <div className="flex-1 min-w-0">
         <p className={cn('text-xs leading-[1.45]', t.text)}>{children}</p>
-        {lines && <div className="mt-0.5 text-xs leading-[17px] text-[#92400e]">{lines}</div>}
+        {lines && <div className="mt-0.5 text-xs leading-[17px] text-state-warn">{lines}</div>}
       </div>
       {action}
     </div>

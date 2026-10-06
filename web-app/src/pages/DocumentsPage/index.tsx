@@ -178,7 +178,7 @@ export function DocumentsPage() {
   // ── A read failed: say so, with Retry (an empty page would be a wrong answer) ──
   if (failed) {
     return (
-      <div className="flex-1 overflow-y-auto bg-surface-container-low">
+      <div className="flex-1 overflow-y-auto bg-page">
         <div className="p-6">
           <Card>
             <LoadError what="the documents" error={failed.error} retrying={failed.retrying} onRetry={failed.retry} />
@@ -192,7 +192,7 @@ export function DocumentsPage() {
   //    "No documents yet" (the view state's default) from a version that has them ──
   if (viewLoading) {
     return (
-      <div className="flex-1 overflow-y-auto bg-surface-container-low">
+      <div className="flex-1 overflow-y-auto bg-page">
         <div className="p-6">
           <Card className="overflow-hidden" aria-busy="true" aria-label="Loading documents">
             <div className="px-5 py-4 border-b border-outline-variant space-y-2">
@@ -210,7 +210,7 @@ export function DocumentsPage() {
   if (pageState === 'never') {
     const runRef = viewVersion?.tag ?? (selectedCommit ? `commit ${selectedCommit.shortSha}` : project?.defaultBranch ?? '')
     return (
-      <div className="flex-1 overflow-y-auto bg-surface-container-low">
+      <div className="flex-1 overflow-y-auto bg-page">
         <div className="p-6">
           <Card className="overflow-hidden">
             <div className="py-20 flex flex-col items-center text-center gap-5">
@@ -240,7 +240,7 @@ export function DocumentsPage() {
   // ── RUNNING state: the picked version is still being generated (mockup: "Generating document") ──
   if (pageState === 'running' && !isLoading && all.length === 0) {
     return (
-      <div className="flex-1 overflow-y-auto bg-surface-container-low">
+      <div className="flex-1 overflow-y-auto bg-page">
         <div className="p-6">
           {/* Staged generation: once the model is built, how far the documents have got. */}
           {viewVersion?.id && (
@@ -260,7 +260,7 @@ export function DocumentsPage() {
               </div>
               <button
                 onClick={goOverview}
-                className="flex items-center gap-2 px-5 py-2.5 border border-outline-variant bg-white hover:bg-surface-container text-on-surface rounded-xl font-mono text-caption transition-colors"
+                className="flex items-center gap-2 px-5 py-2.5 border border-outline-variant bg-surface-container-lowest hover:bg-surface-container text-on-surface rounded-xl font-mono text-caption transition-colors"
               >
                 <Icon name="monitoring" size={16} />
                 View progress
@@ -288,7 +288,7 @@ export function DocumentsPage() {
             {downloadAll.isPending ? 'PREPARING…' : 'DOWNLOAD ALL'}
             {files.length > 0 && (
               <>
-                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber border-2 border-white" aria-hidden />
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber border-2 border-surface-container-lowest" aria-hidden />
                 <span className="sr-only"> ({plural(files.length, 'file')} out of date)</span>
               </>
             )}
@@ -305,21 +305,21 @@ export function DocumentsPage() {
         onOpenDoc={(d) => openDoc(d)}
         loading={isLoading}
       />
-      <div className="flex-1 overflow-y-auto bg-surface-container-low">
+      <div className="flex-1 overflow-y-auto bg-page">
         <div className="p-6">
 
         {/* ── Stale banner: docs generated from an older commit than HEAD ── */}
         {pageState === 'stale' && (
-          <div className="mb-4 flex items-center gap-3 px-4 py-3 rounded-xl border bg-[#fffbeb] border-[#fcd34d]">
-            <Icon name="warning" size={18} className="text-[#b45309] flex-shrink-0" />
+          <div className="mb-4 flex items-center gap-3 px-4 py-3 rounded-xl border bg-warn-bg border-state-warn-line">
+            <Icon name="warning" size={18} className="text-warn flex-shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="font-mono text-caption text-[#92400e]">
+              <p className="font-mono text-caption text-state-warn">
                 Documents generated from{' '}
-                <code className="font-mono text-label bg-[#fef3c7] px-1 py-px rounded-[3px]">{viewVersion?.shortSha ?? '—'}</code>
+                <code className="font-mono text-label bg-highlight px-1 py-px rounded-[3px]">{viewVersion?.shortSha ?? '—'}</code>
                 {commits?.[0] && (
                   <>
                     {' '}— HEAD is now at{' '}
-                    <code className="font-mono text-label bg-[#fef3c7] px-1 py-px rounded-[3px]">{commits[0].shortSha}</code>
+                    <code className="font-mono text-label bg-highlight px-1 py-px rounded-[3px]">{commits[0].shortSha}</code>
                   </>
                 )}
                 {viewVersion?.newCommitsSince
@@ -329,7 +329,7 @@ export function DocumentsPage() {
             </div>
             <button
               onClick={goOverview}
-              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white bg-[#b45309] font-mono text-label font-semibold whitespace-nowrap"
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-surface-container-lowest bg-warn font-mono text-label font-semibold whitespace-nowrap"
             >
               <Icon name="play_arrow" size={12} />
               Re-run
@@ -369,7 +369,7 @@ export function DocumentsPage() {
               <div className="flex items-center gap-2">
                 <StatusFilter value={statusFilter} onToggle={toggleStatus} onClear={() => setStatusFilter(new Set())} />
                 {/* Search */}
-                <div className="flex items-center gap-1.5 px-2.5 py-1.5 border border-outline-variant rounded-lg bg-white hover:border-secondary transition-colors min-w-[180px]">
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 border border-outline-variant rounded-lg bg-surface-container-lowest hover:border-secondary transition-colors min-w-[180px]">
                   <Icon name="search" size={14} className="text-on-surface-variant flex-shrink-0" />
                   <input
                     value={search}
@@ -517,7 +517,7 @@ export function DocumentsPage() {
 
           {/* ── Footer ── */}
           {!isLoading && filtered.length > 0 && (
-            <div className="px-5 py-3.5 border-t border-outline-variant flex items-center justify-between bg-white">
+            <div className="px-5 py-3.5 border-t border-outline-variant flex items-center justify-between bg-surface-container-lowest">
               <Text as="p" variant="caption" className="font-mono">
                 Showing {filtered.length} of {all.length} document{all.length !== 1 ? 's' : ''}
               </Text>

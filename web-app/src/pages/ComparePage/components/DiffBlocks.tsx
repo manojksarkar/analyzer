@@ -14,13 +14,13 @@ const MARK_INLINE: Record<DiffMark, string> = {
   none:   '',
   add:    'bg-[rgba(0,165,114,.18)] text-on-tertiary-container rounded-[2px] px-px underline decoration-1 underline-offset-2',
   del:    'bg-error-container text-error line-through rounded-[2px] px-px',
-  change: 'bg-[#fff1cc] text-[#92600a] rounded-[2px] px-px underline decoration-dotted decoration-1 underline-offset-2',
+  change: 'bg-highlight text-state-warn rounded-[2px] px-px underline decoration-dotted decoration-1 underline-offset-2',
 }
 const MARK_CELL: Record<DiffMark, string> = {
   none:   '',
   add:    'bg-[rgba(0,165,114,.14)] underline decoration-1 underline-offset-2',
   del:    'bg-error-container/70 line-through',
-  change: 'bg-[#fff4d6] underline decoration-dotted decoration-1 underline-offset-2',
+  change: 'bg-highlight/70 underline decoration-dotted decoration-1 underline-offset-2',
 }
 
 /* ─── Inline word-level highlighted text ─── */
@@ -62,14 +62,14 @@ function DiffDiagramBlock({ block }: { block: Extract<CompareBlock, { kind: 'dia
     )}>
       {block.imageUrl ? (
         <img src={block.imageUrl} alt={block.caption ?? 'Diagram'} loading="lazy"
-             className="block w-full max-h-[400px] object-contain bg-white" />
+             className="block w-full max-h-[400px] object-contain bg-surface-container-lowest" />
       ) : (
         <div className="flex flex-col items-center justify-center text-center py-10 gap-2">
           <Icon name="account_tree" size={32} className="text-outline-variant" />
           <span className="font-mono text-caption text-on-surface-variant">{block.caption ?? 'Diagram'}</span>
         </div>
       )}
-      <figcaption className="flex items-center justify-between gap-2 px-3 py-2 border-t border-outline-variant bg-white">
+      <figcaption className="flex items-center justify-between gap-2 px-3 py-2 border-t border-outline-variant bg-surface-container-lowest">
         <span className="flex items-center gap-1.5 font-mono text-label text-on-surface-variant truncate">
           {block.changed && <span className="px-1.5 py-0.5 rounded bg-secondary/10 text-secondary font-semibold">diagram changed</span>}
           <span className="truncate">{block.caption ?? 'Diagram'}</span>
@@ -125,7 +125,7 @@ function DiffBlockView({ block, marked = false }: { block: CompareBlock; marked?
           {block.rows.map((r, ri) => {
             const rowMark = block.rowMarks[ri] ?? 'none'
             return (
-              <tr key={ri} className={cn('border-b border-[rgba(196,198,205,.6)]', rowMark !== 'none' && rowMark !== 'change' && MARK_CELL[rowMark])}>
+              <tr key={ri} className={cn('border-b border-outline-variant/60', rowMark !== 'none' && rowMark !== 'change' && MARK_CELL[rowMark])}>
                 {marked && <RowMarker mark={rowChange(rowMark, block.cellMarks[ri])} />}
                 {r.map((c, ci) => {
                   const cellMark = block.cellMarks[ri]?.[ci] ?? 'none'
@@ -183,7 +183,7 @@ export function SectionBody({ content }: { content: string }) {
               </thead>
               <tbody>
                 {b.rows.map((r, ri) => (
-                  <tr key={ri} className="border-b border-[rgba(196,198,205,.6)]">
+                  <tr key={ri} className="border-b border-outline-variant/60">
                     {r.map((c, ci) => (
                       <td key={ci} className={cn('px-3 py-2', ci === 0 ? 'text-secondary font-mono text-caption' : 'text-on-surface-variant')}>{c}</td>
                     ))}

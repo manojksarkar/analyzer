@@ -5,9 +5,9 @@ export type BadgeVariant = 'default' | 'primary' | 'success' | 'warning' | 'dang
 const variants: Record<BadgeVariant, string> = {
   default:  'bg-surface-container text-on-surface-variant border border-outline-variant',
   primary:  'bg-secondary/10 text-secondary border border-secondary/20',
-  success:  'bg-[#f0fdf9] text-[#00a572] border border-[#86efac]',
-  warning:  'bg-[#fff8e6] text-[#b45309] border border-[#f59e0b]',
-  danger:   'bg-[#fee2e2] text-[#991b1b]',
+  success:  'bg-state-done-bg text-success border border-success-line',
+  warning:  'bg-state-warn-bg text-warn border border-amber',
+  danger:   'bg-error-container text-on-error-container',
   mono:     'bg-surface-container border border-outline-variant text-on-surface-variant font-mono tracking-[0.06em]',
 }
 
@@ -34,31 +34,31 @@ export function Badge({ variant = 'default', children, className }: BadgeProps) 
 export function RoleBadge({ role }: { role: 'admin' | 'developer' }) {
   return (
     <span
-      className="inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold tracking-[0.1em]"
-      style={{
-        fontFamily: 'JetBrains Mono, monospace',
-        background: role === 'admin' ? '#e5eeff' : '#f3f4f6',
-        color: role === 'admin' ? '#0058be' : '#44474c',
-      }}
+      className={cn(
+        'inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold tracking-[0.1em] font-mono',
+        role === 'admin' ? 'bg-surface-container text-secondary' : 'bg-muted text-on-surface-variant',
+      )}
     >
       {role === 'admin' ? 'ADMIN' : 'DEV'}
     </span>
   )
 }
 
+// Theme colours (index.css), so a badge follows the light or the dark theme.
 const PROCESS_COLORS: Record<string, { bg: string; color: string }> = {
-  'SWE.4': { bg: '#e0f5f1', color: '#00796b' },
-  'SWE.3': { bg: '#e5eeff', color: '#0058be' },
-  'SWE.2': { bg: '#eef2ff', color: '#4f46e5' },
-  'SWE.1': { bg: '#f0fdf9', color: '#00a572' },
-  'SYS.1': { bg: '#faf5ff', color: '#7c3aed' },
-  'SYS.2': { bg: '#fff7ed', color: '#c2410c' },
+  'SWE.4': { bg: 'var(--hue-teal-bg)', color: 'var(--hue-teal-ink)' },
+  'SWE.3': { bg: 'var(--color-surface-container)', color: 'var(--color-secondary)' },
+  'SWE.2': { bg: 'var(--hue-indigo-bg)', color: 'var(--hue-indigo-ink)' },
+  'SWE.1': { bg: 'var(--color-state-done-bg)', color: 'var(--color-success)' },
+  'SYS.1': { bg: 'var(--color-violet-bg)', color: 'var(--color-violet)' },
+  'SYS.2': { bg: 'var(--hue-orange-bg)', color: 'var(--hue-orange-ink)' },
 }
 
 export function ProcessBadge({ process }: { process: string }) {
-  const { bg, color } = PROCESS_COLORS[process] ?? { bg: '#e5eeff', color: '#0058be' }
+  const { bg, color } = PROCESS_COLORS[process] ?? PROCESS_COLORS['SWE.3']
   return (
     <span
+      // eslint-disable-next-line no-restricted-syntax -- the colour is the process's (data-driven)
       style={{
         fontFamily: "'JetBrains Mono'", fontSize: 10, fontWeight: 700,
         background: bg, color, padding: '2px 7px', borderRadius: 3,

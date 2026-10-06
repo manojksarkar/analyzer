@@ -50,7 +50,7 @@ export function ConfigOverview({ project, team, teamLoading }: { project: Projec
     <div className="flex gap-6 items-stretch">
       {/* Left — configuration + architecture */}
       <div className="flex-1 min-w-0 flex flex-col gap-4">
-        <div className="bg-white border border-outline-variant rounded-xl overflow-hidden">
+        <div className="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
           <div className="px-5 py-3.5 border-b border-outline-variant flex items-start justify-between gap-3">
             <div>
               <Text as="h2" variant="heading" className="text-on-surface">Project Configuration</Text>
@@ -78,7 +78,7 @@ export function ConfigOverview({ project, team, teamLoading }: { project: Projec
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <Icon name="memory" size={14} className="text-secondary" />
                         <span className="font-mono text-xs font-semibold">{c.name}</span>
-                        <span className={cn('font-mono text-label', c.layers.length ? 'text-on-surface-variant' : 'text-[#b45309]')}>
+                        <span className={cn('font-mono text-label', c.layers.length ? 'text-on-surface-variant' : 'text-warn')}>
                           {c.layers.length ? `used by ${c.layers.join(', ')}` : 'no layer uses it'}
                         </span>
                       </div>
@@ -93,7 +93,7 @@ export function ConfigOverview({ project, team, teamLoading }: { project: Projec
           </div>
         </div>
 
-        <div className="bg-white border border-outline-variant rounded-xl overflow-hidden">
+        <div className="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
           <div className="px-5 py-3.5 border-b border-outline-variant flex items-center justify-between">
             <Text as="h2" variant="heading" className="text-on-surface">Architecture</Text>
             <Text variant="caption" className="font-mono">
@@ -145,7 +145,7 @@ export function ConfigOverview({ project, team, teamLoading }: { project: Projec
 
       {/* Right — team */}
       <div className="w-[300px] flex-shrink-0">
-        <div className="bg-white border border-outline-variant rounded-xl overflow-hidden">
+        <div className="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
           <div className="px-4 py-3.5 border-b border-outline-variant">
             <Text as="h2" variant="heading" className="text-on-surface">Team</Text>
             <Text as="p" variant="caption" className="font-mono mt-0.5">{plural(team?.length ?? 0, 'member')}</Text>

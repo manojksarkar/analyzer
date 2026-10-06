@@ -4,6 +4,7 @@ import { useProjects } from '../../hooks/useProjects'
 import { useAuthStore } from '../../store/auth'
 import { Dropdown, DropdownTrigger, DropdownContent, Icon, BrandMark, TableSkeleton, toast } from '../../components/ui'
 import { NotificationBell } from '../../components/shell/NotificationBell'
+import { ThemeToggle } from '../../components/shell/ThemeToggle'
 import { ProjectRow } from './components/ProjectRow'
 import { ProjectsEmptyState } from './components/ProjectsEmptyState'
 import { RenameProjectDialog } from './components/RenameProjectDialog'
@@ -38,12 +39,12 @@ export function ProjectsPage() {
       <div
         className="fixed inset-0 pointer-events-none -z-10 opacity-[0.025]"
         // eslint-disable-next-line no-restricted-syntax -- decorative dot-grid pattern (awkward as a utility)
-        style={{ backgroundImage: 'radial-gradient(#041627 0.5px, transparent 0.5px)', backgroundSize: '24px 24px' }}
+        style={{ backgroundImage: 'radial-gradient(var(--color-inverse) 0.5px, transparent 0.5px)', backgroundSize: '24px 24px' }}
         aria-hidden
       />
 
       {/* ── Top bar ── */}
-      <header className="h-14 flex-shrink-0 flex items-center justify-between px-6 bg-white border-b border-outline-variant z-40">
+      <header className="h-14 flex-shrink-0 flex items-center justify-between px-6 bg-surface-container-lowest border-b border-outline-variant z-40">
         {/* Brand */}
         <div className="flex items-center gap-3">
           <BrandMark size={32} className="flex-shrink-0 text-secondary" />
@@ -59,6 +60,7 @@ export function ProjectsPage() {
 
         {/* Right */}
         <div className="flex items-center gap-0.5">
+          <ThemeToggle />
           <NotificationBell />
 
           <div className="w-px h-5 bg-outline-variant mx-1.5" aria-hidden />
@@ -105,7 +107,7 @@ export function ProjectsPage() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={requestAccess}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-outline-variant hover:bg-surface-container-low text-on-surface rounded-lg transition-colors font-mono text-caption font-bold tracking-[0.04em]"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container-lowest border border-outline-variant hover:bg-surface-container-low text-on-surface rounded-lg transition-colors font-mono text-caption font-bold tracking-[0.04em]"
                 >
                   <Icon name="lock" size={14} />
                   REQUEST ACCESS
@@ -122,7 +124,7 @@ export function ProjectsPage() {
           </div>
 
           {/* Projects table */}
-          <div className="bg-white border border-outline-variant rounded-xl overflow-hidden mb-6">
+          <div className="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden mb-6">
             {isError ? (
               <div className="flex items-center justify-center h-32 text-sm text-on-surface-variant">
                 Failed to load projects.

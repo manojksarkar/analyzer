@@ -114,7 +114,7 @@ export function RepoBrowser({ start, onUse, onClose }: {
         role="dialog"
         aria-modal="true"
         aria-label="Choose a git repository on the server"
-        className="fixed top-0 right-0 h-screen bg-white border-l border-outline-variant z-[100] flex flex-col w-[380px] shadow-[-4px_0_24px_rgba(4,22,39,.12)] outline-none"
+        className="fixed top-0 right-0 h-screen bg-surface-container-lowest border-l border-outline-variant z-[100] flex flex-col w-[380px] shadow-[-4px_0_24px_rgba(4,22,39,.12)] outline-none"
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant flex-shrink-0">
           <div>
@@ -165,9 +165,9 @@ export function RepoBrowser({ start, onUse, onClose }: {
                 <button key={f.path} type="button" title={f.path} aria-pressed={f.path === picked}
                   onClick={() => setPicked(f.path)} onDoubleClick={() => onUse(f.path)}
                   className={cn(ROW, f.path === picked && ROW_PICKED)}>
-                  <Icon name="source" size={16} className="text-[#006e45]" />
+                  <Icon name="source" size={16} className="text-state-done" />
                   <span className="flex-1 min-w-0 truncate">{f.name}</span>
-                  <span className="px-1.5 rounded-[3px] bg-[#d6f5ea] text-[#006e45] font-mono text-label font-semibold">git</span>
+                  <span className="px-1.5 rounded-[3px] bg-state-done-line text-state-done font-mono text-label font-semibold">git</span>
                   <Icon name="check" size={16} className={f.path === picked ? undefined : 'invisible'} />
                 </button>
               ) : (

@@ -18,38 +18,39 @@ export interface StatusMeta {
   dot: string
   /** The text colour. */
   text: string
-  /** The colour as a value, for what is drawn with data-driven sizes (bar widths, donut arcs). */
+  /** The colour as a CSS value (a theme variable), for what is drawn with data-driven sizes (bar
+   *  widths, donut arcs). */
   hex: string
 }
 
 export const STATUS_META: Record<StatusKey, StatusMeta> = {
   in_review: {
     label: 'In review', icon: 'rate_review',
-    badge: 'bg-[#fff8e6] text-[#b45309] border-amber', dot: 'bg-amber', text: 'text-[#b45309]', hex: '#f59e0b',
+    badge: 'bg-state-warn-bg text-warn border-amber', dot: 'bg-amber', text: 'text-warn', hex: 'var(--color-amber)',
   },
   submitted: {
     label: 'Ready for approval', icon: 'pending_actions',
-    badge: 'bg-surface-container text-secondary border-[#8ab0f0]', dot: 'bg-secondary-container', text: 'text-secondary', hex: '#2170e4',
+    badge: 'bg-surface-container text-secondary border-secondary-container/50', dot: 'bg-secondary-container', text: 'text-secondary', hex: 'var(--color-secondary-container)',
   },
   changes_requested: {
     label: 'Changes requested', icon: 'undo',
-    badge: 'bg-[#fff1f0] text-error border-[#f5a3a3]', dot: 'bg-error', text: 'text-error', hex: '#ba1a1a',
+    badge: 'bg-violet-bg text-violet border-violet-line', dot: 'bg-violet', text: 'text-violet', hex: 'var(--color-violet)',
   },
   approved: {
     label: 'Approved', icon: 'check_circle',
-    badge: 'bg-[#f0fdf9] text-[#00a572] border-[#86efac]', dot: 'bg-[#00a572]', text: 'text-[#00a572]', hex: '#00a572',
+    badge: 'bg-state-done-bg text-success border-success-line', dot: 'bg-success', text: 'text-success', hex: 'var(--color-success)',
   },
   not_run: {
     label: 'Not run', icon: 'radio_button_unchecked',
-    badge: 'bg-[#f3f4f6] text-outline border-[#e2e3e8]', dot: 'bg-outline', text: 'text-outline', hex: '#74777d',
+    badge: 'bg-muted text-outline border-hairline', dot: 'bg-outline', text: 'text-outline', hex: 'var(--color-outline)',
   },
   running: {
     label: 'Running', icon: 'sync',
-    badge: 'bg-surface-container text-secondary border-[#bfcfff]', dot: 'bg-secondary', text: 'text-secondary', hex: '#0058be',
+    badge: 'bg-surface-container text-secondary border-state-busy-line', dot: 'bg-secondary', text: 'text-secondary', hex: 'var(--color-secondary)',
   },
   stale: {
     label: 'Stale', icon: 'warning',
-    badge: 'bg-[#fffbeb] text-[#d97706] border-amber', dot: 'bg-amber', text: 'text-[#d97706]', hex: '#d97706',
+    badge: 'bg-warn-bg text-caution border-amber', dot: 'bg-amber', text: 'text-caution', hex: 'var(--color-caution)',
   },
 }
 
@@ -132,14 +133,14 @@ export function approvalLabel(approved: number, total: number): string {
 
 export const EVENT_META: Record<ReviewEventKind, { icon: string; dot: string; text: string }> = {
   generated:         { icon: 'play_circle',     dot: 'bg-outline-variant', text: 'text-secondary' },
-  carried:           { icon: 'verified',        dot: 'bg-[#00a572]',       text: 'text-[#00a572]' },
-  assigned:          { icon: 'person_add',      dot: 'bg-[#7c3aed]',       text: 'text-[#7c3aed]' },
-  unassigned:        { icon: 'person_remove',   dot: 'bg-[#7c3aed]',       text: 'text-[#7c3aed]' },
-  claimed:           { icon: 'front_hand',      dot: 'bg-[#7c3aed]',       text: 'text-[#7c3aed]' },
+  carried:           { icon: 'verified',        dot: 'bg-success',         text: 'text-success' },
+  assigned:          { icon: 'person_add',      dot: 'bg-violet',          text: 'text-violet' },
+  unassigned:        { icon: 'person_remove',   dot: 'bg-violet',          text: 'text-violet' },
+  claimed:           { icon: 'front_hand',      dot: 'bg-violet',          text: 'text-violet' },
   submitted:         { icon: 'pending_actions', dot: 'bg-secondary',       text: 'text-secondary' },
-  approved:          { icon: 'check_circle',    dot: 'bg-[#00a572]',       text: 'text-[#00a572]' },
-  changes_requested: { icon: 'undo',            dot: 'bg-error',           text: 'text-error' },
-  reopened:          { icon: 'lock_open',       dot: 'bg-[#b45309]',       text: 'text-[#b45309]' },
+  approved:          { icon: 'check_circle',    dot: 'bg-success',         text: 'text-success' },
+  changes_requested: { icon: 'undo',            dot: 'bg-violet',          text: 'text-violet' },
+  reopened:          { icon: 'lock_open',       dot: 'bg-warn',            text: 'text-warn' },
 }
 
 export function eventMeta(kind: string) {

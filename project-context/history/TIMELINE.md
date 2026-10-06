@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-06f | The web app has a dark and a light theme: dark by default, a sun/moon toggle, the dark mockups' Samsung-style palette, light unchanged, no red for a state | [14](14-2026-10-05r.md) |
 | 2026-10-06e | After the rebase: a real-app test of this branch + Vishal's review update v5 passed; nine fixes where they meet -- a stranded migration stamp, old-kind corrections orphaned, a disk model's old names, component names in an update, `layer_filter` unchecked, R9 times in UTC, and Word-file updates no longer re-run Phase 3 | [14](14-2026-10-05r.md) |
 | 2026-10-06d | Word file updates, the web app: eleven review fixes (the hold covers a resume, Try again only within reach, the watcher never misses an end, polling eased for long exports, fail-closed "Can't tell") and the server's partial-failure answers | [14](14-2026-10-05r.md) |
 | 2026-10-06c | Word file updates, the server: eight review fixes -- a resume stores what the dead run made, "layer added" survives a failed update, saves under way are in or out cleanly, structs placed per component, a Word file waits for its reader, partial failures reported, every run dates its files by its start, unreadable states fail closed | [14](14-2026-10-05r.md) |

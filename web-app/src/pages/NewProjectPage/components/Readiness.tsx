@@ -12,8 +12,8 @@ export interface ReadinessItem {
 }
 
 const LOOK = {
-  ok:    { icon: 'check_circle', cls: 'text-[#00a572]' },
-  warn:  { icon: 'error',        cls: 'text-[#b45309]' },
+  ok:    { icon: 'check_circle', cls: 'text-success' },
+  warn:  { icon: 'error',        cls: 'text-warn' },
   error: { icon: 'cancel',       cls: 'text-error' },
 } as const
 
@@ -23,9 +23,9 @@ export function Readiness({ items, onFix }: { items: ReadinessItem[]; onFix: (st
   const errors = items.filter((i) => i.state === 'error').length
   const warns = items.filter((i) => i.state === 'warn').length
   return (
-    <div className={cn('rounded-xl border bg-white overflow-hidden', errors ? 'border-error' : 'border-outline-variant')}>
-      <div className={cn('flex items-center gap-2.5 px-4 py-3 border-b border-outline-variant', errors ? 'bg-error-container' : 'bg-[#f0fff9]')}>
-        <Icon name={errors ? 'block' : 'rocket_launch'} size={18} fill className={errors ? 'text-error' : 'text-[#00a572]'} />
+    <div className={cn('rounded-xl border bg-surface-container-lowest overflow-hidden', errors ? 'border-error' : 'border-outline-variant')}>
+      <div className={cn('flex items-center gap-2.5 px-4 py-3 border-b border-outline-variant', errors ? 'bg-error-container' : 'bg-state-done-bg')}>
+        <Icon name={errors ? 'block' : 'rocket_launch'} size={18} fill className={errors ? 'text-error' : 'text-success'} />
         <div className="flex-1">
           <p className={cn('text-sm font-semibold', errors ? 'text-on-error-container' : 'text-on-surface')}>
             {errors ? `${errors === 1 ? 'One thing' : `${errors} things`} to fix before the project can be created` : 'Ready to create'}

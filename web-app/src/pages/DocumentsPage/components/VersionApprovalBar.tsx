@@ -30,20 +30,20 @@ export function VersionApprovalBar({
       <div className="flex items-center gap-2 mb-2">
         {all ? (
           <>
-            <Icon name="check_circle" size={16} fill className="text-[#00a572]" />
-            <span className="font-mono text-caption text-[#065f46]">
+            <Icon name="check_circle" size={16} fill className="text-success" />
+            <span className="font-mono text-caption text-state-done">
               <b>{tag} is approved</b> · all {c.total} documents{by ? ` · approved by ${by.name}${at ? `, ${at}` : ''}` : ''}
             </span>
           </>
         ) : (
           <>
-            <Icon name="rate_review" size={16} className="text-[#b45309]" />
-            <span className="font-mono text-caption text-[#92400e]">
+            <Icon name="rate_review" size={16} className="text-warn" />
+            <span className="font-mono text-caption text-state-warn">
               <b>{tag} is in review</b> · {c.approved} of {c.total} documents approved. It is approved when every one is.
             </span>
           </>
         )}
-        <span className={cn('ml-auto font-mono text-caption', all ? 'text-[#00a572]' : 'text-[#b45309]')}>{pct}%</span>
+        <span className={cn('ml-auto font-mono text-caption', all ? 'text-success' : 'text-warn')}>{pct}%</span>
       </div>
       <div className="h-2 rounded-[4px] overflow-hidden flex bg-surface-container" role="img" aria-label={`${c.approved} of ${c.total} approved`}>
         {shown.map((k) => (
@@ -72,7 +72,7 @@ export function VersionApprovalBar({
           <button
             onClick={onNeedsReviewer}
             title="Show the documents nobody reviews yet"
-            className="inline-flex items-center gap-[5px] px-1.5 py-0.5 rounded-lg font-mono text-caption text-[#b45309] hover:bg-surface-container"
+            className="inline-flex items-center gap-[5px] px-1.5 py-0.5 rounded-lg font-mono text-caption text-warn hover:bg-surface-container"
           >
             <Icon name="person_off" size={13} />
             Needs a reviewer {c.needsReviewer}

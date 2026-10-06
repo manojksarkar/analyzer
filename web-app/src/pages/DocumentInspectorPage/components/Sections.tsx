@@ -53,7 +53,7 @@ function DiagramImage({ src, title }: { src: string; title: string }) {
         className="group relative block w-full bg-white focus-visible:outline-2 focus-visible:outline-secondary"
       >
         <img src={src} alt={title} loading="lazy" className="block w-full max-h-[440px] object-contain bg-white" />
-        <span className="absolute top-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/90 border border-outline-variant text-on-surface-variant opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity">
+        <span className="absolute top-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container-lowest border border-outline-variant text-on-surface-variant opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity">
           <Icon name="open_in_full" size={13} />
           <span className="font-mono text-label">Open</span>
         </span>
@@ -76,7 +76,7 @@ function DiagramView({ section }: { section: RichSection }) {
           <Text variant="caption" className="font-mono max-w-sm">{section.content ?? 'Diagram generated from the Clang AST'}</Text>
         </div>
       )}
-      <figcaption className="flex items-center justify-between gap-2 px-3 py-2 border-t border-outline-variant bg-white">
+      <figcaption className="flex items-center justify-between gap-2 px-3 py-2 border-t border-outline-variant bg-surface-container-lowest">
         <Text variant="caption" className="font-mono truncate">{section.content ?? section.title}</Text>
         {section.mermaid && (
           <button
@@ -125,7 +125,7 @@ function FlowchartTableView({ data }: { data: FlowchartTableData }) {
                         onClick={() => edit.openFlowchart(fc)}
                         title={edit.labelsLocked ?? undefined}
                         className={cn(
-                          'flex-shrink-0 flex items-center gap-1 px-2.5 py-1 border rounded-lg bg-white font-mono text-label font-semibold disabled:opacity-40',
+                          'flex-shrink-0 flex items-center gap-1 px-2.5 py-1 border rounded-lg bg-surface-container-lowest font-mono text-label font-semibold disabled:opacity-40',
                           edit.labelsLocked ? 'border-outline-variant text-outline' : 'border-secondary text-secondary hover:bg-surface-container-low',
                         )}
                       >

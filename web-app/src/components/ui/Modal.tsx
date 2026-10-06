@@ -22,12 +22,12 @@ export function Modal({
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-primary/40 animate-in fade-in-0" />
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-inverse/40 animate-in fade-in-0" />
         <Dialog.Content
           onInteractOutside={closeOnOutsideClick ? undefined : (e) => e.preventDefault()}
           className={cn(
             'fixed z-50 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2',
-            'w-full max-w-md bg-white rounded-2xl p-6',
+            'w-full max-w-md bg-surface-container-lowest rounded-2xl p-6',
             'shadow-[0_8px_40px_rgba(4,22,39,.18)]',
             'animate-in fade-in-0 zoom-in-95',
             'focus:outline-none',

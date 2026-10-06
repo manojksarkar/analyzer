@@ -123,7 +123,7 @@ function SpecCard({ section, spec }: { section: RichSection; spec: TestSpecData 
           const last = i === meta.length - 1
           return [
             <div key={`k${k}`} className={cn('px-3 py-[5px] bg-surface border-r border-surface-container font-mono text-caption font-semibold text-on-surface-variant', !last && 'border-b')}>{k}</div>,
-            <div key={`v${k}`} className={cn('px-3 py-[5px] border-surface-container [overflow-wrap:anywhere]', !last && 'border-b', v === '-' ? 'text-[#b0b3b8]' : 'text-on-surface')}>{v}</div>,
+            <div key={`v${k}`} className={cn('px-3 py-[5px] border-surface-container [overflow-wrap:anywhere]', !last && 'border-b', v === '-' ? 'text-faint' : 'text-on-surface')}>{v}</div>,
           ]
         })}
       </div>
@@ -180,11 +180,11 @@ function Steps({ steps, hl }: { steps: TestSpecData['steps']; hl: string | null 
   }
   const render = (nodes: Node[]): ReactNode => nodes.map((n) => (
     <div key={n.step.number}>
-      <div className={cn('flex gap-2 px-1.5 -ml-1.5 rounded-lg transition-colors', hl === n.step.number && 'bg-[#fff1c7]')}>
+      <div className={cn('flex gap-2 px-1.5 -ml-1.5 rounded-lg transition-colors', hl === n.step.number && 'bg-highlight')}>
         <span className="flex-shrink-0 font-mono text-caption font-semibold leading-[19px] text-secondary">{n.step.number})</span>
         <span><Code text={n.step.text} /></span>
       </div>
-      {n.kids.length > 0 && <div className="ml-2.5 pl-3 border-l border-[#dde1e8]">{render(n.kids)}</div>}
+      {n.kids.length > 0 && <div className="ml-2.5 pl-3 border-l border-hairline">{render(n.kids)}</div>}
     </div>
   ))
   return <>{render(roots)}</>

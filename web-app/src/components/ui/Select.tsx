@@ -35,7 +35,7 @@ export function Select({ value, onValueChange, options, placeholder, label, erro
           aria-labelledby={id}
           aria-invalid={!!error}
           className={cn(
-            'flex w-full h-10 items-center justify-between gap-2 rounded-xl border bg-white px-3',
+            'flex w-full h-10 items-center justify-between gap-2 rounded-xl border bg-surface-container-lowest px-3',
             'text-sm text-on-surface transition-colors',
             'focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary',
             'disabled:cursor-not-allowed disabled:opacity-50',
@@ -52,7 +52,7 @@ export function Select({ value, onValueChange, options, placeholder, label, erro
             position="popper"
             sideOffset={4}
             className={cn(
-              'z-50 min-w-[var(--radix-select-trigger-width)] rounded-xl border border-outline-variant bg-white p-1',
+              'z-50 min-w-[var(--radix-select-trigger-width)] rounded-xl border border-outline-variant bg-surface-container-lowest p-1',
               'shadow-[0_4px_24px_rgba(4,22,39,.12)]',
               'animate-in fade-in-0 zoom-in-95',
             )}

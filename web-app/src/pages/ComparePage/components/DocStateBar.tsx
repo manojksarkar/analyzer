@@ -8,7 +8,7 @@ import type { Document } from '../../../types'
 export function DocStateBar({ doc, projectId }: { doc: Document; projectId: string }) {
   const carried = doc.review.carriedFrom
   return (
-    <div className="flex-shrink-0 h-9 border-t border-outline-variant bg-white px-4 flex items-center justify-between gap-3">
+    <div className="flex-shrink-0 h-9 border-t border-outline-variant bg-surface-container-lowest px-4 flex items-center justify-between gap-3">
       <div className="flex items-center gap-2 min-w-0">
         <StatusBadge status={doc.status} suffix={carried ? ` · from ${carried.tag}` : undefined} />
         {doc.status !== 'approved' && (doc.reviewer ? (
@@ -16,7 +16,7 @@ export function DocStateBar({ doc, projectId }: { doc: Document; projectId: stri
             <Avatar person={doc.reviewer} size={16} />Reviewer: {doc.reviewer.name}
           </span>
         ) : (
-          <span className="font-mono text-label text-[#b45309] whitespace-nowrap">Needs a reviewer</span>
+          <span className="font-mono text-label text-warn whitespace-nowrap">Needs a reviewer</span>
         ))}
       </div>
       <Link

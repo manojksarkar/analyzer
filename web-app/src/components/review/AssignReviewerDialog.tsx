@@ -101,7 +101,7 @@ export function AssignReviewerDialog({
           </span>
         </p>
         {skipped > 0 && (
-          <p className="text-caption text-[#b45309] leading-snug">
+          <p className="text-caption text-warn leading-snug">
             {skipped} approved document{skipped === 1 ? ' is' : 's are'} skipped: reopen {skipped === 1 ? 'it' : 'them'} first.
           </p>
         )}

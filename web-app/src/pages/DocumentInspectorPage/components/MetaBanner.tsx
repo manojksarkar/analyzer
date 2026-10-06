@@ -16,7 +16,7 @@ export function MetaBanner({ meta }: { meta: DocMeta }) {
         <Icon
           name={meta.source === 'pipeline' ? 'bolt' : 'dataset'}
           size={13}
-          className={meta.pipelineDataAvailable ? 'text-[#00a572]' : 'text-outline'}
+          className={meta.pipelineDataAvailable ? 'text-success' : 'text-outline'}
         />
         Source: {meta.source}
       </span>
