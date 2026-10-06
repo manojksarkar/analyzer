@@ -212,6 +212,12 @@ def test_set_output_dir_relocates_only_output(monkeypatch, tmp_path):
     # NB: `import core.paths as cp` does NOT work — core/__init__.py re-exports the `paths`
     # FUNCTION, which shadows the submodule attribute. Import the names directly.
     from core.paths import paths as _paths, set_data_root, set_output_dir
+    # Put the process's roots back afterwards: left pointing at tmp_path, every later test in the
+    # session read logs from there (tests/e2e/test_live_log.py found no record of the e2e run).
+    import importlib
+    cp = importlib.import_module("core.paths")
+    for name in ("_OVERRIDE_DATA_ROOT", "_OVERRIDE_OUTPUT_DIR", "_CACHED"):
+        monkeypatch.setattr(cp, name, getattr(cp, name))
 
     set_data_root(str(tmp_path))                 # clears the cache too
     before = _paths()
