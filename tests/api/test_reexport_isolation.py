@@ -164,10 +164,41 @@ class TestAReexportWritesEveryDocumentTheVersionHas:
         assert self._runner()._reexport_from_phase("v1", "all") == 4
         assert asked == ["all"]
 
+    def test_an_update_by_component_is_judged_on_its_components(self, monkeypatch):
+        """A correction in ANOTHER component sent an update of Sample Core through Phase 3 --
+        every one of its 28 flowcharts redrawn, 416 s, for a description change in Lib (the
+        real-app test of 2026-10-06). An update by component asks about its components only."""
+        import core.db as core_db
+        import review.export_guard as guard
+
+        class Connection:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        monkeypatch.setattr(core_db, "is_database_configured", lambda *a, **k: True)
+        monkeypatch.setattr(core_db, "get_engine",
+                            lambda *a, **k: type("E", (), {"connect": lambda self: Connection()})())
+        monkeypatch.setattr(guard, "staleness", lambda *a, **k: type(
+            "S", (), {"is_stale": True, "explain": lambda self: "a correction"})())
+        behind = {"L1.Lib"}
+        monkeypatch.setattr(guard, "stale_components",
+                            lambda cx, vid, doc_types, comps: [c for c in comps if c in behind])
+        runner = self._runner()
+        assert runner._reexport_from_phase("v1", "all", ["L1.Sample-Core"]) == 4
+        assert runner._reexport_from_phase("v1", "all", ["L1.Sample-Core", "L1.Lib"]) == 3
+        assert runner._reexport_from_phase("v1", "all") == 3            # a whole version, as before
+        job = type("J", (), {"scope": {"type": "component", "names": ["L1.Sample-Core"]}})()
+        assert runner._scoped_components(job) == ["L1.Sample-Core"]
+        assert runner._scoped_components(type("J", (), {"scope": {"type": "group",
+                                                                  "names": ["G"]}})()) is None
+
     def test_the_reexport_passes_one_answer_to_both(self):
         src = _source("api/services/pipeline_runner.py")
         assert 'doc_type = export_doc_type(db, job.project_id, getattr(job, "version_id", None))' in src
-        assert '_reexport_from_phase(getattr(job, "version_id", None), doc_type)' in src
+        assert '_reexport_from_phase(getattr(job, "version_id", None), doc_type,' in src
         assert "doc_type=doc_type)" in src
 
 

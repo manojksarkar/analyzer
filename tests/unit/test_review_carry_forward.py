@@ -95,6 +95,20 @@ class TestUnchangedCodeKeepsTheHumanText:
         assert row.human_text == "Corrected." and row.llm_text == "llm text"
         assert row.is_orphaned in (False, 0)
 
+    @pytest.mark.parametrize("old,new", sorted(slot.RENAMED_KINDS.items()))
+    def test_a_correction_under_an_old_kind_name_carries_under_the_new(self, conn, old, new):
+        """A baseline whose database was not upgraded yet still holds `behaviourInputName` /
+        `behaviourOutputName` rows (migration 0017 renames them). Judged under the old name the
+        slot key read as malformed and the correction was carried orphaned, for good."""
+        _override(conn, "v3", old, slot.for_entity(new, FID))
+        _seed_version(conn, "v4")
+        out = cf.carry_overrides(conn, "v3", "v4")
+        assert (out.carried, out.orphaned) == (1, 0)
+        row = conn.execute(sa.select(s.text_overrides)
+                           .where(s.text_overrides.c.version_id == "v4")).first()
+        assert row.slot_kind == new and row.is_orphaned in (False, 0)
+        assert row.human_text == "Corrected."
+
     def test_a_unit_description_carries(self, conn):
         _override(conn, "v3", slot.UNIT_DESCRIPTION, slot.for_unit(UNIT))
         _seed_version(conn, "v4")

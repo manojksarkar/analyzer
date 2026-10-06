@@ -46,6 +46,9 @@ DESCRIPTION = "description"
 #: `behaviourInputName` / `behaviourOutputName`, in the model and as slot kinds alike.
 INPUT_NAME = "inputName"
 OUTPUT_NAME = "outputName"
+#: The two kinds' names before 2026-10-05, {old: new}. Migration 0017 / `analyzer.py setup` rename
+#: stored rows; a row still under an old name (a database not yet upgraded) is read under the new.
+RENAMED_KINDS = {"behaviourInputName": INPUT_NAME, "behaviourOutputName": OUTPUT_NAME}
 BEHAVIOUR_DESCRIPTION = "behaviourDescription"
 UNIT_DESCRIPTION = "unitDescription"
 STRUCT_DESCRIPTION = "structDescription"

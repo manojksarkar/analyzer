@@ -572,7 +572,9 @@ class TestItIsWiredIntoReexport:
     def _source():
         return open(os.path.join(PROJECT_ROOT, "analyzer.py"), encoding="utf-8").read()
 
-    CALL = re.compile(r"^[ 	]+rc = _refuse_stale_export\(a\.version_id, doc_type\)", re.M)
+    # A run by component passes its components (judged on them alone, 2026-10-06).
+    CALL = re.compile(r"^[ 	]+rc = _refuse_stale_export\(a\.version_id, doc_type"
+                      r"(?:, components=named)?\)", re.M)
 
     def test_reexport_calls_the_guard(self):
         assert self.CALL.search(self._source()), (

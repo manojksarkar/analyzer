@@ -363,8 +363,11 @@ LAST_NOT_REPEATED = "0006_reuse_index_fk"
 #: Revisions that were renumbered, {old id: new id}. `0017_input_output_names` was
 #: `0015_input_output_names` on branch review_update_v4 before it was rebased onto develop, whose
 #: own 0015 and 0016 came first; a database `alembic upgrade head` stamped there is at 0017's
-#: schema once setup has run, and was otherwise left at an id no checkout has.
-RENUMBERED = {"0015_input_output_names": "0017_input_output_names"}
+#: schema once setup has run, and was otherwise left at an id no checkout has. Likewise
+#: `0018_word_file_updates` was `0017_word_file_updates` on branch
+#: feat/cli-wordfiles-bitbucket-components before it was rebased onto that develop (2026-10-06).
+RENUMBERED = {"0015_input_output_names": "0017_input_output_names",
+              "0017_word_file_updates": "0018_word_file_updates"}
 
 
 def _stamp_head(eng) -> str:

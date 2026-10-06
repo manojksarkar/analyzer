@@ -2,9 +2,10 @@
 <html class="dark" lang="en">
 <head>
 <script src="../theme-toggle.js"></script>
+<script src="theme-toggle.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>[PRODUCT NAME] — VCU Engine Firmware</title>
+<title>ArtiFex — VCU Engine Firmware</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Roboto:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
@@ -287,17 +288,12 @@
   .mm-gauge { position: relative; width: 156px; height: 156px; flex-shrink: 0; }
   .mm-gauge::before { content: ''; position: absolute; inset: 18px; border-radius: 50%; background: radial-gradient(circle, rgba(29,123,255,.13) 0%, rgba(29,123,255,0) 70%); }
   .mm-gauge svg { position: relative; overflow: visible; }
-  /* Magician "Good" health ring: arcs draw in once, then the colours flow round them
-     (rotating gradients), a halo in their own colours breathes */
-  .mm-gauge::before { animation: mm-core-breathe 2.8s ease-in-out infinite; }
-  @keyframes mm-core-breathe { 0%, 100% { opacity: .45; } 50% { opacity: .8; } }
+  /* Magician "Good" health ring: arcs draw in once and then stay still -- approval is not live
+     data, so nothing flows or breathes; a faint static halo under matte arcs */
+  .mm-gauge::before { opacity: .45; }
   .mm-arc { animation: mm-draw .9s cubic-bezier(.22,.9,.3,1) forwards; animation-delay: var(--d, 0s); }
-  .mm-halo {
-    animation: mm-draw .9s cubic-bezier(.22,.9,.3,1) forwards, mm-breathe 2.8s ease-in-out infinite;
-    animation-delay: var(--d, 0s), 0s;
-  }
+  .mm-halo { opacity: .14; animation: mm-draw .9s cubic-bezier(.22,.9,.3,1) forwards; animation-delay: var(--d, 0s); }
   @keyframes mm-draw { to { stroke-dashoffset: 0; } }
-  @keyframes mm-breathe { 0%, 100% { opacity: .1; } 50% { opacity: .38; } }
 
   .mm-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; background: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 12%, transparent), 0 0 10px color-mix(in srgb, var(--c) 45%, transparent); }
 
@@ -425,12 +421,10 @@
 <aside id="app-sidebar" class="fixed left-0 top-0 h-screen bg-surface-container-lowest border-r border-outline-variant flex flex-col z-50">
   <div class="brand-header flex items-center justify-between px-4 py-3.5 border-b border-outline-variant">
     <a href="projects.html" class="flex items-center gap-3 min-w-0 flex-1">
-      <div class="w-8 h-8 brand-tile rounded-lg flex items-center justify-center flex-shrink-0">
-        <span class="material-symbols-outlined text-on-primary" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">account_tree</span>
-      </div>
+      <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true" class="flex-shrink-0 text-secondary"><g stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8.5 2 16l3 7.5"/><path d="M27 8.5 30 16l-3 7.5"/></g><g stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M13.6 7 9.2 24"/><path d="M11 17.8h6.2"/></g><path fill="currentColor" d="M19.8 18.6C19.8 20.7 20.9 21.8 23 21.8 20.9 21.8 19.8 22.9 19.8 25 19.8 22.9 18.7 21.8 16.6 21.8 18.7 21.8 19.8 20.7 19.8 18.6Z"/></svg>
       <div class="brand-text min-w-0 overflow-hidden">
-        <h1 class="text-primary font-bold tracking-tight whitespace-nowrap" style="font-family:Roboto;font-size:15px;line-height:1.2;">[PRODUCT NAME]</h1>
-        <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mt-0.5 whitespace-nowrap">Automotive Tier 1</p>
+        <h1 class="text-primary font-bold tracking-tight whitespace-nowrap" style="font-family:Roboto;font-size:20px;line-height:1.2;">ArtiFex</h1>
+        <p class="text-on-surface-variant uppercase mt-0.5 whitespace-nowrap" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:500;letter-spacing:.04em;">Crafted from Code</p>
       </div>
     </a>
     <button onclick="toggleSidebar()" class="w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors flex-shrink-0" title="Toggle sidebar">
@@ -444,7 +438,8 @@
       <span class="material-symbols-outlined" style="font-size:18px;">arrow_back</span>
       <span class="nav-label font-label-sm text-label-sm text-on-surface-variant">All Projects</span>
     </a>
-    <div class="space-y-0.5 mt-1">
+    <p class="nav-label px-3 pb-1.5 text-on-surface-variant uppercase truncate" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:600;letter-spacing:.09em;">VCU Engine Firmware</p>
+    <div class="space-y-0.5">
       <a href="project-detail.html" title="Overview"
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-active">
         <span class="material-symbols-outlined" style="font-size:20px;">home</span>
@@ -473,14 +468,7 @@
     </div>
   </nav>
 
-  <div class="px-2 pt-2 border-t border-outline-variant">
-    <a href="onboarding.html" title="Settings"
-       class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
-      <span class="material-symbols-outlined" style="font-size:18px;">settings</span>
-      <span class="nav-label font-label-md text-label-md">Settings</span>
-    </a>
-  </div>
-  <div class="px-2 pb-3 pt-1" style="position:relative;">
+  <div class="px-2 pb-3 pt-2 border-t border-outline-variant" style="position:relative;">
     <div id="role-switcher" style="position:relative;">
       <button id="role-chip" onclick="toggleRoleMenu()"
         class="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-container transition-colors text-left">
@@ -555,7 +543,7 @@
         <button id="bell-btn" onclick="toggleBell()" class="relative p-2 hover:bg-surface-container rounded-lg transition-colors" title="Notifications">
           <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
           <span id="bell-count" class="absolute bg-error text-white rounded-full border-2 border-surface-container-lowest"
-                style="display:none;top:2px;right:1px;min-width:18px;height:18px;padding:0 4px;font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;line-height:14px;text-align:center;"></span>
+                style="display:none;top:2px;right:0;min-width:16px;height:16px;padding:0 4px;box-sizing:content-box;font-family:Roboto,sans-serif;font-size:9px;font-weight:700;line-height:16px;text-align:center;"></span>
         </button>
         <div id="bell-dropdown" class="hidden dropdown" style="left:auto;right:0;width:340px;">
           <div class="px-4 py-3 border-b border-outline-variant flex items-center justify-between">
@@ -566,9 +554,6 @@
           <div id="bell-list" class="overflow-y-auto" style="max-height:380px;"></div>
         </div>
       </div>
-      <button class="hide-sm p-2 hover:bg-surface-container rounded-lg transition-colors" title="Help">
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">help</span>
-      </button>
       <div class="hide-sm w-px h-5 bg-outline-variant mx-1.5"></div>
       <button class="hide-sm flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors">
         <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
@@ -825,6 +810,204 @@
         </div>
       </div>
 
+      <!-- ═══ GENERATION (generated state only) ═══
+           Staged generation, in one row: shown only while a component of this version has no
+           documents or a run is making them; gone once every one has its documents. Variants: no
+           run going -> a neutral icon, "43 components have no documents yet", no Stop; a run that
+           stopped -> amber, "Generation stopped 3 hours ago", with the resume command. "View
+           components" opens the drawer below. -->
+      <div id="gen-banner" class="mb-6" style="display:none;">
+        <div role="status" class="bg-surface-container-lowest border border-outline-variant rounded-xl" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;padding:10px 16px;">
+          <span class="material-symbols-outlined animate-spin flex-shrink-0" style="font-size:18px;color:#1d7bff;">autorenew</span>
+          <p style="flex:1 1 300px;min-width:0;font-family:Roboto,sans-serif;font-size:13px;color:#a3a7b1;"><span style="font-weight:600;color:#f2f3f5;">Generating documents</span> · 11 of 54 components done · drawing flowcharts, 38 of 112 · started 2 hours ago</p>
+          <span aria-hidden="true" style="width:140px;height:6px;border-radius:99px;background:#2e3139;overflow:hidden;flex-shrink:0;"><span style="display:block;height:100%;width:20.4%;border-radius:99px;background:#1d7bff;"></span></span>
+          <button type="button" onclick="openComponents()" style="display:inline-flex;align-items:center;padding:6px 12px;border-radius:6px;border:1px solid #2c2f37;background:#1c1e23;font-family:Roboto,sans-serif;font-size:12px;font-weight:600;color:#f2f3f5;white-space:nowrap;cursor:pointer;text-decoration:none;">View components</button>
+          <!-- Admin: stop the web job at work on this version (asks first: what is finished stays) -->
+          <button type="button" title="Stop making these documents? Components already finished keep their documents; the rest show as Stopped." style="border:none;background:none;padding:6px 4px;font-family:Roboto,sans-serif;font-size:12px;font-weight:600;color:#ff4d5a;cursor:pointer;">Stop</button>
+        </div>
+      </div>
+
+      <!-- ═══ COMPONENTS DRAWER ═══
+           The Architecture view's layout (layer -> group -> component chips), so 3 layers and 50+
+           components fit on one screen: a chip says what is happening to the component (legend at
+           the top); one without documents (not started, stopped, failed) is picked with a click,
+           a layer's at once with "Select N". Find narrows the chips; "Without documents" hides the
+           finished ones. Web today: pages/DocumentsPage/components/ComponentsPanel.tsx -->
+      <style>
+        .cd-chip { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border:1px solid; border-radius:6px; font-family:'SamsungOne','Roboto',sans-serif; font-size:11px; line-height:16px; white-space:nowrap; }
+        button.cd-chip { cursor:pointer; }
+        button.cd-chip:hover { border-color:#1d7bff !important; }
+        .cd-chip.sel { background:#1d7bff !important; border-color:#1d7bff !important; color:#1c1e23 !important; }
+        .cd-chip .ic-on, .cd-chip.sel .ic-off { display:none; }
+        .cd-chip.sel .ic-on { display:inline-block; }
+        .cd-seg { padding:5px 10px; border:none; background:none; border-radius:6px; font-family:Roboto,sans-serif; font-size:12px; font-weight:500; color:#a3a7b1; cursor:pointer; }
+        .cd-seg.on { background:#1c1e23; color:#f2f3f5; box-shadow:0 1px 2px rgba(0,0,0,0.24); }
+      </style>
+      <div id="components-drawer" style="display:none;position:fixed;inset:0;z-index:300;">
+        <div onclick="closeComponents()" style="position:absolute;inset:0;background:rgba(0,0,0,0.64);"></div>
+        <aside role="dialog" aria-modal="true" aria-labelledby="cd-title" style="position:absolute;top:0;right:0;bottom:0;width:min(640px,100%);background:#1c1e23;box-shadow:-8px 0 24px rgba(4,22,39,.14);display:flex;flex-direction:column;">
+          <header style="padding:18px 24px 14px;border-bottom:1px solid #24272e;">
+            <div style="display:flex;align-items:flex-start;gap:12px;">
+              <div style="flex:1;min-width:0;">
+                <h2 id="cd-title" style="font-family:Roboto,sans-serif;font-size:18px;font-weight:600;color:#f2f3f5;">Components</h2>
+                <p style="font-family:Roboto,sans-serif;font-size:12px;color:#7c818c;margin-top:2px;"><span style="font-family:'SamsungOne','Roboto',sans-serif;">v1.2.0</span> · 11 of 54 have documents · 3 layers</p>
+              </div>
+              <button type="button" onclick="closeComponents()" aria-label="Close" style="width:32px;height:32px;border-radius:6px;border:none;background:none;display:flex;align-items:center;justify-content:center;color:#a3a7b1;cursor:pointer;">
+                <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+              </button>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:12px;">
+              <label style="flex:1;display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #2c2f37;border-radius:6px;">
+                <span class="material-symbols-outlined" style="font-size:16px;color:#7c818c;">search</span>
+                <input id="cd-find" type="text" oninput="sgFilter()" placeholder="Find a component…" aria-label="Find a component" style="flex:1;min-width:0;border:none;outline:none;box-shadow:none;padding:0;background:transparent;font-family:Roboto,sans-serif;font-size:12px;color:#f2f3f5;">
+              </label>
+              <div role="group" aria-label="Show" style="display:flex;gap:2px;padding:2px;border-radius:8px;background:#1b2638;">
+                <button type="button" class="cd-seg on" data-only="0" onclick="sgOnly(this)">All 54</button>
+                <button type="button" class="cd-seg" data-only="1" onclick="sgOnly(this)">Without documents 43</button>
+              </div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:10px;font-family:Roboto,sans-serif;font-size:11px;color:#7c818c;"><span style="display:inline-flex;align-items:center;gap:4px;"><span class="cd-chip" style="background:#132a1f;border-color:#a7f3d0;color:#3ddc84;padding:0 5px;"><span class="material-symbols-outlined" style="font-size:11px;">check</span></span>Has documents</span><span style="display:inline-flex;align-items:center;gap:4px;"><span class="cd-chip" style="background:#1c1e23;border-color:#2d4a80;color:#1d7bff;padding:0 5px;"><span class="material-symbols-outlined" style="font-size:11px;">autorenew</span></span>In progress</span><span style="display:inline-flex;align-items:center;gap:4px;"><span class="cd-chip" style="background:#1c1e23;border-color:#24272e;color:#a3a7b1;padding:0 5px;"><span class="material-symbols-outlined" style="font-size:11px;">schedule</span></span>Queued</span><span style="display:inline-flex;align-items:center;gap:4px;"><span class="cd-chip" style="background:#2c2414;border-color:#4d3c16;color:#ffc966;padding:0 5px;"><span class="material-symbols-outlined" style="font-size:11px;">pause_circle</span></span>Stopped</span><span style="display:inline-flex;align-items:center;gap:4px;"><span class="cd-chip" style="background:#2e1a1d;border-color:#5a2328;color:#ff4d5a;padding:0 5px;"><span class="material-symbols-outlined" style="font-size:11px;">error</span></span>Failed</span><span style="display:inline-flex;align-items:center;gap:4px;"><span class="cd-chip" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;padding:0 5px;">&nbsp;</span>Not started</span></div>
+          </header>
+          <div id="cd-list" style="flex:1;overflow-y:auto;padding-bottom:8px;">
+            <section class="cd-layer" data-layer="APP_LAYER" style="padding:14px 24px;border-top:1px solid #eef0f3;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <button type="button" onclick="sgFold(this)" aria-expanded="true" style="display:flex;align-items:center;gap:8px;border:none;background:none;padding:0;cursor:pointer;min-width:0;">
+                  <span class="material-symbols-outlined cd-fold" style="font-size:16px;color:#a3a7b1;transition:transform .15s;">expand_more</span>
+                  <span class="material-symbols-outlined" style="font-size:15px;color:#1d7bff;">layers</span>
+                  <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;font-weight:700;color:#f2f3f5;">APP_LAYER</span>
+                </button>
+                <span style="font-family:Roboto,sans-serif;font-size:12px;color:#7c818c;">7 of 24</span>
+                <span aria-hidden="true" style="width:56px;height:4px;border-radius:99px;background:#2e3139;overflow:hidden;"><span style="display:block;height:100%;width:29.2%;background:#3ddc84;"></span></span>
+                <span style="flex:1;"></span>
+                <button type="button" onclick="sgSelectLayer('APP_LAYER')" class="hover:underline" style="border:none;background:none;padding:0;font-family:Roboto,sans-serif;font-size:12px;font-weight:500;color:#1d7bff;cursor:pointer;white-space:nowrap;">Select 13</button>
+              </div>
+              <div class="cd-body">
+                <div class="cd-group" style="margin:10px 0 0 24px;">
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    <span class="material-symbols-outlined" style="font-size:13px;color:#1d7bff;">folder_open</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:600;color:#f2f3f5;">Chassis_Mgmt</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;color:#7c818c;">6 comps</span>
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0 19px;"><span class="cd-chip" data-layer="APP_LAYER" data-name="Brake Controller" title="Brake Controller: has its documents" style="background:#132a1f;border-color:#a7f3d0;color:#3ddc84;"><span class="material-symbols-outlined" style="font-size:12px;">check</span>Brake Controller</span><span class="cd-chip" data-layer="APP_LAYER" data-name="ABS Unit" title="ABS Unit: has its documents" style="background:#132a1f;border-color:#a7f3d0;color:#3ddc84;"><span class="material-symbols-outlined" style="font-size:12px;">check</span>ABS Unit</span><span class="cd-chip" data-layer="APP_LAYER" data-name="Stability Control" title="Stability Control: has its documents" style="background:#132a1f;border-color:#a7f3d0;color:#3ddc84;"><span class="material-symbols-outlined" style="font-size:12px;">check</span>Stability Control</span><span class="cd-chip" data-layer="APP_LAYER" data-name="Steering Assist" title="Steering Assist: being generated" style="background:#1c1e23;border-color:#2d4a80;color:#1d7bff;"><span class="material-symbols-outlined animate-spin" style="font-size:12px;">autorenew</span>Steering Assist</span><span class="cd-chip" data-layer="APP_LAYER" data-name="Suspension Ctrl" title="Suspension Ctrl: queued in this run" style="background:#1c1e23;border-color:#24272e;color:#a3a7b1;"><span class="material-symbols-outlined" style="font-size:12px;">schedule</span>Suspension Ctrl</span><span class="cd-chip" data-layer="APP_LAYER" data-name="Traction Ctrl" title="Traction Ctrl: queued in this run" style="background:#1c1e23;border-color:#24272e;color:#a3a7b1;"><span class="material-symbols-outlined" style="font-size:12px;">schedule</span>Traction Ctrl</span></div>
+                </div>
+                <div class="cd-group" style="margin:10px 0 0 24px;">
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    <span class="material-symbols-outlined" style="font-size:13px;color:#1d7bff;">folder_open</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:600;color:#f2f3f5;">Powertrain</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;color:#7c818c;">6 comps</span>
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0 19px;"><span class="cd-chip" data-layer="APP_LAYER" data-name="Throttle Controller" title="Throttle Controller: has its documents" style="background:#132a1f;border-color:#a7f3d0;color:#3ddc84;"><span class="material-symbols-outlined" style="font-size:12px;">check</span>Throttle Controller</span><span class="cd-chip" data-layer="APP_LAYER" data-name="Fuel Injector" title="Fuel Injector: has its documents" style="background:#132a1f;border-color:#a7f3d0;color:#3ddc84;"><span class="material-symbols-outlined" style="font-size:12px;">check</span>Fuel Injector</span><span class="cd-chip" data-layer="APP_LAYER" data-name="Ignition Ctrl" title="Ignition Ctrl: queued in this run" style="background:#1c1e23;border-color:#24272e;color:#a3a7b1;"><span class="material-symbols-outlined" style="font-size:12px;">schedule</span>Ignition Ctrl</span><button type="button" class="cd-chip pick" data-layer="APP_LAYER" data-name="Gear Selector" onclick="sgToggle(this)" title="Gear Selector: stopped before it finished — click to pick it" style="background:#2c2414;border-color:#4d3c16;color:#ffc966;"><span class="ic-off"><span class="material-symbols-outlined" style="font-size:12px;">pause_circle</span></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Gear Selector</button><button type="button" class="cd-chip pick" data-layer="APP_LAYER" data-name="Torque Manager" onclick="sgToggle(this)" title="Torque Manager: failed — click to pick it" style="background:#2e1a1d;border-color:#5a2328;color:#ff4d5a;"><span class="ic-off"><span class="material-symbols-outlined" style="font-size:12px;">error</span></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Torque Manager</button><button type="button" class="cd-chip pick" data-layer="APP_LAYER" data-name="Cruise Ctrl" onclick="sgToggle(this)" title="Cruise Ctrl: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Cruise Ctrl</button></div>
+                </div>
+                <div class="cd-group" style="margin:10px 0 0 24px;">
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    <span class="material-symbols-outlined" style="font-size:13px;color:#1d7bff;">folder_open</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:600;color:#f2f3f5;">Body</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;color:#7c818c;">6 comps</span>
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0 19px;"><span class="cd-chip" data-layer="APP_LAYER" data-name="Lighting Ctrl" title="Lighting Ctrl: has its documents" style="background:#132a1f;border-color:#a7f3d0;color:#3ddc84;"><span class="material-symbols-outlined" style="font-size:12px;">check</span>Lighting Ctrl</span><span class="cd-chip" data-layer="APP_LAYER" data-name="HVAC Ctrl" title="HVAC Ctrl: has its documents" style="background:#132a1f;border-color:#a7f3d0;color:#3ddc84;"><span class="material-symbols-outlined" style="font-size:12px;">check</span>HVAC Ctrl</span><button type="button" class="cd-chip pick" data-layer="APP_LAYER" data-name="Door Lock" onclick="sgToggle(this)" title="Door Lock: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Door Lock</button><button type="button" class="cd-chip pick" data-layer="APP_LAYER" data-name="Window Lift" onclick="sgToggle(this)" title="Window Lift: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Window Lift</button><button type="button" class="cd-chip pick" data-layer="APP_LAYER" data-name="Wiper Ctrl" onclick="sgToggle(this)" title="Wiper Ctrl: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Wiper Ctrl</button><button type="button" class="cd-chip pick" data-layer="APP_LAYER" data-name="Seat Ctrl" onclick="sgToggle(this)" title="Seat Ctrl: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Seat Ctrl</button></div>
+                </div>
+                <div class="cd-group" style="margin:10px 0 0 24px;">
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    <span class="material-symbols-outlined" style="font-size:13px;color:#1d7bff;">folder_open</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:600;color:#f2f3f5;">ADAS</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;color:#7c818c;">6 comps</span>
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0 19px;"><button type="button" class="cd-chip pick" data-layer="APP_LAYER" data-name="Lane Keep" onclick="sgToggle(this)" title="Lane Keep: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Lane Keep</button><button type="button" class="cd-chip pick" data-layer="APP_LAYER" data-name="Park Assist" onclick="sgToggle(this)" title="Park Assist: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Park Assist</button><button type="button" class="cd-chip pick" data-layer="APP_LAYER" data-name="Blind Spot" onclick="sgToggle(this)" title="Blind Spot: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Blind Spot</button><button type="button" class="cd-chip pick" data-layer="APP_LAYER" data-name="Collision Warn" onclick="sgToggle(this)" title="Collision Warn: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Collision Warn</button><button type="button" class="cd-chip pick" data-layer="APP_LAYER" data-name="Adaptive Cruise" onclick="sgToggle(this)" title="Adaptive Cruise: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Adaptive Cruise</button><button type="button" class="cd-chip pick" data-layer="APP_LAYER" data-name="Sign Recog" onclick="sgToggle(this)" title="Sign Recog: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Sign Recog</button></div>
+                </div>
+              </div>
+            </section>
+            <section class="cd-layer" data-layer="MIDDLEWARE_LAYER" style="padding:14px 24px;border-top:1px solid #eef0f3;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <button type="button" onclick="sgFold(this)" aria-expanded="true" style="display:flex;align-items:center;gap:8px;border:none;background:none;padding:0;cursor:pointer;min-width:0;">
+                  <span class="material-symbols-outlined cd-fold" style="font-size:16px;color:#a3a7b1;transition:transform .15s;">expand_more</span>
+                  <span class="material-symbols-outlined" style="font-size:15px;color:#1d7bff;">layers</span>
+                  <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;font-weight:700;color:#f2f3f5;">MIDDLEWARE_LAYER</span>
+                </button>
+                <span style="font-family:Roboto,sans-serif;font-size:12px;color:#7c818c;">0 of 16</span>
+                <span aria-hidden="true" style="width:56px;height:4px;border-radius:99px;background:#2e3139;overflow:hidden;"><span style="display:block;height:100%;width:0.0%;background:#3ddc84;"></span></span>
+                <span style="flex:1;"></span>
+                <button type="button" onclick="sgSelectLayer('MIDDLEWARE_LAYER')" class="hover:underline" style="border:none;background:none;padding:0;font-family:Roboto,sans-serif;font-size:12px;font-weight:500;color:#1d7bff;cursor:pointer;white-space:nowrap;">Select 16</button>
+              </div>
+              <div class="cd-body">
+                <p style="display:flex;align-items:flex-start;gap:6px;margin:8px 0 0 24px;font-family:Roboto,sans-serif;font-size:12px;color:#a3a7b1;"><span class="material-symbols-outlined" style="font-size:14px;color:#1d7bff;margin-top:1px;">add_circle</span>Not in this version's model yet: generating one of its components adds the layer first (parse + descriptions).</p>
+                <div class="cd-group" style="margin:10px 0 0 24px;">
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    <span class="material-symbols-outlined" style="font-size:13px;color:#1d7bff;">folder_open</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:600;color:#f2f3f5;">Comms</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;color:#7c818c;">5 comps</span>
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0 19px;"><button type="button" class="cd-chip pick" data-layer="MIDDLEWARE_LAYER" data-name="COM Stack" data-adds="MIDDLEWARE_LAYER" onclick="sgToggle(this)" title="COM Stack: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>COM Stack</button><button type="button" class="cd-chip pick" data-layer="MIDDLEWARE_LAYER" data-name="PDU Router" data-adds="MIDDLEWARE_LAYER" onclick="sgToggle(this)" title="PDU Router: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>PDU Router</button><button type="button" class="cd-chip pick" data-layer="MIDDLEWARE_LAYER" data-name="CAN Interface" data-adds="MIDDLEWARE_LAYER" onclick="sgToggle(this)" title="CAN Interface: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>CAN Interface</button><button type="button" class="cd-chip pick" data-layer="MIDDLEWARE_LAYER" data-name="LIN Interface" data-adds="MIDDLEWARE_LAYER" onclick="sgToggle(this)" title="LIN Interface: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>LIN Interface</button><button type="button" class="cd-chip pick" data-layer="MIDDLEWARE_LAYER" data-name="Gateway" data-adds="MIDDLEWARE_LAYER" onclick="sgToggle(this)" title="Gateway: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Gateway</button></div>
+                </div>
+                <div class="cd-group" style="margin:10px 0 0 24px;">
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    <span class="material-symbols-outlined" style="font-size:13px;color:#1d7bff;">folder_open</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:600;color:#f2f3f5;">Diagnostics</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;color:#7c818c;">4 comps</span>
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0 19px;"><button type="button" class="cd-chip pick" data-layer="MIDDLEWARE_LAYER" data-name="DCM" data-adds="MIDDLEWARE_LAYER" onclick="sgToggle(this)" title="DCM: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>DCM</button><button type="button" class="cd-chip pick" data-layer="MIDDLEWARE_LAYER" data-name="DEM" data-adds="MIDDLEWARE_LAYER" onclick="sgToggle(this)" title="DEM: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>DEM</button><button type="button" class="cd-chip pick" data-layer="MIDDLEWARE_LAYER" data-name="FIM" data-adds="MIDDLEWARE_LAYER" onclick="sgToggle(this)" title="FIM: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>FIM</button><button type="button" class="cd-chip pick" data-layer="MIDDLEWARE_LAYER" data-name="Event Logger" data-adds="MIDDLEWARE_LAYER" onclick="sgToggle(this)" title="Event Logger: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Event Logger</button></div>
+                </div>
+                <div class="cd-group" style="margin:10px 0 0 24px;">
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    <span class="material-symbols-outlined" style="font-size:13px;color:#1d7bff;">folder_open</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:600;color:#f2f3f5;">Storage</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;color:#7c818c;">3 comps</span>
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0 19px;"><button type="button" class="cd-chip pick" data-layer="MIDDLEWARE_LAYER" data-name="NVM Manager" data-adds="MIDDLEWARE_LAYER" onclick="sgToggle(this)" title="NVM Manager: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>NVM Manager</button><button type="button" class="cd-chip pick" data-layer="MIDDLEWARE_LAYER" data-name="Memory Interface" data-adds="MIDDLEWARE_LAYER" onclick="sgToggle(this)" title="Memory Interface: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Memory Interface</button><button type="button" class="cd-chip pick" data-layer="MIDDLEWARE_LAYER" data-name="Fee" data-adds="MIDDLEWARE_LAYER" onclick="sgToggle(this)" title="Fee: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Fee</button></div>
+                </div>
+                <div class="cd-group" style="margin:10px 0 0 24px;">
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    <span class="material-symbols-outlined" style="font-size:13px;color:#1d7bff;">folder_open</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:600;color:#f2f3f5;">Services</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;color:#7c818c;">4 comps</span>
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0 19px;"><button type="button" class="cd-chip pick" data-layer="MIDDLEWARE_LAYER" data-name="Scheduler" data-adds="MIDDLEWARE_LAYER" onclick="sgToggle(this)" title="Scheduler: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Scheduler</button><button type="button" class="cd-chip pick" data-layer="MIDDLEWARE_LAYER" data-name="Time Base" data-adds="MIDDLEWARE_LAYER" onclick="sgToggle(this)" title="Time Base: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Time Base</button><button type="button" class="cd-chip pick" data-layer="MIDDLEWARE_LAYER" data-name="Mode Manager" data-adds="MIDDLEWARE_LAYER" onclick="sgToggle(this)" title="Mode Manager: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Mode Manager</button><button type="button" class="cd-chip pick" data-layer="MIDDLEWARE_LAYER" data-name="Crypto Service" data-adds="MIDDLEWARE_LAYER" onclick="sgToggle(this)" title="Crypto Service: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Crypto Service</button></div>
+                </div>
+              </div>
+            </section>
+            <section class="cd-layer" data-layer="HAL_LAYER" style="padding:14px 24px;border-top:1px solid #eef0f3;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <button type="button" onclick="sgFold(this)" aria-expanded="true" style="display:flex;align-items:center;gap:8px;border:none;background:none;padding:0;cursor:pointer;min-width:0;">
+                  <span class="material-symbols-outlined cd-fold" style="font-size:16px;color:#a3a7b1;transition:transform .15s;">expand_more</span>
+                  <span class="material-symbols-outlined" style="font-size:15px;color:#1d7bff;">layers</span>
+                  <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;font-weight:700;color:#f2f3f5;">HAL_LAYER</span>
+                </button>
+                <span style="font-family:Roboto,sans-serif;font-size:12px;color:#7c818c;">4 of 14</span>
+                <span aria-hidden="true" style="width:56px;height:4px;border-radius:99px;background:#2e3139;overflow:hidden;"><span style="display:block;height:100%;width:28.6%;background:#3ddc84;"></span></span>
+                <span style="flex:1;"></span>
+                <button type="button" onclick="sgSelectLayer('HAL_LAYER')" class="hover:underline" style="border:none;background:none;padding:0;font-family:Roboto,sans-serif;font-size:12px;font-weight:500;color:#1d7bff;cursor:pointer;white-space:nowrap;">Select 10</button>
+              </div>
+              <div class="cd-body">
+                <div class="cd-group" style="margin:10px 0 0 24px;">
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    <span class="material-symbols-outlined" style="font-size:13px;color:#1d7bff;">folder_open</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:600;color:#f2f3f5;">Drivers</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;color:#7c818c;">8 comps</span>
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0 19px;"><span class="cd-chip" data-layer="HAL_LAYER" data-name="GPIO Driver" title="GPIO Driver: has its documents" style="background:#132a1f;border-color:#a7f3d0;color:#3ddc84;"><span class="material-symbols-outlined" style="font-size:12px;">check</span>GPIO Driver</span><span class="cd-chip" data-layer="HAL_LAYER" data-name="CAN Driver" title="CAN Driver: has its documents" style="background:#132a1f;border-color:#a7f3d0;color:#3ddc84;"><span class="material-symbols-outlined" style="font-size:12px;">check</span>CAN Driver</span><span class="cd-chip" data-layer="HAL_LAYER" data-name="SPI Driver" title="SPI Driver: has its documents" style="background:#132a1f;border-color:#a7f3d0;color:#3ddc84;"><span class="material-symbols-outlined" style="font-size:12px;">check</span>SPI Driver</span><span class="cd-chip" data-layer="HAL_LAYER" data-name="PWM Driver" title="PWM Driver: has its documents" style="background:#132a1f;border-color:#a7f3d0;color:#3ddc84;"><span class="material-symbols-outlined" style="font-size:12px;">check</span>PWM Driver</span><button type="button" class="cd-chip pick" data-layer="HAL_LAYER" data-name="ADC Driver" onclick="sgToggle(this)" title="ADC Driver: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>ADC Driver</button><button type="button" class="cd-chip pick" data-layer="HAL_LAYER" data-name="I2C Driver" onclick="sgToggle(this)" title="I2C Driver: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>I2C Driver</button><button type="button" class="cd-chip pick" data-layer="HAL_LAYER" data-name="UART Driver" onclick="sgToggle(this)" title="UART Driver: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>UART Driver</button><button type="button" class="cd-chip pick" data-layer="HAL_LAYER" data-name="LIN Driver" onclick="sgToggle(this)" title="LIN Driver: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>LIN Driver</button></div>
+                </div>
+                <div class="cd-group" style="margin:10px 0 0 24px;">
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    <span class="material-symbols-outlined" style="font-size:13px;color:#1d7bff;">folder_open</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:600;color:#f2f3f5;">Platform</span>
+                    <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;color:#7c818c;">6 comps</span>
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0 19px;"><button type="button" class="cd-chip pick" data-layer="HAL_LAYER" data-name="Clock Ctrl" onclick="sgToggle(this)" title="Clock Ctrl: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Clock Ctrl</button><button type="button" class="cd-chip pick" data-layer="HAL_LAYER" data-name="Watchdog" onclick="sgToggle(this)" title="Watchdog: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Watchdog</button><button type="button" class="cd-chip pick" data-layer="HAL_LAYER" data-name="Flash Driver" onclick="sgToggle(this)" title="Flash Driver: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Flash Driver</button><button type="button" class="cd-chip pick" data-layer="HAL_LAYER" data-name="EEPROM Driver" onclick="sgToggle(this)" title="EEPROM Driver: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>EEPROM Driver</button><button type="button" class="cd-chip pick" data-layer="HAL_LAYER" data-name="DMA Ctrl" onclick="sgToggle(this)" title="DMA Ctrl: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>DMA Ctrl</button><button type="button" class="cd-chip pick" data-layer="HAL_LAYER" data-name="Interrupt Ctrl" onclick="sgToggle(this)" title="Interrupt Ctrl: not started — click to pick it" style="background:#1c1e23;border-color:#2c2f37;color:#a3a7b1;"><span class="ic-off"></span><span class="ic-on material-symbols-outlined" style="font-size:12px;">check</span>Interrupt Ctrl</button></div>
+                </div>
+              </div>
+            </section>
+            <p id="cd-none" style="display:none;padding:24px;font-family:Roboto,sans-serif;font-size:12px;color:#7c818c;">No component matches.</p>
+          </div>
+          <footer style="padding:12px 24px;border-top:1px solid #24272e;">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <p id="sg-picked" style="flex:1;min-width:0;font-family:Roboto,sans-serif;font-size:12px;color:#7c818c;">Click the components to generate, or Select a layer's.</p>
+              <button id="sg-clear" type="button" onclick="sgClear()" class="hover:underline" style="display:none;border:none;background:none;padding:0;font-family:Roboto,sans-serif;font-size:12px;font-weight:500;color:#1d7bff;cursor:pointer;">Clear</button>
+              <button id="sg-generate" type="button" disabled class="disabled:opacity-40" style="padding:8px 16px;border-radius:6px;border:none;background:#1d7bff;font-family:Roboto,sans-serif;font-size:12px;font-weight:600;color:#1c1e23;white-space:nowrap;cursor:pointer;"><span id="sg-generate-label">Generate</span></button>
+            </div>
+            <p id="sg-note" style="display:none;margin-top:6px;text-align:right;font-family:Roboto,sans-serif;font-size:12px;color:#7c818c;"></p>
+          </footer>
+        </aside>
+      </div>
+
       <!-- ═══ KPI STRIP (generated state only) ═══ -->
       <div id="kpi-strip" class="mb-6" style="display:none;">
         <div id="kpi-cards"></div>
@@ -931,8 +1114,8 @@
                 <h2 class="text-headline-sm text-on-surface whitespace-nowrap">Function Visibility</h2>
                 <p id="fv-card-summary" class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">3 of 26 functions hidden from DOCX</p>
               </div>
-              <button onclick="openFnPanel()" title="Manage function visibility"
-                class="fv-manage flex-shrink-0 flex items-center gap-1 px-3 py-1.5 border border-outline-variant rounded-lg hover:bg-surface-container transition-colors font-label-sm text-label-sm text-secondary">
+              <button disabled title="Not available yet — there is no editor to hide functions"
+                class="flex items-center gap-1 px-3 py-1.5 border border-outline-variant rounded-lg font-label-sm text-label-sm text-secondary opacity-50 cursor-not-allowed">
                 <span class="fv-manage-label">Manage</span>
                 <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
               </button>
@@ -1323,11 +1506,11 @@ const DOCUMENTS = [
   { id:6,  name: 'Powertrain — Detailed Design',        process: 'SWE.3', version: 'v1.2.0', reviewer: 'AF', status: 'in_review' },
   { id:7,  name: 'CAN-Matrix — Detailed Design',        process: 'SWE.3', version: 'v1.2.0', reviewer: 'AM', status: 'approved',  carried: 'v1.1.0' },
   { id:8,  name: 'Diagnostics — Detailed Design',       process: 'SWE.3', version: 'v1.2.0', reviewer: 'MS', status: 'submitted', comment: 'Flowchart labels corrected; the rest reads right.' },
-  { id:9,  name: 'SYS Requirements Specification',      process: 'SYS.1', version: 'v1.2.0', reviewer: null, status: 'in_review' },
-  { id:10, name: 'System Architecture Document',        process: 'SYS.2', version: 'v1.2.0', reviewer: 'AF', status: 'submitted', comment: 'Checked the component list against the code.' },
-  { id:11, name: 'SW Requirements Specification',       process: 'SWE.1', version: 'v1.2.0', reviewer: 'MS', status: 'in_review' },
-  { id:12, name: 'Detailed SW Design Specification',    process: 'SWE.2', version: 'v1.2.0', reviewer: 'MW', status: 'approved',  carried: 'v1.1.0' },
-  { id:13, name: 'Interface Control Document',          process: 'SWE.2', version: 'v1.2.0', reviewer: 'MW', status: 'changes_requested', comment: 'Directions checked.', adminComment: 'Two interface ids are missing a direction.' },
+  { id:9,  name: 'Layer2-Engine — Unit Test Specification', process: 'SWE.4', version: 'v1.2.0', reviewer: null, status: 'in_review' },
+  { id:10, name: 'ADAS-Control — Unit Test Specification',  process: 'SWE.4', version: 'v1.2.0', reviewer: 'AF', status: 'submitted', comment: 'Test steps follow the corrected flowchart labels.' },
+  { id:11, name: 'Brake-FMEA — Unit Test Specification',    process: 'SWE.4', version: 'v1.2.0', reviewer: 'MS', status: 'in_review' },
+  { id:12, name: 'CAN-Matrix — Unit Test Specification',    process: 'SWE.4', version: 'v1.2.0', reviewer: 'MW', status: 'approved',  carried: 'v1.1.0' },
+  { id:13, name: 'Diagnostics — Unit Test Specification',   process: 'SWE.4', version: 'v1.2.0', reviewer: 'MW', status: 'changes_requested', comment: 'Steps checked.', adminComment: 'Two test steps have no expected result.' },
 ];
 
 // Review and approval (proposal): the four document states - one word each, everywhere.
@@ -1348,10 +1531,7 @@ const MM_GRAD = {
 
 const PROCESSES = [
   { key: 'SWE.3', label: 'Detailed Design' },
-  { key: 'SYS.1', label: 'Req. Elicitation' },
-  { key: 'SYS.2', label: 'System Architecture' },
-  { key: 'SWE.1', label: 'SW Requirements' },
-  { key: 'SWE.2', label: 'SW Architecture' },
+  { key: 'SWE.4', label: 'Unit Test Specification' },
 ];
 
 // Review and approval (proposal): every step is an event with who, when and a comment, newest
@@ -1361,11 +1541,11 @@ const REVIEW_EVENTS = [
   { id:'e1',  kind:'changes_requested', actor:'SC', doc:1,  time:'2h ago', comment:'Input names of Sample_Run are vague: say what the values are.' },
   { id:'e2',  kind:'submitted',         actor:'LP', doc:4,  time:'3h ago', comment:'Checked every function; corrected 4 vague requirements.' },
   { id:'e3',  kind:'submitted',         actor:'MS', doc:8,  time:'5h ago', comment:'Flowchart labels corrected; the rest reads right.' },
-  { id:'e4',  kind:'submitted',         actor:'AF', doc:10, time:'6h ago', comment:'Checked the component list against the code.' },
+  { id:'e4',  kind:'submitted',         actor:'AF', doc:10, time:'6h ago', comment:'Test steps follow the corrected flowchart labels.' },
   { id:'e5',  kind:'approved',          actor:'SC', doc:3,  time:'1d ago', comment:'Corrections read well.', hash:'3f9a2c1e' },
-  { id:'e6',  kind:'reopened',          actor:'ZP', doc:11, time:'1d ago', comment:'The new CAN signals change two requirements.' },
+  { id:'e6',  kind:'reopened',          actor:'ZP', doc:11, time:'1d ago', comment:'The new CAN signals change two test steps.' },
   { id:'e7',  kind:'claimed',           actor:'MS', doc:8,  time:'1d ago' },
-  { id:'e8',  kind:'changes_requested', actor:'ZP', doc:13, time:'2d ago', comment:'Two interface ids are missing a direction.' },
+  { id:'e8',  kind:'changes_requested', actor:'ZP', doc:13, time:'2d ago', comment:'Two test steps have no expected result.' },
   { id:'e9',  kind:'submitted',         actor:'MS', doc:1,  time:'2d ago', comment:'Checked the interface table against the headers.' },
   { id:'e10', kind:'assigned',          actor:'ZP', doc:6,  time:'2d ago', from:'LP', to:'AF' },
   { id:'e11', kind:'assigned',          actor:'SC', doc:1,  time:'3d ago', to:'MS' },
@@ -1422,8 +1602,8 @@ function recordEvent(e) {
 }
 function eventText(e) {
   const d = docById(e.doc);
-  const doc = d ? `<span style="font-weight:600;">${docShort(d)}</span>` : '';
-  const a = who(e.actor);
+  const doc = d ? `${docShort(d)} (${d.process})` : 'a document';
+  const a = `<b style="font-weight:600;">${who(e.actor)}</b>`;
   switch (e.kind) {
     case 'assigned':
       if (!e.to) return `${a} removed ${who(e.from, true)} as reviewer of ${doc}`;
@@ -1435,7 +1615,7 @@ function eventText(e) {
     case 'changes_requested': return `${a} requested changes to ${doc}`;
     case 'reopened':          return `${a} reopened ${doc}`;
     case 'carried':           return `${doc} stays approved: content unchanged since ${e.fromVersion}`;
-    case 'generated':         return `${a} ran the analysis: ${e.version}, every document in review`;
+    case 'generated':         return `The run generated ${DOCUMENTS.length} documents of ${e.version}, every one in review`;
   }
   return '';
 }
@@ -1500,6 +1680,64 @@ function renderAssigneeCell(doc) {
     </div>`;
 }
 
+// Staged generation: the Components drawer. The banner's "View components" opens it; documents.html's
+// arrives with #components and opens it; Escape or the scrim closes it.
+function openComponents()  { document.getElementById('components-drawer').style.display = ''; }
+function closeComponents() { document.getElementById('components-drawer').style.display = 'none'; }
+function sgToggle(chip) { chip.classList.toggle('sel'); sgCount(); }
+function sgSelectLayer(layer) {
+  document.querySelectorAll('.cd-chip.pick[data-layer="' + layer + '"]').forEach(function (c) { if (c.style.display !== 'none') c.classList.add('sel'); });
+  sgCount();
+}
+function sgClear() { document.querySelectorAll('.cd-chip.sel').forEach(function (c) { c.classList.remove('sel'); }); sgCount(); }
+function sgCount() {
+  var sel = Array.prototype.slice.call(document.querySelectorAll('.cd-chip.sel'));
+  var n = sel.length;
+  var adds = Array.from(new Set(sel.map(function (c) { return c.dataset.adds; }).filter(Boolean)));
+  document.getElementById('sg-generate').disabled = !n;
+  document.getElementById('sg-generate-label').textContent = n ? 'Generate ' + n : 'Generate';
+  document.getElementById('sg-picked').textContent = n ? n + ' selected' : 'Click the components to generate, or Select a layer\'s.';
+  document.getElementById('sg-clear').style.display = n ? '' : 'none';
+  var note = document.getElementById('sg-note');
+  note.style.display = n ? '' : 'none';
+  note.textContent = adds.length ? 'Adds ' + adds.join(', ') + ' first (parse + descriptions), then writes the documents' : 'Uses the analysis already done';
+}
+var sgOnlyWithout = false;
+function sgOnly(btn) {
+  sgOnlyWithout = btn.dataset.only === '1';
+  document.querySelectorAll('.cd-seg').forEach(function (b) { b.classList.toggle('on', b === btn); });
+  sgFilter();
+}
+function sgFilter() {
+  var q = document.getElementById('cd-find').value.trim().toLowerCase();
+  var any = false;
+  document.querySelectorAll('.cd-layer').forEach(function (layer) {
+    var shownInLayer = 0;
+    layer.querySelectorAll('.cd-group').forEach(function (g) {
+      var shown = 0;
+      g.querySelectorAll('.cd-chip').forEach(function (c) {
+        var done = c.title.indexOf('has its documents') >= 0;
+        var ok = (!q || c.dataset.name.toLowerCase().indexOf(q) >= 0) && !(sgOnlyWithout && done);
+        c.style.display = ok ? '' : 'none';
+        if (ok) shown++;
+      });
+      g.style.display = shown ? '' : 'none';
+      shownInLayer += shown;
+    });
+    layer.style.display = shownInLayer ? '' : 'none';
+    if (shownInLayer) any = true;
+  });
+  document.getElementById('cd-none').style.display = any ? 'none' : '';
+}
+function sgFold(btn) {
+  var body = btn.closest('.cd-layer').querySelector('.cd-body');
+  var open = body.style.display === 'none';
+  body.style.display = open ? '' : 'none';
+  btn.setAttribute('aria-expanded', String(open));
+  btn.querySelector('.cd-fold').style.transform = open ? '' : 'rotate(-90deg)';
+}
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeComponents(); });
+if (location.hash === '#components') openComponents();
 function renderKpi() {
   const container = document.getElementById('kpi-cards');
   if (!container) return;
@@ -1517,8 +1755,8 @@ function renderKpi() {
   // Magician-style gauge: centre (78,78), one arc per state on r=52, rounded caps with gaps
   const C2 = 2 * Math.PI * 52;
   const C_TICK = 2 * Math.PI * 40;
-  const ARC_W   = 5;   // arc thickness
-  const ARC_GAP = 10;  // >= stroke width so rounded caps don't touch
+  const ARC_W   = 7;   // arc thickness
+  const ARC_GAP = 12;  // >= stroke width so rounded caps don't touch
   const liveSegs = REVIEW_ORDER.filter(k => count[k] > 0).length;
   let arcStart = 0;
   const arcs = REVIEW_ORDER.map((k, i) => {
@@ -1533,11 +1771,10 @@ function renderKpi() {
       transform="rotate(${rot.toFixed(2)} 78 78)" stroke-dasharray="${len.toFixed(2)} ${C2.toFixed(2)}" stroke-dashoffset="${len.toFixed(2)}"`;
     // breathing halo (wide, blurred) under a thin core; both share the flowing gradient
     return `<circle class="mm-halo" ${geom} stroke-width="${ARC_W + 6}" filter="url(#mmHalo)" style="--d:${(i * 0.15).toFixed(2)}s"/>
-    <circle class="mm-arc" ${geom} stroke-width="${ARC_W}" filter="url(#mmGlow)" style="--d:${(i * 0.15).toFixed(2)}s"/>`;
+    <circle class="mm-arc" ${geom} stroke-width="${ARC_W}" style="--d:${(i * 0.15).toFixed(2)}s"/>`;
   }).join('');
-  // the colours flow round the ring unless the viewer asked for reduced motion
-  const flow = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? '' :
-    `<animateTransform attributeName="gradientTransform" type="rotate" from="0 .5 .5" to="360 .5 .5" dur="6s" repeatCount="indefinite"/>`;
+  // the colours stay put: approval changes a few times a day, it is not live data
+  const flow = '';
   const legendRow = (k, i) => {
     const pct = total ? Math.round(count[k] / total * 100) : 0;
     const g   = MM_GRAD[k];
@@ -1608,7 +1845,7 @@ function renderKpi() {
 
   const assignCardAdmin = `
     <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-5">
-      <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-3">Assignment</p>
+      <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-3">Reviewers</p>
       <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:10px;">
         <span data-count="${withReviewer}" style="font-family:'Samsung Sharp Sans','Poppins',sans-serif;font-size:32px;font-weight:700;color:#f2f3f5;line-height:1;">${withReviewer}</span>
         <span style="font-size:13px;color:#8a8f9c;line-height:1;">/ ${total} have a reviewer</span>
@@ -1749,13 +1986,20 @@ function renderLastActions() {
   const body = document.getElementById('last-actions-body');
   if (!body) return;
   const events = currentRole === 'developer' ? REVIEW_EVENTS.filter(concernsDev) : REVIEW_EVENTS;
-  body.innerHTML = events.slice(0, 5).map(e => {
+  const lines = [];
+  events.forEach(e => {
+    const prev = lines[lines.length - 1];
+    if (e.kind === 'carried' && prev && prev.e.kind === 'carried' && prev.e.fromVersion === e.fromVersion) prev.count += 1;
+    else lines.push({ e, count: 1 });
+  });
+  body.innerHTML = lines.slice(0, 6).map(({ e, count }) => {
     const k = EVENT_KINDS[e.kind];
+    const text = count > 1 ? `${count} approvals carried from ${e.fromVersion}: their content is unchanged` : eventText(e);
     return `
     <div style="display:flex;align-items:flex-start;gap:10px;padding:12px 20px;border-bottom:1px solid #24272e;">
       <span class="material-symbols-outlined" style="font-size:15px;color:${k.color};flex-shrink:0;margin-top:1px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">${k.icon}</span>
       <div style="flex:1;min-width:0;">
-        <p style="font-size:12px;color:#f2f3f5;line-height:1.4;">${eventText(e)}</p>
+        <p style="font-size:12px;color:#f2f3f5;line-height:1.4;">${text}</p>
         ${e.comment ? `<p title="${e.comment}" style="font-size:11px;color:#a3a7b1;line-height:1.35;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">“${e.comment}”</p>` : ''}
         ${e.hash ? `<p style="font-size:10px;color:#7c818c;margin-top:2px;font-family:'SamsungOne','Roboto',sans-serif;">Word file sha256 ${e.hash}…</p>` : ''}
         <p style="font-size:10px;color:#8a8f9c;margin-top:2px;font-family:'SamsungOne','Roboto',sans-serif;">${e.time}</p>
@@ -1994,13 +2238,8 @@ function renderDocs() {
             ${chips ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">${chips}</div>` : ''}
           </td>
           <td style="padding:13px 16px;">${avatarStack}</td>
-          <td style="padding:8px 12px;">
-            <button onclick="event.stopPropagation();window.location.href='documents.html'"
-              style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid #24272e;border-radius:6px;background:#1c1e23;cursor:pointer;color:#7c818c;"
-              onmouseover="this.style.borderColor='#1d7bff';this.style.color='#1d7bff'"
-              onmouseout="this.style.borderColor='#24272e';this.style.color='#7c818c'">
-              <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
-            </button>
+          <td style="padding:8px 12px;text-align:right;">
+            <span class="material-symbols-outlined" style="font-size:14px;color:#a3a7b1;">arrow_forward</span>
           </td>
         </tr>`;
     }).join('');
@@ -2265,10 +2504,12 @@ function updateChip() {
     refEl.textContent  = version;
     iconEl.textContent = 'sell';
     iconEl.style.color = '#3ddc84';
+    iconEl.classList.add('sym-fill');
   } else {
     refEl.textContent  = `main @ ${c.sha.slice(0, 7)}`;
     iconEl.textContent = 'alt_route';
     iconEl.style.color = '';
+    iconEl.classList.remove('sym-fill');
   }
 }
 
@@ -2427,7 +2668,7 @@ function updateStatusBadge(state) {
   const cfgs = {
     never:     { icon: 'radio_button_unchecked', text: 'Not Run',   color: '#7c818c', bg: '#26282e', border: '#24272e' },
     running:   { icon: 'sync',                   text: 'Running',   color: '#1d7bff', bg: '#1b2a45', border: '#2d4a80' },
-    in_review: { icon: 'rate_review',             text: `In review · ${vApproved} of ${vDocs.length} approved`, color: '#f5a524', bg: '#2c2414', border: '#6b4a12' },
+    in_review: { icon: 'rate_review',             text: `In review · ${vApproved}/${vDocs.length} approved`, color: '#f5a524', bg: '#2c2414', border: '#6b4a12' },
     complete:  { icon: 'check_circle',            text: 'Approved',  color: '#3ddc84', bg: '#132a1f', border: '#1f5a3a' },
     stale:     { icon: 'warning',                 text: 'Stale',     color: '#f5a524', bg: '#221d12', border: '#6b4a12' },
   };
@@ -2450,6 +2691,7 @@ function setState(state, commit) {
   document.getElementById('empty-banner').style.display  = isNever   ? '' : 'none';
   document.getElementById('gen-panel').style.display     = isRunning  ? '' : 'none';
   document.getElementById('stale-banner').style.display  = isStale    ? '' : 'none';
+  document.getElementById('gen-banner').style.display    = hasContent ? '' : 'none';
   document.getElementById('kpi-strip').style.display     = hasContent ? 'block' : 'none';
   document.getElementById('content-row').style.display   = hasContent ? 'flex'  : 'none';
   document.getElementById('fn-vis-card').style.display   = hasContent ? ''      : 'none';
@@ -2459,9 +2701,9 @@ function setState(state, commit) {
   }
 
   // Subbar CTAs
-  document.getElementById('cta-run').style.display    = ((isNever || isStale || isComplete) && isAdmin) ? '' : 'none';
+  document.getElementById('cta-run').style.display    = (!isRunning && isAdmin) ? '' : 'none';
   document.getElementById('cta-cancel').style.display = (isRunning && isAdmin) ? '' : 'none';
-  document.getElementById('cta-run-label').textContent = (isStale || isComplete) ? 'RE-RUN' : 'RUN ANALYSIS';
+  document.getElementById('cta-run-label').textContent = 'RUN ANALYSIS';
 
 
   // Chip spinner

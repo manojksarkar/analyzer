@@ -480,6 +480,39 @@ class TestTheUpdateScope:
         assert r.json()["detail"]["code"] == "NOT_YOUR_DOCUMENTS"
         assert r.json()["detail"]["components"] == ["L1.B"]
 
+    @pytest.mark.parametrize("header", ["auth_header", "dev_header"])
+    def test_a_component_with_no_documents_is_said_not_filtered_away(self, client, db, request,
+                                                                     header, monkeypatch):
+        """A misspelt name ("L1.Nope", spaces for hyphens, a bare name) answered 200
+        `up_to_date` with no components (admin) or a 403 (developer). The `all` scope said 422."""
+        pid = _project(db)
+        vid = _version(db, pid)
+        _documents(db, pid, vid, ["L1.A"], reviewer="u2")
+        _out_of_date(monkeypatch, {"L1.A"})
+        _Engine(monkeypatch)
+        r = _update(client, request.getfixturevalue(header), pid, vid, scope="out_of_date",
+                    components=["L1.A", "L1.Nope"])
+        assert r.status_code == 422, r.text
+        assert r.json()["detail"]["code"] == "INVALID_COMPONENTS"
+        assert r.json()["detail"]["components"] == ["L1.Nope"]
+        assert not [j for j in db.jobs.list_for_version(vid) if j.mode == REEXPORT_MODE]
+
+    @pytest.mark.parametrize("spelt", ["L1.My Comp", "l1.my-comp", "L1.My-Comp"])
+    def test_a_component_as_the_config_spells_it_is_its_documents_group(self, client, db,
+                                                                        auth_header, monkeypatch,
+                                                                        spelt):
+        """The config says "Layer1.Sample Core", the documents' group "Layer1.Sample-Core":
+        R11 and the job scope take either, and so does the update (it answered `up_to_date`)."""
+        pid = _project(db)
+        vid = _version(db, pid)
+        _documents(db, pid, vid, ["L1.My-Comp"])
+        _out_of_date(monkeypatch, {"L1.My-Comp"})
+        engine = _Engine(monkeypatch)
+        r = _update(client, auth_header, pid, vid, scope="out_of_date", components=[spelt])
+        assert r.status_code == 202, r.text
+        assert r.json()["components"] == ["L1.My-Comp"]
+        engine.finish(r.json()["job_id"])
+
     def test_rebuild_all_is_for_admins(self, client, db, dev_header, monkeypatch):
         pid = _project(db)
         vid = _version(db, pid)
