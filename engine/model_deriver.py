@@ -1012,16 +1012,19 @@ def _enrich_behaviour_names_llm(
     n = len(order)
     progress = ProgressReporter("LLM-behaviour-names", total=n, logger=get_logger("model_deriver"))
     progress.start()
-    for idx, fid in enumerate(order):
+    import threading as _threading
+    mu = _threading.Lock()
+
+    def _one(fid):
         if only_fids is not None and fid not in only_fids:
-            continue
+            return
         f = functions_data.get(fid)
         if not f or not _static_behaviour_name_is_poor(f):
-            continue
+            return
         loc = f.get("location") or {}
         source = extract_source(base_path, loc)
         if not source:
-            continue
+            return
         params = f.get("parameters") or f.get("params") or []
         reads_ids = f.get("readsGlobalIdsTransitive") or f.get("readsGlobalIds") or []
         writes_ids = f.get("writesGlobalIdsTransitive") or f.get("writesGlobalIds") or []
@@ -1050,10 +1053,24 @@ def _enrich_behaviour_names_llm(
             f["inputName"] = res["inputName"]
         if res.get("outputName"):
             f["outputName"] = res["outputName"]
-        if res.get("inputName") or res.get("outputName"):
-            answered.add(fid)
         qn = (f.get("qualifiedName") or "").split("::")[-1]
-        progress.step(label=qn or fid)
+        with mu:
+            if res.get("inputName") or res.get("outputName"):
+                answered.add(fid)
+            progress.step(label=qn or fid)
+
+    workers = int(llm.get("workers") or 1)
+    if workers <= 1:
+        for fid in order:
+            _one(fid)
+    else:
+        # Each function's names come from its own source and the static model: the functions
+        # can be asked at once; only the LLM calls overlap (the lanes in llm_core/pool.py limit them).
+        import contextvars
+        from llm_core.parallel import executor
+        with executor(workers, "llm-names") as pool:
+            for fut in [pool.submit(contextvars.copy_context().run, _one, fid) for fid in order]:
+                fut.result()
     progress.done()
     return answered
 
@@ -1261,6 +1278,18 @@ def _enrich_unit_and_struct_descriptions(units_data: dict, functions_data: dict,
     abbreviations = load_abbreviations(PROJECT_ROOT, config) or {}
     n_units = n_structs = 0
 
+    from llm_core.parallel import llm_workers, map_in_order
+    workers = llm_workers(config)
+
+    def _ask(fn, *args):
+        try:
+            return (fn(*args) or "").strip()
+        except Exception:
+            return ""
+
+    # llm.workers > 1: several units at once -- each prompt holds only its own unit's functions and
+    # globals, whose descriptions are all done by now; the texts land in the units' order.
+    unit_todo = []
     for unit_key, unit in units_data.items():
         if unit.get("description"):
             continue                      # carried forward from a baseline -- do not re-pay
@@ -1269,11 +1298,10 @@ def _enrich_unit_and_struct_descriptions(units_data: dict, functions_data: dict,
         if not (fn_items or gv_items):
             continue
         display = unit.get("name") or unit_key.split(KEY_SEP)[-1]
-        try:
-            text = (get_unit_description(display, fn_items, gv_items, config,
-                                         abbreviations) or "").strip()
-        except Exception:
-            continue
+        unit_todo.append((unit, display, fn_items, gv_items))
+    texts = map_in_order(lambda u: _ask(get_unit_description, u[1], u[2], u[3], config, abbreviations),
+                         unit_todo, workers, "llm-unit")
+    for (unit, *_rest), text in zip(unit_todo, texts):
         if text and text not in ("-", "N/A"):
             unit["description"] = text
             n_units += 1
@@ -1282,6 +1310,7 @@ def _enrich_unit_and_struct_descriptions(units_data: dict, functions_data: dict,
     # its own in the unit header table, or one a typedef row names (develop, 794b95f). Not one
     # declared inside a class, nor an anonymous one -- no row prints their text, so asking the LLM
     # for it would be paid for and never read. The same rule decides what a reviewer is offered.
+    struct_todo = []
     for key in sorted(described_record_keys(data_dict)):
         entry = data_dict[key]
         if entry.get("description"):
@@ -1290,10 +1319,10 @@ def _enrich_unit_and_struct_descriptions(units_data: dict, functions_data: dict,
         fields = entry.get("fields") or []
         if not name:
             continue
-        try:
-            text = (get_struct_description(name, fields, config, abbreviations) or "").strip()
-        except Exception:
-            continue
+        struct_todo.append((entry, name, fields))
+    texts = map_in_order(lambda s: _ask(get_struct_description, s[1], s[2], config, abbreviations),
+                         struct_todo, workers, "llm-struct")
+    for (entry, *_rest), text in zip(struct_todo, texts):
         if text and text not in ("-", "N/A"):
             entry["description"] = text
             n_structs += 1

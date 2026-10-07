@@ -288,6 +288,81 @@ def render_mermaid_cached(project_root: str, mermaid: str, png_path: str, *,
     return ok
 
 
+def render_mermaid_many(project_root: str, items, *, scale=None, puppeteer: bool = True,
+                        timeout: int = 90) -> dict:
+    """Render [(mermaid, png_path), ...]; returns {png_path: ok}.
+
+    Cache hits are copied out as `render_mermaid_cached` does. The misses are drawn by ONE browser
+    (engine/config/render_mmd_batch.mjs: mermaid-cli's renderMermaid with mmdc's own defaults --
+    byte-identical PNGs, 8/8 checked), instead of an `mmdc` and a Chromium each: ~2 s a diagram
+    instead of ~9 s. Whatever the batch could not draw goes through `mmdc` one by one, as before;
+    Docker Mermaid, no puppeteer config, or ANALYZER_MMD_BATCH=0 take the one-by-one path whole."""
+    import json as _json
+    import shutil
+    import tempfile
+    results = {}
+    items = [(m, p) for m, p in items if m]
+    if not items:
+        return results
+    if (os.environ.get("ANALYZER_MMD_BATCH", "1") == "0" or not puppeteer
+            or mermaid_in_docker(project_root)):
+        for m, p in items:
+            results[p] = render_mermaid_cached(project_root, m, p, scale=scale, puppeteer=puppeteer,
+                                               timeout=timeout)
+        return results
+    cache_dir = picture_cache_dir(project_root, _MMDC_CACHE_DIR)
+    misses = []
+    for m, p in items:
+        os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
+        key = mermaid_cache_key(m, scale=scale, puppeteer=puppeteer)
+        if cached_picture(cache_dir, key, p):
+            results[p] = True
+        else:
+            misses.append((m, p, key))
+    if not misses:
+        return results
+    # Everything the batch needs -- its folder, its files, the run -- inside one guard: whatever
+    # goes wrong, the pictures are drawn one by one below, as before the batch existed.
+    drawn = set()
+    tmpdir = None
+    try:
+        tmpdir = tempfile.mkdtemp(prefix="mmd_batch_")
+        jobs = []
+        for i, (m, p, _key) in enumerate(misses):
+            mmd = os.path.join(tmpdir, f"{i}.mmd")
+            with open(mmd, "w", encoding="utf-8") as f:
+                f.write(m)
+            jobs.append({"in": mmd, "out": os.path.abspath(p), "scale": 1 if scale is None else scale})
+        jobs_path = os.path.join(tmpdir, "jobs.json")
+        with open(jobs_path, "w", encoding="utf-8") as f:
+            _json.dump(jobs, f)
+        script = os.path.join(project_root, "engine", "config", "render_mmd_batch.mjs")
+        pup = os.path.join(project_root, "engine", "config", "puppeteer-config.json")
+        cmd = ["node", script, jobs_path] + ([pup] if os.path.isfile(pup) else [])
+        from core.subprocess_util import run_capture
+        r = run_capture(cmd, timeout=60 + timeout * len(jobs))
+        if r.returncode != 0:
+            _log_render_failure("render_mmd_batch.mjs", r)
+        with open(jobs_path + ".results.json", encoding="utf-8") as f:
+            drawn = {os.path.normcase(x["out"]) for x in _json.load(f) if x.get("ok")}
+    except Exception as exc:                              # noqa: BLE001 - one by one below
+        log(f"render_mmd_batch.mjs could not run: {type(exc).__name__}: {exc}",
+            component="render", err=True)
+    finally:
+        if tmpdir:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+    for m, p, key in misses:
+        if os.path.normcase(os.path.abspath(p)) in drawn and os.path.isfile(p):
+            keep_picture(cache_dir, key, p)
+            results[p] = True
+        else:
+            ok = _run_mmdc(project_root, m, p, scale=scale, puppeteer=puppeteer, timeout=timeout)
+            if ok:
+                keep_picture(cache_dir, key, p)
+            results[p] = ok
+    return results
+
+
 def safe_filename(s: str) -> str:
     """Filesystem-safe name: spaces -> -, unsafe chars -> _.
     Includes , & ; to avoid Windows cmd parsing issues when paths are passed to mmdc.
@@ -365,6 +440,76 @@ def render_dot_cached(project_root: str, dot: str, png_path: str, *,
     if ok:
         keep_picture(cache_dir, key, png_path)
     return ok
+
+
+def render_dot_many(project_root: str, items, *, scale=2, timeout: int = 180) -> dict:
+    """Render [(dot, png_path), ...] to PNGs; returns {png_path: ok}.
+
+    Cache hits are copied out as `render_dot_cached` does; the misses are drawn by ONE browser
+    (engine/config/render_dot_batch.mjs: render_dot.mjs's steps exactly, a new page per chart --
+    byte-identical PNGs, 8/8 checked) instead of a browser each: ~1.8 s a chart instead of ~10 s.
+    A chart the batch could not draw goes through render_dot.mjs alone, as before.
+    ANALYZER_DOT_BATCH=0: one by one throughout."""
+    import json as _json
+    import shutil
+    import tempfile
+    results = {}
+    items = [(d, p) for d, p in items if d]
+    if not items:
+        return results
+    if os.environ.get("ANALYZER_DOT_BATCH", "1") == "0":
+        for d, p in items:
+            results[p] = render_dot_cached(project_root, d, p, scale=scale, timeout=timeout)
+        return results
+    cache_dir = picture_cache_dir(project_root, _DOT_CACHE_DIR)
+    misses = []
+    for d, p in items:
+        os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
+        key = dot_cache_key(d, scale=scale)
+        if cached_picture(cache_dir, key, p):
+            results[p] = True
+        else:
+            misses.append((d, p, key))
+    if not misses:
+        return results
+    # Everything the batch needs inside one guard, as render_mermaid_many: on any failure the
+    # charts are drawn one by one below.
+    drawn = set()
+    tmpdir = None
+    try:
+        tmpdir = tempfile.mkdtemp(prefix="dot_batch_")
+        jobs = []
+        for i, (d, p, _key) in enumerate(misses):
+            dot_path = os.path.join(tmpdir, f"{i}.dot")
+            with open(dot_path, "w", encoding="utf-8") as f:
+                f.write(d)
+            jobs.append({"dot": dot_path, "out": os.path.abspath(p), "scale": scale})
+        jobs_path = os.path.join(tmpdir, "jobs.json")
+        with open(jobs_path, "w", encoding="utf-8") as f:
+            _json.dump(jobs, f)
+        script = os.path.join(project_root, "engine", "config", "render_dot_batch.mjs")
+        from core.subprocess_util import run_capture
+        r = run_capture(["node", script, jobs_path], timeout=60 + timeout * len(jobs))
+        if r.returncode != 0:
+            _log_render_failure("render_dot_batch.mjs", r)
+        with open(jobs_path + ".results.json", encoding="utf-8") as f:
+            drawn = {os.path.normcase(x["out"]) for x in _json.load(f) if x.get("ok")}
+    except Exception as exc:                              # noqa: BLE001 - one by one below
+        log(f"render_dot_batch.mjs could not run: {type(exc).__name__}: {exc}",
+            component="render", err=True)
+    finally:
+        if tmpdir:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+    for d, p, key in misses:
+        if os.path.normcase(os.path.abspath(p)) in drawn and os.path.isfile(p):
+            keep_picture(cache_dir, key, p)
+            results[p] = True
+        else:
+            ok = _run_dot_render(project_root, d, p, scale=scale, timeout=timeout)
+            if ok:
+                keep_picture(cache_dir, key, p)
+            results[p] = ok
+    return results
 
 
 # Flowchart pictures for the web reader: DOT -> SVG, many charts per Node process

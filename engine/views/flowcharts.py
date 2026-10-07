@@ -10,7 +10,7 @@ import sys
 from .registry import register
 from core.macro_input import args_for_scope, normalize_scoped_args
 from utils import (
-    KEY_SEP, log, safe_filename, os_type, render_dot_cached,
+    KEY_SEP, log, safe_filename, os_type, render_dot_cached, render_dot_many,
     FLOWCHART_SVG_MAX_BOXES, count_dot_boxes, render_dot_svgs, svg_content_key, svg_file_key,
 )
 from core.flowchart_svg import svg_file_name
@@ -1942,8 +1942,23 @@ def run(model, output_dir, model_dir, config):
 
     progress.start()
 
+    # One browser per CHUNK of charts (utils.render_dot_many), not one per chart; a chunk keeps the
+    # progress moving on a document of hundreds. What the batch misses is drawn alone below.
+    CHUNK = 50
+    drawn = {}
+
+    def _png(unit_name, func_name):
+        return os.path.abspath(os.path.join(out_dir, f"{unit_name}_{safe_filename(func_name)}.png"))
+
     for i, (unit_name, func_name, flowchart, _key, _carried) in enumerate(items, 1):
         progress.step(label=f"{unit_name}/{func_name}")
+        if (i - 1) % CHUNK == 0:
+            chunk = items[i - 1:i - 1 + CHUNK]
+            try:
+                drawn.update(render_dot_many(project_root, [(fl, _png(u, f)) for u, f, fl, _k, _c in chunk],
+                                             scale=2, timeout=180))
+            except Exception as exc:                      # noqa: BLE001 - each chart alone below
+                log("flowchart batch failed (%s); drawing one by one" % exc, component="flowcharts", err=True)
 
         png_name = f"{unit_name}_{safe_filename(func_name)}.png"
         png_path = os.path.abspath(os.path.join(out_dir, png_name))
@@ -1953,7 +1968,7 @@ def run(model, output_dir, model_dir, config):
             # a revert / shared between versions) skips the render entirely. scale=2
             # preserved; the Windows/non-Windows subprocess handling + the temp .dot are
             # inside utils._run_dot_render.
-            if render_dot_cached(
+            if drawn.get(png_path) or render_dot_cached(
                 project_root, flowchart, png_path, scale=2, timeout=180
             ):
                 if os.path.isfile(png_path):

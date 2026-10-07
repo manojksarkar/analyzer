@@ -447,7 +447,7 @@ def _store_labels(cfg, key: str, config: EngineConfig, fallback_ids=frozenset())
 
 def _label_chart(cfg, func_entry: FunctionEntry, source_code: str, base_path: str,
                  label_generator: LabelGenerator, config: EngineConfig,
-                 project_knowledge) -> None:
+                 project_knowledge, lock=None) -> None:
     """One chart's node labels: the cached ones, else the LLM's -- cached unless any fell back.
 
     A chart named in `config.rewrite_keys` is written again past the cache (see EngineConfig).
@@ -456,13 +456,22 @@ def _label_chart(cfg, func_entry: FunctionEntry, source_code: str, base_path: st
     queue entry stays for the next update -- without earlier labels to keep, the run's own are
     all there is, fallbacks and all, as on any run whose labels are not cached.
     """
+    import contextlib
+    guard = lock if lock is not None else contextlib.nullcontext()
     key = _label_cache_key(source_code, config)
     rewrite = func_entry.key in config.rewrite_keys
-    if not rewrite and _apply_cached_labels(cfg, key, config):
-        return
-    _with_current_descriptions(project_knowledge, config)
+    with guard:
+        if not rewrite and _apply_cached_labels(cfg, key, config):
+            return
+        _with_current_descriptions(project_knowledge, config)
+    # The LLM call, outside the lock: with llm.workers > 1 other charts are asked meanwhile.
     label_generator.label_cfg(cfg, func_entry, source_code, base_path)
     fell_back = label_generator.fallback_node_ids
+    with guard:
+        _label_chart_after(cfg, key, func_entry, config, rewrite, fell_back)
+
+
+def _label_chart_after(cfg, key, func_entry, config, rewrite, fell_back) -> None:
     if not rewrite:
         _store_labels(cfg, key, config, fell_back)
     elif fell_back:
@@ -678,6 +687,200 @@ def _build_pkb(functions_data: Dict) -> ProjectKnowledgeBase:
 # Core per-function processing
 # ---------------------------------------------------------------------------
 
+def _build_cfg(func_entry: FunctionEntry, pkb, source_extractor, tu_parser, config: EngineConfig,
+               project_knowledge=None, including_tus=None):
+    """Steps 1-5 of a chart -- source, libclang, the graph, its enrichment: (cfg, source_code).
+    libclang runs here only, so this stays on one thread."""
+    qn = func_entry.qualified_name
+    # 1. Extract source text by line range
+    source_code = source_extractor.extract_by_lines(
+        func_entry.file, func_entry.line, func_entry.end_line
+    )
+    source_lines = source_extractor.get_lines(func_entry.file)
+
+    # 2. Parse full TU (with function bodies)
+    abs_path = source_extractor.abs_path(func_entry.file)
+    tu = tu_parser.get_tu_full(abs_path)
+
+    # 3. Resolve function cursor
+    # Pass abs_path so the resolver can use Strategy 1 (direct position
+    # lookup) and can match loc.file.name against the exact parsed path.
+    func_cursor = find_function_cursor(tu, func_entry, abs_path)
+
+    # Fallback for functions DEFINED in a header that does not parse
+    # standalone — its macros/types come from an include the .cpp pulls in
+    # first (e.g. "#include cfg.h" then "#include foo.h", where foo.h uses a
+    # macro from cfg.h). Parsed alone the definition is a syntax error and
+    # yields no cursor. Phase 1 never hits this because it captures the
+    # function from the .cpp TU. So retry inside each TU that INCLUDES this
+    # header, keeping abs_path (the header) as the resolution target: the
+    # cursor still reports the header as its location.
+    if func_cursor is None:
+        for including_tu in (including_tus or {}).get(func_entry.file, []):
+            try:
+                alt_tu = tu_parser.get_tu_full(
+                    source_extractor.abs_path(including_tu)
+                )
+            except Exception as exc:          # unreadable/missing TU — try next
+                logger.debug("including TU %s unusable: %s", including_tu, exc)
+                continue
+            func_cursor = find_function_cursor(alt_tu, func_entry, abs_path)
+            if func_cursor is not None:
+                logger.info("Resolved '%s' via including TU %s "
+                            "(header does not parse standalone)",
+                            qn, including_tu)
+                break
+
+    if func_cursor is None:
+        raise RuntimeError(
+            f"Could not resolve cursor for '{qn}' in {func_entry.file}:{func_entry.line}"
+            + _parse_error_hint(tu)
+        )
+
+    # 4. Build CFG
+    builder = CFGBuilder(
+        source_lines,
+        max_stmts=config.max_stmts_per_segment,
+        max_lines=config.max_lines_per_segment,
+    )
+    cfg = builder.build(func_cursor, func_entry)
+    logger.debug("CFG built: %d nodes, %d edges for '%s'",
+                 len(cfg.nodes), len(cfg.edges), qn)
+
+    # 5. Enrich CFG nodes with PKB context + project knowledge
+    enricher = NodeEnricher(
+        pkb,
+        source_lines_by_file={func_entry.file: source_lines},
+        knowledge=project_knowledge,
+    )
+    enricher.enrich(cfg, func_entry)
+    return cfg, source_code
+
+
+def _finish_chart(cfg, func_entry: FunctionEntry) -> "FlowchartResult":
+    """Steps 7-9 of a chart: validate it, draw it, keep the graph beside the picture."""
+    key = func_entry.key
+    qn = func_entry.qualified_name
+    # 7. Validate CFG
+    cfg_validation = validate_cfg(cfg)
+    if not cfg_validation.is_valid:
+        logger.warning("CFG validation errors for '%s':\n%s", qn, cfg_validation)
+    elif cfg_validation.warnings:
+        logger.debug("CFG validation warnings for '%s':\n%s", qn, cfg_validation)
+
+    # 8. Build the flowchart script.  The pipeline renders flowcharts with
+    # Graphviz (loop-aware layout: Return/End at the bottom, no crossing
+    # back-edges).  The FlowchartResult field is still named mermaid_script
+    # for compatibility with the writer/schema, but now carries a DOT script.
+    flowchart_script = build_dot(cfg)
+
+    # 9. Carry the graph itself alongside its rendering. build_dot() flattens
+    # the CFG into a picture; SWE.4 transcribes the same graph into nested
+    # Test Steps and needs the node types and edge labels back.
+    return FlowchartResult(
+        function_key=key,
+        qualified_name=qn,
+        mermaid_script=flowchart_script,
+        cfg=serialize_cfg(cfg),
+    )
+
+
+def _label_workers(llm_cfg) -> int:
+    try:
+        return max(1, int((llm_cfg or {}).get("workers") or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _process_all_parallel(by_file, workers, total_funcs, started, pkb, source_extractor, tu_parser,
+                          label_generator, config, base_path, project_knowledge, including_tus,
+                          llm_client, enrichment_cfg, max_context_tokens):
+    """llm.workers > 1: every graph first (libclang, one thread, today's order), then the labels
+    for `workers` charts at once, then each chart drawn in today's order. Returns
+    (file_results, ok, errors) as the sequential loop builds them."""
+    import queue
+    import threading
+    import contextvars
+    from llm_core.parallel import executor
+
+    lock = threading.RLock()
+    generators: "queue.Queue[LabelGenerator]" = queue.Queue()
+    generators.put(label_generator)
+    for _ in range(workers - 1):            # each thread its own: a generator keeps per-call state
+        generators.put(LabelGenerator(client=llm_client, pkb=pkb, max_retries=config.llm_max_retries,
+                                      batch_size=config.llm_batch_size, enrichment_config=enrichment_cfg,
+                                      max_context_tokens=max_context_tokens))
+    jobs = []                               # (file, entry, cfg, source, error)
+    for source_file, entries in sorted(by_file.items()):
+        for entry in entries:
+            try:
+                cfg, source = _build_cfg(entry, pkb, source_extractor, tu_parser, config,
+                                         project_knowledge, including_tus)
+                jobs.append((source_file, entry, cfg, source, None))
+            except Exception as exc:
+                logger.error("Failed to process '%s': %s", entry.qualified_name, exc, exc_info=True)
+                jobs.append((source_file, entry, None, None, exc))
+    done = [0]
+
+    def label(job):
+        _file, entry, cfg, source, error = job
+        if error is not None:
+            return error
+        gen = generators.get()
+        try:
+            _label_chart(cfg, entry, source, base_path, gen, config, project_knowledge, lock=lock)
+            return None
+        except Exception as exc:
+            logger.error("Failed to process '%s': %s", entry.qualified_name, exc, exc_info=True)
+            return exc
+        finally:
+            generators.put(gen)
+            with lock:
+                done[0] += 1
+                logger.info("[%d/%d] Labelled: %s", done[0], total_funcs, entry.qualified_name)
+                _publish_progress(config, done[0], total_funcs, started)
+
+    # Charts with one label-cache key (two copies of one function: same source, same model) run
+    # one after another in today's order, so the later ones take the first one's cached labels, as
+    # they do when every chart runs in order; every other chart is a chain of its own.
+    chains: Dict[str, List[int]] = {}
+    for i, (_f, _e, _cfg, source, error) in enumerate(jobs):
+        key = _label_cache_key(source, config) if error is None else ""
+        chains.setdefault(key or f"#{i}", []).append(i)
+    errors: List[Optional[BaseException]] = [None] * len(jobs)
+
+    def run_chain(indexes):
+        for i in indexes:
+            errors[i] = label(jobs[i])
+    with executor(workers, "labels") as pool:
+        for fut in [pool.submit(contextvars.copy_context().run, run_chain, ix) for ix in chains.values()]:
+            fut.result()
+
+    file_results, ok, err = [], 0, 0
+    current = None
+    for (source_file, entry, cfg, _source, _e), error in zip(jobs, errors):
+        if current is None or current.source_file != source_file:
+            current = FileResult(source_file=source_file)
+            file_results.append(current)
+        if error is None:
+            try:
+                result = _finish_chart(cfg, entry)
+            except Exception as exc:
+                logger.error("Failed to process '%s': %s", entry.qualified_name, exc, exc_info=True)
+                result = FlowchartResult(function_key=entry.key, qualified_name=entry.qualified_name,
+                                         mermaid_script="", error=str(exc))
+        else:
+            result = FlowchartResult(function_key=entry.key, qualified_name=entry.qualified_name,
+                                     mermaid_script="", error=str(error))
+        current.flowcharts.append(result)
+        if result.error:
+            err += 1
+            logger.warning("   ✗ Error: %s", result.error)
+        else:
+            ok += 1
+    return file_results, ok, err
+
+
 def _process_function(
     func_entry: FunctionEntry,
     pkb: ProjectKnowledgeBase,
@@ -697,69 +900,8 @@ def _process_function(
     qn = func_entry.qualified_name
 
     try:
-        # 1. Extract source text by line range
-        source_code = source_extractor.extract_by_lines(
-            func_entry.file, func_entry.line, func_entry.end_line
-        )
-        source_lines = source_extractor.get_lines(func_entry.file)
-
-        # 2. Parse full TU (with function bodies)
-        abs_path = source_extractor.abs_path(func_entry.file)
-        tu = tu_parser.get_tu_full(abs_path)
-
-        # 3. Resolve function cursor
-        # Pass abs_path so the resolver can use Strategy 1 (direct position
-        # lookup) and can match loc.file.name against the exact parsed path.
-        func_cursor = find_function_cursor(tu, func_entry, abs_path)
-
-        # Fallback for functions DEFINED in a header that does not parse
-        # standalone — its macros/types come from an include the .cpp pulls in
-        # first (e.g. "#include cfg.h" then "#include foo.h", where foo.h uses a
-        # macro from cfg.h). Parsed alone the definition is a syntax error and
-        # yields no cursor. Phase 1 never hits this because it captures the
-        # function from the .cpp TU. So retry inside each TU that INCLUDES this
-        # header, keeping abs_path (the header) as the resolution target: the
-        # cursor still reports the header as its location.
-        if func_cursor is None:
-            for including_tu in (including_tus or {}).get(func_entry.file, []):
-                try:
-                    alt_tu = tu_parser.get_tu_full(
-                        source_extractor.abs_path(including_tu)
-                    )
-                except Exception as exc:          # unreadable/missing TU — try next
-                    logger.debug("including TU %s unusable: %s", including_tu, exc)
-                    continue
-                func_cursor = find_function_cursor(alt_tu, func_entry, abs_path)
-                if func_cursor is not None:
-                    logger.info("Resolved '%s' via including TU %s "
-                                "(header does not parse standalone)",
-                                qn, including_tu)
-                    break
-
-        if func_cursor is None:
-            raise RuntimeError(
-                f"Could not resolve cursor for '{qn}' in {func_entry.file}:{func_entry.line}"
-                + _parse_error_hint(tu)
-            )
-
-        # 4. Build CFG
-        builder = CFGBuilder(
-            source_lines,
-            max_stmts=config.max_stmts_per_segment,
-            max_lines=config.max_lines_per_segment,
-        )
-        cfg = builder.build(func_cursor, func_entry)
-        logger.debug("CFG built: %d nodes, %d edges for '%s'",
-                     len(cfg.nodes), len(cfg.edges), qn)
-
-        # 5. Enrich CFG nodes with PKB context + project knowledge
-        enricher = NodeEnricher(
-            pkb,
-            source_lines_by_file={func_entry.file: source_lines},
-            knowledge=project_knowledge,
-        )
-        enricher.enrich(cfg, func_entry)
-
+        cfg, source_code = _build_cfg(func_entry, pkb, source_extractor, tu_parser, config,
+                                      project_knowledge, including_tus)
         # 6. Generate LLM labels (one call per function) — cached by CONTENT.
         #
         # This was the pipeline's largest unbounded cost. Nothing cached these: every run
@@ -769,28 +911,7 @@ def _process_function(
         _label_chart(cfg, func_entry, source_code, base_path, label_generator, config,
                      project_knowledge)
 
-        # 7. Validate CFG
-        cfg_validation = validate_cfg(cfg)
-        if not cfg_validation.is_valid:
-            logger.warning("CFG validation errors for '%s':\n%s", qn, cfg_validation)
-        elif cfg_validation.warnings:
-            logger.debug("CFG validation warnings for '%s':\n%s", qn, cfg_validation)
-
-        # 8. Build the flowchart script.  The pipeline renders flowcharts with
-        # Graphviz (loop-aware layout: Return/End at the bottom, no crossing
-        # back-edges).  The FlowchartResult field is still named mermaid_script
-        # for compatibility with the writer/schema, but now carries a DOT script.
-        flowchart_script = build_dot(cfg)
-
-        # 9. Carry the graph itself alongside its rendering. build_dot() flattens
-        # the CFG into a picture; SWE.4 transcribes the same graph into nested
-        # Test Steps and needs the node types and edge labels back.
-        return FlowchartResult(
-            function_key=key,
-            qualified_name=qn,
-            mermaid_script=flowchart_script,
-            cfg=serialize_cfg(cfg),
-        )
+        return _finish_chart(cfg, func_entry)
 
     except Exception as exc:
         logger.error("Failed to process '%s': %s", qn, exc, exc_info=True)
@@ -1101,7 +1222,14 @@ def run(config: EngineConfig) -> None:
     _started = _time.time()
     _publish_progress(config, 0, total_funcs, _started, force=True)
 
-    for source_file, entries in sorted(by_file.items()):
+    workers = _label_workers(llm_cfg_resolved) if llm_cfg_resolved else 1
+    if workers > 1:
+        file_results, total_ok, total_err = _process_all_parallel(
+            by_file, workers, total_funcs, _started, pkb, source_extractor, tu_parser,
+            label_generator, config, base_path, project_knowledge, including_tus, llm_client,
+            enrichment_cfg, max_context_tokens)
+        processed = total_funcs
+    for source_file, entries in ([] if workers > 1 else sorted(by_file.items())):
         logger.debug("── File: %s  (%d function(s))", source_file, len(entries))
         fr = FileResult(source_file=source_file)
 

@@ -99,6 +99,10 @@ newer entry and the code win.
   engine log lines, tail + SSE, read from per-process files under `logs/live/`. Built; the web page
   is next. [LIVE_LOGS_SPEC](docs/spec/LIVE_LOGS_SPEC.md), [LIVE_LOGS_DESIGN](docs/design/LIVE_LOGS_DESIGN.md),
   [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Live logs".
+- **Pipeline speed** (2026-10-08b, branch `perf/pipeline-speed` on develop `8d438de`, not merged): measured
+  where a run's time goes and prototyped the speed-ups — LLM lanes (several keys, start pacing,
+  failover), `llm.workers`, parse ahead, picture batches — each checked to give develop's output.
+  [PIPELINE_SPEED_PLAN.md](docs/design/PIPELINE_SPEED_PLAN.md) (plan, edge cases, office questions).
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
 - The status boards that used to head this file (2026-07-20, 2026-08-14) are kept, unchanged, in

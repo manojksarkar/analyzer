@@ -12,6 +12,7 @@ from clang import cindex
 
 from core.paths import paths as _paths
 from core.clang_options import PARSE_KEEP_GOING
+from core.tu_prefetch import prefetch as _prefetch
 from core.config import (
     DEFAULT_VISIBILITY_MACROS,
     app_config as _app_config,
@@ -529,6 +530,18 @@ def clang_args_for(file_path: str) -> list:
 
 
 index = cindex.Index.create()
+
+# perf study (ANALYZER_FAST_NULLCHECK=1): the clang >= 19 bindings guard nearly every Cursor method
+# with `is_null()`, which is `self == conf.null_cursor` -- a second ctypes call (clang_equalCursors)
+# per property read: 2.5M of them on the sample, ~20% of Phase 1. libclang's equalCursors compares
+# kind, xdata and data[0..2] (clearing data[1] for declarations only), and the null cursor is
+# kind CXCursor_InvalidFile (70) with every field zero -- so this field check gives the same answer
+# without leaving Python.
+if os.environ.get("ANALYZER_FAST_NULLCHECK") == "1":
+    def _fast_is_null(cur):
+        return (cur._kind_id == 70 and not cur.xdata
+                and not cur.data[0] and not cur.data[1] and not cur.data[2])
+    cindex.Cursor.is_null = _fast_is_null
 
 # The options of BOTH parses of every TU (parse_file, parse_calls_and_globals): one value, so
 # the two passes see the same AST and the parse fingerprint hashes what was actually used.
@@ -2288,16 +2301,56 @@ def _record_tu_diagnostics(tu, rel: str) -> int:
     return len(errors)
 
 
-def parse_file(path):
+# Where Phase 1's time goes, one log line at its end: waiting for libclang's parse vs the AST walks
+# (docs/design/PIPELINE_SPEED_PLAN.md) -- a large wait is what parse-ahead can win back.
+_PHASE_T = {"wait": 0.0, "walk1": 0.0, "walk2": 0.0}
+import time as _time
+
+
+def _parsed(path, tu=None, err=None):
+    """The TU a worker parsed ahead (core.tu_prefetch), its error raised here so the caller's
+    `except` handles it as before -- or, with neither, a parse now on this thread."""
+    if err is not None:
+        raise err
+    if tu is not None:
+        return tu
+    return index.parse(path, args=clang_args_for(path), options=_TU_PARSE_OPTIONS)
+
+
+def _parse_ahead(source_files, stage):
+    """`(path, tu, err)` for each file in order, parsed ahead on worker threads, each parse with
+    an index lent to it alone (one libclang index must not be used by two threads at once). The arguments are
+    worked out here, on this thread, before any worker starts."""
+    args = {p: clang_args_for(p) for p in source_files}
+    from core.tu_prefetch import default_workers
+    if default_workers() > 1:
+        # a native crash in libclang on a worker thread prints every thread's stack; best-effort
+        # (a stderr without a file descriptor cannot take it), and only when threads parse
+        import faulthandler
+        try:
+            if not faulthandler.is_enabled():
+                faulthandler.enable(all_threads=True)
+        except (RuntimeError, ValueError, OSError, AttributeError):
+            pass
+    return _prefetch(source_files,
+                     lambda idx, p: idx.parse(p, args=args[p], options=_TU_PARSE_OPTIONS),
+                     cindex.Index.create)
+
+
+def parse_file(path, tu=None, err=None):
     rel = _rel_path(path)
     _defs_before = len(functions)
     try:
-        tu = index.parse(path, args=clang_args_for(path), options=_TU_PARSE_OPTIONS)
+        _t0 = _time.perf_counter()
+        tu = _parsed(path, tu, err)
+        _t1 = _time.perf_counter()
+        _PHASE_T["wait"] += _t1 - _t0
         _capture_tu_includes(tu, path)  # incremental (M4.0): per-TU include closure
         visit_definitions(tu.cursor)
         visit_type_definitions(tu.cursor)
         visit_usage(tu.cursor)  # incremental (M1.2b): type/macro usage on the same TU
         _collect_macro_defs(tu.cursor)  # active #if/#else macro branch (for _scan_defines)
+        _PHASE_T["walk1"] += _time.perf_counter() - _t1
     except cindex.TranslationUnitLoadError as e:
         # ERROR, not CRITICAL: this TU is lost but the run continues, so the model
         # comes out partial rather than absent.
@@ -2357,7 +2410,7 @@ def _collapse_class_static_declarations():
           f"{len(set(redirect.values()))} definition(s)")
 
 
-def parse_calls_and_globals(path):
+def parse_calls_and_globals(path, tu=None, err=None):
     """Second (and final) parse of a TU: call edges + global read/write access.
 
     Why this is a separate parse from parse_file(): both visitors resolve against the
@@ -2376,13 +2429,17 @@ def parse_calls_and_globals(path):
         # clang_args_for, not CLANG_ARGS: both walks must see the same defines and include
         # dirs as the definition pass, or a layer-gated #ifdef makes them disagree about
         # which globals a function touches.
-        tu = index.parse(path, args=clang_args_for(path), options=_TU_PARSE_OPTIONS)
+        _t0 = _time.perf_counter()
+        tu = _parsed(path, tu, err)
+        _t1 = _time.perf_counter()
+        _PHASE_T["wait"] += _t1 - _t0
         visit_calls(tu.cursor)
         # BOTH visitors, on the one parse. Collapsing the two passes into this function
         # dropped this call, and with it every global read/write in the model: direction
         # became "Out: accesses no globals" for everything, and returnExpr -- captured by
         # this same visitor on RETURN_STMT -- went with it.
         visit_global_access(tu.cursor)
+        _PHASE_T["walk2"] += _time.perf_counter() - _t1
     except cindex.TranslationUnitLoadError:
         pass
 
@@ -3122,19 +3179,40 @@ def main():
 
     p1 = ProgressReporter("parser:parse", total=total, logger=plog)
     p1.start(f"parsing {total} files")
-    for path in source_files:
+    # perf study (ANALYZER_SKIP_COVERED_HEADERS=1): a header that a parsed .cpp includes is not
+    # parsed again on its own -- the .cpp files go first, and the first definition wins, so its
+    # own parse could only add what no .cpp context compiled (another #if branch).
+    skip_covered = os.environ.get("ANALYZER_SKIP_COVERED_HEADERS") == "1"
+    covered, skipped = None, set()
+    for path, tu, err in _parse_ahead(source_files, "parse"):
         p1.step()
-        parse_file(path)
+        if skip_covered and path.endswith(_HEADER_EXTS):
+            if covered is None:
+                covered = set()
+                for closure in tu_includes.values():
+                    covered.update(closure)
+            if to_repo_relative(path, MODULE_BASE_PATH) in covered:
+                skipped.add(path)
+                del tu
+                continue
+        parse_file(path, tu, err)
+        del tu
     p1.done()
+    if skipped:
+        plog.info("perf: %d header(s) skipped, covered by a parsed .cpp", len(skipped))
+        source_files = [p for p in source_files if p not in skipped]
 
     # One parse serves both call edges and global access (see parse_calls_and_globals).
     p2 = ProgressReporter("parser:calls+globals", total=total, logger=plog)
     p2.start(f"collecting calls + global access ({total} files)")
-    for path in source_files:
+    for path, tu, err in _parse_ahead(source_files, "calls+globals"):
         p2.step()
-        parse_calls_and_globals(path)
+        parse_calls_and_globals(path, tu, err)
+        del tu
     p2.done()
 
+    plog.info("time: waiting for libclang's parses %.2fs, AST walks: definitions %.2fs, calls+globals %.2fs",
+              _PHASE_T["wait"], _PHASE_T["walk1"], _PHASE_T["walk2"])
     metadata = build_metadata()
     # ensure_model_dir() resolves via paths(), so it follows --model-root. The old
     # PROJECT_ROOT hardcode created an empty <repo>/model on every run even when the real
@@ -3305,7 +3383,12 @@ def main():
 
 if __name__ == "__main__":
     try:
-        main()
+        _prof_path = os.environ.get("ANALYZER_PROFILE_PARSER")   # perf study: cProfile stats file
+        if _prof_path:
+            import cProfile
+            cProfile.run("main()", _prof_path)
+        else:
+            main()
     except SystemExit:
         # Deliberate exits (the CRITICAL paths above) already logged their reason.
         raise

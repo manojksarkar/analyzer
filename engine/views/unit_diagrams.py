@@ -7,7 +7,7 @@ import sys
 
 from .registry import register
 from utils import (KEY_SEP, display_name, log, safe_filename, os_type,
-                   render_mermaid_cached, scoped_name)
+                   render_mermaid_cached, render_mermaid_many, scoped_name)
 
 
 def _project_root() -> str:
@@ -471,6 +471,7 @@ def run(model, output_dir, model_dir, config):
     total = len(units_to_render)
     progress = ProgressReporter("unitDiagrams", total=total, logger=get_logger("unitDiagrams"))
     progress.start()
+    pictures = []
     for i, unit_key in enumerate(units_to_render, 1):
         progress.step(label=unit_key)
         mermaid = built[unit_key] if unit_key in built else _mermaid_for(unit_key)
@@ -481,8 +482,8 @@ def run(model, output_dir, model_dir, config):
         with open(mmd_path, "w", encoding="utf-8") as f:
             f.write(mermaid)
         if render_png:
-            png_path = os.path.join(out_dir, f"{safe}.png")
-            # M-A: content-addressed cache -> unchanged unit diagrams skip mmdc.
-            render_mermaid_cached(project_root, mermaid, png_path, scale=2, timeout=60)
+            pictures.append((mermaid, os.path.join(out_dir, f"{safe}.png")))
+    # M-A: content-addressed cache -> unchanged unit diagrams skip mmdc; the rest in one browser.
+    render_mermaid_many(project_root, pictures, scale=2, timeout=60)
     _suffix = " regenerated (rest carried)" if affected is not None else ""
     progress.done(summary=f"output/unit_diagrams/ ({total} units{_suffix})")
