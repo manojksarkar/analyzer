@@ -19,6 +19,16 @@ export const groupKeys = (l: ArchLayer, g: ArchGroup) => g.components.map((c) =>
 export const layerKeys = (l: ArchLayer) => l.groups.flatMap((g) => groupKeys(l, g))
 export const allKeys = (layers: ArchLayer[]) => layers.flatMap(layerKeys)
 
+/** The tree's keys of the components a version has documents for (its components answer: `id` is
+ *  `Layer.Component`). An incremental run is compared against such a version: it starts from what
+ *  that version made, not from every component -- a whole project's run takes hours. */
+export function keysWithDocuments(layers: ArchLayer[], comps: { id: string; documents: unknown[] }[]): Set<string> {
+  const made = new Set(comps.filter((c) => c.documents.length > 0).map((c) => c.id))
+  return new Set(layers.flatMap((l) => l.groups.flatMap((g) => g.components
+    .filter((c) => made.has(`${l.name}.${c.name}`))
+    .map((c) => compKey(l.name, g.name, c.name)))))
+}
+
 export type TickState = 'none' | 'some' | 'all'
 export function tickState(keys: string[], ticked: ReadonlySet<string>): TickState {
   const n = keys.filter((k) => ticked.has(k)).length

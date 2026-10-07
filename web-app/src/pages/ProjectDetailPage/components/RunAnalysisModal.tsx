@@ -2,7 +2,8 @@ import { useId, useState } from 'react'
 import { Icon, Modal } from '../../../components/ui'
 import { cn } from '../../../lib/cn'
 import { ScopeTree } from '../../../components/run/ScopeTree'
-import { allKeys, scopeOf } from '../../../lib/runScope'
+import { allKeys, keysWithDocuments, scopeOf } from '../../../lib/runScope'
+import { useVersionComponents } from '../../../hooks/useVersionComponents'
 import type { StartJobInput } from '../../../services/api'
 import type { Commit, Project, Version } from '../../../types'
 import { versionNameProblem } from '../helpers'
@@ -39,12 +40,19 @@ export function RunAnalysisModal({
   const [referenceId, setReferenceId] = useState('')
   const [versionName, setVersionName] = useState(() => suggestNextVersion(versions))
 
-  // Advanced options (docs/ui-mockups/project-detail.html): which components to analyze - every
-  // one ticked to start - and Skip LLM. The modal mounts on each open, so every run starts from
-  // these defaults.
+  // Advanced options (docs/ui-mockups/project-detail.html): which components to analyze, and Skip
+  // LLM. Every component is ticked to start; compared against a version (an incremental run), the
+  // ones that version has documents for -- a whole project's run takes hours, and the demo makes a
+  // few components. Ticks someone sets are kept for the version they were set under, so a list that
+  // arrives later never overwrites them. The modal mounts on each open: every run starts afresh.
   const layers = project.architectureLayers
   const [advOpen, setAdvOpen] = useState(false)
-  const [ticked, setTicked] = useState(() => new Set(allKeys(layers)))
+  const [own, setOwn] = useState<{ ref: string; keys: Set<string> } | null>(null)
+  const { data: baseline } = useVersionComponents(project.id, referenceId || undefined)
+  const baselineKeys = referenceId && baseline ? keysWithDocuments(layers, baseline.components) : null
+  const ticked = own && own.ref === referenceId ? own.keys
+    : baselineKeys && baselineKeys.size > 0 ? baselineKeys : new Set(allKeys(layers))
+  const setTicked = (keys: Set<string>) => setOwn({ ref: referenceId, keys })
   const [skipLlm, setSkipLlm] = useState(false)
   const everyComp = allKeys(layers)
   const total = everyComp.length
@@ -133,6 +141,11 @@ export function RunAnalysisModal({
               ))}
             </select>
             <p className={cn('text-on-surface-variant mt-1.5', FIELD_LABEL)}>Enables diff view between this run and the selected version.</p>
+            {baselineKeys && baselineKeys.size > 0 && own?.ref !== referenceId && (
+              <p className={cn('text-secondary mt-1', FIELD_LABEL)}>
+                Starts with the {baselineKeys.size} component{baselineKeys.size === 1 ? '' : 's'} {refVersions.find((v) => v.id === referenceId)?.tag ?? 'it'} has documents for.
+              </p>
+            )}
           </div>
 
           {/* Version name */}
