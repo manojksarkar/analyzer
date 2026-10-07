@@ -32,7 +32,7 @@ src/
 │   ├── ui/        design-system primitives (Icon, Text, Card, Button, Badge, …)
 │   └── shell/     Sidebar, Topbar, Subbar, ProjectLayout, HomeTopbar (pages outside a project),
 │                  UserMenu (the one account menu: Sign out)
-├── components/logs/  the Logs panel docked on every page + the top bar's Logs button (superusers)
+├── components/livelogs/  the Logs panel docked on every page + the top bar's Logs button (superusers)
 ├── hooks/         React Query read + mutation hooks — the ONLY way the UI gets data
 ├── services/      api/ (HTTP calls) + mappers/ (wire ⇄ FE types) — one file per domain
 ├── store/         Zustand (auth, ui)

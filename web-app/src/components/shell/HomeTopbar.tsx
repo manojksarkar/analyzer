@@ -3,7 +3,7 @@ import { BrandMark } from '../ui'
 import { NotificationBell } from './NotificationBell'
 import { ThemeToggle } from './ThemeToggle'
 import { UserMenu } from './UserMenu'
-import { LogsButton } from '../logs/LogsButton'
+import { LogsButton } from '../livelogs/LogsButton'
 import { APP_NAME, APP_TAGLINE } from '../../constants/branding'
 
 /* The top bar of the pages outside a project (Projects): the brand, which leads to Projects,

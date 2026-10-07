@@ -558,7 +558,7 @@ Contract [LIVE_LOGS_SPEC](../docs/spec/LIVE_LOGS_SPEC.md) (`REQ-LL-01…15`), ho
 - **Gotchas.** `seq` restarts with the API (a stale `after` gets `gap`). The test suite's process sets
   `LIVE_LOG_ENABLED = False` (`tests/conftest.py`): its default handler writes nothing and no reader
   starts; a handler given a folder still writes. Only `logging` records reach the stream, not `print()`.
-- **Panel** (`web-app/src/components/logs/`, state `store/logsPanel.ts`). Docked at the bottom of
+- **Panel** (`web-app/src/components/livelogs/`, state `store/logsPanel.ts`). Docked at the bottom of
   the page that is open -- the project layout and the Projects page mount `LogsPanel` -- so reading a
   run's lines never navigates (a page, 2026-10-06i, cost "so many clicks" to go and come back). It
   opens from the top bar's **Logs** button (`LogsButton`, superusers; in a project: its run at work,

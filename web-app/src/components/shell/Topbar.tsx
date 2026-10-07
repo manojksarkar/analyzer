@@ -3,7 +3,7 @@ import { Icon } from '../ui'
 import { NotificationBell } from './NotificationBell'
 import { ThemeToggle } from './ThemeToggle'
 import { UserMenu } from './UserMenu'
-import { LogsButton } from '../logs/LogsButton'
+import { LogsButton } from '../livelogs/LogsButton'
 
 interface BreadcrumbItem {
   label: string

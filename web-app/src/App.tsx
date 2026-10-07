@@ -170,7 +170,7 @@ export default function App() {
                 <Route index element={<TeamPage />} />
               </Route>
 
-              {/* Live logs is the Logs panel now (components/logs); an old link opens it */}
+              {/* Live logs is the Logs panel now (components/livelogs); an old link opens it */}
               <Route
                 path="/admin/logs"
                 element={
