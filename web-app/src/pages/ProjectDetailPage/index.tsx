@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useProject, useDocuments, useTeam, useCommits, useVersions } from '../../hooks/useProjects'
 import { useCurrentJob, useStartJob, useCancelJob, useJobEvents } from '../../hooks/useJobs'
@@ -7,19 +7,16 @@ import { DashboardSkeleton, Icon, Text } from '../../components/ui'
 import { SubbarCta } from '../../components/shell/SubbarCta'
 import { StopRunDialog } from '../../components/run/StopRunDialog'
 import { GenerationBanner } from '../../components/run/GenerationBanner'
-import { useVersionComponents } from '../../hooks/useVersionComponents'
-import { generationBannerShown } from '../../lib/versionComponents'
 import { cn } from '../../lib/cn'
 import { runScope, useLogsPanel } from '../../store/logsPanel'
 import { failedLoad } from '../../lib/failedLoad'
 import { LoadError } from '../../components/LoadError'
 import { useAuthStore } from '../../store/auth'
+import { useRunModal } from '../../store/runModal'
 import type { StartJobInput } from '../../services/api'
 import { ConfigOverview } from './components/ConfigOverview'
-import { FailedRunBanner, RunWarningsBanner } from './components/RunBanners'
 import { RunAnalysisModal } from './components/RunAnalysisModal'
 import { GeneratedContent } from './components/GeneratedContent'
-import { OtherRuns } from './components/OtherRuns'
 import { RunCards } from './components/RunCards'
 import { PHASE_UI, fmtClock, fmtEta, fmtStart, phaseTime } from './helpers'
 
@@ -78,7 +75,11 @@ export function ProjectDetailPage() {
   const { data: job } = useCurrentJob(projectId ?? '')
   const startJob = useStartJob(projectId ?? '')
   const cancelJob = useCancelJob(projectId ?? '')
-  const [runOpen, setRunOpen] = useState(false)
+  // The Run dialog: opened here, or by a failed run's Re-run in Needs attention (the Subbar).
+  // Closed when the page leaves, so it never opens by itself on a later visit.
+  const runOpen = useRunModal((s) => s.open)
+  const setRunOpen = (v: boolean) => (v ? useRunModal.getState().openRun() : useRunModal.getState().close())
+  useEffect(() => () => useRunModal.getState().close(), [projectId])
   // Cancel Job asks first: a generation's version is removed with everything made so far. Held
   // by job id, so a later run never opens the dialog by itself.
   const [stopJobId, setStopJobId] = useState<string | null>(null)
@@ -100,8 +101,6 @@ export function ProjectDetailPage() {
   const bannerVersion = showContent ? (running ? doneVersion : viewVersion) : pageState === 'never' ? viewVersion : undefined
   const bannerNeedsModel = !showContent
   const bannerVid = bannerVersion?.id
-  const { data: bannerData } = useVersionComponents(projectId ?? '', bannerVid)
-  const bannerShown = !!bannerVid && generationBannerShown(bannerData, { needsModel: bannerNeedsModel })
   const banner = bannerVid && project && (
     <GenerationBanner
       key={bannerVid}
@@ -141,23 +140,8 @@ export function ProjectDetailPage() {
         ) : (
           <>
 
-        {/* ══ LAST RUN FAILED — the error, which no other state shows ══ */}
-        {job?.status === 'failed' && pageState !== 'running' && (
-          <FailedRunBanner projectId={projectId ?? ''} job={job} isAdmin={isAdmin} onRerun={() => setRunOpen(true)} />
-        )}
-
-        {/* ══ OTHER RUNS — at work or cut short, not the web job below (a CLI run too) ══ */}
-        {projectId && (
-          <OtherRuns
-            projectId={projectId}
-            exceptVersionIds={[pageState === 'running' && job ? job.versionId : null, bannerShown ? bannerVid : null]}
-          />
-        )}
-
-        {/* ══ THE RUN FINISHED, WITH WARNINGS — e.g. a component path the checkout did not have ══ */}
-        {viewVersion && viewVersion.warnings.length > 0 && pageState !== 'running' && (
-          <RunWarningsBanner key={viewVersion.id} version={viewVersion} />
-        )}
+        {/* A failed run, other runs at work or cut short, a run's warnings: Needs attention, the
+            chip beside the version (components/attention/) -- they stacked here as banners. */}
 
         {/* ══ EMPTY STATE (not yet analysed) ══ */}
         {pageState === 'never' && (

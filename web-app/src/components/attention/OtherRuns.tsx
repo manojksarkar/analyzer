@@ -1,7 +1,7 @@
-import { Icon } from '../../../components/ui'
-import { useProjectRuns } from '../../../hooks/useVersionComponents'
-import { relativeTime } from '../../../lib/format'
-import type { ProjectRun } from '../../../types'
+import { Icon } from '../ui'
+import { useProjectRuns } from '../../hooks/useVersionComponents'
+import { relativeTime } from '../../lib/format'
+import type { ProjectRun } from '../../types'
 
 /* The project's other runs, at work now or cut short — whichever front door started them: a web
    job the Overview does not show (a Components → Generate, a Word file update), or `analyzer.py

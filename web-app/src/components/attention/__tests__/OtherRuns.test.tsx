@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { http, HttpResponse } from 'msw'
 import { server } from '../../../test/server'
 import { API_BASE_URL } from '../../../lib/http'
-import { OtherRuns } from '../components/OtherRuns'
+import { OtherRuns } from '../OtherRuns'
 
 /* The Overview showed the web job only: a run started from the command line (`analyzer.py export
    --detach`), or a Components → Generate, was invisible there. GET /projects/{pid}/runs lists every

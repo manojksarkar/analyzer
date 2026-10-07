@@ -7,6 +7,7 @@ import { useUIStore, type Selection } from '../../store/ui'
 import { Icon, Skeleton, StatusBadge, toast } from '../ui'
 import { cn } from '../../lib/cn'
 import { copyText } from '../../lib/clipboard'
+import { AttentionChip } from '../attention/AttentionChip'
 import { relativeTime } from '../../lib/format'
 import { STATUS_META, approvalLabel, pageStateStatus } from '../../lib/reviewStatus'
 import { describeVersionRun } from '../../lib/versionRun'
@@ -406,6 +407,7 @@ export function Subbar({ projectName, selectedVersion, selectedCommit, statusBad
           </>
         )}
 
+        <AttentionChip />
         <SuperuserIds selectedVersion={selectedVersion} />
       </div>
 

@@ -4,8 +4,8 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { useAuthStore } from '../../../store/auth'
 import { useLogsPanel } from '../../../store/logsPanel'
-import { FailedRunBanner } from '../components/RunBanners'
-import { failureParts } from '../helpers'
+import { FailedRunBanner } from '../RunBanners'
+import { failureParts } from '../../../lib/failure'
 import type { AnalysisJob } from '../../../types'
 
 /* #31: a run the engine stopped before the parse says why — a headline, its other reasons as

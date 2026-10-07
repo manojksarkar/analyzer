@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { CodeText, Icon } from '../../../components/ui'
-import { relativeTime } from '../../../lib/format'
-import { runScope, useLogsPanel } from '../../../store/logsPanel'
-import { useAuthStore } from '../../../store/auth'
-import type { AnalysisJob, Version } from '../../../types'
-import { failureParts } from '../helpers'
+import { CodeText, Icon } from '../ui'
+import { relativeTime } from '../../lib/format'
+import { runScope, useLogsPanel } from '../../store/logsPanel'
+import { useAuthStore } from '../../store/auth'
+import type { AnalysisJob, Version } from '../../types'
+import { failureParts } from '../../lib/failure'
 
 /* ─── The run that made the version on screen warned about something ─── */
 // A path the checkout did not have (of a component with other files), a dictionary the run went
