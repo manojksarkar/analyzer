@@ -1,6 +1,9 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { CodeText, Icon } from '../../../components/ui'
 import { relativeTime } from '../../../lib/format'
+import { liveLogsHref } from '../../../lib/liveLogs'
+import { useAuthStore } from '../../../store/auth'
 import type { AnalysisJob, Version } from '../../../types'
 import { failureParts } from '../helpers'
 
@@ -40,8 +43,11 @@ export function RunWarningsBanner({ version }: { version: Version }) {
 }
 
 /* ─── The project's latest run ended in an error ─── */
-export function FailedRunBanner({ job, isAdmin, onRerun }: { job: AnalysisJob; isAdmin: boolean; onRerun: () => void }) {
+export function FailedRunBanner({ projectId, job, isAdmin, onRerun }: {
+  projectId: string; job: AnalysisJob; isAdmin: boolean; onRerun: () => void
+}) {
   const [open, setOpen] = useState(false)
+  const isSuperuser = useAuthStore((s) => !!s.user?.isSuperuser)
   // The headline and the engine's reasons read as text, their `paths` as code; the log as a log.
   const { headline, reasons, log: details } = failureParts(job.errorMessage)
   return (
@@ -75,6 +81,13 @@ export function FailedRunBanner({ job, isAdmin, onRerun }: { job: AnalysisJob; i
             </>
           )}
         </div>
+        {/* Superusers: the run's lines in Live logs -- why it failed, before the details above */}
+        {isSuperuser && (
+          <Link to={liveLogsHref(projectId, job.versionId, job.id)} title="This run in Live logs"
+            className="flex items-center gap-1 px-1 py-1.5 flex-shrink-0 text-caption font-semibold text-secondary hover:underline">
+            <Icon name="terminal" size={14} />Logs
+          </Link>
+        )}
         {isAdmin && (
           <button
             onClick={onRerun}

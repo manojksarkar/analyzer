@@ -93,6 +93,25 @@ class TestOnlySuperusers:
         assert [r["message"] for r in body["records"]] == ["line 0", "line 1", "line 2"]
         assert body["cursor"] == 3 and body["level"] == "INFO"
 
+    def test_a_job_thread_names_its_job_on_every_line(self):
+        """A job runs on a thread of its own, which does not inherit the request's context: its
+        "job ... failed: Checkout failed" line carried no job, so a run's Logs link (filtered by
+        its job) showed nothing of why it failed."""
+        import threading
+        from types import SimpleNamespace
+        from api.services import pipeline_runner as pr
+        db = SimpleNamespace(jobs=SimpleNamespace(get=lambda jid: SimpleNamespace(project_id="p1", version_id="ver9")))
+        seen = {}
+
+        def job_thread():
+            pr._tag_job_lines(db, "job9")
+            seen["ctx"] = ls.REQUEST_CONTEXT.get()
+        t = threading.Thread(target=job_thread)
+        t.start()
+        t.join()
+        assert seen["ctx"] == {"project": "p1", "version": "ver9", "job": "job9"}
+        assert ls.REQUEST_CONTEXT.get() is None, "the thread's ids stay in the thread"
+
     def test_the_web_app_is_told_who_is_one(self, client, auth_header, dev_header, superuser):
         """The menu entry and the Logs links show by `is_superuser` on the signed-in user."""
         assert client.get("/api/v1/auth/me", headers=auth_header).json()["user"]["is_superuser"] is True

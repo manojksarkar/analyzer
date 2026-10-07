@@ -126,6 +126,21 @@ def note_request_job(job: Any) -> None:
         pass
 
 
+def _tag_job_lines(db: Any, job_id: str) -> None:
+    """A job's own thread: every server line it writes carries the job's project, version and job
+    (LIVE_LOGS_SPEC REQ-LL-03), as the request that created it did. A thread does not inherit the
+    request's context, so "job ... failed: Checkout failed" carried none, and a run's Logs link
+    (filtered by its job) showed nothing of why it failed."""
+    try:
+        from core.logging_setup import REQUEST_CONTEXT
+        job = db.jobs.get(job_id)
+        REQUEST_CONTEXT.set({k: v for k, v in (("project", getattr(job, "project_id", None)),
+                                                ("version", getattr(job, "version_id", None)),
+                                                ("job", job_id)) if v})
+    except Exception:                                   # noqa: BLE001 - a log line only
+        pass
+
+
 def start(db: Any, job_id: str) -> None:
     """Kick off the real pipeline on a daemon thread (returns immediately)."""
     t = threading.Thread(target=_run, args=(db, job_id), daemon=True, name=f"job-{job_id}")
@@ -853,6 +868,7 @@ def fail_interrupted_jobs(db: Any, *, before: Optional[datetime] = None,
 # ---------------------------------------------------------------------------
 
 def _run(db: Any, job_id: str) -> None:
+    _tag_job_lines(db, job_id)
     try:
         _init_state(job_id)
         _inner_run(db, job_id)
@@ -2399,6 +2415,7 @@ def _reattach_detached(db: Any, job: Any) -> bool:
 
 def _refollow(db: Any, job_id: str, run: dict, render: bool) -> None:
     """The thread of a job followed again after a restart: to the run's end, then the job's."""
+    _tag_job_lines(db, job_id)
     sem = _get_semaphore()
     slot = sem.acquire(blocking=False)      # the run goes on whether or not a slot is free
     try:
@@ -3365,6 +3382,7 @@ def start_export(db: Any, version: Any, components: list, *,
 
 def _run_export(db: Any, job_id: str) -> None:
     """The export job's thread: `analyzer.py export` as its subprocess, followed like a run."""
+    _tag_job_lines(db, job_id)
     try:
         _init_state(job_id)
         job = db.jobs.get(job_id)
@@ -3506,6 +3524,7 @@ def start_resume(db: Any, version: Any, *, started_by: Optional[str] = None) -> 
 
 def _run_resume(db: Any, job_id: str, render: bool, first_phase: int) -> None:
     """The resume job's thread: `analyzer.py resume` in the background, followed to its end."""
+    _tag_job_lines(db, job_id)
     try:
         _init_state(job_id)
         job = db.jobs.get(job_id)
@@ -3538,6 +3557,7 @@ def _run_resume(db: Any, job_id: str, render: bool, first_phase: int) -> None:
 
 def _run_reexport(db: Any, job_id: str) -> None:
     """The re-export job's thread: queued -> running -> complete | failed, as a generation does."""
+    _tag_job_lines(db, job_id)
     try:
         _init_state(job_id)                  # the log buffer the live stream reads
         job = db.jobs.get(job_id)

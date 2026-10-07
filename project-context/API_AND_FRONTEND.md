@@ -562,7 +562,10 @@ Contract [LIVE_LOGS_SPEC](../docs/spec/LIVE_LOGS_SPEC.md) (`REQ-LL-01…15`), ho
   page for every project; reached from the account menu (`components/shell/UserMenu.tsx`, the one menu
   of every top bar: "Live logs" when `user.isSuperuser` -- `is_superuser` added to the auth user,
   `api/routes/auth.py _user_to_dict`) and from a run's **Logs** link (Overview's running job, the
-  generation banner on Overview and Documents; `lib/liveLogs.ts liveLogsHref`: `?project&version&job`).
+  generation banner on Overview and Documents, the Overview's "Last analysis failed" banner;
+  `lib/liveLogs.ts liveLogsHref`: `?project&version&job`). A job's thread tags its own server lines
+  with project, version and job (`pipeline_runner._tag_job_lines`): a thread does not inherit the
+  request's context.
   The filters live in the address. A run with a job is asked for by `job` alone (an API line about a
   job names its project, not always its version). `hooks/useLiveLogs.ts`: tail as a read (never
   refetched on its own), stream with a new ticket per EventSource and `after` = last `seq` seen,

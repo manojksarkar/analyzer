@@ -141,7 +141,7 @@ export function ProjectDetailPage() {
 
         {/* ══ LAST RUN FAILED — the error, which no other state shows ══ */}
         {job?.status === 'failed' && pageState !== 'running' && (
-          <FailedRunBanner job={job} isAdmin={isAdmin} onRerun={() => setRunOpen(true)} />
+          <FailedRunBanner projectId={projectId ?? ''} job={job} isAdmin={isAdmin} onRerun={() => setRunOpen(true)} />
         )}
 
         {/* ══ OTHER RUNS — at work or cut short, not the web job below (a CLI run too) ══ */}
