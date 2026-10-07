@@ -493,7 +493,7 @@ all Word files…* (admin).
   ⋯ *Rebuild all Word files…*), the edit hold for the component being updated, the Review tab's *Word
   file* row, Approve's *Update file*, Submit's toast from `word_file`, the bell's two kinds, bulk approve's
   *Update them*. No user-visible "re-export" is left.
-- **What an update runs** (2026-10-07, [FAST_WORD_FILE_UPDATES.md](../docs/design/FAST_WORD_FILE_UPDATES.md)):
+- **What an update runs** (2026-10-07e, [FAST_WORD_FILE_UPDATES.md](../docs/design/FAST_WORD_FILE_UPDATES.md)):
   the export alone, from the stored data, once the guard finds every view stamped current — every save
   now stamps what it rewrote. Under the writer lock it first draws its components' owed pictures, then
   rewrites the queued texts of its components whose prompt holds a corrected one (`engine/review/rewrite.py`;

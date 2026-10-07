@@ -1,6 +1,6 @@
 # Fast Word-file updates — rebuild only what a correction changes
 
-> Status: **built 2026-10-07** (branch `feat/fast-word-updates`), proposed 2026-10-06. It changes what
+> Status: **built 2026-10-07e** (branch `feat/fast-word-updates`), proposed 2026-10-06. It changes what
 > an update *runs*. When a Word file is out of date, who may update it, the API and the screens stay
 > as in [WORD_FILE_UPDATES.md](WORD_FILE_UPDATES.md). What a save does:
 > [REVIEW_UPDATE_DESIGN.md](REVIEW_UPDATE_DESIGN.md). Decisions taken with the user: §9. Where the
@@ -276,12 +276,12 @@ components have texts queued shows the rewrite, and any charts' Phase 3, as Phas
     description and a behaviour row: the Word files from export-only equal a full Phase 3 + 4 rebuild
     (`tools/doccheck` clean at P4, the text of both documents identical, the new chart picture in and
     the old out).
-  - P5 (2026-10-07), with a local stand-in LLM whose every answer is a hash of its prompt — so a text
+  - P5 (2026-10-07e), with a local stand-in LLM whose every answer is a hash of its prompt — so a text
     whose prompt changed comes back changed and one whose prompt did not comes back the same: the
     description of `gatewayMean` queued 10 texts; the update rewrote the 8 in Sample Core (3 descriptions,
     the unit description, 3 charts, the behaviour row — its 3 LLM bullets, its "returns to" bullets kept);
     Lib's 2 waited; both Word files printed the new texts; the next update found nothing to do.
-- **Generation is as it was** (checked 2026-10-07c). Develop and this branch, side by side on the sample
+- **Generation is as it was** (checked 2026-10-07g). Develop and this branch, side by side on the sample
   repo with the same stand-in LLM and hash seed: a fresh `generate` and an incremental one sent the same
   prompts — develop 5 more in the incremental run, behaviour calls the branch answered from its cache (P4)
   — and stored the same model and views; the 12 Word files have the same text and pictures. What differs
@@ -325,7 +325,7 @@ reopened. That follows the approval rule (P5), not a new decision.
 
 ## 10. Also found
 
-- **Only the printed charts get a Word picture** (built, 2026-10-07b). SWE.3 prints a public
+- **Only the printed charts get a Word picture** (built, 2026-10-07f). SWE.3 prints a public
   function's flowchart and its private callees' — on the Sample Core test, 4 of 28 — and Phase 3 drew all
   28 pictures, a rewrite every chart it relabelled. The flowcharts view now draws the pictures of the
   printed ones alone, by the exporter's own rule (`docx_common.printed_flowcharts`, which the exporter
@@ -337,11 +337,11 @@ reopened. That follows the approval rule (P5), not a new decision.
   project declares none ("Layer1 has NO include dirs"), so those calls are not seen and the Core
   functions count as uncalled from other files. Lib's `#include "../Core/CoreGateway.h"` resolves from
   its own folder. With include folders (the e2e config), 14 Sample Core functions are public.
-- **The label cache lost a run's last minute of labels** (fixed, 2026-10-07). `EntityCache.put` writes a
+- **The label cache lost a run's last minute of labels** (fixed, 2026-10-07e). `EntityCache.put` writes a
   batch every 1,000 rows or 60 s, and the flowchart engine never flushed it at the end: every chart
   labelled in a run's last minute — all of them, on a run that took less — was labelled again by the
   next run, in new words. The engine flushes once every chart is labelled (`_flush_labels`).
-- **An incremental run dropped the names and chart entries** (fixed, 2026-10-07c). A new version
+- **An incremental run dropped the names and chart entries** (fixed, 2026-10-07g). A new version
   inherits the baseline's queue (`carry_forward.carry_queue`, REQ-CS-01), but by a rule that knew only
   the kinds queued before P5: a function's names and a chart's labels fell through and stayed on the
   baseline. No generation rewrites those texts, so the new version printed the words written from the

@@ -58,7 +58,7 @@ Since then (the block above is the original): a doc type's `DOC_TYPE_VIEWS` entr
 is its own function — `views_to_run(doc_type, config)` — so the derivation record can say which
 document each view was built for. `run_views` returns the names it ran (2026-09-29).
 
-An update's Phase 3 (2026-10-07): `run_views --views a,b,…` runs only those of the views the doc type
+An update's Phase 3 (2026-10-07e): `run_views --views a,b,…` runs only those of the views the doc type
 needs (`run_views(…, only=)`), and `--rewrite-labels <request>` puts the charts whose labels are written
 again into the config (`_analyzerRewriteLabels`, read by the flowcharts view). `run.py` takes both flags
 and hands them to Phase 3 alone. The derivation record merges per view, so the views not run keep
@@ -311,7 +311,7 @@ Wraps the **real flowchart engine** under `engine/flowchart/`. Steps:
 
    Since then (the step above is the original): the PNG comes from the DOT through
    `render_dot_cached` (the picture cache), and **only for the charts the directory's SWE.3
-   document prints** (2026-10-07b, `_pictures_to_draw`): each public function's flowchart and its
+   document prints** (2026-10-07f, `_pictures_to_draw`): each public function's flowchart and its
    private callees', by the exporter's own rule — `docx_common.printed_flowcharts`, read from the
    `interface_tables.json` beside it and the model; the exporter prints by `flowchart_section` and
    `private_callee_flowcharts` from the same module. Hidden functions count (hiding is Phase 4's
@@ -479,7 +479,7 @@ engine/flowchart/
     line-break sequence, which is how the enforcement pass's appended segment
     renders.)
 
-Steps 8–9b are `_label_chart` (2026-10-07): the cached labels (keyed by the source and the model)
+Steps 8–9b are `_label_chart` (2026-10-07e): the cached labels (keyed by the source and the model)
 when every node is covered, else the LLM's, cached unless a node fell back. Before the first chart the
 LLM labels, `_with_current_descriptions` lays the model's descriptions over the knowledge base Phase 2
 wrote — the context packet reads a chart's purpose and its callers', callees' and globals' descriptions

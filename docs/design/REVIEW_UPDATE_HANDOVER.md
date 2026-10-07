@@ -598,7 +598,7 @@ text as current and never asks again.
 
 Every kind the cascade queues needs its rule in `carry_forward._queue_entry_applies`: a kind without
 one falls through to "does not apply" and is dropped, with no error. The names and chart-label
-entries (`inputName`, `flowchartLabels`, FAST_WORD_FILE_UPDATES P5) were, until 2026-10-07c — and
+entries (`inputName`, `flowchartLabels`, FAST_WORD_FILE_UPDATES P5) were, until 2026-10-07g — and
 since no generation rewrites them, the new version printed the text written from the rejected one
 for good. A names entry stands for both names here too (`_reviewers_text`).
 
@@ -734,7 +734,7 @@ directories under the bare group name.
 
 **A web job's baseline could belong to another project** — §4.23.
 
-Found by the fast Word-file updates (FAST_WORD_FILE_UPDATES, 2026-10-07):
+Found by the fast Word-file updates (FAST_WORD_FILE_UPDATES, 2026-10-07e):
 
 **The label cache lost a run's last minute of labels** — §4.39.
 

@@ -432,7 +432,7 @@ No prompt reads an input or output name, a unit, struct or behaviour description
 
 **Flowchart node labels are written from descriptions too.** A chart's label prompts name the
 function's purpose (its description), its callers' descriptions, its callees' four calls deep and its
-globals' (`flowchart/pkb/builder`). Until 2026-10-07 this spec said the labels started from the
+globals' (`flowchart/pkb/builder`). Until 2026-10-07e this spec said the labels started from the
 source alone — true of the summariser that once wrote them, not of the label generator that does.
 
 ### REQ-CS-01 — What regenerates when a slot is edited
