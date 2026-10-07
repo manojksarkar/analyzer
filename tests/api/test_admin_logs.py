@@ -112,6 +112,13 @@ class TestOnlySuperusers:
         assert seen["ctx"] == {"project": "p1", "version": "ver9", "job": "job9"}
         assert ls.REQUEST_CONTEXT.get() is None, "the thread's ids stay in the thread"
 
+        @pr._job_thread
+        def job_body(db, job_id):
+            seen["inline"] = ls.REQUEST_CONTEXT.get()
+        job_body(db, "job9")                    # a job run in the caller's thread, as tests do
+        assert seen["inline"]["job"] == "job9"
+        assert ls.REQUEST_CONTEXT.get() is None, "its ids leave with it, not on the caller's later lines"
+
     def test_the_web_app_is_told_who_is_one(self, client, auth_header, dev_header, superuser):
         """The menu entry and the Logs links show by `is_superuser` on the signed-in user."""
         assert client.get("/api/v1/auth/me", headers=auth_header).json()["user"]["is_superuser"] is True
