@@ -1386,7 +1386,7 @@ function WizardView({
                     </div>
                     <div className="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
                       <div className="w-8 h-8 rounded-lg bg-secondary-container flex items-center justify-center flex-shrink-0">
-                        <Icon name="engineering" size={16} fill className="text-secondary" />
+                        <Icon name="engineering" size={16} fill className="text-on-secondary-container" />
                       </div>
                       <div>
                         <p className="text-on-surface font-mono text-xs font-semibold">Developer</p>

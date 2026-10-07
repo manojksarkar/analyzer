@@ -51,7 +51,7 @@ function ProjectIcon({ project }: { project: Project }) {
   if (isAdmin) {
     return (
       <div className="w-9 h-9 rounded-lg bg-secondary-container flex items-center justify-center flex-shrink-0">
-        <Icon name={project.icon} size={18} fill className="text-secondary" />
+        <Icon name={project.icon} size={18} fill className="text-on-secondary-container" />
       </div>
     )
   }

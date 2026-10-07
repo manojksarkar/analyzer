@@ -11,7 +11,7 @@ export function ProjectsEmptyState({
   return (
     <div className="flex flex-col items-center justify-center text-center px-6 py-16">
       <div className="w-16 h-16 rounded-2xl bg-secondary-container flex items-center justify-center mb-6">
-        <Icon name="folder_open" size={32} fill className="text-secondary" />
+        <Icon name="folder_open" size={32} fill className="text-on-secondary-container" />
       </div>
       <h2 className="text-on-surface mb-2 text-lg font-semibold tracking-[-0.01em]">
         No projects yet
