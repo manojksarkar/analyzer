@@ -66,8 +66,11 @@ export function useAllProjectRuns(projectIds: string[]) {
       queryFn: () => versionComponentsApi.runs(id),
       refetchInterval: (q: { state: { data?: ProjectRun[] } }) => runsPollMs(q.state.data),
     })),
-    combine: (results) => results.flatMap((r, i) =>
-      (r.data ?? []).map((run) => ({ projectId: projectIds[i], run }))),
+    combine: (results) => ({
+      runs: results.flatMap((r, i) => (r.data ?? []).map((run) => ({ projectId: projectIds[i], run }))),
+      // Still reading some project's runs: "no run" would be a guess.
+      pending: results.some((r) => r.isPending),
+    }),
   })
 }
 

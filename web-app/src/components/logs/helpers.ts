@@ -1,7 +1,8 @@
 import type { LogFilters, LogLevel, LogRecord, LogSource, ProjectRun } from '../../types'
+import type { LogScope } from '../../store/logsPanel'
 import { runActivity } from '../../lib/versionComponents'
 
-/* Live logs: the page's pure rules — filters in the address, how a time and a run read, which
+/* The Logs panel's pure rules: what the server is asked for, how a time and a run read, which
    lines a search keeps. */
 
 /** Lines over this many are folded (a traceback), with "Show N more lines". */
@@ -9,52 +10,24 @@ export const FOLD_LINES = 5
 /** A run that has reported no progress for this long reads "Quiet for …", in amber. */
 export const QUIET_MS = 10 * 60_000
 
-/** What the page shows: All = INFO and up (DEBUG with the Debug box), or warnings and errors. */
-export type Show = 'all' | 'warn'
+/** All = INFO and up; warnings and errors; or everything, DEBUG too (the busiest). */
+export type Show = 'all' | 'warn' | 'debug'
 
-export interface PageFilters {
-  show: Show
-  debug: boolean
-  source?: LogSource
-  project?: string
-  version?: string
-  job?: string
+/** The server filters for what the panel shows. A run is asked for by its version (its engine
+ *  lines and the API's lines about it both carry it), or by its job when it has no version any
+ *  more (a failed run's draft is removed). */
+export function serverFilters(scope: LogScope, show: Show, source?: LogSource): LogFilters {
+  const level: LogLevel = show === 'warn' ? 'WARNING' : show === 'debug' ? 'DEBUG' : 'INFO'
+  if (scope.kind === 'job') return { level, source, job: scope.job }
+  if (scope.kind === 'version') return { level, source, project: scope.project, version: scope.version }
+  if (scope.kind === 'project') return { level, source, project: scope.project }
+  return { level, source }
 }
 
-/** The address holds the filters, so a run's logs are a link (`?job=…`) and Back works. */
-export function filtersFromParams(p: URLSearchParams): PageFilters {
-  const level = p.get('level')
-  const source = p.get('source')
-  return {
-    show: level === 'WARNING' ? 'warn' : 'all',
-    debug: level === 'DEBUG',
-    source: source === 'server' || source === 'engine' ? source : undefined,
-    project: p.get('project') || undefined,
-    version: p.get('version') || undefined,
-    job: p.get('job') || undefined,
-  }
-}
+/** One run, one version: its lines need no project or version beside them. */
+export const isOneRun = (scope: LogScope) => scope.kind === 'version' || scope.kind === 'job'
 
-export function paramsFromFilters(f: PageFilters): Record<string, string> {
-  const out: Record<string, string> = {}
-  if (f.project) out.project = f.project
-  if (f.version) out.version = f.version
-  if (f.job) out.job = f.job
-  if (f.show === 'warn') out.level = 'WARNING'
-  else if (f.debug) out.level = 'DEBUG'
-  if (f.source) out.source = f.source
-  return out
-}
-
-/** The server filters. A run named by its job is asked for by the job alone: the API's lines
- *  about a job carry its project, not always its version. */
-export function serverFilters(f: PageFilters): LogFilters {
-  const level: LogLevel = f.show === 'warn' ? 'WARNING' : f.debug ? 'DEBUG' : 'INFO'
-  if (f.job) return { level, source: f.source, job: f.job }
-  return { level, source: f.source, project: f.project, version: f.version }
-}
-
-/** `10:15:03.420` — the server's own clock, as sent (no conversion to the reader's zone). */
+/** `10:15:03.420` -- the server's own clock, as sent (no conversion to the reader's zone). */
 export function clockOf(ts: string): string {
   const m = /T(\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?)/.exec(ts)
   return m ? m[1] : ts
@@ -95,8 +68,8 @@ export interface RunState {
   when: string
 }
 
-/** How a run in the Runs list reads now. Quiet = alive, but no progress for 10 minutes: the run
- *  that waits on an LLM that stopped answering. */
+/** How a run reads now. Quiet = alive, but no progress for 10 minutes: the run that waits on an
+ *  LLM that stopped answering. */
 export function runState(run: ProjectRun, now: number): RunState {
   const activity = runActivity(run)
   const at = run.progressAt ?? run.startedAt
@@ -110,4 +83,11 @@ export function runState(run: ProjectRun, now: number): RunState {
 export function sortRuns<T extends { run: ProjectRun }>(runs: T[]): T[] {
   const at = (r: ProjectRun) => Date.parse(r.progressAt ?? r.startedAt ?? '') || 0
   return [...runs].sort((a, b) => Number(!!b.run.alive) - Number(!!a.run.alive) || at(b.run) - at(a.run))
+}
+
+/** The Showing button's words: what kind, and which. */
+export function scopeLabel(scope: LogScope, projectName: (id: string) => string): [string, string] {
+  if (scope.kind === 'all') return ['Showing', 'Every project, and the API']
+  if (scope.kind === 'project') return ['Project', scope.label ?? projectName(scope.project)]
+  return ['Run', scope.label ?? projectName(scope.project)]
 }

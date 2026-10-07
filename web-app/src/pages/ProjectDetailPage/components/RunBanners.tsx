@@ -1,8 +1,7 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import { CodeText, Icon } from '../../../components/ui'
 import { relativeTime } from '../../../lib/format'
-import { liveLogsHref } from '../../../lib/liveLogs'
+import { runScope, useLogsPanel } from '../../../store/logsPanel'
 import { useAuthStore } from '../../../store/auth'
 import type { AnalysisJob, Version } from '../../../types'
 import { failureParts } from '../helpers'
@@ -48,6 +47,7 @@ export function FailedRunBanner({ projectId, job, isAdmin, onRerun }: {
 }) {
   const [open, setOpen] = useState(false)
   const isSuperuser = useAuthStore((s) => !!s.user?.isSuperuser)
+  const openLogs = useLogsPanel((s) => s.openLogs)
   // The headline and the engine's reasons read as text, their `paths` as code; the log as a log.
   const { headline, reasons, log: details } = failureParts(job.errorMessage)
   return (
@@ -81,12 +81,13 @@ export function FailedRunBanner({ projectId, job, isAdmin, onRerun }: {
             </>
           )}
         </div>
-        {/* Superusers: the run's lines in Live logs -- why it failed, before the details above */}
+        {/* Superusers: the run's lines, in the Logs panel below -- why it failed */}
         {isSuperuser && (
-          <Link to={liveLogsHref(projectId, job.versionId, job.id)} title="This run in Live logs"
+          <button type="button" onClick={() => openLogs(runScope(projectId, job.versionId, job.id, job.versionTag ? `Failed run · ${job.versionTag}` : 'Failed run'))}
+            title="This run's lines, below"
             className="flex items-center gap-1 px-1 py-1.5 flex-shrink-0 text-caption font-semibold text-secondary hover:underline">
             <Icon name="terminal" size={14} />Logs
-          </Link>
+          </button>
         )}
         {isAdmin && (
           <button

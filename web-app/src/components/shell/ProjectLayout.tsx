@@ -5,6 +5,8 @@ import { Topbar } from './Topbar'
 import { Subbar, VersionStatusChip } from './Subbar'
 import { SubbarCtaProvider } from './SubbarCta'
 import { ErrorBoundary } from '../ErrorBoundary'
+import { LogsPanel } from '../logs/LogsPanel'
+import { useLogsTakeThePage } from '../logs/useLogRuns'
 import { Skeleton } from '../ui'
 import { useProject, useVersions, useCommits, useDocument } from '../../hooks/useProjects'
 import { useProjectViewState, useRefreshOnJobEnd } from '../../hooks/useProjectViewState'
@@ -48,6 +50,8 @@ export function ProjectLayout({ breadcrumbLabel, breadcrumbParentLabel, breadcru
   useRefreshOnJobEnd(projectId ?? '')
   // The Subbar's action slot, filled by the page through <SubbarCta>.
   const [ctaSlot, setCtaSlot] = useState<HTMLDivElement | null>(null)
+  // The Logs panel at full height takes the page's place (superusers only).
+  const logsFull = useLogsTakeThePage()
 
   // The project always leads (it was dropped whenever a page had a parent crumb).
   const breadcrumbs = [
@@ -76,7 +80,7 @@ export function ProjectLayout({ breadcrumbLabel, breadcrumbParentLabel, breadcru
           }
           ctaSlotRef={setCtaSlot}
         />
-        <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+        <div className={logsFull ? 'hidden' : 'flex-1 flex flex-col overflow-hidden min-h-0'}>
           {/* The layout outlives navigation between a project's pages: without the reset, one
               crash kept the error screen on every page after it. */}
           <ErrorBoundary resetKey={pathname}>
@@ -87,6 +91,7 @@ export function ProjectLayout({ breadcrumbLabel, breadcrumbParentLabel, breadcru
             </Suspense>
           </ErrorBoundary>
         </div>
+        <LogsPanel projectId={projectId} />
       </div>
     </div>
   )

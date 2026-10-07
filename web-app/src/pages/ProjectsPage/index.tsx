@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useProjects } from '../../hooks/useProjects'
 import { Icon, TableSkeleton, toast } from '../../components/ui'
 import { HomeTopbar } from '../../components/shell/HomeTopbar'
+import { LogsPanel } from '../../components/logs/LogsPanel'
+import { useLogsTakeThePage } from '../../components/logs/useLogRuns'
 import { ProjectRow } from './components/ProjectRow'
 import { ProjectsEmptyState } from './components/ProjectsEmptyState'
 import { RenameProjectDialog } from './components/RenameProjectDialog'
@@ -28,6 +30,8 @@ export function ProjectsPage() {
   // The project being renamed (a row's menu). The dialog is the page's, not the row's: a click in
   // it would reach the row and open the project.
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null)
+  // The Logs panel at full height takes the page's place (superusers only).
+  const logsFull = useLogsTakeThePage()
 
   return (
     <div className="h-screen flex flex-col overflow-hidden relative">
@@ -43,7 +47,7 @@ export function ProjectsPage() {
       <HomeTopbar />
 
       {/* ── Scrollable content ── */}
-      <div className="flex-1 overflow-y-auto">
+      <div className={logsFull ? 'hidden' : 'flex-1 overflow-y-auto'}>
         <div className="px-6 py-6 mx-auto max-w-[1280px]">
 
           {/* Page heading */}
@@ -127,6 +131,7 @@ export function ProjectsPage() {
           )}
         </div>
       </div>
+      <LogsPanel />
     </div>
   )
 }

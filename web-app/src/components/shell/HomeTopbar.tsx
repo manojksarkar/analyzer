@@ -3,10 +3,11 @@ import { BrandMark } from '../ui'
 import { NotificationBell } from './NotificationBell'
 import { ThemeToggle } from './ThemeToggle'
 import { UserMenu } from './UserMenu'
+import { LogsButton } from '../logs/LogsButton'
 import { APP_NAME, APP_TAGLINE } from '../../constants/branding'
 
-/* The top bar of the pages outside a project (Projects, Live logs): the brand, which leads to
-   Projects, then the theme, the bell and the account menu. */
+/* The top bar of the pages outside a project (Projects): the brand, which leads to Projects,
+   then the theme, Logs (superusers), the bell and the account menu. */
 export function HomeTopbar() {
   return (
     <header className="h-14 flex-shrink-0 flex items-center justify-between px-6 bg-surface-container-lowest border-b border-outline-variant z-40">
@@ -23,6 +24,7 @@ export function HomeTopbar() {
       </Link>
       <div className="flex items-center gap-0.5">
         <ThemeToggle />
+        <LogsButton />
         <NotificationBell />
         <div className="w-px h-5 bg-outline-variant mx-1.5" aria-hidden />
         <UserMenu />

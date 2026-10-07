@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { useAuthStore } from '../../../store/auth'
+import { useLogsPanel } from '../../../store/logsPanel'
 import { FailedRunBanner } from '../components/RunBanners'
 import { failureParts } from '../helpers'
 import type { AnalysisJob } from '../../../types'
@@ -47,7 +48,7 @@ describe('FailedRunBanner', () => {
   })
 
   describe("the run's lines in Live logs", () => {
-    afterEach(() => useAuthStore.setState({ user: null }))
+    afterEach(() => { useAuthStore.setState({ user: null }); useLogsPanel.setState({ open: false, scope: { kind: 'all' } }) })
     const failed = { id: 'job9', versionId: 'ver9', status: 'failed', errorMessage: 'Checkout failed: boom',
       branch: 'main', shortSha: 'b2e8d45', completedAt: null, versionTag: 'v1.0.0' } as unknown as AnalysisJob
     const show = (isSuperuser: boolean) => {
@@ -55,14 +56,15 @@ describe('FailedRunBanner', () => {
       render(<MemoryRouter><FailedRunBanner projectId="p1" job={failed} isAdmin onRerun={() => {}} /></MemoryRouter>)
     }
 
-    it('a superuser gets Logs, filtered to the failed job', () => {
+    it('a superuser gets Logs: the panel opens on the failed run', async () => {
       show(true)
-      expect(screen.getByRole('link', { name: /Logs/ })).toHaveAttribute('href', '/admin/logs?project=p1&version=ver9&job=job9')
+      await userEvent.setup().click(screen.getByRole('button', { name: /Logs/ }))
+      expect(useLogsPanel.getState()).toMatchObject({ open: true, scope: { kind: 'version', project: 'p1', version: 'ver9' } })
     })
 
     it('anyone else does not', () => {
       show(false)
-      expect(screen.queryByRole('link', { name: /Logs/ })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Logs/ })).not.toBeInTheDocument()
       expect(screen.getByRole('button', { name: /Re-run/ })).toBeInTheDocument()
     })
   })

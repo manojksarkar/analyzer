@@ -1,18 +1,12 @@
-import { useNavigate } from 'react-router-dom'
 import { Dropdown, DropdownTrigger, DropdownContent, Icon } from '../ui'
 import { useAuthStore } from '../../store/auth'
 
-/* The avatar and its menu, on every top bar. A superuser also gets Live logs (every project's runs
-   and the API, /admin/logs); everyone gets Sign out. Profile is not built yet, so it is not offered
-   (ui-review #36, #37). */
+/* The avatar and its menu, on every top bar: Sign out. Logs is the top bar's own button
+   (superusers). Profile is not built yet, so it is not offered (ui-review #36, #37). */
 export function UserMenu() {
-  const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const signOut = useAuthStore((s) => s.signOut)
-  const items = [
-    ...(user?.isSuperuser ? [{ label: 'Live logs', icon: 'terminal', onClick: () => navigate('/admin/logs') }] : []),
-    { label: 'Sign out', icon: 'logout', variant: 'danger' as const, onClick: signOut },
-  ]
+  const items = [{ label: 'Sign out', icon: 'logout', variant: 'danger' as const, onClick: signOut }]
   return (
     <Dropdown>
       <DropdownTrigger asChild>

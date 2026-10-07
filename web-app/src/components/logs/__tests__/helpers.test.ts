@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { LogRecord, ProjectRun } from '../../../types'
-import {
-  clockOf, filtersFromParams, matches, paramsFromFilters, runState, runWords, serverFilters, sortRuns, span,
-} from '../helpers'
+import { clockOf, isOneRun, matches, runState, runWords, scopeLabel, serverFilters, sortRuns, span } from '../helpers'
+import { runScope } from '../../../store/logsPanel'
 
 const run = (over: Partial<ProjectRun> = {}): ProjectRun => ({
   versionId: 'ver1', versionTag: 'v1.2.0', command: 'generate', alive: true, stopped: false, outcome: 'running',
@@ -10,22 +9,31 @@ const run = (over: Partial<ProjectRun> = {}): ProjectRun => ({
   stageStartedAt: null, progressAt: '2026-10-06T10:00:00Z', ...over,
 })
 const NOW = Date.parse('2026-10-06T10:05:00Z')
+const name = (id: string) => ({ p1: 'Brake Control Unit' } as Record<string, string>)[id] ?? id
 
-describe('Live logs helpers', () => {
-  it('the address holds the filters, both ways', () => {
-    const f = filtersFromParams(new URLSearchParams('project=p1&version=v9&level=WARNING&source=engine'))
-    expect(f).toEqual({ show: 'warn', debug: false, source: 'engine', project: 'p1', version: 'v9', job: undefined })
-    expect(paramsFromFilters(f)).toEqual({ project: 'p1', version: 'v9', level: 'WARNING', source: 'engine' })
-    expect(filtersFromParams(new URLSearchParams('level=DEBUG&source=nope'))).toMatchObject({ show: 'all', debug: true, source: undefined })
-    expect(paramsFromFilters({ show: 'all', debug: false })).toEqual({})
+describe('Logs panel helpers', () => {
+  it('what the server is asked for, per scope', () => {
+    expect(serverFilters({ kind: 'all' }, 'all')).toEqual({ level: 'INFO', source: undefined })
+    expect(serverFilters({ kind: 'project', project: 'p1' }, 'warn', 'engine'))
+      .toEqual({ level: 'WARNING', source: 'engine', project: 'p1' })
+    expect(serverFilters({ kind: 'version', project: 'p1', version: 'v9' }, 'debug'))
+      .toEqual({ level: 'DEBUG', source: undefined, project: 'p1', version: 'v9' })
+    expect(serverFilters({ kind: 'job', project: 'p1', job: 'job9' }, 'all'))
+      .toEqual({ level: 'INFO', source: undefined, job: 'job9' })
   })
 
-  it('a run with a job is asked for by its job alone', () => {
-    expect(serverFilters({ show: 'all', debug: false, project: 'p1', version: 'v9', job: 'job1' }))
-      .toEqual({ level: 'INFO', source: undefined, job: 'job1' })
-    expect(serverFilters({ show: 'warn', debug: true, project: 'p1' }))
-      .toEqual({ level: 'WARNING', source: undefined, project: 'p1', version: undefined })
-    expect(serverFilters({ show: 'all', debug: true }).level).toBe('DEBUG')
+  it('a run is its version, or its job once the version is gone', () => {
+    expect(runScope('p1', 'v9', 'job9')).toEqual({ kind: 'version', project: 'p1', version: 'v9', label: undefined })
+    expect(runScope('p1', null, 'job9', 'Failed run')).toEqual({ kind: 'job', project: 'p1', job: 'job9', label: 'Failed run' })
+    expect(runScope('p1', null, null)).toEqual({ kind: 'project', project: 'p1' })
+    expect([isOneRun({ kind: 'version', project: 'p', version: 'v' }), isOneRun({ kind: 'project', project: 'p' })]).toEqual([true, false])
+  })
+
+  it('the Showing button names the scope', () => {
+    expect(scopeLabel({ kind: 'all' }, name)).toEqual(['Showing', 'Every project, and the API'])
+    expect(scopeLabel({ kind: 'project', project: 'p1' }, name)).toEqual(['Project', 'Brake Control Unit'])
+    expect(scopeLabel({ kind: 'version', project: 'p1', version: 'v9', label: 'Brake Control Unit · v1.2.0 · Generate' }, name))
+      .toEqual(['Run', 'Brake Control Unit · v1.2.0 · Generate'])
   })
 
   it('a time reads as the server wrote it', () => {
@@ -49,12 +57,9 @@ describe('Live logs helpers', () => {
       .toMatchObject({ tone: 'stopped', when: 'Stopped 3 h ago' })
   })
 
-  it('spans and run words', () => {
+  it('spans, run words and the order of runs', () => {
     expect([span(30_000), span(12 * 60_000), span(17 * 3600_000), span(72 * 3600_000)]).toEqual(['1 min', '12 min', '17 h', '3 d'])
     expect([runWords('reexport'), runWords('generate'), runWords(null), runWords('other')]).toEqual(['Word file update', 'Generate', 'Run', 'Other'])
-  })
-
-  it('running runs first, then the latest progress', () => {
     const a = { run: run({ versionId: 'a', alive: false, stopped: true, progressAt: '2026-10-06T10:04:00Z' }) }
     const b = { run: run({ versionId: 'b', progressAt: '2026-10-06T08:00:00Z' }) }
     const c = { run: run({ versionId: 'c', progressAt: '2026-10-06T10:00:00Z' }) }

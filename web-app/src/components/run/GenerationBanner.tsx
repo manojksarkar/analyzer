@@ -1,12 +1,12 @@
 import { useState, type ReactNode } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { useVersionComponents } from '../../hooks/useVersionComponents'
 import { useCancelJob } from '../../hooks/useJobs'
 import { useVersionWordFiles, useWordFilesWatcher } from '../../hooks/useWordFiles'
 import { Button, Icon } from '../ui'
 import { cn } from '../../lib/cn'
 import { relativeTime } from '../../lib/format'
-import { liveLogsHref } from '../../lib/liveLogs'
+import { runScope, useLogsPanel } from '../../store/logsPanel'
 import { useAuthStore } from '../../store/auth'
 import { generationBannerShown, generationSummary, type GenerationRow } from '../../lib/versionComponents'
 import { wordFilesRow } from '../../lib/wordFiles'
@@ -56,6 +56,7 @@ export function GenerationBanner({ projectId, versionId, versionTag, isAdmin, la
   const [opened, setOpened] = useState(false)
   const [params, setParams] = useSearchParams()
   const isSuperuser = useAuthStore((s) => !!s.user?.isSuperuser)
+  const openLogs = useLogsPanel((s) => s.openLogs)
   const deepLink = params.get('components') === '1'
 
   // Word files (R9): which are out of date, an update under way, the end of one.
@@ -140,10 +141,10 @@ export function GenerationBanner({ projectId, versionId, versionTag, isAdmin, la
               </Button>
               {/* Superusers: what the run is doing, or why it stopped */}
               {isSuperuser && (row.kind === 'running' || row.kind === 'stopped') && (
-                <Link to={liveLogsHref(projectId, versionId, data.job?.id)} title="This run in Live logs"
+                <button type="button" onClick={() => openLogs(runScope(projectId, versionId, data.job?.id, versionTag))} title="This run's lines, below"
                   className="flex-shrink-0 inline-flex items-center gap-1 px-1 py-1.5 text-xs font-semibold text-secondary hover:underline">
                   <Icon name="terminal" size={15} />Logs
-                </Link>
+                </button>
               )}
               {!compact && isAdmin && data.job && row.kind === 'running' && (
                 <button
