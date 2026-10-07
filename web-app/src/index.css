@@ -114,6 +114,14 @@
   --hue-brand-bg: #e0f2ff; --hue-brand-ink: #0058be;
   --hue-teal-bg: #e0f5f1; --hue-teal-ink: #00796b;
   --hue-indigo-bg: #eef2ff; --hue-indigo-ink: #4f46e5;
+  /* The Overview's approval gauge (ReviewCards.tsx): each state's arc runs lo -> hi -> lo, its
+     legend dot has a faint ring. Hex with alpha, not color-mix(): the office's browser is Chrome 99. */
+  --gauge-approved-hi: #3fcf98;  --gauge-approved-lo: #008a5f;  --gauge-approved-ring: #00a57224;
+  --gauge-submitted-hi: #5b96f0; --gauge-submitted-lo: #1a5bc4; --gauge-submitted-ring: #2170e424;
+  --gauge-changes-hi: #a477f5;   --gauge-changes-lo: #6629d0;   --gauge-changes-ring: #7c3aed24;
+  --gauge-review-hi: #fbbf4a;    --gauge-review-lo: #dc8a06;    --gauge-review-ring: #f59e0b24;
+  --gauge-tick: #dde1e8; --gauge-core-hi: #ffffff; --gauge-core-lo: #f1f4f9; --gauge-core-line: rgba(11, 28, 48, .06);
+  --gauge-bar: #eef0f4; --gauge-glow: rgba(33, 112, 228, .06); --gauge-halo-opacity: .16;
 }
 
 /* Dark theme (docs/ui-mockups/dark/): the same tokens, other values. `data-theme` is set on
@@ -183,6 +191,12 @@
   --hue-brand-bg: #14294a; --hue-brand-ink: #5aa2ff;
   --hue-teal-bg: #12302b; --hue-teal-ink: #4fd1c5;
   --hue-indigo-bg: #22224a; --hue-indigo-ink: #a8a5ff;
+  --gauge-approved-hi: #6eedab;  --gauge-approved-lo: #26b970;  --gauge-approved-ring: #3ddc841f;
+  --gauge-submitted-hi: #86baff; --gauge-submitted-lo: #337aeb; --gauge-submitted-ring: #5aa2ff1f;
+  --gauge-changes-hi: #cdb5ff;   --gauge-changes-lo: #8c65ea;   --gauge-changes-ring: #b18cff1f;
+  --gauge-review-hi: #ffcb6d;    --gauge-review-lo: #f3932a;    --gauge-review-ring: #ffb43d1f;
+  --gauge-tick: #33363f; --gauge-core-hi: #262a33; --gauge-core-lo: #16181d; --gauge-core-line: rgba(255, 255, 255, .06);
+  --gauge-bar: #262930; --gauge-glow: rgba(29, 123, 255, .06); --gauge-halo-opacity: .14;
 }
 
 /* A browser without color-mix() (the office's, Chrome 99–110) paints a translucent token
@@ -193,6 +207,25 @@
    ground, light lines and text, the boxes' hue kept (hue-rotate undoes the invert's). White comes
    out #1a1a1a, the dark `--color-picture`. The Word file is unchanged. */
 :root[data-theme="dark"] .doc-picture { filter: invert(.9) hue-rotate(180deg); }
+
+/* The Overview's approval gauge (docs/ui-mockups/project-detail.html, light and dark): the arcs and
+   the legend's bars draw in once, one after another, and then stay still -- approval is not live
+   data. Colours: the --gauge-* variables above. */
+.gauge::before { content: ''; position: absolute; inset: 18px; border-radius: 50%; background: radial-gradient(circle, var(--gauge-glow) 0%, transparent 70%); }
+.gauge-arc  { animation: gauge-draw .9s cubic-bezier(.22, .9, .3, 1) forwards; animation-delay: var(--d, 0s); }
+.gauge-halo { opacity: var(--gauge-halo-opacity); animation: gauge-draw .9s cubic-bezier(.22, .9, .3, 1) forwards; animation-delay: var(--d, 0s); }
+@keyframes gauge-draw { to { stroke-dashoffset: 0; } }
+.gauge-tick { stroke: var(--gauge-tick); }
+.gauge-core { stroke: var(--gauge-core-line); }
+.gauge-core-hi { stop-color: var(--gauge-core-hi); }
+.gauge-core-lo { stop-color: var(--gauge-core-lo); }
+.gauge-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 3px var(--ring); }
+.gauge-bar { height: 4px; border-radius: 99px; background: var(--gauge-bar); overflow: hidden; }
+.gauge-bar-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--c2), var(--c1)); animation: gauge-grow .8s cubic-bezier(.22, .9, .3, 1) both; animation-delay: var(--d, 0s); }
+@keyframes gauge-grow { from { width: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .gauge-arc, .gauge-halo, .gauge-bar-fill { animation-duration: .01s; animation-delay: 0s; }
+}
 
 @supports not (color: color-mix(in lab, red, red)) {
   :root[data-theme="dark"] .border-outline-variant\/60 { border-color: rgb(44 47 55 / .6); }

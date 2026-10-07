@@ -90,6 +90,26 @@
   .toast-in  { animation: slideInRight .3s ease forwards; }
   .toast-out { animation: slideOutRight .3s ease forwards; }
 
+  /* ── The approval gauge (the dark mockup's, in light colours): the arcs draw in once on load
+     and then stay still -- approval is not live data. A faint halo under each arc. ── */
+  .mm-gauge { position: relative; width: 156px; height: 156px; flex-shrink: 0; }
+  .mm-gauge::before { content: ''; position: absolute; inset: 18px; border-radius: 50%; opacity: .6;
+    background: radial-gradient(circle, rgba(33,112,228,.10) 0%, rgba(33,112,228,0) 70%); }
+  .mm-gauge svg { position: relative; overflow: visible; }
+  .mm-arc  { animation: mm-draw .9s cubic-bezier(.22,.9,.3,1) forwards; animation-delay: var(--d, 0s); }
+  .mm-halo { opacity: .16; animation: mm-draw .9s cubic-bezier(.22,.9,.3,1) forwards; animation-delay: var(--d, 0s); }
+  @keyframes mm-draw { to { stroke-dashoffset: 0; } }
+  .mm-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; background: var(--c); box-shadow: 0 0 0 3px var(--ring); }
+  .mm-bar { position: relative; height: 6px; border-radius: 99px; background: #eef0f4; overflow: hidden; }
+  .mm-bar.thin { height: 4px; }
+  .mm-bar-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--c2), var(--c1));
+    animation: mm-grow .8s cubic-bezier(.22,.9,.3,1) both; animation-delay: var(--d, 0s); }
+  @keyframes mm-grow { from { width: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .mm-arc, .mm-bar-fill { animation-duration: .01s; animation-delay: 0s; }
+    .mm-halo { animation: mm-draw .01s forwards; }
+  }
+
   /* Run modal: small by default; "Advanced options" (.adv-open) widens it to a second column.
      Header and footer stay put, no taller than the window; the left column scrolls if it must,
      on the right only the component tree scrolls. */
@@ -1523,49 +1543,83 @@ function renderKpi() {
   const allDone  = total > 0 && approved === total;
   const vTag     = BRANCH.version || 'v1.2.0';
 
-  // SVG donut r=52, C=2π×52≈326.73 - one arc per state, in REVIEW_ORDER
-  const C2 = 326.73;
-  let arcAt = 0;
-  const arcs = REVIEW_ORDER.map(k => {
-    const len = total ? count[k] / total * C2 : 0;
-    const arc = `<circle cx="68" cy="68" r="52" fill="none" stroke="${REVIEW_STATES[k].dot}" stroke-width="14"
-              stroke-dasharray="${len.toFixed(2)} ${C2.toFixed(2)}" stroke-dashoffset="${(-arcAt).toFixed(2)}"/>`;
-    arcAt += len;
-    return arc;
+  // The approval gauge (as the dark mockup's): centre (78,78), one arc per state on r=52, rounded
+  // caps with gaps. Light colours: the app's state colours (violet for changes requested).
+  const MM_GRAD = {
+    approved:          { id: 'mmGreen',  hi: '#3fcf98', lo: '#008a5f', c1: '#00a572', c2: '#008a5f' },
+    submitted:         { id: 'mmBlue',   hi: '#5b96f0', lo: '#1a5bc4', c1: '#2170e4', c2: '#1a5bc4' },
+    changes_requested: { id: 'mmViolet', hi: '#a477f5', lo: '#6629d0', c1: '#7c3aed', c2: '#6629d0' },
+    in_review:         { id: 'mmAmber',  hi: '#fbbf4a', lo: '#dc8a06', c1: '#f59e0b', c2: '#dc8a06' },
+  };
+  const C2 = 2 * Math.PI * 52;
+  const C_TICK = 2 * Math.PI * 40;
+  const ARC_W   = 7;   // arc thickness
+  const ARC_GAP = 12;  // >= stroke width so rounded caps don't touch
+  const liveSegs = REVIEW_ORDER.filter(k => count[k] > 0).length;
+  let arcStart = 0;
+  const arcs = REVIEW_ORDER.map((k, i) => {
+    const arc = total ? count[k] / total * C2 : 0;
+    const start = arcStart;
+    arcStart += arc;
+    if (!arc) return '';
+    const gap = liveSegs > 1 ? ARC_GAP : 0;
+    const len = Math.max(arc - gap, 0.01);
+    const rot = (start + gap / 2) / C2 * 360 - 90;
+    const geom = `cx="78" cy="78" r="52" fill="none" stroke="url(#${MM_GRAD[k].id})" stroke-linecap="round"
+      transform="rotate(${rot.toFixed(2)} 78 78)" stroke-dasharray="${len.toFixed(2)} ${C2.toFixed(2)}" stroke-dashoffset="${len.toFixed(2)}"`;
+    return `<circle class="mm-halo" ${geom} stroke-width="${ARC_W + 6}" filter="url(#mmHalo)" style="--d:${(i * 0.15).toFixed(2)}s"/>
+    <circle class="mm-arc" ${geom} stroke-width="${ARC_W}" style="--d:${(i * 0.15).toFixed(2)}s"/>`;
   }).join('');
-  const legendRow = k => `
-          <div style="display:flex;align-items:center;justify-content:space-between;">
-            <div style="display:flex;align-items:center;gap:9px;">
-              <span style="width:10px;height:10px;border-radius:50%;background:${REVIEW_STATES[k].dot};flex-shrink:0;"></span>
-              <span style="font-size:13px;color:#44474c;">${REVIEW_STATES[k].label}</span>
+  const legendRow = (k, i) => {
+    const pct = total ? Math.round(count[k] / total * 100) : 0;
+    const g   = MM_GRAD[k];
+    return `
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span class="mm-dot" style="--c:${g.c1};--ring:${g.c1}24;"></span>
+                <span style="font-size:13px;color:#44474c;">${REVIEW_STATES[k].label}</span>
+              </div>
+              <div style="display:flex;align-items:baseline;gap:8px;">
+                <span style="font-family:'JetBrains Mono';font-size:15px;font-weight:700;color:#0b1c30;">${count[k]}</span>
+                <span style="font-size:11px;color:#9aa0a6;min-width:32px;text-align:right;">${pct}%</span>
+              </div>
             </div>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span style="font-family:'JetBrains Mono';font-size:15px;font-weight:700;color:#0b1c30;">${count[k]}</span>
-              <span style="font-size:11px;color:#9aa0a6;min-width:36px;text-align:right;">${total ? Math.round(count[k]/total*100) : 0}%</span>
-            </div>
+            <div class="mm-bar thin"><div class="mm-bar-fill" style="width:${pct}%;--c1:${g.c1};--c2:${g.c2};--d:${(0.15 + i * 0.1).toFixed(2)}s;"></div></div>
           </div>`;
+  };
   const vState = allDone ? REVIEW_STATES.approved : REVIEW_STATES.in_review;
 
   const donutCard = `
-    <div class="bg-white border border-outline-variant rounded-xl p-6" style="display:flex;align-items:center;gap:32px;">
-      <div style="flex-shrink:0;">
-        <svg width="136" height="136" viewBox="0 0 136 136">
-          <g transform="rotate(-90 68 68)">
-            <circle cx="68" cy="68" r="52" fill="none" stroke="#e8eaed" stroke-width="14"/>
-            ${arcs}
-          </g>
-          <text x="68" y="63" text-anchor="middle" font-size="30" font-weight="700" fill="#0b1c30" font-family="Inter,sans-serif">${approved}</text>
-          <text x="68" y="81" text-anchor="middle" font-size="11" fill="#9aa0a6" font-family="Inter,sans-serif">of ${total} approved</text>
+    <div class="bg-white border border-outline-variant rounded-xl p-6" style="display:flex;align-items:center;gap:28px;">
+      <div class="mm-gauge">
+        <svg width="156" height="156" viewBox="0 0 156 156" aria-label="${approved} of ${total} documents approved">
+          <defs>
+            ${REVIEW_ORDER.map(k => `<linearGradient id="${MM_GRAD[k].id}" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="${MM_GRAD[k].lo}"/><stop offset=".5" stop-color="${MM_GRAD[k].hi}"/><stop offset="1" stop-color="${MM_GRAD[k].lo}"/>
+            </linearGradient>`).join('')}
+            <radialGradient id="mmCore" cx="50%" cy="40%" r="60%"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#f1f4f9"/></radialGradient>
+            <filter id="mmHalo" filterUnits="userSpaceOnUse" x="-12" y="-12" width="180" height="180">
+              <feGaussianBlur stdDeviation="4"/>
+            </filter>
+          </defs>
+          <circle cx="78" cy="78" r="52" fill="none" stroke="#eceef2" stroke-width="${ARC_W}"/>
+          ${arcs}
+          <circle cx="78" cy="78" r="40" fill="none" stroke="#dde1e8" stroke-width="4"
+            stroke-dasharray="1.2 ${(C_TICK / 60 - 1.2).toFixed(3)}"/>
+          <circle cx="78" cy="78" r="35" fill="url(#mmCore)" stroke="rgba(11,28,48,.06)"/>
+          <text data-count="${approved}" x="78" y="83" text-anchor="middle" font-size="28" font-weight="700" fill="#0b1c30" font-family="Inter,sans-serif">${approved}</text>
+          <text x="78" y="98" text-anchor="middle" font-size="8.5" fill="#9aa0a6" font-family="Inter,sans-serif" letter-spacing="1.2">OF ${total} APPROVED</text>
         </svg>
       </div>
-      <div style="flex:1;">
+      <div style="flex:1;min-width:0;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px;">
           <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Approval · ${vTag}</p>
           <span title="A version is Approved when every one of its documents is" style="display:inline-flex;align-items:center;gap:4px;font-family:'JetBrains Mono';font-size:10px;font-weight:700;color:${vState.color};background:${vState.bg};border:1px solid ${vState.border};padding:1px 8px;border-radius:99px;white-space:nowrap;">
             <span class="material-symbols-outlined sym-fill" style="font-size:11px;color:${vState.color};">${vState.icon}</span>${allDone ? 'Approved' : 'In review'}
           </span>
         </div>
-        <div style="display:flex;flex-direction:column;gap:11px;">
+        <div style="display:flex;flex-direction:column;gap:10px;">
           ${REVIEW_ORDER.map(legendRow).join('')}
         </div>
       </div>
@@ -1650,6 +1704,22 @@ function renderKpi() {
   container.innerHTML = donutCard
     + (currentRole === 'developer' ? assignCardDev : assignCardAdmin)
     + projectInfoCard;
+  countUp(container);
+}
+
+// The gauge's number counts up once (as the dark mockup's); not with reduced motion.
+function countUp(root) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  root.querySelectorAll('[data-count]').forEach(el => {
+    const target = Number(el.dataset.count);
+    const t0 = performance.now();
+    const step = now => {
+      const k = Math.min((now - t0) / 800, 1);
+      el.textContent = Math.round(target * (1 - Math.pow(1 - k, 3)));
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
 }
 
 function renderUnassignedPool() {

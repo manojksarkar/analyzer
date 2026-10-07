@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react'
+import { useId, type CSSProperties, type ReactNode } from 'react'
+import { useCountUp } from '../../../hooks/useCountUp'
 import { useDownloadDoc } from '../../../hooks/useDocumentMutations'
 import { Avatar, Icon, StatusBadge, Text } from '../../../components/ui'
 import { cn } from '../../../lib/cn'
@@ -52,26 +53,83 @@ function StateBar({ docs, className }: { docs: Document[]; className?: string })
   )
 }
 
-/* The version's approval as a donut: one arc per state, "N of M approved" inside. */
-function Donut({ docs }: { docs: Document[] }) {
-  const C = 326.73
+/* The version's approval as a gauge (project-detail.html, light and dark): one arc per state with
+   rounded ends and a gap between them, drawn in once one after another, a faint halo under each, a
+   tick ring, and "N / OF M APPROVED" in the middle, the number counting up. Colours: index.css
+   --gauge-<state>-*. Each arc's dashoffset starts at its length; CSS draws it to 0 (`gauge-arc`). */
+const GAUGE_KEY: Record<(typeof REVIEW_ORDER)[number], string> = {
+  approved: 'approved', submitted: 'submitted', changes_requested: 'changes', in_review: 'review',
+}
+const R = 52
+const CIRC = 2 * Math.PI * R
+const TICK_CIRC = 2 * Math.PI * 40
+const ARC_W = 7
+const ARC_GAP = 12                      // at least the arc's width, so two rounded ends do not touch
+
+function Gauge({ docs }: { docs: Document[] }) {
   const c = reviewCounts(docs)
-  // Each state's arc starts where the ones before it end.
-  const lens = REVIEW_ORDER.map((k) => (c.total ? (c[k] / c.total) * C : 0))
-  const starts = lens.map((_, i) => lens.slice(0, i).reduce((a, b) => a + b, 0))
+  const shown = useCountUp(c.approved)
+  const uid = useId().replace(/:/g, '')
+  const live = REVIEW_ORDER.filter((k) => c[k] > 0).length
+  // Each state's arc starts where the ones before it end; the gap is taken out of the arc itself.
+  const lens = REVIEW_ORDER.map((k) => (c.total ? (c[k] / c.total) * CIRC : 0))
+  const gap = live > 1 ? ARC_GAP : 0
+  const arcs = REVIEW_ORDER.flatMap((k, i) => {
+    if (!lens[i]) return []
+    const start = lens.slice(0, i).reduce((a, b) => a + b, 0)
+    return [{ k, i, len: Math.max(lens[i] - gap, 0.01), rot: ((start + gap / 2) / CIRC) * 360 - 90 }]
+  })
   return (
-    <svg width="136" height="136" viewBox="0 0 136 136" role="img" aria-label={`${c.approved} of ${c.total} approved`}>
-      <g transform="rotate(-90 68 68)">
-        <circle cx="68" cy="68" r="52" fill="none" className="stroke-track" strokeWidth="14" />
-        {REVIEW_ORDER.map((k, i) => (
-          // eslint-disable-next-line no-restricted-syntax -- a state's colour (a theme variable) on a data-driven arc
-          <circle key={k} cx="68" cy="68" r="52" fill="none" style={{ stroke: STATUS_META[k].hex }} strokeWidth="14"
-            strokeDasharray={`${lens[i].toFixed(2)} ${C.toFixed(2)}`} strokeDashoffset={(-starts[i]).toFixed(2)} />
-        ))}
-      </g>
-      <text x="68" y="63" textAnchor="middle" fontSize="30" fontWeight="700" className="fill-on-surface" fontFamily="Inter,sans-serif">{c.approved}</text>
-      <text x="68" y="81" textAnchor="middle" fontSize="11" className="fill-faint" fontFamily="Inter,sans-serif">of {c.total} approved</text>
-    </svg>
+    <div className="gauge relative w-[156px] h-[156px] flex-shrink-0">
+      <svg width="156" height="156" viewBox="0 0 156 156" role="img" aria-label={`${c.approved} of ${c.total} approved`}
+        className="relative overflow-visible">
+        <defs>
+          {REVIEW_ORDER.map((k) => {
+            const v = GAUGE_KEY[k]
+            return (
+              <linearGradient key={k} id={`${uid}-${v}`} x1="0" y1="0" x2="1" y2="1">
+                {/* eslint-disable-next-line no-restricted-syntax -- a state's gauge colour (a theme variable) */}
+                <stop offset="0" style={{ stopColor: `var(--gauge-${v}-lo)` }} />
+                {/* eslint-disable-next-line no-restricted-syntax -- a state's gauge colour (a theme variable) */}
+                <stop offset=".5" style={{ stopColor: `var(--gauge-${v}-hi)` }} />
+                {/* eslint-disable-next-line no-restricted-syntax -- a state's gauge colour (a theme variable) */}
+                <stop offset="1" style={{ stopColor: `var(--gauge-${v}-lo)` }} />
+              </linearGradient>
+            )
+          })}
+          <radialGradient id={`${uid}-core`} cx="50%" cy="40%" r="60%">
+            <stop offset="0" className="gauge-core-hi" /><stop offset="1" className="gauge-core-lo" />
+          </radialGradient>
+          <filter id={`${uid}-halo`} filterUnits="userSpaceOnUse" x="-12" y="-12" width="180" height="180">
+            <feGaussianBlur stdDeviation="4" />
+          </filter>
+        </defs>
+        <circle cx="78" cy="78" r={R} fill="none" className="stroke-track" strokeWidth={ARC_W} />
+        {arcs.map(({ k, i, len, rot }) => {
+          const geom = {
+            cx: 78, cy: 78, r: R, fill: 'none', stroke: `url(#${uid}-${GAUGE_KEY[k]})`, strokeLinecap: 'round' as const,
+            transform: `rotate(${rot.toFixed(2)} 78 78)`, strokeDasharray: `${len.toFixed(2)} ${CIRC.toFixed(2)}`,
+            strokeDashoffset: len.toFixed(2),
+          }
+          const delay = { '--d': `${(i * 0.15).toFixed(2)}s` } as CSSProperties
+          return (
+            <g key={k} data-state={k}>
+              {/* eslint-disable-next-line no-restricted-syntax -- each arc draws in after the one before it */}
+              <circle {...geom} className="gauge-halo" strokeWidth={ARC_W + 6} filter={`url(#${uid}-halo)`} style={delay} />
+              {/* eslint-disable-next-line no-restricted-syntax -- each arc draws in after the one before it */}
+              <circle {...geom} className="gauge-arc" strokeWidth={ARC_W} style={delay} />
+            </g>
+          )
+        })}
+        <circle cx="78" cy="78" r="40" fill="none" className="gauge-tick" strokeWidth="4"
+          strokeDasharray={`1.2 ${(TICK_CIRC / 60 - 1.2).toFixed(3)}`} />
+        <circle cx="78" cy="78" r="35" fill={`url(#${uid}-core)`} className="gauge-core" />
+        <text x="78" y="83" textAnchor="middle" fontSize="28" fontWeight="700" className="fill-on-surface" fontFamily="Inter,sans-serif">{shown}</text>
+        <text x="78" y="98" textAnchor="middle" fontSize="8.5" letterSpacing="1.2" className="fill-faint" fontFamily="Inter,sans-serif">
+          OF {c.total} APPROVED
+        </text>
+      </svg>
+    </div>
   )
 }
 
@@ -86,15 +144,26 @@ export function KpiStrip({ documents, version, versions, team, isAdmin, meId }: 
   const processCount = new Set(documents.map((d) => d.process)).size
   const vTag = version?.tag ?? versions?.[0]?.tag ?? '—'
 
-  const statusRow = (k: (typeof REVIEW_ORDER)[number]) => (
-    <div key={k} className="flex items-center justify-between">
-      <div className="flex items-center gap-[9px]">
-        <span className={cn('w-2.5 h-2.5 rounded-full flex-shrink-0', STATUS_META[k].dot)} />
-        <span className="text-body text-on-surface-variant">{STATUS_META[k].label}</span>
+  // One state: its dot, count and share, and a thin bar of that share that grows in after the arcs.
+  const statusRow = (k: (typeof REVIEW_ORDER)[number], i: number) => (
+    <div key={k}>
+      <div className="flex items-center justify-between mb-[5px]">
+        <div className="flex items-center gap-2.5">
+          {/* eslint-disable-next-line no-restricted-syntax -- a state's ring colour (a theme variable) */}
+          <span className={cn('gauge-dot', STATUS_META[k].dot)} style={{ '--ring': `var(--gauge-${GAUGE_KEY[k]}-ring)` } as CSSProperties} />
+          <span className="text-body text-on-surface-variant">{STATUS_META[k].label}</span>
+        </div>
+        <div className="flex items-baseline gap-2">
+          <span className="font-mono text-title font-bold text-on-surface">{c[k]}</span>
+          <span className="text-caption text-faint min-w-8 text-right">{pct(c[k], c.total)}%</span>
+        </div>
       </div>
-      <div className="flex items-center gap-2">
-        <span className="font-mono text-title font-bold text-on-surface">{c[k]}</span>
-        <span className="text-caption text-faint min-w-9 text-right">{pct(c[k], c.total)}%</span>
+      <div className="gauge-bar">
+        {/* eslint-disable-next-line no-restricted-syntax -- a state's share and colours are data-driven */}
+        <div className="gauge-bar-fill" style={{
+          width: `${pct(c[k], c.total)}%`, '--c1': STATUS_META[k].hex, '--c2': `var(--gauge-${GAUGE_KEY[k]}-lo)`,
+          '--d': `${(0.15 + i * 0.1).toFixed(2)}s`,
+        } as CSSProperties} />
       </div>
     </div>
   )
@@ -109,16 +178,16 @@ export function KpiStrip({ documents, version, versions, team, isAdmin, meId }: 
 
   return (
     <div className="mb-6 grid grid-cols-[2fr_1fr_1fr] gap-4 items-stretch">
-      <div className="bg-surface-container-lowest border border-outline-variant rounded-xl p-6 flex items-center gap-8">
-        <div className="flex-shrink-0"><Donut docs={documents} /></div>
-        <div className="flex-1">
-          <div className="flex items-center justify-between gap-2 mb-4">
+      <div className="bg-surface-container-lowest border border-outline-variant rounded-xl p-6 flex items-center gap-7">
+        <Gauge docs={documents} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2 mb-3">
             <p className={cn('text-on-surface-variant uppercase', KPI_LABEL)}>Approval · {vTag}</p>
             <span title="A version is Approved when every one of its documents is">
               <StatusBadge status={allDone ? 'approved' : 'in_review'} />
             </span>
           </div>
-          <div className="flex flex-col gap-[11px]">{REVIEW_ORDER.map(statusRow)}</div>
+          <div className="flex flex-col gap-2.5">{REVIEW_ORDER.map(statusRow)}</div>
         </div>
       </div>
 
