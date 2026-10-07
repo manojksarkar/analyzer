@@ -1,7 +1,7 @@
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useId, useState } from 'react'
 import { useAuthStore } from '../store/auth'
 import { ApiError } from '../lib/http'
@@ -38,8 +38,9 @@ function signInErrorMessage(err: unknown): string {
 export function SignInPage() {
   const { signIn } = useAuthStore()
   const navigate = useNavigate()
-  const location = useLocation()
-  const from = (location.state as { from?: Location })?.from?.pathname ?? '/projects'
+  // A sign-in always lands on Projects -- not on the page a session ran out on, which may be a
+  // project the account no longer reaches or a document from another reviewer's link.
+  const from = '/projects'
   const [showPassword, setShowPassword] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
 
