@@ -80,9 +80,10 @@ describe('the Generation banner', () => {
 
   it('a run stopped before it finished, or components cut short', () => {
     expect(generationSummary(view(comps, { run: run({ alive: false, stopped: true }) }))?.row)
-      .toEqual({ kind: 'stopped', at: '2026-10-05T10:00:00Z', cutShort: 0 })
-    expect(generationSummary(view([...comps, one('Layer2.Uart', { state: 'failed' })]))?.row)
-      .toEqual({ kind: 'stopped', at: null, cutShort: 1 })
+      .toEqual({ kind: 'stopped', at: '2026-10-05T10:00:00Z', cutShort: 0, cut: [] })
+    const failed = generationSummary(view([...comps, one('Layer2.Uart', { state: 'failed' })]))?.row
+    expect(failed).toMatchObject({ kind: 'stopped', at: null, cutShort: 1 })
+    expect(failed?.kind === 'stopped' && failed.cut.map((c) => c.id)).toEqual(['Layer2.Uart'])   // the banner names them
   })
 
   it('nothing at work: the components without documents; one no run can make does not count', () => {

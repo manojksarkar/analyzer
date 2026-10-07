@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-07d | The Overview while a run works: three cards -- the documents as they are made, what the run was asked for, what the code holds so far with the LLM's trouble -- and a superuser's newest log lines | [14](14-2026-10-05r.md) |
 | 2026-10-07c | A stopped run says which components did not get their documents and why, and an admin resumes it from the web | [14](14-2026-10-05r.md) |
 | 2026-10-07b | Live logs became a panel docked on every page -- no page to go to and come back from | [14](14-2026-10-05r.md) |
 | 2026-10-07 | Live logs: a failed run has a Logs link, and a job's own lines name the job -- "Checkout failed" was written with no job id | [14](14-2026-10-05r.md) |

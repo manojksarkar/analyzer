@@ -575,5 +575,16 @@ Contract [LIVE_LOGS_SPEC](../docs/spec/LIVE_LOGS_SPEC.md) (`REQ-LL-01…15`), ho
   1/2/5/10/30 s on `onerror`, `gap` = read the tail again, 401/403 on the ticket = Stopped. Names, not
   ids: projects from `useProjects`, version tags from `useVersionTags`. `/admin/logs` (the old page)
   opens the panel on everything (`routes/LogsRedirect`). A job's thread tags its own server lines
-  with project, version and job (`pipeline_runner._tag_job_lines`): a thread does not inherit the
+  with project, version and job (`pipeline_runner._job_thread`, reset when the job body ends): a thread does not inherit the
   request's context. `is_superuser` on the auth user (`api/routes/auth.py _user_to_dict`).
+
+### The Overview while a run works (2026-10-07d)
+
+Under the running panel, `pages/ProjectDetailPage/components/RunCards.tsx`: **Documents** (the asked-for
+components, each opening its SWE.3 / SWE.4 once made), **This run** (version, commit, kind, scope, document
+types, started), **Found so far** (code counts, parse warnings, the step at work, the LLM's retries and
+failed calls); a superuser also gets the version's three newest log lines and **Open logs**. Facts from
+`GET /projects/{pid}/versions/{vid}/run-facts` (`api/services/run_facts.py`): model counts from the
+database, LLM and parse counts from the live log buffer -- so they cover what the buffer holds and are
+zeros without a live log. A stopped run's banner names the cut-short components and resumes from the web
+(admins; 2026-10-07c). Mockup: `project-detail.html` `#run-cards`.

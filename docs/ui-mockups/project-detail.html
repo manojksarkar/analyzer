@@ -547,6 +547,51 @@
       </div>
       <!-- ═══ END GEN PANEL ═══ -->
 
+      <!-- ═══ RUN CARDS (running state only; web-app RunCards.tsx) ═══
+           Under the running panel: the run's newest lines (superusers, "Open logs" opens the panel
+           on the run), then three cards -- the documents as they are made (a component opens once
+           it has them), what the run was asked for, and what the code holds so far with the LLM's
+           trouble (GET .../run-facts). -->
+      <div id="run-cards" style="display:none;" class="mb-7 -mt-4">
+        <div class="mb-4 rounded-xl border border-outline-variant bg-surface-container-lowest px-4 py-2.5">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-outline" style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;">Latest lines</span>
+            <a href="live-logs.html?job=jobd46b0548" class="inline-flex items-center gap-1 text-secondary hover:underline" style="font-size:12px;font-weight:600;text-decoration:none;"><span class="material-symbols-outlined" style="font-size:14px;">terminal</span>Open logs</a>
+          </div>
+          <p class="text-on-surface" style="font-family:'JetBrains Mono';font-size:12px;line-height:20px;"><span class="text-outline">10:41:00</span>&nbsp;&nbsp; LLM-description: 310/842 (37%)</p>
+          <p style="font-family:'JetBrains Mono';font-size:12px;line-height:20px;color:#d97706;"><span class="text-outline">10:41:02</span>&nbsp;&nbsp; LLM (openai/model) HTTP 503: An invalid response was received from the upstream server (attempt 1/2)</p>
+          <p class="text-on-surface" style="font-family:'JetBrains Mono';font-size:12px;line-height:20px;"><span class="text-outline">10:41:09</span>&nbsp;&nbsp; LLM-description: 312/842 (37%)</p>
+        </div>
+        <div class="grid gap-4" style="grid-template-columns:repeat(3,minmax(0,1fr));">
+          <section class="rounded-xl border border-outline-variant bg-surface-container-lowest px-4 py-3.5">
+            <div class="flex items-baseline justify-between mb-2.5"><h3 class="text-on-surface" style="font-size:13px;font-weight:600;">Documents</h3><span class="text-on-surface-variant" style="font-size:11px;">1 of 2 ready</span></div>
+            <div class="flex items-center justify-between mb-1.5"><span class="inline-flex items-center gap-1 px-2 py-0.5 border rounded-md" style="font-size:11px;border-color:#3ddc8466;color:#1fae63;"><span class="material-symbols-outlined" style="font-size:13px;">check</span>Brake Controller</span><span style="font-size:11px;font-weight:600;"><a class="text-secondary" style="text-decoration:none;" href="documents.html">SWE.3</a>&nbsp;&nbsp;<a class="text-secondary" style="text-decoration:none;" href="documents.html">SWE.4</a></span></div>
+            <div class="flex items-center justify-between"><span class="inline-flex items-center gap-1 px-2 py-0.5 border rounded-md text-secondary" style="font-size:11px;border-color:#2d4a8066;"><span class="material-symbols-outlined" style="font-size:13px;">autorenew</span>ABS Unit</span><span class="text-outline" style="font-size:11px;">in progress</span></div>
+          </section>
+          <section class="rounded-xl border border-outline-variant bg-surface-container-lowest px-4 py-3.5">
+            <h3 class="text-on-surface mb-2.5" style="font-size:13px;font-weight:600;">This run</h3>
+            <dl style="display:grid;grid-template-columns:88px 1fr;gap:6px 12px;font-size:12px;">
+              <dt class="text-on-surface-variant">Version</dt><dd class="text-on-surface">v1.2.0</dd>
+              <dt class="text-on-surface-variant">Commit</dt><dd class="text-on-surface">abc1234 on main</dd>
+              <dt class="text-on-surface-variant">Kind</dt><dd class="text-on-surface">Generate</dd>
+              <dt class="text-on-surface-variant">Asked for</dt><dd class="text-on-surface">Components: Brake Controller, ABS Unit · 2 of 25 components</dd>
+              <dt class="text-on-surface-variant">Documents</dt><dd class="text-on-surface">SWE.3 and SWE.4</dd>
+              <dt class="text-on-surface-variant">Started</dt><dd class="text-on-surface">6 min ago</dd>
+            </dl>
+          </section>
+          <section class="rounded-xl border border-outline-variant bg-surface-container-lowest px-4 py-3.5">
+            <h3 class="text-on-surface mb-2.5" style="font-size:13px;font-weight:600;">Found so far</h3>
+            <dl style="display:grid;grid-template-columns:88px 1fr;gap:6px 12px;font-size:12px;">
+              <dt class="text-on-surface-variant">Code</dt><dd class="text-on-surface">842 functions · 196 globals · 41 units · 25 components</dd>
+              <dt class="text-on-surface-variant">Parse</dt><dd style="color:#d97706;">3 warnings</dd>
+              <dt class="text-on-surface-variant">Now</dt><dd class="text-on-surface">writing descriptions, 312 of 842</dd>
+              <dt class="text-on-surface-variant">LLM</dt><dd style="color:#d97706;">1 call failed · 2 retries</dd>
+            </dl>
+            <p style="margin-top:8px;font-family:'JetBrains Mono';font-size:10px;line-height:14px;color:#d97706;">LLM (openai/model) failed after 2 attempt(s): 503 Server Error</p>
+          </section>
+        </div>
+      </div>
+
       <!-- ═══ STALE BANNER ═══ -->
       <div id="stale-banner" style="display:none;" class="mb-6">
         <div class="flex items-center gap-3 px-5 py-3.5 rounded-xl" style="background:#fffbeb;border:1px solid #f59e0b;">
@@ -2362,6 +2407,7 @@ function setState(state, commit) {
 
   document.getElementById('empty-banner').style.display  = isNever   ? '' : 'none';
   document.getElementById('gen-panel').style.display     = isRunning  ? '' : 'none';
+  document.getElementById('run-cards').style.display     = isRunning  ? '' : 'none';
   document.getElementById('stale-banner').style.display  = isStale    ? '' : 'none';
   document.getElementById('gen-banner').style.display    = hasContent ? '' : 'none';
   document.getElementById('kpi-strip').style.display     = hasContent ? 'block' : 'none';

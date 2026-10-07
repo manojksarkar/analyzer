@@ -1,6 +1,8 @@
 import { http } from '../../lib/http'
-import type { ProjectRun, VersionComponents } from '../../types'
-import { ApiProjectRunsSchema, ApiVersionComponentsSchema, mapProjectRuns, mapVersionComponents } from '../mappers'
+import type { ProjectRun, RunFacts, VersionComponents } from '../../types'
+import {
+  ApiProjectRunsSchema, ApiRunFactsSchema, ApiVersionComponentsSchema, mapProjectRuns, mapRunFacts, mapVersionComponents,
+} from '../mappers'
 
 /* Staged generation: a version's components and the documents still to make
    (api/routes/version_components.py — the same view as `analyzer.py components` / `export`). */
@@ -22,6 +24,9 @@ export const versionComponentsApi = {
     mapProjectRuns(ApiProjectRunsSchema.parse(await http.get(`/projects/${pid}/runs`))),
   /** Make the documents of components the version has not generated yet (a job, Phases 3–4; 1–4
    *  when one is of a layer the model lacks: the job adds that layer first). */
+  /** What the version's run has found so far: model counts, the LLM's trouble, parse warnings. */
+  runFacts: async (pid: string, vid: string): Promise<RunFacts> =>
+    mapRunFacts(ApiRunFactsSchema.parse(await http.get(`/projects/${pid}/versions/${vid}/run-facts`))),
   /** Carry on a version whose run stopped before it finished (`analyzer.py resume`, as a job).
    *  409: VERSION_BUSY / RUN_ACTIVE (a run is at work on it), NOTHING_TO_RESUME. */
   resume: async (pid: string, vid: string): Promise<{ jobId: string }> => {

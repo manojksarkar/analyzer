@@ -20,6 +20,7 @@ import { FailedRunBanner, RunWarningsBanner } from './components/RunBanners'
 import { RunAnalysisModal } from './components/RunAnalysisModal'
 import { GeneratedContent } from './components/GeneratedContent'
 import { OtherRuns } from './components/OtherRuns'
+import { RunCards } from './components/RunCards'
 import { PHASE_UI, fmtClock, fmtEta, fmtStart, phaseTime } from './helpers'
 
 /* ─── Phase step (running panel) ─── */
@@ -316,6 +317,8 @@ export function ProjectDetailPage() {
             </div>
           </div>
         )}
+        {/* What the run makes, what it was asked for, what the code holds so far */}
+        {pageState === 'running' && job && projectId && <RunCards projectId={projectId} job={job} />}
 
         {/* ══ STALE BANNER ══ */}
         {pageState === 'stale' && (

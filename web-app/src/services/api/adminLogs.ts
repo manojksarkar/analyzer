@@ -12,8 +12,9 @@ const params = (f: LogFilters) => ({
 })
 
 export const adminLogsApi = {
-  tail: async (filters: LogFilters): Promise<LogTail> =>
-    mapLogTail(ApiLogTailSchema.parse(await http.get('/admin/logs', params(filters)))),
+  /** `lines`: how many (the server's default, 500, when left out). */
+  tail: async (filters: LogFilters, lines?: number): Promise<LogTail> =>
+    mapLogTail(ApiLogTailSchema.parse(await http.get('/admin/logs', { ...params(filters), lines }))),
   /** Opens ONE stream within 60 s. */
   ticket: async (): Promise<string> =>
     ApiLogTicketSchema.parse(await http.post('/admin/logs/ticket')).ticket,

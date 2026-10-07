@@ -18,6 +18,8 @@ export const projectKeys = {
   versionComponents: (id: string, vid: string) => ['projects', id, 'versions', vid, 'components'] as const,
   /** GET /projects/{pid}/runs: runs at work now or cut short, whichever front door started them. */
   runs: (id: string) => ['projects', id, 'runs'] as const,
+  /** What a version's run has found so far (the Overview while it runs). */
+  runFacts: (id: string, vid: string) => ['projects', id, 'versions', vid, 'run-facts'] as const,
   /** Every documents read of the project: lists, details, stats, renders, events. */
   documentsAll: (id: string) => ['projects', id, 'documents'] as const,
   documents: (id: string, filters?: DocumentFilters) =>

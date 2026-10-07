@@ -118,8 +118,8 @@ also asserts the two tokenless requirements below — the SSE route and the asse
 executable reference): `auth/{signin,refresh,signout,me}`; `projects` (list/get/create/update/delete,
 `access-requests`); `repositories/{test-connection,browse,uploads}` + `users/search` (wizard, Team page's Add member);
 `projects/{id}/versions/{vid}/components` + `…/documents/generate` (Documents page's Components panel; the
-components answer also carries `resume_action`, and `POST …/versions/{vid}/resume` exists for a Resume button
-that is not built yet — 2026-10-02c, deferred; and `job`, the web job at work on the version, which the run
+components answer also carries `resume_action`, which the stopped banner's Resume button reads before
+`POST …/versions/{vid}/resume` — 2026-10-07c; `…/run-facts` feeds the Overview's run cards; and `job`, the web job at work on the version, which the run
 strip's admin **Stop** cancels through `jobs/{id}/cancel`);
 `projects/{id}/{commits,versions,documents,members,members/pending,members/invite,jobs,compare,functions,notifications}`;
 document actions (`approve`, `approve-all`, `submit-review`, `request-changes`, `assignments[/self]`,

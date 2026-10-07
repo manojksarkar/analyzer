@@ -74,6 +74,16 @@ export function useAllProjectRuns(projectIds: string[]) {
   })
 }
 
+/** What the version's run has found so far, read again every 10 s while it runs. */
+export function useRunFacts(projectId: string, versionId: string | null | undefined, live: boolean) {
+  return useQuery({
+    queryKey: projectKeys.runFacts(projectId, versionId ?? ''),
+    queryFn: () => versionComponentsApi.runFacts(projectId, versionId as string),
+    enabled: !!projectId && !!versionId,
+    refetchInterval: live ? 10_000 : false,
+  })
+}
+
 /** Resume a version whose run stopped before it finished: the job takes the banner's running row. */
 export function useResumeVersion(projectId: string, versionId: string) {
   const qc = useQueryClient()

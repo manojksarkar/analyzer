@@ -14,6 +14,18 @@ import type { LogFilters, LogRecord } from '../types'
 export const adminKeys = {
   all: ['admin'] as const,
   logs: (f: LogFilters) => ['admin', 'logs', f] as const,
+  recent: (project: string, version: string) => ['admin', 'logs', 'recent', project, version] as const,
+}
+
+/** A run's newest three lines (superusers: the Overview, under the running card), every 5 s. */
+export function useRecentLogLines(project: string, version: string | null | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: adminKeys.recent(project, version ?? ''),
+    queryFn: () => adminLogsApi.tail({ level: 'INFO', project, version: version as string }, 3),
+    enabled: enabled && !!project && !!version,
+    refetchInterval: 5_000,
+    retry: false,
+  })
 }
 
 export type LiveStatus = 'connecting' | 'live' | 'reconnecting' | 'stopped'

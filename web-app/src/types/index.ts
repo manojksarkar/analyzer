@@ -137,6 +137,15 @@ export interface VersionComponents {
   resumeAction: string | null
 }
 
+/** What a version's run has found so far (GET .../run-facts), for the Overview while it runs. */
+export interface RunFacts {
+  /** Counts from the stored model once Parse and Derive wrote them; null before. */
+  model: { functions: number; globals: number; units: number; components: number } | null
+  /** The LLM's trouble for this version: attempts retried, calls that got nothing in the end. */
+  llm: { retries: number; failedCalls: number; lastFailure: { ts: string | null; message: string } | null }
+  parseWarnings: number
+}
+
 /** A person as the review routes name them. */
 export interface UserRef {
   userId: string

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ComponentState, ProjectRun, ReviewStatus, VersionComponents, VersionRun } from '../../types'
+import type { ComponentState, ProjectRun, ReviewStatus, RunFacts, VersionComponents, VersionRun } from '../../types'
 
 /* Staged generation (GET /projects/{pid}/versions/{vid}/components): every component of the layers
    the version parsed — and those its config names in layers the model lacks yet (`in_model` and
@@ -47,6 +47,26 @@ export const ApiVersionComponentsSchema = z.object({
   resume_action: z.string().nullable().optional(),
 })
 export type ApiVersionComponents = z.infer<typeof ApiVersionComponentsSchema>
+
+export const ApiRunFactsSchema = z.object({
+  version_id: z.string(),
+  model: z.object({ functions: z.number(), globals: z.number(), units: z.number(), components: z.number() }).nullable(),
+  llm: z.object({
+    failed_calls: z.number(), retries: z.number(),
+    last_failure: z.object({ ts: z.string().nullable().optional(), message: z.string() }).nullable(),
+  }),
+  parse: z.object({ warnings: z.number() }),
+})
+export type ApiRunFacts = z.infer<typeof ApiRunFactsSchema>
+
+export const mapRunFacts = (r: ApiRunFacts): RunFacts => ({
+  model: r.model,
+  llm: {
+    retries: r.llm.retries, failedCalls: r.llm.failed_calls,
+    lastFailure: r.llm.last_failure ? { ts: r.llm.last_failure.ts ?? null, message: r.llm.last_failure.message } : null,
+  },
+  parseWarnings: r.parse.warnings,
+})
 
 /** GET /projects/{pid}/runs: the runs at work now, or cut short, whichever front door started them. */
 export const ApiProjectRunsSchema = z.object({

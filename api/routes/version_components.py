@@ -127,6 +127,20 @@ def list_components(project_id: str, version_id: str,
     }
 
 
+@router.get("/projects/{project_id}/versions/{version_id}/run-facts")
+def version_run_facts(project_id: str, version_id: str,
+                      current_user: User = Depends(get_current_user),
+                      db: InMemoryDatabase = Depends(get_db)) -> Dict[str, Any]:
+    """What the version's run has found so far, for the Overview while it runs: `model` (counts of
+    functions, globals, units and components once Parse and Derive wrote them; null before), `llm`
+    (`retries`, `failed_calls`, `last_failure` {ts, message}: the LLM's trouble for this version, from
+    the live log the API holds) and `parse` (`warnings`). Read only (api/services/run_facts.py)."""
+    require_project_member(project_id, current_user, db)
+    version = _version(db, project_id, version_id)
+    from ..services.run_facts import run_facts
+    return run_facts(db, version.id)
+
+
 @router.post("/projects/{project_id}/versions/{version_id}/resume", status_code=202)
 def resume_version(project_id: str, version_id: str,
                    current_user: User = Depends(get_current_user),
