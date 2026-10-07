@@ -411,6 +411,20 @@
 
       <span class="text-outline-variant select-none">·</span>
       <span id="sb-status-badge"></span>
+
+      <!-- Needs attention (web-app components/attention/AttentionChip.tsx, 2026-10-07h): one chip instead of
+           the banners that stacked on the Overview -- a failed run, every other run at work or cut short, a run's
+           warnings, the version's generation stopped or at work. The most pressing first and "+N"; amber when
+           something failed or warned, blue when only work is under way; hidden when there is nothing. It opens
+           the drawer below. The sample: a failed run and two other runs. -->
+      <span class="text-outline-variant select-none">·</span>
+      <button onclick="openAttention()" title="Needs attention: what failed, stopped, is at work or warned"
+              style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:9999px;border:1px solid #f59e0b;background:#fff8e6;color:#92400e;font-family:'JetBrains Mono';font-size:11px;font-weight:600;white-space:nowrap;">
+        <span class="material-symbols-outlined sym-fill" style="font-size:13px;">warning</span>Run failed · +2
+      </button>
+      <!-- Superusers only: the project's and the version's ids, for analyzer.py and the logs; a click copies one -->
+      <span class="text-outline-variant select-none">·</span>
+      <span title="Project and version ids (superusers) — click to copy" style="font-family:'JetBrains Mono';font-size:10px;color:#74777d;cursor:pointer;">pfc66bf4b · ver3a1b2c3d</span>
     </div>
     <!-- Subbar CTAs -->
     <div class="flex items-center gap-1.5">
@@ -1033,13 +1047,14 @@
             <label class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:11px;">Compare against</label>
             <span style="font-size:10px;color:#c4c6cd;font-family:'JetBrains Mono';">OPTIONAL</span>
           </div>
-          <select id="run-modal-reference"
+          <select id="run-modal-reference" onchange="refHint(this)"
             class="w-full border border-outline-variant rounded-lg px-3 py-2 text-on-surface bg-white cursor-pointer focus:outline-none"
             style="font-family:'JetBrains Mono';font-size:12px;"
             onfocus="this.style.borderColor='#0058be'" onblur="this.style.borderColor='#c4c6cd'">
             <option value="">— None —</option>
           </select>
           <p class="font-label-sm text-label-sm text-on-surface-variant mt-1.5" style="font-size:11px;">Enables diff view between this run and the selected version.</p>
+          <p id="run-ref-hint" style="display:none;font-family:'JetBrains Mono';font-size:11px;color:#0058be;margin-top:4px;"></p>
         </div>
 
         <!-- Version name -->
@@ -3336,6 +3351,56 @@ currentState = _initCommit ? _initCommit.pageState : 'in_review';
 updateChip();
 renderReviewViews();   // KPI, documents, review queue, last actions, bell
 setState(currentState, _initCommit);
+</script>
+
+<!-- ══════════════ NEEDS ATTENTION DRAWER (the Subbar chip) ══════════════ -->
+<div id="attention-drawer" style="display:none;position:fixed;inset:0;z-index:300;">
+  <div onclick="closeAttention()" style="position:absolute;inset:0;background:rgba(4,22,39,.32);"></div>
+  <aside role="dialog" aria-modal="true" aria-labelledby="attn-title" style="position:absolute;top:0;right:0;bottom:0;width:min(640px,100%);background:#fff;box-shadow:-8px 0 24px rgba(4,22,39,.14);display:flex;flex-direction:column;">
+    <header style="padding:18px 24px 14px;border-bottom:1px solid #e2e3e8;display:flex;align-items:flex-start;gap:12px;">
+      <div style="flex:1;min-width:0;">
+        <h2 id="attn-title" style="font-family:Inter,sans-serif;font-size:18px;font-weight:600;color:#0b1c30;">Needs attention</h2>
+        <p style="font-size:12px;color:#74777d;margin-top:2px;">3 things: runs that failed, stopped or are at work, and what a run warned about.</p>
+      </div>
+      <button onclick="closeAttention()" aria-label="Close" style="color:#74777d;"><span class="material-symbols-outlined" style="font-size:20px;">close</span></button>
+    </header>
+    <div style="flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:16px;">
+      <!-- The failed analysis: as the Overview's banner was, with Logs (superusers) and Re-run (admins; opens
+           the Overview's Run dialog). Gone once a later run of its version is at work or complete. -->
+      <div style="border:1px solid rgba(186,26,26,.32);background:rgba(186,26,26,.05);border-radius:12px;padding:16px 20px;display:flex;align-items:flex-start;gap:12px;">
+        <span class="material-symbols-outlined sym-fill" style="font-size:20px;color:#93000a;">error</span>
+        <div style="flex:1;min-width:0;">
+          <p style="font-size:13px;font-weight:600;color:#0b1c30;">Last analysis failed — v1.3.0</p>
+          <p style="font-family:'JetBrains Mono';font-size:11px;color:#74777d;margin-top:2px;">main @ 9d4dd0f · 2 hours ago</p>
+          <p style="font-family:'JetBrains Mono';font-size:12px;color:#93000a;margin-top:8px;">Checkout failed: the commit is not on the remote</p>
+        </div>
+        <a href="live-logs.html?job=jobF" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:#0058be;text-decoration:none;padding:6px 4px;"><span class="material-symbols-outlined" style="font-size:14px;">terminal</span>Logs</a>
+        <button style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;background:#0058be;color:#fff;font-family:'JetBrains Mono';font-size:11px;font-weight:700;"><span class="material-symbols-outlined" style="font-size:14px;">replay</span>Re-run</button>
+      </div>
+      <!-- Other runs: one each, at work or cut short, whichever front door started them (CLI too) -->
+      <div style="border:1px solid #c4c6cd;border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;">
+        <span class="material-symbols-outlined spin" style="font-size:16px;color:#0058be;">autorenew</span>
+        <p style="flex:1;font-size:13px;color:#0b1c30;">Running export into v1.1.0 <span style="color:#74777d;">— stage parser 120/216 (55%)</span></p>
+      </div>
+      <div style="border:1px solid #fcd34d;background:#fffbeb;border-radius:12px;padding:12px 16px;display:flex;align-items:flex-start;gap:12px;">
+        <span class="material-symbols-outlined" style="font-size:16px;color:#92400e;">pause_circle</span>
+        <div style="flex:1;min-width:0;">
+          <p style="font-size:13px;color:#0b1c30;">generate into v1.0.0 stopped 2 days ago, before it finished</p>
+          <code style="display:block;margin-top:4px;font-family:'JetBrains Mono';font-size:10px;color:#92400e;background:#fff3cd;padding:2px 6px;border-radius:3px;">python analyzer.py resume --project-id pfc66bf4b --version-id ver1a2b3c4d --detach</code>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+<script>
+function openAttention()  { document.getElementById('attention-drawer').style.display = ''; }
+function closeAttention() { document.getElementById('attention-drawer').style.display = 'none'; }
+// The Run dialog: compared against a version, the run starts with the components it has documents for.
+function refHint(sel) {
+  const h = document.getElementById('run-ref-hint');
+  h.style.display = sel.value ? '' : 'none';
+  if (sel.value) h.textContent = 'Starts with the 3 components ' + sel.selectedOptions[0].text.split(' ')[0] + ' has documents for.';
+}
 </script>
 </body>
 </html>
