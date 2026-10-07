@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useInviteMember, useUserSearch } from '../../../hooks/useTeamMutations'
-import { Avatar, Button, Icon, Modal, Skeleton, Text } from '../../../components/ui'
+import { Avatar, Button, Icon, Modal, Skeleton, Text, toast } from '../../../components/ui'
 import { cn } from '../../../lib/cn'
+import { copyText } from '../../../lib/clipboard'
 import type { TeamMember, UserRole } from '../../../types'
 
 /* Add a person to the project (A20): search everyone with an account by name or email and pick
@@ -67,7 +68,10 @@ export function AddMemberDialog({
           </Text>
           <div className="flex items-center gap-2">
             <code className="flex-1 px-3 py-2 rounded-lg bg-surface-container-low border border-outline-variant font-mono text-sm text-on-surface select-all">{created.password}</code>
-            <Button variant="outline" size="sm" onClick={() => { void navigator.clipboard?.writeText(created.password) }}>
+            <Button variant="outline" size="sm" onClick={() => {
+              void copyText(created.password).then((ok) => ok ? toast.success('Copied', 'The temporary password is on the clipboard.')
+                : toast.error('Copy failed', 'Select the password and copy it by hand.'))
+            }}>
               <Icon name="content_copy" size={14} />Copy
             </Button>
           </div>

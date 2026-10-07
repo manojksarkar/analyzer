@@ -1,10 +1,12 @@
-import { useState, useEffect, useRef, type ReactNode } from 'react'
+import { Fragment, useState, useEffect, useRef, type ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useVersions, useCommits, useCommitsLastSync, useProjects } from '../../hooks/useProjects'
 import { usePickerSelection } from '../../hooks/useProjectViewState'
+import { useAuthStore } from '../../store/auth'
 import { useUIStore, type Selection } from '../../store/ui'
-import { Icon, Skeleton, StatusBadge } from '../ui'
+import { Icon, Skeleton, StatusBadge, toast } from '../ui'
 import { cn } from '../../lib/cn'
+import { copyText } from '../../lib/clipboard'
 import { relativeTime } from '../../lib/format'
 import { STATUS_META, approvalLabel, pageStateStatus } from '../../lib/reviewStatus'
 import { describeVersionRun } from '../../lib/versionRun'
@@ -115,6 +117,44 @@ function CommitRow({ commit, isCurrent, isLast, onSelect }: { commit: Commit; is
   )
 }
 
+/** The version the picker shows: the one picked, or with nothing picked the layout's latest. */
+function activeVersionOf(selection: Selection | null | undefined, versions: Version[] | undefined, latest?: Version) {
+  return selection?.type === 'version'
+    ? versions?.find((v) => v.id === selection.id)
+    : !selection ? latest : undefined
+}
+
+/* ─── Superusers: the project's and the version's ids, for analyzer.py and the logs ─── */
+// A click copies one. Only superusers see them: an id means nothing to a reviewer.
+function SuperuserIds({ selectedVersion }: { selectedVersion?: Version }) {
+  const { projectId } = useParams<{ projectId: string }>()
+  const isSuperuser = useAuthStore((s) => !!s.user?.isSuperuser)
+  const { data: versions } = useVersions(projectId ?? '')
+  const selection = usePickerSelection(projectId ?? '')
+  if (!isSuperuser || !projectId) return null
+  const version = activeVersionOf(selection, versions, selectedVersion)
+  const ids: [string, string][] = [['Project', projectId], ...(version?.id ? [['Version', version.id] as [string, string]] : [])]
+  const copy = (what: string, id: string) => void copyText(id).then((ok) => ok
+    ? toast.success(`${what} id copied`, id)
+    : toast.error('Copy failed', `Select ${id} and copy it by hand.`))
+  return (
+    <>
+      <span className="text-outline-variant select-none" aria-hidden>·</span>
+      <span className="flex items-center gap-0.5 font-mono text-label text-outline" aria-label="Ids">
+        {ids.map(([what, id], i) => (
+          <Fragment key={what}>
+            {i > 0 && <span aria-hidden>·</span>}
+            <button type="button" title={`${what} id — click to copy`} onClick={() => copy(what, id)}
+              className="px-1 py-0.5 rounded hover:bg-surface-container hover:text-on-surface transition-colors">
+              {id}
+            </button>
+          </Fragment>
+        ))}
+      </span>
+    </>
+  )
+}
+
 /* ─── Commit/version picker ─── */
 function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: Version; selectedCommit?: Commit }) {
   const { projectId } = useParams<{ projectId: string }>()
@@ -148,9 +188,7 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
   // version, else the commit) so they stay mutually exclusive: the chip shows
   // the version tag by default and only falls back to "branch @ commit" when a
   // specific commit with no version is picked.
-  const activeVersion = selection?.type === 'version'
-    ? versions?.find((v) => v.id === selection.id)
-    : !selection ? selectedVersion : undefined
+  const activeVersion = activeVersionOf(selection, versions, selectedVersion)
   const activeCommit = selection?.type === 'commit'
     ? commits?.find((c) => c.sha === selection.sha)
     : (!selection && !selectedVersion) ? selectedCommit : undefined
@@ -367,6 +405,8 @@ export function Subbar({ projectName, selectedVersion, selectedCommit, statusBad
             {statusBadge}
           </>
         )}
+
+        <SuperuserIds selectedVersion={selectedVersion} />
       </div>
 
       <div ref={ctaSlotRef} className="flex items-center gap-1.5">{cta}</div>
