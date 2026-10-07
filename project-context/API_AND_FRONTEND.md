@@ -589,6 +589,16 @@ Contract [LIVE_LOGS_SPEC](../docs/spec/LIVE_LOGS_SPEC.md) (`REQ-LL-01…15`), ho
   with project, version and job (`pipeline_runner._job_thread`, reset when the job body ends): a thread does not inherit the
   request's context. `is_superuser` on the auth user (`api/routes/auth.py _user_to_dict`).
 
+### Needs attention (2026-10-07h)
+
+What used to stack as banners on the Overview -- a failed analysis, every other run at work or cut short,
+a run's warnings, and the version's generation stopped or at work -- is one chip beside the version in the
+Subbar (`components/attention/AttentionChip.tsx`, every project page; rules in `lib/attention.ts`), opening
+a drawer with each item and its buttons; a toast when something new needs attention. The version's own
+generation row (`GenerationBanner`) stays on the Overview. A failed analysis is not shown once a later run of
+its version is at work or complete (`failureSuperseded`). Re-run opens the Overview's Run dialog through
+`store/runModal.ts`.
+
 ### The Overview while a run works (2026-10-07d)
 
 Under the running panel, `pages/ProjectDetailPage/components/RunCards.tsx`: **Documents** (the asked-for

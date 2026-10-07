@@ -221,7 +221,8 @@ so neighbouring files can overlap by a few days — search the date tag.
 | File | Entries |
 |---|---|
 | [TIMELINE.md](project-context/history/TIMELINE.md) | **every dated change in one line, newest first — start here** |
-| [14-2026-10-05r.md](project-context/history/14-2026-10-05r.md) | from 2026-10-05r — **the newest: new entries go at the top** |
+| [15-2026-10-07h.md](project-context/history/15-2026-10-07h.md) | from 2026-10-07h — **the newest: new entries go at the top** |
+| [14-2026-10-05r.md](project-context/history/14-2026-10-05r.md) | 2026-10-05r … 2026-10-07g |
 | [13-2026-10-05c.md](project-context/history/13-2026-10-05c.md) | 2026-10-05c … 2026-10-05q; at its end, `review_update_v4`'s 2026-10-03 … 2026-10-03b |
 | [11-2026-09-29e.md](project-context/history/11-2026-09-29e.md) | 2026-09-29e … 2026-10-05b |
 | [12-2026-09-29-web-app.md](project-context/history/12-2026-09-29-web-app.md) | the web app branch `integrate/ui-v5`, 2026-09-29 … 2026-09-30f (13 entries), written beside files 10–11 and closed when it merged develop (2026-09-30g) |

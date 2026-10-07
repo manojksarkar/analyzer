@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-07h | The web app before the office demo: one chip for what needs attention instead of stacked banners, a failure a later run made good no longer shown, the approval gauge in both themes, an incremental run that starts from its baseline's components, ids for superusers, white icons on blue tiles, sign-in to Projects | [15](15-2026-10-07h.md) |
 | 2026-10-07g | Checked: fresh and incremental generation make the same Word files on this branch as on develop; an incremental run now keeps the names and chart entries it used to drop | [14](14-2026-10-05r.md) |
 | 2026-10-07f | Phase 3 draws a Word picture only for the flowcharts the SWE.3 document prints, by the exporter's own rule | [14](14-2026-10-05r.md) |
 | 2026-10-07e | Built: fast Word-file updates -- a correction's Word-file update exports from the stored data, and rewrites with the LLM only the texts in its components whose prompt holds the corrected one | [14](14-2026-10-05r.md) |
