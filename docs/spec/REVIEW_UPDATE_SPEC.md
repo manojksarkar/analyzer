@@ -426,72 +426,86 @@ byte-identical to the one a full regeneration produces for the same corrected CF
 Some LLM text is generated **from** other LLM text. Correcting the input must regenerate what was
 built on it, or the document keeps prose derived from wording the human has already rejected.
 
-Four chains exist. Traced from each generator's inputs:
+Only a **description** is read by another prompt — traced from each prompt builder, not guessed
+([FAST_WORD_FILE_UPDATES §4.1](../design/FAST_WORD_FILE_UPDATES.md#41-llm-texts-written-from-a-corrected-text)).
+No prompt reads an input or output name, a unit, struct or behaviour description, or a node label.
 
-```
-1  callee description            -> function description      get_description(source, callee_descriptions, …)
-2  function + global descriptions -> unit description          get_unit_description(unit, fn_items, gv_items, …)
-3  caller + callee descriptions   -> behaviour call description _build_call_context()
-4  source -> function summary -> file summary -> component summary -> project summary -> node labels
-```
-
-**Chain 4 starts from the SOURCE, not from descriptions** — `_summarize_function_batch` builds its
-prompt from the signature and body and never reads `description`. This is what keeps the cascade
-small: editing a description does **not** invalidate the ~42,000 flowchart node labels.
+**Flowchart node labels are written from descriptions too.** A chart's label prompts name the
+function's purpose (its description), its callers' descriptions, its callees' four calls deep and its
+globals' (`flowchart/pkb/builder`). Until 2026-10-07 this spec said the labels started from the
+source alone — true of the summariser that once wrote them, not of the label generator that does.
 
 ### REQ-CS-01 — What regenerates when a slot is edited
 
-| edited | regenerates |
+| edited | regenerates — the texts whose prompt holds it |
 |---|---|
-| function description | its unit's description · the descriptions of its **direct callers** · behaviour call descriptions where it is caller or callee |
-| global description | its unit's description |
-| unit description | nothing |
-| struct description | nothing |
-| behaviour in/out name | nothing — built from source, params, globals, return type |
-| behaviour description | nothing |
-| flowchart node label | nothing — the summary chain feeds *into* labels, not out |
+| function description | the descriptions of its callers, its callees and the other functions of its file · the descriptions of the globals it reaches through calls · its unit's description · the behaviour rows it is in: their incoming call, or their call tree · the labels of its own chart, its callees' charts and every chart within four calls above it |
+| global description | the descriptions, input and output names and chart labels of every function that reaches it through calls · its unit's description |
+| unit, struct or behaviour description, input or output name, node label | nothing |
 
-Regeneration is **deferred, not skipped**: the dependents are recorded when the correction is
-saved and rebuilt by a run that has the source and an LLM. Doing it in the request would need the
-git checkout, which the saving host may not have, and would make a saved sentence take minutes.
-Not recording them at all is not an option — the description cache is keyed on the callee's
-*source* plus its dependency hashes, and correcting a *description* changes neither, so a later run
-would hit the cache and the dependent would keep its stale wording for ever.
+These are **candidates**: prompts are cut to a token budget, so a far caller may not carry the
+corrected text. Each is rewritten only when its prompt really changed — built twice without the LLM,
+from the model with every description correction taken back to its LLM original and from the model as
+it is, and compared.
 
-**The debt is paid where each text is written**, and only there:
+Regeneration is **deferred, not skipped**: the dependents are recorded when the correction is saved
+(`regeneration_queue`) and rewritten by the Word-file update of their component, before it exports
+(`engine/review/rewrite.py`). Doing it in the request would need the git checkout, which the saving
+host may not have, and would make a saved sentence take minutes. Not recording them is not an option
+— the description cache is keyed on the source plus the callees' source hashes and the label cache on
+the source alone, and a corrected *description* moves neither, so a later run would hit the cache and
+keep the stale wording for ever.
+
+**Each text is rewritten by the generator that wrote it, and stored where it is stored:**
 
 | queued | paid by |
 |---|---|
-| function description | Phase 2's description step — told to write it afresh, **not to answer from the cache**: the cache key moves with the source, not with a corrected description, so a cache hit would hand back the very wording the queue exists to replace |
-| unit description | Phase 2's unit-description step |
-| behaviour description | the behaviour view, for the rows it builds — not by a run that did not build them (a SWE.4-only run, the view switched off, another component) |
+| function or global description | the update's rewrite step; or a re-derive's Phase 2 — told to write it afresh, **not to answer from the cache**: a cache hit would hand back the very wording the queue exists to replace |
+| unit description | the update's rewrite step; or a re-derive's unit-description step |
+| input and output names | the update's rewrite step; a name a reviewer corrected is kept |
+| behaviour description | the update's rewrite step, call by call — a call whose prompt did not move keeps its words; or the behaviour view, for the rows it builds — not by a run that did not build them (a SWE.4-only run, the view switched off, another component) |
+| a chart's labels | the update's Phase 3: the flowchart engine writes them again past its cache, which then holds the new ones; the corrected labels go back on top |
 
-An entry leaves the queue when its slot carries new text, or no longer exists. One a run could not pay
-— no LLM, descriptions switched off — stays owed, and the slot keeps its previous wording until then.
+**Within the update's own components** (decided with the user, D3): a text in another component waits
+in the queue for that component's update, or a re-derive. A text in a component with an approved
+document waits until the document is reopened, as a correction there is refused.
+
+An entry leaves the queue when its slot carries new text, when its prompt turns out not to hold the
+corrected text, or when the slot no longer exists. One that could not be paid — no LLM, descriptions
+switched off, no answer — stays owed, and the slot keeps its previous wording until then.
 
 **The queue travels with the text.** A new version generated from a baseline starts from the
 baseline's text, stale wording included, so it inherits the baseline's still-owed entries for what it
 still contains — unless a correction is in force there
 ([REQ-CS-03](#req-cs-03--a-regenerated-slot-does-not-overwrite-its-own-override)).
 
-**Verification:** editing a function description queues its unit description and its direct
-callers' descriptions for regeneration, and leaves node labels untouched. A queued function is not
-answered from the cache. A run with no LLM retires nothing; a SWE.4-only run retires no behaviour
-entry; a version generated from a baseline with entries owes them too.
+**Verification:** editing a function description queues the texts above
+(`tests/unit/test_review_cascade.py`). With a stub LLM the update rewrites exactly those whose prompt
+changed and retires the rest; a reviewer's text is kept; a text in another component, or whose rewrite
+got no answer, stays queued with its words; a behaviour row keeps the words of every call whose prompt
+did not move (`test_review_rewrite.py`). A queued description is not answered from the cache, and a
+rewritten chart's labels replace its cached ones (`test_flowchart_label_cache.py`). A run with no LLM
+retires nothing; a SWE.4-only run retires no behaviour entry; a version generated from a baseline with
+entries owes them too.
 
 "Regenerates" here means *new LLM text*. It is separate from **re-derivation**, which rebuilds view
 output from text that already exists and never calls an LLM — see
 [REQ-CS-04](#req-cs-04--a-node-label-edit-re-derives-the-components-swe4-specs).
 
-### REQ-CS-02 — Caller cascade is one level only
+### REQ-CS-02 — One level only
 
-Correcting A regenerates its direct callers. It does **not** continue transitively to their callers.
+A text is regenerated because its prompt holds the **corrected** text — never because it holds a text
+that was itself regenerated. With A ← B ← C, correcting A's description regenerates B's and leaves
+C's: C's prompt holds B's description, not A's. C's chart labels are regenerated — its label prompt
+names the callee hierarchy four calls deep, A's corrected description included — and that is one level
+too.
 
 Full transitivity could regenerate hundreds of functions from one edit, each an LLM call, with the
 effect growing without bound in a deep call graph. One level is predictable and bounded; a later full
 regeneration picks up the rest naturally.
 
-**Verification:** with A ← B ← C, editing A regenerates B and leaves C unchanged.
+**Verification:** with A ← B ← C, correcting A's description regenerates B's description, not C's;
+C's chart is queued for its labels.
 
 ### REQ-CS-03 — A regenerated slot does not overwrite its own override
 

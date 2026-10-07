@@ -26,7 +26,7 @@ import os
 import sys
 from typing import Any, Dict, Optional
 
-from sqlalchemy import delete, func, insert, select, update
+from sqlalchemy import delete, distinct, func, insert, or_, select, update
 
 from core.db_util import insert_chunked, insert_ignore, scrub_nulls
 
@@ -340,7 +340,12 @@ def load_edges(conn, version_id) -> Dict[str, dict]:
 _OUTPUT_TEXT_EXTS = (".json", ".mmd", ".txt", ".md", ".csv", ".dot", ".svg", ".html")
 
 
-def dump_output_files_to_dir(conn, version_id, out_dir) -> int:
+def _dir_key(name) -> str:
+    """A component's directory name compared as `export_guard.component_id` compares it."""
+    return (name or "").strip().replace(" ", "-").casefold()
+
+
+def dump_output_files_to_dir(conn, version_id, out_dir, groups=None) -> int:
     """Write a version's stored TEXT view files back under `out_dir`. Returns files written.
 
     The counterpart of `persist_output_files`, and what lets a BASELINE's Phase-3 output be
@@ -354,10 +359,20 @@ def dump_output_files_to_dir(conn, version_id, out_dir) -> int:
 
     PNGs are NOT restored (they are not stored — D-14). A carried unit whose JSON is restored
     but whose PNG is missing simply gets re-rendered from the DOT, which is correct.
+
+    `groups`: only these components' directories (and the files outside any directory) -- what
+    an export-only run of them reads (FAST_WORD_FILE_UPDATES P2). A component is matched as the
+    export guard matches it: `Layer1.Sample Core` is `layer1.sample-core`. None: every row.
     """
-    rows = conn.execute(select(s.version_output_files.c.rel_path,
-                               s.version_output_files.c.content)
-                        .where(s.version_output_files.c.version_id == version_id)).fetchall()
+    vof = s.version_output_files
+    q = select(vof.c.rel_path, vof.c.content).where(vof.c.version_id == version_id)
+    if groups is not None:
+        want = {_dir_key(g) for g in groups if g}
+        names = [g for (g,) in conn.execute(select(distinct(vof.c.group_name))
+                                            .where(vof.c.version_id == version_id)).fetchall()
+                 if g and _dir_key(g) in want]
+        q = q.where(or_(vof.c.group_name.in_(names), vof.c.group_name.is_(None)))
+    rows = conn.execute(q).fetchall()
     if not rows:
         return 0
     n = 0

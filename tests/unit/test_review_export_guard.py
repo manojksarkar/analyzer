@@ -572,9 +572,10 @@ class TestItIsWiredIntoReexport:
     def _source():
         return open(os.path.join(PROJECT_ROOT, "analyzer.py"), encoding="utf-8").read()
 
-    # A run by component passes its components (judged on them alone, 2026-10-06).
+    # A run by component passes its components (judged on them alone, 2026-10-06), and owed
+    # pictures do not count: the run draws them before run.py checks (FAST_WORD_FILE_UPDATES P2).
     CALL = re.compile(r"^[ 	]+rc = _refuse_stale_export\(a\.version_id, doc_type"
-                      r"(?:, components=named)?\)", re.M)
+                      r"(?:, components=named)?(?:, pictures=False)?\)", re.M)
 
     def test_reexport_calls_the_guard(self):
         assert self.CALL.search(self._source()), (
@@ -867,3 +868,89 @@ class TestStaleComponentsInOnePass:
 
     def test_nothing_when_nobody_corrected_anything(self, conn):
         assert g.stale_components(conn, "v1", None, ["A", "B"]) == []
+
+
+class TestTextTheExportReadsFromTheModel:
+    """FAST_WORD_FILE_UPDATES P1. An input or output name and a unit description are read from the
+    MODEL at export (the exporter and the web page): no stored view holds a copy of them, so no
+    view can be behind them. Asked about `interfaceTables`, each such save sent its component's
+    Word-file update through Phase 3 -- every flowchart redrawn -- for nothing."""
+
+    @pytest.mark.parametrize("kind,key", [("inputName", "Comp|UnitA|f|"),
+                                          ("outputName", "Comp|UnitA|f|"),
+                                          ("unitDescription", "Comp|UnitA")])
+    def test_its_correction_needs_the_export_only(self, conn, kind, key):
+        _derived(conn, T0, views=("interfaceTables",))
+        _override(conn, T1, key=key, kind=kind)
+        assert not g.staleness(conn, "v1", "swe3", component="Comp").is_stale
+        assert g.stale_components(conn, "v1", "swe3", ["Comp"]) == []
+
+    def test_a_description_is_still_asked_about_its_copy(self, conn):
+        """The interface table keeps a copy of a description: that copy can be behind."""
+        _derived(conn, T0)
+        _override(conn, T1)
+        assert g.stale_components(conn, "v1", "swe3", ["Comp"]) == ["Comp"]
+
+
+class TestAStructDescriptionIsJudgedWhereItIsShown:
+    """A struct description's key names a type, not a component. Asked about one component, it
+    counts where that component's stored unit header table shows the type -- R9's rule
+    (`word_files.struct_placement`). The minimum over every component sent every component's
+    update through Phase 3 once one struct was corrected (FAST_WORD_FILE_UPDATES P1)."""
+
+    @staticmethod
+    def _tables(conn, shown_in=("A",), before_type_keys=()):
+        for comp in ("A", "B"):
+            row = {"declaration": "struct Point { int x; };", "information": "llm",
+                   "typeKey": "Point" if comp in shown_in else "Other"}
+            if comp in before_type_keys:
+                row.pop("typeKey")
+            conn.execute(sa.insert(s.version_output_files).values(
+                version_id="v1", rel_path="%s/unit_headers.json" % comp, group_name=comp,
+                content=json.dumps({"%s|U" % comp: [row]})))
+        for comp in ("A", "B"):
+            _derived(conn, T0, views=("unitHeaders",), component=comp)
+
+    def test_only_where_it_is_shown(self, conn):
+        self._tables(conn, shown_in=("A",))
+        _override(conn, T1, key="Point", kind="structDescription")
+        assert g.stale_components(conn, "v1", "swe3", ["A", "B"]) == ["A"]
+        _derived(conn, T2, views=("unitHeaders",), component="A")      # the save patched A's table
+        assert g.stale_components(conn, "v1", "swe3", ["A", "B"]) == []
+
+    def test_a_table_from_before_type_keys_is_read_cautiously(self, conn):
+        self._tables(conn, shown_in=("A",), before_type_keys=("B",))
+        _override(conn, T1, key="Point", kind="structDescription")
+        assert g.stale_components(conn, "v1", "swe3", ["A", "B"]) == ["A", "B"]
+
+    def test_the_whole_version_keeps_the_cautious_reading(self, conn):
+        self._tables(conn, shown_in=("A",))
+        _override(conn, T1, key="Point", kind="structDescription")
+        _derived(conn, T2, views=("unitHeaders",), component="A")
+        assert g.staleness(conn, "v1", "swe3").is_stale                 # B's stamp is older
+
+
+class TestOwedPicturesAndTheComponentsAnExportWrites:
+    """FAST_WORD_FILE_UPDATES P2."""
+
+    def test_an_owed_picture_does_not_decide_a_run_that_draws_it_first(self, conn):
+        from review import render_queue as rq, slot
+        views = ("flowcharts", "testSpecs", "utExport")
+        _override(conn, T1, key=slot.for_node("Comp|UnitA|f|", "N1"), kind="nodeLabel")
+        _derived(conn, T2, views=views)                                 # the save stamped them
+        rq.enqueue(conn, "v1", "Comp|UnitA|f|", "UnitA_f.png", now=T1)
+        assert g.stale_components(conn, "v1", "swe3", ["Comp"]) == ["Comp"]
+        assert g.stale_components(conn, "v1", "swe3", ["Comp"], pictures=False) == []
+        assert not g.staleness(conn, "v1", "swe3", component="Comp", pictures=False).is_stale
+
+    def test_a_correction_in_another_component_does_not_refuse_the_export(self, conn):
+        """run.py's backstop asked about the whole version: one un-updated correction in Lib
+        refused an export-only update of Sample Core."""
+        _derived(conn, T0, component="A")
+        _derived(conn, T0, component="B")
+        _override(conn, T1, key="B|U|f|")
+        g.assert_exportable(conn, "v1", "swe3", components=["A"])
+        with pytest.raises(g.StaleExport):
+            g.assert_exportable(conn, "v1", "swe3", components=["A", "B"])
+        with pytest.raises(g.StaleExport):
+            g.assert_exportable(conn, "v1", "swe3")                      # the whole version

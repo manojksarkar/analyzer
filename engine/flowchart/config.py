@@ -63,6 +63,16 @@ class EngineConfig:
     units: tuple = ()
     restrict_from_plan: bool = False
 
+    # --- writing charts' labels again (FAST_WORD_FILE_UPDATES P5) ----------------------------
+    # A reviewer corrected a description these charts' label prompts hold. Their labels are
+    # written again past the label cache -- keyed by the source alone, it would hand back the
+    # labels written from the rejected text -- and the cache then holds the new ones. Each
+    # chart rewritten without a fallback label is appended to `rewrite_report`, which is what
+    # retires its queue entry. `only_rewrite` charts those functions alone (an update).
+    rewrite_keys: frozenset = frozenset()
+    rewrite_report: Optional[str] = None
+    only_rewrite: bool = False
+
     # LLM call settings
     llm_timeout: int = 120
     llm_max_retries: int = 2

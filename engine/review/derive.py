@@ -64,6 +64,24 @@ VIEWS_BY_KIND: Dict[str, Tuple[str, ...]] = {
 }
 
 
+#: Kinds no stored view holds a copy of: the exporter and the web page read them from the MODEL
+#: (`docx_exporter`, `api/services/doc_render`), which the save writes at once.
+READ_FROM_THE_MODEL = frozenset((slot.INPUT_NAME, slot.OUTPUT_NAME, slot.UNIT_DESCRIPTION))
+
+
+def copies_for(slot_kind: str) -> Tuple[str, ...]:
+    """The stored views that hold a COPY of `slot_kind`'s text -- what an export prints instead of
+    the model's, and so what the export guard asks about (`export_guard._judge`).
+
+    `views_for` minus the kinds read from the model. Asked about `interfaceTables`, a save of an
+    input name, an output name or a unit description -- none of which that view copies -- read as
+    behind until Phase 3 ran, and every Word-file update of its component redrew every flowchart
+    (FAST_WORD_FILE_UPDATES P1). `views_for` stays the answer to "which documents print it" (R9).
+    """
+    views = views_for(slot_kind)
+    return () if slot_kind in READ_FROM_THE_MODEL else views
+
+
 def views_for(slot_kind: str) -> Tuple[str, ...]:
     """The views `slot_kind` invalidates. Raises for a kind that is not editable.
 

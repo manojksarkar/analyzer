@@ -231,6 +231,15 @@ def _component_of(slot_kind: str, slot_key: str, component_of) -> Optional[str]:
     return component_id(component_of(slot_kind, slot_key))
 
 
+def _struct_type_key(slot_kind: str, slot_key: str) -> str:
+    """The type a struct description is keyed by, as R9 reads it (`word_files.states`)."""
+    from review import slot as _slot
+    try:
+        return _slot.parse(slot_kind, slot_key).get("entity_key") or slot_key
+    except Exception:                               # noqa: BLE001
+        return slot_key
+
+
 # ---------------------------------------------------------------------------
 # the question
 # ---------------------------------------------------------------------------
@@ -280,7 +289,8 @@ def _derivation_stamps(conn, version_id: str) -> Dict[Tuple[str, str], datetime.
     return stamps
 
 
-def staleness(conn, version_id: str, doc_types=None, component: Optional[str] = None) -> Staleness:
+def staleness(conn, version_id: str, doc_types=None, component: Optional[str] = None, *,
+              pictures: bool = True) -> Staleness:
     """Whether exporting `doc_types` of this version would ship text a correction replaced.
 
     `doc_types` is what the export writes -- `"swe3"`, `"swe4"`, `"all"` -- and only the views
@@ -288,23 +298,33 @@ def staleness(conn, version_id: str, doc_types=None, component: Optional[str] = 
 
     `component` narrows the question to one component's documents -- whether ITS Word file has
     every correction, which is what approving one document asks (REVIEW_APPROVE_API_SPEC A6,
-    A15). A correction keyed by no component (a struct description) still counts, as everywhere
-    else here: which unit prints it is not in its key. So does one this build cannot place.
+    A15). A correction keyed by no component -- a struct description -- counts where that
+    component's stored unit header table shows the type, as R9 places it
+    (`word_files.struct_placement`; cautious for a table from before `typeKey`). One this build
+    cannot place counts everywhere.
+
+    `pictures=False`: an owed picture does not count (`stale_components`).
     """
-    return _judge(conn, version_id, _rows_in_force(conn, version_id), doc_types, component, {})
+    return _judge(conn, version_id, _rows_in_force(conn, version_id), doc_types, component, {},
+                  pictures=pictures)
 
 
-def stale_components(conn, version_id: str, doc_types, components: Iterable[str]) -> List[str]:
+def stale_components(conn, version_id: str, doc_types, components: Iterable[str], *,
+                     pictures: bool = True) -> List[str]:
     """Of `components`, those whose documents are behind a correction -- `staleness(...,
     component=c).is_stale` for each, with what that reads (the render queue, the derivation stamps,
     the stored records) read ONCE: R9's `staleComponents` asks it of every component with a
-    document, and the web app polls R9 while a re-export runs."""
+    document, and the web app polls R9 while a re-export runs.
+
+    `pictures=False`: a picture still owed does not count -- for a run that draws its components'
+    owed pictures before its own check (`render_queue.run_pending(components=...)`, analyzer.py
+    `reexport`), asked beforehand whether it needs Phase 3 (FAST_WORD_FILE_UPDATES P2)."""
     rows = _rows_in_force(conn, version_id)
     if not rows:
         return []
     cache: Dict[str, Any] = {}
     return [c for c in components
-            if _judge(conn, version_id, rows, doc_types, c, cache).is_stale]
+            if _judge(conn, version_id, rows, doc_types, c, cache, pictures=pictures).is_stale]
 
 
 def _rows_in_force(conn, version_id: str) -> list:
@@ -327,10 +347,11 @@ def _cached(cache: Dict[str, Any], key: str, load):
 
 
 def _judge(conn, version_id: str, rows, doc_types, component: Optional[str],
-           cache: Dict[str, Any]) -> Staleness:
+           cache: Dict[str, Any], *, pictures: bool = True) -> Staleness:
     """`staleness` from the corrections in force (`rows`); what else it reads is kept in `cache`
     for the next component's question (`stale_components`)."""
-    from review.derive import component_of, views_for
+    from review import slot as _slot
+    from review.derive import component_of, copies_for
 
     if component:
         want = component_id(component)
@@ -382,15 +403,17 @@ def _judge(conn, version_id: str, rows, doc_types, component: Optional[str],
                   if types and "swe3" in types else None)
     # Only a document with pictures waits for one: SWE.4 prints no flowchart, and SWE.3 only
     # where a SWE.3 run draws them.
-    if renders.pending and (types is None or "flowcharts" in views_read(("flowcharts",), types,
-                                                                        swe3_built)):
+    if pictures and renders.pending and (types is None or "flowcharts" in views_read(
+            ("flowcharts",), types, swe3_built)):
         return verdict(True, "%d flowchart image(s) are still being drawn" % renders.pending,
                        min(stamps.values()) if stamps else None)
 
     oldest = None
     for r in rows:
         try:
-            views = views_read(views_for(r.slot_kind), types, swe3_built)
+            # The views holding a COPY of the text (`copies_for`): an input or output name and a
+            # unit description are read from the model at export, so no view can be behind them.
+            views = views_read(copies_for(r.slot_kind), types, swe3_built)
             comp = _component_of(r.slot_kind, r.slot_key, component_of)
         except Exception as exc:                    # noqa: BLE001 -- a row this build cannot place
             # Not evidence of freshness. A correction the guard cannot read is a correction it
@@ -398,6 +421,17 @@ def _judge(conn, version_id: str, rows, doc_types, component: Optional[str],
             return verdict(True, "a correction this build cannot place (%s %r: %s)"
                            % (r.slot_kind, r.slot_key, exc), oldest)
         when = _aware(r.updated_at) if r.updated_at else newest
+        if comp is None and component and views and r.slot_kind == _slot.STRUCT_DESCRIPTION:
+            # Asked about ONE component, a struct description counts where that component's
+            # stored unit header table shows the type -- R9's rule (`word_files.struct_placement`),
+            # cautious for a table from before `typeKey`. The minimum over every component made a
+            # struct correction send every component's update through Phase 3.
+            from review.word_files import struct_placement
+            placement = _cached(cache, "struct_placement",
+                                lambda: struct_placement(conn, version_id))
+            if not placement.prints(_struct_type_key(r.slot_kind, r.slot_key), component):
+                continue
+            comp = component_id(component)
         for view in sorted(views):
             if comp is None:
                 # A key that names no component -- a struct description is keyed by its type.
@@ -422,14 +456,27 @@ def _judge(conn, version_id: str, rows, doc_types, component: Optional[str],
     return verdict(False, "up to date", oldest)
 
 
-def assert_exportable(conn, version_id: str, doc_types=None) -> Staleness:
+def assert_exportable(conn, version_id: str, doc_types=None,
+                      components: Optional[Iterable[str]] = None, *,
+                      pictures: bool = True) -> Staleness:
     """Raise `StaleExport` if exporting `doc_types` now would ship superseded text.
 
     A FAILED render does not raise -- see `staleness` -- but it is still said out loud, because
     `REQ-IM-03` promises the document never goes out stale *without somebody being told*. Silence
     here would make that promise false while the code looked fine.
+
+    `components`: the components this export writes. Only their corrections decide, as an update
+    by component is judged (`stale_components`): asked about the whole version, a correction in
+    a component nobody is exporting refused the export of every other (FAST_WORD_FILE_UPDATES
+    P2). None: the whole version.
     """
-    st = staleness(conn, version_id, doc_types)
+    comps = [c for c in (components or ()) if c]
+    if comps:
+        judged = [staleness(conn, version_id, doc_types, component=c, pictures=pictures)
+                  for c in comps]
+        st = next((j for j in judged if j.is_stale), judged[0])
+    else:
+        st = staleness(conn, version_id, doc_types, pictures=pictures)
     if st.failed_renders and not st.is_stale:
         from core.logging_setup import get_logger
         get_logger("review").warning(

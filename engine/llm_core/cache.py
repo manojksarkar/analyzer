@@ -138,6 +138,40 @@ class EntityCache:
         if batch:
             self._write(batch)
 
+    def replace(self, entity_id: str, content_hash: str, value: str) -> None:
+        """Record *value* under the key, REPLACING what is stored -- written at once, not buffered.
+
+        For a text rewritten on purpose: a reviewer corrected a text it was written from (the
+        review regeneration queue, FAST_WORD_FILE_UPDATES P5). Its key is the source and the
+        callees' source hashes, which a corrected description does not move, so `put` -- first
+        writer wins -- kept the old wording, and the next generation brought it back.
+        """
+        if not value:
+            return
+        key = (entity_id, content_hash)
+        with self._lock:
+            self._loaded[key] = value
+            self._pending.pop(key, None)
+        if not self._enabled:
+            return
+        try:
+            from api.db.postgres import schema as s
+            from core.db import get_engine
+            from core.db_util import upsert
+            with get_engine().begin() as cx:
+                upsert(cx, s.llm_description_cache,
+                       [{"project_id": self._project, "namespace": self._namespace,
+                         "cache_version": self._version, "entity_id": entity_id,
+                         "content_hash": content_hash, "value": value,
+                         "created_at": datetime.datetime.now(datetime.timezone.utc)}],
+                       keys=("project_id", "namespace", "cache_version", "entity_id",
+                             "content_hash"),
+                       update=("value", "created_at"))
+            with self._lock:
+                self._writes += 1
+        except Exception as exc:
+            logger.warning("LLM cache replace failed (%s); continuing without it.", exc)
+
     def flush(self) -> None:
         """Persist buffered entries. Safe to call repeatedly and when empty."""
         with self._lock:

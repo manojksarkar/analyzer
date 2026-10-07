@@ -387,6 +387,40 @@ class TestTheRegenerationQueueTravels:
         assert cf.carry_overrides(conn, "v3", "v4").queued == 0
         assert len(cascade.pending(conn, "v4")) == 1
 
+    NAMES = slot.for_entity(slot.INPUT_NAME, FID)
+
+    def test_a_names_entry_and_a_chart_entry_are_carried(self, conn):
+        """The two kinds only a Word-file update rewrites -- no generation does (FAST_WORD_FILE_
+        UPDATES P5). Left behind, an incremental run dropped them: the new version printed the
+        names and labels written from the rejected text, and nothing asked for them again."""
+        self._queue(conn, "v3", slot.INPUT_NAME, self.NAMES)
+        self._queue(conn, "v3", cascade.FLOWCHART_LABELS, FID)
+        _seed_version(conn, "v4")
+        assert cf.carry_overrides(conn, "v3", "v4").queued == 2
+        assert self._pending(conn, "v4") == {(slot.INPUT_NAME, self.NAMES),
+                                            (cascade.FLOWCHART_LABELS, FID)}
+
+    def test_a_chart_entry_for_a_function_gone_stays_behind(self, conn):
+        self._queue(conn, "v3", cascade.FLOWCHART_LABELS, "Comp|UnitA|ns::gone|void")
+        _seed_version(conn, "v4")
+        assert cf.carry_overrides(conn, "v3", "v4").queued == 0
+
+    def test_one_corrected_name_leaves_the_other_owed(self, conn):
+        """A names entry stands for both names: one corrected, the other is still owed."""
+        _override(conn, "v3", slot.INPUT_NAME, self.NAMES)
+        self._queue(conn, "v3", slot.INPUT_NAME, self.NAMES)
+        _seed_version(conn, "v4")
+        out = cf.carry_overrides(conn, "v3", "v4")
+        assert (out.carried, out.queued) == (1, 1)
+
+    def test_both_names_corrected_is_the_reviewers_text(self, conn):
+        _override(conn, "v3", slot.INPUT_NAME, self.NAMES)
+        _override(conn, "v3", slot.OUTPUT_NAME, slot.for_entity(slot.OUTPUT_NAME, FID))
+        self._queue(conn, "v3", slot.INPUT_NAME, self.NAMES)
+        _seed_version(conn, "v4")
+        out = cf.carry_overrides(conn, "v3", "v4")
+        assert (out.carried, out.queued) == (2, 0)
+
 
 class TestWhatPhase3Receives:
     def test_the_config_payload_has_the_shape_the_views_read(self, conn):

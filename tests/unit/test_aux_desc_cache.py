@@ -119,3 +119,33 @@ def test_rich_enrichment_regenerate_does_not_answer_from_the_cache(monkeypatch):
         "Stale, from the cache."
     assert le.enrich_functions_rich(funcs(), "/tmp", _CFG, regenerate={"A|U|f|"})[
         "A|U|f|"]["description"] == "Fresh, pass two."
+
+
+def test_behaviour_call_descriptions_cached(tmp_path, monkeypatch):
+    """FAST_WORD_FILE_UPDATES P4. Asked again on every Phase 3, every behaviour row was re-worded
+    each run -- rows nobody corrected changed -- and each call paid the gateway's pause. Cached by
+    the prompt: the same caller and callee descriptions give the same words with no call, and a
+    corrected description (it is in the prompt) asks again."""
+    from behaviour_diagram.llm_call_description import CallDescriptionGenerator
+    _fresh_cache(tmp_path, monkeypatch)
+    calls = []
+
+    class Client:
+        def generate(self, system, prompt):
+            calls.append(prompt)
+            return "Run calls compute to add the numbers."
+
+    functions = {"A|U|run|": {"description": "Runs the job."},
+                 "B|V|compute|": {"description": "Adds two numbers."}}
+
+    def describe():
+        gen = CallDescriptionGenerator(_CFG)
+        gen._llm_available, gen._llm_client = True, Client()
+        return gen.get_call_description("A|U|run|", "B|V|compute|", lambda k: k.split("|")[2],
+                                        functions)
+
+    assert describe() == describe() == "Run calls compute to add the numbers."
+    assert len(calls) == 1                                       # the second run reused it
+    functions["B|V|compute|"]["description"] = "Sums two integers."   # a reviewer's correction
+    describe()
+    assert len(calls) == 2                                       # its rows are asked again

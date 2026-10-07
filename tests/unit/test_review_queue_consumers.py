@@ -349,7 +349,7 @@ class TestTheConsumersAreWiredIn:
         src = self._src("engine/run_views.py")
         call = self._matcher(self.CASES["Phase 3 retires behaviour rows"][1]).search(src)
         assert call and call.start() > src.index(
-            "run_views(model, output_dir, model_dir, config, doc_type=doc_type)")
+            "ran = run_views(model, output_dir, model_dir, config, doc_type=doc_type")
 
 
 class TestAFailedRewriteLeavesTheModelAsItFoundIt:

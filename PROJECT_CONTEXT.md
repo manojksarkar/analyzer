@@ -81,6 +81,11 @@ newer entry and the code win.
   only what they rebuilt; developers update what they review; migration **0018** (`analyzer.py setup`).
   The web screens follow the mockup (2026-10-06). [WORD_FILE_UPDATES.md](docs/design/WORD_FILE_UPDATES.md);
   [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Word file updates".
+- **Fast Word-file updates** (2026-10-07, branch `feat/fast-word-updates`, not committed): an update exports
+  from the stored data, and rewrites with the LLM only its components' texts whose prompt holds a corrected
+  one (`engine/review/rewrite.py`; charts through its own Phase 3, `run.py --views --rewrite-labels`). A label
+  update 237 s → 13–22 s. Fresh and incremental generation make the same Word files as on develop (checked
+  side by side, 2026-10-07c). [FAST_WORD_FILE_UPDATES.md](docs/design/FAST_WORD_FILE_UPDATES.md); HANDOVER §4.35–4.40.
 - **Live logs for superusers** (backend; 2026-10-06, branch `feat/live-logs`): one stream of API and
   engine log lines, tail + SSE, read from per-process files under `logs/live/`. Built; the web page
   is next. [LIVE_LOGS_SPEC](docs/spec/LIVE_LOGS_SPEC.md), [LIVE_LOGS_DESIGN](docs/design/LIVE_LOGS_DESIGN.md),

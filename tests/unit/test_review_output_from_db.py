@@ -205,6 +205,41 @@ class TestAnExportOnlyRunReadsTheDatabase:
         assert (tmp_path / "G" / "test_specs.json").read_text(encoding="utf-8") == \
             "the corrected text"
 
+    def test_an_export_only_run_restores_its_components_alone(self, tmp_path):
+        """FAST_WORD_FILE_UPDATES P2: an export-only update of one component wrote every
+        component's stored output to disk first. Matched as the guard matches a component."""
+        import datetime
+        import sqlalchemy as sa
+        from api.db.postgres import schema as s
+        from core.model_store import dump_output_files_to_dir
+
+        eng = sa.create_engine("sqlite://")
+        s.metadata.create_all(eng)
+        with eng.begin() as cx:
+            now = datetime.datetime.now(datetime.timezone.utc)
+            cx.execute(sa.insert(s.projects).values(id="p", name="p", created_at=now))
+            cx.execute(sa.insert(s.versions).values(id="v1", project_id="p", version="v1",
+                                                    created_at=now))
+            for rel, group in (("Layer1.Sample-Core/a.json", "Layer1.Sample-Core"),
+                               ("Layer1.Lib/b.json", "Layer1.Lib"), ("top.json", None)):
+                cx.execute(sa.insert(s.version_output_files).values(
+                    version_id="v1", rel_path=rel, content="x", group_name=group))
+            assert dump_output_files_to_dir(cx, "v1", str(tmp_path),
+                                            groups=["Layer1.Sample Core"]) == 2
+        assert (tmp_path / "Layer1.Sample-Core" / "a.json").is_file()
+        assert (tmp_path / "top.json").is_file()
+        assert not (tmp_path / "Layer1.Lib").exists()
+
+    def test_only_an_export_only_run_restores_by_component(self):
+        """A run that derives restores everything: a view may read another component's output. An
+        update's Phase 3 limited to some views (`--views`: the flowcharts and SWE.4 views, which
+        read their own directory) restores by component too (FAST_WORD_FILE_UPDATES P5)."""
+        src = _src(self.SRC)
+        body = src[src.index("def _restore_output_from_db"):]
+        body = body[:body.index("\ndef ")]
+        assert ("groups = (_doc_components(plans) or None) if from_phase >= 4 or views_arg "
+                "else None") in body
+
     def test_it_is_never_fatal(self):
         """The export still runs from disk if the restore fails -- which is what it did before
         this existed -- but it says so."""

@@ -60,8 +60,10 @@ def views_to_run(doc_type, config):
     return selected
 
 
-def run_views(model, output_dir, model_dir, config, doc_type=DOC_TYPE_SWE3):
-    """Run the views a doc type needs (`views_to_run`).
+def run_views(model, output_dir, model_dir, config, doc_type=DOC_TYPE_SWE3, only=None):
+    """Run the views a doc type needs (`views_to_run`) -- of them, only those named in `only`
+    when given: an update's Phase 3, which re-derives the views a rewrite changed and keeps the
+    stored rest (FAST_WORD_FILE_UPDATES P5).
 
     model = {functions, globalVariables, units, components, dataDictionary}.
 
@@ -70,6 +72,8 @@ def run_views(model, output_dir, model_dir, config, doc_type=DOC_TYPE_SWE3):
     """
     ran = []
     for view_name in views_to_run(doc_type, config):
+        if only is not None and view_name not in only:
+            continue
         with timed(view_name):
             VIEW_REGISTRY[view_name](model, output_dir, model_dir, config)
         ran.append(view_name)

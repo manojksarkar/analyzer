@@ -203,3 +203,68 @@ class TestNodeAvailable:
             raise FileNotFoundError(cmd[0])
         monkeypatch.setattr(fc.subprocess, "run", missing)
         assert fc._node_available(PROJECT_ROOT) is False
+
+
+# ---------------------------------------------------------------------------
+# The Word pictures: only the charts a Word file prints
+# ---------------------------------------------------------------------------
+PUB, HELPER, LONE, OTHER = ("C|U|pub|", "C|U|helper|", "C|U|lone|", "C|V|other|")
+FUNCS = {
+    PUB: {"qualifiedName": "pub", "visibility": "public", "callsIds": [HELPER, OTHER]},
+    HELPER: {"qualifiedName": "helper", "visibility": "private", "callsIds": []},
+    LONE: {"qualifiedName": "lone", "visibility": "private", "callsIds": []},
+    OTHER: {"qualifiedName": "other", "visibility": "public", "callsIds": []},
+}
+TABLES = {"C|U": {"entries": [{"functionId": PUB, "type": "Function"},
+                              {"functionId": "C|U|g", "type": "Global Variable"}]},
+          "unitNames": ["U"]}
+
+
+class TestOnlyPrintedChartsGetAWordPicture:
+    """SWE.3 prints a public function's flowchart and its private callees'
+    (`docx_common.printed_flowcharts`, the exporter's own rule). Phase 3 drew a Word picture for
+    every chart -- 28 on Sample Core, of which 4 were printed."""
+
+    def test_the_rule(self):
+        from docx_common import flowchart_section, printed_flowcharts, private_callee_flowcharts
+        # pub's own; helper, its private callee; not `other` (public: printed in ITS unit's
+        # section, here it has none); not `lone`, which no public function calls.
+        assert printed_flowcharts(TABLES, FUNCS) == {PUB, HELPER}
+        assert private_callee_flowcharts(PUB, FUNCS) == [HELPER]
+        assert private_callee_flowcharts(PUB, FUNCS, hidden={HELPER}) == []
+        assert not flowchart_section({"functionId": PUB, "type": "Function"}, hidden={PUB})
+        assert not flowchart_section({"functionId": "C|U|g", "type": "Global Variable"})
+
+    def test_a_hidden_function_still_counts(self):
+        """Hiding is Phase 4's alone (set from the web app, no Phase 3): shown again later, the
+        function is printed with the picture Phase 3 drew."""
+        from docx_common import printed_flowcharts
+        funcs = {**FUNCS, PUB: {**FUNCS[PUB], "hidden": True}}
+        assert printed_flowcharts(TABLES, funcs) == {PUB, HELPER}
+
+    def test_the_exporter_prints_by_the_same_rule(self):
+        src = open(os.path.join(PROJECT_ROOT, "engine", "docx_exporter.py"), encoding="utf-8").read()
+        assert "(i for i in interfaces if _flowchart_section(i, _hidden_fids))" in src
+        assert "_private_callee_flowcharts(iface.get(\"functionId\")," in src
+
+    def _items(self, carried=False):
+        return [("U", name, "digraph{}", key, carried)
+                for name, key in (("pub", PUB), ("helper", HELPER), ("lone", LONE), ("old", None))]
+
+    def test_only_printed_charts_are_drawn(self, tmp_path):
+        from views.flowcharts import _pictures_to_draw
+        drawn = _pictures_to_draw(self._items(), {PUB, HELPER}, str(tmp_path))
+        # `old`: a chart stored before charts carried their key -- drawn, as before
+        assert [it[1] for it in drawn] == ["pub", "helper", "old"]
+
+    def test_without_interface_tables_every_chart_is_drawn(self, tmp_path):
+        from views.flowcharts import _pictures_to_draw
+        assert len(_pictures_to_draw(self._items(), None, str(tmp_path))) == 4
+
+    def test_a_carried_chart_is_drawn_only_when_printed_and_missing(self, tmp_path):
+        """A baseline drew only the charts it printed: a chart printed since, with no picture to
+        carry, is drawn; one with its picture (or its slices) on disk is not."""
+        from views.flowcharts import _pictures_to_draw
+        (tmp_path / "U_helper_part_1_of_2.png").write_bytes(b"png")
+        drawn = _pictures_to_draw(self._items(carried=True), {PUB, HELPER}, str(tmp_path))
+        assert [it[1] for it in drawn] == ["pub", "old"]

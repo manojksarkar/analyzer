@@ -587,3 +587,62 @@ class TestModelAccess:
         with pytest.raises(svc.SlotUnknown):
             _apply(conn, m, slot.STRUCT_DESCRIPTION,
                    slot.for_entity(slot.STRUCT_DESCRIPTION, TYPE), "Words.")
+
+
+class TestAStructCorrectionReachesTheUnitHeaderCopies:
+    """FAST_WORD_FILE_UPDATES P1. The Word file prints the unit header view's COPY of a struct's
+    description, not the model's. Unpatched, the copy kept the LLM's words until Phase 3, and the
+    export guard sent every Word-file update of the component through Phase 3 for it."""
+
+    OTHER_TYPE = "Comp||Other|"
+
+    @staticmethod
+    def _table(conn, comp, type_key, *, before_type_keys=False, info="Holds config."):
+        import json
+        row = {"declaration": "struct Cfg { int a; };", "information": info, "typeKey": type_key}
+        if before_type_keys:
+            row.pop("typeKey")
+        conn.execute(sa.insert(s.version_output_files).values(
+            version_id="v1", rel_path="%s/unit_headers.json" % comp, group_name=comp,
+            content=json.dumps({"%s|UnitA" % comp: [row]}, indent=2)))
+
+    @staticmethod
+    def _info(conn, comp):
+        import json
+        content = conn.execute(sa.select(s.version_output_files.c.content).where(
+            s.version_output_files.c.rel_path == "%s/unit_headers.json" % comp)).scalar()
+        [rows] = json.loads(content).values()
+        return rows[0]["information"]
+
+    @staticmethod
+    def _stamped(conn):
+        return {(r.view_name, r.group_name) for r in conn.execute(
+            sa.select(s.view_derivations.c.view_name, s.view_derivations.c.group_name))}
+
+    def test_every_copy_that_shows_it_and_the_components_it_can_vouch_for(self, conn):
+        self._table(conn, "Comp", TYPE)
+        self._table(conn, "Other", self.OTHER_TYPE)
+        self._table(conn, "Old", TYPE, before_type_keys=True)
+        out = _apply(conn, svc.ModelAccess(artifacts=_model()), slot.STRUCT_DESCRIPTION,
+                     slot.for_entity(slot.STRUCT_DESCRIPTION, TYPE), "Tuning parameters.")
+        assert self._info(conn, "Comp") == "Tuning parameters."
+        assert self._info(conn, "Other") == "Holds config."        # another type's row
+        assert self._info(conn, "Old") == "Holds config."          # cannot be placed
+        stamped = self._stamped(conn)
+        assert {("unitHeaders", "comp"), ("unitHeaders", "other")} <= stamped
+        assert ("unitHeaders", "old") not in stamped               # Phase 3 makes it again
+        assert list(out.views_derived) == []                       # reported: SWE.4 views only
+
+    def test_an_earlier_correction_goes_back_in_too(self, conn):
+        """A stamp says the copy carries every correction. One saved before saves patched the
+        copy was never written into it, so it goes in with the new one."""
+        self._table(conn, "Comp", TYPE)
+        self._table(conn, "Other", self.OTHER_TYPE, info="LLM words.")
+        conn.execute(sa.insert(s.text_overrides).values(
+            version_id="v1", slot_kind=slot.STRUCT_DESCRIPTION,
+            slot_key=slot.for_entity(slot.STRUCT_DESCRIPTION, self.OTHER_TYPE),
+            llm_text="LLM words.", human_text="Older words.", is_orphaned=False,
+            updated_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)))
+        _apply(conn, svc.ModelAccess(artifacts=_model()), slot.STRUCT_DESCRIPTION,
+               slot.for_entity(slot.STRUCT_DESCRIPTION, TYPE), "Tuning parameters.")
+        assert self._info(conn, "Other") == "Older words."

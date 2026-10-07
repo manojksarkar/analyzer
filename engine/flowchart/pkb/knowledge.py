@@ -428,3 +428,36 @@ def load_knowledge_data(data: Optional[dict]) -> Optional[ProjectKnowledge]:
     logger.info("Project knowledge loaded: %s  (%s)",
                 data.get("project_name") or "<unnamed project>", k.stats())
     return k
+
+
+def overlay_descriptions(knowledge: Optional[ProjectKnowledge], functions: Dict[str, dict],
+                         globals_: Optional[Dict[str, dict]] = None) -> int:
+    """Put the model's descriptions into the knowledge base's copies of them. Returns how many
+    changed.
+
+    Phase 2 writes the knowledge base from the model it has just enriched, corrections in. A
+    reviewer's save corrects the model alone, and so does an update rewriting the texts written
+    from it (FAST_WORD_FILE_UPDATES P5) -- while a chart's label prompts read its purpose, its
+    callers', callees' and globals' descriptions from here first, and so does a rich description's
+    prompt. Without this, a prompt built after a save carried the text the reviewer rejected.
+
+    Keyed by qualified name, as the knowledge base is. Overloads share one entry, and which one's
+    text Phase 2 left in it depends on the order it met them -- so a name the model holds more than
+    once keeps the entry's text.
+    """
+    if knowledge is None:
+        return 0
+    changed = 0
+    for table, entries in ((knowledge.functions, functions or {}),
+                           (knowledge.globals, globals_ or {})):
+        texts: Dict[str, List[str]] = {}
+        for entry in entries.values():
+            qn = (entry or {}).get("qualifiedName") or ""
+            if qn:
+                texts.setdefault(qn, []).append(entry.get("description") or "")
+        for qn, known in (table or {}).items():
+            text = texts.get(qn)
+            if text and len(text) == 1 and known.description != text[0]:
+                known.description = text[0]
+                changed += 1
+    return changed

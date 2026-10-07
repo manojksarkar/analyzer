@@ -984,10 +984,15 @@ def _enrich_behaviour_names_llm(
     """Use LLM to improve inputName/outputName when static names are poor. Uses abbreviations.
 
     Incremental (M3.2): when only_fids is given, only impacted functions are sent to
-    the LLM — the dominant Phase-2 cost — and the reuse set keeps its carried names."""
+    the LLM — the dominant Phase-2 cost — and the reuse set keeps its carried names.
+
+    Returns the ids of the functions the LLM named. A function it did not -- no source, no answer
+    -- keeps the static names, which an update rewriting names must not store over the LLM's
+    earlier ones (`review.rewrite`)."""
+    answered = set()
     llm = config.get("llm") or {}
     if not llm.get("behaviourNames", True):
-        return
+        return answered
     try:
         from llm_enrichment import (
             llm_provider_reachable,
@@ -997,9 +1002,9 @@ def _enrich_behaviour_names_llm(
             analyzer_root,
         )
     except ImportError:
-        return
+        return answered
     if not llm_provider_reachable(config):
-        return
+        return answered
     from core.progress import ProgressReporter
     from core.logging_setup import get_logger
     abbreviations = load_abbreviations(analyzer_root(), config)
@@ -1045,9 +1050,12 @@ def _enrich_behaviour_names_llm(
             f["inputName"] = res["inputName"]
         if res.get("outputName"):
             f["outputName"] = res["outputName"]
+        if res.get("inputName") or res.get("outputName"):
+            answered.add(fid)
         qn = (f.get("qualifiedName") or "").split("::")[-1]
         progress.step(label=qn or fid)
     progress.done()
+    return answered
 
 
 # ---------------------------------------------------------------------------

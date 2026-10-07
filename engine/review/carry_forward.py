@@ -50,7 +50,7 @@ import json
 import os
 import sys
 from types import SimpleNamespace
-from typing import Any, Dict, Iterable, List, Mapping, NamedTuple, Optional, Set
+from typing import Any, Dict, Iterable, List, Mapping, NamedTuple, Optional, Set, Tuple
 
 from sqlalchemy import insert, select, update
 
@@ -355,8 +355,23 @@ def _carry_rows(conn, baseline_version_id: str, target_version_id: str, target: 
     return carried, orphaned, reasons
 
 
+def _reviewers_text(pair: Tuple[str, str], human: Set[Tuple[str, str]]) -> bool:
+    """Whether a reviewer wrote all the text a queue entry stands for (`REQ-CS-03`). An input-name
+    entry stands for both names, so one corrected name leaves the other owed -- the rule the
+    cascade queues by and the rewrite retires by (`cascade._drop_overridden`, `rewrite._is_human`)."""
+    kind, key = pair
+    if kind == slot.INPUT_NAME:
+        return all((k, key) in human for k in (slot.INPUT_NAME, slot.OUTPUT_NAME))
+    return pair in human
+
+
 def _queue_entry_applies(kind: str, key: str, target: "_Target") -> bool:
     """Whether a baseline queue entry still names something in the new version."""
+    from review.cascade import FLOWCHART_LABELS
+    if kind == FLOWCHART_LABELS:
+        # Keyed by the function itself, not a slot: its chart's labels, owed until a Word-file
+        # update writes them again (`review.rewrite`, FAST_WORD_FILE_UPDATES P5).
+        return key in target.hashes
     try:
         parts = slot.parse(kind, key)
     except slot.SlotKeyError:
@@ -368,7 +383,10 @@ def _queue_entry_applies(kind: str, key: str, target: "_Target") -> bool:
             return key in target.behaviour_keys
         return (parts["function_id"] in target.hashes
                 and parts["external_caller_id"] in target.hashes)
-    if kind == slot.DESCRIPTION:
+    if kind in (slot.DESCRIPTION, slot.INPUT_NAME):
+        # An input-name entry stands for the function's input and output names together; no
+        # generation rewrites them -- Phase 2 takes only descriptions -- so they wait, here as on
+        # the baseline, for a Word-file update.
         return parts["entity_key"] in target.hashes
     # The cascade queues nothing else (`cascade.dependents_of`).
     return False
@@ -409,7 +427,7 @@ def carry_queue(conn, baseline_version_id: str, target_version_id: str, *,
     n = 0
     for row in src:
         pair = (row.slot_kind, row.slot_key)
-        if pair in queued or pair in human:
+        if pair in queued or _reviewers_text(pair, human):
             continue
         if not _queue_entry_applies(row.slot_kind, row.slot_key, target):
             continue

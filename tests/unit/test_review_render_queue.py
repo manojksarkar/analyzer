@@ -215,6 +215,54 @@ class TestTheWorker:
         assert rq.counts(conn, "v1") == rq.Counts(pending=0, failed=1)
 
 
+class TestAnUpdateDrawsWhatItsComponentsOwe:
+    """FAST_WORD_FILE_UPDATES P2. A Word-file update draws its components' owed pictures before
+    it exports -- the one a label correction changed, not Phase 3's every chart."""
+
+    @staticmethod
+    def _drawn(monkeypatch, ok=True):
+        from review import rerender
+        drawn = []
+
+        def render(project_root, fc_dir, item):
+            drawn.append((os.path.relpath(fc_dir, project_root).replace(os.sep, "/"),
+                          item.flowchart_id))
+            return ok
+        monkeypatch.setattr(rerender, "render_png", render)
+        return drawn
+
+    def test_only_the_components_asked_for(self, conn, tmp_path, monkeypatch):
+        drawn = self._drawn(monkeypatch)
+        mine = rq.enqueue(conn, "v1", FID)
+        rq.enqueue(conn, "v1", "Lib|UnitL|lib|")                     # another component's
+        assert rq.run_pending(conn, "v1", output_dir=str(tmp_path), project_root=str(tmp_path),
+                              components=["comp"], limit=None) == [mine]
+        assert [fid for _d, fid in drawn] == [FID]
+        assert rq.counts(conn, "v1") == rq.Counts(pending=1, failed=0)
+
+    def test_a_picture_that_failed_before_is_tried_again(self, conn, tmp_path, monkeypatch):
+        self._drawn(monkeypatch, ok=False)
+        job = rq.enqueue(conn, "v1", FID)
+        rq.run_pending(conn, "v1", output_dir=str(tmp_path), project_root=str(tmp_path))
+        assert rq.counts(conn, "v1") == rq.Counts(pending=0, failed=1)
+        self._drawn(monkeypatch, ok=True)
+        assert rq.run_pending(conn, "v1", output_dir=str(tmp_path), project_root=str(tmp_path),
+                              components=["Comp"], retry_failed=True) == [job]
+        assert rq.counts(conn, "v1") == rq.Counts(0, 0)
+
+    def test_every_stored_copy_once_however_many_jobs(self, conn, tmp_path, monkeypatch):
+        """Two corrections make two jobs; the flowchart is drawn once, in each copy's directory."""
+        content = conn.execute(sa.select(s.version_output_files.c.content)).scalar()
+        conn.execute(sa.insert(s.version_output_files).values(
+            version_id="v1", rel_path="Other/flowcharts/UnitA.json", group_name="Other",
+            content=content))
+        drawn = self._drawn(monkeypatch)
+        jobs = [rq.enqueue(conn, "v1", FID), rq.enqueue(conn, "v1", FID)]
+        assert rq.run_pending(conn, "v1", output_dir=str(tmp_path),
+                              project_root=str(tmp_path)) == jobs
+        assert sorted(drawn) == [("Other/flowcharts", FID), ("Sample/flowcharts", FID)]
+
+
 class TestThroughTheSave:
     def test_a_save_raises_a_job(self, conn):
         out = svc.apply_flowchart_overrides(conn, "v1", FID, {"n1": "Corrected"})

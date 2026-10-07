@@ -420,7 +420,7 @@ class TestWebRunLocking:
         from api.services import pipeline_runner as pr
         locks, seen = [], {}
         monkeypatch.setattr(pr, "_version_writer", lambda *a: locks.append(a))
-        monkeypatch.setattr(pr, "_reexport_from_phase", lambda vid, doc_type="swe3", components=None: 4)
+        monkeypatch.setattr(pr, "_reexport_from_phase", lambda vid, doc_type="swe3", components=None, **kw: 4)
         monkeypatch.setattr(pr, "export_doc_type", lambda db, pid, vid: "all")
         monkeypatch.setattr(pr, "_execute_detached",
                             lambda db, job_id, cmd, **kw: seen.update(cmd=cmd, kw=kw) or False)
@@ -435,6 +435,43 @@ class TestWebRunLocking:
                                    "--from-phase", "auto", "--doc-type", "all",
                                    "--components", "Layer1.Math,Layer2.Gpio"]
         assert seen["kw"]["phase_start"] == 4
+
+    def test_texts_to_rewrite_show_as_phase_3(self, sql_db, version, monkeypatch):
+        """The update rewrites its components' queued texts -- and draws their charts again --
+        before it exports (FAST_WORD_FILE_UPDATES P5): the job shows that as Phase 3, not as
+        skipped. The process still decides what it runs (`auto`). A text queued in another
+        component does not count."""
+        import dataclasses
+        import datetime as dt
+        import sys
+        from api.services.settings import get_settings
+        if str(get_settings().repo_root / "engine") not in sys.path:
+            sys.path.insert(0, str(get_settings().repo_root / "engine"))
+        from review import cascade
+        from api.services import pipeline_runner as pr
+        seen = {}
+        monkeypatch.setattr(pr, "_version_writer", lambda *a: None)
+        monkeypatch.setattr(pr, "_reexport_from_phase", lambda vid, doc_type="swe3", components=None, **kw: 4)
+        monkeypatch.setattr(pr, "export_doc_type", lambda db, pid, vid: "all")
+        monkeypatch.setattr(pr, "_execute_detached",
+                            lambda db, job_id, cmd, **kw: seen.update(cmd=cmd, kw=kw) or False)
+
+        def run(queued_in):
+            with sql_db._engine.begin() as cx:
+                cx.execute(cascade.s.regeneration_queue.delete())
+                cascade.enqueue(cx, version.id, [cascade.Dependent(
+                    "description", queued_in + "|U|f|void", "test")],
+                    now=dt.datetime.now(dt.timezone.utc))
+            job = dataclasses.replace(sql_db.jobs.get("job2"), id="jobrx" + uuid.uuid4().hex[:6],
+                                      project_id="p1", version_id=version.id, mode="reexport",
+                                      status="queued",
+                                      scope={"type": "component", "names": ["Layer1.Math"]})
+            sql_db.jobs.create(job)
+            pr._run_reexport(sql_db, job.id)
+            return seen["kw"]["phase_start"], seen["cmd"][seen["cmd"].index("--from-phase") + 1]
+
+        assert run("Layer1.Math") == (3, "auto")
+        assert run("Layer2.Gpio") == (4, "auto")
 
 
 class TestWebReexportScope:

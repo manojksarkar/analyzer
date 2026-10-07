@@ -46,6 +46,15 @@ Options:
                        last time the views were derived. Only matters for
                        --from-phase 4, which skips the step that would apply it.
                        Without this the run refuses and says how to re-derive.
+  --views <a,b,...>    Phase 3 makes only these of the views the doc type needs and
+                       keeps the stored rest -- a Word-file update's Phase 3
+                       (FAST_WORD_FILE_UPDATES P5). With --rewrite-labels, the
+                       flowcharts view charts those functions alone.
+  --rewrite-labels <file>
+                       Write these charts' labels again, past the label cache: a
+                       JSON file {"keys": [function keys], "report": path} written
+                       by the update (review.rewrite); each chart rewritten is
+                       appended to the report.
   --from-phase N       Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export)
   --to-phase N         Stop after phase N (1-4). Lets the incremental engine run
                        parse+derive only (--to-phase 2), compute impact, then
@@ -193,7 +202,7 @@ from core.model_io import FUNCTIONS, GLOBALS, UNITS, COMPONENTS
 _KNOWN_FLAGS = (
     "--help", "-h",
     "--clean", "--config",
-    "--use-model", "--skip-model", "--force-export",
+    "--use-model", "--skip-model", "--force-export", "--views", "--rewrite-labels",
     "--no-llm-summarize", "--llm-summarize",
     "--selected-group", "--selected-layer", "--selected-component", "--selected-unit",
     "--component-per-docx", "--filter-mode",
@@ -216,6 +225,8 @@ _KNOWN_FLAGS = (
 clean_all               = False
 use_model               = False
 force_export            = False  # export even when a correction is newer than the last derivation
+views_arg               = None   # Phase 3 makes only these views (an update's, P5)
+rewrite_labels_arg      = None   # the charts whose labels are written again (an update's, P5)
 no_llm_summarize        = False
 from_phase              = 1
 to_phase                = None   # stop after this phase (1-4); None = run through phase 4
@@ -264,6 +275,18 @@ while i < len(sys.argv):
         use_model = True
     elif a == "--force-export":
         force_export = True
+    elif a == "--views":
+        i += 1
+        if i >= len(sys.argv):
+            log("--views requires a comma-separated list of views", component="run", err=True)
+            sys.exit(1)
+        views_arg = sys.argv[i]
+    elif a == "--rewrite-labels":
+        i += 1
+        if i >= len(sys.argv) or not os.path.isfile(sys.argv[i]):
+            log("--rewrite-labels requires the update's request file", component="run", err=True)
+            sys.exit(1)
+        rewrite_labels_arg = os.path.abspath(sys.argv[i])
     elif a == "--no-llm-summarize":
         no_llm_summarize = True
     elif a == "--llm-summarize":
@@ -996,6 +1019,10 @@ def _component_states(_plan):
         return
     _mark_components(_STATES_VID, _docs, "generated")
 
+# An export-only run restores only its components' directories -- all the exporters read -- and so
+# does an update's Phase 3 limited to some views (`--views`: the flowcharts and SWE.4 views read their
+# own directory); a run that derives restores everything, as a view may read another component's
+# output (FAST_WORD_FILE_UPDATES P2, P5).
 def _restore_output_from_db(from_phase: int) -> None:
     """Write this version's stored view output back to `output/` before a run that re-renders it.
 
@@ -1011,6 +1038,7 @@ def _restore_output_from_db(from_phase: int) -> None:
 
     Silent no-op without a version or a database. Never fatal: a failed restore is reported and
     the run goes on from disk, as it did before this existed (REQ-PRE-02).
+
     """
     if from_phase < 2:
         return
@@ -1022,8 +1050,9 @@ def _restore_output_from_db(from_phase: int) -> None:
             return
         from core.model_store import dump_output_files_to_dir
         from core.paths import paths
+        groups = (_doc_components(plans) or None) if from_phase >= 4 or views_arg else None
         with get_engine().connect() as cx:
-            n = dump_output_files_to_dir(cx, vid, paths().output_dir)
+            n = dump_output_files_to_dir(cx, vid, paths().output_dir, groups=groups)
         if n:
             log(f"restored {n} view output file(s) from the database",
                 component="run")
@@ -1064,8 +1093,9 @@ def _refuse_stale_export(from_phase: int, force: bool) -> None:
         with get_engine().connect() as cx:
             # Asked about the documents THIS run exports: a SWE.3 export is not held up by SWE.4
             # specs it does not print, and a SWE.4 export is not waved through by a SWE.3
-            # re-derive.
-            assert_exportable(cx, vid, doc_type_arg)
+            # re-derive. And about the components it exports: a correction in another component
+            # refused an export-only update of this one (FAST_WORD_FILE_UPDATES P2).
+            assert_exportable(cx, vid, doc_type_arg, components=_doc_components(plans) or None)
     except ImportError:
         return                 # the feature is not present in this tree
     except Exception as exc:   # noqa: BLE001
@@ -1099,6 +1129,17 @@ if to_phase is not None:
                                       components=list(_plan.components)))
     plans = _filtered
     log(f"--to-phase {to_phase}: running {len(plans)} plan(s) up to phase {to_phase}.", component="run")
+
+# An update's Phase 3 (FAST_WORD_FILE_UPDATES P5): `--views` and `--rewrite-labels` are Phase 3's
+# alone, so they go to each plan's views step and to nothing else.
+if views_arg or rewrite_labels_arg:
+    for _plan in plans:
+        for _ph in _plan.phases:
+            if os.path.basename(_ph.script) == "run_views.py":
+                if views_arg:
+                    _ph.args.extend(["--views", views_arg])
+                if rewrite_labels_arg:
+                    _ph.args.extend(["--rewrite-labels", rewrite_labels_arg])
 
 # REQ-PRE-02. An export-only run (`--from-phase 4`) SKIPS Phase 3, so it exports whatever text
 # happens to be in `output/` on this machine. That is the wrong source: the database is where the

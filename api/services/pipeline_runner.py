@@ -3032,8 +3032,13 @@ def _scoped_components(job: Any) -> Optional[list]:
 
 
 def _reexport_from_phase(version_id: Optional[str], doc_type: str = "swe3",
-                         components: Optional[list] = None) -> int:
+                         components: Optional[list] = None, *, pictures: bool = True) -> int:
     """4 normally; 3 when a reviewer's correction is newer than the last derivation.
+
+    `pictures=False`: a corrected flowchart's picture still owed does not decide it -- for a run
+    that draws its components' owed pictures before it exports (`analyzer.py reexport`,
+    `_draw_owed_pictures`). Counted, one corrected label sent the update through Phase 3, every
+    chart of the component redrawn (FAST_WORD_FILE_UPDATES P2).
 
     `REQ-AP-04` says an export must verify rather than assume. The CLI answers by refusing and
     printing how to re-derive. A refusal is the wrong answer HERE: the person at the other end is
@@ -3066,7 +3071,8 @@ def _reexport_from_phase(version_id: Optional[str], doc_type: str = "swe3",
                 # corrections decide. Asked of the whole version, a correction in another
                 # component sent the update through Phase 3 -- every flowchart of the component
                 # redrawn (416 s for 28 charts) for a description change elsewhere.
-                behind = stale_components(cx, version_id, doc_type, components)
+                behind = stale_components(cx, version_id, doc_type, components,
+                                          pictures=pictures)
                 if not behind:
                     return 4
                 _log.info("re-export: %s has corrections newer than the views of %s, so this run "
@@ -3075,7 +3081,7 @@ def _reexport_from_phase(version_id: Optional[str], doc_type: str = "swe3",
             # Asked about what this re-export writes (`export_doc_type`): SWE.3, and SWE.4 when
             # the version has it -- a node-label correction re-derives the SWE.4 specs at save
             # time, so that document is behind as well.
-            st = staleness(cx, version_id, doc_type)
+            st = staleness(cx, version_id, doc_type, pictures=pictures)
     except Exception as exc:                                       # noqa: BLE001 - see docstring
         _log.warning("re-export: could not check whether %s is up to date (%s); "
                      "exporting without re-deriving", version_id, exc)
@@ -3107,8 +3113,10 @@ def _do_reexport(db: Any, job_id: str) -> bool:
         # document of a large version takes hours, and as a child of this server it died with
         # every restart.
         doc_type = export_doc_type(db, job.project_id, job.version_id)
+        # Owed pictures do not decide it: `analyzer.py reexport` draws them before it exports.
         return _reexport_detached(db, job_id, _reexport_from_phase(job.version_id, doc_type,
-                                                                   _scoped_components(job)),
+                                                                   _scoped_components(job),
+                                                                   pictures=False),
                                   doc_type)
 
     root = get_settings().repo_root
@@ -3176,6 +3184,10 @@ def _do_reexport(db: Any, job_id: str) -> bool:
     # Both documents of a version that has both: a web run writes SWE.4 beside SWE.3, and a
     # re-export that rewrote only SWE.3 left the SWE.4 Word file with the old labels.
     doc_type = export_doc_type(db, job.project_id, getattr(job, "version_id", None))
+    # The corrected flowcharts' pictures its components owe, drawn first -- as `analyzer.py
+    # reexport` draws them -- so a label correction needs the export only (FAST_WORD_FILE_UPDATES P2).
+    _draw_owed_pictures(getattr(job, "version_id", None), adir / "output",
+                        _scoped_components(job), root)
     from_phase = _reexport_from_phase(getattr(job, "version_id", None), doc_type,
                                       _scoped_components(job))
     if from_phase > 3 and _stale_in_scope(db, job):
@@ -3183,6 +3195,14 @@ def _do_reexport(db: Any, job_id: str) -> bool:
         # older than it, and an export alone would print them again (`analyzer.py reexport` goes
         # back to Phase 3 for the same reason).
         from_phase = 3
+    # The texts written from corrected ones, in this update's components, rewritten before it
+    # exports them -- as `analyzer.py reexport` does -- and the charts among them to its Phase 3:
+    # the flowcharts and the SWE.4 views alone when nothing else is behind (FAST_WORD_FILE_UPDATES
+    # P5).
+    labels = _rewrite_queued(db, job_id, job, cdir, config_path, adir)
+    label_views = None
+    if labels and from_phase > 3:
+        from_phase, label_views = 3, _LABEL_REWRITE_VIEWS
 
     arch_layers = project.architecture_layers or []
     # The model is rows, so Phase 4 needs the version id to find it. This used to ASK whether
@@ -3193,6 +3213,10 @@ def _do_reexport(db: Any, job_id: str) -> bool:
                      arch_layers=arch_layers,
                      model_root=adir / "model", output_root=adir / "output",
                      version_id=getattr(job, "version_id", None), doc_type=doc_type)
+    if labels:
+        cmd += ["--rewrite-labels", str(labels)]
+    if label_views:
+        cmd += ["--views", label_views]
     if from_phase > 3:
         # Nothing to re-derive: say so on the job rather than leave phase 3 "pending" for ever.
         job = db.jobs.get(job_id)
@@ -3210,7 +3234,95 @@ def _do_reexport(db: Any, job_id: str) -> bool:
     # re-export that only rewrote FILES would leave the stored copies stale and appear to
     # have had no effect. capture_output also re-collects the .docx into documents/.
     _capture_reexport_output(db, job, adir, since=since)
+    _labels_done(job_id, getattr(job, "version_id", None), labels)
     return True
+
+
+#: An update's Phase 3 when the rewrite left charts: the flowcharts, and the SWE.4 views that
+#: transcribe their labels (`analyzer._LABEL_REWRITE_VIEWS`).
+_LABEL_REWRITE_VIEWS = "flowcharts,testSpecs,utExport"
+
+
+def _rewrite_queued(db: Any, job_id: str, job: Any, checkout, config_path, adir) -> Optional[Path]:
+    """Rewrite the texts written from corrected ones in the components this update writes
+    (`review.rewrite`); the charts' request for run.py when there are charts, else None.
+
+    In a process of its own (`engine/review/rewrite.py`): the step takes on a run's identity --
+    its project scopes the LLM caches -- which this server, serving every project, must not.
+    Never fatal: a text not rewritten keeps its words and its queue entry for the next update."""
+    version_id = getattr(job, "version_id", None)
+    # Only on the SQL backend, whose database the child is handed (`_engine_db_env`): without
+    # one the child would read whatever database this machine's engine config names.
+    if not version_id or getattr(db, "_engine", None) is None:
+        return None
+    root = get_settings().repo_root
+    request = Path(adir) / "rewrite_labels.json"
+    scope = getattr(job, "scope", None) or {}
+    cmd = [sys.executable, str(root / "engine" / "review" / "rewrite.py"),
+           "--version-id", version_id, "--project-id", job.project_id,
+           "--config", str(config_path), "--source", str(checkout),
+           "--labels-request", str(request),
+           "--scope-type", (scope.get("type") if isinstance(scope, dict) else None) or "project"]
+    for name in (scope.get("names") if isinstance(scope, dict) else None) or []:
+        cmd += ["--scope-name", str(name)]
+    try:
+        r = subprocess.run(cmd, cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           encoding="utf-8", errors="replace",
+                           env=_subprocess_env(db, job_id, _engine_db_env(db)))
+        for line in (r.stdout or "").splitlines():
+            if line.strip():
+                _append_log(job_id, line)
+        if r.returncode != 0:
+            _log.warning("re-export %s: the texts written from corrected ones were not rewritten "
+                         "(exit %s); they stay queued", job_id, r.returncode)
+            return None
+    except Exception as exc:                                       # noqa: BLE001 - see docstring
+        _log.warning("re-export %s: could not rewrite the texts written from corrected ones: %s",
+                     job_id, exc)
+        return None
+    return request if request.is_file() else None
+
+
+def _labels_done(job_id: str, version_id: Optional[str], request: Optional[Path]) -> None:
+    """Retire the queue entries of the charts this update wrote again, once its output is stored
+    (`review.rewrite.labels_done`). Never fatal: an entry left is rewritten again next time."""
+    if not (request and version_id):
+        return
+    try:
+        engine_dir = str(get_settings().repo_root / "engine")
+        if engine_dir not in sys.path:
+            sys.path.insert(0, engine_dir)
+        from core.db import get_engine                              # type: ignore[import]
+        from review.rewrite import labels_done                      # type: ignore[import]
+        n = labels_done(get_engine(), version_id, str(request))
+        _append_log(job_id, f"The labels of {n} flowchart(s) written from corrected texts were "
+                            f"written again.")
+    except Exception as exc:                                       # noqa: BLE001 - see docstring
+        _log.warning("re-export %s: could not record the charts written again: %s", job_id, exc)
+
+
+def _draw_owed_pictures(version_id: Optional[str], output_dir, components: Optional[list],
+                        project_root) -> None:
+    """Draw the corrected flowchart pictures `components` owe (every component's when None), and
+    retry the failed ones, before an in-process re-export judges and exports -- as `analyzer.py
+    reexport` does (`_draw_owed_pictures` there). Never fatal: a picture that cannot be drawn is
+    recorded as failed, which the export guard reports without blocking (REQ-IM-03)."""
+    if not version_id:
+        return
+    try:
+        engine_dir = str(get_settings().repo_root / "engine")
+        if engine_dir not in sys.path:
+            sys.path.insert(0, engine_dir)
+        from core.db import get_engine, is_database_configured     # type: ignore[import]
+        if not is_database_configured():
+            return
+        from review.render_queue import run_pending                 # type: ignore[import]
+        with get_engine().begin() as cx:
+            run_pending(cx, version_id, output_dir=str(output_dir), project_root=str(project_root),
+                        limit=None, components=components, retry_failed=True)
+    except Exception as exc:                                       # noqa: BLE001 - see docstring
+        _log.warning("re-export: could not draw the corrected flowchart pictures of %s first: %s",
+                     version_id, exc)
 
 
 def _update_since(version_id: Optional[str]) -> datetime:
@@ -3263,14 +3375,36 @@ def _reexport_detached(db: Any, job_id: str, first_phase: int, doc_type: str) ->
         cmd += ["--components", ",".join(names)]
     elif scope.get("type") not in (None, "project"):
         cmd += ["--scope", _scope_to_cli(scope)]
-    if first_phase > 3:
+    # What the job shows: an update with texts to rewrite in its components does that, and draws
+    # their charts again, before it exports (`review.rewrite`) -- Phase 3's work, shown as Phase 3.
+    # The command still says `auto`: the process decides what it runs.
+    shown = 3 if first_phase > 3 and _rewrites_queued(db, job) else first_phase
+    if shown > 3:
         # Nothing to re-derive: say so on the job rather than leave phase 3 "pending" for ever.
         for p in job.phases:
-            if p.number < first_phase and p.status == "pending":
+            if p.number < shown and p.status == "pending":
                 p.status = "skipped"
         db.jobs.update(job)
-    return _execute_detached(db, job_id, cmd, phase_start=first_phase,
+    return _execute_detached(db, job_id, cmd, phase_start=shown,
                              extra_env=_engine_db_env(db))
+
+
+def _rewrites_queued(db: Any, job: Any) -> bool:
+    """Whether the regeneration queue holds texts the update rewrites -- of the job's components,
+    or of the version when its scope names none. Read through the API's own database, the one the
+    run is handed. False when it cannot be read: Phase 3 then shows as skipped, as before."""
+    engine = getattr(db, "_engine", None)
+    if engine is None or not getattr(job, "version_id", None):
+        return False
+    try:
+        engine_dir = str(get_settings().repo_root / "engine")
+        if engine_dir not in sys.path:
+            sys.path.insert(0, engine_dir)
+        from review import rewrite                                   # type: ignore[import]
+        return bool(rewrite.queued(engine, job.version_id, _scoped_components(job)))
+    except Exception as exc:                                       # noqa: BLE001 - see docstring
+        _log.warning("re-export %s: could not read the regeneration queue: %s", job.id, exc)
+        return False
 
 
 def _reexport_scope(db: Any, version: Any, generation_scope: Optional[dict]) -> Optional[dict]:

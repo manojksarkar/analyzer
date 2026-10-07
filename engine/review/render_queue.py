@@ -126,8 +126,16 @@ def pending_jobs(conn, version_id: Optional[str] = None) -> Sequence:
 # ---------------------------------------------------------------------------
 # the worker
 # ---------------------------------------------------------------------------
+def failed_jobs(conn, version_id: str) -> Sequence:
+    """Jobs that gave up, oldest first."""
+    return conn.execute(select(s.render_jobs).where(s.render_jobs.c.version_id == version_id,
+                                                    s.render_jobs.c.status == FAILED)
+                        .order_by(s.render_jobs.c.requested_at, s.render_jobs.c.job_id)).fetchall()
+
+
 def run_pending(conn, version_id: str, *, output_dir: str, project_root: str,
-                limit: int = 50) -> List[int]:
+                limit: Optional[int] = 50, components=None,
+                retry_failed: bool = False) -> List[int]:
     """Draw the pictures this version is waiting on. Returns the job ids finished.
 
     Each job is completed **individually**, so one flowchart that cannot be drawn does not leave
@@ -135,39 +143,57 @@ def run_pending(conn, version_id: str, *, output_dir: str, project_root: str,
 
     Reads the CORRECTED CFG from storage rather than anything carried along with the job: by the
     time this runs the graph may have been corrected again, and the picture must match what the
-    document will show, not what was true when the job was made.
+    document will show, not what was true when the job was made. Drawn in EVERY stored copy's
+    directory, as `rerender.redraw_flowchart` writes every copy; two jobs for one flowchart draw
+    it once.
+
+    `components`: only the jobs of these components' flowcharts (a Word-file update draws what
+    its components owe BEFORE it exports, FAST_WORD_FILE_UPDATES P2). `retry_failed`: also the
+    jobs that gave up before -- the update is when the picture is needed. `limit` None: all.
     """
-    from review import rerender
+    jobs = list(pending_jobs(conn, version_id))
+    if retry_failed:
+        jobs += list(failed_jobs(conn, version_id))
+    if components is not None:
+        want = {_component_key(c) for c in components}
+        jobs = [j for j in jobs
+                if _component_key((j.flowchart_id or "").split("|", 1)[0]) in want]
+    if limit is not None:
+        jobs = jobs[:max(1, int(limit))]
 
     done: List[int] = []
-    for job in pending_jobs(conn, version_id)[:max(1, int(limit))]:
-        try:
-            found = rerender.find_flowchart_row(conn, version_id, job.flowchart_id)
-            if not found:
-                complete(conn, job.job_id, error="no stored flowchart for %s" % job.flowchart_id)
-                done.append(job.job_id)
-                continue
-            rel_path, unit_name, content = found
-            import json
+    errors: dict = {}
+    for job in jobs:
+        if job.flowchart_id not in errors:
+            errors[job.flowchart_id] = _draw(conn, version_id, job, output_dir, project_root)
+        complete(conn, job.job_id, error=errors[job.flowchart_id])
+        done.append(job.job_id)
+    return done
+
+
+def _draw(conn, version_id: str, job, output_dir: str, project_root: str) -> str:
+    """Draw one job's flowchart in every stored copy's directory: "" when drawn, else why not."""
+    import json
+    from review import rerender
+    try:
+        found = rerender.find_flowchart_rows(conn, version_id, job.flowchart_id)
+        if not found:
+            return "no stored flowchart for %s" % job.flowchart_id
+        for rel_path, unit_name, content in found:
             entry = next((e for e in json.loads(content)
                           if isinstance(e, dict) and e.get("functionKey") == job.flowchart_id),
                          None)
             if entry is None or not (entry.get("flowchart") or "").strip():
-                complete(conn, job.job_id, error="no DOT stored for %s" % job.flowchart_id)
-                done.append(job.job_id)
-                continue
-
+                return "no DOT stored for %s" % job.flowchart_id
             item = rerender.Redrawn(
                 flowchart_id=job.flowchart_id,
                 function_name=(entry.get("name") or ""),
                 png_name=job.png_name or rerender.png_name_for(unit_name,
                                                                entry.get("name") or ""),
                 dot=entry["flowchart"])
-            fc_dir = os.path.join(output_dir,
-                                  os.path.dirname(rel_path).replace("/", os.sep))
-            ok = rerender.render_png(project_root, fc_dir, item)
-            complete(conn, job.job_id, error="" if ok else "graphviz produced no image")
-        except Exception as exc:                      # noqa: BLE001 - recorded, see docstring
-            complete(conn, job.job_id, error=str(exc)[:500])
-        done.append(job.job_id)
-    return done
+            fc_dir = os.path.join(output_dir, os.path.dirname(rel_path).replace("/", os.sep))
+            if not rerender.render_png(project_root, fc_dir, item):
+                return "graphviz produced no image"
+        return ""
+    except Exception as exc:                          # noqa: BLE001 - recorded, see run_pending
+        return str(exc)[:500] or type(exc).__name__

@@ -20,10 +20,10 @@ from core.subprocess_util import log_stderr_tail, run_streaming
 def _project_root() -> str:
     """The CODE root, for resolving tools and assets.
 
-    Deliberately NOT derived from model_dir. These views need `node_modules/.bin/mmdc`,
-    `engine/config/render_dot.mjs` and the shared `.mmdc_cache`, all of which live at the
-    code root — while model_dir is DATA whose location moves (per-version dirs, an isolated
-    test root). The old `dirname(model_dir)` coupled the two, which is why flowcharts.py
+    Deliberately NOT derived from model_dir. These views need `node_modules/.bin/mmdc` and
+    `engine/config/render_dot.mjs`, which live at the code root (the picture caches are data,
+    `utils.picture_cache_dir`) — while model_dir is DATA whose location moves (per-version
+    dirs, an isolated test root). The old `dirname(model_dir)` coupled the two, which is why flowcharts.py
     needed a "walk up one extra level" special case, and why relocating model/ would have
     silently pointed the renderer at a directory with no render script in it: the render
     simply returns False and the flowchart never appears.
@@ -484,6 +484,123 @@ def _apply_text_overrides(out_dir, config) -> int:
         log("applied %d corrected flowchart(s) before rendering" % len(done),
             component="flowcharts")
     return len(done)
+
+
+def _rewrite_request(config) -> dict:
+    """The charts whose labels this run writes again (`run_views --rewrite-labels`,
+    FAST_WORD_FILE_UPDATES P5): {"keys": [...], "report": path, "only": bool}; {} for an ordinary
+    run."""
+    req = (config or {}).get("_analyzerRewriteLabels")
+    return req if isinstance(req, dict) and req.get("keys") else {}
+
+
+def _read_lines(path) -> list:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return [line.strip() for line in f if line.strip()]
+    except OSError:
+        return []
+
+
+def _stored_unit_files(out_dir) -> dict:
+    """{file name: text} of the flowchart JSON in `out_dir`: the stored charts an update's rewrite
+    is spliced into, and put back when the engine fails."""
+    out = {}
+    for fname in os.listdir(out_dir):
+        if fname.endswith(".json"):
+            try:
+                with open(os.path.join(out_dir, fname), "r", encoding="utf-8") as f:
+                    out[fname] = f.read()
+            except OSError:
+                pass
+    return out
+
+
+def _put_back_unit_files(out_dir, stored) -> None:
+    """The flowchart JSON in `out_dir` exactly as `stored`: a file the engine added is removed."""
+    for fname in os.listdir(out_dir):
+        if fname.endswith(".json") and fname not in stored:
+            try:
+                os.remove(os.path.join(out_dir, fname))
+            except OSError:
+                pass
+    for fname, text in stored.items():
+        with open(os.path.join(out_dir, fname), "w", encoding="utf-8") as f:
+            f.write(text)
+
+
+def _splice_rewritten(out_dir, stored, rewritten) -> list:
+    """Put the charts the engine rewrote into the stored ones, and everything else back as it was.
+    Returns the function keys spliced.
+
+    Charting a few functions, the engine wrote unit files holding those alone, and a summary of
+    them. Each stored unit file gets its rewritten entries in place -- by `functionKey`, or by name
+    for an entry stored before charts carried their key -- and every other file, the summary too,
+    is put back. A chart the engine did not report (a fallback label, an error) keeps its stored
+    entry; a unit file this directory did not have is not printed here, and goes.
+    """
+    done = set(rewritten or ())
+    fresh = {}
+    for fname in os.listdir(out_dir):
+        if not fname.endswith(".json") or fname == "_summary.json" or fname not in stored:
+            continue
+        try:
+            with open(os.path.join(out_dir, fname), "r", encoding="utf-8") as f:
+                arr = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+        for e in arr if isinstance(arr, list) else []:
+            if (isinstance(e, dict) and e.get("functionKey") in done and e.get("flowchart")
+                    and not e.get("error")):
+                fresh.setdefault(fname, {})[e["functionKey"]] = e
+    _put_back_unit_files(out_dir, stored)
+    spliced = []
+    for fname, entries in fresh.items():
+        try:
+            arr = json.loads(stored[fname])
+        except ValueError:
+            continue
+        if not isinstance(arr, list):
+            continue
+        names = [e.get("name") for e in arr if isinstance(e, dict)]
+        changed = False
+        for i, e in enumerate(arr):
+            if not isinstance(e, dict):
+                continue
+            key = e.get("functionKey")
+            if not key and names.count(e.get("name")) == 1:
+                key = next((k for k, new in entries.items() if new.get("name") == e.get("name")),
+                           None)
+            if key in entries:
+                arr[i] = entries[key]
+                spliced.append(key)
+                changed = True
+        if changed:
+            with open(os.path.join(out_dir, fname), "w", encoding="utf-8") as f:
+                json.dump(arr, f, indent=2, ensure_ascii=False)
+    return sorted(set(spliced))
+
+
+def _report_rewritten(report, keys) -> None:
+    """Append the charts this run rewrote to the update's report (`review.rewrite.labels_done`
+    retires their queue entries once the run's output is stored)."""
+    if not (report and keys):
+        return
+    try:
+        with open(report, "a", encoding="utf-8") as f:
+            f.writelines(k + "\n" for k in keys)
+    except OSError as exc:
+        log("could not report the rewritten charts (%s); their queue entries stay" % exc,
+            component="flowcharts", err=True)
+
+
+def _end_rewrite(rewrite_dir, out_dir, stored) -> None:
+    """Done with an update's rewrite: the stored charts put back when given (the engine failed),
+    and the request removed."""
+    if stored is not None:
+        _put_back_unit_files(out_dir, stored)
+    if rewrite_dir:
+        shutil.rmtree(rewrite_dir, ignore_errors=True)
 
 
 def _merge_incremental_flowcharts(inc, out_dir):
@@ -1116,6 +1233,67 @@ def write_flowchart_svgs(project_root, out_dir) -> dict:
     return counts
 
 
+def _printed_charts(output_dir_abs, model):
+    """The function keys whose Word picture this directory's SWE.3 document can print
+    (`docx_common.printed_flowcharts`), or None -- draw every picture -- when its interface
+    tables are not there to say: the interfaceTables view runs first in the same Phase 3, or the
+    run restored them."""
+    try:
+        with open(os.path.join(output_dir_abs, "interface_tables.json"), "r",
+                  encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    from docx_common import printed_flowcharts
+    return printed_flowcharts(data, (model or {}).get("functions") or {})
+
+
+def _picture_on_disk(out_dir, unit_name, func_name) -> bool:
+    """Whether a chart's Word picture is in `out_dir`: `<unit>_<function>.png`, or its slices."""
+    stem = f"{unit_name}_{safe_filename(func_name)}"
+    try:
+        names = os.listdir(out_dir)
+    except OSError:
+        return False
+    return any(n == stem + ".png" or (n.startswith(stem + "_part_") and n.endswith(".png"))
+               for n in names)
+
+
+def _pictures_to_draw(items, printed, out_dir) -> list:
+    """The charts whose Word picture this run draws, of `items` -- `(unit, function, DOT, key,
+    carried)`.
+
+    Only those this directory's Word file prints (`printed`, `docx_common.printed_flowcharts`, the
+    exporter's own rule): each public function's flowchart and its private callees'. A chart no
+    document prints keeps its graph, labels and web picture -- SWE.4's Test Steps and the web
+    reader use those -- and gets no Word picture: one costs seconds, and on Sample Core 24 of the
+    28 were never printed. `printed` None (no interface tables to read) draws as before.
+
+    A chart an incremental run carried from its baseline is drawn when it is printed and has no
+    picture on disk: a baseline drew only the charts IT printed, and a chart that became printed
+    since -- a new caller in another file -- would otherwise be printed without one."""
+    out, unprinted, filled = [], 0, 0
+    for it in items:
+        _unit, _func, _dot, key, carried = it
+        if printed is not None and key and key not in printed:
+            unprinted += 1
+            continue
+        if carried:
+            if _picture_on_disk(out_dir, _unit, _func):
+                continue
+            filled += 1
+        out.append(it)
+    if unprinted:
+        log("%d flowchart picture(s) not drawn: no Word file prints them" % unprinted,
+            component="flowcharts")
+    if filled:
+        log("%d printed flowchart(s) had no picture to carry; drawn" % filled,
+            component="flowcharts")
+    return out
+
+
 def _needs_flowchart_images(config) -> bool:
     """`views.flowcharts` -- draw the flowchart images, or not.
 
@@ -1419,14 +1597,27 @@ def run(model, output_dir, model_dir, config):
         except (OSError, json.JSONDecodeError):
             pass
 
+    # An update writing some charts' labels again (FAST_WORD_FILE_UPDATES P5): `only` -- the
+    # update's own Phase 3 -- charts those functions alone and splices them into the stored charts
+    # run.py restored here; otherwise the run charts everything, those past the label cache.
+    rewrite = _rewrite_request(config)
+    only_rewrite = bool(rewrite.get("only"))
+    rewrite_keys = [k for k in rewrite.get("keys") or ()
+                    if not allowed_components or k.split(KEY_SEP)[0].lower() in allowed_components]
+
     # Incremental (M2.4b/M3.1/M3.4/M3.6): restrict the engine to changed
     # functions + carry forward baseline JSONs/PNGs
     # (function-level splice happens after the engine).
-    functions_arg_path, inc = _apply_incremental_plan(
-        functions_arg_path,
-        model_dir_abs,
-        out_dir,
-    )
+    #
+    # Not for an update's rewrite: it is not a generation, and the charts it starts from are the
+    # stored ones.
+    inc = None
+    if not only_rewrite:
+        functions_arg_path, inc = _apply_incremental_plan(
+            functions_arg_path,
+            model_dir_abs,
+            out_dir,
+        )
 
     # knowledge_base.json (generated by model_deriver.py) - pass if it exists
     kb_path = os.path.join(
@@ -1509,6 +1700,27 @@ def run(model, output_dir, model_dir, config):
     if not llm_cfg.get("descriptions", True):
         cmd.append("--no-llm")
 
+    # The charts to write again, with this run's own report of the ones the engine rewrote.
+    rewrite_dir = stored_charts = None
+    if rewrite_keys and only_rewrite:
+        stored_charts = _stored_unit_files(out_dir)
+        if not any(name != "_summary.json" for name in stored_charts):
+            # Nothing stored here to write into: splicing would leave the directory empty, and the
+            # capture would store it so. The charts stay queued.
+            log("no stored charts here to write the labels into; they stay queued",
+                component="flowcharts", err=True)
+            rewrite_keys, stored_charts = [], None
+    if rewrite_keys:
+        import tempfile
+        rewrite_dir = tempfile.mkdtemp(prefix="rewrite_labels_")
+        request = os.path.join(rewrite_dir, "request.json")
+        with open(request, "w", encoding="utf-8") as f:
+            json.dump({"keys": sorted(rewrite_keys),
+                       "report": os.path.join(rewrite_dir, "rewritten")}, f)
+        cmd.extend(["--rewrite-labels", request])
+        if only_rewrite:
+            cmd.append("--only-rewrite")
+
     # Many projects have hundreds of -I/-D clang args. Passing them all on the
     # command line blows the Windows cmd.exe 8192-char limit (WinError 206).
     # Write them to a response file and pass `@file` - flowchart_engine.py
@@ -1524,30 +1736,36 @@ def run(model, output_dir, model_dir, config):
 
         cmd.append(f"@{args_file}")
 
-    log(
-        "flowcharts cmd: " + " ".join(shlex.quote(a) for a in cmd),
-        component="flowcharts",
-    )
-
-    try:
-        # Stream the engine's stderr through (so its per-function progress still
-        # reaches the console and the API's log tail) while keeping the tail, so a
-        # crash reports its cause instead of a bare exit code. This is the exact
-        # site where a LibclangError stayed invisible for a whole debugging
-        # session (PROJECT_CONTEXT §16 Risk 5); doc 09, A0.
-        returncode, stderr_tail, _ = run_streaming(
-            cmd,
-            cwd=project_root,
-            shell=(os_type == "Windows"),
+    if only_rewrite and not rewrite_keys:
+        # An update with no chart of this run's to write again: the stored charts stand.
+        returncode, stderr_tail = 0, ""
+    else:
+        log(
+            "flowcharts cmd: " + " ".join(shlex.quote(a) for a in cmd),
+            component="flowcharts",
         )
 
-    except subprocess.TimeoutExpired:
-        log("generator timed out", component="flowcharts", err=True)
-        return
+        try:
+            # Stream the engine's stderr through (so its per-function progress still
+            # reaches the console and the API's log tail) while keeping the tail, so a
+            # crash reports its cause instead of a bare exit code. This is the exact
+            # site where a LibclangError stayed invisible for a whole debugging
+            # session (PROJECT_CONTEXT §16 Risk 5); doc 09, A0.
+            returncode, stderr_tail, _ = run_streaming(
+                cmd,
+                cwd=project_root,
+                shell=(os_type == "Windows"),
+            )
 
-    except OSError as e:
-        log("generator failed: %s" % e, component="flowcharts", err=True)
-        return
+        except subprocess.TimeoutExpired:
+            log("generator timed out", component="flowcharts", err=True)
+            _end_rewrite(rewrite_dir, out_dir, stored_charts)
+            return
+
+        except OSError as e:
+            log("generator failed: %s" % e, component="flowcharts", err=True)
+            _end_rewrite(rewrite_dir, out_dir, stored_charts)
+            return
 
     if returncode != 0:
         log_stderr_tail("flowchart engine", stderr_tail)
@@ -1556,7 +1774,17 @@ def run(model, output_dir, model_dir, config):
             component="flowcharts",
             err=True,
         )
+        _end_rewrite(rewrite_dir, out_dir, stored_charts)
         return
+
+    if rewrite_dir:
+        rewritten = _read_lines(os.path.join(rewrite_dir, "rewritten"))
+        if stored_charts is not None:
+            rewritten = _splice_rewritten(out_dir, stored_charts, rewritten)
+        _report_rewritten(rewrite.get("report"), rewritten)
+        log("labels written again for %d of %d chart(s)" % (len(rewritten), len(rewrite_keys)),
+            component="flowcharts")
+        _end_rewrite(rewrite_dir, out_dir, None)
 
     # Incremental function-level (M3.6): splice the freshly generated
     # per-function flowcharts into the carried baseline file JSONs before
@@ -1597,18 +1825,19 @@ def run(model, output_dir, model_dir, config):
     file_units = inc.get("impacted_units") if inc_mode == "file" else None
     fresh_pairs = inc.get("fresh_pairs") if inc_mode == "function" else None
 
+    # (unit, function, DOT, function key, carried): `carried` -- an incremental run took its
+    # picture from the baseline, and redraws only what changed.
     items = []
 
     for fname in sorted(os.listdir(out_dir)):
-        if not fname.endswith(".json"):
+        if not fname.endswith(".json") or fname == "_summary.json":
             continue
 
         unit_name = fname[:-5]
 
         # File-level: skip re-rendering PNGs for non-impacted units
         # (carried forward).
-        if file_units is not None and unit_name not in file_units:
-            continue
+        unit_carried = file_units is not None and unit_name not in file_units
 
         path = os.path.join(out_dir, fname)
 
@@ -1620,6 +1849,8 @@ def run(model, output_dir, model_dir, config):
                 continue
 
             for item in arr:
+                if not isinstance(item, dict):
+                    continue
                 func_name = (item.get("name") or "").strip()
                 flowchart = (item.get("flowchart") or "").strip()
 
@@ -1628,13 +1859,13 @@ def run(model, output_dir, model_dir, config):
 
                 # Function-level: re-render only the directly changed
                 # functions' PNGs.
-                if (
+                carried = unit_carried or (
                     fresh_pairs is not None
                     and (unit_name, func_name) not in fresh_pairs
-                ):
-                    continue
+                )
 
-                items.append((unit_name, func_name, flowchart))
+                items.append((unit_name, func_name, flowchart, item.get("functionKey"),
+                              carried))
 
         except (json.JSONDecodeError, OSError):
             pass
@@ -1649,8 +1880,11 @@ def run(model, output_dir, model_dir, config):
         # find dozens on disk; the engine's own "N file(s) written" line above is
         # what this run produced.
         log("%d flowchart(s) on disk; PNG render skipped "
-            "(views.flowcharts is false)" % len(items), component="flowcharts")
+            "(views.flowcharts is false)" % len([it for it in items if not it[4]]),
+            component="flowcharts")
         return
+
+    items = _pictures_to_draw(items, _printed_charts(output_dir_abs, model), out_dir)
 
     from core.progress import ProgressReporter
     from core.logging_setup import get_logger
@@ -1666,7 +1900,7 @@ def run(model, output_dir, model_dir, config):
 
     progress.start()
 
-    for i, (unit_name, func_name, flowchart) in enumerate(items, 1):
+    for i, (unit_name, func_name, flowchart, _key, _carried) in enumerate(items, 1):
         progress.step(label=f"{unit_name}/{func_name}")
 
         png_name = f"{unit_name}_{safe_filename(func_name)}.png"

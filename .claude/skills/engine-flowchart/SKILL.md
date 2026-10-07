@@ -71,6 +71,20 @@ Start context (read as needed, don't duplicate here):
   A node id is a *position*: a builder change that renumbers nodes makes `slot_shape` (a hash of the
   node-id list) disagree, and the correction is dropped (Phase 3) or orphaned (carry-forward) instead of
   landing on the wrong box — REQ-ID-02, HANDOVER §4.13.
+- **Labels are written from descriptions too.** The context packet — purpose, callers, the callee
+  hierarchy, globals — reads the knowledge base Phase 2 wrote; `_with_current_descriptions` lays the
+  model's descriptions over it before the first chart the LLM labels (`pkb.knowledge.overlay_descriptions`).
+  An update rewriting the charts a description correction reached runs the engine with
+  `--rewrite-labels <request> --only-rewrite` (`_label_chart`): those charts skip the label cache —
+  keyed by the source, which a correction does not move — and `_replace_labels` replaces the entry; a
+  chart with a fallback label keeps its earlier labels and is not reported. The view splices them into
+  the stored charts (`views/flowcharts._splice_rewritten`). The label cache buffers its writes:
+  `_flush_labels` at the end of `run()` lands them (HANDOVER §4.37, §4.39).
+- **A Word picture only for a printed chart.** The view draws PNGs for the charts the directory's
+  SWE.3 document prints — public functions' flowcharts and their private callees' — by the exporter's
+  own rule, `docx_common.printed_flowcharts` (`_pictures_to_draw`). Change which flowcharts the exporter
+  prints only through `docx_common.flowchart_section` / `private_callee_flowcharts`, or a printed chart
+  ends up with no picture.
 
 ## 2. Incremental engine (`engine/incremental/`)
 
@@ -91,7 +105,9 @@ Start context (read as needed, don't duplicate here):
 - **Reviewer corrections travel with the version.** Once the baseline is chosen,
   `_carry_review_overrides(base_vid, version_id)` copies its `text_overrides` onto the new version
   (`engine/review/carry_forward.py`) and orphans any whose entity changed. Keep that call — dropping it
-  in a merge fails only `test_review_pipeline_wiring.py` (HANDOVER §4.4).
+  in a merge fails only `test_review_pipeline_wiring.py` (HANDOVER §4.4). The same call copies the
+  regeneration queue's still-owed entries (`carry_queue`) — names and chart labels included, which no
+  generation rewrites; every queued kind needs its rule in `_queue_entry_applies` (HANDOVER §4.31).
 
 ## 3. Boundaries
 

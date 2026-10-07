@@ -116,6 +116,8 @@ const KIND_WORDS: Record<string, [string, string]> = {
   unitDescription: ['unit description', 'unit descriptions'],
   structDescription: ['struct description', 'struct descriptions'],
   nodeLabel: ['flowchart label', 'flowchart labels'],
+  // Queued only, never edited: a chart's node labels, which the LLM writes together (R10).
+  flowchartLabels: ['flowchart labels', 'flowcharts’ labels'],
 }
 
 export function kindWords(kind: string, n = 1): string {

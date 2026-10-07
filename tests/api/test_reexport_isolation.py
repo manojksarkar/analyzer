@@ -159,7 +159,7 @@ class TestAReexportWritesEveryDocumentTheVersionHas:
         monkeypatch.setattr(core_db, "is_database_configured", lambda *a, **k: True)
         monkeypatch.setattr(core_db, "get_engine",
                             lambda *a, **k: type("E", (), {"connect": lambda self: Connection()})())
-        monkeypatch.setattr(guard, "staleness", lambda cx, vid, doc_types=None: (
+        monkeypatch.setattr(guard, "staleness", lambda cx, vid, doc_types=None, **kw: (
             asked.append(doc_types) or type("S", (), {"is_stale": False})()))
         assert self._runner()._reexport_from_phase("v1", "all") == 4
         assert asked == ["all"]
@@ -185,7 +185,7 @@ class TestAReexportWritesEveryDocumentTheVersionHas:
             "S", (), {"is_stale": True, "explain": lambda self: "a correction"})())
         behind = {"L1.Lib"}
         monkeypatch.setattr(guard, "stale_components",
-                            lambda cx, vid, doc_types, comps: [c for c in comps if c in behind])
+                            lambda cx, vid, doc_types, comps, **kw: [c for c in comps if c in behind])
         runner = self._runner()
         assert runner._reexport_from_phase("v1", "all", ["L1.Sample-Core"]) == 4
         assert runner._reexport_from_phase("v1", "all", ["L1.Sample-Core", "L1.Lib"]) == 3

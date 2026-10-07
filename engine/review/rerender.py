@@ -81,6 +81,7 @@ def write_output_row(conn, version_id: str, rel_path: str, content: str) -> None
 FLOWCHARTS = "flowcharts"
 INTERFACE_TABLES = "interface_tables.json"
 BEHAVIOUR_MANIFEST = "_behaviour_pngs.json"
+UNIT_HEADERS = "unit_headers.json"
 
 
 def output_rows(conn, version_id: str, which: str, *, mentioning: Optional[str] = None):
@@ -108,7 +109,8 @@ def output_rows(conn, version_id: str, which: str, *, mentioning: Optional[str] 
     return rows
 
 
-def _flowchart_row_in(rows, flowchart_id: str):
+def _flowchart_rows_in(rows, flowchart_id: str) -> list:
+    out = []
     for r in rows:
         try:
             entries = json.loads(r.content or "[]")
@@ -118,12 +120,15 @@ def _flowchart_row_in(rows, flowchart_id: str):
             continue
         if any(isinstance(e, dict) and e.get("functionKey") == flowchart_id for e in entries):
             unit_name = r.rel_path.rsplit("/", 1)[-1][:-len(".json")]
-            return r.rel_path, unit_name, r.content
-    return None
+            out.append((r.rel_path, unit_name, r.content))
+    return out
 
 
-def find_flowchart_row(conn, version_id: str, flowchart_id: str):
-    """`(rel_path, unit_name, content)` for the unit file holding `flowchart_id`, or None.
+def find_flowchart_rows(conn, version_id: str, flowchart_id: str) -> list:
+    """`[(rel_path, unit_name, content)]` for EVERY stored unit file holding `flowchart_id` --
+    one per output directory that carries it (two when group scopes overlap). A save that
+    stamps the `flowcharts` view vouches for every copy (`export_guard.stamp_saved`), so it
+    rewrites every copy.
 
     Searched rather than computed: the row's path carries a group directory and a unit stem that
     the flowchart id does not contain, and guessing either would fail silently on any project
@@ -135,9 +140,16 @@ def find_flowchart_row(conn, version_id: str, flowchart_id: str):
     "no such flowchart".
     """
     spelled = json.dumps(flowchart_id)[1:-1]
-    found = _flowchart_row_in(
+    found = _flowchart_rows_in(
         output_rows(conn, version_id, FLOWCHARTS, mentioning=spelled), flowchart_id)
-    return found or _flowchart_row_in(output_rows(conn, version_id, FLOWCHARTS), flowchart_id)
+    return found or _flowchart_rows_in(output_rows(conn, version_id, FLOWCHARTS), flowchart_id)
+
+
+def find_flowchart_row(conn, version_id: str, flowchart_id: str):
+    """`(rel_path, unit_name, content)` for the first unit file holding `flowchart_id`, or None
+    (`find_flowchart_rows`)."""
+    found = find_flowchart_rows(conn, version_id, flowchart_id)
+    return found[0] if found else None
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +199,53 @@ def patch_interface_tables(conn, version_id: str, entity_key: str, description: 
 
 
 # ---------------------------------------------------------------------------
+# unit header tables
+# ---------------------------------------------------------------------------
+def patch_unit_headers(conn, version_id: str, texts: Mapping[str, str]) -> set:
+    """Put struct descriptions into the `information` cell of every stored unit-header row of their
+    type, `{type key: text}`, in every stored `unit_headers.json`. Returns the components it can
+    vouch for: every component whose stored tables name each row's type (`typeKey`).
+
+    The Word file prints this view's COPY of a struct's description (`views/unit_headers`, the cell
+    is `_struct_description`: the stored description, else a name-derived fallback). The model
+    alone being corrected left the copy behind until Phase 3, and the export guard sent every
+    Word-file update of the component through Phase 3 for it (FAST_WORD_FILE_UPDATES P1).
+
+    `texts` must be every struct correction IN FORCE, not just the one being saved: a stamp says
+    the copy carries every correction up to now, and corrections saved before the copy was
+    patched at save time were never written into it. A row from before `typeKey` cannot be
+    placed, so its component is not returned -- the guard keeps it behind until Phase 3 runs.
+    """
+    known: dict = {}
+    for r in output_rows(conn, version_id, UNIT_HEADERS):
+        try:
+            by_unit = json.loads(r.content or "{}")
+        except ValueError:
+            continue           # unreadable: patched nowhere, vouched for nowhere
+        if not isinstance(by_unit, dict):
+            continue
+        changed = False
+        for unit_key, rows in by_unit.items():
+            comp = str(unit_key).split("|", 1)[0]
+            placed = known.get(comp, True)
+            for row in rows if isinstance(rows, list) else ():
+                if not isinstance(row, dict):
+                    continue
+                if "typeKey" not in row:
+                    placed = False
+                    continue
+                text = texts.get(row.get("typeKey") or "")
+                if text and row.get("information") != text:
+                    row["information"] = text
+                    changed = True
+            known[comp] = placed
+        if changed:
+            # As the view writes it (`views/unit_headers.run`), so a save and a run store one text.
+            write_output_row(conn, version_id, r.rel_path, json.dumps(by_unit, indent=2))
+    return {c for c, placed in known.items() if placed}
+
+
+# ---------------------------------------------------------------------------
 # behaviour rows
 # ---------------------------------------------------------------------------
 def find_behaviour_row(conn, version_id: str, function_id: str, external_caller_id: str):
@@ -199,8 +258,16 @@ def find_behaviour_row(conn, version_id: str, function_id: str, external_caller_
     A row written before `externalCallerId` existed simply does not match, which is the right
     outcome — it cannot be addressed unambiguously, so it is not addressed at all.
     """
+    found = find_behaviour_rows(conn, version_id, function_id, external_caller_id)
+    return found[0] if found else None
+
+
+def find_behaviour_rows(conn, version_id: str, function_id: str, external_caller_id: str) -> list:
+    """`[(rel_path, content, row)]` -- the row in EVERY stored manifest that carries it, so a save
+    that stamps `behaviourDiagram` has rewritten every copy (`export_guard.stamp_saved`)."""
     from review import phase3_overrides as p3
 
+    out = []
     for r in output_rows(conn, version_id, BEHAVIOUR_MANIFEST):
         try:
             payload = json.loads(r.content or "{}")
@@ -209,8 +276,9 @@ def find_behaviour_row(conn, version_id: str, function_id: str, external_caller_
         for _c, _u, row in p3.behaviour_rows((payload or {}).get("_docxRows")):
             if (row.get("currentFunctionId") == function_id
                     and row.get("externalCallerId") == external_caller_id):
-                return r.rel_path, r.content, row
-    return None
+                out.append((r.rel_path, r.content, row))
+                break
+    return out
 
 
 def write_behaviour_row(conn, version_id: str, rel_path: str, content: str,
@@ -241,30 +309,32 @@ def redraw_flowchart(conn, version_id: str, flowchart_id: str,
                      labels: Mapping[str, str], *,
                      output_dir: Optional[str] = None,
                      project_root: Optional[str] = None) -> Sequence[Redrawn]:
-    """Apply `{node_id: text}` to one flowchart, store the JSON, re-render the picture.
+    """Apply `{node_id: text}` to one flowchart in EVERY stored copy, store the JSON, re-render
+    the picture.
 
     `output_dir` and `project_root` are optional: without them the JSON is updated and **no image
     is produced**. That is the right behaviour for an API host with no output tree — the text is
-    corrected everywhere it is read from the database, and the picture is regenerated by the next
-    run. It is not silent: the caller gets the `Redrawn` list either way and can queue a render.
+    corrected everywhere it is read from the database, and the picture is drawn by the next
+    update or run (`render_queue.draw_owed`). It is not silent: the caller gets the `Redrawn`
+    list either way and can queue a render.
     """
-    found = find_flowchart_row(conn, version_id, flowchart_id)
+    found = find_flowchart_rows(conn, version_id, flowchart_id)
     if not found:
         raise RedrawError("no stored flowchart for %s in version %s"
                           % (flowchart_id, version_id))
-    rel_path, unit_name, content = found
-
-    patched = patch_unit_flowcharts(content, unit_name, {flowchart_id: dict(labels)})
-    if not patched.redrawn:
-        return ()
-
-    write_output_row(conn, version_id, rel_path, patched.content)
-
-    if output_dir and project_root:
-        fc_dir = os.path.join(output_dir, os.path.dirname(rel_path).replace("/", os.sep))
-        for item in patched.redrawn:
-            render_png(project_root, fc_dir, item)
-    return patched.redrawn
+    redrawn: Sequence[Redrawn] = ()
+    for rel_path, unit_name, content in found:
+        patched = patch_unit_flowcharts(content, unit_name, {flowchart_id: dict(labels)})
+        if not patched.redrawn:
+            continue
+        write_output_row(conn, version_id, rel_path, patched.content)
+        if output_dir and project_root:
+            fc_dir = os.path.join(output_dir, os.path.dirname(rel_path).replace("/", os.sep))
+            for item in patched.redrawn:
+                render_png(project_root, fc_dir, item)
+        # The same flowchart in every copy: one entry per flowchart, not per copy.
+        redrawn = redrawn or patched.redrawn
+    return redrawn
 
 
 def render_png(project_root: str, fc_dir: str, item: Redrawn) -> bool:

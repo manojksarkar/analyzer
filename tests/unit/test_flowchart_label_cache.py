@@ -135,6 +135,19 @@ class TestWiring:
         assert "llm_cache_version=args.llm_cache_version" in eng
         assert 'cache_version=ver' in eng
 
+    def test_the_run_lands_its_labels_before_it_ends(self, monkeypatch):
+        """`put` buffers: a batch is written every 1,000 rows or 60 s. Nothing flushed this cache,
+        so a run's last minute of labels was lost at exit and paid for again next run."""
+        flushed = []
+        monkeypatch.setattr(fe, "_label_cache",
+                            lambda cfg: type("C", (), {"flush": lambda self: flushed.append(1)})())
+        fe._flush_labels(None)
+        assert flushed == [1]
+        eng = open(os.path.join(ROOT, "engine", "flowchart", "flowchart_engine.py"),
+                   encoding="utf-8").read()
+        run = eng[eng.index("\ndef run(config"):]
+        assert run.index("_flush_labels(config)") < run.index("writer.write_all(file_results)")
+
     def test_labels_share_the_description_cache_table(self):
         eng = open(os.path.join(ROOT, "engine", "flowchart", "flowchart_engine.py"),
                    encoding="utf-8").read()
@@ -181,3 +194,91 @@ class TestFallbacksAreNeverCached:
         cfg.nodes["n2"].label = ""
         fe._store_labels(cfg, "k", None)
         assert cache.puts == []
+
+
+class TestWritingAChartAgain:
+    """FAST_WORD_FILE_UPDATES P5. The key is the source's, and a corrected description moves no
+    source: a chart whose label prompts held the rejected text would get the same labels back
+    from the cache for ever. A chart named for rewriting skips the cache, and its new labels
+    replace the cached ones -- unless the LLM fell back on a node, when it keeps the old."""
+
+    class _Gen:
+        def __init__(self, labels, fell_back=()):
+            self.labels, self.fallback_node_ids, self.calls = labels, frozenset(fell_back), 0
+
+        def label_cfg(self, cfg, func_entry, source_code, base_path):
+            self.calls += 1
+            for nid, text in self.labels.items():
+                cfg.nodes[nid].label = text
+
+    class _ReplacingCache(_Cache):
+        def __init__(self, data=None):
+            super().__init__(data)
+            self.replaced = []
+
+        def replace(self, eid, ch, val):
+            self.replaced.append(val)
+            self.data[(eid, ch)] = val
+
+    def _setup(self, monkeypatch, tmp_path, cached=None):
+        from config import EngineConfig
+        config = EngineConfig(functions_json_path="", metadata_json_path="", out_dir="",
+                              rewrite_keys=frozenset({"K"}),
+                              rewrite_report=str(tmp_path / "rewritten"))
+        key = fe._label_cache_key("src", config)
+        cache = self._ReplacingCache({(key, key): json.dumps(cached)} if cached else {})
+        monkeypatch.setattr(fe, "_label_cache", lambda cfg: cache)
+        entry = type("E", (), {"key": "K", "qualified_name": "ns::k"})()
+        return config, cache, entry
+
+    def _report(self, tmp_path):
+        p = tmp_path / "rewritten"
+        return p.read_text(encoding="utf-8").split() if p.exists() else []
+
+    def test_a_named_chart_skips_the_cache_and_replaces_it(self, monkeypatch, tmp_path):
+        config, cache, entry = self._setup(monkeypatch, tmp_path, {"n1": "old a", "n2": "old b"})
+        gen = self._Gen({"n1": "new a", "n2": "new b"})
+        cfg = _cfg()
+        fe._label_chart(cfg, entry, "src", "", gen, config, None)
+        assert gen.calls == 1
+        assert json.loads(cache.replaced[0]) == {"n1": "new a", "n2": "new b"}
+        assert self._report(tmp_path) == ["K"]
+
+    def test_a_fallback_keeps_the_earlier_labels_and_reports_nothing(self, monkeypatch,
+                                                                      tmp_path):
+        config, cache, entry = self._setup(monkeypatch, tmp_path, {"n1": "old a", "n2": "old b"})
+        cfg = _cfg()
+        fe._label_chart(cfg, entry, "src", "", self._Gen({"n1": "new a", "n2": "Check: x"},
+                                                         fell_back={"n2"}), config, None)
+        assert (cfg.nodes["n1"].label, cfg.nodes["n2"].label) == ("old a", "old b")
+        assert cache.replaced == [] and cache.puts == []
+        assert self._report(tmp_path) == []
+
+    def test_any_other_chart_still_comes_from_the_cache(self, monkeypatch, tmp_path):
+        config, cache, _entry = self._setup(monkeypatch, tmp_path, {"n1": "old a", "n2": "old b"})
+        other = type("E", (), {"key": "OTHER", "qualified_name": "ns::o"})()
+        gen = self._Gen({"n1": "new a", "n2": "new b"})
+        cfg = _cfg()
+        fe._label_chart(cfg, other, "src", "", gen, config, None)
+        assert gen.calls == 0 and cfg.nodes["n1"].label == "old a"
+
+    def test_the_knowledge_base_is_brought_up_to_date_only_when_the_llm_writes(self,
+                                                                               monkeypatch,
+                                                                               tmp_path):
+        """A chart's purpose, callers' and callees' descriptions come from the knowledge base,
+        which Phase 2 wrote; the model's corrections go over it first -- and a run whose every
+        chart is cached reads none of them, so pays nothing."""
+        config, _cache, entry = self._setup(monkeypatch, tmp_path, {"n1": "a", "n2": "b"})
+        seen = []
+        monkeypatch.setattr(fe, "_with_current_descriptions", lambda kb, cfg: seen.append(kb))
+        other = type("E", (), {"key": "OTHER", "qualified_name": "ns::o"})()
+        fe._label_chart(_cfg(), other, "src", "", self._Gen({}), config, "KB")
+        assert seen == []
+        fe._label_chart(_cfg(), entry, "src", "", self._Gen({"n1": "x", "n2": "y"}), config, "KB")
+        assert seen == ["KB"]
+
+    def test_the_request_names_the_charts_and_where_to_report(self, tmp_path):
+        req = tmp_path / "req.json"
+        req.write_text(json.dumps({"keys": ["A", "B"], "report": "R"}), encoding="utf-8")
+        assert fe._read_rewrite_request(str(req)) == {"keys": ["A", "B"], "report": "R"}
+        assert fe._read_rewrite_request(None) == {}
