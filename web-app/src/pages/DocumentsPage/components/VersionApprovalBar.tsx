@@ -39,7 +39,7 @@ export function VersionApprovalBar({
           <>
             <Icon name="rate_review" size={16} className="text-warn" />
             <span className="font-mono text-caption text-state-warn">
-              <b>{tag} is in review</b> · {c.approved} of {c.total} documents approved. It is approved when every one is.
+              <b>{tag} is in review</b> · {c.approved} of {c.total} documents approved. The version is approved once all {c.total} are.
             </span>
           </>
         )}

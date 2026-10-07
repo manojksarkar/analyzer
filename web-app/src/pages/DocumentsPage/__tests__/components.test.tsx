@@ -140,4 +140,8 @@ describe('VersionApprovalBar', () => {
     render(<VersionApprovalBar docs={[mk('a', 'approved')]} onOnlyStatus={vi.fn()} onNeedsReviewer={vi.fn()} />)
     expect(screen.getByText(/is approved/)).toBeInTheDocument()
   })
+  it('in review, says how many it waits for -- "It is approved when every one is" read as nonsense', () => {
+    render(<VersionApprovalBar docs={[mk('a', 'approved'), mk('b', 'in_review')]} onOnlyStatus={vi.fn()} onNeedsReviewer={vi.fn()} />)
+    expect(screen.getByText(/1 of 2 documents approved\. The version is approved once all 2 are\./)).toBeInTheDocument()
+  })
 })
