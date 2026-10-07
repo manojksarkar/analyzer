@@ -1057,7 +1057,17 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
             container_png = os.path.join(
                 artifacts_dir, "component_container_diagrams", f"{safe_filename(component_name)}.png"
             )
+            # File dependency diagram: .cpp → .h include edges inside component
+            dep_mmd = _build_component_header_dependency_mermaid(component_name, unit_rows_component, units_data, components_data)
+            dep_png = os.path.join(
+                artifacts_dir, "component_header_dependency_diagrams", f"{safe_filename(component_name)}.png"
+            )
             if msd_render_png:
+                # Both of the component's diagrams in one browser (utils.render_mermaid_many); the
+                # calls below then find them in the picture cache.
+                from utils import render_mermaid_many
+                render_mermaid_many(PROJECT_ROOT, [(container_mmd, container_png), (dep_mmd, dep_png)],
+                                    scale=2, timeout=90)
                 _render_mermaid_to_png(PROJECT_ROOT, container_mmd, container_png)
             if os.path.isfile(container_png):
                 try:
@@ -1072,11 +1082,6 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 _add_mermaid_as_text(doc, container_mmd, font_small)
             _add_horizontal_rule(doc)
 
-            # File dependency diagram: .cpp → .h include edges inside component
-            dep_mmd = _build_component_header_dependency_mermaid(component_name, unit_rows_component, units_data, components_data)
-            dep_png = os.path.join(
-                artifacts_dir, "component_header_dependency_diagrams", f"{safe_filename(component_name)}.png"
-            )
             if msd_render_png:
                 _render_mermaid_to_png(PROJECT_ROOT, dep_mmd, dep_png)
             if os.path.isfile(dep_png):

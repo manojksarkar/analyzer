@@ -166,7 +166,10 @@ class TestItIsActuallyWiredIn:
         src = self._source()
         call = self.CALL.search(src)
         assert call, "no call site to order"
-        assert call.start() < src.index("if render_dot_cached("), (
+        # the first picture drawn, in one browser for many (render_dot_many) or alone
+        first_draw = re.search(r"render_dot_(?:many|cached)\(", src)
+        assert first_draw, "no draw call to order against"
+        assert call.start() < first_draw.start(), (
             "corrections are applied after the pictures are drawn; the flowchart image would "
             "carry the old label")
 

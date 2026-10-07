@@ -348,6 +348,18 @@ class TestFormatLlmConfigBanner:
         assert "sk-secret" not in banner
         assert "set" in banner
 
+    def test_lanes_are_counted_and_their_keys_never_printed(self):
+        cfg = load_llm_config(_cfg(lanes=[{"apiKey": "sk-lane-1"}, {"apiKey": "sk-lane-2"}],
+                                   pacing="start", workers=3))
+        banner = format_llm_config_banner(cfg)
+        assert "2 configured" in banner and "start / 3" in banner
+        assert "sk-lane" not in banner
+
+    def test_no_lanes_says_one_call_at_a_time(self, monkeypatch):
+        monkeypatch.delenv("LLM_API_KEYS", raising=False)
+        banner = format_llm_config_banner(load_llm_config(_cfg()))
+        assert "none (one lane" in banner and "after / 1" in banner
+
 
 class TestLayerSources:
     """Per-layer inputs live INSIDE the layer block, beside `path` and `groups`."""

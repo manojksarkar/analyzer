@@ -593,12 +593,53 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "enrichment": enrichment,
         "cacheVersion": cache_version,
         "fewShotExamplesDir": few_shot_dir.strip(),
+        # perf/pipeline-speed (llm_core/pool.py): several endpoints/keys, start pacing, and how
+        # many calls a stage may have in flight. Absent: one lane, pause after each call, one
+        # call at a time -- today's behaviour.
+        "lanes": _lanes(llm.get("lanes")),
+        "pacing": _choice(llm.get("pacing"), ("after", "start"), "after", "llm.pacing"),
+        "workers": _positive_int(llm.get("workers", 1), "llm.workers"),
     }
+
+
+def _lanes(raw: Any) -> List[Dict[str, Any]]:
+    if raw in (None, ""):
+        return []
+    if not isinstance(raw, list) or not all(isinstance(x, dict) for x in raw):
+        raise LlmConfigError("llm.lanes must be a list of objects")
+    return [dict(x) for x in raw]
+
+
+def _choice(raw: Any, allowed, default: str, name: str) -> str:
+    v = str(raw or default).lower()
+    if v not in allowed:
+        raise LlmConfigError(f"{name} must be one of {', '.join(allowed)} (got {raw!r})")
+    return v
+
+
+def _positive_int(raw: Any, name: str) -> int:
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        raise LlmConfigError(f"{name} must be a whole number (got {raw!r})")
+    if v < 1:
+        raise LlmConfigError(f"{name} must be at least 1 (got {v})")
+    return v
 
 
 # ---------------------------------------------------------------------------
 # Startup banner
 # ---------------------------------------------------------------------------
+
+def _lanes_display(llm_cfg: Dict[str, Any]) -> str:
+    lanes = llm_cfg.get("lanes") or []
+    env = [k for k in os.environ.get("LLM_API_KEYS", "").split(",") if k.strip()]
+    if lanes:
+        return f"{len(lanes)} configured"
+    if env:
+        return f"{len(env)} from LLM_API_KEYS"
+    return "none (one lane: one call at a time, as before)"
+
 
 def format_llm_config_banner(llm_cfg: Dict[str, Any]) -> str:
     """Format a multi-line banner showing the resolved LLM config.
@@ -644,6 +685,9 @@ def format_llm_config_banner(llm_cfg: Dict[str, Any]) -> str:
         f"{'  (no throttle)' if not llm_cfg.get('rateLimitSeconds') else '  (per process)'}"
         f"{'' if llm_cfg.get('provider') == 'openai' else '  (ignored on ollama)'}",
         f"  apiKey            : {api_key_display}",
+        # LLM lanes (llm_core/pool.py) -- counted, never printed: a lane's key is a secret too
+        f"  lanes             : {_lanes_display(llm_cfg)}",
+        f"  pacing / workers  : {llm_cfg.get('pacing') or 'after'} / {llm_cfg.get('workers') or 1}",
         f"  cacheVersion      : {llm_cfg.get('cacheVersion')}",
         f"  fewShotExamplesDir: {llm_cfg.get('fewShotExamplesDir')}",
         f"  descriptions      : {llm_cfg.get('descriptions')}",

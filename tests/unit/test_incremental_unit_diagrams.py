@@ -154,8 +154,10 @@ class TestApplyIncrementalUnitPlan:
         model_dir, _ = self._setup(tmp_path, plan)
 
         rendered = []
-        monkeypatch.setattr(_mod, "render_mermaid_cached",
-                            lambda root, text, png, **kw: rendered.append(os.path.basename(png)))
+        # the view draws its pictures in one browser (render_mermaid_many); what it is handed
+        # is what would be drawn
+        monkeypatch.setattr(_mod, "render_mermaid_many",
+                            lambda root, items, **kw: rendered.extend(os.path.basename(png) for _t, png in items))
         model = {"units": units, "functions": funcs, "globalVariables": glbs}
         _mod.run(model, str(tmp_path / "output"), model_dir, {"views": {"unitDiagrams": True}})
 

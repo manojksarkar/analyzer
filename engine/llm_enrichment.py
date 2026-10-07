@@ -19,6 +19,7 @@ in llm_core.LlmClient.
 """
 
 import os
+import threading
 import re
 import sys
 from typing import Dict, List, Optional
@@ -202,6 +203,8 @@ def _client_cache_key(llm_cfg: dict) -> str:
         str(llm_cfg.get("retries", "")),
         str(llm_cfg.get("timeoutSeconds", "")),
         str(llm_cfg.get("rateLimitSeconds", "")),
+        repr(llm_cfg.get("lanes") or []),
+        str(llm_cfg.get("pacing", "")),
     ])
 
 
@@ -244,6 +247,8 @@ def _get_client(config: dict) -> Optional["LlmClient"]:
         # so the throttle has to be threaded through explicitly — without this
         # the enrichment phases silently ignore llmServer.rateLimitSeconds.
         rate_limit_seconds=llm_cfg.get("rateLimitSeconds", 3.0),
+        lanes=llm_cfg.get("lanes"),
+        pacing=llm_cfg.get("pacing"),
     )
     # Config that isn't visible to LlmClient but changes what we compare
     # between runs (see tools/llm_stats.py).
@@ -486,11 +491,22 @@ One sentence:"""
 # unchanged struct/unit reuses its description with no LLM call.
 # ---------------------------------------------------------------------------
 _AUX_DESC_CACHE = None
+# The cache is shared by every thread of a stage (llm.workers > 1); the LLM call is not held.
+_AUX_LOCK = threading.RLock()
+# One lock per cache key: two threads asking the same question (two structs with one name and
+# one field list) ask the LLM once and both take that answer, as they do one after another.
+_AUX_INFLIGHT: Dict[str, threading.Lock] = {}
 
 
 def _aux_desc_cache(config: dict):
     """Lazy content-addressed store for export-time descriptions. Project-scoped so it is
     stable across version runs, content-addressed (safe to share), honours llm.cacheVersion."""
+    global _AUX_DESC_CACHE
+    with _AUX_LOCK:
+        return _aux_desc_cache_locked(config)
+
+
+def _aux_desc_cache_locked(config: dict):
     global _AUX_DESC_CACHE
     if _AUX_DESC_CACHE is None:
         import atexit
@@ -514,18 +530,28 @@ def _cached_desc(config: dict, key_material: str, generate) -> str:
         cache = _aux_desc_cache(config)
         model = llm_server(config).get("defaultModel", "")
         h = EntityCache.compute_hash(f"{key_material}|model={model}")
-        hit = cache.get(h, h)
-        if hit is not None:
-            return hit
     except Exception:
         cache = h = None
-    result = generate()
-    if cache is not None and h and result:
+    if cache is None or not h:
+        return generate()
+    with _AUX_LOCK:
+        key_lock = _AUX_INFLIGHT.setdefault(h, threading.Lock())
+    with key_lock:
         try:
-            cache.put(h, h, result)
+            with _AUX_LOCK:
+                hit = cache.get(h, h)
+            if hit is not None:
+                return hit
         except Exception:
             pass
-    return result
+        result = generate()
+        if result:
+            try:
+                with _AUX_LOCK:
+                    cache.put(h, h, result)
+            except Exception:
+                pass
+        return result
 
 
 def get_struct_description(struct_name: str, fields: list, config: dict, abbreviations: dict = None) -> str:
@@ -697,18 +723,28 @@ def enrich_functions_with_descriptions(functions_data: list, base_path: str, con
 
 
 def _enrich_globals_loop(globals_list: list, base_path: str, config: dict, processor_fn, result_key: str, label: str) -> dict:
+    from llm_core.parallel import llm_workers, map_in_order
     result = {}
     progress = ProgressReporter(label, total=len(globals_list), logger=_log)
     progress.start()
-    for idx, g in enumerate(globals_list):
+    mu = threading.Lock()
+    todo = []
+    for g in globals_list:
         loc = g.get("location", {})
         if not loc:
             continue
-        key = _make_canonical_key(g)
-        source = extract_source_line(base_path, loc)
+        todo.append((g, _make_canonical_key(g), extract_source_line(base_path, loc)))
+
+    def ask(item):
+        g, _key, source = item
         val = processor_fn(source, config)
+        with mu:
+            progress.step(label=short_name(g.get("qualifiedName", "")) or "?")
+        return val
+    # llm.workers > 1: several globals at once (each prompt is its own line of source); the
+    # results land in the list's order, as before.
+    for (g, key, _source), val in zip(todo, map_in_order(ask, todo, llm_workers(config), "llm-glob")):
         result[key] = {result_key: val}
-        progress.step(label=short_name(g.get("qualifiedName", "")) or "?")
     progress.done(summary=f"{len(result)} described")
     return result
 
@@ -1093,6 +1129,51 @@ def _run_self_review(
     return result or draft
 
 
+class _Locked:
+    """`obj` whose methods take `lock` while they run: a helper shared by the threads of one stage."""
+
+    def __init__(self, obj, lock):
+        self._obj, self._lock = obj, lock
+
+    def __getattr__(self, name):
+        attr = getattr(self._obj, name)
+        if not callable(attr):
+            return attr
+
+        def call(*a, **kw):
+            with self._lock:
+                return attr(*a, **kw)
+        return call
+
+
+def _run_in_rounds(rounds, wanted, work, workers, chain=None):
+    """`work(key)` for every wanted key, round after round; a round's keys on `workers` threads,
+    except a cycle's round, which runs in today's order on this thread. Keys with one `chain(key)`
+    -- one cache entry, e.g. two copies of a static helper with one name -- run one after another
+    in today's order, so the later ones find the first one's answer in the cache, as they do when
+    everything runs in order. Each thread carries this thread's context (the LLM stage the report
+    counts its calls under)."""
+    import contextvars
+    from llm_core.parallel import executor
+
+    def run_chain(ks):
+        for k in ks:
+            work(k)
+    with executor(workers, "llm-desc") as pool:
+        for keys, cycle in rounds:
+            keys = [k for k in keys if k in wanted]
+            if cycle or len(keys) <= 1:
+                for k in keys:
+                    work(k)
+                continue
+            chains: Dict[str, list] = {}
+            for k in keys:
+                chains.setdefault(chain(k) if chain else k, []).append(k)
+            futures = [pool.submit(contextvars.copy_context().run, run_chain, ks) for ks in chains.values()]
+            for fut in futures:
+                fut.result()                     # an error stops the run, as it does today
+
+
 def enrich_functions_rich(
     functions_data: dict,
     base_path: str,
@@ -1145,9 +1226,13 @@ def enrich_functions_rich(
     func_by_id = dict(functions_data)
     calls_map = {key: set(f.get("callsIds", [])) for key, f in functions_data.items()}
     processed, order, all_keys = set(), [], set(func_by_id)
+    # Each round's functions call none of each other: llm.workers > 1 describes a round at once.
+    # A round with no free function is what a call cycle leaves: everything left, in set order.
+    rounds = []
     while len(processed) < len(all_keys):
-        ready = [k for k in all_keys - processed if calls_map.get(k, set()).issubset(processed)] \
-            or list(all_keys - processed)
+        free = [k for k in all_keys - processed if calls_map.get(k, set()).issubset(processed)]
+        ready = free or list(all_keys - processed)
+        rounds.append((ready, not free))
         for key in ready:
             order.append(key)
             processed.add(key)
@@ -1198,15 +1283,15 @@ def enrich_functions_rich(
     progress = ProgressReporter("LLM-description-pass1", total=len(order), logger=_log)
     progress.start()
 
-    for key in order:
+    def _pass1(key):
         f = func_by_id.get(key)
         if not f:
-            continue
+            return
         loc = f.get("location", {})
         source = extract_source(base_path, loc)
         if not source:
             progress.step(label="skip")
-            continue
+            return
 
         qn = f.get("qualifiedName", "")
         budget = ContextBudget(max_tokens=max_tokens, task="function_description", counter=counter)
@@ -1230,7 +1315,7 @@ def enrich_functions_rich(
         if cached:
             result[key] = {"description": cached}
             progress.step(label=short_name(qn) or "?")
-            continue
+            return
 
         desc = get_rich_description(
             source, config,
@@ -1266,6 +1351,20 @@ def enrich_functions_rich(
         elif desc:
             entity_cache.put(qn or key, cache_hash, desc, metadata={"pass": 1})
         progress.step(label=short_name(qn) or "?")
+
+    workers = int(llm_cfg.get("workers") or 1)
+    if workers <= 1:
+        for key in order:
+            _pass1(key)
+    else:
+        # The shared helpers take one thread at a time; only the LLM calls overlap.
+        mu = threading.RLock()
+        entity_cache, progress, builder, repo_map_builder, few_shot_pool, counter = (
+            _Locked(o, mu) if o is not None else None
+            for o in (entity_cache, progress, builder, repo_map_builder, few_shot_pool, counter))
+        # the description cache is keyed by qualified name: one name, one chain
+        _run_in_rounds(rounds, set(order), _pass1, workers,
+                       chain=lambda k: (func_by_id.get(k) or {}).get("qualifiedName") or k)
 
     entity_cache.flush()        # writes are buffered; land pass 1 before pass 2 spends more LLM
     progress.done(summary=f"{len(result)} described (pass 1) — cache: {entity_cache.stats()}")

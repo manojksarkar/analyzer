@@ -224,6 +224,8 @@ class LlmClient:
         num_ctx: int = 8192,
         max_retries: int = 1,
         rate_limit_seconds: Optional[float] = _OPENAI_RATE_LIMIT_SEC,
+        lanes: Optional[List[Dict]] = None,
+        pacing: Optional[str] = None,
         # Legacy-compat args
         url: Optional[str] = None,
         use_openai_format: bool = False,
@@ -262,6 +264,16 @@ class LlmClient:
                 self._endpoint = f"{base}/api/generate"
         else:
             raise ValueError("LlmClient: either url= or base_url= is required")
+
+        # LLM lanes (llm_core/pool.py): only when the config asks for them -- several endpoints or
+        # keys, or start pacing. Otherwise None, and every call takes today's path (one lock,
+        # a pause after each call), exactly as before.
+        self._pool = None
+        if lanes or (pacing or "after").lower() == "start" or os.environ.get("LLM_API_KEYS"):
+            from .pool import lanes_from_config, shared_pool
+            self._pool = shared_pool(lanes_from_config(
+                {"lanes": lanes, "pacing": pacing}, provider=self._provider, endpoint=self._endpoint,
+                api_key=self._api_key, headers=self._custom_headers, rate_limit=self._rate_limit))
 
         # Make the run's report self-describing — a saved stats file is useless
         # if you can't tell which provider/model/server produced it.
@@ -330,6 +342,76 @@ class LlmClient:
             b["prompt_tokens"] += int(m["prompt"] or 0)
             b["completion_tokens"] += int(m["completion"] or 0)
 
+    # With lanes: whether this thread's last request was refused in a way another try can get
+    # past -- 429/502/503, a refused connection, a key refused while another lane is left. Such
+    # an attempt is retried without using one up. A timeout or a 504 cools the lane but counts:
+    # it already cost a full wait, and a prompt too slow for the model stays too slow.
+    _BUSY = threading.local()
+    # ...at most this many times per call, within this long; then the attempts count again, and
+    # a gateway that is down -- or one that refuses this one prompt every time -- ends in "failed
+    # after N attempt(s)" as before, not in a loop.
+    BUSY_FREE_RETRIES = 6
+    BUSY_BUDGET_SECONDS = 600.0
+
+    def _attempt_numbers(self, total: int) -> Iterator[int]:
+        """1..total. With lanes, an attempt the gateway refused as busy does not count while the
+        call is within BUSY_BUDGET_SECONDS: an over-asked gateway delays a call but loses none.
+        (Five calls in ~540 were lost to busy refusals before, with lanes asking more of a key
+        than the gateway allowed.)"""
+        if self._pool is None:
+            yield from range(1, total + 1)
+            return
+        deadline = time.monotonic() + self.BUSY_BUDGET_SECONDS
+        free_left = self.BUSY_FREE_RETRIES
+        n = 0
+        while True:
+            n += 1
+            LlmClient._BUSY.flag = False
+            yield min(n, total)
+            if getattr(LlmClient._BUSY, "flag", False) and free_left > 0 and time.monotonic() < deadline:
+                free_left -= 1
+                n -= 1                  # the same attempt again: it was not used up
+                continue
+            if n >= total:
+                return
+
+    def _post(self, m: Dict, payload: Dict, *, chat: bool = False) -> Dict:
+        """One request through the lanes: wait for the lane that can start soonest, send, and
+        release it -- cooling it down when the gateway was busy (429/502/503/504, a timeout, a
+        refused connection), so the next attempt takes another lane at once."""
+        from .pool import AUTH_STATUSES, BUSY_STATUSES
+        lane, waited = self._pool.acquire(timeout=max(self._timeout, 60) * 4)
+        m["throttle"] += waited
+        busy = free = dead = False
+        retry_after = None
+        try:
+            if self._provider == "openai":
+                headers = build_openai_headers(api_key=lane.api_key, config_headers=lane.headers)
+                resp = requests.post(lane.endpoint, headers=headers, json=payload, timeout=self._timeout)
+            else:
+                ep = lane.endpoint.replace("/api/generate", "/api/chat") if chat else lane.endpoint
+                resp = requests.post(ep, json=payload, timeout=self._timeout)
+            if resp.status_code in BUSY_STATUSES:
+                busy, free = True, resp.status_code != 504
+                try:
+                    retry_after = float(resp.headers.get("Retry-After") or "") or None
+                except ValueError:
+                    retry_after = None
+            elif resp.status_code in AUTH_STATUSES and len(self._pool.lanes) > 1:
+                dead = True
+                free = self._pool.live_lanes(besides=lane) > 0
+            resp.raise_for_status()
+            return resp.json()
+        except requests.Timeout:                # ConnectTimeout too: it waited the full timeout
+            busy = True
+            raise
+        except requests.ConnectionError:
+            busy = free = True
+            raise
+        finally:
+            LlmClient._BUSY.flag = free
+            self._pool.release(lane, busy=busy, retry_after=retry_after, dead=dead)
+
     def _throttle(self, m: Dict) -> None:
         """Sleep the configured gateway pause, recording how long it took."""
         if self._rate_limit > 0:
@@ -380,8 +462,8 @@ class LlmClient:
             return _fake_response(system_prompt, user_prompt)
         last_exc: Optional[BaseException] = None
         # max_retries=1 means: 1 initial attempt + 1 retry = 2 total tries.
-        total_attempts = self._max_retries + 1
-        for attempt in range(1, total_attempts + 1):
+        total_attempts = self._max_retries + 1 + (len(self._pool.lanes) - 1 if self._pool else 0)
+        for attempt in self._attempt_numbers(total_attempts):
             try:
                 if self._provider == "openai":
                     raw = self._call_openai(system_prompt, user_prompt)
@@ -481,8 +563,8 @@ class LlmClient:
         if _fake_enabled():          # deterministic baseline capture; prompt already dumped
             return _fake_response(*(str(m.get("content", "")) for m in messages))
         last_exc: Optional[BaseException] = None
-        total_attempts = self._max_retries + 1
-        for attempt in range(1, total_attempts + 1):
+        total_attempts = self._max_retries + 1 + (len(self._pool.lanes) - 1 if self._pool else 0)
+        for attempt in self._attempt_numbers(total_attempts):
             try:
                 if self._provider == "openai":
                     raw = self._call_openai_messages(messages, temp)
@@ -566,9 +648,12 @@ class LlmClient:
             },
         }
         with self._attempt("ollama") as m:
-            resp = requests.post(self._endpoint, json=payload, timeout=self._timeout)
-            resp.raise_for_status()
-            data = resp.json()
+            if self._pool is not None:
+                data = self._post(m, payload)
+            else:
+                resp = requests.post(self._endpoint, json=payload, timeout=self._timeout)
+                resp.raise_for_status()
+                data = resp.json()
             text = (data.get("response") or "").strip()
             # Token tracking
             m["prompt"] = int(data.get("prompt_eval_count") or 0)
@@ -597,9 +682,12 @@ class LlmClient:
             },
         }
         with self._attempt("ollama") as m:
-            resp = requests.post(chat_endpoint, json=payload, timeout=self._timeout)
-            resp.raise_for_status()
-            data = resp.json()
+            if self._pool is not None:
+                data = self._post(m, payload, chat=True)
+            else:
+                resp = requests.post(chat_endpoint, json=payload, timeout=self._timeout)
+                resp.raise_for_status()
+                data = resp.json()
             # /api/chat returns {"message": {"role": "assistant", "content": "..."}}
             msg = data.get("message") or {}
             text = (msg.get("content") or "").strip()
@@ -632,7 +720,10 @@ class LlmClient:
         # generate() concurrently, only one OpenAI request is in flight at a
         # time, and we always sleep after to satisfy the gateway throttle.
         with self._attempt("openai") as m:
-            with _OPENAI_LOCK:
+            if self._pool is not None:
+                data = self._post(m, payload)
+            else:
+              with _OPENAI_LOCK:
                 headers = build_openai_headers(
                     api_key=self._api_key,
                     config_headers=self._custom_headers,
@@ -672,7 +763,10 @@ class LlmClient:
             "max_tokens": 2048,
         }
         with self._attempt("openai") as m:
-            with _OPENAI_LOCK:
+            if self._pool is not None:
+                data = self._post(m, payload)
+            else:
+              with _OPENAI_LOCK:
                 headers = build_openai_headers(
                     api_key=self._api_key,
                     config_headers=self._custom_headers,
@@ -721,6 +815,8 @@ def from_config(llm_cfg: Dict) -> LlmClient:
     api_key = resolve_api_key(llm_cfg)
     rate_limit = llm_cfg.get("rateLimitSeconds")
     return LlmClient(
+        lanes=llm_cfg.get("lanes"),
+        pacing=llm_cfg.get("pacing"),
         provider=provider,
         base_url=base_url,
         model=model,
