@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useVersionComponents } from '../../hooks/useVersionComponents'
+import { useResumeVersion, useVersionComponents } from '../../hooks/useVersionComponents'
 import { useCancelJob } from '../../hooks/useJobs'
 import { useVersionWordFiles, useWordFilesWatcher } from '../../hooks/useWordFiles'
 import { Button, Icon } from '../ui'
@@ -54,6 +54,8 @@ export function GenerationBanner({ projectId, versionId, versionTag, isAdmin, la
   const cancel = useCancelJob(projectId)
   const [stopping, setStopping] = useState(false)
   const [opened, setOpened] = useState(false)
+  const resume = useResumeVersion(projectId, versionId)
+  const [showCommand, setShowCommand] = useState(false)
   const [params, setParams] = useSearchParams()
   const isSuperuser = useAuthStore((s) => !!s.user?.isSuperuser)
   const openLogs = useLogsPanel((s) => s.openLogs)
@@ -99,6 +101,8 @@ export function GenerationBanner({ projectId, versionId, versionTag, isAdmin, la
   const row = shown && !(summary.row?.kind === 'running' && runCommand === 'reexport' && wordRow.kind === 'updating')
     ? summary.row : null
   const done = `${withDocs} of ${total}`
+  // A run (or a web job) holds the version: Resume would be refused (409 VERSION_BUSY / RUN_ACTIVE).
+  const resumeBusy = data.resumeAction === 'busy' || !!data.job
 
   let text: ReactNode = null
   let extra: ReactNode = null
@@ -108,10 +112,26 @@ export function GenerationBanner({ projectId, versionId, versionTag, isAdmin, la
     if (!compact && row.startedAt) parts.push(`started ${relativeTime(row.startedAt)}`)
     text = <><b className="font-semibold text-on-surface">{row.verb}</b> · {parts.join(' · ')}</>
   } else if (row?.kind === 'stopped') {
-    text = row.at
-      ? <><b className="font-semibold text-on-surface">Generation stopped</b> {relativeTime(row.at)} before it finished · {done} done</>
-      : <><b className="font-semibold text-on-surface">{plural(row.cutShort, 'component')} stopped or failed</b> · {done} done</>
-    extra = (
+    // Which components did not get their documents, and why: a failure's own words, else the stop.
+    const names = row.cut.map((c) => c.id)
+    const which = names.length > 2 ? `${names.slice(0, 2).join(', ')} +${names.length - 2} more` : names.join(', ')
+    const failed = row.cut.find((c) => c.state === 'failed' && c.error)
+    const reason = failed?.error?.split('\n')[0] ?? null
+    const headline = row.at
+      ? <><b className="font-semibold text-on-surface">Generation stopped</b> {relativeTime(row.at)} before it finished</>
+      : row.cut.length === 1
+        ? <b className="font-semibold text-on-surface">{names[0]} {row.cut[0].state === 'failed' ? 'failed' : 'stopped'}</b>
+        : <b className="font-semibold text-on-surface">{plural(row.cutShort, 'component')} stopped or failed</b>
+    text = (
+      <>
+        {headline}
+        {row.at && which && <> · not made: {which}</>}
+        {!row.at && row.cut.length > 1 && <> · {which}</>}
+        {reason && <> · <span title={failed?.error ?? undefined}>{reason.length > 140 ? `${reason.slice(0, 140)}…` : reason}</span></>}
+        {' · '}{done} done
+      </>
+    )
+    extra = showCommand && (
       <code className="block mt-1 font-mono text-label text-state-warn bg-highlight px-1.5 py-0.5 rounded-[3px] break-all select-all">
         python analyzer.py resume --project-id {projectId} --version-id {versionId} --detach
       </code>
@@ -135,6 +155,22 @@ export function GenerationBanner({ projectId, versionId, versionTag, isAdmin, la
                 {/* eslint-disable-next-line no-restricted-syntax -- the share done is data-driven */}
                 <span className={cn('block h-full rounded-full', BAR[row.kind])} style={{ width: `${total ? (100 * withDocs) / total : 0}%` }} />
               </span>
+              {/* Admins: carry the stopped run on from the web (POST .../resume) -- greyed out, with
+                  the reason, while a run holds the version; the server command behind a link */}
+              {isAdmin && row.kind === 'stopped' && data.resumeAction !== 'nothing' && (
+                <>
+                  <Button size="sm" onClick={() => resume.mutate(undefined, { onSuccess: () => poll() })}
+                    disabled={resumeBusy || resume.isPending} loading={resume.isPending}
+                    title={resumeBusy ? 'A run is at work on this version: Resume once it ends.' : 'Carry the run on from where it stopped'}
+                    className="flex-shrink-0 h-auto py-1.5 rounded-[6px] whitespace-nowrap">
+                    <Icon name="play_arrow" size={15} />Resume
+                  </Button>
+                  <button type="button" onClick={() => setShowCommand((v) => !v)}
+                    className="flex-shrink-0 px-1 py-1.5 text-xs text-on-surface-variant hover:text-secondary hover:underline">
+                    {showCommand ? 'Hide the command' : 'Run on the server'}
+                  </button>
+                </>
+              )}
               <Button variant="outline" size="sm" onClick={() => setOpened(true)}
                 className="flex-shrink-0 h-auto py-1.5 rounded-[6px] bg-surface-container-lowest whitespace-nowrap">
                 View components

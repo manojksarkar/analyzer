@@ -44,6 +44,7 @@ export const ApiVersionComponentsSchema = z.object({
   run: ApiVersionRunSchema.nullable(),
   job: z.object({ id: z.string(), mode: z.string().nullable().optional(), status: z.string() })
     .nullable().optional(),
+  resume_action: z.string().nullable().optional(),
 })
 export type ApiVersionComponents = z.infer<typeof ApiVersionComponentsSchema>
 
@@ -95,5 +96,6 @@ export function mapVersionComponents(r: ApiVersionComponents): VersionComponents
     counts,
     run: r.run ? mapVersionRun(r.run) : null,
     job: r.job ? { id: r.job.id, mode: r.job.mode ?? 'auto', status: r.job.status } : null,
+    resumeAction: r.resume_action ?? null,
   }
 }

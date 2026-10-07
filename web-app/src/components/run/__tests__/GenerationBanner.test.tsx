@@ -91,6 +91,7 @@ function setup(isAdmin: boolean, body: object, opts: {
   const { readiness = r9(false, []), compact, needsModel, url = '/' } = opts
   const cancelled: string[] = []
   const reexported: string[] = []
+  const resumed: string[] = []
   server.use(
     http.get(`${API_BASE_URL}/projects/p1/versions/ver1/components`, () => HttpResponse.json(body)),
     http.get(`${API_BASE_URL}/projects/p1/versions/ver1/export-readiness`, async () => {
@@ -104,6 +105,10 @@ function setup(isAdmin: boolean, body: object, opts: {
       reexported.push(JSON.stringify(await request.json()))
       return HttpResponse.json({ job_id: 'jobrx', status: 'queued', version_id: 'ver1', scope: 'out_of_date', components: [], joined: false }, { status: 202 })
     }),
+    http.post(`${API_BASE_URL}/projects/p1/versions/ver1/resume`, () => {
+      resumed.push('ver1')
+      return HttpResponse.json({ job_id: 'jobres', status: 'queued', version_id: 'ver1' }, { status: 202 })
+    }),
     http.post(`${API_BASE_URL}/projects/p1/jobs/:jobId/cancel`, ({ params }) => {
       cancelled.push(String(params.jobId))
       return HttpResponse.json({ job: null })
@@ -116,7 +121,7 @@ function setup(isAdmin: boolean, body: object, opts: {
   const view = render(wrap(
     <GenerationBanner projectId="p1" versionId="ver1" versionTag="v1.2.0" isAdmin={isAdmin} compact={compact} needsModel={needsModel} />,
   ))
-  return { cancelled, reexported, user: userEvent.setup(), ...view }
+  return { cancelled, reexported, resumed, user: userEvent.setup(), ...view }
 }
 
 const banner = () => screen.findByRole('status', { name: 'Generation' })
@@ -181,11 +186,36 @@ describe('GenerationBanner', () => {
     expect(await banner()).toHaveTextContent('Updating Word files · 2 of 4 components done · writing Word files, 3 of 25')
   })
 
-  it('a run cut short: says so, with the command that continues it', async () => {
-    setup(false, STOPPED)
+  it('a run cut short: says so; an admin resumes it from here, the command one click away', async () => {
+    const { resumed, user } = setup(true, { ...STOPPED, resume_action: 'export' })
     const row = await banner()
     expect(row).toHaveTextContent('Generation stopped 3h ago before it finished · 2 of 4 done')
+    expect(within(row).queryByText(/python analyzer.py resume/)).not.toBeInTheDocument()
+    await user.click(within(row).getByRole('button', { name: 'Run on the server' }))
     expect(within(row).getByText('python analyzer.py resume --project-id p1 --version-id ver1 --detach')).toBeInTheDocument()
+    await user.click(within(row).getByRole('button', { name: /Resume/ }))
+    await waitFor(() => expect(resumed).toEqual(['ver1']))
+  })
+
+  it('names what did not get its documents, and why', async () => {
+    const failed = { ...IDLE, components: [comp('Layer1.Math', 'generated', [DOC('d1')]), comp('Layer1.Util', 'failed'),
+      comp('Layer2.Gpio', 'not_requested')], resume_action: 'export' }
+    setup(true, failed)
+    expect(await banner()).toHaveTextContent('Layer1.Util failed · Components: L1.Util: stopped with exit code 1 · 1 of 3 done')
+  })
+
+  it('Resume waits while a run holds the version; a developer gets neither it nor the command', async () => {
+    setup(true, { ...STOPPED, resume_action: 'busy' })
+    const row = await banner()
+    expect(within(row).getByRole('button', { name: /Resume/ })).toBeDisabled()
+    expect(within(row).getByRole('button', { name: /Resume/ })).toHaveAttribute('title', expect.stringMatching(/at work on this version/))
+  })
+
+  it('a developer sees the stop, not Resume', async () => {
+    setup(false, { ...STOPPED, resume_action: 'export' })
+    const row = await banner()
+    expect(within(row).queryByRole('button', { name: /Resume/ })).not.toBeInTheDocument()
+    expect(within(row).queryByRole('button', { name: 'Run on the server' })).not.toBeInTheDocument()
   })
 
   it('a version with no documents yet shows only when it has a model', async () => {

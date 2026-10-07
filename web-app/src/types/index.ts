@@ -132,6 +132,9 @@ export interface VersionComponents {
   run: VersionRun | null
   /** null from an API that does not say (older), or when no web job is at work on it. */
   job: VersionJob | null
+  /** What Resume would do now (POST .../resume): regenerate | derive | export | close when a run
+   *  stopped before it finished; busy while one is at work; nothing otherwise. null: not said. */
+  resumeAction: string | null
 }
 
 /** A person as the review routes name them. */

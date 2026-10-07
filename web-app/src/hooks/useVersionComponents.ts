@@ -74,6 +74,21 @@ export function useAllProjectRuns(projectIds: string[]) {
   })
 }
 
+/** Resume a version whose run stopped before it finished: the job takes the banner's running row. */
+export function useResumeVersion(projectId: string, versionId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => versionComponentsApi.resume(projectId, versionId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: projectKeys.versionComponents(projectId, versionId) })
+      qc.invalidateQueries({ queryKey: projectKeys.job(projectId) })
+      qc.invalidateQueries({ queryKey: projectKeys.runs(projectId) })
+      toast.success('Resuming', 'The run carries on from where it stopped.')
+    },
+    onError: (e: Error) => toast.error('Could not resume', e.message),
+  })
+}
+
 export function useGenerateComponents(projectId: string, versionId?: string) {
   const qc = useQueryClient()
   return useMutation({

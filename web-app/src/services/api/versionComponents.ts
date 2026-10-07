@@ -22,6 +22,12 @@ export const versionComponentsApi = {
     mapProjectRuns(ApiProjectRunsSchema.parse(await http.get(`/projects/${pid}/runs`))),
   /** Make the documents of components the version has not generated yet (a job, Phases 3–4; 1–4
    *  when one is of a layer the model lacks: the job adds that layer first). */
+  /** Carry on a version whose run stopped before it finished (`analyzer.py resume`, as a job).
+   *  409: VERSION_BUSY / RUN_ACTIVE (a run is at work on it), NOTHING_TO_RESUME. */
+  resume: async (pid: string, vid: string): Promise<{ jobId: string }> => {
+    const r = await http.post<{ job_id: string }>(`/projects/${pid}/versions/${vid}/resume`)
+    return { jobId: r.job_id }
+  },
   generate: async (pid: string, vid: string, components: string[]): Promise<GenerateResult> => {
     const r = await http.post<{ job_id: string; components: string[]; skipped: string[]; added_layers?: string[] }>(
       `/projects/${pid}/versions/${vid}/documents/generate`, { components })

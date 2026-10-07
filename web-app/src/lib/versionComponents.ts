@@ -87,7 +87,7 @@ export type GenerationRow =
   /** A run, or a web job, is at work on the version. */
   | { kind: 'running'; verb: string; activity: string; startedAt: string | null }
   /** Its run stopped before it finished (`stopped`), or finished with components cut short. */
-  | { kind: 'stopped'; at: string | null; cutShort: number }
+  | { kind: 'stopped'; at: string | null; cutShort: number; cut: VersionComponent[] }
   /** Nothing at work, and `missing` components have no documents yet. */
   | { kind: 'missing'; missing: number }
 
@@ -109,7 +109,8 @@ export function generationSummary(data: VersionComponents | undefined): Generati
   const comps = data.components
   const withDocs = comps.filter(hasDocuments).length
   const stale = comps.filter((c) => c.state === 'stale').length
-  const cutShort = comps.filter((c) => c.inModel && (c.state === 'stopped' || c.state === 'failed')).length
+  const cut = comps.filter((c) => c.inModel && (c.state === 'stopped' || c.state === 'failed'))
+  const cutShort = cut.length
   const missing = comps.filter((c) => !hasDocuments(c) && !unmakeable(c)).length
   const { run, job } = data
   let row: GenerationRow | null = null
@@ -122,7 +123,7 @@ export function generationSummary(data: VersionComponents | undefined): Generati
       startedAt: live?.startedAt ?? null,
     }
   } else if (run?.stopped || cutShort > 0) {
-    row = { kind: 'stopped', at: run?.stopped ? run.progressAt ?? run.startedAt : null, cutShort }
+    row = { kind: 'stopped', at: run?.stopped ? run.progressAt ?? run.startedAt : null, cutShort, cut }
   } else if (missing > 0) {
     row = { kind: 'missing', missing }
   }
