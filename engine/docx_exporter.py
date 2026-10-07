@@ -19,6 +19,8 @@ from docx_common import (
     add_para as _add_para,
     add_toc as _add_toc,
     build_cover_page as _build_cover_page,
+    flowchart_section as _flowchart_section,
+    private_callee_flowcharts as _private_callee_flowcharts,
 )
 
 # Apply (and strip) --model-root / --output-root BEFORE paths() is snapshotted below.
@@ -1122,11 +1124,14 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
             doc.add_heading(f"{sec_num}.1.{unit_idx}.2 unit interface", level=4)
             _add_interface_table(doc, interfaces, font_small)
 
-            # 2.1.1.3, 2.1.1.4, ... per interface (functions only — globals have no flowchart section)
+            # 2.1.1.3, 2.1.1.4, ... per interface (functions only — globals have no flowchart section).
+            # Which flowcharts are printed is ONE rule (`docx_common.flowchart_section`,
+            # `private_callee_flowcharts`): the flowcharts view draws the pictures of exactly
+            # these, and a chart printed here that it did not draw would have no picture.
             unit_name_flowchart = unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_name_display
             rendered_private_fids = set()  # track private flowcharts already shown in this unit
             for iface_idx, iface in enumerate(
-                (i for i in interfaces if i.get("type") != "Global Variable"), start=3
+                (i for i in interfaces if _flowchart_section(i, _hidden_fids)), start=3
             ):
                 func_name = iface.get("name", "")
                 # Class-qualified for anything the reader sees; func_name stays short because
@@ -1165,13 +1170,9 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                     )
 
                 if flowcharts_enabled:
-                    callee_fids = (functions_data.get(iface.get("functionId")) or {}).get("callsIds") or []
-                    for callee_fid in callee_fids:
-                        if callee_fid in _hidden_fids:
-                            continue
+                    for callee_fid in _private_callee_flowcharts(iface.get("functionId"),
+                                                                 functions_data, _hidden_fids):
                         callee = functions_data.get(callee_fid) or {}
-                        if (callee.get("visibility") or "").lower() != "private":
-                            continue
                         callee_parts = callee_fid.split(KEY_SEP)
                         callee_unit_key = KEY_SEP.join(callee_parts[:2]) if len(callee_parts) >= 2 else ""
                         callee_unit_prefix = callee_unit_key.replace(KEY_SEP, "_").replace(" ", "_")

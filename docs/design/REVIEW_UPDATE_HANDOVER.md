@@ -144,6 +144,8 @@ branch changed; `tests/unit/test_project_context_fits.py` then checks the sizes 
 | `rerender.py` | the same, plus the database row and the PNG |
 | `export_guard.py` | whether an export would ship superseded text, per view, component and document type; the derivation records and stamps it reads |
 | `swe4_rederive.py` | a save re-derives the component's SWE.4 specs and UT export from the stored rows (`REQ-CS-04`) |
+| `cascade.py` | what a correction invalidates (`REQ-CS-01`): the candidates, recorded in `regeneration_queue` |
+| `rewrite.py` | the Word-file update rewrites its components' queued texts before it exports, and hands their charts to its Phase 3 (FAST_WORD_FILE_UPDATES P5) |
 
 ### 3.2 Modified — the merge conflict surface
 
@@ -594,6 +596,12 @@ components): a SWE.4-only run retired every one of them before. A save removes i
 version starts from the baseline's text, stale wording included; without the entries it reads that
 text as current and never asks again.
 
+Every kind the cascade queues needs its rule in `carry_forward._queue_entry_applies`: a kind without
+one falls through to "does not apply" and is dropped, with no error. The names and chart-label
+entries (`inputName`, `flowchartLabels`, FAST_WORD_FILE_UPDATES P5) were, until 2026-10-07c — and
+since no generation rewrites them, the new version printed the text written from the rejected one
+for good. A names entry stands for both names here too (`_reviewers_text`).
+
 → `test_review_carry_forward.py::TestTheRegenerationQueueTravels`.
 
 ### 4.32 A 4xx is the caller's fault
@@ -637,6 +645,70 @@ the shared blob alone); `test_db_setup_upgrade.py::TestMigration0017RenamesTheIn
 `test_review_overrides_api.py::TestTheInputAndOutputNames` (the old names are a 422 on every route);
 `test_extend_layers.py::test_a_function_stored_under_the_old_names_is_written_under_the_new`.
 
+### 4.35 An update rewrites only the texts whose prompt holds a corrected one
+
+`review/rewrite.py` (FAST_WORD_FILE_UPDATES P5). The candidates are `cascade.dependents_of`'s; each
+is rewritten only when its prompt's inputs differ between the model with every description correction
+taken back to its LLM original (`then`) and the model as it is (`now`), the knowledge base brought up
+to date with each (`pkb.knowledge.overlay_descriptions`). A comparison that misses an input leaves a
+text with the rejected wording, in silence; one that compares too much pays the LLM for nothing. A
+reviewer's text, another component's (D3) and an approved document's are not touched; a text whose
+rewrite gets no answer keeps its words and its entry. Names are stored only when the LLM answered —
+its silence leaves the poor static names, which must not replace its earlier ones.
+
+→ `test_review_rewrite.py::TestDescriptions`, `::TestWhichEntries`, `::TestUnitsAndNames`;
+`test_review_cascade.py` (the candidates).
+
+### 4.36 A behaviour row is rebuilt for the caller the view drew it for
+
+The view pairs the selector's i-th caller with the i-th direct caller from another component, and the
+selector takes callers of callers, so a row's `externalCallerId` is not always the caller whose call
+its first bullet describes — and that bullet is the LLM's, from both ends' descriptions. A rebuild for
+`externalCallerId` would describe a call the diagram does not draw. `rewrite._drawn_for` repeats the
+pairing; a call whose prompt did not move keeps its stored words, and the call cache learns them.
+
+→ `test_review_rewrite.py::TestTheCallerARowWasDrawnFor`, `::TestBehaviourRows`.
+
+### 4.37 A rewritten chart replaces its cached labels; a fallback keeps the old ones
+
+The label cache is keyed by the source, which a corrected description does not move. A chart named
+for rewriting skips the cache and **replaces** the entry (`_replace_labels`) — `put`, first writer
+wins, would keep the labels written from the rejected text, and the next run would bring them back. A
+chart where the LLM fell back on a node keeps its earlier labels and is not reported, so its entry
+stays. The view splices only the charts the engine reported, and the update retires their entries
+only after its output is stored (`rewrite.labels_done`).
+
+→ `test_flowchart_label_cache.py::TestWritingAChartAgain`;
+`test_review_rewrite.py::TestTheViewSplicesTheRewrittenCharts`, `::TestCharts`.
+
+### 4.38 An update's Phase 3 keeps the views it did not run
+
+`run.py --views` reaches Phase 3 alone (`views.run_views(only=…)`), and the derivation record merges
+per view, so the views it did not run keep their entries and their stamps. A record written over
+would leave them unstamped, and every later update would run a full Phase 3. The update runs its own
+Phase 3 only when nothing else is behind (`analyzer._with_label_rewrite` asks the guard first).
+
+→ `test_review_rewrite.py::TestTheUpdatesPhase3`, `::TestTheAnalyzerChangesItsPhase3`.
+
+### 4.39 The label cache is flushed when the engine finishes
+
+`EntityCache.put` buffers and writes a batch every 1,000 rows or 60 seconds. The flowchart engine
+never flushed it, so the labels of a run's last minute were lost at exit and paid for again, in new
+words, by the next run. `_flush_labels` runs once every chart is labelled.
+
+→ `test_flowchart_label_cache.py::TestWiring::test_the_run_lands_its_labels_before_it_ends`.
+
+### 4.40 The rewrite step runs only on a model that is made
+
+`analyzer._render_version` is the path of `reexport`, `export` and `resume` alike, so a staged
+generation's runs take the update's rewrite step too. One that derives the model again — `resume` of a
+run cut short in Phase 2, `reexport --from-phase 2` — must skip it: the step would read a model Phase 2
+has yet to make, and store descriptions that Phase 2 then keeps, as it describes only blanks. Phase 2
+rewrites the queued descriptions itself there. With nothing queued, the step returns before it takes
+the run's identity (`rewrite.queued`).
+
+→ `test_review_pipeline_wiring.py::TestEveryPieceHasACaller::test_the_rewrite_step_leaves_a_re_derive_to_phase_2`.
+
 ---
 
 ## 5. Defects this branch found in existing code
@@ -661,6 +733,16 @@ directories under the bare group name.
 **A hung diagram render held a run for an hour** — §4.24.
 
 **A web job's baseline could belong to another project** — §4.23.
+
+Found by the fast Word-file updates (FAST_WORD_FILE_UPDATES, 2026-10-07):
+
+**The label cache lost a run's last minute of labels** — §4.39.
+
+**The cascade missed most of what a correction invalidates.** `dependents_of` recorded a function's
+direct callers, unit and behaviour rows and a global's unit; the prompts also read callees', file
+siblings' and globals' descriptions, input and output names, and — contrary to `REQ-CS-01` as it was
+written — flowchart labels, whose prompts name the function's purpose and its callers', callees' and
+globals' descriptions. A behaviour row's incoming call is the LLM's too (§4.36).
 
 ---
 

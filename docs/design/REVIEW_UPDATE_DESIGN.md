@@ -478,24 +478,23 @@ its own fix.
 
 ## 6. The cascade
 
-`engine/review/cascade.py`. One level only (`REQ-CS-02`).
+`engine/review/cascade.py`. One level only (`REQ-CS-02`): a text is a dependent because its prompt
+holds the corrected text, never because it holds one that was itself regenerated.
 
-Dependents of an edited **function description**:
+Only a description is read by another prompt, so only a description cascades. Its dependents are
+`REQ-CS-01`'s table, read from the prompt builders
+([FAST_WORD_FILE_UPDATES §4.1](FAST_WORD_FILE_UPDATES.md#41-llm-texts-written-from-a-corrected-text)):
+for a **function**, the descriptions of its callers, callees and file siblings and of the globals it
+reaches, its unit's description, the behaviour rows it is in (their incoming call or their call tree),
+and the labels of its own chart, its callees' charts and every chart within four calls above it; for a
+**global**, the descriptions, input and output names and chart labels of every function that reaches
+it, and its unit's description. A chart's labels are queued as one entry, `flowchartLabels`, keyed by
+the function — not an editable kind: the LLM writes a chart's labels together.
 
-1. **Its unit's description** — `model_units` by the function's `unit_key`
-2. **Its direct callers** — one indexed query, the index exists for exactly this:
-
-   ```sql
-   SELECT src_key FROM model_edges
-    WHERE version_id = :v AND kind = 'call' AND dst_key = :entity_key
-   ```
-
-   (`ix_edges_reverse` on `(version_id, kind, dst_key)` — commented in the schema as *"who depends on
-   X (impact)"*.)
-3. **Behaviour call descriptions** where it is caller or callee
-
-A **global description** regenerates only its unit's description. Every other slot kind cascades to
-nothing — `REQ-CS-01`'s table is the whole list. (An earlier draft of this line cited `REQ-CS-04`–`07`, which were never written; the cases were collapsed into that table.)
+`dependents_of` reads the call and global-access edges once (`_Graph`, two indexed queries) and walks
+them in memory — a query per step would be a query per function on a real project. What it returns
+are **candidates**: prompts are cut to a token budget, so a far caller may not carry the corrected
+text; the update checks each prompt before it rewrites (§6.1).
 
 **The dependents are RECORDED, not regenerated where the correction is saved** — a deviation from
 this section's first draft, for two reasons that were checked rather than assumed:
@@ -504,14 +503,16 @@ this section's first draft, for two reasons that were checked rather than assume
   the git checkout. The host saving a correction is not guaranteed to have one.
 * regenerating is an LLM call, and saving a sentence must not take minutes.
 
-Skipping it instead is not available either: the description cache is keyed on the callee's source
-plus its dependency hashes (`llm_core.cache.compute_hash`), and correcting a *description* changes
-neither — so the next run hits the cache and the caller keeps its stale wording for ever.
+Skipping it instead is not available either: the description cache is keyed on the source plus the
+callees' source hashes (`llm_core.cache.compute_hash`) and the label cache on the source alone, and
+correcting a *description* moves neither — so the next run hits the cache and keeps the stale wording
+for ever.
 
-So `cascade.dependents_of` computes the set (cheap, indexed, exact) and `cascade.enqueue` records it
-in `regeneration_queue`. A run with a checkout and an LLM consumes it, calling the same generators
-the pipeline uses — `get_description`, `get_unit_description`, `CallDescriptionGenerator` — so
-wording stays consistent with a normal run.
+So `cascade.dependents_of` computes the set and `cascade.enqueue` records it in `regeneration_queue`.
+The Word-file update of a component consumes its entries (§6.1), calling the generators that wrote
+them — `enrich_functions_rich`, `enrich_globals_rich`, `get_unit_description`, Phase 2's name step,
+`CallDescriptionGenerator`, the flowchart label generator — so wording stays consistent with a normal
+run.
 
 **A dependent that already has its own override is skipped** (`REQ-CS-03`). The human's text is never
 replaced by a regeneration. For the same reason a save removes **its own** slot's entry: a slot
@@ -520,8 +521,38 @@ queued before a human corrected it would otherwise be regenerated, and the answe
 
 ### 6.1 Paying the debt
 
-The queue is drained in **three places** — where each kind's text is written, each taking only its
-own kind, with the artifact that kind lives in:
+**The Word-file update pays its components' entries** before it exports (`engine/review/rewrite.py`,
+FAST_WORD_FILE_UPDATES P5; decided with the user, D1 and D3). `analyzer.py` runs the step under the
+version's writer lock, after drawing the owed pictures; the API's in-process re-export runs
+`engine/review/rewrite.py` as a child process, as the step takes on a run's identity (its project
+scopes the LLM caches) and the API's process serves every project. For each entry of the update's
+components:
+
+1. **a reviewer's text** (`REQ-CS-03`) — retired, untouched; **an approved document's component** —
+   left queued until the document is reopened; **a chart printed nowhere** — retired;
+2. **the prompt check** — the prompt's inputs built twice without the LLM, from the model with every
+   description correction taken back to its LLM original (`then`) and from the model as it is
+   (`now`), the knowledge base brought up to date with each (`pkb.knowledge.overlay_descriptions`); a
+   prompt that did not change retires its entry unchanged;
+3. **the rewrite**, by the generator that wrote the text, from the model as it is — descriptions
+   first, as Phase 2 does, so a unit description is written from its functions' new ones:
+
+| kind | rewritten by | stored |
+|---|---|---|
+| `description` | `enrich_functions_rich(regenerate=, only=)` / `enrich_globals_rich` | `set_entity_field`, `patch_interface_tables`, then each component's SWE.4 re-derive (`swe4_rederive`) and stamps |
+| `unitDescription` | `get_unit_description` | `set_unit_description` |
+| `inputName` (both names) | Phase 2's static names, then the LLM for poor ones; stored only when it answered | `set_entity_field`, keeping a name a reviewer corrected |
+| `behaviourDescription` | `CallDescriptionGenerator`, call by call: a call whose prompt did not move keeps its stored words, and the call cache learns them | `write_behaviour_row` on every copy, stamp |
+| `flowchartLabels` | the update's Phase 3: `run.py --views flowcharts,testSpecs,utExport --rewrite-labels <request>` — the flowchart engine charts those functions alone, past its label cache (`--only-rewrite`), and the view splices them into the stored charts | retired once the run's output is stored, for the charts the engine reported (`labels_done`) |
+
+Each text is stored in a transaction of its own under the version's save lock, after checking again
+that no reviewer corrected it meanwhile. One whose rewrite got no answer keeps its words and its entry.
+A behaviour row is rebuilt for the caller the view drew it for: the view pairs the selector's i-th
+caller — the selector takes callers of callers — with the i-th direct caller from another component
+(`rewrite._drawn_for`).
+
+**A re-derive pays what it rebuilds**, as before — each step taking only its own kind, with the
+artifact that kind lives in:
 
 | kind | where | how |
 |---|---|---|
@@ -552,10 +583,12 @@ the regeneration did not happen — the LLM was unreachable, or `llm.description
 clearing it would convert "still owed" into "done". An entry whose slot has left the version
 entirely *is* retired, or it would be retried for ever against something that is not there.
 
-**Flowchart node labels are not dependents of anything.** The summary chain (`function summary → file
-→ component → project`) feeds *into* labels and is built from source, never from `description` — see
-`REQ-CS-01`'s table. This is what bounds the cascade; without it one edit would invalidate ~42,000
-labels.
+**Flowchart node labels are dependents of descriptions.** This section once said they were not: the
+summary chain (`function summary → file → component → project`) that fed them was built from the
+source. The label generator that writes them now (`flowchart/llm/generator`) names the function's
+purpose, its callers', callees' and globals' descriptions (`flowchart/pkb/builder`). What bounds the
+cascade is the prompt check and the charts' reach — the function's own, its callees', and those within
+four calls above it — not ~42,000 labels: a chart is one entry, and its labels one engine run.
 
 ---
 
@@ -785,9 +818,13 @@ offer, so carry-forward leaves it alone.
 The new version starts from the baseline's text — `carry_forward_descriptions` copies an unchanged
 function's description across — so a stale description the baseline never rewrote arrived as the new
 version's own text, and the entry that said it was owed stayed behind on the baseline. An entry is
-copied when what it names is still there (the function, the unit, or both ends of the call, judged
-as for a behaviour correction), the new version does not queue it already, and no correction is in
-force there for that slot — including one copied by the same call. `Carried.queued` counts them.
+copied when what it names is still there (the function — for a description, a function's names or
+its chart's labels —, the unit, or both ends of the call, judged as for a behaviour correction), the
+new version does not queue it already, and no correction is in force there for that slot — including
+one copied by the same call; a names entry stands for both names, so only both corrected keep it
+back. `Carried.queued` counts them. The names and chart entries matter most: no generation rewrites
+them — Phase 2 takes only descriptions — so they wait for the new version's Word-file update
+(`review.rewrite`), as they would have on the baseline.
 
 `overrides_for_config` then builds what a Phase-3 run feeds to
 [§5.1](#51-text-that-phase-3-produces)'s `from_config`. Only the two Phase-3 kinds appear in it: the
@@ -1110,9 +1147,9 @@ in September.
 | `REQ-VR-01` | override in v3 → generate v4 → unchanged function shows human text |
 | `REQ-VR-01` | changed function shows fresh LLM text, not the stale human note |
 | `REQ-VR-02` | `llm_description_cache` is byte-identical after an override |
-| `REQ-CS-01` | edit a description → unit description and direct callers regenerate |
-| `REQ-CS-01` | …and node labels do **not** |
-| `REQ-CS-02` | A ← B ← C: editing A regenerates B, leaves C |
+| `REQ-CS-01` | edit a description → every text whose prompt can hold it is queued (`test_review_cascade.py`) |
+| `REQ-CS-01` | the update rewrites, with a stub LLM, exactly those whose prompt changed; a reviewer's text, another component's and an approved one's stay; no answer keeps the words and the entry (`test_review_rewrite.py`) |
+| `REQ-CS-02` | A ← B ← C: editing A queues B's description, not C's; C's chart is queued |
 | `REQ-CS-03` | a cascade does not overwrite a slot that has its own override |
 | `REQ-ST-04` | N=3, five edits → original + newest three |
 | `REQ-ST-06` | empty update rejected, every slot kind |
@@ -1207,7 +1244,8 @@ read-modify-write. Per node keeps `human_text` a plain string for all seven kind
 The *invalidation* unit is still the whole flowchart — a PNG cannot be partly re-rendered — which is
 what [§5](#5-re-deriving-the-views) and [§7](#7-images) already do.
 
-**One level of caller cascade.** Transitive cascade is unbounded in a deep call graph — one edit
+**One level of cascade.** A text is regenerated because its prompt holds the corrected text, never
+because it holds a regenerated one. Transitive cascade is unbounded in a deep call graph — one edit
 could regenerate hundreds of functions, each an LLM call. One level is predictable; a later full
 regeneration picks up the rest.
 

@@ -128,6 +128,28 @@ def insert_ignore(conn, table, rows: list) -> None:
         conn.execute(stmt, chunk)
 
 
+def upsert(conn, table, rows: list, *, keys, update) -> None:
+    """Bulk insert, REPLACING the `update` columns of a row that collides on `keys` (last writer
+    wins) -- for a value that is deliberately rewritten, where `insert_ignore` would keep the old
+    one. `keys` must be a unique constraint of `table`. Postgres and SQLite only, as
+    `insert_ignore`."""
+    if not rows:
+        return
+    rows = _scrubbed(rows)
+    name = conn.engine.dialect.name
+    if name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert as _ins
+    elif name == "sqlite":
+        from sqlalchemy.dialects.sqlite import insert as _ins
+    else:                                            # pragma: no cover
+        raise NotImplementedError("upsert on %s" % name)
+    stmt = _ins(table)
+    stmt = stmt.on_conflict_do_update(index_elements=list(keys),
+                                      set_={c: stmt.excluded[c] for c in update})
+    for chunk in _chunks(rows):
+        conn.execute(stmt, chunk)
+
+
 def insert_chunked(conn, table, rows: list) -> None:
     """Bulk insert in chunks, WITHOUT conflict tolerance.
 

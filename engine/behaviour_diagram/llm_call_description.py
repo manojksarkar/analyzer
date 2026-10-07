@@ -144,30 +144,50 @@ class CallDescriptionGenerator:
 
         try:
             from llm_core import tokens
-            from llm_enrichment import _get_domain_context
 
-            prompt = (
-                "Generate a short, human-readable description (1 line, max 20 words) "
-                "explaining why the caller function calls the callee function.\n"
-                "Use the provided function descriptions to make it meaningful.\n"
-                "\n"
-                f"{context}\n"
-                "\n"
-                "Generate a natural description like \"FunctionA calls FunctionB to get "
-                "the sum of 2 numbers\" or \"FunctionA calls FunctionB to validate input\".\n"
-                "\n"
-                "Description:"
-            )
+            system, prompt = self._prompt(context)
 
-            # Anchor the model to the project's real domain (Task 3.14) so it
-            # stops inventing unrelated vocabulary in call descriptions.
-            system = _get_domain_context(self.config)
+            def _ask() -> str:
+                with tokens.stage("behaviour.call_description"):
+                    result = self._llm_client.generate(system, prompt)
+                return _one_line(result) if result else ""
 
-            with tokens.stage("behaviour.call_description"):
-                result = self._llm_client.generate(system, prompt)
-            return _one_line(result) if result else ""
+            # Cached by the whole prompt, as unit descriptions and input/output names are
+            # (`llm_enrichment._cached_desc`: the model and `llm.cacheVersion` are in the key).
+            # Asked again on every Phase 3, every row was re-worded each run -- rows nobody
+            # corrected changed under a reviewer -- and each paid the LLM and the gateway's pause.
+            # A corrected caller or callee description is IN the prompt, so exactly the rows
+            # written from it are asked again (FAST_WORD_FILE_UPDATES P4, decided with the user).
+            from llm_enrichment import _cached_desc
+            return _cached_desc(self.config, self.cache_material(context), _ask)
         except Exception:
             return ""
+
+    def _prompt(self, context: str):
+        """(system, prompt) the LLM is asked for one call's description."""
+        from llm_enrichment import _get_domain_context
+        prompt = (
+            "Generate a short, human-readable description (1 line, max 20 words) "
+            "explaining why the caller function calls the callee function.\n"
+            "Use the provided function descriptions to make it meaningful.\n"
+            "\n"
+            f"{context}\n"
+            "\n"
+            "Generate a natural description like \"FunctionA calls FunctionB to get "
+            "the sum of 2 numbers\" or \"FunctionA calls FunctionB to validate input\".\n"
+            "\n"
+            "Description:"
+        )
+        # Anchor the model to the project's real domain (Task 3.14) so it
+        # stops inventing unrelated vocabulary in call descriptions.
+        return _get_domain_context(self.config), prompt
+
+    def cache_material(self, context: str) -> str:
+        """What one call's description is cached by (`llm_enrichment._cached_desc`): the whole
+        prompt. A rewrite seeds it with a row's stored words for a call whose prompt did not
+        move (`review.rewrite`), so they are kept, not asked again."""
+        system, prompt = self._prompt(context)
+        return "behaviour_call|%s|%s" % (system, prompt)
 
 
 def _one_line(text: str) -> str:

@@ -493,6 +493,17 @@ all Word files…* (admin).
   ⋯ *Rebuild all Word files…*), the edit hold for the component being updated, the Review tab's *Word
   file* row, Approve's *Update file*, Submit's toast from `word_file`, the bell's two kinds, bulk approve's
   *Update them*. No user-visible "re-export" is left.
+- **What an update runs** (2026-10-07, [FAST_WORD_FILE_UPDATES.md](../docs/design/FAST_WORD_FILE_UPDATES.md)):
+  the export alone, from the stored data, once the guard finds every view stamped current — every save
+  now stamps what it rewrote. Under the writer lock it first draws its components' owed pictures, then
+  rewrites the queued texts of its components whose prompt holds a corrected one (`engine/review/rewrite.py`;
+  the API's in-process re-export runs it as a child process). Charts among them make its run.py a Phase 3
+  for `flowcharts,testSpecs,utExport` alone (`--views`, `--rewrite-labels`). A job whose components have
+  texts queued shows that work as Phase 3 (`_reexport_detached`, `_rewrites_queued`); the command still
+  says `--from-phase auto`. A label update takes about 20 s.
+  R10 and R3's `queuedForRegeneration` carry a new kind, `flowchartLabels` (one chart's labels, keyed by
+  its flowchart id); the reader's queue list (`QueuedList.tsx`) counts it as the document's when the
+  document prints one of the chart's node labels.
 
 ### Repositories — where a project's code comes from (2026-10-05k, 2026-10-05r)
 

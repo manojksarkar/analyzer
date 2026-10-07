@@ -1,33 +1,32 @@
 """What else a correction invalidates, and recording it.
 
 `REQ-CS-01`. Some LLM text is generated FROM other LLM text, so correcting one piece leaves the
-text built on it describing wording the human has already rejected.
+text built on it describing wording the human has already rejected. Only a description is read by
+another prompt -- traced from each prompt builder, not guessed (FAST_WORD_FILE_UPDATES §4.1):
 
-Four chains exist. Traced from each generator's inputs, not guessed:
+    function and global descriptions  <- callers', callees', file siblings' and globals' descriptions
+    unit description                  <- its functions' and globals' descriptions
+    input and output names            <- the descriptions of the globals the function reads and writes
+    behaviour call descriptions       <- both ends' descriptions
+    flowchart node labels             <- the function's own, its callers', its callees' (four calls
+                                         deep) and its globals' descriptions (`flowchart/pkb/builder`)
 
-    1  callee description             -> function description        get_description(source, callee_descriptions, …)
-    2  function + global descriptions -> unit description            get_unit_description(unit, fn_items, gv_items, …)
-    3  caller + callee descriptions   -> behaviour call description   _build_call_context()
-    4  source -> function summary -> … -> node labels                 _summarize_function_batch(signature, body)
-
-**Chain 4 starts from the SOURCE**, never from `description`. That is what bounds this: correcting
-a description does not invalidate the ~42,000 flowchart node labels. Without that fact the cascade
-would be the whole document.
-
-## Why this records rather than regenerates
+## Recorded at the save, rewritten by the update
 
 Checked, not assumed:
 
-* `get_description` needs the function's **source**, and the source is not in the model — it is in
+* a description's prompt holds the function's **source**, which is not in the model -- it is in
   the git checkout. The host saving a correction is not guaranteed to have one.
 * regenerating is an LLM call; saving a sentence must not take minutes.
 
-And skipping it is not an option either. The description cache is keyed on the callee's source plus
-its dependency hashes (`llm_core.cache.compute_hash`), and correcting a *description* changes
-neither — so the next run would hit the cache and the caller would keep its stale wording for ever.
+So the save records the dependents in `regeneration_queue`, and the Word-file update of their
+component rewrites them before it exports (`review.rewrite`; decided with the user, D1 and D3) --
+a re-derive pays the ones it rebuilds, as before.
 
-So the dependents go in `regeneration_queue`, and a run with a checkout and an LLM consumes it.
-`apply_override` can also be handed a generator and do it immediately; the two are the same list.
+And skipping it is not an option either. The description cache is keyed on the source plus the
+callees' source hashes (`llm_core.cache.compute_hash`), and the label cache on the source alone; a
+corrected *description* moves neither -- so the next run would hit the cache and keep the stale
+wording for ever.
 
 ## One level
 
@@ -70,9 +69,34 @@ def unit_key_of(entity_key: str) -> str:
     return "|".join(parts[:2]) if len(parts) >= 2 else ""
 
 
+#: A queued CHART: the node labels of one flowchart, which the LLM writes together and the
+#: flowcharts view rewrites together (FAST_WORD_FILE_UPDATES P5). Not an editable slot kind -- a
+#: reviewer corrects one label (`nodeLabel`) -- and keyed by the function's entity key.
+FLOWCHART_LABELS = "flowchartLabels"
+
+#: How far up the call graph a label prompt names callees and their descriptions
+#: (`flowchart/pkb/builder._CALLEE_BFS_DEPTH`).
+LABEL_CALLEE_DEPTH = 4
+
+
 def dependents_of(conn, version_id: str, slot_kind: str, slot_key: str, *,
                   artifact: Optional[str] = None) -> List[Dependent]:
-    """Everything one level down from this correction (`REQ-CS-01`).
+    """Everything one level down from this correction (`REQ-CS-01`): every text whose prompt can
+    contain it. Read from the prompt builders (FAST_WORD_FILE_UPDATES §4.1); only a description
+    is read by another prompt.
+
+    A function's description `F` is in the prompt of: the descriptions of its callers, its callees
+    and the other functions of its file, and of the globals it reaches through calls
+    (`llm_enrichment._build_function_context`, `enrich_globals_rich`); its unit's description;
+    the behaviour rows whose call tree it is in, or whose incoming call it makes
+    (`CallDescriptionGenerator`); and the labels of its own chart, its callees' charts and every
+    chart within `LABEL_CALLEE_DEPTH` calls above it (`flowchart/pkb/builder`). A global's is in
+    the prompt of its unit's description and of the descriptions, input and output names and chart
+    labels of every function that reaches it through calls (the knowledge base's read and write
+    sets are transitive).
+
+    These are CANDIDATES: prompts are cut to a token budget, so a far caller may not carry it.
+    The update that rewrites them checks each prompt first (`review.rewrite`).
 
     `artifact` distinguishes a function from a global — both are the `description` kind, and they
     cascade differently. It is what `resolver.locate` already returned, so nothing re-resolves it.
@@ -81,9 +105,8 @@ def dependents_of(conn, version_id: str, slot_kind: str, slot_key: str, *,
     is never replaced by a regeneration.
     """
     if slot_kind != slot.DESCRIPTION:
-        # Every other kind cascades to nothing. REQ-CS-01's table is the whole list -- a unit or
-        # struct description is an output of the chain, a behaviour name is built from the
-        # signature, and a node label comes from the source summary chain.
+        # Every other kind cascades to nothing: no prompt reads an input or output name, a unit,
+        # struct or behaviour description, or a node label (FAST_WORD_FILE_UPDATES §4.1).
         return []
 
     out: List[Dependent] = []
@@ -91,49 +114,132 @@ def dependents_of(conn, version_id: str, slot_kind: str, slot_key: str, *,
     if unit_key:
         out.append(Dependent(slot.UNIT_DESCRIPTION, slot.for_unit(unit_key),
                              "its unit description is built from this one"))
+    graph = _Graph(conn, version_id)
 
     if artifact == "globalVariables":
-        # A global feeds only its unit's description. It has no callers and appears in no
-        # behaviour row.
+        for fid in sorted(graph.reaching_global(slot_key)):
+            out += [
+                Dependent(slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, fid),
+                          "its description was written with this global as context"),
+                Dependent(slot.INPUT_NAME, slot.for_entity(slot.INPUT_NAME, fid),
+                          "its input and output names were written with this global as context"),
+                Dependent(FLOWCHART_LABELS, fid,
+                          "its flowchart labels were written with this global as context")]
         return _drop_overridden(conn, version_id, out)
 
-    out += _direct_callers(conn, version_id, slot_key)
-    out += _behaviour_rows_touching(conn, version_id, slot_key)
+    described = (set(graph.callers(slot_key)) | set(graph.callees(slot_key))
+                 | set(_same_file_functions(conn, version_id, slot_key))) - {slot_key}
+    out += [Dependent(slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, fid),
+                      "its description was written with this function as context")
+            for fid in sorted(described)]
+    out += [Dependent(slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, gid),
+                      "its description was written with this function as context")
+            for gid in sorted(graph.globals_reached(slot_key))]
+    out += _behaviour_rows_touching(conn, version_id, slot_key,
+                                    graph.callers_closure(slot_key) | {slot_key}
+                                    | graph.callees_closure(slot_key))
+    charts = ({slot_key} | set(graph.callees(slot_key))
+              | graph.callers_closure(slot_key, depth=LABEL_CALLEE_DEPTH))
+    out += [Dependent(FLOWCHART_LABELS, fid,
+                      "its flowchart labels were written with this function as context")
+            for fid in sorted(charts)]
     return _drop_overridden(conn, version_id, out)
 
 
-def _direct_callers(conn, version_id: str, entity_key: str) -> List[Dependent]:
-    """Functions that call this one — one indexed lookup.
+class _Graph:
+    """The version's call and global-access edges, read ONCE (two indexed queries), walked in
+    memory: a correction's dependents reach through call chains, and a query per step would be
+    a query per function on a real project."""
 
-    `ix_edges_reverse` on `(version_id, kind, dst_key)` exists for exactly this; the schema
-    comments it "who depends on X (impact)".
-    """
-    rows = conn.execute(
-        select(s.model_edges.c.src_key)
-        .where(s.model_edges.c.version_id == version_id,
-               s.model_edges.c.kind == "call",
-               s.model_edges.c.dst_key == entity_key)).fetchall()
-    seen, out = set(), []
-    for r in rows:
-        caller = r.src_key
-        if not caller or caller == entity_key or caller in seen:
-            continue           # self-recursion is not a dependent of itself
-        seen.add(caller)
-        out.append(Dependent(slot.DESCRIPTION,
-                             slot.for_entity(slot.DESCRIPTION, caller),
-                             "its description was written with this function as context"))
-    return out
+    def __init__(self, conn, version_id: str):
+        e = s.model_edges
+        self._down: Dict[str, set] = {}
+        self._up: Dict[str, set] = {}
+        for r in conn.execute(select(e.c.src_key, e.c.dst_key)
+                              .where(e.c.version_id == version_id, e.c.kind == "call")):
+            if r.src_key and r.dst_key and r.src_key != r.dst_key:
+                self._down.setdefault(r.src_key, set()).add(r.dst_key)
+                self._up.setdefault(r.dst_key, set()).add(r.src_key)
+        self._touches: Dict[str, set] = {}
+        self._touched_by: Dict[str, set] = {}
+        for r in conn.execute(select(e.c.src_key, e.c.dst_key)
+                              .where(e.c.version_id == version_id,
+                                     e.c.kind == "global_access")):
+            if r.src_key and r.dst_key:
+                self._touches.setdefault(r.src_key, set()).add(r.dst_key)
+                self._touched_by.setdefault(r.dst_key, set()).add(r.src_key)
+
+    def callers(self, fid: str) -> set:
+        return set(self._up.get(fid, ()))
+
+    def callees(self, fid: str) -> set:
+        return set(self._down.get(fid, ()))
+
+    @staticmethod
+    def _closure(start, step, depth: Optional[int] = None) -> set:
+        seen, frontier, level = set(), set(start), 0
+        while frontier and (depth is None or level < depth):
+            level += 1
+            nxt = set()
+            for k in frontier:
+                nxt |= step(k)
+            frontier = nxt - seen
+            seen |= frontier
+        return seen
+
+    def callers_closure(self, fid: str, depth: Optional[int] = None) -> set:
+        """Every function that reaches `fid` through calls -- within `depth` calls if given."""
+        return self._closure({fid}, self.callers, depth) - {fid}
+
+    def callees_closure(self, fid: str) -> set:
+        """Every function `fid` reaches through calls."""
+        return self._closure({fid}, self.callees) - {fid}
+
+    def globals_reached(self, fid: str) -> set:
+        """The globals `fid` reads or writes, itself or through its callees (transitive, as the
+        knowledge base's read and write sets are)."""
+        reached = self._closure({fid}, self.callees) | {fid}
+        return set().union(*(self._touches.get(f, set()) for f in reached))
+
+    def reaching_global(self, gid: str) -> set:
+        """Every function that reads or writes `gid`, itself or through a callee."""
+        direct = set(self._touched_by.get(gid, ()))
+        return direct | set().union(*(self._closure({f}, self.callers) for f in direct))
 
 
-def _behaviour_rows_touching(conn, version_id: str, entity_key: str) -> List[Dependent]:
-    """Behaviour call descriptions where this function is the caller or the callee.
+def _same_file_functions(conn, version_id: str, entity_key: str) -> List[str]:
+    """The other functions of `entity_key`'s source file -- the siblings a rich description's
+    prompt lists (`llm_enrichment._build_function_context`)."""
+    ev, en = s.entity_versions, s.entities
+    row = conn.execute(select(ev.c.file).select_from(ev.join(en, ev.c.entity_id == en.c.entity_id))
+                       .where(ev.c.version_id == version_id,
+                              en.c.entity_key == entity_key)).first()
+    if not row or not row.file:
+        return []
+    return [r.entity_key for r in conn.execute(
+        select(en.c.entity_key).select_from(ev.join(en, ev.c.entity_id == en.c.entity_id))
+        .where(ev.c.version_id == version_id, ev.c.file == row.file,
+               en.c.kind == "function", en.c.entity_key != entity_key))]
 
-    `_build_call_context` uses both descriptions, so either end invalidates the row. Rows without
-    an `externalCallerId` are skipped rather than matched on their display label -- see
-    `slot.for_behaviour_row` for the two callers that share one.
+
+def _behaviour_rows_touching(conn, version_id: str, entity_key: str,
+                             row_functions=None) -> List[Dependent]:
+    """Behaviour rows whose call descriptions can be written from this function's description.
+
+    A row's LLM bullets describe its incoming call -- from the caller the view drew it for -- and
+    the calls of its function's call tree (`MermaidBuilder.build_diagram_for_caller`,
+    `CallDescriptionGenerator`), each from both ends' descriptions; the "returns to" bullets are
+    written without the LLM. So the rows of the function itself, of every function that reaches
+    it through calls, and of every function it reaches -- it may be a row's caller, which the view
+    takes from the callers of callers (`selector.get_external_callers_with_component`)
+    (`row_functions`, candidates -- the update compares each call's prompt). Without
+    `row_functions`: the rows of this function. Rows without an `externalCallerId` are skipped
+    rather than matched on their display label -- see `slot.for_behaviour_row` for the two callers
+    that share one.
     """
     from review import phase3_overrides as p3, rerender
 
+    wanted = set(row_functions) if row_functions is not None else {entity_key}
     out, seen = [], set()
     for r in rerender.output_rows(conn, version_id, rerender.BEHAVIOUR_MANIFEST):
         try:
@@ -142,7 +248,7 @@ def _behaviour_rows_touching(conn, version_id: str, entity_key: str) -> List[Dep
             continue           # one unreadable manifest must not lose the rest of the cascade
         for _c, _u, row in p3.behaviour_rows((payload or {}).get("_docxRows")):
             fid, caller = row.get("currentFunctionId"), row.get("externalCallerId")
-            if not (fid and caller) or entity_key not in (fid, caller):
+            if not (fid and caller) or fid not in wanted:
                 continue
             try:
                 key = slot.for_behaviour_row(fid, caller)
@@ -157,13 +263,23 @@ def _behaviour_rows_touching(conn, version_id: str, entity_key: str) -> List[Dep
 
 
 def _drop_overridden(conn, version_id: str, items: Sequence[Dependent]) -> List[Dependent]:
-    """`REQ-CS-03`. A slot a human has already corrected is not regenerated over."""
+    """`REQ-CS-03`. A slot a human has already corrected is not regenerated over.
+
+    The input and output names are written together, so an `inputName` entry stands for both: it
+    goes only when BOTH are corrected (the rewrite keeps whichever one is). A chart's entry stays
+    whatever its labels: the rewrite puts each corrected label back on top."""
     if not items:
         return []
     overridden = {(r.slot_kind, r.slot_key) for r in conn.execute(
         select(s.text_overrides.c.slot_kind, s.text_overrides.c.slot_key)
         .where(s.text_overrides.c.version_id == version_id)).fetchall()}
-    return [d for d in items if (d.slot_kind, d.slot_key) not in overridden]
+
+    def human(d: Dependent) -> bool:
+        if d.slot_kind == slot.INPUT_NAME:
+            return all((k, d.slot_key) in overridden for k in (slot.INPUT_NAME, slot.OUTPUT_NAME))
+        return (d.slot_kind, d.slot_key) in overridden
+
+    return [d for d in items if not human(d)]
 
 
 # ---------------------------------------------------------------------------

@@ -105,4 +105,24 @@ describe('QueuedList (R10)', () => {
     expect(screen.queryByText('rewrite the inputName')).toBeNull()
     expect(screen.getByText('1 more in other documents of this version.')).toBeInTheDocument()
   })
+
+  it('counts a chart’s queued labels as this document’s when it prints the chart', async () => {
+    const chart = (key: string) => ({
+      slotKind: 'flowchartLabels', slotKey: key, reason: `relabel ${key}`, causedBy: null,
+      requestedAt: null,
+    })
+    server.use(
+      http.get(`${API_BASE_URL}/projects/p1/versions/v1/regeneration-queue`, () => HttpResponse.json({
+        pending: [chart('C|U|sub|int'), chart('Other|X|f|')], total: 2,
+      })),
+    )
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <QueuedList projectId="p1" versionId="v1" slotRefs={new Set(['nodeLabel:C|U|sub|int\u0001n3'])} />
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByText('relabel C|U|sub|int')).toBeInTheDocument()
+    expect(screen.getByText('flowchart labels')).toBeInTheDocument()
+    expect(screen.getByText('1 more in other documents of this version.')).toBeInTheDocument()
+  })
 })

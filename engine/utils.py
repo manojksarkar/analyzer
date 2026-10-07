@@ -121,7 +121,7 @@ def _docker_draws(project_root: str) -> bool:
         if subprocess.run(["docker", "image", "inspect", MERMAID_DOCKER_IMAGE],
                           capture_output=True, timeout=20).returncode != 0:
             return False                          # not loaded, daemon down, or not ours to use
-        cache = os.path.join(project_root, _MMDC_CACHE_DIR)
+        cache = picture_cache_dir(project_root, _MMDC_CACHE_DIR)
         os.makedirs(cache, exist_ok=True)
         probe = tempfile.mkdtemp(prefix="docker-test-", dir=cache)
     except (OSError, subprocess.SubprocessError):
@@ -162,9 +162,57 @@ def mmdc_command(project_root: str, in_path: str, out_path: str, *,
 
 # Content-addressed Mermaid->PNG cache (M-A). mmdc is the slow primitive (~5-8s/call);
 # identical diagrams (same text + render opts) are rendered once and reused across
-# units / components / versions. Lives at <project_root>/.mmdc_cache; content-addressed,
-# so it is safe across projects and persists across version runs.
+# units / components / versions. Lives at <data root>/.mmdc_cache (`picture_cache_dir`);
+# content-addressed, so it is safe across projects and persists across version runs.
 _MMDC_CACHE_DIR = ".mmdc_cache"
+
+
+def picture_cache_dir(project_root: str, name: str) -> str:
+    """Where a content-addressed picture cache lives: under the installation's DATA root when the
+    run names one (`ANALYZER_DATA_ROOT`), else under `project_root` as before.
+
+    The caches are data, shared by every run. A detached run works from a copy of the code
+    (`runs/<version>/<time>/code`, core/frozen_run.py) that leaves them out, and looked up beside
+    that copy every such run started with empty caches: every flowchart and Mermaid picture was
+    drawn again, 5-12 s each in a headless browser -- 28 charts redrawn to change one label
+    (docs/design/FAST_WORD_FILE_UPDATES.md, P3). A detached run is given `ANALYZER_DATA_ROOT`;
+    an in-place run is not, and its code root is the installation anyway.
+    """
+    data_root = os.environ.get("ANALYZER_DATA_ROOT")
+    return os.path.join(os.path.abspath(data_root) if data_root else project_root, name)
+
+
+def mermaid_cache_dir(project_root: str) -> str:
+    """The Mermaid picture cache (`picture_cache_dir`), for a renderer that runs mmdc itself."""
+    return picture_cache_dir(project_root, _MMDC_CACHE_DIR)
+
+
+def cached_picture(cache_dir: str, key: str, png_path: str) -> bool:
+    """Copy the cached picture `key` to png_path. True on a hit; False on a miss or any error."""
+    import shutil
+    cache_png = os.path.join(cache_dir, key + ".png")
+    if not os.path.isfile(cache_png):
+        return False
+    try:
+        os.makedirs(os.path.dirname(png_path) or ".", exist_ok=True)
+        shutil.copyfile(cache_png, png_path)
+        return True
+    except OSError:
+        return False                                   # the caller draws it instead
+
+
+def keep_picture(cache_dir: str, key: str, png_path: str) -> None:
+    """Store png_path as the cached picture `key`. Best effort and atomic: a temporary name, then
+    a rename, so a run reading the cache never meets half a file."""
+    import shutil
+    try:
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_png = os.path.join(cache_dir, key + ".png")
+        tmp = f"{cache_png}.{os.getpid()}.tmp"        # PID-unique: see stores._write_json
+        shutil.copyfile(png_path, tmp)
+        os.replace(tmp, cache_png)
+    except OSError:
+        pass
 
 
 def mermaid_cache_key(mermaid: str, *, scale=None, puppeteer: bool = True) -> str:
@@ -229,25 +277,14 @@ def render_mermaid_cached(project_root: str, mermaid: str, png_path: str, *,
     """Render `mermaid` to png_path, reusing a content-addressed PNG cache so an identical
     diagram is only ever rendered once. Returns True iff png_path exists afterward. Any
     cache error degrades gracefully to a direct render (never breaks a build)."""
-    import shutil
-    cache_dir = os.path.join(project_root, _MMDC_CACHE_DIR)
-    cache_png = os.path.join(cache_dir, mermaid_cache_key(mermaid, scale=scale, puppeteer=puppeteer) + ".png")
+    cache_dir = picture_cache_dir(project_root, _MMDC_CACHE_DIR)
+    key = mermaid_cache_key(mermaid, scale=scale, puppeteer=puppeteer)
     os.makedirs(os.path.dirname(png_path) or ".", exist_ok=True)
-    if os.path.isfile(cache_png):                     # hit -> copy out, no mmdc
-        try:
-            shutil.copyfile(cache_png, png_path)
-            return True
-        except OSError:
-            pass                                       # fall through to a real render
+    if cached_picture(cache_dir, key, png_path):      # hit -> copy out, no mmdc
+        return True
     ok = _run_mmdc(project_root, mermaid, png_path, scale=scale, puppeteer=puppeteer, timeout=timeout)
-    if ok:                                             # populate the cache (best-effort, atomic)
-        try:
-            os.makedirs(cache_dir, exist_ok=True)
-            tmp = f"{cache_png}.{os.getpid()}.tmp"   # PID-unique: see stores._write_json
-            shutil.copyfile(png_path, tmp)
-            os.replace(tmp, cache_png)
-        except OSError:
-            pass
+    if ok:
+        keep_picture(cache_dir, key, png_path)
     return ok
 
 
@@ -319,25 +356,14 @@ def render_dot_cached(project_root: str, dot: str, png_path: str, *,
     cache so an identical diagram is only ever rendered once. Returns True iff
     png_path exists afterward. Any cache error degrades gracefully to a direct
     render (never breaks a build)."""
-    import shutil
-    cache_dir = os.path.join(project_root, _DOT_CACHE_DIR)
-    cache_png = os.path.join(cache_dir, dot_cache_key(dot, scale=scale) + ".png")
+    cache_dir = picture_cache_dir(project_root, _DOT_CACHE_DIR)
+    key = dot_cache_key(dot, scale=scale)
     os.makedirs(os.path.dirname(png_path) or ".", exist_ok=True)
-    if os.path.isfile(cache_png):                     # hit -> copy out, no render
-        try:
-            shutil.copyfile(cache_png, png_path)
-            return True
-        except OSError:
-            pass                                       # fall through to a real render
+    if cached_picture(cache_dir, key, png_path):      # hit -> copy out, no render
+        return True
     ok = _run_dot_render(project_root, dot, png_path, scale=scale, timeout=timeout)
-    if ok:                                             # populate the cache (best-effort, atomic)
-        try:
-            os.makedirs(cache_dir, exist_ok=True)
-            tmp = f"{cache_png}.{os.getpid()}.tmp"   # PID-unique: see stores._write_json
-            shutil.copyfile(png_path, tmp)
-            os.replace(tmp, cache_png)
-        except OSError:
-            pass
+    if ok:
+        keep_picture(cache_dir, key, png_path)
     return ok
 
 

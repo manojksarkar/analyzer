@@ -432,6 +432,14 @@ def apply_override(conn,
         from review import rerender as _rr
         tables_patched = _rr.patch_interface_tables(
             conn, version_id, resolver.entity_of(slot_kind, slot_key), text)
+    # A struct description: the unit header view keeps a COPY of it in each stored table that
+    # shows the type, and the Word file prints the copy. Every struct correction in force goes
+    # back in, so the components returned can be stamped (FAST_WORD_FILE_UPDATES P1).
+    struct_components = set()
+    if slot_kind == slot.STRUCT_DESCRIPTION:
+        from review import rerender as _rr
+        struct_components = _rr.patch_unit_headers(conn, version_id,
+                                                   _struct_texts_in_force(conn, version_id))
 
     # --- the cascade -------------------------------------------------------
     # Text generated FROM this text is now describing wording the human has rejected. The
@@ -459,7 +467,11 @@ def apply_override(conn,
         # Word-file update re-ran Phase 3 for it -- every flowchart of the component redrawn
         # (416 s for 28 charts in the real-app test of 2026-10-06) where Phase 4 was enough.
         views.append("interfaceTables")
-    _stamp_derivations(conn, version_id, views, stamp,
+    # A struct's key names a type, not a component: `unitHeaders` is stamped for each component
+    # whose tables were patched -- and not reported, as `viewsDerived` names SWE.4 views.
+    _stamp_derivations(conn, version_id,
+                       views + [("unitHeaders", comp) for comp in sorted(struct_components)],
+                       stamp,
                        _component_of_id(next(iter(slot.parse(slot_kind, slot_key).values()), "")))
 
     return Applied(version_id=version_id, slot_kind=slot_kind, slot_key=slot_key,
@@ -616,7 +628,15 @@ def apply_flowchart_overrides(conn,
     # component's SWE.4 specs as well as the flowchart (REQ-CS-04).
     views = list(derive(version_id=version_id, slot_kind=slot.NODE_LABEL,
                         flowchart_id=flowchart_id) or ()) if derive else []
-    _stamp_derivations(conn, version_id, views, stamp, _component_of_id(flowchart_id))
+    # `redraw_flowchart` rewrote the flowchart's JSON and DOT in every stored copy (it raises when
+    # there is none), and every label correction is applied at its save: `flowcharts` is current
+    # for this component, and stamped so -- beside the SWE.4 views, which alone are reported
+    # (`viewsDerived`, REVIEW_UPDATE_API_SPEC R8). Unstamped, the export guard called it behind and
+    # every Word-file update went through Phase 3, redrawing every chart of the component
+    # (FAST_WORD_FILE_UPDATES P1). The PICTURE is not vouched for here: it is a render job, which
+    # the guard asks about on its own until it is drawn.
+    _stamp_derivations(conn, version_id, _with(views, "flowcharts"), stamp,
+                       _component_of_id(flowchart_id))
 
     return FlowchartApplied(version_id=version_id, flowchart_id=flowchart_id, slot_shape=shape,
                             applied=applied, first_edits=first_edits, redrawn=redrawn,
@@ -682,11 +702,11 @@ def apply_behaviour_override(conn,
     except slot.SlotKeyError as exc:
         raise SlotUnknown(str(exc)) from None
 
-    found = rerender.find_behaviour_row(conn, version_id, function_id, external_caller_id)
+    found = rerender.find_behaviour_rows(conn, version_id, function_id, external_caller_id)
     if not found:
         raise SlotUnknown("no behaviour row for %s called by %s in version %s"
                           % (function_id, external_caller_id, version_id))
-    rel_path, content, row = found
+    _rel_path, _content, row = found[0]
     previous = p3.join_bullets(row.get("behaviorDescription"))
 
     first = _upsert_override(conn, version_id, slot.BEHAVIOUR_DESCRIPTION, key,
@@ -696,14 +716,20 @@ def apply_behaviour_override(conn,
     _append_history(conn, version_id, slot.BEHAVIOUR_DESCRIPTION, key, text,
                     user_id, stamp, depth)
 
-    rerender.write_behaviour_row(conn, version_id, rel_path, content, key, text)
+    for rel_path, content, _row in found:
+        rerender.write_behaviour_row(conn, version_id, rel_path, content, key, text)
     # The row a human just wrote owes no regeneration (REQ-CS-03) -- see apply_override.
     from review import cascade as _cascade
     _cascade.clear(conn, version_id, slot.BEHAVIOUR_DESCRIPTION, key)
 
     views = list(derive(version_id=version_id, slot_kind=slot.BEHAVIOUR_DESCRIPTION,
                         slot_key=key) or ()) if derive else []
-    _stamp_derivations(conn, version_id, views, stamp, _component_of_id(function_id))
+    # The row is rewritten in every stored manifest above, through the code the view uses, and
+    # every behaviour correction is written at its save: `behaviourDiagram` is current for this
+    # component, and stamped so (not reported: `viewsDerived` names SWE.4 views). The picture
+    # shows names only (REQ-IM-01), so no render is owed (FAST_WORD_FILE_UPDATES P1).
+    _stamp_derivations(conn, version_id, _with(views, "behaviourDiagram"), stamp,
+                       _component_of_id(function_id))
 
     stored = get_override(conn, version_id, slot.BEHAVIOUR_DESCRIPTION, key)
     return BehaviourApplied(version_id=version_id, slot_key=key,
@@ -805,6 +831,27 @@ def _stamp_derivations(conn, version_id, views, stamp, component=None) -> None:
         if name and comp:
             pairs.append((name, comp))
     stamp_saved(conn, version_id, pairs, stamp)
+
+
+def _with(views, name: str) -> list:
+    """`views` and `name`, once -- what a save stamps beside the views it reports."""
+    views = list(views or ())
+    return views if name in views else views + [name]
+
+
+def _struct_texts_in_force(conn, version_id: str) -> Dict[str, str]:
+    """`{type key: text}` of every struct description correction in force (not orphaned) --
+    what each stored unit header table must show (`rerender.patch_unit_headers`)."""
+    from review.export_guard import _struct_type_key
+    out: Dict[str, str] = {}
+    for r in conn.execute(select(s.text_overrides.c.slot_key, s.text_overrides.c.human_text)
+                          .where(s.text_overrides.c.version_id == version_id,
+                                 s.text_overrides.c.slot_kind == slot.STRUCT_DESCRIPTION,
+                                 s.text_overrides.c.is_orphaned.is_(False))).fetchall():
+        text = (r.human_text or "").strip()
+        if text:
+            out[_struct_type_key(slot.STRUCT_DESCRIPTION, r.slot_key)] = text
+    return out
 
 
 def _component_of_id(ident: Optional[str]) -> Optional[str]:

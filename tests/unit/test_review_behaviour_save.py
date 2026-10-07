@@ -234,3 +234,24 @@ class TestSurvivingARegeneration:
             "the matcher also matches the definition, so it could never fail")
         assert call.search(src).start() < src.index('out_path = os.path.join'), (
             "corrections are applied after the manifest is written")
+
+
+class TestTheSaveVouchesForTheStoredRows:
+    """FAST_WORD_FILE_UPDATES P1. The save rewrites the row the exporter prints, so the
+    `behaviourDiagram` view is current for its component -- stamped, or every Word-file update
+    of it went through Phase 3. A stamp vouches for every stored copy: each is rewritten."""
+
+    def test_every_stored_copy_is_rewritten_and_the_view_stamped(self, conn):
+        copy = "Other/behaviour_diagrams/_behaviour_pngs.json"
+        conn.execute(sa.insert(s.version_output_files).values(
+            version_id="v1", rel_path=copy, content=json.dumps(_payload()), group_name="Other"))
+        out = svc.apply_behaviour_override(conn, "v1", FID, ADD, ["adds the two operands"])
+        contents = {r.rel_path: json.loads(r.content) for r in conn.execute(
+            sa.select(s.version_output_files.c.rel_path, s.version_output_files.c.content))}
+        for rel in (REL, copy):
+            [row] = [r for r in _rows_of(contents[rel]) if r["externalCallerId"] == ADD]
+            assert row["behaviorDescription"] == ["adds the two operands"], rel
+        stamped = {(r.view_name, r.group_name) for r in conn.execute(
+            sa.select(s.view_derivations.c.view_name, s.view_derivations.c.group_name))}
+        assert ("behaviourDiagram", "comp") in stamped
+        assert list(out.views_derived) == []          # reported: SWE.4 views only (R6)

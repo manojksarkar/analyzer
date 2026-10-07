@@ -391,7 +391,9 @@ def _readable(slot_kind: str, slot_key: str) -> str:
     try:
         parts = slot_mod.parse(slot_kind, slot_key)
     except Exception:                                   # noqa: BLE001 - a label, never an error
-        return slot_key
+        # A chart's labels (`flowchartLabels`, not an editable kind) are keyed by the function's
+        # id alone.
+        return slot_key.split("|")[2] if slot_key.count("|") >= 2 else slot_key
     ident = parts.get("entity_key") or parts.get("function_id") or ""
     if ident.count("|") >= 2:
         return ident.split("|")[2]                      # Comp|Unit|name|params -> name
@@ -871,8 +873,9 @@ def regeneration_queue(
     which therefore need regenerating.
 
     Recorded rather than regenerated when the correction was saved: regenerating needs the
-    function's source, which is in the git checkout and not in the model, and an LLM call. A run
-    with both consumes this.
+    function's source, which is in the git checkout and not in the model, and an LLM call. The
+    Word-file update of a component rewrites its entries before it exports (`review.rewrite`);
+    `flowchartLabels` names one chart's labels, by its flowchart id.
     """
     require_project_member(project_id, current_user, db)
     _version(project_id, version_id)

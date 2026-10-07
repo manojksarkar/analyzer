@@ -58,6 +58,12 @@ Since then (the block above is the original): a doc type's `DOC_TYPE_VIEWS` entr
 is its own function — `views_to_run(doc_type, config)` — so the derivation record can say which
 document each view was built for. `run_views` returns the names it ran (2026-09-29).
 
+An update's Phase 3 (2026-10-07): `run_views --views a,b,…` runs only those of the views the doc type
+needs (`run_views(…, only=)`), and `--rewrite-labels <request>` puts the charts whose labels are written
+again into the config (`_analyzerRewriteLabels`, read by the flowcharts view). `run.py` takes both flags
+and hands them to Phase 3 alone. The derivation record merges per view, so the views not run keep
+their stamps.
+
 The four view modules are imported at the bottom of `__init__.py` so their
 `@register("name")` decorators populate `VIEW_REGISTRY`.
 
@@ -303,6 +309,16 @@ Wraps the **real flowchart engine** under `engine/flowchart/`. Steps:
    present), captures the PNG to `<unit>_<func>.png`, deletes the temp file.
    Progress is reported via `core.progress.ProgressReporter`.
 
+   Since then (the step above is the original): the PNG comes from the DOT through
+   `render_dot_cached` (the picture cache), and **only for the charts the directory's SWE.3
+   document prints** (2026-10-07b, `_pictures_to_draw`): each public function's flowchart and its
+   private callees', by the exporter's own rule — `docx_common.printed_flowcharts`, read from the
+   `interface_tables.json` beside it and the model; the exporter prints by `flowchart_section` and
+   `private_callee_flowcharts` from the same module. Hidden functions count (hiding is Phase 4's
+   alone). The other charts keep their JSON, labels and web SVG. Without interface tables to read,
+   every chart is drawn as before; a chart an incremental run carried is drawn when it is printed
+   and has no picture on disk.
+
 ---
 
 ## 13. The flowchart engine — `engine/flowchart/`
@@ -462,6 +478,18 @@ engine/flowchart/
 11. **Build DOT** — `build_dot(cfg)`. (`_escape` turns `<br/>` into the DOT
     line-break sequence, which is how the enforcement pass's appended segment
     renders.)
+
+Steps 8–9b are `_label_chart` (2026-10-07): the cached labels (keyed by the source and the model)
+when every node is covered, else the LLM's, cached unless a node fell back. Before the first chart the
+LLM labels, `_with_current_descriptions` lays the model's descriptions over the knowledge base Phase 2
+wrote — the context packet reads a chart's purpose and its callers', callees' and globals' descriptions
+there, and a reviewer's save changes the model alone. **Writing charts again** (an update, FAST_WORD_FILE_UPDATES
+P5): `--rewrite-labels <request>` names charts that skip the cache; their new labels replace the cached
+ones (`_replace_labels`) and each is appended to the request's report — unless a node fell back, when
+the chart keeps its earlier labels. `--only-rewrite` charts those functions alone; the flowcharts view
+then splices them into the stored unit files (`_splice_rewritten`) and puts every other file back.
+`_flush_labels` lands the label cache's buffered writes once every chart is labelled: without it a run's
+last minute of labels was lost at exit.
 
 ### `LIBCLANG_PATH` env var (feat/test-framework)
 

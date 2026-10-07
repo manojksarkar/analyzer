@@ -244,8 +244,9 @@ document's component itself. `GET /jobs/current` is the project's latest *genera
 
 ### Flow 7 — needs attention (optional panel)
 
-R10 `GET /versions/{versionId}/regeneration-queue`: texts the next run rewrites because a correction
-changed what they were written from. Show each with its `reason`.
+R10 `GET /versions/{versionId}/regeneration-queue`: texts the next Word-file update of their component
+rewrites because a correction changed what they were written from. Show each with its `reason`; an
+entry of kind `flowchartLabels` is one chart's labels, keyed by its flowchart id.
 
 ### Drawing a flowchart
 
@@ -430,7 +431,7 @@ What a correction invalidated — text that was generated **from** the text just
 
 | field | type | notes |
 |---|---|---|
-| `slotKind` | string | |
+| `slotKind` | string | an editable kind, or `flowchartLabels`: one chart's node labels, which the LLM writes together — keyed by the chart's flowchart id (its function's id), and never edited as such (a reviewer corrects one `nodeLabel`) |
 | `slotKey` | string | |
 | `label` | string | in a save's answer: the function's, global's or unit's name, for saying WHICH texts the next run rewrites without taking the key apart |
 
@@ -1104,20 +1105,29 @@ They are **recorded, not regenerated** at save time, for reasons that were check
 assumed: generating a description needs the function's **source**, which lives in the git checkout
 and not in the model, and it is an LLM call — a saved sentence must not take minutes.
 
-Nor can it be skipped. The description cache is keyed on the callee's *source* plus its dependency
-hashes, and correcting a *description* changes neither, so the next run would hit the cache and the
-caller would keep its stale wording for ever.
+Nor can it be skipped. The description cache is keyed on the *source* plus the callees' source
+hashes, and the label cache on the source alone; correcting a *description* moves neither, so the
+next run would hit the cache and keep the stale wording for ever.
 
+The list names **candidates** — every text whose prompt can hold the corrected one (`REQ-CS-01`).
 A slot a human has already corrected never appears here (`REQ-CS-03`) — their text is not
 regenerated over — and correcting a slot that is listed here takes it off the list. The cascade is
-**one level** (`REQ-CS-02`): a caller's own callers are not invalidated, because a transitive cascade
-is unbounded in a deep call graph.
+**one level** (`REQ-CS-02`): a text is listed because its prompt holds the corrected text, never
+because it holds a text that was itself regenerated.
 
-**When an entry leaves the list.** A description or unit description when a run's Phase 2 wrote it
-afresh; a behaviour row when a run's behaviour view rebuilt it — not a SWE.4-only run, and not a run
-over another component. A run with no LLM, or with descriptions switched off, pays nothing: the
-entries stay, and the slots keep their previous wording until a run with an LLM rewrites them. A
-version generated from this one owes the same entries for what it still contains.
+**When an entry leaves the list.** The Word-file update of the entry's component (WORD_FILE_UPDATES)
+rewrites its texts before it exports: each candidate's prompt is built twice without the LLM, with
+the corrections taken back and as they are, and one whose prompt did not change leaves the list
+unchanged; the others are rewritten with the LLM and leave it. A chart's labels (`flowchartLabels`)
+are written again by the update's Phase 3 and leave the list once its output is stored. A re-derive
+(`reexport --from-phase 2`) pays the descriptions and unit descriptions it writes, and a run's
+behaviour view the rows it rebuilds — not a SWE.4-only run, and not a run over another component.
+
+What stays: an entry in another component than the update's — that component's own update rewrites
+it; one in a component with an approved document, until the document is reopened; one whose rewrite
+got no answer, which keeps its previous wording; and every entry of a run with no LLM, or with
+descriptions switched off. A version generated from this one owes the same entries for what it still
+contains.
 
 ---
 
@@ -1258,11 +1268,10 @@ slot* when a whole flowchart is saved at once.
 
 Honest gaps, so the UI does not plan around something that is not there.
 
-- **Both queues are drained by a RUN, not by a timer.** A pending picture is drawn when a host with
-  the output tree captures a version's output, and a queued regeneration is rebuilt by Phase 2
-  (descriptions) or Phase 3 (behaviour rows). Between a correction and the next run,
-  `pendingRenders` and R10 report what is still owed. Nothing runs on a schedule, so do not poll
-  expecting these to clear on their own.
+- **Both queues are drained by a RUN, not by a timer.** A pending picture is drawn by the next
+  Word-file update of its component, before it exports, and a queued regeneration is rewritten by
+  that update (R10). Between a correction and the next run, `pendingRenders` and R10 report what is
+  still owed. Nothing runs on a schedule, so do not poll expecting these to clear on their own.
 - **No cleanup endpoint** for orphaned corrections — deliberately, pending a decision; see
   [REVIEW_UPDATE_DESIGN Open items](../design/REVIEW_UPDATE_DESIGN.md#open-items).
 - **No bulk or batch write** beyond R8's one flowchart. Correct slots one call at a time.

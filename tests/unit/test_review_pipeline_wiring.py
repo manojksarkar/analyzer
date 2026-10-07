@@ -53,7 +53,7 @@ class TestPhase3IsHandedTheCorrections:
         src = _src(self.SRC)
         call = self.CALL.search(src)
         assert call and call.start() < src.index(
-            "run_views(model, output_dir, model_dir, config, doc_type=doc_type)")
+            "ran = run_views(model, output_dir, model_dir, config, doc_type=doc_type")
 
     def test_a_run_with_no_version_is_left_alone(self):
         """A standalone run has no version id and no database. Neither is a reason to fail a
@@ -145,7 +145,21 @@ class TestEveryPieceHasACaller:
         "render_queue.run_pending": ("engine/incremental/store.py", "run_pending"),
         "cascade.blank_queued_text": ("engine/model_deriver.py", "blank_queued_text"),
         "cascade.clear_behaviour_entries": ("engine/run_views.py", "clear_behaviour_entries"),
+        # An update rewrites the texts written from a corrected one before it exports
+        # (FAST_WORD_FILE_UPDATES P5): in the CLI's process, and as a child of the API's.
+        "rewrite.run_step (cli)": ("analyzer.py", "run_step(version_id"),
+        "rewrite.main (api re-export)": ("api/services/pipeline_runner.py",
+                                         '"review" / "rewrite.py"'),
     }
+
+    def test_the_rewrite_step_leaves_a_re_derive_to_phase_2(self):
+        """`analyzer.py`'s runs share one path -- `reexport`, `export`, `resume`. One that derives
+        the model again (`resume` of a run cut short in Phase 2, `reexport --from-phase 2`) must
+        not rewrite first: the step would read a model Phase 2 has yet to make and store
+        descriptions Phase 2 then keeps, as it fills only blanks."""
+        src = _src("analyzer.py")
+        call = src.index("labels = (_rewrite_queued(")
+        assert "if a.from_phase >= 3 else None)" in src[call:call + 200]
 
     @pytest.mark.parametrize("what", sorted(WIRED))
     def test_it_is_called_from_the_pipeline(self, what):

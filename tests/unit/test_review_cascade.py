@@ -1,16 +1,18 @@
-"""What else a correction invalidates (REQ-CS-01/02/03).
+"""What else a correction invalidates (REQ-CS-01/02/03, FAST_WORD_FILE_UPDATES §4.1).
 
-Some LLM text is generated FROM other LLM text. Correcting a function's description leaves its
-callers' descriptions, and its unit's, describing wording the human has already rejected.
+Some LLM text is generated FROM other LLM text: every text whose prompt contains a corrected text
+is queued, and the update of its component rewrites it (decided with the user, 2026-10-06). Only a
+description is read by other prompts. Read from the prompt builders, a function's description is in
+the prompts of its callers', callees' and same-file functions' descriptions, of the globals it
+reaches, its unit's description, the behaviour rows it is in -- their incoming call or their call
+tree -- and the labels of its own chart, its callees' charts and every chart within four calls
+above it. A global's is in the
+prompts of its unit's description and of the descriptions, input and output names and chart
+labels of every function that reaches it.
 
-Two properties matter more than the mechanics, and both are load-bearing:
-
-  **the cascade stops at one level** -- a transitive one is unbounded in a deep call graph, and one
-  edit could mean hundreds of LLM calls;
-
-  **node labels are not dependents of anything** -- the summary chain that produces them starts at
-  the SOURCE, never at a description. Without that, one correction would invalidate ~42,000 labels
-  and the cascade would be the whole document.
+**One level**: a text is queued because its prompt holds the CORRECTED text -- never because it
+was written from a text that is itself queued (REQ-CS-02). A chart four calls up is one level: its
+label prompt lists the callee hierarchy, descriptions included.
 """
 import datetime
 import json
@@ -65,6 +67,26 @@ def _deps(conn, key=CALLEE, kind=slot.DESCRIPTION, artifact="functions"):
                                  artifact=artifact)
 
 
+def _pairs(deps):
+    return {(d.slot_kind, d.slot_key) for d in deps}
+
+
+def _call(conn, src, dst):
+    conn.execute(sa.insert(s.model_edges).values(
+        version_id="v1", kind="call", src_key=src, dst_key=dst, mode=None))
+
+
+def _reads(conn, fid, gid):
+    conn.execute(sa.insert(s.model_edges).values(
+        version_id="v1", kind="global_access", src_key=fid, dst_key=gid, mode="read"))
+
+
+def _in_file(conn, fid, path):
+    eid = conn.execute(sa.insert(s.entities).values(
+        project_id="p", entity_key=fid, kind="function")).inserted_primary_key[0]
+    conn.execute(sa.insert(s.entity_versions).values(version_id="v1", entity_id=eid, file=path))
+
+
 class TestWhatAFunctionDescriptionInvalidates:
     def test_its_unit_description(self, conn):
         keys = {(d.slot_kind, d.slot_key) for d in _deps(conn)}
@@ -77,43 +99,94 @@ class TestWhatAFunctionDescriptionInvalidates:
         assert keys == {slot.for_entity(slot.DESCRIPTION, CALLER1),
                         slot.for_entity(slot.DESCRIPTION, CALLER2)}
 
-    def test_behaviour_rows_at_either_end(self, conn):
-        keys = {d.slot_key for d in _deps(conn) if d.slot_kind == slot.BEHAVIOUR_DESCRIPTION}
-        assert keys == {slot.for_behaviour_row(CALLEE, CALLER2)}
+    def test_its_callees_and_its_file_s_other_functions(self, conn):
+        """A rich description's prompt lists the CALLERS of a function too, and its file's other
+        functions (`_build_function_context`)."""
+        callee = "Comp|UnitA|ns::helper|void"
+        _call(conn, CALLEE, callee)
+        _in_file(conn, CALLEE, "UnitA.cpp")
+        _in_file(conn, "Comp|UnitA|ns::sibling|void", "UnitA.cpp")
+        _in_file(conn, "Comp|UnitB|ns::elsewhere|void", "UnitB.cpp")
+        keys = {d.slot_key for d in _deps(conn) if d.slot_kind == slot.DESCRIPTION}
+        assert {slot.for_entity(slot.DESCRIPTION, callee),
+                slot.for_entity(slot.DESCRIPTION, "Comp|UnitA|ns::sibling|void")} <= keys
+        assert slot.for_entity(slot.DESCRIPTION, "Comp|UnitB|ns::elsewhere|void") not in keys
 
-    def test_it_does_not_invalidate_node_labels(self, conn):
-        """The bound on the whole cascade. `_summarize_function_batch` builds its prompt from the
-        signature and body and never reads `description`, so a correction cannot reach the
-        ~42,000 node labels."""
+    def test_the_globals_it_reaches(self, conn):
+        """A global's rich description lists its readers and writers, through calls."""
+        callee = "Comp|UnitA|ns::helper|void"
+        _call(conn, CALLEE, callee)
+        _reads(conn, callee, GLOBAL)
+        assert (slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, GLOBAL)) in _pairs(_deps(conn))
+
+    def test_the_behaviour_rows_it_is_in(self, conn):
+        """A row's bullets describe its incoming call -- from the caller the view drew it for --
+        and its function's calls, each from both ends' descriptions (`build_diagram_for_caller`).
+        So the row of the function itself, the rows of whoever reaches it, and the rows of what it
+        reaches: it may be the row's caller, as CALLER2 is here."""
+        row = slot.for_behaviour_row(CALLEE, CALLER2)
+        for key in (CALLEE, CALLER2):
+            rows = {d.slot_key for d in _deps(conn, key=key)
+                    if d.slot_kind == slot.BEHAVIOUR_DESCRIPTION}
+            assert rows == {row}, key
+        stranger = "Comp|UnitB|ns::stranger|void"
+        _call(conn, stranger, "Comp|UnitB|ns::other|void")
+        assert not any(d.slot_kind == slot.BEHAVIOUR_DESCRIPTION
+                       for d in _deps(conn, key=stranger))
+
+    def test_its_chart_its_callees_charts_and_the_charts_four_calls_up(self, conn):
+        """A label prompt names the function's purpose (its description), its callers' and its
+        callees' descriptions down to four levels -- so these charts, and not a fifth level."""
+        chain = ["Comp|UnitA|ns::up%d|void" % i for i in range(1, 6)]
+        _call(conn, chain[0], CALLER1)
+        for a, b in zip(chain[1:], chain):
+            _call(conn, a, b)
+        callee = "Comp|UnitA|ns::helper|void"
+        _call(conn, CALLEE, callee)
+        charts = {d.slot_key for d in _deps(conn) if d.slot_kind == cascade.FLOWCHART_LABELS}
+        assert {CALLEE, callee, CALLER1, CALLER2, chain[0], chain[1], chain[2]} == charts
         assert not any(d.slot_kind == slot.NODE_LABEL for d in _deps(conn))
 
     def test_it_stops_at_one_level(self, conn):
-        """CALLER1's own callers are NOT included. A transitive cascade is unbounded in a deep
-        call graph -- one edit, hundreds of LLM calls (REQ-CS-02)."""
-        conn.execute(sa.insert(s.model_edges).values(
-            version_id="v1", kind="call", src_key="Comp|UnitA|ns::grandparent|void",
-            dst_key=CALLER1, mode=None))
-        keys = {d.slot_key for d in _deps(conn)}
-        assert slot.for_entity(slot.DESCRIPTION, "Comp|UnitA|ns::grandparent|void") not in keys
+        """CALLER1's own callers are NOT queued for their DESCRIPTIONS: their prompts hold
+        CALLER1's description, not the corrected one (REQ-CS-02). Their chart is: its label prompt
+        lists the callee hierarchy, the corrected description included."""
+        gp = "Comp|UnitA|ns::grandparent|void"
+        _call(conn, gp, CALLER1)
+        pairs = _pairs(_deps(conn))
+        assert (slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, gp)) not in pairs
+        assert (cascade.FLOWCHART_LABELS, gp) in pairs
 
     def test_recursion_is_not_its_own_dependent(self, conn):
-        conn.execute(sa.insert(s.model_edges).values(
-            version_id="v1", kind="call", src_key=CALLEE, dst_key=CALLEE, mode=None))
-        assert slot.for_entity(slot.DESCRIPTION, CALLEE) not in {d.slot_key for d in _deps(conn)}
+        _call(conn, CALLEE, CALLEE)
+        assert (slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, CALLEE)) \
+            not in _pairs(_deps(conn))
 
     def test_two_call_sites_yield_one_dependent(self, conn):
-        conn.execute(sa.insert(s.model_edges).values(
-            version_id="v1", kind="call", src_key=CALLER1, dst_key=CALLEE, mode=None))
-        callers = [d for d in _deps(conn)
-                   if d.slot_key == slot.for_entity(slot.DESCRIPTION, CALLER1)]
+        _call(conn, CALLER1, CALLEE)
+        callers = [d for d in _deps(conn) if d.slot_kind == slot.DESCRIPTION
+                   and d.slot_key == slot.for_entity(slot.DESCRIPTION, CALLER1)]
         assert len(callers) == 1
 
 
-class TestWhatDoesNotCascade:
-    def test_a_global_description_reaches_only_its_unit(self, conn):
+class TestWhatAGlobalDescriptionInvalidates:
+    def test_with_nobody_reading_it_only_its_unit(self, conn):
         deps = _deps(conn, key=GLOBAL, artifact="globalVariables")
         assert [(d.slot_kind, d.slot_key) for d in deps] == \
             [(slot.UNIT_DESCRIPTION, slot.for_unit(UNIT))]
+
+    def test_the_texts_of_every_function_that_reaches_it(self, conn):
+        """The knowledge base's read and write sets are transitive: a function that calls a reader
+        has the global in its description's, its names' and its labels' prompts too."""
+        _reads(conn, CALLEE, GLOBAL)               # CALLER1 and CALLER2 call CALLEE
+        pairs = _pairs(_deps(conn, key=GLOBAL, artifact="globalVariables"))
+        for fid in (CALLEE, CALLER1, CALLER2):
+            assert {(slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, fid)),
+                    (slot.INPUT_NAME, slot.for_entity(slot.INPUT_NAME, fid)),
+                    (cascade.FLOWCHART_LABELS, fid)} <= pairs
+
+
+class TestWhatDoesNotCascade:
 
     @pytest.mark.parametrize("kind", [slot.UNIT_DESCRIPTION, slot.STRUCT_DESCRIPTION,
                                       slot.INPUT_NAME, slot.OUTPUT_NAME,
@@ -131,9 +204,23 @@ class TestAHumansTextIsNeverOverwritten:
             slot_key=slot.for_entity(slot.DESCRIPTION, CALLER1),
             llm_text="llm", human_text="already corrected", is_orphaned=False,
             updated_at=datetime.datetime.now(datetime.timezone.utc)))
-        keys = {d.slot_key for d in _deps(conn)}
-        assert slot.for_entity(slot.DESCRIPTION, CALLER1) not in keys
-        assert slot.for_entity(slot.DESCRIPTION, CALLER2) in keys
+        pairs = _pairs(_deps(conn))
+        assert (slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, CALLER1)) not in pairs
+        assert (slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, CALLER2)) in pairs
+
+    def test_the_names_stay_queued_while_one_of_them_is_the_llm_s(self, conn):
+        """An `inputName` entry stands for both names: it goes when BOTH are corrected."""
+        _reads(conn, CALLEE, GLOBAL)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        conn.execute(sa.insert(s.text_overrides).values(
+            version_id="v1", slot_kind=slot.INPUT_NAME, slot_key=CALLEE, llm_text="x",
+            human_text="Mine", is_orphaned=False, updated_at=now))
+        names = (slot.INPUT_NAME, CALLEE)
+        assert names in _pairs(_deps(conn, key=GLOBAL, artifact="globalVariables"))
+        conn.execute(sa.insert(s.text_overrides).values(
+            version_id="v1", slot_kind=slot.OUTPUT_NAME, slot_key=CALLEE, llm_text="y",
+            human_text="Mine too", is_orphaned=False, updated_at=now))
+        assert names not in _pairs(_deps(conn, key=GLOBAL, artifact="globalVariables"))
 
 
 class TestTheQueue:
@@ -141,7 +228,7 @@ class TestTheQueue:
         cascade.enqueue(conn, "v1", _deps(conn), source_kind=slot.DESCRIPTION,
                         source_key=CALLEE)
         rows = cascade.pending(conn, "v1")
-        assert len(rows) == 4          # unit + 2 callers + 1 behaviour row
+        assert len(rows) == 7          # unit + 2 callers + 1 behaviour row + 3 charts
         assert all(r.source_slot_key == CALLEE for r in rows)
 
     def test_the_reason_is_recorded(self, conn):
@@ -154,7 +241,7 @@ class TestTheQueue:
         be two LLM calls to reach the same place."""
         cascade.enqueue(conn, "v1", _deps(conn))
         cascade.enqueue(conn, "v1", _deps(conn))
-        assert len(cascade.pending(conn, "v1")) == 4
+        assert len(cascade.pending(conn, "v1")) == 7
 
     def test_an_entry_is_cleared_only_when_named(self, conn):
         """Not "clear the version": an entry must survive until the thing it names has actually
@@ -162,7 +249,7 @@ class TestTheQueue:
         everything is fine."""
         cascade.enqueue(conn, "v1", _deps(conn))
         assert cascade.clear(conn, "v1", slot.UNIT_DESCRIPTION, slot.for_unit(UNIT))
-        assert len(cascade.pending(conn, "v1")) == 3
+        assert len(cascade.pending(conn, "v1")) == 6
         assert not cascade.clear(conn, "v1", slot.UNIT_DESCRIPTION, slot.for_unit(UNIT))
 
     def test_nothing_to_enqueue_is_not_an_error(self, conn):
@@ -185,8 +272,8 @@ class TestThroughTheOverrideService:
         out = svc.apply_override(conn, "v1", slot.DESCRIPTION,
                                  slot.for_entity(slot.DESCRIPTION, CALLEE), "Corrected.",
                                  models=svc.ModelAccess(artifacts=self._model()))
-        assert len(out.queued_for_regeneration) == 4
-        assert len(cascade.pending(conn, "v1")) == 4
+        assert len(out.queued_for_regeneration) == 7
+        assert len(cascade.pending(conn, "v1")) == 7
 
     def test_the_corrected_slot_is_not_queued_against_itself(self, conn):
         svc.apply_override(conn, "v1", slot.DESCRIPTION,
@@ -211,5 +298,5 @@ class TestThroughTheOverrideService:
         out = svc.apply_override(conn, "v1", slot.DESCRIPTION,
                                  slot.for_entity(slot.DESCRIPTION, CALLEE), "Corrected.",
                                  models=models)
-        assert slot.for_entity(slot.DESCRIPTION, CALLER1) not in \
-            {k for _kind, k in out.queued_for_regeneration}
+        assert (slot.DESCRIPTION, slot.for_entity(slot.DESCRIPTION, CALLER1)) not in \
+            set(out.queued_for_regeneration)

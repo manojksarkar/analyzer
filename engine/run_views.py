@@ -318,6 +318,20 @@ def _retire_behaviour_regenerations(output_dir, ran, model, config) -> None:
         print("[run_views] could not retire behaviour regenerations: %s" % exc)
 
 
+def _rewrite_request(path, *, only: bool) -> dict:
+    """The charts whose labels this run writes again (`--rewrite-labels <file>`, written by the
+    update: `review.rewrite.write_labels_request`), as the flowcharts view reads them. `only` --
+    the run makes some views alone -- charts those functions alone, into the stored charts.
+
+    A request that cannot be read stops the phase: charting everything, or nothing, in place of
+    what was asked would both look like success."""
+    from review.rewrite import read_labels_request
+    req = read_labels_request(path)
+    if not req.get("keys"):
+        raise SystemExit("[run_views] --rewrite-labels %s names no chart" % path)
+    return {"keys": list(req["keys"]), "report": req.get("report"), "only": only}
+
+
 def _layers_by_name(config) -> dict:
     """`layers` reduced to what the SWE.4 views read from it -- which components each group of
     each layer holds (`test_specs._layer_components`). Paths and file names stay out: they are
@@ -419,6 +433,18 @@ def main():
         i = args.index("--doc-type")
         if i + 1 < len(args):
             doc_type = args[i + 1]
+    # An update's Phase 3 (FAST_WORD_FILE_UPDATES P5): only these of the views the doc type needs,
+    # and the charts whose labels are written again -- `run.py --views / --rewrite-labels`.
+    only_views = None
+    if "--views" in args:
+        i = args.index("--views")
+        if i + 1 < len(args):
+            only_views = [v.strip() for v in args[i + 1].split(",") if v.strip()]
+    rewrite_labels = None
+    if "--rewrite-labels" in args:
+        i = args.index("--rewrite-labels")
+        if i + 1 < len(args):
+            rewrite_labels = args[i + 1]
     if not os.path.isabs(output_dir):
         output_dir = os.path.join(PROJECT_ROOT, output_dir)
     os.makedirs(output_dir, exist_ok=True)
@@ -506,8 +532,12 @@ def main():
     # never opens a database of its own.
     config = _with_text_overrides(config)
     _check_model_corrections(model)
+    if rewrite_labels:
+        config = dict(config)
+        config["_analyzerRewriteLabels"] = _rewrite_request(rewrite_labels, only=bool(only_views))
 
-    ran = run_views(model, output_dir, model_dir, config, doc_type=doc_type) or []
+    ran = run_views(model, output_dir, model_dir, config, doc_type=doc_type,
+                    only=only_views) or []
 
     # REQ-AP-04. What this run rebuilt -- which views, for which components, from corrections read
     # when -- for the export guard. See review.export_guard.

@@ -64,6 +64,12 @@ Start context (read as needed, don't duplicate here):
   **never** `externalUnitFunction`, a display label two callers can share — so every row keeps
   `externalCallerId`. `CallDescriptionGenerator` collapses each description onto one line (`_one_line`):
   a row's bullets are stored joined by newline, so a newline inside one would split it in two.
+- **Call descriptions are cached by the whole prompt** (`llm_enrichment._cached_desc`, `cache_material`;
+  FAST_WORD_FILE_UPDATES P4): a re-run keeps a row's words. The **inbound** call's bullet is the LLM's
+  too (`build_diagram_for_caller`), described from the caller the row was drawn for — the S3-11 pairing
+  above. A correction to either end's description changes a call's prompt, and the Word-file update
+  rebuilds that row call by call (`review/rewrite._row_bullets`, for `rewrite._drawn_for`'s caller),
+  keeping the stored words of every call whose prompt did not move.
 
 ## 3. Boundaries
 
@@ -77,7 +83,8 @@ Start context (read as needed, don't duplicate here):
 - New behaviour-diagram logic? Still **one diagram per external caller**, private functions skipped, PNG via `mmdc`.
 - Description change? It flows through `CallDescriptionGenerator` (this package's LLM path), not the main enrichment.
 - Changed a row's fields or how its description is built? A reviewer's correction must still land —
-  `pytest tests/unit/test_review_behaviour_save.py tests/unit/test_review_phase3_overrides.py`.
+  `pytest tests/unit/test_review_behaviour_save.py tests/unit/test_review_phase3_overrides.py` — and the
+  update must still rebuild the row as the view does: `pytest tests/unit/test_review_rewrite.py`.
 - Meaningful change? Update the project context (`project-context/`: topic file + dated history entry) — pair
   with `docs-maintainer`.
 - Touching behaviour-*name* derivation, the model schema, or the DOCX exporter? That's `engine-dev`.

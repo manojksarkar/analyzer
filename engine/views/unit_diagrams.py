@@ -13,10 +13,10 @@ from utils import (KEY_SEP, display_name, log, safe_filename, os_type,
 def _project_root() -> str:
     """The CODE root, for resolving tools and assets.
 
-    Deliberately NOT derived from model_dir. These views need `node_modules/.bin/mmdc`,
-    `engine/config/render_dot.mjs` and the shared `.mmdc_cache`, all of which live at the
-    code root — while model_dir is DATA whose location moves (per-version dirs, an isolated
-    test root). The old `dirname(model_dir)` coupled the two, which is why flowcharts.py
+    Deliberately NOT derived from model_dir. These views need `node_modules/.bin/mmdc` and
+    `engine/config/render_dot.mjs`, which live at the code root (the picture caches are data,
+    `utils.picture_cache_dir`) — while model_dir is DATA whose location moves (per-version
+    dirs, an isolated test root). The old `dirname(model_dir)` coupled the two, which is why flowcharts.py
     needed a "walk up one extra level" special case, and why relocating model/ would have
     silently pointed the renderer at a directory with no render script in it: the render
     simply returns False and the flowchart never appears.

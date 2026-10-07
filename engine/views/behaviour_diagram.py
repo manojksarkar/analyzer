@@ -19,22 +19,33 @@ if str(_src) not in sys.path:
 from .registry import register
 
 from behaviour_diagram import SequenceDiagramGenerator
-from utils import log, mmdc_command, scoped_name, KEY_SEP, os_type
+from utils import (log, mmdc_command, scoped_name, KEY_SEP, os_type, cached_picture, keep_picture,
+                   mermaid_cache_dir, mermaid_cache_key)
 
 
 def _project_root() -> str:
     """The CODE root, for resolving tools and assets.
 
-    Deliberately NOT derived from model_dir. These views need `node_modules/.bin/mmdc`,
-    `engine/config/render_dot.mjs` and the shared `.mmdc_cache`, all of which live at the
-    code root — while model_dir is DATA whose location moves (per-version dirs, an isolated
-    test root). The old `dirname(model_dir)` coupled the two, which is why flowcharts.py
+    Deliberately NOT derived from model_dir. These views need `node_modules/.bin/mmdc` and
+    `engine/config/render_dot.mjs`, which live at the code root (the picture caches are data,
+    `utils.picture_cache_dir`) — while model_dir is DATA whose location moves (per-version
+    dirs, an isolated test root). The old `dirname(model_dir)` coupled the two, which is why flowcharts.py
     needed a "walk up one extra level" special case, and why relocating model/ would have
     silently pointed the renderer at a directory with no render script in it: the render
     simply returns False and the flowchart never appears.
     """
     from core.paths import paths
     return paths().project_root
+
+
+def _mermaid_key(mmd_path: str) -> str:
+    """The cache key of the diagram in `mmd_path`, as `utils.render_mermaid_cached` keys the same
+    text drawn with the same options (scale 2, our puppeteer config); "" when it cannot be read."""
+    try:
+        with open(mmd_path, encoding="utf-8") as fh:
+            return mermaid_cache_key(fh.read(), scale=2, puppeteer=True)
+    except OSError:
+        return ""
 
 
 #: Seconds for one mmdc render, then for the one retry. A sequence diagram draws in seconds, but
@@ -71,6 +82,7 @@ def run(model, output_dir, model_dir, config):
         return
 
     project_root = _project_root()
+    _cache_dir = mermaid_cache_dir(project_root)
     out_dir = os.path.join(output_dir, "behaviour_diagrams")
     os.makedirs(out_dir, exist_ok=True)
 
@@ -184,6 +196,10 @@ def run(model, output_dir, model_dir, config):
 
             png_path = None
             if render_png and os.path.isfile(mmd_path):
+                # The picture cache every Mermaid renderer shares, keyed as `render_mermaid_cached`
+                # keys it: a diagram drawn before -- by any run, in any component -- is copied,
+                # not drawn again in a headless browser (FAST_WORD_FILE_UPDATES P3).
+                _cache_key = _mermaid_key(mmd_path)
                 png_base = os.path.splitext(os.path.basename(mmd_path))[0]
                 png = os.path.join(out_dir, f"{png_base}.png")
                 # This is where --selected-unit saves the time: mmdc costs seconds per
@@ -197,7 +213,7 @@ def run(model, output_dir, model_dir, config):
                 _short = _unit.split(KEY_SEP, 1)[1].lower() if KEY_SEP in _unit else ""
                 _reuse = (allowed_units and _short not in allowed_units
                           and os.path.isfile(png))
-                if _reuse:
+                if _reuse or (_cache_key and cached_picture(_cache_dir, _cache_key, png)):
                     png_path = png
                 else:
                     run_cmd = mmdc_command(project_root, mmd_path, png, scale=2)
@@ -205,6 +221,8 @@ def run(model, output_dir, model_dir, config):
                         r2 = _render_png(run_cmd)
                         if r2.returncode == 0 and os.path.isfile(png):
                             png_path = png
+                            if _cache_key:
+                                keep_picture(_cache_dir, _cache_key, png)
                         elif r2.returncode != 0 and idx == 0:
                             msg = (r2.stderr or r2.stdout or f"exit {r2.returncode}").strip()
                             log("mmdc failed: %s" % msg, component="behaviourDiagram", err=True)

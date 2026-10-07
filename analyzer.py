@@ -435,12 +435,16 @@ def cmd_register(a) -> int:
 
 
 def _refuse_stale_export(version_id: str, doc_type: str = None, *, quiet: bool = False,
-                         components=None) -> int:
+                         components=None, pictures: bool = True) -> int:
     """0 if this version's `doc_type` documents are safe to export only (REQ-AP-04), 2 if they
     would ship stale text (said on stderr unless `quiet`).
 
     Asked about the documents this export writes: a SWE.3 re-derive does not make the SWE.4 specs
     current, and SWE.4 specs a SWE.3 export does not print must not hold it up.
+
+    `pictures=False`: a corrected flowchart's picture still owed does not count -- the run draws
+    its components' owed pictures before it exports (`_draw_owed_pictures`), and run.py checks
+    again then (FAST_WORD_FILE_UPDATES P2).
 
     Never blocks a run it cannot judge. With no database configured there is no override table
     to be stale against, and a guard that turns a missing optional feature into a failed export
@@ -457,14 +461,14 @@ def _refuse_stale_export(version_id: str, doc_type: str = None, *, quiet: bool =
                 # corrections can make it ship old text. Asked of the whole version, a correction
                 # in another component sent every update through Phase 3 -- every flowchart of
                 # the component redrawn (416 s for 28 charts) for a description change elsewhere.
-                behind = stale_components(cx, version_id, doc_type, components)
+                behind = stale_components(cx, version_id, doc_type, components, pictures=pictures)
                 if not behind:
                     return 0
                 if not quiet:
                     print(f"corrections newer than the views of: {', '.join(behind)}",
                           file=sys.stderr)
                 return 2
-            assert_exportable(cx, version_id, doc_type)
+            assert_exportable(cx, version_id, doc_type, pictures=pictures)
     except ImportError:
         return 0
     except Exception as exc:
@@ -509,6 +513,92 @@ def _touched_since(version_id: str, since):
         print(f"note: could not read which components this run made ({type(exc).__name__}: "
               f"{exc}); storing the whole version", file=sys.stderr)
         return None
+
+
+def _draw_owed_pictures(version_id: str, output_dir: str, components=None) -> None:
+    """Draw the corrected flowchart pictures `components` still owe (every component's when
+    None), and retry the ones that failed before, into this version's output tree -- before a
+    run exports them (FAST_WORD_FILE_UPDATES P2). A label save rewrites the stored chart at once;
+    its Word picture is drawn here, not by Phase 3 redrawing every chart of the component.
+
+    Never fatal: a picture that cannot be drawn is recorded as failed, and the export guard
+    reports it without blocking (REQ-IM-03), as before.
+    """
+    try:
+        from core.db import get_engine, is_database_configured
+        if not is_database_configured():
+            return
+        from review.render_queue import run_pending
+        with get_engine().begin() as cx:
+            done = run_pending(cx, version_id, output_dir=output_dir, project_root=_ROOT,
+                               limit=None, components=components, retry_failed=True)
+        if done:
+            print(f"drew {len(done)} corrected flowchart picture(s) before the export")
+    except Exception as exc:                        # noqa: BLE001 -- see docstring
+        print(f"note: could not draw the corrected flowchart pictures first "
+              f"({type(exc).__name__}: {exc})", file=sys.stderr)
+
+
+#: An update's Phase 3 when the rewrite left charts and nothing else is behind: the flowcharts,
+#: and the SWE.4 views that transcribe their labels (FAST_WORD_FILE_UPDATES P5).
+_LABEL_REWRITE_VIEWS = "flowcharts,testSpecs,utExport"
+
+
+def _rewrite_queued(version_id: str, project_id: str, cfg: str, checkout: str, scope,
+                    adir: str):
+    """Rewrite the texts written from corrected ones in the components this run writes (D3), as
+    `review.rewrite` does; the path of the charts' request for run.py when there are charts, else
+    None (FAST_WORD_FILE_UPDATES P5).
+
+    Never fatal: a text not rewritten keeps its words and its queue entry, and the next update
+    tries again -- the Word files are still made."""
+    try:
+        from core.db import is_database_configured
+        if not is_database_configured():
+            return None
+        from review.rewrite import read_config, run_step, scope_components
+        config = read_config(cfg)
+        request = os.path.join(adir, "rewrite_labels.json")
+        result = run_step(version_id, project_id, scope_components(config, scope),
+                          config=config, base_path=checkout, labels_request=request)
+        return request if result.charts else None
+    except Exception as exc:                        # noqa: BLE001 -- see docstring
+        print(f"note: the texts written from corrected ones were not rewritten "
+              f"({type(exc).__name__}: {exc}); they stay queued", file=sys.stderr)
+        return None
+
+
+def _with_label_rewrite(argv: list, request: str, version_id: str, doc_type: str,
+                        named) -> list:
+    """run.py's arguments with the charts' labels to write again. An export-only run becomes
+    Phase 3 for the flowcharts and the SWE.4 views alone -- the charts written again, the rest of
+    the views kept as stored -- unless a correction made meanwhile put another view behind, when
+    Phase 3 makes them all. A run with Phase 3 in it already just carries the charts."""
+    out = list(argv) + ["--rewrite-labels", request]
+    i = out.index("--from-phase")
+    if int(out[i + 1]) >= 4:
+        out[i + 1] = "3"
+        if not _refuse_stale_export(version_id, doc_type, quiet=True, components=named,
+                                    pictures=False):
+            out += ["--views", _LABEL_REWRITE_VIEWS]
+        if "--use-model" not in out:
+            out.append("--use-model")
+    return out
+
+
+def _labels_done(version_id: str, request) -> None:
+    """Retire the queue entries of the charts this run wrote again, once its output is stored
+    (`review.rewrite.labels_done`). Never fatal: an entry left is rewritten again next time."""
+    if not request:
+        return
+    try:
+        from core.db import get_engine
+        from review.rewrite import labels_done
+        n = labels_done(get_engine(), version_id, request)
+        print(f"the labels of {n} flowchart(s) written from corrected texts were written again")
+    except Exception as exc:                        # noqa: BLE001 -- see docstring
+        print(f"note: could not record the charts written again ({type(exc).__name__}: {exc}); "
+              f"they stay queued", file=sys.stderr)
 
 
 def _render_version(a, *, scope, command: str, after=None, before=None):
@@ -599,15 +689,20 @@ def _render_version(a, *, scope, command: str, after=None, before=None):
     named = (list((scope or {}).get("names") or [])
              if (scope or {}).get("type") == "component" else None)
     if a.from_phase >= 4 and not forced:
+        # A picture still owed does not decide it: the run draws its components' owed pictures,
+        # under the writer lock, before it exports (`_draw_owed_pictures` below), and run.py asks
+        # again then. Counted here, one corrected label sent the update through Phase 3 -- every
+        # flowchart of the component redrawn (FAST_WORD_FILE_UPDATES P2).
         if getattr(a, "_views_when_stale", False) \
-                and _refuse_stale_export(a.version_id, doc_type, quiet=True, components=named):
+                and _refuse_stale_export(a.version_id, doc_type, quiet=True, components=named,
+                                         pictures=False):
             # `--from-phase auto`: the web app judged "export only" when the job was made; a
             # correction saved while it waited made that stale. The views are made again
             # instead of the re-export refused.
             print("a correction is newer than the views: making them again first (phase 3).")
             a.from_phase = 3
         else:
-            rc = _refuse_stale_export(a.version_id, doc_type, components=named)
+            rc = _refuse_stale_export(a.version_id, doc_type, components=named, pictures=False)
             if rc:
                 return rc, None
 
@@ -662,6 +757,19 @@ def _render_version(a, *, scope, command: str, after=None, before=None):
                 rc = before(cfg, own_cfg, checkout, doc_type)
                 if rc:
                     return run.ok(rc), None
+            # The corrected flowcharts' pictures this run's components owe, drawn before the
+            # export prints them -- the one picture a label correction changed, not Phase 3's
+            # every chart (FAST_WORD_FILE_UPDATES P2).
+            _draw_owed_pictures(a.version_id, os.path.join(adir, "output"), named)
+            # The texts written from corrected ones, in this run's components, rewritten before it
+            # exports them -- and the charts among them to this run's Phase 3 (P5). Not when the run
+            # derives the model again (`resume` of a run cut short in Phase 2, `reexport
+            # --from-phase 2`): the step would read a model Phase 2 has yet to make, and Phase 2
+            # rewrites the queued descriptions itself, as before; names and charts wait for an update.
+            labels = (_rewrite_queued(a.version_id, a.project_id, cfg, checkout, scope, adir)
+                      if a.from_phase >= 3 else None)
+            if labels:
+                argv = _with_label_rewrite(argv, labels, a.version_id, doc_type, named)
             rc = _script(os.path.join(_ROOT, "engine", "run.py"), argv)
             # 3: some components failed and run.py went on with the others -- store and record
             # what they made, and report the failure.
@@ -686,6 +794,7 @@ def _render_version(a, *, scope, command: str, after=None, before=None):
                       f"({exc}). The database still holds the previous render.",
                       file=sys.stderr)
                 return run.ok(1), None
+            _labels_done(a.version_id, labels)
             _register_for_review(a.project_id, a.version_id)
             if rc == 0 and after is not None:
                 after(docs)

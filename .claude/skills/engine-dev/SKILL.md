@@ -136,6 +136,14 @@ test that catches it: [REVIEW_UPDATE_HANDOVER §4](docs/design/REVIEW_UPDATE_HAN
   so a blank is how the regeneration queue asks for a rewrite (`review/cascade.py`) — and
   `regenerate=` is how it stops the description cache answering with the stale wording. A new
   generator of text the cascade can queue takes both, or its queue entries are paid by a cache hit.
+- **The Word-file update pays its components' queue first** (`review/rewrite.py`, FAST_WORD_FILE_UPDATES
+  P5): each candidate's prompt is built with the corrections taken back and as they are, and only one
+  that moved is rewritten, by the generator that wrote it. A new prompt that reads another LLM text
+  needs its entry in `cascade.dependents_of`, its comparison in `rewrite._World.moved` and its rewrite
+  there, and a new queued kind its rule in `carry_forward._queue_entry_applies` (or an incremental run
+  drops it) — or a correction leaves the new text with the rejected wording, in silence. The step runs
+  in every `analyzer._render_version` run (`reexport`, `export`, `resume`) that starts at Phase 3 or
+  later; one that derives the model again leaves the descriptions to Phase 2 (HANDOVER §4.40).
 - **A save writes one model row** (`model_store.set_entity_field`, `set_unit_description`), never the
   version's model: a repository flush from a save rewrote everything from a stale snapshot.
 - **Which records get a description is ONE rule** — `utils.has_own_header_row` / `is_described_record`

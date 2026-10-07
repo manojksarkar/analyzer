@@ -23,7 +23,13 @@ export function QueuedList({ projectId, versionId, slotRefs }: {
   slotRefs: Set<string>
 }) {
   const { data, isLoading, isError } = useRegenerationQueue(projectId, versionId)
-  const items = (data ?? []).filter((q) => slotRefs.has(slotRef(q.slotKind, q.slotKey)))
+  // A chart's queued labels (`flowchartLabels`) are keyed by its flowchart id: this document's
+  // when it prints one of the chart's node labels.
+  const charts = new Set([...slotRefs].filter((r) => r.startsWith('nodeLabel:'))
+    // eslint-disable-next-line no-control-regex -- a node label's key joins flowchart and node with U+0001
+    .map((r) => r.slice('nodeLabel:'.length).split(/\u0001/)[0]))
+  const items = (data ?? []).filter((q) => (q.slotKind === 'flowchartLabels'
+    ? charts.has(q.slotKey) : slotRefs.has(slotRef(q.slotKind, q.slotKey))))
   const elsewhere = (data?.length ?? 0) - items.length
   return (
     <section aria-label="Queued for the next run" className="mt-4">

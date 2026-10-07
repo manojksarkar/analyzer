@@ -16,6 +16,51 @@ PROJECT_ROOT = _p.project_root
 MODEL_DIR = _p.model_dir
 
 
+# ---------------------------------------------------------------------------
+# Which flowcharts the SWE.3 document prints (SWE3_WIKI N.1.6) -- one rule, read by the exporter
+# that prints them and by the flowcharts view that draws their pictures.
+# ---------------------------------------------------------------------------
+def flowchart_section(iface: dict, hidden=frozenset()) -> bool:
+    """Whether an interface-table entry gets a flowchart section of its own: a function's (a
+    global has none) that is not hidden."""
+    return iface.get("type") != "Global Variable" and iface.get("functionId") not in hidden
+
+
+def private_callee_flowcharts(function_id, functions: dict, hidden=frozenset()) -> list:
+    """The functions whose flowcharts are printed under `function_id`'s own: the private
+    functions it calls directly, in call order, hidden ones left out. A private function has no
+    section of its own, so this is where its logic is published."""
+    out = []
+    for callee in (functions.get(function_id) or {}).get("callsIds") or []:
+        if callee in hidden:
+            continue
+        if ((functions.get(callee) or {}).get("visibility") or "").lower() != "private":
+            continue
+        out.append(callee)
+    return out
+
+
+def printed_flowcharts(interface_data: dict, functions: dict) -> set:
+    """The function keys whose flowchart the SWE.3 document built from `interface_data` (an
+    `interface_tables.json`) can print: each function entry's own, and its private callees'.
+
+    Hidden functions count: hiding is Phase 4's alone, set from the web app with no Phase 3, so a
+    function shown again later is printed with the picture Phase 3 drew for it. What the exporter
+    prints is always among these."""
+    out = set()
+    for unit in (interface_data or {}).values():
+        if not isinstance(unit, dict):
+            continue
+        for iface in unit.get("entries") or []:
+            if not isinstance(iface, dict) or not flowchart_section(iface):
+                continue
+            fid = iface.get("functionId")
+            if fid:
+                out.add(fid)
+                out.update(private_callee_flowcharts(fid, functions))
+    return out
+
+
 #: How long `save_docx` waits for a reader to let go of the file it replaces (Windows), and the
 #: first pause between tries (doubling).
 REPLACE_WAIT_SECONDS = 8.0

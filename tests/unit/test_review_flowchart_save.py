@@ -412,3 +412,42 @@ class TestAFlowchartWithNoStoredGraph:
         n = conn.execute(sa.select(sa.func.count())
                          .select_from(s.text_overrides)).scalar()
         assert n == 0
+
+
+class TestTheSaveVouchesForTheStoredChart:
+    """FAST_WORD_FILE_UPDATES P1. A label save rewrites the stored chart, so the `flowcharts` view
+    is current for its component -- stamped, or the export guard sent the Word-file update through
+    Phase 3 and every chart of the component was redrawn to change one label. A stamp vouches for
+    every stored copy, so every copy is rewritten first."""
+
+    @staticmethod
+    def _stamped(conn):
+        return {(r.view_name, r.group_name) for r in conn.execute(
+            sa.select(s.view_derivations.c.view_name, s.view_derivations.c.group_name)
+            .where(s.view_derivations.c.version_id == "v1")).fetchall()}
+
+    def test_the_view_is_stamped_for_its_component(self, conn):
+        out = _save(conn, {"n1": "Check the flag"})
+        assert ("flowcharts", "comp") in self._stamped(conn)
+        assert list(out.views_derived) == []        # what is REPORTED stays the SWE.4 views (R8)
+
+    def test_then_only_the_picture_is_owed(self, conn):
+        """The save drew no picture here (no output tree): the update draws it first, so the
+        export alone is enough once it is drawn."""
+        from review import export_guard as g
+        _save(conn, {"n1": "Check the flag"})
+        assert g.stale_components(conn, "v1", "swe3", ["Comp"]) == ["Comp"]      # the picture
+        assert g.stale_components(conn, "v1", "swe3", ["Comp"], pictures=False) == []
+
+    def test_every_stored_copy_is_rewritten(self, conn):
+        """Overlapping group scopes store one unit's flowcharts in two directories."""
+        from review import rerender
+        copy = "Other/flowcharts/UnitA.json"
+        conn.execute(sa.insert(s.version_output_files).values(
+            version_id="v1", rel_path=copy, group_name="Other",
+            content=rerender.read_output_row(conn, "v1", REL)))
+        _save(conn, {"n1": "Check the flag"})
+        for rel in (REL, copy):
+            entry = next(e for e in json.loads(rerender.read_output_row(conn, "v1", rel))
+                         if e["functionKey"] == FID)
+            assert "Check the flag" in entry["flowchart"], rel

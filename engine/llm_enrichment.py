@@ -1077,6 +1077,7 @@ def enrich_functions_rich(
     config: dict,
     knowledge=None,
     regenerate=None,
+    only=None,
 ) -> dict:
     """Budget-aware function description enrichment with optional two-pass.
 
@@ -1099,8 +1100,12 @@ def enrich_functions_rich(
         Function ids whose cached description must not be reused: a reviewer corrected a
         description they were written from (the review regeneration queue, REQ-CS-01). The
         cache key is the source plus the callees' SOURCE hashes, which a corrected description
-        does not move -- so without this the stale text comes straight back. The fresh text is
-        cached as usual and replaces the stale entry.
+        does not move -- so without this the stale text comes straight back. The fresh text
+        replaces the stale entry (`EntityCache.replace`).
+    only : set, optional
+        Describe these function ids alone, of those with no description: an update rewriting
+        the texts a correction was written into (`review.rewrite`) must not describe a function
+        that simply has none. None: every function with no description, as Phase 2 does.
 
     Returns
     -------
@@ -1124,7 +1129,8 @@ def enrich_functions_rich(
         for key in ready:
             order.append(key)
             processed.add(key)
-    order = [k for k in order if not func_by_id.get(k, {}).get("description")]
+    order = [k for k in order if not func_by_id.get(k, {}).get("description")
+             and (only is None or k in only)]
     if not order:
         return {}
 
@@ -1231,7 +1237,11 @@ def enrich_functions_rich(
                 desc = reviewed
 
         result[key] = {"description": desc}
-        if desc:
+        if desc and key in regenerate:
+            # Same key as the stale entry (a corrected description moves no source hash): the
+            # fresh text REPLACES it, or the next generation brings the old wording back.
+            entity_cache.replace(qn or key, cache_hash, desc)
+        elif desc:
             entity_cache.put(qn or key, cache_hash, desc, metadata={"pass": 1})
         progress.step(label=short_name(qn) or "?")
 
@@ -1306,7 +1316,10 @@ def enrich_functions_rich(
 
             if refined:
                 result[key] = {"description": refined}
-                entity_cache.put(qn or key, pass2_hash, refined, metadata={"pass": 2})
+                if key in regenerate:
+                    entity_cache.replace(qn or key, pass2_hash, refined)
+                else:
+                    entity_cache.put(qn or key, pass2_hash, refined, metadata={"pass": 2})
             progress2.step(label=short_name(qn) or "?")
 
         progress2.done(summary=f"{len(result)} refined (pass 2) — cache: {entity_cache.stats()}")
