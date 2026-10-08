@@ -407,7 +407,9 @@ def _draw_web_svgs(db, project_id: str, version_id: str, flowchart_id: str) -> N
     """The web page's SVG of a flowchart a save just rebuilt (`review.rerender.draw_web_svgs`).
 
     After the save's commit, and best effort: the correction is stored either way, and a
-    re-export draws the picture when this cannot -- no output tree on this host, or no Node."""
+    re-export draws the picture when this cannot -- no output tree on this host, or no Node. Only
+    on disk: the update's restore writes the stored SVG back, from the old DOT, and draws it again
+    after (`views.flowcharts.refresh_web_svgs`)."""
     try:
         from ..services.doc_render import commit_output_root
         from ..services.settings import get_settings

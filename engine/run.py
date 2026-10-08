@@ -1056,9 +1056,24 @@ def _restore_output_from_db(from_phase: int) -> None:
         if n:
             log(f"restored {n} view output file(s) from the database",
                 component="run")
+        if from_phase >= 4:
+            _refresh_web_flowcharts(groups)
     except Exception as exc:                       # noqa: BLE001 - see docstring
         log(f"WARNING: could not restore view output from the database ({exc}); running from "
             f"whatever is in output/ on this machine", component="run", err=True)
+
+
+def _refresh_web_flowcharts(groups) -> None:
+    """The web page's flowchart pictures of an export-only run, drawn again where the restore just
+    put back one drawn from an older DOT (`views.flowcharts.refresh_web_svgs` has the why). Phase
+    3 draws them on every other run. Never fatal: the Word file does not use them."""
+    try:
+        from core.paths import paths
+        from views.flowcharts import refresh_web_svgs
+        refresh_web_svgs(paths().project_root, paths().output_dir, groups)
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        log(f"WARNING: the web page's flowchart pictures were not brought up to date ({exc})",
+            component="run", err=True)
 
 
 def _refuse_stale_export(from_phase: int, force: bool) -> None:

@@ -21,7 +21,7 @@ from utils import (  # noqa: E402
     FLOWCHART_SVG_MAX_BOXES, count_dot_boxes, safe_filename, svg_content_key, svg_file_key,
 )
 from views.flowcharts import (  # noqa: E402
-    _carry_forward_flowcharts, _prune_orphan_flowcharts, write_flowchart_svgs,
+    _carry_forward_flowcharts, _prune_orphan_flowcharts, refresh_web_svgs, write_flowchart_svgs,
 )
 
 needs_node = pytest.mark.skipif(
@@ -143,6 +143,44 @@ class TestWriteSvgs:
         assert counts["removed"] == 1
         assert not (tmp_path / "U_gone.svg").exists()
         assert (tmp_path / "U_f.svg").exists()
+
+
+class TestAnExportOnlyRunDrawsWhatItsRestorePutBackStale:
+    """`refresh_web_svgs`, after an export-only run's restore (`run._restore_output_from_db`).
+    The stored SVG is the last capture's, drawn from the DOT before a label correction, and Phase
+    3 does not run: the web page read "Flowchart not drawn for this run" after every label update
+    (FAST_WORD_FILE_UPDATES P2)."""
+
+    def test_only_the_runs_components_by_the_guards_spelling(self, tmp_path, monkeypatch):
+        import views.flowcharts as fc
+        seen = []
+        monkeypatch.setattr(fc, "write_flowchart_svgs",
+                            lambda root, d: seen.append(d) or {"drawn": 1})
+        for comp in ("Layer1.Sample-Core", "Layer1.Lib"):
+            (tmp_path / comp / "flowcharts").mkdir(parents=True)
+        (tmp_path / "Layer1.Util").mkdir()                 # a component with no charts
+        total = fc.refresh_web_svgs(PROJECT_ROOT, str(tmp_path), ["Layer1.Sample Core"])
+        assert seen == [str(tmp_path / "Layer1.Sample-Core" / "flowcharts")]
+        assert total["drawn"] == 1
+        seen.clear()
+        fc.refresh_web_svgs(PROJECT_ROOT, str(tmp_path))   # no components named: every one
+        assert sorted(seen) == sorted(str(tmp_path / c / "flowcharts")
+                                      for c in ("Layer1.Lib", "Layer1.Sample-Core"))
+
+    def test_no_output_tree_draws_nothing(self, tmp_path):
+        assert refresh_web_svgs(PROJECT_ROOT, str(tmp_path / "absent"))["drawn"] == 0
+
+    @needs_node
+    def test_the_picture_of_the_corrected_dot_replaces_the_restored_one(self, tmp_path):
+        fc_dir = tmp_path / "Layer1.Sample-Core" / "flowcharts"
+        fc_dir.mkdir(parents=True)
+        _write_unit(str(fc_dir), "Core", [("add", _dot("Old", "End"))])
+        write_flowchart_svgs(PROJECT_ROOT, str(fc_dir))      # what the last capture stored
+        corrected = _dot("Corrected", "End")
+        _write_unit(str(fc_dir), "Core", [("add", corrected)])   # the restored, corrected chart
+        counts = refresh_web_svgs(PROJECT_ROOT, str(tmp_path), ["Layer1.Sample Core"])
+        assert counts["drawn"] == 1
+        assert svg_file_key(str(fc_dir / "Core_add.svg")) == svg_content_key(corrected)
 
 
 class TestIncrementalCarriesSvgs:
