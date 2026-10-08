@@ -117,7 +117,8 @@ Start context (read as needed, don't duplicate here):
 - **Consumers of your output:** the DOCX exporter embeds the DOT-rendered PNGs; **SWE.4's deferred
   boundary/equivalence pass** borrows `CFGBuilder`. Behaviour diagrams are a *separate* view (→ `engine-behaviour`).
   The **web reader shows server-drawn SVGs** — `views/flowcharts.write_flowchart_svgs`, every run, one Node
-  process (`engine/config/render_svg.mjs`); name / box count / 500-box limit / content key live in
+  process (`engine/config/render_svg.mjs`); an export-only run, which has no Phase 3, draws those its restore
+  put back stale (`refresh_web_svgs`, HANDOVER §4.41); name / box count / 500-box limit / content key live in
   `engine/core/flowchart_svg.py`, shared with `api/services/doc_render.py`. The DOT never reaches the browser.
   Backfill old runs: `tools/render_flowchart_pngs.py --project ID | --all`.
 

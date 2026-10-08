@@ -1233,6 +1233,37 @@ def write_flowchart_svgs(project_root, out_dir) -> dict:
     return counts
 
 
+def refresh_web_svgs(project_root, output_dir, components=None) -> dict:
+    """`write_flowchart_svgs` over every `<component>/flowcharts` directory of `output_dir`, or
+    only `components`' (compared as the export guard compares them, `export_guard.component_id`).
+    Returns the summed counts.
+
+    For a run that renders without this view: an export-only run (`run.py --from-phase 4`). It
+    writes the stored view output back to disk first (`run._restore_output_from_db`), and the SVG
+    stored there is the one the last capture took. A label correction rebuilds the stored DOT at
+    once and draws its new SVG on disk only (`review.rerender.draw_web_svgs`), so the restore put
+    the old picture back over the new one, the capture stored it again, and the web page read
+    "Flowchart not drawn for this run" after every label update -- the Word file had the new
+    picture, which the update draws first (FAST_WORD_FILE_UPDATES P2). Only charts whose SVG
+    does not match their DOT are drawn, one Node process per folder that has any: none when
+    nothing changed.
+    """
+    from review.export_guard import component_id
+    want = None if components is None else {component_id(c) for c in components}
+    total = {"drawn": 0, "current": 0, "too_large": 0, "failed": 0, "removed": 0}
+    try:
+        names = sorted(os.listdir(output_dir))
+    except OSError:
+        return total
+    for name in names:
+        fc_dir = os.path.join(output_dir, name, "flowcharts")
+        if not os.path.isdir(fc_dir) or (want is not None and component_id(name) not in want):
+            continue
+        for k, n in write_flowchart_svgs(project_root, fc_dir).items():
+            total[k] = total.get(k, 0) + n
+    return total
+
+
 def _printed_charts(output_dir_abs, model):
     """The function keys whose Word picture this directory's SWE.3 document can print
     (`docx_common.printed_flowcharts`), or None -- draw every picture -- when its interface

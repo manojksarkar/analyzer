@@ -240,12 +240,28 @@ class TestAnExportOnlyRunReadsTheDatabase:
         assert ("groups = (_doc_components(plans) or None) if from_phase >= 4 or views_arg "
                 "else None") in body
 
+    def test_an_export_only_run_draws_the_web_pictures_the_restore_put_back_stale(self):
+        """FAST_WORD_FILE_UPDATES P2 made a label correction's Word-file update export-only. Its
+        restore writes back the stored SVG -- the last capture's, drawn from the DOT before the
+        correction -- over the one the save drew, and Phase 3, which draws them, does not run: the
+        web page read "Flowchart not drawn for this run" after every label update while the Word
+        file had the new picture. After the restore, those are drawn again (`refresh_web_svgs`)."""
+        import importlib
+        src = _src(self.SRC)
+        body = src[src.index("def _restore_output_from_db"):]
+        body = body[:body.index("\ndef ")]
+        call = re.search(r"if from_phase >= 4:\s*\n\s*_refresh_web_flowcharts\(groups\)", body)
+        assert call, "an export-only run no longer draws the web pictures after its restore"
+        assert body.index("dump_output_files_to_dir(cx") < call.start()
+        assert "refresh_web_svgs(" in src[src.index("def _refresh_web_flowcharts"):]
+        assert hasattr(importlib.import_module("views.flowcharts"), "refresh_web_svgs")
+
     def test_it_is_never_fatal(self):
         """The export still runs from disk if the restore fails -- which is what it did before
         this existed -- but it says so."""
         src = _src(self.SRC)
         body = src[src.index("def _restore_output_from_db"):]
-        head = body[:2000]
+        head = body[:body.index("\ndef ")]                 # the function, whatever its length
         assert "except Exception as exc:" in head
         assert "err=True" in head
         assert "raise" not in head

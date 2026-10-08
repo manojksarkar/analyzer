@@ -709,6 +709,19 @@ the run's identity (`rewrite.queued`).
 
 → `test_review_pipeline_wiring.py::TestEveryPieceHasACaller::test_the_rewrite_step_leaves_a_re_derive_to_phase_2`.
 
+### 4.41 An export-only run draws the web pictures its restore put back stale
+
+The web page shows a flowchart only when its SVG was drawn from the stored DOT (`doc_render._flowchart_entry`
+compares the key inside the file), and Phase 3 draws them on every run (`write_flowchart_svgs`). A label
+correction's update is export-only (FAST_WORD_FILE_UPDATES P2), so no Phase 3; its restore writes back the
+SVG stored at the last capture — drawn from the DOT before the correction — over the one the save drew,
+and the capture stores it again. After the restore `run._refresh_web_flowcharts` draws the charts whose
+SVG no longer matches (`views.flowcharts.refresh_web_svgs`). Drop the call and every label update leaves
+"Flowchart not drawn for this run" on the page, while the Word file looks right.
+
+→ `test_review_output_from_db.py::TestAnExportOnlyRunReadsTheDatabase::test_an_export_only_run_draws_the_web_pictures_the_restore_put_back_stale`,
+`test_flowchart_svgs.py::TestAnExportOnlyRunDrawsWhatItsRestorePutBackStale`.
+
 ---
 
 ## 5. Defects this branch found in existing code
