@@ -159,6 +159,11 @@ unit description, the Lib → `gatewayMean` behaviour row, and the charts of `ga
   stored copy's directory; run.py asks the guard again then.
 - An export-only run restores only its own components' stored output (`run._restore_output_from_db`),
   and the guard judges only its components (`assert_exportable(components=…)`).
+- **The web page's pictures too** (added 2026-10-08). The restore writes back the SVG the last capture
+  stored, drawn from the DOT before the correction, over the one the save drew; no Phase 3 runs to draw
+  it again. After the restore the run draws the SVGs that no longer match their DOT
+  (`views.flowcharts.refresh_web_svgs`). Without it the page read "Flowchart not drawn for this run" after
+  every label update, while the Word file had the new picture.
 - **The fallback is unchanged.** Phase 3 + 4 still run for a component a newly added layer changed, a
   view no save could bring up to date, or a guard that cannot read the stamps. After P3 and P4 it costs
   seconds, not minutes.
