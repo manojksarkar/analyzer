@@ -52,12 +52,12 @@ checked as described in §3.
 | L3 | **Calls in parallel inside a stage** (`llm.workers`): names, globals, structs, units, flowchart labels per function; descriptions by call-graph round | lets L1/L2 work — one call at a time can use only one lane | yes | low–medium (threads) | built, opt-in |
 | R1 | **One browser for many pictures** (Mermaid batch) | ≈4–5× a diagram; with R2, Phase 3 **3.5×** and the SWE.3 export **1.6×** on a component, cold caches (§3) | **yes, byte-identical PNGs** | low | built; wired for unit diagrams and the export's two component diagrams (behaviour diagrams next) |
 | R2 | Same for flowchart PNGs (`render_dot.mjs` starts a browser per chart) | **5.4×**: 1.8 s a chart vs 9.8 s — hours on a 500-chart document | **yes, byte-identical PNGs** | low | built and wired (chunks of 50) |
-| P1 | **Parse ahead on threads** | Phase 1 **−24 %** (16.2 → 12.3 s, best of 3; only the parse overlaps, the Python walk stays) | **yes** (model compared field by field, list order included) | **one native crash in 5 runs** with the first design — redesigned: **30 runs clean** since (§4.1) | built, env-gated |
-| P2 | **Skip headers a `.cpp` already covered** | Phase 1 **−30 %** (16.2 → 11.3 s, best of 3; 104 of 218 files not parsed alone) | **yes on the sample** | needs a one-time compare on the office code (§4.1) | built, env-gated |
+| P1 | **Parse ahead on threads** | Phase 1 **−24 %** (16.2 → 12.3 s, best of 3; only the parse overlaps, the Python walk stays) | **yes** (model compared field by field, list order included) | **one native crash in 5 runs** with the first design — redesigned: **30 runs clean** since (§4.1) | built, opt-in (`parse` block) |
+| P2 | **Skip headers a `.cpp` already covered** | Phase 1 **−30 %** (16.2 → 11.3 s, best of 3; 104 of 218 files not parsed alone) | **yes on the sample** | needs a one-time compare on the office code (§4.1) | built, opt-in (`parse` block) |
 | P5 | **One parse per file instead of two**: pass 1 records each file's call and global-access candidates, resolved once every definition is known (pass 2 exists only for that) | Phase 1 ≈ −25–35 % (pass 2: 4.7 s of 15.9 s here) | must be proven (model compare) | medium: pass 2's visitors become a resolve step | research |
 | P6 | **The walks in several processes**: each process parses and walks its share of the files and records what each file contributed; the main process folds the records in today's file order, so "first file wins" holds | Phase 1 up to ×processes (the walk is ⅔ of it and threads cannot share it: the GIL) | must be proven | high: the visitors write shared state directly; they would have to record per file first | research — worth it only if the office's `run.log` shows Phase 1 matters (§6) |
 | P3 | One AST walk instead of six | Phase 1 maybe −40 % | must be proven | medium: six visitors, one traversal | research |
-| P4 | **A field check for the bindings' null guard**: clang ≥ 19 bindings call `is_null()` (a second libclang call) before nearly every cursor read — 2.5M calls, ≈20 % of Phase 1 | Phase 1 **−25 %** (16.2 → 12.1 s, best of 3) | **yes** (parse snapshots and include lists identical) | low: libclang's `clang_equalCursors` for the null cursor is exactly kind 70 + zero fields; or pin the bindings to the libclang version | built, env-gated |
+| P4 | **A field check for the bindings' null guard**: clang ≥ 19 bindings call `is_null()` (a second libclang call) before nearly every cursor read — 2.5M calls, ≈20 % of Phase 1 | Phase 1 **−25 %** (16.2 → 12.1 s, best of 3) | **yes** (parse snapshots and include lists identical) | low: libclang's `clang_equalCursors` for the null cursor is exactly kind 70 + zero fields; or pin the bindings to the libclang version | built, opt-in (`parse` block) |
 | C1 | Fewer LLM calls: description + names in one call; bigger flowchart label batches (4 → 8–12 nodes); templated text for trivial accessors | Phase 2 −40 %, labels −50–66 % | **no — wording changes** | quality to review | decision for the user |
 | X1 | Parse/derive only a component's closure | depends: high-level component small, a low-level one ≈ its whole layer | only with every caller/ancestor/descendant/global user parsed | high: a missed file silently changes publication, ids, directions | research (needs a baseline version) |
 | X2 | Components of a run in parallel processes | ×processes on Phase 3–4 | yes | needs a limiter shared **across processes** first (B6) | planned |
@@ -69,8 +69,8 @@ checked as described in §3.
 |---|---|---|
 | Lanes, start pacing, failover, adaptive concurrency, busy retries, refused keys, the learnt pause | `engine/llm_core/pool.py`, `client.py` (`_post`, `_attempt_numbers`) | unit tests; L-runs below. **Off unless configured** — with no `lanes`/`pacing`, the client runs today's code path untouched (its tests pin `sleep(3.0)` after each call) |
 | `llm.workers` | `engine/llm_core/parallel.py`; descriptions (`_run_in_rounds`), names, globals, units, structs; flowchart labels (`_process_all_parallel`) | results applied in today's order; descriptions run a call-graph *round* at once (a round's functions call none of each other) and the last round of a cycle in today's order |
-| Parse ahead | `engine/core/tu_prefetch.py`, `parser.py` (`_parse_ahead`, `ANALYZER_PARSE_WORKERS`) | `tools/perf/compare_models.py`: identical model, parse snapshots identical but a timestamp |
-| Skip covered headers | `parser.py` (`ANALYZER_SKIP_COVERED_HEADERS=1`) | identical model and snapshots; `tu_includes` 114 rows instead of 218 |
+| Parse ahead | `engine/core/tu_prefetch.py`, `parser.py` (`_parse_ahead`); `parse.workers` | `tools/perf/compare_models.py`: identical model, parse snapshots identical but a timestamp |
+| Skip covered headers | `parser.py`; `parse.skipCoveredHeaders` (also in the parse fingerprint) | identical model and snapshots; `tu_includes` 114 rows instead of 218 |
 | Mermaid batch | `engine/config/render_mmd_batch.mjs` | 8/8 PNGs byte-identical to `mmdc`; 1.8–2.7 s per diagram vs 9.5 s; browser killed mid-batch → relaunched, 11/11 drawn (§4.3) |
 | Flowchart PNG batch | `engine/config/render_dot_batch.mjs` | 8/8 byte-identical to `render_dot.mjs`; 1.8 s per chart vs 9.8 s; browser killed mid-batch → relaunched, 14/14 byte-identical |
 
@@ -142,7 +142,7 @@ JSON would close that.
 | Kind | Pieces | Default |
 |---|---|---|
 | Ready to review for develop | lanes + start pacing + failover + adaptive concurrency + busy retries + refused keys + the learnt pause + the `LLM lanes:` log line (`pool.py`, `client.py`); `llm.workers` stages (`parallel.py` — its `executor` cancels queued work on an error or a Ctrl+C — descriptions, names, globals, units, structs, flowchart labels; one cache key, one question at a time); the LLM banner's lanes/pacing/workers lines; picture batches (`render_mmd_batch.mjs`, `render_dot_batch.mjs` — a dead browser relaunched — `utils.render_*_many`, unit diagrams, flowchart PNGs, the export's component diagrams) | LLM changes **off** unless configured; picture batches **on** (byte-identical, per-picture fallback; `ANALYZER_MMD_BATCH=0` / `ANALYZER_DOT_BATCH=0` turn them off) |
-| Behind a flag, gate open | parse ahead (`ANALYZER_PARSE_WORKERS`), skip covered headers (`ANALYZER_SKIP_COVERED_HEADERS=1`), the field null check (`ANALYZER_FAST_NULLCHECK=1`) | off |
+| Opt-in, the config's `parse` block | parse ahead (`parse.workers`), the field null check (`parse.fastNullCheck`), skip covered headers (`parse.skipCoveredHeaders`) — each overridden by its environment variable (`ANALYZER_PARSE_WORKERS`, `ANALYZER_FAST_NULLCHECK`, `ANALYZER_SKIP_COVERED_HEADERS`), as `llm`'s settings are (`LLM_WORKERS`, `LLM_PACING`, …). `core.config.load_parse_config` | off |
 | Kept as a measurement | one `time:` line at Phase 1's end — waiting for libclang vs walking the AST (a large wait is what parse ahead wins back) | logging only |
 | Study only — remove before a merge | `ANALYZER_PROFILE_PARSER` (cProfile of Phase 1); the per-walk timers are already gone (they broke two guard tests that look for the visitor calls) | off |
 | Tools | `tools/perf/*` | — |
@@ -169,7 +169,7 @@ JSON would close that.
   take its "covered" set from the baseline's full include lists, and `parseFingerprint` must include the
   mode, so a baseline made one way is never merged with a parse made the other way.
 - Memory: each parsed-ahead TU holds its AST; at most `workers + 2` alive (office TUs with big headers:
-  hundreds of MB each — size `ANALYZER_PARSE_WORKERS` to the machine).
+  hundreds of MB each — size `parse.workers` to the machine: 2–4 on 8 GB, 6–8 on 16 GB and up).
 
 ### 4.2 The LLM
 - **The office's 503 says "invalid response from the upstream server"** — the model behind the gateway,

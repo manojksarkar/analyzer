@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 
 from core.config import (
     load_config, load_llm_config, LlmConfigError, format_llm_config_banner,
+    load_parse_config, ParseConfigError,
     layer_source, layer_sources, layer_source_origin, core_config_warnings,
     missing_layer_inputs,
     ConfigFileError, LLM_SERVER_KEYS, LLVM_KEYS_BEFORE, RUN_SERVER_BLOCKS, SERVER_BLOCKS,
@@ -359,6 +360,50 @@ class TestFormatLlmConfigBanner:
         monkeypatch.delenv("LLM_API_KEYS", raising=False)
         banner = format_llm_config_banner(load_llm_config(_cfg()))
         assert "none (one lane" in banner and "after / 1" in banner
+
+
+class TestParseConfig:
+    """Phase 1's speed settings: the config's `parse` block, each overridden by its environment
+    variable, as `llm`'s settings are."""
+
+    ENV = ("ANALYZER_PARSE_WORKERS", "ANALYZER_FAST_NULLCHECK", "ANALYZER_SKIP_COVERED_HEADERS")
+
+    @pytest.fixture(autouse=True)
+    def _no_env(self, monkeypatch):
+        for k in self.ENV:
+            monkeypatch.delenv(k, raising=False)
+
+    def test_nothing_set_is_todays_parse(self):
+        assert load_parse_config({}) == {"workers": 1, "fastNullCheck": False, "skipCoveredHeaders": False}
+
+    def test_the_config_block_is_read(self):
+        cfg = load_parse_config({"parse": {"workers": 6, "fastNullCheck": True, "skipCoveredHeaders": True}})
+        assert cfg == {"workers": 6, "fastNullCheck": True, "skipCoveredHeaders": True}
+
+    def test_the_environment_overrides_the_config(self, monkeypatch):
+        monkeypatch.setenv("ANALYZER_PARSE_WORKERS", "3")
+        monkeypatch.setenv("ANALYZER_FAST_NULLCHECK", "0")
+        cfg = load_parse_config({"parse": {"workers": 6, "fastNullCheck": True}})
+        assert cfg["workers"] == 3 and cfg["fastNullCheck"] is False
+
+    def test_auto_is_half_the_cpus_at_most_eight(self, monkeypatch):
+        monkeypatch.setattr(os, "cpu_count", lambda: 32)
+        assert load_parse_config({"parse": {"workers": "auto"}})["workers"] == 8
+        monkeypatch.setattr(os, "cpu_count", lambda: 6)
+        assert load_parse_config({"parse": {"workers": "auto"}})["workers"] == 3
+
+    @pytest.mark.parametrize("block", [{"workers": 0}, {"workers": "many"}, {"fastNullCheck": "maybe"}])
+    def test_a_bad_value_is_an_error_not_a_guess(self, block):
+        with pytest.raises(ParseConfigError):
+            load_parse_config({"parse": block})
+
+    def test_llm_workers_and_pacing_take_their_environment_too(self, monkeypatch):
+        monkeypatch.setenv("LLM_WORKERS", "5")
+        monkeypatch.setenv("LLM_PACING", "start")
+        cfg = load_llm_config(_cfg(workers=2))
+        assert cfg["workers"] == 5 and cfg["pacing"] == "start"
+        from llm_core.parallel import llm_workers
+        assert llm_workers({"llm": {"workers": 2}}) == 5
 
 
 class TestLayerSources:

@@ -12,6 +12,7 @@ LLM stage (llm_core/tokens.py) and not as "unspecified".
 from __future__ import annotations
 
 import contextvars
+import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from typing import Callable, Iterable, Iterator, List, TypeVar
@@ -21,8 +22,11 @@ R = TypeVar("R")
 
 
 def llm_workers(config: dict) -> int:
+    """`llm.workers`, or the environment's LLM_WORKERS over it (as core.config.load_llm_config
+    reads it); at least 1."""
+    raw = os.environ.get("LLM_WORKERS", "").strip() or ((config or {}).get("llm") or {}).get("workers") or 1
     try:
-        return max(1, int(((config or {}).get("llm") or {}).get("workers") or 1))
+        return max(1, int(raw))
     except (TypeError, ValueError):
         return 1
 

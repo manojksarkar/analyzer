@@ -98,6 +98,7 @@
     // A second user's ticket:  { "name": "user2", "customHeaders": { "User-Id": "user-id-2", "x-dep-ticket": "credential:TOKEN_2" } }
     // An API key, not a header: { "name": "key-a", "apiKey": "KEY_A" }  (or env LLM_API_KEYS=KEY_A,KEY_B, no lanes)
     // Another gateway:          { "name": "backup", "baseUrl": "https://other-gateway/v1", "apiKey": "KEY_C" }
+    // Each of pacing / workers can also come from the environment: LLM_PACING, LLM_WORKERS.
   },
 
   // A local Ollama instead of a gateway:
@@ -119,4 +120,16 @@
     "libPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
     "includePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include"
   }
+
+  // Optional: a faster parse (Phase 1; docs/design/PIPELINE_SPEED_PLAN.md). Nothing changes until
+  // you uncomment it. Each setting can also come from the environment, which wins:
+  // ANALYZER_PARSE_WORKERS, ANALYZER_FAST_NULLCHECK, ANALYZER_SKIP_COVERED_HEADERS.
+  //   workers             files parsed ahead on threads while one is walked: 1 = as always;
+  //                       "auto" = half the CPUs, at most 8. Each one parsed ahead holds its whole
+  //                       AST in memory -- 2-4 on an 8 GB machine, 6-8 on 16 GB and up.
+  //   fastNullCheck       a cheaper libclang check, same output.
+  //   skipCoveredHeaders  a header a parsed .cpp already included is not parsed on its own. CAN
+  //                       change the output (a header's own #if branches): compare once with it
+  //                       on and off before relying on it.
+  // ,"parse": { "workers": 6, "fastNullCheck": true, "skipCoveredHeaders": false }
 }
