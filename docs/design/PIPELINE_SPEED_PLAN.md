@@ -287,6 +287,16 @@ after a call. Keys can also come from `LLM_API_KEYS=key1,key2`. A lane may name 
   seconds waited, a refused key, the pause start pacing learnt (`+2.70s after each call` on a 3 s
   gateway means it counts from a call's end: start pacing gains little there).
 
+**Should `pacing` default to `"start"`? Decided (2026-10-12): not yet — after one office run.**
+
+| | |
+|---|---|
+| Why not now | `"start"` wins only when the gateway counts its gap from a call's START. If it counts from the END, start pacing is refused about every other call: each refusal is a retry and a cool-down, twice the requests on the gateway, and a ticket refused again and again might be flagged by the gateway's owners. The lane does learn the right pause by itself (L6e: back to today's speed, nothing lost), but pays refusals while it learns (46 in L6e). On an unknown gateway, `"after"` is what is known to work |
+| The test | One office run with `"pacing": "start"` (one ticket is enough). Read the `LLM lanes:` line at the end of Phase 2 |
+| Make it the default | few `busy`, and no learnt pause (no `+X.XXs after each call`) — the gateway counts from the start |
+| Keep `"after"` | many `busy`, and a learnt pause near the gap (`+2.7s after each call` on 3 s) — it counts from the end |
+| To flip the default | One line: `"pacing": "start"` in `config.defaults.json`'s `llm` block (the code's own default stays `"after"`, so a machine can still set `"after"` in `config.local.json`). The client tests that pin `sleep(3.0)` after each call cover `"after"` and stay |
+
 **A — safe, same output (review and merge what is built; days):**
 1. Picture batches (R1, R2) — on by default, byte-identical, per-picture fallback; wire the behaviour
    diagrams the same way.
