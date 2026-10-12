@@ -144,7 +144,7 @@ JSON would close that.
 | Ready to review for develop | lanes + start pacing + failover + adaptive concurrency + busy retries + refused keys + the learnt pause + the `LLM lanes:` log line (`pool.py`, `client.py`); `llm.workers` stages (`parallel.py` — its `executor` cancels queued work on an error or a Ctrl+C — descriptions, names, globals, units, structs, flowchart labels; one cache key, one question at a time); the LLM banner's lanes/pacing/workers lines; picture batches (`render_mmd_batch.mjs`, `render_dot_batch.mjs` — a dead browser relaunched — `utils.render_*_many`, unit diagrams, flowchart PNGs, the export's component diagrams) | LLM changes **off** unless configured; picture batches **always on** (byte-identical; a failing batch falls back per picture by itself, so there is no switch) |
 | Parsing | the field null check — **always on**, self-checked at start; parse ahead — `parse.workers` (env `ANALYZER_PARSE_WORKERS` over it), off until the office code has had a clean run, then `"auto"` by default. `core.config.load_parse_config` | null check on; parse ahead off |
 | Kept as a measurement | one `time:` line at Phase 1's end — waiting for libclang vs walking the AST (a large wait is what parse ahead wins back) | logging only |
-| Study only — remove before a merge | `ANALYZER_PROFILE_PARSER` (cProfile of Phase 1); the per-walk timers are already gone (they broke two guard tests that look for the visitor calls) | off |
+| Study scaffolding | none left: the per-walk timers and the `ANALYZER_PROFILE_PARSER` profiling hook are removed (2026-10-12) | — |
 | Tools | `tools/perf/*` | — |
 
 ## 4. Edge cases
