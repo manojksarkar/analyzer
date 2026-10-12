@@ -19,13 +19,13 @@ if (pupConfigPath && fs.existsSync(pupConfigPath)) {
   Object.assign(launch, JSON.parse(fs.readFileSync(pupConfigPath, 'utf8')))
 }
 
-// Pages at once in the one browser (MMD_BATCH_PAGES, default 3): each diagram gets its own page,
-// as with mmdc, so they cannot affect one another.
-const pages = Math.max(1, parseInt(process.env.MMD_BATCH_PAGES || '3', 10) || 1)
-// Each job has its own time limit (MMD_JOB_TIMEOUT_MS, default 90 s -- mmdc's per-diagram limit at
-// export): a stuck diagram fails alone and goes back to mmdc, instead of holding the whole batch
-// until the batch's own (much longer) timeout.
-const JOB_MS = Math.max(1000, parseInt(process.env.MMD_JOB_TIMEOUT_MS || '90000', 10) || 90000)
+// Pages at once in the one browser: each diagram gets its own page, as with mmdc, so they cannot
+// affect one another.
+const pages = 3
+// Each job has its own time limit (mmdc's per-diagram limit at export): a stuck diagram fails
+// alone and goes back to mmdc, instead of holding the whole batch until the batch's own (much
+// longer) timeout.
+const JOB_MS = 90000
 function withTimeout (promise, ms) {
   let timer
   return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`timed out after ${ms} ms`)), ms) })])

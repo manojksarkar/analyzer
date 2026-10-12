@@ -351,40 +351,41 @@ class TestFormatLlmConfigBanner:
 
     def test_lanes_are_counted_and_their_keys_never_printed(self):
         cfg = load_llm_config(_cfg(lanes=[{"apiKey": "sk-lane-1"}, {"apiKey": "sk-lane-2"}],
-                                   pacing="start", workers=3))
+                                   pacing="start"))
         banner = format_llm_config_banner(cfg)
-        assert "2 configured" in banner and "start / 3" in banner
+        assert "2 configured" in banner and "pacing            : start" in banner
+        assert "calls at once     : 4" in banner, "twice what two lanes take at once"
         assert "sk-lane" not in banner
 
     def test_no_lanes_says_one_call_at_a_time(self, monkeypatch):
         monkeypatch.delenv("LLM_API_KEYS", raising=False)
         banner = format_llm_config_banner(load_llm_config(_cfg()))
-        assert "none (one lane" in banner and "after / 1" in banner
+        assert "none (one lane" in banner and "pacing            : after" in banner
+        assert "calls at once     : 1" in banner
 
 
 class TestParseConfig:
-    """Phase 1's speed settings: the config's `parse` block, each overridden by its environment
-    variable, as `llm`'s settings are."""
-
-    ENV = ("ANALYZER_PARSE_WORKERS", "ANALYZER_FAST_NULLCHECK", "ANALYZER_SKIP_COVERED_HEADERS")
+    """Phase 1's one speed setting: the config's `parse.workers`, overridden by the environment,
+    as `llm`'s settings are."""
 
     @pytest.fixture(autouse=True)
     def _no_env(self, monkeypatch):
-        for k in self.ENV:
-            monkeypatch.delenv(k, raising=False)
+        monkeypatch.delenv("ANALYZER_PARSE_WORKERS", raising=False)
 
     def test_nothing_set_is_todays_parse(self):
-        assert load_parse_config({}) == {"workers": 1, "fastNullCheck": False, "skipCoveredHeaders": False}
+        assert load_parse_config({}) == {"workers": 1}
 
     def test_the_config_block_is_read(self):
-        cfg = load_parse_config({"parse": {"workers": 6, "fastNullCheck": True, "skipCoveredHeaders": True}})
-        assert cfg == {"workers": 6, "fastNullCheck": True, "skipCoveredHeaders": True}
+        assert load_parse_config({"parse": {"workers": 6}}) == {"workers": 6}
 
     def test_the_environment_overrides_the_config(self, monkeypatch):
         monkeypatch.setenv("ANALYZER_PARSE_WORKERS", "3")
-        monkeypatch.setenv("ANALYZER_FAST_NULLCHECK", "0")
-        cfg = load_parse_config({"parse": {"workers": 6, "fastNullCheck": True}})
-        assert cfg["workers"] == 3 and cfg["fastNullCheck"] is False
+        assert load_parse_config({"parse": {"workers": 6}})["workers"] == 3
+
+    def test_options_that_were_removed_are_ignored_not_an_error(self):
+        # fastNullCheck is always on (self-checked); skipCoveredHeaders is gone
+        assert load_parse_config({"parse": {"workers": 2, "fastNullCheck": False,
+                                            "skipCoveredHeaders": True}}) == {"workers": 2}
 
     def test_auto_is_half_the_cpus_at_most_eight(self, monkeypatch):
         monkeypatch.setattr(os, "cpu_count", lambda: 32)
@@ -392,18 +393,16 @@ class TestParseConfig:
         monkeypatch.setattr(os, "cpu_count", lambda: 6)
         assert load_parse_config({"parse": {"workers": "auto"}})["workers"] == 3
 
-    @pytest.mark.parametrize("block", [{"workers": 0}, {"workers": "many"}, {"fastNullCheck": "maybe"}])
+    @pytest.mark.parametrize("block", [{"workers": 0}, {"workers": "many"}])
     def test_a_bad_value_is_an_error_not_a_guess(self, block):
         with pytest.raises(ParseConfigError):
             load_parse_config({"parse": block})
 
-    def test_llm_workers_and_pacing_take_their_environment_too(self, monkeypatch):
-        monkeypatch.setenv("LLM_WORKERS", "5")
-        monkeypatch.setenv("LLM_PACING", "start")
-        cfg = load_llm_config(_cfg(workers=2))
-        assert cfg["workers"] == 5 and cfg["pacing"] == "start"
-        from llm_core.parallel import llm_workers
-        assert llm_workers({"llm": {"workers": 2}}) == 5
+    def test_llm_calls_at_once_are_not_a_setting(self, monkeypatch):
+        monkeypatch.delenv("LLM_API_KEYS", raising=False)
+        monkeypatch.setenv("LLM_WORKERS", "5")          # no such override
+        assert load_llm_config(_cfg(workers=7))["workers"] == 1
+        assert load_llm_config(_cfg(lanes=[{"apiKey": "a"}, {"apiKey": "b"}]))["workers"] == 4
 
 
 class TestLayerSources:

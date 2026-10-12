@@ -1,8 +1,8 @@
 """Ask the LLM about several items at once, keeping everything else as a sequential run does it.
 
-`llm.workers` (default 1) is how many calls a stage may have in flight. The lanes (pool.py) decide
-how many really go out at once and how fast; with one lane of today's behaviour, extra workers
-only queue -- so `workers` is safe to raise only together with lanes or start pacing.
+How many calls a stage may have in flight follows the lanes (`llm_workers`: 1 without lanes or
+start pacing, else twice what the lanes take at once). The lanes (pool.py) decide how many really
+go out at once and how fast; the spare workers only have the next question ready.
 
 `map_in_order` returns results in the items' order, so a caller that applies them in a loop writes
 the model in the same order as before: the same text, in the same places, whatever finishes first.
@@ -12,7 +12,6 @@ LLM stage (llm_core/tokens.py) and not as "unspecified".
 from __future__ import annotations
 
 import contextvars
-import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from typing import Callable, Iterable, Iterator, List, TypeVar
@@ -22,13 +21,10 @@ R = TypeVar("R")
 
 
 def llm_workers(config: dict) -> int:
-    """`llm.workers`, or the environment's LLM_WORKERS over it (as core.config.load_llm_config
-    reads it); at least 1."""
-    raw = os.environ.get("LLM_WORKERS", "").strip() or ((config or {}).get("llm") or {}).get("workers") or 1
-    try:
-        return max(1, int(raw))
-    except (TypeError, ValueError):
-        return 1
+    """How many calls a stage keeps in flight: what the config's lanes allow
+    (core.config.llm_calls_at_once) -- 1 without lanes or start pacing. Not a setting."""
+    from core.config import llm_calls_at_once
+    return llm_calls_at_once((config or {}).get("llm") or {})
 
 
 @contextmanager
