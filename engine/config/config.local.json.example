@@ -72,6 +72,32 @@
     "numCtx": 8192,                            // context window in tokens (sent to Ollama only)
     // The prompt budget in tokens. Left out or null: worked out from the provider and numCtx.
     "maxContextTokens": 127488
+
+    // Optional: faster LLM runs (docs/design/PIPELINE_SPEED_PLAN.md). Nothing changes until you
+    // uncomment these; with none of them a run makes one call at a time and pauses after each, as
+    // always. Ask the gateway's owners first: is the limit per ticket or per user, and is the gap
+    // counted from a call's start or its end? Every lane uses this block's model.
+    //
+    // pacing "start": the rateLimitSeconds gap counts from a call's START, not after it ends --
+    // with a 5 s answer and a 3 s gap, a call every 5 s instead of every 8. Works on one ticket.
+    // ,"pacing": "start"
+    //
+    // workers: questions in flight per LLM step. Helps only with "pacing": "start" or lanes (on
+    // Ollama it really sends that many at once -- size it to the server).
+    // ,"workers": 4
+    //
+    // lanes: one per ticket or key, used side by side; a busy one rests, a refused one is left
+    // out. A lane's customHeaders replace this block's headers of the same name; anything a lane
+    // leaves out (baseUrl, apiKey, rateLimitSeconds, ...) comes from this block. A lane's `name`
+    // is printed in the log -- never put a secret in it.
+    // ,"lanes": [
+    //   { "name": "ticket-a", "customHeaders": { "x-dep-ticket": "credential:TOKEN_A" } },
+    //   { "name": "ticket-b", "customHeaders": { "x-dep-ticket": "credential:TOKEN_B" } }
+    // ]
+    //
+    // A second user's ticket:  { "name": "user2", "customHeaders": { "User-Id": "user-id-2", "x-dep-ticket": "credential:TOKEN_2" } }
+    // An API key, not a header: { "name": "key-a", "apiKey": "KEY_A" }  (or env LLM_API_KEYS=KEY_A,KEY_B, no lanes)
+    // Another gateway:          { "name": "backup", "baseUrl": "https://other-gateway/v1", "apiKey": "KEY_C" }
   },
 
   // A local Ollama instead of a gateway:
