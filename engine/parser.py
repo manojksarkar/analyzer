@@ -127,6 +127,10 @@ from utils import (
 )
 
 _config = _app_config()
+# Phase 1's speed settings (parse-ahead threads, the fast null check, skipping covered headers):
+# the config's `parse` block, each overridden by its environment variable (core.config).
+from core.config import load_parse_config as _load_parse_config
+_PARSE = _load_parse_config(_config)
 _clang = _config.get("clang") or {}
 # Where LLVM is on THIS machine: `llvm` in config.local.json (libPath, includePath). Not set:
 # the libclang that came with pip, and no builtin-header folder.
@@ -531,13 +535,13 @@ def clang_args_for(file_path: str) -> list:
 
 index = cindex.Index.create()
 
-# perf study (ANALYZER_FAST_NULLCHECK=1): the clang >= 19 bindings guard nearly every Cursor method
+# parse.fastNullCheck (env ANALYZER_FAST_NULLCHECK): the clang >= 19 bindings guard nearly every Cursor method
 # with `is_null()`, which is `self == conf.null_cursor` -- a second ctypes call (clang_equalCursors)
 # per property read: 2.5M of them on the sample, ~20% of Phase 1. libclang's equalCursors compares
 # kind, xdata and data[0..2] (clearing data[1] for declarations only), and the null cursor is
 # kind CXCursor_InvalidFile (70) with every field zero -- so this field check gives the same answer
 # without leaving Python.
-if os.environ.get("ANALYZER_FAST_NULLCHECK") == "1":
+if _PARSE["fastNullCheck"]:
     def _fast_is_null(cur):
         return (cur._kind_id == 70 and not cur.xdata
                 and not cur.data[0] and not cur.data[1] and not cur.data[2])
@@ -569,6 +573,11 @@ def _fingerprint_args() -> list:
     for scope in sorted(_MACRO_ARGS_BY_SCOPE):
         args += _MACRO_ARGS_BY_SCOPE[scope]
     args.append(f"--parse-options=0x{_TU_PARSE_OPTIONS:x}")
+    # A parse that skipped covered headers can differ from one that did not (a header's own
+    # #if branches): never merge one onto the other. Only when on, so every other parse keeps
+    # the fingerprint it always had.
+    if _PARSE["skipCoveredHeaders"]:
+        args.append("--analyzer-skip-covered-headers")
     return args
 
 
@@ -2322,8 +2331,8 @@ def _parse_ahead(source_files, stage):
     an index lent to it alone (one libclang index must not be used by two threads at once). The arguments are
     worked out here, on this thread, before any worker starts."""
     args = {p: clang_args_for(p) for p in source_files}
-    from core.tu_prefetch import default_workers
-    if default_workers() > 1:
+    workers = _PARSE["workers"]
+    if workers > 1:
         # a native crash in libclang on a worker thread prints every thread's stack; best-effort
         # (a stderr without a file descriptor cannot take it), and only when threads parse
         import faulthandler
@@ -2334,7 +2343,7 @@ def _parse_ahead(source_files, stage):
             pass
     return _prefetch(source_files,
                      lambda idx, p: idx.parse(p, args=args[p], options=_TU_PARSE_OPTIONS),
-                     cindex.Index.create)
+                     cindex.Index.create, workers=workers)
 
 
 def parse_file(path, tu=None, err=None):
@@ -3179,10 +3188,15 @@ def main():
 
     p1 = ProgressReporter("parser:parse", total=total, logger=plog)
     p1.start(f"parsing {total} files")
-    # perf study (ANALYZER_SKIP_COVERED_HEADERS=1): a header that a parsed .cpp includes is not
-    # parsed again on its own -- the .cpp files go first, and the first definition wins, so its
-    # own parse could only add what no .cpp context compiled (another #if branch).
-    skip_covered = os.environ.get("ANALYZER_SKIP_COVERED_HEADERS") == "1"
+    # parse.skipCoveredHeaders (env ANALYZER_SKIP_COVERED_HEADERS): a header that a parsed .cpp
+    # includes is not parsed again on its own -- the .cpp files go first, and the first
+    # definition wins, so its own parse could only add what no .cpp context compiled (another
+    # #if branch).
+    skip_covered = _PARSE["skipCoveredHeaders"]
+    if _PARSE["workers"] > 1 or _PARSE["fastNullCheck"] or skip_covered:
+        plog.info("parse settings: %d file(s) parsed ahead on threads, fast null check %s, "
+                  "covered headers %s", _PARSE["workers"], "on" if _PARSE["fastNullCheck"] else "off",
+                  "skipped" if skip_covered else "parsed")
     covered, skipped = None, set()
     for path, tu, err in _parse_ahead(source_files, "parse"):
         p1.step()

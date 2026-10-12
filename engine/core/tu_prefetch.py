@@ -26,10 +26,11 @@ from typing import Any, Callable, Deque, Iterable, Iterator, List, Optional, Tup
 
 
 def default_workers() -> int:
-    """`ANALYZER_PARSE_WORKERS` if set, else 1 -- today's sequential parse. Opt-in until the
-    office code has had a clean run with it (30 clean runs on the sample:
-    docs/design/PIPELINE_SPEED_PLAN.md §4.1); a sensible value is half the CPUs, at most 8
-    (each parsed-ahead TU holds its AST in memory)."""
+    """For a caller that passes no `workers`: `ANALYZER_PARSE_WORKERS` if set, else 1 -- today's
+    sequential parse. The parser passes the config's `parse.workers` instead (with the same
+    environment override: core.config.load_parse_config). Opt-in until the office code has had a
+    clean run with it (30 clean runs on the sample: docs/design/PIPELINE_SPEED_PLAN.md §4.1); a
+    sensible value is half the CPUs, at most 8 (each parsed-ahead TU holds its AST in memory)."""
     raw = os.environ.get("ANALYZER_PARSE_WORKERS", "").strip()
     if raw:
         try:

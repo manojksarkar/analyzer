@@ -595,10 +595,12 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "fewShotExamplesDir": few_shot_dir.strip(),
         # perf/pipeline-speed (llm_core/pool.py): several endpoints/keys, start pacing, and how
         # many calls a stage may have in flight. Absent: one lane, pause after each call, one
-        # call at a time -- today's behaviour.
+        # call at a time -- today's behaviour. Each overridden by its environment variable, as
+        # the rest of this block is (LLM_API_KEYS makes the lanes: llm_core/pool.py).
         "lanes": _lanes(llm.get("lanes")),
-        "pacing": _choice(llm.get("pacing"), ("after", "start"), "after", "llm.pacing"),
-        "workers": _positive_int(llm.get("workers", 1), "llm.workers"),
+        "pacing": _choice(_env_or("LLM_PACING", llm.get("pacing")), ("after", "start"), "after",
+                          "llm.pacing"),
+        "workers": _positive_int(_env_or("LLM_WORKERS", llm.get("workers", 1)), "llm.workers"),
     }
 
 
@@ -617,14 +619,68 @@ def _choice(raw: Any, allowed, default: str, name: str) -> str:
     return v
 
 
-def _positive_int(raw: Any, name: str) -> int:
+def _positive_int(raw: Any, name: str, error=None) -> int:
+    error = error or LlmConfigError
     try:
         v = int(raw)
     except (TypeError, ValueError):
-        raise LlmConfigError(f"{name} must be a whole number (got {raw!r})")
+        raise error(f"{name} must be a whole number (got {raw!r})")
     if v < 1:
-        raise LlmConfigError(f"{name} must be at least 1 (got {v})")
+        raise error(f"{name} must be at least 1 (got {v})")
     return v
+
+
+class ParseConfigError(ValueError):
+    """A `parse` setting that cannot be used."""
+
+
+def load_parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Phase 1's speed settings: the config's `parse` block, each overridden by its environment
+    variable -- as `llm`'s are (LLM_API_KEY, LLM_WORKERS, ...). docs/design/PIPELINE_SPEED_PLAN.md.
+
+        workers             files parsed ahead on threads while this one is walked; 1 = today's
+                            sequential parse; "auto" = half the CPUs, at most 8
+                                                                 env ANALYZER_PARSE_WORKERS
+        fastNullCheck       the bindings' null check read from the cursor's own fields
+                                                                 env ANALYZER_FAST_NULLCHECK
+        skipCoveredHeaders  a header a parsed .cpp already included is not parsed on its own
+                                                                 env ANALYZER_SKIP_COVERED_HEADERS
+
+    `workers` and `fastNullCheck` never change the output: machine settings, for
+    config.local.json. `skipCoveredHeaders` can (a header's own parse can see an #if branch no
+    .cpp sees), so the parse fingerprint carries it and a narrowed parse never mixes the two."""
+    p = (config or {}).get("parse") or {}
+    if not isinstance(p, dict):
+        raise ParseConfigError("parse must be an object")
+
+    def env_or(key: str, fallback):
+        v = os.environ.get(key)
+        return v if v is not None and v.strip() != "" else fallback
+
+    raw = env_or("ANALYZER_PARSE_WORKERS", p.get("workers", 1))
+    if str(raw).strip().lower() == "auto":
+        workers = max(1, min(8, (os.cpu_count() or 2) // 2))
+    else:
+        workers = _positive_int(raw, "parse.workers", ParseConfigError)
+    return {
+        "workers": workers,
+        "fastNullCheck": _flag(env_or("ANALYZER_FAST_NULLCHECK", p.get("fastNullCheck", False)),
+                               "parse.fastNullCheck"),
+        "skipCoveredHeaders": _flag(env_or("ANALYZER_SKIP_COVERED_HEADERS",
+                                           p.get("skipCoveredHeaders", False)),
+                                    "parse.skipCoveredHeaders"),
+    }
+
+
+def _flag(raw: Any, name: str) -> bool:
+    if isinstance(raw, bool):
+        return raw
+    v = str(raw).strip().lower()
+    if v in ("1", "true", "yes", "on"):
+        return True
+    if v in ("0", "false", "no", "off", ""):
+        return False
+    raise ParseConfigError(f"{name} must be true or false (got {raw!r})")
 
 
 # ---------------------------------------------------------------------------

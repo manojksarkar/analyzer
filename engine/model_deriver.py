@@ -1059,7 +1059,8 @@ def _enrich_behaviour_names_llm(
                 answered.add(fid)
             progress.step(label=qn or fid)
 
-    workers = int(llm.get("workers") or 1)
+    from llm_core.parallel import llm_workers
+    workers = llm_workers(config)
     if workers <= 1:
         for fid in order:
             _one(fid)
