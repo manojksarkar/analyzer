@@ -3398,12 +3398,7 @@ def main():
 
 if __name__ == "__main__":
     try:
-        _prof_path = os.environ.get("ANALYZER_PROFILE_PARSER")   # perf study: cProfile stats file
-        if _prof_path:
-            import cProfile
-            cProfile.run("main()", _prof_path)
-        else:
-            main()
+        main()
     except SystemExit:
         # Deliberate exits (the CRITICAL paths above) already logged their reason.
         raise
