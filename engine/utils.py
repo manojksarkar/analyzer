@@ -296,7 +296,8 @@ def render_mermaid_many(project_root: str, items, *, scale=None, puppeteer: bool
     (engine/config/render_mmd_batch.mjs: mermaid-cli's renderMermaid with mmdc's own defaults --
     byte-identical PNGs, 8/8 checked), instead of an `mmdc` and a Chromium each: ~2 s a diagram
     instead of ~9 s. Whatever the batch could not draw goes through `mmdc` one by one, as before;
-    Docker Mermaid, no puppeteer config, or ANALYZER_MMD_BATCH=0 take the one-by-one path whole."""
+    Docker Mermaid and a caller without the puppeteer config take the one-by-one path whole.
+    No switch: whatever goes wrong with the batch, the pictures are drawn one by one."""
     import json as _json
     import shutil
     import tempfile
@@ -304,8 +305,7 @@ def render_mermaid_many(project_root: str, items, *, scale=None, puppeteer: bool
     items = [(m, p) for m, p in items if m]
     if not items:
         return results
-    if (os.environ.get("ANALYZER_MMD_BATCH", "1") == "0" or not puppeteer
-            or mermaid_in_docker(project_root)):
+    if not puppeteer or mermaid_in_docker(project_root):
         for m, p in items:
             results[p] = render_mermaid_cached(project_root, m, p, scale=scale, puppeteer=puppeteer,
                                                timeout=timeout)
@@ -448,18 +448,14 @@ def render_dot_many(project_root: str, items, *, scale=2, timeout: int = 180) ->
     Cache hits are copied out as `render_dot_cached` does; the misses are drawn by ONE browser
     (engine/config/render_dot_batch.mjs: render_dot.mjs's steps exactly, a new page per chart --
     byte-identical PNGs, 8/8 checked) instead of a browser each: ~1.8 s a chart instead of ~10 s.
-    A chart the batch could not draw goes through render_dot.mjs alone, as before.
-    ANALYZER_DOT_BATCH=0: one by one throughout."""
+    A chart the batch could not draw goes through render_dot.mjs alone, as before. No switch:
+    whatever goes wrong with the batch, the charts are drawn one by one."""
     import json as _json
     import shutil
     import tempfile
     results = {}
     items = [(d, p) for d, p in items if d]
     if not items:
-        return results
-    if os.environ.get("ANALYZER_DOT_BATCH", "1") == "0":
-        for d, p in items:
-            results[p] = render_dot_cached(project_root, d, p, scale=scale, timeout=timeout)
         return results
     cache_dir = picture_cache_dir(project_root, _DOT_CACHE_DIR)
     misses = []

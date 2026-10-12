@@ -62,10 +62,10 @@ async function draw(browser, viz, job) {
   }
 }
 
-// Each chart has its own time limit (DOT_JOB_TIMEOUT_MS, default 180 s -- render_dot.mjs's limit per
-// chart): a stuck chart fails alone and is drawn by render_dot.mjs afterwards, instead of holding the
-// whole batch until the batch's own timeout.
-const JOB_MS = Math.max(1000, parseInt(process.env.DOT_JOB_TIMEOUT_MS || "180000", 10) || 180000);
+// Each chart has its own time limit (render_dot.mjs's limit per chart): a stuck chart fails alone
+// and is drawn by render_dot.mjs afterwards, instead of holding the whole batch until the batch's
+// own timeout.
+const JOB_MS = 180000;
 function withTimeout(promise, ms) {
   let timer;
   return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`timed out after ${ms} ms`)), ms); })])

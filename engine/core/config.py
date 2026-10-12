@@ -595,13 +595,34 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "fewShotExamplesDir": few_shot_dir.strip(),
         # perf/pipeline-speed (llm_core/pool.py): several endpoints/keys, start pacing, and how
         # many calls a stage may have in flight. Absent: one lane, pause after each call, one
-        # call at a time -- today's behaviour. Each overridden by its environment variable, as
-        # the rest of this block is (LLM_API_KEYS makes the lanes: llm_core/pool.py).
+        # call at a time -- today's behaviour. `workers` is not a setting: it is what the lanes
+        # allow (`llm_calls_at_once`).
         "lanes": _lanes(llm.get("lanes")),
-        "pacing": _choice(_env_or("LLM_PACING", llm.get("pacing")), ("after", "start"), "after",
-                          "llm.pacing"),
-        "workers": _positive_int(_env_or("LLM_WORKERS", llm.get("workers", 1)), "llm.workers"),
+        "pacing": _choice(llm.get("pacing"), ("after", "start"), "after", "llm.pacing"),
+        "workers": llm_calls_at_once(llm),
     }
+
+
+def llm_calls_at_once(llm: Dict[str, Any]) -> int:
+    """How many LLM calls a stage keeps in flight. Not a setting: it follows the lanes.
+
+    No lanes and pacing "after": 1 -- one call at a time, as always. Otherwise twice what the
+    lanes take at once (each lane's `maxConcurrent`, default 1). The lanes alone decide what
+    really goes out (llm_core/pool.py); the spare half only has the next question ready the
+    moment a lane frees up."""
+    llm = llm or {}
+    lanes = llm.get("lanes") if isinstance(llm.get("lanes"), list) else []
+    env_keys = [k for k in os.environ.get("LLM_API_KEYS", "").split(",") if k.strip()]
+    if not lanes and not env_keys and str(llm.get("pacing") or "after").lower() != "start":
+        return 1
+
+    def _at_once(lane) -> int:
+        try:
+            return max(1, int((lane or {}).get("maxConcurrent") or 1))
+        except (TypeError, ValueError, AttributeError):
+            return 1
+    capacity = sum(_at_once(l) for l in lanes) if lanes else (len(env_keys) or 1)
+    return 2 * capacity
 
 
 def _lanes(raw: Any) -> List[Dict[str, Any]]:
@@ -635,20 +656,16 @@ class ParseConfigError(ValueError):
 
 
 def load_parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Phase 1's speed settings: the config's `parse` block, each overridden by its environment
-    variable -- as `llm`'s are (LLM_API_KEY, LLM_WORKERS, ...). docs/design/PIPELINE_SPEED_PLAN.md.
+    """Phase 1's one speed setting: the config's `parse.workers`, overridden by the environment's
+    ANALYZER_PARSE_WORKERS -- as `llm`'s settings are (LLM_API_KEY, ...).
+    docs/design/PIPELINE_SPEED_PLAN.md.
 
-        workers             files parsed ahead on threads while this one is walked; 1 = today's
-                            sequential parse; "auto" = half the CPUs, at most 8
-                                                                 env ANALYZER_PARSE_WORKERS
-        fastNullCheck       the bindings' null check read from the cursor's own fields
-                                                                 env ANALYZER_FAST_NULLCHECK
-        skipCoveredHeaders  a header a parsed .cpp already included is not parsed on its own
-                                                                 env ANALYZER_SKIP_COVERED_HEADERS
+        workers   files parsed ahead on threads while this one is walked; 1 = today's sequential
+                  parse; "auto" = half the CPUs, at most 8
 
-    `workers` and `fastNullCheck` never change the output: machine settings, for
-    config.local.json. `skipCoveredHeaders` can (a header's own parse can see an #if branch no
-    .cpp sees), so the parse fingerprint carries it and a narrowed parse never mixes the two."""
+    It never changes the output: a machine setting (cores, memory), for config.local.json. Kept
+    as a setting until the office code has had a clean run with it; "auto" is meant to become
+    the default then."""
     p = (config or {}).get("parse") or {}
     if not isinstance(p, dict):
         raise ParseConfigError("parse must be an object")
@@ -662,25 +679,7 @@ def load_parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
         workers = max(1, min(8, (os.cpu_count() or 2) // 2))
     else:
         workers = _positive_int(raw, "parse.workers", ParseConfigError)
-    return {
-        "workers": workers,
-        "fastNullCheck": _flag(env_or("ANALYZER_FAST_NULLCHECK", p.get("fastNullCheck", False)),
-                               "parse.fastNullCheck"),
-        "skipCoveredHeaders": _flag(env_or("ANALYZER_SKIP_COVERED_HEADERS",
-                                           p.get("skipCoveredHeaders", False)),
-                                    "parse.skipCoveredHeaders"),
-    }
-
-
-def _flag(raw: Any, name: str) -> bool:
-    if isinstance(raw, bool):
-        return raw
-    v = str(raw).strip().lower()
-    if v in ("1", "true", "yes", "on"):
-        return True
-    if v in ("0", "false", "no", "off", ""):
-        return False
-    raise ParseConfigError(f"{name} must be true or false (got {raw!r})")
+    return {"workers": workers}
 
 
 # ---------------------------------------------------------------------------
@@ -743,7 +742,8 @@ def format_llm_config_banner(llm_cfg: Dict[str, Any]) -> str:
         f"  apiKey            : {api_key_display}",
         # LLM lanes (llm_core/pool.py) -- counted, never printed: a lane's key is a secret too
         f"  lanes             : {_lanes_display(llm_cfg)}",
-        f"  pacing / workers  : {llm_cfg.get('pacing') or 'after'} / {llm_cfg.get('workers') or 1}",
+        f"  pacing            : {llm_cfg.get('pacing') or 'after'}",
+        f"  calls at once     : {llm_cfg.get('workers') or 1}  (follows the lanes)",
         f"  cacheVersion      : {llm_cfg.get('cacheVersion')}",
         f"  fewShotExamplesDir: {llm_cfg.get('fewShotExamplesDir')}",
         f"  descriptions      : {llm_cfg.get('descriptions')}",

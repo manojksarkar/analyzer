@@ -74,31 +74,29 @@
     "maxContextTokens": 127488
 
     // Optional: faster LLM runs (docs/design/PIPELINE_SPEED_PLAN.md). Nothing changes until you
-    // uncomment these; with none of them a run makes one call at a time and pauses after each, as
+    // uncomment one; with neither, a run makes one call at a time and pauses after each, as
     // always. Ask the gateway's owners first: is the limit per ticket or per user, and is the gap
-    // counted from a call's start or its end? Every lane uses this block's model.
+    // counted from a call's start or its end?
     //
-    // pacing "start": the rateLimitSeconds gap counts from a call's START, not after it ends --
-    // with a 5 s answer and a 3 s gap, a call every 5 s instead of every 8. Works on one ticket.
-    // ,"pacing": "start"
-    //
-    // workers: questions in flight per LLM step. Helps only with "pacing": "start" or lanes (on
-    // Ollama it really sends that many at once -- size it to the server).
-    // ,"workers": 4
-    //
-    // lanes: one per ticket or key, used side by side; a busy one rests, a refused one is left
-    // out. A lane's customHeaders replace this block's headers of the same name; anything a lane
-    // leaves out (baseUrl, apiKey, rateLimitSeconds, ...) comes from this block. A lane's `name`
-    // is printed in the log -- never put a secret in it.
+    // lanes: one per ticket or key, used side by side -- a busy one rests, a refused one is left
+    // out. How many calls go out at once follows the lanes; there is nothing else to set. A lane's
+    // customHeaders replace this block's headers of the same name; anything a lane leaves out
+    // (baseUrl, apiKey) comes from this block, and every lane uses this block's model and gap.
+    // A lane's `name` is printed in the log -- never put a secret in it.
     // ,"lanes": [
     //   { "name": "ticket-a", "customHeaders": { "x-dep-ticket": "credential:TOKEN_A" } },
     //   { "name": "ticket-b", "customHeaders": { "x-dep-ticket": "credential:TOKEN_B" } }
     // ]
     //
-    // A second user's ticket:  { "name": "user2", "customHeaders": { "User-Id": "user-id-2", "x-dep-ticket": "credential:TOKEN_2" } }
+    // A second user's ticket:   { "name": "user2", "customHeaders": { "User-Id": "user-id-2", "x-dep-ticket": "credential:TOKEN_2" } }
     // An API key, not a header: { "name": "key-a", "apiKey": "KEY_A" }  (or env LLM_API_KEYS=KEY_A,KEY_B, no lanes)
     // Another gateway:          { "name": "backup", "baseUrl": "https://other-gateway/v1", "apiKey": "KEY_C" }
-    // Each of pacing / workers can also come from the environment: LLM_PACING, LLM_WORKERS.
+    // A ticket that may run 2 calls at once: add "maxConcurrent": 2 to its lane.
+    //
+    // pacing "start": the rateLimitSeconds gap counts from a call's START, not after it ends --
+    // with a 5 s answer and a 3 s gap, a call every 5 s instead of every 8. Works on one ticket.
+    // To be decided by one office run, then fixed for good (the plan, section 5).
+    // ,"pacing": "start"
   },
 
   // A local Ollama instead of a gateway:
@@ -121,15 +119,9 @@
     "includePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include"
   }
 
-  // Optional: a faster parse (Phase 1; docs/design/PIPELINE_SPEED_PLAN.md). Nothing changes until
-  // you uncomment it. Each setting can also come from the environment, which wins:
-  // ANALYZER_PARSE_WORKERS, ANALYZER_FAST_NULLCHECK, ANALYZER_SKIP_COVERED_HEADERS.
-  //   workers             files parsed ahead on threads while one is walked: 1 = as always;
-  //                       "auto" = half the CPUs, at most 8. Each one parsed ahead holds its whole
-  //                       AST in memory -- 2-4 on an 8 GB machine, 6-8 on 16 GB and up.
-  //   fastNullCheck       a cheaper libclang check, same output.
-  //   skipCoveredHeaders  a header a parsed .cpp already included is not parsed on its own. CAN
-  //                       change the output (a header's own #if branches): compare once with it
-  //                       on and off before relying on it.
-  // ,"parse": { "workers": 6, "fastNullCheck": true, "skipCoveredHeaders": false }
+  // Optional: files parsed ahead on threads while one is walked (Phase 1). 1 = as always; "auto" =
+  // half the CPUs, at most 8. Each file parsed ahead holds its whole AST in memory: 2-4 on an
+  // 8 GB machine, 6-8 on 16 GB and up. Same output. The environment's ANALYZER_PARSE_WORKERS wins.
+  // To become "auto" by default once the office code has had a clean run with it.
+  // ,"parse": { "workers": 6 }
 }

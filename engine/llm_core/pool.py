@@ -260,7 +260,7 @@ def lanes_from_config(llm_cfg: Dict, *, provider: str, endpoint: str, api_key: O
     pacing = str(llm_cfg.get("pacing") or "after").lower()
     if pacing not in ("after", "start"):
         pacing = "after"
-    # Ollama never had a pause; keep it that way unless a lane says otherwise.
+    # Ollama never had a pause; keep it that way.
     base_interval = rate_limit if provider == "openai" else 0.0
     specs = list(llm_cfg.get("lanes") or [])
     env_keys = [k.strip() for k in os.environ.get("LLM_API_KEYS", "").split(",") if k.strip()]
@@ -276,12 +276,12 @@ def lanes_from_config(llm_cfg: Dict, *, provider: str, endpoint: str, api_key: O
             ep = f"{base}/chat/completions" if provider == "openai" else f"{base}/api/generate"
         h = dict(headers)
         h.update(spec.get("customHeaders") or {})
-        interval = spec.get("rateLimitSeconds")
+        # The gap and the pacing are the llm block's, the same on every lane: one less thing to
+        # get wrong per lane.
         lanes.append(Lane(
             name=str(spec.get("name") or f"lane{i + 1}"), endpoint=ep,
             api_key=spec.get("apiKey") or api_key, headers=h,
             max_concurrent=max(1, int(spec.get("maxConcurrent") or 1)),
-            interval=float(base_interval if interval is None else interval),
-            pacing=str(spec.get("pacing") or pacing).lower(),
+            interval=float(base_interval), pacing=pacing,
         ))
     return lanes

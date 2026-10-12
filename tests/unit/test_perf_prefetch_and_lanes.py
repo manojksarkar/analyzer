@@ -102,12 +102,25 @@ def test_no_lanes_configured_is_one_lane_of_todays_behaviour():
 def test_lanes_take_their_missing_fields_from_the_llm_block(monkeypatch):
     monkeypatch.delenv("LLM_API_KEYS", raising=False)
     lanes = lanes_from_config({"pacing": "start", "lanes": [{"apiKey": "K1"}, {"apiKey": "K2", "maxConcurrent": 2},
-                                                             {"baseUrl": "http://other/", "rateLimitSeconds": 1}]},
+                                                             {"baseUrl": "http://other/", "rateLimitSeconds": 1,
+                                                              "pacing": "after"}]},
                               provider="openai", endpoint="http://g/chat/completions", api_key="K0",
                               headers={"x": "1"}, rate_limit=3.0)
+    # the gap and the pacing are the llm block's on every lane: a lane cannot set its own
     assert [(l.api_key, l.max_concurrent, l.interval, l.pacing) for l in lanes] == [
-        ("K1", 1, 3.0, "start"), ("K2", 2, 3.0, "start"), ("K0", 1, 1.0, "start")]
+        ("K1", 1, 3.0, "start"), ("K2", 2, 3.0, "start"), ("K0", 1, 3.0, "start")]
     assert lanes[2].endpoint == "http://other/chat/completions" and lanes[0].headers == {"x": "1"}
+
+
+def test_a_lanes_headers_replace_the_blocks_of_the_same_name():
+    # the office: the credential is a header, one ticket (and maybe one user) per lane
+    lanes = lanes_from_config(
+        {"lanes": [{"customHeaders": {"x-dep-ticket": "A"}},
+                   {"customHeaders": {"x-dep-ticket": "B", "User-Id": "u2"}}]},
+        provider="openai", endpoint="http://g/chat/completions", api_key=None,
+        headers={"User-Id": "u1", "x-dep-ticket": "block"}, rate_limit=3.0)
+    assert [l.headers for l in lanes] == [{"User-Id": "u1", "x-dep-ticket": "A"},
+                                          {"User-Id": "u2", "x-dep-ticket": "B"}]
 
 
 def test_keys_from_the_environment_make_one_lane_each(monkeypatch):
@@ -527,14 +540,22 @@ def test_a_batch_that_cannot_even_write_its_files_falls_back_to_one_by_one(monke
     assert sorted(calls["mmdc"]) == ["a.png", "b.png"] and calls["batch"] == 0
 
 
-def test_the_switch_off_is_todays_path(monkeypatch, tmp_path):
+def test_without_the_puppeteer_config_it_is_todays_path(monkeypatch, tmp_path):
     import utils
-    _fake_batch(monkeypatch, tmp_path)
-    monkeypatch.setenv("ANALYZER_MMD_BATCH", "0")
+    calls = _fake_batch(monkeypatch, tmp_path)
     seen = []
     monkeypatch.setattr(utils, "render_mermaid_cached", lambda root, m, p, **kw: seen.append(p) or True)
+    utils.render_mermaid_many(ROOT, [("graph A", str(tmp_path / "a.png"))], scale=2, puppeteer=False)
+    assert seen == [str(tmp_path / "a.png")] and calls["batch"] == 0
+
+
+def test_the_batch_has_no_switch(monkeypatch, tmp_path):
+    # Fewer options: a failing batch falls back by itself, so there is nothing to switch off.
+    import utils
+    calls = _fake_batch(monkeypatch, tmp_path)
+    monkeypatch.setenv("ANALYZER_MMD_BATCH", "0")
     utils.render_mermaid_many(ROOT, [("graph A", str(tmp_path / "a.png"))], scale=2)
-    assert seen == [str(tmp_path / "a.png")]
+    assert calls["batch"] == 1
 
 
 # ── llm_core.parallel ────────────────────────────────────────────────────────────────────────
@@ -571,12 +592,17 @@ def test_one_worker_stays_on_the_calling_thread():
     assert set(map_in_order(lambda _x: threading.get_ident(), range(4), workers=1)) == {me}
 
 
-def test_llm_workers_reads_the_config_and_never_goes_below_one():
+def test_calls_at_once_follow_the_lanes_and_are_not_a_setting(monkeypatch):
     from llm_core.parallel import llm_workers
-    assert llm_workers({}) == 1
-    assert llm_workers({"llm": {"workers": 4}}) == 4
-    assert llm_workers({"llm": {"workers": 0}}) == 1
-    assert llm_workers({"llm": {"workers": "x"}}) == 1
+    monkeypatch.delenv("LLM_API_KEYS", raising=False)
+    assert llm_workers({}) == 1, "no lanes, pause after each call: one at a time, as always"
+    assert llm_workers({"llm": {"workers": 9}}) == 1, "llm.workers is not read any more"
+    assert llm_workers({"llm": {"pacing": "start"}}) == 2, "one lane, start pacing"
+    assert llm_workers({"llm": {"lanes": [{"apiKey": "a"}, {"apiKey": "b"}]}}) == 4
+    assert llm_workers({"llm": {"lanes": [{"apiKey": "a", "maxConcurrent": 3}]}}) == 6
+    assert llm_workers({"llm": {"lanes": [{"apiKey": "a", "maxConcurrent": "x"}]}}) == 2
+    monkeypatch.setenv("LLM_API_KEYS", "a,b,c")
+    assert llm_workers({}) == 6
 
 
 # ── one cache entry, one question at a time ──────────────────────────────────────────────────

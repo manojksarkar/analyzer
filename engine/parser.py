@@ -127,8 +127,8 @@ from utils import (
 )
 
 _config = _app_config()
-# Phase 1's speed settings (parse-ahead threads, the fast null check, skipping covered headers):
-# the config's `parse` block, each overridden by its environment variable (core.config).
+# Phase 1's one speed setting, parse-ahead threads: the config's `parse.workers`, overridden by
+# the environment's ANALYZER_PARSE_WORKERS (core.config).
 from core.config import load_parse_config as _load_parse_config
 _PARSE = _load_parse_config(_config)
 _clang = _config.get("clang") or {}
@@ -535,17 +535,40 @@ def clang_args_for(file_path: str) -> list:
 
 index = cindex.Index.create()
 
-# parse.fastNullCheck (env ANALYZER_FAST_NULLCHECK): the clang >= 19 bindings guard nearly every Cursor method
-# with `is_null()`, which is `self == conf.null_cursor` -- a second ctypes call (clang_equalCursors)
-# per property read: 2.5M of them on the sample, ~20% of Phase 1. libclang's equalCursors compares
-# kind, xdata and data[0..2] (clearing data[1] for declarations only), and the null cursor is
-# kind CXCursor_InvalidFile (70) with every field zero -- so this field check gives the same answer
-# without leaving Python.
-if _PARSE["fastNullCheck"]:
-    def _fast_is_null(cur):
-        return (cur._kind_id == 70 and not cur.xdata
-                and not cur.data[0] and not cur.data[1] and not cur.data[2])
-    cindex.Cursor.is_null = _fast_is_null
+def _fast_is_null(cur):
+    return (cur._kind_id == 70 and not cur.xdata
+            and not cur.data[0] and not cur.data[1] and not cur.data[2])
+
+
+def _install_fast_null_check() -> bool:
+    """The clang >= 19 bindings guard nearly every Cursor method with `is_null()`, which is
+    `self == conf.null_cursor` -- a second ctypes call (clang_equalCursors) per property read:
+    2.5M of them on the sample, a quarter of Phase 1. libclang's equalCursors compares kind, xdata
+    and data[0..2], and the null cursor is kind CXCursor_InvalidFile (70) with every field zero
+    -- so the field check gives the same answer without leaving Python.
+
+    Always on, and checked first against the bindings' own answer -- on the null cursor and on
+    real cursors of a one-line file. Anything else than full agreement (a libclang that builds
+    its null cursor another way, bindings that renamed a field, older bindings with no such
+    guard) and the bindings' own check stays. True when the fast one is in."""
+    own = getattr(cindex.Cursor, "is_null", None)
+    if own is None:
+        return False
+    try:
+        null = cindex.conf.null_cursor
+        tu = index.parse("analyzer_null_check.c",
+                         unsaved_files=[("analyzer_null_check.c", "int analyzer_null_check(void);")])
+        real = [tu.cursor] + list(tu.cursor.get_children())
+        agree = (len(real) > 1 and bool(own(null)) and bool(_fast_is_null(null))
+                 and not any(bool(own(c)) or bool(_fast_is_null(c)) for c in real))
+    except Exception:                               # noqa: BLE001 - the bindings' own check stays
+        agree = False
+    if agree:
+        cindex.Cursor.is_null = _fast_is_null
+    return agree
+
+
+_FAST_NULL_CHECK = _install_fast_null_check()
 
 # The options of BOTH parses of every TU (parse_file, parse_calls_and_globals): one value, so
 # the two passes see the same AST and the parse fingerprint hashes what was actually used.
@@ -573,11 +596,6 @@ def _fingerprint_args() -> list:
     for scope in sorted(_MACRO_ARGS_BY_SCOPE):
         args += _MACRO_ARGS_BY_SCOPE[scope]
     args.append(f"--parse-options=0x{_TU_PARSE_OPTIONS:x}")
-    # A parse that skipped covered headers can differ from one that did not (a header's own
-    # #if branches): never merge one onto the other. Only when on, so every other parse keeps
-    # the fingerprint it always had.
-    if _PARSE["skipCoveredHeaders"]:
-        args.append("--analyzer-skip-covered-headers")
     return args
 
 
@@ -3188,33 +3206,16 @@ def main():
 
     p1 = ProgressReporter("parser:parse", total=total, logger=plog)
     p1.start(f"parsing {total} files")
-    # parse.skipCoveredHeaders (env ANALYZER_SKIP_COVERED_HEADERS): a header that a parsed .cpp
-    # includes is not parsed again on its own -- the .cpp files go first, and the first
-    # definition wins, so its own parse could only add what no .cpp context compiled (another
-    # #if branch).
-    skip_covered = _PARSE["skipCoveredHeaders"]
-    if _PARSE["workers"] > 1 or _PARSE["fastNullCheck"] or skip_covered:
-        plog.info("parse settings: %d file(s) parsed ahead on threads, fast null check %s, "
-                  "covered headers %s", _PARSE["workers"], "on" if _PARSE["fastNullCheck"] else "off",
-                  "skipped" if skip_covered else "parsed")
-    covered, skipped = None, set()
+    if _PARSE["workers"] > 1:
+        plog.info("parse.workers: %d file(s) parsed ahead on threads", _PARSE["workers"])
+    if not _FAST_NULL_CHECK:
+        plog.info("the fast null check is off: it did not agree with these libclang bindings "
+                  "(slower parse, same output)")
     for path, tu, err in _parse_ahead(source_files, "parse"):
         p1.step()
-        if skip_covered and path.endswith(_HEADER_EXTS):
-            if covered is None:
-                covered = set()
-                for closure in tu_includes.values():
-                    covered.update(closure)
-            if to_repo_relative(path, MODULE_BASE_PATH) in covered:
-                skipped.add(path)
-                del tu
-                continue
         parse_file(path, tu, err)
         del tu
     p1.done()
-    if skipped:
-        plog.info("perf: %d header(s) skipped, covered by a parsed .cpp", len(skipped))
-        source_files = [p for p in source_files if p not in skipped]
 
     # One parse serves both call edges and global access (see parse_calls_and_globals).
     p2 = ProgressReporter("parser:calls+globals", total=total, logger=plog)

@@ -101,7 +101,8 @@ newer entry and the code win.
   [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Live logs".
 - **Pipeline speed** (2026-10-08b, branch `perf/pipeline-speed` on develop `8d438de`, not merged): measured
   where a run's time goes and prototyped the speed-ups — LLM lanes (several keys, start pacing,
-  failover), `llm.workers`, parse ahead, picture batches — each checked to give develop's output.
+  failover), parse ahead, picture batches — each checked to give develop's output; three settings left
+  (`llm.lanes`, `llm.pacing`, `parse.workers`, 2026-10-12).
   [PIPELINE_SPEED_PLAN.md](docs/design/PIPELINE_SPEED_PLAN.md) (plan, edge cases, office questions).
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
