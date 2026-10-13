@@ -60,11 +60,11 @@ export function OutlineTab({
               onClick={() => toggle(n.id)}
               aria-label={`${open ? 'Fold' : 'Open'} ${n.title}`}
               aria-expanded={open}
-              className="w-[18px] h-[18px] flex-shrink-0 flex items-center justify-center rounded text-outline hover:bg-surface-container hover:text-secondary"
+              className="w-6 h-6 -my-[3px] -ml-[3px] flex-shrink-0 flex items-center justify-center rounded text-outline hover:bg-surface-container hover:text-secondary"
             >
               <Icon name={open ? 'expand_more' : 'chevron_right'} size={16} />
             </button>
-          ) : <span className="w-[18px] flex-shrink-0" />}
+          ) : <span className="w-[21px] flex-shrink-0" />}
           <button
             type="button"
             data-active={n.id === activeId ? 'true' : undefined}

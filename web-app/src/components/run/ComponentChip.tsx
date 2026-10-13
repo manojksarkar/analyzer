@@ -51,7 +51,7 @@ export function ComponentChip({ c, canPick, picked, onToggle }: {
       aria-pressed={picked}
       title={title}
       className={cn(BASE, s.tone, 'cursor-pointer hover:border-secondary',
-        picked && 'bg-secondary border-secondary text-white hover:border-secondary')}
+        picked && 'bg-action border-action text-white hover:border-secondary')}
     >
       {picked ? <Icon name="check" size={12} /> : icon}
       {c.name}

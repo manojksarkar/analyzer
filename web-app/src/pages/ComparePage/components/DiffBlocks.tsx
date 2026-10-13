@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Icon } from '../../../components/ui'
+import { Icon, ScrollX } from '../../../components/ui'
 import { cn } from '../../../lib/cn'
 import { parseSectionBody } from '../../../lib/markdown'
 import type { CompareBlock, DiffMark, DiffSegment } from '../../../types'
@@ -12,7 +12,7 @@ import { MARK_MEANING, rowChange, signColumns } from '../helpers'
 const SR_ONLY = 'sr-only select-none'
 const MARK_INLINE: Record<DiffMark, string> = {
   none:   '',
-  add:    'bg-[rgba(0,165,114,.18)] text-on-tertiary-container rounded-[2px] px-px underline decoration-1 underline-offset-2',
+  add:    'bg-[rgba(0,165,114,.18)] text-state-done rounded-[2px] px-px underline decoration-1 underline-offset-2',
   del:    'bg-error-container text-error line-through rounded-[2px] px-px',
   change: 'bg-highlight text-state-warn rounded-[2px] px-px underline decoration-dotted decoration-1 underline-offset-2',
 }
@@ -65,7 +65,7 @@ function DiffDiagramBlock({ block }: { block: Extract<CompareBlock, { kind: 'dia
              className="doc-picture block w-full max-h-[400px] object-contain bg-white" />
       ) : (
         <div className="flex flex-col items-center justify-center text-center py-10 gap-2">
-          <Icon name="account_tree" size={32} className="text-outline-variant" />
+          <Icon name="account_tree" size={32} className="text-field" />
           <span className="font-mono text-caption text-on-surface-variant">{block.caption ?? 'Diagram'}</span>
         </div>
       )}
@@ -111,7 +111,7 @@ function DiffBlockView({ block, marked = false }: { block: CompareBlock; marked?
   }
   // table — with a marker column when any row or cell changed, here or in its counterpart
   return (
-    <div className="overflow-x-auto border border-outline-variant rounded-lg">
+    <ScrollX className="border border-outline-variant rounded-lg">
       <table className="w-full text-left text-xs">
         <thead className="bg-surface-container text-on-surface-variant">
           <tr>
@@ -142,7 +142,7 @@ function DiffBlockView({ block, marked = false }: { block: CompareBlock; marked?
           })}
         </tbody>
       </table>
-    </div>
+    </ScrollX>
   )
 }
 

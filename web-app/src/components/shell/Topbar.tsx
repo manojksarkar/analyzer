@@ -31,7 +31,7 @@ export function Topbar({ breadcrumbs }: TopbarProps) {
           </li>
           {breadcrumbs.map((crumb, i) => (
             <li key={i} className="flex items-center gap-1.5">
-              <span className="text-outline-variant select-none">/</span>
+              <span className="text-outline-variant select-none" aria-hidden>/</span>
               {crumb.to ? (
                 <Link
                   to={crumb.to}

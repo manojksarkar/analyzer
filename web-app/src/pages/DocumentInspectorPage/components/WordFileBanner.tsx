@@ -208,7 +208,7 @@ function UpdateButton({ label, blocked, title, onClick }: {
         type="button"
         disabled={!!blocked}
         onClick={onClick}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-secondary text-white font-mono text-label font-semibold tracking-[0.03em] whitespace-nowrap hover:bg-secondary-container disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:bg-secondary"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-action text-white font-mono text-label font-semibold tracking-[0.03em] whitespace-nowrap hover:bg-secondary-container disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:bg-action"
       >
         <Icon name="sync" size={13} />{label}
       </button>

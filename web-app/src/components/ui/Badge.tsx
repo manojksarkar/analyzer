@@ -35,7 +35,7 @@ export function RoleBadge({ role }: { role: 'admin' | 'developer' }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold tracking-[0.1em] font-mono',
+        'inline-flex items-center rounded-full px-2 py-0.5 text-caption font-bold tracking-[0.1em] font-mono',
         role === 'admin' ? 'bg-surface-container text-secondary' : 'bg-muted text-on-surface-variant',
       )}
     >
@@ -60,7 +60,7 @@ export function ProcessBadge({ process }: { process: string }) {
     <span
       // eslint-disable-next-line no-restricted-syntax -- the colour is the process's (data-driven)
       style={{
-        fontFamily: "'JetBrains Mono'", fontSize: 10, fontWeight: 700,
+        fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 700,
         background: bg, color, padding: '2px 7px', borderRadius: 3,
         display: 'inline-flex', alignItems: 'center',
       }}

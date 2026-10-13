@@ -89,7 +89,7 @@ export function VersionsPage() {
                     <span
                       className={cn(
                         'inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full text-label font-bold',
-                        active ? 'bg-secondary text-white' : 'bg-surface-container text-secondary',
+                        active ? 'bg-action text-white' : 'bg-surface-container text-secondary',
                       )}
                     >
                       {count}
@@ -207,7 +207,7 @@ function VersionRow({ v, isCurrent, last, running, onView, onCompare }: { v: Ver
             </div>
           </div>
           <div className="flex items-center gap-1.5 flex-shrink-0 pt-0.5">
-            <button onClick={onView} className="inline-flex items-center gap-1 transition-colors px-2.5 py-[5px] border border-secondary rounded-md font-mono text-label font-semibold text-white bg-secondary whitespace-nowrap">
+            <button onClick={onView} className="inline-flex items-center gap-1 transition-colors px-2.5 py-[5px] border border-secondary rounded-md font-mono text-label font-semibold text-white bg-action whitespace-nowrap">
               <Icon name="description" size={13} aria-hidden />
               View docs
             </button>

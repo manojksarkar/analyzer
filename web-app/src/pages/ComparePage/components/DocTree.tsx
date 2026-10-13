@@ -16,7 +16,7 @@ export function DocTree({ rows, mode, setMode, activeId, onSelect, changedCount,
   failed?: FailedLoad | null
 }) {
   return (
-    <aside className="w-60 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex flex-col overflow-hidden">
+    <aside aria-label="Documents" className="w-60 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex flex-col overflow-hidden">
       <div className="px-3 py-2.5 border-b border-outline-variant flex-shrink-0 flex items-center justify-between">
         <span className="text-on-surface-variant uppercase font-mono text-caption font-medium tracking-[0.1em]">Documents</span>
         <div className="flex items-center rounded-lg border border-outline-variant overflow-hidden font-mono text-label font-semibold">

@@ -194,8 +194,8 @@ export function ReviewTab({
             placeholder="What you checked, and what you corrected"
             onChange={(e) => { setComment(e.target.value); if (nudge) setNudge(false) }}
             className={cn(
-              'w-full resize-y min-h-16 rounded-lg border px-2 py-1.5 text-xs leading-[1.45] text-on-surface outline-none focus:border-secondary focus:ring-2 focus:ring-secondary/30',
-              nudge ? 'border-error' : 'border-outline-variant',
+              'w-full resize-y min-h-16 rounded-lg border px-2 py-1.5 text-xs leading-[1.45] text-on-surface focus:border-secondary',
+              nudge ? 'border-error' : 'border-field',
             )}
           />
           {nudge && <Why>Say what you checked: the comment is the review record the admin approves on.</Why>}
@@ -272,7 +272,7 @@ function WordState({ state, act }: { state: React.ReactNode; act: React.ReactNod
 /** Update / Try again: a link, or off with its reason in the tooltip. */
 function WordAct({ label, blocked, title, onClick }: { label: string; blocked: string; title?: string; onClick: () => void }) {
   if (blocked) {
-    return <span title={blocked} className="font-mono text-label font-semibold text-outline-variant cursor-not-allowed">{label}</span>
+    return <span title={blocked} aria-disabled="true" className="font-mono text-label font-semibold text-outline-variant cursor-not-allowed">{label}</span>
   }
   return (
     <button type="button" onClick={onClick} title={title} className="text-secondary font-mono text-label font-semibold hover:underline">
@@ -314,8 +314,8 @@ function Why({ children }: { children: React.ReactNode }) {
 }
 
 const BUTTON_TONE = {
-  primary: { variant: 'primary', cls: 'bg-secondary text-white hover:bg-secondary-container border-transparent' },
-  ok: { variant: 'primary', cls: 'bg-on-tertiary-container text-white hover:bg-[#008a5f] disabled:bg-on-tertiary-container/40 border-transparent' },
+  primary: { variant: 'primary', cls: 'bg-action text-white hover:bg-secondary-container border-transparent' },
+  ok: { variant: 'primary', cls: 'bg-on-tertiary-container text-on-status hover:bg-state-done disabled:bg-on-tertiary-container/40 border-transparent' },
   bad: { variant: 'outline', cls: 'bg-surface-container-lowest text-violet border-violet-line hover:bg-violet-bg' },
   outline: { variant: 'outline', cls: 'bg-surface-container-lowest text-on-surface border-outline-variant hover:bg-surface-container-low' },
 } as const

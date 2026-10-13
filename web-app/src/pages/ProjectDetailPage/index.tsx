@@ -23,17 +23,17 @@ import { PHASE_UI, fmtClock, fmtEta, fmtStart, phaseTime } from './helpers'
 /* ─── Phase step (running panel) ─── */
 type PhaseStatus = 'done' | 'active' | 'pending'
 function PhaseStep({ n, label, status, time }: { n: number; label: string; status: PhaseStatus; time: string }) {
-  const timeColor = status === 'done' ? 'text-success' : status === 'active' ? 'text-secondary' : 'text-outline-variant'
+  const timeColor = status === 'done' ? 'text-success' : status === 'active' ? 'text-secondary' : 'text-outline'
   return (
     <div className="flex flex-col items-center text-center min-w-[105px]">
       <div
         className={cn(
           'w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0',
-          status === 'done' ? 'bg-on-tertiary-container' : status === 'active' ? 'bg-secondary' : 'bg-surface-container',
+          status === 'done' ? 'bg-on-tertiary-container' : status === 'active' ? 'bg-action' : 'bg-surface-container',
         )}
       >
         {status === 'done' ? (
-          <Icon name="check" size={14} fill className="text-white" />
+          <Icon name="check" size={14} fill className="text-on-status" />
         ) : status === 'active' ? (
           <div className="animate-spin w-3.5 h-3.5 rounded-full border-2 border-white/35 border-t-white" />
         ) : (
@@ -122,7 +122,7 @@ export function ProjectDetailPage() {
         <SubbarCta>
           <button
             onClick={() => setRunOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors font-mono text-caption font-bold tracking-[0.04em]"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-action hover:bg-secondary-container text-on-secondary rounded-lg transition-colors font-mono text-caption font-bold tracking-[0.04em]"
           >
             <Icon name="play_circle" size={14} fill />
             RUN ANALYSIS
@@ -161,7 +161,7 @@ export function ProjectDetailPage() {
                 onClick={() => setRunOpen(true)}
                 disabled={!isAdmin}
                 title={runDisabledWhy}
-                className="flex items-center gap-2 px-5 py-2.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-xl transition-colors disabled:opacity-60 font-mono text-xs font-bold tracking-[0.04em]"
+                className="flex items-center gap-2 px-5 py-2.5 bg-action hover:bg-secondary-container text-on-secondary rounded-xl transition-colors disabled:opacity-60 font-mono text-xs font-bold tracking-[0.04em]"
               >
                 <Icon name="play_circle" size={16} fill />
                 RUN ANALYSIS
@@ -190,7 +190,7 @@ export function ProjectDetailPage() {
                     <p className="text-white font-semibold font-sans text-sm">
                       Analysis {job.status === 'paused' ? 'Paused' : job.status === 'queued' ? 'Queued' : 'Running'}
                     </p>
-                    <span className={cn('font-mono text-micro font-bold text-white px-[7px] py-px rounded-[3px] uppercase tracking-[0.05em]', job.status === 'queued' ? 'bg-outline' : 'bg-secondary')}>
+                    <span className={cn('font-mono text-micro font-bold px-[7px] py-px rounded-[3px] uppercase tracking-[0.05em]', job.status === 'queued' ? 'bg-outline text-on-status' : 'bg-action text-white')}>
                       {job.status === 'queued' ? 'Queued' : 'Live'}
                     </span>
                   </div>
@@ -210,7 +210,7 @@ export function ProjectDetailPage() {
                           <>
                             <Icon name="source" size={12} />
                             <p className="text-caption font-mono">Branch <span className="text-[#4d9fff]">{job.branch}</span></p>
-                            <span className="text-[#1e3045]">·</span>
+                            <span className="text-[#1e3045]" aria-hidden>·</span>
                             <p className="text-caption font-mono">Commit <span className="text-[#4d9fff]">{job.shortSha}</span></p>
                           </>
                         )}
@@ -321,7 +321,7 @@ export function ProjectDetailPage() {
               onClick={() => setRunOpen(true)}
               disabled={!isAdmin}
               title={runDisabledWhy}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors flex-shrink-0 disabled:opacity-60 font-mono text-caption font-bold tracking-[0.04em]"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-action hover:bg-secondary-container text-on-secondary rounded-lg transition-colors flex-shrink-0 disabled:opacity-60 font-mono text-caption font-bold tracking-[0.04em]"
             >
               <Icon name="play_circle" size={14} fill />
               Re-run

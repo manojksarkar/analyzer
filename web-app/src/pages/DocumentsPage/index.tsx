@@ -225,7 +225,7 @@ export function DocumentsPage() {
               </div>
               <button
                 onClick={goOverview}
-                className="flex items-center gap-2 px-5 py-2.5 bg-secondary hover:bg-secondary-container text-white rounded-xl font-mono text-caption transition-colors"
+                className="flex items-center gap-2 px-5 py-2.5 bg-action hover:bg-secondary-container text-white rounded-xl font-mono text-caption transition-colors"
               >
                 <Icon name="play_arrow" size={16} />
                 Run Analysis
@@ -282,7 +282,7 @@ export function DocumentsPage() {
             onClick={() => (files.length ? setDownloadAllOpen(true) : downloadAllNow())}
             disabled={downloadAll.isPending}
             title={files.length ? `${plural(files.length, 'file')} ${files.length === 1 ? 'is' : 'are'} out of date` : undefined}
-            className="relative flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container rounded-lg transition-colors text-on-secondary font-mono text-caption font-bold tracking-[0.04em] disabled:opacity-60"
+            className="relative flex items-center gap-1.5 px-3 py-1.5 bg-action hover:bg-secondary-container rounded-lg transition-colors text-on-secondary font-mono text-caption font-bold tracking-[0.04em] disabled:opacity-60"
           >
             <Icon name="download" size={14} />
             {downloadAll.isPending ? 'PREPARING…' : 'DOWNLOAD ALL'}
@@ -369,13 +369,13 @@ export function DocumentsPage() {
               <div className="flex items-center gap-2">
                 <StatusFilter value={statusFilter} onToggle={toggleStatus} onClear={() => setStatusFilter(new Set())} />
                 {/* Search */}
-                <div className="flex items-center gap-1.5 px-2.5 py-1.5 border border-outline-variant rounded-lg bg-surface-container-lowest hover:border-secondary transition-colors min-w-[180px]">
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 border border-field rounded-lg bg-surface-container-lowest hover:border-secondary transition-colors min-w-[180px]">
                   <Icon name="search" size={14} className="text-on-surface-variant flex-shrink-0" />
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     type="text"
-                    placeholder="Search documents…"
+                    placeholder="Search documents…" aria-label="Search documents"
                     className="flex-1 bg-transparent outline-none text-on-surface placeholder:text-on-surface-variant font-mono text-caption"
                   />
                 </div>
@@ -414,7 +414,7 @@ export function DocumentsPage() {
 
           {/* ── Batch bar ── */}
           {selectedDocs.length > 0 && (
-            <div className="bg-secondary border-b border-secondary-container px-5 py-2.5 flex items-center justify-between" role="toolbar" aria-label="Bulk actions">
+            <div className="bg-action border-b border-secondary-container px-5 py-2.5 flex items-center justify-between" role="toolbar" aria-label="Bulk actions">
               <div className="flex items-center gap-3">
                 <span className="text-on-secondary font-semibold font-mono text-xs">{selectedDocs.length} selected</span>
                 <div className="w-px h-4 bg-on-secondary opacity-30" aria-hidden />
@@ -422,7 +422,7 @@ export function DocumentsPage() {
                   <button
                     key={icon}
                     onClick={onClick}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors text-on-secondary font-mono text-caption font-medium bg-white/12 hover:bg-white/20"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors text-on-secondary font-mono text-caption font-medium bg-bar-button hover:bg-bar-button-hover"
                   >
                     <Icon name={icon} size={13} />
                     {label}
@@ -431,7 +431,7 @@ export function DocumentsPage() {
               </div>
               <button
                 onClick={() => setSelected(new Set())}
-                className="flex items-center gap-1 text-on-secondary opacity-70 hover:opacity-100 transition-opacity font-mono text-caption"
+                className="flex items-center gap-1 text-on-secondary hover:underline font-mono text-caption"
               >
                 <Icon name="close" size={14} />
                 Clear
@@ -464,7 +464,7 @@ export function DocumentsPage() {
                         // eslint-disable-next-line no-restricted-syntax -- per-column layout width from the header config
                         style={{ width: w }}
                       >
-                        {h}
+                        {h || <span className="sr-only">Actions</span>}
                       </th>
                     ))}
                   </tr>

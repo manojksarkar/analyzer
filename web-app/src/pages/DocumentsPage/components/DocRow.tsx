@@ -66,7 +66,7 @@ export function DocRow({
     )
   } else if (isDeveloper && doc.reviewer?.userId === meId) {
     action = (
-      <span title="You review it" className="p-1.5 flex items-center text-success">
+      <span title="You review it" role="img" aria-label="You review it" className="p-1.5 flex items-center text-success">
         <Icon name="how_to_reg" size={15} />
       </span>
     )
@@ -157,7 +157,8 @@ export function DocRow({
             <RowButton icon="download" title="Download DOCX" onClick={onDownload} />
           )}
           {carried ? (
-            <span title={`Content unchanged since ${carried.tag}: nothing to compare`} className="p-1.5 flex items-center cursor-not-allowed text-outline-variant">
+            <span title={`Content unchanged since ${carried.tag}: nothing to compare`} role="img" aria-disabled="true"
+              aria-label={`Content unchanged since ${carried.tag}: nothing to compare`} className="p-1.5 flex items-center cursor-not-allowed text-outline-variant">
               <Icon name="compare_arrows" size={15} />
             </span>
           ) : (

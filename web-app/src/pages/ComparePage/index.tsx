@@ -229,7 +229,7 @@ export function ComparePage() {
                 <div className="sticky top-0 z-10 bg-surface-container-lowest border-b border-outline-variant px-4 py-2 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full flex-shrink-0 bg-on-tertiary-container" aria-hidden />
                   <span className="text-on-surface font-mono text-xs font-medium">Current</span>
-                  {isLatest && <span className="px-2 py-0.5 rounded uppercase font-mono text-micro font-bold bg-on-tertiary-container text-white">Latest</span>}
+                  {isLatest && <span className="px-2 py-0.5 rounded uppercase font-mono text-micro font-bold bg-on-tertiary-container text-on-status">Latest</span>}
                   <span className="text-on-surface-variant font-mono text-caption">{currentTag ? currentTag : `${currentBranch} @ ${currentShort}`}</span>
                   <div className="ml-auto flex items-center gap-2">
                     <button
@@ -283,7 +283,7 @@ export function ComparePage() {
                       <Fragment key={s.key}>
                         {/* Reference cell */}
                         <div className={cn('bg-surface-container-lowest border-r border-b border-outline-variant/60 px-8 py-6',
-                          s.diffType === 'removed' ? 'bg-error-container/20' : changed && 'opacity-90')}>
+                          s.diffType === 'removed' && 'bg-error-container/20')}>
                           <div className="flex items-baseline gap-2 mb-3">
                             {s.number && <span className="font-mono text-caption text-outline flex-shrink-0">{s.number}</span>}
                             <h2 className={cn('text-primary font-semibold font-sans', headingSize)}>{s.title}</h2>

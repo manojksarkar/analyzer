@@ -19,7 +19,7 @@ type FormValues = z.infer<typeof schema>
 
 const FEATURES = ['ASPICE Ready', 'End-to-End Traceability', 'Enterprise Security']
 
-const INPUT_CLS = 'w-full h-11 px-3 bg-surface-container-lowest border border-outline-variant rounded-xl font-sans text-sm text-on-surface placeholder:text-outline outline-none focus:border-secondary focus:shadow-[0_0_0_3px_rgba(0,88,190,0.12)]'
+const INPUT_CLS = 'w-full h-11 px-3 bg-surface-container-lowest border border-field rounded-xl font-sans text-sm text-on-surface placeholder:text-outline focus:border-secondary'
 const LABEL_CLS = 'block font-mono text-caption font-medium tracking-[0.08em] uppercase text-on-surface-variant mb-1.5'
 
 /** Turn any sign-in failure into a clear, user-facing message. */
@@ -72,7 +72,7 @@ export function SignInPage() {
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-background">
       <ThemeToggle floating />
-      <div className="w-full max-w-5xl bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden grid lg:grid-cols-[1fr_1.1fr] shadow-[0_4px_32px_rgba(4,22,39,.10)]">
+      <main className="w-full max-w-5xl bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden grid lg:grid-cols-[1fr_1.1fr] shadow-[0_4px_32px_rgba(4,22,39,.10)]">
         {/* Left Panel */}
         <div className="hidden lg:flex flex-col justify-between p-12 bg-hero text-white">
           <div>
@@ -81,17 +81,17 @@ export function SignInPage() {
               <BrandMark size={40} className="flex-shrink-0 text-white" />
               <div>
                 <h1 className="font-bold tracking-tight font-sans text-3xl leading-[1.1]">{APP_NAME}</h1>
-                <p className="text-on-primary-container uppercase mt-1 font-mono text-caption font-medium tracking-[0.08em]">{APP_TAGLINE}</p>
+                <p className="text-on-hero uppercase mt-1 font-mono text-caption font-medium tracking-[0.08em]">{APP_TAGLINE}</p>
               </div>
             </div>
 
             {/* Headline */}
             <div className="mt-14">
-              <p className="text-secondary-container uppercase mb-4 font-mono text-caption font-medium tracking-[0.2em]">AI Software Intelligence Platform</p>
+              <p className="text-hero-accent uppercase mb-4 font-mono text-caption font-medium tracking-[0.2em]">AI Software Intelligence Platform</p>
               <h2 className="text-white text-[28px] leading-[36px] font-bold tracking-[-0.02em]">
                 Turn your codebase into compliance — automatically.
               </h2>
-              <p className="mt-4 text-on-primary-container leading-relaxed text-base max-w-[340px]">
+              <p className="mt-4 text-on-hero leading-relaxed text-base max-w-[340px]">
                 Generate requirements, architecture, traceability, test documentation, and compliance artifacts automatically.
               </p>
             </div>
@@ -101,8 +101,8 @@ export function SignInPage() {
           <ul className="flex flex-col gap-2.5 mt-10">
             {FEATURES.map((feat) => (
               <li key={feat} className="flex items-center gap-2.5">
-                <Icon name="check_circle" size={16} fill className="text-on-tertiary-container" />
-                <span className="text-on-primary-container font-mono text-xs font-medium">{feat}</span>
+                <Icon name="check_circle" size={16} fill className="text-hero-ok" />
+                <span className="text-on-hero font-mono text-xs font-medium">{feat}</span>
               </li>
             ))}
           </ul>
@@ -193,7 +193,7 @@ export function SignInPage() {
                     onClick={() => setShowPassword((v) => !v)}
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                     aria-pressed={showPassword}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-lg text-on-surface-variant hover:text-on-surface transition-colors"
                   >
                     <Icon name={showPassword ? 'visibility' : 'visibility_off'} size={18} />
                   </button>
@@ -206,7 +206,7 @@ export function SignInPage() {
                 <input
                   type="checkbox"
                   id="remember"
-                  className="w-4 h-4 rounded border-outline-variant cursor-pointer accent-secondary"
+                  className="w-4 h-4 rounded border-field cursor-pointer accent-secondary"
                   {...register('remember')}
                 />
                 <label htmlFor="remember" className="text-on-surface-variant cursor-pointer text-body">Remember me</label>
@@ -216,7 +216,7 @@ export function SignInPage() {
               <button
                 type="submit"
                 disabled={busy}
-                className="w-full h-11 rounded-xl bg-secondary text-white hover:bg-secondary-container transition-colors mt-1 disabled:opacity-60 disabled:cursor-not-allowed font-sans text-body font-semibold"
+                className="w-full h-11 rounded-xl bg-action text-white hover:bg-secondary-container transition-colors mt-1 disabled:opacity-60 disabled:cursor-not-allowed font-sans text-body font-semibold"
               >
                 {isSubmitting ? 'Signing in…' : 'Continue'}
               </button>
@@ -225,7 +225,7 @@ export function SignInPage() {
             {/* No "Request Access" footer until requesting is built (ui-review #36): an admin adds people. */}
           </div>
         </div>
-      </div>
+      </main>
     </div>
   )
 }

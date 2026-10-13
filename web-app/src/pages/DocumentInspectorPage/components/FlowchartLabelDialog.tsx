@@ -95,8 +95,8 @@ export function FlowchartLabelDialog({
                     onBlur={() => setFocused(null)}
                     onChange={(e) => setDraft((d) => ({ ...d, [s.nodeId ?? '']: e.target.value }))}
                     className={cn(
-                      'w-full resize-y rounded-lg border px-2 py-1.5 text-xs text-on-surface outline-none',
-                      isChanged ? 'border-secondary bg-surface-container-low' : 'border-outline-variant bg-surface-container-lowest',
+                      'w-full resize-y rounded-lg border px-2 py-1.5 text-xs text-on-surface',
+                      isChanged ? 'border-secondary bg-surface-container-low' : 'border-field bg-surface-container-lowest',
                       focused === s.key && 'ring-2 ring-secondary',
                     )}
                   />

@@ -6,7 +6,7 @@ import { Icon, Text } from '../components/ui'
 export function NotFoundPage() {
   const { pathname } = useLocation()
   return (
-    <div className="h-screen flex flex-col items-center justify-center gap-4 text-center p-8 bg-background">
+    <main className="h-screen flex flex-col items-center justify-center gap-4 text-center p-8 bg-background">
       <div className="w-14 h-14 rounded-full bg-surface-container-low border border-outline-variant flex items-center justify-center">
         <Icon name="explore_off" size={28} className="text-on-surface-variant" />
       </div>
@@ -21,6 +21,6 @@ export function NotFoundPage() {
         <Icon name="arrow_back" size={16} />
         Back to projects
       </Link>
-    </div>
+    </main>
   )
 }

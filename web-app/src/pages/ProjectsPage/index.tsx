@@ -47,7 +47,7 @@ export function ProjectsPage() {
       <HomeTopbar />
 
       {/* ── Scrollable content ── */}
-      <div className={logsFull ? 'hidden' : 'flex-1 overflow-y-auto'}>
+      <main className={logsFull ? 'hidden' : 'flex-1 overflow-y-auto'}>
         <div className="px-6 py-6 mx-auto max-w-[1280px]">
 
           {/* Page heading */}
@@ -71,7 +71,7 @@ export function ProjectsPage() {
                 </button>
                 <button
                   onClick={() => navigate('/projects/new')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors font-mono text-caption font-bold tracking-[0.04em]"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-action hover:bg-secondary-container text-on-secondary rounded-lg transition-colors font-mono text-caption font-bold tracking-[0.04em]"
                 >
                   <Icon name="add" size={14} />
                   NEW PROJECT
@@ -100,7 +100,7 @@ export function ProjectsPage() {
                         key={label}
                         className={`${cls} font-mono text-caption font-medium text-on-surface-variant uppercase tracking-[0.07em]`}
                       >
-                        {label}
+                        {label || <span className="sr-only">Actions</span>}
                       </th>
                     ))}
                   </tr>
@@ -130,7 +130,7 @@ export function ProjectsPage() {
             />
           )}
         </div>
-      </div>
+      </main>
       <LogsPanel />
     </div>
   )

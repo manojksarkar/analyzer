@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { Dropdown, DropdownTrigger, DropdownContent, Icon } from '../../../components/ui'
 import { useDeleteProject, useDownloadProjectConfig } from '../../../hooks/useProjects'
 import { cn } from '../../../lib/cn'
@@ -9,7 +10,7 @@ function AvatarStack({ members, max = 3 }: { members: TeamMember[]; max?: number
   const visible = members.slice(0, max)
   const overflow = members.length - max
   return (
-    <div className="flex items-center" aria-label={`${members.length} member${members.length !== 1 ? 's' : ''}`}>
+    <div className="flex items-center" role="img" aria-label={`${members.length} member${members.length !== 1 ? 's' : ''}`}>
       {visible.map((m, i) => (
         <div
           key={m.id}
@@ -148,7 +149,9 @@ export function ProjectRow({ project, onNavigate, onTeam, onRename }: {
           <ProjectIcon project={project} />
           <div>
             <p className="text-on-surface flex items-center gap-2 font-mono text-xs font-medium">
-              {project.name}
+              <Link to={`/projects/${project.id}/overview`} onClick={(e) => e.stopPropagation()} className="hover:text-secondary transition-colors">
+                {project.name}
+              </Link>
               <RolePill role={project.userRole} />
             </p>
           </div>

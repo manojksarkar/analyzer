@@ -612,3 +612,47 @@ failed calls); a superuser also gets the version's three newest log lines and **
 database, LLM and parse counts from the live log buffer -- so they cover what the buffer holds and are
 zeros without a live log. A stopped run's banner names the cut-short components and resumes from the web
 (admins; 2026-10-07c). Mockup: `project-detail.html` `#run-cards`.
+
+### Accessibility: WCAG 2.2 AA in both themes (2026-10-13)
+
+The mockups (`docs/ui-mockups/`, 8 pages x light, dark) and the web app meet it, checked by machine
+(history 2026-10-13, 2026-10-13b). **The rules a change must keep are in the `ui-dev` skill, §8** -- one
+home. This section says where things are.
+
+- **Web app.** Tokens in `web-app/src/index.css`, light and dark: `outline` (the quietest text),
+  `field` (a field's boundary, a quiet icon), `focus` (the ring), `action` (a blue fill under white
+  text; `secondary` is blue as text), `on-status` (text on a status fill), `bar-button` (the selection
+  bar's buttons), `on-hero` / `hero-accent` / `hero-ok` (the sign-in panel). `text-micro` and
+  `text-label` are 11px. The focus ring, reduced motion and the search-box rule are the last rules of
+  `index.css`, outside every `@layer`, so no utility removes them -- a component does not style its
+  focus. `ui/ScrollX`: a table that scrolls sideways is a Tab stop only when it scrolls. One `<main>`
+  in `ProjectLayout` (the reader's canvas is a `div`), the sub-bar a named `section`. A project opens
+  from its name (a `Link`: an admin's row menu has no "View"), the Overview's rows from theirs (a
+  `button`); the row's click stays for the mouse. Guard in `npm test`:
+  `src/__tests__/accessibility.test.ts` -- the tokens' contrast per theme, and the source for the
+  patterns that failed (text under 11px, a component's own ring, faded text, white on `bg-secondary`,
+  a field in the divider colour).
+- **Mockups.** `a11y.css` (ring, field borders, `.sr-only`, reduced motion, small-target hit areas,
+  per-surface colours) and `a11y.js` (names for icon-only controls and unlabelled fields from their
+  icon, label or placeholder; `tabindex`, Enter/Space and `role="button"` for elements with `onclick`),
+  loaded by every page (dark pages as `../`). The web app needs no such script: its components carry
+  the names.
+- **Changed colours**, mockups and web app alike:
+
+  | Role | Light | Dark |
+  |---|---|---|
+  | muted text (`outline`, `faint`) | `#74777d`, `#9aa0a6` -> `#65686e` | `#7c818c`, `#8a8f9c` -> `#979ca7` |
+  | blue as text (`secondary`) | `#0058be` | `#1d7bff` -> `#6aa9ff` |
+  | blue fill under white text (`action`; hover `secondary-container`) | `#0058be`; `#2170e4` | `#1a6ce6`; `#1662d6` |
+  | green text (`success`, `on-tertiary-container`) | `#00a572` -> `#00754f` | `#1fae63` -> `#2fc878` |
+  | amber text (`caution`) | `#d97706` -> `#a8500a` | unchanged |
+  | text on a status fill (`on-status`) | `#ffffff` | `#0b0c0f` |
+  | field border (`field`) | `#85888f` | `#737885` |
+  | focus ring (`focus`) | `#0058be`; white inside navy or blue | `#8ab8ff`; white inside blue |
+
+- **A report that is not a fault.** With a Radix menu open (user menu, a row's menu, a download
+  menu) the page behind is hidden from assistive technology on purpose and the keyboard stays in the
+  menu; axe then reports no `main`, no heading and focusable content inside `aria-hidden`.
+- **Not covered by the browser checks** (no run was started, no dialog confirmed): a running job's
+  panel and the wizard's steps 2-5. Their fields' names and their text on fills were checked in the
+  source. Sample data still has people's names.

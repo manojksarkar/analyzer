@@ -37,12 +37,12 @@ export function Select({ value, onValueChange, options, placeholder, label, erro
           className={cn(
             'flex w-full h-10 items-center justify-between gap-2 rounded-xl border bg-surface-container-lowest px-3',
             'text-sm text-on-surface transition-colors',
-            'focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary',
+            'focus:border-secondary',
             'disabled:cursor-not-allowed disabled:opacity-50',
-            error ? 'border-error' : 'border-outline-variant',
+            error ? 'border-error' : 'border-field',
           )}
         >
-          <SelectPrimitive.Value placeholder={<span className="text-on-surface-variant/60">{placeholder}</span>} />
+          <SelectPrimitive.Value placeholder={<span className="text-outline">{placeholder}</span>} />
           <SelectPrimitive.Icon>
             <span className="material-symbols-outlined text-on-surface-variant" style={{ fontSize: 18 }} aria-hidden>expand_more</span>
           </SelectPrimitive.Icon>
@@ -65,7 +65,7 @@ export function Select({ value, onValueChange, options, placeholder, label, erro
                   disabled={opt.disabled}
                   className={cn(
                     'flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-on-surface',
-                    'cursor-pointer select-none outline-none',
+                    'cursor-pointer select-none',
                     'data-[highlighted]:bg-surface-container',
                     'data-[disabled]:opacity-40 data-[disabled]:pointer-events-none',
                   )}

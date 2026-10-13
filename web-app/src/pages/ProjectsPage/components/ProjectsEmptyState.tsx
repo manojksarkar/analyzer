@@ -27,7 +27,7 @@ export function ProjectsEmptyState({
           onClick={onNewProject}
           className="group flex flex-col items-center gap-3 p-6 bg-surface-container-lowest border-2 border-secondary rounded-xl hover:bg-secondary/5 transition-colors text-center"
         >
-          <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-action flex items-center justify-center">
             <Icon name="add" size={20} className="text-white" />
           </div>
           <div>

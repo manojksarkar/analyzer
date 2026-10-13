@@ -330,7 +330,7 @@ export function DocumentInspectorPage() {
             title={approved ? 'Approved: locked. An admin can reopen it.' : undefined}
             className={cn(
               'flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors font-mono text-caption font-bold tracking-[0.04em] border disabled:opacity-45 disabled:cursor-not-allowed',
-              isEditing ? 'bg-secondary border-secondary text-on-secondary hover:bg-secondary-container' : 'border-secondary text-secondary bg-surface-container-lowest hover:bg-surface-container-low',
+              isEditing ? 'bg-action border-action text-on-secondary hover:bg-secondary-container' : 'border-secondary text-secondary bg-surface-container-lowest hover:bg-surface-container-low',
             )}
           >
             <Icon name={approved ? 'lock' : isEditing ? 'check' : 'edit'} size={14} />
@@ -356,7 +356,7 @@ export function DocumentInspectorPage() {
       )}
 
       {/* ── Document canvas ── */}
-      <main ref={setCanvasEl} className="flex-1 overflow-y-auto bg-page">
+      <div ref={setCanvasEl} className="flex-1 overflow-y-auto bg-page">
         {isEditing && <EditBar hold={hold} />}
         {/* The reading column: room for the tables at a laptop's width (paddings grow on a wide
             screen only), capped so a wide screen does not stretch the lines; prose keeps its own
@@ -414,7 +414,7 @@ export function DocumentInspectorPage() {
                         <button
                           type="button"
                           title={`Out of date: ${outOfDateWhy(own)}`}
-                          className="relative flex items-center gap-1.5 px-3 py-2 bg-secondary hover:bg-secondary-container text-white rounded-lg transition-colors font-mono text-caption font-medium"
+                          className="relative flex items-center gap-1.5 px-3 py-2 bg-action hover:bg-secondary-container text-white rounded-lg transition-colors font-mono text-caption font-medium"
                         >
                           <Icon name="download" size={15} />
                           DOCX
@@ -436,7 +436,7 @@ export function DocumentInspectorPage() {
                   ) : (
                     <button
                       onClick={() => downloadDoc(doc.id, fileName)}
-                      className="relative flex items-center gap-1.5 px-3 py-2 bg-secondary hover:bg-secondary-container text-white rounded-lg transition-colors font-mono text-caption font-medium"
+                      className="relative flex items-center gap-1.5 px-3 py-2 bg-action hover:bg-secondary-container text-white rounded-lg transition-colors font-mono text-caption font-medium"
                     >
                       <Icon name="download" size={15} />
                       DOCX
@@ -473,7 +473,7 @@ export function DocumentInspectorPage() {
                 </div>
               ) : rich.sections.length === 0 ? (
                 <div className="bg-surface-container-low border border-outline-variant rounded-lg flex flex-col items-center text-center py-14 gap-3">
-                  <Icon name="description" size={40} className="text-outline-variant" />
+                  <Icon name="description" size={40} className="text-field" />
                   <Text as="p" variant="caption" className="font-mono">No section content for this document yet.</Text>
                 </div>
               ) : (
@@ -483,7 +483,7 @@ export function DocumentInspectorPage() {
             )}
           </div>
         </div>
-      </main>
+      </div>
 
       {/* ── Right panel: Outline · Review · Corrections ── */}
       <RightPanel tabs={tabs} active={activeTab} onTab={setTab} collapsed={panelCollapsed} onToggle={togglePanel}>

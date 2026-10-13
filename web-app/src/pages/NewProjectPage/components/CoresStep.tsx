@@ -219,7 +219,7 @@ export function CoresStep({ cores, layers, wanted, openFiles, folder, folderBusy
                 <CoreRow label="Macros" help={<>The <code>-D</code> set for this build</>}>
                   {c.macroMode === 'typed' ? (
                     <>
-                      <textarea className="inp mono macro-text" rows={3} value={c.macroText}
+                      <textarea className="inp mono macro-text" rows={3} aria-label="Macros" value={c.macroText}
                         placeholder={'_CONFIG_CMCORE=1\nPLATFORM=QNX'}
                         onChange={(e) => onChange(c.id, { macroText: e.target.value })} />
                       <div className="flex items-center justify-between gap-3">

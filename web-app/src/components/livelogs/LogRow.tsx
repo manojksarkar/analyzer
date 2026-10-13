@@ -12,7 +12,7 @@ const TAG: Partial<Record<LogLevel, string>> = {
   DEBUG: 'text-outline border border-outline-variant',
   WARNING: 'text-warn bg-warn-bg',
   ERROR: 'text-error bg-error-container',
-  CRITICAL: 'text-white bg-error',
+  CRITICAL: 'text-on-status bg-error',
 }
 
 function highlight(text: string, q: string): ReactNode {

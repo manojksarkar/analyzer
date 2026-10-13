@@ -44,6 +44,10 @@ next to the code in `__tests__/` folders:
 
 - `src/services/mappers/__tests__/*` — snake_case → camelCase, derived fields, edge cases.
 - `src/components/ui/__tests__/*`, `src/hooks/__tests__/*` — render/data-flow smoke tests.
+- `src/__tests__/accessibility.test.ts` — accessibility guards that need no browser: the colour tokens'
+  contrast in the light and the dark theme, and the source for the patterns that break the shared rules
+  (text under 11px, a component's own focus ring, faded text). The rules: the `ui-dev` skill, §8. A new
+  screen still gets a Tab walk and an axe run in both themes.
 
 Add a page's endpoint to [src/test/handlers.ts](src/test/handlers.ts) (returning a fixture) and write
 tests as you cover more screens. Unhandled requests fail loudly (`onUnhandledRequest: 'error'`).

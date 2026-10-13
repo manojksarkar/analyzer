@@ -71,7 +71,7 @@ export function NotificationBell() {
       >
         <Icon name="notifications" size={22} className="text-on-surface-variant" />
         {unread > 0 && (
-          <span className="absolute top-0.5 right-0 min-w-4 h-4 px-1 rounded-full bg-error text-white border-2 border-surface-container-lowest box-content font-sans text-micro font-bold leading-4 text-center" aria-hidden>
+          <span className="absolute top-0.5 right-0 min-w-4 h-4 px-1 rounded-full bg-error text-on-status border-2 border-surface-container-lowest box-content font-sans text-micro font-bold leading-4 text-center" aria-hidden>
             {unread > 9 ? '9+' : unread}
           </span>
         )}

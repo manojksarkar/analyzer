@@ -107,7 +107,7 @@ export function RunAnalysisModal({
               <Icon name="alt_route" size={14} className="text-on-surface-variant" />
               <span className={cn('text-on-surface-variant', FIELD_LABEL)}>Branch</span>
               <span className="font-mono text-xs font-bold text-on-surface">{branch}</span>
-              <span className="ml-auto text-on-surface-variant text-label opacity-50 tracking-[.04em] font-mono">FIXED</span>
+              <span className="ml-auto text-outline text-label tracking-[.04em] font-mono">FIXED</span>
             </div>
             <div className="px-4 py-3">
               <label className={cn('text-on-surface-variant block mb-2', FIELD_LABEL)}>Commit</label>
@@ -117,7 +117,7 @@ export function RunAnalysisModal({
                   {commitsLoading ? 'Loading commits…' : 'No commits available to analyze yet.'}
                 </p>
               ) : (
-                <select value={commitSha} onChange={(e) => setPickedSha(e.target.value)} className={cn('w-full rounded-lg px-3 py-2 text-on-surface bg-surface-container-lowest cursor-pointer focus:outline-none border border-outline-variant', SELECT_CLS)}>
+                <select value={commitSha} aria-label="Commit" onChange={(e) => setPickedSha(e.target.value)} className={cn('w-full rounded-lg px-3 py-2 text-on-surface bg-surface-container-lowest cursor-pointer border border-field', SELECT_CLS)}>
                   {cs.map((c) => (
                     <option key={c.sha} value={c.sha}>
                       {c.shortSha}{c.versionTag ? ` [${c.versionTag}]` : ''} · {c.relativeTime} — {c.message}
@@ -132,9 +132,9 @@ export function RunAnalysisModal({
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className={cn('text-on-surface-variant', FIELD_LABEL)}>Compare against</label>
-              <span className="text-label text-outline-variant font-mono">OPTIONAL</span>
+              <span className="text-label text-outline font-mono">OPTIONAL</span>
             </div>
-            <select value={referenceId} onChange={(e) => setReferenceId(e.target.value)} className={cn('w-full border border-outline-variant rounded-lg px-3 py-2 text-on-surface bg-surface-container-lowest cursor-pointer focus:outline-none', SELECT_CLS)}>
+            <select value={referenceId} aria-label="Compare against" onChange={(e) => setReferenceId(e.target.value)} className={cn('w-full border border-field rounded-lg px-3 py-2 text-on-surface bg-surface-container-lowest cursor-pointer', SELECT_CLS)}>
               <option value="">— None —</option>
               {refVersions.map((v) => (
                 <option key={v.id} value={v.id}>{v.tag} · {v.shortSha} — {v.description}</option>
@@ -155,8 +155,8 @@ export function RunAnalysisModal({
               <Icon name="sell" size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
               <input value={versionName} onChange={(e) => setVersionName(e.target.value)} type="text" placeholder="e.g. v1.3.0" autoComplete="off" spellCheck={false}
                 aria-label="Version name" aria-invalid={nameProblem ? 'true' : undefined} aria-describedby={nameProblem ? nameHintId : undefined}
-                className={cn('w-full border rounded-lg pl-9 pr-3 py-2.5 bg-surface-container-lowest focus:outline-none font-mono text-body font-bold text-secondary tracking-[.03em] box-border',
-                  nameProblem ? 'border-error' : 'border-outline-variant')} />
+                className={cn('w-full border rounded-lg pl-9 pr-3 py-2.5 bg-surface-container-lowest font-mono text-body font-bold text-secondary tracking-[.03em] box-border',
+                  nameProblem ? 'border-error' : 'border-field')} />
             </div>
             {nameProblem && <p id={nameHintId} className={cn('text-error mt-1.5', FIELD_LABEL)}>{nameProblem}</p>}
           </div>
@@ -188,7 +188,7 @@ export function RunAnalysisModal({
             <div className="flex-shrink-0 flex flex-col gap-3 mt-3.5 pt-3.5 border-t border-surface-container">
               {/* Skip LLM: the job's no_llm */}
               <label className="flex items-start gap-3 cursor-pointer group">
-                <input type="checkbox" checked={skipLlm} onChange={(e) => setSkipLlm(e.target.checked)} className="mt-0.5 rounded border-outline-variant text-secondary flex-shrink-0 w-[15px] h-[15px]" />
+                <input type="checkbox" checked={skipLlm} onChange={(e) => setSkipLlm(e.target.checked)} className="mt-0.5 rounded border-field text-secondary flex-shrink-0 w-[15px] h-[15px]" />
                 <div>
                   <span className="text-on-surface text-xs group-hover:text-secondary transition-colors">Skip LLM</span>
                   <p className="text-on-surface-variant mt-0.5 text-caption">Faster: the LLM steps are skipped. Use it to check structure, not wording.</p>
@@ -197,7 +197,7 @@ export function RunAnalysisModal({
               {/* Pause after Phase 1 — the server does not act on it yet: a run goes through all
                   four phases, and there is no function-visibility editor to pause for. */}
               <label className="flex items-start gap-3 cursor-not-allowed opacity-60">
-                <input type="checkbox" checked={false} disabled readOnly className="mt-0.5 rounded border-outline-variant text-secondary flex-shrink-0 w-[15px] h-[15px]" />
+                <input type="checkbox" checked={false} disabled readOnly className="mt-0.5 rounded border-field text-secondary flex-shrink-0 w-[15px] h-[15px]" />
                 <div>
                   <span className="text-on-surface text-xs">Pause after Phase 1 to review function visibility</span>
                   <p className="text-on-surface-variant mt-0.5 text-caption">Not available yet — a run goes through all four phases without stopping.</p>
@@ -212,7 +212,7 @@ export function RunAnalysisModal({
       <div className="flex-shrink-0 px-6 py-4 border-t border-outline-variant flex items-center justify-between">
         <button onClick={onClose} className="px-4 py-2 text-on-surface-variant hover:bg-surface-container rounded-lg transition-colors text-sm">Cancel</button>
         <button onClick={submit} disabled={!!blocked || submitting} title={blocked ?? undefined}
-          className="flex items-center gap-2 px-5 py-2.5 bg-secondary text-on-secondary rounded-xl transition-colors disabled:opacity-60 font-mono text-xs font-bold tracking-[.04em]">
+          className="flex items-center gap-2 px-5 py-2.5 bg-action text-on-secondary rounded-xl transition-colors disabled:opacity-60 font-mono text-xs font-bold tracking-[.04em]">
           <Icon name="rocket_launch" size={16} fill />
           {submitting ? 'STARTING…' : 'START ANALYSIS'}
         </button>

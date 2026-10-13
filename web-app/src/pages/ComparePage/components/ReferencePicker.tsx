@@ -22,7 +22,7 @@ export function ReferencePicker({ options, value, fallback, onPick, className }:
       title="The version the current one is compared with"
       value={versionRef(value) ?? ''}
       onChange={(e) => onPick(e.target.value)}
-      className={cn(chip, 'normal-case cursor-pointer hover:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary', className)}
+      className={cn(chip, 'normal-case cursor-pointer border-field hover:border-secondary', className)}
     >
       {options.map((v) => {
         const ref = versionRef(v) ?? ''

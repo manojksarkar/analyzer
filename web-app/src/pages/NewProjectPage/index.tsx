@@ -147,7 +147,7 @@ function StepRail({
 }: { cur: number; done: Set<number>; issues: Set<number>; onClose: () => void; onGo: (n: number) => void }) {
   const pct = Math.round((done.size / STEPS.length) * 100)
   return (
-    <aside className="w-60 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex flex-col overflow-y-auto">
+    <aside aria-label="Setup progress" className="w-60 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex flex-col overflow-y-auto">
       <div className="px-4 pt-4 pb-3 border-b border-outline-variant">
         <div className="flex items-center justify-between mb-1.5">
           <p className="text-on-surface-variant uppercase font-mono text-caption font-medium tracking-[0.10em]">Setup Progress</p>
@@ -169,6 +169,7 @@ function StepRail({
           const n = i + 1
           const state = done.has(n) ? 'done' : n === cur ? 'active' : 'pending'
           const clickable = n < cur || done.has(n)
+          const titleCls = cn('font-mono text-xs leading-[1.2]', n === cur ? 'text-secondary font-semibold' : done.has(n) ? 'text-on-surface font-medium' : 'text-on-surface-variant font-medium')
           return (
             <div key={n} className={cn('step-li', clickable && 'cursor-pointer')} onClick={() => clickable && onGo(n)}>
               <div className={`step-dot ${state}`}>
@@ -178,7 +179,9 @@ function StepRail({
                 {issues.has(n) && <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-error border-2 border-surface-container-lowest" />}
               </div>
               <div className="pt-[3px]">
-                <p className={cn('font-mono text-xs leading-[1.2]', n === cur ? 'text-secondary font-semibold' : done.has(n) ? 'text-on-surface font-medium' : 'text-on-surface-variant font-medium')}>{s.title}</p>
+                {clickable
+                  ? <button type="button" onClick={(e) => { e.stopPropagation(); onGo(n) }} aria-current={n === cur ? 'step' : undefined} className={cn(titleCls, 'block text-left hover:underline')}>{s.title}</button>
+                  : <p aria-current={n === cur ? 'step' : undefined} className={titleCls}>{s.title}</p>}
                 <p className={cn('font-mono text-caption mt-0.5', issues.has(n) ? 'text-error' : n === cur ? 'text-secondary' : 'text-outline')}>
                   {issues.has(n) ? 'Needs a fix' : s.sub}
                 </p>
@@ -923,7 +926,7 @@ function WizardView({
       <StepRail cur={cur} done={done} issues={railIssues} onClose={onCancel} onGo={railGo} />
 
       {/* Form area */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-background">
+      <main className="flex-1 flex flex-col overflow-hidden bg-background">
         <div ref={scrollRef} className="flex-1 overflow-y-auto">
           <div className="max-w-2xl mx-auto px-6 py-6 space-y-5">
             <StepHeader title={STEP_HEADERS[cur - 1].title} sub={STEP_HEADERS[cur - 1].sub} />
@@ -941,7 +944,7 @@ function WizardView({
               <div className="card space-y-4">
                 <div>
                   <div className="lbl">Project Name <span className="req">*</span></div>
-                  <input className={`inp ${errs.name ? 'err' : ''}`} value={name} onChange={(e) => { setName(e.target.value); setErrs((p) => ({ ...p, name: false })) }} type="text" placeholder="e.g. VCU Engine Firmware" />
+                  <input className={`inp ${errs.name ? 'err' : ''}`} aria-label="Project name" value={name} onChange={(e) => { setName(e.target.value); setErrs((p) => ({ ...p, name: false })) }} type="text" placeholder="e.g. VCU Engine Firmware" />
                 </div>
 
                 {/* Where the code is: Remote - a URL (Bitbucket, GitHub, GitLab, any git server) - or
@@ -1000,7 +1003,7 @@ function WizardView({
                       <input ref={tokenInput} className={cn('inp mono pr-10', !showToken && 'secret')} value={token} onChange={(e) => { setToken(e.target.value); repoChanged() }}
                         type="text" name="repository-access-token" aria-label="Access Token" placeholder="Paste the access token"
                         autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-lpignore="true" data-1p-ignore="true" />
-                      <button type="button" onClick={() => setShowToken((s) => !s)} aria-label={showToken ? 'Hide token' : 'Show token'} aria-pressed={showToken} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors">
+                      <button type="button" onClick={() => setShowToken((s) => !s)} aria-label={showToken ? 'Hide token' : 'Show token'} aria-pressed={showToken} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-lg text-on-surface-variant hover:text-on-surface transition-colors">
                         <Icon name={showToken ? 'visibility' : 'visibility_off'} size={17} />
                       </button>
                     </div>
@@ -1097,7 +1100,10 @@ function WizardView({
                   {layers.map((layer) => (
                     <div key={layer.id} className="layer-block">
                       <div className="layer-head" onClick={() => patchLayer(layer.id, (l) => ({ ...l, collapsed: !l.collapsed }))}>
-                        <Icon name={layer.collapsed ? 'keyboard_arrow_right' : 'keyboard_arrow_down'} size={15} className="text-on-surface-variant" />
+                        <button type="button" className="tree-toggle" aria-label={`${layer.collapsed ? 'Expand' : 'Collapse'} ${layer.name}`} aria-expanded={!layer.collapsed}
+                          onClick={(e) => { e.stopPropagation(); patchLayer(layer.id, (l) => ({ ...l, collapsed: !l.collapsed })) }}>
+                          <Icon name={layer.collapsed ? 'keyboard_arrow_right' : 'keyboard_arrow_down'} size={15} className="text-on-surface-variant" />
+                        </button>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-on-surface font-mono text-body font-bold leading-[1.3]">{layer.name}</span>
@@ -1129,7 +1135,7 @@ function WizardView({
                           {layer.groups.map((g) => (
                             <div key={g.id}>
                               <div className="tree-group-row">
-                                <button onClick={() => patchLayer(layer.id, (l) => ({ ...l, groups: l.groups.map((x) => x.id === g.id ? { ...x, collapsed: !x.collapsed } : x) }))} className="tree-toggle">
+                                <button onClick={() => patchLayer(layer.id, (l) => ({ ...l, groups: l.groups.map((x) => x.id === g.id ? { ...x, collapsed: !x.collapsed } : x) }))} aria-label={`${g.collapsed ? 'Expand' : 'Collapse'} ${g.name}`} aria-expanded={!g.collapsed} className="tree-toggle">
                                   <Icon name={g.collapsed ? 'keyboard_arrow_right' : 'keyboard_arrow_down'} size={14} />
                                 </button>
                                 <Icon name={g.collapsed ? 'folder' : 'folder_open'} size={14} className="text-secondary" />
@@ -1143,7 +1149,7 @@ function WizardView({
                                   {g.comps.map((c) => (
                                     <div key={c.id}>
                                       <div className="tree-comp-row">
-                                        <button onClick={() => toggleComp(layer.id, g.id, c.id)} className="tree-toggle">
+                                        <button onClick={() => toggleComp(layer.id, g.id, c.id)} aria-label={`Files of ${c.name}`} aria-expanded={c.files.length > 0 && !c.collapsed} className="tree-toggle">
                                           <Icon name={c.files.length > 0 && !c.collapsed ? 'keyboard_arrow_down' : 'keyboard_arrow_right'} size={13} />
                                         </button>
                                         <Icon name="folder" size={13} className="text-secondary opacity-60" />
@@ -1183,7 +1189,7 @@ function WizardView({
                           {/* Add group */}
                           {inlineAdd?.parentId === layer.id ? (
                             <div className="inline-add-row">
-                              <input autoFocus className="inline-add-input" value={inlineVal} onChange={(e) => setInlineVal(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') confirmGroup(); if (e.key === 'Escape') { setInlineAdd(null); setInlineVal('') } }} placeholder="Group name…" />
+                              <input autoFocus className="inline-add-input" aria-label="Group name" value={inlineVal} onChange={(e) => setInlineVal(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') confirmGroup(); if (e.key === 'Escape') { setInlineAdd(null); setInlineVal('') } }} placeholder="Group name…" />
                               <button className="inline-add-confirm" onClick={confirmGroup}>Add</button>
                               <button className="inline-add-cancel" onClick={() => { setInlineAdd(null); setInlineVal('') }}><Icon name="close" size={14} /></button>
                             </div>
@@ -1242,12 +1248,12 @@ function WizardView({
                   <div className="p-4 bg-surface-container-low border-2 border-dashed border-secondary rounded-xl space-y-3">
                     <div>
                       <div className="lbl mb-1">Layer Name</div>
-                      <input autoFocus className="inp mono uppercase" value={newLayerName} onChange={(e) => setNewLayerName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') confirmAddLayer() }} type="text" placeholder="E.G. MIDDLEWARE_LAYER" />
+                      <input autoFocus className="inp mono uppercase" aria-label="Layer name" value={newLayerName} onChange={(e) => setNewLayerName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') confirmAddLayer() }} type="text" placeholder="E.G. MIDDLEWARE_LAYER" />
                     </div>
                     <div>
                       <div className="lbl mb-1">Layer Root Path</div>
                       <div className="flex gap-2">
-                        <input className="inp mono flex-1" value={newLayerPath} onChange={(e) => setNewLayerPath(e.target.value)} type="text" placeholder="Select a folder under the project root…" />
+                        <input className="inp mono flex-1" value={newLayerPath} aria-label="Layer root path" onChange={(e) => setNewLayerPath(e.target.value)} type="text" placeholder="Select a folder under the project root…" />
                         <button type="button" onClick={() => openFolderPicker({ kind: 'new-layer-path' })} className="flex items-center gap-1.5 px-3 border border-outline-variant rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant flex-shrink-0 whitespace-nowrap font-mono text-caption font-bold tracking-[.04em]">
                           <Icon name="folder_open" size={16} /> Select Folder
                         </button>
@@ -1255,13 +1261,13 @@ function WizardView({
                     </div>
                     <div>
                       <div className="lbl mb-1">Core</div>
-                      <select className="inp mono" value={newLayerCore} onChange={(e) => setNewLayerCore(e.target.value)}>
+                      <select className="inp mono" value={newLayerCore} aria-label="Core" onChange={(e) => setNewLayerCore(e.target.value)}>
                         <option value="">No core</option>
                         {cores.map((c) => <option key={c.id} value={c.id}>{c.name.trim() || 'Unnamed core'}</option>)}
                       </select>
                     </div>
                     <div className="flex gap-2 pt-1">
-                      <button onClick={confirmAddLayer} className="px-4 py-2 bg-secondary text-on-secondary rounded-lg hover:bg-secondary-container transition-colors font-mono text-xs font-medium">Add Layer</button>
+                      <button onClick={confirmAddLayer} className="px-4 py-2 bg-action text-on-secondary rounded-lg hover:bg-secondary-container transition-colors font-mono text-xs font-medium">Add Layer</button>
                       <button onClick={() => { setAddLayerOpen(false); setNewLayerName(''); setNewLayerPath('') }} className="px-4 py-2 border border-outline-variant text-on-surface-variant rounded-lg hover:bg-surface-container transition-colors font-mono text-xs font-medium">Cancel</button>
                     </div>
                   </div>
@@ -1314,7 +1320,7 @@ function WizardView({
                           <p className="text-on-surface-variant truncate font-mono text-label">{m.email}</p>
                         </div>
                         <div className="w-[120px] flex-shrink-0">
-                          <select value={m.role} onChange={(e) => setMembers((prev) => prev.map((x) => x.email === m.email ? { ...x, role: e.target.value as Role } : x))} className="font-mono text-label font-semibold tracking-[.04em] px-1.5 py-[3px] border border-outline-variant rounded-lg bg-surface-container-lowest text-on-surface outline-none w-full">
+                          <select value={m.role} aria-label={`Role of ${m.name || m.email}`} onChange={(e) => setMembers((prev) => prev.map((x) => x.email === m.email ? { ...x, role: e.target.value as Role } : x))} className="font-mono text-label font-semibold tracking-[.04em] px-1.5 py-[3px] border border-field rounded-lg bg-surface-container-lowest text-on-surface w-full">
                             <option value="Developer">Developer</option>
                             <option value="Admin">Admin</option>
                           </select>
@@ -1341,9 +1347,9 @@ function WizardView({
                           <div className="flex gap-2">
                             <div className="relative flex-1">
                               <Icon name="search" size={16} className="absolute left-[9px] top-1/2 -translate-y-1/2 text-outline pointer-events-none" />
-                              <input className="inp with-icon" value={search} onChange={(e) => setSearch(e.target.value)} onFocus={() => setSearchOpen(true)} onBlur={() => window.setTimeout(() => setSearchOpen(false), 150)} type="text" autoComplete="off" placeholder="Search by name or email…" />
+                              <input className="inp with-icon" value={search} aria-label="Search by name or email" onChange={(e) => setSearch(e.target.value)} onFocus={() => setSearchOpen(true)} onBlur={() => window.setTimeout(() => setSearchOpen(false), 150)} type="text" autoComplete="off" placeholder="Search by name or email…" />
                             </div>
-                            <select className="w-[120px] flex-shrink-0 px-2 border border-outline-variant rounded-lg bg-surface-container-lowest text-on-surface outline-none font-mono text-label font-semibold tracking-[.04em]" value={inviteRole} onChange={(e) => setInviteRole(e.target.value as Role)}>
+                            <select aria-label="Role" className="w-[120px] flex-shrink-0 px-2 border border-field rounded-lg bg-surface-container-lowest text-on-surface font-mono text-label font-semibold tracking-[.04em]" value={inviteRole} onChange={(e) => setInviteRole(e.target.value as Role)}>
                               <option value="Developer">Developer</option>
                               <option value="Admin">Admin</option>
                             </select>
@@ -1542,7 +1548,7 @@ function WizardView({
                   <div>
                     {[{ name: me.name, email: me.email, role: 'Admin' as Role, you: true }, ...members.map((m) => ({ ...m, you: false }))].map((m) => (
                       <div key={m.email} className="flex items-center gap-2.5 px-4 py-2.5 border-b border-surface-container-low">
-                        <div className={cn('w-[30px] h-[30px] rounded-full flex items-center justify-center flex-shrink-0', m.role === 'Admin' ? 'bg-primary-container' : 'bg-secondary')}>
+                        <div className={cn('w-[30px] h-[30px] rounded-full flex items-center justify-center flex-shrink-0', m.role === 'Admin' ? 'bg-primary-container' : 'bg-action')}>
                           <span className="font-mono text-micro font-bold text-white tracking-[.04em]">{memberInitials(m)}</span>
                         </div>
                         <div className="flex-1 min-w-0">
@@ -1580,14 +1586,14 @@ function WizardView({
               <Icon name="arrow_back" size={16} />
               Back
             </button>
-            <button onClick={cont} disabled={submitting} className={cn('flex items-center gap-2 px-6 py-2.5 rounded-lg font-mono text-xs font-medium tracking-[0.02em] text-white transition-all active:scale-[.98] disabled:opacity-60', isLast ? 'bg-on-tertiary-container' : 'bg-secondary')}>
+            <button onClick={cont} disabled={submitting} className={cn('flex items-center gap-2 px-6 py-2.5 rounded-lg font-mono text-xs font-medium tracking-[0.02em] transition-all active:scale-[.98] disabled:opacity-60', isLast ? 'bg-on-tertiary-container text-on-status' : 'bg-action text-white')}>
               {isLast
                 ? <><Icon name="rocket_launch" size={16} fill />{submitting ? 'Initializing…' : 'Initialize Project'}</>
                 : <>{cur === 4 && members.length === 0 ? 'Skip for now' : 'Continue'}<Icon name="arrow_forward" size={16} /></>}
             </button>
           </div>
         </div>
-      </div>
+      </main>
 
       {/* Add-Component right panel */}
       {compPanel && (
@@ -1606,7 +1612,7 @@ function WizardView({
 
             <div className="px-4 py-3 border-b border-outline-variant flex-shrink-0">
               <div className="lbl mb-1.5">Component Name <span className="req">*</span></div>
-              <input autoFocus className="inp" value={compName} onChange={(e) => setCompName(e.target.value)} type="text" placeholder="e.g. TorqueManager" />
+              <input autoFocus className="inp" value={compName} aria-label="Component name" onChange={(e) => setCompName(e.target.value)} type="text" placeholder="e.g. TorqueManager" />
             </div>
 
             <div className="flex-1 overflow-y-auto px-3 py-3">
@@ -1619,7 +1625,7 @@ function WizardView({
             <div className="px-4 py-3 border-t border-outline-variant flex items-center gap-3 flex-shrink-0">
               <span className="flex-1 text-on-surface-variant font-mono text-caption">{selectedFiles.size} file{selectedFiles.size !== 1 ? 's' : ''} selected</span>
               <button onClick={closeCompPanel} className="px-3 py-2 border border-outline-variant text-on-surface-variant rounded-lg hover:bg-surface-container transition-colors font-mono text-xs font-medium">Cancel</button>
-              <button onClick={confirmAddComponent} className="px-4 py-2 bg-secondary text-on-secondary rounded-lg hover:bg-secondary-container transition-colors font-mono text-xs font-medium">Add</button>
+              <button onClick={confirmAddComponent} className="px-4 py-2 bg-action text-on-secondary rounded-lg hover:bg-secondary-container transition-colors font-mono text-xs font-medium">Add</button>
             </div>
           </aside>
         </>
@@ -1647,7 +1653,7 @@ function WizardView({
             </div>
             <div className="px-4 py-3 border-t border-outline-variant flex gap-3 flex-shrink-0">
               <button onClick={() => setFpTarget(null)} className="px-4 py-2 border border-outline-variant text-on-surface-variant rounded-lg hover:bg-surface-container transition-colors font-mono text-xs font-medium">Cancel</button>
-              <button onClick={confirmFolderPicker} disabled={!fpSelected} className="flex-1 py-2 bg-secondary text-on-secondary rounded-lg hover:bg-secondary-container transition-colors disabled:opacity-60 font-mono text-xs font-medium">Select Folder</button>
+              <button onClick={confirmFolderPicker} disabled={!fpSelected} className="flex-1 py-2 bg-action text-on-secondary rounded-lg hover:bg-secondary-container transition-colors disabled:opacity-60 font-mono text-xs font-medium">Select Folder</button>
             </div>
           </aside>
         </>
@@ -1667,7 +1673,7 @@ function WizardView({
       const assigned = !!owner
       return (
         <div key={node.path} className={`sidebar-file-row ${assigned ? 'assigned' : ''}`} onClick={() => !assigned && toggleFile(node.path)}>
-          <input type="checkbox" className={cn('file-cb', TREE_CB)} disabled={assigned} checked={selectedFiles.has(node.path)} onChange={() => toggleFile(node.path)} onClick={(e) => e.stopPropagation()} />
+          <input type="checkbox" className={cn('file-cb', TREE_CB)} aria-label={node.name} disabled={assigned} checked={selectedFiles.has(node.path)} onChange={() => toggleFile(node.path)} onClick={(e) => e.stopPropagation()} />
           <Icon name="description" size={13} className="text-on-surface-variant" />
           <span className="flex-1 font-mono text-caption text-on-surface">{node.name}</span>
           {assigned && <span className="file-owner-tag">{owner}</span>}
@@ -1684,10 +1690,10 @@ function WizardView({
     return (
       <div key={node.path} className="sidebar-folder-block">
         <div className="sidebar-folder-row" onClick={() => toggleFolder(node)}>
-          <button onClick={(e) => { e.stopPropagation(); setTreeOpen((p) => ({ ...p, [node.path]: !p[node.path] })) }} className="tree-toggle">
+          <button onClick={(e) => { e.stopPropagation(); setTreeOpen((p) => ({ ...p, [node.path]: !p[node.path] })) }} aria-label={`${open ? 'Collapse' : 'Expand'} ${node.name}`} aria-expanded={open} className="tree-toggle">
             <Icon name={open ? 'keyboard_arrow_down' : 'keyboard_arrow_right'} size={14} />
           </button>
-          <input type="checkbox" className={cn('folder-cb', TREE_CB)} checked={checked} ref={(el) => { if (el) el.indeterminate = indeterminate }} onChange={() => toggleFolder(node)} onClick={(e) => e.stopPropagation()} />
+          <input type="checkbox" className={cn('folder-cb', TREE_CB)} aria-label={node.name} checked={checked} ref={(el) => { if (el) el.indeterminate = indeterminate }} onChange={() => toggleFolder(node)} onClick={(e) => e.stopPropagation()} />
           <Icon name={isRoot ? 'account_tree' : open ? 'folder_open' : 'folder'} size={15} className="text-secondary" />
           <span className={cn('flex-1 font-mono text-caption text-on-surface', isRoot ? 'font-semibold' : 'font-normal')}>{node.name}</span>
         </div>
@@ -1711,11 +1717,13 @@ function WizardView({
     return (
       <div key={node.path}>
         <div className={`fp-folder-row ${selected ? 'selected' : ''}`} onClick={() => { setFpSelected(node.path); if (hasChildren && !open) setFpOpen((p) => ({ ...p, [node.path]: true })) }}>
-          <button className={cn('tree-toggle', !hasChildren && 'invisible')} onClick={(e) => { e.stopPropagation(); setFpOpen((p) => ({ ...p, [node.path]: !p[node.path] })) }}>
+          <button aria-label={`${open ? 'Collapse' : 'Expand'} ${node.name}`} aria-expanded={open} className={cn('tree-toggle', !hasChildren && 'invisible')} onClick={(e) => { e.stopPropagation(); setFpOpen((p) => ({ ...p, [node.path]: !p[node.path] })) }}>
             <Icon name={open ? 'keyboard_arrow_down' : 'keyboard_arrow_right'} size={14} />
           </button>
           <Icon name={node.path === '.' ? 'account_tree' : open ? 'folder_open' : 'folder'} size={15} className="text-secondary" />
-          <span className={cn('flex-1 font-mono text-caption text-on-surface', node.path === '.' ? 'font-semibold' : 'font-normal')}>{node.name}/</span>
+          <button type="button" aria-pressed={selected}
+            onClick={(e) => { e.stopPropagation(); setFpSelected(node.path); if (hasChildren && !open) setFpOpen((p) => ({ ...p, [node.path]: true })) }}
+            className={cn('flex-1 text-left font-mono text-caption text-on-surface', node.path === '.' ? 'font-semibold' : 'font-normal')}>{node.name}/</button>
         </div>
         {hasChildren && open && <div className="fp-children">{children.map((c) => renderFpNode(c))}</div>}
       </div>
