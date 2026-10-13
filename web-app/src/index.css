@@ -303,6 +303,10 @@ body {
 .inp.mono { font-family: "JetBrains Mono", monospace; font-size: 12px; }
 .inp.with-icon { padding-left: 32px; }   /* room for a leading icon (pl-8 loses to .inp) */
 .inp.with-chevron { padding-right: 34px; }   /* room for a trailing chevron (a combobox's) */
+/* A secret that is not a sign-in password (a repository's access token): a TEXT field shown as dots.
+   Not type="password": a browser takes a text box followed by a password box for a sign-in form,
+   saves the pair as a login, offers the saved ones, and fills the first again when the page changes. */
+.inp.secret { -webkit-text-security: disc; }
 .inp.err { border-color: var(--color-error) !important; box-shadow: 0 0 0 3px rgba(186,26,26,.10) !important; }
 textarea.inp { resize: none; }
 select.inp { appearance: auto; }

@@ -106,6 +106,14 @@ values that can't be a class — data-driven colour, a computed width %, donut m
 
 If a value is static, it has a token/utility — use it.
 
+### A secret that is not a sign-in password
+
+An access token is `type="text"` with `.inp.secret` (shown as dots; Show / Hide toggles the class),
+`autoComplete="off"` and `spellCheck={false}` — **never `type="password"`**. A browser takes a text box
+followed by a password box for a sign-in form: it saved "repository URL + token" as a login, offered
+the saved ones, and filled its first one back in when the page changed (the wizard, 2026-10-13c). Only
+the sign-in page has password fields.
+
 ## 3. Data & state
 
 **Server state → React Query. Client state → Zustand. Never mix them.**

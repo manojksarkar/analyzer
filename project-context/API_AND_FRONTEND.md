@@ -524,6 +524,9 @@ A project's `repo_url` is a remote URL or a local folder on the server; the wiza
   `repo_url` is the URL used; the wizard puts it in the box), browse, the config preview and create.
 - **Messages** — `repo_git._friendly(msg, token_sent=)`: "Authentication failed — this repository needs an
   access token." / "… — check the access token."; the wizard moves the cursor to the token field.
+- **The token field is a text field shown as dots** (`.inp.secret`), never `type="password"`, and both
+  boxes have autofill off (2026-10-13c): a password box under the URL box made the browser save
+  "URL + token" as a login and fill its first saved one back in after Test Connection.
 - **`projects.repo_provider`** is set by the server from the URL on create ("bitbucket", "local", else as
   before) — display only; nothing reads it to decide how to sign in. The token stays in
   `build_config.repo_access_token`, in plain text (study 03 wants it encrypted).
