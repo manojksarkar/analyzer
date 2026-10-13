@@ -231,7 +231,8 @@ Generates one `.mmd` per (current function, external caller) pair via
 > `.generate()` inside `tokens.stage("behaviour.call_description")` so calls appear in the LLM report, and
 > passes `_get_domain_context(config)` as the system prompt for Task 3.14 anchoring. `except ImportError`
 > widened to `except Exception` — `llm_provider_reachable` **raises** `LlmConfigError` on a config missing
-> `llm.defaultModel`, which would otherwise kill the whole view.
+> `llmServer.defaultModel`, which would otherwise kill the whole view. (No `llmServer` at all is not
+> an error there: it answers False, as for a server that cannot be reached.)
 > **(5) A behaviour description is *call*-specific and is NOT the callee's function description.** Both the
 > old code and an interim fix here used `functions_data[calleeFn]["description"]` as a fallback; that is
 > wrong — it answers "what is this function" where the table asks "why does this caller call it", and the
@@ -496,8 +497,8 @@ last minute of labels was lost at exit.
 At import time, `flowchart_engine.py` checks `os.environ["LIBCLANG_PATH"]`.
 If set (and the path is a file), it calls
 `clang.cindex.Config.set_library_file(path)` before any libclang call.
-`run.py` sets this env var from `clang.llvmLibPath` in config so the value
-propagates automatically into the flowchart engine subprocess.
+Without it, the engine reads `llvm.libPath` from its own config load (config.local.json's,
+whatever config is injected), as `parser.py` does.
 
 ### LLM client construction + banner + enrichment config (version3)
 

@@ -49,17 +49,26 @@ def _load_defaults() -> dict:
 def _resolve_config(user_path):
     """Build the per-project config the way the API does (pipeline_runner._write_project_config):
     the defaults as the BASE, the project's own file layered on top, then config.local.json's
-    machine-specific settings.
+    overrides of the defaults. THIS SERVER's settings (the LLM server, LLVM, the database) are
+    not written into it, from either file: a run reads them from config.local.json when it
+    loads the config, so a key changed there reaches the next run of a project onboarded long ago.
 
     Copying --config verbatim was the bug. A project config carrying only `layers` — the only
     part that is genuinely per-project — produced a workspace config with no `clang`, no `views`
     and no `llm` at all, so the run stopped at load_llm_config or parsed with no include paths.
     The UI never hit it because the API has merged onto the defaults all along.
     """
-    from core.config import _deep_merge
-    cfg = _load_defaults()
+    from core.config import SERVER_BLOCKS, _deep_merge, moved_settings, without_server_settings
+    cfg = without_server_settings(_load_defaults())
     if user_path:
         user = _load_jsonc(user_path)
+        named = [b for b in SERVER_BLOCKS if b in user] + [m.split(" -> ")[0] for m in moved_settings(user)]
+        if named:
+            print(f"note     : {os.path.basename(user_path)} names server settings ({', '.join(named)}).")
+            print("           They are not used: the LLM server, LLVM and the database are this "
+                  "machine's,")
+            print("           set in engine/config/config.local.json.")
+        without_server_settings(user)
         # `project` (name, repository, branch) names ONE project: the user's file's, or none -
         # never the defaults', which name the sample and would reach the wizard on an import.
         cfg.pop("project", None)
@@ -73,10 +82,11 @@ def _resolve_config(user_path):
     if os.path.isfile(local):
         try:
             over = _load_jsonc(local)
-            # The engine reaches Postgres through its own config, and a workspace file is no
-            # place for the password. `layers` and `project` are the project's identity, not a
-            # machine setting, so a local override must not silently replace what --config set.
-            over.pop("db", None)
+            # This machine's own blocks stay in that file (see the docstring): a workspace file
+            # is no place for a password or a key. `layers` and `project` are the project's
+            # identity, not a machine setting, so a local override must not silently replace what
+            # --config set.
+            without_server_settings(over)
             over.pop("layers", None)
             over.pop("project", None)
             _deep_merge(cfg, over)
@@ -250,7 +260,11 @@ def main(argv=None) -> int:
                 on_disk = json.load(fh)
         except Exception:
             on_disk = None
-        if src and on_disk != cfg:
+        # A file written before the server's settings left it (2026-10-13) still holds them;
+        # they are not read from it, so they are no difference.
+        from core.config import without_server_settings
+        same = on_disk is not None and without_server_settings(json.loads(json.dumps(on_disk))) == cfg
+        if src and not same:
             print(f"\nconfig   : {cfg_path}")
             print(f"           ALREADY EXISTS and differs from --config, so it was NOT replaced.")
             print(f"           Nothing here uses {os.path.basename(src)} — stopping rather than "

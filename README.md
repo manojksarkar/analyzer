@@ -19,9 +19,9 @@ Then either the web app — `start-app` (Windows) or `python tools/start_app.py`
 servers and stale code, then starts the API and [web-app/](web-app/) — or the command line,
 [docs/CLI_COMMANDS.md](docs/CLI_COMMANDS.md).
 
-Config: [engine/config/config.defaults.json](engine/config/config.defaults.json), overridden by
-`engine/config/config.local.json` (machine settings and secrets; template
-[config.local.json.example](engine/config/config.local.json.example)).
+Config, one file per kind of setting: [engine/config/config.defaults.json](engine/config/config.defaults.json)
+is how documents are made; `engine/config/config.local.json` is this server — its database, LLM
+server and LLVM install (template [config.local.json.example](engine/config/config.local.json.example)).
 
 ## Web UI
 

@@ -134,37 +134,112 @@ apply the same-layer model filter (see §4d).
 JSONC: `//`, `/* */`, and trailing commas are tolerated by
 `core.config._strip_json_comments` + `_strip_trailing_commas`.
 
-### Where each setting lives (three sources, three roles)
+### Where each setting lives (one file per kind of setting — 2026-10-13d)
 
-Config is split by **role**, not scattered — each source has one job:
+| Source | Holds | Tracked |
+|---|---|---|
+| `engine/config/config.local.json` | **THIS SERVER.** `db`, `auth`, `repositories`, `llmServer` (which LLM answers: `provider`, `baseUrl`, `defaultModel`, `customHeaders`, `apiKey`, `rateLimitSeconds`, `timeoutSeconds`, `retries`, `numCtx`, `maxContextTokens`), `llvm` (`libPath`, `includePath`) | **gitignored** |
+| `engine/config/config.defaults.json` | **HOW DOCUMENTS ARE MADE.** `clang` (`clangArgs`, `includePathsFromProjectWalk`), `views`, `llm` (`descriptions`, `behaviourNames`, `summarize`, `enrichment`, `cacheVersion`, the prompt inputs), `docx`, the sample's `cores` / `layers`, `logs`, `ui` | yes |
+| a project — `projects.build_config`, or a CLI project's `workspaces/<pid>/config.json` | its own `clang`, `llm`, `views`, `docx`, `layers`, `cores`: they win over the defaults, and over what config.local.json says of the same | DB / workspace |
+| a version — `versions.resolved_config`, `versions/<vid>/config.json` | the config its run started with, so a resume runs as it began | DB / workspace |
 
-| Source | Role | Holds | Tracked | Scope |
-|---|---|---|---|---|
-| `engine/config/config.defaults.json` | built-in **defaults** | the schema below (views/clang/llm-non-secret/layers/docx) | yes | shared |
-| `engine/config/config.local.json` | **secrets / infra** | `db` connection + `llm` credentials (baseUrl, customHeaders/token) | **gitignored** | per machine |
-| `versions.resolved_config` (Postgres) | **per-version** analysis config | defaults + project `build_config` + `layers` (+ `no_llm`) — **non-secret** | in DB | per version |
+**No block name is in both files, and no server setting is in a project's or a version's
+config.** The names are written once, in `core/config.py`: `SERVER_BLOCKS` (the five),
+`RUN_SERVER_BLOCKS` (`llmServer`, `llvm` — the two a run reads through its config),
+`LLM_SERVER_KEYS`, `LLVM_KEYS_BEFORE`. Guard: `tests/unit/test_core_config.py`
+`TestWhichFileASettingIsIn` (the shipped defaults hold no server key; the local example holds
+the five blocks and nothing else).
+
+Why (office, 2026-10-13: "there are config files in the workspace, the project, the version —
+which one do I update?"): until then `llm` held both kinds, the defaults carried a server
+(a local Ollama) and LLVM paths, and every written config froze a copy — a CLI project's at
+onboarding, a version's on its first day. A key changed in config.local.json reached neither.
 
 Resolution:
 - **`load_config(engine_dir)`** deep-merges `config.defaults.json` then `config.local.json`
-  (`core.config._deep_merge` — nested dicts merge per key, scalars/lists replace; so
-  `config.local.json` can override just `llm.baseUrl` or one `llm.customHeaders` entry without
-  restating the block). Used by standalone `python engine/run.py` and by the CLI/db tools.
-- **`ANALYZER_CONFIG=<file>`** (set by `run.py --config`) loads that one file *instead* — no merge.
-  This is how a per-project/per-version config is injected into the analyzer and every phase
-  subprocess (they inherit the env var).
-- **API-driven jobs**: `pipeline_runner._write_project_config` builds the per-version **non-secret**
-  analysis config (`config.defaults.json` + `build_config` + `layers`), stores it in
-  `versions.resolved_config` (via `_store_resolved_config`, on the version row reserved at job
-  start), and **materializes** the workspace `config.json` the engine runs with = that config with
-  `config.local.json`'s secrets overlaid (llm creds), **`db` section stripped** (the engine reaches
-  Postgres via `DATABASE_URL`, so the password is never written to a workspace file). The engine
-  reads the workspace file via `ANALYZER_CONFIG`. `_make_version` carries `resolved_config` through
-  finalize (the repo's `_put` replaces the whole row).
+  (`core.config._deep_merge` — nested dicts merge per key, scalars/lists replace; a machine may
+  still override a default there, e.g. `views.flowcharts`), then **`with_server_settings`**:
+  `llmServer` and `llvm` are config.local.json's as they are now, and whatever else held those
+  names is dropped (so a block put in the defaults is not read).
+- **`ANALYZER_CONFIG=<file>`** (set by `run.py --config`) loads that file's analysis settings as
+  they are — no merge of config.local.json over them — and then the same `with_server_settings`.
+  This is how a per-project/per-version config reaches the analyzer and every phase subprocess
+  (they inherit the env var), and why a change in config.local.json reaches the next run of
+  every project. A config.local.json that cannot be parsed raises `ConfigFileError` here: a phase
+  stops rather than run without the LLM server (the plain load stays tolerant — the API serves).
+- **Which local file** — `local_config_path`: `$ANALYZER_DATA_ROOT/engine/config/config.local.json`
+  when it exists (a `--detach` run's code is a frozen copy, and the copy's file is the one of
+  the day the run started), else the engine's own.
+- **Written configs hold no server setting** — `without_server_settings` drops every
+  `SERVER_BLOCKS` block and the old names (`llm.<server key>`, `clang.llvmLibPath`,
+  `clang.clangIncludePath`) in `pipeline_runner._write_project_config`,
+  `tools/new_project._resolve_config` and `VersionStore.write_config`. So no credential is in a
+  workspace file, and `analyzer._with_current_secrets` / `config.runtime.json` are gone: a
+  resumed version's own file is used as it is.
+- **Readers of a config file that do not go through `load_config`** call `with_server_settings`
+  themselves: `incremental.generate.resolve_run_config`, `review.rewrite.read_config`.
+- **API-driven jobs**: `pipeline_runner._write_project_config` builds the per-version analysis
+  config (`config.defaults.json` + the project's `clang` / `llm` / `views` / `docx` + `layers`),
+  stores it in `versions.resolved_config` (via `_store_resolved_config`, on the version row
+  reserved at job start), and **materializes** the workspace `config.json` the engine runs
+  with = that config with config.local.json's overrides of the defaults laid under the project's
+  own settings (`_project_settings_win`). The engine reads the workspace file via
+  `ANALYZER_CONFIG`. `_make_version` carries `resolved_config` through finalize (the repo's
+  `_put` replaces the whole row).
+- **No `llmServer`**: `load_llm_config` raises `LlmConfigError` (`NO_LLM_SERVER`, naming the file
+  and the block). `run.py` stops at its start, exit 2, when the run asks the LLM for text
+  (`llm_text_wanted` — descriptions, names or summaries on — and Phase 2 or 3 is in the run);
+  else it logs "LLM: not used by this run". Reached without `run.py` (a view or an update run on
+  its own), `llm_provider_reachable` answers False and `_get_client` None, with one warning, and
+  the flowcharts view passes `--no-llm` to its engine: the text is left as without the LLM, as
+  when the server cannot be reached. The environment alone can name a server
+  (`LLM_PROVIDER` + `LLM_BASE_URL` + `LLM_DEFAULT_MODEL`).
+- **No `llvm`**: no library path is set and no builtin-header `-I` is passed; libclang is found
+  by `clang.cindex` itself (pip `libclang` brings one; the `clang` bindings alone do not, and
+  then the parse fails with `LibclangError`). `tools/doctor.py` loads it in a process of its own
+  to say which, so `run.py`'s preflight stops such a run with the block to add.
+  `-I<llvm.includePath>` is part of the parse fingerprint: the same path as before gives the
+  same fingerprint.
+- **Old names** (`llm.baseUrl` …, `clang.llvmLibPath`, `clang.clangIncludePath`) are read
+  nowhere. In config.local.json a run names them at its start (`local_config_notes`), each with
+  its place now (`moved_settings`), and so does the "no LLM server" error; in a workspace or
+  version config written before, they are ignored.
 
-**Secrets never enter `config.defaults.json` (tracked) or `versions.resolved_config` (per-version).**
-Copy `config.local.json.example` → `config.local.json` and fill in `db` + `llm` credentials.
+Copy `config.local.json.example` → `config.local.json` and fill in `db`, `llmServer`, `llvm`.
+`python analyzer.py doctor` says what this machine has set.
 
-### Current schema (`config.defaults.json` — non-secret defaults)
+### Current schema
+
+`config.local.json` — this server (the annotated form: `config.local.json.example`):
+
+```jsonc
+{
+  "db":   { "driver": "postgresql+psycopg", "host": "...", "port": 5432, "user": "...", "password": "...", "database": "..." },
+  "auth": { "accessTokenMinutes": 480 },
+  "repositories": { "localRoots": ["D:/src"] },
+  "llmServer": {
+    // ── required by every run that writes LLM text — load_llm_config raises LlmConfigError ──
+    "provider":          "openai",        // "ollama" | "openai"  (strictly validated)
+    "baseUrl":           "https://your-llm-gateway/v1",
+    "defaultModel":      "your-model-name",
+    // ── may be left out ──
+    "customHeaders":     { "x-dep-ticket": "credential:TOKEN", "User-Type": "AD_ID", "User-Id": "...", "Send-System-Name": "rvc-api-module" },
+    "apiKey":            "",              // openai bearer; prefer env LLM_API_KEY
+    "rateLimitSeconds":  3.0,             // default 3.0: pause after every OpenAI call (>=0; 0 = off; ollama ignores)
+    "timeoutSeconds":    300,             // default 300, positive int
+    "retries":           1,               // default 1, >=0; up to (1+retries) total tries
+    "numCtx":            8192,            // default 8192, Ollama context window (positive int)
+    "maxContextTokens":  127488           // default null → auto: numCtx-512 for Ollama, 127488 for OpenAI
+  },
+  "llvm": {
+    "libPath":     "C:\\Program Files\\LLVM\\bin\\libclang.dll",
+    "includePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include"
+  }
+}
+```
+
+`config.defaults.json` — how documents are made (the annotated form, kept identical by a test:
+`config.defaults.json.example`):
 
 ```jsonc
 {
@@ -176,30 +251,19 @@ Copy `config.local.json.example` → `config.local.json` and fill in `db` + `llm
     "componentStaticDiagram": true   // was "moduleStaticDiagram" in older versions
   },
   "clang": {
-    "llvmLibPath":       "C:\\Program Files\\LLVM\\bin\\libclang.dll",
-    "clangIncludePath":  "C:\\Program Files\\LLVM\\lib\\clang\\17\\include"
+    "clangArgs":                   ["--target=arm-none-eabi"],
+    "includePathsFromProjectWalk": false
   },
   "llm": {
-    // ── required fields — load_llm_config raises LlmConfigError if missing ──
-    "provider":          "ollama",        // "ollama" | "openai"  (strictly validated)
-    "baseUrl":           "http://localhost:11434",
-    "defaultModel":      "llama3.2",
-    "timeoutSeconds":    300,             // positive int
-    "numCtx":            8192,            // Ollama context window (positive int)
-    "retries":           1,               // >=0; up to (1+retries) total tries
-
-    // ── optional fields ──
-    "descriptions":      false,           // enable LLM function descriptions (Phase 2)
-    "behaviourNames":    false,           // enable LLM input/output names (inputName / outputName)
+    // what the LLM writes, and how it is prompted — all optional. WHICH LLM answers is
+    // `llmServer` in config.local.json.
+    "descriptions":      true,            // LLM function descriptions (Phase 2)
+    "behaviourNames":    true,            // LLM input/output names (inputName / outputName)
     "summarize":         false,           // false = suppress Phase 2 hierarchy summarization
-    // SECRETS below → put in config.local.json (gitignored), NOT here. baseUrl also if private.
-    "apiKey":            "",              // openai bearer; prefer env LLM_API_KEY
-    "rateLimitSeconds":  3.0,             // pause after every OpenAI call (>=0; 0 = off; ollama ignores)
-    "customHeaders":     { "x-dep-ticket": "credential:", "User-Type": "AD_ID", ... },
-
-    // version3 — token budgeting
-    "maxContextTokens":  127488,          // null → auto: numCtx-512 for Ollama, 127488 for OpenAI
-    "cacheVersion":      1,               // bump to invalidate llm entity cache
+    "abbreviationsPath": "engine/config/abbreviations.txt",
+    "domainContextPath": "engine/config/domain.txt",
+    "descriptionBlocklist": ["audio", "video"],
+    "cacheVersion":      2,               // bump to invalidate llm entity cache
     "fewShotExamplesDir": "few_shot_examples",
 
     // version3 — enrichment feature flags (every flag must be a bool)
@@ -247,20 +311,22 @@ Copy `config.local.json.example` → `config.local.json` and fill in `db` + `llm
 }
 ```
 
-### Environment-variable overrides for `llm`
+### Environment-variable overrides for `llmServer`
 
-`load_llm_config()` (in [engine/core/config.py](../engine/core/config.py)) honors:
+`load_llm_config()` (in [engine/core/config.py](../engine/core/config.py)) resolves `llmServer`
+and `llm` into one flat dict (the shape every caller had before the two were told apart) and
+honors:
 
 | Env var | Wins over |
 |---|---|
-| `LLM_PROVIDER` | `llm.provider` |
-| `LLM_BASE_URL` | `llm.baseUrl` |
-| `LLM_DEFAULT_MODEL` | `llm.defaultModel` |
-| `LLM_TIMEOUT_SECONDS` | `llm.timeoutSeconds` |
-| `LLM_NUM_CTX` | `llm.numCtx` |
-| `LLM_RETRIES` | `llm.retries` |
-| `LLM_API_KEY` | `llm.apiKey` |
-| `LLM_RATE_LIMIT_SECONDS` | `llm.rateLimitSeconds` |
+| `LLM_PROVIDER` | `llmServer.provider` |
+| `LLM_BASE_URL` | `llmServer.baseUrl` |
+| `LLM_DEFAULT_MODEL` | `llmServer.defaultModel` |
+| `LLM_TIMEOUT_SECONDS` | `llmServer.timeoutSeconds` |
+| `LLM_NUM_CTX` | `llmServer.numCtx` |
+| `LLM_RETRIES` | `llmServer.retries` |
+| `LLM_API_KEY` | `llmServer.apiKey` |
+| `LLM_RATE_LIMIT_SECONDS` | `llmServer.rateLimitSeconds` |
 
 Custom-header values can be overridden via `X_DEP_TICKET`, `USER_TYPE`,
 `USER_ID`, `SEND_SYSTEM_NAME` (handled inside `llm_core.headers`).
@@ -283,13 +349,14 @@ Custom-header values can be overridden via `X_DEP_TICKET`, `USER_TYPE`,
   are relative to the layer's path and are prepended by `get_flat_groups()`.
 - Old `modulesGroups` / `layer` top-level keys still load via `get_flat_groups()`
   for backwards compatibility. New code always uses `layers`.
-- LLM is off by default for descriptions/behaviour names. Phase 2 hierarchy
-  summarization (which writes `summaries.json` + `knowledge_base.json`) is
-  on by default and is controlled by `--no-llm-summarize`.
-- **Strict validation** (version3): missing/empty/wrong-type required fields
-  cause `run.py` (and `flowchart_engine.py`) to print `Invalid LLM config:
-  <specific field>` and exit(2). There are no silent defaults for the required
-  fields. Fix the JSON (or the matching env var) and re-run.
+- Descriptions and behaviour names are ON in the shipped defaults (`--no-llm` turns both off
+  for one run); Phase 2 hierarchy summarization (`summaries.json` + `knowledge_base.json`)
+  is off there (`llm.summarize: false`) and `--no-llm-summarize` turns it off for a run.
+- **Strict validation** (version3): a missing, empty or wrong-type required field of
+  `llmServer` (`provider`, `baseUrl`, `defaultModel`) makes `run.py` (and
+  `flowchart_engine.py`) print `Invalid LLM config: <specific field>` and exit(2), and so does
+  no `llmServer` at all on a run that asks the LLM for text. There is no built-in server to
+  fall back to. Fix config.local.json (or the matching env var) and re-run.
 - **Startup banner** (version3): every run prints the resolved LLM
   configuration — provider, baseUrl, model, numCtx, `maxContextTokens`
   (resolved, e.g. `auto -> 7680`), timeout, retries, apiKey status,

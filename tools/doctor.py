@@ -15,7 +15,8 @@ What it verifies:
   - Node.js runtime
   - npm packages used by rendering: @viz-js/viz + puppeteer (flowcharts), @mermaid-js/mermaid-cli (mmdc)
   - Chromium that puppeteer will launch to rasterize SVG->PNG
-  - libclang DLL (CFG parsing): LIBCLANG_PATH -> engine/config/config.defaults.json -> pip-bundled fallback
+  - libclang DLL (CFG parsing): LIBCLANG_PATH -> llvm.libPath in engine/config/config.local.json -> pip-bundled fallback
+  - the LLM server this machine names (llmServer in config.local.json); none is a warning, not a failure
 """
 from __future__ import annotations
 
@@ -249,7 +250,27 @@ def check_chromium():
 
 
 # ---------------------------------------------------------------------------
-# libclang (env -> config.defaults.json -> pip-bundled) — mirrors _configure_libclang
+# This machine's own settings: engine/config/config.local.json (llvm, llmServer)
+# ---------------------------------------------------------------------------
+
+_LOCAL = "engine/config/config.local.json"
+
+
+def _server_settings():
+    """The `llvm` and `llmServer` blocks of this machine's config.local.json, read the way a
+    run reads them (`core.config.server_settings`). {} when the file or the reader is missing."""
+    try:
+        engine = os.path.join(ROOT, "engine")
+        if engine not in sys.path:
+            sys.path.insert(0, engine)
+        from core.config import server_settings
+        return server_settings(engine)
+    except Exception:                                   # noqa: BLE001 - a check never raises
+        return {}
+
+
+# ---------------------------------------------------------------------------
+# libclang (env -> llvm.libPath -> pip-bundled) — mirrors _configure_libclang
 # ---------------------------------------------------------------------------
 
 def check_libclang():
@@ -257,30 +278,50 @@ def check_libclang():
     if env and os.path.isfile(env):
         return Check("libclang", OK, f"{env} (env: LIBCLANG_PATH)")
 
-    cfg_path = os.path.join(ROOT, "engine", "config", "config.defaults.json")
-    cfg_lib = ""
-    if os.path.isfile(cfg_path):
-        try:
-            with open(cfg_path, encoding="utf-8") as f:
-                cfg = json.load(f)
-            cfg_lib = (cfg.get("clang") or {}).get("llvmLibPath") or cfg.get("llvmLibPath") or ""
-        except (OSError, ValueError):
-            cfg_lib = ""
+    cfg_lib = str((_server_settings().get("llvm") or {}).get("libPath") or "")
     if cfg_lib and os.path.isfile(cfg_lib):
-        return Check("libclang", OK, f"{cfg_lib} (config: engine/config/config.defaults.json)")
+        return Check("libclang", OK, f"{cfg_lib} (config: {_LOCAL} llvm.libPath)")
 
-    # pip `libclang` bundles a native library that clang.cindex can discover.
-    if importlib.util.find_spec("clang.cindex") is not None:
-        detail = "pip 'libclang' bundled lib (default discovery)"
-        if cfg_lib:
-            detail += f"; NOTE config path missing: {cfg_lib}"
-        return Check("libclang", WARN, detail,
-                     "Set a valid engine/config/config.defaults.json clang.llvmLibPath or "
+    # pip `libclang` bundles a native library that clang.cindex can discover -- when it can:
+    # the `clang` bindings alone bring none, and then nothing loads without a path.
+    missing = f"; NOTE config path missing: {cfg_lib}" if cfg_lib else ""
+    if importlib.util.find_spec("clang.cindex") is not None and _default_libclang_loads():
+        return Check("libclang", WARN, "pip 'libclang' bundled lib (default discovery)" + missing,
+                     f"Set a valid llvm.libPath in {_LOCAL} or "
                      "$LIBCLANG_PATH to pin the DLL explicitly", required=False)
 
     return Check("libclang", FAIL,
-                 "not resolvable via $LIBCLANG_PATH, config.defaults.json, or pip 'libclang'",
-                 "pip install libclang  (or install LLVM and set config.defaults.json clang.llvmLibPath)")
+                 f"not loadable via $LIBCLANG_PATH, llvm.libPath in {_LOCAL}, or pip 'libclang'"
+                 + missing,
+                 f"Install LLVM and set llvm.libPath (and llvm.includePath) in {_LOCAL} -- "
+                 "config.local.json.example shows the block.  Or: pip install libclang")
+
+
+@functools.lru_cache(maxsize=1)
+def _default_libclang_loads():
+    """True when clang.cindex finds a libclang by itself. Asked in a process of its own: a
+    library loaded here could not be replaced by the one a parser names afterwards."""
+    rc, _out, _err = _run([sys.executable, "-c",
+                           "from clang import cindex; cindex.Index.create()"], timeout=60)
+    return rc == 0
+
+
+# ---------------------------------------------------------------------------
+# The LLM server (llmServer). None set is a warning: --no-llm runs need none.
+# ---------------------------------------------------------------------------
+
+def check_llm_server():
+    server = _server_settings().get("llmServer") or {}
+    missing = [k for k in ("provider", "baseUrl", "defaultModel")
+               if not str(server.get(k) or "").strip()]
+    if not missing:
+        return Check("llm server", OK,
+                     f"{server['provider']} {server['defaultModel']} @ {server['baseUrl']} "
+                     f"(config: {_LOCAL} llmServer)", required=False)
+    fix = f"Add an `llmServer` block to {_LOCAL} (config.local.json.example shows it)"
+    if not server:
+        return Check("llm server", WARN, "none set: only --no-llm runs work", fix, required=False)
+    return Check("llm server", WARN, f"llmServer has no {', '.join(missing)}", fix, required=False)
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +340,7 @@ def collect_checks():
     checks.append(check_chromium())
     checks.append(check_mmdc())
     checks.append(check_libclang())
+    checks.append(check_llm_server())
     return checks
 
 

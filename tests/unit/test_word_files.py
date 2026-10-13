@@ -288,7 +288,7 @@ class TestARunStoresOnlyWhatItRebuilt:
     def test_reexport_export_and_resume_say_what_they_rebuilt(self):
         """`_render_version` is what all three run; by component, the capture is told which."""
         src = open(os.path.join(PROJECT_ROOT, "analyzer.py"), encoding="utf-8").read()
-        body = src[src.index("def _render_version("):src.index("def _with_current_secrets(")]
+        body = src[src.index("def _render_version("):src.index("def _llm_off(")]
         assert "components=rebuilt, since=since" in body
         assert body.index("since = ") < body.index('_script(os.path.join(_ROOT, "engine", "run.py")')
 
@@ -498,7 +498,7 @@ class TestASaveUnderWayIsInOrOut:
 
     def test_both_front_doors_take_it(self):
         src = open(os.path.join(PROJECT_ROOT, "analyzer.py"), encoding="utf-8").read()
-        body = src[src.index("def _render_version("):src.index("def _with_current_secrets(")]
+        body = src[src.index("def _render_version("):src.index("def _llm_off(")]
         assert body.index("with writing(") < body.index("since = _run_since(") \
             < body.index('_script(os.path.join(_ROOT, "engine", "run.py")')
         pr = open(os.path.join(PROJECT_ROOT, "api", "services", "pipeline_runner.py"),
@@ -615,7 +615,7 @@ class TestAGroupOrLayerRunStoresItsComponents:
 
     def test_the_cli_passes_them(self):
         src = open(os.path.join(PROJECT_ROOT, "analyzer.py"), encoding="utf-8").read()
-        body = src[src.index("def _render_version("):src.index("def _with_current_secrets(")]
+        body = src[src.index("def _render_version("):src.index("def _llm_off(")]
         assert "rebuilt = _touched_since(a.version_id, since)" in body
 
 

@@ -209,7 +209,8 @@ The thread:
 1. Clones / checks out the commit into `workspaces/<project_id>/<sha16>/` via
    `git_cli.shallow_clone`.
 2. Writes a per-project `config.json` (from `build_config` + `architecture_layers`)
-   and passes it via `--config` to `run.py`.
+   and passes it via `--config` to `run.py`. It holds no server setting: the LLM server and
+   LLVM are read from `engine/config/config.local.json` by each phase (root context, CLI_AND_CONFIG §6).
 3. Runs `run.py` as a subprocess (`shell=False`, `cwd=repo_root`), merging
    `stdout`+`stderr` and tailing the output for SSE events.
 4. Detects phase transitions from log markers (`=== Phase N: ===`), updates

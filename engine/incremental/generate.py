@@ -239,8 +239,13 @@ def resolve_run_config(config_path: Optional[str], *, no_llm: bool = False) -> D
             f"(POST /projects onboarding, or when a job runs). Onboard the project / run a "
             f"job, or pass --config <path>.")
     import json as _json
+    from core.config import with_server_settings
     with open(config_path, "r", encoding="utf-8") as fh:
         cfg = _json.load(fh)
+    # This server's own (the LLM server, LLVM) as config.local.json has them now, as every
+    # phase reads them (`core.config.load_config`): the summary and the manifest name the
+    # model the run will use. `write_config` leaves them out of a version's file again.
+    with_server_settings(cfg, strict=True)
     if no_llm:
         apply_no_llm(cfg)
     return cfg
@@ -465,7 +470,8 @@ def generate_full(
 
     # 5. fingerprints -> seed reuse index (content-only key; recipe is intentionally
     #    not folded in — an approved doc is reused regardless of model/prompt).
-    llm = cfg.get("llm") or {}
+    from core.config import llm_server
+    llm = llm_server(cfg)
     fps = compute_fingerprints(hashes, functions, edges)
     # One existence query for the whole project instead of one per entity (doc 09, B5a).
     # This is the worst case of the two seeding loops — a full generation fingerprints

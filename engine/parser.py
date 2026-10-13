@@ -127,8 +127,10 @@ from utils import (
 
 _config = _app_config()
 _clang = _config.get("clang") or {}
-_llvm = _clang.get("llvmLibPath") or _config.get("llvmLibPath")
-_clang_inc = _clang.get("clangIncludePath") or _config.get("clangIncludePath")
+# Where LLVM is on THIS machine: `llvm` in config.local.json (libPath, includePath). Not set:
+# the libclang that came with pip, and no builtin-header folder.
+from core.config import llvm_paths as _llvm_paths
+_llvm, _clang_inc = _llvm_paths(_config)
 if _llvm and os.path.isfile(_llvm):
     # Windows can fail to load libclang when dependent DLLs (e.g. from LLVM)
     # are not on the DLL search path. Ensure the LLVM bin folder is discoverable.
@@ -218,8 +220,9 @@ CLANG_ARGS = [
                   # otherwise libclang infers C/ambiguous for .h and the TU fails to load.
     "-std=c++14",
     f"-I{MODULE_BASE_PATH}",
-    f"-I{_clang_inc}",
 ]
+if _clang_inc:
+    CLANG_ARGS.append(f"-I{_clang_inc}")        # Clang's own headers (stddef.h, stdint.h, ...)
 # Layer include dirs are NOT folded in here. Flattening every layer's dirs into one
 # global arg list is the same cross-layer leak the data dictionary had: in a run
 # spanning layers (no --selected-layer, or --component-per-docx across layers) every

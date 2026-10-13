@@ -97,19 +97,20 @@ class TestTheTokensThemselves:
 
 
 def test_the_api_setting_stays_out_of_project_configs(tmp_path, monkeypatch):
-    """The runner copies config.local.json into each project's runtime config, minus `db`.
-    `auth` is the API server's own setting too -- no engine reads it -- so it is left out."""
+    """The runner lays config.local.json's overrides of the defaults into each project's runtime
+    config. This server's own blocks -- `auth` among them -- are left out."""
     from api.services import pipeline_runner as pr
     cfg_dir = tmp_path / "engine" / "config"
     cfg_dir.mkdir(parents=True)
     shutil.copy(os.path.join(PROJECT_ROOT, "engine", "config", "config.defaults.json"), cfg_dir)
     (cfg_dir / "config.local.json").write_text(
-        '{"auth": {"accessTokenMinutes": 720}, "llm": {"baseUrl": "http://gateway.test"}}',
+        '{"auth": {"accessTokenMinutes": 720}, "llmServer": {"baseUrl": "http://gateway.test"}, '
+        '"logs": {"level": "DEBUG"}}',
         encoding="utf-8")
     monkeypatch.setattr(pr, "get_settings", lambda: SimpleNamespace(repo_root=tmp_path))
     project = SimpleNamespace(build_config={},
                               architecture_layers=[{"name": "L1", "groups": ["G1"]}])
     path, _ = pr._write_project_config(project, tmp_path / "ws")
     cfg = json.loads(open(path, encoding="utf-8").read())
-    assert "auth" not in cfg
-    assert cfg["llm"]["baseUrl"] == "http://gateway.test"      # the rest still comes through
+    assert "auth" not in cfg and "llmServer" not in cfg
+    assert cfg["logs"]["level"] == "DEBUG"                     # the rest still comes through

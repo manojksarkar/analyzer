@@ -5,8 +5,6 @@
     "branch": "main"
   },
   "clang": {
-    "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
-    "clangIncludePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include",
     "clangArgs": [
       "--target=arm-none-eabi"
     ],
@@ -123,12 +121,6 @@
     "descriptions": true,
     "behaviourNames": true,
     "summarize": false,
-    "provider": "ollama",
-    "baseUrl": "http://localhost:11434",
-    "defaultModel": "llama3.2",
-    "timeoutSeconds": 300,
-    "numCtx": 8192,
-    "retries": 1,
     "fewShotExamplesDir": "few_shot_examples",
     "abbreviationsPath": "engine/config/abbreviations.txt",
     "domainContextPath": "engine/config/domain.txt",
@@ -136,7 +128,6 @@
       "audio",
       "video"
     ],
-    "rateLimitSeconds": 3,
     "cacheVersion": 2,
     "enrichment": {
       "twoPassDescriptions": false,
@@ -144,13 +135,6 @@
       "ensemble": false,
       "cfgSimplification": false,
       "variableEnrichment": false
-    },
-    "maxContextTokens": 127488,
-    "customHeaders": {
-      "x-dep-ticket": "credential:",
-      "User-Type": "AD_ID",
-      "User-Id": "",
-      "Send-System-Name": "rvc-api-module"
     }
   },
   "ui": {

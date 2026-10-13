@@ -93,6 +93,12 @@ Four phases. **Each is a separate Python subprocess**; they communicate through 
 - Base `config.defaults.json` ([config/config.defaults.json](engine/config/config.defaults.json)): `clang`, `views` (per-view enables),
   `layers.<Layer>.groups.<Group>.<Component>`, `llm`, `docx.*`. Read via `app_config()` in
   [core/config.py](engine/core/config.py); `ANALYZER_CONFIG=<path>` overrides the file.
+- **One file per kind of setting.** How documents are made → `config.defaults.json`. This server
+  (`db`, `auth`, `repositories`, `llmServer`, `llvm`) → `config.local.json`, read from there only,
+  at load (`with_server_settings`). A new setting goes in ONE of the two: a server one gets its
+  key in `LLM_SERVER_KEYS` (or its block in `SERVER_BLOCKS`), is read through `llm_server` /
+  `load_llm_config` / `llvm_paths`, and is never written into a project's or a version's config
+  (`without_server_settings`). `TestWhichFileASettingIsIn` fails on a server key in the defaults.
 - `DEFAULT_VISIBILITY_MACROS` (`PUBLIC`/`PRIVATE`/`PROTECTED`/`__OVLYINIT`) are always injected as `-D…=`
   so libclang parses visibility-tagged code — distinct from the user `--macros` CSV.
 

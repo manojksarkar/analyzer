@@ -868,14 +868,28 @@ except Exception as _pf_err:  # noqa: BLE001
 # provider, endpoint, model, and token budget the run will use. Fails loud
 # (LlmConfigError) if any required field is missing or invalid — better to
 # stop here than half-way through a long run.
-from core.config import load_llm_config, format_llm_config_banner, LlmConfigError
-try:
-    _resolved_llm_cfg = load_llm_config(cfg)
-    for _line in format_llm_config_banner(_resolved_llm_cfg).splitlines():
-        log(_line, component="run")
-except LlmConfigError as e:
-    log(f"Invalid LLM config: {e}", component="run", err=True)
-    sys.exit(2)
+#
+# WHICH LLM answers is this server's own: `llmServer` in config.local.json. A run that asks the
+# LLM for nothing needs none set: --no-llm, or one that has neither Phase 2 nor Phase 3 in it.
+from core.config import (load_llm_config, format_llm_config_banner, LlmConfigError,
+                         has_llm_server, llm_text_wanted, llvm_paths, local_config_notes)
+for _note in local_config_notes(os.path.join(SCRIPT_DIR, "engine")):
+    log(f"  WARNING: {_note}", component="run")
+if not llvm_paths(cfg)[0]:
+    log("LLVM: llvm.libPath is not set in engine/config/config.local.json - the parser uses the "
+        "libclang Python finds by itself", component="run")
+_llm_asked = (llm_text_wanted(cfg, summarize=not no_llm_summarize)
+              and from_phase <= 3 and (to_phase is None or to_phase >= 2))
+if not has_llm_server(cfg) and not _llm_asked:
+    log("LLM: not used by this run (no LLM server is set, and it needs none)", component="run")
+else:
+    try:
+        _resolved_llm_cfg = load_llm_config(cfg)
+        for _line in format_llm_config_banner(_resolved_llm_cfg).splitlines():
+            log(_line, component="run")
+    except LlmConfigError as e:
+        log(f"Invalid LLM config: {e}", component="run", err=True)
+        sys.exit(2)
 
 # --selected-unit: fail before Phase 3 when that is honest, and only then.
 #

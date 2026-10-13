@@ -25,10 +25,17 @@ in `engine/utils.py` or one of the phase scripts.
 ### `core.config` — [engine/core/config.py](../engine/core/config.py)
 
 - `_strip_json_comments` / `_strip_trailing_commas` — JSONC parser.
-- `load_config(project_root)` — merges `engine/config/config.json` + `config.local.json`. **If `ANALYZER_CONFIG`
-  env points to a file, that file is loaded instead, as-is (JSONC), with no local merge** — the per-project
-  config-injection seam (§23, M1.1); set-but-missing fails loud.
-- `load_llm_config(cfg)` — env-var overlay + normalised `llm` block (see §6).
+- `load_config(project_root)` — merges `engine/config/config.defaults.json` + `config.local.json`. **If `ANALYZER_CONFIG`
+  env points to a file, that file is loaded instead (JSONC), with no merge of the local file over its
+  analysis settings** — the per-project config-injection seam (§23, M1.1); set-but-missing fails loud.
+  Either way the server's blocks (`llmServer`, `llvm`) are config.local.json's, read at load
+  (`with_server_settings`; §6 "Where each setting lives").
+- `SERVER_BLOCKS` / `RUN_SERVER_BLOCKS` / `LLM_SERVER_KEYS` / `LLVM_KEYS_BEFORE` — which file a
+  setting is in, written once; `with_server_settings`, `without_server_settings`,
+  `local_config_path`, `server_settings`, `local_config_notes`, `moved_settings`, `llvm_paths`,
+  `llm_server`, `has_llm_server`, `llm_text_wanted` (2026-10-13d).
+- `load_llm_config(cfg)` — env-var overlay + `llmServer` (which LLM) and `llm` (what it writes)
+  resolved into one flat dict (see §6); no `llmServer` → `LlmConfigError(NO_LLM_SERVER)`.
 - `app_config(*, refresh=False)` — process-cached merged dict.
 - Typed accessors: `llm_config()`, `views_config()`, `exporter_config()`,
   `clang_config()`, `components_groups()`.
@@ -199,7 +206,7 @@ Shared pipeline:
 
 Hard rules baked in for the OpenAI route:
 - A class-level `_OPENAI_LOCK` serialises every OpenAI request process-wide.
-- Every OpenAI call is followed by `time.sleep(llm.rateLimitSeconds)` even on
+- Every OpenAI call is followed by `time.sleep(llmServer.rateLimitSeconds)` even on
   failure, because the corporate gateway throttles ~1 req/3s. Default `3.0`
   (`_OPENAI_RATE_LIMIT_SEC`); `0` disables the pause entirely. Ollama never
   sleeps. Cost: the engine is single-threaded, so this is ~1.5 batches +
@@ -216,7 +223,7 @@ flowchart engine's standalone subprocess invocation keeps working.
 ### `llm_core.headers`, `llm_core.think`, `llm_core.tokens`
 
 - `headers` — `build_openai_headers`, `resolve_api_key`. Resolves `LLM_API_KEY`
-  env var first, falls back to `llm.apiKey`. Handles the corporate-gateway
+  env var first, falls back to `llmServer.apiKey`. Handles the corporate-gateway
   custom-header format and `X_DEP_TICKET`/`USER_TYPE`/`USER_ID`/`SEND_SYSTEM_NAME`
   env overrides.
 - `think.strip_think_section(text)` — removes `<think>...</think>` sections

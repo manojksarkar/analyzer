@@ -1,15 +1,17 @@
 {
-  // Local config overrides + secrets. Copy this file to `config.local.json` (same folder) and
-  // fill in real values. `config.local.json` is gitignored, so credentials never get committed.
-  // It is merged over `config.defaults.json`; keep only the keys you want to override here.
+  // THIS SERVER's settings: its database, its sign-in, its repository folders, its LLM server and
+  // its LLVM install. Copy this file to `config.local.json` (same folder) and fill in real values.
+  // `config.local.json` is gitignored, so credentials never get committed.
   //
-  // A project's runs (web or `analyzer.py`): what the PROJECT sets wins over this file -- its
-  // `clang` settings (e.g. includePathsFromProjectWalk, clangArgs), `views`, `docx` and its LLM
-  // on/off switches. This file brings this machine's own: the LLM connection, where LLVM is
-  // (`clang.llvmLibPath`, `clang.clangIncludePath`), and a default for what a project leaves unset.
-  // Do not copy config.defaults.json here: a copied `clang` block once switched a project's
-  // include-path walk off on every run.
+  // One file per kind of setting:
   //
+  //   config.local.json     THIS SERVER              db, auth, repositories, llmServer, llvm
+  //   config.defaults.json  HOW DOCUMENTS ARE MADE   clang, views, llm, docx, cores, layers, ...
+  //
+  // The five blocks below are read from THIS file only. They are not in config.defaults.json, a
+  // project's own config cannot set them, and a version does not store them. Change one here and
+  // the next run uses it: every project, from the web app and from `analyzer.py` alike.
+
   // Database connection. Used by the API server and the db tools when DATABASE_URL is NOT set
   // in the environment (env var still wins if present). Resolution order:
   //   DATABASE_URL env  ->  this `db` section  ->  the compose default (localhost).
@@ -39,15 +41,56 @@
     "localRoots": ["D:/src"]
   },
 
-  // LLM endpoint + credentials. Keep these here (gitignored), NOT in tracked config.defaults.json.
-  // Deep-merged over config.defaults.json's `llm`, so list ONLY the keys you want to override — e.g. the
-  // gateway URL and the auth-header token; provider/model/timeouts stay as set in config.json.
-  // Applies to both `python engine/run.py` runs and API-driven jobs.
-  "llm": {
+  // The LLM server: which one answers, how to sign in to it, and what it can take.
+  //
+  // `provider`, `baseUrl` and `defaultModel` are required by every run that writes LLM text.
+  // Without this block only `--no-llm` runs work: any other run stops at its start and says so.
+  //
+  // WHAT the LLM writes (descriptions, names, the prompt inputs) is not a server setting: that is
+  // `llm` in config.defaults.json, and each project's own switches.
+  "llmServer": {
+    "provider": "openai",                      // "openai" (any OpenAI-shaped gateway) or "ollama"
     "baseUrl": "https://your-llm-gateway/v1",
+    "defaultModel": "your-model-name",
+
+    // Sent with every request. The ticket is the secret.
     "customHeaders": {
       "x-dep-ticket": "credential:YOUR_TOKEN_HERE",
-      "User-Id": "your-user-id"
-    }
+      "User-Type": "AD_ID",
+      "User-Id": "your-user-id",
+      "Send-System-Name": "rvc-api-module"
+    },
+    // "apiKey": "YOUR_KEY_HERE",              // only for a server that takes "Authorization: Bearer"
+
+    // The rest may be left out; the values shown are what a run uses then.
+    //
+    // Pause after every call, per process. 3 = an API gateway that allows about one call per 3 s.
+    // Set 0 for a hosted model with no limit, where 3 s per call would dominate the run.
+    "rateLimitSeconds": 3,
+    "timeoutSeconds": 300,                     // how long one call may take
+    "retries": 1,                              // tries again after a failed call
+    "numCtx": 8192,                            // context window in tokens (sent to Ollama only)
+    // The prompt budget in tokens. Left out or null: worked out from the provider and numCtx.
+    "maxContextTokens": 127488
+  },
+
+  // A local Ollama instead of a gateway:
+  //   "llmServer": { "provider": "ollama", "baseUrl": "http://localhost:11434", "defaultModel": "llama3.2" }
+  //
+  // One run on other values, without editing this file -- environment variables:
+  //   LLM_PROVIDER, LLM_BASE_URL, LLM_DEFAULT_MODEL, LLM_API_KEY, LLM_RATE_LIMIT_SECONDS,
+  //   LLM_TIMEOUT_SECONDS, LLM_RETRIES, LLM_NUM_CTX
+
+  // Where LLVM is installed on this machine.
+  //   libPath      the libclang library the parser loads
+  //   includePath  Clang's own headers (stddef.h, stdint.h, ...): the folder of the installed version
+  // Without this block the parser uses the libclang that came with `pip install libclang`, and
+  // says so in the run's log.
+  //
+  // The FLAGS every parse is given (clang.clangArgs) are not a machine setting: they are in
+  // config.defaults.json, and a project may set its own.
+  "llvm": {
+    "libPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
+    "includePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include"
   }
 }

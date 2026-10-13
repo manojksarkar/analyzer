@@ -96,22 +96,52 @@ class TestResolveConfig:
         # onboarding the sample itself (--use-defaults) keeps the sample's block
         assert NP._resolve_config(None)["project"]["name"] == "SampleCppProject"
 
-    def test_the_db_password_never_reaches_a_workspace_file(self, tmp_path, monkeypatch):
-        """config.local.json is overlaid for machine settings (llm creds), but the engine
-        reaches Postgres through its own config — a workspace file has no business holding it."""
+    def test_no_server_setting_reaches_a_workspace_file(self, tmp_path, monkeypatch):
+        """config.local.json's overrides of the defaults are laid over the project's config; this
+        server's own blocks stay in that file. A run reads them from there when it loads the
+        config -- so a workspace file holds no password and no key, and does not keep the LLM
+        settings of the day the project was onboarded."""
+        cfgdir = tmp_path / "config"
+        cfgdir.mkdir()
+        (cfgdir / "config.defaults.json").write_text(json.dumps({
+            "layers": {"L": {"path": "L", "groups": {}}}, "llm": {"descriptions": True},
+            "views": {"flowcharts": False, "unitDiagrams": True}}), encoding="utf-8")
+        (cfgdir / "config.local.json").write_text(json.dumps({
+            "db": {"url": "postgresql://u:SECRET@h/d"}, "auth": {"accessTokenMinutes": 5},
+            "repositories": {"localRoots": ["D:/src"]},
+            "llmServer": {"baseUrl": "http://x", "customHeaders": {"x-dep-ticket": "SECRET"}},
+            "llvm": {"libPath": "C:/LLVM/bin/libclang.dll"},
+            "llm": {"baseUrl": "http://the-old-place", "customHeaders": {"k": "SECRET"}},
+            "views": {"flowcharts": True}}), encoding="utf-8")
+        monkeypatch.setattr(NP, "_CONFIG_DIR", str(cfgdir))
+        cfg = NP._resolve_config(None)
+        assert not set(cfg) & {"db", "auth", "repositories", "llmServer", "llvm"}
+        assert "SECRET" not in json.dumps(cfg)
+        assert cfg["llm"] == {"descriptions": True}
+        assert cfg["views"] == {"flowcharts": True, "unitDiagrams": True}, \
+            "an override of a default still applies, and merges per key rather than replacing"
+
+    def test_server_settings_in_the_projects_own_file_are_named_and_left_out(
+            self, tmp_path, monkeypatch, capsys):
+        """A --config copied from an older config.defaults.json names an LLM gateway and LLVM
+        paths. They are this machine's, not a project's: saying so beats a run that quietly
+        uses another server than the file in front of the user names."""
         cfgdir = tmp_path / "config"
         cfgdir.mkdir()
         (cfgdir / "config.defaults.json").write_text(
-            '{"layers": {"L": {"path": "L", "groups": {}}}, "llm": {"provider": "openai"}}',
-            encoding="utf-8")
-        (cfgdir / "config.local.json").write_text(
-            '{"db": {"url": "postgresql://u:secret@h/d"}, "llm": {"baseUrl": "http://x"}}',
-            encoding="utf-8")
+            '{"llm": {"descriptions": true}, "clang": {"clangArgs": []}}', encoding="utf-8")
         monkeypatch.setattr(NP, "_CONFIG_DIR", str(cfgdir))
-        cfg = NP._resolve_config(None)
-        assert "db" not in cfg
-        assert cfg["llm"]["baseUrl"] == "http://x", "non-secret machine settings still apply"
-        assert cfg["llm"]["provider"] == "openai", "and merge per key rather than replacing"
+        src = _write(tmp_path, "my.json", json.dumps({
+            "layers": {"L": {"path": "L", "groups": {"G": {"C": "c"}}}},
+            "llm": {"baseUrl": "https://gw/v1", "behaviourNames": False},
+            "clang": {"llvmLibPath": "D:/llvm/libclang.dll", "clangArgs": ["-DX"]},
+            "llmServer": {"provider": "openai"}}))
+        cfg = NP._resolve_config(src)
+        assert cfg["llm"] == {"descriptions": True, "behaviourNames": False}
+        assert cfg["clang"] == {"clangArgs": ["-DX"]} and "llmServer" not in cfg
+        out = capsys.readouterr().out
+        assert "llm.baseUrl" in out and "clang.llvmLibPath" in out and "llmServer" in out
+        assert "config.local.json" in out
 
 
 class TestDescribeLayers:

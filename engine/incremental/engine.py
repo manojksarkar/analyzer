@@ -1080,7 +1080,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     _persist_run_metadata(store, version_id, project_id)
     # Rendered output -> versions/<ver id>/ (what every reader resolves) + the .docx list.
     documents = store.capture_output(version_id, _paths().output_dir)
-    llm = cfg.get("llm") or {}
+    from core.config import llm_server
+    llm = llm_server(cfg)
     # Content-only reuse key (recipe intentionally not folded in — approved outputs are
     # reused regardless of which model/prompt produced them). Reuse the fingerprints
     # computed for the M3.7 lookup (descriptions added since don't affect the content key).

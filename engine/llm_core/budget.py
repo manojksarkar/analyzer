@@ -283,9 +283,9 @@ def resolve_max_tokens(llm_cfg: Dict) -> int:
             hard_cap = max(1024, int(llm_cfg["numCtx"]) - 256)
             if explicit_i > hard_cap:
                 logger.warning(
-                    "llm.maxContextTokens=%d exceeds Ollama numCtx=%d; "
+                    "llmServer.maxContextTokens=%d exceeds Ollama numCtx=%d; "
                     "clamping to %d to avoid server-side truncation. "
-                    "Raise numCtx in config to use a larger window.",
+                    "Raise llmServer.numCtx to use a larger window.",
                     explicit_i, int(llm_cfg["numCtx"]), hard_cap,
                 )
                 return hard_cap

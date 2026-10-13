@@ -72,9 +72,9 @@ class Settings(BaseSettings):
     # was near-certain to collide, not rare).
     #
     # !! LLM GATEWAY (doc 09 B6, STILL OPEN): the rate limit is PER PROCESS. The corporate
-    # gateway allows ~1 call / 3s, and `llm.rateLimitSeconds` enforces that inside ONE job — so
+    # gateway allows ~1 call / 3s, and `llmServer.rateLimitSeconds` enforces that inside ONE job — so
     # 4 concurrent jobs hit the gateway at ~4 calls / 3s, four times its limit. Until a shared
-    # limiter exists, either set `llm.rateLimitSeconds` to 3 x this value (6) so the AGGREGATE
+    # limiter exists, either set `llmServer.rateLimitSeconds` to 3 x this value (6) so the AGGREGATE
     # rate is correct, or point the run at the on-prem hosted model, which has no limit
     # (`rateLimitSeconds: 0`). Concurrency with LLM enabled and a 3s per-process limit WILL
     # exceed the gateway.

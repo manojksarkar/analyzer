@@ -74,21 +74,28 @@ run.py
 | `views.behaviourDiagram.renderPng` | `true` | Render behaviour diagrams to PNG |
 | `views.moduleStaticDiagram.enabled` | `true` | Generate module static diagrams |
 | `views.moduleStaticDiagram.renderPng` | `true` | Render module diagrams to PNG |
-| `clang.llvmLibPath` | — | Path to libclang.dll / libclang.so |
-| `clang.clangIncludePath` | — | Path to clang system headers |
 | `clang.clangArgs` | `[]` | Extra clang arguments (e.g. `-I/path`) |
-| `llm.baseUrl` | `http://localhost:11434` | Ollama base URL |
-| `llm.defaultModel` | `qwen2.5-coder:14b` | LLM model for all calls |
-| `llm.numCtx` | `8192` | Ollama context window tokens |
-| `llm.timeoutSeconds` | `120` | HTTP timeout per LLM call |
 | `llm.descriptions` | `true` | Enable LLM function descriptions |
 | `llm.behaviourNames` | `true` | Enable LLM behaviour Input/Output name polish |
 | `llm.abbreviationsPath` | `engine/config/abbreviations.txt` | Domain abbreviation expansions |
 | `export.docxPath` | `output/software_detailed_design_{group}.docx` | Output path |
 | `export.docxFontSize` | `8` | Font size in the DOCX |
 
-Override any key without modifying `config.json` by creating `config.local.json` in the
-same folder — it is merged on top at runtime.
+This server's own settings are not in that file but in `config.local.json` beside it
+(gitignored), and are read from there only:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `llvm.libPath` | — | Path to libclang.dll / libclang.so |
+| `llvm.includePath` | — | Path to clang system headers |
+| `llmServer.provider` | — (required) | `ollama` or `openai` (any OpenAI-shaped gateway) |
+| `llmServer.baseUrl` | — (required) | The LLM server's base URL |
+| `llmServer.defaultModel` | — (required) | LLM model for all calls |
+| `llmServer.numCtx` | `8192` | Ollama context window tokens |
+| `llmServer.timeoutSeconds` | `300` | HTTP timeout per LLM call |
+
+A key of the first table can also be overridden for one machine in `config.local.json` — it
+is merged on top at runtime.
 
 ---
 

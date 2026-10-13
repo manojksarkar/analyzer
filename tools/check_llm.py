@@ -3,7 +3,7 @@
 
 The pipeline reports "returned empty response" and retries, which tells you nothing about WHY.
 This sends the requests the phases send — to the OpenAI-compatible gateway or to Ollama,
-whichever `llm.provider` names — and prints what came back: status, the stop reason, token
+whichever `llmServer.provider` names — and prints what came back: status, the stop reason, token
 counts, and the raw body when the answer is empty. Those are the fields the client discards.
 
 Three prompts, deliberately different sizes, because an empty reply that depends on size is a
@@ -153,7 +153,7 @@ def _read_ollama(data: dict, approx: int, max_tokens: int) -> bool:
     if cut:
         print(f"  PROMPT CUT — the model saw {seen} tokens of a ~{approx}-token prompt; Ollama "
               "dropped the rest")
-        print("     to fit numCtx, without an error. Raise llm.numCtx.")
+        print("     to fit numCtx, without an error. Raise llmServer.numCtx.")
     if text:
         print(f"  -> {text[:300]}")
         return not cut
@@ -288,10 +288,10 @@ def main(argv=None) -> int:
         print(f"RESULT: {failures} of {len(prompts)} prompt(s) failed.")
         print("If only the LARGE prompt failed, it is a size/budget problem.")
         if ollama:
-            print("If a prompt was CUT, raise llm.numCtx.")
+            print("If a prompt was CUT, raise llmServer.numCtx.")
             print(f"If ALL failed with done_reason=length, {max_tokens} output tokens are too few "
                   "for this model.")
-            print("If only the FIRST timed out, loading the model took it; raise llm.timeoutSeconds.")
+            print("If only the FIRST timed out, loading the model took it; raise llmServer.timeoutSeconds.")
             print("If ALL failed with a non-200 or no connection, it is the server or the model name.")
         else:
             print("If ALL failed with finish_reason=length, raise max_tokens.")

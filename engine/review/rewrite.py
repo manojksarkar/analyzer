@@ -812,10 +812,12 @@ def _model_deriver():
 
 
 def read_config(path: str) -> Dict[str, Any]:
-    """A run config file, read as a run reads it (`core.config.load_config`)."""
-    from core.config import _strip_json_comments, _strip_trailing_commas
+    """A run config file, read as a run reads it (`core.config.load_config`): this server's
+    own settings -- the LLM server -- are config.local.json's, not the file's."""
+    from core.config import _strip_json_comments, _strip_trailing_commas, with_server_settings
     with open(path, encoding="utf-8") as fh:
-        return json.loads(_strip_trailing_commas(_strip_json_comments(fh.read())))
+        cfg = json.loads(_strip_trailing_commas(_strip_json_comments(fh.read())))
+    return with_server_settings(cfg, strict=True)
 
 
 # ---------------------------------------------------------------------------

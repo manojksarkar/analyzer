@@ -190,7 +190,7 @@ class TestGenerateOpenAI:
 
 
 # ---------------------------------------------------------------------------
-# Gateway throttle (llm.rateLimitSeconds)
+# Gateway throttle (llmServer.rateLimitSeconds)
 # ---------------------------------------------------------------------------
 
 class TestRateLimit:
@@ -355,14 +355,14 @@ class TestConfigurableRateLimit:
 
     def test_config_validation_accepts_zero_and_rejects_nonsense(self):
         from core.config import load_llm_config, LlmConfigError
-        base = {"llm": {"provider": "openai", "baseUrl": "http://x", "defaultModel": "m",
-                        "timeoutSeconds": 60, "numCtx": 8192, "retries": 1}}
+        base = {"llmServer": {"provider": "openai", "baseUrl": "http://x", "defaultModel": "m",
+                              "timeoutSeconds": 60, "numCtx": 8192, "retries": 1}}
         import copy
-        ok = copy.deepcopy(base); ok["llm"]["rateLimitSeconds"] = 0
+        ok = copy.deepcopy(base); ok["llmServer"]["rateLimitSeconds"] = 0
         assert load_llm_config(ok)["rateLimitSeconds"] == 0.0
         # default when absent stays gateway-safe
         assert load_llm_config(copy.deepcopy(base))["rateLimitSeconds"] == 3.0
         for bad in ("soon", -1):
-            cfg = copy.deepcopy(base); cfg["llm"]["rateLimitSeconds"] = bad
+            cfg = copy.deepcopy(base); cfg["llmServer"]["rateLimitSeconds"] = bad
             with pytest.raises(LlmConfigError):
                 load_llm_config(cfg)

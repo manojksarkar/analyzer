@@ -44,10 +44,10 @@ F = "Comp|UnitA|ns::f|void"
 G = "Comp|UnitB|ns::g|void"
 EXT = "Ext|UnitX|ns::c|void"
 
-LLM = {"provider": "ollama", "baseUrl": "http://localhost:11434", "defaultModel": "m",
-       "timeoutSeconds": 5, "numCtx": 8192, "retries": 0, "descriptions": True,
-       "behaviourNames": True}
-CONFIG = {"llm": LLM}
+LLM = {"descriptions": True, "behaviourNames": True}
+LLM_SERVER = {"provider": "ollama", "baseUrl": "http://localhost:11434", "defaultModel": "m",
+              "timeoutSeconds": 5, "numCtx": 8192, "retries": 0}
+CONFIG = {"llm": LLM, "llmServer": LLM_SERVER}
 NOW = datetime.datetime(2026, 10, 7, tzinfo=datetime.timezone.utc)
 
 SOURCE = {"a.cpp": "void caller() {\n  callee();\n}\nint x;\nvoid callee() {\n  x++;\n}\n"
@@ -256,7 +256,7 @@ class TestWhichEntries:
     def test_a_version_made_without_the_llm_rewrites_nothing(self, eng, src, llm):
         asked, _ = llm
         _queue(eng, (slot.DESCRIPTION, CALLER))
-        result = _run(eng, src, config={"llm": {**LLM, "descriptions": False}})
+        result = _run(eng, src, config={**CONFIG, "llm": {**LLM, "descriptions": False}})
         assert asked["functions"] == [] and result.waiting == 1
         assert _pending(eng) == {(slot.DESCRIPTION, CALLER)}
 

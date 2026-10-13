@@ -40,9 +40,9 @@ analyzer/                     (repo root — cwd of the pipeline; model/ output/
     flowchart/                Real C++ → Mermaid CFG flowchart engine
     behaviour_diagram/        Sequence/behaviour diagram generator package (SequenceDiagramGenerator)
     config/
-      config.defaults.json    Base defaults (JSONC: // and /* */ comments allowed)
-      config.local.json       Secrets (gitignored): db + llm creds; deep-merged over defaults
-      config.local.json       Local overrides (gitignored)
+      config.defaults.json    How documents are made: parse flags, views, llm, docx (tracked)
+      config.local.json       THIS SERVER (gitignored): db, auth, repositories, llmServer, llvm --
+                              read from this file only; it may also override a default
       abbreviations.txt       Abbreviation expansions for LLM prompts
       data_dictionary.csv     Sample data-dictionary CSV (--data-dictionary <path>)
       config.defaults.json.example  ANNOTATED twin of config.defaults.json: same data,
@@ -260,8 +260,9 @@ python engine/run.py --selected-group Sample SampleCppProject
 2. **Argv loop** — parses flags. Sets `selected_group_arg = "Sample"`,
    `from_phase = 1`, `use_model = False`, `no_llm_summarize = False`.
 3. **`load_config(SCRIPT_DIR)`** (re-exported from `core.config`) — reads
-   JSONC, merges `config.local.json` if present. Sets `LIBCLANG_PATH` env var
-   from `clang.llvmLibPath` if the file exists (propagates to all subprocesses).
+   JSONC, merges `config.local.json` if present; this server's `llmServer` and `llvm`
+   blocks are that file's, whatever config is injected (CLI_AND_CONFIG §6). Each parser
+   reads `llvm.libPath` from its own config load (no env var is set for it).
    If `llm.summarize` is `false` in config, forces `no_llm_summarize = True`.
 3a. **Layer include path collection** — walks each `layers.<L>.path` directory
    under `SampleCppProject/`, collecting every subdirectory. Writes

@@ -35,9 +35,12 @@ from typing import Any, Optional
 FILLED, CHECK, SKIPPED = "filled", "check", "skipped"
 
 _PROJECT_SECTIONS = ("clang", "views", "docx")      # carried into the project's build config
-_SERVER_SECTIONS = ("llm", "ui", "db")              # the server's settings, never a project's
-# Paths on the machine that wrote the file; the server uses its own. `macrosFile` is set by the
-# server from the project's preprocessor definitions.
+# The server's settings, never a project's: its own blocks (config.local.json -- `db`, `auth`,
+# `repositories`, `llmServer`, `llvm`) and what it sets for every project (`llm`, `ui`).
+_SERVER_SECTIONS = ("llm", "ui", "db", "auth", "repositories", "llmServer", "llvm")
+# Paths on the machine that wrote the file; the server uses its own (`llvm` in its
+# config.local.json; a file from before 2026-10-13 has them in `clang`). `macrosFile` is set by
+# the server from the project's preprocessor definitions.
 _MACHINE_CLANG_KEYS = ("llvmLibPath", "clangIncludePath", "macrosFile")
 _TOKEN_KEYS = ("token", "accessToken", "access_token", "repoAccessToken", "repo_access_token")
 _KNOWN = {"project", "layers", "cores", *_PROJECT_SECTIONS, *_SERVER_SECTIONS}

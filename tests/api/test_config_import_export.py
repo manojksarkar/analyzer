@@ -31,6 +31,8 @@ CONFIG = """
   "clang": {"llvmLibPath": "C:/LLVM/bin/libclang.dll", "clangArgs": ["--target=arm-none-eabi"]},
   "views": {"flowcharts": true, "behaviourDiagram": false},
   "llm": {"baseUrl": "http://secret-gateway"},
+  "llmServer": {"provider": "openai", "baseUrl": "http://secret-gateway"},
+  "llvm": {"libPath": "C:/LLVM/bin/libclang.dll"},
 }
 """
 
@@ -97,6 +99,7 @@ class TestWithoutTheRepository:
                                       "views": {"flowcharts": True, "behaviourDiagram": False}}
         skipped = " ".join(_texts(self.r, "skipped"))
         assert "clang.llvmLibPath" in skipped and "`llm`" in skipped
+        assert "`llmServer`" in skipped and "`llvm`" in skipped
         assert "compileCommands" not in skipped, "a core's compile commands are imported"
 
 

@@ -321,9 +321,9 @@ flowcharts.run(model, output_dir, model_dir, config)
           --metaData-json   model/metadata.json
           --std             c++14
           --out-dir         output/flowcharts/
-          --llm-url         <config.llm.baseUrl>/api/generate
-          --llm-model       <config.llm.defaultModel>
-          --llm-num-ctx     <config.llm.numCtx>
+          --llm-url         <config.llmServer.baseUrl>/api/generate
+          --llm-model       <config.llmServer.defaultModel>
+          --llm-num-ctx     <config.llmServer.numCtx>
           --knowledge-json  model/knowledge_base.json   (if exists)
           --clang-arg=<I>   (from config.clang.clangArgs)
 

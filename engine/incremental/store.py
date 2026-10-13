@@ -218,8 +218,14 @@ class ArtifactStore(ABC):
         It is not a record of the version (the API stores that in `versions.resolved_config`);
         it is what the phase subprocesses are handed as `--config`, in the same way the
         workspace config.json is. A process boundary needs a file on one side of it.
+
+        Without this server's settings (the LLM server and its credentials, LLVM): a phase
+        reads those from config.local.json when it loads the file.
         """
-        _write_json(os.path.join(self.artifact_dir(version_id), "config.json"), config)
+        import copy
+        from core.config import without_server_settings
+        _write_json(os.path.join(self.artifact_dir(version_id), "config.json"),
+                    without_server_settings(copy.deepcopy(config)))
 
     def read_config(self, version_id: str) -> Dict[str, Any]:
         """The config that file holds. Kept as the counterpart of the write — reading back what
