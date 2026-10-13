@@ -72,8 +72,8 @@ newer entry and the code win.
   [CLI_COMMANDS](docs/CLI_COMMANDS.md#a-run-that-lasts-days), detail
   [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Staged generation".
 - **Config: one file per kind of setting** (2026-10-13d, branch `refactor/config-separation`, not
-  merged): `llmServer` and `llvm` are config.local.json's only, read at load by every run; the
-  defaults hold no server key. **Each machine's config.local.json needs the two blocks once** --
+  merged): `llmServer`, `llvm` and (on `perf/pipeline-speed`) `parse` are config.local.json's only,
+  read at load by every run; the defaults hold no server key. **Each machine's config.local.json needs the two blocks once** --
   [config.local.json.example](engine/config/config.local.json.example);
   [CLI_AND_CONFIG.md](project-context/CLI_AND_CONFIG.md) §6.
 - **Bitbucket repositories** (2026-10-05r, branch `feat/cli-wordfiles-bitbucket-components`, not
@@ -99,10 +99,11 @@ newer entry and the code win.
   engine log lines, tail + SSE, read from per-process files under `logs/live/`. Built; the web page
   is next. [LIVE_LOGS_SPEC](docs/spec/LIVE_LOGS_SPEC.md), [LIVE_LOGS_DESIGN](docs/design/LIVE_LOGS_DESIGN.md),
   [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Live logs".
-- **Pipeline speed** (2026-10-08b, branch `perf/pipeline-speed` on develop `8d438de`, not merged): measured
-  where a run's time goes and prototyped the speed-ups — LLM lanes (several keys, start pacing,
-  failover), parse ahead, picture batches — each checked to give develop's output; three settings left
-  (`llm.lanes`, `llm.pacing`, `parse.workers`, 2026-10-12).
+- **Pipeline speed** (2026-10-08b, branch `perf/pipeline-speed`, rebased onto
+  `refactor/config-separation` 2026-10-13e, not merged): measured where a run's time goes and
+  prototyped the speed-ups — LLM lanes (several keys, start pacing, failover), parse ahead, picture
+  batches — each checked to give develop's output; three settings left, all this server's, in
+  config.local.json (`llmServer.lanes`, `llmServer.pacing`, `parse.workers`).
   [PIPELINE_SPEED_PLAN.md](docs/design/PIPELINE_SPEED_PLAN.md) (plan, edge cases, office questions).
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.

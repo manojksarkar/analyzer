@@ -15,9 +15,10 @@
   //
   //   config.local.json      THIS SERVER - its database (db), sign-in (auth),
   //   (gitignored)           repository folders (repositories), LLM server
-  //                          (llmServer) and LLVM install (llvm). Those five
-  //                          blocks are read from that file only: none of them
-  //                          is here. See config.local.json.example.
+  //                          (llmServer), LLVM install (llvm) and how many
+  //                          files it parses at once (parse). Those six blocks
+  //                          are read from that file only: none of them is
+  //                          here. See config.local.json.example.
   //
   // Override the whole file for one run with ANALYZER_CONFIG=<path>.
   // Read through core.config.app_config().
@@ -253,7 +254,8 @@
   // rerun on unchanged input reproduces byte-identical output.
   //
   // WHICH LLM answers is not here: the server, its model, its credentials, its
-  // rate limit, timeout, retries and context size are this server's own, the
+  // rate limit, timeout, retries and context size - and its lanes and pacing
+  // (docs/design/PIPELINE_SPEED_PLAN.md) - are this server's own, the
   // "llmServer" block of config.local.json.
   // -------------------------------------------------------------------------
   "llm": {

@@ -32,11 +32,11 @@ A lane learns what the gateway really allows:
 
 Config (all optional; without it there is one lane, today's behaviour exactly):
 
-    "llm": { "pacing": "start",
-             "lanes": [ {"apiKey": "K1"}, {"apiKey": "K2", "maxConcurrent": 2},
-                        {"baseUrl": "http://other-gateway", "apiKey": "K3"} ] }
+    "llmServer": { "pacing": "start",
+                   "lanes": [ {"apiKey": "K1"}, {"apiKey": "K2", "maxConcurrent": 2},
+                              {"baseUrl": "http://other-gateway", "apiKey": "K3"} ] }
 
-A lane's missing fields come from the `llm` block. `LLM_API_KEYS=k1,k2` makes one lane per key on
+Both are the server's (config.local.json). A lane's missing fields come from the `llmServer` block. `LLM_API_KEYS=k1,k2` makes one lane per key on
 the configured baseUrl. Lanes are shared by every client in the process, as the lock was: phases
 run one at a time, so per process is per run -- except two web jobs at once (B6), which still
 need a limit shared across processes.

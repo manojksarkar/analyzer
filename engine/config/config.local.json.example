@@ -1,14 +1,15 @@
 {
-  // THIS SERVER's settings: its database, its sign-in, its repository folders, its LLM server and
-  // its LLVM install. Copy this file to `config.local.json` (same folder) and fill in real values.
-  // `config.local.json` is gitignored, so credentials never get committed.
+  // THIS SERVER's settings: its database, its sign-in, its repository folders, its LLM server,
+  // its LLVM install and how many files it parses at once. Copy this file to `config.local.json`
+  // (same folder) and fill in real values. `config.local.json` is gitignored, so credentials
+  // never get committed.
   //
   // One file per kind of setting:
   //
-  //   config.local.json     THIS SERVER              db, auth, repositories, llmServer, llvm
+  //   config.local.json     THIS SERVER              db, auth, repositories, llmServer, llvm, parse
   //   config.defaults.json  HOW DOCUMENTS ARE MADE   clang, views, llm, docx, cores, layers, ...
   //
-  // The five blocks below are read from THIS file only. They are not in config.defaults.json, a
+  // The six blocks below are read from THIS file only. They are not in config.defaults.json, a
   // project's own config cannot set them, and a version does not store them. Change one here and
   // the next run uses it: every project, from the web app and from `analyzer.py` alike.
 
@@ -71,32 +72,32 @@
     "retries": 1,                              // tries again after a failed call
     "numCtx": 8192,                            // context window in tokens (sent to Ollama only)
     // The prompt budget in tokens. Left out or null: worked out from the provider and numCtx.
-    "maxContextTokens": 127488
+    "maxContextTokens": 127488,
 
-    // Optional: faster LLM runs (docs/design/PIPELINE_SPEED_PLAN.md). Nothing changes until you
-    // uncomment one; with neither, a run makes one call at a time and pauses after each, as
-    // always. Ask the gateway's owners first: is the limit per ticket or per user, and is the gap
-    // counted from a call's start or its end?
+    // Faster LLM runs (docs/design/PIPELINE_SPEED_PLAN.md). As written here nothing changes: a
+    // run makes one call at a time and pauses after each, as always. Ask the gateway's owners
+    // first: is the limit per ticket or per user, and is the gap counted from a call's start or
+    // its end?
     //
+    // pacing "start": the rateLimitSeconds gap counts from a call's START, not after it ends --
+    // with a 5 s answer and a 3 s gap, a call every 5 s instead of every 8. Works on one ticket.
+    // To be decided by one office run, then fixed for good (the plan, section 5).
+    "pacing": "after",
+
     // lanes: one per ticket or key, used side by side -- a busy one rests, a refused one is left
     // out. How many calls go out at once follows the lanes; there is nothing else to set. A lane's
     // customHeaders replace this block's headers of the same name; anything a lane leaves out
     // (baseUrl, apiKey) comes from this block, and every lane uses this block's model and gap.
     // A lane's `name` is printed in the log -- never put a secret in it.
-    // ,"lanes": [
-    //   { "name": "ticket-a", "customHeaders": { "x-dep-ticket": "credential:TOKEN_A" } },
-    //   { "name": "ticket-b", "customHeaders": { "x-dep-ticket": "credential:TOKEN_B" } }
-    // ]
-    //
+    //   "lanes": [
+    //     { "name": "ticket-a", "customHeaders": { "x-dep-ticket": "credential:TOKEN_A" } },
+    //     { "name": "ticket-b", "customHeaders": { "x-dep-ticket": "credential:TOKEN_B" } }
+    //   ]
     // A second user's ticket:   { "name": "user2", "customHeaders": { "User-Id": "user-id-2", "x-dep-ticket": "credential:TOKEN_2" } }
     // An API key, not a header: { "name": "key-a", "apiKey": "KEY_A" }  (or env LLM_API_KEYS=KEY_A,KEY_B, no lanes)
     // Another gateway:          { "name": "backup", "baseUrl": "https://other-gateway/v1", "apiKey": "KEY_C" }
     // A ticket that may run 2 calls at once: add "maxConcurrent": 2 to its lane.
-    //
-    // pacing "start": the rateLimitSeconds gap counts from a call's START, not after it ends --
-    // with a 5 s answer and a 3 s gap, a call every 5 s instead of every 8. Works on one ticket.
-    // To be decided by one office run, then fixed for good (the plan, section 5).
-    // ,"pacing": "start"
+    "lanes": []
   },
 
   // A local Ollama instead of a gateway:
@@ -117,11 +118,14 @@
   "llvm": {
     "libPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
     "includePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include"
-  }
+  },
 
-  // Optional: files parsed ahead on threads while one is walked (Phase 1). 1 = as always; "auto" =
-  // half the CPUs, at most 8. Each file parsed ahead holds its whole AST in memory: 2-4 on an
-  // 8 GB machine, 6-8 on 16 GB and up. Same output. The environment's ANALYZER_PARSE_WORKERS wins.
+  // How many files this machine parses at once (Phase 1): files parsed ahead on threads while
+  // one is walked. 1 = one at a time, as always; a number; or "auto" = half the CPUs, at most 8.
+  // Each file parsed ahead holds its whole AST in memory: 2-4 on an 8 GB machine, 6-8 on 16 GB
+  // and up. Same output whatever the value. The environment's ANALYZER_PARSE_WORKERS wins.
   // To become "auto" by default once the office code has had a clean run with it.
-  // ,"parse": { "workers": 6 }
+  "parse": {
+    "workers": 1
+  }
 }

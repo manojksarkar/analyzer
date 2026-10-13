@@ -23,8 +23,8 @@ R = TypeVar("R")
 def llm_workers(config: dict) -> int:
     """How many calls a stage keeps in flight: what the config's lanes allow
     (core.config.llm_calls_at_once) -- 1 without lanes or start pacing. Not a setting."""
-    from core.config import llm_calls_at_once
-    return llm_calls_at_once((config or {}).get("llm") or {})
+    from core.config import llm_calls_at_once, llm_server
+    return llm_calls_at_once(llm_server(config or {}))
 
 
 @contextmanager
