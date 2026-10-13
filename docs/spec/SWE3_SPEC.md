@@ -74,20 +74,23 @@ Every unit that has a source implementation file produces one interface table in
 
 The table lists the unit's public functions and global variables. Private items do not appear.
 
-A marking can only restrict, never promote. `PROTECTED`, and a C++ `protected:` or `private:` label,
-count as private. `PUBLIC` does not by itself publish a function: it is listed only if a function in
-**another unit** calls it, or its address appears in a file-scope dispatch table. This reverses the
-earlier reading, which listed protected items and trusted `PUBLIC` unconditionally.
+**One rule decides what is public: something in another unit uses it.** A function is listed only if a
+function in **another unit** calls it, or its address appears in a file-scope dispatch table. No marking
+is consulted (2026-10-13): `PUBLIC` does not by itself publish a function, and `PRIVATE`, `PROTECTED`
+and a C++ `private:` / `protected:` label do not hide one that another unit calls — a friend, a derived
+class in another file. (Earlier readings: `PUBLIC` trusted unconditionally and protected items listed;
+then, from 2026-09-20, a marking could restrict but not promote.)
 
 A unit is `Foo.h` + `Foo.cpp` together, so a caller in the companion header does not publish anything —
 the same granularity the Source/Destination cell uses (REQ-IT-12), which lists caller units other than
 the function's own.
 
-A **global** is listed only if a function in **another unit** reads or writes it; a marking only
-restricts. A use through an `extern` declaration counts for the definition of that qualified name, and a
+A **global** is listed only if a function in **another unit** reads or writes it, whatever it is
+marked. A use through an `extern` declaration counts for the definition of that qualified name, and a
 declaration-only global is never listed (the defining unit's row stands for it).
 
-**Verification:** Known private and protected items absent. A `PUBLIC` function whose only callers are in
+**Verification:** Items nothing outside their unit uses absent, whatever they are marked. A function marked
+`PROTECTED` or `PRIVATE` that another unit calls present (`coreGetCount`, called by `App/Main`). A `PUBLIC` function whose only callers are in
 its own unit absent, whether they sit in the same file or in its companion header. Known cross-unit
 interfaces present. `g_sharedTick` (read by Lib through `SharedDefs.h`) and `g_utilBase` (read by Core
 through `Util.h`) listed; `PUBLIC` `g_result` and `g_utilBuf`, used by their own unit only, absent.

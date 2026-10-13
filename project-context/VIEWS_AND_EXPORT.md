@@ -88,6 +88,49 @@ Full logic and column definitions: `docs/spec/SWE3_SPEC.md` — Interface Tables
 - Columns: Interface ID, Interface Name, Information, Data Type, Data Range,
   Direction (In/Out), Source/Destination, Interface Type.
 
+**What a function is printed as, and what its flowchart is called (2026-10-14h)** — ONE rule,
+[engine/core/function_names.py](../engine/core/function_names.py), free of engine imports so
+`api/services/doc_render.py` uses it too:
+- `display_names(functions)` → `{fid: name}`. `Class::name` (`utils.scoped_name`) when no other
+  function of the UNIT prints alike; else what tells them apart: the full qualified name for one
+  name in several scopes (`fast::init`), plus the parameter types for overloads (`scale(int)`).
+  Judged among all functions of the unit, published or not. Callers: `interfaceName` in this view
+  (so the Interface Name cell, the `N.1.u.k <Unit>-<Function>` heading and the flowchart table
+  title follow), `currentFunctionDisplay` in the behaviour view, the private-callee signature in
+  both renderers, the names a unit description is prompted with (`model_deriver`).
+- `overload_signatures(functions)` → `{fid: "(int, float)"}` for overloads only. SWE.4 prints the
+  full qualified name, so `test_specs` / `dynamic_specs` add `headingName` to an overload's spec
+  and to no other (`swe4_exporter._spec_name`, and the web page's twin `api/services/
+  swe4_render._spec_name`). `without_signature` keeps a signature line from
+  repeating the list (`int scale(int a)`, not `scale(int)(int a)`).
+- `chart_names(functions)` → `{fid: chart name}`: the qualified name, and for an overload
+  `qualifiedName(<the key's param types>)` with `*`, `&`, `&&` spelled `ptr`, `ref`, `rref` —
+  a picture's file name replaces both `*` and `&` by `_`, so `f(T *)` and `f(T &)` would be two
+  charts with one picture. Names of a unit that are still one file (apart only by case) are
+  numbered in key order (`run`, `run-2`). A chart is keyed by `name` inside `<unit>.json` and by
+  it on disk (`<unit>_<name>.png` / `.svg`); two overloads shared one name, so one chart replaced
+  the other everywhere a file is read by name. The engine's writer takes the names from EVERY
+  function of the model (`flowchart_engine._remember_chart_names`, before the incremental plan
+  narrows the list — an overload drawn alone must get the name it has beside its sibling); the
+  flowcharts view joins its incremental sets on them; `docx_exporter` and `doc_render` look a
+  chart up by them. A function whose qualified name is unique in its unit keeps the name it had:
+  no file, SVG or stored chart of it is renamed. Reviewer corrections were never affected — a
+  node label's flowchart id is the function key.
+- **A version generated before the names** holds a function's overloads under ONE name. Three
+  paths, each checked on a version made by develop's code: (1) `stored_chart` — both renderers
+  find an overload under the qualified name when its own is not stored, so a Phase-4-only export
+  or a web read shows what it showed; when its OWN chart is found, only its own name names a
+  picture (a carried shared picture may be the sibling's). (2) `analyzer.py reexport` redraws:
+  each overload gets its heading and its picture. (3) An incremental run:
+  `views/flowcharts._overloads_with_nothing_to_carry` adds the unchanged overloads to the plan
+  (the mechanism of the cross-version add-back), or the merge would drop the shared entry — a name
+  no current function has — and leave them with no chart. The shared PNG stays on disk, unread,
+  like a deleted function's.
+- `tools/doccheck`: a heading may end in a parameter list (`cells._IDENTIFIER_RE`), and
+  `model.normalise_key` keeps an attached, non-empty one, so two overloads are two entries
+  (`utilAbs()` and a spaced `Unit (old)` normalise as before).
+- Tests: `tests/unit/test_function_names.py`; fixture `SampleCppProject/Layer1/Poly/Overloads.*`.
+
 ### View 2: `unitDiagrams` — [engine/views/unit_diagrams.py](../engine/views/unit_diagrams.py)
 
 One Mermaid `.mmd` (and optionally `.png`) per unit into
@@ -491,6 +534,31 @@ the chart keeps its earlier labels. `--only-rewrite` charts those functions alon
 then splices them into the stored unit files (`_splice_rewritten`) and puts every other file back.
 `_flush_labels` lands the label cache's buffered writes once every chart is labelled: without it a run's
 last minute of labels was lost at exit.
+
+### A header libclang cannot find (2026-10-14i)
+
+Firmware is compiled with armclang and parsed with libclang: a toolchain header (`stdio.h`) or a
+project header outside the include paths may be missing. `PARSE_KEEP_GOING`
+(`core/clang_options.py`, both parsers) keeps the parse going, and a statement that uses a name of
+the missing header stays in the tree as an `UNEXPOSED_EXPR` with its text — so `if (p == NULL)
+{ printf(...); }` keeps its decision and both branches (measured on LLVM 21).
+
+What clang does NOT keep: `case X:` when `X` is an enum value or a macro of the missing header.
+It makes no `CASE_STMT` and leaves the case's statements loose in the switch body, and
+`CFGBuilder._flatten_switch_cases` took only statements under a kept case (loose ones before the
+first case were dropped, later ones appended to the previous case after its `break`). Now
+`_dropped_case_labels` reads `case ...:` / `default:` from the body's own tokens at its own
+brace depth (a nested switch's labels are its own), keeps those with no CASE/DEFAULT cursor at
+that position, and `_flatten_with_dropped_labels` assigns every statement to the label before it
+by source position. A switch clang understood takes the unchanged walk (no dropped label → the
+old code path), so no existing graph moves. SWE.4's Test Steps come from the same graph.
+
+Still lost, by nature: a `#if` / `#ifdef` branch on a macro of the missing header. Defining a
+host macro (`_WIN32`) in `clang.clangArgs` does not make a header reachable; it switches the
+code's own `#ifdef _WIN32` branches on and its target branches off. The fix for a missing header
+is its include directory (`-isystem <toolchain>/include` in `clang.clangArgs`, or the core's
+`compileCommands`). Tests: `tests/unit/test_cfg_missing_header.py`; fixture
+`SampleCppProject/Layer1/Diag/MissingHeaderSwitch*.cpp`.
 
 ### `LIBCLANG_PATH` env var (feat/test-framework)
 

@@ -88,6 +88,8 @@ def run(model, output_dir, model_dir, config):
 
     units_data = model.get("units", {})
     functions_data = model.get("functions", {})
+    from core.function_names import display_names
+    display = display_names(functions_data)        # as the interface table prints each one
     allowed_components = {m.lower() for m in (config.get("_analyzerAllowedComponents") or [])}
     fid_to_unit = {fid: uk for uk, u in units_data.items() for fid in u.get("functionIds", [])}
     unit_names = {uk: u.get("name", uk.split(KEY_SEP)[-1] if KEY_SEP in uk else uk)
@@ -240,7 +242,7 @@ def run(model, output_dir, model_dir, config):
                 # short name within the unit, which picks the wrong one when a unit has two
                 # same-named methods (AddOperation::apply / MultiplyOperation::apply).
                 "currentFunctionId": fid,
-                "currentFunctionDisplay": scoped_name(
+                "currentFunctionDisplay": display.get(fid) or scoped_name(
                     func_qualified, (functions_data.get(fid) or {}).get("className", "")
                 ),
                 "externalUnitFunction": external_unit_external_function,

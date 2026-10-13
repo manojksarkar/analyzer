@@ -1,20 +1,25 @@
-"""The visibility rule, one assertion per cell of SampleCppProject/Layer1/Access/AccessMatrix.
+"""What is published, one assertion per cell of SampleCppProject/Layer1/Access/AccessMatrix.
 
-Two phases decide whether an entry reaches the interface table, and they fail differently,
-so they are asserted apart:
+ONE rule decides whether an entry reaches the interface table (2026-10-13): something in
+ANOTHER UNIT uses it -- a caller for a function (or its address in a file-scope table), a
+reader or writer for a global. Nothing else: no PRIVATE / PROTECTED / PUBLIC macro and no C++
+access is consulted. Two phases are still asserted apart, because they fail differently:
 
-  * PHASE 1 (parser._function_visibility) RECORDS `public` or `private` -- two values, one
-    bit. A PRIVATE/PROTECTED/PUBLIC macro wins wherever it exists; otherwise a member takes
-    its C++ access, written label or language default; a free function has neither, and
-    unmarked records as `public`.
-  * PHASE 2 (model_deriver._fn_is_private) BUCKETS it. `private` is buried whatever calls
-    it; everything else has to earn its row from a caller in another file or an address in
-    a file-scope table.
+  * PHASE 1 (parser._function_visibility) RECORDS the marking as `public` or `private` --
+    two values, one bit. A PRIVATE/PROTECTED/PUBLIC macro wins wherever it exists; otherwise
+    a member takes its C++ access, written label or language default; a free function has
+    neither, and unmarked records as `public`. It is a fact about the source and decides
+    nothing any more.
+  * PHASE 2 (model_deriver._fn_is_private) applies the rule, and `_enrich_interfaces`
+    writes its answer into `visibility` -- over the marking, in both directions -- because
+    every view and exporter filter tests `visibility == "private"`.
+
+Until 2026-10-13 a marking could restrict: `private` was buried whatever called it (a friend,
+a derived class in another unit), which is what the "private, cross-file caller" cell was.
 
 Phase 1 is asserted against the real fixture rather than an inline snippet, so the fixture
 cannot drift away from the test. It cannot be read back out of the model instead: phase 2
-overwrites `visibility` with "private" on everything it buries, which hides exactly the
-mistakes this file exists to catch.
+overwrites `visibility`, which hides exactly the mistakes this file exists to catch.
 
 The Access component is outside the e2e run's scope (group "Layer1.My Sample"), so these
 cells have no e2e coverage -- this is the only place they are checked.
@@ -178,7 +183,11 @@ WORLD = {
 
 @pytest.mark.parametrize("label,fn,expected_private", [
     ("private, no caller",            _fn("private"),                       True),
-    ("private, cross-file caller",    _fn("private", [OTHER]),              True),
+    ("private, same-file caller only", _fn("private", [SAME]),              True),
+    ("private, companion-header caller only", _fn("private", [COMPANION]),  True),
+    # The cell that changed on 2026-10-13: a marking no longer restricts. A friend, or a
+    # derived class in another unit calling a protected method, is a user in another unit.
+    ("private, cross-file caller",    _fn("private", [OTHER]),              False),
     ("public, cross-file caller",     _fn("public", [OTHER]),               False),
     ("public, same-file caller only", _fn("public", [SAME]),                True),
     ("public, companion-header caller only", _fn("public", [COMPANION]),  True),
@@ -187,21 +196,56 @@ WORLD = {
     ("unmarked, cross-file caller",   _fn(None, [OTHER]),                   False),
     ("unmarked, no caller",           _fn(None),                            True),
     ("address-taken, no caller",      _fn(None, (), ["Cross|OpsTable"]),    False),
-    ("private but address-taken",     _fn("private", (), ["Cross|OpsTable"]), True),
+    ("private but address-taken",     _fn("private", (), ["Cross|OpsTable"]), False),
 ])
 def test_phase_two_buckets(label, fn, expected_private):
     assert _fn_is_private(fn, WORLD, BASE) is expected_private, label
 
 
 def test_public_no_longer_guarantees_a_row():
-    """A marking may restrict, never promote.
+    """A marking cannot publish.
 
     `PUBLIC` used to short-circuit _fn_is_private and publish a function whatever the call
-    graph said. It no longer does, so `public` and unmarked are indistinguishable here --
-    which is the whole content of the change, and the thing to notice if it is reverted.
+    graph said. It no longer does, so `public` and unmarked are indistinguishable here.
     """
     assert _fn_is_private(_fn("public"), WORLD, BASE) is True
     assert _fn_is_private(_fn(None), WORLD, BASE) is True
+
+
+@pytest.mark.parametrize("marking", ["private", "public", None])
+def test_no_marking_changes_the_answer(marking):
+    """The whole rule: used from another unit, or not. Three markings, the same two answers."""
+    assert _fn_is_private(_fn(marking, [OTHER]), WORLD, BASE) is False
+    assert _fn_is_private(_fn(marking, [SAME]), WORLD, BASE) is True
+    assert _fn_is_private(_fn(marking), WORLD, BASE) is True
+
+
+def test_the_answer_is_written_over_the_marking():
+    """Every view and exporter filter tests `visibility == "private"`. A function marked
+    private that another unit calls must therefore not keep that marking, or it would be
+    published by the rule and dropped by every reader of it -- and one marked public that
+    nobody outside calls must get it."""
+    import model_deriver as md
+    functions = {
+        "Layer1.Access|AccessMatrix|sealedButCalled|": dict(
+            _fn("private", [OTHER]), qualifiedName="sealedButCalled", parameters=[]),
+        "Layer1.Access|AccessMatrix|publicUncalled|": dict(
+            _fn("public"), qualifiedName="publicUncalled", parameters=[]),
+        OTHER: dict(WORLD[OTHER], qualifiedName="caller", parameters=[]),
+    }
+    functions[OTHER]["location"]["line"] = 1
+    for f in functions.values():
+        f["location"].setdefault("line", 1)
+    idx = md._build_interface_index(BASE, functions, {}, "Proj", None)
+    md._enrich_interfaces(BASE, "Proj", functions, {}, idx, None)
+    called = functions["Layer1.Access|AccessMatrix|sealedButCalled|"]
+    uncalled = functions["Layer1.Access|AccessMatrix|publicUncalled|"]
+    assert (called["visibility"], called["interfaceId"][:3]) == ("public", "IF_")
+    assert (uncalled["visibility"], uncalled["interfaceId"][:4]) == ("private", "PIF_")
+    # ...and deriving again from the model it wrote gives the same answer
+    idx = md._build_interface_index(BASE, functions, {}, "Proj", None)
+    md._enrich_interfaces(BASE, "Proj", functions, {}, idx, None)
+    assert (called["visibility"], uncalled["visibility"]) == ("public", "private")
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +283,9 @@ def _private(globals_data, functions_data, vid=G_DEF):
     ("used from its companion header",   [_user("Layer1/Access/AccessMatrix.h", reads=[G_DEF])], None, True),
     ("used by nobody",                   [], None, True),
     ("PUBLIC, used by its own unit only", [_user("Layer1/Access/AccessMatrix.cpp", reads=[G_DEF])], "public", True),
-    ("PRIVATE, read from another unit",  [_user("Layer1/App/Main.cpp", reads=[G_DEF])], "private", True),
+    # Changed on 2026-10-13, with the function rule: a marking no longer restricts.
+    ("PRIVATE, read from another unit",  [_user("Layer1/App/Main.cpp", reads=[G_DEF])], "private", False),
+    ("PRIVATE, used by its own unit only", [_user("Layer1/Access/AccessMatrix.cpp", reads=[G_DEF])], "private", True),
 ])
 def test_phase_two_buckets_globals(label, users, visibility, expected_private):
     globals_data = {G_DEF: _glb(visibility=visibility)}

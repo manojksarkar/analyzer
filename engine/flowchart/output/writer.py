@@ -28,7 +28,7 @@ omitted when the CFG could not be built.
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from models import FileResult, FlowchartResult
 
@@ -38,9 +38,13 @@ logger = logging.getLogger(__name__)
 class OutputWriter:
     """Writes per-source-file JSON output to out_dir."""
 
-    def __init__(self, out_dir: str) -> None:
+    def __init__(self, out_dir: str, chart_names: Optional[Dict[str, str]] = None) -> None:
         self._out_dir = Path(out_dir)
         self._out_dir.mkdir(parents=True, exist_ok=True)
+        # {function key: the chart's name in its unit file}. A chart is keyed by name inside the
+        # file, and by it on disk (<unit>_<name>.png / .svg): overloads share a qualified name,
+        # so each needs one of its own (core.function_names.chart_names).
+        self._chart_names = dict(chart_names or {})
 
     def write_file_result(self, file_result: FileResult) -> Path:
         """
@@ -52,7 +56,7 @@ class OutputWriter:
         out_name = source_path.stem + ".json"
         out_path = self._out_dir / out_name
 
-        payload = _serialize_file_result(file_result)
+        payload = _serialize_file_result(file_result, self._chart_names)
 
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2, ensure_ascii=False)
@@ -100,13 +104,14 @@ class OutputWriter:
 # Serialization helpers
 # ---------------------------------------------------------------------------
 
-def _serialize_file_result(file_result: FileResult) -> List[Dict]:
+def _serialize_file_result(file_result: FileResult,
+                           chart_names: Optional[Dict[str, str]] = None) -> List[Dict]:
     """Convert FileResult → JSON-serializable list."""
     result = []
     for fc in file_result.flowcharts:
         entry: Dict = {
             "functionKey": fc.function_key,
-            "name": fc.qualified_name,
+            "name": (chart_names or {}).get(fc.function_key) or fc.qualified_name,
             "flowchart": fc.mermaid_script,
         }
         if fc.cfg:

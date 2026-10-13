@@ -53,8 +53,11 @@ def _spec_name(spec: dict) -> str:
     agree on what a function is called or they cannot be read side by side.
 
     Falls back to `name`: for a plain function the two are the same string.
+
+    Overloads have one qualified name between them, so the view gives each a `headingName`
+    with its parameter types (`core.function_names.overload_signatures`).
     """
-    return spec.get("qualifiedName") or spec.get("name", "")
+    return spec.get("headingName") or spec.get("qualifiedName") or spec.get("name", "")
 
 
 def _numbered(items):

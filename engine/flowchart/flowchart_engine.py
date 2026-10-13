@@ -599,6 +599,9 @@ def _load_inputs_from_db(config: EngineConfig):
     eng = _db_conn()
     with eng.connect() as cx:
         functions = model_store.load_functions(cx, config.version_id)
+        # Chart names, from EVERY function: an overload this run draws alone (an incremental
+        # run restricted to it below) must get the name it has beside its sibling.
+        _remember_chart_names(functions)
         row = cx.execute(select(_s.versions.c.base_path, _s.versions.c.project_name)
                          .where(_s.versions.c.id == config.version_id)).first()
         _plan_applied = False
@@ -639,6 +642,16 @@ def _load_inputs_from_db(config: EngineConfig):
     logger.info("loaded %d function(s) from the database for %s%s",
                 len(functions), config.version_id, _scope)
     return meta, functions
+
+
+_CHART_NAMES: Dict[str, str] = {}
+
+
+def _remember_chart_names(functions: Dict) -> None:
+    """{function key: its chart's name} for this run's writer (core.function_names)."""
+    from core.function_names import chart_names  # noqa: WPS433
+    _CHART_NAMES.clear()
+    _CHART_NAMES.update(chart_names(functions or {}))
 
 
 def _db_knowledge_base(version_id: str) -> Optional[dict]:
@@ -1070,6 +1083,7 @@ def run(config: EngineConfig) -> None:
     else:
         meta = _load_project_meta(config.metadata_json_path)
         functions_data = _load_functions(config.functions_json_path)
+        _remember_chart_names(functions_data)
     base_path = meta.base_path
 
     logger.debug("Project: %s  |  base_path: %s", meta.project_name, base_path)
@@ -1210,7 +1224,7 @@ def run(config: EngineConfig) -> None:
         maxContextTokens=max_context_tokens,
         enrichment=enrichment_cfg,
     )
-    writer = OutputWriter(config.out_dir)
+    writer = OutputWriter(config.out_dir, _CHART_NAMES)
 
     # Process each source file
     file_results: List[FileResult] = []

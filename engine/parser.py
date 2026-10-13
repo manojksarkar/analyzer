@@ -361,6 +361,10 @@ _dd_sources += _data_dict_layer_args
 # through derive, views and export would mean four values and a filter test at every
 # consumer, to express two outcomes. The cost is that the distinction is gone for good --
 # flipping the policy later means re-parsing, not reinterpreting a stored model.
+#
+# Since 2026-10-13 the recorded value decides nothing: Phase 2 publishes by one rule (used
+# from another unit, or not) and writes its answer over the field. It stays a fact about
+# the source.
 _MACRO_TO_VISIBILITY = {"PRIVATE": "private", "PROTECTED": "private", "PUBLIC": "public"}
 
 # "default" is the LOOKUP's way of saying "nothing was written here, keep looking" -- the

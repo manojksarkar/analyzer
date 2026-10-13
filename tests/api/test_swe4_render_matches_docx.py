@@ -48,6 +48,12 @@ SPECS = {
                      {"steps": ["2.b"], "text": "Successfully returned sample"}]),
         _fn("reset", 10, rt="void", steps=[("1", "Issue function reset with input VOID.")]),
         _fn("broken", 30, rt="int", steps=[]),
+        # overloads: one qualified name, so the view gives each a heading name of its own
+        dict(_fn("scale", 40, params=["int value"], steps=[("1", "Issue function scale with inputs value.")]),
+             testCaseId="TC_SCALE_1", headingName="scale(int)"),
+        dict(_fn("scale", 41, params=["int value", "int factor"],
+                 steps=[("1", "Issue function scale with inputs value, factor.")]),
+             testCaseId="TC_SCALE_2", headingName="scale(int, int)"),
     ]},
     "Layer1.Signal|Driver": {"name": "Driver", "functions": [
         _fn("acquire", 5, params=["int raw"], mocks=["normalize()"], globals_=["int g_level"],
@@ -118,6 +124,14 @@ class TestTheHeadings:
         assert "2.1.2.1 Signal-reset" in titles and "2.1.2.2 Signal-Proc::normalize" in titles
         assert "2.1.3.1 Driver - acquire (Hub - hubCompute)" in titles
 
+    def test_overloads_have_a_heading_each(self, exported, page):
+        """Two overloads share a qualified name; the page and the DOCX both print the spec's
+        `headingName`, or two sections read the same."""
+        heads, _ = exported
+        titles = [t["title"] for t in page["toc"]]
+        for name in ("Signal-scale(int)", "Signal-scale(int, int)"):
+            assert titles.count(name) == 1 and sum(h.endswith(" " + name) for h in heads) == 1
+
 
 class TestTheTables:
     def test_every_cell_is_the_docx_text(self, exported, page):
@@ -126,7 +140,7 @@ class TestTheTables:
         spec_tables = [t for t in tables if t and t[0][0] == "Eval. Equipment Name"]
         b_tables = [t for t in tables if t and t[0][0] == "Test Case ID"]
         specs = [s for s in _flat(page["sections"]) if s["type"] == "test_spec"]
-        assert len(specs) == len(spec_tables) == len(b_tables) == 5
+        assert len(specs) == len(spec_tables) == len(b_tables) == 7
         for s, a, b in zip(specs, spec_tables, b_tables):
             rows = dict(s["table"]["rows"])
             assert [rows[h] for h in a[0]] == a[1]
@@ -150,7 +164,7 @@ class TestTheStructuredSpec:
 
     def test_the_summary_counts_the_document(self, page):
         s = page["test_summary"]
-        assert (s["units"], s["function_specs"], s["dynamic_specs"], s["mocks"]) == (2, 4, 1, 1)
+        assert (s["units"], s["function_specs"], s["dynamic_specs"], s["mocks"]) == (2, 6, 1, 1)
 
     def test_the_chapters_carry_the_review_section_keys(self, page):
         assert [s["id"] for s in page["sections"]][:3] == ["intro", "test_spec", "metrics"]

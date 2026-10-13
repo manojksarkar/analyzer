@@ -392,6 +392,17 @@ def _flowchart_svg():
     return flowchart_svg
 
 
+def _function_names():
+    """engine/core/function_names: what a function is printed as and what its flowchart is
+    called -- the rule the engine's views and the DOCX exporter use."""
+    import sys
+    eng = str(_REPO_ROOT / "engine")
+    if eng not in sys.path:
+        sys.path.insert(0, eng)
+    from core import function_names
+    return function_names
+
+
 def _find_flowchart(flowcharts_map: dict, unit_keys: tuple, func_keys: tuple):
     """(dot, unit_key, func_key) for the first unit/function spelling the map has, else None.
     Which spelling matched names the picture: the engine calls it <unit_key>_<func_key>.svg."""
@@ -765,6 +776,12 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
     unit_descriptions: dict = _view_json(output_reader, group_dir, "unit_descriptions.json") or {}
 
     # Load flowcharts + behavior diagrams
+    # An overload's flowchart has a name of its own, and a private callee is printed under the
+    # name the tables give it (mirrors docx_exporter).
+    _names = _function_names()
+    chart_name_of = _names.chart_names(functions_data or {})
+    display_name_of = _names.display_names(functions_data or {})
+    overloads = _names.overload_signatures(functions_data or {})
     flowcharts_dir = group_dir / "flowcharts"
     flowchart_ids: dict = {}
     flowcharts_map = _load_flowcharts(flowcharts_dir, output_reader, group_dir, flowchart_ids)
@@ -936,14 +953,17 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                     continue
                 # Class-qualified for display; func_name stays short as a lookup key.
                 func_display = iface.get("interfaceName", "") or func_name
-                func_qn = iface.get("qualifiedName", "") or func_name
+                func_plain_qn = iface.get("qualifiedName", "") or func_name
+                func_qn = chart_name_of.get(iface.get("functionId")) or func_plain_qn
 
                 # Flowchart lookup (mirrors docx_exporter). Flowcharts are keyed by
                 # qualifiedName (flowchart/output/writer.py), so try that FIRST — looking up by
                 # short name alone meant class methods never resolved and silently rendered
                 # without a flowchart here, unlike the DOCX.
+                # An overload has a chart name of its own; a version generated before 2026-10-13
+                # holds it under the qualified name, and is read there as it was then.
                 found = _find_flowchart(flowcharts_map, (unit_prefix, unit_name_fc),
-                                        (func_qn, func_name))
+                                        (func_qn, func_plain_qn, func_name))
                 flowchart_entries: list[dict] = []
 
                 if found:
@@ -952,7 +972,9 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                         f"{p.get('type', '')} {p.get('name', '')}".strip() for p in params
                     )
                     ret = iface.get("returnType", "") or ""
-                    signature = f"{ret} {func_display}({params_str})".strip()
+                    # the signature writes the parameters itself: no `scale(int)(int a)`
+                    sig_name = _names.without_signature(func_display, iface.get("functionId"), overloads)
+                    signature = f"{ret} {sig_name}({params_str})".strip()
                     flowchart_entries.append(
                         _flowchart_entry(group_dir, found, signature, asset_base, flowchart_ids))
 
@@ -975,17 +997,20 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                         c_prefix = c_unit_key.replace(KEY_SEP, "_").replace(" ", "_")
                         c_unit_name = callee_parts[1] if len(callee_parts) > 1 else ""
                         callee_found = _find_flowchart(flowcharts_map, (c_prefix, c_unit_name),
-                                                       (callee_qn, callee_fn))
+                                                       (chart_name_of.get(callee_fid) or callee_qn,
+                                                        callee_qn, callee_fn))
                         if not callee_found:
                             continue
                         rendered_private_fids.add(callee_fid)
-                        callee_display = scoped_name(callee_qn, callee.get("className", ""))
+                        callee_display = (display_name_of.get(callee_fid)
+                                          or scoped_name(callee_qn, callee.get("className", "")))
                         callee_params = callee.get("params") or callee.get("parameters") or []
                         cparams_str = ", ".join(
                             f"{p.get('type', '')} {p.get('name', '')}".strip()
                             for p in callee_params
                         )
-                        callee_sig = f"{callee.get('returnType', '')} {callee_display}({cparams_str})".strip()
+                        callee_sig_name = _names.without_signature(callee_display, callee_fid, overloads)
+                        callee_sig = f"{callee.get('returnType', '')} {callee_sig_name}({cparams_str})".strip()
                         flowchart_entries.append(
                             _flowchart_entry(group_dir, callee_found, callee_sig, asset_base,
                                              flowchart_ids))

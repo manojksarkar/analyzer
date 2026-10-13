@@ -6,6 +6,7 @@ import re
 from .registry import register
 from core.config import get_group_layer_name
 from utils import get_range, log, scoped_name, short_name, KEY_SEP
+from core.function_names import display_names
 
 
 def _iface_order(entry):
@@ -72,6 +73,9 @@ def _build_interface_tables(
 ):
     # Only .cpp units; entries sorted by line; caller/callee units derived from calledByIds/callsIds
     fid_to_unit = _fid_to_unit(units_data)
+    # What each function is printed as: `Class::name`, and for the ones that share that with
+    # another function of their unit, what tells them apart (core.function_names).
+    names = display_names(functions_data)
     dd = data_dictionary or {}
     unit_names = {uk: u.get("name", uk.split(KEY_SEP)[-1] if KEY_SEP in uk else uk) for uk, u in units_data.items()}
 
@@ -95,12 +99,14 @@ def _build_interface_tables(
             # `name` stays SHORT — downstream code uses it as a lookup key (flowchart stems,
             # behaviour rows), not only for display. `interfaceName` carries the class-qualified
             # display form so two same-named methods in one unit (AddOperation::apply vs
-            # MultiplyOperation::apply) are distinguishable wherever a name is rendered.
+            # MultiplyOperation::apply) are distinguishable wherever a name is rendered -- and,
+            # for overloads and same-named functions of different namespaces, the parameter
+            # types or the full scope that tell THOSE apart.
             name = short_name(qn)
             loc = dict(f.get("location", {}))
             if loc.get("file"):
                 loc["file"] = _strip_ext(loc["file"])
-            interface_name = scoped_name(qn, f.get("className", ""))
+            interface_name = names.get(fid) or scoped_name(qn, f.get("className", ""))
             caller_units = {
                 u for cid in f.get("calledByIds", []) or []
                 for u in fid_to_unit.get(cid, []) if u

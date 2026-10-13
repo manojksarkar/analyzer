@@ -349,6 +349,8 @@ def build(units_data, functions_data, global_variables_data, components_data,
     unit_headers = _unit_headers(units_data, components_data or {})
 
     result = {}
+    from core.function_names import overload_signatures
+    overloads = overload_signatures(functions_data)     # as test_specs: an overload's heading
     for fid, caller_fid in select_targets(units_data, functions_data, components_data,
                                           unit_of, filter_mode, allowed_components):
         func = functions_data.get(fid)
@@ -359,6 +361,8 @@ def build(units_data, functions_data, global_variables_data, components_data,
                                    unit_names.get(unit_key, unit_key), functions_data,
                                    global_variables_data, unit_of, unit_names, dd,
                                    unit_headers)
+        if fid in overloads:
+            spec["headingName"] = spec["qualifiedName"] + overloads[fid]
         result.setdefault(spec["component"], []).append(spec)
     return result
 

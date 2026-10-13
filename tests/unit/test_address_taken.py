@@ -180,10 +180,11 @@ class TestPrivacyRule:
         f = self._fn(addressTakenByUnits=["Cross|OpsTable"])
         assert _fn_is_private(f, {}, self.BASE) is False
 
-    def test_explicit_private_still_wins_over_the_table(self):
-        """A source-level PRIVATE annotation stays authoritative."""
+    def test_a_private_marking_does_not_hide_a_function_in_a_table(self):
+        """No marking decides publication (2026-10-13): a function registered in a table is
+        reached through it whatever it is marked. Until then PRIVATE won over the table."""
         f = self._fn(visibility="private", addressTakenByUnits=["Cross|OpsTable"])
-        assert _fn_is_private(f, {}, self.BASE) is True
+        assert _fn_is_private(f, {}, self.BASE) is False
 
     def test_empty_list_does_not_make_it_public(self):
         assert _fn_is_private(self._fn(addressTakenByUnits=[]), {}, self.BASE) is True

@@ -172,15 +172,12 @@ def test_private_names_absent_from_docx(all_cell_text):
         assert name not in all_cell_text, f"Private name '{name}' found in DOCX interface table"
 
 
-def test_protected_name_absent_from_interface_rows(all_interface_rows):
-    """coreGetCount is PROTECTED, so it gets no interface row.
-
-    Asserted against the interface ROWS rather than all cell text: a private function can
-    still appear elsewhere in the document, labelled with its signature under the
-    flowchart of the public function that calls it.
+def test_a_marked_function_another_unit_calls_has_its_row(all_interface_rows):
+    """coreGetCount is PROTECTED and App/Main.cpp calls it, so it has an interface row: what
+    is published is decided by who uses it, not by a marking (2026-10-13).
     """
     names = {r.cells[COL_IF_NAME].text.strip() for r in all_interface_rows}
-    assert "coreGetCount" not in names, "PROTECTED 'coreGetCount' leaked into the DOCX interface table"
+    assert "coreGetCount" in names, "'coreGetCount' is called from another unit and has no DOCX row"
 
 
 @pytest.mark.parametrize("name,unit", [

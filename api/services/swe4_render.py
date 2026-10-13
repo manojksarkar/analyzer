@@ -105,7 +105,9 @@ def _steps_text(steps: list[dict]) -> str:
 # ── one spec ───────────────────────────────────────────────────────────────────
 
 def _spec_name(spec: dict) -> str:
-    return spec.get("qualifiedName") or spec.get("name", "")
+    """As swe4_exporter._spec_name: an overload's spec carries a `headingName` with its
+    parameter types, or two sections of the page would read the same."""
+    return spec.get("headingName") or spec.get("qualifiedName") or spec.get("name", "")
 
 
 def _test_spec(spec: dict, cfg: dict) -> dict:

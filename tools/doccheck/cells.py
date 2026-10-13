@@ -125,8 +125,22 @@ def key_value_rows(rows):
     return out
 
 
-# A C++ name as a heading prints it: `apply`, `AddOperation::apply`, `operator+`.
-_IDENTIFIER_RE = re.compile(r"^[A-Za-z_~][A-Za-z0-9_]*(?:::[A-Za-z_~][A-Za-z0-9_]*)*$")
+# A C++ name as a heading prints it: `apply`, `AddOperation::apply`, `operator+` -- and, for a
+# function that shares its name with another of its unit, with what tells them apart: an
+# overload's parameter types, `scale(int)`, `scale(const char *, int)`
+# (engine/core/function_names.py).
+_IDENTIFIER_RE = re.compile(
+    r"^[A-Za-z_~][A-Za-z0-9_]*(?:::[A-Za-z_~][A-Za-z0-9_]*)*(?:\([^()]*(?:\([^()]*\)[^()]*)*\))?$")
+
+
+def split_signature(name):
+    """`Calc::scale(int, float)` -> (`Calc::scale`, `(int, float)`); a name with no parameter
+    list -> (name, "")."""
+    text = (name or "").strip()
+    cut = text.find("(")
+    if cut > 0 and text.endswith(")"):
+        return text[:cut].rstrip(), text[cut:]
+    return text, ""
 
 
 def starts_with_unit(heading, unit_name):

@@ -172,9 +172,19 @@ def normalise_key(name: str) -> str:
     units that are not the same unit.
     """
     s = (name or "").strip()
+    # An overload's parameter types are part of its name -- `scale(int)` and `scale(float)`
+    # are two functions (engine/core/function_names.py). They are written against the name,
+    # and are never empty: `utilAbs()` is a call form, and a spaced `Unit (old)` a qualifier.
+    sig = ""
+    m = _SIGNATURE_RE.match(s)
+    if m and m.group(2).strip("() "):
+        s, sig = m.group(1), re.sub(r"\s+", "", m.group(2))
     s = s.split("(")[0].strip()          # drop a trailing "(...)" qualifier
     s = re.sub(r"[\s_\-]+", "", s)
-    return s.casefold()
+    return (s + sig).casefold()
+
+
+_SIGNATURE_RE = re.compile(r"^(.*[A-Za-z0-9_~])(\([^()]*(?:\([^()]*\)[^()]*)*\))$")
 
 
 _CODE_COMMENT_RE = re.compile(r"/\*.*?\*/|//[^\n]*", re.DOTALL)

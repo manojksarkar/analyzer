@@ -71,13 +71,13 @@ def test_private_globals_excluded(core_entries):
         assert name not in global_names, f"PRIVATE global '{name}' leaked into interface table"
 
 
-def test_protected_functions_excluded(core_entries):
-    # coreGetCount is PROTECTED. A protected item is unreachable from another unit except
-    # through inheritance, so it is not an interface: the parser records PROTECTED as
-    # "private" and the row never reaches the table. Reverses the earlier reading of
-    # REQ-IT-02, which asked for protected items to be listed.
+def test_a_marked_function_another_unit_calls_is_published(core_entries):
+    # coreGetCount is PROTECTED, and App/Main.cpp calls it. One rule decides a row since
+    # 2026-10-13: something in another unit uses it -- no marking is consulted. (Before, a
+    # marking could restrict: PROTECTED recorded as "private" and the row never reached the
+    # table, whatever called it.)
     names = {e["name"] for e in core_entries if e["type"] == "Function"}
-    assert "coreGetCount" not in names, "PROTECTED function 'coreGetCount' leaked into interface table"
+    assert "coreGetCount" in names, "'coreGetCount' is called from another unit and has no row"
 
 
 @pytest.mark.parametrize("entries_fixture,expected,unit", [
@@ -107,7 +107,7 @@ def test_global_used_by_another_unit_present(request, entries_fixture, global_na
     assert global_name in names, f"global '{global_name}' missing from {unit} entries"
 
 
-# PUBLIC-marked, but only their own unit touches them: a marking may restrict, never promote.
+# PUBLIC-marked, but only their own unit touches them: no marking publishes anything.
 @pytest.mark.parametrize("entries_fixture,global_name,unit", [
     ("core_entries", "g_result",  "Core"),
     ("util_entries", "g_utilBuf", "Util"),

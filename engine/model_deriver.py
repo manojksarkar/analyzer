@@ -411,18 +411,24 @@ def _has_external_caller(f: dict, functions_data: dict, base_path: str) -> bool:
 
 
 def _fn_is_private(f: dict, functions_data: dict, base_path: str) -> bool:
-    if (f.get("visibility") or "").lower() == "private":
-        return True
+    """A function the unit does not publish: ONE rule -- nothing in another unit uses it.
+
+    No marking is consulted (2026-10-13). PRIVATE / PROTECTED / PUBLIC and the C++ access of a
+    method are still recorded by Phase 1, and decide nothing here: a function another unit
+    calls is that unit's interface whatever it is marked, and one nobody outside calls is not.
+    (Until then a marking could restrict: a private or protected function stayed out of the
+    table even with a caller in another unit -- a friend, a derived class. `_enrich_interfaces`
+    therefore writes the answer over the recorded marking, in both directions.)
+    """
     # A function published by a file-scope initializer table (`static const fp_t table[] =
     # { fn1, … };`) is reachable through that table even though no CALL_EXPR names it, so
-    # the outside-the-unit-caller rule below would wrongly bury it. Ranked BELOW the explicit
-    # PRIVATE annotation: a source-level marking stays authoritative. This is EVIDENCE of
-    # reachability, not an annotation, which is why it survived the change below.
+    # the outside-the-unit-caller rule below would wrongly bury it. This is EVIDENCE of use,
+    # not a marking.
     if f.get("addressTakenByUnits"):
         return False
     # A PUBLIC marking used to short-circuit here, guaranteeing a row. It no longer does:
-    # a marking may RESTRICT, never promote, so publication has to be earned by a caller in
-    # another UNIT. PUBLIC and unmarked are now indistinguishable to this function.
+    # publication has to be earned by a caller in another UNIT. PUBLIC, PRIVATE and unmarked
+    # are indistinguishable to this function.
     #
     # The cost is real and was measured before the change -- 42 of the sample's 91
     # PUBLIC-marked functions lose their row, `main` among them, and the App|Main unit's
@@ -477,18 +483,18 @@ def _glb_used_outside(functions_data: dict, global_variables_data: dict, base_pa
 def _glb_is_private(vid: str, g: dict, used_outside: set) -> bool:
     """A global the unit must not publish as its interface.
 
-    Three reasons, checked in order:
+    Two reasons, checked in order. No marking is among them (2026-10-13): PRIVATE / PUBLIC
+    and the C++ access of a static member are recorded by Phase 1 and decide nothing here,
+    as for functions (`_fn_is_private`).
 
-    * marked (or C++-access) private.
     * a DECLARATION ONLY. `extern const OpsFn g_opsTable[];` in OpsClient.cpp is a promise
       that the storage exists elsewhere; OpsClient owns nothing and merely reads someone
       else's table, so publishing it as OpsClient's interface claims a relationship that
       runs the other way. The defining unit still publishes it. Nothing is lost from the
       document: the unit header table is not filtered, so the `extern` line is still
       listed there and explained (SWE3_WIKI N.1.4).
-    * no function in another unit reads or writes it (`_glb_used_outside`). A marking may
-      restrict, never promote -- the rule functions have followed since 2026-09-20. A file-
-      scope `static` falls here by construction: nothing outside its file can name it.
+    * no function in another unit reads or writes it (`_glb_used_outside`). A file-scope
+      `static` falls here by construction: nothing outside its file can name it.
 
     The same trap as the function rule: "no user outside this unit" and "no user this run
     could see" are one fact to the tool (an ISR, a pointer, assembly, an unparsed layer).
@@ -497,8 +503,6 @@ def _glb_is_private(vid: str, g: dict, used_outside: set) -> bool:
     would bury every global at once. Absent is therefore read as "a definition", which is
     what every global was assumed to be before the field existed.
     """
-    if (g.get("visibility") or "").lower() == "private":
-        return True
     if g.get("isDefinition") is False:
         return True
     return vid not in used_outside
@@ -598,6 +602,11 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
             f["visibility"] = "private"
             prefix = "PIF"
         else:
+            # Published by its user in another unit, whatever it is marked. Every view and
+            # exporter filter tests `visibility == "private"`, so the marking Phase 1
+            # recorded must not stay on it.
+            if (f.get("visibility") or "").lower() == "private":
+                f["visibility"] = "public"
             prefix = "IF"
         interface_id = f"{prefix}_{layer_code}_{group_code}_{unit_name_code}_{idx_code}" if group_code else f"{prefix}_{layer_code}_{unit_name_code}_{idx_code}"
         raw_params = f.get("parameters", f.get("params", []))
@@ -628,6 +637,9 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
             g["visibility"] = "private"
             prefix = "PIF"
         else:
+            # Used from another unit, whatever it is marked: see the function case above.
+            if (g.get("visibility") or "").lower() == "private":
+                g["visibility"] = "public"
             prefix = "IF"
         g["interfaceId"] = f"{prefix}_{layer_code}_{group_code}_{unit_name_code}_{idx_code}" if group_code else f"{prefix}_{layer_code}_{unit_name_code}_{idx_code}"
 
@@ -1220,18 +1232,20 @@ def _iface_items_for_unit(unit_key: str, units_data: dict, functions_data: dict,
     """
     unit = units_data.get(unit_key) or {}
     fn_items, gv_items = [], []
+    from core.function_names import display_names
+    names = display_names(functions_data)          # what the interface table prints
 
-    def _add(bucket, entry):
+    def _add(bucket, entry, name=None):
         d = str(entry.get("description") or "").strip()
         if not d or d in ("-", "N/A"):
             return
-        name = scoped_name(entry.get("qualifiedName", ""), entry.get("className", ""))
+        name = name or scoped_name(entry.get("qualifiedName", ""), entry.get("className", ""))
         bucket.append((str(name).strip(), " ".join(d.split())))
 
     for fid in unit.get("functionIds") or []:
         f = functions_data.get(fid)
         if f and (f.get("visibility") or "").lower() != "private":
-            _add(fn_items, f)
+            _add(fn_items, f, names.get(fid))
     for vid in unit.get("globalVariableIds") or []:
         g = global_variables_data.get(vid)
         if g and (g.get("visibility") or "").lower() != "private":
