@@ -63,41 +63,45 @@
     },
     // "apiKey": "YOUR_KEY_HERE",              // only for a server that takes "Authorization: Bearer"
 
-    // The rest may be left out; the values shown are what a run uses then.
-    //
-    // Pause after every call, per process. 3 = an API gateway that allows about one call per 3 s.
-    // Set 0 for a hosted model with no limit, where 3 s per call would dominate the run.
-    "rateLimitSeconds": 3,
+    // Everything below may be left out; the values shown are what a run uses then.
+
+    // ---- One call ----
     "timeoutSeconds": 300,                     // how long one call may take
     "retries": 1,                              // tries again after a failed call
     "numCtx": 8192,                            // context window in tokens (sent to Ollama only)
-    // The prompt budget in tokens. Left out or null: worked out from the provider and numCtx.
-    "maxContextTokens": 127488,
+    "maxContextTokens": 127488,                // prompt budget in tokens; null = worked out from provider and numCtx
 
-    // Faster LLM runs (docs/design/PIPELINE_SPEED_PLAN.md). As written here nothing changes: a
-    // run makes one call at a time and pauses after each, as always. Ask the gateway's owners
-    // first: is the limit per ticket or per user, and is the gap counted from a call's start or
-    // its end?
+    // ---- How fast calls go out: three keys, read together ----
     //
-    // pacing "start": the rateLimitSeconds gap counts from a call's START, not after it ends --
-    // with a 5 s answer and a 3 s gap, a call every 5 s instead of every 8. Works on one ticket.
-    // To be decided by one office run, then fixed for good (the plan, section 5).
+    //   rateLimitSeconds   the pause between two calls on ONE ticket.
+    //                      3 = a gateway that allows about one call per 3 s; 0 = no pause.
+    //   pacing             where that pause is counted from:
+    //                        "after"  the END of a call    (as always)
+    //                        "start"  the START of a call  (faster: with a 5 s answer, a call every
+    //                                 5 s instead of every 8 -- right only if the gateway counts so)
+    //   lanes              how many tickets are used side by side:
+    //                        []          one ticket, the one above (customHeaders / apiKey):
+    //                                    one call at a time
+    //                        two lanes   two calls at a time, each lane with its own pause
+    //
+    // As written here: one ticket, one call at a time, a 3 s pause after each. Nothing is faster
+    // until you change `pacing` or list lanes. (Why and how much: docs/design/PIPELINE_SPEED_PLAN.md.)
+    "rateLimitSeconds": 3,
     "pacing": "after",
+    "lanes": []
 
-    // lanes: one per ticket or key, used side by side -- a busy one rests, a refused one is left
-    // out. How many calls go out at once follows the lanes; there is nothing else to set. A lane's
-    // customHeaders replace this block's headers of the same name; anything a lane leaves out
-    // (baseUrl, apiKey) comes from this block, and every lane uses this block's model and gap.
-    // A lane's `name` is printed in the log -- never put a secret in it.
+    // Two tickets. A lane is ONE ticket or key for this same server and model; it has a `name`
+    // for the log (never a secret) and its own credential. When lanes are listed, only they
+    // send calls: the ticket above is then just the default for a lane that names none.
     //   "lanes": [
     //     { "name": "ticket-a", "customHeaders": { "x-dep-ticket": "credential:TOKEN_A" } },
     //     { "name": "ticket-b", "customHeaders": { "x-dep-ticket": "credential:TOKEN_B" } }
     //   ]
-    // A second user's ticket:   { "name": "user2", "customHeaders": { "User-Id": "user-id-2", "x-dep-ticket": "credential:TOKEN_2" } }
-    // An API key, not a header: { "name": "key-a", "apiKey": "KEY_A" }  (or env LLM_API_KEYS=KEY_A,KEY_B, no lanes)
-    // Another gateway:          { "name": "backup", "baseUrl": "https://other-gateway/v1", "apiKey": "KEY_C" }
-    // A ticket that may run 2 calls at once: add "maxConcurrent": 2 to its lane.
-    "lanes": []
+    // Other lanes:
+    //   a second user's ticket    { "name": "user2", "customHeaders": { "User-Id": "user-id-2", "x-dep-ticket": "credential:TOKEN_2" } }
+    //   an API key, not a header  { "name": "key-a", "apiKey": "KEY_A" }   (or env LLM_API_KEYS=KEY_A,KEY_B and no lanes)
+    //   another gateway           { "name": "backup", "baseUrl": "https://other-gateway/v1", "apiKey": "KEY_C" }
+    //   two calls at once on it   add "maxConcurrent": 2 to the lane
   },
 
   // A local Ollama instead of a gateway:
