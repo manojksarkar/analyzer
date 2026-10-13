@@ -938,6 +938,16 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 components_data = {k: v for k, v in components_data.items() if k.lower() in lower}
                 global_variables_data = {k: v for k, v in global_variables_data.items() if k.split("|")[0].lower() in lower}
                 functions_data = {k: v for k, v in functions_data.items() if k.split("|")[0].lower() in lower}
+    # A flowchart is keyed by its name inside its unit's file -- the qualified name, and for an
+    # overload the one the flowchart engine gave it -- and a function is printed under the name
+    # the interface table has for it (core.function_names: one rule for all of them).
+    from core.function_names import (chart_names as _chart_names, display_names as _display_names,
+                                     overload_signatures as _overload_signatures,
+                                     stored_chart as _stored_chart,
+                                     without_signature as _without_signature)
+    _chart_name_of = _chart_names(functions_data)
+    _display_name_of = _display_names(functions_data)
+    _overloads = _overload_signatures(functions_data)
     _hidden_fids: set = {fid for fid, f in functions_data.items() if f.get("hidden", False)}
     _hidden_by_mod_unit: dict = {}
     for _fid in _hidden_fids:
@@ -1145,17 +1155,17 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 # Class-qualified for anything the reader sees; func_name stays short because
                 # it is also a lookup key for flowchart stems below.
                 func_display = iface.get("interfaceName", "") or func_name
-                # Flowchart JSON + PNGs are keyed by qualifiedName (flowchart/output/writer.py),
-                # so look up by qualifiedName; fall back to the short name for un-namespaced funcs.
+                # Flowchart JSON + PNGs are keyed by the chart's name (flowchart/output/writer.py):
+                # the qualifiedName, or an overload's own; fall back to the short name for
+                # un-namespaced funcs.
                 func_qn = iface.get("qualifiedName", "") or func_name
                 doc.add_heading(f"{sec_num}.1.{unit_idx}.{iface_idx} {unit_name_display}-{func_display}", level=4)
                 unit_prefix = unit_key.replace(KEY_SEP, "_").replace(" ", "_")
-                flowchart = (
-                    flowcharts_map.get(unit_prefix, {}).get(func_qn)
-                    or flowcharts_map.get(unit_name_flowchart, {}).get(func_qn)
-                    or flowcharts_map.get(unit_prefix, {}).get(func_name)
-                    or flowcharts_map.get(unit_name_flowchart, {}).get(func_name)
-                ) if flowcharts_enabled and func_name else None
+                flowchart, chart_keys = _stored_chart(
+                    flowcharts_map, (unit_prefix, unit_name_flowchart),
+                    _chart_name_of.get(iface.get("functionId")), func_qn, func_name)
+                if not (flowcharts_enabled and func_name):
+                    flowchart = None
                 # Build flowcharts list: own flowchart + private callee flowcharts
                 flowcharts_list = []
                 if flowchart:
@@ -1164,15 +1174,13 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                         for p in (iface.get("parameters") or [])
                     )
                     iface_return = iface.get("returnType", "") or ""
-                    iface_signature = f"{iface_return} {func_display}({iface_params})".strip()
+                    # the signature writes the parameters itself: no `scale(int)(int a)`
+                    _sig_name = _without_signature(func_display, iface.get("functionId"), _overloads)
+                    iface_signature = f"{iface_return} {_sig_name}({iface_params})".strip()
                     # Slice-aware: prefer {stem}_part_K_of_N.png (a tall flowchart split by
                     # views/flowcharts.py), else the single {stem}.png, else mermaid text.
-                    base_stems = [
-                        f"{unit_prefix}_{safe_filename(func_qn)}",
-                        f"{unit_name_flowchart}_{safe_filename(func_qn)}",
-                        f"{unit_prefix}_{safe_filename(func_name)}",
-                        f"{unit_name_flowchart}_{safe_filename(func_name)}",
-                    ]
+                    base_stems = [f"{u}_{safe_filename(k)}" for k in chart_keys
+                                  for u in (unit_prefix, unit_name_flowchart)]
                     _append_flowchart_entries(
                         flowcharts_list, flowcharts_dir, base_stems, flowchart, iface_signature
                     )
@@ -1189,14 +1197,12 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                         callee_func_name = callee_qn.split("::")[-1] if callee_qn else ""
                         if not callee_func_name:
                             continue
-                        callee_display = scoped_name(callee_qn, callee.get("className", ""))
-                        # Keyed by qualifiedName (writer.py); short-name fallback for un-namespaced.
-                        callee_flowchart = (
-                            flowcharts_map.get(callee_unit_prefix, {}).get(callee_qn)
-                            or flowcharts_map.get(callee_unit_name, {}).get(callee_qn)
-                            or flowcharts_map.get(callee_unit_prefix, {}).get(callee_func_name)
-                            or flowcharts_map.get(callee_unit_name, {}).get(callee_func_name)
-                        )
+                        callee_display = (_display_name_of.get(callee_fid)
+                                          or scoped_name(callee_qn, callee.get("className", "")))
+                        # Keyed by the chart's name (writer.py); short-name fallback for un-namespaced.
+                        callee_flowchart, callee_keys = _stored_chart(
+                            flowcharts_map, (callee_unit_prefix, callee_unit_name),
+                            _chart_name_of.get(callee_fid), callee_qn, callee_func_name)
                         if not callee_flowchart:
                             continue
                         if callee_fid in rendered_private_fids:
@@ -1207,13 +1213,10 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                             for p in (callee.get("params") or callee.get("parameters") or [])
                         )
                         callee_return = callee.get("returnType", "")
-                        callee_signature = f"{callee_return} {callee_display}({callee_params})".strip()
-                        callee_stems = [
-                            f"{callee_unit_prefix}_{safe_filename(callee_qn)}",
-                            f"{callee_unit_name}_{safe_filename(callee_qn)}",
-                            f"{callee_unit_prefix}_{safe_filename(callee_func_name)}",
-                            f"{callee_unit_name}_{safe_filename(callee_func_name)}",
-                        ]
+                        _callee_sig_name = _without_signature(callee_display, callee_fid, _overloads)
+                        callee_signature = f"{callee_return} {_callee_sig_name}({callee_params})".strip()
+                        callee_stems = [f"{u}_{safe_filename(k)}" for k in callee_keys
+                                        for u in (callee_unit_prefix, callee_unit_name)]
                         _append_flowchart_entries(
                             flowcharts_list, flowcharts_dir, callee_stems, callee_flowchart, callee_signature
                         )

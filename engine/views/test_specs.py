@@ -608,6 +608,10 @@ def _build_test_specs(units_data, functions_data, global_variables_data,
     unit_of = _unit_of(units_data)
     unit_names = {uk: u.get("name", uk.split(KEY_SEP)[-1] if KEY_SEP in uk else uk)
                   for uk, u in units_data.items()}
+    # Overloads print one qualified name: their heading adds the parameter types, and only
+    # theirs does -- every other spec is written as before (core.function_names).
+    from core.function_names import overload_signatures
+    overloads = overload_signatures(functions_data)
 
     result = {"unitNames": {}}
     for unit_key, unit_info in units_data.items():
@@ -624,6 +628,8 @@ def _build_test_specs(units_data, functions_data, global_variables_data,
             specs.append(_build_spec(fid, func, unit_key, unit_name, functions_data,
                                      global_variables_data, spec_ids, unit_of, dd,
                                      unit_headers))
+            if fid in overloads:
+                specs[-1]["headingName"] = specs[-1]["qualifiedName"] + overloads[fid]
         if specs:
             result[unit_key] = {"name": unit_name, "functions": specs}
     result["unitNames"] = {k: unit_names[k] for k in result if k != "unitNames"}

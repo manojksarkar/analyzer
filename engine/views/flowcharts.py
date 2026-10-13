@@ -230,6 +230,33 @@ def _source_unit_flowchart(version_dir, unit):
     return None, {}
 
 
+def _overloads_with_nothing_to_carry(funcs, chart, base_fc, stem_of, skip=()) -> list:
+    """The overloads whose chart the baseline does not hold under their own name.
+
+    An overload's chart has a name of its own since 2026-10-13 (core.function_names). A
+    baseline generated before that holds a function's overloads under ONE name, so an
+    overload that did not change has nothing to carry -- and the merge drops the shared entry,
+    a name no current function has. It is drawn, like a function new to the baseline. A unit
+    the baseline has no file for is new, or not this run's: its functions are not added."""
+    in_baseline, out = {}, []
+    for fid, name in chart.items():
+        if fid in skip or name == (funcs.get(fid) or {}).get("qualifiedName"):
+            continue
+        stem = stem_of(fid)
+        if not stem:
+            continue
+        if stem not in in_baseline:
+            try:
+                with open(os.path.join(base_fc, stem + ".json"), "r", encoding="utf-8") as f:
+                    arr = json.load(f)
+                in_baseline[stem] = {e.get("name") for e in arr if isinstance(e, dict)}
+            except (OSError, json.JSONDecodeError, TypeError):
+                in_baseline[stem] = None
+        if in_baseline[stem] is not None and name not in in_baseline[stem]:
+            out.append(fid)
+    return sorted(out)
+
+
 def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
     """Incremental flowchart reuse. If model/incremental_plan.json exists:
 
@@ -279,6 +306,12 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
         fpath = ((funcs.get(fid) or {}).get("location") or {}).get("file")
         return os.path.splitext(os.path.basename(fpath))[0] if fpath else None
 
+    # A chart is joined on its NAME inside its unit's file: the qualified name, and for an
+    # overload the name the engine gave it (core.function_names) -- two overloads share a
+    # qualified name, and joined on that, one of them replaced the other.
+    from core.function_names import chart_names as _chart_names
+    _chart = _chart_names(funcs)
+
     out_path = os.path.join(model_dir_abs, "functions_incremental.json")
 
     fids = plan.get("flowchartFids")
@@ -300,7 +333,7 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
         scope_units = {}
 
         for fid, info in funcs.items():
-            stem, qn = _stem(fid), info.get("qualifiedName")
+            stem, qn = _stem(fid), _chart.get(fid)
             if stem and qn:
                 scope_units.setdefault(stem, set()).add(qn)
 
@@ -317,7 +350,7 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
         for fid, src_dir in xver_plan.items():
             info = funcs.get(fid)
             stem = _stem(fid)
-            qn = info.get("qualifiedName") if info else None
+            qn = _chart.get(fid) if info else None
 
             if not info or not stem or not qn:
                 continue
@@ -332,6 +365,10 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
             xver_by_unit.setdefault(stem, {})[qn] = entry
 
             _splice_function_pngs(src_fc_dir, out_dir, stem, qn)
+
+        # A baseline from before overloads had chart names of their own.
+        sel += _overloads_with_nothing_to_carry(funcs, _chart, base_fc, _stem,
+                                                skip=set(sel) | set(xver_plan))
 
         restricted = {fid: funcs[fid] for fid in sel}
         # The engine restricts ITSELF from the stored plan, so the `sel.append(fid)`
@@ -355,14 +392,14 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
             try:
                 from core.model_io import write_model_file
                 write_model_file(INCREMENTAL_PLAN, {**plan, "flowchartFids": sorted(set(sel))})
-                log("incremental: %d function(s) had no usable cross-version flowchart; "
-                    "added them back to the plan so the engine regenerates them"
+                log("incremental: %d function(s) had no flowchart to carry or reuse; "
+                    "added them to the plan so the engine draws them"
                     % (len(set(sel) - set(fids))), "flowcharts")
             except Exception as exc:                       # never fail the run over this
                 log("incremental: could not republish the plan (%s); flowcharts for "
                     "changed functions may be stale" % exc, "flowcharts", err=True)
         fresh_pairs = {
-            (_stem(fid), funcs[fid].get("qualifiedName"))
+            (_stem(fid), _chart.get(fid))
             for fid in sel
         }
 

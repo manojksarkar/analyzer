@@ -10,6 +10,9 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-14i | A `case` whose constant comes from a header libclang cannot find keeps its branch in the flowchart and in the test steps | [15](15-2026-10-07h.md) |
+| 2026-10-14h | Two functions of one unit never print alike: overloads carry their parameter types, one name in two namespaces its scope -- and each overload has a flowchart of its own | [15](15-2026-10-07h.md) |
+| 2026-10-14g | What is published is one rule: something in another unit uses it. No PUBLIC / PRIVATE / PROTECTED marking and no C++ access is consulted any more | [15](15-2026-10-07h.md) |
 | 2026-10-14f | A third LLM provider, `anthropic`: the Claude Messages API, native | [15](15-2026-10-07h.md) |
 | 2026-10-14e | Log lines say how long something took in minutes, hours and days | [15](15-2026-10-07h.md) |
 | 2026-10-14d | Every speed-up is one key of ONE block, `speedups`; a key not set is develop's way, so an empty block runs exactly as develop does | [15](15-2026-10-07h.md) |

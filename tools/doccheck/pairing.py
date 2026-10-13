@@ -101,8 +101,11 @@ _RULE_PAIR = ("a dynamic-behaviour spec exists exactly where SWE.3 draws a behav
 
 
 def _bare(name):
-    """`SignalProcessor::normalize` -> `normalize`."""
-    return normalise_key(str(name).split("::")[-1])
+    """`SignalProcessor::normalize` -> `normalize`. An overload keeps its parameter types --
+    `ns::Calc::scale(int)` -> `scale(int)` -- or its overloads would all be one name again."""
+    from . import cells
+    base, sig = cells.split_signature(str(name))
+    return normalise_key(base.split("::")[-1] + sig)
 
 
 def _interaction_key(entity):

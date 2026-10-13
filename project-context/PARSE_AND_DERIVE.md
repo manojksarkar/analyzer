@@ -97,6 +97,11 @@ through inheritance, and no later phase distinguishes it from private. Collapsin
 lets `_fn_is_private`, the five view filters and the two exporter filters all test one string.
 Lossy by design — see the 2026-09-20 entry.
 
+**Since 2026-10-14g the recorded value decides nothing.** Publication is ONE rule in Phase 2 —
+used from another unit, or not (`_fn_is_private`, `_glb_is_private`, §11) — and
+`_enrich_interfaces` writes its answer over this field, in both directions. Phase 1 still records
+the marking, as a fact about the source.
+
 Clang reports the **effective** access, so an unlabelled `class` member is `private` and an
 unlabelled `struct` member `public`. Both are taken at face value: private-by-default binds
 another unit exactly as a written label does.
@@ -383,7 +388,8 @@ unchanged and a locally-used comparator stays private.
   Readers are matched by the global's **qualified name**, not var id, so an `extern`
   redeclaration in the consuming file (its own cursor, its own var id) still resolves.
 - `_fn_is_private` gains a third escape clause, ranked **below** the explicit `PRIVATE`
-  annotation — a source-level marking stays authoritative.
+  annotation — a source-level marking stays authoritative. (Since 2026-10-14g no marking is
+  consulted any more, so a function in a table is published whatever it is marked.)
 - Consumed by `interface_tables` (Source/Destination) and `unit_diagrams` (edge).
 - Persisted to `model/address_taken.json` (`ADDRESS_TAKEN`, not in `ALL_MODEL_NAMES`) and
   replayed by `incremental/parse_merge._merge_address_taken` + `_apply_address_taken`,
@@ -471,16 +477,23 @@ Assigns a per-file sequential index and sets `interfaceId` on each function and 
 
 `<LAYER>` is resolved per entry via `get_component_layer_name(config, component)` and processed by `_id_seg_layer` (keeps uppercase letters **and digits**, so "Layer1" → "LAYER1"). Falls back to `_id_seg(project_name)` for old-style configs without a `layers` key. `<GROUP>`, `<UNIT>` use the existing `_id_seg` (uppercase letters only). Example: `IF_LAYER1_FULL_READWRITE_01`.
 
-**Function privacy rule (`_fn_is_private`)** — first match wins:
-1. `visibility == "private"` → private. Covers `PRIVATE` and `PROTECTED` markings and `private:` /
-   `protected:` methods alike, since phase 1 records all of them as `"private"`.
-2. `addressTakenByUnits` non-empty → public. Reachable through a file-scope pointer table even
-   though no call names it. This is *evidence*, not an annotation, which is why it survives.
-3. Otherwise: private unless some `calledByIds` entry lives in a **different file**.
+**Function privacy rule (`_fn_is_private`)** — ONE rule since 2026-10-14g: private unless something
+in **another unit** uses it. No marking is consulted.
+1. `addressTakenByUnits` non-empty → public. Reachable through a file-scope pointer table even
+   though no call names it. This is *evidence* of use, not an annotation.
+2. Otherwise: private unless some `calledByIds` entry lives in a **different unit**
+   (`_has_external_caller`; a unit is `Foo.h` + `Foo.cpp`).
 
-`visibility == "public"` used to short-circuit at rule 2 and guarantee a row. **Removed 2026-09-20** —
-a marking may restrict, never promote, so an unmarked declaration and a `PUBLIC`-marked one are the same
-thing here and only `private` decides anything. Consequences and the revert in the 2026-09-20 entry.
+History of the rule: `visibility == "public"` used to guarantee a row — removed 2026-09-20 (a marking
+may not promote). `visibility == "private"` used to deny one whatever called the function (`PRIVATE`,
+`PROTECTED`, `private:` / `protected:` methods) — **removed 2026-10-14g**: a private or protected
+function another unit calls (a friend, a derived class in another file) is that unit's interface.
+
+**The answer is written over `visibility`** by `_enrich_interfaces`, in both directions:
+`"private"` on what is not published, and `"public"` on what is published though Phase 1 recorded
+`"private"`. Every view and exporter filter tests `visibility == "private"`; leaving the marking on
+a published function would publish it by the rule and drop it in every reader. Idempotent: the rule
+does not read the field, so a re-derive from a stored model gives the same answer.
 
 Rule 4 compares FILES, while a unit collapses `Foo.h` + `Foo.cpp` — so a helper defined inline in
 the header and called from its own .cpp counts as externally called. Known, untouched.
@@ -488,7 +501,9 @@ Two helpers implement this:
 - `_has_external_caller(f, functions_data, base_path)` — returns `True` if any caller lives in a different file.
 - `_fn_is_private(f, functions_data, base_path)` — combines the two conditions above.
 
-Globals use the old visibility-only rule (they have no call graph).
+Globals: `_glb_is_private` — a declaration only (`isDefinition` false), or no function of another
+unit reads or writes it (`_glb_used_outside`, 2026-09-24c). No marking and no C++ access of a static
+member is consulted (2026-10-14g), and `visibility` is written the same way as for functions.
 
 Also normalises `parameters` to `[{name, type}]`, dropping any extra fields the parser captured.
 

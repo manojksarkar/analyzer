@@ -14,7 +14,8 @@ pytestmark = pytest.mark.unit
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 
-from views.flowcharts import _merge_incremental_flowcharts, _prune_orphan_flowcharts
+from views.flowcharts import (_merge_incremental_flowcharts, _overloads_with_nothing_to_carry,
+                              _prune_orphan_flowcharts)
 
 
 def _entry(name, body):
@@ -175,3 +176,52 @@ class TestPruneOrphanFlowcharts:
         files = set(os.listdir(str(d)))
         assert "Foobar.json" in files and "Foobar_someFunc.png" in files
         assert "Foo.json" not in files
+
+
+class TestABaselineFromBeforeOverloadsHadNames:
+    """An overload's chart has a name of its own (core.function_names, 2026-10-13). A baseline
+    generated before that holds a function's overloads under one name: an overload that did
+    not change has nothing to carry, and the merge drops the shared entry -- so it is drawn."""
+
+    ONE, TWO, ALONE = "L.C|Utils|scale|int", "L.C|Utils|scale|int,int", "L.C|Utils|alone|"
+    FUNCS = {ONE: {"qualifiedName": "scale"}, TWO: {"qualifiedName": "scale"},
+             ALONE: {"qualifiedName": "alone"}}
+    CHART = {ONE: "scale(int)", TWO: "scale(int,int)", ALONE: "alone"}
+
+    def _baseline(self, tmp_path, names, unit="Utils"):
+        base_fc = tmp_path / "baseline"
+        base_fc.mkdir(exist_ok=True)
+        _write(str(base_fc / f"{unit}.json"), [_entry(n, "old-" + n) for n in names])
+        return str(base_fc)
+
+    def _ask(self, base_fc, skip=()):
+        return _overloads_with_nothing_to_carry(self.FUNCS, self.CHART, base_fc,
+                                                lambda fid: fid.split("|")[1], skip=skip)
+
+    def test_overloads_under_one_shared_name_are_drawn(self, tmp_path):
+        assert self._ask(self._baseline(tmp_path, ["scale", "scale", "alone"])) == [self.ONE, self.TWO]
+
+    def test_a_baseline_with_their_own_names_carries_them(self, tmp_path):
+        assert self._ask(self._baseline(tmp_path, ["scale(int)", "scale(int,int)", "alone"])) == []
+
+    def test_only_overloads_are_added(self, tmp_path):
+        """A function with no chart in the baseline that is NOT an overload is the plan's
+        business (changed, new, or never drawn): adding it would redraw it on every run."""
+        assert self._ask(self._baseline(tmp_path, ["scale(int)", "scale(int,int)"])) == []
+
+    def test_a_unit_the_baseline_does_not_hold_is_left_alone(self, tmp_path):
+        assert self._ask(self._baseline(tmp_path, ["scale"], unit="Other")) == []
+
+    def test_one_the_plan_already_draws_is_not_added_twice(self, tmp_path):
+        base_fc = self._baseline(tmp_path, ["scale", "alone"])
+        assert self._ask(base_fc, skip={self.ONE}) == [self.TWO]
+
+    def test_the_merge_then_holds_one_chart_per_overload(self, tmp_path):
+        merged = _setup(tmp_path, [_entry("scale", "old-shared"), _entry("alone", "old-alone")],
+                        [_entry("scale(int)", "NEW-one"), _entry("scale(int,int)", "NEW-two")],
+                        {"scale(int)", "scale(int,int)", "alone"})
+        by = {e["name"]: e["flowchart"] for e in merged}
+        assert sorted(by) == ["alone", "scale(int)", "scale(int,int)"], "the shared entry is gone"
+        assert "NEW-one" in by["scale(int)"] and "NEW-two" in by["scale(int,int)"]
+        assert "old-alone" in by["alone"]
+

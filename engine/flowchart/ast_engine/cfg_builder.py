@@ -511,7 +511,17 @@ class CFGBuilder:
 
         Recursing through this nesting gives a flat, ordered list that
         _process_switch_body can iterate uniformly.
+
+        A `case X:` whose X clang cannot resolve -- an enum value or a macro of a
+        header it could not find -- has no CASE_STMT at all: clang drops the label and
+        leaves the case's statements loose in the body. Those labels are read back
+        from the source text (`_flatten_with_dropped_labels`), or the whole branch
+        would be missing from the flowchart.
         """
+        dropped = self._dropped_case_labels(body)
+        if dropped:
+            return self._flatten_with_dropped_labels(body, dropped)
+
         result: List[Tuple[str, List[ci.Cursor]]] = []
 
         def collect(cursor: ci.Cursor) -> None:
@@ -553,6 +563,131 @@ class CFGBuilder:
                 last_label, last_stmts = result[-1]
                 result[-1] = (last_label, last_stmts + [child])
 
+        return result
+
+    # -- case labels clang dropped ---------------------------------------
+
+    _CASE_KINDS = (ci.CursorKind.CASE_STMT, ci.CursorKind.DEFAULT_STMT)
+
+    def _case_cursors(self, body: ci.Cursor) -> List[ci.Cursor]:
+        """Every CASE/DEFAULT clang kept in a switch body: its direct children, and the
+        ones nested in them (`case 1: case 2: stmt;` nests 2 in 1)."""
+        found: List[ci.Cursor] = []
+
+        def walk(cursor: ci.Cursor) -> None:
+            found.append(cursor)
+            for c in cursor.get_children():
+                if c.kind in self._CASE_KINDS:
+                    walk(c)
+
+        for child in body.get_children():
+            if child.kind in self._CASE_KINDS:
+                walk(child)
+        return found
+
+    def _dropped_case_labels(self, body: ci.Cursor) -> List[Tuple[int, str]]:
+        """(offset, edge label) of each `case ...:` / `default:` written directly in a switch
+        body that clang made no CASE/DEFAULT statement for. Empty for a switch clang
+        understood, which is every switch of code whose headers are all found.
+
+        Read from the body's own tokens, at its own brace depth: a label of a switch nested
+        in a case is that switch's, and is found when it is processed.
+        """
+        try:
+            tokens = list(body.get_tokens())
+        except Exception:                                   # no token stream: nothing to recover
+            return []
+        kept = {(c.location.line, c.location.column) for c in self._case_cursors(body)}
+        labels: List[Tuple[int, str]] = []
+        braces = parens = 0
+        i, n = 0, len(tokens)
+        while i < n:
+            tok = tokens[i]
+            sp = tok.spelling
+            if sp == "{":
+                braces += 1
+            elif sp == "}":
+                braces -= 1
+            elif sp in ("(", "["):
+                parens += 1
+            elif sp in (")", "]"):
+                parens -= 1
+            elif braces == 1 and parens == 0 and sp in ("case", "default"):
+                # the label ends at its own colon: not one inside (...) or of a `?:`
+                j, depth, ternary = i + 1, 0, 0
+                while j < n:
+                    s = tokens[j].spelling
+                    if s in ("(", "["):
+                        depth += 1
+                    elif s in (")", "]"):
+                        depth -= 1
+                    elif s == "?":
+                        ternary += 1
+                    elif s == ":" and depth == 0:
+                        if ternary == 0:
+                            break
+                        ternary -= 1
+                    elif s in (";", "{", "}"):
+                        j = n                               # not a label after all
+                        break
+                    j += 1
+                if j < n and (tok.location.line, tok.location.column) not in kept:
+                    if sp == "default":
+                        text = "default"
+                    else:
+                        first, colon = tokens[i + 1], tokens[j]
+                        value = SourceExtractor.get_extent_text(
+                            self._src, first.extent.start.line, colon.extent.start.line,
+                            first.extent.start.column, colon.extent.start.column)
+                        text = "case " + " ".join(value.split())
+                    labels.append((tok.extent.start.offset, text))
+                if j < n:
+                    i = j
+            i += 1
+        return labels
+
+    def _flatten_with_dropped_labels(
+            self,
+            body: ci.Cursor,
+            dropped: List[Tuple[int, str]],
+    ) -> List[Tuple[str, List[ci.Cursor]]]:
+        """`_flatten_switch_cases` for a body with labels clang dropped: every label -- clang's
+        and the ones read from the source -- in source order, each with the statements written
+        between it and the next label. That is what the plain walk gives a switch clang
+        understood; here the statements of a dropped case sit loose in the body, and by
+        position is the only way to tell whose they are. Statements before the first label
+        are unreachable and left out, as there.
+        """
+        labels: List[Tuple[int, str]] = list(dropped)
+        stmts: List[Tuple[int, ci.Cursor]] = []
+
+        def take(cursor: ci.Cursor) -> None:
+            children = list(cursor.get_children())
+            if cursor.kind == ci.CursorKind.CASE_STMT:
+                value = self._src_text(children[0]) if children else "?"
+                labels.append((cursor.extent.start.offset, f"case {value}"))
+                children = children[1:]
+            else:
+                labels.append((cursor.extent.start.offset, "default"))
+            for c in children:
+                if c.kind in self._CASE_KINDS:
+                    take(c)
+                else:
+                    stmts.append((c.extent.start.offset, c))
+
+        for child in body.get_children():
+            if child.kind in self._CASE_KINDS:
+                take(child)
+            else:
+                stmts.append((child.extent.start.offset, child))
+
+        labels.sort(key=lambda item: item[0])
+        stmts.sort(key=lambda item: item[0])
+        result: List[Tuple[str, List[ci.Cursor]]] = []
+        for k, (offset, label) in enumerate(labels):
+            end = labels[k + 1][0] if k + 1 < len(labels) else None
+            result.append((label, [c for o, c in stmts
+                                   if o > offset and (end is None or o < end)]))
         return result
 
     def _process_case_stmts(self, stmts: List[ci.Cursor]):

@@ -91,7 +91,7 @@ Marked `@pytest.mark.xfail` — define the contract the real generators must sat
 | REQ-IT-01 | Header-only units excluded | — | Not tested |
 | REQ-IT-01 | Module-scoped run filters units | — | Not tested |
 | REQ-IT-02 | Public functions included | `test_public_functions_present` (e2e) | Covered |
-| REQ-IT-02 | Protected functions included | `test_protected_functions_included` (e2e) | Covered |
+| REQ-IT-02 | A marked function another unit calls is included | `test_a_marked_function_another_unit_calls_is_published` (e2e), `test_visibility_matrix.py` (unit) | Covered |
 | REQ-IT-02 | Public globals included | `test_public_global_present` (e2e) | Covered |
 | REQ-IT-02 | Private functions excluded | `test_private_functions_excluded` (e2e) | Covered |
 | REQ-IT-02 | Private globals excluded | `test_private_globals_excluded` (e2e) | Covered |

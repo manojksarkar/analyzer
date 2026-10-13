@@ -56,23 +56,13 @@ newer entry and the code win.
   2026-09-30f, is [history file 12](project-context/history/12-2026-09-29-web-app.md). Review & update's
   screen is the document reader's **edit mode** (2026-10-01; [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md)
   "Review & update in the web app").
-- **Review and approval** (assign a reviewer, submit, approve, request changes, reopen; a version is
-  approved when all its documents are) — built on branch `feat/review-approve` (committed `a55c9c5`, not pushed), 2026-10-01d.
-  Backend complete before the review site's 4-day generation, so what remains is web work. Contract
-  [REVIEW_APPROVE_API_SPEC](docs/spec/REVIEW_APPROVE_API_SPEC.md), design
-  [REVIEW_APPROVE_DESIGN](docs/design/REVIEW_APPROVE_DESIGN.md) (its open questions are still open), rules in
-  `api/services/review_workflow.py`, recording in `api/services/document_registry.py` (every run, CLI too;
-  `analyzer.py register` for older versions); a database upgrades with `analyzer.py setup` (migration 0015).
-- **Staged generation** (2026-10-02, same branch, committed `a55c9c5`): one model per version, documents per
-  component by any number of runs (`export`, `reexport`, `resume`), `--detach` for runs that last days, one
-  writer per version (migration 0016); web runs go on in the background when the API restarts, and a
-  run that dies keeps its version for `resume` (2026-10-02c); an `export` of a component from another
-  layer adds that layer to the same version, the old layers' documents marked stale where it changes
-  them (2026-10-04e). For the review site's multi-day run — guide
-  [CLI_COMMANDS](docs/CLI_COMMANDS.md#a-run-that-lasts-days), detail
-  [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Staged generation".
+- **Review and approval** and **staged generation** (2026-10-01d … 2026-10-04e) are on develop (PR #71,
+  2026-10-05): assign, submit, approve, request changes, reopen (`api/services/review_workflow.py`, migration
+  0015; open questions in [REVIEW_APPROVE_DESIGN](docs/design/REVIEW_APPROVE_DESIGN.md)); one model per
+  version, documents per component by any number of runs (`export`, `reexport`, `resume`, `--detach`,
+  migration 0016) — [CLI_COMMANDS](docs/CLI_COMMANDS.md#a-run-that-lasts-days), [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Staged generation".
 - **Config: one file per kind of setting** (2026-10-13d, branch `refactor/config-separation`, not
-  merged): `llmServer`, `llvm` and (on `perf/pipeline-speed`) `parse` are config.local.json's only,
+  merged): `llmServer`, `llvm` and (on `perf/pipeline-speed`) `speedups` are config.local.json's only,
   read at load by every run; the defaults hold no server key. **Each machine's config.local.json needs the two blocks once** --
   [config.local.json.example](engine/config/config.local.json.example);
   [CLI_AND_CONFIG.md](project-context/CLI_AND_CONFIG.md) §6.
@@ -99,12 +89,12 @@ newer entry and the code win.
   engine log lines, tail + SSE, read from per-process files under `logs/live/`. Built; the web page
   is next. [LIVE_LOGS_SPEC](docs/spec/LIVE_LOGS_SPEC.md), [LIVE_LOGS_DESIGN](docs/design/LIVE_LOGS_DESIGN.md),
   [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Live logs".
-- **Pipeline speed** (2026-10-08b, branch `perf/pipeline-speed`, rebased onto
-  `refactor/config-separation` 2026-10-13e, not merged): measured where a run's time goes and
-  prototyped the speed-ups — LLM lanes (several keys, start pacing, failover), parse ahead, picture
-  batches — each checked to give develop's output; all in ONE config.local.json block, `speedups`
-  (`llms`, `pacing`, `parseWorkers`, `pictureBatches`, `fastNullCheck`): empty = develop (2026-10-14d).
-  [PIPELINE_SPEED_PLAN.md](docs/design/PIPELINE_SPEED_PLAN.md) (plan, edge cases, questions for a review run).
+- **Pipeline speed** (2026-10-08b, branch `perf/pipeline-speed`, on `refactor/config-separation`): LLM
+  lanes, parse ahead, picture batches, each in ONE config.local.json block, `speedups` — empty = develop
+  (2026-10-14d); a Claude API provider (2026-10-14f). [PIPELINE_SPEED_PLAN.md](docs/design/PIPELINE_SPEED_PLAN.md).
+- **Review issues** (2026-10-14g … i, branch `fix/review-issues-on-speed`, on `perf/pipeline-speed`): one
+  publication rule (use from another unit), overloads print and draw apart (`engine/core/function_names.py`),
+  a `case` from a missing header keeps its branch. Interface ids after a newly published function move: `--full` once.
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
 - The status boards that used to head this file (2026-07-20, 2026-08-14) are kept, unchanged, in
@@ -168,11 +158,16 @@ The big shifts since most of §1–§24 were written. Each names its dated entry
   2026-07-29 — notes in [STATUS_BOARDS.md](project-context/history/STATUS_BOARDS.md)); a component renders
   only its own (2026-08-25b); oversize pictures are handled (2026-09-21). Unit and behaviour diagrams are
   still Mermaid; the behaviour-diagram package was replaced (2026-08-22b).
-- **What is published.** A `PUBLIC` marking no longer guarantees a row, and protected counts as private
-  (2026-09-20); a function is published only when another UNIT calls it (2026-09-22b), a global only when
-  another unit reads or writes it (2026-09-24c); a static member used through an object (`this->s_x`,
-  `obj.s_x`) is a global use, for publication and direction alike (2026-09-25b). The client-facing rules:
-  [SWE3_WIKI](docs/spec/SWE3_WIKI.md).
+- **What is published.** ONE rule since 2026-10-14g: used from another unit, or not — no `PUBLIC` /
+  `PRIVATE` / `PROTECTED` marking and no C++ access is consulted. Before: `PUBLIC` stopped guaranteeing
+  a row and protected counted as private (2026-09-20); a function is published only when another UNIT
+  calls it (2026-09-22b), a global only when another unit reads or writes it (2026-09-24c); a static
+  member used through an object (`this->s_x`, `obj.s_x`) is a global use, for publication and direction
+  alike (2026-09-25b). The client-facing rules: [SWE3_WIKI](docs/spec/SWE3_WIKI.md).
+- **Names.** Two functions of one unit never print alike (2026-10-14h): overloads carry their
+  parameter types, one name in two namespaces its scope, and each overload has a flowchart of its
+  own — `engine/core/function_names.py`. A `case` whose constant comes from a header libclang cannot
+  find keeps its branch (2026-10-14i).
 - **Unit header table.** No visibility filter (2026-09-23); struct, class and union are listed
   (2026-09-23b); an orphan header is listed once, by one owner unit (2026-09-24b); a declaration is read
   until its braces close, braces in comments and literals aside — no 60-line cap (2026-09-25, 2026-09-25b).

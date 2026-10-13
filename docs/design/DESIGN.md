@@ -58,7 +58,7 @@ run.py
 
 **Views (read-only projections):** Each view reads the model and writes output. Configurable via `config.views`. Implemented: interfaceTables → interface_tables.json; behaviourDiagram → output/behaviour_diagrams/; flowcharts → output/flowcharts/.
 
-**Visibility filtering:** Private entries are excluded from the interface table, unit diagrams, behaviour diagrams and the SWE.4 specs (the unit header table is not filtered: it lists what a unit declares, since 2026-09-23). `PROTECTED` counts as private. A `PUBLIC` marking does not by itself publish a function — since 2026-09-20 a marking may restrict but never promote, so publication is earned by a caller in ANOTHER UNIT (`Foo.h` + `Foo.cpp` count as one, so a companion-header caller publishes nothing) or by a file-scope dispatch table. A global earns its row the same way, from a function in another unit that reads or writes it (S3-7, 2026-09-24); a use through an `extern` declaration counts for the definition of that name, and a declaration-only global is never published. The DOCX flowchart section renders a non-private function's own flowchart followed by those of any private functions it calls, each at most once per unit (`rendered_private_fids`).
+**Visibility filtering:** Private entries are excluded from the interface table, unit diagrams, behaviour diagrams and the SWE.4 specs (the unit header table is not filtered: it lists what a unit declares, since 2026-09-23). No marking decides it (2026-10-13): `PUBLIC` does not by itself publish a function, and `PRIVATE` / `PROTECTED` / a C++ access label do not hide one — publication is earned by a caller in ANOTHER UNIT (`Foo.h` + `Foo.cpp` count as one, so a companion-header caller publishes nothing) or by a file-scope dispatch table. A global earns its row the same way, from a function in another unit that reads or writes it (S3-7, 2026-09-24); a use through an `extern` declaration counts for the definition of that name, and a declaration-only global is never published. The DOCX flowchart section renders a non-private function's own flowchart followed by those of any private functions it calls, each at most once per unit (`rendered_private_fids`).
 
 **Output:** software_detailed_design.docx — structure spec in [software_detailed_design.json](../spec/software_detailed_design.json): 1 Introduction, 2..N Modules (Static Design with unit interface tables, Dynamic Behaviour), Code Metrics, Appendix A.
 
@@ -289,6 +289,8 @@ is richer when `--llm-summarize` is active (default).
    phase ever distinguished more than that — every filter tests `== "private"` — so the
    rule is one bit. Lossy: changing the policy means re-parsing, not reinterpreting a
    stored model.
+   Since 2026-10-13 this is a fact about the source and decides nothing: Phase 2 publishes
+   by ONE rule — used from another unit, or not — and writes its answer over the field.
 5. Write `metadata.json`, `functions.json` (with `comment`, `visibility`), `globalVariables.json`,
    `dataDictionary.json` (with `comment` on types and members).
 

@@ -96,57 +96,42 @@ These rules decide what appears anywhere in the document, so they are worth agre
 
 ### Public vs. private
 
-Everything the document publishes is *public*. A function is **private** — left out of the interface
-table, the unit diagram and the headings — by the first rule that applies:
+Everything the document publishes is *public*. **One rule decides it: something in another unit uses
+it.** A unit is a `.cpp` with its header, so a call from the companion header is a call from the same unit.
 
-1. Marked `PRIVATE` or `PROTECTED` → private.
-2. Its address sits in a file-level table (`static const fp_t table[] = { fn, … };`) → public. It is
-   reachable through that table even though no call names it.
-3. Otherwise: **public if a function in another file calls it**, private if not.
+| | Public when | Private when |
+|---|---|---|
+| **Function** | a function in **another unit** calls it — or its address sits in a file-level table (`static const fp_t table[] = { fn, … };`): it is reachable through that table even though no call names it | nothing outside its unit uses it |
+| **Global** | a function in **another unit** reads or writes it | nothing outside its unit uses it — or it is only declared here (`extern`), not defined: the unit that defines it decides |
 
-**A marking can only restrict, never promote.** `PUBLIC` used to guarantee a row; it no longer does, so
-`PUBLIC` and unmarked now mean the same thing. Being an interface is earned by rule 2 or rule 3.
+**No marking is consulted.** `PRIVATE`, `PROTECTED` and `PUBLIC`, and the C++ access of a member
+(`private:`, `protected:`, `public:`, or the default of a member with no label), decide nothing:
 
-**Protected is private** — it can be reached only by inheriting from its class, which makes it part of
-that class's inheritance contract, not the unit's interface.
+- a `PUBLIC` function that nobody outside its unit calls has **no** row;
+- a `PRIVATE` or `protected` one that another unit does call — a friend, a derived class in another
+  file — **has** a row. Until 2026-10-13 a marking could restrict, and such a function had none.
 
-**A method's C++ access counts as a marking.** `private:` and `protected:` make it private. `public:`
-counts as public — which, like any other public marking, still has to be earned by rule 2 or 3. A member
-with no label takes the language's own default: private in a `class`, public in a `struct`. A macro on
-the declaration wins over the label.
-
-The markings are macros that expand to nothing, so the compiler never sees them; they are found by
-reading back up to 5 lines above the declaration, stopping at whatever precedes it so a neighbour's
-marking cannot be picked up by mistake. C++ access comes from the compiler's own parse.
-
-A **global** follows the same idea, with readers and writers in place of callers. It is private when the
-first of these applies:
-
-1. Marked `PRIVATE` or `PROTECTED` — or, for a static data member, its C++ access is private or
-   protected → private.
-2. Only declared here (`extern`), not defined → private. The unit that defines it decides.
-3. Otherwise: **public if a function in another unit reads or writes it**, private if not.
+The markings are still read from the source and kept with the function, as a fact about the code. Nothing
+in a document depends on them.
 
 A use through an `extern` declaration counts for the variable it declares: `Lib` reading `g_sharedTick`
 through `SharedDefs.h` publishes `Core`'s `int g_sharedTick = 0;`. So does a use of a class's static
-member through an object (`obj.s_count`, `p->s_count`) — unless that member is private or protected,
-which rule 1 settles first. Calling a function of the owning unit that touches the global does not
-count; that is a use of the function, not the global. A file-scope `static` variable can never pass
-rule 3, because nothing outside its file can name it.
+member through an object (`obj.s_count`, `p->s_count`). Calling a function of the owning unit that
+touches the global does not count; that is a use of the function, not the global. A file-scope `static`
+variable can never be public, because nothing outside its file can name it.
 
 **None of this applies to the [unit header table](#n14--unit-header-table)**, which lists what a unit
 declares and uses, whatever its visibility.
 
-**⚠ To confirm.** Rule 3 now decides almost every function and global, and its answer depends on what
-was parsed:
+**⚠ To confirm.** The rule's answer depends on what was parsed:
 
 - An entry point nothing calls by name — an ISR, a driver-registered callback — is private unless a
   dispatch table holds its address.
 - A run narrowed to one layer cannot see the layer above calling in, so that layer's own front door
   reads as uncalled.
 
-On the sample, 42 of 91 `PUBLIC`-marked functions lose their row, `main` among them, and 15 of 19
-published globals lose theirs.
+On the sample, 42 of 91 `PUBLIC`-marked functions have no row, `main` among them, and 15 of 19
+globals none. With no marking consulted, 14 functions and 1 global of the sample that are marked private or protected gain a row, each used from another unit — `coreGetCount` (`PROTECTED`, called by `App/Main`), `MtxStruct::guarded` (protected, called from a derived class in another file), `MtxStruct::sealed` (private, called by a friend), `ViaCounters::s_mark` (a protected static member) among them — and none loses one. An interface id is a position in its unit's public sequence, so a function that joins it renumbers the ones after it: 11 rows that were already there got a new `IF_` number.
 
 Private functions are not lost. When a public function calls a private one, the private function's
 flowchart is added under that public function (see [flowcharts](#n16--per-function-flowchart-entry)). It is
@@ -157,6 +142,7 @@ labelled with its **signature**, never with an id.
 | Where | Form | Why |
 |---|---|---|
 | Interface Name, headings | short name with the class in front — `MapCache::insert`, `FtlLookup` | the namespace is dropped because it only makes the cell longer. The class is kept because it is what tells two same-named methods apart |
+| …of two functions of one unit that would print alike | what tells them apart is added. **Overloads** get their parameter types — `FtlRead(Lba_t)`, `FtlRead(Lba_t, uint32_t)`. **One name in two namespaces** gets its scope — `fast::init`, `slow::init` | two sections must not read the same. A name nobody in its unit shares is printed as before, and the choice is made among all functions of the unit, so a name does not change when another function gains or loses a caller |
 | Diagram boxes | `Component/Unit` | the layer prefix is dropped. The box is there to be read, not looked up |
 | Internal keys and file names | layer included (`Ftl.Map\|FtlMap`) | two layers are allowed to have a component with the same name |
 
@@ -492,18 +478,14 @@ Eight columns. Here they are at a glance; each one is then explained in full bel
 | Types and macros | never appear here — they belong to the [unit header table](#n14--unit-header-table) |
 | A unit with no source file | no table at all |
 
-**By access specifier.** "Earned" = for a function, a caller in another unit or an address in a pointer
+**By how it is declared.** "Earned" = for a function, a caller in another unit or an address in a pointer
 table; for a global, a function in another unit that reads or writes it — see
-[Public vs. private](#public-vs-private).
+[Public vs. private](#public-vs-private). The access label makes no difference.
 
 | Declared under | Function / method | Global variable |
 |---|---|---|
-| `public:` | row, if earned | row, if earned |
-| `protected:` | no row | no row |
-| `private:` | no row | no row |
-| no label, in a `class` | no row | no row |
-| no label, in a `struct` | row, if earned | row, if earned |
-| file scope | row, if earned | row, if earned |
+| `public:`, `protected:`, `private:`, or no label — in a `class` or a `struct` | row, if earned | row, if earned |
+| `PUBLIC`, `PROTECTED`, `PRIVATE`, or no marking — at file scope | row, if earned | row, if earned |
 | file scope, `static` | row, if earned | no row — nothing outside its file can use it |
 | `extern` — a declaration, no definition | n/a | **no row** — the defining unit publishes it |
 
@@ -665,7 +647,8 @@ can be filtered on it.
 
 ### N.1.6 — Per-function flowchart entry
 
-One heading, `N.1.u.k <Unit>-<Function>`, per public function of the unit. Globals get no entry. Each
+One heading, `N.1.u.k <Unit>-<Function>`, per public function of the unit, the function named as in the
+interface table (see [Names](#names): overloads carry their parameter types). Globals get no entry. Each
 heading holds a table of five rows:
 
 | Row | What it holds |
@@ -681,7 +664,8 @@ heading holds a table of five rows:
 The function's own flowchart first, then one for each **private** function it calls directly. A private
 function has no heading of its own, so this is where its logic is published. Each private function is
 drawn at most once per unit, under the first public function that calls it. Hidden ones are skipped. Every
-picture has its signature above it, so a stack of flowcharts in one cell stays readable.
+picture has its signature above it, so a stack of flowcharts in one cell stays readable. Each overload has
+a flowchart of its own.
 
 #### How a flowchart is built
 
@@ -690,6 +674,14 @@ The shape comes from the code; only the wording comes from the LLM.
 1. libclang reads the function and builds its control-flow graph. The node kinds are `START`, `END`,
    `ACTION`, `DECISION`, `LOOP_HEAD`, `SWITCH_HEAD`, `CASE`, `DEFAULT_CASE`, `RETURN`, `BREAK`,
    `CONTINUE`, `TRY_HEAD` and `CATCH`. Arrows carry Yes/No labels.
+
+   **A header that cannot be found does not remove a branch.** The code is compiled with the target's
+   own compiler and read here with libclang, so a toolchain header (`stdio.h`) or a project header
+   outside the include paths may be missing. The parse goes on past it, and a statement that uses one of
+   its names — `printf(...)`, `p == NULL` — stays in the graph as written. A `case X:` whose `X` is an
+   enum value or a macro of the missing header is read back from the source text, with the statements
+   that follow it. What is still lost: a `#if` / `#ifdef` branch that depends on a macro of the missing
+   header, because the preprocessor never sees it defined. The run's log names every header not found.
 2. Each node is given extra context: the calls it makes, the comments in it, and what the enums, macros
    and typedefs it uses actually mean.
 3. A local LLM writes a short label for each node, with context about callers and callees. A second pass
@@ -826,10 +818,10 @@ another unit of the same component. `HilQueue` is in a different component.
 typedef uint32_t Lba_t;
 
 // ---- unit FtlMap.cpp ----
-uint16_t        gEntryCount = 64;        // public global
-PRIVATE uint8_t gErrCount   = 0;         // private -> not published
+uint16_t        gEntryCount = 64;        // read by another unit -> published
+PRIVATE uint8_t gErrCount   = 0;         // used only in this unit -> not published
 
-PRIVATE bool isValidLba(Lba_t lba);      // private -> no table row; flowchart shown under its caller
+PRIVATE bool isValidLba(Lba_t lba);      // called only in this unit -> no table row; flowchart shown under its caller
 PUBLIC  int  FtlSetEntry(Lba_t lba, uint32_t ppn);   // calls FtlCacheInsert in unit FtlCache
 PUBLIC  int  FtlGetPpn(Lba_t lba, uint32_t* ppnOut);
 ```
