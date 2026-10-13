@@ -964,7 +964,7 @@ function WizardView({
                       <Icon name={isLocal ? 'folder' : 'link'} size={16} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-outline pointer-events-none" />
                       <input ref={repoInput} className={cn('inp mono with-icon', errs.repo && 'err')} value={repoUrl}
                         onChange={(e) => { setRepoUrl(e.target.value); setErrs((p) => ({ ...p, repo: false })); repoChanged() }}
-                        type="text" spellCheck={false} aria-label={isLocal ? 'Repository folder' : 'Repository URL'}
+                        type="text" name="repository-location" autoComplete="off" spellCheck={false} aria-label={isLocal ? 'Repository folder' : 'Repository URL'}
                         placeholder={isLocal ? 'D:/src/vcu-firmware' : 'https://bitbucket.company.com/scm/vcu/vcu-firmware.git'} />
                     </div>
                     {/* Pick the folder instead of typing it - from the SERVER's folders: a browser
@@ -986,14 +986,21 @@ function WizardView({
 
                 {/* The access token, with every remote URL but an SSH one (the server's own key signs
                     in); a folder on the server needs none. How it is sent is the server's to read
-                    from the URL. */}
+                    from the URL.
+                    A text field shown as dots (`.inp.secret`), never type="password": with a password
+                    box under the URL box the browser took the two for a sign-in form, saved "URL +
+                    token" as a login, offered the saved ones in the URL box -- and after Test
+                    Connection (the page changes: the Branch box appears) filled the FIRST of them again,
+                    another repository's URL and token over the ones picked. So also: no autofill, and
+                    no spellcheck (a text field's is on by default, and may send what is typed away). */}
                 {tokenShown && (
                   <div>
                     <div className="lbl">Access Token</div>
                     <div className="relative">
-                      <input ref={tokenInput} className="inp mono pr-10" value={token} onChange={(e) => { setToken(e.target.value); repoChanged() }}
-                        type={showToken ? 'text' : 'password'} aria-label="Access Token" placeholder="Paste the access token" autoComplete="off" />
-                      <button type="button" onClick={() => setShowToken((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors">
+                      <input ref={tokenInput} className={cn('inp mono pr-10', !showToken && 'secret')} value={token} onChange={(e) => { setToken(e.target.value); repoChanged() }}
+                        type="text" name="repository-access-token" aria-label="Access Token" placeholder="Paste the access token"
+                        autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-lpignore="true" data-1p-ignore="true" />
+                      <button type="button" onClick={() => setShowToken((s) => !s)} aria-label={showToken ? 'Hide token' : 'Show token'} aria-pressed={showToken} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors">
                         <Icon name={showToken ? 'visibility' : 'visibility_off'} size={17} />
                       </button>
                     </div>

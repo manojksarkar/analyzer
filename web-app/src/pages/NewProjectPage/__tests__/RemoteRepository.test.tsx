@@ -85,9 +85,27 @@ describe('Step 1: Remote', { timeout: 60_000 }, () => {
     expect(screen.getByRole('radio', { name: 'Local' })).toHaveAttribute('aria-checked', 'false')
     expect(urlBox()).toHaveAttribute('placeholder', CLONE)
     expect(tokenBox()).toHaveAttribute('placeholder', 'Paste the access token')
-    expect(tokenBox()).toHaveAttribute('type', 'password')
     expect(screen.queryByText(/Private repository\?/)).toBeNull()
     expect(screen.queryByText(/Optional — for private repos/)).toBeNull()
+  })
+
+  /* A URL box above a password box is a sign-in form to a browser: it saved "URL + token" as a
+     login, offered the saved ones in the URL box, and after Test Connection filled the first of
+     them again over the one picked -- another repository's URL and token. The token is a text box
+     shown as dots, so no browser takes the pair for a sign-in. */
+  it('the token is not a password field to the browser: text shown as dots, no autofill, no spellcheck', async () => {
+    const { user } = setup()
+    await screen.findByRole('textbox', { name: 'Repository URL' })
+    expect(document.querySelector('input[type="password"]')).toBeNull()
+    expect(tokenBox()).toHaveAttribute('type', 'text')
+    expect(tokenBox()).toHaveClass('secret')                       // dots: index.css `.inp.secret`
+    expect(tokenBox()).toHaveAttribute('autocomplete', 'off')
+    expect(tokenBox()).toHaveAttribute('spellcheck', 'false')
+    expect(urlBox()).toHaveAttribute('autocomplete', 'off')
+    await user.click(screen.getByRole('button', { name: 'Show token' }))
+    expect(tokenBox()).not.toHaveClass('secret')
+    expect(tokenBox()).toHaveAttribute('type', 'text')
+    expect(screen.getByRole('button', { name: 'Hide token' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('the token field is hidden for Local and for an SSH URL, and back for an https one', async () => {
