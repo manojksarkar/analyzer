@@ -19,14 +19,14 @@
           "on-primary": "#ffffff", "on-primary-container": "#8192a7",
           "secondary": "#0058be", "secondary-container": "#2170e4",
           "on-secondary": "#ffffff", "on-secondary-container": "#fefcff",
-          "on-tertiary-container": "#00a572",
+          "on-tertiary-container": "#00754f",
           "error": "#ba1a1a", "error-container": "#ffdad6", "on-error-container": "#93000a",
           "surface": "#f8f9ff", "background": "#f8f9ff",
           "surface-container-lowest": "#ffffff", "surface-container-low": "#eff4ff",
           "surface-container": "#e5eeff", "surface-container-high": "#dce9ff",
           "surface-container-highest": "#d3e4fe",
           "on-surface": "#0b1c30", "on-surface-variant": "#44474c",
-          "outline": "#74777d", "outline-variant": "#c4c6cd",
+          "outline": "#65686e", "outline-variant": "#c4c6cd",
           "tertiary-container": "#00311f", "tertiary-fixed": "#6ffbbe",
         },
         borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
@@ -120,21 +120,21 @@
   .dropdown { position: absolute; top: calc(100% + 6px); left: 0; background: white; border: 1px solid #c4c6cd; border-radius: 8px; overflow: hidden; z-index: 200; box-shadow: 0 4px 20px rgba(4,22,39,.12); }
 
   /* List view */
-  .proc-tab { padding: 8px 14px; border-bottom: 2px solid transparent; font-family: 'JetBrains Mono'; font-size: 11px; font-weight: 600; color: #74777d; transition: color .1s, border-color .1s; white-space: nowrap; cursor: pointer; }
+  .proc-tab { padding: 8px 14px; border-bottom: 2px solid transparent; font-family: 'JetBrains Mono'; font-size: 11px; font-weight: 600; color: #65686e; transition: color .1s, border-color .1s; white-space: nowrap; cursor: pointer; }
   .proc-tab:hover:not(.active) { color: #0b1c30; }
   .proc-tab.active { color: #0058be; border-bottom-color: #0058be; }
-  .proc-filter-btn { flex-shrink: 0; padding: 2px 8px; border-radius: 4px; font-family: 'JetBrains Mono'; font-size: 10px; font-weight: 600; color: #44474c; background: transparent; border: 1px solid transparent; cursor: pointer; transition: all .1s; white-space: nowrap; }
+  .proc-filter-btn { flex-shrink: 0; padding: 2px 8px; border-radius: 4px; font-family: 'JetBrains Mono'; font-size: 11px; font-weight: 600; color: #44474c; background: transparent; border: 1px solid transparent; cursor: pointer; transition: all .1s; white-space: nowrap; }
   .proc-filter-btn:hover { background: #e5eeff; color: #0058be; }
   .proc-filter-btn.active { background: #e5eeff; color: #0058be; border-color: #0058be; }
   .doc-row:hover { background: #f8f9ff; cursor: pointer; }
-  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 99px; font-size: 10px; font-weight: 700; font-family: 'JetBrains Mono'; white-space: nowrap; }
-  .badge-approved { background: #f0fdf9; color: #00a572; border: 1px solid #86efac; }
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 700; font-family: 'JetBrains Mono'; white-space: nowrap; }
+  .badge-approved { background: #f0fdf9; color: #00754f; border: 1px solid #86efac; }
   .badge-review   { background: #fff8e6; color: #b45309; border: 1px solid #f59e0b; }
-  .badge-unchanged { background: #f3f4f6; color: #74777d; border: 1px solid #c4c6cd; }
-  .proc-pill { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 3px; font-size: 10px; font-weight: 700; font-family: 'JetBrains Mono'; }
+  .badge-unchanged { background: #f3f4f6; color: #65686e; border: 1px solid #c4c6cd; }
+  .proc-pill { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 3px; font-size: 11px; font-weight: 700; font-family: 'JetBrains Mono'; }
   .pill-swe3 { background: #e5eeff; color: #0058be; }
   .pill-swe2 { background: #eef2ff; color: #4f46e5; }
-  .pill-swe1 { background: #f0fdf9; color: #00a572; }
+  .pill-swe1 { background: #f0fdf9; color: #00754f; }
   .pill-sys1 { background: #faf5ff; color: #7c3aed; }
   .pill-sys2 { background: #fff7ed; color: #c2410c; }
   .pill-swe4 { background: #e0f5f1; color: #00796b; }
@@ -144,7 +144,7 @@
      the long Test Steps column gets the page's width. */
   .s4-h3 { font: 600 17px/24px 'Inter', sans-serif; color: #0b1c30; margin: 28px 0 4px; }
   .s4-h4 { font: 600 15px/22px 'Inter', sans-serif; color: #0b1c30; margin: 22px 0 4px; }
-  .s4-num { font: 600 12px/18px 'JetBrains Mono', monospace; color: #74777d; margin-right: 6px; }
+  .s4-num { font: 600 12px/18px 'JetBrains Mono', monospace; color: #65686e; margin-right: 6px; }
   .s4-spec { margin-top: 26px; scroll-margin-top: 16px; }
   .s4-spec-h { display: flex; align-items: baseline; gap: 2px; margin-bottom: 10px; font: 600 14px/20px 'Inter', sans-serif; color: #0b1c30; }
   .s4-box { border: 1px solid #c4c6cd; border-radius: 0.5rem; overflow: hidden; }
@@ -155,13 +155,13 @@
   .s4-a code, .s4-b code { font: 500 11.5px 'JetBrains Mono', monospace; background: #eff4ff; padding: 0 4px; border-radius: 3px; }
   .s4-list { margin: 0; padding: 0; list-style: none; }
   .s4-list li { display: flex; gap: 6px; }
-  .s4-list .n { flex-shrink: 0; min-width: 18px; font: 500 11.5px/19px 'JetBrains Mono', monospace; color: #74777d; }
-  .s4-muted { color: #74777d; font-style: italic; }
+  .s4-list .n { flex-shrink: 0; min-width: 18px; font: 500 11.5px/19px 'JetBrains Mono', monospace; color: #65686e; }
+  .s4-muted { color: #65686e; font-style: italic; }
   .s4-step { display: flex; gap: 8px; padding: 1px 6px; margin-left: -6px; border-radius: 0.25rem; transition: background .12s; }
   .s4-step .n { flex-shrink: 0; font: 600 11.5px/19px 'JetBrains Mono', monospace; color: #0058be; }
   .s4-step.hl { background: #fff1c7; }
   .s4-kids { margin-left: 10px; padding-left: 12px; border-left: 1px solid #dde1e8; }
-  .s4-ref { display: inline-flex; margin-left: 3px; padding: 0 5px; border-radius: 3px; background: #e5eeff; color: #0058be; font: 600 10.5px/17px 'JetBrains Mono', monospace; cursor: default; }
+  .s4-ref { display: inline-flex; margin-left: 3px; padding: 0 5px; border-radius: 3px; background: #e5eeff; color: #0058be; font: 600 11px/17px 'JetBrains Mono', monospace; cursor: default; }
   .s4-ref:hover { background: #0058be; color: #fff; }
   /* Table B: the DOCX's vertical form, one field per row */
   .s4-b { display: grid; grid-template-columns: 200px minmax(0,1fr); margin-top: 10px; font-size: 12px; }
@@ -182,7 +182,7 @@
   .spin { animation: spin 1s linear infinite; }
 
   /* Project status chip */
-  .proj-status-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:99px; font-family:'JetBrains Mono'; font-size:10px; font-weight:700; white-space:nowrap; border:1px solid transparent; }
+  .proj-status-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:99px; font-family:'JetBrains Mono'; font-size:11px; font-weight:700; white-space:nowrap; border:1px solid transparent; }
   .proj-status-chip .s-dot { display:none; }
   .proj-status-chip .s-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
   @keyframes pulse-dot { 0%,100%{opacity:1;} 50%{opacity:.3;} }
@@ -194,8 +194,8 @@
   .doc-h3 { font: 600 14px/20px Inter; color: #0b1c30; margin: 26px 0 8px; }
   .doc-h4 { font: 600 12px/18px Inter; color: #44474c; margin: 18px 0 6px; }
   .doc-p  { font-size: 13px; line-height: 1.6; color: #0b1c30; }
-  .doc-cap { font: 500 11px 'JetBrains Mono'; color: #74777d; margin: 16px 0 6px; }
-  .doc-fig { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 22px; border: 1px solid #c4c6cd; border-radius: 8px; background: #f8f9ff; color: #74777d; font: 500 11px 'JetBrains Mono'; }
+  .doc-cap { font: 500 11px 'JetBrains Mono'; color: #65686e; margin: 16px 0 6px; }
+  .doc-fig { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 22px; border: 1px solid #c4c6cd; border-radius: 8px; background: #f8f9ff; color: #65686e; font: 500 11px 'JetBrains Mono'; }
   table.dt { width: 100%; border-collapse: collapse; font-size: 12px; }
   table.dt th { background: #e5eeff; color: #44474c; font-weight: 600; text-align: left; padding: 7px 9px; border: 1px solid #c4c6cd; }
   table.dt td { padding: 7px 9px; border: 1px solid #c4c6cd; vertical-align: top; color: #0b1c30; }
@@ -214,23 +214,23 @@
   body.editing .ed:focus { outline: 2px solid #0058be; background: #fff; }
   body.editing.locked .ed { outline-color: #c4c6cd; cursor: not-allowed; background: transparent; }
   body.editing .ed { position: relative; padding-right: 22px; }
-  body.editing .ed::after { content: 'edit'; position: absolute; top: 1px; right: 2px; font: normal 15px/1 'Material Symbols Outlined'; font-feature-settings: 'liga'; color: #74777d; pointer-events: none; }
+  body.editing .ed::after { content: 'edit'; position: absolute; top: 1px; right: 2px; font: normal 15px/1 'Material Symbols Outlined'; font-feature-settings: 'liga'; color: #65686e; pointer-events: none; }
   body.editing .ed:hover::after { color: #0058be; }
   body.editing .ed:focus::after, body.editing.locked .ed::after { display: none; }
-  .ed-meta { display: none; margin-top: 5px; font: 500 10px/14px 'JetBrains Mono'; color: #74777d; }
+  .ed-meta { display: none; margin-top: 5px; font: 500 11px/14px 'JetBrains Mono'; color: #65686e; }
   body.editing .ed-meta:not(:empty) { display: block; }
   .ed-meta a { color: #0058be; cursor: pointer; }
   .ed-meta a:hover { text-decoration: underline; }
-  .ed-meta .ok { color: #00a572; font-weight: 600; }
+  .ed-meta .ok { color: #00754f; font-weight: 600; }
   .ed-meta .err { color: #ba1a1a; font-weight: 600; }
   .ed-hist { margin-top: 6px; border: 1px solid #c4c6cd; border-radius: 6px; background: #f8f9ff; padding: 6px 8px; font-size: 11px; }
   body:not(.editing) .ed-hist { display: none; }
-  .ed-hist .h { font: 600 10px 'JetBrains Mono'; color: #44474c; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+  .ed-hist .h { font: 600 11px 'JetBrains Mono'; color: #44474c; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
   .ed-hist .r { display: grid; grid-template-columns: 150px 1fr; gap: 8px; padding: 3px 0; border-top: 1px solid #e5eeff; }
-  .ed-hist .w { font: 500 10px 'JetBrains Mono'; color: #74777d; }
+  .ed-hist .w { font: 500 11px 'JetBrains Mono'; color: #65686e; }
   .edit-bar { display: none; position: sticky; top: 0; z-index: 15; align-items: center; gap: 10px; padding: 8px 24px; background: #eff4ff; border-bottom: 1px solid #b9cdf5; }
   body.editing .edit-bar { display: flex; }
-  kbd { font: 500 10px 'JetBrains Mono'; border: 1px solid #c4c6cd; border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; background: #fff; }
+  kbd { font: 500 11px 'JetBrains Mono'; border: 1px solid #c4c6cd; border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; background: #fff; }
   .ready-banner { display: none; align-items: center; gap: 10px; padding: 10px 14px; margin-bottom: 14px; border-radius: 10px; border: 1px solid #fcd34d; background: #fffbeb; }
   .ready-banner.show { display: flex; }
   .ready-banner.ok { border-color: #86efac; background: #f0fdf9; }
@@ -238,7 +238,7 @@
   .wf-list { margin-top: 2px; font: 400 12px/17px Inter, sans-serif; color: #92400e; }
   .wf-state { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
   .wf-btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 6px; border: none; cursor: pointer;
-            background: #0058be; color: #fff; font: 600 10px 'JetBrains Mono'; letter-spacing: .03em; white-space: nowrap; }
+            background: #0058be; color: #fff; font: 600 11px 'JetBrains Mono'; letter-spacing: .03em; white-space: nowrap; }
   .wf-btn:hover { background: #2170e4; }
   .wf-more { padding: 4px; border: none; border-radius: 6px; background: none; color: #92400e; cursor: pointer; display: inline-flex; }
   .wf-more:hover { background: #fde68a55; }
@@ -247,15 +247,15 @@
   .wf-menu button { display: flex; width: 100%; align-items: flex-start; gap: 8px; padding: 8px 10px; border: none; background: none;
                     text-align: left; border-radius: 6px; cursor: pointer; font: 500 12px/16px Inter, sans-serif; color: #0b1c30; }
   .wf-menu button:hover { background: #eff4ff; }
-  .wf-menu .sub { display: block; margin-top: 1px; font: 400 11px/15px Inter, sans-serif; color: #74777d; }
+  .wf-menu .sub { display: block; margin-top: 1px; font: 400 11px/15px Inter, sans-serif; color: #65686e; }
   .dl-dot { position: relative; }
   .dl-dot::after { content: ''; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%;
                    background: #d97706; border: 1.5px solid #fff; }
-  .reexport-btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 6px; background: #b45309; color: #fff; font: 600 10px 'JetBrains Mono'; white-space: nowrap; }
+  .reexport-btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 6px; background: #b45309; color: #fff; font: 600 11px 'JetBrains Mono'; white-space: nowrap; }
   .wf-btn:disabled { opacity: .45; cursor: not-allowed; }
   .wf-btn:disabled:hover { background: #0058be; }
   .ready-banner.bad { border-color: #f5a3a3; background: #fff1f0; }
-  .wf-menu button:disabled { cursor: not-allowed; color: #74777d; }
+  .wf-menu button:disabled { cursor: not-allowed; color: #65686e; }
   .wf-menu button:disabled:hover { background: none; }
   .wf-off { color: #b0b3b8 !important; cursor: not-allowed; }
   /* The Documents page's banner card (#gen-banner): task 3's generation row and the Word-files row */
@@ -269,7 +269,7 @@
   .fc-wrap { margin-top: 10px; border: 1px solid #c4c6cd; border-radius: 8px; overflow: hidden; }
   .fc-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: #f8f9ff; border-bottom: 1px solid #c4c6cd; }
   .fc-sig { font: 500 11px 'JetBrains Mono'; color: #44474c; }
-  .fc-edit { display: none; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid #0058be; color: #0058be; border-radius: 6px; font: 600 10px 'JetBrains Mono'; background: #fff; }
+  .fc-edit { display: none; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid #0058be; color: #0058be; border-radius: 6px; font: 600 11px 'JetBrains Mono'; background: #fff; }
   .fc-edit:hover { background: #eff4ff; }
   body.editing .fc-edit { display: inline-flex; }
   body.editing.locked .fc-edit { opacity: .4; pointer-events: none; }
@@ -278,10 +278,10 @@
   .fcs .shape.term { fill: #e5eeff; }
   .fcs .nd.hl .shape { stroke: #0058be; stroke-width: 2.4; fill: #eff4ff; }
   .fcs text { font-family: Inter, sans-serif; font-size: 11px; fill: #0b1c30; }
-  .fcs .elab { font-size: 10px; fill: #74777d; }
+  .fcs .elab { font-size: 11px; fill: #74777d; }
   .fcs .edge { stroke: #74777d; stroke-width: 1.2; fill: none; }
   .fcs .badge { fill: #041627; }
-  .fcs .badge-t { fill: #fff; font-size: 9px; font-weight: 600; }
+  .fcs .badge-t { fill: #fff; font-size: 11px; font-weight: 600; }
   .fc-modal { position: fixed; inset: 0; z-index: 300; background: rgba(4,22,39,.45); display: flex; align-items: center; justify-content: center; }
   .fc-modal.hidden { display: none; }
   .fc-dialog { width: min(980px, 94vw); max-height: 90vh; background: #fff; border-radius: 12px; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(4,22,39,.3); overflow: hidden; }
@@ -290,12 +290,12 @@
   .fc-rows { overflow-y: auto; padding: 12px 16px; }
   .fc-hint { font-size: 11px; color: #44474c; margin-bottom: 6px; }
   .fc-row { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid #eef1f6; }
-  .fc-num { flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: #041627; color: #fff; font: 600 10px/20px 'JetBrains Mono'; text-align: center; }
+  .fc-num { flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: #041627; color: #fff; font: 600 11px/20px 'JetBrains Mono'; text-align: center; }
   .fc-row textarea { width: 100%; resize: vertical; min-height: 40px; border: 1px solid #c4c6cd; border-radius: 6px; padding: 6px 8px; font-size: 12px; font-family: Inter; }
   .fc-row textarea:focus { outline: 2px solid #0058be; border-color: #0058be; }
   .fc-row.changed textarea { border-color: #0058be; background: #eff4ff; }
   .fc-row .fc-fixed { font-size: 12px; color: #44474c; padding-top: 1px; }
-  .fc-row .note { font: 500 10px 'JetBrains Mono'; color: #74777d; margin-top: 3px; }
+  .fc-row .note { font: 500 11px 'JetBrains Mono'; color: #65686e; margin-top: 3px; }
   .fc-row .note a { color: #0058be; cursor: pointer; }
   .fc-foot-note { font-size: 11px; color: #44474c; }
   .btn-ghost { font: 600 11px 'JetBrains Mono'; padding: 7px 14px; border: 1px solid #c4c6cd; border-radius: 6px; color: #44474c; background: #fff; }
@@ -307,15 +307,15 @@
 
   /* ── Right panel: Outline · Review · Corrections ── */
   .rp-tabs { display: flex; border-bottom: 1px solid #c4c6cd; flex-shrink: 0; padding: 0 6px; }
-  .rp-tab { padding: 11px 8px 9px; font: 600 11px 'JetBrains Mono'; color: #74777d; border-bottom: 2px solid transparent; margin-bottom: -1px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .rp-tab { padding: 11px 8px 9px; font: 600 11px 'JetBrains Mono'; color: #65686e; border-bottom: 2px solid transparent; margin-bottom: -1px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
   .rp-tab:hover { color: #0b1c30; }
   .rp-tab.active { color: #0058be; border-bottom-color: #0058be; }
-  .rp-count { font-size: 10px; background: #e5eeff; color: #0058be; border-radius: 9px; padding: 0 6px; }
+  .rp-count { font-size: 11px; background: #e5eeff; color: #0058be; border-radius: 9px; padding: 0 6px; }
   .rp-search { display: flex; align-items: center; gap: 6px; border: 1px solid #c4c6cd; border-radius: 8px; padding: 5px 8px; background: #fff; }
   .rp-search:focus-within { border-color: #0058be; }
   .rp-search input { flex: 1; outline: none; font: 12px Inter; background: transparent; min-width: 0; }
-  .rp-search .material-symbols-outlined { font-size: 15px; color: #74777d; }
-  .rp-hint { font: 500 10px 'JetBrains Mono'; color: #74777d; margin-top: 6px; }
+  .rp-search .material-symbols-outlined { font-size: 15px; color: #65686e; }
+  .rp-hint { font: 500 11px 'JetBrains Mono'; color: #65686e; margin-top: 6px; }
   .ol-row { display: flex; align-items: baseline; gap: 6px; padding: 4px 8px; border-radius: 4px; font-size: 12px; color: #44474c; cursor: pointer; min-width: 0; }
   .ol-row:hover { background: #eff4ff; color: #0b1c30; }
   .ol-row.active { background: #eff4ff; color: #0058be; font-weight: 600; }
@@ -324,54 +324,54 @@
   .ol-row.d3 { padding-left: 52px; font-size: 11.5px; }
   .ol-unit { display: flex; align-items: center; padding-left: 12px; }
   .ol-unit .ol-row { flex: 1; padding-left: 2px; }
-  .ol-chev { width: 18px; height: 18px; flex-shrink: 0; color: #74777d; display: flex; align-items: center; justify-content: center; border-radius: 3px; }
+  .ol-chev { width: 18px; height: 18px; flex-shrink: 0; color: #65686e; display: flex; align-items: center; justify-content: center; border-radius: 3px; }
   .ol-chev:hover { background: #e5eeff; color: #0058be; }
   .ol-chev .material-symbols-outlined { font-size: 16px; }
-  .ol-num { font: 500 10px 'JetBrains Mono'; color: #74777d; flex-shrink: 0; }
+  .ol-num { font: 500 11px 'JetBrains Mono'; color: #65686e; flex-shrink: 0; }
   .ol-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
-  .ol-badge { font: 600 10px 'JetBrains Mono'; color: #0058be; flex-shrink: 0; }
+  .ol-badge { font: 600 11px 'JetBrains Mono'; color: #0058be; flex-shrink: 0; }
   .ol-row mark, .rp-mark { background: #fef3c7; color: inherit; border-radius: 2px; }
   .corr-item { display: block; width: 100%; text-align: left; border: 1px solid #c4c6cd; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; background: #fff; }
   button.corr-item:hover { border-color: #0058be; background: #f8f9ff; }
   .corr-top { display: flex; justify-content: space-between; gap: 6px; align-items: baseline; }
-  .corr-kind { font: 600 10px 'JetBrains Mono'; color: #0058be; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
-  .corr-where { font: 500 10px 'JetBrains Mono'; color: #44474c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .corr-kind { font: 600 11px 'JetBrains Mono'; color: #0058be; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+  .corr-where { font: 500 11px 'JetBrains Mono'; color: #44474c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .corr-text { font-size: 12px; color: #0b1c30; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .corr-by { font: 500 10px 'JetBrains Mono'; color: #74777d; margin-top: 4px; }
+  .corr-by { font: 500 11px 'JetBrains Mono'; color: #65686e; margin-top: 4px; }
   .corr-item.orphan { background: #f3f4f6; border-style: dashed; }
-  .corr-item.orphan .corr-kind, .corr-item.orphan .corr-text { color: #74777d; }
-  .corr-sec { font: 600 10px 'JetBrains Mono'; text-transform: uppercase; letter-spacing: .06em; color: #44474c; margin: 14px 0 6px; }
+  .corr-item.orphan .corr-kind, .corr-item.orphan .corr-text { color: #65686e; }
+  .corr-sec { font: 600 11px 'JetBrains Mono'; text-transform: uppercase; letter-spacing: .06em; color: #44474c; margin: 14px 0 6px; }
   @keyframes jump-flash { 0% { background: #fde68a; } 100% { background: transparent; } }
   .jump-flash { animation: jump-flash 1.8s ease-out; }
-  .doc-muted { font-size: 12px; color: #74777d; font-style: italic; }
+  .doc-muted { font-size: 12px; color: #65686e; font-style: italic; }
   /* a jump (outline, corrections) lands below the sticky Editing bar, not under it */
   #view-doc [id], #view-doc .ed { scroll-margin-top: 64px; }
   /* the document list folds away while a document is open */
   .tree-rail { width: 32px; flex-shrink: 0; background: #fff; border-right: 1px solid #c4c6cd; display: none; flex-direction: column; align-items: center; padding-top: 8px; }
   .tree-rail button { display: flex; flex-direction: column; align-items: center; gap: 8px; color: #44474c; padding: 6px 0; width: 100%; }
   .tree-rail button:hover { color: #0058be; background: #eff4ff; }
-  .tree-rail .vt { writing-mode: vertical-rl; font: 600 10px 'JetBrains Mono'; letter-spacing: .1em; text-transform: uppercase; }
-  .tree-fold { color: #74777d; border-radius: 4px; padding: 2px; display: flex; }
+  .tree-rail .vt { writing-mode: vertical-rl; font: 600 11px 'JetBrains Mono'; letter-spacing: .1em; text-transform: uppercase; }
+  .tree-fold { color: #65686e; border-radius: 4px; padding: 2px; display: flex; }
   .tree-fold:hover { color: #0058be; background: #eff4ff; }
 
   /* ── Review and approval (proposal): one reviewer per document, four states, every step on record ── */
   .badge-ready   { background: #e5eeff; color: #0058be; border: 1px solid #8ab0f0; }
   .badge-changes { background: #fff1f0; color: #ba1a1a; border: 1px solid #f5a3a3; }
-  .av { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; flex-shrink: 0; font: 700 9px Inter; }
-  .av.none { border: 1px dashed #c4c6cd; color: #74777d; background: #fff; }
+  .av { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; flex-shrink: 0; font: 700 11px Inter; }
+  .av.none { border: 1px dashed #c4c6cd; color: #65686e; background: #fff; }
   .rv-sec { padding: 12px 12px 0; }
   .rv-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 0; border-bottom: 1px solid #eef1f6; }
-  .rv-k { font: 600 10px 'JetBrains Mono'; color: #74777d; text-transform: uppercase; letter-spacing: .06em; flex-shrink: 0; }
+  .rv-k { font: 600 11px 'JetBrains Mono'; color: #65686e; text-transform: uppercase; letter-spacing: .06em; flex-shrink: 0; }
   .rv-v { font-size: 11.5px; color: #0b1c30; display: flex; align-items: center; gap: 5px; min-width: 0; text-align: right; }
-  .rv-v a { color: #0058be; cursor: pointer; font: 600 10px 'JetBrains Mono'; }
+  .rv-v a { color: #0058be; cursor: pointer; font: 600 11px 'JetBrains Mono'; }
   .rv-v a:hover { text-decoration: underline; }
   .rv-box { border-radius: 8px; border: 1px solid; padding: 9px 10px; font-size: 11.5px; line-height: 1.45; }
   .rv-box .rv-k { display: block; margin-bottom: 3px; }
   .rv-box.ok { background: #f0fdf9; border-color: #86efac; color: #065f46; }
   .rv-box.info { background: #eff4ff; border-color: #b9cdf5; color: #0b1c30; }
   .rv-box.bad { background: #fff1f0; border-color: #f5a3a3; color: #0b1c30; }
-  .rv-hash { font: 500 10px 'JetBrains Mono'; color: #44474c; margin-top: 4px; }
-  .rv-meta { font: 500 10px 'JetBrains Mono'; color: #74777d; margin-top: 4px; }
+  .rv-hash { font: 500 11px 'JetBrains Mono'; color: #44474c; margin-top: 4px; }
+  .rv-meta { font: 500 11px 'JetBrains Mono'; color: #65686e; margin-top: 4px; }
   .rv-btn { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 7px 10px; border-radius: 6px; font: 600 11px 'JetBrains Mono'; margin-top: 8px; border: 1px solid transparent; }
   .rv-btn .material-symbols-outlined { font-size: 14px; }
   .rv-btn:disabled { opacity: .45; cursor: not-allowed; }
@@ -398,9 +398,9 @@
   .tl.reopened::before { background: #b45309; }
   .tl p { font-size: 11.5px; line-height: 1.4; color: #0b1c30; }
   .tl .q { color: #44474c; margin-top: 2px; }
-  .tl .w { font: 500 10px 'JetBrains Mono'; color: #74777d; margin-top: 2px; }
+  .tl .w { font: 500 11px 'JetBrains Mono'; color: #65686e; margin-top: 2px; }
   .rv-banner { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; margin-bottom: 14px; border-radius: 10px; border: 1px solid; font-size: 12px; line-height: 1.45; }
-  .rv-banner .act { margin-left: auto; flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 6px; font: 600 10px 'JetBrains Mono'; border: 1px solid; background: #fff; }
+  .rv-banner .act { margin-left: auto; flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 6px; font: 600 11px 'JetBrains Mono'; border: 1px solid; background: #fff; }
   .rv-banner.ok { background: #f0fdf9; border-color: #86efac; color: #065f46; }
   .rv-banner.bad { background: #fff1f0; border-color: #f5a3a3; color: #93000a; }
   .rv-banner.info { background: #eff4ff; border-color: #b9cdf5; color: #0b1c30; }
@@ -421,59 +421,61 @@
   .bell-row { display: flex; gap: 10px; padding: 10px 14px; border-top: 1px solid #eef1f6; font-size: 12px; line-height: 1.4; }
   .bell-row.unread { background: #f8f9ff; }
   .bell-row .material-symbols-outlined { font-size: 16px; margin-top: 1px; }
-  .bell-count { position: absolute; top: 2px; right: 0; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #ba1a1a; color: #fff; font: 700 9px/16px Inter; text-align: center; border: 2px solid #fff; box-sizing: content-box; }
+  .bell-count { position: absolute; top: 2px; right: 0; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #ba1a1a; color: #fff; font: 700 11px/16px Inter; text-align: center; border: 2px solid #fff; box-sizing: content-box; }
   #cta-edit:disabled { opacity: .45; cursor: not-allowed; }
 </style>
+<link rel="stylesheet" href="a11y.css">
+<script src="a11y.js" defer></script>
 </head>
 
 <body class="bg-background text-on-surface overflow-hidden nav-expanded">
 
 <!-- ══════════════ SIDEBAR ══════════════ -->
-<aside id="app-sidebar" class="fixed left-0 top-0 h-screen bg-white border-r border-outline-variant flex flex-col z-50 overflow-hidden">
+<aside id="app-sidebar" aria-label="Sidebar" class="fixed left-0 top-0 h-screen bg-white border-r border-outline-variant flex flex-col z-50 overflow-hidden">
   <div class="brand-header flex items-center justify-between px-4 py-3.5 border-b border-outline-variant flex-shrink-0">
-    <a href="projects.html" class="flex items-center gap-3 min-w-0 flex-1">
+    <a href="projects.html" class="flex items-center gap-3 min-w-0 flex-1" title="All projects">
       <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true" class="flex-shrink-0 text-secondary"><g stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8.5 2 16l3 7.5"/><path d="M27 8.5 30 16l-3 7.5"/></g><g stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M13.6 7 9.2 24"/><path d="M11 17.8h6.2"/></g><path fill="currentColor" d="M19.8 18.6C19.8 20.7 20.9 21.8 23 21.8 20.9 21.8 19.8 22.9 19.8 25 19.8 22.9 18.7 21.8 16.6 21.8 18.7 21.8 19.8 20.7 19.8 18.6Z"/></svg>
       <div class="brand-text min-w-0 overflow-hidden">
         <h1 class="text-primary font-bold tracking-tight whitespace-nowrap" style="font-family:Inter;font-size:20px;line-height:1.2;">ArtiFex</h1>
-        <p class="text-on-surface-variant uppercase mt-0.5 whitespace-nowrap" style="font-family:'JetBrains Mono';font-size:10px;font-weight:500;letter-spacing:.04em;">Crafted from Code</p>
+        <p class="text-on-surface-variant uppercase mt-0.5 whitespace-nowrap" style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;letter-spacing:0;">Crafted from Code</p>
       </div>
     </a>
-    <button onclick="toggleSidebar()" class="w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors flex-shrink-0" title="Toggle sidebar">
-      <span class="material-symbols-outlined" id="sidebar-toggle-icon" style="font-size:18px;">chevron_left</span>
+    <button onclick="toggleSidebar()" aria-label="Show or hide the sidebar" class="w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors flex-shrink-0" title="Toggle sidebar">
+      <span class="material-symbols-outlined" aria-hidden="true" id="sidebar-toggle-icon" style="font-size:18px;">chevron_left</span>
     </button>
   </div>
 
-  <nav class="flex-1 overflow-y-auto px-2 py-2">
+  <nav class="flex-1 overflow-y-auto px-2 py-2" aria-label="Main">
     <a href="projects.html" title="All Projects"
        class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default mb-2">
-      <span class="material-symbols-outlined" style="font-size:18px;">arrow_back</span>
+      <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">arrow_back</span>
       <span class="nav-label font-label-sm text-label-sm text-on-surface-variant">All Projects</span>
     </a>
-    <p class="nav-label px-3 pb-1.5 font-label-sm text-on-surface-variant uppercase tracking-[.09em] truncate" style="font-size:10px;">VCU Engine Firmware</p>
+    <p class="nav-label px-3 pb-1.5 font-label-sm text-on-surface-variant uppercase tracking-[.09em] truncate" style="font-size:11px;">VCU Engine Firmware</p>
     <div class="space-y-0.5">
       <a href="project-detail.html" title="Overview"
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
-        <span class="material-symbols-outlined" style="font-size:20px;">home</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">home</span>
         <span class="nav-label font-label-md text-label-md">Overview</span>
       </a>
       <a href="#" onclick="showListState(); return false;" title="Documents"
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-active">
-        <span class="material-symbols-outlined" style="font-size:20px;">description</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">description</span>
         <span class="nav-label font-label-md text-label-md">Documents</span>
       </a>
       <a href="compare.html" title="Compare"
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
-        <span class="material-symbols-outlined" style="font-size:20px;">compare_arrows</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">compare_arrows</span>
         <span class="nav-label font-label-md text-label-md">Compare</span>
       </a>
       <a href="versions.html" title="Versions"
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
-        <span class="material-symbols-outlined" style="font-size:20px;">local_offer</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">local_offer</span>
         <span class="nav-label font-label-md text-label-md">Versions</span>
       </a>
       <a href="team.html" title="Team"
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
-        <span class="material-symbols-outlined" style="font-size:20px;">group</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">group</span>
         <span class="nav-label font-label-md text-label-md">Team</span>
       </a>
     </div>
@@ -497,7 +499,7 @@
 </aside>
 
 <!-- ══════════════ APP MAIN ══════════════ -->
-<div id="app-main" class="h-screen flex flex-col">
+<main id="app-main" class="h-screen flex flex-col">
 
   <!-- ── TOP BAR ── -->
   <header class="h-14 flex-shrink-0 flex items-center justify-between px-4 bg-white border-b border-outline-variant z-40">
@@ -506,19 +508,19 @@
       <a href="projects.html"
          class="w-7 h-7 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
          title="Dashboard">
-        <span class="material-symbols-outlined sym-fill" style="font-size:18px;">hexagon</span>
+        <span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:18px;">hexagon</span>
       </a>
-      <span class="text-outline-variant select-none">/</span>
+      <span class="text-outline-variant select-none" aria-hidden="true">/</span>
       <a href="project-detail.html"
          class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:underline transition-colors whitespace-nowrap">
         VCU Engine Firmware
       </a>
-      <span class="text-outline-variant select-none">/</span>
+      <span class="text-outline-variant select-none" aria-hidden="true">/</span>
       <button onclick="showListState()"
          class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:underline transition-colors">
         Documents
       </button>
-      <span class="text-outline-variant select-none" id="breadcrumb-doc-sep" style="display:none;">/</span>
+      <span class="text-outline-variant select-none" id="breadcrumb-doc-sep" style="display:none;" aria-hidden="true">/</span>
       <span class="font-label-md text-label-md text-on-surface truncate" id="breadcrumb-doc" style="display:none;">SWE.3 — Brake Controller</span>
     </nav>
     <!-- Right actions -->
@@ -527,7 +529,7 @@
            and the Word files an update the user started wrote, or could not -->
       <div class="relative" id="bell-wrap">
         <button onclick="toggleBell()" class="relative p-2 hover:bg-surface-container rounded-lg transition-colors" title="Notifications">
-          <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
+          <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:22px;">notifications</span>
           <span class="bell-count" id="bell-count" style="display:none;"></span>
         </button>
         <div id="bell-dd" class="bell-dd" style="display:none;"></div>
@@ -537,17 +539,17 @@
         <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
           <span class="text-on-secondary-container font-bold text-xs" id="top-initials" style="font-family:Inter;">AD</span>
         </div>
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">expand_more</span>
+        <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:16px;">expand_more</span>
       </button>
       <div class="w-px h-5 bg-outline-variant mx-1"></div>
-      <div class="flex items-center rounded-full border border-outline-variant overflow-hidden" style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;">
+      <div class="flex items-center rounded-full border border-outline-variant overflow-hidden" style="font-family:'JetBrains Mono';font-size:11px;font-weight:600;">
         <button onclick="applyRole('admin')" id="role-btn-admin" class="px-2.5 py-1 transition-colors bg-secondary text-white">Admin</button>
         <button onclick="applyRole('developer')" id="role-btn-dev" class="px-2.5 py-1 transition-colors text-on-surface-variant hover:bg-surface-container">Dev</button>
       </div>
       <!-- Mockup only, not in the app: switches for the Word-file states a static page cannot reach on
            its own - a run generating v1.2.0 that holds the version, and an update that fails. -->
       <div class="w-px h-5 bg-outline-variant mx-1"></div>
-      <div class="flex items-center gap-1.5" style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;">
+      <div class="flex items-center gap-1.5" style="font-family:'JetBrains Mono';font-size:11px;font-weight:600;">
         <button id="demo-gen" onclick="toggleDemo('gen')" aria-pressed="false" title="Mockup only: a run generating v1.2.0 holds the version"
                 class="rounded-full border border-outline-variant px-2.5 py-1 transition-colors text-on-surface-variant hover:bg-surface-container">Generation running</button>
         <button id="demo-fail" onclick="toggleDemo('fail')" aria-pressed="false" title="Mockup only: the next update fails"
@@ -563,9 +565,9 @@
       <!-- Project switcher -->
       <div class="relative" id="sb-project-wrap">
         <button id="sb-project-btn" onclick="toggleSbProject()" class="subbar-pill">
-          <span class="material-symbols-outlined text-secondary sym-fill" style="font-size:14px;">folder</span>
+          <span class="material-symbols-outlined text-secondary sym-fill" aria-hidden="true" style="font-size:14px;">folder</span>
           <span class="font-label-md text-label-md text-on-surface" id="sb-project-name" style="font-size:12px;">VCU Engine Firmware</span>
-          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="sb-project-chevron" style="font-size:13px;">expand_more</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" aria-hidden="true" id="sb-project-chevron" style="font-size:13px;">expand_more</span>
         </button>
         <div id="sb-project-dropdown" class="hidden dropdown" style="min-width:264px;">
           <div class="py-1.5">
@@ -577,27 +579,27 @@
             <button onclick="switchSbProject('Brake Control Unit')" data-proj="Brake Control Unit"
                     class="sb-proj-opt w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left">
               <span class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Brake Control Unit</span>
-              <span class="ml-auto material-symbols-outlined text-outline-variant sb-proj-check" style="font-size:15px;opacity:0;">check</span>
+              <span class="ml-auto material-symbols-outlined text-outline sb-proj-check" style="font-size:15px;opacity:0;">check</span>
             </button>
           </div>
           <div class="border-t border-outline-variant">
             <a href="onboarding.html" class="flex items-center gap-2 px-3 py-2.5 hover:bg-surface-container-low transition-colors">
-              <span class="material-symbols-outlined text-secondary" style="font-size:14px;">add_circle</span>
+              <span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:14px;">add_circle</span>
               <span class="font-label-md text-label-md text-secondary" style="font-size:12px;">New Project</span>
             </a>
           </div>
         </div>
       </div>
 
-      <span class="text-outline-variant select-none">·</span>
+      <span class="text-outline-variant select-none" aria-hidden="true">·</span>
 
       <!-- Commit chip with picker dropdown -->
       <div class="relative" id="commit-chip-wrap">
         <button id="commit-chip-btn" onclick="toggleCommitPicker()" class="subbar-pill">
-          <span id="chip-icon-sym" class="material-symbols-outlined sym-fill text-on-tertiary-container flex-shrink-0" style="font-size:13px;">sell</span>
+          <span id="chip-icon-sym" class="material-symbols-outlined sym-fill text-on-tertiary-container flex-shrink-0" aria-hidden="true" style="font-size:13px;">sell</span>
           <div id="chip-icon-spin" class="spin flex-shrink-0" style="display:none;width:11px;height:11px;border:1.5px solid #0058be;border-top-color:transparent;border-radius:9999px;"></div>
           <span id="chip-ref" class="text-on-surface font-semibold" style="font-family:'JetBrains Mono';font-size:11px;">v1.2.0</span>
-          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="chip-chevron" style="font-size:13px;">expand_more</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" aria-hidden="true" id="chip-chevron" style="font-size:13px;">expand_more</span>
         </button>
         <div id="commit-picker" class="hidden absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden" style="min-width:380px;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);">
           <div class="flex items-center border-b border-outline-variant px-3">
@@ -609,8 +611,8 @@
           </div>
           <div id="cp-panel-commits" style="display:none;">
             <div class="px-3 py-2 border-b border-outline-variant">
-              <div class="flex items-center gap-2 px-2 py-1.5 bg-surface-container-low border border-outline-variant rounded-lg">
-                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">search</span>
+              <div class="flex items-center gap-2 px-2 py-1.5 bg-surface-container-low border border-outline rounded-lg">
+                <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:15px;">search</span>
                 <input type="text" placeholder="Search commits…" oninput="filterPickerCommits(this.value)" class="flex-1 bg-transparent outline-none text-on-surface placeholder-outline" style="font-family:'JetBrains Mono';font-size:11px;">
               </div>
             </div>
@@ -619,12 +621,12 @@
         </div>
       </div>
 
-      <span class="text-outline-variant select-none">·</span>
+      <span class="text-outline-variant select-none" aria-hidden="true">·</span>
 
       <!-- Project status chip -->
-      <div id="proj-status-chip" class="proj-status-chip" style="background:#f0fdf9;color:#00a572;border-color:#86efac;">
+      <div id="proj-status-chip" class="proj-status-chip" style="background:#f0fdf9;color:#00754f;border-color:#86efac;">
         <span class="s-dot" id="proj-chip-dot" style="background:#00a572;"></span>
-        <span class="material-symbols-outlined sym-fill" id="proj-chip-icon" style="font-size:11px;">check_circle</span>
+        <span class="material-symbols-outlined sym-fill" aria-hidden="true" id="proj-chip-icon" style="font-size:11px;">check_circle</span>
         <span id="proj-chip-label">Approved</span>
       </div>
 
@@ -634,7 +636,7 @@
         <a href="compare.html"
            class="flex items-center gap-1.5 px-2.5 py-1.5 border border-outline-variant text-on-surface-variant hover:bg-surface-container hover:border-secondary hover:text-secondary rounded-lg transition-colors"
            style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
-          <span class="material-symbols-outlined" style="font-size:13px;">compare_arrows</span>
+          <span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">compare_arrows</span>
           Compare
         </a>
       </div>
@@ -645,12 +647,12 @@
       <!-- Edit: turns the SWE.3 document into edit mode (review & update) -->
       <button id="cta-edit" onclick="toggleEdit()" class="items-center gap-1.5 px-3 py-1.5 border border-secondary text-secondary hover:bg-surface-container-low rounded-lg transition-colors"
               style="display:none;font-family:'JetBrains Mono';font-size:11px;font-weight:500;letter-spacing:.02em;">
-        <span class="material-symbols-outlined" id="cta-edit-icon" style="font-size:15px;">edit</span>
+        <span class="material-symbols-outlined" aria-hidden="true" id="cta-edit-icon" style="font-size:15px;">edit</span>
         <span id="cta-edit-label">Edit</span>
       </button>
       <button id="cta-download" class="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-white rounded-lg transition-colors"
               style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;letter-spacing:.04em;">
-        <span class="material-symbols-outlined" style="font-size:14px;">download</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">download</span>
         <span id="cta-download-label">DOWNLOAD ALL</span>
       </button>
     </div>
@@ -660,12 +662,12 @@
   <div class="flex-1 flex overflow-hidden">
 
     <!-- DOCUMENT TREE -->
-    <aside id="doc-tree-panel" class="w-60 flex-shrink-0 bg-white border-r border-outline-variant flex flex-col overflow-hidden" style="display:none;">
+    <aside id="doc-tree-panel" aria-label="Documents" class="w-60 flex-shrink-0 bg-white border-r border-outline-variant flex flex-col overflow-hidden" style="display:none;">
       <!-- Panel header -->
       <div class="px-3 py-2.5 border-b border-outline-variant flex-shrink-0 flex items-center justify-between">
         <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em] block">Documents</span>
         <button id="tree-fold" class="tree-fold" onclick="foldDocTree(true)" title="Hide the document list" aria-label="Hide the document list" style="display:none;">
-          <span class="material-symbols-outlined" style="font-size:18px;">left_panel_close</span>
+          <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">left_panel_close</span>
         </button>
       </div>
       <!-- Reviewer filter (one reviewer per document) -->
@@ -673,9 +675,9 @@
         <button onclick="toggleListAssignee()" id="list-assignee-btn"
                 class="w-full flex items-center gap-2 px-2.5 py-1.5 border border-outline-variant rounded-lg bg-white hover:bg-surface-container-low transition-colors"
                 style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;color:#44474c;">
-          <span class="material-symbols-outlined text-on-surface-variant" style="font-size:14px;">person</span>
+          <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:14px;">person</span>
           <span id="list-assignee-label" class="flex-1 text-left">Reviewer</span>
-          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="list-assignee-chevron" style="font-size:13px;">expand_more</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" aria-hidden="true" id="list-assignee-chevron" style="font-size:13px;">expand_more</span>
         </button>
         <div id="list-assignee-dd" class="hidden" style="position:absolute;top:calc(100% - 4px);left:8px;right:8px;background:white;border:1px solid #c4c6cd;border-radius:8px;overflow:hidden;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);">
           <div class="py-1.5">
@@ -693,9 +695,9 @@
       <div class="flex-1 overflow-y-auto py-2" id="component-tree"></div>
     </aside>
     <!-- The document list, folded: a document opens with it out of the way, as the reader needs the width -->
-    <aside id="tree-rail" class="tree-rail">
+    <aside id="tree-rail" aria-label="Documents, folded" class="tree-rail">
       <button onclick="foldDocTree(false)" title="Show the document list" aria-label="Show the document list">
-        <span class="material-symbols-outlined" style="font-size:18px;">left_panel_open</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">left_panel_open</span>
         <span class="vt">Documents</span>
       </button>
     </aside>
@@ -704,19 +706,19 @@
     <div class="flex-1 flex overflow-hidden relative">
 
       <!-- DOCUMENT CANVAS -->
-      <main class="flex-1 overflow-y-auto bg-surface-container-low" id="canvas">
+      <div class="flex-1 overflow-y-auto bg-surface-container-low" id="canvas">
 
         <!-- LIST VIEW (default) -->
         <div id="view-list" class="p-6">
 
           <!-- Stale banner -->
           <div id="stale-banner" class="mb-4 flex items-center gap-3 px-4 py-3 rounded-xl border" style="display:none;background:#fffbeb;border-color:#fcd34d;">
-            <span class="material-symbols-outlined flex-shrink-0" style="color:#b45309;font-size:18px;">warning</span>
+            <span class="material-symbols-outlined flex-shrink-0" aria-hidden="true" style="color:#b45309;font-size:18px;">warning</span>
             <div class="flex-1 min-w-0">
-              <p class="font-label-sm text-label-sm" style="color:#92400e;">Documents generated from <code style="font-family:'JetBrains Mono';font-size:10px;background:#fef3c7;padding:1px 4px;border-radius:3px;">d9a0c55</code> — HEAD is now at <code style="font-family:'JetBrains Mono';font-size:10px;background:#fef3c7;padding:1px 4px;border-radius:3px;">f3a1b22</code> · 4 commits ahead</p>
+              <p class="font-label-sm text-label-sm" style="color:#92400e;">Documents generated from <code style="font-family:'JetBrains Mono';font-size:11px;background:#fef3c7;padding:1px 4px;border-radius:3px;">d9a0c55</code> — HEAD is now at <code style="font-family:'JetBrains Mono';font-size:11px;background:#fef3c7;padding:1px 4px;border-radius:3px;">f3a1b22</code> · 4 commits ahead</p>
             </div>
-            <button onclick="startGeneration()" class="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white transition-colors" style="background:#b45309;font-family:'JetBrains Mono';font-size:10px;font-weight:600;white-space:nowrap;">
-              <span class="material-symbols-outlined" style="font-size:12px;">play_arrow</span>Re-run
+            <button onclick="startGeneration()" class="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white transition-colors" style="background:#b45309;font-family:'JetBrains Mono';font-size:11px;font-weight:600;white-space:nowrap;">
+              <span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;">play_arrow</span>Re-run
             </button>
           </div>
 
@@ -730,11 +732,11 @@
                developer's, the ones they review. It replaces task 3's planned "out of date" row. -->
           <div id="gen-banner" role="status" class="mb-4 bg-white border border-outline-variant rounded-xl" style="display:none;overflow:hidden;">
             <div id="gen-row" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;padding:10px 16px;">
-              <span class="material-symbols-outlined animate-spin flex-shrink-0" style="font-size:18px;color:#0058be;">autorenew</span>
+              <span class="material-symbols-outlined animate-spin flex-shrink-0" aria-hidden="true" style="font-size:18px;color:#0058be;">autorenew</span>
               <p style="flex:1 1 220px;min-width:0;font-family:Inter,sans-serif;font-size:13px;color:#44474c;"><span style="font-weight:600;color:#0b1c30;">Generating documents</span> · 11 of 54 components done</p>
               <span aria-hidden="true" style="width:140px;height:6px;border-radius:99px;background:#e8eaed;overflow:hidden;flex-shrink:0;"><span style="display:block;height:100%;width:20.4%;border-radius:99px;background:#0058be;"></span></span>
               <a href="project-detail.html#components" style="display:inline-flex;align-items:center;padding:6px 12px;border-radius:6px;border:1px solid #c4c6cd;background:#fff;font-family:Inter,sans-serif;font-size:12px;font-weight:600;color:#0b1c30;white-space:nowrap;cursor:pointer;text-decoration:none;">View components</a>
-              <a href="live-logs.html?job=jobd46b0548" title="This run in Live logs (superusers)" style="display:inline-flex;align-items:center;gap:4px;padding:6px 4px;font-family:Inter,sans-serif;font-size:12px;font-weight:600;color:#0058be;white-space:nowrap;text-decoration:none;"><span class="material-symbols-outlined" style="font-size:15px;">terminal</span>Logs</a>
+              <a href="live-logs.html?job=jobd46b0548" title="This run in Live logs (superusers)" style="display:inline-flex;align-items:center;gap:4px;padding:6px 4px;font-family:Inter,sans-serif;font-size:12px;font-weight:600;color:#0058be;white-space:nowrap;text-decoration:none;"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">terminal</span>Logs</a>
             </div>
             <div id="wf-row" class="gb-row" style="display:none;"></div>
           </div>
@@ -756,27 +758,27 @@
                     <button onclick="toggleListStatus()" id="list-status-btn"
                             class="flex items-center gap-1.5 px-3 py-2 border border-outline-variant rounded-lg bg-white hover:bg-surface-container-low transition-colors"
                             style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;color:#44474c;">
-                      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:14px;">filter_list</span>
+                      <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:14px;">filter_list</span>
                       <span id="list-status-label">Status</span>
-                      <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="list-status-chevron" style="font-size:13px;">expand_more</span>
+                      <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" aria-hidden="true" id="list-status-chevron" style="font-size:13px;">expand_more</span>
                     </button>
                     <div id="list-status-dd" class="hidden" style="position:absolute;top:calc(100% + 6px);right:0;background:white;border:1px solid #c4c6cd;border-radius:8px;overflow:hidden;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);min-width:180px;">
                       <div class="py-1.5">
                         <button onclick="toggleListStatus('in_review')" class="list-status-opt w-full flex items-center justify-between px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface">
                           <span>In review</span>
-                          <span class="material-symbols-outlined text-secondary" id="ls-check-in_review" style="font-size:14px;display:none;">check</span>
+                          <span class="material-symbols-outlined text-secondary" aria-hidden="true" id="ls-check-in_review" style="font-size:14px;display:none;">check</span>
                         </button>
                         <button onclick="toggleListStatus('submitted')" class="list-status-opt w-full flex items-center justify-between px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface">
                           <span>Ready for approval</span>
-                          <span class="material-symbols-outlined text-secondary" id="ls-check-submitted" style="font-size:14px;display:none;">check</span>
+                          <span class="material-symbols-outlined text-secondary" aria-hidden="true" id="ls-check-submitted" style="font-size:14px;display:none;">check</span>
                         </button>
                         <button onclick="toggleListStatus('changes_requested')" class="list-status-opt w-full flex items-center justify-between px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface">
                           <span>Changes requested</span>
-                          <span class="material-symbols-outlined text-secondary" id="ls-check-changes_requested" style="font-size:14px;display:none;">check</span>
+                          <span class="material-symbols-outlined text-secondary" aria-hidden="true" id="ls-check-changes_requested" style="font-size:14px;display:none;">check</span>
                         </button>
                         <button onclick="toggleListStatus('approved')"  class="list-status-opt w-full flex items-center justify-between px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface">
                           <span>Approved</span>
-                          <span class="material-symbols-outlined text-secondary" id="ls-check-approved" style="font-size:14px;display:none;">check</span>
+                          <span class="material-symbols-outlined text-secondary" aria-hidden="true" id="ls-check-approved" style="font-size:14px;display:none;">check</span>
                         </button>
                       </div>
                       <div class="border-t border-outline-variant py-1">
@@ -785,8 +787,8 @@
                     </div>
                   </div>
                   <!-- Search -->
-                  <div class="flex items-center gap-1.5 px-2.5 py-1.5 border border-outline-variant rounded-lg bg-white hover:border-secondary transition-colors" style="min-width:180px;">
-                    <span class="material-symbols-outlined text-on-surface-variant flex-shrink-0" style="font-size:14px;">search</span>
+                  <div class="flex items-center gap-1.5 px-2.5 py-1.5 border border-outline rounded-lg bg-white hover:border-secondary transition-colors" style="min-width:180px;">
+                    <span class="material-symbols-outlined text-on-surface-variant flex-shrink-0" aria-hidden="true" style="font-size:14px;">search</span>
                     <input id="doc-search" type="text" placeholder="Search documents…"
                            class="flex-1 bg-transparent outline-none text-on-surface placeholder:text-on-surface-variant"
                            style="font-family:'JetBrains Mono';font-size:11px;line-height:16px;height:16px;border:0;padding:0;box-shadow:none;min-width:0;" oninput="filterDocSearch(this.value)" />
@@ -810,18 +812,18 @@
                 <span id="list-batch-count" class="text-on-secondary font-semibold" style="font-family:'JetBrains Mono';font-size:12px;"></span>
                 <div class="w-px h-4 bg-on-secondary opacity-30"></div>
                 <button onclick="listBatchDownload()" class="flex items-center gap-1.5 px-3 py-1.5 bg-white bg-opacity-10 hover:bg-opacity-20 text-on-secondary rounded-lg transition-colors" style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
-                  <span class="material-symbols-outlined" style="font-size:13px;">download</span>Download
+                  <span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">download</span>Download
                 </button>
                 <button id="batch-assign-btn" onclick="openAssign([...selectedDocIds])" class="flex items-center gap-1.5 px-3 py-1.5 bg-white bg-opacity-10 hover:bg-opacity-20 text-on-secondary rounded-lg transition-colors" style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
-                  <span class="material-symbols-outlined" style="font-size:13px;">person_add</span>Assign…
+                  <span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">person_add</span>Assign…
                 </button>
                 <!-- Approves only the selected documents that are Ready for approval; the dialog names the rest -->
                 <button id="batch-approve-btn" onclick="openModal({ type: 'bulk' })" class="flex items-center gap-1.5 px-3 py-1.5 bg-white bg-opacity-10 hover:bg-opacity-20 text-on-secondary rounded-lg transition-colors" style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
-                  <span class="material-symbols-outlined" style="font-size:13px;">task_alt</span><span id="batch-approve-label">Approve…</span>
+                  <span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">task_alt</span><span id="batch-approve-label">Approve…</span>
                 </button>
               </div>
-              <button onclick="clearListSelection()" class="flex items-center gap-1 text-on-secondary opacity-70 hover:opacity-100 transition-opacity" style="font-family:'JetBrains Mono';font-size:11px;">
-                <span class="material-symbols-outlined" style="font-size:14px;">close</span>Clear
+              <button onclick="clearListSelection()" class="flex items-center gap-1 text-on-secondary hover:underline" style="font-family:'JetBrains Mono';font-size:11px;">
+                <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">close</span>Clear
               </button>
             </div>
 
@@ -830,22 +832,22 @@
               <table class="w-full table-fixed">
                 <thead>
                   <tr class="bg-surface-container-low border-b border-outline-variant">
-                    <th class="px-3 py-3" style="width:40px;">
-                      <input type="checkbox" class="doc-checkbox" id="list-select-all" onchange="toggleSelectAllDocs(this)">
+                    <th class="px-3 py-3" style="width:40px;" aria-label="Select">
+                      <input type="checkbox" class="doc-checkbox" id="list-select-all" aria-label="Select all documents" onchange="toggleSelectAllDocs(this)">
                     </th>
                     <th class="text-left px-3 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Document</th>
                     <th class="text-left px-3 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:76px;">Process</th>
                     <th class="text-left px-3 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:156px;">Reviewer</th>
                     <th class="text-left px-3 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:168px;">Status</th>
                     <th class="text-left px-3 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:170px;">Last activity</th>
-                    <th class="px-3 py-3" style="width:146px;"></th>
+                    <th class="px-3 py-3" style="width:146px;"><span class="sr-only">Actions</span></th>
                   </tr>
                 </thead>
                 <tbody id="doc-list-body"></tbody>
               </table>
               <div id="list-empty-state" class="hidden py-14 flex flex-col items-center text-center gap-4">
                 <div class="w-12 h-12 rounded-full bg-surface-container-low border border-outline-variant flex items-center justify-center">
-                  <span class="material-symbols-outlined text-on-surface-variant" style="font-size:24px;">search_off</span>
+                  <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:24px;">search_off</span>
                 </div>
                 <div>
                   <p class="font-headline-sm text-on-surface">No documents found</p>
@@ -867,14 +869,14 @@
           <div class="bg-white border border-outline-variant rounded-xl overflow-hidden">
             <div class="py-20 flex flex-col items-center text-center gap-5">
               <div class="w-16 h-16 rounded-2xl bg-surface-container-low border border-outline-variant flex items-center justify-center">
-                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:32px;">play_circle</span>
+                <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:32px;">play_circle</span>
               </div>
               <div>
                 <p class="font-headline-sm text-headline-sm text-on-surface mb-1">No documents yet</p>
                 <p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Run analysis on <span id="not-run-version" style="font-family:'JetBrains Mono';font-size:11px;color:#0058be;">v1.1.0</span> to generate design specifications</p>
               </div>
               <a href="project-detail.html" class="flex items-center gap-2 px-5 py-2.5 bg-secondary hover:bg-secondary-container text-white rounded-xl font-label-md text-label-md transition-colors">
-                <span class="material-symbols-outlined" style="font-size:16px;">play_arrow</span>
+                <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">play_arrow</span>
                 Run Analysis
               </a>
             </div>
@@ -889,7 +891,7 @@
 
         <!-- Edit mode bar -->
         <div id="edit-bar" class="edit-bar">
-          <span class="material-symbols-outlined" id="edit-bar-icon" style="font-size:18px;color:#0058be;">edit_note</span>
+          <span class="material-symbols-outlined" aria-hidden="true" id="edit-bar-icon" style="font-size:18px;color:#0058be;">edit_note</span>
           <p class="flex-1" id="edit-bar-text" style="font-size:12px;color:#0b1c30;"></p>
         </div>
 
@@ -904,16 +906,16 @@
                components in it wait (the server answers 409); every other document stays editable.
                showDocState() moves it under the SWE.4 reader's review banner for a SWE.4 document. -->
           <div id="ready-banner" class="ready-banner" role="status">
-            <span class="material-symbols-outlined" id="ready-icon" style="font-size:18px;color:#b45309;">warning</span>
+            <span class="material-symbols-outlined" aria-hidden="true" id="ready-icon" style="font-size:18px;color:#b45309;">warning</span>
             <div class="flex-1 min-w-0">
               <p id="ready-text" style="font-size:12px;color:#92400e;"></p>
               <p id="ready-list" class="wf-list"></p>
             </div>
             <button id="reexport-btn" onclick="askUpdate()" class="wf-btn">
-              <span class="material-symbols-outlined" style="font-size:13px;">sync</span><span id="update-label">Update</span>
+              <span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">sync</span><span id="update-label">Update</span>
             </button>
             <button id="wf-more-btn" class="wf-more" onclick="openWfMore(event)" title="More" aria-label="More">
-              <span class="material-symbols-outlined" style="font-size:18px;">more_vert</span>
+              <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">more_vert</span>
             </button>
           </div>
 
@@ -949,7 +951,7 @@
 
                 <h3 class="doc-h2" id="s-static">2.1 Static Design</h3>
                 <div class="doc-fig">
-                  <span class="material-symbols-outlined" style="font-size:36px;color:#c4c6cd;">schema</span>
+                  <span class="material-symbols-outlined" aria-hidden="true" style="font-size:36px;color:#c4c6cd;">schema</span>
                   Component diagram — Brake Controller
                 </div>
                 <p class="doc-cap">Component/Unit Table</p>
@@ -1007,7 +1009,7 @@
                             <div class="fc-head">
                               <span class="fc-sig">void BrakeCtrl_Run(void)</span>
                               <button class="fc-edit" onclick="openFlowchartEditor()">
-                                <span class="material-symbols-outlined" style="font-size:13px;">account_tree</span>Edit flowchart
+                                <span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">account_tree</span>Edit flowchart
                               </button>
                             </div>
                             <div class="fc-pic" id="doc-fc"></div>
@@ -1065,11 +1067,11 @@
           </div>
         </div>
         </div><!-- /view-swe4 -->
-      </main>
+      </div>
 
       <!-- RIGHT PANEL: Outline · Review · Corrections. Outline is always there: a firmware document
            has hundreds of functions, and the reviewer needs it most while reviewing. -->
-      <aside class="flex-shrink-0 bg-white border-l border-outline-variant flex flex-col overflow-hidden" style="width:248px;" id="outline-panel">
+      <aside class="flex-shrink-0 bg-white border-l border-outline-variant flex flex-col overflow-hidden" style="width:248px;" id="outline-panel" aria-label="Outline">
         <div class="rp-tabs" role="tablist">
           <button class="rp-tab active" data-tab="outline" role="tab" onclick="setPanelTab('outline')">Outline</button>
           <button class="rp-tab" data-tab="review" role="tab" id="rp-tab-review" onclick="setPanelTab('review')">Review</button>
@@ -1080,7 +1082,7 @@
         <div id="rp-outline" class="flex-1 flex flex-col min-h-0">
           <div class="px-3 pt-3 pb-2 flex-shrink-0" id="outline-search-wrap">
             <div class="rp-search">
-              <span class="material-symbols-outlined">search</span>
+              <span class="material-symbols-outlined" aria-hidden="true">search</span>
               <input id="outline-search" type="text" placeholder="Find a unit or function…" oninput="setOutlineQuery(this.value)" aria-label="Find a unit or function">
             </div>
             <p class="rp-hint" id="outline-hint"></p>
@@ -1106,7 +1108,7 @@
         <div class="text-center" style="max-width:360px;">
           <div class="w-16 h-16 rounded-2xl bg-white border border-outline-variant mx-auto mb-6 flex items-center justify-center"
                style="box-shadow:0 1px 4px rgba(4,22,39,.08);">
-            <span class="material-symbols-outlined text-outline-variant" style="font-size:32px;">description</span>
+            <span class="material-symbols-outlined text-outline" aria-hidden="true" style="font-size:32px;">description</span>
           </div>
           <h2 class="font-headline-sm text-headline-sm text-on-surface mb-1">
             No document for&nbsp;<code class="font-label-md text-label-md text-secondary" id="empty-version" style="font-size:16px;">v0.9.0</code>
@@ -1132,7 +1134,7 @@
             </div>
             <button onclick="startGeneration()"
                     class="w-full flex items-center justify-center gap-2 px-5 py-3 bg-secondary hover:bg-secondary-container text-white rounded-xl font-label-md text-label-md transition-colors">
-              <span class="material-symbols-outlined" style="font-size:16px;">play_arrow</span>
+              <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">play_arrow</span>
               Generate SWE.3 Document
             </button>
           </div>
@@ -1154,7 +1156,7 @@
             <div class="px-6 pt-6 pb-5 border-b border-outline-variant">
               <div class="flex items-center gap-3 mb-5">
                 <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style="background:#e5eeff;">
-                  <span class="material-symbols-outlined text-secondary spin-slow" style="font-size:20px;">autorenew</span>
+                  <span class="material-symbols-outlined text-secondary spin-slow" aria-hidden="true" style="font-size:20px;">autorenew</span>
                 </div>
                 <div class="flex-1 min-w-0">
                   <p class="font-headline-sm text-headline-sm text-on-surface">Generating document</p>
@@ -1179,7 +1181,7 @@
               <span class="text-body-sm text-on-surface-variant" id="gen-status">Running…</span>
               <button onclick="cancelGeneration()" id="gen-cancel-btn"
                       class="flex items-center gap-1.5 px-3 py-1.5 border border-outline-variant hover:bg-surface-container rounded-lg transition-colors font-label-sm text-label-sm text-on-surface-variant">
-                <span class="material-symbols-outlined" style="font-size:13px;">cancel</span>Cancel
+                <span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">cancel</span>Cancel
               </button>
             </div>
           </div>
@@ -1188,7 +1190,7 @@
 
     </div><!-- /canvas area -->
   </div><!-- /content area -->
-</div><!-- /app-main -->
+</main><!-- /app-main -->
 
 <!-- ══ FLOWCHART LABEL EDITOR (review & update mockup): R7 lists one flowchart's labels, R8 saves the
      changed ones together. No close on a backdrop click: that would lose typed labels. ══ -->
@@ -1200,7 +1202,7 @@
         <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" style="font-family:'JetBrains Mono';">void BrakeCtrl_Run(void)</p>
       </div>
       <button onclick="closeFlowchartEditor()" class="p-1 hover:bg-surface-container rounded-lg" aria-label="Close">
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">close</span>
+        <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:18px;">close</span>
       </button>
     </div>
     <div class="fc-body">
@@ -1250,10 +1252,10 @@ const MEMBERS = {
 const REVIEWERS = ['Developer A', 'Developer B', 'Developer C'];
 const ADMIN = 'Admin';
 const REVIEW_STATES = {
-  in_review:         { cls: 'badge-review',   icon: 'rate_review',     label: 'In review',          color: '#f59e0b' },
+  in_review:         { cls: 'badge-review',   icon: 'rate_review',     label: 'In review',          color: '#a8500a' },
   submitted:         { cls: 'badge-ready',    icon: 'pending_actions', label: 'Ready for approval', color: '#2170e4' },
   changes_requested: { cls: 'badge-changes',  icon: 'undo',            label: 'Changes requested',  color: '#ba1a1a' },
-  approved:          { cls: 'badge-approved', icon: 'check_circle',    label: 'Approved',           color: '#00a572' },
+  approved:          { cls: 'badge-approved', icon: 'check_circle',    label: 'Approved',           color: '#00754f' },
 };
 
 function mkDoc(process, name, subtitle, reviewer, status, extra = {}) {
@@ -1349,13 +1351,13 @@ function pillClass(p) {
 
 function statusBadge(s) {
   const st = REVIEW_STATES[s] || REVIEW_STATES.in_review;
-  return `<span class="badge ${st.cls}"><span class="material-symbols-outlined" style="font-size:10px;">${st.icon}</span>${st.label}</span>`;
+  return `<span class="badge ${st.cls}"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:11px;">${st.icon}</span>${st.label}</span>`;
 }
 
 function avatar(name, size = 24) {
-  if (!name) return `<span class="av none" style="width:${size}px;height:${size}px;"><span class="material-symbols-outlined" style="font-size:${Math.round(size * .55)}px;">person</span></span>`;
+  if (!name) return `<span class="av none" style="width:${size}px;height:${size}px;"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:${Math.round(size * .55)}px;">person</span></span>`;
   const m = MEMBERS[name];
-  return `<span class="av" style="width:${size}px;height:${size}px;background:${m.bg};color:${m.fg};font-size:${Math.round(size * .38)}px;">${m.initials}</span>`;
+  return `<span class="av" style="width:${size}px;height:${size}px;background:${m.bg};color:${m.fg};font-size:${Math.max(11, Math.round(size * .38))}px;">${m.initials}</span>`;
 }
 
 // ── List view filter state ────────────────────────────────────────────────────
@@ -1559,7 +1561,7 @@ function renderDocList() {
 
   const admin = currentRole === 'admin', me = ROLES.developer.assignee;
   const iconBtn = (onclick, icon, title, color = 'text-on-surface-variant') =>
-    `<button onclick="${onclick}" title="${title}" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors ${color}"><span class="material-symbols-outlined" style="font-size:15px;">${icon}</span></button>`;
+    `<button onclick="${onclick}" title="${title}" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors ${color}"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">${icon}</span></button>`;
 
   document.getElementById('doc-list-body').innerHTML = docs.map(d => {
     const isSel = selectedDocIds.has(d.id);
@@ -1575,7 +1577,7 @@ function renderDocList() {
     if (admin && d.status === 'submitted') act = iconBtn(`openDocReview('${id}')`, 'fact_check', 'Review and approve', 'text-secondary');
     else if (admin && d.status !== 'approved') act = iconBtn(`openAssign(['${id}'])`, 'person_add', d.reviewer ? `Re-assign (now ${d.reviewer})` : 'Assign a reviewer');
     else if (!admin && !d.reviewer && d.status !== 'approved') act = iconBtn(`claimDoc('${id}')`, 'front_hand', 'Claim: become its reviewer', 'text-secondary');
-    else if (!admin && d.reviewer === me) act = `<span class="p-1.5 flex items-center text-on-tertiary-container" title="You review it"><span class="material-symbols-outlined" style="font-size:15px;">how_to_reg</span></span>`;
+    else if (!admin && d.reviewer === me) act = `<span class="p-1.5 flex items-center text-on-tertiary-container" title="You review it"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">how_to_reg</span></span>`;
     return `
       <tr class="doc-row border-b border-outline-variant last:border-0${isSel ? ' row-selected' : ''}" data-doc="${d.id}" onclick="openDocReview('${id}', false)">
         <td class="px-3 py-3.5 text-center" onclick="event.stopPropagation()">
@@ -1584,7 +1586,7 @@ function renderDocList() {
         <td class="px-3 py-3.5">
           <div class="flex items-center gap-3">
             <div class="w-8 h-8 rounded-lg bg-surface-container-low border border-outline-variant flex items-center justify-center flex-shrink-0">
-              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">article</span>
+              <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:15px;">article</span>
             </div>
             <div class="min-w-0">
               <p class="font-label-md text-label-md text-on-surface hover:text-secondary transition-colors cursor-pointer truncate" style="font-size:13px;" title="${d.name}">${d.name}</p>
@@ -1594,18 +1596,18 @@ function renderDocList() {
         </td>
         <td class="px-3 py-3.5"><span class="proc-pill ${pillClass(d.process)}">${d.process}</span></td>
         <td class="px-3 py-3.5">${reviewerHtml}</td>
-        <td class="px-3 py-3.5">${statusBadge(d.status)}${d.carried ? `<p style="font-family:'JetBrains Mono';font-size:10px;color:#00a572;margin-top:3px;" title="Content unchanged since ${d.carried}">from ${d.carried}</p>` : ''}</td>
+        <td class="px-3 py-3.5">${statusBadge(d.status)}${d.carried ? `<p style="font-family:'JetBrains Mono';font-size:11px;color:#00754f;margin-top:3px;" title="Content unchanged since ${d.carried}">from ${d.carried}</p>` : ''}</td>
         <td class="px-3 py-3.5" style="font-size:11px;color:#44474c;line-height:1.35;">
           <p class="truncate" style="max-width:190px;" title="${esc((last.by ? last.by + ' ' : '') + last.text)}">${last.by ? `<b style="font-weight:600;">${last.by}</b> ` : ''}${last.text}</p>
-          <p style="font-family:'JetBrains Mono';font-size:10px;color:#74777d;margin-top:2px;">${ago(last.at)}</p>
+          <p style="font-family:'JetBrains Mono';font-size:11px;color:#65686e;margin-top:2px;">${ago(last.at)}</p>
         </td>
         <td class="px-3 py-3.5" onclick="event.stopPropagation()">
           <div class="flex items-center gap-1">
             ${iconBtn(`openDocReview('${id}', false)`, 'open_in_new', 'View', 'text-secondary')}
             ${dlBtn(d)}
             ${d.carried
-              ? `<span title="Content unchanged since ${d.carried}: nothing to compare" class="p-1.5 flex items-center cursor-not-allowed" style="color:#c4c6cd;"><span class="material-symbols-outlined" style="font-size:15px;">compare_arrows</span></span>`
-              : `<a href="compare.html" title="Compare vs reference" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant"><span class="material-symbols-outlined" style="font-size:15px;">compare_arrows</span></a>`}
+              ? `<span title="Content unchanged since ${d.carried}: nothing to compare" class="p-1.5 flex items-center cursor-not-allowed" style="color:#c4c6cd;" aria-disabled="true"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">compare_arrows</span></span>`
+              : `<a href="compare.html" title="Compare vs reference" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">compare_arrows</span></a>`}
             ${act}
           </div>
         </td>
@@ -1623,9 +1625,9 @@ function paintVersionBar() {
   const counts = ['approved', 'submitted', 'changes_requested', 'in_review'].map(k => [k, allDocs.filter(d => d.status === k).length]).filter(([, c]) => c);
   const pct = Math.round(a / n * 100);
   const head = a === n
-    ? `<span class="material-symbols-outlined sym-fill" style="font-size:16px;color:#00a572;">check_circle</span>
+    ? `<span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:16px;color:#00754f;">check_circle</span>
        <span class="font-label-sm text-label-sm" style="color:#065f46;"><b>${activeVersion} is approved</b> · all ${n} documents · ${versionApproval() || ''}</span>`
-    : `<span class="material-symbols-outlined" style="font-size:16px;color:#b45309;">rate_review</span>
+    : `<span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:#b45309;">rate_review</span>
        <span class="font-label-sm text-label-sm" style="color:#92400e;"><b>${activeVersion} is in review</b> · ${a} of ${n} documents approved. It is approved when every one is.</span>`;
   bar.innerHTML = `
     <div class="flex items-center gap-2 mb-2">${head}<span class="ml-auto font-label-sm text-label-sm" style="font-family:'JetBrains Mono';color:${a === n ? '#00a572' : '#b45309'};">${pct}%</span></div>
@@ -1633,7 +1635,7 @@ function paintVersionBar() {
     <div class="flex flex-wrap gap-x-2 mt-1.5">${counts.map(([k, c]) =>
       `<button class="ver-leg" onclick="onlyStatus('${k}')" title="Show only ${REVIEW_STATES[k].label}"><i style="background:${REVIEW_STATES[k].color};"></i>${REVIEW_STATES[k].label} ${c}</button>`).join('')}
       ${allDocs.some(d => !d.reviewer && d.status !== 'approved')
-        ? `<button class="ver-leg" onclick="setListAssignee('—','Needs a reviewer')" style="color:#b45309;"><span class="material-symbols-outlined" style="font-size:13px;">person_off</span>Needs a reviewer ${allDocs.filter(d => !d.reviewer && d.status !== 'approved').length}</button>` : ''}
+        ? `<button class="ver-leg" onclick="setListAssignee('—','Needs a reviewer')" style="color:#b45309;"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">person_off</span>Needs a reviewer ${allDocs.filter(d => !d.reviewer && d.status !== 'approved').length}</button>` : ''}
     </div>`;
 }
 // Who approved the version, and when: the last approval of its last document
@@ -1689,8 +1691,8 @@ function filterPickerCommits(val) { renderPickerCommits(val); }
 
 function commitStatusBadge(status, version) {
   if (version) {
-    return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:9px;font-weight:600;color:#00a572;background:#f0fdf9;border:1px solid #86efac;padding:0px 6px;border-radius:99px;">
-      <span class="material-symbols-outlined" style="font-size:10px;color:#00a572;">sell</span>${version}</span>`;
+    return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:11px;font-weight:600;color:#00754f;background:#f0fdf9;border:1px solid #86efac;padding:0px 6px;border-radius:99px;">
+      <span class="material-symbols-outlined" aria-hidden="true" style="font-size:11px;color:#00754f;">sell</span>${version}</span>`;
   }
   return '';
 }
@@ -1701,7 +1703,7 @@ function renderPickerCommits(filter) {
     c.sha.includes(filter) || c.msg.toLowerCase().includes(filter) || c.author.toLowerCase().includes(filter));
   const list = document.getElementById('cp-commits-list');
   if (!filtered.length) {
-    list.innerHTML = `<div style="padding:24px 16px;text-align:center;font-size:12px;color:#74777d;">No commits match</div>`;
+    list.innerHTML = `<div style="padding:24px 16px;text-align:center;font-size:12px;color:#65686e;">No commits match</div>`;
     return;
   }
   list.innerHTML = filtered.map((c, i) => {
@@ -1710,7 +1712,7 @@ function renderPickerCommits(filter) {
     const dotBorder = c.current ? '2px solid #0058be' : c.version ? '2px solid #00a572' : '2px solid #c4c6cd';
     const dotFill   = (c.current || c.version) ? dotColor : 'white';
     const currentBadge = c.current
-      ? `<span style="font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#e5eeff;color:#0058be;border:1px solid #bfcfff;padding:0px 5px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;">current</span>`
+      ? `<span style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;background:#e5eeff;color:#0058be;border:1px solid #bfcfff;padding:0px 5px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;">current</span>`
       : '';
     return `
     <button onclick="selectCommit('${c.sha}')" style="width:100%;display:flex;gap:0;padding:0 12px;text-align:left;background:${c.current ? '#f5f8ff' : 'transparent'};border:none;cursor:pointer;" onmouseover="if(!${c.current})this.style.background='#f8f9fa'" onmouseout="if(!${c.current})this.style.background='${c.current ? '#f5f8ff' : 'transparent'}'">
@@ -1721,14 +1723,14 @@ function renderPickerCommits(filter) {
       <div style="flex:1;min-width:0;padding:10px 0 10px 8px;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:2px;">
           <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
-            <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;color:#44474c;background:#f3f4f6;padding:1px 5px;border-radius:4px;">${c.sha.slice(0,7)}</span>
+            <span style="font-family:'JetBrains Mono';font-size:11px;font-weight:600;color:#44474c;background:#f3f4f6;padding:1px 5px;border-radius:4px;">${c.sha.slice(0,7)}</span>
             ${currentBadge}
             ${commitStatusBadge(c.status, c.version)}
           </div>
-          ${c.current ? '<span class="material-symbols-outlined" style="font-size:14px;color:#0058be;flex-shrink:0;">check</span>' : ''}
+          ${c.current ? '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;color:#0058be;flex-shrink:0;">check</span>' : ''}
         </div>
         <div style="font-size:11px;color:#0b1c30;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:290px;">${c.msg}</div>
-        <div style="font-size:10px;color:#74777d;margin-top:1px;">${c.author} · ${c.time}</div>
+        <div style="font-size:11px;color:#65686e;margin-top:1px;">${c.author} · ${c.time}</div>
       </div>
     </button>`;
   }).join('');
@@ -1738,8 +1740,8 @@ function renderPickerVersions() {
   const list = document.getElementById('cp-versions-list');
   const accentColor = s => s === 'approved' ? '#00a572' : s === 'in_review' ? '#f59e0b' : '#c4c6cd';
   const pill = s => {
-    if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#f0fdf9;color:#00a572;border:1px solid #86efac;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#00a572;display:inline-block;"></span>Approved</span>`;
-    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In review</span>`;
+    if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:11px;font-weight:700;background:#f0fdf9;color:#00754f;border:1px solid #86efac;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#00a572;display:inline-block;"></span>Approved</span>`;
+    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:11px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In review</span>`;
     return '';
   };
   const activeSha = (COMMITS.find(x => x.current) || {}).sha;
@@ -1754,13 +1756,13 @@ function renderPickerVersions() {
             <span style="font-family:'JetBrains Mono';font-size:12px;font-weight:700;color:#0b1c30;">${v.tag}</span>
             ${pill(v.status)}
           </div>
-          ${isActive ? '<span class="material-symbols-outlined" style="font-size:15px;color:#0058be;flex-shrink:0;">check</span>' : ''}
+          ${isActive ? '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;color:#0058be;flex-shrink:0;">check</span>' : ''}
         </div>
         <div style="font-size:11px;color:#44474c;margin-bottom:4px;line-height:1.4;">${v.desc}</div>
         <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-family:'JetBrains Mono';font-size:10px;color:#74777d;background:#f3f4f6;padding:1px 5px;border-radius:4px;">${v.sha.slice(0,7)}</span>
-          <span style="font-size:10px;color:#74777d;">${v.date}</span>
-          <span style="font-size:10px;color:#74777d;">${v.docs} docs</span>
+          <span style="font-family:'JetBrains Mono';font-size:11px;color:#65686e;background:#f3f4f6;padding:1px 5px;border-radius:4px;">${v.sha.slice(0,7)}</span>
+          <span style="font-size:11px;color:#65686e;">${v.date}</span>
+          <span style="font-size:11px;color:#65686e;">${v.docs} docs</span>
         </div>
       </div>
     </button>`;
@@ -1775,7 +1777,7 @@ function updateChip() {
   if (c.version) {
     refEl.textContent  = c.version;
     iconEl.textContent = 'sell';
-    iconEl.style.color = '#00a572';
+    iconEl.style.color = '#00754f';
   } else {
     refEl.textContent  = `main @ ${c.sha.slice(0,7)}`;
     iconEl.textContent = 'alt_route';
@@ -1869,7 +1871,7 @@ const PROJECT_STATUS_CFG = {
   'not-run':   { label:'Not Run',   dot:'#c4c6cd', bg:'#f3f4f6', color:'#44474c', border:'#c4c6cd', pulse:false },
   'running':   { label:'Running',   dot:'#0058be', bg:'#e5eeff', color:'#0058be', border:'#93c5fd', pulse:true  },
   'in-review': { label:'In review', dot:'#b45309', bg:'#fffbeb', color:'#92400e', border:'#fcd34d', pulse:false },
-  'complete':  { label:'Approved',  dot:'#00a572', bg:'#f0fdf9', color:'#00a572', border:'#86efac', pulse:false },
+  'complete':  { label:'Approved',  dot:'#00a572', bg:'#f0fdf9', color:'#00754f', border:'#86efac', pulse:false },
   'stale':     { label:'Stale',     dot:'#c2410c', bg:'#fff7ed', color:'#c2410c', border:'#fdba74', pulse:false },
 };
 
@@ -2021,17 +2023,17 @@ const GEN_LINES = [
   { phase: 1, pct:  5,  txt: 'Phase 1: Parsing C++ source…',               color: '#8192a7' },
   { phase: 1, pct: 15,  txt: 'Phase 1: Layer1/Chassis_Mgmt (18 files)…',   color: '#8192a7' },
   { phase: 1, pct: 20,  txt: 'Phase 1: Layer1/Powertrain (11 files)…',     color: '#8192a7' },
-  { phase: 1, pct: 24,  txt: 'Phase 1: 847 functions · 42 globals found',   color: '#00a572' },
-  { phase: 1, pct: 25,  txt: 'Phase 1: Complete ✓',                         color: '#00a572' },
+  { phase: 1, pct: 24,  txt: 'Phase 1: 847 functions · 42 globals found',   color: '#00754f' },
+  { phase: 1, pct: 25,  txt: 'Phase 1: Complete ✓',                         color: '#00754f' },
   { phase: 2, pct: 30,  txt: 'Phase 2: Deriving model…',                    color: '#8192a7' },
   { phase: 2, pct: 40,  txt: 'Phase 2: LLM enrichment — 12/47 units',       color: '#8192a7' },
-  { phase: 2, pct: 50,  txt: 'Phase 2: LLM enrichment — 47/47 ✓',          color: '#00a572' },
+  { phase: 2, pct: 50,  txt: 'Phase 2: LLM enrichment — 47/47 ✓',          color: '#00754f' },
   { phase: 3, pct: 55,  txt: 'Phase 3: Running views…',                     color: '#8192a7' },
   { phase: 3, pct: 65,  txt: 'Phase 3: Interface tables generated',          color: '#8192a7' },
-  { phase: 3, pct: 75,  txt: 'Phase 3: Flowcharts — 12/12 ✓',              color: '#00a572' },
+  { phase: 3, pct: 75,  txt: 'Phase 3: Flowcharts — 12/12 ✓',              color: '#00754f' },
   { phase: 4, pct: 80,  txt: 'Phase 4: Exporting DOCX…',                    color: '#8192a7' },
   { phase: 4, pct: 93,  txt: 'Phase 4: Sections 1–4 complete',               color: '#8192a7' },
-  { phase: 4, pct: 98,  txt: 'Phase 4: software_detailed_design_Chassis_Mgmt.docx written ✓', color: '#00a572' },
+  { phase: 4, pct: 98,  txt: 'Phase 4: software_detailed_design_Chassis_Mgmt.docx written ✓', color: '#00754f' },
   { phase: 4, pct: 100, txt: 'Done. Every document is In review.',         color: '#6ffbbe' },
 ];
 
@@ -2367,13 +2369,13 @@ function renderReviewTab() {
   const admin = currentRole === 'admin', n = corrCount(d), stale = wordFileStale(d);
   const row = (k, v) => `<div class="rv-row"><span class="rv-k">${k}</span><span class="rv-v">${v}</span></div>`;
   const btn = (cls, icon, label, onclick, why) =>
-    `<button class="rv-btn ${cls}" onclick="${onclick}" ${why ? `disabled title="${esc(why)}"` : ''}><span class="material-symbols-outlined">${icon}</span>${label}</button>`;
-  const ic = (name) => `<span class="material-symbols-outlined" style="font-size:13px;vertical-align:-2px;">${name}</span>`;
+    `<button class="rv-btn ${cls}" onclick="${onclick}" ${why ? `disabled title="${esc(why)}"` : ''}><span class="material-symbols-outlined" aria-hidden="true">${icon}</span>${label}</button>`;
+  const ic = (name) => `<span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;vertical-align:-2px;">${name}</span>`;
   const corr = `${n} correction${n === 1 ? '' : 's'}`;
   let action = '';
   if (d.status === 'approved') {
     const ap = lastEvent(d, 'approved'), ca = lastEvent(d, 'carried');
-    action = `<div class="rv-box ok"><span class="rv-k" style="color:#00a572;">Approved</span>` +
+    action = `<div class="rv-box ok"><span class="rv-k" style="color:#00754f;">Approved</span>` +
       (ap ? `By ${ap.by} · ${ap.at}${ap.comment ? `<p style="color:#0b1c30;margin-top:3px;">“${esc(ap.comment)}”</p>` : ''}`
           : `In ${d.carried}. The content is unchanged in ${d.version}, so the approval carries.`) +
       `<p class="rv-hash">Word file sha256 ${(ap || ca).hash}…</p></div>` +
@@ -2411,7 +2413,7 @@ function renderReviewTab() {
   // The Word file row: Up to date · Out of date (why) [Update] · Updating… · Update failed [Try again]
   // · Approved. Update and Try again are off, the reason in their tooltip, while nothing can start.
   const failed = failureFor(d), blocked = stale ? updateBlocked([d.name]) : '';
-  const off = (label) => `<span class="wf-off" title="${esc(blocked)}" style="font:600 10px 'JetBrains Mono';">${label}</span>`;
+  const off = (label) => `<span class="wf-off" title="${esc(blocked)}" style="font:600 11px 'JetBrains Mono';">${label}</span>`;
   // The state, and its action stacked under it (the panel is narrow).
   const stack = (state, act) => `<span class="wf-state">${state}${act}</span>`;
   const word = d.status === 'approved'
@@ -2421,7 +2423,7 @@ function renderReviewTab() {
                      blocked ? off('Try again') : `<a onclick="tryAgain()">Try again</a>`)
     : stale ? stack(`<span style="color:#b45309;" title="${esc(cap(behindWhy(d)))}">Out of date (${behindWhy(d, true)})</span>`,
                     blocked ? off('Update') : `<a onclick="askUpdate(['${d.name}'])" title="Updates its SWE.3 and SWE.4">Update</a>`)
-    : '<span style="color:#00a572;">Up to date</span>';
+    : '<span style="color:#00754f;">Up to date</span>';
   const events = [...d.events].reverse().map(e => `<div class="tl ${e.kind}">` +
     `<p>${e.by ? `<b>${e.by}</b> ` : ''}${esc(e.text)}</p>` +
     (e.comment ? `<p class="q">“${esc(e.comment)}”</p>` : '') +
@@ -2443,18 +2445,18 @@ function paintReviewBanner() {
   let h = '';
   if (d && d.status === 'approved') {
     const ap = lastEvent(d, 'approved');
-    h = `<div class="rv-banner ok"><span class="material-symbols-outlined" style="font-size:18px;color:#00a572;">lock</span>` +
+    h = `<div class="rv-banner ok"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;color:#00754f;">lock</span>` +
         `<p>${ap ? `<b>Approved</b> by ${ap.by} · ${ap.at}.` : `<b>Approved in ${d.carried}.</b> The content is unchanged in ${d.version}, so the approval carries.`}` +
         ` Locked: no corrections.${admin ? '' : ' An admin can reopen it.'}</p>` +
         (admin ? `<button class="act" style="border-color:#86efac;color:#065f46;" onclick="openModal({ type: 'reopen', id: '${d.id}' })">` +
-                 `<span class="material-symbols-outlined" style="font-size:13px;">lock_open</span>Reopen…</button>` : '') + `</div>`;
+                 `<span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">lock_open</span>Reopen…</button>` : '') + `</div>`;
   } else if (d && d.status === 'changes_requested') {
     const cr = lastEvent(d, 'changes_requested');
-    h = `<div class="rv-banner bad"><span class="material-symbols-outlined" style="font-size:18px;color:#ba1a1a;">undo</span>` +
+    h = `<div class="rv-banner bad"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;color:#ba1a1a;">undo</span>` +
         `<div><p><b>Changes requested</b> by ${cr.by} · ${cr.at}</p><p style="color:#0b1c30;margin-top:2px;">“${esc(cr.comment)}”</p></div>` +
         (isMine(d) ? `<button class="act" style="border-color:#f5a3a3;color:#ba1a1a;" onclick="setPanelTab('review')">Submit again…</button>` : '') + `</div>`;
   } else if (d && d.status === 'submitted' && admin) {
-    h = `<div class="rv-banner info"><span class="material-symbols-outlined" style="font-size:18px;color:#0058be;">pending_actions</span>` +
+    h = `<div class="rv-banner info"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;color:#0058be;">pending_actions</span>` +
         `<p><b>Ready for approval.</b> ${d.reviewer} submitted it: “${esc(d.comment)}”</p>` +
         `<button class="act" style="border-color:#8ab0f0;color:#0058be;" onclick="setPanelTab('review')">Approve or request changes…</button></div>`;
   }
@@ -2490,7 +2492,7 @@ function renderModal() {
   const typed = host._m === m && document.getElementById('rv-m-comment') ? document.getElementById('rv-m-comment').value : null;
   host._m = m;
   if (!m) { host.classList.add('hidden'); host.innerHTML = ''; return; }
-  const ic = (name) => `<span class="material-symbols-outlined" style="font-size:14px;vertical-align:-3px;">${name}</span>`;
+  const ic = (name) => `<span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;vertical-align:-3px;">${name}</span>`;
   let title = '', body = '', foot = '';
   if (m.type === 'assign') {
     const ds = m.ids.map(docById).filter(Boolean), open = ds.filter(d => d.status !== 'approved'), skip = ds.length - open.length;
@@ -2501,7 +2503,7 @@ function renderModal() {
         return `<button class="pick${m.pick === name ? ' on' : ''}" onclick="pickReviewer('${name}')">${avatar(name, 28)}` +
                `<span class="flex-1"><span style="font-size:13px;">${name}</span>` +
                `<span class="rv-meta" style="display:block;margin-top:1px;">${load} open review${load === 1 ? '' : 's'}</span></span>` +
-               (m.pick === name ? '<span class="material-symbols-outlined" style="color:#0058be;font-size:18px;">check</span>' : '') + `</button>`;
+               (m.pick === name ? '<span class="material-symbols-outlined" aria-hidden="true" style="color:#0058be;font-size:18px;">check</span>' : '') + `</button>`;
       }).join('') +
       `<p class="rv-note">${ic('info')} One reviewer per document: this replaces the reviewer it has. ${m.pick || 'The reviewer'} gets a notification.</p>` +
       (skip ? `<p class="rv-why">${skip} approved document${skip === 1 ? ' is' : 's are'} skipped: reopen ${skip === 1 ? 'it' : 'them'} first.</p>` : '');
@@ -2528,7 +2530,7 @@ function renderModal() {
       `<textarea id="rv-m-comment" class="rv-ta" maxlength="2000" placeholder="Anything the record should say"></textarea>` +
       `<p class="rv-note">${ic('lock')} Approving locks the document: no corrections until an admin reopens it.` +
       (d.process === 'SWE.4' ? ' The flowchart labels of its SWE.3 lock too: its test steps are built from them.' : '') + `</p>`;
-    foot = `<button class="rv-btn ok" onclick="doApprove()" ${wordFileStale(d) || isUpdating(d) ? 'disabled' : ''}><span class="material-symbols-outlined">check_circle</span>Approve</button>`;
+    foot = `<button class="rv-btn ok" onclick="doApprove()" ${wordFileStale(d) || isUpdating(d) ? 'disabled' : ''}><span class="material-symbols-outlined" aria-hidden="true">check_circle</span>Approve</button>`;
   } else if (m.type === 'confirm') {
     // What an update writes, each file with its short reason, and at most two notes. Rebuild all: its
     // count and its cost. From a download: when the download starts.
@@ -2541,7 +2543,7 @@ function renderModal() {
           (docs.length ? docs.slice().sort(byName).map(d => `<p>${docLabel(d)} <span style="color:#92400e;">· ${behindWhy(d)}</span></p>`).join('')
                        : '<p>Nothing is out of date now.</p>') + `</div>`) +
       notes.map((x, i) => `<p class="rv-note"${m.rebuild && !i ? ' style="margin-top:0;"' : ''}>${x}</p>`).join('');
-    foot = `<button id="wf-confirm" class="rv-btn p" onclick="runConfirm()" ${docs.length ? '' : 'disabled'}><span class="material-symbols-outlined">${m.rebuild ? 'autorenew' : 'sync'}</span>${m.rebuild ? 'Rebuild' : 'Update'}</button>`;
+    foot = `<button id="wf-confirm" class="rv-btn p" onclick="runConfirm()" ${docs.length ? '' : 'disabled'}><span class="material-symbols-outlined" aria-hidden="true">${m.rebuild ? 'autorenew' : 'sync'}</span>${m.rebuild ? 'Rebuild' : 'Update'}</button>`;
   } else if (m.type === 'dlall') {
     // Corrected files: updated first (this dialog is the confirmation). A developer's update reaches
     // the ones they review.
@@ -2552,21 +2554,21 @@ function renderModal() {
       (admin || mine.length === behind.length ? '' : `<p class="rv-note">${mine.length ? `You can update the ${mine.length} you review.` : 'An admin updates them.'}</p>`) +
       (why ? `<p class="rv-note">${esc(why)}</p>` : '');
     foot = `<button class="rv-btn" onclick="closeModal(); toast('Downloading all Word files.')">As they are</button>` +
-      (mine.length ? `<button class="rv-btn p" onclick="closeModal(); dlAllUpdate()" ${why ? `disabled title="${esc(why)}"` : ''}><span class="material-symbols-outlined">sync</span>Corrected files</button>` : '');
+      (mine.length ? `<button class="rv-btn p" onclick="closeModal(); dlAllUpdate()" ${why ? `disabled title="${esc(why)}"` : ''}><span class="material-symbols-outlined" aria-hidden="true">sync</span>Corrected files</button>` : '');
   } else if (m.type === 'changes') {
     const d = docById(m.id);
     title = `Request changes · ${docLabel(d)}`;
     body = `<p class="rv-k" style="margin-bottom:4px;">What needs to change (required)</p>` +
       `<textarea id="rv-m-comment" class="rv-ta" maxlength="2000" placeholder="${d.reviewer} sees this at the top of the document"></textarea>` +
       `<p class="rv-note">It goes back to ${d.reviewer}, who fixes it and submits it again.</p>`;
-    foot = `<button class="rv-btn bad" onclick="doChanges()"><span class="material-symbols-outlined">undo</span>Request changes</button>`;
+    foot = `<button class="rv-btn bad" onclick="doChanges()"><span class="material-symbols-outlined" aria-hidden="true">undo</span>Request changes</button>`;
   } else if (m.type === 'reopen') {
     const d = docById(m.id);
     title = `Reopen ${docLabel(d)}`;
     body = `<p class="rv-note" style="margin:0 0 10px;">It goes back to In review${d.reviewer ? ` with ${d.reviewer} as its reviewer` : ''}, ` +
       `and corrections are allowed again. The approval stays in its activity.</p>` +
       `<p class="rv-k" style="margin-bottom:4px;">Reason (required)</p><textarea id="rv-m-comment" class="rv-ta" maxlength="2000"></textarea>`;
-    foot = `<button class="rv-btn p" onclick="doReopen()"><span class="material-symbols-outlined">lock_open</span>Reopen</button>`;
+    foot = `<button class="rv-btn p" onclick="doReopen()"><span class="material-symbols-outlined" aria-hidden="true">lock_open</span>Reopen</button>`;
   } else if (m.type === 'bulk') {
     const ready = bulkReady(), skip = selectedDocIds.size - ready.length;
     title = `Approve ${ready.length} document${ready.length === 1 ? '' : 's'}`;
@@ -2582,11 +2584,11 @@ function renderModal() {
                (other > 0 ? `<p class="rv-why">${plural(other, 'other selected document')} ${other === 1 ? 'is' : 'are'} not ready for approval.</p>` : '');
       })() +
       `<p class="rv-note">Each is approved on its own record, with its Word file’s hash, and locked.</p>`;
-    foot = `<button class="rv-btn ok" onclick="doBulk()" ${ready.length ? '' : 'disabled'}><span class="material-symbols-outlined">check_circle</span>Approve ${ready.length}</button>`;
+    foot = `<button class="rv-btn ok" onclick="doBulk()" ${ready.length ? '' : 'disabled'}><span class="material-symbols-outlined" aria-hidden="true">check_circle</span>Approve ${ready.length}</button>`;
   }
   host.innerHTML = `<div class="rv-dialog" role="dialog" aria-modal="true">` +
     `<div class="hd"><p class="font-label-md text-label-md text-on-surface">${title}</p>` +
-    `<button onclick="closeModal()" class="p-1 hover:bg-surface-container rounded-lg" aria-label="Close"><span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">close</span></button></div>` +
+    `<button onclick="closeModal()" class="p-1 hover:bg-surface-container rounded-lg" aria-label="Close"><span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:18px;">close</span></button></div>` +
     `<div class="bd">${body}</div>` +
     `<div class="ft"><button class="rv-btn o" onclick="closeModal()">Cancel</button>${foot}</div></div>`;
   host.classList.remove('hidden');
@@ -2651,9 +2653,9 @@ function paintBell() {
     (unread ? `<button onclick="markAllRead()" class="font-label-sm text-label-sm text-secondary hover:underline">Mark all read</button>` : '') + `</div>` +
     (list.length
       ? list.slice(0, 8).map(x => `<div class="bell-row${x.unread ? ' unread' : ''}">` +
-          `<span class="material-symbols-outlined" style="color:${x.icon === 'error' ? '#ba1a1a' : x.unread ? '#0058be' : '#74777d'};">${x.icon}</span>` +
+          `<span class="material-symbols-outlined" aria-hidden="true" style="color:${x.icon === 'error' ? '#ba1a1a' : x.unread ? '#0058be' : '#74777d'};">${x.icon}</span>` +
           `<div class="min-w-0"><p style="color:#0b1c30;">${esc(x.text)}</p><p class="rv-meta" style="margin-top:2px;">${x.at}</p></div></div>`).join('')
-      : '<p class="bell-row" style="color:#74777d;">Nothing new.</p>');
+      : '<p class="bell-row" style="color:#65686e;">Nothing new.</p>');
 }
 
 // ── Sidebar toggle ────────────────────────────────────────────────────────────
@@ -2739,9 +2741,9 @@ function renderTree() {
       const hRow = document.createElement('div');
       hRow.className = 'flex items-center gap-1.5 px-3 py-2 cursor-pointer hover:bg-surface-container-low transition-colors select-none';
       hRow.innerHTML = `
-        <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" style="font-size:14px;transform:rotate(${expanded?90:0}deg)">chevron_right</span>
+        <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" aria-hidden="true" style="font-size:14px;transform:rotate(${expanded?90:0}deg)">chevron_right</span>
         <span class="font-label-md text-label-md text-on-surface" style="font-size:11px;font-weight:600;">${process}</span>
-        <span class="font-label-sm text-label-sm text-on-surface-variant truncate" style="font-size:10px;">${label}</span>`;
+        <span class="font-label-sm text-label-sm text-on-surface-variant truncate" style="font-size:11px;">${label}</span>`;
       hRow.onclick = () => { expandedProcs.has(process) ? expandedProcs.delete(process) : expandedProcs.add(process); renderTree(); };
       el.appendChild(hRow);
 
@@ -2765,8 +2767,8 @@ function renderTree() {
         lRow.className = 'flex items-center gap-1 cursor-pointer hover:bg-surface-container-low transition-colors select-none';
         lRow.style.cssText = 'padding: 4px 12px 4px 20px;';
         lRow.innerHTML = `
-          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" style="font-size:13px;transform:rotate(${layerExp?90:0}deg)">chevron_right</span>
-          <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em]" style="font-size:10px;">${layer}</span>`;
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" aria-hidden="true" style="font-size:13px;transform:rotate(${layerExp?90:0}deg)">chevron_right</span>
+          <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em]" style="font-size:11px;">${layer}</span>`;
         lRow.onclick = () => { const k = process + '/' + layer; layerExp ? expandedLayers.delete(k) : expandedLayers.add(k); renderTree(); };
         el.appendChild(lRow);
 
@@ -2798,7 +2800,7 @@ function renderTree() {
       sRow.className = `flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors select-none rounded-lg mx-1 ${active ? 'bg-surface-container-low' : 'hover:bg-surface-container-low'}`;
       sRow.innerHTML = `
         <span class="font-label-md text-label-md ${active ? 'text-secondary' : 'text-on-surface'}" style="font-size:11px;font-weight:600;white-space:nowrap;">${process}</span>
-        <span class="font-label-sm text-label-sm text-on-surface-variant truncate" style="font-size:10px;">${label}</span>`;
+        <span class="font-label-sm text-label-sm text-on-surface-variant truncate" style="font-size:11px;">${label}</span>`;
       sRow.onclick = () => selectDoc(process, null);
       el.appendChild(sRow);
     }
@@ -3275,7 +3277,7 @@ function paintReady() {
   // Just written.
   if (justUpdated && justUpdated.includes(cd.name) && !wordFileStale(cd)) {
     b.className = 'ready-banner show ok';
-    icon.textContent = 'check_circle'; icon.style.color = '#00a572';
+    icon.textContent = 'check_circle'; icon.style.color = '#00754f';
     txt.style.color = '#065f46';
     txt.innerHTML = '<b>Word files updated.</b> ' + linkHtml(`downloadDoc('${cd.id}')`, 'Download');
     more.style.display = 'none';
@@ -3404,11 +3406,11 @@ function paintGenBanner() {
   const admin = currentRole === 'admin', behind = behindDocs(), f = visibleFailure();
   let h = '';
   if (updating) {
-    h = `<span class="material-symbols-outlined spin-slow flex-shrink-0" style="font-size:18px;color:#0058be;">autorenew</span>` +
+    h = `<span class="material-symbols-outlined spin-slow flex-shrink-0" aria-hidden="true" style="font-size:18px;color:#0058be;">autorenew</span>` +
         `<p class="gb-text">${progressHtml()}</p>`;
   } else if (f) {
     const why = updateBlocked(f.rebuild ? null : f.comps, f.rebuild);
-    h = `<span class="material-symbols-outlined flex-shrink-0" style="font-size:18px;color:#ba1a1a;">error</span>` +
+    h = `<span class="material-symbols-outlined flex-shrink-0" aria-hidden="true" style="font-size:18px;color:#ba1a1a;">error</span>` +
         `<p class="gb-text"><b>Update failed</b> — ${f.why}.</p>` +
         `<button class="gb-btn" onclick="tryAgain()" ${why ? `disabled title="${esc(why)}"` : ''}>Try again</button>`;
   } else if (behind.length) {
@@ -3420,7 +3422,7 @@ function paintGenBanner() {
     const why = mine.length ? updateBlocked(admin ? null : compsOf(mine)) : '';
     // While a generation holds the version, its one-line note takes the reasons' place.
     const detail = why ? why : admin ? reasons : mine.length ? `${mine.length} you review` : `an admin updates ${behind.length === 1 ? 'it' : 'them'}`;
-    h = `<span class="material-symbols-outlined flex-shrink-0" style="font-size:18px;color:#b45309;">warning</span>` +
+    h = `<span class="material-symbols-outlined flex-shrink-0" aria-hidden="true" style="font-size:18px;color:#b45309;">warning</span>` +
         `<p class="gb-text"><b>${plural(behind.length, 'Word file')} ${behind.length === 1 ? 'is' : 'are'} out of date</b> · ${esc(detail)}</p>` +
         (mine.length ? `<button class="gb-btn" onclick="${admin ? 'askUpdate()' : `askUpdate(${jsArr(compsOf(mine))})`}"` +
                        (why ? ` disabled title="${esc(why)}"` : '') + `>${admin ? 'Update all' : 'Update them'}</button>` : '');
@@ -3457,8 +3459,8 @@ function toggleDemo(which) {
 // Up to date, or approved: a plain download.
 function dlBtn(d) {
   const btn = (onclick, title, icon, cls = '') =>
-    `<button onclick="${onclick}" title="${title}" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant ${cls}"><span class="material-symbols-outlined" style="font-size:15px;">${icon}</span></button>`;
-  if (isUpdating(d)) return `<span class="p-1.5 flex items-center" title="Updating…" style="color:#b45309;"><span class="material-symbols-outlined spin-slow" style="font-size:15px;">autorenew</span></span>`;
+    `<button onclick="${onclick}" title="${title}" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant ${cls}"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">${icon}</span></button>`;
+  if (isUpdating(d)) return `<span class="p-1.5 flex items-center" title="Updating…" style="color:#b45309;"><span class="material-symbols-outlined spin-slow" aria-hidden="true" style="font-size:15px;">autorenew</span></span>`;
   if (wordFileStale(d)) return btn(`openDlMenu(event, '${d.id}')`, `Out of date: ${behindWhy(d)}`, 'download', 'dl-dot');
   return btn(`downloadDoc('${d.id}')`, 'Download', 'download');
 }
@@ -3467,9 +3469,9 @@ function openDlMenu(e, id) {
   const d = docById(id), blocked = updateBlocked([d.name]);
   const m = document.createElement('div'); m.className = 'wf-menu'; m.id = 'wf-menu'; m.setAttribute('role', 'menu');
   m.innerHTML =
-    `<button role="menuitem" ${blocked ? 'disabled' : ''} onclick="askUpdate(['${d.name}'], () => downloadDoc('${id}'))"><span class="material-symbols-outlined" style="font-size:16px;color:${blocked ? '#b0b3b8' : '#0058be'};">sync</span>` +
+    `<button role="menuitem" ${blocked ? 'disabled' : ''} onclick="askUpdate(['${d.name}'], () => downloadDoc('${id}'))"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:${blocked ? '#b0b3b8' : '#0058be'};">sync</span>` +
     `<span>Corrected file<span class="sub">${blocked ? esc(blocked) : 'Updated first'}</span></span></button>` +
-    `<button role="menuitem" onclick="closeWfMenus(); downloadDoc('${id}', true)"><span class="material-symbols-outlined" style="font-size:16px;color:#74777d;">download</span>` +
+    `<button role="menuitem" onclick="closeWfMenus(); downloadDoc('${id}', true)"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:#65686e;">download</span>` +
     `<span>Current file<span class="sub">${cap(behindWhy(d))}</span></span></button>`;
   document.body.appendChild(m);
   const r = (e.currentTarget || e.target).getBoundingClientRect();
@@ -3480,7 +3482,7 @@ function openWfMore(e) {
   e.stopPropagation(); closeWfMenus();
   const blocked = updateBlocked(null, true);
   const m = document.createElement('div'); m.className = 'wf-menu'; m.id = 'wf-menu'; m.setAttribute('role', 'menu');
-  m.innerHTML = `<button role="menuitem" ${blocked ? 'disabled' : ''} onclick="askUpdate(null, null, true)"><span class="material-symbols-outlined" style="font-size:16px;color:${blocked ? '#b0b3b8' : '#0058be'};">autorenew</span>` +
+  m.innerHTML = `<button role="menuitem" ${blocked ? 'disabled' : ''} onclick="askUpdate(null, null, true)"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:${blocked ? '#b0b3b8' : '#0058be'};">autorenew</span>` +
     `<span>Rebuild all Word files…${blocked ? `<span class="sub">${esc(blocked)}</span>` : ''}</span></button>`;
   document.body.appendChild(m);
   const r = e.currentTarget.getBoundingClientRect();
@@ -3777,7 +3779,7 @@ function renderOutline() {
     const open = q ? true : expandedUnits.has(u.name);
     const n = editing ? unitCorrections(u.name) : 0;
     h += `<div class="ol-unit"><button class="ol-chev" onclick="toggleUnit('${u.name}')" aria-label="${open ? 'Fold' : 'Open'} ${u.name}">` +
-         `<span class="material-symbols-outlined">${open ? 'expand_more' : 'chevron_right'}</span></button>` +
+         `<span class="material-symbols-outlined" aria-hidden="true">${open ? 'expand_more' : 'chevron_right'}</span></button>` +
          `<a class="ol-row${u.id === activeOutlineId ? ' active' : ''}" data-target="${u.id}"><span class="ol-num">${u.num}</span>` +
          `<span class="ol-label">${markMatch(u.name, q)}</span>` +
          `${n ? `<span class="ol-badge" title="${n} correction${n > 1 ? 's' : ''} in this unit">\u25cf ${n}</span>` : ''}</a></div>`;

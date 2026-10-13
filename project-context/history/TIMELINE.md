@@ -11,6 +11,7 @@
 | Date | Change | File |
 |---|---|---|
 | 2026-10-13c | The wizard's access token is a text field shown as dots, not a password field: the browser no longer takes "repository URL + token" for a sign-in form | [15](15-2026-10-07h.md) |
+| 2026-10-13 | The mockups meet WCAG 2.2 AA in both themes: contrast, focus ring, text size, names, keyboard reach, landmarks | [15](15-2026-10-07h.md) |
 | 2026-10-08 | The web page shows a corrected flowchart after its Word-file update again: an export-only run draws the web pictures its restore put back stale | [15](15-2026-10-07h.md) |
 | 2026-10-07h | The web app before the office demo: one chip for what needs attention instead of stacked banners, a failure a later run made good no longer shown, the approval gauge in both themes, an incremental run that starts from its baseline's components, ids for superusers, white icons on blue tiles, sign-in to Projects | [15](15-2026-10-07h.md) |
 | 2026-10-07g | Checked: fresh and incremental generation make the same Word files on this branch as on develop; an incremental run now keeps the names and chart entries it used to drop | [14](14-2026-10-05r.md) |

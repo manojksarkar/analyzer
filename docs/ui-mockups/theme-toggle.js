@@ -43,7 +43,7 @@
     btn.id = 'theme-toggle';
     btn.title = label;
     btn.setAttribute('aria-label', label);
-    btn.innerHTML = '<span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">' + icon + '</span>';
+    btn.innerHTML = '<span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;" aria-hidden="true">' + icon + '</span>';
     btn.addEventListener('click', toggle);
 
     // In the header: first of the right-hand actions. No header (sign-in): float top-right.

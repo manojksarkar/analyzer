@@ -18,16 +18,16 @@
         colors: {
           "primary": "#f4f5f7", "primary-container": "#26282e",
           "on-primary": "#ffffff", "on-primary-container": "#8a8f9c",
-          "secondary": "#1d7bff", "secondary-container": "#3d8fff",
+          "secondary": "#6aa9ff", "secondary-container": "#1a6ce6",
           "on-secondary": "#ffffff", "on-secondary-container": "#ffffff",
-          "on-tertiary-container": "#1fae63",
-          "error": "#ff4d5a", "error-container": "#3a1d21", "on-error-container": "#ff8a93",
+          "on-tertiary-container": "#2fc878",
+          "error": "#ff6b76", "error-container": "#3a1d21", "on-error-container": "#ff8a93",
           "surface": "#0e0f12", "background": "#0e0f12", "panel": "#15161a", "inverse": "#33363f",
           "surface-container-lowest": "#1c1e23", "surface-container-low": "#23262d",
           "surface-container": "#272a32", "surface-container-high": "#2e3139",
           "surface-container-highest": "#363a44",
           "on-surface": "#f2f3f5", "on-surface-variant": "#a3a7b1",
-          "outline": "#6b707c", "outline-variant": "#2c2f37",
+          "outline": "#979ca7", "outline-variant": "#2c2f37",
           "tertiary-container": "#10301f", "tertiary-fixed": "#6ff0b0",
         },
         borderRadius: { "DEFAULT": "6px", "lg": "8px", "xl": "14px", "2xl": "18px", "full": "9999px" },
@@ -101,21 +101,21 @@
   .member-row.pending { background: #1c1e23; }
 
   /* Role badge */
-  .role-admin { font-family: 'SamsungOne','Roboto',sans-serif; font-size: 9px; font-weight: 700; background: #1b2a45; color: #1d7bff; padding: 1px 8px; border-radius: 99px; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
-  .role-dev   { font-family: 'SamsungOne','Roboto',sans-serif; font-size: 9px; font-weight: 700; background: #26282e; color: #a3a7b1; padding: 1px 8px; border-radius: 99px; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+  .role-admin { font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; font-weight: 700; background: #1b2a45; color: #6aa9ff; padding: 1px 8px; border-radius: 99px; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+  .role-dev   { font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; font-weight: 700; background: #26282e; color: #a3a7b1; padding: 1px 8px; border-radius: 99px; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
 
   /* Role dropdown in table */
   .role-select-wrap { position: relative; display: inline-block; }
-  .role-select-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border: 1px solid #2c2f37; border-radius: 6px; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 10px; font-weight: 600; color: #a3a7b1; background: #1c1e23; cursor: pointer; transition: all .1s; }
-  .role-select-btn:hover { background: #1b2638; border-color: #1d7bff; color: #1d7bff; }
+  .role-select-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border: 1px solid #2c2f37; border-radius: 6px; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; font-weight: 600; color: #a3a7b1; background: #1c1e23; cursor: pointer; transition: all .1s; }
+  .role-select-btn:hover { background: #1b2638; border-color: #1d7bff; color: #6aa9ff; }
   .role-dd { display: none; position: absolute; top: calc(100% + 4px); left: 0; min-width: 140px; background: #1c1e23; border: 1px solid #2c2f37; border-radius: 8px; overflow: hidden; z-index: 100; box-shadow: 0 4px 16px rgba(0,0,0,0.24); }
   .role-dd.open { display: block; }
   .role-dd-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; font-weight: 500; color: #f2f3f5; cursor: pointer; transition: background .1s; }
   .role-dd-item:hover { background: #26282e; }
-  .role-dd-item.active { color: #1d7bff; }
+  .role-dd-item.active { color: #6aa9ff; }
 
   /* Row action buttons */
-  .row-action-btn { padding: 4px; border-radius: 6px; color: #7c818c; background: transparent; border: none; cursor: pointer; transition: all .1s; display: inline-flex; align-items: center; }
+  .row-action-btn { padding: 4px; border-radius: 6px; color: #979ca7; background: transparent; border: none; cursor: pointer; transition: all .1s; display: inline-flex; align-items: center; }
   .row-action-btn:hover { background: #26282e; color: #f2f3f5; }
 
   /* Row kebab menu */
@@ -123,7 +123,7 @@
   .row-menu.open { display: block; }
   .row-menu-item { display: flex; align-items: center; gap: 8px; padding: 8px 14px; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; font-weight: 500; color: #f2f3f5; cursor: pointer; transition: background .1s; white-space: nowrap; }
   .row-menu-item:hover { background: #26282e; }
-  .row-menu-item.danger { color: #ff4d5a; }
+  .row-menu-item.danger { color: #ff6b76; }
   .row-menu-item.danger:hover { background: #2e1a1d; }
 
   /* Access legend */
@@ -137,13 +137,13 @@
   .modal-card { animation: slideUp .2s ease; }
 
   /* Resend button */
-  .resend-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border: 1px solid #2c2f37; border-radius: 6px; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 10px; font-weight: 600; color: #a3a7b1; background: #1c1e23; cursor: pointer; transition: all .1s; }
-  .resend-btn:hover { background: #1b2638; border-color: #1d7bff; color: #1d7bff; }
+  .resend-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border: 1px solid #2c2f37; border-radius: 6px; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; font-weight: 600; color: #a3a7b1; background: #1c1e23; cursor: pointer; transition: all .1s; }
+  .resend-btn:hover { background: #1b2638; border-color: #1d7bff; color: #6aa9ff; }
 
   /* ── Samsung Magician dark theme layer (shared by every dark mockup) ── */
   :root {
     --mm-blue: #1d7bff; --mm-blue-hi: #3d8fff; --mm-navy: #1428a0;
-    --mm-grad: linear-gradient(135deg, #3d8fff 0%, #1d7bff 50%, #1853ce 100%);
+    --mm-grad: linear-gradient(135deg, #1a6ce6 0%, #1662d6 50%, #1853ce 100%);
     --shadow-card: 0 1px 0 rgba(255,255,255,.04) inset, 0 10px 30px rgba(0,0,0,.45);
     --shadow-pop: 0 18px 48px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.05);
     --glow-blue: 0 0 0 1px rgba(29,123,255,.45), 0 6px 20px rgba(29,123,255,.35);
@@ -168,7 +168,7 @@
 
   /* Signature surfaces: gradient CTA, glassy cards, glowing brand tile */
   .bg-secondary { background-image: var(--mm-grad); box-shadow: 0 4px 14px rgba(29,123,255,.35); }
-  .hover\:bg-secondary-container:hover { background-image: linear-gradient(135deg, #509cff 0%, #2d86ff 50%, #1e5ed7 100%); box-shadow: var(--glow-blue); }
+  .hover\:bg-secondary-container:hover { background-image: linear-gradient(135deg, #1f70ea 0%, #1a6ce6 50%, #1a5ed8 100%); box-shadow: var(--glow-blue); }
   .rounded-xl.border.bg-surface-container-lowest,
   .rounded-2xl.border.bg-surface-container-lowest { box-shadow: var(--shadow-card); background-image: linear-gradient(180deg, rgba(255,255,255,.025), transparent 120px); }
   .brand-tile { background-image: var(--mm-grad); box-shadow: 0 0 18px rgba(29,123,255,.55); }
@@ -182,12 +182,12 @@
   }
   #app-sidebar { background: linear-gradient(180deg, #17181d 0%, #121317 100%) !important; border-color: #24272e !important; }
   header { background: rgba(21,22,26,.85) !important; backdrop-filter: blur(10px); border-color: #24272e !important; }
-  input::placeholder, textarea::placeholder { color: #6b707c !important; }
+  input::placeholder, textarea::placeholder { color: #979ca7 !important; }
 
   /* Form controls (beat the Tailwind forms plugin's light defaults) */
   input[type='text'], input[type='search'], input[type='email'], input[type='password'],
   input[type='url'], input[type='number'], input:not([type]), textarea, select {
-    background-color: transparent; color: #f2f3f5; border-color: #2c2f37;
+    background-color: transparent; color: #f2f3f5; border-color: #737885;
   }
   input[type='text']:focus, input[type='search']:focus, input[type='email']:focus, input[type='password']:focus,
   input[type='url']:focus, input[type='number']:focus, input:not([type]):focus, textarea:focus, select:focus {
@@ -195,9 +195,9 @@
   }
   input.bg-transparent { border: 0; padding: 0; box-shadow: none !important; }
   select option { background: #1f2127; color: #f2f3f5; }
-  input[type='checkbox'], input[type='radio'] { background-color: #1c1e23; border: 1.5px solid #4a4f5b; color: #1d7bff; accent-color: #1d7bff; }
+  input[type='checkbox'], input[type='radio'] { background-color: #1c1e23; border: 1.5px solid #4a4f5b; color: #6aa9ff; accent-color: #1d7bff; }
   input[type='checkbox'] { border-radius: 4px; }
-  input[type='checkbox']:checked, input[type='radio']:checked { background-color: #1d7bff; border-color: #1d7bff; }
+  input[type='checkbox']:checked, input[type='radio']:checked { background-color: #1a6ce6; border-color: #1d7bff; }
   input[type='checkbox']:focus, input[type='radio']:focus { box-shadow: 0 0 0 3px rgba(29,123,255,.3); outline: none; }
 
   /* Navigation */
@@ -205,7 +205,7 @@
   .nav-default { color: #a3a7b1; }
   .nav-default:hover { background: rgba(255,255,255,.05); color: #f2f3f5; }
   .nav-active { background: linear-gradient(90deg, rgba(29,123,255,.22), rgba(29,123,255,.06)) !important; color: #ffffff !important; border-left: none !important; }
-  .nav-active::before { content: ''; position: absolute; left: -2px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: #3d8fff; box-shadow: 0 0 10px #1d7bff; }
+  .nav-active::before { content: ''; position: absolute; left: -2px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: #1a6ce6; box-shadow: 0 0 10px #1d7bff; }
   .nav-active .material-symbols-outlined { color: #5aa2ff; font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
   .outline-link.active { color: #5aa2ff; background: rgba(29,123,255,.12); font-weight: 500; }
 
@@ -219,7 +219,7 @@
   .badge { border-radius: 999px; }
   .badge-approved { background: rgba(61,220,132,.12); color: #3ddc84; border-color: rgba(61,220,132,.35); }
   .badge-review   { background: rgba(245,165,36,.12); color: #f5a524; border-color: rgba(245,165,36,.35); }
-  .badge-unchanged { background: rgba(255,255,255,.05); color: #8a8f9c; border-color: #2c2f37; }
+  .badge-unchanged { background: rgba(255,255,255,.05); color: #979ca7; border-color: #2c2f37; }
   .proc-pill { border-radius: 999px; }
   .pill-swe3 { background: rgba(29,123,255,.16); color: #5aa2ff; }
   .pill-swe2 { background: rgba(143,139,255,.16); color: #a8a5ff; }
@@ -238,58 +238,60 @@
   .doc-row:hover { background: rgba(255,255,255,.035); }
   .doc-row.row-selected { background: rgba(29,123,255,.10); }
 </style>
+<link rel="stylesheet" href="../a11y.css">
+<script src="../a11y.js" defer></script>
 </head>
 
 <body class="bg-background text-on-surface overflow-hidden nav-expanded">
 
 <!-- ══════════════ SIDEBAR ══════════════ -->
-<aside id="app-sidebar" class="fixed left-0 top-0 h-screen bg-surface-container-lowest border-r border-outline-variant flex flex-col z-50 overflow-hidden">
+<aside id="app-sidebar" aria-label="Sidebar" class="fixed left-0 top-0 h-screen bg-surface-container-lowest border-r border-outline-variant flex flex-col z-50 overflow-hidden">
   <div class="brand-header flex items-center justify-between px-4 py-3.5 border-b border-outline-variant flex-shrink-0">
-    <a href="projects.html" class="flex items-center gap-3 min-w-0 flex-1">
+    <a href="projects.html" class="flex items-center gap-3 min-w-0 flex-1" title="All projects">
       <div class="w-8 h-8 brand-tile rounded-lg flex items-center justify-center flex-shrink-0">
-        <span class="material-symbols-outlined text-on-primary sym-fill" style="font-size:18px;">account_tree</span>
+        <span class="material-symbols-outlined text-on-primary sym-fill" aria-hidden="true" style="font-size:18px;">account_tree</span>
       </div>
       <div class="brand-text min-w-0 overflow-hidden">
         <h1 class="text-primary font-bold tracking-tight whitespace-nowrap" style="font-family:Roboto;font-size:15px;line-height:1.2;">[PRODUCT NAME]</h1>
         <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mt-0.5 whitespace-nowrap">Automotive Tier 1</p>
       </div>
     </a>
-    <button onclick="toggleSidebar()" class="w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors flex-shrink-0" title="Toggle sidebar">
-      <span class="material-symbols-outlined" id="sidebar-toggle-icon" style="font-size:18px;">chevron_left</span>
+    <button onclick="toggleSidebar()" aria-label="Show or hide the sidebar" class="w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors flex-shrink-0" title="Toggle sidebar">
+      <span class="material-symbols-outlined" aria-hidden="true" id="sidebar-toggle-icon" style="font-size:18px;">chevron_left</span>
     </button>
   </div>
 
-  <nav class="flex-1 overflow-y-auto px-2 py-2">
+  <nav class="flex-1 overflow-y-auto px-2 py-2" aria-label="Main">
     <a href="projects.html" title="All Projects"
        class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default mb-2">
-      <span class="material-symbols-outlined" style="font-size:18px;">arrow_back</span>
+      <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">arrow_back</span>
       <span class="nav-label font-label-sm text-label-sm text-on-surface-variant">All Projects</span>
     </a>
-    <p class="nav-label px-3 pb-1.5 font-label-sm text-on-surface-variant uppercase tracking-[.09em] truncate" style="font-size:10px;">VCU Engine Firmware</p>
+    <p class="nav-label px-3 pb-1.5 font-label-sm text-on-surface-variant uppercase tracking-[.09em] truncate" style="font-size:11px;">VCU Engine Firmware</p>
     <div class="space-y-0.5">
       <a href="project-detail.html" title="Overview"
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
-        <span class="material-symbols-outlined" style="font-size:20px;">home</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">home</span>
         <span class="nav-label font-label-md text-label-md">Overview</span>
       </a>
       <a href="documents.html" title="Documents"
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
-        <span class="material-symbols-outlined" style="font-size:20px;">description</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">description</span>
         <span class="nav-label font-label-md text-label-md">Documents</span>
       </a>
       <a href="compare.html" title="Compare"
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
-        <span class="material-symbols-outlined" style="font-size:20px;">compare_arrows</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">compare_arrows</span>
         <span class="nav-label font-label-md text-label-md">Compare</span>
       </a>
       <a href="versions.html" title="Versions"
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
-        <span class="material-symbols-outlined" style="font-size:20px;">local_offer</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">local_offer</span>
         <span class="nav-label font-label-md text-label-md">Versions</span>
       </a>
       <a href="team.html" title="Team"
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-active">
-        <span class="material-symbols-outlined" style="font-size:20px;">group</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">group</span>
         <span class="nav-label font-label-md text-label-md">Team</span>
       </a>
     </div>
@@ -298,7 +300,7 @@
   <div class="px-2 pt-2 border-t border-outline-variant flex-shrink-0">
     <a href="onboarding.html" title="Settings"
        class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
-      <span class="material-symbols-outlined" style="font-size:18px;">settings</span>
+      <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">settings</span>
       <span class="nav-label font-label-md text-label-md">Settings</span>
     </a>
   </div>
@@ -320,7 +322,7 @@
 </aside>
 
 <!-- ══════════════ APP MAIN ══════════════ -->
-<div id="app-main" class="h-screen flex flex-col">
+<main id="app-main" class="h-screen flex flex-col">
 
   <!-- ── TOP BAR ── -->
   <header class="h-14 flex-shrink-0 flex items-center justify-between px-4 bg-surface-container-lowest border-b border-outline-variant z-40">
@@ -328,33 +330,33 @@
       <a href="projects.html"
          class="w-7 h-7 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
          title="Dashboard">
-        <span class="material-symbols-outlined sym-fill" style="font-size:18px;">hexagon</span>
+        <span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:18px;">hexagon</span>
       </a>
-      <span class="text-outline-variant select-none">/</span>
+      <span class="text-outline-variant select-none" aria-hidden="true">/</span>
       <a href="project-detail.html"
          class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:underline transition-colors whitespace-nowrap">
         VCU Engine Firmware
       </a>
-      <span class="text-outline-variant select-none">/</span>
+      <span class="text-outline-variant select-none" aria-hidden="true">/</span>
       <span class="font-label-md text-label-md text-on-surface">Team</span>
     </nav>
     <div class="flex items-center gap-0.5">
       <button class="relative p-2 hover:bg-surface-container rounded-lg transition-colors" title="Notifications">
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
+        <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:22px;">notifications</span>
         <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border-2 border-surface-container-lowest"></span>
       </button>
       <button class="p-2 hover:bg-surface-container rounded-lg transition-colors" title="Help">
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">help</span>
+        <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:22px;">help</span>
       </button>
       <div class="w-px h-5 bg-outline-variant mx-1.5"></div>
       <button class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors">
         <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
           <span class="text-on-secondary-container font-bold text-xs" id="topbar-initials" style="font-family:Roboto;">EL</span>
         </div>
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">expand_more</span>
+        <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:16px;">expand_more</span>
       </button>
       <div class="w-px h-5 bg-outline-variant mx-1"></div>
-      <div class="flex items-center rounded-full border border-outline-variant overflow-hidden" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:600;">
+      <div class="flex items-center rounded-full border border-outline-variant overflow-hidden" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:600;">
         <button onclick="applyRole('admin')" id="role-btn-admin" class="px-2.5 py-1 transition-colors bg-secondary text-white">Admin</button>
         <button onclick="applyRole('developer')" id="role-btn-dev" class="px-2.5 py-1 transition-colors text-on-surface-variant hover:bg-surface-container">Dev</button>
       </div>
@@ -368,9 +370,9 @@
       <!-- Project switcher -->
       <div class="relative" id="sb-project-wrap">
         <button id="sb-project-btn" onclick="toggleSbProject()" class="subbar-pill">
-          <span class="material-symbols-outlined text-secondary sym-fill" style="font-size:14px;">folder</span>
+          <span class="material-symbols-outlined text-secondary sym-fill" aria-hidden="true" style="font-size:14px;">folder</span>
           <span class="font-label-md text-label-md text-on-surface" id="sb-project-name" style="font-size:12px;">VCU Engine Firmware</span>
-          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="sb-project-chevron" style="font-size:13px;">expand_more</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" aria-hidden="true" id="sb-project-chevron" style="font-size:13px;">expand_more</span>
         </button>
         <div id="sb-project-dropdown" class="hidden dropdown" style="min-width:264px;">
           <div class="py-1.5">
@@ -382,26 +384,26 @@
             <button onclick="switchSbProject('Brake Control Unit')" data-proj="Brake Control Unit"
                     class="sb-proj-opt w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left">
               <span class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Brake Control Unit</span>
-              <span class="ml-auto material-symbols-outlined text-outline-variant sb-proj-check" style="font-size:15px;opacity:0;">check</span>
+              <span class="ml-auto material-symbols-outlined text-outline sb-proj-check" style="font-size:15px;opacity:0;">check</span>
             </button>
           </div>
           <div class="border-t border-outline-variant">
             <a href="projects-empty.html" class="flex items-center gap-2 px-3 py-2.5 hover:bg-surface-container-low transition-colors">
-              <span class="material-symbols-outlined text-secondary" style="font-size:14px;">add_circle</span>
+              <span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:14px;">add_circle</span>
               <span class="font-label-md text-label-md text-secondary" style="font-size:12px;">New Project</span>
             </a>
           </div>
         </div>
       </div>
 
-      <span class="text-outline-variant select-none">·</span>
+      <span class="text-outline-variant select-none" aria-hidden="true">·</span>
 
       <!-- Commit chip -->
       <div class="relative" id="commit-chip-wrap">
         <button id="commit-chip-btn" onclick="toggleCommitPicker()" class="subbar-pill">
-          <span id="chip-icon-sym" class="material-symbols-outlined text-on-tertiary-container flex-shrink-0" style="font-size:13px;">sell</span>
+          <span id="chip-icon-sym" class="material-symbols-outlined text-on-tertiary-container flex-shrink-0" aria-hidden="true" style="font-size:13px;">sell</span>
           <span id="chip-ref" class="text-on-surface font-semibold" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;">v1.2.0</span>
-          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="chip-chevron" style="font-size:13px;">expand_more</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" aria-hidden="true" id="chip-chevron" style="font-size:13px;">expand_more</span>
         </button>
         <div id="commit-picker" class="hidden absolute top-full left-0 mt-1.5 bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden" style="min-width:380px;z-index:200;box-shadow:0 4px 20px rgba(0,0,0,0.24);">
           <div class="flex items-center border-b border-outline-variant px-3">
@@ -413,8 +415,8 @@
           </div>
           <div id="cp-panel-commits" style="display:none;">
             <div class="px-3 py-2 border-b border-outline-variant">
-              <div class="flex items-center gap-2 px-2 py-1.5 bg-surface-container-low border border-outline-variant rounded-lg">
-                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">search</span>
+              <div class="flex items-center gap-2 px-2 py-1.5 bg-surface-container-low border border-outline rounded-lg">
+                <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:15px;">search</span>
                 <input type="text" placeholder="Search commits…" oninput="filterPickerCommits(this.value)" class="flex-1 bg-transparent outline-none text-on-surface placeholder-outline" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;">
               </div>
             </div>
@@ -429,7 +431,7 @@
       <button onclick="openInviteModal()"
               class="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-white rounded-lg transition-colors"
               style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:500;letter-spacing:.02em;">
-        <span class="material-symbols-outlined" style="font-size:15px;">person_add</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">person_add</span>
         Invite
       </button>
     </div>
@@ -452,7 +454,7 @@
           <button id="card-invite-btn" onclick="openInviteModal()"
                   class="flex items-center gap-1.5 px-2.5 py-1.5 border border-outline-variant hover:bg-surface-container text-on-surface-variant rounded-lg transition-colors font-label-sm text-label-sm"
                   style="display:none;">
-            <span class="material-symbols-outlined" style="font-size:14px;">person_add</span>
+            <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">person_add</span>
             Invite
           </button>
         </div>
@@ -465,7 +467,7 @@
                 <th class="text-left px-5 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Member</th>
                 <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:120px;">Role</th>
                 <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:130px;">Last Active</th>
-                <th class="px-4 py-3" style="width:120px;" id="th-actions"></th>
+                <th class="px-4 py-3" style="width:120px;" id="th-actions"><span class="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody id="team-table-body"></tbody>
@@ -494,7 +496,7 @@
             </p>
           </div>
           <div class="access-row" style="background:#0e0f12;">
-            <span class="material-symbols-outlined text-on-surface-variant flex-shrink-0" style="font-size:15px;margin-top:1px;">info</span>
+            <span class="material-symbols-outlined text-on-surface-variant flex-shrink-0" aria-hidden="true" style="font-size:15px;margin-top:1px;">info</span>
             <p class="font-label-sm text-label-sm text-on-surface-variant leading-relaxed">
               Reviewer is not a role: whoever is assigned to a document reviews it — one reviewer per document.
             </p>
@@ -504,11 +506,11 @@
 
     </div>
   </div>
-</div><!-- /app-main -->
+</main><!-- /app-main -->
 
 
 <!-- ══════════════ INVITE MODAL ══════════════ -->
-<div id="invite-modal" class="modal-backdrop hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.85);">
+<div id="invite-modal" role="dialog" aria-modal="true" aria-label="Invite to project" class="modal-backdrop hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.85);">
   <div class="modal-card bg-surface-container-lowest rounded-xl border border-outline-variant w-full mx-4" style="max-width:440px;box-shadow:0 8px 48px rgba(0,0,0,0.48);">
     <div class="px-6 py-5 border-b border-outline-variant flex items-center justify-between">
       <div>
@@ -516,14 +518,14 @@
         <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">VCU Engine Firmware</p>
       </div>
       <button onclick="closeInviteModal()" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors">
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">close</span>
+        <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:18px;">close</span>
       </button>
     </div>
     <div class="px-6 py-5 space-y-4">
       <div>
         <label class="block font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-1.5">Email address</label>
         <input id="invite-email" type="email" placeholder="colleague@company.com"
-               class="w-full px-3 py-2.5 border border-outline-variant rounded-lg bg-surface-container-lowest text-on-surface placeholder-outline outline-none focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors"
+               class="w-full px-3 py-2.5 border border-outline rounded-lg bg-surface-container-lowest text-on-surface placeholder-outline outline-none focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors"
                style="font-size:13px;">
       </div>
       <div>
@@ -533,25 +535,25 @@
             <input type="radio" name="invite-role" value="developer" checked class="accent-secondary" onchange="setInviteRole('developer')">
             <div>
               <p class="font-label-md text-label-md text-on-surface" style="font-size:12px;">Developer</p>
-              <p class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;">Reviews documents</p>
+              <p class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:11px;">Reviews documents</p>
             </div>
           </label>
           <label class="flex-1 flex items-center gap-2.5 px-3 py-2.5 border border-outline-variant rounded-lg cursor-pointer hover:border-secondary transition-colors" id="invite-role-admin-lbl">
             <input type="radio" name="invite-role" value="admin" class="accent-secondary" onchange="setInviteRole('admin')">
             <div>
               <p class="font-label-md text-label-md text-on-surface" style="font-size:12px;">Admin</p>
-              <p class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;">Assigns and approves</p>
+              <p class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:11px;">Assigns and approves</p>
             </div>
           </label>
         </div>
         <!-- Review and approval (proposal): what the selected role can do -->
-        <p id="invite-role-desc" class="font-label-sm text-label-sm text-on-surface-variant leading-relaxed mt-2.5 px-3 py-2 rounded-lg" style="font-size:10px;background:#0e0f12;"></p>
+        <p id="invite-role-desc" class="font-label-sm text-label-sm text-on-surface-variant leading-relaxed mt-2.5 px-3 py-2 rounded-lg" style="font-size:11px;background:#0e0f12;"></p>
       </div>
     </div>
     <div class="px-6 pb-5 flex items-center justify-end gap-2">
       <button onclick="closeInviteModal()" class="px-4 py-2 border border-outline-variant hover:bg-surface-container rounded-lg font-label-md text-label-md text-on-surface-variant transition-colors">Cancel</button>
       <button onclick="sendInvite()" class="flex items-center gap-1.5 px-4 py-2 bg-secondary hover:bg-secondary-container text-white rounded-lg font-label-md text-label-md transition-colors">
-        <span class="material-symbols-outlined" style="font-size:15px;">send</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">send</span>
         Send Invite
       </button>
     </div>
@@ -559,12 +561,12 @@
 </div>
 
 <!-- Toast -->
-<div id="toast" class="hidden fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-4 py-3 bg-inverse rounded-xl"
+<div id="toast" role="status" aria-live="polite" class="hidden fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-4 py-3 bg-inverse rounded-xl"
      style="min-width:280px;box-shadow:0 4px 24px rgba(0,0,0,0.64);">
-  <span id="toast-icon" class="material-symbols-outlined flex-shrink-0 sym-fill" style="font-size:18px;color:#3ddc84;">check_circle</span>
+  <span id="toast-icon" class="material-symbols-outlined flex-shrink-0 sym-fill" aria-hidden="true" style="font-size:18px;color:#3ddc84;">check_circle</span>
   <p id="toast-msg" class="font-label-sm text-label-sm text-white flex-1">Done.</p>
   <button onclick="hideToast()" class="text-on-primary-container hover:text-white transition-colors">
-    <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+    <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">close</span>
   </button>
 </div>
 
@@ -617,7 +619,7 @@ function renderTeamTable() {
   tbody.innerHTML = TEAM_MEMBERS.map((m, i) => {
     const avatarHtml = m.pending
       ? `<div style="width:34px;height:34px;border-radius:50%;border:2px dashed #2c2f37;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-           <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">person</span>
+           <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:16px;">person</span>
          </div>`
       : `<div style="width:34px;height:34px;border-radius:50%;background:${m.bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
            <span style="font-family:Roboto;font-size:11px;font-weight:700;color:${m.text};">${m.id}</span>
@@ -631,16 +633,16 @@ function renderTeamTable() {
       ? `<div class="role-select-wrap" id="role-wrap-${i}">
            <button class="role-select-btn" onclick="toggleRoleDd(event,${i})">
              <span id="role-label-${i}">${m.role}</span>
-             <span class="material-symbols-outlined" style="font-size:11px;">expand_more</span>
+             <span class="material-symbols-outlined" aria-hidden="true" style="font-size:11px;">expand_more</span>
            </button>
            <div class="role-dd" id="role-dd-${i}">
              <div class="role-dd-item ${m.role === 'Admin' ? 'active' : ''}" onclick="setMemberRole(${i},'Admin')">
                <span>Admin</span>
-               ${m.role === 'Admin' ? '<span class="material-symbols-outlined" style="font-size:14px;color:#1d7bff;">check</span>' : ''}
+               ${m.role === 'Admin' ? '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;color:#6aa9ff;">check</span>' : ''}
              </div>
              <div class="role-dd-item ${m.role === 'Developer' ? 'active' : ''}" onclick="setMemberRole(${i},'Developer')">
                <span>Developer</span>
-               ${m.role === 'Developer' ? '<span class="material-symbols-outlined" style="font-size:14px;color:#1d7bff;">check</span>' : ''}
+               ${m.role === 'Developer' ? '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;color:#6aa9ff;">check</span>' : ''}
              </div>
            </div>
          </div>`
@@ -649,29 +651,29 @@ function renderTeamTable() {
     const actionsCell = !isAdmin ? '' : m.pending
       ? `<div class="flex items-center gap-1.5">
            <button class="resend-btn" onclick="showToast('Invite resent to ${m.name}')">
-             <span class="material-symbols-outlined" style="font-size:12px;">send</span>Resend
+             <span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;">send</span>Resend
            </button>
            <div style="position:relative;" id="kebab-wrap-${i}">
              <button class="row-action-btn" onclick="toggleRowMenu(event,'row-menu-${i}')">
-               <span class="material-symbols-outlined" style="font-size:16px;">more_vert</span>
+               <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">more_vert</span>
              </button>
              <div class="row-menu" id="row-menu-${i}">
                <div class="row-menu-item danger" onclick="revokeInvite(${i})">
-                 <span class="material-symbols-outlined" style="font-size:14px;">cancel</span>Revoke invite
+                 <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">cancel</span>Revoke invite
                </div>
              </div>
            </div>
          </div>`
       : `<div class="flex items-center gap-1.5" style="position:relative;" id="kebab-wrap-${i}">
            <button class="row-action-btn" onclick="toggleRowMenu(event,'row-menu-${i}')" title="More actions">
-             <span class="material-symbols-outlined" style="font-size:16px;">more_vert</span>
+             <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">more_vert</span>
            </button>
            <div class="row-menu" id="row-menu-${i}">
              <div class="row-menu-item" onclick="void(0)">
-               <span class="material-symbols-outlined" style="font-size:14px;">manage_accounts</span>Change role
+               <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">manage_accounts</span>Change role
              </div>
              <div class="row-menu-item danger" onclick="removeMember(${i})">
-               <span class="material-symbols-outlined" style="font-size:14px;">person_remove</span>Remove
+               <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">person_remove</span>Remove
              </div>
            </div>
          </div>`;
@@ -682,9 +684,9 @@ function renderTeamTable() {
         <div class="flex items-center gap-3">
           ${avatarHtml}
           <div class="min-w-0">
-            <p class="font-label-md text-label-md text-on-surface truncate" style="font-size:13px;${m.pending ? 'color:#7c818c;' : ''}">${m.pending ? m.name : m.name}</p>
-            ${m.pending ? `<p class="font-label-sm text-label-sm" style="color:#f5a524;font-size:10px;">Pending</p>`
-              : m.openReviews ? `<p class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;">${m.openReviews} open review${m.openReviews === 1 ? '' : 's'}</p>` : ''}
+            <p class="font-label-md text-label-md text-on-surface truncate" style="font-size:13px;${m.pending ? 'color:#979ca7;' : ''}">${m.pending ? m.name : m.name}</p>
+            ${m.pending ? `<p class="font-label-sm text-label-sm" style="color:#f5a524;font-size:11px;">Pending</p>`
+              : m.openReviews ? `<p class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:11px;">${m.openReviews} open review${m.openReviews === 1 ? '' : 's'}</p>` : ''}
           </div>
         </div>
       </td>
@@ -843,8 +845,8 @@ function renderPickerVersions() {
   const list = document.getElementById('cp-versions-list');
   const accentCol = s => s === 'approved' ? '#3ddc84' : s === 'in_review' ? '#f5a524' : '#2c2f37';
   const pill = s => {
-    if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:8px;font-weight:700;background:#132a1f;color:#3ddc84;border:1px solid #1f5a3a;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#3ddc84;display:inline-block;"></span>Approved</span>`;
-    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:8px;font-weight:700;background:#2c2414;color:#f5a524;border:1px solid #6b4a12;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f5a524;display:inline-block;"></span>In review</span>`;
+    if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#132a1f;color:#3ddc84;border:1px solid #1f5a3a;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#3ddc84;display:inline-block;"></span>Approved</span>`;
+    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#2c2414;color:#f5a524;border:1px solid #6b4a12;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f5a524;display:inline-block;"></span>In review</span>`;
     return '';
   };
   const activeSha = (COMMITS.find(x => x.current) || {}).sha;
@@ -859,13 +861,13 @@ function renderPickerVersions() {
             <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;font-weight:700;color:#f2f3f5;">${v.tag}</span>
             ${pill(v.status)}
           </div>
-          ${isActive ? '<span class="material-symbols-outlined" style="font-size:15px;color:#1d7bff;flex-shrink:0;">check</span>' : ''}
+          ${isActive ? '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;color:#6aa9ff;flex-shrink:0;">check</span>' : ''}
         </div>
         <div style="font-size:11px;color:#a3a7b1;margin-bottom:4px;line-height:1.4;">${v.desc}</div>
         <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-family:'JetBrains Mono';font-size:10px;color:#7c818c;background:#26282e;padding:1px 5px;border-radius:4px;">${v.sha.slice(0,7)}</span>
-          <span style="font-size:10px;color:#7c818c;">${v.date}</span>
-          <span style="font-size:10px;color:#7c818c;">${v.docs} docs</span>
+          <span style="font-family:'JetBrains Mono';font-size:11px;color:#979ca7;background:#26282e;padding:1px 5px;border-radius:4px;">${v.sha.slice(0,7)}</span>
+          <span style="font-size:11px;color:#979ca7;">${v.date}</span>
+          <span style="font-size:11px;color:#979ca7;">${v.docs} docs</span>
         </div>
       </div>
     </button>`;
@@ -878,7 +880,7 @@ function renderPickerCommits(filter) {
     c.sha.includes(filter) || c.msg.toLowerCase().includes(filter) || c.author.toLowerCase().includes(filter));
   const list = document.getElementById('cp-commits-list');
   if (!filtered.length) {
-    list.innerHTML = `<div style="padding:24px 16px;text-align:center;font-size:12px;color:#7c818c;">No commits match</div>`;
+    list.innerHTML = `<div style="padding:24px 16px;text-align:center;font-size:12px;color:#979ca7;">No commits match</div>`;
     return;
   }
   list.innerHTML = filtered.map((c, i) => {
@@ -886,7 +888,7 @@ function renderPickerCommits(filter) {
     const dotColor = c.version ? '#3ddc84' : c.current ? '#1d7bff' : '#2c2f37';
     const dotFill  = (c.current || c.version) ? dotColor : 'white';
     const vTag = c.version
-      ? `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:600;color:#3ddc84;background:#132a1f;border:1px solid #1f5a3a;padding:0px 6px;border-radius:99px;"><span class="material-symbols-outlined" style="font-size:10px;color:#3ddc84;">sell</span>${c.version}</span>`
+      ? `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:600;color:#3ddc84;background:#132a1f;border:1px solid #1f5a3a;padding:0px 6px;border-radius:99px;"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:11px;color:#3ddc84;">sell</span>${c.version}</span>`
       : '';
     return `
     <button onclick="selectCommit('${c.sha}')" style="width:100%;display:flex;gap:0;padding:0 12px;text-align:left;background:${c.current ? '#1b2638' : 'transparent'};border:none;cursor:pointer;" onmouseover="if(!${c.current})this.style.background='#23262d'" onmouseout="if(!${c.current})this.style.background='${c.current ? '#1b2638' : 'transparent'}'">
@@ -896,11 +898,11 @@ function renderPickerCommits(filter) {
       </div>
       <div style="flex:1;min-width:0;padding:10px 0 10px 8px;">
         <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:2px;">
-          <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;color:#a3a7b1;background:#26282e;padding:1px 5px;border-radius:4px;">${c.sha.slice(0,7)}</span>
+          <span style="font-family:'JetBrains Mono';font-size:11px;font-weight:600;color:#a3a7b1;background:#26282e;padding:1px 5px;border-radius:4px;">${c.sha.slice(0,7)}</span>
           ${vTag}
         </div>
         <div style="font-size:11px;color:#f2f3f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:290px;">${c.msg}</div>
-        <div style="font-size:10px;color:#7c818c;margin-top:1px;">${c.author} · ${c.time}</div>
+        <div style="font-size:11px;color:#979ca7;margin-top:1px;">${c.author} · ${c.time}</div>
       </div>
     </button>`;
   }).join('');

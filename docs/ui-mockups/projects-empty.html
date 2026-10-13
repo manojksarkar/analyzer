@@ -19,7 +19,7 @@
           "on-primary": "#ffffff", "on-primary-container": "#8192a7",
           "secondary": "#0058be", "secondary-container": "#2170e4",
           "on-secondary": "#ffffff", "on-secondary-container": "#fefcff",
-          "on-tertiary-container": "#00a572", "tertiary-container": "#00311f",
+          "on-tertiary-container": "#00754f", "tertiary-container": "#00311f",
           "tertiary-fixed": "#6ffbbe",
           "error": "#ba1a1a", "error-container": "#ffdad6", "on-error-container": "#93000a",
           "surface": "#f8f9ff", "background": "#f8f9ff",
@@ -27,7 +27,7 @@
           "surface-container": "#e5eeff", "surface-container-high": "#dce9ff",
           "surface-container-highest": "#d3e4fe",
           "on-surface": "#0b1c30", "on-surface-variant": "#44474c",
-          "outline": "#74777d", "outline-variant": "#c4c6cd",
+          "outline": "#65686e", "outline-variant": "#c4c6cd",
         },
         borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
         fontFamily: {
@@ -81,7 +81,7 @@
     transition: border-color .15s, box-shadow .15s;
   }
   .inp:focus { border-color: #0058be; box-shadow: 0 0 0 3px rgba(0,88,190,.10); }
-  .inp::placeholder { color: #74777d; }
+  .inp::placeholder { color: #65686e; }
   .inp.mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
   .inp.err  { border-color: #ba1a1a !important; box-shadow: 0 0 0 3px rgba(186,26,26,.10) !important; }
   textarea.inp { resize: none; }
@@ -139,26 +139,26 @@
   .core-name { width: 100%; max-width: 240px; padding: 0 6px; margin-left: -6px; font: 600 14px/22px 'Inter', sans-serif; color: #0b1c30; background: transparent; border: 1px solid transparent; border-radius: 0.25rem; }
   .core-name:hover { border-color: #c4c6cd; background: #fff; }
   .core-name:focus { outline: none; border-color: #0058be; background: #fff; box-shadow: 0 0 0 3px rgba(0,88,190,.10); }
-  .core-uses { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 3px; font: 500 10px/16px 'JetBrains Mono', monospace; color: #74777d; }
+  .core-uses { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 3px; font: 500 11px/16px 'JetBrains Mono', monospace; color: #65686e; }
   .core-uses .layer-tag { padding: 0 6px; border-radius: 3px; background: #e5eeff; color: #0058be; font-weight: 600; }
   .core-uses.none { color: #b45309; }
   .core-row { display: grid; grid-template-columns: 172px minmax(0, 1fr); gap: 16px; align-items: start; padding: 14px 16px; }
   .core-row + .core-row { border-top: 1px solid #eff4ff; }
   .core-row-label { font: 600 12px/18px 'JetBrains Mono', monospace; color: #0b1c30; }
-  .core-row-help { margin-top: 2px; font: 400 11px/15px 'Inter', sans-serif; color: #74777d; }
-  .core-row-help code { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; }
+  .core-row-help { margin-top: 2px; font: 400 11px/15px 'Inter', sans-serif; color: #65686e; }
+  .core-row-help code { font-family: 'JetBrains Mono', monospace; font-size: 11px; }
   .core-row-help .opt { font-weight: 600; color: #44474c; }
   .wanted-note { margin-top: 6px; font: 400 11px/15px 'Inter', sans-serif; color: #8a5300; }
   .upload-btn { width: 100%; min-height: 40px; display: flex; align-items: center; gap: 10px; padding: 8px 12px; text-align: left; background: #f8f9ff; border: 1.5px dashed #c4c6cd; border-radius: 0.5rem; cursor: pointer; transition: border-color .15s, background .15s; }
   .upload-btn:hover, .upload-btn.dragover { border-color: #0058be; background: #eff4ff; }
   .upload-btn .t { font: 500 12px/16px 'Inter', sans-serif; color: #0b1c30; }
-  .upload-btn .s { margin-left: auto; white-space: nowrap; font: 400 11px/14px 'JetBrains Mono', monospace; color: #74777d; }
+  .upload-btn .s { margin-left: auto; white-space: nowrap; font: 400 11px/14px 'JetBrains Mono', monospace; color: #65686e; }
   .upload-btn.wanted { border-color: #e5b25d; background: #fffaf0; }
   .upload-btn.wanted .t { color: #8a5300; }
   .file-pill { min-height: 40px; display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 12px; background: #f0fff9; border: 1px solid rgba(0,165,114,.35); border-radius: 0.5rem; }
   .file-pill .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 12px/16px 'JetBrains Mono', monospace; color: #0b1c30; }
-  .file-pill .z { white-space: nowrap; font: 400 11px/14px 'JetBrains Mono', monospace; color: #74777d; }
-  .pill-btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: #74777d; background: none; border: none; border-radius: 0.25rem; cursor: pointer; }
+  .file-pill .z { white-space: nowrap; font: 400 11px/14px 'JetBrains Mono', monospace; color: #65686e; }
+  .pill-btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: #65686e; background: none; border: none; border-radius: 0.25rem; cursor: pointer; }
   .pill-btn:hover { background: #e5eeff; color: #0058be; }
   .pill-btn.del:hover { background: #ffdad6; color: #ba1a1a; }
   .switch-link { margin-top: 6px; padding: 0; font: 500 11px/14px 'Inter', sans-serif; color: #0058be; background: none; border: none; cursor: pointer; }
@@ -166,7 +166,7 @@
   .macro-text { min-height: 76px; resize: vertical; }
 
   /* ── Step 3: a layer's core ── */
-  .layer-core { display: flex; align-items: center; gap: 6px; flex-shrink: 0; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #74777d; }
+  .layer-core { display: flex; align-items: center; gap: 6px; flex-shrink: 0; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #65686e; }
   .layer-core-select { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: #0058be; background-color: #fff; background-size: 1.1em 1.1em; background-position: right 4px center; border: 1px solid #c4c6cd; border-radius: 0.25rem; padding: 3px 24px 3px 6px; cursor: pointer; }
 
   /* ── Step rail ── */
@@ -184,7 +184,7 @@
     font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600;
     transition: all .2s;
   }
-  .step-dot.pending { background: #fff; border: 1.5px solid #c4c6cd; color: #74777d; }
+  .step-dot.pending { background: #fff; border: 1.5px solid #c4c6cd; color: #65686e; }
   .step-dot.active  { background: #0058be; border: 2px solid #0058be; color: #fff; box-shadow: 0 0 0 4px rgba(0,88,190,.15); }
   .step-dot.done    { background: #00a572; border: 2px solid #00a572; color: #fff; }
 
@@ -192,23 +192,23 @@
   .layer-block { border: 1px solid #c4c6cd; border-radius: 0.5rem; overflow: hidden; }
   .layer-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #eff4ff; border-bottom: 1px solid #c4c6cd; cursor: pointer; user-select: none; }
   .layer-block.collapsed .layer-head { border-bottom: none; }   /* a collapsed layer is its head alone */
-  .layer-path-display { display: block; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #74777d; margin-top: 2px; cursor: pointer; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .layer-path-display { display: block; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #65686e; margin-top: 2px; cursor: pointer; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .layer-path-display:hover { color: #0058be; }
   .layer-path-display.empty { color: #b0b3b8; }
   .layer-path-input { display: block; font-family: 'JetBrains Mono', monospace !important; font-size: 11px !important; line-height: 1.4; color: #0058be; background: none; border: none; border-bottom: 1px solid #0058be; outline: none; width: 100%; margin-top: 2px; padding: 0; }
   .layer-body { padding: 4px 0 8px; }
   .tree-group-row { display: flex; align-items: center; gap: 3px; padding: 3px 12px; border-radius: 3px; cursor: default; }
   .tree-group-row:hover { background: #e5eeff; }
-  .tree-toggle { display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex-shrink: 0; color: #74777d; background: none; border: none; cursor: pointer; border-radius: 2px; }
+  .tree-toggle { display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex-shrink: 0; color: #65686e; background: none; border: none; cursor: pointer; border-radius: 2px; }
   .tree-toggle:hover { background: #dce9ff; color: #0058be; }
   .tree-children { margin-left: 18px; padding-left: 8px; border-left: 1px solid #dde1e8; }
   .add-group-btn { display: flex; align-items: center; gap: 3px; padding: 4px 12px; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; color: #0058be; background: none; border: none; cursor: pointer; width: 100%; text-align: left; }
   .add-group-btn:hover { color: #2170e4; }
   .inline-add-row { display: flex; align-items: center; gap: 4px; padding: 4px 12px; }
   .inline-add-input { font-family: 'JetBrains Mono', monospace !important; font-size: 11px !important; flex: 1; padding: 3px 8px; border: 1px solid #0058be; border-radius: 4px; outline: none; color: #0b1c30; }
-  .inline-add-confirm { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; padding: 3px 10px; background: #0058be; color: #fff; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+  .inline-add-confirm { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; padding: 3px 10px; background: #0058be; color: #fff; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
   .inline-add-confirm:hover { background: #2170e4; }
-  .inline-add-cancel { display: flex; align-items: center; background: none; border: none; cursor: pointer; color: #74777d; padding: 2px; }
+  .inline-add-cancel { display: flex; align-items: center; background: none; border: none; cursor: pointer; color: #65686e; padding: 2px; }
   .inline-add-cancel:hover { color: #ba1a1a; }
   .inc-paths-section { margin: 4px 8px 6px; background: #f0faf6; border: 1px solid rgba(0,165,114,.15); border-radius: 6px; padding: 6px 10px; }
   .inc-paths-row { display: flex; gap: 10px; align-items: flex-start; }
@@ -221,7 +221,7 @@
   .ext-path-input { font-family: 'JetBrains Mono', monospace !important; font-size: 11px !important; line-height: 1.3; color: #006e45; background: none; border: none; outline: none; flex: 1; min-width: 0; padding: 0; height: 18px; }
   .ext-path-input:focus { color: #004d30; }
   .ext-path-input::placeholder { color: #a0c4b8; }
-  .ext-browse-btn { flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px; padding: 1px 5px; border: 1px solid rgba(0,165,114,.35); border-radius: 3px; background: transparent; cursor: pointer; font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 700; letter-spacing: .04em; color: #00815a; }
+  .ext-browse-btn { flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px; padding: 1px 5px; border: 1px solid rgba(0,165,114,.35); border-radius: 3px; background: transparent; cursor: pointer; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: .04em; color: #00815a; }
   .ext-browse-btn:hover { background: #d6f5ea; }
 
   /* ── Review cards ── */
@@ -243,13 +243,13 @@
   .sidebar-file-row:hover { background:#eff4ff; }
   .sidebar-file-row.assigned { cursor:default; opacity:.55; }
   .sidebar-file-row.assigned:hover { background:transparent; }
-  .file-owner-tag { font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:1px 5px; background:#e5eeff; color:#0058be; border-radius:3px; white-space:nowrap; flex-shrink:0; }
+  .file-owner-tag { font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:1px 5px; background:#e5eeff; color:#0058be; border-radius:3px; white-space:nowrap; flex-shrink:0; }
   .tree-comp-block { }
   .tree-comp-row { display:flex; align-items:center; gap:3px; padding:2px 8px; border-radius:3px; cursor:default; }
   .tree-comp-row:hover { background:#e5eeff; }
   .comp-files { margin-left:16px; padding-left:8px; border-left:1px solid #dde1e8; }
-  .file-row { display:flex; align-items:center; gap:4px; font-family:'JetBrains Mono',monospace; font-size:10px; color:#74777d; padding:1px 6px; }
-  .sect-label { font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#74777d; }
+  .file-row { display:flex; align-items:center; gap:4px; font-family:'JetBrains Mono',monospace; font-size:11px; color:#65686e; padding:1px 6px; }
+  .sect-label { font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#65686e; }
 
   /* ── Folder picker ── */
   .fp-folder-row { display:flex; align-items:center; gap:5px; padding:4px 6px; border-radius:4px; cursor:pointer; user-select:none; }
@@ -274,23 +274,23 @@
               font: 500 11px/16px 'JetBrains Mono', monospace; color: #0058be; }
   .rb-crumb:hover { background: #eff4ff; }
   .rb-crumb:last-child { color: #0b1c30; font-weight: 600; }
-  .rb-sep { color: #74777d; font-size: 11px; }
+  .rb-sep { color: #65686e; font-size: 11px; }
   .rb-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: .375rem; cursor: pointer; user-select: none;
             font: 400 12px/18px 'JetBrains Mono', monospace; color: #0b1c30; }
   .rb-row:hover { background: #eff4ff; }
   .rb-row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rb-row.picked { background: #e5eeff; color: #0058be; font-weight: 600; }
-  .rb-git { padding: 0 6px; border-radius: 3px; background: #d6f5ea; color: #006e45; font: 600 10px/16px 'JetBrains Mono', monospace; }
-  .rb-empty { padding: 16px 10px; text-align: center; font: 400 12px/16px Inter, sans-serif; color: #74777d; }
+  .rb-git { padding: 0 6px; border-radius: 3px; background: #d6f5ea; color: #006e45; font: 600 11px/16px 'JetBrains Mono', monospace; }
+  .rb-empty { padding: 16px 10px; text-align: center; font: 400 12px/16px Inter, sans-serif; color: #65686e; }
 
   /* ── Branch: one box - search and list (step 1) ── */
-  .bd-head  { padding: 6px 12px; font: 500 11px/16px 'JetBrains Mono', monospace; color: #74777d; border-bottom: 1px solid #eff4ff; }
+  .bd-head  { padding: 6px 12px; font: 500 11px/16px 'JetBrains Mono', monospace; color: #65686e; border-bottom: 1px solid #eff4ff; }
   .bd-item  { display: flex; align-items: center; gap: 8px; padding: 7px 12px; cursor: pointer; font: 400 12px/18px 'JetBrains Mono', monospace; color: #0b1c30; }
   .bd-item:hover, .bd-item.focused { background: #eff4ff; }
   .bd-item.picked { color: #0058be; font-weight: 600; }
   .bd-item .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .bd-item .tag { padding: 0 6px; border-radius: 3px; background: #e5eeff; color: #0058be; font-size: 10px; font-weight: 600; }
-  .bd-empty { padding: 10px 12px; font: 400 12px/16px Inter, sans-serif; color: #74777d; }
+  .bd-item .tag { padding: 0 6px; border-radius: 3px; background: #e5eeff; color: #0058be; font-size: 11px; font-weight: 600; }
+  .bd-empty { padding: 10px 12px; font: 400 12px/16px Inter, sans-serif; color: #65686e; }
 
   /* ── Member search dropdown ── */
   .ms-item { display:flex; align-items:center; gap:10px; padding:8px 12px; cursor:pointer; transition:background .1s; }
@@ -300,6 +300,8 @@
   /* ── Help tooltip ── */
   #help-tip { display: none; position: fixed; z-index: 999; max-width: 260px; padding: 8px 12px; background: #041627; color: #e5eeff; font-family: Inter,sans-serif; font-size: 12px; line-height: 1.5; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.25); pointer-events: none; }
 </style>
+<link rel="stylesheet" href="a11y.css">
+<script src="a11y.js" defer></script>
 </head>
 <body class="bg-background text-on-surface font-body-md overflow-hidden">
 
@@ -333,14 +335,14 @@
 
   <div class="flex items-center gap-0.5">
     <button class="p-2 hover:bg-surface-container rounded-lg transition-colors" aria-label="Notifications">
-      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
+      <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:22px;">notifications</span>
     </button>
     <div class="w-px h-5 bg-outline-variant mx-1.5"></div>
     <button class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors">
       <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
         <span class="text-on-secondary-container font-bold text-xs" style="font-family:Inter;">EL</span>
       </div>
-      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">expand_more</span>
+      <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:16px;">expand_more</span>
     </button>
   </div>
 </header>
@@ -350,7 +352,7 @@
      VIEW: EMPTY STATE (default) - the Projects page with no project yet
      (web-app pages/ProjectsPage: its heading, and ProjectsEmptyState where the table goes)
      ══════════════════════════════════════════ -->
-<div id="view-empty" class="fixed inset-0 pt-14 overflow-y-auto">
+<div id="view-empty" role="main" class="fixed inset-0 pt-14 overflow-y-auto">
   <div class="px-6 py-6 mx-auto" style="max-width:1280px;">
 
     <!-- Page heading. No New Project / Request Access buttons while there is no project: the two
@@ -366,7 +368,7 @@
     <div class="bg-white border border-outline-variant rounded-xl overflow-hidden mb-6">
       <div class="flex flex-col items-center justify-center text-center px-6 py-16">
         <div class="w-16 h-16 bg-secondary-container flex items-center justify-center mb-6" style="border-radius:.75rem;">
-          <span class="material-symbols-outlined sym-fill text-secondary" style="font-size:32px;">folder_open</span>
+          <span class="material-symbols-outlined sym-fill text-white" aria-hidden="true" style="font-size:32px;">folder_open</span>
         </div>
         <h2 class="text-on-surface mb-2" style="font-family:Inter;font-size:18px;font-weight:600;line-height:28px;letter-spacing:-0.01em;">No projects yet</h2>
         <p class="text-on-surface-variant mb-8" style="font-size:13px;line-height:1.6;max-width:440px;">
@@ -379,7 +381,7 @@
           <!-- New Project - opens the wizard -->
           <button onclick="showWizard()" class="choice-card choice-card-primary flex flex-col items-center gap-3 p-6 bg-white rounded-xl text-center">
             <div class="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center">
-              <span class="material-symbols-outlined text-white" style="font-size:20px;">add</span>
+              <span class="material-symbols-outlined text-white" aria-hidden="true" style="font-size:20px;">add</span>
             </div>
             <div>
               <p class="text-on-surface mb-1" style="font-size:14px;line-height:20px;font-weight:600;">New Project</p>
@@ -387,14 +389,14 @@
             </div>
             <span class="mt-auto flex items-center gap-1 text-secondary" style="font-size:12px;line-height:16px;font-weight:600;">
               Get started
-              <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
+              <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">arrow_forward</span>
             </span>
           </button>
 
           <!-- Request Access - a message, no dialog: a project admin adds people from Team -->
           <button onclick="requestAccess()" class="choice-card choice-card-plain flex flex-col items-center gap-3 p-6 bg-white rounded-xl text-center">
             <div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center">
-              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:20px;">lock</span>
+              <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:20px;">lock</span>
             </div>
             <div>
               <p class="text-on-surface mb-1" style="font-size:14px;line-height:20px;font-weight:600;">Request Access</p>
@@ -402,7 +404,7 @@
             </div>
             <span class="mt-auto flex items-center gap-1 text-on-surface-variant" style="font-size:12px;line-height:16px;font-weight:600;">
               Send request
-              <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
+              <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">arrow_forward</span>
             </span>
           </button>
 
@@ -417,16 +419,16 @@
 <!-- ══════════════════════════════════════════
      VIEW: WIZARD (hidden until New Project)
      ══════════════════════════════════════════ -->
-<div id="view-wizard" class="fixed inset-0 pt-14 hidden" style="display:none;">
+<div id="view-wizard" role="main" class="fixed inset-0 pt-14 hidden" style="display:none;">
 <div class="h-full flex">
 
   <!-- STEP RAIL -->
-  <aside class="w-60 flex-shrink-0 bg-white border-r border-outline-variant flex flex-col overflow-y-auto">
+  <aside class="w-60 flex-shrink-0 bg-white border-r border-outline-variant flex flex-col overflow-y-auto" aria-label="Setup progress">
     <div class="px-4 pt-4 pb-3 border-b border-outline-variant">
       <div class="flex items-center justify-between mb-1.5">
         <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.10em]">Setup Progress</p>
         <button onclick="cancelWizard()" class="text-on-surface-variant hover:text-on-surface transition-colors" title="Cancel">
-          <span class="material-symbols-outlined" style="font-size:18px;">close</span>
+          <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">close</span>
         </button>
       </div>
       <div class="flex items-center gap-3 mt-2">
@@ -441,7 +443,7 @@
     </div>
     <div class="px-4 pb-4">
       <div class="flex items-start gap-2.5 p-3 bg-surface-container-low border border-outline-variant rounded-xl">
-        <span class="material-symbols-outlined text-secondary flex-shrink-0 mt-0.5" style="font-size:14px;">admin_panel_settings</span>
+        <span class="material-symbols-outlined text-secondary flex-shrink-0 mt-0.5" aria-hidden="true" style="font-size:14px;">admin_panel_settings</span>
         <p class="font-label-sm text-label-sm text-on-surface-variant leading-snug">Admin-only setup. Developers gain access after initialization.</p>
       </div>
     </div>
@@ -474,16 +476,16 @@
               <span id="repo-label">Repository URL</span> <span class="req">*</span>
               <div class="seg" role="radiogroup" aria-label="Where the repository is">
                 <button type="button" id="src-url" class="seg-btn on" role="radio" aria-checked="true" onclick="setRepoSource('url')">
-                  <span class="material-symbols-outlined">link</span>Remote
+                  <span class="material-symbols-outlined" aria-hidden="true">link</span>Remote
                 </button>
                 <button type="button" id="src-local" class="seg-btn" role="radio" aria-checked="false" onclick="setRepoSource('local')">
-                  <span class="material-symbols-outlined">folder</span>Local
+                  <span class="material-symbols-outlined" aria-hidden="true">folder</span>Local
                 </button>
               </div>
             </div>
             <div class="flex gap-2">
               <div style="position:relative;flex:1;">
-                <span id="repo-icon" class="material-symbols-outlined" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:16px;color:#74777d;pointer-events:none;">link</span>
+                <span id="repo-icon" class="material-symbols-outlined" aria-hidden="true" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:16px;color:#65686e;pointer-events:none;">link</span>
                 <input class="inp mono" id="s1-repo" type="text" placeholder="https://bitbucket.company.com/scm/vcu/vcu-firmware.git" style="padding-left:34px;"
                        spellcheck="false" oninput="this.classList.remove('err'); repoTyped();">
               </div>
@@ -491,7 +493,7 @@
                    browser cannot give a full path from the reviewer's own PC, and git runs on the
                    server). -->
               <button type="button" id="repo-browse" class="rb-browse" onclick="openRepoBrowser()">
-                <span class="material-symbols-outlined" style="font-size:16px;">folder_open</span>BROWSE…
+                <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">folder_open</span>BROWSE…
               </button>
             </div>
             <!-- URL chosen, but a folder path typed: say so, one click to switch. -->
@@ -511,9 +513,9 @@
             <div class="relative">
               <input class="inp mono pr-10" id="s1-token" type="password" placeholder="Paste the access token"
                      oninput="repoChanged()">
-              <button type="button" onclick="toggleToken()"
+              <button type="button" onclick="toggleToken()" aria-label="Show token" aria-pressed="false"
                       class="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors">
-                <span class="material-symbols-outlined" id="token-eye" style="font-size:17px;">visibility_off</span>
+                <span class="material-symbols-outlined" aria-hidden="true" id="token-eye" style="font-size:17px;">visibility_off</span>
               </button>
             </div>
           </div>
@@ -523,7 +525,7 @@
             <button id="test-conn-btn" onclick="testConnection()"
                     class="flex items-center gap-1.5 px-4 py-2 border border-outline-variant rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors flex-shrink-0"
                     style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#44474c;">
-              <span class="material-symbols-outlined" style="font-size:15px;">wifi_tethering</span>
+              <span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">wifi_tethering</span>
               Test Connection
             </button>
             <span id="test-conn-status" class="text-body-sm" style="font-size:12px;"></span>
@@ -536,14 +538,14 @@
             <div style="height:1px;background:#eff4ff;margin-bottom:16px;"></div>
             <div class="lbl">Branch <span class="req">*</span></div>
             <div style="position:relative;">
-              <span class="material-symbols-outlined" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:16px;color:#74777d;pointer-events:none;">call_split</span>
+              <span class="material-symbols-outlined" aria-hidden="true" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:16px;color:#65686e;pointer-events:none;">call_split</span>
               <input class="inp mono" id="s1-branch-box" type="text" autocomplete="off" spellcheck="false"
                      role="combobox" aria-label="Branch" aria-autocomplete="list" aria-expanded="false" aria-controls="branch-dd"
                      placeholder="Search or pick a branch…" style="padding-left:34px;padding-right:34px;"
                      onfocus="branchOpen()" onclick="branchOpen()" oninput="branchFilter()"
                      onmouseup="branchMouseUp(event)" onkeydown="branchKey(event)" onblur="setTimeout(branchClose, 150)">
-              <span class="material-symbols-outlined" id="branch-chevron" onmousedown="event.preventDefault(); branchToggle()"
-                    style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:20px;color:#74777d;cursor:pointer;transition:transform .15s;">expand_more</span>
+              <span class="material-symbols-outlined" aria-hidden="true" id="branch-chevron" onmousedown="event.preventDefault(); branchToggle()"
+                    style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:20px;color:#65686e;cursor:pointer;transition:transform .15s;">expand_more</span>
               <div id="branch-dd" role="listbox" aria-label="Branches"
                    style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid #c4c6cd;border-radius:0.5rem;box-shadow:0 4px 16px rgba(4,22,39,.12);max-height:248px;overflow-y:auto;z-index:200;"></div>
             </div>
@@ -565,7 +567,7 @@
                 <p id="import-modal-title" style="font-size:16px;font-weight:600;color:#0b1c30;"></p>
                 <p style="font-size:12px;color:#44474c;margin-top:2px;">Items that need your attention are dealt with in the step named beside them.</p>
               </div>
-              <button onclick="closeImportModal()" style="background:none;border:none;cursor:pointer;color:#44474c;padding:4px;"><span class="material-symbols-outlined" style="font-size:20px;">close</span></button>
+              <button onclick="closeImportModal()" style="background:none;border:none;cursor:pointer;color:#44474c;padding:4px;"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">close</span></button>
             </div>
             <div id="import-modal-body" style="max-height:60vh;overflow-y:auto;display:grid;gap:18px;"></div>
           </div>
@@ -586,19 +588,19 @@
 
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
-            <span class="material-symbols-outlined text-secondary" style="font-size:17px;">memory</span>
+            <span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:17px;">memory</span>
             <span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-[.08em]">Cores <span id="cores-count"></span></span>
           </div>
           <button onclick="addCore()"
                   class="flex items-center gap-1.5 px-3 py-1.5 text-secondary border border-outline-variant rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors">
-            <span class="material-symbols-outlined" style="font-size:15px;">add</span> Add Core
+            <span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">add</span> Add Core
           </button>
         </div>
 
         <div id="cores-list" class="space-y-3"></div>
 
         <div class="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
-          <span class="material-symbols-outlined text-secondary flex-shrink-0" style="font-size:18px;">info</span>
+          <span class="material-symbols-outlined text-secondary flex-shrink-0" aria-hidden="true" style="font-size:18px;">info</span>
           <p class="text-body-sm text-on-surface-variant">Layers built the same way share a core. A layer with no core is parsed without macros or a data dictionary. Paths inside a compile_commands.json come from the build machine and are mapped onto the repository automatically.</p>
         </div>
       </div><!-- /step-2 -->
@@ -613,12 +615,12 @@
 
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
-            <span class="material-symbols-outlined text-secondary" style="font-size:17px;">account_tree</span>
+            <span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:17px;">account_tree</span>
             <span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-[.08em]">Project Architecture</span>
           </div>
           <button onclick="showAddLayer()"
                   class="flex items-center gap-1.5 px-3 py-1.5 text-secondary border border-outline-variant rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors">
-            <span class="material-symbols-outlined" style="font-size:15px;">add</span> Add Layer
+            <span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">add</span> Add Layer
           </button>
         </div>
 
@@ -626,7 +628,7 @@
 
           <!-- empty state hint -->
           <div id="arch-empty" class="flex flex-col items-center justify-center py-10 text-center">
-            <span class="material-symbols-outlined text-on-surface-variant mb-3" style="font-size:36px;opacity:.35;">account_tree</span>
+            <span class="material-symbols-outlined text-on-surface-variant mb-3" aria-hidden="true" style="font-size:36px;opacity:.35;">account_tree</span>
             <p class="font-label-md text-label-md text-on-surface-variant" style="font-size:12px;">No layers yet.</p>
             <p class="text-body-sm text-on-surface-variant mt-1" style="font-size:12px;">Click <strong>Add Layer</strong> to start mapping your architecture.</p>
           </div>
@@ -646,7 +648,7 @@
               <button type="button" onclick="openFolderPicker('new-layer-path')"
                       class="flex items-center gap-1.5 px-3 border border-outline-variant rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant flex-shrink-0"
                       style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;letter-spacing:.04em;">
-                <span class="material-symbols-outlined" style="font-size:16px;">folder_open</span>
+                <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">folder_open</span>
                 BROWSE
               </button>
             </div>
@@ -663,15 +665,15 @@
         </div>
 
         <div class="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
-          <span class="material-symbols-outlined text-secondary flex-shrink-0" style="font-size:18px;">info</span>
+          <span class="material-symbols-outlined text-secondary flex-shrink-0" aria-hidden="true" style="font-size:18px;">info</span>
           <p class="text-body-sm text-on-surface-variant">Layer root path is scanned by Clang. Groups define logical modules. Components map to physical source folders.</p>
         </div>
         <!-- One click removes a whole layer or group: it can be undone for 10 s. -->
         <div id="undo-bar" role="status" style="display:none;position:sticky;bottom:12px;z-index:10;align-items:center;gap:12px;padding:10px 16px;background:#041627;color:#fff;border-radius:.5rem;box-shadow:0 4px 16px rgba(4,22,39,.25);">
-          <span class="material-symbols-outlined" style="font-size:16px;opacity:.7;">delete</span>
+          <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;opacity:.7;">delete</span>
           <span class="undo-label" style="flex:1;font-size:12px;"></span>
           <button onclick="undoRemove()" style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#8ab4ff;background:none;border:none;cursor:pointer;">Undo</button>
-          <button onclick="LAST_REMOVED = null; renderUndo();" aria-label="Dismiss" style="background:none;border:none;color:#fff;opacity:.7;cursor:pointer;"><span class="material-symbols-outlined" style="font-size:15px;">close</span></button>
+          <button onclick="LAST_REMOVED = null; renderUndo();" aria-label="Dismiss" style="background:none;border:none;color:#fff;opacity:.7;cursor:pointer;"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">close</span></button>
         </div>
       </div><!-- /step-3 -->
 
@@ -687,7 +689,7 @@
         <div class="card">
           <!-- Header row -->
           <div class="flex items-center gap-3 pb-3 mb-1 border-b border-outline-variant"
-               style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#74777d;">
+               style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#65686e;">
             <div style="width:28px;flex-shrink:0;"></div>
             <span class="flex-1">Member</span>
             <span style="width:120px;flex-shrink:0;">Role</span>
@@ -701,10 +703,10 @@
             </div>
             <div class="flex-1 min-w-0">
               <p class="font-label-md text-label-md text-on-surface" style="font-size:12px;">Emma Lewis <span class="text-on-surface-variant" style="font-weight:400;">(you)</span></p>
-              <p class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;">emma.lewis@company.com</p>
+              <p class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:11px;">emma.lewis@company.com</p>
             </div>
             <div style="width:120px;flex-shrink:0;">
-              <span style="display:inline-block;font-family:'JetBrains Mono';font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;background:#1a2b3c;color:#8192a7;border-radius:3px;">Admin</span>
+              <span style="display:inline-block;font-family:'JetBrains Mono';font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;background:#1a2b3c;color:#8192a7;border-radius:3px;">Admin</span>
             </div>
             <div style="width:24px;flex-shrink:0;"></div>
           </div>
@@ -718,7 +720,7 @@
               <button onclick="openAddMember()"
                       class="flex items-center gap-2 text-secondary hover:text-secondary-container transition-colors"
                       style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;">
-                <span class="material-symbols-outlined" style="font-size:16px;">person_add</span>
+                <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">person_add</span>
                 Add / Invite member
               </button>
             </div>
@@ -727,7 +729,7 @@
               <div style="position:relative;">
                 <div class="flex gap-2">
                   <div style="position:relative;flex:1;">
-                    <span class="material-symbols-outlined" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:16px;color:#74777d;pointer-events:none;">search</span>
+                    <span class="material-symbols-outlined" aria-hidden="true" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:16px;color:#65686e;pointer-events:none;">search</span>
                     <input class="inp" id="member-search" type="text" autocomplete="off"
                            placeholder="Search by name or email…"
                            style="padding-left:32px;"
@@ -736,7 +738,7 @@
                            onblur="setTimeout(memberSearchClose,150)"
                            onkeydown="memberSearchKey(event)">
                   </div>
-                  <select class="inp" id="invite-role-select" style="width:130px;flex-shrink:0;">
+                  <select class="inp" id="invite-role-select" aria-label="Role" style="width:130px;flex-shrink:0;">
                     <option value="Developer">Developer</option>
                     <option value="Admin">Admin</option>
                   </select>
@@ -756,12 +758,12 @@
 
         <!-- What each role may do: on request, not in the way. -->
         <button type="button" onclick="toggleRoles(this)" class="flex items-center gap-1 text-secondary hover:underline" style="font-size:11px;">
-          <span class="material-symbols-outlined" style="font-size:14px;">help</span><span>What can each role do?</span>
+          <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">help</span><span>What can each role do?</span>
         </button>
         <div id="role-legend" class="grid grid-cols-2 gap-3" style="display:none;">
           <div class="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
             <div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center flex-shrink-0">
-              <span class="material-symbols-outlined text-on-primary-container sym-fill" style="font-size:16px;">manage_accounts</span>
+              <span class="material-symbols-outlined text-on-primary-container sym-fill" aria-hidden="true" style="font-size:16px;">manage_accounts</span>
             </div>
             <div>
               <p class="font-label-md text-label-md text-on-surface" style="font-size:12px;font-weight:600;">Admin</p>
@@ -770,7 +772,7 @@
           </div>
           <div class="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
             <div class="w-8 h-8 rounded-lg bg-secondary-container flex items-center justify-center flex-shrink-0">
-              <span class="material-symbols-outlined text-secondary sym-fill" style="font-size:16px;">engineering</span>
+              <span class="material-symbols-outlined text-white sym-fill" aria-hidden="true" style="font-size:16px;">engineering</span>
             </div>
             <div>
               <p class="font-label-md text-label-md text-on-surface" style="font-size:12px;font-weight:600;">Developer</p>
@@ -791,13 +793,13 @@
 
         <!-- Is the project ready: what must be fixed (blocks), what it would miss (warns) - then the details. -->
         <div id="r-ready"></div>
-        <p style="padding-top:8px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#74777d;">Details</p>
+        <p style="padding-top:8px;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#65686e;">Details</p>
 
         <!-- Project Basics -->
         <div class="rev-card">
           <div class="rev-card-head">
             <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">source_environment</span>
+              <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:15px;">source_environment</span>
               <span class="font-label-md text-label-md text-on-surface" style="font-weight:600;">Project &amp; Repository</span>
             </div>
             <button onclick="goToStep(1)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
@@ -812,7 +814,7 @@
         <div class="rev-card">
           <div class="rev-card-head">
             <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">memory</span>
+              <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:15px;">memory</span>
               <span class="font-label-md text-label-md text-on-surface" style="font-weight:600;">Cores</span>
             </div>
             <button onclick="goToStep(2)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
@@ -824,14 +826,14 @@
         <div class="rev-card">
           <div class="rev-card-head">
             <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">account_tree</span>
+              <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:15px;">account_tree</span>
               <span class="font-label-md text-label-md text-on-surface" style="font-weight:600;">Architecture</span>
             </div>
             <button onclick="goToStep(3)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
           </div>
           <div class="rev-row"><span>Layers</span><span id="r-layers">—</span></div>
           <button type="button" onclick="toggleReviewTree(this)" class="w-full flex items-center gap-1.5 text-secondary hover:bg-surface-container-low" style="padding:10px 16px;border-top:1px solid #c4c6cd;font-family:'JetBrains Mono',monospace;font-size:11px;text-align:left;">
-            <span class="material-symbols-outlined" style="font-size:15px;">expand_more</span><span>Show every layer, group and component</span>
+            <span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">expand_more</span><span>Show every layer, group and component</span>
           </button>
           <div id="r-arch-tree" class="border-t border-outline-variant divide-y divide-outline-variant" style="display:none;"></div>
         </div>
@@ -840,7 +842,7 @@
         <div class="rev-card">
           <div class="rev-card-head">
             <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">group</span>
+              <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:15px;">group</span>
               <span class="font-label-md text-label-md text-on-surface" style="font-weight:600;">Team</span>
             </div>
             <button onclick="goToStep(4)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
@@ -861,11 +863,11 @@
       <div class="flex items-center gap-3">
         <button id="back-btn" onclick="doBack()"
                 class="flex items-center gap-2 px-5 py-2.5 border border-outline-variant rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors invisible">
-          <span class="material-symbols-outlined" style="font-size:16px;">arrow_back</span> Back
+          <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">arrow_back</span> Back
         </button>
         <button id="continue-btn" onclick="doContinue()"
                 class="flex items-center gap-2 px-6 py-2.5 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md hover:bg-secondary-container active:scale-[.98] transition-all">
-          Continue <span class="material-symbols-outlined" style="font-size:16px;">arrow_forward</span>
+          Continue <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">arrow_forward</span>
         </button>
       </div>
     </div>
@@ -887,7 +889,7 @@
     <p id="toast-msg" class="text-on-surface-variant mt-0.5" style="font-size:12px;"></p>
   </div>
   <button onclick="hideToast()" aria-label="Dismiss" class="text-on-surface-variant hover:text-on-surface transition-colors flex-shrink-0">
-    <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+    <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">close</span>
   </button>
 </div>
 
@@ -895,10 +897,10 @@
 <!-- ══════════════════════════════════════════
      INIT OVERLAY
      ══════════════════════════════════════════ -->
-<div id="init-overlay">
+<div id="init-overlay" role="dialog" aria-modal="true" aria-labelledby="init-title">
   <div class="bg-white rounded-2xl p-8 w-full mx-4 text-center space-y-4" style="max-width:360px;">
     <div class="w-14 h-14 rounded-2xl bg-secondary-container flex items-center justify-center mx-auto" id="init-icon">
-      <span class="material-symbols-outlined text-on-secondary-container" style="font-size:28px;">rocket_launch</span>
+      <span class="material-symbols-outlined text-on-secondary-container" aria-hidden="true" style="font-size:28px;">rocket_launch</span>
     </div>
     <h3 class="text-headline-sm text-on-surface" id="init-title">Initializing project…</h3>
     <p class="text-body-sm text-on-surface-variant" id="init-sub">Saving configuration…</p>
@@ -1006,11 +1008,11 @@ function goToStep(n) {
 
   var btn = document.getElementById('continue-btn');
   if (n === 5) {
-    btn.innerHTML = '<span class="material-symbols-outlined sym-fill" style="font-size:16px;">rocket_launch</span> Initialize Project';
+    btn.innerHTML = '<span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:16px;">rocket_launch</span> Initialize Project';
     btn.style.background = '#00a572';
     btn.style.color = '#fff';
   } else {
-    btn.innerHTML = 'Continue <span class="material-symbols-outlined" style="font-size:16px;">arrow_forward</span>';
+    btn.innerHTML = 'Continue <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">arrow_forward</span>';
     btn.style.background = '';
     btn.style.color = '';
   }
@@ -1047,7 +1049,7 @@ function renderRail() {
     var n = i + 1;
     var cls = done.has(n) ? 'done' : n === cur ? 'active' : 'pending';
     var icon = cls === 'done'
-      ? '<span class="material-symbols-outlined sym-fill" style="font-size:14px;">check</span>' : n;
+      ? '<span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:14px;">check</span>' : n;
     var titleColor = n === cur ? '#0058be' : done.has(n) ? '#0b1c30' : '#44474c';
     var bad = n <= 3 && (attempted.has(n) || done.has(n)) && issuesFor(n).length > 0;
     var subColor   = bad ? '#ba1a1a' : n === cur ? '#0058be' : '#74777d';
@@ -1139,19 +1141,19 @@ function renderStepState() {
   var many = (items.length === 1 ? 'One thing' : items.length + ' things');
   box.innerHTML = !items.length ? '' : '<div role="alert" style="padding:14px;background:#ffdad6;border:1px solid #ba1a1a;border-radius:.75rem;">'
     + '<p style="display:flex;align-items:center;gap:8px;font-family:\'JetBrains Mono\',monospace;font-size:12px;font-weight:600;color:#410002;">'
-    + '<span class="material-symbols-outlined sym-fill" style="font-size:15px;color:#ba1a1a;">error</span>' + many + ' to fix before you continue</p>'
+    + '<span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:15px;color:#ba1a1a;">error</span>' + many + ' to fix before you continue</p>'
     + '<ul style="margin:8px 0 0 24px;list-style:disc;display:grid;gap:4px;">'
     + items.map(function(t) { return '<li style="font-size:12px;color:#410002;line-height:1.45;">' + escHtml(t) + '</li>'; }).join('')
     + '</ul></div>';
   var hint = document.getElementById('step-hint');
   hint.innerHTML = items.length
-    ? '<span class="material-symbols-outlined sym-fill" style="font-size:14px;color:#ba1a1a;">error</span>'
+    ? '<span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:14px;color:#ba1a1a;">error</span>'
       + '<span class="font-label-sm text-label-sm" style="color:#ba1a1a;">' + many + ' to fix in this step</span>'
-    : '<span class="material-symbols-outlined" style="font-size:14px;">info</span>'
+    : '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">info</span>'
       + '<span class="font-label-sm text-label-sm text-on-surface-variant" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + STEP_HINTS[cur - 1] + '</span>';
   if (cur === 4) {
     document.getElementById('continue-btn').innerHTML = (members.length ? 'Continue' : 'Skip for now')
-      + ' <span class="material-symbols-outlined" style="font-size:16px;">arrow_forward</span>';
+      + ' <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">arrow_forward</span>';
   }
 }
 
@@ -1215,17 +1217,17 @@ function fileControl(c, kind, accept, types, icon) {
   var pick = 'document.getElementById(\'' + c.id + '-' + kind + '\').click()';
   if (f) {
     return '<div class="file-pill">'
-      + '<span class="material-symbols-outlined sym-fill" style="font-size:18px;color:#00a572;">' + icon + '</span>'
+      + '<span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:18px;color:#00754f;">' + icon + '</span>'
       + '<span class="n" title="' + escHtml(f.name) + '">' + escHtml(f.name) + '</span>'
       + '<span class="z">' + (f.size / 1024).toFixed(1) + ' KB</span>'
-      + '<button class="pill-btn" onclick="' + pick + '" title="Replace"><span class="material-symbols-outlined" style="font-size:17px;">swap_horiz</span></button>'
-      + '<button class="pill-btn del" onclick="clearCoreFile(\'' + c.id + '\',\'' + kind + '\')" title="Remove"><span class="material-symbols-outlined" style="font-size:17px;">close</span></button>'
+      + '<button class="pill-btn" onclick="' + pick + '" title="Replace"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:17px;">swap_horiz</span></button>'
+      + '<button class="pill-btn del" onclick="clearCoreFile(\'' + c.id + '\',\'' + kind + '\')" title="Remove"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:17px;">close</span></button>'
       + '</div>' + input;
   }
   return '<button class="upload-btn' + (exp ? ' wanted' : '') + '" onclick="' + pick + '"'
     + ' ondragover="event.preventDefault();this.classList.add(\'dragover\');" ondragleave="this.classList.remove(\'dragover\');"'
     + ' ondrop="coreFileDrop(event,\'' + c.id + '\',\'' + kind + '\')">'
-    + '<span class="material-symbols-outlined" style="font-size:18px;color:' + (exp ? '#b45309' : '#74777d') + ';">upload_file</span>'
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;color:' + (exp ? '#b45309' : '#74777d') + ';">upload_file</span>'
     + '<span class="t">' + (exp ? 'Upload <b>' + escHtml(exp) + '</b>' : 'Choose a file or drop it here') + '</span>'
     + (exp ? '' : '<span class="s">' + types + '</span>')
     + '</button>'
@@ -1261,10 +1263,10 @@ function optionalLinks(c) {
   var links = [['ddFile', 'Data dictionary'], ['ccFile', 'Compile commands']].filter(function(k) { return !showsInput(c, k[0]); });
   if (!links.length) return '';
   return '<div style="display:flex;align-items:center;gap:16px;padding:10px 16px;border-top:1px solid #eff4ff;">'
-    + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#74777d;">Optional</span>'
+    + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#65686e;">Optional</span>'
     + links.map(function(k) {
         return '<button class="switch-link" style="margin-top:0;display:flex;align-items:center;gap:3px;" onclick="openInput(\'' + c.id + '\',\'' + k[0] + '\')">'
-          + '<span class="material-symbols-outlined" style="font-size:13px;">add</span>' + k[1] + '</button>';
+          + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">add</span>' + k[1] + '</button>';
       }).join('')
     + '</div>';
 }
@@ -1276,7 +1278,7 @@ function renderCores() {
   if (count) count.textContent = CORES.length ? '· ' + CORES.length : '';
   if (!CORES.length) {
     list.innerHTML = '<div class="flex flex-col items-center justify-center py-10 text-center">'
-      + '<span class="material-symbols-outlined text-on-surface-variant mb-3" style="font-size:36px;opacity:.35;">memory</span>'
+      + '<span class="material-symbols-outlined text-on-surface-variant mb-3" aria-hidden="true" style="font-size:36px;opacity:.35;">memory</span>'
       + '<p class="font-label-md text-label-md text-on-surface-variant" style="font-size:12px;">No cores.</p>'
       + '<p class="text-body-sm text-on-surface-variant mt-1" style="font-size:12px;">Every layer is parsed without macros or a data dictionary. Click <strong>Add Core</strong> to add one.</p></div>';
     return;
@@ -1285,7 +1287,7 @@ function renderCores() {
     var used = layersUsing(c.id);
     return '<div class="core-card">'
       + '<div class="core-card-head">'
-      +   '<div class="core-chip-icon"><span class="material-symbols-outlined" style="font-size:17px;color:#8192a7;">memory</span></div>'
+      +   '<div class="core-chip-icon"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:17px;color:#8192a7;">memory</span></div>'
       +   '<div class="flex-1 min-w-0">'
       +     '<input class="core-name" value="' + escHtml(c.name) + '" onchange="renameCore(\'' + c.id + '\',this)" aria-label="Core name" title="Rename the core">'
       +     '<div class="core-uses' + (used.length ? '' : ' none') + '">'
@@ -1295,7 +1297,7 @@ function renderCores() {
       +     '</div>'
       +   '</div>'
       +   '<button onclick="removeCore(\'' + c.id + '\')" class="pill-btn del" title="Remove the core">'
-      +   '<span class="material-symbols-outlined" style="font-size:18px;">delete</span></button>'
+      +   '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">delete</span></button>'
       + '</div>'
       + coreRow('Macros', 'The <code>-D</code> set for this build', false, macrosControl(c))
       + (showsInput(c, 'ddFile') ? coreRow('Data dictionary', 'Signal names, units, ranges', true, fileControl(c, 'ddFile', '.csv', '.csv', 'menu_book')) : '')
@@ -1472,14 +1474,14 @@ var MONO = 'font-family:\'JetBrains Mono\',monospace;';
 function importBtn(label, icon, onclick, primary) {
   return '<button type="button" onclick="' + onclick + '" style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:.5rem;background:#fff;cursor:pointer;flex-shrink:0;'
     + MONO + 'font-size:11px;font-weight:600;border:1px solid ' + (primary ? '#0058be;color:#0058be;' : '#c4c6cd;color:#44474c;') + '">'
-    + '<span class="material-symbols-outlined" style="font-size:14px;">' + icon + '</span>' + label + '</button>';
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">' + icon + '</span>' + label + '</button>';
 }
 // Step 1's import: one row - an invitation before an import, a summary after it.
 function renderImportReport() {
   var row = document.getElementById('import-row');
   if (!IMPORTED) {
     row.innerHTML = '<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border:1px dashed #c4c6cd;border-radius:.75rem;background:#fff;">'
-      + '<span class="material-symbols-outlined text-secondary" style="font-size:18px;flex-shrink:0;">settings_suggest</span>'
+      + '<span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:18px;flex-shrink:0;">settings_suggest</span>'
       + '<div style="flex:1;min-width:0;"><p style="font-size:14px;color:#0b1c30;">Have a config file?</p>'
       + '<p style="font-size:11px;color:#44474c;margin-top:2px;">Fills the project, repository, cores and architecture.</p></div>'
       + importBtn('Import config', 'upload_file', "document.getElementById('import-file').click()", true)
@@ -1497,13 +1499,13 @@ function renderImportReport() {
   var n = of('check').length;
   row.innerHTML = '<div style="padding:12px 16px;border:1px solid #c4c6cd;border-radius:.75rem;background:#fff;">'
     + '<div style="display:flex;align-items:center;gap:12px;">'
-    + '<span class="material-symbols-outlined text-secondary" style="font-size:18px;flex-shrink:0;">description</span>'
+    + '<span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:18px;flex-shrink:0;">description</span>'
     + '<div style="flex:1;min-width:0;">'
     + '<p style="' + MONO + 'font-size:12px;font-weight:600;color:#0b1c30;">' + escHtml(IMPORTED) + '</p>'
     + '<p style="display:flex;flex-wrap:wrap;gap:2px 12px;margin-top:2px;font-size:11px;">'
-    + '<span style="color:#00a572;">✓ ' + of('filled').length + ' filled</span>'
+    + '<span style="color:#00754f;">✓ ' + of('filled').length + ' filled</span>'
     + (n ? '<span style="color:#b45309;">⚠ ' + n + ' need' + (n === 1 ? 's' : '') + ' attention' + (whereText ? ' (' + whereText + ')' : '') + '</span>' : '')
-    + (of('skipped').length ? '<span style="color:#74777d;">' + of('skipped').length + ' not used</span>' : '')
+    + (of('skipped').length ? '<span style="color:#65686e;">' + of('skipped').length + ' not used</span>' : '')
     + state + '</p></div>'
     + importBtn('View details', 'list_alt', 'openImportModal()', false)
     + importBtn('Replace', 'swap_horiz', "document.getElementById('import-file').click()", false)
@@ -1516,12 +1518,12 @@ function renderImportReport() {
     var list = of(level);
     if (!list.length) return '';
     var lv = IMPORT_LEVEL[level];
-    return '<section><p style="margin-bottom:8px;' + MONO + 'font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#44474c;">' + lv[2] + ' · ' + list.length + '</p>'
+    return '<section><p style="margin-bottom:8px;' + MONO + 'font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#44474c;">' + lv[2] + ' · ' + list.length + '</p>'
       + '<ul style="display:grid;gap:8px;">' + list.map(function(i) {
           return '<li style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#0b1c30;">'
-            + '<span class="material-symbols-outlined sym-fill" style="font-size:14px;color:' + lv[1] + ';flex-shrink:0;margin-top:1px;">' + lv[0] + '</span>'
+            + '<span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:14px;color:' + lv[1] + ';flex-shrink:0;margin-top:1px;">' + lv[0] + '</span>'
             + '<span style="flex:1;line-height:1.45;">' + codeText(i[1]) + '</span>'
-            + '<span style="flex-shrink:0;' + MONO + 'font-size:9px;color:#74777d;white-space:nowrap;margin-top:1px;">' + importWhere(i[1]) + '</span></li>';
+            + '<span style="flex-shrink:0;' + MONO + 'font-size:11px;color:#65686e;white-space:nowrap;margin-top:1px;">' + importWhere(i[1]) + '</span></li>';
         }).join('') + '</ul></section>';
   }).join('');
 }
@@ -1539,7 +1541,7 @@ function toggleLayer(head) {
     body = document.createElement('div');
     body.className = 'layer-body';
     body.innerHTML = '<div class="groups-container"></div>'
-      + '<button onclick="addGroup(this)" class="add-group-btn"><span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Group</button>'
+      + '<button onclick="addGroup(this)" class="add-group-btn"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;">add</span> Add Group</button>'
       + libPathLink();
     block.appendChild(body);
     icon.textContent = 'keyboard_arrow_down';
@@ -1559,15 +1561,15 @@ function collapseLayer(block) {
 
 // Lib paths are optional: a link until the layer has one.
 function libPathLink() {
-  return '<button onclick="openLibPaths(this)" class="add-group-btn" style="color:#74777d;" title="External include paths (-I flags) for this layer.">'
-    + '<span class="material-symbols-outlined" style="font-size:12px;">add</span> Lib path <span style="font-weight:400;">(optional)</span></button>';
+  return '<button onclick="openLibPaths(this)" class="add-group-btn" style="color:#65686e;" title="External include paths (-I flags) for this layer.">'
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;">add</span> Lib path <span style="font-weight:400;">(optional)</span></button>';
 }
 function openLibPaths(btn) {
   var sec = document.createElement('div');
   sec.className = 'inc-paths-section';
   sec.innerHTML = '<div class="inc-paths-row"><div class="inc-paths-label" title="External include paths (-I flags) for this layer.">Lib Paths</div>'
     + '<div class="inc-paths-content"><div class="ext-paths-list"></div>'
-    + '<button onclick="addExtPath(this)" class="inc-add-btn"><span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle;">add</span> Add path</button>'
+    + '<button onclick="addExtPath(this)" class="inc-add-btn"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;vertical-align:middle;">add</span> Add path</button>'
     + '</div></div>';
   btn.replaceWith(sec);
   addExtPath(sec.querySelector('.inc-add-btn'));
@@ -1621,7 +1623,7 @@ function addGroup(btn) {
   row.innerHTML = '<input class="inline-add-input" type="text" placeholder="Group name…" autocomplete="off">'
     + '<button class="inline-add-confirm" onclick="confirmAddGroup(this)">Add</button>'
     + '<button class="inline-add-cancel" onclick="this.closest(\'.inline-add-row\').remove()">'
-    + '<span class="material-symbols-outlined" style="font-size:14px;">close</span></button>';
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">close</span></button>';
   container.appendChild(row);
   var inp = row.querySelector('.inline-add-input');
   inp.focus();
@@ -1636,14 +1638,14 @@ function groupEl(name) {
   var grp = document.createElement('div');
   grp.className = 'tree-group';
   grp.innerHTML = '<div class="tree-group-row">'
-    + '<button onclick="toggleTreeGroup(this)" class="tree-toggle"><span class="material-symbols-outlined" style="font-size:14px;">keyboard_arrow_down</span></button>'
-    + '<span class="material-symbols-outlined text-secondary" style="font-size:14px;">folder_open</span>'
+    + '<button onclick="toggleTreeGroup(this)" class="tree-toggle"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">keyboard_arrow_down</span></button>'
+    + '<span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:14px;">folder_open</span>'
     + '<span class="font-label-md text-on-surface flex-1" style="font-size:13px;">' + escHtml(name) + '</span>'
-    + '<button onclick="removeGroup(this)" class="p-1 text-on-surface-variant hover:text-error transition-colors"><span class="material-symbols-outlined" style="font-size:14px;">close</span></button>'
+    + '<button onclick="removeGroup(this)" class="p-1 text-on-surface-variant hover:text-error transition-colors"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">close</span></button>'
     + '</div>'
     + '<div class="tree-children">'
     + '<button onclick="addComponent(this)" class="add-group-btn" style="padding-left:20px;">'
-    + '<span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Component</button>'
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;">add</span> Add Component</button>'
     + '</div>';
   return grp;
 }
@@ -1721,17 +1723,17 @@ function componentEl(name, files, collapsed) {
   block.dataset.compName = name;
   block.innerHTML = '<div class="tree-comp-row">'
     + '<button onclick="toggleCompFiles(this)" class="tree-toggle">'
-    + '<span class="material-symbols-outlined" style="font-size:13px;">' + (open ? 'keyboard_arrow_down' : 'keyboard_arrow_right') + '</span></button>'
-    + '<span class="material-symbols-outlined text-secondary" style="font-size:13px;opacity:.6;">folder</span>'
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">' + (open ? 'keyboard_arrow_down' : 'keyboard_arrow_right') + '</span></button>'
+    + '<span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:13px;opacity:.6;">folder</span>'
     + '<span class="font-label-md text-on-surface flex-1" style="font-size:13px;">' + escHtml(name) + '</span>'
     + (collapsed && files.length ? '<span class="font-label-sm text-label-sm text-on-surface-variant" style="margin-right:4px;">' + files.length + (files.length === 1 ? ' path' : ' paths') + '</span>' : '')
     + '<button onclick="removeComponent(this)" class="p-1 text-on-surface-variant hover:text-error transition-colors">'
-    + '<span class="material-symbols-outlined" style="font-size:13px;">close</span></button>'
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">close</span></button>'
     + '</div>'
     + '<div class="comp-files' + (open ? '' : ' hidden') + '">'
     + files.map(function(f) {
         return '<div class="file-row" data-filename="' + escHtml(f) + '">'
-          + '<span class="material-symbols-outlined" style="font-size:12px;color:#b0b3b8;">' + (/\.[a-z]+$/i.test(f) ? 'description' : 'folder') + '</span>'
+          + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;color:#b0b3b8;">' + (/\.[a-z]+$/i.test(f) ? 'description' : 'folder') + '</span>'
           + escHtml(f) + '</div>';
       }).join('')
     + '</div>';
@@ -1867,21 +1869,21 @@ function layerEl(name, path, coreId) {
   var block = document.createElement('div');
   block.className = 'layer-block';
   block.innerHTML = '<div class="layer-head" onclick="toggleLayer(this)">'
-    + '<span class="material-symbols-outlined" style="font-size:15px;color:#44474c;">keyboard_arrow_down</span>'
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;color:#44474c;">keyboard_arrow_down</span>'
     + '<div class="flex-1 min-w-0">'
     + '<div class="font-label-md font-bold text-on-surface" style="font-size:13px;line-height:1.3;">' + escHtml(name) + '</div>'
     + '<div style="display:flex;align-items:baseline;gap:6px;min-width:0;">'
     + '<span class="layer-path-display' + (path ? '' : ' empty') + '" onclick="event.stopPropagation();startEditPath(this)">' + (path ? escHtml(path) : 'Set root path…') + '</span>'
-    + '<span class="layer-summary" style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#74777d;white-space:nowrap;"></span>'
+    + '<span class="layer-summary" style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#65686e;white-space:nowrap;"></span>'
     + '</div>'
     + '</div>'
     + '<label class="layer-core" onclick="event.stopPropagation()">Core'
     + '<select class="layer-core-select">' + coreOptions(coreId) + '</select></label>'
-    + '<button onclick="event.stopPropagation();removeLayer(this);" class="p-1 text-on-surface-variant hover:text-error transition-colors"><span class="material-symbols-outlined" style="font-size:15px;">close</span></button>'
+    + '<button onclick="event.stopPropagation();removeLayer(this);" class="p-1 text-on-surface-variant hover:text-error transition-colors"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">close</span></button>'
     + '</div>'
     + '<div class="layer-body">'
     + '<div class="groups-container"></div>'
-    + '<button onclick="addGroup(this)" class="add-group-btn"><span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Group</button>'
+    + '<button onclick="addGroup(this)" class="add-group-btn"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;">add</span> Add Group</button>'
     + libPathLink()
     + '</div>';
   return block;
@@ -1916,7 +1918,7 @@ function startEditPath(span) {
   browseBtn.type = 'button';
   browseBtn.title = 'Browse folder';
   browseBtn.style.cssText = 'flex-shrink:0;background:none;border:none;cursor:pointer;color:#0058be;padding:0;display:flex;align-items:center;';
-  browseBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:13px;">folder_open</span>';
+  browseBtn.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">folder_open</span>';
   browseBtn.onclick = function(e) {
     e.stopPropagation();
     openFolderPicker(inp); // pass the input element directly
@@ -1942,12 +1944,12 @@ function addExtPath(btn) {
   if (!list) return;
   var row = document.createElement('div');
   row.className = 'ext-path-row';
-  row.innerHTML = '<span class="material-symbols-outlined" style="font-size:13px;color:#00a572;flex-shrink:0;">folder_open</span>'
+  row.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;color:#00754f;flex-shrink:0;">folder_open</span>'
     + '<input class="ext-path-input" type="text" placeholder="/path/to/include">'
     + '<button type="button" class="ext-browse-btn" onclick="openFolderPicker(this.closest(\'.ext-path-row\').querySelector(\'.ext-path-input\'))">'
-    + '<span class="material-symbols-outlined" style="font-size:11px;">folder_open</span>BROWSE</button>'
-    + '<button onclick="removeExtPath(this)" style="display:flex;align-items:center;background:none;border:none;cursor:pointer;padding:0;color:#74777d;" onmouseover="this.style.color=\'#ba1a1a\'" onmouseout="this.style.color=\'#74777d\'">'
-    + '<span class="material-symbols-outlined" style="font-size:13px;line-height:1;">close</span></button>';
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:11px;">folder_open</span>BROWSE</button>'
+    + '<button onclick="removeExtPath(this)" style="display:flex;align-items:center;background:none;border:none;cursor:pointer;padding:0;color:#65686e;" onmouseover="this.style.color=\'#ba1a1a\'" onmouseout="this.style.color=\'#74777d\'">'
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;line-height:1;">close</span></button>';
   list.appendChild(row);
   row.querySelector('.ext-path-input').focus();
 }
@@ -2040,10 +2042,10 @@ function memberSearchFilter(q) {
     // Use single-quoted attribute so JSON.stringify double quotes don't break HTML
     return "<div class='ms-item' data-idx='" + i + "'"
       + " onmousedown='memberSearchSelect(" + JSON.stringify(u.email) + "," + JSON.stringify(u.name) + ")'>"
-      + '<div class="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center flex-shrink-0" style="font-family:Inter;font-size:10px;font-weight:700;color:#0058be;">' + ini + '</div>'
+      + '<div class="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center flex-shrink-0" style="font-family:Inter;font-size:11px;font-weight:700;color:#0058be;">' + ini + '</div>'
       + '<div class="flex-1 min-w-0">'
       + '<p style="font-size:13px;color:#0b1c30;line-height:1.3;">' + escHtml(u.name) + '</p>'
-      + '<p style="font-size:11px;color:#74777d;font-family:\'JetBrains Mono\',monospace;">' + escHtml(u.email) + '</p>'
+      + '<p style="font-size:11px;color:#65686e;font-family:\'JetBrains Mono\',monospace;">' + escHtml(u.email) + '</p>'
       + '</div></div>';
   }).join('');
 
@@ -2052,15 +2054,15 @@ function memberSearchFilter(q) {
   var exactMatch = KNOWN_USERS.some(function(u) { return u.email.toLowerCase() === ql; });
   if (raw && isEmail && !exactMatch && !alreadyAdded.includes(raw.toLowerCase())) {
     html += "<div class='ms-item ms-invite' onmousedown='memberSearchSelect(" + JSON.stringify(raw.toLowerCase()) + ", null)'>"
-      + '<span class="material-symbols-outlined" style="font-size:16px;color:#00a572;flex-shrink:0;">mail</span>'
+      + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:#00754f;flex-shrink:0;">mail</span>'
       + '<div class="flex-1 min-w-0">'
       + '<p style="font-size:13px;color:#0b1c30;">Send invite to <strong>' + escHtml(raw) + '</strong></p>'
-      + '<p style="font-size:11px;color:#74777d;">Not yet in the organisation</p>'
+      + '<p style="font-size:11px;color:#65686e;">Not yet in the organisation</p>'
       + '</div></div>';
   }
 
   if (!html) {
-    html = '<p style="padding:10px 12px;font-size:12px;color:#74777d;">No matches — type a full email to invite</p>';
+    html = '<p style="padding:10px 12px;font-size:12px;color:#65686e;">No matches — type a full email to invite</p>';
   }
 
   dd.innerHTML = html;
@@ -2126,18 +2128,18 @@ function renderMemberList() {
       + '<span style="font-family:Inter;font-size:11px;font-weight:700;color:' + avatarClr + ';">' + escHtml(ini) + '</span></div>'
       + '<div class="flex-1 min-w-0">'
       + '<p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">' + escHtml(label) + '</p>'
-      + '<p class="font-label-sm text-label-sm text-on-surface-variant truncate" style="font-size:10px;">' + escHtml(sub) + '</p>'
+      + '<p class="font-label-sm text-label-sm text-on-surface-variant truncate" style="font-size:11px;">' + escHtml(sub) + '</p>'
       + '</div>'
       + '<div style="width:120px;flex-shrink:0;">'
       + '<select onchange="setMemberRole(' + JSON.stringify(m.email) + ', this.value)" '
-      + 'style="font-family:\'JetBrains Mono\';font-size:10px;font-weight:600;letter-spacing:.04em;padding:3px 6px;border:1px solid #c4c6cd;border-radius:4px;background:#fff;color:#0b1c30;outline:none;width:100%;">'
+      + 'style="font-family:\'JetBrains Mono\';font-size:11px;font-weight:600;letter-spacing:.04em;padding:3px 6px;border:1px solid #c4c6cd;border-radius:4px;background:#fff;color:#0b1c30;outline:none;width:100%;">'
       + '<option value="Developer"' + (m.role === 'Developer' ? ' selected' : '') + '>Developer</option>'
       + '<option value="Admin"' + (m.role === 'Admin' ? ' selected' : '') + '>Admin</option>'
       + '</select>'
       + '</div>'
       + '<div style="width:24px;flex-shrink:0;">'
       + '<button onclick="removeMember(' + JSON.stringify(m.email) + ')" class="text-on-surface-variant hover:text-error transition-colors">'
-      + '<span class="material-symbols-outlined" style="font-size:16px;">close</span></button>'
+      + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">close</span></button>'
       + '</div>'
       + '</div>';
   }).join('');
@@ -2158,15 +2160,15 @@ function rTeamRow(name, email, role, pending, isYou) {
   var roleColor = role === 'Admin' ? '#8192a7' : '#0058be';
   return '<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid #eff4ff;">'
     + '<div style="width:30px;height:30px;border-radius:50%;background:' + avatarBg + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;">'
-    + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;font-weight:700;color:#fff;letter-spacing:.04em;">' + initials + '</span>'
+    + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;color:#fff;letter-spacing:.04em;">' + initials + '</span>'
     + '</div>'
     + '<div style="flex:1;min-width:0;">'
     + '<div style="font-family:Inter,sans-serif;font-size:12px;font-weight:500;color:#0b1c30;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
-    + escHtml(displayName) + (isYou ? ' <span style="color:#74777d;font-weight:400;">(you)</span>' : '') + '</div>'
-    + '<div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#74777d;margin-top:1px;">' + escHtml(email) + '</div>'
+    + escHtml(displayName) + (isYou ? ' <span style="color:#65686e;font-weight:400;">(you)</span>' : '') + '</div>'
+    + '<div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#65686e;margin-top:1px;">' + escHtml(email) + '</div>'
     + '</div>'
-    + '<span style="flex-shrink:0;font-family:\'JetBrains Mono\',monospace;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:3px;background:' + roleBg + ';color:' + roleColor + ';">' + escHtml(role) + '</span>'
-    + (pending ? '<span style="flex-shrink:0;font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#74777d;background:#f8f9ff;border:1px solid #c4c6cd;padding:2px 6px;border-radius:3px;margin-left:4px;">Invited</span>' : '')
+    + '<span style="flex-shrink:0;font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:3px;background:' + roleBg + ';color:' + roleColor + ';">' + escHtml(role) + '</span>'
+    + (pending ? '<span style="flex-shrink:0;font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#65686e;background:#f8f9ff;border:1px solid #c4c6cd;padding:2px 6px;border-radius:3px;margin-left:4px;">Invited</span>' : '')
     + '</div>';
 }
 
@@ -2178,7 +2180,7 @@ function renderReadiness(items) {
   var MONO = 'font-family:\'JetBrains Mono\',monospace;';
   document.getElementById('r-ready').innerHTML = '<div style="border:1px solid ' + (errors ? '#ba1a1a' : '#c4c6cd') + ';border-radius:.75rem;background:#fff;overflow:hidden;">'
     + '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #c4c6cd;background:' + (errors ? '#ffdad6' : '#f0fff9') + ';">'
-    + '<span class="material-symbols-outlined sym-fill" style="font-size:18px;color:' + (errors ? '#ba1a1a' : '#00a572') + ';">' + (errors ? 'block' : 'rocket_launch') + '</span>'
+    + '<span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:18px;color:' + (errors ? '#ba1a1a' : '#00a572') + ';">' + (errors ? 'block' : 'rocket_launch') + '</span>'
     + '<div><p style="font-size:14px;font-weight:600;color:' + (errors ? '#410002' : '#0b1c30') + ';">'
     + (errors ? (errors === 1 ? 'One thing' : errors + ' things') + ' to fix before the project can be created' : 'Ready to create') + '</p>'
     + (warns ? '<p style="font-size:11px;color:#44474c;margin-top:2px;">' + (warns === 1 ? 'One thing' : warns + ' things') + ' it would miss - fine to create now and fix later.</p>' : '')
@@ -2186,7 +2188,7 @@ function renderReadiness(items) {
     + items.map(function(i) {
         var lk = LOOK[i[0]];
         return '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 16px;border-top:1px solid #eff4ff;">'
-          + '<span class="material-symbols-outlined sym-fill" style="font-size:16px;color:' + lk[1] + ';flex-shrink:0;margin-top:1px;">' + lk[0] + '</span>'
+          + '<span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:16px;color:' + lk[1] + ';flex-shrink:0;margin-top:1px;">' + lk[0] + '</span>'
           + '<div style="flex:1;min-width:0;"><p style="font-size:12px;color:#0b1c30;">' + escHtml(i[1]) + '</p>'
           + (i[2] ? '<p style="font-size:11px;color:#44474c;margin-top:2px;">' + codeText(i[2]) + '</p>' : '') + '</div>'
           + (i[3] && i[0] !== 'ok' ? '<button onclick="goToStep(' + i[3] + ')" style="flex-shrink:0;background:none;border:none;cursor:pointer;' + MONO + 'font-size:11px;font-weight:600;color:#0058be;">Fix in step ' + i[3] + '</button>' : '')
@@ -2240,21 +2242,21 @@ function populateReview() {
     var used = layersUsing(c.id);
     return '<div style="padding:10px 16px;border-bottom:1px solid #eff4ff;">'
       + '<div style="display:flex;align-items:center;gap:6px;">'
-      + '<span class="material-symbols-outlined text-secondary" style="font-size:14px;">memory</span>'
+      + '<span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:14px;">memory</span>'
       + '<span style="' + mono + 'font-size:11px;font-weight:700;color:#0b1c30;">' + escHtml(c.name) + '</span>'
-      + '<span style="margin-left:auto;' + mono + 'font-size:10px;color:' + (used.length ? '#44474c' : '#b45309') + ';">'
+      + '<span style="margin-left:auto;' + mono + 'font-size:11px;color:' + (used.length ? '#44474c' : '#b45309') + ';">'
       + (used.length ? 'used by ' + used.map(escHtml).join(', ') : 'no layer uses it') + '</span></div>'
-      + '<div style="margin:4px 0 0 20px;' + mono + 'font-size:10px;color:#74777d;">'
+      + '<div style="margin:4px 0 0 20px;' + mono + 'font-size:11px;color:#65686e;">'
       + escHtml(macros) + ' · ' + escHtml(c.ddFile ? c.ddFile.name : 'no dictionary') + ' · '
       + escHtml(c.ccFile ? c.ccFile.name : 'no compile commands') + '</div></div>';
   }).join('');
   var noCore = layersUsing('');
   if (noCore.length) {
-    coreRows += '<div style="padding:10px 16px;' + mono + 'font-size:10px;color:#74777d;">No core: '
+    coreRows += '<div style="padding:10px 16px;' + mono + 'font-size:11px;color:#65686e;">No core: '
       + noCore.map(escHtml).join(', ') + '</div>';
   }
   document.getElementById('r-cores').innerHTML = coreRows
-    || '<div style="padding:12px 16px;' + mono + 'font-size:11px;color:#74777d;">No cores</div>';
+    || '<div style="padding:12px 16px;' + mono + 'font-size:11px;color:#65686e;">No cores</div>';
 
   // ── Architecture ──
   var layers = document.querySelectorAll('#arch-tree .layer-block');
@@ -2276,11 +2278,11 @@ function populateReview() {
     rows += '<div style="padding:10px 16px;">';
     // Layer row
     rows += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">'
-      + '<span class="material-symbols-outlined text-secondary" style="font-size:14px;">layers</span>'
+      + '<span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:14px;">layers</span>'
       + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;color:#0b1c30;">' + escHtml(lName) + '</span>'
-      + (lPath ? '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#74777d;margin-left:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escHtml(lPath) + '</span>' : '')
-      + '<span style="margin-left:auto;font-family:\'JetBrains Mono\',monospace;font-size:9px;font-weight:600;padding:2px 7px;border-radius:3px;'
-      + (core ? 'background:#e5eeff;color:#0058be;">' + escHtml(core.name) : 'background:#f3f4f6;color:#74777d;">no core') + '</span>'
+      + (lPath ? '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#65686e;margin-left:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escHtml(lPath) + '</span>' : '')
+      + '<span style="margin-left:auto;font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:600;padding:2px 7px;border-radius:3px;'
+      + (core ? 'background:#e5eeff;color:#0058be;">' + escHtml(core.name) : 'background:#f3f4f6;color:#65686e;">no core') + '</span>'
       + '</div>';
 
     // Lib paths for this layer
@@ -2289,14 +2291,14 @@ function populateReview() {
     if (libPaths.length) {
       rows += '<div style="display:flex;align-items:center;gap:4px;margin-left:16px;margin-bottom:4px;flex-wrap:wrap;gap:4px;">';
       libPaths.forEach(function(p) {
-        rows += '<span style="display:inline-flex;align-items:center;gap:3px;background:#f0faf6;border:1px solid rgba(0,165,114,.2);border-radius:4px;padding:2px 7px;font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#006e45;">'
-          + '<span class="material-symbols-outlined" style="font-size:10px;color:#00a572;">folder</span>' + escHtml(p) + '</span>';
+        rows += '<span style="display:inline-flex;align-items:center;gap:3px;background:#f0faf6;border:1px solid rgba(0,165,114,.2);border-radius:4px;padding:2px 7px;font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#006e45;">'
+          + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:11px;color:#00754f;">folder</span>' + escHtml(p) + '</span>';
       });
       rows += '</div>';
     }
 
     if (!groups.length) {
-      rows += '<div style="margin-left:20px;font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#74777d;">No groups defined</div>';
+      rows += '<div style="margin-left:20px;font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#65686e;">No groups defined</div>';
     }
 
     groups.forEach(function(group) {
@@ -2307,13 +2309,13 @@ function populateReview() {
       // Group row
       rows += '<div style="margin-left:16px;border-left:2px solid #e5eeff;padding-left:8px;margin-top:4px;">';
       rows += '<div style="display:flex;align-items:center;gap:5px;padding:3px 0;">'
-        + '<span class="material-symbols-outlined text-secondary" style="font-size:13px;">folder_open</span>'
-        + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;font-weight:600;color:#0b1c30;">' + escHtml(gName) + '</span>'
-        + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#74777d;margin-left:4px;">' + comps.length + ' comp' + (comps.length !== 1 ? 's' : '') + '</span>'
+        + '<span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:13px;">folder_open</span>'
+        + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:600;color:#0b1c30;">' + escHtml(gName) + '</span>'
+        + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#65686e;margin-left:4px;">' + comps.length + ' comp' + (comps.length !== 1 ? 's' : '') + '</span>'
         + '</div>';
 
       if (!comps.length) {
-        rows += '<div style="margin-left:18px;font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#b0b3b8;padding:2px 0;">No components</div>';
+        rows += '<div style="margin-left:18px;font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#b0b3b8;padding:2px 0;">No components</div>';
       }
 
       comps.forEach(function(comp) {
@@ -2323,16 +2325,16 @@ function populateReview() {
         // Component row
         rows += '<div style="margin-left:16px;border-left:2px solid #eff4ff;padding-left:8px;margin-top:3px;">';
         rows += '<div style="display:flex;align-items:center;gap:5px;padding:2px 0;">'
-          + '<span class="material-symbols-outlined" style="font-size:12px;color:#0058be;opacity:.75;">folder</span>'
-          + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#0b1c30;">' + escHtml(cName) + '</span>'
-          + (files.length ? '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#0058be;background:#e5eeff;padding:1px 5px;border-radius:3px;margin-left:4px;">' + files.length + ' file' + (files.length !== 1 ? 's' : '') + '</span>' : '')
+          + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;color:#0058be;opacity:.75;">folder</span>'
+          + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#0b1c30;">' + escHtml(cName) + '</span>'
+          + (files.length ? '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#0058be;background:#e5eeff;padding:1px 5px;border-radius:3px;margin-left:4px;">' + files.length + ' file' + (files.length !== 1 ? 's' : '') + '</span>' : '')
           + '</div>';
 
         // File rows
         files.forEach(function(f) {
           rows += '<div style="margin-left:18px;display:flex;align-items:center;gap:4px;padding:1px 0;">'
-            + '<span class="material-symbols-outlined" style="font-size:11px;color:#b0b3b8;">description</span>'
-            + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#44474c;">' + escHtml(f) + '</span>'
+            + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:11px;color:#b0b3b8;">description</span>'
+            + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#44474c;">' + escHtml(f) + '</span>'
             + '</div>';
         });
         rows += '</div>';
@@ -2341,7 +2343,7 @@ function populateReview() {
     });
     rows += '</div>';
   });
-  archOut.innerHTML = rows || '<p style="padding:12px 16px;font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#74777d;">No layers defined.</p>';
+  archOut.innerHTML = rows || '<p style="padding:12px 16px;font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#65686e;">No layers defined.</p>';
 
   // ── Team ──
   var adminCount = 1 + members.filter(function(m) { return m.role === 'Admin'; }).length;
@@ -2383,7 +2385,7 @@ function initProject() {
     pct.textContent = step[0] + '%';
     sub.textContent = step[1];
     if (step[0] === 100) {
-      document.getElementById('init-icon').innerHTML = '<span class="material-symbols-outlined sym-fill" style="font-size:28px;color:#00a572;">check_circle</span>';
+      document.getElementById('init-icon').innerHTML = '<span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:28px;color:#00754f;">check_circle</span>';
       document.getElementById('init-icon').style.background = 'rgba(0,165,114,.15)';
       document.getElementById('init-title').textContent = 'Project created!';
       setTimeout(function() { window.location.href = 'project-detail.html'; }, 900);
@@ -2410,6 +2412,7 @@ function toggleToken() {
   var icon = document.getElementById('token-eye');
   if (inp.type === 'password') { inp.type = 'text'; icon.textContent = 'visibility'; }
   else                         { inp.type = 'password'; icon.textContent = 'visibility_off'; }
+  icon.parentElement.setAttribute('aria-pressed', inp.type === 'text');
 }
 
 // ════════════════════════════════════════
@@ -2443,7 +2446,7 @@ function renderBranchList(q) {
       + ' aria-selected="' + on + '" data-i="' + i + '" onmousedown="event.preventDefault(); branchPick(' + i + ')">'
       + '<span class="nm">' + escHtml(b) + '</span>'
       + (b === SAMPLE_DEFAULT_BRANCH ? '<span class="tag">default</span>' : '')
-      + (on ? '<span class="material-symbols-outlined" style="font-size:16px;">check</span>' : '')
+      + (on ? '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">check</span>' : '')
       + '</div>';
   }).join('');
   var dd = document.getElementById('branch-dd');
@@ -2667,24 +2670,24 @@ function confirmRepoBrowser() {
 
 function renderRepoBrowser() {
   document.getElementById('rb-crumbs').innerHTML =
-    '<button class="rb-crumb" onclick="rbCrumb(0)"><span class="material-symbols-outlined" style="font-size:14px;">dns</span>This server</button>'
+    '<button class="rb-crumb" onclick="rbCrumb(0)"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">dns</span>This server</button>'
     + RB_PATH.map(function(p, i) {
       return '<span class="rb-sep">›</span><button class="rb-crumb" onclick="rbCrumb(' + (i + 1) + ')">' + escHtml(p) + '</button>';
     }).join('');
   var rows = rbChildren(RB_PATH).map(function(name, i) {
     var node = rbNode(RB_PATH.concat([name]));
     if (!RB_PATH.length) {
-      return '<div class="rb-row" onclick="rbOpen(' + i + ')"><span class="material-symbols-outlined" style="font-size:16px;color:#74777d;">hard_drive</span>'
-        + '<span class="nm">' + escHtml(name) + '</span><span class="material-symbols-outlined" style="font-size:16px;color:#74777d;">chevron_right</span></div>';
+      return '<div class="rb-row" onclick="rbOpen(' + i + ')"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:#65686e;">hard_drive</span>'
+        + '<span class="nm">' + escHtml(name) + '</span><span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:#65686e;">chevron_right</span></div>';
     }
     if (node._git) {
       return '<div class="rb-row" data-path="' + escHtml(rbJoin(RB_PATH.concat([name]))) + '" onclick="rbPick(' + i + ')" ondblclick="rbPick(' + i + '); confirmRepoBrowser()">'
-        + '<span class="material-symbols-outlined" style="font-size:16px;color:#006e45;">source</span>'
+        + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:#006e45;">source</span>'
         + '<span class="nm">' + escHtml(name) + '</span><span class="rb-git">git</span>'
-        + '<span class="material-symbols-outlined rb-check" style="font-size:16px;visibility:hidden;">check</span></div>';
+        + '<span class="material-symbols-outlined rb-check" aria-hidden="true" style="font-size:16px;visibility:hidden;">check</span></div>';
     }
-    return '<div class="rb-row" onclick="rbOpen(' + i + ')"><span class="material-symbols-outlined text-secondary" style="font-size:16px;">folder</span>'
-      + '<span class="nm">' + escHtml(name) + '/</span><span class="material-symbols-outlined" style="font-size:16px;color:#74777d;">chevron_right</span></div>';
+    return '<div class="rb-row" onclick="rbOpen(' + i + ')"><span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:16px;">folder</span>'
+      + '<span class="nm">' + escHtml(name) + '/</span><span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:#65686e;">chevron_right</span></div>';
   });
   document.getElementById('rb-list').innerHTML = rows.join('') || '<div class="rb-empty">No folders here</div>';
   rbMarkPicked();
@@ -2712,7 +2715,7 @@ document.addEventListener('keydown', function(e) {
 function connectFailed(msg) {
   var statusEl = document.getElementById('test-conn-status');
   statusEl.style.color = '#ba1a1a';
-  statusEl.innerHTML = '<span style="vertical-align:middle;font-size:14px;margin-right:3px;" class="material-symbols-outlined sym-fill">error</span> ' + escHtml(msg);
+  statusEl.innerHTML = '<span style="vertical-align:middle;font-size:14px;margin-right:3px;" class="material-symbols-outlined sym-fill" aria-hidden="true">error</span> ' + escHtml(msg);
 }
 
 // What the server answers for a local path - simulated here: a path with "missing" in it does
@@ -2778,8 +2781,8 @@ function testConnection() {
 
     document.getElementById('branch-field').classList.remove('hidden');
     refreshStepState();
-    statusEl.style.color = '#00a572';
-    statusEl.innerHTML = '<span style="vertical-align:middle;font-size:14px;margin-right:3px;" class="material-symbols-outlined sym-fill">check_circle</span> Connected · ' + branches.length + ' branches found';
+    statusEl.style.color = '#00754f';
+    statusEl.innerHTML = '<span style="vertical-align:middle;font-size:14px;margin-right:3px;" class="material-symbols-outlined sym-fill" aria-hidden="true">check_circle</span> Connected · ' + branches.length + ' branches found';
     if (IMPORTED && !IMPORT_CHECKED) checkImportAgainstRepo();   // the imported config, against this branch
   }, 1200);
 }
@@ -2867,8 +2870,8 @@ function renderFpNodes(nodes, expanded) {
     return '<div class="fp-node">'
       + "<div class='fp-folder-row' onclick='fpRowClick(event,this,\"" + pathAttr + "\"," + (hasChildren ? 'true' : 'false') + ")'>"
       + '<button class="tree-toggle" onclick="event.stopPropagation();fpToggle(this)" style="' + (hasChildren ? '' : 'visibility:hidden;') + '">'
-      + '<span class="material-symbols-outlined" style="font-size:14px;">' + (expanded ? 'keyboard_arrow_down' : 'keyboard_arrow_right') + '</span></button>'
-      + '<span class="material-symbols-outlined text-secondary" style="font-size:15px;">' + (expanded ? 'folder_open' : 'folder') + '</span>'
+      + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">' + (expanded ? 'keyboard_arrow_down' : 'keyboard_arrow_right') + '</span></button>'
+      + '<span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:15px;">' + (expanded ? 'folder_open' : 'folder') + '</span>'
       + '<span class="fp-name" style="font-family:\'JetBrains Mono\';font-size:11px;color:#0b1c30;flex:1;">' + escHtml(node.name) + '/</span>'
       + '</div>'
       + (hasChildren ? '<div class="fp-children"' + (expanded ? '' : ' style="display:none;"') + '>' + childrenHtml + '</div>' : '')
@@ -2941,7 +2944,7 @@ function fpToggle(btn) {
       <p class="text-on-surface-variant mt-0.5" style="font-size:11px;line-height:16px;">Folders on the server ArtiFex runs on. Only a git repository can be picked.</p>
     </div>
     <button onclick="closeRepoBrowser()" aria-label="Close" class="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-colors">
-      <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+      <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">close</span>
     </button>
   </div>
   <!-- Where we are: each part goes back there -->
@@ -2949,7 +2952,7 @@ function fpToggle(btn) {
   <!-- The folder's folders: a plain one opens, a git repository is picked (double-click: picked and used) -->
   <div id="rb-list" class="flex-1 overflow-y-auto px-2 py-2"></div>
   <div class="px-4 py-3 border-t border-outline-variant flex-shrink-0 space-y-2.5">
-    <p id="rb-picked" style="font:500 11px/16px 'JetBrains Mono',monospace;color:#74777d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Pick a git repository</p>
+    <p id="rb-picked" style="font:500 11px/16px 'JetBrains Mono',monospace;color:#65686e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Pick a git repository</p>
     <div class="flex gap-3">
       <button onclick="closeRepoBrowser()" class="px-4 py-2 border border-outline-variant text-on-surface-variant rounded-lg font-label-md text-label-md hover:bg-surface-container transition-colors">Cancel</button>
       <button id="rb-use" onclick="confirmRepoBrowser()" class="flex-1 py-2 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md hover:bg-secondary-container transition-colors">Use this repository</button>
@@ -2959,14 +2962,14 @@ function fpToggle(btn) {
 
 <!-- ══ FOLDER PICKER SIDEBAR ══ -->
 <div id="folder-picker-backdrop" class="hidden fixed inset-0 z-[99]" style="background:rgba(4,22,39,.25);" onclick="closeFolderPicker()"></div>
-<div id="folder-picker" class="hidden fixed top-0 right-0 h-screen bg-white border-l border-outline-variant z-[100] flex flex-col" style="width:320px;box-shadow:-4px 0 24px rgba(4,22,39,.12);">
+<div id="folder-picker" role="dialog" aria-modal="true" aria-label="Select folder" class="hidden fixed top-0 right-0 h-screen bg-white border-l border-outline-variant z-[100] flex flex-col" style="width:320px;box-shadow:-4px 0 24px rgba(4,22,39,.12);">
   <div class="flex items-center justify-between px-5 py-4 border-b border-outline-variant flex-shrink-0">
     <div>
       <h3 class="text-headline-sm text-on-surface" style="font-size:14px;">Select Folder</h3>
       <p class="text-body-sm text-on-surface-variant mt-0.5" id="fp-selected-label" style="font-size:11px;font-family:'JetBrains Mono';">No folder selected</p>
     </div>
     <button onclick="closeFolderPicker()" class="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-colors">
-      <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+      <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">close</span>
     </button>
   </div>
   <div class="flex-1 overflow-y-auto px-3 py-3" id="fp-tree">
@@ -2980,7 +2983,7 @@ function fpToggle(btn) {
 
 <!-- ══ COMPONENT FILE-SELECT SIDEBAR ══ -->
 <div id="comp-sidebar-backdrop" class="hidden fixed inset-0 z-[99]" style="background:rgba(4,22,39,.25);" onclick="closeCompSidebar()"></div>
-<div id="comp-sidebar" class="hidden fixed top-0 right-0 h-screen bg-white border-l border-outline-variant z-[100] flex flex-col" style="width:340px;box-shadow:-4px 0 24px rgba(4,22,39,.12);">
+<div id="comp-sidebar" role="dialog" aria-modal="true" aria-label="Add component" class="hidden fixed top-0 right-0 h-screen bg-white border-l border-outline-variant z-[100] flex flex-col" style="width:340px;box-shadow:-4px 0 24px rgba(4,22,39,.12);">
   <!-- Header -->
   <div class="flex items-center justify-between px-5 py-4 border-b border-outline-variant flex-shrink-0">
     <div>
@@ -2988,7 +2991,7 @@ function fpToggle(btn) {
       <p class="text-body-sm text-on-surface-variant mt-0.5" style="font-size:11px;font-family:'JetBrains Mono';" id="sidebar-layer-path">Layer root: —</p>
     </div>
     <button onclick="closeCompSidebar()" class="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-colors">
-      <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+      <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">close</span>
     </button>
   </div>
   <!-- Component name -->
@@ -3003,54 +3006,54 @@ function fpToggle(btn) {
       <!-- src/ -->
       <div class="sidebar-folder-block">
         <div class="sidebar-folder-row" onclick="if(!event.target.closest('.tree-toggle')&&event.target.tagName!=='INPUT')this.querySelector('.folder-cb').click()">
-          <button onclick="event.stopPropagation();toggleSidebarFolder(this)" class="tree-toggle"><span class="material-symbols-outlined" style="font-size:14px;">keyboard_arrow_down</span></button>
+          <button onclick="event.stopPropagation();toggleSidebarFolder(this)" class="tree-toggle"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">keyboard_arrow_down</span></button>
           <input type="checkbox" class="folder-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFolder(this)">
-          <span class="material-symbols-outlined text-secondary" style="font-size:15px;">folder_open</span>
+          <span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:15px;">folder_open</span>
           <span style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;flex:1;">src/</span>
         </div>
         <div class="sidebar-folder-children pl-5">
           <div class="sidebar-file-row" data-filename="torque_manager.cpp" onclick="sidebarFileRowClick(event,this)">
             <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
-            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:13px;">description</span>
             <span class="file-name" style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;flex:1;">torque_manager.cpp</span>
             <span class="file-owner-tag" style="display:none;"></span>
           </div>
           <div class="sidebar-file-row" data-filename="torque_manager.h" onclick="sidebarFileRowClick(event,this)">
             <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
-            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:13px;">description</span>
             <span class="file-name" style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;flex:1;">torque_manager.h</span>
             <span class="file-owner-tag" style="display:none;"></span>
           </div>
           <div class="sidebar-file-row" data-filename="efficiency_optimizer.cpp" onclick="sidebarFileRowClick(event,this)">
             <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
-            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:13px;">description</span>
             <span class="file-name" style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;flex:1;">efficiency_optimizer.cpp</span>
             <span class="file-owner-tag" style="display:none;"></span>
           </div>
           <div class="sidebar-file-row" data-filename="efficiency_optimizer.h" onclick="sidebarFileRowClick(event,this)">
             <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
-            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:13px;">description</span>
             <span class="file-name" style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;flex:1;">efficiency_optimizer.h</span>
             <span class="file-owner-tag" style="display:none;"></span>
           </div>
           <!-- diagnostics/ -->
           <div class="sidebar-folder-block">
             <div class="sidebar-folder-row" onclick="if(!event.target.closest('.tree-toggle')&&event.target.tagName!=='INPUT')this.querySelector('.folder-cb').click()">
-              <button onclick="event.stopPropagation();toggleSidebarFolder(this)" class="tree-toggle"><span class="material-symbols-outlined" style="font-size:14px;">keyboard_arrow_right</span></button>
+              <button onclick="event.stopPropagation();toggleSidebarFolder(this)" class="tree-toggle"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">keyboard_arrow_right</span></button>
               <input type="checkbox" class="folder-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFolder(this)">
-              <span class="material-symbols-outlined text-secondary" style="font-size:15px;">folder</span>
+              <span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:15px;">folder</span>
               <span style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;flex:1;">diagnostics/</span>
             </div>
             <div class="sidebar-folder-children pl-5 hidden">
               <div class="sidebar-file-row" data-filename="fault_logger.cpp" onclick="sidebarFileRowClick(event,this)">
                 <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
-                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+                <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:13px;">description</span>
                 <span class="file-name" style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;flex:1;">fault_logger.cpp</span>
                 <span class="file-owner-tag" style="display:none;"></span>
               </div>
               <div class="sidebar-file-row" data-filename="fault_logger.h" onclick="sidebarFileRowClick(event,this)">
                 <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
-                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+                <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:13px;">description</span>
                 <span class="file-name" style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;flex:1;">fault_logger.h</span>
                 <span class="file-owner-tag" style="display:none;"></span>
               </div>
@@ -3061,21 +3064,21 @@ function fpToggle(btn) {
       <!-- include/ -->
       <div class="sidebar-folder-block">
         <div class="sidebar-folder-row" onclick="if(!event.target.closest('.tree-toggle')&&event.target.tagName!=='INPUT')this.querySelector('.folder-cb').click()">
-          <button onclick="event.stopPropagation();toggleSidebarFolder(this)" class="tree-toggle"><span class="material-symbols-outlined" style="font-size:14px;">keyboard_arrow_right</span></button>
+          <button onclick="event.stopPropagation();toggleSidebarFolder(this)" class="tree-toggle"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">keyboard_arrow_right</span></button>
           <input type="checkbox" class="folder-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFolder(this)">
-          <span class="material-symbols-outlined text-secondary" style="font-size:15px;">folder</span>
+          <span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:15px;">folder</span>
           <span style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;flex:1;">include/</span>
         </div>
         <div class="sidebar-folder-children pl-5 hidden">
           <div class="sidebar-file-row" data-filename="app_types.h" onclick="sidebarFileRowClick(event,this)">
             <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
-            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:13px;">description</span>
             <span class="file-name" style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;flex:1;">app_types.h</span>
             <span class="file-owner-tag" style="display:none;"></span>
           </div>
           <div class="sidebar-file-row" data-filename="config.h" onclick="sidebarFileRowClick(event,this)">
             <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
-            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:13px;">description</span>
             <span class="file-name" style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;flex:1;">config.h</span>
             <span class="file-owner-tag" style="display:none;"></span>
           </div>

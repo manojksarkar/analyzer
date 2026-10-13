@@ -1,0 +1,76 @@
+/* Accessibility layer shared by every mockup, light (docs/ui-mockups/*.html) and dark (dark/*.html).
+ *
+ * Loaded after each page's own styles. The Tailwind CDN build is injected later still, so the
+ * rules that must win over a utility (`outline-none`) are marked !important.
+ */
+
+/* Keyboard focus: one ring, everywhere, 3:1 or better against every surface of its theme.
+ * Mouse clicks do not show it (:focus-visible), so nothing changes for a pointer user. */
+:root      { --focus-ring: #0058be; }
+html.dark  { --focus-ring: #8ab8ff; }
+:focus-visible {
+  outline: 2px solid var(--focus-ring) !important;
+  outline-offset: 2px !important;
+}
+/* A field that sits inside a bordered box (search bars): the box shows the focus. */
+:where(div, label):has(> input.outline-none:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+:where(div, label):has(> input.outline-none:focus-visible) > input.outline-none:focus-visible {
+  outline: none !important;
+}
+
+/* Text for screen readers only: an icon button's name, an empty column's header. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+/* People who ask their system for less motion: no gauge sweeps, no sliding drawers. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Colours that only work on one surface, fixed where that surface is. */
+html.light .bg-primary .text-secondary-container { color: #6ea8ff; }    /* sign-in: blue tagline on navy */
+html.dark .mm-hero .text-on-primary-container   { color: #d6e0ff; }    /* sign-in: text on the blue hero */
+html.dark .mm-hero .text-secondary-container    { color: #b9d2ff; }
+html.dark .mm-hero .text-on-tertiary-container  { color: #6ff0b0; }
+html.dark .bg-error { background-color: #d42a3c; }                      /* white count on a red badge */
+
+/* A field's boundary is visible: 3:1 against the surface around it. :where() keeps this as weak
+ * as a utility class, so a page's own :focus and error borders still win. */
+html.light :where(input, select, textarea) { border-color: #85888f; }
+html.dark  :where(input, select, textarea) { border-color: #737885; }
+
+/* Dark: the buttons on the blue selection bar. A lighter chip under white text falls below 4.5:1,
+ * a darker one does not. */
+html.dark .bg-secondary .bg-white.bg-opacity-10       { background-color: rgba(0, 0, 0, .16); }
+html.dark .bg-secondary .bg-white.bg-opacity-10:hover { background-color: rgba(0, 0, 0, .30); }
+/* Dark: the check on a finished step's green disc (set inline, or by the page's script). */
+html.dark [style*="background:#3ddc84"] > .material-symbols-outlined.text-white,
+html.dark [style*="background: rgb(61, 220, 132)"] > .material-symbols-outlined.text-white { color: #0b0c0f; }
+
+/* A panel that slides in from the side is out of reach while it is closed: no Tab stop inside it.
+ * It hides only after it has slid out. */
+.fn-panel:not(.open) { visibility: hidden; transition: transform .3s cubic-bezier(.4, 0, .2, 1), visibility 0s linear .3s; }
+
+/* Inside a navy or blue surface (toast, run panel, selection bar, sign-in hero) the ring is white:
+ * the blue one would vanish there. Set on what the surface holds, not on the surface itself --
+ * a blue button's own ring is drawn outside it, on the page. */
+html.light :where(.bg-primary, .bg-secondary, [style*="background:#041627"], [style*="background: #041627"],
+                  [style*="background: rgb(4, 22, 39)"]) > * { --focus-ring: #ffffff; }
+html.dark  :where(.bg-secondary, .mm-hero) > * { --focus-ring: #ffffff; }
+
+/* Small targets (WCAG 2.5.8): a tree's fold arrows answer a 24px touch without moving anything --
+ * the hit area grows, the arrow does not. Chips in a legend or a switch are 24px tall. */
+.sc-tog, .ol-chev, .tree-toggle { position: relative; }
+.sc-tog::after, .ol-chev::after { content: ''; position: absolute; inset: -3px; }
+.tree-toggle::after { content: ''; position: absolute; inset: -4px 0 -4px -8px; }
+.ver-leg, .seg-btn { min-height: 24px; }
