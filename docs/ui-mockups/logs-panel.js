@@ -15,15 +15,17 @@
   var KEY = 'mockupLogsPanel';
 
   // ── Palette: the light and the dark mockups' tokens ─────────────────────────────────────────
+  // Text colours reach 4.5:1 on every surface here; `fill` carries white text; `field` is the
+  // 3:1 boundary of a field and of a switch that is off.
   var C = DARK ? {
     card: '#1c1e23', line: '#2c2f37', hair: '#24272e', hover: '#23262d', head: '#23262d', text: '#f2f3f5',
-    log: '#d6d9df', sub: '#a3a7b1', muted: '#7c818c', accent: '#1d7bff', accentBg: '#1b2638', accentLine: '#2d4a80',
-    ok: '#3ddc84', warn: '#ffc966', warnBg: '#2c2414', err: '#ff7b72', errBg: '#3a1d21', mark: '#3a2e14',
+    log: '#d6d9df', sub: '#a3a7b1', muted: '#979ca7', accent: '#6aa9ff', fill: '#1a6ce6', field: '#737885', accentBg: '#1b2638', accentLine: '#2d4a80',
+    ok: '#3ddc84', okText: '#3ddc84', warn: '#ffc966', warnBg: '#2c2414', err: '#ff7b72', errBg: '#3a1d21', mark: '#3a2e14',
     shadow: '0 -8px 32px rgba(0,0,0,.55)', ui: "'SamsungOne','Roboto',sans-serif", label: "'SamsungOne','Roboto',sans-serif"
   } : {
     card: '#ffffff', line: '#c4c6cd', hair: '#eef1f6', hover: '#f8f9ff', head: '#eff4ff', text: '#0b1c30',
-    log: '#0b1c30', sub: '#44474c', muted: '#74777d', accent: '#0058be', accentBg: '#eff4ff', accentLine: '#b9cdf5',
-    ok: '#00a572', warn: '#b45309', warnBg: '#fffbeb', err: '#ba1a1a', errBg: '#ffdad6', mark: '#fde68a',
+    log: '#0b1c30', sub: '#44474c', muted: '#65686e', accent: '#0058be', fill: '#0058be', field: '#85888f', accentBg: '#eff4ff', accentLine: '#b9cdf5',
+    ok: '#00a572', okText: '#00754f', warn: '#b45309', warnBg: '#fffbeb', err: '#ba1a1a', errBg: '#ffdad6', mark: '#fde68a',
     shadow: '0 -8px 32px rgba(4,22,39,.14)', ui: 'Inter,sans-serif', label: "'JetBrains Mono',monospace"
   };
 
@@ -34,15 +36,15 @@
     '#lp .grip::after{content:"";position:absolute;left:50%;top:3px;width:40px;height:3px;margin-left:-20px;border-radius:3px;background:' + C.line + '}',
     '#lp .bar{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:8px 14px;border-bottom:1px solid ' + C.line + '}',
     '#lp .ttl{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px}',
-    '#lp .st{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;color:' + C.ok + '}',
+    '#lp .st{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;color:' + C.okText + '}',
     '#lp .st i{width:7px;height:7px;border-radius:50%;background:' + C.ok + '}',
     '#lp .scope{position:relative}',
-    '#lp .scopebtn{display:inline-flex;align-items:center;gap:6px;height:30px;max-width:360px;padding:0 10px;border:1px solid ' + C.line + ';border-radius:8px;background:' + C.card + ';font-size:13px;color:' + C.text + ';cursor:pointer;white-space:nowrap}',
+    '#lp .scopebtn{display:inline-flex;align-items:center;gap:6px;height:30px;max-width:360px;padding:0 10px;border:1px solid ' + C.field + ';border-radius:8px;background:' + C.card + ';font-size:13px;color:' + C.text + ';cursor:pointer;white-space:nowrap}',
     '#lp .scopebtn b{font-weight:500;overflow:hidden;text-overflow:ellipsis}',
     '#lp .scopebtn .k{color:' + C.muted + '}',
     '#lp .menu{position:absolute;left:0;bottom:calc(100% + 6px);min-width:340px;max-height:320px;overflow:auto;background:' + C.card + ';border:1px solid ' + C.line + ';border-radius:10px;box-shadow:' + C.shadow + ';display:none;z-index:5;padding:4px 0}',
     '#lp .menu.open{display:block}',
-    '#lp .menu h6{margin:6px 12px 2px;font:600 10px ' + C.label + ';letter-spacing:.06em;text-transform:uppercase;color:' + C.muted + '}',
+    '#lp .menu .mh{margin:6px 12px 2px;font:600 11px ' + C.label + ';letter-spacing:.06em;text-transform:uppercase;color:' + C.muted + '}',
     '#lp .opt{display:block;width:100%;text-align:left;padding:7px 12px;font-size:13px;color:' + C.text + ';cursor:pointer;background:none;border:0}',
     '#lp .opt:hover{background:' + C.hover + '}',
     '#lp .opt.on{background:' + C.accentBg + ';color:' + C.accent + '}',
@@ -57,12 +59,12 @@
     '#lp .seg button.on{background:' + C.accentBg + ';color:' + C.accent + ';font-weight:600}',
     '#lp label.chk{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:' + C.sub + ';cursor:pointer}',
     '#lp .srch{position:relative}',
-    '#lp .srch input{height:30px;width:170px;padding:0 8px 0 28px;border:1px solid ' + C.line + ';border-radius:8px;background:' + C.card + ';font-size:12px;color:' + C.text + '}',
+    '#lp .srch input{height:30px;width:170px;padding:0 8px 0 28px;border:1px solid ' + C.field + ';border-radius:8px;background:' + C.card + ';font-size:12px;color:' + C.text + '}',
     '#lp .srch span{position:absolute;left:7px;top:7px;font-size:16px;color:' + C.muted + '}',
-    '#lp .sw{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:' + C.sub + ';cursor:pointer;user-select:none}',
-    '#lp .sw i{position:relative;width:26px;height:16px;border-radius:99px;background:' + C.line + '}',
+    '#lp .sw{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 4px;border:0;border-radius:8px;background:none;font-family:inherit;font-size:12px;color:' + C.sub + ';cursor:pointer;user-select:none}',
+    '#lp .sw i{position:relative;width:26px;height:16px;border-radius:99px;background:' + C.field + '}',
     '#lp .sw i::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;transition:transform .15s}',
-    '#lp .sw.on i{background:' + C.accent + '}',
+    '#lp .sw.on i{background:' + C.fill + '}',
     '#lp .sw.on i::after{transform:translateX(10px)}',
     '#lp .ib{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;border:0;background:none;color:' + C.sub + ';cursor:pointer}',
     '#lp .ib:hover{background:' + C.hover + ';color:' + C.text + '}',
@@ -71,19 +73,19 @@
     '#lp .r{display:grid;grid-template-columns:92px 68px minmax(0,1fr) auto;column-gap:12px;padding:3px 14px;border-bottom:1px solid ' + C.hair + ';align-items:start}',
     '#lp .r:hover{background:' + C.hover + '}',
     '#lp .t{font:12px/20px "JetBrains Mono",monospace;color:' + C.sub + ';white-space:nowrap;font-variant-ligatures:none}',
-    '#lp .lv{justify-self:start;font:600 10px/18px "JetBrains Mono",monospace;padding:0 6px;border-radius:4px;margin-top:1px}',
+    '#lp .lv{justify-self:start;font:600 11px/18px "JetBrains Mono",monospace;padding:0 6px;border-radius:4px;margin-top:1px}',
     '#lp .lv.WARNING{color:' + C.warn + ';background:' + C.warnBg + '}',
     '#lp .lv.ERROR{color:' + C.err + ';background:' + C.errBg + '}',
     '#lp .lv.DEBUG{color:' + C.muted + ';border:1px solid ' + C.line + '}',
     '#lp pre{margin:0;font:12px/20px "JetBrains Mono",monospace;color:' + C.log + ';white-space:pre-wrap;word-break:break-word;font-variant-ligatures:none}',
     '#lp mark{background:' + C.mark + ';color:inherit}',
     '#lp .ctx{max-width:340px;font-size:11px;line-height:20px;color:' + C.muted + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}',
-    '#lp .ctx a{color:' + C.sub + ';cursor:pointer}',
-    '#lp .ctx a:hover{color:' + C.accent + ';text-decoration:underline}',
-    '#lp .fold{font-size:12px;color:' + C.accent + ';cursor:pointer}',
-    '#lp .div{display:flex;align-items:center;gap:8px;padding:8px 14px 2px;font:600 10px ' + C.label + ';letter-spacing:.06em;text-transform:uppercase;color:' + C.accent + '}',
+    '#lp .ctx button{padding:0;border:0;background:none;font:inherit;color:' + C.sub + ';cursor:pointer;text-decoration:underline;text-underline-offset:2px}',
+    '#lp .ctx button:hover{color:' + C.accent + '}',
+    '#lp .fold{padding:0;border:0;background:none;font-family:inherit;font-size:12px;color:' + C.accent + ';cursor:pointer}',
+    '#lp .div{display:flex;align-items:center;gap:8px;padding:8px 14px 2px;font:600 11px ' + C.label + ';letter-spacing:.06em;text-transform:uppercase;color:' + C.accent + '}',
     '#lp .div::after{content:"";flex:1;height:1px;background:' + C.accentLine + '}',
-    '#lp .pill{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:none;align-items:center;gap:5px;height:28px;padding:0 12px;border-radius:99px;background:' + C.accent + ';color:#fff;font-size:12px;font-weight:600;border:0;cursor:pointer;box-shadow:' + C.shadow + '}',
+    '#lp .pill{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:none;align-items:center;gap:5px;height:28px;padding:0 12px;border-radius:99px;background:' + C.fill + ';color:#fff;font-size:12px;font-weight:600;border:0;cursor:pointer;box-shadow:' + C.shadow + '}',
     '#lp .pill.show{display:inline-flex}',
     '#lp .empty{padding:40px 14px;text-align:center;color:' + C.muted + ';font-size:13px}',
     '#lp-btn{position:relative}',
@@ -180,21 +182,21 @@
     el.id = 'lp';
     el.setAttribute('aria-label', 'Logs');
     el.innerHTML =
-      '<div class="grip" title="Drag to resize"></div>' +
+      '<div class="grip" title="Drag to resize" aria-hidden="true"></div>' +
       '<div class="bar">' +
-      '  <span class="ttl"><span class="material-symbols-outlined" style="font-size:18px;">terminal</span>Logs<span class="st"><i></i>Live</span></span>' +
-      '  <div class="scope"><button class="scopebtn" data-a="scope"><span class="k"></span><b></b><span class="material-symbols-outlined" style="font-size:16px;">expand_more</span></button><div class="menu"></div></div>' +
-      '  <div class="seg" data-g="show" title="Debug: every line, the busiest"><button data-v="all" class="on">All</button><button data-v="warn">Warnings &amp; errors</button><button data-v="debug">Debug</button></div>' +
-      '  <div class="seg" data-g="source"><button data-v="" class="on">All</button><button data-v="server">API</button><button data-v="engine">Engine</button></div>' +
-      '  <div class="srch"><span class="material-symbols-outlined">search</span><input type="search" placeholder="Search the lines" data-a="q"></div>' +
+      '  <span class="ttl"><span class="material-symbols-outlined" style="font-size:18px;" aria-hidden="true">terminal</span>Logs<span class="st"><i></i>Live</span></span>' +
+      '  <div class="scope"><button type="button" class="scopebtn" data-a="scope" aria-haspopup="true" aria-expanded="false"><span class="k"></span><b></b><span class="material-symbols-outlined" style="font-size:16px;" aria-hidden="true">expand_more</span></button><div class="menu"></div></div>' +
+      '  <div class="seg" data-g="show" role="group" aria-label="Lines to show" title="Debug: every line, the busiest"><button type="button" data-v="all" class="on">All</button><button type="button" data-v="warn">Warnings &amp; errors</button><button type="button" data-v="debug">Debug</button></div>' +
+      '  <div class="seg" data-g="source" role="group" aria-label="Where the lines come from"><button type="button" data-v="" class="on">All</button><button type="button" data-v="server">API</button><button type="button" data-v="engine">Engine</button></div>' +
+      '  <div class="srch"><span class="material-symbols-outlined" aria-hidden="true">search</span><input type="search" placeholder="Search the lines" aria-label="Search the lines" data-a="q"></div>' +
       '  <span class="sp"></span>' +
-      '  <span class="sw on" data-a="follow" role="switch" aria-checked="true"><i></i>Follow</span>' +
-      '  <button class="ib" data-a="clear" title="Clear (new lines keep arriving)"><span class="material-symbols-outlined" style="font-size:18px;">clear_all</span></button>' +
-      '  <button class="ib" data-a="max" title="Full height"><span class="material-symbols-outlined" style="font-size:18px;">open_in_full</span></button>' +
-      '  <button class="ib" data-a="close" title="Close (Esc)"><span class="material-symbols-outlined" style="font-size:18px;">close</span></button>' +
+      '  <button type="button" class="sw on" data-a="follow" role="switch" aria-checked="true"><i></i>Follow</button>' +
+      '  <button type="button" class="ib" data-a="clear" title="Clear (new lines keep arriving)" aria-label="Clear"><span class="material-symbols-outlined" style="font-size:18px;" aria-hidden="true">clear_all</span></button>' +
+      '  <button type="button" class="ib" data-a="max" title="Full height" aria-label="Full height"><span class="material-symbols-outlined" style="font-size:18px;" aria-hidden="true">open_in_full</span></button>' +
+      '  <button type="button" class="ib" data-a="close" title="Close (Esc)" aria-label="Close"><span class="material-symbols-outlined" style="font-size:18px;" aria-hidden="true">close</span></button>' +
       '</div>' +
-      '<div class="rows"></div>' +
-      '<button class="pill" data-a="resume"><span class="material-symbols-outlined" style="font-size:15px;">arrow_downward</span><span></span></button>';
+      '<div class="rows" role="log" aria-live="off" aria-label="Log lines" tabindex="0"></div>' +
+      '<button type="button" class="pill" data-a="resume"><span class="material-symbols-outlined" style="font-size:15px;" aria-hidden="true">arrow_downward</span><span>New lines</span></button>';
     document.body.appendChild(el);
     rowsEl = el.querySelector('.rows');
     el.addEventListener('click', onClick);
@@ -214,7 +216,7 @@
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && S.open) setOpen(false); });
     document.addEventListener('click', function (e) {
       var m = el.querySelector('.menu');
-      if (m.classList.contains('open') && !el.querySelector('.scope').contains(e.target)) m.classList.remove('open');
+      if (m.classList.contains('open') && !el.querySelector('.scope').contains(e.target)) setMenu(false);
     });
     window.addEventListener('resize', place);
   }
@@ -229,13 +231,16 @@
     el.style.height = (S.max ? window.innerHeight - top : S.height) + 'px';
     el.querySelector('[data-a=max] span').textContent = S.max ? 'close_fullscreen' : 'open_in_full';
     el.querySelector('[data-a=max]').title = S.max ? 'Back to its size' : 'Full height';
+    el.querySelector('[data-a=max]').setAttribute('aria-label', S.max ? 'Back to its size' : 'Full height');
   }
 
   function setOpen(on) {
     S.open = on;
     el.classList.toggle('open', on);
     var b = document.getElementById('lp-btn');
-    if (b) b.classList.toggle('on', on);
+    if (b) { b.classList.toggle('on', on); b.setAttribute('aria-expanded', on); }
+    // Closed from inside (Esc, the close button): focus goes back to the button that opens it
+    if (!on && b && el.contains(document.activeElement)) b.focus();
     save();
     if (on) { place(); render(true); }
   }
@@ -249,20 +254,28 @@
     if (a === 'max') { S.max = !S.max; place(); save(); return render(); }
     if (a === 'clear') { S.clearedAt = seq; return render(true); }
     if (a === 'follow' || a === 'resume') { S.follow = a === 'resume' ? true : !S.follow; if (!S.follow) S.pausedAt = seq; return render(S.follow); }
-    if (a === 'scope') { e.stopPropagation(); return el.querySelector('.menu').classList.toggle('open'); }
+    if (a === 'scope') { e.stopPropagation(); return setMenu(!el.querySelector('.menu').classList.contains('open')); }
     if (t.hasAttribute('data-pick')) {
       var p = JSON.parse(t.getAttribute('data-pick'));
       S.scope = p; S.clearedAt = 0;
-      el.querySelector('.menu').classList.remove('open');
+      setMenu(false);
       paintScope(); save(); return render(true);
     }
     var g = t.parentNode && t.parentNode.getAttribute && t.parentNode.getAttribute('data-g');
     if (g) { S[g] = t.getAttribute('data-v'); S.clearedAt = 0; paintControls(); return render(true); }
   }
 
+  function setMenu(on) {
+    el.querySelector('.menu').classList.toggle('open', on);
+    el.querySelector('.scopebtn').setAttribute('aria-expanded', on);
+  }
+
   function paintControls() {
     ['show', 'source'].forEach(function (g) {
-      [].forEach.call(el.querySelectorAll('[data-g=' + g + '] button'), function (b) { b.classList.toggle('on', b.getAttribute('data-v') === S[g]); });
+      [].forEach.call(el.querySelectorAll('[data-g=' + g + '] button'), function (b) {
+        var on = b.getAttribute('data-v') === S[g];
+        b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
+      });
     });
   }
 
@@ -273,14 +286,14 @@
     var cur = JSON.stringify(S.scope);
     function opt(pick, title, sub, cls) {
       var on = JSON.stringify(pick) === cur ? ' on' : '';
-      return '<button class="opt' + on + '" data-pick=\'' + JSON.stringify(pick) + '\'>' + title + (sub ? '<small class="' + (cls || '') + '"><i></i>' + sub + '</small>' : '') + '</button>';
+      return '<button type="button" class="opt' + on + '"' + (on ? ' aria-current="true"' : '') + ' data-pick=\'' + JSON.stringify(pick) + '\'>' + title + (sub ? '<small class="' + (cls || '') + '"><i></i>' + sub + '</small>' : '') + '</button>';
     }
-    var h = '<h6>Runs</h6>';
+    var h = '<div class="mh">Runs</div>';
     RUNS.forEach(function (r) {
       h += opt({ kind: 'run', job: r.job }, NAMES[r.project] + ' · ' + TAGS[r.version] + ' · ' + RUN[r.command],
         r.what + ' · ' + r.when, r.state === 'quiet' ? 'q' : '');
     });
-    h += '<h6>Everything</h6>';
+    h += '<div class="mh">Everything</div>';
     if (here) h += opt({ kind: 'project', project: here }, 'This project · ' + NAMES[here]);
     h += opt({ kind: 'all' }, 'Every project, and the API');
     el.querySelector('.menu').innerHTML = h;
@@ -290,16 +303,16 @@
     var lines = r.message.split('\n'), open = openFolds[r.seq], long = lines.length > 5 && !open;
     var ctx = [(r.source === 'server' ? 'API' : 'Engine') + ' · ' + esc(r.logger)];
     if (!one) {
-      if (S.scope.kind === 'all' && r.project) ctx.push('<a data-pick=\'' + JSON.stringify({ kind: 'project', project: r.project }) + '\'>' + NAMES[r.project] + '</a>');
+      if (S.scope.kind === 'all' && r.project) ctx.push('<button type="button" data-pick=\'' + JSON.stringify({ kind: 'project', project: r.project }) + '\'>' + NAMES[r.project] + '</button>');
       if (r.version) ctx.push(TAGS[r.version] || r.version);
-      if (r.job) ctx.push('<a data-pick=\'' + JSON.stringify({ kind: 'run', job: r.job }) + '\'>' + (RUN[r.run] || 'Run') + '</a>');
+      if (r.job) ctx.push('<button type="button" data-pick=\'' + JSON.stringify({ kind: 'run', job: r.job }) + '\'>' + (RUN[r.run] || 'Run') + '</button>');
       if (r.step) ctx.push(r.step);
     }
     if (r.components) ctx.push(r.components.join(', '));
     return '<div class="r"><span class="t" title="' + full(r.ts) + '">' + clockOf(r.ts) + '</span>' +
       '<span>' + (r.level === 'INFO' ? '' : '<span class="lv ' + r.level + '">' + r.level + '</span>') + '</span>' +
       '<div><pre>' + hl(long ? lines.slice(0, 5).join('\n') : r.message) + '</pre>' +
-      (lines.length > 5 ? '<span class="fold" onclick="this.dispatchEvent(new CustomEvent(\'fold\',{bubbles:true,detail:' + r.seq + '}))">' + (open ? 'Show less' : 'Show ' + (lines.length - 5) + ' more lines') + '</span>' : '') +
+      (lines.length > 5 ? '<button type="button" class="fold" aria-expanded="' + !!open + '" onclick="this.dispatchEvent(new CustomEvent(\'fold\',{bubbles:true,detail:' + r.seq + '}))">' + (open ? 'Show less' : 'Show ' + (lines.length - 5) + ' more lines') + '</button>' : '') +
       '</div><div class="ctx" title="pid ' + r.pid + '">' + ctx.join(' · ') + '</div></div>';
   }
 
@@ -326,7 +339,11 @@
   }
   function paintDot() {
     var b = document.getElementById('lp-btn');
-    if (b) b.classList.toggle('quiet', RUNS.some(function (r) { return r.state === 'quiet'; }));
+    if (!b) return;
+    var quiet = RUNS.some(function (r) { return r.state === 'quiet'; });
+    b.classList.toggle('quiet', quiet);
+    // the amber dot, in words
+    b.setAttribute('aria-label', quiet ? 'Logs. A run has reported nothing for 10 minutes' : 'Logs');
   }
 
   // The stream: a line every ~1.5 s from the live run
@@ -351,8 +368,9 @@
       btn.id = 'lp-btn';
       btn.title = 'Logs (superusers)';
       btn.setAttribute('aria-label', 'Logs');
+      btn.setAttribute('aria-expanded', 'false');
       btn.className = 'p-2 hover:bg-surface-container rounded-lg transition-colors';
-      btn.innerHTML = '<span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">terminal</span><span class="dot" title="A run has reported nothing for 10 minutes"></span>';
+      btn.innerHTML = '<span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;" aria-hidden="true">terminal</span><span class="dot" title="A run has reported nothing for 10 minutes"></span>';
       btn.addEventListener('click', function () {
         if (S.open) return setOpen(false);
         window.openLogs(here ? { kind: 'project', project: here } : { kind: 'all' });
@@ -372,7 +390,7 @@
     if (location.hash === '#logs' || S.open) window.openLogs();
     if (location.hash === '#logs-max') { S.max = true; window.openLogs(); }
     if (location.hash === '#logs-run') window.openLogs({ kind: 'run', job: 'jobd46b0548' });
-    if (location.hash === '#logs-menu') { window.openLogs({ kind: 'run', job: 'jobd46b0548' }); el.querySelector('.menu').classList.add('open'); }
+    if (location.hash === '#logs-menu') { window.openLogs({ kind: 'run', job: 'jobd46b0548' }); setMenu(true); }
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount); else mount();
 })();

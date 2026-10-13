@@ -18,16 +18,16 @@
         colors: {
           "primary": "#f4f5f7", "primary-container": "#26282e",
           "on-primary": "#ffffff", "on-primary-container": "#8a8f9c",
-          "secondary": "#1d7bff", "secondary-container": "#3d8fff",
+          "secondary": "#6aa9ff", "secondary-container": "#1a6ce6",
           "on-secondary": "#ffffff", "on-secondary-container": "#ffffff",
-          "on-tertiary-container": "#1fae63",
-          "error": "#ff4d5a", "error-container": "#3a1d21", "on-error-container": "#ff8a93",
+          "on-tertiary-container": "#2fc878",
+          "error": "#ff6b76", "error-container": "#3a1d21", "on-error-container": "#ff8a93",
           "surface": "#0e0f12", "background": "#0e0f12", "panel": "#15161a", "inverse": "#33363f",
           "surface-container-lowest": "#1c1e23", "surface-container-low": "#23262d",
           "surface-container": "#272a32", "surface-container-high": "#2e3139",
           "surface-container-highest": "#363a44",
           "on-surface": "#f2f3f5", "on-surface-variant": "#a3a7b1",
-          "outline": "#6b707c", "outline-variant": "#2c2f37",
+          "outline": "#979ca7", "outline-variant": "#2c2f37",
           "tertiary-container": "#10301f", "tertiary-fixed": "#6ff0b0",
         },
         borderRadius: { "DEFAULT": "6px", "lg": "8px", "xl": "14px", "2xl": "18px", "full": "9999px" },
@@ -95,8 +95,8 @@
     color: #a3a7b1; transition: background 0.1s;
   }
   .tree-component:hover { background: #1b2638; color: #f2f3f5; }
-  .tree-component.active { background: #1b2a45; color: #1d7bff; border-left: 2px solid #1d7bff; padding-left: 8px; }
-  .tree-component.active .comp-dot { background: #1d7bff; }
+  .tree-component.active { background: #1b2a45; color: #6aa9ff; border-left: 2px solid #1d7bff; padding-left: 8px; }
+  .tree-component.active .comp-dot { background: #1a6ce6; }
   .comp-dot { width: 6px; height: 6px; border-radius: 50%; background: #2c2f37; flex-shrink: 0; }
 
   /* Flat process doc rows */
@@ -107,7 +107,7 @@
     color: #a3a7b1; transition: background 0.1s;
   }
   .proc-row:hover { background: #1b2638; color: #f2f3f5; }
-  .proc-row.active { background: #1b2a45; color: #1d7bff; border-left: 2px solid #1d7bff; padding-left: 10px; }
+  .proc-row.active { background: #1b2a45; color: #6aa9ff; border-left: 2px solid #1d7bff; padding-left: 10px; }
 
   /* Diff block highlights */
   .diff-added   { border-left: 3px solid #3ddc84; background: rgba(61,220,132,0.08); }
@@ -121,7 +121,7 @@
   /* ── Samsung Magician dark theme layer (shared by every dark mockup) ── */
   :root {
     --mm-blue: #1d7bff; --mm-blue-hi: #3d8fff; --mm-navy: #1428a0;
-    --mm-grad: linear-gradient(135deg, #3d8fff 0%, #1d7bff 50%, #1853ce 100%);
+    --mm-grad: linear-gradient(135deg, #1a6ce6 0%, #1662d6 50%, #1853ce 100%);
     --shadow-card: 0 1px 0 rgba(255,255,255,.04) inset, 0 10px 30px rgba(0,0,0,.45);
     --shadow-pop: 0 18px 48px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.05);
     --glow-blue: 0 0 0 1px rgba(29,123,255,.45), 0 6px 20px rgba(29,123,255,.35);
@@ -146,7 +146,7 @@
 
   /* Signature surfaces: gradient CTA, glassy cards, glowing brand tile */
   .bg-secondary { background-image: var(--mm-grad); box-shadow: 0 4px 14px rgba(29,123,255,.35); }
-  .hover\:bg-secondary-container:hover { background-image: linear-gradient(135deg, #509cff 0%, #2d86ff 50%, #1e5ed7 100%); box-shadow: var(--glow-blue); }
+  .hover\:bg-secondary-container:hover { background-image: linear-gradient(135deg, #1f70ea 0%, #1a6ce6 50%, #1a5ed8 100%); box-shadow: var(--glow-blue); }
   .rounded-xl.border.bg-surface-container-lowest,
   .rounded-2xl.border.bg-surface-container-lowest { box-shadow: var(--shadow-card); background-image: linear-gradient(180deg, rgba(255,255,255,.025), transparent 120px); }
   .brand-tile { background-image: var(--mm-grad); box-shadow: 0 0 18px rgba(29,123,255,.55); }
@@ -160,12 +160,12 @@
   }
   #app-sidebar { background: linear-gradient(180deg, #17181d 0%, #121317 100%) !important; border-color: #24272e !important; }
   header { background: rgba(21,22,26,.85) !important; backdrop-filter: blur(10px); border-color: #24272e !important; }
-  input::placeholder, textarea::placeholder { color: #6b707c !important; }
+  input::placeholder, textarea::placeholder { color: #979ca7 !important; }
 
   /* Form controls (beat the Tailwind forms plugin's light defaults) */
   input[type='text'], input[type='search'], input[type='email'], input[type='password'],
   input[type='url'], input[type='number'], input:not([type]), textarea, select {
-    background-color: transparent; color: #f2f3f5; border-color: #2c2f37;
+    background-color: transparent; color: #f2f3f5; border-color: #737885;
   }
   input[type='text']:focus, input[type='search']:focus, input[type='email']:focus, input[type='password']:focus,
   input[type='url']:focus, input[type='number']:focus, input:not([type]):focus, textarea:focus, select:focus {
@@ -173,9 +173,9 @@
   }
   input.bg-transparent { border: 0; padding: 0; box-shadow: none !important; }
   select option { background: #1f2127; color: #f2f3f5; }
-  input[type='checkbox'], input[type='radio'] { background-color: #1c1e23; border: 1.5px solid #4a4f5b; color: #1d7bff; accent-color: #1d7bff; }
+  input[type='checkbox'], input[type='radio'] { background-color: #1c1e23; border: 1.5px solid #4a4f5b; color: #6aa9ff; accent-color: #1d7bff; }
   input[type='checkbox'] { border-radius: 4px; }
-  input[type='checkbox']:checked, input[type='radio']:checked { background-color: #1d7bff; border-color: #1d7bff; }
+  input[type='checkbox']:checked, input[type='radio']:checked { background-color: #1a6ce6; border-color: #1d7bff; }
   input[type='checkbox']:focus, input[type='radio']:focus { box-shadow: 0 0 0 3px rgba(29,123,255,.3); outline: none; }
 
   /* Navigation */
@@ -183,7 +183,7 @@
   .nav-default { color: #a3a7b1; }
   .nav-default:hover { background: rgba(255,255,255,.05); color: #f2f3f5; }
   .nav-active { background: linear-gradient(90deg, rgba(29,123,255,.22), rgba(29,123,255,.06)) !important; color: #ffffff !important; border-left: none !important; }
-  .nav-active::before { content: ''; position: absolute; left: -2px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: #3d8fff; box-shadow: 0 0 10px #1d7bff; }
+  .nav-active::before { content: ''; position: absolute; left: -2px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: #1a6ce6; box-shadow: 0 0 10px #1d7bff; }
   .nav-active .material-symbols-outlined { color: #5aa2ff; font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
   .outline-link.active { color: #5aa2ff; background: rgba(29,123,255,.12); font-weight: 500; }
 
@@ -197,7 +197,7 @@
   .badge { border-radius: 999px; }
   .badge-approved { background: rgba(61,220,132,.12); color: #3ddc84; border-color: rgba(61,220,132,.35); }
   .badge-review   { background: rgba(245,165,36,.12); color: #f5a524; border-color: rgba(245,165,36,.35); }
-  .badge-unchanged { background: rgba(255,255,255,.05); color: #8a8f9c; border-color: #2c2f37; }
+  .badge-unchanged { background: rgba(255,255,255,.05); color: #979ca7; border-color: #2c2f37; }
   .proc-pill { border-radius: 999px; }
   .pill-swe3 { background: rgba(29,123,255,.16); color: #5aa2ff; }
   .pill-swe2 { background: rgba(143,139,255,.16); color: #a8a5ff; }
@@ -216,58 +216,60 @@
   .doc-row:hover { background: rgba(255,255,255,.035); }
   .doc-row.row-selected { background: rgba(29,123,255,.10); }
 </style>
+<link rel="stylesheet" href="../a11y.css">
+<script src="../a11y.js" defer></script>
 </head>
 
 <body class="bg-background text-on-surface overflow-hidden">
 
 <!-- ══════════════ SIDEBAR ══════════════ -->
-<aside id="app-sidebar" class="fixed left-0 top-0 h-screen bg-surface-container-lowest border-r border-outline-variant flex flex-col z-50 overflow-hidden">
+<aside id="app-sidebar" aria-label="Sidebar" class="fixed left-0 top-0 h-screen bg-surface-container-lowest border-r border-outline-variant flex flex-col z-50 overflow-hidden">
   <div class="brand-header flex items-center justify-between px-4 py-3.5 border-b border-outline-variant flex-shrink-0">
-    <a href="projects.html" class="flex items-center gap-3 min-w-0 flex-1">
+    <a href="projects.html" class="flex items-center gap-3 min-w-0 flex-1" title="All projects">
       <div class="w-8 h-8 brand-tile rounded-lg flex items-center justify-center flex-shrink-0">
-        <span class="material-symbols-outlined text-on-primary sym-fill" style="font-size:18px;">account_tree</span>
+        <span class="material-symbols-outlined text-on-primary sym-fill" aria-hidden="true" style="font-size:18px;">account_tree</span>
       </div>
       <div class="brand-text min-w-0 overflow-hidden">
         <h1 class="text-primary font-bold tracking-tight whitespace-nowrap" style="font-family:Roboto;font-size:15px;line-height:1.2;">[PRODUCT NAME]</h1>
         <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mt-0.5 whitespace-nowrap">Automotive Tier 1</p>
       </div>
     </a>
-    <button onclick="toggleSidebar()" class="w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors flex-shrink-0">
-      <span class="material-symbols-outlined" id="sidebar-toggle-icon" style="font-size:18px;">chevron_right</span>
+    <button onclick="toggleSidebar()" aria-label="Show or hide the sidebar" class="w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors flex-shrink-0">
+      <span class="material-symbols-outlined" aria-hidden="true" id="sidebar-toggle-icon" style="font-size:18px;">chevron_right</span>
     </button>
   </div>
 
-  <nav class="flex-1 overflow-y-auto px-2 py-2">
+  <nav class="flex-1 overflow-y-auto px-2 py-2" aria-label="Main">
     <a href="projects.html" title="All Projects"
        class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default mb-2">
-      <span class="material-symbols-outlined" style="font-size:18px;">arrow_back</span>
+      <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">arrow_back</span>
       <span class="nav-label font-label-sm text-label-sm text-on-surface-variant">All Projects</span>
     </a>
-    <p class="nav-label px-3 pb-1.5 font-label-sm text-on-surface-variant uppercase tracking-[.09em] truncate" style="font-size:10px;">VCU Engine Firmware</p>
+    <p class="nav-label px-3 pb-1.5 font-label-sm text-on-surface-variant uppercase tracking-[.09em] truncate" style="font-size:11px;">VCU Engine Firmware</p>
     <div class="space-y-0.5">
       <a href="project-detail.html" title="Overview"
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
-        <span class="material-symbols-outlined" style="font-size:20px;">home</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">home</span>
         <span class="nav-label font-label-md text-label-md">Overview</span>
       </a>
       <a href="documents.html" title="Documents"
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
-        <span class="material-symbols-outlined" style="font-size:20px;">description</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">description</span>
         <span class="nav-label font-label-md text-label-md">Documents</span>
       </a>
       <a href="compare.html" title="Compare"
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-active">
-        <span class="material-symbols-outlined" style="font-size:20px;">compare_arrows</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">compare_arrows</span>
         <span class="nav-label font-label-md text-label-md">Compare</span>
       </a>
       <a href="versions.html" title="Versions"
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
-        <span class="material-symbols-outlined" style="font-size:20px;">local_offer</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">local_offer</span>
         <span class="nav-label font-label-md text-label-md">Versions</span>
       </a>
       <a href="team.html" title="Team"
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
-        <span class="material-symbols-outlined" style="font-size:20px;">group</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">group</span>
         <span class="nav-label font-label-md text-label-md">Team</span>
       </a>
     </div>
@@ -276,7 +278,7 @@
   <div class="px-2 pt-2 border-t border-outline-variant flex-shrink-0">
     <a href="onboarding.html" title="Settings"
        class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
-      <span class="material-symbols-outlined" style="font-size:18px;">settings</span>
+      <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">settings</span>
       <span class="nav-label font-label-md text-label-md">Settings</span>
     </a>
   </div>
@@ -298,39 +300,40 @@
 </aside>
 
 <!-- ══════════════ MAIN ══════════════ -->
-<div id="app-main" class="h-screen flex flex-col overflow-hidden">
+<main id="app-main" class="h-screen flex flex-col overflow-hidden">
+  <h1 class="sr-only">Compare versions</h1>
 
   <!-- ── TOP BAR ── -->
   <header class="h-14 flex-shrink-0 flex items-center justify-between px-4 bg-surface-container-lowest border-b border-outline-variant z-40">
     <nav class="flex items-center gap-1.5" aria-label="Breadcrumb">
       <a href="projects.html"
          class="w-7 h-7 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" title="Dashboard">
-        <span class="material-symbols-outlined sym-fill" style="font-size:18px;">hexagon</span>
+        <span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:18px;">hexagon</span>
       </a>
-      <span class="text-outline-variant select-none">/</span>
+      <span class="text-outline-variant select-none" aria-hidden="true">/</span>
       <a href="project-detail.html" class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:underline transition-colors whitespace-nowrap">VCU Engine Firmware</a>
-      <span class="text-outline-variant select-none">/</span>
+      <span class="text-outline-variant select-none" aria-hidden="true">/</span>
       <a href="compare.html" class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:underline transition-colors">Compare</a>
-      <span class="text-outline-variant select-none" id="bc-sep" style="display:none;">/</span>
+      <span class="text-outline-variant select-none" id="bc-sep" style="display:none;" aria-hidden="true">/</span>
       <span class="font-label-md text-label-md text-on-surface truncate" id="bc-doc" style="display:none;"></span>
     </nav>
     <div class="flex items-center gap-0.5">
       <button class="relative p-2 hover:bg-surface-container rounded-lg transition-colors" title="Notifications">
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
+        <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:22px;">notifications</span>
         <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border-2 border-surface-container-lowest"></span>
       </button>
       <button class="p-2 hover:bg-surface-container rounded-lg transition-colors" title="Help">
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">help</span>
+        <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:22px;">help</span>
       </button>
       <div class="w-px h-5 bg-outline-variant mx-1.5"></div>
       <button class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors">
         <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
           <span class="text-on-secondary-container font-bold text-xs" style="font-family:Roboto;" id="topbar-initials">EL</span>
         </div>
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">expand_more</span>
+        <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:16px;">expand_more</span>
       </button>
       <div class="w-px h-5 bg-outline-variant mx-1"></div>
-      <div class="flex items-center rounded-full border border-outline-variant overflow-hidden" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:600;">
+      <div class="flex items-center rounded-full border border-outline-variant overflow-hidden" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:600;">
         <button onclick="setRole('admin')" id="btn-role-admin" class="px-2.5 py-1 transition-colors bg-secondary text-white">Admin</button>
         <button onclick="setRole('dev')"   id="btn-role-dev"   class="px-2.5 py-1 transition-colors text-on-surface-variant hover:bg-surface-container">Dev</button>
       </div>
@@ -344,9 +347,9 @@
       <!-- Project switcher -->
       <div class="relative" id="sb-project-wrap">
         <button id="sb-project-btn" onclick="toggleSbProject()" class="subbar-pill">
-          <span class="material-symbols-outlined text-secondary sym-fill" style="font-size:14px;">folder</span>
+          <span class="material-symbols-outlined text-secondary sym-fill" aria-hidden="true" style="font-size:14px;">folder</span>
           <span class="font-label-md text-label-md text-on-surface" style="font-size:12px;">VCU Engine Firmware</span>
-          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="sb-project-chevron" style="font-size:13px;">expand_more</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" aria-hidden="true" id="sb-project-chevron" style="font-size:13px;">expand_more</span>
         </button>
         <div id="sb-project-dropdown" class="hidden dropdown" style="min-width:240px;">
           <div class="py-1.5">
@@ -361,16 +364,16 @@
         </div>
       </div>
 
-      <span class="text-outline-variant select-none">·</span>
+      <span class="text-outline-variant select-none" aria-hidden="true">·</span>
 
       <!-- Commit chip with Versions / Commits tabs (matches project-detail) -->
       <div class="relative" id="commit-chip-wrap">
         <button id="commit-chip-btn" onclick="toggleCommitChip()"
                 class="flex items-center gap-1.5 px-2.5 py-1.5 border border-outline-variant rounded-lg hover:bg-surface-container transition-colors"
                 style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:500;">
-          <span id="chip-icon-sym" class="material-symbols-outlined flex-shrink-0" style="font-size:13px;color:#3ddc84;">sell</span>
+          <span id="chip-icon-sym" class="material-symbols-outlined flex-shrink-0" aria-hidden="true" style="font-size:13px;color:#3ddc84;">sell</span>
           <span class="text-on-surface font-semibold" id="chip-ref">v1.2.0</span>
-          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="chip-chevron" style="font-size:13px;">expand_more</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" aria-hidden="true" id="chip-chevron" style="font-size:13px;">expand_more</span>
         </button>
         <div id="commit-chip-dropdown" class="hidden dropdown" style="min-width:380px;">
           <div class="flex items-center border-b border-outline-variant px-3">
@@ -388,8 +391,8 @@
           </div>
           <div id="cp-panel-commits" style="display:none;">
             <div class="px-3 py-2 border-b border-outline-variant">
-              <div class="flex items-center gap-2 px-2 py-1.5 bg-surface-container-low border border-outline-variant rounded-lg">
-                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">search</span>
+              <div class="flex items-center gap-2 px-2 py-1.5 bg-surface-container-low border border-outline rounded-lg">
+                <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:15px;">search</span>
                 <input type="text" placeholder="Search commits…" oninput="filterChipCommits(this.value)"
                        class="flex-1 bg-transparent outline-none text-on-surface placeholder-outline"
                        style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;">
@@ -405,12 +408,12 @@
     <div class="flex items-center gap-1.5">
       <button class="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-white rounded-lg transition-colors"
               style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:500;letter-spacing:.02em;">
-        <span class="material-symbols-outlined" style="font-size:15px;">download</span>Export
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">download</span>Export
       </button>
       <a href="documents.html"
          class="flex items-center gap-1.5 px-3 py-1.5 border border-outline-variant hover:bg-surface-container rounded-lg transition-colors font-label-md text-label-md text-on-surface-variant"
          style="font-size:11px;">
-        <span class="material-symbols-outlined" style="font-size:14px;">close</span>Exit
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">close</span>Exit
       </a>
     </div>
   </div>
@@ -419,10 +422,10 @@
   <div class="flex-1 flex overflow-hidden">
 
     <!-- DOCUMENT TREE -->
-    <aside class="w-60 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex flex-col overflow-hidden">
+    <aside class="w-60 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex flex-col overflow-hidden" aria-label="Documents">
       <div class="px-3 py-2.5 border-b border-outline-variant flex-shrink-0 flex items-center justify-between">
         <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em]">Documents</span>
-        <div class="flex items-center rounded-lg border border-outline-variant overflow-hidden" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:600;">
+        <div class="flex items-center rounded-lg border border-outline-variant overflow-hidden" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:600;">
           <button id="toggle-diff" onclick="setTreeMode('diff')"
                   class="px-2 py-1 bg-secondary text-white transition-colors">Diff</button>
           <button id="toggle-all"  onclick="setTreeMode('all')"
@@ -444,7 +447,7 @@
         <div class="flex-1 flex items-center justify-center p-8">
           <div class="text-center" style="max-width:480px;">
             <div class="w-16 h-16 rounded-2xl bg-surface-container flex items-center justify-center mx-auto mb-5">
-              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:32px;">difference</span>
+              <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:32px;">difference</span>
             </div>
             <h2 class="font-headline-sm text-headline-sm text-on-surface mb-2">Select a document to compare</h2>
             <p class="text-body-sm text-on-surface-variant mb-1">
@@ -467,10 +470,10 @@
           <div class="flex-shrink-0 px-4 py-2 bg-surface-container-lowest border-b border-outline-variant flex items-center gap-2">
             <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:#3ddc84;"></span>
             <span class="font-label-md text-label-md text-on-surface">Current</span>
-            <span class="px-2 py-0.5 rounded" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;text-transform:uppercase;background:#3ddc84;color:#fff;">Latest</span>
+            <span class="px-2 py-0.5 rounded" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;text-transform:uppercase;background:#3ddc84;color:#0b0c0f;">Latest</span>
             <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-family:'SamsungOne','Roboto',sans-serif;" id="current-panel-ref">main @ b2e8d45</span>
-            <span id="current-commit-badge" class="ml-auto" title="The version's status — derived from its documents" style="display:flex;align-items:center;gap:2px;padding:2px 6px;border-radius:4px;font-size:10px;font-family:'SamsungOne','Roboto',sans-serif;background:#2c2414;color:#f5a524;border:1px solid #6b4a12;">
-              <span class="material-symbols-outlined" style="font-size:10px;">rate_review</span>In review
+            <span id="current-commit-badge" class="ml-auto" title="The version's status — derived from its documents" style="display:flex;align-items:center;gap:2px;padding:2px 6px;border-radius:4px;font-size:11px;font-family:'SamsungOne','Roboto',sans-serif;background:#2c2414;color:#f5a524;border:1px solid #6b4a12;">
+              <span class="material-symbols-outlined" aria-hidden="true" style="font-size:11px;">rate_review</span>In review
             </span>
           </div>
           <div class="flex-1 overflow-y-auto bg-transparent" id="canvas-current">
@@ -538,7 +541,7 @@
                   <section id="c-static" class="transition-all duration-200">
                     <h2 class="font-headline-sm text-headline-sm text-primary mb-3">3. Static Design</h2>
                     <div class="bg-surface-container-low border border-outline-variant rounded-lg flex flex-col items-center justify-center text-center py-10 gap-2">
-                      <span class="material-symbols-outlined text-outline-variant" style="font-size:36px;">schema</span>
+                      <span class="material-symbols-outlined text-outline" aria-hidden="true" style="font-size:36px;">schema</span>
                       <p class="font-label-md text-label-md text-on-surface-variant">Include dependency diagram</p>
                     </div>
                   </section>
@@ -549,7 +552,7 @@
                     <div class="mb-6">
                       <h3 class="font-label-md text-label-md text-on-surface mb-2 uppercase tracking-[0.06em]">4.1 Control Flow Graphs</h3>
                       <div class="diff-changed rounded-lg p-4 flex flex-col items-center justify-center text-center py-10 gap-2 border border-secondary/20">
-                        <span class="material-symbols-outlined text-secondary" style="font-size:36px;">account_tree</span>
+                        <span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:36px;">account_tree</span>
                         <p class="font-label-md text-label-md text-on-surface-variant">CFG · 4 functions · 51 nodes</p>
                         <span class="px-2 py-0.5 rounded text-secondary bg-secondary/10 font-label-sm text-label-sm">~ changed</span>
                       </div>
@@ -557,7 +560,7 @@
                     <div>
                       <h3 class="font-label-md text-label-md text-on-surface mb-2 uppercase tracking-[0.06em]">4.2 State Machine</h3>
                       <div class="bg-surface-container-low border border-outline-variant rounded-lg flex flex-col items-center justify-center text-center py-10 gap-2">
-                        <span class="material-symbols-outlined text-outline-variant" style="font-size:36px;">alt_route</span>
+                        <span class="material-symbols-outlined text-outline" aria-hidden="true" style="font-size:36px;">alt_route</span>
                         <p class="font-label-md text-label-md text-on-surface-variant">State machine · INIT → STANDBY → ACTIVE → FAULT</p>
                       </div>
                     </div>
@@ -574,7 +577,7 @@
           <div class="flex-shrink-0 px-4 py-2 bg-surface-container-lowest border-b border-outline-variant flex items-center gap-2">
             <span class="w-2 h-2 rounded-full bg-outline-variant flex-shrink-0"></span>
             <span class="font-label-md text-label-md text-on-surface">Reference</span>
-            <span class="px-2 py-0.5 rounded bg-surface-container text-on-surface-variant border border-outline-variant" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;text-transform:uppercase;" id="baseline-badge">a3f9c12</span>
+            <span class="px-2 py-0.5 rounded bg-surface-container text-on-surface-variant border border-outline-variant" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;text-transform:uppercase;" id="baseline-badge">a3f9c12</span>
             <div class="flex items-center gap-2 ml-auto">
               <span class="flex items-center gap-1 text-on-tertiary-container font-label-sm text-label-sm">
                 <span class="w-1.5 h-1.5 rounded-sm bg-on-tertiary-container inline-block"></span>1 added
@@ -587,7 +590,7 @@
           <div class="flex-1 overflow-y-auto bg-transparent" id="canvas-baseline">
             <div id="baseline-no-doc" class="hidden h-full flex items-center justify-center p-8">
               <div class="text-center" style="max-width:300px;">
-                <span class="material-symbols-outlined text-outline-variant block mb-4" style="font-size:40px;">description</span>
+                <span class="material-symbols-outlined text-outline block mb-4" aria-hidden="true" style="font-size:40px;">description</span>
                 <p class="font-headline-sm text-headline-sm text-on-surface mb-1">No document for <code class="font-label-md text-label-md text-secondary" id="baseline-no-doc-hash" style="font-size:15px;">hash</code></p>
                 <p class="text-body-sm text-on-surface-variant mb-6" id="baseline-no-doc-msg">No commit selected</p>
                 <p class="text-body-sm text-outline">Select a documented commit as baseline ←</p>
@@ -627,7 +630,7 @@
                             <tr class="border-b border-outline-variant/60"><td class="px-3 py-2 font-label-md text-label-md text-secondary">IF_BrakeReq</td><td class="px-3 py-2 text-on-surface-variant">Input</td><td class="px-3 py-2 text-on-surface-variant">Target deceleration from VCU</td></tr>
                             <tr class="border-b border-outline-variant/60"><td class="px-3 py-2 font-label-md text-label-md text-secondary">IF_WheelSpeed[4]</td><td class="px-3 py-2 text-on-surface-variant">Input</td><td class="px-3 py-2 text-on-surface-variant">Raw encoder pulse counts</td></tr>
                             <tr class="border-b border-outline-variant/60"><td class="px-3 py-2 font-label-md text-label-md text-secondary">IF_ValveCmd</td><td class="px-3 py-2 text-on-surface-variant">Output</td><td class="px-3 py-2 text-on-surface-variant">PWM duty cycle for valves</td></tr>
-                            <tr class="diff-removed opacity-40">
+                            <tr class="diff-removed">
                               <td class="px-3 py-2 font-label-md text-label-md line-through text-on-surface-variant" colspan="3">— IF_DiagStatus not in this version</td>
                             </tr>
                           </tbody>
@@ -638,7 +641,7 @@
                     <section id="b-static">
                       <h2 class="font-headline-sm text-headline-sm text-primary mb-3">3. Static Design</h2>
                       <div class="bg-surface-container-low border border-outline-variant rounded-lg flex flex-col items-center justify-center text-center py-10 gap-2">
-                        <span class="material-symbols-outlined text-outline-variant" style="font-size:36px;">schema</span>
+                        <span class="material-symbols-outlined text-outline" aria-hidden="true" style="font-size:36px;">schema</span>
                         <p class="font-label-md text-label-md text-on-surface-variant">Include dependency diagram</p>
                       </div>
                     </section>
@@ -648,7 +651,7 @@
                       <div class="mb-6">
                         <h3 class="font-label-md text-label-md text-on-surface mb-2 uppercase tracking-[0.06em]">4.1 Control Flow Graphs</h3>
                         <div class="diff-changed rounded-lg p-4 flex flex-col items-center justify-center text-center py-10 gap-2 border border-secondary/20">
-                          <span class="material-symbols-outlined text-secondary" style="font-size:36px;">account_tree</span>
+                          <span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:36px;">account_tree</span>
                           <p class="font-label-md text-label-md text-on-surface-variant">CFG · 3 functions · 42 nodes</p>
                           <span class="px-2 py-0.5 rounded text-secondary bg-secondary/10 font-label-sm text-label-sm">~ changed</span>
                         </div>
@@ -656,7 +659,7 @@
                       <div>
                         <h3 class="font-label-md text-label-md text-on-surface mb-2 uppercase tracking-[0.06em]">4.2 State Machine</h3>
                         <div class="bg-surface-container-low border border-outline-variant rounded-lg flex flex-col items-center justify-center text-center py-10 gap-2">
-                          <span class="material-symbols-outlined text-outline-variant" style="font-size:36px;">alt_route</span>
+                          <span class="material-symbols-outlined text-outline" aria-hidden="true" style="font-size:36px;">alt_route</span>
                           <p class="font-label-md text-label-md text-on-surface-variant">State machine · INIT → STANDBY → ACTIVE → FAULT</p>
                         </div>
                       </div>
@@ -677,7 +680,7 @@
 
     </div><!-- /compare area -->
   </div><!-- /body row -->
-</div><!-- /app-main -->
+</main><!-- /app-main -->
 
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -718,16 +721,16 @@ const commits = [
 // Review and approval (proposal): the four document states — one word each, everywhere
 const DOC_STATE_META = {
   in_review:         { icon: 'rate_review',     label: 'In review',          bg: '#2c2414', color: '#f5a524', border: '#6b4a12' },
-  submitted:         { icon: 'pending_actions', label: 'Ready for approval', bg: '#1b2a45', color: '#1d7bff', border: '#2d4a80' },
-  changes_requested: { icon: 'undo',            label: 'Changes requested',  bg: '#2e1a1d', color: '#ff4d5a', border: '#5a2328' },
+  submitted:         { icon: 'pending_actions', label: 'Ready for approval', bg: '#1b2a45', color: '#6aa9ff', border: '#2d4a80' },
+  changes_requested: { icon: 'undo',            label: 'Changes requested',  bg: '#2e1a1d', color: '#ff6b76', border: '#5a2328' },
   approved:          { icon: 'check_circle',    label: 'Approved',           bg: '#132a1f', color: '#3ddc84', border: '#1f5a3a' },
 };
 
 function docStatusBadge(status, carriedFrom) {
   const b = DOC_STATE_META[status];
   if (!b) return '';
-  return `<span style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:99px;font-size:10px;font-family:'SamsungOne','Roboto',sans-serif;font-weight:600;white-space:nowrap;flex-shrink:0;background:${b.bg};color:${b.color};border:1px solid ${b.border};">
-    <span class="material-symbols-outlined" style="font-size:11px;">${b.icon}</span>${b.label}${carriedFrom ? ` · from ${carriedFrom}` : ''}</span>`;
+  return `<span style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:99px;font-size:11px;font-family:'SamsungOne','Roboto',sans-serif;font-weight:600;white-space:nowrap;flex-shrink:0;background:${b.bg};color:${b.color};border:1px solid ${b.border};">
+    <span class="material-symbols-outlined" aria-hidden="true" style="font-size:11px;">${b.icon}</span>${b.label}${carriedFrom ? ` · from ${carriedFrom}` : ''}</span>`;
 }
 
 // The status of the commit / version on the Current side: 'in_review', 'approved', or null (no documents)
@@ -771,8 +774,8 @@ const VERSIONS = [
 function renderChipVersions() {
   const accentColor = s => s === 'approved' ? '#3ddc84' : s === 'in_review' ? '#f5a524' : '#2c2f37';
   const pill = s => {
-    if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:8px;font-weight:700;background:#132a1f;color:#3ddc84;border:1px solid #1f5a3a;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#3ddc84;display:inline-block;"></span>Approved</span>`;
-    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:8px;font-weight:700;background:#2c2414;color:#f5a524;border:1px solid #6b4a12;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f5a524;display:inline-block;"></span>In review</span>`;
+    if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#132a1f;color:#3ddc84;border:1px solid #1f5a3a;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#3ddc84;display:inline-block;"></span>Approved</span>`;
+    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#2c2414;color:#f5a524;border:1px solid #6b4a12;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f5a524;display:inline-block;"></span>In review</span>`;
     return '';
   };
   document.getElementById('cp-versions-list').innerHTML = VERSIONS.map(v => {
@@ -786,13 +789,13 @@ function renderChipVersions() {
             <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;font-weight:700;color:#f2f3f5;">${v.tag}</span>
             ${pill(v.status)}
           </div>
-          ${isActive ? '<span class="material-symbols-outlined" style="font-size:15px;color:#1d7bff;flex-shrink:0;">check</span>' : ''}
+          ${isActive ? '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;color:#6aa9ff;flex-shrink:0;">check</span>' : ''}
         </div>
         <div style="font-size:11px;color:#a3a7b1;margin-bottom:4px;line-height:1.4;">${v.desc}</div>
         <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-family:'JetBrains Mono';font-size:10px;color:#7c818c;background:#26282e;padding:1px 5px;border-radius:4px;">${v.sha.slice(0,7)}</span>
-          <span style="font-size:10px;color:#7c818c;">${v.date}</span>
-          <span style="font-size:10px;color:#7c818c;">${v.docs} docs</span>
+          <span style="font-family:'JetBrains Mono';font-size:11px;color:#979ca7;background:#26282e;padding:1px 5px;border-radius:4px;">${v.sha.slice(0,7)}</span>
+          <span style="font-size:11px;color:#979ca7;">${v.date}</span>
+          <span style="font-size:11px;color:#979ca7;">${v.docs} docs</span>
         </div>
       </div>
     </button>`;
@@ -803,15 +806,15 @@ function renderChipCommits(filter = '') {
   const filtered = commits.filter(c => !filter || c.hash.includes(filter) || c.msg.toLowerCase().includes(filter.toLowerCase()));
   const list = document.getElementById('cp-commits-list');
   if (!filtered.length) {
-    list.innerHTML = `<div style="padding:24px 16px;text-align:center;font-size:12px;color:#7c818c;">No commits match</div>`;
+    list.innerHTML = `<div style="padding:24px 16px;text-align:center;font-size:12px;color:#979ca7;">No commits match</div>`;
     return;
   }
   const versionPill = v => v
-    ? `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:600;color:#3ddc84;background:#132a1f;border:1px solid #1f5a3a;padding:0px 6px;border-radius:99px;"><span class="material-symbols-outlined" style="font-size:10px;color:#3ddc84;">sell</span>${v}</span>`
+    ? `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:600;color:#3ddc84;background:#132a1f;border:1px solid #1f5a3a;padding:0px 6px;border-radius:99px;"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:11px;color:#3ddc84;">sell</span>${v}</span>`
     : '';
   const statusPill = s => {
-    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:8px;font-weight:700;background:#2c2414;color:#f5a524;border:1px solid #6b4a12;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f5a524;display:inline-block;"></span>In review</span>`;
-    if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:8px;font-weight:700;background:#132a1f;color:#3ddc84;border:1px solid #1f5a3a;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#3ddc84;display:inline-block;"></span>Approved</span>`;
+    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#2c2414;color:#f5a524;border:1px solid #6b4a12;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f5a524;display:inline-block;"></span>In review</span>`;
+    if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#132a1f;color:#3ddc84;border:1px solid #1f5a3a;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#3ddc84;display:inline-block;"></span>Approved</span>`;
     return '';
   };
   list.innerHTML = filtered.map((c, i) => {
@@ -821,7 +824,7 @@ function renderChipCommits(filter = '') {
     const dotBorder = isCurrent ? '2px solid #1d7bff' : c.version ? '2px solid #3ddc84' : '2px solid #2c2f37';
     const dotFill   = (isCurrent || c.version) ? dotColor : 'white';
     const currentBadge = isCurrent
-      ? `<span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:8px;font-weight:700;background:#1b2a45;color:#1d7bff;border:1px solid #2d4a80;padding:0px 5px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;">current</span>`
+      ? `<span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#1b2a45;color:#6aa9ff;border:1px solid #2d4a80;padding:0px 5px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;">current</span>`
       : '';
     return `
     <button onclick="selectChipCommit('${c.hash}','${c.branch}')" style="width:100%;display:flex;gap:0;padding:0 12px;text-align:left;background:${isCurrent ? '#1b2638' : 'transparent'};border:none;cursor:pointer;" onmouseover="if(!${isCurrent})this.style.background='#23262d'" onmouseout="if(!${isCurrent})this.style.background='${isCurrent ? '#1b2638' : 'transparent'}'">
@@ -832,15 +835,15 @@ function renderChipCommits(filter = '') {
       <div style="flex:1;min-width:0;padding:10px 0 10px 8px;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:2px;">
           <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
-            <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:600;color:#a3a7b1;background:#26282e;padding:1px 5px;border-radius:4px;">${c.hash.slice(0,7)}</span>
+            <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:600;color:#a3a7b1;background:#26282e;padding:1px 5px;border-radius:4px;">${c.hash.slice(0,7)}</span>
             ${currentBadge}
             ${versionPill(c.version)}
             ${statusPill(c.docStatus)}
           </div>
-          ${isCurrent ? '<span class="material-symbols-outlined" style="font-size:14px;color:#1d7bff;flex-shrink:0;">check</span>' : ''}
+          ${isCurrent ? '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;color:#6aa9ff;flex-shrink:0;">check</span>' : ''}
         </div>
         <div style="font-size:11px;color:#f2f3f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:290px;">${c.msg}</div>
-        <div style="font-size:10px;color:#7c818c;margin-top:1px;">${c.branch} · ${c.age}</div>
+        <div style="font-size:11px;color:#979ca7;margin-top:1px;">${c.branch} · ${c.age}</div>
       </div>
     </button>`;
   }).join('');
@@ -910,8 +913,8 @@ function applyCurrentState() {
   };
   const s = statusMap[run];
   if (s) {
-    badge.style.cssText = `display:flex;align-items:center;gap:2px;padding:2px 6px;border-radius:4px;font-size:10px;font-family:'SamsungOne','Roboto',sans-serif;background:${s.bg};color:${s.color};border:1px solid ${s.border};`;
-    badge.innerHTML = `<span class="material-symbols-outlined" style="font-size:10px;">${s.icon}</span>${s.label}`;
+    badge.style.cssText = `display:flex;align-items:center;gap:2px;padding:2px 6px;border-radius:4px;font-size:11px;font-family:'SamsungOne','Roboto',sans-serif;background:${s.bg};color:${s.color};border:1px solid ${s.border};`;
+    badge.innerHTML = `<span class="material-symbols-outlined" aria-hidden="true" style="font-size:11px;">${s.icon}</span>${s.label}`;
   } else {
     badge.style.display = 'none';
   }
@@ -928,8 +931,8 @@ function renderDocStateBar() {
   if (!st) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
 
   const who = st.status === 'approved' ? ''
-    : st.reviewer ? `<span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;color:#7c818c;white-space:nowrap;">Reviewer: ${st.reviewer}</span>`
-    : `<span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;color:#f5a524;white-space:nowrap;">Needs a reviewer</span>`;
+    : st.reviewer ? `<span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#979ca7;white-space:nowrap;">Reviewer: ${st.reviewer}</span>`
+    : `<span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f5a524;white-space:nowrap;">Needs a reviewer</span>`;
   bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 16px;height:36px;';
   bar.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;min-width:0;">
@@ -937,7 +940,7 @@ function renderDocStateBar() {
       ${who}
     </div>
     <a href="documents.html" id="doc-state-link"
-       style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:500;color:#1d7bff;text-decoration:none;white-space:nowrap;"
+       style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:500;color:#6aa9ff;text-decoration:none;white-space:nowrap;"
        onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">Review and approve in the document →</a>`;
 }
 
@@ -986,7 +989,7 @@ const flatDocs = [
 ];
 
 const diffMeta = {
-  changed: { label: '~', color: '#1d7bff', bg: '#1b2a45' },
+  changed: { label: '~', color: '#6aa9ff', bg: '#1b2a45' },
   added:   { label: '+', color: '#3ddc84', bg: 'rgba(61,220,132,0.13)' },
 };
 
@@ -1009,8 +1012,8 @@ function renderTree() {
     const hdr = document.createElement('div');
     hdr.className = 'flex items-center gap-1.5 px-3 py-1.5 cursor-pointer hover:bg-surface-container-low transition-colors select-none';
     hdr.innerHTML = `
-      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:14px;transform:rotate(${swe3Expanded ? 90 : 0}deg);transition:transform .15s;">chevron_right</span>
-      <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;background:#1b2a45;color:#1d7bff;padding:1px 6px;border-radius:3px;">SWE.3</span>`;
+      <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:14px;transform:rotate(${swe3Expanded ? 90 : 0}deg);transition:transform .15s;">chevron_right</span>
+      <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;background:#1b2a45;color:#6aa9ff;padding:1px 6px;border-radius:3px;">SWE.3</span>`;
     hdr.onclick = () => { swe3Expanded = !swe3Expanded; renderTree(); };
     el.appendChild(hdr);
 
@@ -1020,12 +1023,12 @@ function renderTree() {
         const isActive  = name === activeItem;
         const meta      = diff ? diffMeta[diff] : null;
         const dotColor  = meta ? meta.color : (isActive ? '#1d7bff' : '#2c2f37');
-        const diffBadge = meta ? `<span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;color:${meta.color};background:${meta.bg};padding:1px 5px;border-radius:3px;">${meta.label}</span>` : '';
+        const diffBadge = meta ? `<span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;color:${meta.color};background:${meta.bg};padding:1px 5px;border-radius:3px;">${meta.label}</span>` : '';
         const row = document.createElement('div');
 
         row.className = `tree-component${isActive ? ' active' : ''}`;
         row.style.paddingLeft = '32px';
-        const badge = meta ? `<span style="margin-left:auto;font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;color:${meta.color};background:${meta.bg};padding:1px 5px;border-radius:3px;">${meta.label}</span>` : '';
+        const badge = meta ? `<span style="margin-left:auto;font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;color:${meta.color};background:${meta.bg};padding:1px 5px;border-radius:3px;">${meta.label}</span>` : '';
         row.innerHTML = `<span class="comp-dot" style="background:${dotColor};"></span><span class="${!diff && !isActive ? 'opacity-40' : ''}">${name}</span>${badge}`;
 
         row.onclick = () => { selectItem(name); };
@@ -1042,7 +1045,7 @@ function renderTree() {
     row.className = `proc-row${isActive ? ' active' : ''}`;
     row.innerHTML = `
       <span class="comp-dot" style="background:${isActive ? '#1d7bff' : '#2c2f37'};"></span>
-      <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;background:${bg};color:${color};padding:1px 6px;border-radius:3px;">${process}</span>
+      <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:${bg};color:${color};padding:1px 6px;border-radius:3px;">${process}</span>
       <span class="${!isActive ? 'opacity-50' : ''}" style="font-size:11px;font-family:'SamsungOne','Roboto',sans-serif;">${name}</span>`;
     row.onclick = () => { selectItem(name); };
     el.appendChild(row);
@@ -1075,11 +1078,11 @@ function renderEmptyCards() {
     return `<div onclick="selectItem('${safeName}')"
       class="w-full flex flex-col px-4 py-3 bg-surface-container-lowest border border-outline-variant hover:bg-surface-container-low hover:border-secondary/40 rounded-xl transition-colors text-left group cursor-pointer">
       <div class="flex items-center gap-3">
-        <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;background:#1b2a45;color:#1d7bff;padding:2px 6px;border-radius:3px;flex-shrink:0;">${process}</span>
+        <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#1b2a45;color:#6aa9ff;padding:2px 6px;border-radius:3px;flex-shrink:0;">${process}</span>
         <span class="flex-1 font-label-md text-label-md text-on-surface group-hover:text-secondary transition-colors" style="font-size:12px;">${name}</span>
         ${st ? docStatusBadge(st.status, st.carriedFrom) : ''}
-        <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;color:${meta.color};background:${meta.bg};padding:2px 6px;border-radius:3px;flex-shrink:0;">${diff === 'added' ? '+ added' : '~ changed'}</span>
-        <span class="material-symbols-outlined text-outline-variant group-hover:text-secondary transition-colors" style="font-size:16px;flex-shrink:0;">arrow_forward</span>
+        <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;color:${meta.color};background:${meta.bg};padding:2px 6px;border-radius:3px;flex-shrink:0;">${diff === 'added' ? '+ added' : '~ changed'}</span>
+        <span class="material-symbols-outlined text-outline group-hover:text-secondary transition-colors" aria-hidden="true" style="font-size:16px;flex-shrink:0;">arrow_forward</span>
       </div>
     </div>`;
   });

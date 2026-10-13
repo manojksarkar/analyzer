@@ -19,16 +19,16 @@
         colors: {
           "primary": "#f4f5f7", "primary-container": "#26282e",
           "on-primary": "#ffffff", "on-primary-container": "#8a8f9c",
-          "secondary": "#1d7bff", "secondary-container": "#3d8fff",
+          "secondary": "#6aa9ff", "secondary-container": "#1a6ce6",
           "on-secondary": "#ffffff", "on-secondary-container": "#ffffff",
-          "on-tertiary-container": "#1fae63",
-          "error": "#ff4d5a", "error-container": "#3a1d21", "on-error-container": "#ff8a93",
+          "on-tertiary-container": "#2fc878",
+          "error": "#ff6b76", "error-container": "#3a1d21", "on-error-container": "#ff8a93",
           "surface": "#0e0f12", "background": "#0e0f12", "panel": "#15161a", "inverse": "#33363f",
           "surface-container-lowest": "#1c1e23", "surface-container-low": "#23262d",
           "surface-container": "#272a32", "surface-container-high": "#2e3139",
           "surface-container-highest": "#363a44",
           "on-surface": "#f2f3f5", "on-surface-variant": "#a3a7b1",
-          "outline": "#6b707c", "outline-variant": "#2c2f37",
+          "outline": "#979ca7", "outline-variant": "#2c2f37",
           "tertiary-container": "#10301f", "tertiary-fixed": "#6ff0b0",
         },
         borderRadius: { "DEFAULT": "6px", "lg": "8px", "xl": "14px", "2xl": "18px", "full": "9999px" },
@@ -90,7 +90,7 @@
     transition: border-color .15s, box-shadow .15s;
   }
   .inp:focus { border-color: #1d7bff; box-shadow: 0 0 0 3px rgba(29,123,255,0.15); }
-  .inp::placeholder { color: #7c818c; }
+  .inp::placeholder { color: #979ca7; }
   .inp.mono { font-family: 'SamsungOne','Roboto',sans-serif; font-size: 12px; }
   .inp.err  { border-color: #ff4d5a !important; box-shadow: 0 0 0 3px rgba(255,77,90,0.15) !important; }
   textarea.inp { resize: none; }
@@ -102,7 +102,7 @@
     font-family: 'SamsungOne','Roboto',sans-serif; font-size: 12px; font-weight: 600;
     letter-spacing: .02em; color: #f2f3f5;
   }
-  .lbl .req { color: #ff4d5a; }
+  .lbl .req { color: #ff6b76; }
 
   /* ── Help button ── */
   .hbtn {
@@ -112,7 +112,7 @@
     cursor: pointer; color: #a3a7b1; flex-shrink: 0;
     transition: background .15s, border-color .15s, color .15s;
   }
-  .hbtn:hover { background: #1b2a45; border-color: #1d7bff; color: #1d7bff; }
+  .hbtn:hover { background: #1b2a45; border-color: #1d7bff; color: #6aa9ff; }
   .hbtn .material-symbols-outlined { font-size: 12px; }
 
   /* ── Section card ── */
@@ -130,7 +130,7 @@
     font-family: 'SamsungOne','Roboto',sans-serif; font-size: 12px; font-weight: 500; letter-spacing: .02em;
     border: 1px solid #2c2f37; background: #1c1e23; color: #a3a7b1; cursor: pointer; transition: all .15s;
   }
-  .tab-btn.on { background: #1d7bff; border-color: #1d7bff; color: #fff; }
+  .tab-btn.on { background: #1a6ce6; border-color: #1d7bff; color: #fff; }
 
   /* ── Drop zone ── */
   .drop-zone {
@@ -148,35 +148,35 @@
   .core-name { width: 100%; max-width: 240px; padding: 0 6px; margin-left: -6px; font: 600 14px/22px 'Roboto', sans-serif; color: #f2f3f5; background: transparent; border: 1px solid transparent; border-radius: 0.25rem; }
   .core-name:hover { border-color: #2c2f37; background: #1c1e23; }
   .core-name:focus { outline: none; border-color: #1d7bff; background: #1c1e23; box-shadow: 0 0 0 3px rgba(29,123,255,0.15); }
-  .core-uses { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 3px; font: 500 10px/16px 'SamsungOne','Roboto',sans-serif; color: #7c818c; }
-  .core-uses .layer-tag { padding: 0 6px; border-radius: 3px; background: #1b2a45; color: #1d7bff; font-weight: 600; }
+  .core-uses { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 3px; font: 500 11px/16px 'SamsungOne','Roboto',sans-serif; color: #979ca7; }
+  .core-uses .layer-tag { padding: 0 6px; border-radius: 3px; background: #1b2a45; color: #6aa9ff; font-weight: 600; }
   .core-uses.none { color: #f5a524; }
   .core-row { display: grid; grid-template-columns: 172px minmax(0, 1fr); gap: 16px; align-items: start; padding: 14px 16px; }
   .core-row + .core-row { border-top: 1px solid #1b2638; }
   .core-row-label { font: 600 12px/18px 'SamsungOne','Roboto',sans-serif; color: #f2f3f5; }
-  .core-row-help { margin-top: 2px; font: 400 11px/15px 'Roboto', sans-serif; color: #7c818c; }
-  .core-row-help code { font-family: 'SamsungOne','Roboto',sans-serif; font-size: 10.5px; }
+  .core-row-help { margin-top: 2px; font: 400 11px/15px 'Roboto', sans-serif; color: #979ca7; }
+  .core-row-help code { font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; }
   .core-row-help .opt { font-weight: 600; color: #a3a7b1; }
   .wanted-note { margin-top: 6px; font: 400 11px/15px 'Roboto', sans-serif; color: #ffc966; }
   .upload-btn { width: 100%; min-height: 40px; display: flex; align-items: center; gap: 10px; padding: 8px 12px; text-align: left; background: #0e0f12; border: 1.5px dashed #2c2f37; border-radius: 0.5rem; cursor: pointer; transition: border-color .15s, background .15s; }
   .upload-btn:hover, .upload-btn.dragover { border-color: #1d7bff; background: #1b2638; }
   .upload-btn .t { font: 500 12px/16px 'Roboto', sans-serif; color: #f2f3f5; }
-  .upload-btn .s { margin-left: auto; white-space: nowrap; font: 400 11px/14px 'SamsungOne','Roboto',sans-serif; color: #7c818c; }
+  .upload-btn .s { margin-left: auto; white-space: nowrap; font: 400 11px/14px 'SamsungOne','Roboto',sans-serif; color: #979ca7; }
   .upload-btn.wanted { border-color: #6b4a12; background: #221d12; }
   .upload-btn.wanted .t { color: #ffc966; }
   .file-pill { min-height: 40px; display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 12px; background: #132a1f; border: 1px solid rgba(61,220,132,0.45); border-radius: 0.5rem; }
   .file-pill .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 12px/16px 'SamsungOne','Roboto',sans-serif; color: #f2f3f5; }
-  .file-pill .z { white-space: nowrap; font: 400 11px/14px 'SamsungOne','Roboto',sans-serif; color: #7c818c; }
-  .pill-btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: #7c818c; background: none; border: none; border-radius: 0.25rem; cursor: pointer; }
-  .pill-btn:hover { background: #1b2a45; color: #1d7bff; }
-  .pill-btn.del:hover { background: #3a1d21; color: #ff4d5a; }
-  .switch-link { margin-top: 6px; padding: 0; font: 500 11px/14px 'Roboto', sans-serif; color: #1d7bff; background: none; border: none; cursor: pointer; }
+  .file-pill .z { white-space: nowrap; font: 400 11px/14px 'SamsungOne','Roboto',sans-serif; color: #979ca7; }
+  .pill-btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: #979ca7; background: none; border: none; border-radius: 0.25rem; cursor: pointer; }
+  .pill-btn:hover { background: #1b2a45; color: #6aa9ff; }
+  .pill-btn.del:hover { background: #3a1d21; color: #ff6b76; }
+  .switch-link { margin-top: 6px; padding: 0; font: 500 11px/14px 'Roboto', sans-serif; color: #6aa9ff; background: none; border: none; cursor: pointer; }
   .switch-link:hover { text-decoration: underline; }
   .macro-text { min-height: 76px; resize: vertical; }
 
   /* ── Step 3: a layer's core ── */
-  .layer-core { display: flex; align-items: center; gap: 6px; flex-shrink: 0; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #7c818c; }
-  .layer-core-select { font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: #1d7bff; background-color: #1c1e23; background-size: 1.1em 1.1em; background-position: right 4px center; border: 1px solid #2c2f37; border-radius: 0.25rem; padding: 3px 24px 3px 6px; cursor: pointer; }
+  .layer-core { display: flex; align-items: center; gap: 6px; flex-shrink: 0; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #979ca7; }
+  .layer-core-select { font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: #6aa9ff; background-color: #1c1e23; background-size: 1.1em 1.1em; background-position: right 4px center; border: 1px solid #2c2f37; border-radius: 0.25rem; padding: 3px 24px 3px 6px; cursor: pointer; }
 
   /* ── Step rail ── */
   .step-li { position: relative; display: flex; gap: 14px; padding-bottom: 28px; }
@@ -193,44 +193,44 @@
     font-family: 'SamsungOne','Roboto',sans-serif; font-size: 12px; font-weight: 600;
     transition: all .2s;
   }
-  .step-dot.pending { background: #1c1e23; border: 1.5px solid #2c2f37; color: #7c818c; }
-  .step-dot.active  { background: #1d7bff; border: 2px solid #1d7bff; color: #fff; box-shadow: 0 0 0 4px rgba(29,123,255,0.22); }
+  .step-dot.pending { background: #1c1e23; border: 1.5px solid #2c2f37; color: #979ca7; }
+  .step-dot.active  { background: #1a6ce6; border: 2px solid #1d7bff; color: #fff; box-shadow: 0 0 0 4px rgba(29,123,255,0.22); }
   .step-dot.done    { background: #3ddc84; border: 2px solid #3ddc84; color: #fff; }
 
   /* ── Layer / architecture ── */
   .layer-block { border: 1px solid #2c2f37; border-radius: 0.5rem; overflow: hidden; }
   .layer-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #1b2638; border-bottom: 1px solid #2c2f37; cursor: pointer; user-select: none; }
   .layer-block.collapsed .layer-head { border-bottom: none; }   /* a collapsed layer is its head alone */
-  .layer-path-display { display: block; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; color: #7c818c; margin-top: 2px; cursor: pointer; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .layer-path-display:hover { color: #1d7bff; }
-  .layer-path-display.empty { color: #6b707c; }
-  .layer-path-input { display: block; font-family: 'SamsungOne','Roboto',sans-serif !important; font-size: 11px !important; line-height: 1.4; color: #1d7bff; background: none; border: none; border-bottom: 1px solid #1d7bff; outline: none; width: 100%; margin-top: 2px; padding: 0; }
+  .layer-path-display { display: block; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; color: #979ca7; margin-top: 2px; cursor: pointer; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .layer-path-display:hover { color: #6aa9ff; }
+  .layer-path-display.empty { color: #979ca7; }
+  .layer-path-input { display: block; font-family: 'SamsungOne','Roboto',sans-serif !important; font-size: 11px !important; line-height: 1.4; color: #6aa9ff; background: none; border: none; border-bottom: 1px solid #1d7bff; outline: none; width: 100%; margin-top: 2px; padding: 0; }
   .layer-body { padding: 4px 0 8px; }
   .tree-group-row { display: flex; align-items: center; gap: 3px; padding: 3px 12px; border-radius: 3px; cursor: default; }
   .tree-group-row:hover { background: #1b2a45; }
-  .tree-toggle { display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex-shrink: 0; color: #7c818c; background: none; border: none; cursor: pointer; border-radius: 2px; }
-  .tree-toggle:hover { background: #2e3139; color: #1d7bff; }
+  .tree-toggle { display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex-shrink: 0; color: #979ca7; background: none; border: none; cursor: pointer; border-radius: 2px; }
+  .tree-toggle:hover { background: #2e3139; color: #6aa9ff; }
   .tree-children { margin-left: 18px; padding-left: 8px; border-left: 1px solid #2c2f37; }
-  .add-group-btn { display: flex; align-items: center; gap: 3px; padding: 4px 12px; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 12px; font-weight: 600; color: #1d7bff; background: none; border: none; cursor: pointer; width: 100%; text-align: left; }
-  .add-group-btn:hover { color: #3d8fff; }
+  .add-group-btn { display: flex; align-items: center; gap: 3px; padding: 4px 12px; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 12px; font-weight: 600; color: #6aa9ff; background: none; border: none; cursor: pointer; width: 100%; text-align: left; }
+  .add-group-btn:hover { color: #6aa9ff; }
   .inline-add-row { display: flex; align-items: center; gap: 4px; padding: 4px 12px; }
   .inline-add-input { font-family: 'SamsungOne','Roboto',sans-serif !important; font-size: 11px !important; flex: 1; padding: 3px 8px; border: 1px solid #1d7bff; border-radius: 4px; outline: none; color: #f2f3f5; }
-  .inline-add-confirm { font-family: 'SamsungOne','Roboto',sans-serif; font-size: 10px; font-weight: 600; padding: 3px 10px; background: #1d7bff; color: #fff; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
-  .inline-add-confirm:hover { background: #3d8fff; }
-  .inline-add-cancel { display: flex; align-items: center; background: none; border: none; cursor: pointer; color: #7c818c; padding: 2px; }
-  .inline-add-cancel:hover { color: #ff4d5a; }
+  .inline-add-confirm { font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; font-weight: 600; padding: 3px 10px; background: #1a6ce6; color: #fff; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+  .inline-add-confirm:hover { background: #1a6ce6; }
+  .inline-add-cancel { display: flex; align-items: center; background: none; border: none; cursor: pointer; color: #979ca7; padding: 2px; }
+  .inline-add-cancel:hover { color: #ff6b76; }
   .inc-paths-section { margin: 4px 8px 6px; background: #132a1f; border: 1px solid rgba(61,220,132,0.2); border-radius: 6px; padding: 6px 10px; }
   .inc-paths-row { display: flex; gap: 10px; align-items: flex-start; }
   .inc-paths-label { flex-shrink: 0; white-space: nowrap; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #3ddc84; padding-top: 5px; cursor: help; }
   .inc-paths-content { flex: 1; min-width: 0; }
   .inc-add-btn { display: inline-flex; align-items: center; gap: 3px; margin-top: 4px; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: #3ddc84; background: none; border: none; cursor: pointer; padding: 0; }
-  .inc-add-btn:hover { color: #1d7bff; }
+  .inc-add-btn:hover { color: #6aa9ff; }
   .ext-path-row { display: flex; align-items: center; gap: 5px; border-bottom: 1px solid rgba(61,220,132,0.26); padding: 2px 0; margin-bottom: 1px; }
   .ext-path-row:last-of-type { border-bottom: none; margin-bottom: 0; }
   .ext-path-input { font-family: 'SamsungOne','Roboto',sans-serif !important; font-size: 11px !important; line-height: 1.3; color: #3ddc84; background: none; border: none; outline: none; flex: 1; min-width: 0; padding: 0; height: 18px; }
   .ext-path-input:focus { color: #3ddc84; }
   .ext-path-input::placeholder { color: #5f7d72; }
-  .ext-browse-btn { flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px; padding: 1px 5px; border: 1px solid rgba(61,220,132,0.45); border-radius: 3px; background: transparent; cursor: pointer; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 9px; font-weight: 700; letter-spacing: .04em; color: #3ddc84; }
+  .ext-browse-btn { flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px; padding: 1px 5px; border: 1px solid rgba(61,220,132,0.45); border-radius: 3px; background: transparent; cursor: pointer; font-family: 'SamsungOne','Roboto',sans-serif; font-size: 11px; font-weight: 700; letter-spacing: .04em; color: #3ddc84; }
   .ext-browse-btn:hover { background: #1f5a3a; }
 
   /* ── Review cards ── */
@@ -252,19 +252,19 @@
   .sidebar-file-row:hover { background:#1b2638; }
   .sidebar-file-row.assigned { cursor:default; opacity:.55; }
   .sidebar-file-row.assigned:hover { background:transparent; }
-  .file-owner-tag { font-family:'SamsungOne','Roboto',sans-serif; font-size:9px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:1px 5px; background:#1b2a45; color:#1d7bff; border-radius:3px; white-space:nowrap; flex-shrink:0; }
+  .file-owner-tag { font-family:'SamsungOne','Roboto',sans-serif; font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:1px 5px; background:#1b2a45; color:#6aa9ff; border-radius:3px; white-space:nowrap; flex-shrink:0; }
   .tree-comp-block { }
   .tree-comp-row { display:flex; align-items:center; gap:3px; padding:2px 8px; border-radius:3px; cursor:default; }
   .tree-comp-row:hover { background:#1b2a45; }
   .comp-files { margin-left:16px; padding-left:8px; border-left:1px solid #2c2f37; }
-  .file-row { display:flex; align-items:center; gap:4px; font-family:'SamsungOne','Roboto',sans-serif; font-size:10px; color:#7c818c; padding:1px 6px; }
-  .sect-label { font-family:'SamsungOne','Roboto',sans-serif; font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#7c818c; }
+  .file-row { display:flex; align-items:center; gap:4px; font-family:'SamsungOne','Roboto',sans-serif; font-size:11px; color:#979ca7; padding:1px 6px; }
+  .sect-label { font-family:'SamsungOne','Roboto',sans-serif; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#979ca7; }
 
   /* ── Folder picker ── */
   .fp-folder-row { display:flex; align-items:center; gap:5px; padding:4px 6px; border-radius:4px; cursor:pointer; user-select:none; }
   .fp-folder-row:hover { background:#1b2638; }
   .fp-folder-row.selected { background:#1b2a45; }
-  .fp-folder-row.selected .fp-name { color:#1d7bff; font-weight:600; }
+  .fp-folder-row.selected .fp-name { color:#6aa9ff; font-weight:600; }
   .fp-children { margin-left:16px; border-left:1px solid #1b2a45; }
 
   /* ── Repository source: Remote | Local (step 1) ── */
@@ -273,33 +273,33 @@
              font: 600 11px/16px 'SamsungOne','Roboto',sans-serif; letter-spacing: .02em; color: #a3a7b1; transition: background .15s, color .15s; }
   .seg-btn .material-symbols-outlined { font-size: 14px; }
   .seg-btn:hover { color: #f2f3f5; }
-  .seg-btn.on { background: #1c1e23; color: #1d7bff; box-shadow: 0 1px 2px rgba(0,0,0,0.24); }
+  .seg-btn.on { background: #1c1e23; color: #6aa9ff; box-shadow: 0 1px 2px rgba(0,0,0,0.24); }
 
   /* ── Local path: Browse - the server's folders ── */
   .rb-browse { display: none; align-items: center; gap: 6px; padding: 0 12px; flex-shrink: 0; background: #1c1e23; border: 1px solid #2c2f37; border-radius: .5rem; cursor: pointer;
                font: 700 11px/16px 'SamsungOne','Roboto',sans-serif; letter-spacing: .04em; color: #a3a7b1; transition: background .15s; }
   .rb-browse:hover { background: #1b2638; }
   .rb-crumb { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: none; border-radius: .25rem; background: none; cursor: pointer;
-              font: 500 11px/16px 'SamsungOne','Roboto',sans-serif; color: #1d7bff; }
+              font: 500 11px/16px 'SamsungOne','Roboto',sans-serif; color: #6aa9ff; }
   .rb-crumb:hover { background: #1b2638; }
   .rb-crumb:last-child { color: #f2f3f5; font-weight: 600; }
-  .rb-sep { color: #7c818c; font-size: 11px; }
+  .rb-sep { color: #979ca7; font-size: 11px; }
   .rb-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: .375rem; cursor: pointer; user-select: none;
             font: 400 12px/18px 'SamsungOne','Roboto',sans-serif; color: #f2f3f5; }
   .rb-row:hover { background: #1b2638; }
   .rb-row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .rb-row.picked { background: #1b2a45; color: #1d7bff; font-weight: 600; }
-  .rb-git { padding: 0 6px; border-radius: 3px; background: #1f5a3a; color: #3ddc84; font: 600 10px/16px 'SamsungOne','Roboto',sans-serif; }
-  .rb-empty { padding: 16px 10px; text-align: center; font: 400 12px/16px Roboto, sans-serif; color: #7c818c; }
+  .rb-row.picked { background: #1b2a45; color: #6aa9ff; font-weight: 600; }
+  .rb-git { padding: 0 6px; border-radius: 3px; background: #1f5a3a; color: #3ddc84; font: 600 11px/16px 'SamsungOne','Roboto',sans-serif; }
+  .rb-empty { padding: 16px 10px; text-align: center; font: 400 12px/16px Roboto, sans-serif; color: #979ca7; }
 
   /* ── Branch: one box - search and list (step 1) ── */
-  .bd-head  { padding: 6px 12px; font: 500 11px/16px 'SamsungOne','Roboto',sans-serif; color: #7c818c; border-bottom: 1px solid #1b2638; }
+  .bd-head  { padding: 6px 12px; font: 500 11px/16px 'SamsungOne','Roboto',sans-serif; color: #979ca7; border-bottom: 1px solid #1b2638; }
   .bd-item  { display: flex; align-items: center; gap: 8px; padding: 7px 12px; cursor: pointer; font: 400 12px/18px 'SamsungOne','Roboto',sans-serif; color: #f2f3f5; }
   .bd-item:hover, .bd-item.focused { background: #1b2638; }
-  .bd-item.picked { color: #1d7bff; font-weight: 600; }
+  .bd-item.picked { color: #6aa9ff; font-weight: 600; }
   .bd-item .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .bd-item .tag { padding: 0 6px; border-radius: 3px; background: #1b2a45; color: #1d7bff; font-size: 10px; font-weight: 600; }
-  .bd-empty { padding: 10px 12px; font: 400 12px/16px Roboto, sans-serif; color: #7c818c; }
+  .bd-item .tag { padding: 0 6px; border-radius: 3px; background: #1b2a45; color: #6aa9ff; font-size: 11px; font-weight: 600; }
+  .bd-empty { padding: 10px 12px; font: 400 12px/16px Roboto, sans-serif; color: #979ca7; }
 
   /* ── Member search dropdown ── */
   .ms-item { display:flex; align-items:center; gap:10px; padding:8px 12px; cursor:pointer; transition:background .1s; }
@@ -312,7 +312,7 @@
   /* ── Samsung Magician dark theme layer (shared by every dark mockup) ── */
   :root {
     --mm-blue: #1d7bff; --mm-blue-hi: #3d8fff; --mm-navy: #1428a0;
-    --mm-grad: linear-gradient(135deg, #3d8fff 0%, #1d7bff 50%, #1853ce 100%);
+    --mm-grad: linear-gradient(135deg, #1a6ce6 0%, #1662d6 50%, #1853ce 100%);
     --shadow-card: 0 1px 0 rgba(255,255,255,.04) inset, 0 10px 30px rgba(0,0,0,.45);
     --shadow-pop: 0 18px 48px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.05);
     --glow-blue: 0 0 0 1px rgba(29,123,255,.45), 0 6px 20px rgba(29,123,255,.35);
@@ -337,7 +337,7 @@
 
   /* Signature surfaces: gradient CTA, glassy cards, glowing brand tile */
   .bg-secondary { background-image: var(--mm-grad); box-shadow: 0 4px 14px rgba(29,123,255,.35); }
-  .hover\:bg-secondary-container:hover { background-image: linear-gradient(135deg, #509cff 0%, #2d86ff 50%, #1e5ed7 100%); box-shadow: var(--glow-blue); }
+  .hover\:bg-secondary-container:hover { background-image: linear-gradient(135deg, #1f70ea 0%, #1a6ce6 50%, #1a5ed8 100%); box-shadow: var(--glow-blue); }
   .rounded-xl.border.bg-surface-container-lowest,
   .rounded-2xl.border.bg-surface-container-lowest { box-shadow: var(--shadow-card); background-image: linear-gradient(180deg, rgba(255,255,255,.025), transparent 120px); }
   .brand-tile { background-image: var(--mm-grad); box-shadow: 0 0 18px rgba(29,123,255,.55); }
@@ -351,12 +351,12 @@
   }
   #app-sidebar { background: linear-gradient(180deg, #17181d 0%, #121317 100%) !important; border-color: #24272e !important; }
   header { background: rgba(21,22,26,.85) !important; backdrop-filter: blur(10px); border-color: #24272e !important; }
-  input::placeholder, textarea::placeholder { color: #6b707c !important; }
+  input::placeholder, textarea::placeholder { color: #979ca7 !important; }
 
   /* Form controls (beat the Tailwind forms plugin's light defaults) */
   input[type='text'], input[type='search'], input[type='email'], input[type='password'],
   input[type='url'], input[type='number'], input:not([type]), textarea, select {
-    background-color: transparent; color: #f2f3f5; border-color: #2c2f37;
+    background-color: transparent; color: #f2f3f5; border-color: #737885;
   }
   input[type='text']:focus, input[type='search']:focus, input[type='email']:focus, input[type='password']:focus,
   input[type='url']:focus, input[type='number']:focus, input:not([type]):focus, textarea:focus, select:focus {
@@ -364,9 +364,9 @@
   }
   input.bg-transparent { border: 0; padding: 0; box-shadow: none !important; }
   select option { background: #1f2127; color: #f2f3f5; }
-  input[type='checkbox'], input[type='radio'] { background-color: #1c1e23; border: 1.5px solid #4a4f5b; color: #1d7bff; accent-color: #1d7bff; }
+  input[type='checkbox'], input[type='radio'] { background-color: #1c1e23; border: 1.5px solid #4a4f5b; color: #6aa9ff; accent-color: #1d7bff; }
   input[type='checkbox'] { border-radius: 4px; }
-  input[type='checkbox']:checked, input[type='radio']:checked { background-color: #1d7bff; border-color: #1d7bff; }
+  input[type='checkbox']:checked, input[type='radio']:checked { background-color: #1a6ce6; border-color: #1d7bff; }
   input[type='checkbox']:focus, input[type='radio']:focus { box-shadow: 0 0 0 3px rgba(29,123,255,.3); outline: none; }
 
   /* Navigation */
@@ -374,7 +374,7 @@
   .nav-default { color: #a3a7b1; }
   .nav-default:hover { background: rgba(255,255,255,.05); color: #f2f3f5; }
   .nav-active { background: linear-gradient(90deg, rgba(29,123,255,.22), rgba(29,123,255,.06)) !important; color: #ffffff !important; border-left: none !important; }
-  .nav-active::before { content: ''; position: absolute; left: -2px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: #3d8fff; box-shadow: 0 0 10px #1d7bff; }
+  .nav-active::before { content: ''; position: absolute; left: -2px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: #1a6ce6; box-shadow: 0 0 10px #1d7bff; }
   .nav-active .material-symbols-outlined { color: #5aa2ff; font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
   .outline-link.active { color: #5aa2ff; background: rgba(29,123,255,.12); font-weight: 500; }
 
@@ -388,7 +388,7 @@
   .badge { border-radius: 999px; }
   .badge-approved { background: rgba(61,220,132,.12); color: #3ddc84; border-color: rgba(61,220,132,.35); }
   .badge-review   { background: rgba(245,165,36,.12); color: #f5a524; border-color: rgba(245,165,36,.35); }
-  .badge-unchanged { background: rgba(255,255,255,.05); color: #8a8f9c; border-color: #2c2f37; }
+  .badge-unchanged { background: rgba(255,255,255,.05); color: #979ca7; border-color: #2c2f37; }
   .proc-pill { border-radius: 999px; }
   .pill-swe3 { background: rgba(29,123,255,.16); color: #5aa2ff; }
   .pill-swe2 { background: rgba(143,139,255,.16); color: #a8a5ff; }
@@ -407,6 +407,8 @@
   .doc-row:hover { background: rgba(255,255,255,.035); }
   .doc-row.row-selected { background: rgba(29,123,255,.10); }
 </style>
+<link rel="stylesheet" href="../a11y.css">
+<script src="../a11y.js" defer></script>
 </head>
 <body class="bg-background text-on-surface font-body-md overflow-hidden">
 
@@ -440,14 +442,14 @@
 
   <div class="flex items-center gap-0.5">
     <button class="p-2 hover:bg-surface-container rounded-lg transition-colors" aria-label="Notifications">
-      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
+      <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:22px;">notifications</span>
     </button>
     <div class="w-px h-5 bg-outline-variant mx-1.5"></div>
     <button class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors">
       <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
         <span class="text-on-secondary-container font-bold text-xs" style="font-family:Roboto;">EL</span>
       </div>
-      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">expand_more</span>
+      <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:16px;">expand_more</span>
     </button>
   </div>
 </header>
@@ -457,7 +459,7 @@
      VIEW: EMPTY STATE (default) - the Projects page with no project yet
      (web-app pages/ProjectsPage: its heading, and ProjectsEmptyState where the table goes)
      ══════════════════════════════════════════ -->
-<div id="view-empty" class="fixed inset-0 pt-14 overflow-y-auto">
+<div id="view-empty" role="main" class="fixed inset-0 pt-14 overflow-y-auto">
   <div class="px-6 py-6 mx-auto" style="max-width:1280px;">
 
     <!-- Page heading. No New Project / Request Access buttons while there is no project: the two
@@ -473,7 +475,7 @@
     <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden mb-6">
       <div class="flex flex-col items-center justify-center text-center px-6 py-16">
         <div class="w-16 h-16 bg-secondary-container flex items-center justify-center mb-6" style="border-radius:.75rem;">
-          <span class="material-symbols-outlined sym-fill text-secondary" style="font-size:32px;">folder_open</span>
+          <span class="material-symbols-outlined sym-fill text-white" aria-hidden="true" style="font-size:32px;">folder_open</span>
         </div>
         <h2 class="text-on-surface mb-2" style="font-family:Roboto;font-size:18px;font-weight:600;line-height:28px;letter-spacing:-0.01em;">No projects yet</h2>
         <p class="text-on-surface-variant mb-8" style="font-size:13px;line-height:1.6;max-width:440px;">
@@ -486,7 +488,7 @@
           <!-- New Project - opens the wizard -->
           <button onclick="showWizard()" class="choice-card choice-card-primary flex flex-col items-center gap-3 p-6 bg-surface-container-lowest rounded-xl text-center">
             <div class="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center">
-              <span class="material-symbols-outlined text-white" style="font-size:20px;">add</span>
+              <span class="material-symbols-outlined text-white" aria-hidden="true" style="font-size:20px;">add</span>
             </div>
             <div>
               <p class="text-on-surface mb-1" style="font-size:14px;line-height:20px;font-weight:600;">New Project</p>
@@ -494,14 +496,14 @@
             </div>
             <span class="mt-auto flex items-center gap-1 text-secondary" style="font-size:12px;line-height:16px;font-weight:600;">
               Get started
-              <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
+              <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">arrow_forward</span>
             </span>
           </button>
 
           <!-- Request Access - a message, no dialog: a project admin adds people from Team -->
           <button onclick="requestAccess()" class="choice-card choice-card-plain flex flex-col items-center gap-3 p-6 bg-surface-container-lowest rounded-xl text-center">
             <div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center">
-              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:20px;">lock</span>
+              <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:20px;">lock</span>
             </div>
             <div>
               <p class="text-on-surface mb-1" style="font-size:14px;line-height:20px;font-weight:600;">Request Access</p>
@@ -509,7 +511,7 @@
             </div>
             <span class="mt-auto flex items-center gap-1 text-on-surface-variant" style="font-size:12px;line-height:16px;font-weight:600;">
               Send request
-              <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
+              <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">arrow_forward</span>
             </span>
           </button>
 
@@ -524,16 +526,16 @@
 <!-- ══════════════════════════════════════════
      VIEW: WIZARD (hidden until New Project)
      ══════════════════════════════════════════ -->
-<div id="view-wizard" class="fixed inset-0 pt-14 hidden" style="display:none;">
+<div id="view-wizard" role="main" class="fixed inset-0 pt-14 hidden" style="display:none;">
 <div class="h-full flex">
 
   <!-- STEP RAIL -->
-  <aside class="w-60 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex flex-col overflow-y-auto">
+  <aside class="w-60 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex flex-col overflow-y-auto" aria-label="Setup progress">
     <div class="px-4 pt-4 pb-3 border-b border-outline-variant">
       <div class="flex items-center justify-between mb-1.5">
         <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.10em]">Setup Progress</p>
         <button onclick="cancelWizard()" class="text-on-surface-variant hover:text-on-surface transition-colors" title="Cancel">
-          <span class="material-symbols-outlined" style="font-size:18px;">close</span>
+          <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">close</span>
         </button>
       </div>
       <div class="flex items-center gap-3 mt-2">
@@ -548,7 +550,7 @@
     </div>
     <div class="px-4 pb-4">
       <div class="flex items-start gap-2.5 p-3 bg-surface-container-low border border-outline-variant rounded-xl">
-        <span class="material-symbols-outlined text-secondary flex-shrink-0 mt-0.5" style="font-size:14px;">admin_panel_settings</span>
+        <span class="material-symbols-outlined text-secondary flex-shrink-0 mt-0.5" aria-hidden="true" style="font-size:14px;">admin_panel_settings</span>
         <p class="font-label-sm text-label-sm text-on-surface-variant leading-snug">Admin-only setup. Developers gain access after initialization.</p>
       </div>
     </div>
@@ -581,16 +583,16 @@
               <span id="repo-label">Repository URL</span> <span class="req">*</span>
               <div class="seg" role="radiogroup" aria-label="Where the repository is">
                 <button type="button" id="src-url" class="seg-btn on" role="radio" aria-checked="true" onclick="setRepoSource('url')">
-                  <span class="material-symbols-outlined">link</span>Remote
+                  <span class="material-symbols-outlined" aria-hidden="true">link</span>Remote
                 </button>
                 <button type="button" id="src-local" class="seg-btn" role="radio" aria-checked="false" onclick="setRepoSource('local')">
-                  <span class="material-symbols-outlined">folder</span>Local
+                  <span class="material-symbols-outlined" aria-hidden="true">folder</span>Local
                 </button>
               </div>
             </div>
             <div class="flex gap-2">
               <div style="position:relative;flex:1;">
-                <span id="repo-icon" class="material-symbols-outlined" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:16px;color:#7c818c;pointer-events:none;">link</span>
+                <span id="repo-icon" class="material-symbols-outlined" aria-hidden="true" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:16px;color:#979ca7;pointer-events:none;">link</span>
                 <input class="inp mono" id="s1-repo" type="text" placeholder="https://bitbucket.company.com/scm/vcu/vcu-firmware.git" style="padding-left:34px;"
                        spellcheck="false" oninput="this.classList.remove('err'); repoTyped();">
               </div>
@@ -598,7 +600,7 @@
                    browser cannot give a full path from the reviewer's own PC, and git runs on the
                    server). -->
               <button type="button" id="repo-browse" class="rb-browse" onclick="openRepoBrowser()">
-                <span class="material-symbols-outlined" style="font-size:16px;">folder_open</span>BROWSE…
+                <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">folder_open</span>BROWSE…
               </button>
             </div>
             <!-- URL chosen, but a folder path typed: say so, one click to switch. -->
@@ -618,9 +620,9 @@
             <div class="relative">
               <input class="inp mono pr-10" id="s1-token" type="password" placeholder="Paste the access token"
                      oninput="repoChanged()">
-              <button type="button" onclick="toggleToken()"
+              <button type="button" onclick="toggleToken()" aria-label="Show token" aria-pressed="false"
                       class="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors">
-                <span class="material-symbols-outlined" id="token-eye" style="font-size:17px;">visibility_off</span>
+                <span class="material-symbols-outlined" aria-hidden="true" id="token-eye" style="font-size:17px;">visibility_off</span>
               </button>
             </div>
           </div>
@@ -630,7 +632,7 @@
             <button id="test-conn-btn" onclick="testConnection()"
                     class="flex items-center gap-1.5 px-4 py-2 border border-outline-variant rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors flex-shrink-0"
                     style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#a3a7b1;">
-              <span class="material-symbols-outlined" style="font-size:15px;">wifi_tethering</span>
+              <span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">wifi_tethering</span>
               Test Connection
             </button>
             <span id="test-conn-status" class="text-body-sm" style="font-size:12px;"></span>
@@ -643,14 +645,14 @@
             <div style="height:1px;background:#1b2638;margin-bottom:16px;"></div>
             <div class="lbl">Branch <span class="req">*</span></div>
             <div style="position:relative;">
-              <span class="material-symbols-outlined" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:16px;color:#7c818c;pointer-events:none;">call_split</span>
+              <span class="material-symbols-outlined" aria-hidden="true" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:16px;color:#979ca7;pointer-events:none;">call_split</span>
               <input class="inp mono" id="s1-branch-box" type="text" autocomplete="off" spellcheck="false"
                      role="combobox" aria-label="Branch" aria-autocomplete="list" aria-expanded="false" aria-controls="branch-dd"
                      placeholder="Search or pick a branch…" style="padding-left:34px;padding-right:34px;"
                      onfocus="branchOpen()" onclick="branchOpen()" oninput="branchFilter()"
                      onmouseup="branchMouseUp(event)" onkeydown="branchKey(event)" onblur="setTimeout(branchClose, 150)">
-              <span class="material-symbols-outlined" id="branch-chevron" onmousedown="event.preventDefault(); branchToggle()"
-                    style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:20px;color:#7c818c;cursor:pointer;transition:transform .15s;">expand_more</span>
+              <span class="material-symbols-outlined" aria-hidden="true" id="branch-chevron" onmousedown="event.preventDefault(); branchToggle()"
+                    style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:20px;color:#979ca7;cursor:pointer;transition:transform .15s;">expand_more</span>
               <div id="branch-dd" role="listbox" aria-label="Branches"
                    style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#1c1e23;border:1px solid #2c2f37;border-radius:0.5rem;box-shadow:0 4px 16px rgba(0,0,0,0.24);max-height:248px;overflow-y:auto;z-index:200;"></div>
             </div>
@@ -672,7 +674,7 @@
                 <p id="import-modal-title" style="font-size:16px;font-weight:600;color:#f2f3f5;"></p>
                 <p style="font-size:12px;color:#a3a7b1;margin-top:2px;">Items that need your attention are dealt with in the step named beside them.</p>
               </div>
-              <button onclick="closeImportModal()" style="background:none;border:none;cursor:pointer;color:#a3a7b1;padding:4px;"><span class="material-symbols-outlined" style="font-size:20px;">close</span></button>
+              <button onclick="closeImportModal()" style="background:none;border:none;cursor:pointer;color:#a3a7b1;padding:4px;"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">close</span></button>
             </div>
             <div id="import-modal-body" style="max-height:60vh;overflow-y:auto;display:grid;gap:18px;"></div>
           </div>
@@ -693,19 +695,19 @@
 
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
-            <span class="material-symbols-outlined text-secondary" style="font-size:17px;">memory</span>
+            <span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:17px;">memory</span>
             <span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-[.08em]">Cores <span id="cores-count"></span></span>
           </div>
           <button onclick="addCore()"
                   class="flex items-center gap-1.5 px-3 py-1.5 text-secondary border border-outline-variant rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors">
-            <span class="material-symbols-outlined" style="font-size:15px;">add</span> Add Core
+            <span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">add</span> Add Core
           </button>
         </div>
 
         <div id="cores-list" class="space-y-3"></div>
 
         <div class="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
-          <span class="material-symbols-outlined text-secondary flex-shrink-0" style="font-size:18px;">info</span>
+          <span class="material-symbols-outlined text-secondary flex-shrink-0" aria-hidden="true" style="font-size:18px;">info</span>
           <p class="text-body-sm text-on-surface-variant">Layers built the same way share a core. A layer with no core is parsed without macros or a data dictionary. Paths inside a compile_commands.json come from the build machine and are mapped onto the repository automatically.</p>
         </div>
       </div><!-- /step-2 -->
@@ -720,12 +722,12 @@
 
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
-            <span class="material-symbols-outlined text-secondary" style="font-size:17px;">account_tree</span>
+            <span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:17px;">account_tree</span>
             <span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-[.08em]">Project Architecture</span>
           </div>
           <button onclick="showAddLayer()"
                   class="flex items-center gap-1.5 px-3 py-1.5 text-secondary border border-outline-variant rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors">
-            <span class="material-symbols-outlined" style="font-size:15px;">add</span> Add Layer
+            <span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">add</span> Add Layer
           </button>
         </div>
 
@@ -733,7 +735,7 @@
 
           <!-- empty state hint -->
           <div id="arch-empty" class="flex flex-col items-center justify-center py-10 text-center">
-            <span class="material-symbols-outlined text-on-surface-variant mb-3" style="font-size:36px;opacity:.35;">account_tree</span>
+            <span class="material-symbols-outlined text-on-surface-variant mb-3" aria-hidden="true" style="font-size:36px;opacity:.35;">account_tree</span>
             <p class="font-label-md text-label-md text-on-surface-variant" style="font-size:12px;">No layers yet.</p>
             <p class="text-body-sm text-on-surface-variant mt-1" style="font-size:12px;">Click <strong>Add Layer</strong> to start mapping your architecture.</p>
           </div>
@@ -753,7 +755,7 @@
               <button type="button" onclick="openFolderPicker('new-layer-path')"
                       class="flex items-center gap-1.5 px-3 border border-outline-variant rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant flex-shrink-0"
                       style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;">
-                <span class="material-symbols-outlined" style="font-size:16px;">folder_open</span>
+                <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">folder_open</span>
                 BROWSE
               </button>
             </div>
@@ -770,15 +772,15 @@
         </div>
 
         <div class="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
-          <span class="material-symbols-outlined text-secondary flex-shrink-0" style="font-size:18px;">info</span>
+          <span class="material-symbols-outlined text-secondary flex-shrink-0" aria-hidden="true" style="font-size:18px;">info</span>
           <p class="text-body-sm text-on-surface-variant">Layer root path is scanned by Clang. Groups define logical modules. Components map to physical source folders.</p>
         </div>
         <!-- One click removes a whole layer or group: it can be undone for 10 s. -->
         <div id="undo-bar" role="status" style="display:none;position:sticky;bottom:12px;z-index:10;align-items:center;gap:12px;padding:10px 16px;background:#0b0c0f;color:#fff;border-radius:.5rem;box-shadow:0 4px 16px rgba(0,0,0,0.5);">
-          <span class="material-symbols-outlined" style="font-size:16px;opacity:.7;">delete</span>
+          <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;opacity:.7;">delete</span>
           <span class="undo-label" style="flex:1;font-size:12px;"></span>
           <button onclick="undoRemove()" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#8ab4ff;background:none;border:none;cursor:pointer;">Undo</button>
-          <button onclick="LAST_REMOVED = null; renderUndo();" aria-label="Dismiss" style="background:none;border:none;color:#fff;opacity:.7;cursor:pointer;"><span class="material-symbols-outlined" style="font-size:15px;">close</span></button>
+          <button onclick="LAST_REMOVED = null; renderUndo();" aria-label="Dismiss" style="background:none;border:none;color:#fff;opacity:.7;cursor:pointer;"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">close</span></button>
         </div>
       </div><!-- /step-3 -->
 
@@ -794,7 +796,7 @@
         <div class="card">
           <!-- Header row -->
           <div class="flex items-center gap-3 pb-3 mb-1 border-b border-outline-variant"
-               style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7c818c;">
+               style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#979ca7;">
             <div style="width:28px;flex-shrink:0;"></div>
             <span class="flex-1">Member</span>
             <span style="width:120px;flex-shrink:0;">Role</span>
@@ -808,10 +810,10 @@
             </div>
             <div class="flex-1 min-w-0">
               <p class="font-label-md text-label-md text-on-surface" style="font-size:12px;">Emma Lewis <span class="text-on-surface-variant" style="font-weight:400;">(you)</span></p>
-              <p class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;">emma.lewis@company.com</p>
+              <p class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:11px;">emma.lewis@company.com</p>
             </div>
             <div style="width:120px;flex-shrink:0;">
-              <span style="display:inline-block;font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;background:#26282e;color:#8a8f9c;border-radius:3px;">Admin</span>
+              <span style="display:inline-block;font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;background:#26282e;color:#979ca7;border-radius:3px;">Admin</span>
             </div>
             <div style="width:24px;flex-shrink:0;"></div>
           </div>
@@ -825,7 +827,7 @@
               <button onclick="openAddMember()"
                       class="flex items-center gap-2 text-secondary hover:text-secondary-container transition-colors"
                       style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;">
-                <span class="material-symbols-outlined" style="font-size:16px;">person_add</span>
+                <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">person_add</span>
                 Add / Invite member
               </button>
             </div>
@@ -834,7 +836,7 @@
               <div style="position:relative;">
                 <div class="flex gap-2">
                   <div style="position:relative;flex:1;">
-                    <span class="material-symbols-outlined" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:16px;color:#7c818c;pointer-events:none;">search</span>
+                    <span class="material-symbols-outlined" aria-hidden="true" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:16px;color:#979ca7;pointer-events:none;">search</span>
                     <input class="inp" id="member-search" type="text" autocomplete="off"
                            placeholder="Search by name or email…"
                            style="padding-left:32px;"
@@ -843,7 +845,7 @@
                            onblur="setTimeout(memberSearchClose,150)"
                            onkeydown="memberSearchKey(event)">
                   </div>
-                  <select class="inp" id="invite-role-select" style="width:130px;flex-shrink:0;">
+                  <select class="inp" id="invite-role-select" aria-label="Role" style="width:130px;flex-shrink:0;">
                     <option value="Developer">Developer</option>
                     <option value="Admin">Admin</option>
                   </select>
@@ -863,12 +865,12 @@
 
         <!-- What each role may do: on request, not in the way. -->
         <button type="button" onclick="toggleRoles(this)" class="flex items-center gap-1 text-secondary hover:underline" style="font-size:11px;">
-          <span class="material-symbols-outlined" style="font-size:14px;">help</span><span>What can each role do?</span>
+          <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">help</span><span>What can each role do?</span>
         </button>
         <div id="role-legend" class="grid grid-cols-2 gap-3" style="display:none;">
           <div class="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
             <div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center flex-shrink-0">
-              <span class="material-symbols-outlined text-on-primary-container sym-fill" style="font-size:16px;">manage_accounts</span>
+              <span class="material-symbols-outlined text-on-primary-container sym-fill" aria-hidden="true" style="font-size:16px;">manage_accounts</span>
             </div>
             <div>
               <p class="font-label-md text-label-md text-on-surface" style="font-size:12px;font-weight:600;">Admin</p>
@@ -877,7 +879,7 @@
           </div>
           <div class="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
             <div class="w-8 h-8 rounded-lg bg-secondary-container flex items-center justify-center flex-shrink-0">
-              <span class="material-symbols-outlined text-secondary sym-fill" style="font-size:16px;">engineering</span>
+              <span class="material-symbols-outlined text-white sym-fill" aria-hidden="true" style="font-size:16px;">engineering</span>
             </div>
             <div>
               <p class="font-label-md text-label-md text-on-surface" style="font-size:12px;font-weight:600;">Developer</p>
@@ -898,13 +900,13 @@
 
         <!-- Is the project ready: what must be fixed (blocks), what it would miss (warns) - then the details. -->
         <div id="r-ready"></div>
-        <p style="padding-top:8px;font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7c818c;">Details</p>
+        <p style="padding-top:8px;font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#979ca7;">Details</p>
 
         <!-- Project Basics -->
         <div class="rev-card">
           <div class="rev-card-head">
             <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">source_environment</span>
+              <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:15px;">source_environment</span>
               <span class="font-label-md text-label-md text-on-surface" style="font-weight:600;">Project &amp; Repository</span>
             </div>
             <button onclick="goToStep(1)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
@@ -919,7 +921,7 @@
         <div class="rev-card">
           <div class="rev-card-head">
             <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">memory</span>
+              <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:15px;">memory</span>
               <span class="font-label-md text-label-md text-on-surface" style="font-weight:600;">Cores</span>
             </div>
             <button onclick="goToStep(2)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
@@ -931,14 +933,14 @@
         <div class="rev-card">
           <div class="rev-card-head">
             <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">account_tree</span>
+              <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:15px;">account_tree</span>
               <span class="font-label-md text-label-md text-on-surface" style="font-weight:600;">Architecture</span>
             </div>
             <button onclick="goToStep(3)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
           </div>
           <div class="rev-row"><span>Layers</span><span id="r-layers">—</span></div>
           <button type="button" onclick="toggleReviewTree(this)" class="w-full flex items-center gap-1.5 text-secondary hover:bg-surface-container-low" style="padding:10px 16px;border-top:1px solid #2c2f37;font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;text-align:left;">
-            <span class="material-symbols-outlined" style="font-size:15px;">expand_more</span><span>Show every layer, group and component</span>
+            <span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">expand_more</span><span>Show every layer, group and component</span>
           </button>
           <div id="r-arch-tree" class="border-t border-outline-variant divide-y divide-outline-variant" style="display:none;"></div>
         </div>
@@ -947,7 +949,7 @@
         <div class="rev-card">
           <div class="rev-card-head">
             <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">group</span>
+              <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:15px;">group</span>
               <span class="font-label-md text-label-md text-on-surface" style="font-weight:600;">Team</span>
             </div>
             <button onclick="goToStep(4)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
@@ -968,11 +970,11 @@
       <div class="flex items-center gap-3">
         <button id="back-btn" onclick="doBack()"
                 class="flex items-center gap-2 px-5 py-2.5 border border-outline-variant rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors invisible">
-          <span class="material-symbols-outlined" style="font-size:16px;">arrow_back</span> Back
+          <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">arrow_back</span> Back
         </button>
         <button id="continue-btn" onclick="doContinue()"
                 class="flex items-center gap-2 px-6 py-2.5 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md hover:bg-secondary-container active:scale-[.98] transition-all">
-          Continue <span class="material-symbols-outlined" style="font-size:16px;">arrow_forward</span>
+          Continue <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">arrow_forward</span>
         </button>
       </div>
     </div>
@@ -988,13 +990,13 @@
      ══════════════════════════════════════════ -->
 <div id="toast" role="status" class="hidden fixed bottom-4 right-4 z-[100] flex items-start gap-3 p-4 rounded-xl border border-outline-variant bg-surface-container-lowest"
      style="width:320px;box-shadow:0 4px 24px rgba(0,0,0,0.24);">
-  <span class="material-symbols-outlined sym-fill mt-0.5 flex-shrink-0" style="font-size:18px;color:#1d7bff;" aria-hidden="true">info</span>
+  <span class="material-symbols-outlined sym-fill mt-0.5 flex-shrink-0" style="font-size:18px;color:#6aa9ff;" aria-hidden="true">info</span>
   <div class="flex-1 min-w-0">
     <p id="toast-title" class="text-on-surface" style="font-size:14px;font-weight:600;"></p>
     <p id="toast-msg" class="text-on-surface-variant mt-0.5" style="font-size:12px;"></p>
   </div>
   <button onclick="hideToast()" aria-label="Dismiss" class="text-on-surface-variant hover:text-on-surface transition-colors flex-shrink-0">
-    <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+    <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">close</span>
   </button>
 </div>
 
@@ -1002,10 +1004,10 @@
 <!-- ══════════════════════════════════════════
      INIT OVERLAY
      ══════════════════════════════════════════ -->
-<div id="init-overlay">
+<div id="init-overlay" role="dialog" aria-modal="true" aria-labelledby="init-title">
   <div class="bg-surface-container-lowest rounded-2xl p-8 w-full mx-4 text-center space-y-4" style="max-width:360px;">
     <div class="w-14 h-14 rounded-2xl bg-secondary-container flex items-center justify-center mx-auto" id="init-icon">
-      <span class="material-symbols-outlined text-on-secondary-container" style="font-size:28px;">rocket_launch</span>
+      <span class="material-symbols-outlined text-on-secondary-container" aria-hidden="true" style="font-size:28px;">rocket_launch</span>
     </div>
     <h3 class="text-headline-sm text-on-surface" id="init-title">Initializing project…</h3>
     <p class="text-body-sm text-on-surface-variant" id="init-sub">Saving configuration…</p>
@@ -1113,11 +1115,11 @@ function goToStep(n) {
 
   var btn = document.getElementById('continue-btn');
   if (n === 5) {
-    btn.innerHTML = '<span class="material-symbols-outlined sym-fill" style="font-size:16px;">rocket_launch</span> Initialize Project';
+    btn.innerHTML = '<span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:16px;">rocket_launch</span> Initialize Project';
     btn.style.background = '#3ddc84';
     btn.style.color = '#fff';
   } else {
-    btn.innerHTML = 'Continue <span class="material-symbols-outlined" style="font-size:16px;">arrow_forward</span>';
+    btn.innerHTML = 'Continue <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">arrow_forward</span>';
     btn.style.background = '';
     btn.style.color = '';
   }
@@ -1154,7 +1156,7 @@ function renderRail() {
     var n = i + 1;
     var cls = done.has(n) ? 'done' : n === cur ? 'active' : 'pending';
     var icon = cls === 'done'
-      ? '<span class="material-symbols-outlined sym-fill" style="font-size:14px;">check</span>' : n;
+      ? '<span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:14px;">check</span>' : n;
     var titleColor = n === cur ? '#1d7bff' : done.has(n) ? '#f2f3f5' : '#a3a7b1';
     var bad = n <= 3 && (attempted.has(n) || done.has(n)) && issuesFor(n).length > 0;
     var subColor   = bad ? '#ff4d5a' : n === cur ? '#1d7bff' : '#7c818c';
@@ -1213,7 +1215,7 @@ function validate(n) {
     repo.classList.toggle('err', !repo.value.trim());
     if (repo.value.trim() && document.getElementById('branch-field').classList.contains('hidden')) {
       var st = document.getElementById('test-conn-status');
-      st.style.color = '#ff4d5a';
+      st.style.color = '#ff6b76';
       st.textContent = 'Test the connection first to load branches.';
     }
   }
@@ -1246,19 +1248,19 @@ function renderStepState() {
   var many = (items.length === 1 ? 'One thing' : items.length + ' things');
   box.innerHTML = !items.length ? '' : '<div role="alert" style="padding:14px;background:#3a1d21;border:1px solid #ff4d5a;border-radius:.75rem;">'
     + '<p style="display:flex;align-items:center;gap:8px;font-family:\'SamsungOne\',\'Roboto\',sans-serif;font-size:12px;font-weight:600;color:#ff8a93;">'
-    + '<span class="material-symbols-outlined sym-fill" style="font-size:15px;color:#ff4d5a;">error</span>' + many + ' to fix before you continue</p>'
+    + '<span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:15px;color:#ff6b76;">error</span>' + many + ' to fix before you continue</p>'
     + '<ul style="margin:8px 0 0 24px;list-style:disc;display:grid;gap:4px;">'
     + items.map(function(t) { return '<li style="font-size:12px;color:#ff8a93;line-height:1.45;">' + escHtml(t) + '</li>'; }).join('')
     + '</ul></div>';
   var hint = document.getElementById('step-hint');
   hint.innerHTML = items.length
-    ? '<span class="material-symbols-outlined sym-fill" style="font-size:14px;color:#ff4d5a;">error</span>'
-      + '<span class="font-label-sm text-label-sm" style="color:#ff4d5a;">' + many + ' to fix in this step</span>'
-    : '<span class="material-symbols-outlined" style="font-size:14px;">info</span>'
+    ? '<span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:14px;color:#ff6b76;">error</span>'
+      + '<span class="font-label-sm text-label-sm" style="color:#ff6b76;">' + many + ' to fix in this step</span>'
+    : '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">info</span>'
       + '<span class="font-label-sm text-label-sm text-on-surface-variant" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + STEP_HINTS[cur - 1] + '</span>';
   if (cur === 4) {
     document.getElementById('continue-btn').innerHTML = (members.length ? 'Continue' : 'Skip for now')
-      + ' <span class="material-symbols-outlined" style="font-size:16px;">arrow_forward</span>';
+      + ' <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">arrow_forward</span>';
   }
 }
 
@@ -1322,17 +1324,17 @@ function fileControl(c, kind, accept, types, icon) {
   var pick = 'document.getElementById(\'' + c.id + '-' + kind + '\').click()';
   if (f) {
     return '<div class="file-pill">'
-      + '<span class="material-symbols-outlined sym-fill" style="font-size:18px;color:#3ddc84;">' + icon + '</span>'
+      + '<span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:18px;color:#3ddc84;">' + icon + '</span>'
       + '<span class="n" title="' + escHtml(f.name) + '">' + escHtml(f.name) + '</span>'
       + '<span class="z">' + (f.size / 1024).toFixed(1) + ' KB</span>'
-      + '<button class="pill-btn" onclick="' + pick + '" title="Replace"><span class="material-symbols-outlined" style="font-size:17px;">swap_horiz</span></button>'
-      + '<button class="pill-btn del" onclick="clearCoreFile(\'' + c.id + '\',\'' + kind + '\')" title="Remove"><span class="material-symbols-outlined" style="font-size:17px;">close</span></button>'
+      + '<button class="pill-btn" onclick="' + pick + '" title="Replace"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:17px;">swap_horiz</span></button>'
+      + '<button class="pill-btn del" onclick="clearCoreFile(\'' + c.id + '\',\'' + kind + '\')" title="Remove"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:17px;">close</span></button>'
       + '</div>' + input;
   }
   return '<button class="upload-btn' + (exp ? ' wanted' : '') + '" onclick="' + pick + '"'
     + ' ondragover="event.preventDefault();this.classList.add(\'dragover\');" ondragleave="this.classList.remove(\'dragover\');"'
     + ' ondrop="coreFileDrop(event,\'' + c.id + '\',\'' + kind + '\')">'
-    + '<span class="material-symbols-outlined" style="font-size:18px;color:' + (exp ? '#f5a524' : '#7c818c') + ';">upload_file</span>'
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;color:' + (exp ? '#f5a524' : '#7c818c') + ';">upload_file</span>'
     + '<span class="t">' + (exp ? 'Upload <b>' + escHtml(exp) + '</b>' : 'Choose a file or drop it here') + '</span>'
     + (exp ? '' : '<span class="s">' + types + '</span>')
     + '</button>'
@@ -1368,10 +1370,10 @@ function optionalLinks(c) {
   var links = [['ddFile', 'Data dictionary'], ['ccFile', 'Compile commands']].filter(function(k) { return !showsInput(c, k[0]); });
   if (!links.length) return '';
   return '<div style="display:flex;align-items:center;gap:16px;padding:10px 16px;border-top:1px solid #1b2638;">'
-    + '<span style="font-family:\'SamsungOne\',\'Roboto\',sans-serif;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#7c818c;">Optional</span>'
+    + '<span style="font-family:\'SamsungOne\',\'Roboto\',sans-serif;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#979ca7;">Optional</span>'
     + links.map(function(k) {
         return '<button class="switch-link" style="margin-top:0;display:flex;align-items:center;gap:3px;" onclick="openInput(\'' + c.id + '\',\'' + k[0] + '\')">'
-          + '<span class="material-symbols-outlined" style="font-size:13px;">add</span>' + k[1] + '</button>';
+          + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">add</span>' + k[1] + '</button>';
       }).join('')
     + '</div>';
 }
@@ -1383,7 +1385,7 @@ function renderCores() {
   if (count) count.textContent = CORES.length ? '· ' + CORES.length : '';
   if (!CORES.length) {
     list.innerHTML = '<div class="flex flex-col items-center justify-center py-10 text-center">'
-      + '<span class="material-symbols-outlined text-on-surface-variant mb-3" style="font-size:36px;opacity:.35;">memory</span>'
+      + '<span class="material-symbols-outlined text-on-surface-variant mb-3" aria-hidden="true" style="font-size:36px;opacity:.35;">memory</span>'
       + '<p class="font-label-md text-label-md text-on-surface-variant" style="font-size:12px;">No cores.</p>'
       + '<p class="text-body-sm text-on-surface-variant mt-1" style="font-size:12px;">Every layer is parsed without macros or a data dictionary. Click <strong>Add Core</strong> to add one.</p></div>';
     return;
@@ -1392,7 +1394,7 @@ function renderCores() {
     var used = layersUsing(c.id);
     return '<div class="core-card">'
       + '<div class="core-card-head">'
-      +   '<div class="core-chip-icon"><span class="material-symbols-outlined" style="font-size:17px;color:#8a8f9c;">memory</span></div>'
+      +   '<div class="core-chip-icon"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:17px;color:#979ca7;">memory</span></div>'
       +   '<div class="flex-1 min-w-0">'
       +     '<input class="core-name" value="' + escHtml(c.name) + '" onchange="renameCore(\'' + c.id + '\',this)" aria-label="Core name" title="Rename the core">'
       +     '<div class="core-uses' + (used.length ? '' : ' none') + '">'
@@ -1402,7 +1404,7 @@ function renderCores() {
       +     '</div>'
       +   '</div>'
       +   '<button onclick="removeCore(\'' + c.id + '\')" class="pill-btn del" title="Remove the core">'
-      +   '<span class="material-symbols-outlined" style="font-size:18px;">delete</span></button>'
+      +   '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">delete</span></button>'
       + '</div>'
       + coreRow('Macros', 'The <code>-D</code> set for this build', false, macrosControl(c))
       + (showsInput(c, 'ddFile') ? coreRow('Data dictionary', 'Signal names, units, ranges', true, fileControl(c, 'ddFile', '.csv', '.csv', 'menu_book')) : '')
@@ -1578,15 +1580,15 @@ function importWhere(t) {
 var MONO = 'font-family:\'SamsungOne\',\'Roboto\',sans-serif;';
 function importBtn(label, icon, onclick, primary) {
   return '<button type="button" onclick="' + onclick + '" style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:.5rem;background:#1c1e23;cursor:pointer;flex-shrink:0;'
-    + MONO + 'font-size:11px;font-weight:600;border:1px solid ' + (primary ? '#1d7bff;color:#1d7bff;' : '#6b707c;color:#a3a7b1;') + '">'
-    + '<span class="material-symbols-outlined" style="font-size:14px;">' + icon + '</span>' + label + '</button>';
+    + MONO + 'font-size:11px;font-weight:600;border:1px solid ' + (primary ? '#1d7bff;color:#6aa9ff;' : '#6b707c;color:#a3a7b1;') + '">'
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">' + icon + '</span>' + label + '</button>';
 }
 // Step 1's import: one row - an invitation before an import, a summary after it.
 function renderImportReport() {
   var row = document.getElementById('import-row');
   if (!IMPORTED) {
     row.innerHTML = '<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border:1px dashed #2c2f37;border-radius:.75rem;background:#1c1e23;">'
-      + '<span class="material-symbols-outlined text-secondary" style="font-size:18px;flex-shrink:0;">settings_suggest</span>'
+      + '<span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:18px;flex-shrink:0;">settings_suggest</span>'
       + '<div style="flex:1;min-width:0;"><p style="font-size:14px;color:#f2f3f5;">Have a config file?</p>'
       + '<p style="font-size:11px;color:#a3a7b1;margin-top:2px;">Fills the project, repository, cores and architecture.</p></div>'
       + importBtn('Import config', 'upload_file', "document.getElementById('import-file').click()", true)
@@ -1604,13 +1606,13 @@ function renderImportReport() {
   var n = of('check').length;
   row.innerHTML = '<div style="padding:12px 16px;border:1px solid #2c2f37;border-radius:.75rem;background:#1c1e23;">'
     + '<div style="display:flex;align-items:center;gap:12px;">'
-    + '<span class="material-symbols-outlined text-secondary" style="font-size:18px;flex-shrink:0;">description</span>'
+    + '<span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:18px;flex-shrink:0;">description</span>'
     + '<div style="flex:1;min-width:0;">'
     + '<p style="' + MONO + 'font-size:12px;font-weight:600;color:#f2f3f5;">' + escHtml(IMPORTED) + '</p>'
     + '<p style="display:flex;flex-wrap:wrap;gap:2px 12px;margin-top:2px;font-size:11px;">'
     + '<span style="color:#3ddc84;">✓ ' + of('filled').length + ' filled</span>'
     + (n ? '<span style="color:#f5a524;">⚠ ' + n + ' need' + (n === 1 ? 's' : '') + ' attention' + (whereText ? ' (' + whereText + ')' : '') + '</span>' : '')
-    + (of('skipped').length ? '<span style="color:#7c818c;">' + of('skipped').length + ' not used</span>' : '')
+    + (of('skipped').length ? '<span style="color:#979ca7;">' + of('skipped').length + ' not used</span>' : '')
     + state + '</p></div>'
     + importBtn('View details', 'list_alt', 'openImportModal()', false)
     + importBtn('Replace', 'swap_horiz', "document.getElementById('import-file').click()", false)
@@ -1623,12 +1625,12 @@ function renderImportReport() {
     var list = of(level);
     if (!list.length) return '';
     var lv = IMPORT_LEVEL[level];
-    return '<section><p style="margin-bottom:8px;' + MONO + 'font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#a3a7b1;">' + lv[2] + ' · ' + list.length + '</p>'
+    return '<section><p style="margin-bottom:8px;' + MONO + 'font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#a3a7b1;">' + lv[2] + ' · ' + list.length + '</p>'
       + '<ul style="display:grid;gap:8px;">' + list.map(function(i) {
           return '<li style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#f2f3f5;">'
-            + '<span class="material-symbols-outlined sym-fill" style="font-size:14px;color:' + lv[1] + ';flex-shrink:0;margin-top:1px;">' + lv[0] + '</span>'
+            + '<span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:14px;color:' + lv[1] + ';flex-shrink:0;margin-top:1px;">' + lv[0] + '</span>'
             + '<span style="flex:1;line-height:1.45;">' + codeText(i[1]) + '</span>'
-            + '<span style="flex-shrink:0;' + MONO + 'font-size:9px;color:#7c818c;white-space:nowrap;margin-top:1px;">' + importWhere(i[1]) + '</span></li>';
+            + '<span style="flex-shrink:0;' + MONO + 'font-size:11px;color:#979ca7;white-space:nowrap;margin-top:1px;">' + importWhere(i[1]) + '</span></li>';
         }).join('') + '</ul></section>';
   }).join('');
 }
@@ -1646,7 +1648,7 @@ function toggleLayer(head) {
     body = document.createElement('div');
     body.className = 'layer-body';
     body.innerHTML = '<div class="groups-container"></div>'
-      + '<button onclick="addGroup(this)" class="add-group-btn"><span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Group</button>'
+      + '<button onclick="addGroup(this)" class="add-group-btn"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;">add</span> Add Group</button>'
       + libPathLink();
     block.appendChild(body);
     icon.textContent = 'keyboard_arrow_down';
@@ -1666,15 +1668,15 @@ function collapseLayer(block) {
 
 // Lib paths are optional: a link until the layer has one.
 function libPathLink() {
-  return '<button onclick="openLibPaths(this)" class="add-group-btn" style="color:#7c818c;" title="External include paths (-I flags) for this layer.">'
-    + '<span class="material-symbols-outlined" style="font-size:12px;">add</span> Lib path <span style="font-weight:400;">(optional)</span></button>';
+  return '<button onclick="openLibPaths(this)" class="add-group-btn" style="color:#979ca7;" title="External include paths (-I flags) for this layer.">'
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;">add</span> Lib path <span style="font-weight:400;">(optional)</span></button>';
 }
 function openLibPaths(btn) {
   var sec = document.createElement('div');
   sec.className = 'inc-paths-section';
   sec.innerHTML = '<div class="inc-paths-row"><div class="inc-paths-label" title="External include paths (-I flags) for this layer.">Lib Paths</div>'
     + '<div class="inc-paths-content"><div class="ext-paths-list"></div>'
-    + '<button onclick="addExtPath(this)" class="inc-add-btn"><span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle;">add</span> Add path</button>'
+    + '<button onclick="addExtPath(this)" class="inc-add-btn"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;vertical-align:middle;">add</span> Add path</button>'
     + '</div></div>';
   btn.replaceWith(sec);
   addExtPath(sec.querySelector('.inc-add-btn'));
@@ -1728,7 +1730,7 @@ function addGroup(btn) {
   row.innerHTML = '<input class="inline-add-input" type="text" placeholder="Group name…" autocomplete="off">'
     + '<button class="inline-add-confirm" onclick="confirmAddGroup(this)">Add</button>'
     + '<button class="inline-add-cancel" onclick="this.closest(\'.inline-add-row\').remove()">'
-    + '<span class="material-symbols-outlined" style="font-size:14px;">close</span></button>';
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">close</span></button>';
   container.appendChild(row);
   var inp = row.querySelector('.inline-add-input');
   inp.focus();
@@ -1743,14 +1745,14 @@ function groupEl(name) {
   var grp = document.createElement('div');
   grp.className = 'tree-group';
   grp.innerHTML = '<div class="tree-group-row">'
-    + '<button onclick="toggleTreeGroup(this)" class="tree-toggle"><span class="material-symbols-outlined" style="font-size:14px;">keyboard_arrow_down</span></button>'
-    + '<span class="material-symbols-outlined text-secondary" style="font-size:14px;">folder_open</span>'
+    + '<button onclick="toggleTreeGroup(this)" class="tree-toggle"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">keyboard_arrow_down</span></button>'
+    + '<span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:14px;">folder_open</span>'
     + '<span class="font-label-md text-on-surface flex-1" style="font-size:13px;">' + escHtml(name) + '</span>'
-    + '<button onclick="removeGroup(this)" class="p-1 text-on-surface-variant hover:text-error transition-colors"><span class="material-symbols-outlined" style="font-size:14px;">close</span></button>'
+    + '<button onclick="removeGroup(this)" class="p-1 text-on-surface-variant hover:text-error transition-colors"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">close</span></button>'
     + '</div>'
     + '<div class="tree-children">'
     + '<button onclick="addComponent(this)" class="add-group-btn" style="padding-left:20px;">'
-    + '<span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Component</button>'
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;">add</span> Add Component</button>'
     + '</div>';
   return grp;
 }
@@ -1828,17 +1830,17 @@ function componentEl(name, files, collapsed) {
   block.dataset.compName = name;
   block.innerHTML = '<div class="tree-comp-row">'
     + '<button onclick="toggleCompFiles(this)" class="tree-toggle">'
-    + '<span class="material-symbols-outlined" style="font-size:13px;">' + (open ? 'keyboard_arrow_down' : 'keyboard_arrow_right') + '</span></button>'
-    + '<span class="material-symbols-outlined text-secondary" style="font-size:13px;opacity:.6;">folder</span>'
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">' + (open ? 'keyboard_arrow_down' : 'keyboard_arrow_right') + '</span></button>'
+    + '<span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:13px;opacity:.6;">folder</span>'
     + '<span class="font-label-md text-on-surface flex-1" style="font-size:13px;">' + escHtml(name) + '</span>'
     + (collapsed && files.length ? '<span class="font-label-sm text-label-sm text-on-surface-variant" style="margin-right:4px;">' + files.length + (files.length === 1 ? ' path' : ' paths') + '</span>' : '')
     + '<button onclick="removeComponent(this)" class="p-1 text-on-surface-variant hover:text-error transition-colors">'
-    + '<span class="material-symbols-outlined" style="font-size:13px;">close</span></button>'
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">close</span></button>'
     + '</div>'
     + '<div class="comp-files' + (open ? '' : ' hidden') + '">'
     + files.map(function(f) {
         return '<div class="file-row" data-filename="' + escHtml(f) + '">'
-          + '<span class="material-symbols-outlined" style="font-size:12px;color:#6b707c;">' + (/\.[a-z]+$/i.test(f) ? 'description' : 'folder') + '</span>'
+          + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;color:#979ca7;">' + (/\.[a-z]+$/i.test(f) ? 'description' : 'folder') + '</span>'
           + escHtml(f) + '</div>';
       }).join('')
     + '</div>';
@@ -1974,21 +1976,21 @@ function layerEl(name, path, coreId) {
   var block = document.createElement('div');
   block.className = 'layer-block';
   block.innerHTML = '<div class="layer-head" onclick="toggleLayer(this)">'
-    + '<span class="material-symbols-outlined" style="font-size:15px;color:#a3a7b1;">keyboard_arrow_down</span>'
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;color:#a3a7b1;">keyboard_arrow_down</span>'
     + '<div class="flex-1 min-w-0">'
     + '<div class="font-label-md font-bold text-on-surface" style="font-size:13px;line-height:1.3;">' + escHtml(name) + '</div>'
     + '<div style="display:flex;align-items:baseline;gap:6px;min-width:0;">'
     + '<span class="layer-path-display' + (path ? '' : ' empty') + '" onclick="event.stopPropagation();startEditPath(this)">' + (path ? escHtml(path) : 'Set root path…') + '</span>'
-    + '<span class="layer-summary" style="font-family:\'SamsungOne\',\'Roboto\',sans-serif;font-size:11px;color:#7c818c;white-space:nowrap;"></span>'
+    + '<span class="layer-summary" style="font-family:\'SamsungOne\',\'Roboto\',sans-serif;font-size:11px;color:#979ca7;white-space:nowrap;"></span>'
     + '</div>'
     + '</div>'
     + '<label class="layer-core" onclick="event.stopPropagation()">Core'
     + '<select class="layer-core-select">' + coreOptions(coreId) + '</select></label>'
-    + '<button onclick="event.stopPropagation();removeLayer(this);" class="p-1 text-on-surface-variant hover:text-error transition-colors"><span class="material-symbols-outlined" style="font-size:15px;">close</span></button>'
+    + '<button onclick="event.stopPropagation();removeLayer(this);" class="p-1 text-on-surface-variant hover:text-error transition-colors"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">close</span></button>'
     + '</div>'
     + '<div class="layer-body">'
     + '<div class="groups-container"></div>'
-    + '<button onclick="addGroup(this)" class="add-group-btn"><span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Group</button>'
+    + '<button onclick="addGroup(this)" class="add-group-btn"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;">add</span> Add Group</button>'
     + libPathLink()
     + '</div>';
   return block;
@@ -2022,8 +2024,8 @@ function startEditPath(span) {
   var browseBtn = document.createElement('button');
   browseBtn.type = 'button';
   browseBtn.title = 'Browse folder';
-  browseBtn.style.cssText = 'flex-shrink:0;background:none;border:none;cursor:pointer;color:#1d7bff;padding:0;display:flex;align-items:center;';
-  browseBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:13px;">folder_open</span>';
+  browseBtn.style.cssText = 'flex-shrink:0;background:none;border:none;cursor:pointer;color:#6aa9ff;padding:0;display:flex;align-items:center;';
+  browseBtn.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">folder_open</span>';
   browseBtn.onclick = function(e) {
     e.stopPropagation();
     openFolderPicker(inp); // pass the input element directly
@@ -2049,12 +2051,12 @@ function addExtPath(btn) {
   if (!list) return;
   var row = document.createElement('div');
   row.className = 'ext-path-row';
-  row.innerHTML = '<span class="material-symbols-outlined" style="font-size:13px;color:#3ddc84;flex-shrink:0;">folder_open</span>'
+  row.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;color:#3ddc84;flex-shrink:0;">folder_open</span>'
     + '<input class="ext-path-input" type="text" placeholder="/path/to/include">'
     + '<button type="button" class="ext-browse-btn" onclick="openFolderPicker(this.closest(\'.ext-path-row\').querySelector(\'.ext-path-input\'))">'
-    + '<span class="material-symbols-outlined" style="font-size:11px;">folder_open</span>BROWSE</button>'
-    + '<button onclick="removeExtPath(this)" style="display:flex;align-items:center;background:none;border:none;cursor:pointer;padding:0;color:#7c818c;" onmouseover="this.style.color=\'#ff4d5a\'" onmouseout="this.style.color=\'#7c818c\'">'
-    + '<span class="material-symbols-outlined" style="font-size:13px;line-height:1;">close</span></button>';
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:11px;">folder_open</span>BROWSE</button>'
+    + '<button onclick="removeExtPath(this)" style="display:flex;align-items:center;background:none;border:none;cursor:pointer;padding:0;color:#979ca7;" onmouseover="this.style.color=\'#ff4d5a\'" onmouseout="this.style.color=\'#7c818c\'">'
+    + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;line-height:1;">close</span></button>';
   list.appendChild(row);
   row.querySelector('.ext-path-input').focus();
 }
@@ -2147,10 +2149,10 @@ function memberSearchFilter(q) {
     // Use single-quoted attribute so JSON.stringify double quotes don't break HTML
     return "<div class='ms-item' data-idx='" + i + "'"
       + " onmousedown='memberSearchSelect(" + JSON.stringify(u.email) + "," + JSON.stringify(u.name) + ")'>"
-      + '<div class="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center flex-shrink-0" style="font-family:Roboto;font-size:10px;font-weight:700;color:#1d7bff;">' + ini + '</div>'
+      + '<div class="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center flex-shrink-0" style="font-family:Roboto;font-size:11px;font-weight:700;color:#6aa9ff;">' + ini + '</div>'
       + '<div class="flex-1 min-w-0">'
       + '<p style="font-size:13px;color:#f2f3f5;line-height:1.3;">' + escHtml(u.name) + '</p>'
-      + '<p style="font-size:11px;color:#7c818c;font-family:\'JetBrains Mono\',monospace;">' + escHtml(u.email) + '</p>'
+      + '<p style="font-size:11px;color:#979ca7;font-family:\'JetBrains Mono\',monospace;">' + escHtml(u.email) + '</p>'
       + '</div></div>';
   }).join('');
 
@@ -2159,15 +2161,15 @@ function memberSearchFilter(q) {
   var exactMatch = KNOWN_USERS.some(function(u) { return u.email.toLowerCase() === ql; });
   if (raw && isEmail && !exactMatch && !alreadyAdded.includes(raw.toLowerCase())) {
     html += "<div class='ms-item ms-invite' onmousedown='memberSearchSelect(" + JSON.stringify(raw.toLowerCase()) + ", null)'>"
-      + '<span class="material-symbols-outlined" style="font-size:16px;color:#3ddc84;flex-shrink:0;">mail</span>'
+      + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:#3ddc84;flex-shrink:0;">mail</span>'
       + '<div class="flex-1 min-w-0">'
       + '<p style="font-size:13px;color:#f2f3f5;">Send invite to <strong>' + escHtml(raw) + '</strong></p>'
-      + '<p style="font-size:11px;color:#7c818c;">Not yet in the organisation</p>'
+      + '<p style="font-size:11px;color:#979ca7;">Not yet in the organisation</p>'
       + '</div></div>';
   }
 
   if (!html) {
-    html = '<p style="padding:10px 12px;font-size:12px;color:#7c818c;">No matches — type a full email to invite</p>';
+    html = '<p style="padding:10px 12px;font-size:12px;color:#979ca7;">No matches — type a full email to invite</p>';
   }
 
   dd.innerHTML = html;
@@ -2233,18 +2235,18 @@ function renderMemberList() {
       + '<span style="font-family:Roboto;font-size:11px;font-weight:700;color:' + avatarClr + ';">' + escHtml(ini) + '</span></div>'
       + '<div class="flex-1 min-w-0">'
       + '<p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">' + escHtml(label) + '</p>'
-      + '<p class="font-label-sm text-label-sm text-on-surface-variant truncate" style="font-size:10px;">' + escHtml(sub) + '</p>'
+      + '<p class="font-label-sm text-label-sm text-on-surface-variant truncate" style="font-size:11px;">' + escHtml(sub) + '</p>'
       + '</div>'
       + '<div style="width:120px;flex-shrink:0;">'
       + '<select onchange="setMemberRole(' + JSON.stringify(m.email) + ', this.value)" '
-      + 'style="font-family:\'JetBrains Mono\';font-size:10px;font-weight:600;letter-spacing:.04em;padding:3px 6px;border:1px solid #2c2f37;border-radius:4px;background:#1c1e23;color:#f2f3f5;outline:none;width:100%;">'
+      + 'style="font-family:\'JetBrains Mono\';font-size:11px;font-weight:600;letter-spacing:.04em;padding:3px 6px;border:1px solid #2c2f37;border-radius:4px;background:#1c1e23;color:#f2f3f5;outline:none;width:100%;">'
       + '<option value="Developer"' + (m.role === 'Developer' ? ' selected' : '') + '>Developer</option>'
       + '<option value="Admin"' + (m.role === 'Admin' ? ' selected' : '') + '>Admin</option>'
       + '</select>'
       + '</div>'
       + '<div style="width:24px;flex-shrink:0;">'
       + '<button onclick="removeMember(' + JSON.stringify(m.email) + ')" class="text-on-surface-variant hover:text-error transition-colors">'
-      + '<span class="material-symbols-outlined" style="font-size:16px;">close</span></button>'
+      + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">close</span></button>'
       + '</div>'
       + '</div>';
   }).join('');
@@ -2265,15 +2267,15 @@ function rTeamRow(name, email, role, pending, isYou) {
   var roleColor = role === 'Admin' ? '#8a8f9c' : '#1d7bff';
   return '<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid #1b2638;">'
     + '<div style="width:30px;height:30px;border-radius:50%;background:' + avatarBg + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;">'
-    + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;font-weight:700;color:#fff;letter-spacing:.04em;">' + initials + '</span>'
+    + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;color:#fff;letter-spacing:.04em;">' + initials + '</span>'
     + '</div>'
     + '<div style="flex:1;min-width:0;">'
     + '<div style="font-family:Roboto,sans-serif;font-size:12px;font-weight:500;color:#f2f3f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
-    + escHtml(displayName) + (isYou ? ' <span style="color:#7c818c;font-weight:400;">(you)</span>' : '') + '</div>'
-    + '<div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#7c818c;margin-top:1px;">' + escHtml(email) + '</div>'
+    + escHtml(displayName) + (isYou ? ' <span style="color:#979ca7;font-weight:400;">(you)</span>' : '') + '</div>'
+    + '<div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#979ca7;margin-top:1px;">' + escHtml(email) + '</div>'
     + '</div>'
-    + '<span style="flex-shrink:0;font-family:\'JetBrains Mono\',monospace;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:3px;background:' + roleBg + ';color:' + roleColor + ';">' + escHtml(role) + '</span>'
-    + (pending ? '<span style="flex-shrink:0;font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#7c818c;background:#0e0f12;border:1px solid #2c2f37;padding:2px 6px;border-radius:3px;margin-left:4px;">Invited</span>' : '')
+    + '<span style="flex-shrink:0;font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:3px;background:' + roleBg + ';color:' + roleColor + ';">' + escHtml(role) + '</span>'
+    + (pending ? '<span style="flex-shrink:0;font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#979ca7;background:#0e0f12;border:1px solid #2c2f37;padding:2px 6px;border-radius:3px;margin-left:4px;">Invited</span>' : '')
     + '</div>';
 }
 
@@ -2285,7 +2287,7 @@ function renderReadiness(items) {
   var MONO = 'font-family:\'SamsungOne\',\'Roboto\',sans-serif;';
   document.getElementById('r-ready').innerHTML = '<div style="border:1px solid ' + (errors ? '#ff4d5a' : '#2c2f37') + ';border-radius:.75rem;background:#1c1e23;overflow:hidden;">'
     + '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #2c2f37;background:' + (errors ? '#3a1d21' : '#132a1f') + ';">'
-    + '<span class="material-symbols-outlined sym-fill" style="font-size:18px;color:' + (errors ? '#ff4d5a' : '#3ddc84') + ';">' + (errors ? 'block' : 'rocket_launch') + '</span>'
+    + '<span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:18px;color:' + (errors ? '#ff4d5a' : '#3ddc84') + ';">' + (errors ? 'block' : 'rocket_launch') + '</span>'
     + '<div><p style="font-size:14px;font-weight:600;color:' + (errors ? '#ff8a93' : '#f2f3f5') + ';">'
     + (errors ? (errors === 1 ? 'One thing' : errors + ' things') + ' to fix before the project can be created' : 'Ready to create') + '</p>'
     + (warns ? '<p style="font-size:11px;color:#a3a7b1;margin-top:2px;">' + (warns === 1 ? 'One thing' : warns + ' things') + ' it would miss - fine to create now and fix later.</p>' : '')
@@ -2293,10 +2295,10 @@ function renderReadiness(items) {
     + items.map(function(i) {
         var lk = LOOK[i[0]];
         return '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 16px;border-top:1px solid #1b2638;">'
-          + '<span class="material-symbols-outlined sym-fill" style="font-size:16px;color:' + lk[1] + ';flex-shrink:0;margin-top:1px;">' + lk[0] + '</span>'
+          + '<span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:16px;color:' + lk[1] + ';flex-shrink:0;margin-top:1px;">' + lk[0] + '</span>'
           + '<div style="flex:1;min-width:0;"><p style="font-size:12px;color:#f2f3f5;">' + escHtml(i[1]) + '</p>'
           + (i[2] ? '<p style="font-size:11px;color:#a3a7b1;margin-top:2px;">' + codeText(i[2]) + '</p>' : '') + '</div>'
-          + (i[3] && i[0] !== 'ok' ? '<button onclick="goToStep(' + i[3] + ')" style="flex-shrink:0;background:none;border:none;cursor:pointer;' + MONO + 'font-size:11px;font-weight:600;color:#1d7bff;">Fix in step ' + i[3] + '</button>' : '')
+          + (i[3] && i[0] !== 'ok' ? '<button onclick="goToStep(' + i[3] + ')" style="flex-shrink:0;background:none;border:none;cursor:pointer;' + MONO + 'font-size:11px;font-weight:600;color:#6aa9ff;">Fix in step ' + i[3] + '</button>' : '')
           + '</div>';
       }).join('')
     + '</div>';
@@ -2347,21 +2349,21 @@ function populateReview() {
     var used = layersUsing(c.id);
     return '<div style="padding:10px 16px;border-bottom:1px solid #1b2638;">'
       + '<div style="display:flex;align-items:center;gap:6px;">'
-      + '<span class="material-symbols-outlined text-secondary" style="font-size:14px;">memory</span>'
+      + '<span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:14px;">memory</span>'
       + '<span style="' + mono + 'font-size:11px;font-weight:700;color:#f2f3f5;">' + escHtml(c.name) + '</span>'
-      + '<span style="margin-left:auto;' + mono + 'font-size:10px;color:' + (used.length ? '#a3a7b1' : '#f5a524') + ';">'
+      + '<span style="margin-left:auto;' + mono + 'font-size:11px;color:' + (used.length ? '#a3a7b1' : '#f5a524') + ';">'
       + (used.length ? 'used by ' + used.map(escHtml).join(', ') : 'no layer uses it') + '</span></div>'
-      + '<div style="margin:4px 0 0 20px;' + mono + 'font-size:10px;color:#7c818c;">'
+      + '<div style="margin:4px 0 0 20px;' + mono + 'font-size:11px;color:#979ca7;">'
       + escHtml(macros) + ' · ' + escHtml(c.ddFile ? c.ddFile.name : 'no dictionary') + ' · '
       + escHtml(c.ccFile ? c.ccFile.name : 'no compile commands') + '</div></div>';
   }).join('');
   var noCore = layersUsing('');
   if (noCore.length) {
-    coreRows += '<div style="padding:10px 16px;' + mono + 'font-size:10px;color:#7c818c;">No core: '
+    coreRows += '<div style="padding:10px 16px;' + mono + 'font-size:11px;color:#979ca7;">No core: '
       + noCore.map(escHtml).join(', ') + '</div>';
   }
   document.getElementById('r-cores').innerHTML = coreRows
-    || '<div style="padding:12px 16px;' + mono + 'font-size:11px;color:#7c818c;">No cores</div>';
+    || '<div style="padding:12px 16px;' + mono + 'font-size:11px;color:#979ca7;">No cores</div>';
 
   // ── Architecture ──
   var layers = document.querySelectorAll('#arch-tree .layer-block');
@@ -2383,11 +2385,11 @@ function populateReview() {
     rows += '<div style="padding:10px 16px;">';
     // Layer row
     rows += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">'
-      + '<span class="material-symbols-outlined text-secondary" style="font-size:14px;">layers</span>'
+      + '<span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:14px;">layers</span>'
       + '<span style="font-family:\'SamsungOne\',\'Roboto\',sans-serif;font-size:11px;font-weight:700;color:#f2f3f5;">' + escHtml(lName) + '</span>'
-      + (lPath ? '<span style="font-family:\'SamsungOne\',\'Roboto\',sans-serif;font-size:9px;color:#7c818c;margin-left:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escHtml(lPath) + '</span>' : '')
-      + '<span style="margin-left:auto;font-family:\'SamsungOne\',\'Roboto\',sans-serif;font-size:9px;font-weight:600;padding:2px 7px;border-radius:3px;'
-      + (core ? 'background:#1b2a45;color:#1d7bff;">' + escHtml(core.name) : 'background:#26282e;color:#7c818c;">no core') + '</span>'
+      + (lPath ? '<span style="font-family:\'SamsungOne\',\'Roboto\',sans-serif;font-size:11px;color:#979ca7;margin-left:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escHtml(lPath) + '</span>' : '')
+      + '<span style="margin-left:auto;font-family:\'SamsungOne\',\'Roboto\',sans-serif;font-size:11px;font-weight:600;padding:2px 7px;border-radius:3px;'
+      + (core ? 'background:#1b2a45;color:#6aa9ff;">' + escHtml(core.name) : 'background:#26282e;color:#979ca7;">no core') + '</span>'
       + '</div>';
 
     // Lib paths for this layer
@@ -2396,14 +2398,14 @@ function populateReview() {
     if (libPaths.length) {
       rows += '<div style="display:flex;align-items:center;gap:4px;margin-left:16px;margin-bottom:4px;flex-wrap:wrap;gap:4px;">';
       libPaths.forEach(function(p) {
-        rows += '<span style="display:inline-flex;align-items:center;gap:3px;background:#132a1f;border:1px solid rgba(61,220,132,0.26);border-radius:4px;padding:2px 7px;font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#3ddc84;">'
-          + '<span class="material-symbols-outlined" style="font-size:10px;color:#3ddc84;">folder</span>' + escHtml(p) + '</span>';
+        rows += '<span style="display:inline-flex;align-items:center;gap:3px;background:#132a1f;border:1px solid rgba(61,220,132,0.26);border-radius:4px;padding:2px 7px;font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#3ddc84;">'
+          + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:11px;color:#3ddc84;">folder</span>' + escHtml(p) + '</span>';
       });
       rows += '</div>';
     }
 
     if (!groups.length) {
-      rows += '<div style="margin-left:20px;font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#7c818c;">No groups defined</div>';
+      rows += '<div style="margin-left:20px;font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#979ca7;">No groups defined</div>';
     }
 
     groups.forEach(function(group) {
@@ -2414,13 +2416,13 @@ function populateReview() {
       // Group row
       rows += '<div style="margin-left:16px;border-left:2px solid #1b2a45;padding-left:8px;margin-top:4px;">';
       rows += '<div style="display:flex;align-items:center;gap:5px;padding:3px 0;">'
-        + '<span class="material-symbols-outlined text-secondary" style="font-size:13px;">folder_open</span>'
-        + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;font-weight:600;color:#f2f3f5;">' + escHtml(gName) + '</span>'
-        + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#7c818c;margin-left:4px;">' + comps.length + ' comp' + (comps.length !== 1 ? 's' : '') + '</span>'
+        + '<span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:13px;">folder_open</span>'
+        + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:600;color:#f2f3f5;">' + escHtml(gName) + '</span>'
+        + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#979ca7;margin-left:4px;">' + comps.length + ' comp' + (comps.length !== 1 ? 's' : '') + '</span>'
         + '</div>';
 
       if (!comps.length) {
-        rows += '<div style="margin-left:18px;font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#6b707c;padding:2px 0;">No components</div>';
+        rows += '<div style="margin-left:18px;font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#979ca7;padding:2px 0;">No components</div>';
       }
 
       comps.forEach(function(comp) {
@@ -2430,16 +2432,16 @@ function populateReview() {
         // Component row
         rows += '<div style="margin-left:16px;border-left:2px solid #1b2638;padding-left:8px;margin-top:3px;">';
         rows += '<div style="display:flex;align-items:center;gap:5px;padding:2px 0;">'
-          + '<span class="material-symbols-outlined" style="font-size:12px;color:#1d7bff;opacity:.75;">folder</span>'
-          + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#f2f3f5;">' + escHtml(cName) + '</span>'
-          + (files.length ? '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#1d7bff;background:#1b2a45;padding:1px 5px;border-radius:3px;margin-left:4px;">' + files.length + ' file' + (files.length !== 1 ? 's' : '') + '</span>' : '')
+          + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;color:#6aa9ff;opacity:.75;">folder</span>'
+          + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#f2f3f5;">' + escHtml(cName) + '</span>'
+          + (files.length ? '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#6aa9ff;background:#1b2a45;padding:1px 5px;border-radius:3px;margin-left:4px;">' + files.length + ' file' + (files.length !== 1 ? 's' : '') + '</span>' : '')
           + '</div>';
 
         // File rows
         files.forEach(function(f) {
           rows += '<div style="margin-left:18px;display:flex;align-items:center;gap:4px;padding:1px 0;">'
-            + '<span class="material-symbols-outlined" style="font-size:11px;color:#6b707c;">description</span>'
-            + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#a3a7b1;">' + escHtml(f) + '</span>'
+            + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:11px;color:#979ca7;">description</span>'
+            + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#a3a7b1;">' + escHtml(f) + '</span>'
             + '</div>';
         });
         rows += '</div>';
@@ -2448,7 +2450,7 @@ function populateReview() {
     });
     rows += '</div>';
   });
-  archOut.innerHTML = rows || '<p style="padding:12px 16px;font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#7c818c;">No layers defined.</p>';
+  archOut.innerHTML = rows || '<p style="padding:12px 16px;font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#979ca7;">No layers defined.</p>';
 
   // ── Team ──
   var adminCount = 1 + members.filter(function(m) { return m.role === 'Admin'; }).length;
@@ -2490,7 +2492,7 @@ function initProject() {
     pct.textContent = step[0] + '%';
     sub.textContent = step[1];
     if (step[0] === 100) {
-      document.getElementById('init-icon').innerHTML = '<span class="material-symbols-outlined sym-fill" style="font-size:28px;color:#3ddc84;">check_circle</span>';
+      document.getElementById('init-icon').innerHTML = '<span class="material-symbols-outlined sym-fill" aria-hidden="true" style="font-size:28px;color:#3ddc84;">check_circle</span>';
       document.getElementById('init-icon').style.background = 'rgba(61,220,132,0.2)';
       document.getElementById('init-title').textContent = 'Project created!';
       setTimeout(function() { window.location.href = 'project-detail.html'; }, 900);
@@ -2517,6 +2519,7 @@ function toggleToken() {
   var icon = document.getElementById('token-eye');
   if (inp.type === 'password') { inp.type = 'text'; icon.textContent = 'visibility'; }
   else                         { inp.type = 'password'; icon.textContent = 'visibility_off'; }
+  icon.parentElement.setAttribute('aria-pressed', inp.type === 'text');
 }
 
 // ════════════════════════════════════════
@@ -2550,7 +2553,7 @@ function renderBranchList(q) {
       + ' aria-selected="' + on + '" data-i="' + i + '" onmousedown="event.preventDefault(); branchPick(' + i + ')">'
       + '<span class="nm">' + escHtml(b) + '</span>'
       + (b === SAMPLE_DEFAULT_BRANCH ? '<span class="tag">default</span>' : '')
-      + (on ? '<span class="material-symbols-outlined" style="font-size:16px;">check</span>' : '')
+      + (on ? '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">check</span>' : '')
       + '</div>';
   }).join('');
   var dd = document.getElementById('branch-dd');
@@ -2774,24 +2777,24 @@ function confirmRepoBrowser() {
 
 function renderRepoBrowser() {
   document.getElementById('rb-crumbs').innerHTML =
-    '<button class="rb-crumb" onclick="rbCrumb(0)"><span class="material-symbols-outlined" style="font-size:14px;">dns</span>This server</button>'
+    '<button class="rb-crumb" onclick="rbCrumb(0)"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">dns</span>This server</button>'
     + RB_PATH.map(function(p, i) {
       return '<span class="rb-sep">›</span><button class="rb-crumb" onclick="rbCrumb(' + (i + 1) + ')">' + escHtml(p) + '</button>';
     }).join('');
   var rows = rbChildren(RB_PATH).map(function(name, i) {
     var node = rbNode(RB_PATH.concat([name]));
     if (!RB_PATH.length) {
-      return '<div class="rb-row" onclick="rbOpen(' + i + ')"><span class="material-symbols-outlined" style="font-size:16px;color:#7c818c;">hard_drive</span>'
-        + '<span class="nm">' + escHtml(name) + '</span><span class="material-symbols-outlined" style="font-size:16px;color:#7c818c;">chevron_right</span></div>';
+      return '<div class="rb-row" onclick="rbOpen(' + i + ')"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:#979ca7;">hard_drive</span>'
+        + '<span class="nm">' + escHtml(name) + '</span><span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:#979ca7;">chevron_right</span></div>';
     }
     if (node._git) {
       return '<div class="rb-row" data-path="' + escHtml(rbJoin(RB_PATH.concat([name]))) + '" onclick="rbPick(' + i + ')" ondblclick="rbPick(' + i + '); confirmRepoBrowser()">'
-        + '<span class="material-symbols-outlined" style="font-size:16px;color:#3ddc84;">source</span>'
+        + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:#3ddc84;">source</span>'
         + '<span class="nm">' + escHtml(name) + '</span><span class="rb-git">git</span>'
-        + '<span class="material-symbols-outlined rb-check" style="font-size:16px;visibility:hidden;">check</span></div>';
+        + '<span class="material-symbols-outlined rb-check" aria-hidden="true" style="font-size:16px;visibility:hidden;">check</span></div>';
     }
-    return '<div class="rb-row" onclick="rbOpen(' + i + ')"><span class="material-symbols-outlined text-secondary" style="font-size:16px;">folder</span>'
-      + '<span class="nm">' + escHtml(name) + '/</span><span class="material-symbols-outlined" style="font-size:16px;color:#7c818c;">chevron_right</span></div>';
+    return '<div class="rb-row" onclick="rbOpen(' + i + ')"><span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:16px;">folder</span>'
+      + '<span class="nm">' + escHtml(name) + '/</span><span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:#979ca7;">chevron_right</span></div>';
   });
   document.getElementById('rb-list').innerHTML = rows.join('') || '<div class="rb-empty">No folders here</div>';
   rbMarkPicked();
@@ -2818,8 +2821,8 @@ document.addEventListener('keydown', function(e) {
 
 function connectFailed(msg) {
   var statusEl = document.getElementById('test-conn-status');
-  statusEl.style.color = '#ff4d5a';
-  statusEl.innerHTML = '<span style="vertical-align:middle;font-size:14px;margin-right:3px;" class="material-symbols-outlined sym-fill">error</span> ' + escHtml(msg);
+  statusEl.style.color = '#ff6b76';
+  statusEl.innerHTML = '<span style="vertical-align:middle;font-size:14px;margin-right:3px;" class="material-symbols-outlined sym-fill" aria-hidden="true">error</span> ' + escHtml(msg);
 }
 
 // What the server answers for a local path - simulated here: a path with "missing" in it does
@@ -2886,7 +2889,7 @@ function testConnection() {
     document.getElementById('branch-field').classList.remove('hidden');
     refreshStepState();
     statusEl.style.color = '#3ddc84';
-    statusEl.innerHTML = '<span style="vertical-align:middle;font-size:14px;margin-right:3px;" class="material-symbols-outlined sym-fill">check_circle</span> Connected · ' + branches.length + ' branches found';
+    statusEl.innerHTML = '<span style="vertical-align:middle;font-size:14px;margin-right:3px;" class="material-symbols-outlined sym-fill" aria-hidden="true">check_circle</span> Connected · ' + branches.length + ' branches found';
     if (IMPORTED && !IMPORT_CHECKED) checkImportAgainstRepo();   // the imported config, against this branch
   }, 1200);
 }
@@ -2974,8 +2977,8 @@ function renderFpNodes(nodes, expanded) {
     return '<div class="fp-node">'
       + "<div class='fp-folder-row' onclick='fpRowClick(event,this,\"" + pathAttr + "\"," + (hasChildren ? 'true' : 'false') + ")'>"
       + '<button class="tree-toggle" onclick="event.stopPropagation();fpToggle(this)" style="' + (hasChildren ? '' : 'visibility:hidden;') + '">'
-      + '<span class="material-symbols-outlined" style="font-size:14px;">' + (expanded ? 'keyboard_arrow_down' : 'keyboard_arrow_right') + '</span></button>'
-      + '<span class="material-symbols-outlined text-secondary" style="font-size:15px;">' + (expanded ? 'folder_open' : 'folder') + '</span>'
+      + '<span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">' + (expanded ? 'keyboard_arrow_down' : 'keyboard_arrow_right') + '</span></button>'
+      + '<span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:15px;">' + (expanded ? 'folder_open' : 'folder') + '</span>'
       + '<span class="fp-name" style="font-family:\'JetBrains Mono\';font-size:11px;color:#f2f3f5;flex:1;">' + escHtml(node.name) + '/</span>'
       + '</div>'
       + (hasChildren ? '<div class="fp-children"' + (expanded ? '' : ' style="display:none;"') + '>' + childrenHtml + '</div>' : '')
@@ -3048,7 +3051,7 @@ function fpToggle(btn) {
       <p class="text-on-surface-variant mt-0.5" style="font-size:11px;line-height:16px;">Folders on the server ArtiFex runs on. Only a git repository can be picked.</p>
     </div>
     <button onclick="closeRepoBrowser()" aria-label="Close" class="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-colors">
-      <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+      <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">close</span>
     </button>
   </div>
   <!-- Where we are: each part goes back there -->
@@ -3056,7 +3059,7 @@ function fpToggle(btn) {
   <!-- The folder's folders: a plain one opens, a git repository is picked (double-click: picked and used) -->
   <div id="rb-list" class="flex-1 overflow-y-auto px-2 py-2"></div>
   <div class="px-4 py-3 border-t border-outline-variant flex-shrink-0 space-y-2.5">
-    <p id="rb-picked" style="font:500 11px/16px 'SamsungOne','Roboto',sans-serif;color:#7c818c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Pick a git repository</p>
+    <p id="rb-picked" style="font:500 11px/16px 'SamsungOne','Roboto',sans-serif;color:#979ca7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Pick a git repository</p>
     <div class="flex gap-3">
       <button onclick="closeRepoBrowser()" class="px-4 py-2 border border-outline-variant text-on-surface-variant rounded-lg font-label-md text-label-md hover:bg-surface-container transition-colors">Cancel</button>
       <button id="rb-use" onclick="confirmRepoBrowser()" class="flex-1 py-2 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md hover:bg-secondary-container transition-colors">Use this repository</button>
@@ -3066,14 +3069,14 @@ function fpToggle(btn) {
 
 <!-- ══ FOLDER PICKER SIDEBAR ══ -->
 <div id="folder-picker-backdrop" class="hidden fixed inset-0 z-[99]" style="background:rgba(0,0,0,0.5);" onclick="closeFolderPicker()"></div>
-<div id="folder-picker" class="hidden fixed top-0 right-0 h-screen bg-surface-container-lowest border-l border-outline-variant z-[100] flex flex-col" style="width:320px;box-shadow:-4px 0 24px rgba(0,0,0,0.24);">
+<div id="folder-picker" role="dialog" aria-modal="true" aria-label="Select folder" class="hidden fixed top-0 right-0 h-screen bg-surface-container-lowest border-l border-outline-variant z-[100] flex flex-col" style="width:320px;box-shadow:-4px 0 24px rgba(0,0,0,0.24);">
   <div class="flex items-center justify-between px-5 py-4 border-b border-outline-variant flex-shrink-0">
     <div>
       <h3 class="text-headline-sm text-on-surface" style="font-size:14px;">Select Folder</h3>
       <p class="text-body-sm text-on-surface-variant mt-0.5" id="fp-selected-label" style="font-size:11px;font-family:'SamsungOne','Roboto',sans-serif;">No folder selected</p>
     </div>
     <button onclick="closeFolderPicker()" class="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-colors">
-      <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+      <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">close</span>
     </button>
   </div>
   <div class="flex-1 overflow-y-auto px-3 py-3" id="fp-tree">
@@ -3087,7 +3090,7 @@ function fpToggle(btn) {
 
 <!-- ══ COMPONENT FILE-SELECT SIDEBAR ══ -->
 <div id="comp-sidebar-backdrop" class="hidden fixed inset-0 z-[99]" style="background:rgba(0,0,0,0.5);" onclick="closeCompSidebar()"></div>
-<div id="comp-sidebar" class="hidden fixed top-0 right-0 h-screen bg-surface-container-lowest border-l border-outline-variant z-[100] flex flex-col" style="width:340px;box-shadow:-4px 0 24px rgba(0,0,0,0.24);">
+<div id="comp-sidebar" role="dialog" aria-modal="true" aria-label="Add component" class="hidden fixed top-0 right-0 h-screen bg-surface-container-lowest border-l border-outline-variant z-[100] flex flex-col" style="width:340px;box-shadow:-4px 0 24px rgba(0,0,0,0.24);">
   <!-- Header -->
   <div class="flex items-center justify-between px-5 py-4 border-b border-outline-variant flex-shrink-0">
     <div>
@@ -3095,7 +3098,7 @@ function fpToggle(btn) {
       <p class="text-body-sm text-on-surface-variant mt-0.5" style="font-size:11px;font-family:'SamsungOne','Roboto',sans-serif;" id="sidebar-layer-path">Layer root: —</p>
     </div>
     <button onclick="closeCompSidebar()" class="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-colors">
-      <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+      <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">close</span>
     </button>
   </div>
   <!-- Component name -->
@@ -3110,54 +3113,54 @@ function fpToggle(btn) {
       <!-- src/ -->
       <div class="sidebar-folder-block">
         <div class="sidebar-folder-row" onclick="if(!event.target.closest('.tree-toggle')&&event.target.tagName!=='INPUT')this.querySelector('.folder-cb').click()">
-          <button onclick="event.stopPropagation();toggleSidebarFolder(this)" class="tree-toggle"><span class="material-symbols-outlined" style="font-size:14px;">keyboard_arrow_down</span></button>
+          <button onclick="event.stopPropagation();toggleSidebarFolder(this)" class="tree-toggle"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">keyboard_arrow_down</span></button>
           <input type="checkbox" class="folder-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFolder(this)">
-          <span class="material-symbols-outlined text-secondary" style="font-size:15px;">folder_open</span>
+          <span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:15px;">folder_open</span>
           <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">src/</span>
         </div>
         <div class="sidebar-folder-children pl-5">
           <div class="sidebar-file-row" data-filename="torque_manager.cpp" onclick="sidebarFileRowClick(event,this)">
             <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
-            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:13px;">description</span>
             <span class="file-name" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">torque_manager.cpp</span>
             <span class="file-owner-tag" style="display:none;"></span>
           </div>
           <div class="sidebar-file-row" data-filename="torque_manager.h" onclick="sidebarFileRowClick(event,this)">
             <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
-            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:13px;">description</span>
             <span class="file-name" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">torque_manager.h</span>
             <span class="file-owner-tag" style="display:none;"></span>
           </div>
           <div class="sidebar-file-row" data-filename="efficiency_optimizer.cpp" onclick="sidebarFileRowClick(event,this)">
             <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
-            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:13px;">description</span>
             <span class="file-name" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">efficiency_optimizer.cpp</span>
             <span class="file-owner-tag" style="display:none;"></span>
           </div>
           <div class="sidebar-file-row" data-filename="efficiency_optimizer.h" onclick="sidebarFileRowClick(event,this)">
             <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
-            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:13px;">description</span>
             <span class="file-name" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">efficiency_optimizer.h</span>
             <span class="file-owner-tag" style="display:none;"></span>
           </div>
           <!-- diagnostics/ -->
           <div class="sidebar-folder-block">
             <div class="sidebar-folder-row" onclick="if(!event.target.closest('.tree-toggle')&&event.target.tagName!=='INPUT')this.querySelector('.folder-cb').click()">
-              <button onclick="event.stopPropagation();toggleSidebarFolder(this)" class="tree-toggle"><span class="material-symbols-outlined" style="font-size:14px;">keyboard_arrow_right</span></button>
+              <button onclick="event.stopPropagation();toggleSidebarFolder(this)" class="tree-toggle"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">keyboard_arrow_right</span></button>
               <input type="checkbox" class="folder-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFolder(this)">
-              <span class="material-symbols-outlined text-secondary" style="font-size:15px;">folder</span>
+              <span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:15px;">folder</span>
               <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">diagnostics/</span>
             </div>
             <div class="sidebar-folder-children pl-5 hidden">
               <div class="sidebar-file-row" data-filename="fault_logger.cpp" onclick="sidebarFileRowClick(event,this)">
                 <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
-                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+                <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:13px;">description</span>
                 <span class="file-name" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">fault_logger.cpp</span>
                 <span class="file-owner-tag" style="display:none;"></span>
               </div>
               <div class="sidebar-file-row" data-filename="fault_logger.h" onclick="sidebarFileRowClick(event,this)">
                 <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
-                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+                <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:13px;">description</span>
                 <span class="file-name" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">fault_logger.h</span>
                 <span class="file-owner-tag" style="display:none;"></span>
               </div>
@@ -3168,21 +3171,21 @@ function fpToggle(btn) {
       <!-- include/ -->
       <div class="sidebar-folder-block">
         <div class="sidebar-folder-row" onclick="if(!event.target.closest('.tree-toggle')&&event.target.tagName!=='INPUT')this.querySelector('.folder-cb').click()">
-          <button onclick="event.stopPropagation();toggleSidebarFolder(this)" class="tree-toggle"><span class="material-symbols-outlined" style="font-size:14px;">keyboard_arrow_right</span></button>
+          <button onclick="event.stopPropagation();toggleSidebarFolder(this)" class="tree-toggle"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">keyboard_arrow_right</span></button>
           <input type="checkbox" class="folder-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFolder(this)">
-          <span class="material-symbols-outlined text-secondary" style="font-size:15px;">folder</span>
+          <span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-size:15px;">folder</span>
           <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">include/</span>
         </div>
         <div class="sidebar-folder-children pl-5 hidden">
           <div class="sidebar-file-row" data-filename="app_types.h" onclick="sidebarFileRowClick(event,this)">
             <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
-            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:13px;">description</span>
             <span class="file-name" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">app_types.h</span>
             <span class="file-owner-tag" style="display:none;"></span>
           </div>
           <div class="sidebar-file-row" data-filename="config.h" onclick="sidebarFileRowClick(event,this)">
             <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#1d7bff;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
-            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:13px;">description</span>
             <span class="file-name" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;color:#f2f3f5;flex:1;">config.h</span>
             <span class="file-owner-tag" style="display:none;"></span>
           </div>

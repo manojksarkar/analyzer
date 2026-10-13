@@ -17,16 +17,16 @@
         colors: {
           "primary": "#f4f5f7", "primary-container": "#26282e",
           "on-primary": "#ffffff", "on-primary-container": "#8a8f9c",
-          "secondary": "#1d7bff", "secondary-container": "#3d8fff",
+          "secondary": "#6aa9ff", "secondary-container": "#1a6ce6",
           "on-secondary": "#ffffff", "on-secondary-container": "#ffffff",
-          "on-tertiary-container": "#1fae63",
-          "error": "#ff4d5a", "error-container": "#3a1d21", "on-error-container": "#ff8a93",
+          "on-tertiary-container": "#2fc878",
+          "error": "#ff6b76", "error-container": "#3a1d21", "on-error-container": "#ff8a93",
           "surface": "#0e0f12", "background": "#0e0f12", "panel": "#15161a", "inverse": "#33363f",
           "surface-container-lowest": "#1c1e23", "surface-container-low": "#23262d",
           "surface-container": "#272a32", "surface-container-high": "#2e3139",
           "surface-container-highest": "#363a44",
           "on-surface": "#f2f3f5", "on-surface-variant": "#a3a7b1",
-          "outline": "#6b707c", "outline-variant": "#2c2f37",
+          "outline": "#979ca7", "outline-variant": "#2c2f37",
           "tertiary-container": "#10301f", "tertiary-fixed": "#6ff0b0",
         },
         borderRadius: { "DEFAULT": "6px", "lg": "8px", "xl": "14px", "2xl": "18px", "full": "9999px" },
@@ -72,7 +72,7 @@
   /* ── Samsung Magician dark theme layer (shared by every dark mockup) ── */
   :root {
     --mm-blue: #1d7bff; --mm-blue-hi: #3d8fff; --mm-navy: #1428a0;
-    --mm-grad: linear-gradient(135deg, #3d8fff 0%, #1d7bff 50%, #1853ce 100%);
+    --mm-grad: linear-gradient(135deg, #1a6ce6 0%, #1662d6 50%, #1853ce 100%);
     --shadow-card: 0 1px 0 rgba(255,255,255,.04) inset, 0 10px 30px rgba(0,0,0,.45);
     --shadow-pop: 0 18px 48px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.05);
     --glow-blue: 0 0 0 1px rgba(29,123,255,.45), 0 6px 20px rgba(29,123,255,.35);
@@ -97,7 +97,7 @@
 
   /* Signature surfaces: gradient CTA, glassy cards, glowing brand tile */
   .bg-secondary { background-image: var(--mm-grad); box-shadow: 0 4px 14px rgba(29,123,255,.35); }
-  .hover\:bg-secondary-container:hover { background-image: linear-gradient(135deg, #509cff 0%, #2d86ff 50%, #1e5ed7 100%); box-shadow: var(--glow-blue); }
+  .hover\:bg-secondary-container:hover { background-image: linear-gradient(135deg, #1f70ea 0%, #1a6ce6 50%, #1a5ed8 100%); box-shadow: var(--glow-blue); }
   .rounded-xl.border.bg-surface-container-lowest,
   .rounded-2xl.border.bg-surface-container-lowest { box-shadow: var(--shadow-card); background-image: linear-gradient(180deg, rgba(255,255,255,.025), transparent 120px); }
   .brand-tile { background-image: var(--mm-grad); box-shadow: 0 0 18px rgba(29,123,255,.55); }
@@ -111,12 +111,12 @@
   }
   #app-sidebar { background: linear-gradient(180deg, #17181d 0%, #121317 100%) !important; border-color: #24272e !important; }
   header { background: rgba(21,22,26,.85) !important; backdrop-filter: blur(10px); border-color: #24272e !important; }
-  input::placeholder, textarea::placeholder { color: #6b707c !important; }
+  input::placeholder, textarea::placeholder { color: #979ca7 !important; }
 
   /* Form controls (beat the Tailwind forms plugin's light defaults) */
   input[type='text'], input[type='search'], input[type='email'], input[type='password'],
   input[type='url'], input[type='number'], input:not([type]), textarea, select {
-    background-color: transparent; color: #f2f3f5; border-color: #2c2f37;
+    background-color: transparent; color: #f2f3f5; border-color: #737885;
   }
   input[type='text']:focus, input[type='search']:focus, input[type='email']:focus, input[type='password']:focus,
   input[type='url']:focus, input[type='number']:focus, input:not([type]):focus, textarea:focus, select:focus {
@@ -124,9 +124,9 @@
   }
   input.bg-transparent { border: 0; padding: 0; box-shadow: none !important; }
   select option { background: #1f2127; color: #f2f3f5; }
-  input[type='checkbox'], input[type='radio'] { background-color: #1c1e23; border: 1.5px solid #4a4f5b; color: #1d7bff; accent-color: #1d7bff; }
+  input[type='checkbox'], input[type='radio'] { background-color: #1c1e23; border: 1.5px solid #4a4f5b; color: #6aa9ff; accent-color: #1d7bff; }
   input[type='checkbox'] { border-radius: 4px; }
-  input[type='checkbox']:checked, input[type='radio']:checked { background-color: #1d7bff; border-color: #1d7bff; }
+  input[type='checkbox']:checked, input[type='radio']:checked { background-color: #1a6ce6; border-color: #1d7bff; }
   input[type='checkbox']:focus, input[type='radio']:focus { box-shadow: 0 0 0 3px rgba(29,123,255,.3); outline: none; }
 
   /* Navigation */
@@ -134,7 +134,7 @@
   .nav-default { color: #a3a7b1; }
   .nav-default:hover { background: rgba(255,255,255,.05); color: #f2f3f5; }
   .nav-active { background: linear-gradient(90deg, rgba(29,123,255,.22), rgba(29,123,255,.06)) !important; color: #ffffff !important; border-left: none !important; }
-  .nav-active::before { content: ''; position: absolute; left: -2px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: #3d8fff; box-shadow: 0 0 10px #1d7bff; }
+  .nav-active::before { content: ''; position: absolute; left: -2px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: #1a6ce6; box-shadow: 0 0 10px #1d7bff; }
   .nav-active .material-symbols-outlined { color: #5aa2ff; font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
   .outline-link.active { color: #5aa2ff; background: rgba(29,123,255,.12); font-weight: 500; }
 
@@ -148,7 +148,7 @@
   .badge { border-radius: 999px; }
   .badge-approved { background: rgba(61,220,132,.12); color: #3ddc84; border-color: rgba(61,220,132,.35); }
   .badge-review   { background: rgba(245,165,36,.12); color: #f5a524; border-color: rgba(245,165,36,.35); }
-  .badge-unchanged { background: rgba(255,255,255,.05); color: #8a8f9c; border-color: #2c2f37; }
+  .badge-unchanged { background: rgba(255,255,255,.05); color: #979ca7; border-color: #2c2f37; }
   .proc-pill { border-radius: 999px; }
   .pill-swe3 { background: rgba(29,123,255,.16); color: #5aa2ff; }
   .pill-swe2 { background: rgba(143,139,255,.16); color: #a8a5ff; }
@@ -167,10 +167,12 @@
   .doc-row:hover { background: rgba(255,255,255,.035); }
   .doc-row.row-selected { background: rgba(29,123,255,.10); }
 </style>
+<link rel="stylesheet" href="../a11y.css">
+<script src="../a11y.js" defer></script>
 </head>
 <body class="bg-background text-on-surface font-body-md min-h-screen flex items-center justify-center p-6">
 
-<div class="w-full max-w-5xl bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden grid lg:grid-cols-[1fr_1.1fr]" style="box-shadow:0 4px 32px rgba(0,0,0,0.2);">
+<div class="w-full max-w-5xl bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden grid lg:grid-cols-[1fr_1.1fr]" role="main" style="box-shadow:0 4px 32px rgba(0,0,0,0.2);">
 
   <!-- Left Panel -->
   <div class="hidden lg:flex flex-col justify-between p-12 mm-hero text-on-primary">
@@ -178,7 +180,7 @@
       <!-- Logo -->
       <div class="flex items-center gap-3">
         <div class="w-8 h-8 brand-tile rounded-lg flex items-center justify-center flex-shrink-0">
-          <span class="material-symbols-outlined text-on-primary" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">account_tree</span>
+          <span class="material-symbols-outlined text-on-primary" aria-hidden="true" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">account_tree</span>
         </div>
         <div>
           <h1 class="font-bold tracking-tight" style="font-family:Roboto;font-size:15px;line-height:1.2;">[PRODUCT NAME]</h1>
@@ -202,15 +204,15 @@
     <!-- Feature list -->
     <div class="flex flex-col gap-2.5 mt-10">
       <div class="flex items-center gap-2.5">
-        <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
+        <span class="material-symbols-outlined text-on-tertiary-container" aria-hidden="true" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
         <span class="font-label-md text-label-md text-on-primary-container">ASPICE Ready</span>
       </div>
       <div class="flex items-center gap-2.5">
-        <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
+        <span class="material-symbols-outlined text-on-tertiary-container" aria-hidden="true" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
         <span class="font-label-md text-label-md text-on-primary-container">End-to-End Traceability</span>
       </div>
       <div class="flex items-center gap-2.5">
-        <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
+        <span class="material-symbols-outlined text-on-tertiary-container" aria-hidden="true" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
         <span class="font-label-md text-label-md text-on-primary-container">Enterprise Security</span>
       </div>
     </div>
@@ -223,7 +225,7 @@
       <!-- Mobile logo -->
       <div class="lg:hidden flex items-center gap-3 mb-8">
         <div class="w-8 h-8 brand-tile rounded-lg flex items-center justify-center flex-shrink-0">
-          <span class="material-symbols-outlined text-on-primary" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">account_tree</span>
+          <span class="material-symbols-outlined text-on-primary" aria-hidden="true" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">account_tree</span>
         </div>
         <h1 class="text-primary font-bold tracking-tight" style="font-family:Roboto;font-size:15px;">[PRODUCT NAME]</h1>
       </div>
@@ -236,7 +238,7 @@
 
       <!-- SSO Button -->
       <button onclick="signIn()" class="w-full flex items-center justify-center gap-2.5 h-11 rounded-xl border border-outline-variant bg-surface-container-lowest hover:bg-surface-container-low transition-colors font-label-md text-label-md text-on-surface mb-5" style="font-family:Roboto;font-size:13px;font-weight:500;">
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">domain</span>
+        <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:18px;">domain</span>
         Continue with Company SSO
       </button>
 
@@ -252,11 +254,12 @@
 
         <!-- Email -->
         <div>
-          <label class="block font-label-md text-label-md text-on-surface-variant uppercase tracking-[0.08em] mb-1.5" style="font-size:11px;">Work Email</label>
+          <label class="block font-label-md text-label-md text-on-surface-variant uppercase tracking-[0.08em] mb-1.5" style="font-size:11px;" for="email">Work Email</label>
           <input
+            id="email"
             type="email"
             placeholder="name@company.com"
-            class="w-full h-11 px-3 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-body-md transition-shadow"
+            class="w-full h-11 px-3 rounded-xl border border-outline bg-surface-container-lowest text-on-surface text-body-md transition-shadow"
             style="font-family:Roboto;"
           >
         </div>
@@ -264,7 +267,7 @@
         <!-- Password -->
         <div>
           <div class="flex items-center justify-between mb-1.5">
-            <label class="font-label-md text-label-md text-on-surface-variant uppercase tracking-[0.08em]" style="font-size:11px;">Password</label>
+            <label class="font-label-md text-label-md text-on-surface-variant uppercase tracking-[0.08em]" style="font-size:11px;" for="password">Password</label>
             <a href="#" class="text-body-sm text-secondary hover:underline" style="font-size:12px;">Forgot password?</a>
           </div>
           <div class="relative">
@@ -272,15 +275,15 @@
               id="password"
               type="password"
               placeholder="••••••••"
-              class="w-full h-11 px-3 pr-11 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-body-md transition-shadow"
+              class="w-full h-11 px-3 pr-11 rounded-xl border border-outline bg-surface-container-lowest text-on-surface text-body-md transition-shadow"
               style="font-family:Roboto;"
             >
             <button
               type="button"
-              onclick="togglePassword()"
-              class="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors"
+              onclick="togglePassword()" aria-label="Show password" aria-pressed="false"
+              class="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-lg text-on-surface-variant hover:text-on-surface transition-colors"
             >
-              <span class="material-symbols-outlined" id="eye-icon" style="font-size:18px;">visibility_off</span>
+              <span class="material-symbols-outlined" aria-hidden="true" id="eye-icon" style="font-size:18px;">visibility_off</span>
             </button>
           </div>
         </div>
@@ -290,7 +293,7 @@
           <input
             type="checkbox"
             id="remember"
-            class="w-4 h-4 rounded border-outline-variant text-secondary accent-secondary cursor-pointer"
+            class="w-4 h-4 rounded border-outline text-secondary accent-secondary cursor-pointer"
           >
           <label for="remember" class="text-body-sm text-on-surface-variant cursor-pointer" style="font-size:13px;">Remember me</label>
         </div>
@@ -330,6 +333,7 @@ function togglePassword() {
     input.type = 'password';
     icon.textContent = 'visibility_off';
   }
+  icon.parentElement.setAttribute('aria-pressed', input.type === 'text');
 }
 
 function signIn() {

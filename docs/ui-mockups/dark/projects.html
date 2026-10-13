@@ -18,16 +18,16 @@
         colors: {
           "primary": "#f4f5f7", "primary-container": "#26282e",
           "on-primary": "#ffffff", "on-primary-container": "#8a8f9c",
-          "secondary": "#1d7bff", "secondary-container": "#3d8fff",
+          "secondary": "#6aa9ff", "secondary-container": "#1a6ce6",
           "on-secondary": "#ffffff", "on-secondary-container": "#ffffff",
-          "on-tertiary-container": "#1fae63",
-          "error": "#ff4d5a", "error-container": "#3a1d21", "on-error-container": "#ff8a93",
+          "on-tertiary-container": "#2fc878",
+          "error": "#ff6b76", "error-container": "#3a1d21", "on-error-container": "#ff8a93",
           "surface": "#0e0f12", "background": "#0e0f12", "panel": "#15161a", "inverse": "#33363f",
           "surface-container-lowest": "#1c1e23", "surface-container-low": "#23262d",
           "surface-container": "#272a32", "surface-container-high": "#2e3139",
           "surface-container-highest": "#363a44",
           "on-surface": "#f2f3f5", "on-surface-variant": "#a3a7b1",
-          "outline": "#6b707c", "outline-variant": "#2c2f37",
+          "outline": "#979ca7", "outline-variant": "#2c2f37",
           "tertiary-container": "#10301f", "tertiary-fixed": "#6ff0b0",
         },
         borderRadius: { "DEFAULT": "6px", "lg": "8px", "xl": "14px", "2xl": "18px", "full": "9999px" },
@@ -82,7 +82,7 @@
   .row-menu.open { display:block; }
   .row-menu-item { display:flex; align-items:center; gap:8px; padding:8px 14px; font-family:'SamsungOne','Roboto',sans-serif; font-size:11px; font-weight:600; color:#f2f3f5; cursor:pointer; transition:background .1s; white-space:nowrap; }
   .row-menu-item:hover { background:#26282e; }
-  .row-menu-item.danger { color:#ff4d5a; }
+  .row-menu-item.danger { color:#ff6b76; }
   .row-menu-item.danger:hover { background:#2e1a1d; }
   .row-menu-sep { height:1px; background:#24272e; margin:3px 0; }
 
@@ -94,7 +94,7 @@
   /* ── Samsung Magician dark theme layer (shared by every dark mockup) ── */
   :root {
     --mm-blue: #1d7bff; --mm-blue-hi: #3d8fff; --mm-navy: #1428a0;
-    --mm-grad: linear-gradient(135deg, #3d8fff 0%, #1d7bff 50%, #1853ce 100%);
+    --mm-grad: linear-gradient(135deg, #1a6ce6 0%, #1662d6 50%, #1853ce 100%);
     --shadow-card: 0 1px 0 rgba(255,255,255,.04) inset, 0 10px 30px rgba(0,0,0,.45);
     --shadow-pop: 0 18px 48px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.05);
     --glow-blue: 0 0 0 1px rgba(29,123,255,.45), 0 6px 20px rgba(29,123,255,.35);
@@ -119,7 +119,7 @@
 
   /* Signature surfaces: gradient CTA, glassy cards, glowing brand tile */
   .bg-secondary { background-image: var(--mm-grad); box-shadow: 0 4px 14px rgba(29,123,255,.35); }
-  .hover\:bg-secondary-container:hover { background-image: linear-gradient(135deg, #509cff 0%, #2d86ff 50%, #1e5ed7 100%); box-shadow: var(--glow-blue); }
+  .hover\:bg-secondary-container:hover { background-image: linear-gradient(135deg, #1f70ea 0%, #1a6ce6 50%, #1a5ed8 100%); box-shadow: var(--glow-blue); }
   .rounded-xl.border.bg-surface-container-lowest,
   .rounded-2xl.border.bg-surface-container-lowest { box-shadow: var(--shadow-card); background-image: linear-gradient(180deg, rgba(255,255,255,.025), transparent 120px); }
   .brand-tile { background-image: var(--mm-grad); box-shadow: 0 0 18px rgba(29,123,255,.55); }
@@ -133,12 +133,12 @@
   }
   #app-sidebar { background: linear-gradient(180deg, #17181d 0%, #121317 100%) !important; border-color: #24272e !important; }
   header { background: rgba(21,22,26,.85) !important; backdrop-filter: blur(10px); border-color: #24272e !important; }
-  input::placeholder, textarea::placeholder { color: #6b707c !important; }
+  input::placeholder, textarea::placeholder { color: #979ca7 !important; }
 
   /* Form controls (beat the Tailwind forms plugin's light defaults) */
   input[type='text'], input[type='search'], input[type='email'], input[type='password'],
   input[type='url'], input[type='number'], input:not([type]), textarea, select {
-    background-color: transparent; color: #f2f3f5; border-color: #2c2f37;
+    background-color: transparent; color: #f2f3f5; border-color: #737885;
   }
   input[type='text']:focus, input[type='search']:focus, input[type='email']:focus, input[type='password']:focus,
   input[type='url']:focus, input[type='number']:focus, input:not([type]):focus, textarea:focus, select:focus {
@@ -146,9 +146,9 @@
   }
   input.bg-transparent { border: 0; padding: 0; box-shadow: none !important; }
   select option { background: #1f2127; color: #f2f3f5; }
-  input[type='checkbox'], input[type='radio'] { background-color: #1c1e23; border: 1.5px solid #4a4f5b; color: #1d7bff; accent-color: #1d7bff; }
+  input[type='checkbox'], input[type='radio'] { background-color: #1c1e23; border: 1.5px solid #4a4f5b; color: #6aa9ff; accent-color: #1d7bff; }
   input[type='checkbox'] { border-radius: 4px; }
-  input[type='checkbox']:checked, input[type='radio']:checked { background-color: #1d7bff; border-color: #1d7bff; }
+  input[type='checkbox']:checked, input[type='radio']:checked { background-color: #1a6ce6; border-color: #1d7bff; }
   input[type='checkbox']:focus, input[type='radio']:focus { box-shadow: 0 0 0 3px rgba(29,123,255,.3); outline: none; }
 
   /* Navigation */
@@ -156,7 +156,7 @@
   .nav-default { color: #a3a7b1; }
   .nav-default:hover { background: rgba(255,255,255,.05); color: #f2f3f5; }
   .nav-active { background: linear-gradient(90deg, rgba(29,123,255,.22), rgba(29,123,255,.06)) !important; color: #ffffff !important; border-left: none !important; }
-  .nav-active::before { content: ''; position: absolute; left: -2px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: #3d8fff; box-shadow: 0 0 10px #1d7bff; }
+  .nav-active::before { content: ''; position: absolute; left: -2px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: #1a6ce6; box-shadow: 0 0 10px #1d7bff; }
   .nav-active .material-symbols-outlined { color: #5aa2ff; font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
   .outline-link.active { color: #5aa2ff; background: rgba(29,123,255,.12); font-weight: 500; }
 
@@ -170,7 +170,7 @@
   .badge { border-radius: 999px; }
   .badge-approved { background: rgba(61,220,132,.12); color: #3ddc84; border-color: rgba(61,220,132,.35); }
   .badge-review   { background: rgba(245,165,36,.12); color: #f5a524; border-color: rgba(245,165,36,.35); }
-  .badge-unchanged { background: rgba(255,255,255,.05); color: #8a8f9c; border-color: #2c2f37; }
+  .badge-unchanged { background: rgba(255,255,255,.05); color: #979ca7; border-color: #2c2f37; }
   .proc-pill { border-radius: 999px; }
   .pill-swe3 { background: rgba(29,123,255,.16); color: #5aa2ff; }
   .pill-swe2 { background: rgba(143,139,255,.16); color: #a8a5ff; }
@@ -189,6 +189,8 @@
   .doc-row:hover { background: rgba(255,255,255,.035); }
   .doc-row.row-selected { background: rgba(29,123,255,.10); }
 </style>
+<link rel="stylesheet" href="../a11y.css">
+<script src="../a11y.js" defer></script>
 </head>
 
 <body class="bg-background text-on-surface font-body-md overflow-hidden">
@@ -200,7 +202,7 @@
   <header class="h-14 flex-shrink-0 flex items-center justify-between px-6 bg-surface-container-lowest border-b border-outline-variant z-40">
     <a href="projects.html" class="flex items-center gap-3">
       <div class="w-8 h-8 brand-tile rounded-lg flex items-center justify-center flex-shrink-0">
-        <span class="material-symbols-outlined text-on-primary" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">account_tree</span>
+        <span class="material-symbols-outlined text-on-primary" aria-hidden="true" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">account_tree</span>
       </div>
       <div>
         <h1 class="text-primary font-bold tracking-tight" style="font-family:Roboto;font-size:15px;line-height:1.2;">[PRODUCT NAME]</h1>
@@ -209,18 +211,18 @@
     </a>
     <div class="flex items-center gap-0.5">
       <button class="relative p-2 hover:bg-surface-container rounded-lg transition-colors">
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
+        <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:22px;">notifications</span>
         <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border-2 border-surface-container-lowest"></span>
       </button>
       <button class="p-2 hover:bg-surface-container rounded-lg transition-colors">
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">help</span>
+        <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:22px;">help</span>
       </button>
       <div class="w-px h-5 bg-outline-variant mx-1.5"></div>
       <button class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors">
         <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
           <span class="text-on-secondary-container font-bold text-xs" style="font-family:Roboto;">EL</span>
         </div>
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">expand_more</span>
+        <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:16px;">expand_more</span>
       </button>
     </div>
   </header>
@@ -237,7 +239,7 @@
       <a href="projects-empty.html"
          class="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors"
          style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;text-decoration:none;">
-        <span class="material-symbols-outlined" style="font-size:14px;">add</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">add</span>
         NEW PROJECT
       </a>
     </div>
@@ -254,7 +256,7 @@
             <th class="px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:160px;">Progress</th>
             <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Last Run</th>
             <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Team</th>
-            <th class="px-4 py-3" style="width:44px;"></th>
+            <th class="px-4 py-3" style="width:44px;"><span class="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody>
@@ -264,18 +266,18 @@
             <td class="px-5 py-3.5">
               <div class="flex items-center gap-3">
                 <div class="w-9 h-9 rounded-lg bg-secondary-container flex items-center justify-center flex-shrink-0">
-                  <span class="material-symbols-outlined text-secondary" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">memory</span>
+                  <span class="material-symbols-outlined text-white" aria-hidden="true" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">memory</span>
                 </div>
                 <div>
-                  <p class="font-label-md text-label-md text-on-surface flex items-center gap-2">VCU Engine Firmware <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#1b2a45;color:#1d7bff;padding:1px 7px;border-radius:99px;letter-spacing:.04em;">ADMIN</span></p>
+                  <p class="font-label-md text-label-md text-on-surface flex items-center gap-2">VCU Engine Firmware <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#1b2a45;color:#6aa9ff;padding:1px 7px;border-radius:99px;letter-spacing:.04em;">ADMIN</span></p>
                 </div>
               </div>
             </td>
             <td class="px-4 py-3.5">
-              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;background:#1b2a45;color:#1d7bff;padding:2px 7px;border-radius:3px;text-transform:uppercase;">ISO 26262</span>
+              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#1b2a45;color:#6aa9ff;padding:2px 7px;border-radius:3px;text-transform:uppercase;">ISO 26262</span>
             </td>
             <td class="px-4 py-3.5">
-              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;background:#26282e;color:#a3a7b1;border:1px solid #2c2f37;padding:2px 7px;border-radius:3px;">v1.2.0</span>
+              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#26282e;color:#a3a7b1;border:1px solid #2c2f37;padding:2px 7px;border-radius:3px;">v1.2.0</span>
             </td>
             <td class="text-right px-4 py-3.5 text-secondary" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;font-weight:600;">26</td>
             <td class="px-4 py-3.5">
@@ -287,21 +289,21 @@
             <td class="px-4 py-3.5 text-on-surface-variant" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;white-space:nowrap;">Jun 15, 2026</td>
             <td class="px-4 py-3.5">
               <div style="display:flex;align-items:center;">
-                <div title="Manoj S." style="width:26px;height:26px;border-radius:50%;background:#12283a;border:2px solid #1c1e23;display:inline-flex;align-items:center;justify-content:center;position:relative;z-index:4;flex-shrink:0;"><span style="font-family:Roboto;font-size:9px;font-weight:700;color:#5cc1ff;">MS</span></div>
-                <div title="Sarah Chen" style="width:26px;height:26px;border-radius:50%;background:#1b2a45;border:2px solid #1c1e23;display:inline-flex;align-items:center;justify-content:center;margin-left:-8px;position:relative;z-index:3;flex-shrink:0;"><span style="font-family:Roboto;font-size:9px;font-weight:700;color:#7fb2ff;">SC</span></div>
-                <div title="Ana Ferreira" style="width:26px;height:26px;border-radius:50%;background:#2e1a28;border:2px solid #1c1e23;display:inline-flex;align-items:center;justify-content:center;margin-left:-8px;position:relative;z-index:2;flex-shrink:0;"><span style="font-family:Roboto;font-size:9px;font-weight:700;color:#ff7ab8;">AF</span></div>
-                <div title="+2 more" style="width:26px;height:26px;border-radius:50%;background:#26282e;border:2px solid #1c1e23;display:inline-flex;align-items:center;justify-content:center;margin-left:-8px;position:relative;z-index:1;flex-shrink:0;font-family:Roboto;font-size:9px;font-weight:700;color:#a3a7b1;">+2</div>
+                <div title="Manoj S." style="width:26px;height:26px;border-radius:50%;background:#12283a;border:2px solid #1c1e23;display:inline-flex;align-items:center;justify-content:center;position:relative;z-index:4;flex-shrink:0;"><span style="font-family:Roboto;font-size:11px;font-weight:700;color:#5cc1ff;">MS</span></div>
+                <div title="Sarah Chen" style="width:26px;height:26px;border-radius:50%;background:#1b2a45;border:2px solid #1c1e23;display:inline-flex;align-items:center;justify-content:center;margin-left:-8px;position:relative;z-index:3;flex-shrink:0;"><span style="font-family:Roboto;font-size:11px;font-weight:700;color:#7fb2ff;">SC</span></div>
+                <div title="Ana Ferreira" style="width:26px;height:26px;border-radius:50%;background:#2e1a28;border:2px solid #1c1e23;display:inline-flex;align-items:center;justify-content:center;margin-left:-8px;position:relative;z-index:2;flex-shrink:0;"><span style="font-family:Roboto;font-size:11px;font-weight:700;color:#ff7ab8;">AF</span></div>
+                <div title="+2 more" style="width:26px;height:26px;border-radius:50%;background:#26282e;border:2px solid #1c1e23;display:inline-flex;align-items:center;justify-content:center;margin-left:-8px;position:relative;z-index:1;flex-shrink:0;font-family:Roboto;font-size:11px;font-weight:700;color:#a3a7b1;">+2</div>
               </div>
             </td>
             <td class="px-4 py-3.5" style="position:relative;">
               <button onclick="event.stopPropagation();toggleRowMenu(event,'menu-vcu')" class="p-1 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
-                <span class="material-symbols-outlined" style="font-size:18px;">more_vert</span>
+                <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">more_vert</span>
               </button>
               <div id="menu-vcu" class="row-menu">
-                <div class="row-menu-item" onclick="event.stopPropagation();openRenameProject('vcu')"><span class="material-symbols-outlined" style="font-size:15px;">edit</span>Rename</div>
-                <div class="row-menu-item" onclick="event.stopPropagation();closeRowMenus();showToast('Config downloaded')"><span class="material-symbols-outlined" style="font-size:15px;">download</span>Download config</div>
+                <div class="row-menu-item" onclick="event.stopPropagation();openRenameProject('vcu')"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">edit</span>Rename</div>
+                <div class="row-menu-item" onclick="event.stopPropagation();closeRowMenus();showToast('Config downloaded')"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">download</span>Download config</div>
                 <div class="row-menu-sep"></div>
-                <div class="row-menu-item danger" onclick="event.stopPropagation();"><span class="material-symbols-outlined" style="font-size:15px;">delete</span>Delete</div>
+                <div class="row-menu-item danger" onclick="event.stopPropagation();"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">delete</span>Delete</div>
               </div>
             </td>
           </tr>
@@ -311,18 +313,18 @@
             <td class="px-5 py-3.5">
               <div class="flex items-center gap-3">
                 <div class="w-9 h-9 rounded-lg bg-surface-container-low border border-outline-variant flex items-center justify-center flex-shrink-0">
-                  <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">sensors</span>
+                  <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:18px;">sensors</span>
                 </div>
                 <div>
-                  <p class="font-label-md text-label-md text-on-surface flex items-center gap-2">ADAS Sensor Fusion <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#26282e;color:#a3a7b1;padding:1px 7px;border-radius:99px;letter-spacing:.04em;">DEV</span></p>
+                  <p class="font-label-md text-label-md text-on-surface flex items-center gap-2">ADAS Sensor Fusion <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#26282e;color:#a3a7b1;padding:1px 7px;border-radius:99px;letter-spacing:.04em;">DEV</span></p>
                 </div>
               </div>
             </td>
             <td class="px-4 py-3.5">
-              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;background:#1b2a45;color:#1d7bff;padding:2px 7px;border-radius:3px;text-transform:uppercase;">ASPICE L2</span>
+              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#1b2a45;color:#6aa9ff;padding:2px 7px;border-radius:3px;text-transform:uppercase;">ASPICE L2</span>
             </td>
             <td class="px-4 py-3.5">
-              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;background:#26282e;color:#a3a7b1;border:1px solid #2c2f37;padding:2px 7px;border-radius:3px;">v0.9.0</span>
+              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#26282e;color:#a3a7b1;border:1px solid #2c2f37;padding:2px 7px;border-radius:3px;">v0.9.0</span>
             </td>
             <td class="text-right px-4 py-3.5 text-secondary" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;font-weight:600;">2</td>
             <td class="px-4 py-3.5">
@@ -334,17 +336,17 @@
             <td class="px-4 py-3.5 text-on-surface-variant" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;white-space:nowrap;">Jun 12, 2026</td>
             <td class="px-4 py-3.5">
               <div style="display:flex;align-items:center;">
-                <div title="Priya R." style="width:26px;height:26px;border-radius:50%;background:#2c2a14;border:2px solid #1c1e23;display:inline-flex;align-items:center;justify-content:center;position:relative;z-index:2;flex-shrink:0;"><span style="font-family:Roboto;font-size:9px;font-weight:700;color:#ffc966;">PR</span></div>
-                <div title="Marcus Webb" style="width:26px;height:26px;border-radius:50%;background:#2a1f45;border:2px solid #1c1e23;display:inline-flex;align-items:center;justify-content:center;margin-left:-8px;position:relative;z-index:1;flex-shrink:0;"><span style="font-family:Roboto;font-size:9px;font-weight:700;color:#c3a6ff;">MW</span></div>
+                <div title="Priya R." style="width:26px;height:26px;border-radius:50%;background:#2c2a14;border:2px solid #1c1e23;display:inline-flex;align-items:center;justify-content:center;position:relative;z-index:2;flex-shrink:0;"><span style="font-family:Roboto;font-size:11px;font-weight:700;color:#ffc966;">PR</span></div>
+                <div title="Marcus Webb" style="width:26px;height:26px;border-radius:50%;background:#2a1f45;border:2px solid #1c1e23;display:inline-flex;align-items:center;justify-content:center;margin-left:-8px;position:relative;z-index:1;flex-shrink:0;"><span style="font-family:Roboto;font-size:11px;font-weight:700;color:#c3a6ff;">MW</span></div>
               </div>
             </td>
             <td class="px-4 py-3.5" style="position:relative;">
               <button onclick="event.stopPropagation();toggleRowMenu(event,'menu-adas')" class="p-1 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
-                <span class="material-symbols-outlined" style="font-size:18px;">more_vert</span>
+                <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">more_vert</span>
               </button>
               <div id="menu-adas" class="row-menu">
-                <div class="row-menu-item" onclick="event.stopPropagation();location.href='project-detail.html'"><span class="material-symbols-outlined" style="font-size:15px;">open_in_new</span>View Project</div>
-                <div class="row-menu-item" onclick="event.stopPropagation();closeRowMenus();showToast('Config downloaded')"><span class="material-symbols-outlined" style="font-size:15px;">download</span>Download config</div>
+                <div class="row-menu-item" onclick="event.stopPropagation();location.href='project-detail.html'"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">open_in_new</span>View Project</div>
+                <div class="row-menu-item" onclick="event.stopPropagation();closeRowMenus();showToast('Config downloaded')"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">download</span>Download config</div>
               </div>
             </td>
           </tr>
@@ -354,18 +356,18 @@
             <td class="px-5 py-3.5">
               <div class="flex items-center gap-3">
                 <div class="w-9 h-9 rounded-lg bg-surface-container-low border border-outline-variant flex items-center justify-center flex-shrink-0">
-                  <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">tune</span>
+                  <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true" style="font-size:18px;">tune</span>
                 </div>
                 <div>
-                  <p class="font-label-md text-label-md text-on-surface flex items-center gap-2">EPS Control Unit <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#26282e;color:#a3a7b1;padding:1px 7px;border-radius:99px;letter-spacing:.04em;">DEV</span></p>
+                  <p class="font-label-md text-label-md text-on-surface flex items-center gap-2">EPS Control Unit <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#26282e;color:#a3a7b1;padding:1px 7px;border-radius:99px;letter-spacing:.04em;">DEV</span></p>
                 </div>
               </div>
             </td>
             <td class="px-4 py-3.5">
-              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;background:#1b2a45;color:#1d7bff;padding:2px 7px;border-radius:3px;text-transform:uppercase;">ISO 26262</span>
+              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#1b2a45;color:#6aa9ff;padding:2px 7px;border-radius:3px;text-transform:uppercase;">ISO 26262</span>
             </td>
             <td class="px-4 py-3.5">
-              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;background:#26282e;color:#a3a7b1;border:1px solid #2c2f37;padding:2px 7px;border-radius:3px;">v2.1.0</span>
+              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#26282e;color:#a3a7b1;border:1px solid #2c2f37;padding:2px 7px;border-radius:3px;">v2.1.0</span>
             </td>
             <td class="text-right px-4 py-3.5 text-secondary" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;font-weight:600;">1</td>
             <td class="px-4 py-3.5">
@@ -377,17 +379,17 @@
             <td class="px-4 py-3.5 text-on-surface-variant" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;white-space:nowrap;">Jun 8, 2026</td>
             <td class="px-4 py-3.5">
               <div style="display:flex;align-items:center;">
-                <div title="Arjun M." style="width:26px;height:26px;border-radius:50%;background:#2c2a14;border:2px solid #1c1e23;display:inline-flex;align-items:center;justify-content:center;position:relative;z-index:2;flex-shrink:0;"><span style="font-family:Roboto;font-size:9px;font-weight:700;color:#ffc966;">AM</span></div>
-                <div title="Zara Patel" style="width:26px;height:26px;border-radius:50%;background:#2f1f14;border:2px solid #1c1e23;display:inline-flex;align-items:center;justify-content:center;margin-left:-8px;position:relative;z-index:1;flex-shrink:0;"><span style="font-family:Roboto;font-size:9px;font-weight:700;color:#ff9d5c;">ZP</span></div>
+                <div title="Arjun M." style="width:26px;height:26px;border-radius:50%;background:#2c2a14;border:2px solid #1c1e23;display:inline-flex;align-items:center;justify-content:center;position:relative;z-index:2;flex-shrink:0;"><span style="font-family:Roboto;font-size:11px;font-weight:700;color:#ffc966;">AM</span></div>
+                <div title="Zara Patel" style="width:26px;height:26px;border-radius:50%;background:#2f1f14;border:2px solid #1c1e23;display:inline-flex;align-items:center;justify-content:center;margin-left:-8px;position:relative;z-index:1;flex-shrink:0;"><span style="font-family:Roboto;font-size:11px;font-weight:700;color:#ff9d5c;">ZP</span></div>
               </div>
             </td>
             <td class="px-4 py-3.5" style="position:relative;">
               <button onclick="event.stopPropagation();toggleRowMenu(event,'menu-eps')" class="p-1 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
-                <span class="material-symbols-outlined" style="font-size:18px;">more_vert</span>
+                <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">more_vert</span>
               </button>
               <div id="menu-eps" class="row-menu">
-                <div class="row-menu-item" onclick="event.stopPropagation();location.href='project-detail.html'"><span class="material-symbols-outlined" style="font-size:15px;">open_in_new</span>View Project</div>
-                <div class="row-menu-item" onclick="event.stopPropagation();closeRowMenus();showToast('Config downloaded')"><span class="material-symbols-outlined" style="font-size:15px;">download</span>Download config</div>
+                <div class="row-menu-item" onclick="event.stopPropagation();location.href='project-detail.html'"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">open_in_new</span>View Project</div>
+                <div class="row-menu-item" onclick="event.stopPropagation();closeRowMenus();showToast('Config downloaded')"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">download</span>Download config</div>
               </div>
             </td>
           </tr>
@@ -397,15 +399,15 @@
             <td class="px-5 py-3.5">
               <div class="flex items-center gap-3">
                 <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style="background:#2c2414;border:1px solid #6b4a12;">
-                  <span class="material-symbols-outlined" style="font-size:18px;color:#f5a524;">warning</span>
+                  <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;color:#f5a524;">warning</span>
                 </div>
                 <div>
-                  <p class="font-label-md text-label-md text-on-surface flex items-center gap-2">Brake-by-Wire ECU <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#1b2a45;color:#1d7bff;padding:1px 7px;border-radius:99px;letter-spacing:.04em;">ADMIN</span></p>
+                  <p class="font-label-md text-label-md text-on-surface flex items-center gap-2">Brake-by-Wire ECU <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#1b2a45;color:#6aa9ff;padding:1px 7px;border-radius:99px;letter-spacing:.04em;">ADMIN</span></p>
                 </div>
               </div>
             </td>
             <td class="px-4 py-3.5">
-              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;background:#1b2a45;color:#1d7bff;padding:2px 7px;border-radius:3px;text-transform:uppercase;">ISO 26262</span>
+              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#1b2a45;color:#6aa9ff;padding:2px 7px;border-radius:3px;text-transform:uppercase;">ISO 26262</span>
             </td>
             <td class="px-4 py-3.5">
               <span class="font-label-sm text-label-sm text-on-surface-variant">—</span>
@@ -420,21 +422,21 @@
             <td class="px-4 py-3.5" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;white-space:nowrap;color:#f5a524;">47d ago</td>
             <td class="px-4 py-3.5">
               <button onclick="event.stopPropagation();" title="Add team members"
-                      style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border:1.5px dashed #2c2f37;border-radius:99px;background:transparent;cursor:pointer;color:#7c818c;font-size:10px;font-family:'SamsungOne','Roboto',sans-serif;"
-                      onmouseover="this.style.borderColor='#1d7bff';this.style.color='#1d7bff'" onmouseout="this.style.borderColor='#2c2f37';this.style.color='#7c818c'">
-                <span class="material-symbols-outlined" style="font-size:12px;">person_add</span>
+                      style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border:1.5px dashed #2c2f37;border-radius:99px;background:transparent;cursor:pointer;color:#979ca7;font-size:11px;font-family:'SamsungOne','Roboto',sans-serif;"
+                      onmouseover="this.style.borderColor='#1d7bff';this.style.color='#6aa9ff'" onmouseout="this.style.borderColor='#2c2f37';this.style.color='#979ca7'">
+                <span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;">person_add</span>
                 Add
               </button>
             </td>
             <td class="px-4 py-3.5" style="position:relative;">
               <button onclick="event.stopPropagation();toggleRowMenu(event,'menu-bbw')" class="p-1 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
-                <span class="material-symbols-outlined" style="font-size:18px;">more_vert</span>
+                <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">more_vert</span>
               </button>
               <div id="menu-bbw" class="row-menu">
-                <div class="row-menu-item" onclick="event.stopPropagation();openRenameProject('bbw')"><span class="material-symbols-outlined" style="font-size:15px;">edit</span>Rename</div>
-                <div class="row-menu-item" onclick="event.stopPropagation();closeRowMenus();showToast('Config downloaded')"><span class="material-symbols-outlined" style="font-size:15px;">download</span>Download config</div>
+                <div class="row-menu-item" onclick="event.stopPropagation();openRenameProject('bbw')"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">edit</span>Rename</div>
+                <div class="row-menu-item" onclick="event.stopPropagation();closeRowMenus();showToast('Config downloaded')"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">download</span>Download config</div>
                 <div class="row-menu-sep"></div>
-                <div class="row-menu-item danger" onclick="event.stopPropagation();"><span class="material-symbols-outlined" style="font-size:15px;">delete</span>Delete</div>
+                <div class="row-menu-item danger" onclick="event.stopPropagation();"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">delete</span>Delete</div>
               </div>
             </td>
           </tr>
@@ -444,15 +446,15 @@
             <td class="px-5 py-3.5">
               <div class="flex items-center gap-3">
                 <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style="background:#2c2414;border:1px solid #6b4a12;">
-                  <span class="material-symbols-outlined" style="font-size:18px;color:#f5a524;">warning</span>
+                  <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;color:#f5a524;">warning</span>
                 </div>
                 <div>
-                  <p class="font-label-md text-label-md text-on-surface flex items-center gap-2">Powertrain Control Module <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:9px;font-weight:700;background:#26282e;color:#a3a7b1;padding:1px 7px;border-radius:99px;letter-spacing:.04em;">DEV</span></p>
+                  <p class="font-label-md text-label-md text-on-surface flex items-center gap-2">Powertrain Control Module <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#26282e;color:#a3a7b1;padding:1px 7px;border-radius:99px;letter-spacing:.04em;">DEV</span></p>
                 </div>
               </div>
             </td>
             <td class="px-4 py-3.5">
-              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:700;background:#132a1f;color:#3ddc84;padding:2px 7px;border-radius:3px;text-transform:uppercase;">ASPICE L3</span>
+              <span style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;background:#132a1f;color:#3ddc84;padding:2px 7px;border-radius:3px;text-transform:uppercase;">ASPICE L3</span>
             </td>
             <td class="px-4 py-3.5">
               <span class="font-label-sm text-label-sm text-on-surface-variant">—</span>
@@ -467,19 +469,19 @@
             <td class="px-4 py-3.5" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;white-space:nowrap;color:#f5a524;">Never run</td>
             <td class="px-4 py-3.5">
               <button onclick="event.stopPropagation();" title="Add team members"
-                      style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border:1.5px dashed #2c2f37;border-radius:99px;background:transparent;cursor:pointer;color:#7c818c;font-size:10px;font-family:'SamsungOne','Roboto',sans-serif;"
-                      onmouseover="this.style.borderColor='#1d7bff';this.style.color='#1d7bff'" onmouseout="this.style.borderColor='#2c2f37';this.style.color='#7c818c'">
-                <span class="material-symbols-outlined" style="font-size:12px;">person_add</span>
+                      style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border:1.5px dashed #2c2f37;border-radius:99px;background:transparent;cursor:pointer;color:#979ca7;font-size:11px;font-family:'SamsungOne','Roboto',sans-serif;"
+                      onmouseover="this.style.borderColor='#1d7bff';this.style.color='#6aa9ff'" onmouseout="this.style.borderColor='#2c2f37';this.style.color='#979ca7'">
+                <span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;">person_add</span>
                 Add
               </button>
             </td>
             <td class="px-4 py-3.5" style="position:relative;">
               <button onclick="event.stopPropagation();toggleRowMenu(event,'menu-pcm')" class="p-1 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
-                <span class="material-symbols-outlined" style="font-size:18px;">more_vert</span>
+                <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">more_vert</span>
               </button>
               <div id="menu-pcm" class="row-menu">
-                <div class="row-menu-item" onclick="event.stopPropagation();location.href='project-detail.html'"><span class="material-symbols-outlined" style="font-size:15px;">open_in_new</span>View Project</div>
-                <div class="row-menu-item" onclick="event.stopPropagation();closeRowMenus();showToast('Config downloaded')"><span class="material-symbols-outlined" style="font-size:15px;">download</span>Download config</div>
+                <div class="row-menu-item" onclick="event.stopPropagation();location.href='project-detail.html'"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">open_in_new</span>View Project</div>
+                <div class="row-menu-item" onclick="event.stopPropagation();closeRowMenus();showToast('Config downloaded')"><span class="material-symbols-outlined" aria-hidden="true" style="font-size:15px;">download</span>Download config</div>
               </div>
             </td>
           </tr>
@@ -497,13 +499,13 @@
 
 
 <!-- Toast -->
-<div id="toast" class="hidden fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-4 py-3 bg-inverse rounded-xl"
+<div id="toast" role="status" aria-live="polite" class="hidden fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-4 py-3 bg-inverse rounded-xl"
      style="min-width:300px;max-width:380px;box-shadow:0 4px 24px rgba(0,0,0,0.64);">
-  <span id="toast-icon" class="material-symbols-outlined flex-shrink-0"
+  <span id="toast-icon" class="material-symbols-outlined flex-shrink-0" aria-hidden="true"
         style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;color:#3ddc84;">check_circle</span>
   <p id="toast-msg" class="font-label-sm text-label-sm text-white flex-1">Done.</p>
   <button onclick="hideToast()" class="text-on-primary-container hover:text-white transition-colors flex-shrink-0">
-    <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+    <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">close</span>
   </button>
 </div>
 
@@ -549,7 +551,7 @@ function hideToast() {
 <!-- ══ RENAME PROJECT - an admin's row menu (web-app ProjectsPage/components/RenameProjectDialog.tsx).
      A rename is rare: it is here, not on the project's own pages. ══ -->
 <style>
-  #rp-name { width: 100%; height: 40px; padding: 0 12px; border: 1px solid #2c2f37; border-radius: 12px; background: #1c1e23;
+  #rp-name { width: 100%; height: 40px; padding: 0 12px; border: 1px solid #737885; border-radius: 12px; background: #1c1e23;
              font: 400 14px/20px Roboto, sans-serif; color: #f2f3f5; outline: none; transition: border-color .15s, box-shadow .15s; }
   #rp-name:focus { border-color: #1d7bff; box-shadow: 0 0 0 2px rgba(29,123,255,0.52); }
   #rp-name.err { border-color: #ff4d5a; }
@@ -558,8 +560,8 @@ function hideToast() {
   .rp-btn:disabled { opacity: .5; cursor: not-allowed; }
   .rp-outline { border: 1px solid #2c2f37; background: #1c1e23; color: #f2f3f5; }
   .rp-outline:hover { background: #1b2a45; }
-  .rp-primary { border: 1px solid #1d7bff; background: #1d7bff; color: #fff; }
-  .rp-primary:hover:not(:disabled) { background: #3d8fff; }
+  .rp-primary { border: 1px solid #1d7bff; background: #1a6ce6; color: #fff; }
+  .rp-primary:hover:not(:disabled) { background: #1a6ce6; }
 </style>
 <div id="rp-dialog" class="hidden fixed inset-0 z-[300] flex items-center justify-center" style="background:rgba(0,0,0,0.8);"
      onclick="if (event.target === this) closeRenameProject()">
@@ -568,17 +570,17 @@ function hideToast() {
     <div class="flex items-center justify-between" style="margin-bottom:12px;">
       <h3 style="font:600 16px/24px Roboto,sans-serif;color:#f2f3f5;">Rename project</h3>
       <button type="button" onclick="closeRenameProject()" aria-label="Close" style="padding:4px;border-radius:8px;color:#a3a7b1;">
-        <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">close</span>
       </button>
     </div>
     <label for="rp-name" style="display:block;margin-bottom:6px;font:600 11px/16px 'SamsungOne','Roboto',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#a3a7b1;">Project name</label>
     <input id="rp-name" type="text" autocomplete="off" oninput="renameProjectCheck()">
-    <p id="rp-error" class="hidden" role="alert" style="margin-top:4px;align-items:center;gap:4px;font:400 12px/16px Roboto,sans-serif;color:#ff4d5a;">
-      <span class="material-symbols-outlined" style="font-size:12px;">error</span><span id="rp-error-text"></span>
+    <p id="rp-error" class="hidden" role="alert" style="margin-top:4px;align-items:center;gap:4px;font:400 12px/16px Roboto,sans-serif;color:#ff6b76;">
+      <span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;">error</span><span id="rp-error-text"></span>
     </p>
     <!-- The name of another listed project: said, not refused (the server allows it). -->
     <p id="rp-taken" class="hidden" role="status" style="margin-top:4px;align-items:center;gap:4px;font:400 12px/16px Roboto,sans-serif;color:#f5a524;">
-      <span class="material-symbols-outlined" style="font-size:12px;">info</span><span id="rp-taken-text"></span>
+      <span class="material-symbols-outlined" aria-hidden="true" style="font-size:12px;">info</span><span id="rp-taken-text"></span>
     </p>
     <p style="margin-top:12px;font:400 11px/1.6 Roboto,sans-serif;color:#a3a7b1;">
       Documents already made keep the name they were made with, on their cover and in their
@@ -587,14 +589,14 @@ function hideToast() {
     <div class="flex justify-end gap-2" style="margin:16px -24px 0;padding:16px 24px 0;border-top:1px solid #2c2f37;">
       <button type="button" class="rp-btn rp-outline" onclick="closeRenameProject()">Cancel</button>
       <button type="submit" id="rp-submit" class="rp-btn rp-primary">
-        <span class="material-symbols-outlined" style="font-size:14px;">edit</span>Rename
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">edit</span>Rename
       </button>
     </div>
   </form>
 </div>
 <div id="rp-toast" role="status" class="hidden fixed z-[400] flex items-start gap-3 p-4 bg-surface-container-lowest"
      style="right:16px;bottom:16px;width:320px;border:1px solid #2c2f37;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,0.24);">
-  <span class="material-symbols-outlined" style="font-size:18px;color:#3ddc84;margin-top:2px;font-variation-settings:'FILL' 1;">check_circle</span>
+  <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;color:#3ddc84;margin-top:2px;font-variation-settings:'FILL' 1;">check_circle</span>
   <div style="flex:1;min-width:0;">
     <p id="rp-toast-title" style="font:600 14px/20px Roboto,sans-serif;color:#f2f3f5;"></p>
     <p id="rp-toast-msg" style="margin-top:2px;font:400 12px/16px Roboto,sans-serif;color:#a3a7b1;"></p>
