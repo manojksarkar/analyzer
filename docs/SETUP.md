@@ -33,8 +33,15 @@ the diagram tools (`@mermaid-js/mermaid-cli`, `puppeteer`, `@viz-js/viz`); the s
 
 ## 3. Configure
 
-Machine-specific settings and secrets go in `engine/config/config.local.json` (gitignored, merged
-over `config.defaults.json`). Start from the template:
+There are two config files, one per kind of setting:
+
+| File | Holds |
+|---|---|
+| `engine/config/config.local.json` (gitignored) | **this server**: its database (`db`), sign-in (`auth`), repository folders (`repositories`), LLM server (`llmServer`) and LLVM install (`llvm`) |
+| `engine/config/config.defaults.json` (tracked) | **how documents are made**: parse flags, views, what the LLM writes, document texts |
+
+The server's five blocks are read from `config.local.json` only, by every run, when it starts: a
+change there applies to the next run of every project. Start from the template:
 
 ```
 copy engine\config\config.local.json.example engine\config\config.local.json
@@ -42,12 +49,18 @@ copy engine\config\config.local.json.example engine\config\config.local.json
 
 - **`db`** — where PostgreSQL is (user, password, database). The `DATABASE_URL` environment variable
   wins over it when set.
-- **`llm`** — the LLM endpoint. The default is a local Ollama (`http://localhost:11434`, model
-  `llama3.2`): install Ollama, then `ollama pull llama3.2`. For a gateway, set `baseUrl` and its headers.
-  To run without any LLM, add `"llm": {"descriptions": false, "behaviourNames": false}` — much faster,
-  descriptions stay empty.
-- **libclang** — if LLVM is not in `C:\Program Files\LLVM`, set `clang.llvmLibPath` and
-  `clang.clangIncludePath` here.
+- **`llmServer`** — the LLM that writes the descriptions: `provider`, `baseUrl`, `defaultModel`,
+  and for a gateway its `customHeaders`. For a local Ollama: install it, `ollama pull llama3.2`, and
+  set `{"provider": "ollama", "baseUrl": "http://localhost:11434", "defaultModel": "llama3.2"}`.
+  There is no built-in server: without this block only `--no-llm` runs work (much faster,
+  descriptions stay empty), and any other run stops at its start and says so.
+- **`llvm`** — where LLVM is: `libPath` (the libclang library) and `includePath` (Clang's own
+  headers, in the folder of the installed version, e.g. `...\lib\clang\17\include`).
+
+`python analyzer.py doctor` says which of these this machine has set.
+
+Also on this machine, outside that file:
+
 - **Chrome** — `engine/config/puppeteer-config.json` names the Chrome executable; edit
   `executablePath` if yours is elsewhere.
 - **Mermaid in docker** — when the `minlag/mermaid-cli` image is loaded and a test drawing in it

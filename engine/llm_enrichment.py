@@ -24,6 +24,7 @@ import sys
 from typing import Dict, List, Optional
 
 from utils import norm_path, short_name, load_llm_config
+from core.config import NO_LLM_SERVER, has_llm_server, llm_server
 from core.logging_setup import get_logger
 from core.progress import ProgressReporter
 
@@ -204,9 +205,26 @@ def _client_cache_key(llm_cfg: dict) -> str:
     ])
 
 
+_NO_SERVER_SAID = False
+
+
+def _say_no_llm_server() -> None:
+    """Once per process: the LLM was asked for, and this server names none (`llmServer` in
+    config.local.json). The text is left as it is without the LLM, as when the server cannot be
+    reached -- a run stops over it at its start (run.py), before any phase gets here."""
+    global _NO_SERVER_SAID
+    if not _NO_SERVER_SAID:
+        _NO_SERVER_SAID = True
+        _log.warning("LLM text is not written: %s.", NO_LLM_SERVER)
+
+
 def _get_client(config: dict) -> Optional["LlmClient"]:
-    """Build or return a cached LlmClient for the resolved config."""
+    """Build or return a cached LlmClient for the resolved config. None when no LLM server
+    is set."""
     if LlmClient is None:
+        return None
+    if not has_llm_server(config):
+        _say_no_llm_server()
         return None
     llm_cfg = load_llm_config(config)
     key = _client_cache_key(llm_cfg)
@@ -224,7 +242,7 @@ def _get_client(config: dict) -> Optional["LlmClient"]:
         max_retries=llm_cfg["retries"],
         # This path builds the client directly rather than via from_config(),
         # so the throttle has to be threaded through explicitly — without this
-        # the enrichment phases silently ignore llm.rateLimitSeconds.
+        # the enrichment phases silently ignore llmServer.rateLimitSeconds.
         rate_limit_seconds=llm_cfg.get("rateLimitSeconds", 3.0),
     )
     # Config that isn't visible to LlmClient but changes what we compare
@@ -244,8 +262,12 @@ def llm_provider_reachable(config: dict) -> bool:
 
     For ollama, ping /api/tags. For openai we cannot ping cheaply so we
     return True and rely on the per-call error handling in LlmClient.
+    False when no LLM server is set at all.
     """
     if not HAS_REQUESTS or LlmClient is None:
+        return False
+    if not has_llm_server(config):
+        _say_no_llm_server()
         return False
     llm_cfg = load_llm_config(config)
     provider = llm_cfg["provider"]
@@ -490,7 +512,7 @@ def _cached_desc(config: dict, key_material: str, generate) -> str:
     cache = h = None
     try:
         cache = _aux_desc_cache(config)
-        model = (config.get("llm") or {}).get("defaultModel", "")
+        model = llm_server(config).get("defaultModel", "")
         h = EntityCache.compute_hash(f"{key_material}|model={model}")
         hit = cache.get(h, h)
         if hit is not None:

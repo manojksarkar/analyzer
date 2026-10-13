@@ -196,7 +196,7 @@ def format_single(report: dict, label: str) -> str:
         lines.append(f"  LLM was {total_llm:.1f}s of a {run_seconds:.1f}s run ({share:.0f}%).")
     if total_llm and totals.get("throttleSeconds"):
         share = 100.0 * totals["throttleSeconds"] / total_llm
-        lines.append(f"  Throttle (llm.rateLimitSeconds) was {share:.0f}% of LLM time.")
+        lines.append(f"  Throttle (llmServer.rateLimitSeconds) was {share:.0f}% of LLM time.")
     return "\n".join(lines)
 
 

@@ -4,7 +4,7 @@ Supports two providers:
   - "ollama"  : POST {baseUrl}/api/generate  (local Ollama)
   - "openai"  : POST {baseUrl}/chat/completions  (OpenAI-compatible gateway)
 
-Selected via config['llm']['provider'] or the explicit `provider=` ctor arg.
+Selected via config['llmServer']['provider'] or the explicit `provider=` ctor arg.
 Both providers go through the same `generate(system, user)` interface and the
 same response post-processing (strip_think_section + token tracking).
 
@@ -12,7 +12,7 @@ Hard rules baked in:
   - OpenAI requests are serialised process-wide (1 in flight at a time) and
     every OpenAI call — successful or not — is followed by a sleep, because
     the corporate gateway throttles ~1 request per 3 seconds. The pause is
-    `llm.rateLimitSeconds` (default 3.0; 0 disables it). Ollama never sleeps.
+    `llmServer.rateLimitSeconds` (default 3.0; 0 disables it). Ollama never sleeps.
   - Configurable retry. Default = 1 retry on (HTTP error | empty response).
   - All responses pass through strip_think_section() before being returned.
   - Token usage from both providers is recorded into llm.tokens.
@@ -196,7 +196,7 @@ _OPENAI_LOCK = threading.Lock()
 
 # Default pause after every OpenAI-shaped call, in seconds. 3.0 matches the corporate/on-prem
 # API gateway, which allows roughly one request per 3s. Overridable per client via
-# `rate_limit_seconds` (config key `llm.rateLimitSeconds`).
+# `rate_limit_seconds` (config key `llmServer.rateLimitSeconds`).
 #
 # Configurable because the two deployments have opposite needs (doc 09, B6): the on-prem
 # **gateway** enforces that global limit, while an on-prem **hosted model** has no limit at all

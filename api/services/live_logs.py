@@ -67,7 +67,7 @@ class Masker:
 
 def configured_secrets() -> List[str]:
     """The secrets this machine's config holds: the database password, the LLM key and the
-    values of the LLM's custom headers (`config.local.json` puts credentials there)."""
+    values of the LLM's custom headers (`llmServer` in `config.local.json`, read as it is now)."""
     out: List[str] = []
     try:
         from core.db import database_url
@@ -78,13 +78,16 @@ def configured_secrets() -> List[str]:
     except Exception:                                   # noqa: BLE001
         pass
     try:
-        from core.config import app_config
-        llm = app_config().get("llm") or {}
-        for key in ("apiKey", "api_key", "key", "token"):
-            if isinstance(llm.get(key), str):
-                out.append(llm[key])
-        out.extend(v for v in (llm.get("customHeaders") or {}).values()
-                   if isinstance(v, str) and len(v) >= 6)
+        from core.config import app_config, server_settings
+        # `llm` too: a config.local.json from before the two were told apart keeps them there.
+        for llm in (server_settings().get("llmServer"), app_config().get("llm")):
+            if not isinstance(llm, dict):
+                continue
+            for key in ("apiKey", "api_key", "key", "token"):
+                if isinstance(llm.get(key), str):
+                    out.append(llm[key])
+            out.extend(v for v in (llm.get("customHeaders") or {}).values()
+                       if isinstance(v, str) and len(v) >= 6)
     except Exception:                                   # noqa: BLE001
         pass
     return out

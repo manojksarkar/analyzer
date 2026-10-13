@@ -114,7 +114,9 @@ python analyzer.py setup
 ```
 
 **2. Write `my-config.json`.** Only `layers` is yours; `clang`, `views` and `llm` are merged in
-from `engine/config/config.defaults.json`.
+from `engine/config/config.defaults.json`. Which LLM answers and where LLVM is are not a project's
+settings: they are this machine's, in `engine/config/config.local.json` (`llmServer`, `llvm`), and a
+change there applies to the next run of every project.
 
 ```json
 {
@@ -983,7 +985,7 @@ python analyzer.py check-datadict dd_layer1.csv --layer Layer1 --quiet
 ```
 
 `doctor` checks clang, node, graphviz and the browser before a long run stops on a missing one.
-`check-llm` asks the model directly — the gateway or Ollama, whichever `llm.provider` names — so
+`check-llm` asks the model directly — the gateway or Ollama, whichever `llmServer.provider` names — so
 "no descriptions in the document" can be attributed to the model rather than the pipeline.
 `--only` takes `tiny`, `description` or `large` (or 1-3). On Ollama it also flags a prompt cut to
 fit `numCtx` (Ollama reports no error) and the model's load time, which counts against
@@ -1164,6 +1166,10 @@ detached run uses the database its starter resolved (`DATABASE_URL`), and record
 | Message | What to do |
 |---|---|
 | `no database is configured` | Add the `db` section to `engine/config/config.local.json`, then `python analyzer.py setup`. The model and every version artifact live there and nowhere else. |
+| `Invalid LLM config: no LLM server is set` | Add the `llmServer` block (`provider`, `baseUrl`, `defaultModel`) to `engine/config/config.local.json` — `config.local.json.example` shows it — or run with `--no-llm`. Nothing else has to be edited: every project's next run reads it from there. |
+| `WARNING: ...config.local.json has settings under their old names` | Move each one to the place the message names: `llm.baseUrl` → `llmServer.baseUrl`, `clang.llvmLibPath` → `llvm.libPath`. Under the old names they are not read. |
+| `[FAIL] libclang: not loadable` | Set `llvm.libPath` (the libclang library) and `llvm.includePath` (Clang's own headers) in `engine/config/config.local.json`. |
+| `config.local.json could not be read` | The message has the line. A run stops on it rather than go on without this machine's LLM server. |
 | `WorkspaceNotFound: no workspace for project 'x'` | `python analyzer.py onboard` — the directory, config and rows all come from there. |
 | `this run needs the database but there is no versions row for '<pid>.vX'` | Reserve it (the message prints the exact command), or add `--create-version`. |
 | `STOPPING BEFORE THE PARSE - ... dataDictionary file not found: <path>` | Fix the path in `cores.<core>.dataDictionary` (the message names the key). Relative paths resolve from the repo root. |
@@ -1208,7 +1214,8 @@ LLM CALLS (a failed call means the caller fell back to a mechanical result)
 
 A non-zero **Failed** count means the document contains fallback text rather than real prose.
 
-If **Time** is mostly the pause rather than the model, `llm.rateLimitSeconds` is the lever. It
+If **Time** is mostly the pause rather than the model, `llmServer.rateLimitSeconds` (in
+`engine/config/config.local.json`) is the lever. It
 is `3.0` by default, which is right for a throttled corporate gateway and pure waste for an
 on-prem hosted model that has no limit — set it to `0` there. That one value is usually the
 largest speed difference available, and the Time line is how you tell whether it applies to you.

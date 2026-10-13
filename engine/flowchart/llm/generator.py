@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
 # a caller can't pass a token budget (e.g. legacy code paths, tests). They are
 # tuned for the worst case — a 2048-token Ollama model.
 #
-# At runtime the active budgets scale with config.llm.maxContextTokens so a
+# At runtime the active budgets scale with config.llmServer.maxContextTokens so a
 # 128K-token model isn't artificially capped at 6000 chars of prompt / 1200
 # chars of project context.
 MAX_PROMPT_CHARS = 6000    # fallback only; real value = _derive_budgets().prompt
@@ -118,7 +118,7 @@ class LabelGenerator:
         self._fallback_ids: Set[str] = set()
         # Authoritative input-token budget for budget-aware passes (coherence,
         # CFG simplification). Resolved upstream via llm_core.budget.resolve_max_tokens
-        # so it honours config.llm.maxContextTokens for both Ollama and OpenAI.
+        # so it honours config.llmServer.maxContextTokens for both Ollama and OpenAI.
         self._max_context_tokens = max_context_tokens
 
     # ------------------------------------------------------------------
@@ -728,7 +728,7 @@ class LabelGenerator:
         """Return True if *prompt* + system prompt fits the coherence budget.
 
         Uses the authoritative max_context_tokens threaded in from config
-        (`llm.maxContextTokens`, resolved once by the caller). No silent
+        (`llmServer.maxContextTokens`, resolved once by the caller). No silent
         defaults — callers that skip this parameter (e.g. standalone tests
         that don't plumb config) fall back to the legacy char check.
         """
@@ -893,7 +893,7 @@ def _derive_budgets(max_context_tokens: Optional[int]) -> Tuple[int, int]:
     model (OpenAI) those limits throw away ~99% of the usable context window
     and starve the LLM of project context. This helper scales both limits
     with the model's real token window (as resolved from
-    config.llm.maxContextTokens / numCtx), while keeping the old values as
+    config.llmServer.maxContextTokens / numCtx), while keeping the old values as
     hard floors for small local models.
     """
     if not max_context_tokens or max_context_tokens <= 0:
@@ -920,7 +920,7 @@ def _build_size_aware_prompt(
     """
     Build a prompt that fits within the model's context window.
 
-    Budgets scale with ``max_context_tokens`` (from ``llm.maxContextTokens`` /
+    Budgets scale with ``max_context_tokens`` (from ``llmServer.maxContextTokens`` /
     ``numCtx``) — small Ollama models stay at the legacy 6000/1200 floors,
     while GPT-4-class models get proportionally larger project-context budgets
     so the PKB packet isn't chopped down to 1200 chars.

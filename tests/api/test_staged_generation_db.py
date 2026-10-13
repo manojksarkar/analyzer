@@ -996,42 +996,63 @@ class TestAfterTheSecondReview:
     def test_a_resume_takes_this_machine_s_current_secrets_and_keeps_its_switches(
             self, tmp_path, monkeypatch):
         """The version's config is frozen with its run, but a gateway key rotated since must
-        reach a resume days later; the run's --no-llm must not be undone."""
+        reach a resume days later; the run's --no-llm must not be undone. The key is not in the
+        version's file: a phase reads this server's settings from config.local.json when it
+        loads the file (`core.config.load_config`), so nothing is laid over it and no copy with
+        credentials is written beside it."""
         import json
-        import analyzer
+        import os
+        import core.config as core_config
+        from core.config import load_config, load_llm_config
+        engine_dir = os.path.dirname(os.path.dirname(os.path.abspath(core_config.__file__)))
+        for name in ("LLM_API_KEY", "LLM_PROVIDER", "LLM_BASE_URL", "LLM_DEFAULT_MODEL"):
+            monkeypatch.delenv(name, raising=False)
         local = tmp_path / "engine" / "config" / "config.local.json"
         local.parent.mkdir(parents=True)
-        local.write_text(json.dumps({"llm": {"apiKey": "NEW", "descriptions": True},
-                                     "db": {"password": "x"}}), encoding="utf-8")
+        local.write_text(json.dumps({
+            "llmServer": {"provider": "openai", "baseUrl": "https://gw/v1", "defaultModel": "m",
+                          "apiKey": "NEW"},
+            "llm": {"descriptions": True}, "db": {"password": "x"}}), encoding="utf-8")
         monkeypatch.setenv("ANALYZER_DATA_ROOT", str(tmp_path))
         vcfg = tmp_path / "ver1" / "config.json"
         vcfg.parent.mkdir()
+        # as a version from before the split kept it: the key of its first day, in `llm`
         vcfg.write_text(json.dumps({"llm": {"apiKey": "OLD", "descriptions": False},
+                                    "llmServer": {"apiKey": "OLD"},
                                     "layers": {"L1": {}}}), encoding="utf-8")
-        runtime = json.loads(open(analyzer._with_current_secrets(str(vcfg)), encoding="utf-8").read())
-        assert runtime["llm"] == {"apiKey": "NEW", "descriptions": False}
-        assert "db" not in runtime and runtime["layers"] == {"L1": {}}
+        monkeypatch.setenv("ANALYZER_CONFIG", str(vcfg))
+        run = load_config(engine_dir)
+        assert load_llm_config(run)["apiKey"] == "NEW"
+        assert run["llm"]["descriptions"] is False                 # the run's own --no-llm stays
+        assert "db" not in run and run["layers"] == {"L1": {}}
+        assert os.listdir(vcfg.parent) == ["config.json"], "no config.runtime.json beside it"
 
     def test_a_resume_keeps_the_version_s_own_clang_views_and_docx(self, tmp_path, monkeypatch):
         """Office, 2026-10-05: a `clang` block in this machine's config.local.json (the walk off)
         turned a version's `includePathsFromProjectWalk: true` off. The version runs as it began;
         this machine still brings where ITS LLVM is."""
         import json
-        import analyzer
+        import os
+        import core.config as core_config
+        from core.config import llvm_paths, load_config
+        engine_dir = os.path.dirname(os.path.dirname(os.path.abspath(core_config.__file__)))
         local = tmp_path / "engine" / "config" / "config.local.json"
         local.parent.mkdir(parents=True)
-        local.write_text(json.dumps({"clang": {"includePathsFromProjectWalk": False,
-                                               "llvmLibPath": "D:/LLVM/bin/libclang.dll"},
+        local.write_text(json.dumps({"clang": {"includePathsFromProjectWalk": False},
+                                     "llvm": {"libPath": "D:/LLVM/bin/libclang.dll"},
                                      "views": {"flowcharts": False}, "docx": {"toc": False}}), encoding="utf-8")
         monkeypatch.setenv("ANALYZER_DATA_ROOT", str(tmp_path))
         vcfg = tmp_path / "ver1" / "config.json"
         vcfg.parent.mkdir()
         vcfg.write_text(json.dumps({"clang": {"includePathsFromProjectWalk": True,
                                               "llvmLibPath": "C:/old/libclang.dll"},
+                                    "llvm": {"libPath": "C:/old/libclang.dll"},
                                     "views": {"flowcharts": True}, "docx": {"toc": True}}), encoding="utf-8")
-        runtime = json.loads(open(analyzer._with_current_secrets(str(vcfg)), encoding="utf-8").read())
-        assert runtime["clang"] == {"includePathsFromProjectWalk": True, "llvmLibPath": "D:/LLVM/bin/libclang.dll"}
-        assert runtime["views"] == {"flowcharts": True} and runtime["docx"] == {"toc": True}
+        monkeypatch.setenv("ANALYZER_CONFIG", str(vcfg))
+        run = load_config(engine_dir)
+        assert run["clang"]["includePathsFromProjectWalk"] is True
+        assert run["views"] == {"flowcharts": True} and run["docx"] == {"toc": True}
+        assert llvm_paths(run)[0] == "D:/LLVM/bin/libclang.dll"
 
     def test_the_periodic_pass_only_follows_runs_again(self, sql_db, draft, tmp_path, monkeypatch):
         """A job with no background run may be queued or starting: only start-up decides those."""

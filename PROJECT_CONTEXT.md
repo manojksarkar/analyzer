@@ -71,6 +71,11 @@ newer entry and the code win.
   them (2026-10-04e). For the office's multi-day run — guide
   [CLI_COMMANDS](docs/CLI_COMMANDS.md#a-run-that-lasts-days), detail
   [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Staged generation".
+- **Config: one file per kind of setting** (2026-10-13d, branch `refactor/config-separation`, not
+  merged): `llmServer` and `llvm` are config.local.json's only, read at load by every run; the
+  defaults hold no server key. **Each machine's config.local.json needs the two blocks once** --
+  [config.local.json.example](engine/config/config.local.json.example);
+  [CLI_AND_CONFIG.md](project-context/CLI_AND_CONFIG.md) §6.
 - **Bitbucket repositories** (2026-10-05r, branch `feat/cli-wordfiles-bitbucket-components`, not
   committed): one rule for how a token reaches git (`engine/incremental/clone.git_auth`: a header for
   Bitbucket), a page address turned into its clone URL, wizard step 1 Remote | Local. Waits on the
@@ -143,9 +148,11 @@ The big shifts since most of §1–§24 were written. Each names its dated entry
 - **One CLI.** `analyzer.py` replaced four front doors (2026-08-24); `engine/run.py` still runs the
   phases beneath it. Re-derive without re-parsing (2026-08-25); a run says what it will do before it
   parses (2026-09-24g).
-- **Config** has three sources with three roles (2026-08-09, §6): `config.defaults.json` (tracked
-  defaults), `config.local.json` (this machine's secrets — database and LLM credentials) and each
-  version's resolved config, stored in `versions.resolved_config`.
+- **Config** is one file per kind of setting (2026-10-13d, §6): `config.local.json` is THIS SERVER
+  (`db`, `auth`, `repositories`, `llmServer`, `llvm`), read from that file only by every process
+  when it loads its config; `config.defaults.json` is how documents are made (`clang`, `views`,
+  `llm`, `docx`), which a project's own settings win over. No written config (workspace, version,
+  `versions.resolved_config`) holds a server setting. Before: three sources (2026-08-09).
 - **Per-layer inputs.** Macros as JSON, per layer (2026-08-07); the data dictionary per layer
   (2026-08-18); include paths from each core's `compile_commands.json` (2026-09-02), the project-folder
   walk only on request (2026-09-10); `clang.clangArgs` for cross-target parsing (2026-08-13).
@@ -167,7 +174,8 @@ The big shifts since most of §1–§24 were written. Each names its dated entry
 - **SWE.4** runs on the database pipeline (2026-09-01b), prints class-qualified names (2026-09-21b) and
   agrees with SWE.3 on external callers (2026-09-21d).
 - **LLM.** Every call is timed and attributed to a pipeline stage (2026-08-12b); the gateway throttle is
-  `llm.rateLimitSeconds` (2026-08-12); `analyzer.py check-llm` asks the LLM directly (2026-09-24e).
+  `llmServer.rateLimitSeconds` (2026-08-12; the block's name since 2026-10-13d); `analyzer.py check-llm`
+  asks the LLM directly (2026-09-24e).
 - **API and web app.** A CLI-onboarded project is reachable over HTTP — `analyzer.py grant`, and a
   superuser who reaches every project (2026-09-22, 2026-09-22b); web-app runs go through
   `analyzer.py generate` (2026-09-26); a sign-in lasts a working day (2026-09-26b); a re-export is a job

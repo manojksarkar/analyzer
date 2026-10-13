@@ -806,23 +806,27 @@ def _process_function(
 # LLM client construction
 # ---------------------------------------------------------------------------
 
-def _load_analyzer_llm_config() -> Optional[Dict]:
+def _load_analyzer_llm_config(no_llm: bool = False) -> Optional[Dict]:
     """Return the resolved llm config block, walking up from cwd.
 
     flowchart_engine is launched with cwd=project_root by views/flowcharts.py,
     so the first hit is the analyzer config. Returns None if no config.defaults.json
-    is reachable (e.g. standalone CLI invocation from another directory).
+    is reachable (e.g. standalone CLI invocation from another directory) -- and for a
+    --no-llm run on a server that names no LLM: it asks no server anything, so it needs none.
 
-    Raises LlmConfigError (from core.config) if the config.defaults.json IS reachable
+    Raises LlmConfigError (from core.config) if the config IS reachable
     but has missing/invalid required fields — that is a user-facing error,
     not a silent fallback.
     """
     from utils import load_config, load_llm_config  # noqa: WPS433
+    from core.config import has_llm_server  # noqa: WPS433
     cwd = os.path.abspath(os.getcwd())
     for candidate in (cwd, os.path.dirname(cwd)):
         cfg_path = os.path.join(candidate, "engine", "config", "config.defaults.json")
         if os.path.isfile(cfg_path):
             cfg = load_config(os.path.join(candidate, "engine"))
+            if no_llm and not has_llm_server(cfg):
+                return None
             return load_llm_config(cfg)
     return None
 
@@ -875,24 +879,23 @@ def _configure_libclang() -> None:
     src/parser.py) does not otherwise configure libclang, so clang.cindex falls
     back to OS default discovery and fails with LibclangError when libclang.dll
     is not on the loader path. Resolve the library from LIBCLANG_PATH (set by the
-    API) or the analyzer config's clang.llvmLibPath, mirroring src/parser.py.
+    API) or this machine's llvm.libPath (config.local.json), mirroring src/parser.py.
     """
     lib = os.environ.get("LIBCLANG_PATH") or ""
     if not lib:
         try:
             from utils import load_config  # noqa: WPS433
+            from core.config import llvm_paths  # noqa: WPS433
             cwd = os.path.abspath(os.getcwd())
             for candidate in (cwd, os.path.dirname(cwd)):
                 if os.path.isfile(os.path.join(candidate, "engine", "config", "config.defaults.json")):
-                    cfg = load_config(os.path.join(candidate, "engine")) or {}
-                    clang_cfg = cfg.get("clang") or {}
-                    lib = clang_cfg.get("llvmLibPath") or cfg.get("llvmLibPath") or ""
+                    lib = llvm_paths(load_config(os.path.join(candidate, "engine")) or {})[0]
                     break
         except Exception:
             lib = ""
     if not (lib and os.path.isfile(lib)):
         logger.warning(
-            "libclang not configured (LIBCLANG_PATH / clang.llvmLibPath unset or "
+            "libclang not configured (LIBCLANG_PATH / llvm.libPath in config.local.json unset or "
             "missing); relying on default discovery - flowchart parsing may fail.")
         return
     lib_dir = os.path.dirname(lib)
@@ -928,7 +931,7 @@ def run(config: EngineConfig) -> None:
     # so the user sees the exact failing field instead of a silent fallback.
     from utils import format_llm_config_banner, LlmConfigError  # noqa: WPS433
     try:
-        llm_cfg_resolved = _load_analyzer_llm_config()
+        llm_cfg_resolved = _load_analyzer_llm_config(config.no_llm)
     except LlmConfigError as exc:
         logger.error("Invalid LLM config: %s", exc)
         sys.exit(2)

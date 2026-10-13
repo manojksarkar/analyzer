@@ -90,7 +90,7 @@ def _llm_lines(counts: Dict[str, Any]) -> List[str]:
                      f"({_lat:.0f}s waiting on the model, {_thr:.0f}s in the rate-limit pause)")
             if _thr > _lat:
                 L.append("                Most of it was the THROTTLE, not the model — "
-                         "llm.rateLimitSeconds")
+                         "llmServer.rateLimitSeconds")
                 L.append("                is the lever, and 0 disables it on an endpoint "
                          "with no limit.")
         _pt, _ct = timing.get("prompt_tokens", 0), timing.get("completion_tokens", 0)
@@ -340,8 +340,8 @@ def emit_run_summary(*, project_id: str, version_id: str, branch: str, commit: s
     component that still has other files, is a warning: the parser skips it without a word.
     """
     from core.component_files import component_path_problems
-    from core.config import (core_config_warnings, layer_source_origin, load_llm_config,
-                             missing_layer_inputs)
+    from core.config import (core_config_warnings, has_llm_server, layer_source_origin,
+                             llm_text_wanted, load_llm_config, missing_layer_inputs)
 
     def _exists(p):
         return bool(p) and os.path.isfile(p if os.path.isabs(p) else os.path.join(project_root, p))
@@ -357,6 +357,9 @@ def emit_run_summary(*, project_id: str, version_id: str, branch: str, commit: s
 
     if no_llm:
         llm = "OFF (--no-llm)"
+    elif not has_llm_server(cfg):
+        llm = ("NOT SET - add an `llmServer` block to engine/config/config.local.json"
+               if llm_text_wanted(cfg) else "not set, and nothing enabled uses it")
     else:
         try:
             lc = load_llm_config(cfg)

@@ -4,9 +4,20 @@
   //
   // config.defaults.json itself is kept comment-free strict JSON. This file is
   // its documented twin: same structure, same values, every key explained.
-  // It is NOT loaded by anything - edit config.defaults.json for shipped
-  // defaults, or engine/config/config.local.json (gitignored) for machine-local
-  // overrides, which are merged OVER these.
+  // It is NOT loaded by anything.
+  //
+  // One file per kind of setting:
+  //
+  //   config.defaults.json   HOW DOCUMENTS ARE MADE - the parse flags, the views,
+  //   (this one, tracked)    what the LLM writes and how it is prompted, the
+  //                          document texts, the sample's cores and layers.
+  //                          A project's own settings win over these.
+  //
+  //   config.local.json      THIS SERVER - its database (db), sign-in (auth),
+  //   (gitignored)           repository folders (repositories), LLM server
+  //                          (llmServer) and LLVM install (llvm). Those five
+  //                          blocks are read from that file only: none of them
+  //                          is here. See config.local.json.example.
   //
   // Override the whole file for one run with ANALYZER_CONFIG=<path>.
   // Read through core.config.app_config().
@@ -27,14 +38,12 @@
   },
 
   // -------------------------------------------------------------------------
-  // clang - how libclang is loaded and what every parse is told.
+  // clang - what every parse is told.
+  //
+  // Where LLVM is installed is not here: that is this machine's own, the
+  // "llvm" block of config.local.json (libPath, includePath).
   // -------------------------------------------------------------------------
   "clang": {
-    // The libclang shared library. On Windows, parser.py also calls
-    // os.add_dll_directory(<llvm/bin>) so dependent DLLs resolve.
-    "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
-    // Clang's own builtin headers (stddef.h, stdint.h, ...). Added as -I.
-    "clangIncludePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include",
     // Extra flags appended to every translation unit, after the derived ones.
     // NOTE: the real client build uses --target=arm-arm-none-eabi (armclang).
     // The value below does not match it; settle that when build -D flags are
@@ -238,10 +247,14 @@
   },
 
   // -------------------------------------------------------------------------
-  // llm - enrichment. Deterministic facts stay deterministic; the LLM only
-  // synthesises (descriptions, behaviour names, test cases) grounded in them.
-  // Calls are content-addressed and cached, so a rerun on unchanged input
-  // reproduces byte-identical output.
+  // llm - WHAT the LLM writes and how it is prompted. Deterministic facts stay
+  // deterministic; the LLM only synthesises (descriptions, behaviour names,
+  // test cases) grounded in them. Calls are content-addressed and cached, so a
+  // rerun on unchanged input reproduces byte-identical output.
+  //
+  // WHICH LLM answers is not here: the server, its model, its credentials, its
+  // rate limit, timeout, retries and context size are this server's own, the
+  // "llmServer" block of config.local.json.
   // -------------------------------------------------------------------------
   "llm": {
     // ON by default, and deliberately so: poc-4 shipped these false, and the
@@ -254,14 +267,6 @@
     // Separate from descriptions - also switchable with --no-llm-summarize.
     "summarize": false,
 
-    "provider": "ollama",
-    "baseUrl": "http://localhost:11434",
-    "defaultModel": "llama3.2",
-    "timeoutSeconds": 300,
-    // Context window handed to the model, in tokens.
-    "numCtx": 8192,
-    "retries": 1,
-
     // Grounding inputs. domainContextPath is what keeps descriptions in the
     // project's real vocabulary instead of inventing a domain. A relative file
     // path is read from the repository root; a missing file reads as none.
@@ -271,11 +276,6 @@
     // Words that must never appear in a generated description - they were
     // hallucinated from an unrelated domain.
     "descriptionBlocklist": ["audio", "video"],
-
-    // Pause after every OpenAI-shaped call, PER PROCESS. 3 = the on-prem API
-    // gateway's global ~1-call-per-3s limit. Set 0 for an on-prem hosted model,
-    // which has no limit and where 3s per call would dominate the run.
-    "rateLimitSeconds": 3,
 
     // Bump to invalidate every cached completion.
     "cacheVersion": 2,
@@ -287,18 +287,6 @@
       "ensemble": false,
       "cfgSimplification": false,
       "variableEnrichment": false
-    },
-
-    // Budget the ContextBudget / TASK_RATIOS split works from.
-    "maxContextTokens": 127488,
-
-    // Sent with every request. "credential:" is a placeholder - put the real
-    // ticket in config.local.json, which is gitignored.
-    "customHeaders": {
-      "x-dep-ticket": "credential:",
-      "User-Type": "AD_ID",
-      "User-Id": "",
-      "Send-System-Name": "rvc-api-module"
     }
   },
 

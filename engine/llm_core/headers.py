@@ -3,7 +3,7 @@
 The gateway requires several non-standard headers (x-dep-ticket, User-Type,
 User-Id, Send-System-Name) plus a fresh UUID per request for Prompt-Msg-Id /
 Completion-Msg-Id. Values come from environment variables first, then
-config['llm']['customHeaders'], then defaults.
+config['llmServer']['customHeaders'], then defaults.
 """
 
 import os
@@ -31,7 +31,7 @@ _ENV_VARS = {
 def _resolve(name: str, config_headers: Dict[str, str]) -> str:
     """Resolve a single custom header value.
 
-    Order: env var > config['llm']['customHeaders'][name] > built-in default.
+    Order: env var > config['llmServer']['customHeaders'][name] > built-in default.
     """
     env_name = _ENV_VARS.get(name)
     if env_name and os.environ.get(env_name):

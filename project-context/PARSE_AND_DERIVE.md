@@ -13,7 +13,8 @@
 ### Initialization
 
 - Reads `core.config.app_config()` and `clang_config()`.
-- Loads libclang from `clang.llvmLibPath`. On Windows, calls
+- Loads libclang from `llvm.libPath` (this machine's, config.local.json —
+  `core.config.llvm_paths`; unset: `clang.cindex` finds one itself). On Windows, calls
   `os.add_dll_directory(<llvm/bin>)` so dependent DLLs are found, with a
   `PATH`-extension fallback.
 - Builds `_FILE_COMPONENT_MAP` via `_build_file_component_map` from merged `layers` groups via `get_flat_groups` (or `components`/`modules` top-level fallback). Component name values are stored normalized (spaces → `-`) so all model keys use the identifier form.
@@ -21,7 +22,7 @@
   and extends `CLANG_ARGS` with `-I<dir>` for every directory in every layer.
 - Sets `CLANG_ARGS`:
   - `-std=c++14`
-  - `-I<MODULE_BASE_PATH>`, `-I<clangIncludePath>`
+  - `-I<MODULE_BASE_PATH>`, `-I<llvm.includePath>` (only when set)
   - `-I<every dir from clang_include_paths.json>` (all layer subdirectories)
   - `-DPRIVATE=` `-DPROTECTED=` `-DPUBLIC=` `-D__OVLYINIT=` (visibility macros via `default_clang_macro_defs()`)
   - **Auto-derived layer paths** — reads `model/clang_include_paths.json`

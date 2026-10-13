@@ -1361,31 +1361,30 @@ def _load_base_config(base_path: Path) -> dict:
         return {}
 
 
-# This machine's own entries in a `clang` block -- where ITS LLVM is: a project's never win over them.
-_MACHINE_CLANG_KEYS = ("llvmLibPath", "clangIncludePath")
-# The LLM switches a project or a run (--no-llm) sets; the rest of `llm` -- the gateway, the key,
-# the model, the rate limit -- is this machine's.
-_LLM_SWITCHES = ("descriptions", "behaviourNames")
+# A project's own sections: how ITS documents are made. (Which LLM answers and where LLVM is
+# are this server's -- `llmServer` and `llvm` in config.local.json -- and no project sets them.)
+_PROJECT_CONFIG_SECTIONS = ("clang", "llm", "views", "docx")
+
+
+def _project_sections(bc: dict) -> dict:
+    """The project's own settings, section by section, without any of this server's: a project
+    made before the two were told apart may still hold a gateway in `llm` or an LLVM path in
+    `clang` (`core.config.without_server_settings`)."""
+    from core.config import without_server_settings
+    return without_server_settings({key: copy.deepcopy(bc[key]) for key in _PROJECT_CONFIG_SECTIONS
+                                    if isinstance(bc.get(key), dict)})
 
 
 def _project_settings_win(cfg: dict, bc: dict, no_llm: bool) -> None:
-    """What the project says wins over this machine's config.local.json, laid over the run's
-    config for ITS settings -- the LLM connection, the LLVM install -- and as a default for what
-    the project leaves unsaid. A `clang` block there (the defaults' copied in, the walk off) turned
-    a project's `includePathsFromProjectWalk: true` off on every run, while the version's record
-    (`versions.resolved_config`) still said on; editing the workspace file did not help, as every
-    run writes it again."""
-    for key in ("clang", "views", "docx"):
-        own = bc.get(key)
-        if isinstance(own, dict):
-            cfg.setdefault(key, {}).update(
-                {k: v for k, v in own.items() if not (key == "clang" and k in _MACHINE_CLANG_KEYS)})
-    llm = bc.get("llm") if isinstance(bc.get("llm"), dict) else {}
-    switches = {k: llm[k] for k in _LLM_SWITCHES if k in llm}
+    """What the project says wins over this machine's config.local.json, which is laid over the
+    run's config as a default for what the project leaves unsaid. A `clang` block there (the
+    defaults' copied in, the walk off) turned a project's `includePathsFromProjectWalk: true` off
+    on every run, while the version's record (`versions.resolved_config`) still said on; editing
+    the workspace file did not help, as every run writes it again."""
+    for key, own in _project_sections(bc).items():
+        cfg.setdefault(key, {}).update(own)
     if no_llm:
-        switches.update(descriptions=False, behaviourNames=False)
-    if switches:
-        cfg.setdefault("llm", {}).update(switches)
+        cfg.setdefault("llm", {}).update(descriptions=False, behaviourNames=False)
 
 
 def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = False) -> tuple[Path, dict]:
@@ -1395,25 +1394,26 @@ def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = F
     Two configs come out of here, by design:
 
       * ``analysis_cfg`` — config.defaults.json + this project's build_config + layers (+ no_llm).
-        No secrets. This is the reproducible, self-describing per-version config → resolved_config.
-      * the workspace file — ``analysis_cfg`` overlaid with engine/config/config.local.json's
-        secrets (llm baseUrl/credentials, any machine-specific override) so the engine can reach
-        the LLM. The ``db`` section is deliberately NOT written to this on-disk file: the engine
-        talks to Postgres via the DATABASE_URL env, so the DB password has no business in it.
+        This is the reproducible, self-describing per-version config → resolved_config.
+      * the workspace file — ``analysis_cfg`` with this machine's overrides of the defaults
+        (engine/config/config.local.json) under the project's own settings.
+
+    Neither holds THIS SERVER's settings -- the database, the LLM server and its credentials,
+    where LLVM is (`core.config.SERVER_BLOCKS`). Every phase reads the two it needs (`llmServer`,
+    `llvm`) from config.local.json when it loads the workspace file (`core.config.load_config`):
+    a key changed there reaches the next run, and no credential is written to a workspace.
     """
-    from core.config import _deep_merge
+    from core.config import _deep_merge, without_server_settings
     base_path = get_settings().repo_root / "engine" / "config" / "config.defaults.json"
-    cfg = _load_base_config(base_path)
+    cfg = without_server_settings(_load_base_config(base_path))
     # The defaults' `project` block names the sample project, for the wizard's Import config; the
     # engine ignores it, and left in, every version's stored config would carry the sample's name.
     cfg.pop("project", None)
 
     # Apply explicit section overrides from build_config (per-project, from onboarding)
     bc = project.build_config or {}
-    for key in ("clang", "llm", "views", "docx"):
-        if key in bc and isinstance(bc[key], dict):
-            cfg.setdefault(key, {})
-            cfg[key].update(bc[key])
+    for key, own in _project_sections(bc).items():
+        cfg.setdefault(key, {}).update(own)
 
     # Convert architecture_layers to the layers schema. Names have to be unambiguous
     # BEFORE the engine sees them: the wizard hands over lists, the config is dicts keyed
@@ -1454,23 +1454,20 @@ def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = F
         cfg["llm"]["descriptions"] = False
         cfg["llm"]["behaviourNames"] = False
 
-    # Snapshot the non-secret analysis config BEFORE overlaying secrets — this is what gets
-    # persisted per version. deepcopy so the secret overlay below can't leak back into it.
+    # Snapshot the analysis config BEFORE this machine's overrides — this is what gets persisted
+    # per version. deepcopy so the overlay below can't leak back into it.
     analysis_cfg = copy.deepcopy(cfg)
 
-    # Overlay secrets from config.local.json (gitignored) into the RUNTIME file only: llm creds/URL
-    # (and any machine-specific override) reach the engine, but never enter resolved_config. Drop
-    # `db` so the DB password is not written to a workspace file. Deep-merged per nested key, so a
-    # partial `llm` block (e.g. just customHeaders) overrides without restating the whole block.
+    # This machine's overrides of the defaults (config.local.json, gitignored), into the RUNTIME
+    # file only, and never over what the project itself says. Its server blocks are left out:
+    # see the docstring. Deep-merged per nested key.
     local_path = base_path.parent / "config.local.json"
     if local_path.is_file():
         try:
-            local = _load_base_config(local_path)
-            local.pop("db", None)
-            local.pop("auth", None)        # the API server's own setting; no engine reads it
+            local = without_server_settings(_load_base_config(local_path))
             _deep_merge(cfg, local)
             _project_settings_win(cfg, bc, no_llm)
-        except Exception:                            # best-effort: run with the non-secret config
+        except Exception:                            # best-effort: run with the defaults alone
             pass
 
     workspace_dir.mkdir(parents=True, exist_ok=True)

@@ -109,22 +109,22 @@ class TestLoadConfig:
         assert result["b"] == 99
 
     def test_local_override_deep_merges_nested(self, tmp_path):
-        # config.local.json overrides ONE nested key without wiping siblings — this is
-        # what lets secrets (llm.baseUrl / llm.customHeaders) live in the local file while
-        # provider/model stay in config.defaults.json. A shallow update would drop provider.
+        # config.local.json overrides ONE nested key without wiping siblings: a machine that
+        # wants flowcharts on says only that. A shallow update would drop the other views.
+        # (This server's own blocks -- llmServer, llvm -- are not merged at all: they are in
+        # the local file only. tests/unit/test_core_config.py TestWhichFileASettingIsIn.)
         cfg_dir = tmp_path / "config"
         cfg_dir.mkdir()
         (cfg_dir / "config.defaults.json").write_text(
-            '{"llm": {"provider": "openai", "defaultModel": "m", '
-            '"customHeaders": {"User-Id": "u"}}}')
+            '{"views": {"interfaceTables": true, "flowcharts": false, '
+            '"utExport": {"review": {"author": "u"}}}}')
         (cfg_dir / "config.local.json").write_text(
-            '{"llm": {"baseUrl": "https://gw/v1", "customHeaders": {"x-tok": "secret"}}}')
+            '{"views": {"flowcharts": true, "utExport": {"review": {"reviewer": "r"}}}}')
         result = utils.load_config(str(tmp_path))
-        assert result["llm"]["provider"] == "openai"          # kept from defaults
-        assert result["llm"]["defaultModel"] == "m"           # kept from defaults
-        assert result["llm"]["baseUrl"] == "https://gw/v1"    # added by local
-        assert result["llm"]["customHeaders"]["User-Id"] == "u"      # kept (nested sibling)
-        assert result["llm"]["customHeaders"]["x-tok"] == "secret"   # added by local
+        assert result["views"]["interfaceTables"] is True     # kept from defaults
+        assert result["views"]["flowcharts"] is True          # overridden by local
+        assert result["views"]["utExport"]["review"]["reviewer"] == "r"   # added by local
+        assert result["views"]["utExport"]["review"]["author"] == "u"     # kept (nested sibling)
 
     def test_missing_config_returns_empty(self, tmp_path):
         result = utils.load_config(str(tmp_path))

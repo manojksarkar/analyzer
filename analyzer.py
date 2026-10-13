@@ -632,8 +632,6 @@ def _render_version(a, *, scope, command: str, after=None, before=None):
     # after a --no-llm run and failed after every real one.
     cfg = os.path.join(adir, "config.json")
     own_cfg = os.path.isfile(cfg)
-    if own_cfg:
-        cfg = _with_current_secrets(cfg)
     if not own_cfg:
         # A version that is not THIS project's -- a typo, or another project's id -- is refused
         # here, before the project's own config stands in for its missing one. Checking only
@@ -807,56 +805,14 @@ def _render_version(a, *, scope, command: str, after=None, before=None):
         return 2, None
 
 
-#: A run's own LLM switches (`--no-llm`), which this machine's local config never overrides.
-_RUN_SWITCHES = ("descriptions", "behaviourNames")
-#: The sections of a version's config that are its analysis settings: this machine's local config
-#: does not override them, except where ITS LLVM is (`_MACHINE_CLANG_KEYS`).
-_VERSION_SECTIONS = ("clang", "views", "docx")
-_MACHINE_CLANG_KEYS = ("llvmLibPath", "clangIncludePath")
-
-
-def _with_current_secrets(cfg_path: str) -> str:
-    """The version's own config with this machine's CURRENT local settings over it (its
-    `config.local.json`, `db` and `auth` aside: the LLM gateway, key, headers, rate limit), as
-    `config.runtime.json` beside it; its path. A version keeps the config its run started with,
-    so that a resume days later runs as it began -- but the credentials are the machine's, and a
-    key rotated meanwhile failed every LLM call of the resumed run. The run's own switches stay.
-    On any error the version's file as it is."""
-    try:
-        import json
-        from core.config import _deep_merge, _strip_json_comments, _strip_trailing_commas
-        root = os.environ.get("ANALYZER_DATA_ROOT") or _ROOT      # the installation, not a frozen copy
-        local_path = os.path.join(root, "engine", "config", "config.local.json")
-        if not os.path.isfile(local_path):
-            local_path = os.path.join(_ROOT, "engine", "config", "config.local.json")
-        if not os.path.isfile(local_path):
-            return cfg_path
-
-        def load(p):
-            with open(p, encoding="utf-8") as fh:
-                return json.loads(_strip_trailing_commas(_strip_json_comments(fh.read())))
-        cfg, local = load(cfg_path), load(local_path)
-        local.pop("db", None)
-        local.pop("auth", None)
-        kept = {k: (cfg.get("llm") or {})[k] for k in _RUN_SWITCHES if k in (cfg.get("llm") or {})}
-        # The version's analysis settings stay as its run began: a `clang` block in this machine's
-        # file (the walk off) turned a version's includePathsFromProjectWalk off at every resume,
-        # export and re-export. This machine still brings its LLVM install and its connection.
-        own = {k: json.loads(json.dumps(cfg[k])) for k in _VERSION_SECTIONS if isinstance(cfg.get(k), dict)}
-        _deep_merge(cfg, local)
-        if kept:
-            cfg.setdefault("llm", {}).update(kept)
-        for key, section in own.items():
-            cfg.setdefault(key, {}).update(
-                {k: v for k, v in section.items() if not (key == "clang" and k in _MACHINE_CLANG_KEYS)})
-        out = os.path.join(os.path.dirname(cfg_path), "config.runtime.json")
-        with open(out, "w", encoding="utf-8") as fh:
-            json.dump(cfg, fh, indent=2)
-        return out
-    except Exception as exc:                        # noqa: BLE001 -- see docstring
-        print(f"note: this machine's settings could not be laid over the version's config "
-              f"({type(exc).__name__}: {exc}); using it as it is", file=sys.stderr)
-        return cfg_path
+# A version keeps the config its run started with, so that a resume days later runs as it began:
+# its `clang`, `llm`, `views` and `docx` are its own, and nothing of this machine's
+# config.local.json is laid over them. THIS SERVER's settings are not in that file at all -- the
+# LLM server, its key, headers and rate limit, where LLVM is: every phase reads them from
+# config.local.json when it loads the version's config (`core.config.load_config`). So a key
+# changed since the run began is the one a resumed run calls with. (Until 2026-10-13 the version's
+# file held the credentials of its first day, and a `config.runtime.json` was written beside it
+# with the current ones.)
 
 
 def _llm_off(cfg_path: str) -> bool:
@@ -1340,11 +1296,6 @@ def _resume(a) -> int:
                   "back from the cache.", file=sys.stderr)
             return 2
         argv = list(plan["argv"])
-        if "--config" in argv[:-1]:
-            # The version's own config, with this machine's current settings (secrets) over it.
-            i = argv.index("--config") + 1
-            if os.path.basename(os.path.dirname(argv[i])) == a.version_id:
-                argv[i] = _with_current_secrets(argv[i])
         print("the parse (Phase 1) did not finish: running the same generate again -- the parse "
               "starts over, the LLM work already done comes back from the cache.\n  "
               + " ".join(argv), flush=True)

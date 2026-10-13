@@ -1656,17 +1656,21 @@ def run(model, output_dir, model_dir, config):
         "knowledge_base.json",
     )
 
-    # LLM config for flowchart engine
+    # LLM config for flowchart engine: what is written (`llm`) and which server writes it
+    # (`llmServer`, this server's own). The engine resolves the server again for itself; these
+    # three are what its standalone command line falls back to.
+    from core.config import has_llm_server, llm_server
     llm_cfg = config.get("llm") or {}
+    llm_server_cfg = llm_server(config)
 
     llm_base_url = (
-        llm_cfg.get("baseUrl")
+        llm_server_cfg.get("baseUrl")
         or "http://localhost:11434"
     ).rstrip("/")
 
     llm_url = f"{llm_base_url}/api/generate"
-    llm_model = llm_cfg.get("defaultModel") or "qwen2.5-coder:14b"
-    llm_num_ctx = str(int(llm_cfg.get("numCtx", 8192)))
+    llm_model = llm_server_cfg.get("defaultModel") or "qwen2.5-coder:14b"
+    llm_num_ctx = str(int(llm_server_cfg.get("numCtx", 8192)))
 
     cmd = [
         sys.executable,
@@ -1729,6 +1733,13 @@ def run(model, output_dir, model_dir, config):
     # tell the flowchart engine to skip the LLM too (fallback node labels)
     # for an LLM-free pipeline.
     if not llm_cfg.get("descriptions", True):
+        cmd.append("--no-llm")
+    elif not has_llm_server(config):
+        # Asked for, and this server names no LLM (`llmServer` in config.local.json): the
+        # mechanical labels, as when the server cannot be reached. A run stops over it at its
+        # start (run.py); this is a view run on its own.
+        print("  WARNING: no LLM server is set (llmServer in engine/config/config.local.json): "
+              "flowchart labels are written without the LLM", flush=True)
         cmd.append("--no-llm")
 
     # The charts to write again, with this run's own report of the ones the engine rewrote.

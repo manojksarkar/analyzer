@@ -13,15 +13,32 @@ from core.config import (
     load_config, load_llm_config, LlmConfigError, format_llm_config_banner,
     layer_source, layer_sources, layer_source_origin, core_config_warnings,
     missing_layer_inputs,
+    ConfigFileError, LLM_SERVER_KEYS, LLVM_KEYS_BEFORE, RUN_SERVER_BLOCKS, SERVER_BLOCKS,
+    has_llm_server, llm_text_wanted, llvm_paths, local_config_notes, local_config_path,
+    moved_settings, with_server_settings, without_server_settings,
 )
 from core.component_files import component_path_problems
 
+_SERVER_ENV = ("LLM_PROVIDER", "LLM_BASE_URL", "LLM_DEFAULT_MODEL", "LLM_TIMEOUT_SECONDS",
+               "LLM_NUM_CTX", "LLM_RETRIES", "LLM_API_KEY", "LLM_RATE_LIMIT_SECONDS",
+               "ANALYZER_CONFIG", "ANALYZER_DATA_ROOT")
+
+
+@pytest.fixture(autouse=True)
+def _no_server_in_the_environment(monkeypatch):
+    """These tests say where each setting comes from: this shell's own must not answer."""
+    for name in _SERVER_ENV:
+        monkeypatch.delenv(name, raising=False)
+
 
 def _cfg(**overrides):
-    base = {"llm": {"provider": "ollama", "baseUrl": "http://localhost:11434",
-                    "defaultModel": "llama3.2", "timeoutSeconds": 120,
-                    "numCtx": 8192, "retries": 1}}
-    base["llm"].update(overrides)
+    """A config that names an LLM server. An override goes where its key lives: the server's
+    own (`llmServer`), or what the LLM writes (`llm`)."""
+    base = {"llm": {}, "llmServer": {"provider": "ollama", "baseUrl": "http://localhost:11434",
+                                     "defaultModel": "llama3.2", "timeoutSeconds": 120,
+                                     "numCtx": 8192, "retries": 1}}
+    for key, value in overrides.items():
+        base["llmServer" if key in LLM_SERVER_KEYS else "llm"][key] = value
     return base
 
 
@@ -41,9 +58,21 @@ class TestLoadLlmConfig:
             load_llm_config(_cfg(provider="badprovider"))
 
     def test_missing_required_field_raises(self):
-        cfg = _cfg(); del cfg["llm"]["defaultModel"]
-        with pytest.raises(LlmConfigError, match="defaultModel"):
+        cfg = _cfg(); del cfg["llmServer"]["defaultModel"]
+        with pytest.raises(LlmConfigError, match="llmServer.defaultModel"):
             load_llm_config(cfg)
+
+    def test_the_rest_of_the_server_block_may_be_left_out(self):
+        r = load_llm_config({"llmServer": {"provider": "openai", "baseUrl": "https://gw/v1",
+                                           "defaultModel": "m"}})
+        assert (r["timeoutSeconds"], r["numCtx"], r["retries"]) == (300, 8192, 1)
+        assert r["rateLimitSeconds"] == 3.0 and r["maxContextTokens"] is None
+        assert r["customHeaders"] == {} and r["apiKey"] is None
+
+    def test_what_the_llm_writes_is_read_from_llm(self):
+        r = load_llm_config(_cfg(descriptions=False, cacheVersion=7))
+        assert r["descriptions"] is False and r["cacheVersion"] == 7
+        assert r["behaviourNames"] is True                      # its default, with no key
 
     def test_non_positive_numeric_field_raises(self):
         with pytest.raises(LlmConfigError, match="timeoutSeconds"):
@@ -69,9 +98,28 @@ class TestLoadLlmConfig:
         monkeypatch.setenv("LLM_DEFAULT_MODEL", "")
         assert load_llm_config(_cfg(defaultModel="cfg-model"))["defaultModel"] == "cfg-model"
 
-    def test_missing_llm_block_raises(self):
-        with pytest.raises(LlmConfigError, match="'llm' block"):
-            load_llm_config({"other": "stuff"})
+    def test_no_llm_server_raises_and_says_where_one_is_set(self):
+        with pytest.raises(LlmConfigError, match="no LLM server is set.*config.local.json"):
+            load_llm_config({"llm": {"descriptions": True}})
+
+    def test_a_server_named_the_old_way_is_not_read(self):
+        """Until 2026-10-13 the server's keys were in `llm`. They are not read there: the error
+        names each one with its place now, instead of running on half a config."""
+        old = {"llm": {"provider": "ollama", "baseUrl": "http://localhost:11434",
+                       "defaultModel": "llama3.2", "timeoutSeconds": 120, "numCtx": 8192,
+                       "retries": 1}}
+        with pytest.raises(LlmConfigError) as err:
+            load_llm_config(old)
+        assert "no LLM server is set" in str(err.value)
+        assert "llm.baseUrl -> llmServer.baseUrl" in str(err.value)
+
+    def test_the_environment_alone_names_a_server(self, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "ollama")
+        monkeypatch.setenv("LLM_BASE_URL", "http://localhost:11434")
+        monkeypatch.setenv("LLM_DEFAULT_MODEL", "env-model")
+        cfg = {"llm": {"descriptions": True}}
+        assert has_llm_server(cfg)
+        assert load_llm_config(cfg)["defaultModel"] == "env-model"
 
     def test_rate_limit_defaults_to_three_seconds(self):
         assert load_llm_config(_cfg())["rateLimitSeconds"] == 3.0
@@ -123,16 +171,167 @@ class TestLoadConfigAnalyzerConfigOverride:
         assert load_config(PROJECT_ROOT).get("__injected__") is True
 
     def test_override_does_not_merge_config_local(self, monkeypatch, tmp_path):
-        # An injected config is used as-is; config.local.json must not bleed in.
+        # An injected config's analysis settings are used as they are: what config.local.json
+        # says of the same must not bleed in. (Its server blocks are another matter:
+        # TestWhichFileASettingIsIn.)
+        root = _config_root(tmp_path, local={"views": {"flowcharts": True}, "only": "local's"})
         ovr = tmp_path / "override.json"
-        ovr.write_text(json.dumps({"only": "this"}))
+        ovr.write_text(json.dumps({"only": "this", "views": {"flowcharts": False}}))
         monkeypatch.setenv("ANALYZER_CONFIG", str(ovr))
-        assert load_config(PROJECT_ROOT) == {"only": "this"}
+        assert load_config(root) == {"only": "this", "views": {"flowcharts": False}}
 
     def test_missing_override_file_fails_loud(self, monkeypatch, tmp_path):
         monkeypatch.setenv("ANALYZER_CONFIG", str(tmp_path / "nope.json"))
         with pytest.raises(FileNotFoundError, match="ANALYZER_CONFIG"):
             load_config(PROJECT_ROOT)
+
+
+def _config_root(tmp_path, *, defaults=None, local=None, name="engine"):
+    """A folder laid out as the engine's: `<root>/config/config.defaults.json` and, when given,
+    `config.local.json`. Its path, as `load_config` takes it."""
+    root = tmp_path / name
+    (root / "config").mkdir(parents=True, exist_ok=True)
+    (root / "config" / "config.defaults.json").write_text(json.dumps(defaults or {}), encoding="utf-8")
+    if local is not None:
+        text = local if isinstance(local, str) else json.dumps(local)
+        (root / "config" / "config.local.json").write_text(text, encoding="utf-8")
+    return str(root)
+
+
+_SERVER = {"provider": "openai", "baseUrl": "https://gw/v1", "defaultModel": "m",
+           "customHeaders": {"x-dep-ticket": "credential:SECRET"}}
+_LLVM = {"libPath": "C:/LLVM/bin/libclang.dll", "includePath": "C:/LLVM/lib/clang/17/include"}
+
+
+class TestWhichFileASettingIsIn:
+    """One file per kind of setting: config.local.json is THIS SERVER (database, sign-in,
+    repository folders, LLM server, LLVM), config.defaults.json is how documents are made.
+    The same key in two files is what made "which file do I edit?" a question."""
+
+    @staticmethod
+    def _shipped(name):
+        from core.config import _strip_json_comments, _strip_trailing_commas
+        path = os.path.join(PROJECT_ROOT, "engine", "config", name)
+        with open(path, encoding="utf-8") as fh:
+            return json.loads(_strip_trailing_commas(_strip_json_comments(fh.read())))
+
+    def test_the_shipped_defaults_hold_no_server_setting(self):
+        defaults = self._shipped("config.defaults.json")
+        assert not set(defaults) & set(SERVER_BLOCKS)
+        assert moved_settings(defaults) == [], "a server key is back in `llm` or `clang`"
+
+    def test_the_local_example_holds_the_server_blocks_and_nothing_else(self):
+        example = self._shipped("config.local.json.example")
+        assert set(example) == set(SERVER_BLOCKS)
+        assert set(example["llmServer"]) <= set(LLM_SERVER_KEYS)
+        assert set(example["llvm"]) == set(LLVM_KEYS_BEFORE.values())
+        assert not set(example) & set(self._shipped("config.defaults.json")), "a block in both files"
+        load_llm_config({"llmServer": example["llmServer"]})      # the example is a valid server
+
+    def test_the_server_blocks_are_the_local_files_alone(self, tmp_path):
+        root = _config_root(tmp_path,
+                            defaults={"llmServer": {"baseUrl": "from the defaults", "retries": 9},
+                                      "llvm": {"libPath": "from the defaults"},
+                                      "llm": {"descriptions": True}},
+                            local={"llmServer": _SERVER})
+        cfg = load_config(root)
+        assert cfg["llmServer"] == _SERVER            # not merged with the defaults' block
+        assert "llvm" not in cfg                      # the local file has none: there is none
+        assert cfg["llm"] == {"descriptions": True}
+
+    def test_without_a_local_file_there_is_no_server(self, tmp_path):
+        cfg = load_config(_config_root(tmp_path, defaults={"llmServer": _SERVER, "llm": {}}))
+        assert "llmServer" not in cfg and not has_llm_server(cfg)
+
+    def test_a_run_config_gets_the_servers_blocks_as_they_are_now(self, tmp_path, monkeypatch):
+        """A project's config is written at onboarding, a version's on its first day. Each held
+        the LLM settings of that day, so a key changed in config.local.json never reached the
+        next run -- the office asked which of the files to edit."""
+        root = _config_root(tmp_path, local={"llmServer": _SERVER, "llvm": _LLVM})
+        run_cfg = tmp_path / "workspace.json"
+        run_cfg.write_text(json.dumps({
+            "layers": {"L": {}},
+            "llmServer": {"provider": "ollama", "baseUrl": "of the day it was written"},
+            "llm": {"descriptions": True, "baseUrl": "the old place"}}))
+        monkeypatch.setenv("ANALYZER_CONFIG", str(run_cfg))
+
+        cfg = load_config(root)
+        assert cfg["llmServer"] == _SERVER and cfg["llvm"] == _LLVM
+        assert cfg["layers"] == {"L": {}} and cfg["llm"]["descriptions"] is True
+        assert load_llm_config(cfg)["baseUrl"] == "https://gw/v1"     # not "the old place"
+
+        rotated = dict(_SERVER, customHeaders={"x-dep-ticket": "credential:NEW"})
+        _config_root(tmp_path, local={"llmServer": rotated})
+        cfg = load_config(root)
+        assert cfg["llmServer"]["customHeaders"] == {"x-dep-ticket": "credential:NEW"}
+        assert "llvm" not in cfg, "a block taken out of the local file is gone, not remembered"
+
+    def test_a_local_file_that_cannot_be_read_stops_a_run(self, tmp_path, monkeypatch):
+        """A run with no server settings writes no LLM text and says little about it. A typo
+        made in the file while a run of days is going must stop its next phase instead."""
+        root = _config_root(tmp_path, local='{"llmServer": {"provider": "openai",}')   # no closing }
+        assert "llmServer" not in load_config(root)         # the API keeps serving
+        run_cfg = tmp_path / "workspace.json"
+        run_cfg.write_text("{}")
+        monkeypatch.setenv("ANALYZER_CONFIG", str(run_cfg))
+        with pytest.raises(ConfigFileError, match="config.local.json could not be read"):
+            load_config(root)
+        assert any("could not be read" in n for n in local_config_notes(root))
+
+    def test_a_detached_runs_copy_reads_the_installations_file(self, tmp_path, monkeypatch):
+        """`--detach` runs a frozen copy of the code, config.local.json included: the copy's is
+        the one of the day the run started."""
+        copy = _config_root(tmp_path, local={"llmServer": dict(_SERVER, defaultModel="frozen")},
+                            name="copy")
+        install = tmp_path / "install" / "engine" / "config"
+        install.mkdir(parents=True)
+        (install / "config.local.json").write_text(json.dumps({"llmServer": _SERVER}))
+        assert local_config_path(copy).startswith(copy)
+        monkeypatch.setenv("ANALYZER_DATA_ROOT", str(tmp_path / "install"))
+        assert load_config(copy)["llmServer"]["defaultModel"] == "m"
+        monkeypatch.setenv("ANALYZER_DATA_ROOT", str(tmp_path / "no such data root"))
+        assert load_config(copy)["llmServer"]["defaultModel"] == "frozen"
+
+    def test_what_is_written_for_a_project_holds_no_server_setting(self):
+        cfg = {"db": {"password": "p"}, "auth": {}, "repositories": {}, "llmServer": _SERVER,
+               "llvm": _LLVM, "views": {"flowcharts": True},
+               "llm": {"descriptions": False, "baseUrl": "x", "customHeaders": {"k": "SECRET"},
+                       "rateLimitSeconds": 0},
+               "clang": {"clangArgs": ["-DX"], "llvmLibPath": "a", "clangIncludePath": "b"}}
+        assert without_server_settings(cfg) == {
+            "views": {"flowcharts": True}, "llm": {"descriptions": False},
+            "clang": {"clangArgs": ["-DX"]}}
+
+    def test_with_server_settings_drops_what_the_config_held(self, tmp_path):
+        root = _config_root(tmp_path, local={"llvm": _LLVM})
+        cfg = with_server_settings({"llmServer": {"baseUrl": "stale"}, "views": {}}, root)
+        assert cfg == {"views": {}, "llvm": _LLVM}
+        assert set(RUN_SERVER_BLOCKS) == {"llmServer", "llvm"}
+
+    def test_settings_under_their_old_names_are_named_with_their_place_now(self, tmp_path):
+        old = {"llm": {"baseUrl": "https://gw", "customHeaders": {}, "descriptions": True},
+               "clang": {"llvmLibPath": "x", "clangArgs": []}}
+        assert moved_settings(old) == ["llm.baseUrl -> llmServer.baseUrl",
+                                       "llm.customHeaders -> llmServer.customHeaders",
+                                       "clang.llvmLibPath -> llvm.libPath"]
+        [note] = local_config_notes(_config_root(tmp_path, local=old))
+        assert "llm.baseUrl -> llmServer.baseUrl" in note and "not read" in note
+        assert local_config_notes(_config_root(tmp_path, local={"llmServer": _SERVER}, name="ok")) == []
+        assert local_config_notes(_config_root(tmp_path, name="none")) == []
+
+    def test_llvm_paths(self):
+        assert llvm_paths({"llvm": _LLVM}) == (_LLVM["libPath"], _LLVM["includePath"])
+        assert llvm_paths({"clang": {"llvmLibPath": "the old place"}}) == ("", "")
+
+    @pytest.mark.parametrize("llm, summarize, wanted", [
+        ({}, None, True),                                                   # every default is on
+        ({"descriptions": False, "behaviourNames": False, "summarize": False}, None, False),
+        ({"descriptions": False, "behaviourNames": False}, False, False),   # --no-llm
+        ({"descriptions": False, "behaviourNames": True, "summarize": False}, None, True),
+        ({"descriptions": False, "behaviourNames": False, "summarize": False}, True, True),
+    ])
+    def test_a_run_that_asks_the_llm_for_nothing_needs_no_server(self, llm, summarize, wanted):
+        assert llm_text_wanted({"llm": llm}, summarize=summarize) is wanted
 
 
 class TestFormatLlmConfigBanner:

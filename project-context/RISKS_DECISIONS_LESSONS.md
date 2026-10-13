@@ -316,7 +316,7 @@ actually read before the long-running pipeline starts. See §4b.
 ### One token budget, many sections (version3)
 
 Every LLM call in the project derives its section limits from one knob
-(`llm.maxContextTokens`) via `ContextBudget(task, …)` + `TASK_RATIOS`.
+(`llmServer.maxContextTokens`) via `ContextBudget(task, …)` + `TASK_RATIOS`.
 Adding a new LLM task type means adding an entry in `TASK_RATIOS` — no
 other code changes. Section ratios must sum to ~1.0 (enforced by assertion).
 

@@ -384,7 +384,10 @@ generated yet), `reexport` (again), `resume` (after a crash). Human guide:
   (`RUN_ACTIVE`); `start_app.kill_tree` skips `runs/.../code/` processes. Round 2: only connection
   errors are waited out (`_db_unavailable`); the frozen config keeps its typed macros, and `export` /
   `resume` overlay this machine's current local settings (`analyzer._with_current_secrets`, the run's
-  LLM switches kept); the periodic pass only re-attaches, and only while `runner_still_held`.
+  LLM switches kept -- until 2026-10-13d: since then no written config holds a server setting, a
+  phase reads the LLM server and LLVM from config.local.json when it loads the version's own
+  file, and that function is gone); the periodic pass only re-attaches, and only while
+  `runner_still_held`.
   `DELETE /versions/{id}` throws a stopped run's kept version away (409 `VERSION_BUSY` / `RUN_ACTIVE` /
   `VERSION_IS_BASELINE`; jobs detached, cached comparisons dropped).
 - **Limits**: each web run freezes ~10 MB of code (about a minute on Windows with the virus scanner; never

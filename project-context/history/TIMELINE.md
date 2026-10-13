@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-13d | One file per kind of setting: this server's settings -- the LLM server and where LLVM is -- are in config.local.json only, and every run reads them from it when it loads its config; config.defaults.json holds how documents are made | [15](15-2026-10-07h.md) |
 | 2026-10-13c | The wizard's access token is a text field shown as dots, not a password field: the browser no longer takes "repository URL + token" for a sign-in form | [15](15-2026-10-07h.md) |
 | 2026-10-13b | The web app meets WCAG 2.2 AA in both themes, like its mockups: tokens, one focus ring, 11px text, names, keyboard reach, landmarks -- and a test that keeps it | [15](15-2026-10-07h.md) |
 | 2026-10-13 | The mockups meet WCAG 2.2 AA in both themes: contrast, focus ring, text size, names, keyboard reach, landmarks | [15](15-2026-10-07h.md) |

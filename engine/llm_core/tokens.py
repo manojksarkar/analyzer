@@ -263,7 +263,7 @@ class _TokenCounter:
             share = 100.0 * agg["throttleSeconds"] / agg["totalSeconds"] if agg["totalSeconds"] else 0.0
             lines.append(
                 f"  throttle is {share:.0f}% of LLM time "
-                f"(llm.rateLimitSeconds, set to 0 to remove it)"
+                f"(llmServer.rateLimitSeconds, set to 0 to remove it)"
             )
         return "\n".join(lines)
 

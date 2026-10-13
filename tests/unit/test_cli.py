@@ -72,12 +72,20 @@ _resolve_group_name = _load_resolve_group()
 GROUPS = {"Sample": {...}, "Full": {...}, "Support": {...}}
 
 
+# A run that asks the LLM for text stops at its start on a machine that names no LLM server
+# (`llmServer` in config.local.json). These tests are about the command line's own errors, which
+# come after that check, so they name one: nothing here gets as far as calling it.
+_LLM_SERVER = {"LLM_PROVIDER": "ollama", "LLM_BASE_URL": "http://127.0.0.1:9",
+               "LLM_DEFAULT_MODEL": "none"}
+
+
 def _run_cli(*args):
     return subprocess.run(
         [sys.executable, _RUN_PY, *args],
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
+        env={**os.environ, **_LLM_SERVER},
     )
 
 

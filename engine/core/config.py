@@ -1,10 +1,13 @@
 """Cached, typed accessors for the analyzer configuration.
 
-All values still live in `config/config.json` (and `config.local.json`) so the
-user can change anything by editing the JSON file. This module:
+All values live in two JSON files, one per kind of setting, so the user can change
+anything by editing a file: `config/config.defaults.json` (how documents are made) and
+`config/config.local.json` (this server: database, sign-in, repository folders, LLM
+server, LLVM install -- see "Which file a setting is in" below). This module:
   1. Parses JSONC (JSON with // and /* */ comments and trailing commas).
-  2. Loads + merges config.json + config.local.json once per process.
-  3. Resolves the LLM config block, applying environment-variable overrides.
+  2. Loads + merges config.defaults.json + config.local.json once per process.
+  3. Resolves the LLM settings (`llm` + `llmServer`), applying environment-variable
+     overrides.
   4. Provides typed helpers (llm_config, views_config, exporter_config,
      components_groups) so call sites stop typing `cfg.get("llm", {}).get(...)`.
   5. Re-exports the raw dict via `app_config()` for code that still wants the
@@ -118,14 +121,178 @@ def _strip_trailing_commas(text: str) -> str:
 
 def _deep_merge(base: Dict[str, Any], over: Dict[str, Any]) -> Dict[str, Any]:
     """Recursively merge ``over`` into ``base``: nested dicts merge, scalars/lists replace. So
-    config.local.json can override a single nested key (e.g. ``llm.customHeaders`` or
-    ``llm.baseUrl``) without restating the whole ``llm`` block."""
+    config.local.json can override a single nested key (e.g. ``views.flowcharts``) without
+    restating the whole block."""
     for k, v in over.items():
         if isinstance(v, dict) and isinstance(base.get(k), dict):
             _deep_merge(base[k], v)
         else:
             base[k] = v
     return base
+
+
+# ---------------------------------------------------------------------------
+# Which file a setting is in
+# ---------------------------------------------------------------------------
+# Two files, two jobs (config.local.json.example has the long form):
+#
+#   config.local.json     THIS SERVER: its database, sign-in, repository folders, LLM server and
+#                         LLVM install. Read from that file only, by every process, when it
+#                         loads its config: not from the defaults, a project or a version.
+#   config.defaults.json  HOW DOCUMENTS ARE MADE: the parse flags, the views, what the LLM writes
+#                         and how it is prompted, the document texts. A project's own win.
+#
+# Every place that builds or reads a config goes by the names below, so the split is written once.
+
+#: This server's blocks. Not in config.defaults.json, and never written into a project's or a
+#: version's config (`without_server_settings`).
+SERVER_BLOCKS = ("db", "auth", "repositories", "llmServer", "llvm")
+#: The server blocks a run reads through its config: laid over it when it is loaded
+#: (`with_server_settings`). The others have readers of their own, on the same file:
+#: `core.db._db_section`, `api.middleware.auth`, `api.services.local_repos`.
+RUN_SERVER_BLOCKS = ("llmServer", "llvm")
+#: The keys of `llmServer`. Until 2026-10-13 they were in `llm`, where they are not read any more.
+LLM_SERVER_KEYS = ("provider", "baseUrl", "defaultModel", "customHeaders", "apiKey",
+                   "rateLimitSeconds", "timeoutSeconds", "retries", "numCtx", "maxContextTokens")
+#: `llvm`'s keys, by the name each had in `clang` until then.
+LLVM_KEYS_BEFORE = {"llvmLibPath": "libPath", "clangIncludePath": "includePath"}
+
+
+class ConfigFileError(ValueError):
+    """config.local.json is there and cannot be read: a run stops rather than go on without this
+    server's settings (and so without the LLM's text)."""
+
+
+def _read_jsonc(path: str) -> Dict[str, Any]:
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.loads(_strip_trailing_commas(_strip_json_comments(f.read())))
+    return data if isinstance(data, dict) else {}
+
+
+def local_config_path(config_root: Optional[str] = None) -> str:
+    """This installation's config.local.json (it may not exist). `config_root` is the folder
+    holding `config/`, the engine's by default.
+
+    A detached run's code is a frozen copy (`core.frozen_run`), and the copy's file is the one of
+    the day the run started; a key changed since is in the installation's, which
+    `ANALYZER_DATA_ROOT` names."""
+    data_root = os.environ.get("ANALYZER_DATA_ROOT", "").strip()
+    if data_root:
+        path = os.path.join(data_root, "engine", "config", "config.local.json")
+        if os.path.isfile(path):
+            return path
+    root = config_root or paths().src_dir
+    path = os.path.join(root, "config", "config.local.json")
+    if not os.path.isfile(path) and os.path.isfile(os.path.join(root, "config.local.json")):
+        path = os.path.join(root, "config.local.json")
+    return path
+
+
+def server_settings(config_root: Optional[str] = None, *, strict: bool = False) -> Dict[str, Any]:
+    """The server blocks a run reads (`RUN_SERVER_BLOCKS`), as config.local.json has them now.
+    No file, or no such block: without it. A file that cannot be read: `ConfigFileError` when
+    `strict`, else none of them."""
+    path = local_config_path(config_root)
+    if not os.path.isfile(path):
+        return {}
+    try:
+        local = _read_jsonc(path)
+    except (ValueError, OSError) as exc:
+        if strict:
+            raise ConfigFileError(f"{path} could not be read ({exc}). It holds this server's "
+                                  f"settings (the LLM server, LLVM): correct it and run again.") from exc
+        return {}
+    return {block: json.loads(json.dumps(local[block]))
+            for block in RUN_SERVER_BLOCKS if isinstance(local.get(block), dict)}
+
+
+def with_server_settings(config: Dict[str, Any], config_root: Optional[str] = None, *,
+                         strict: bool = False) -> Dict[str, Any]:
+    """`config`, in place, with this server's blocks as config.local.json has them: whatever the
+    config held under those names is dropped first. So a change in that file reaches the next run
+    of every project -- a config written at onboarding, or days ago for a version being resumed,
+    does not keep the settings of that day."""
+    for block in RUN_SERVER_BLOCKS:
+        config.pop(block, None)
+    config.update(server_settings(config_root, strict=strict))
+    return config
+
+
+def without_server_settings(config: Dict[str, Any]) -> Dict[str, Any]:
+    """`config`, in place, without this server's settings: its blocks, and the names their keys
+    had in `llm` and `clang` before. What a project's or a version's config may keep, and what
+    is written to a workspace file -- which so holds no credential."""
+    for block in SERVER_BLOCKS:
+        config.pop(block, None)
+    for section, keys in (("llm", LLM_SERVER_KEYS), ("clang", LLVM_KEYS_BEFORE)):
+        if isinstance(config.get(section), dict):
+            for key in keys:
+                config[section].pop(key, None)
+    return config
+
+
+def moved_settings(config: Dict[str, Any]) -> List[str]:
+    """What `config` still names the old way, each with its place now:
+    `["llm.baseUrl -> llmServer.baseUrl", "clang.llvmLibPath -> llvm.libPath"]`."""
+    out: List[str] = []
+    llm = config.get("llm") if isinstance(config, dict) else None
+    if isinstance(llm, dict):
+        out.extend(f"llm.{k} -> llmServer.{k}" for k in LLM_SERVER_KEYS if k in llm)
+    clang = config.get("clang") if isinstance(config, dict) else None
+    if isinstance(clang, dict):
+        out.extend(f"clang.{k} -> llvm.{new}" for k, new in LLVM_KEYS_BEFORE.items() if k in clang)
+    return out
+
+
+def local_config_notes(config_root: Optional[str] = None) -> List[str]:
+    """What is wrong with this installation's config.local.json, for the start of a run: it
+    cannot be read, or it has server settings where they were before the split (they are not
+    read there). Empty when there is nothing to say."""
+    path = local_config_path(config_root)
+    if not os.path.isfile(path):
+        return []
+    try:
+        local = _read_jsonc(path)
+    except (ValueError, OSError) as exc:
+        return [f"{path} could not be read ({exc})"]
+    moved = moved_settings(local)
+    if not moved:
+        return []
+    return [f"{path} has settings under their old names, where they are not read any more: "
+            f"{'; '.join(moved)}. Move them (config.local.json.example shows the two blocks)."]
+
+
+def llvm_paths(config: Dict[str, Any]) -> Tuple[str, str]:
+    """(the libclang library, Clang's own include folder) of this machine: `llvm.libPath` and
+    `llvm.includePath`. "" for one that is not set."""
+    llvm = config.get("llvm") if isinstance(config, dict) else None
+    llvm = llvm if isinstance(llvm, dict) else {}
+    return str(llvm.get("libPath") or "").strip(), str(llvm.get("includePath") or "").strip()
+
+
+def llm_server(config: Dict[str, Any]) -> Dict[str, Any]:
+    """The `llmServer` block as written ({} when there is none). `load_llm_config` is the
+    resolved, checked form; this is for a reader that must not stop a run over it."""
+    server = config.get("llmServer") if isinstance(config, dict) else None
+    return server if isinstance(server, dict) else {}
+
+
+def has_llm_server(config: Dict[str, Any]) -> bool:
+    """True when an LLM server is named: an `llmServer` block, or the environment's
+    (`LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_DEFAULT_MODEL`)."""
+    return bool(llm_server(config)) or any(
+        os.environ.get(name) for name in ("LLM_PROVIDER", "LLM_BASE_URL", "LLM_DEFAULT_MODEL"))
+
+
+def llm_text_wanted(config: Dict[str, Any], *, summarize: Optional[bool] = None) -> bool:
+    """True when this config asks the LLM for any text: descriptions (which the flowchart labels
+    and the behaviour descriptions follow), input and output names, or the summaries.
+    `summarize`: the run's own answer where a flag decides it (`--no-llm-summarize`)."""
+    llm = config.get("llm") if isinstance(config, dict) else None
+    llm = llm if isinstance(llm, dict) else {}
+    if summarize is None:
+        summarize = bool(llm.get("summarize", True))
+    return bool(llm.get("descriptions", True) or llm.get("behaviourNames", True) or summarize)
 
 
 def load_config(project_root: str) -> Dict[str, Any]:
@@ -136,13 +303,16 @@ def load_config(project_root: str) -> Dict[str, Any]:
     (``paths().src_dir``), not the repo root.
 
     If the ``ANALYZER_CONFIG`` environment variable points to a file, that file
-    is loaded **instead**, as the complete self-contained per-run config — no
-    ``config.local.json`` merge. This is how a per-project / per-version config
-    (carrying the project's ``layers``) is injected into the analyzer and every
-    phase subprocess, which inherit the env var. ``config.local.json`` is
-    intentionally skipped so the injected config is fully reproducible (a dev's
-    local overrides do not bleed into a per-project run). See ``run.py --config``.
+    is loaded **instead**, as the run's config — with no merge of
+    ``config.local.json`` over its analysis settings. This is how a per-project /
+    per-version config (carrying the project's ``layers``) is injected into the
+    analyzer and every phase subprocess, which inherit the env var: the run is
+    reproducible, a dev's local overrides do not bleed into it. See ``run.py --config``.
     A set-but-missing path fails loud rather than silently falling back.
+
+    Either way THIS SERVER's blocks (``llmServer``, ``llvm``) are those of
+    ``config.local.json``, read now (`with_server_settings`): the defaults hold none, and a
+    per-run file's own are not used.
     """
     override = os.environ.get("ANALYZER_CONFIG", "").strip()
     if override:
@@ -152,7 +322,7 @@ def load_config(project_root: str) -> Dict[str, Any]:
             )
         with open(override, "r", encoding="utf-8") as f:
             stripped = _strip_trailing_commas(_strip_json_comments(f.read()))
-        return json.loads(stripped)
+        return with_server_settings(json.loads(stripped), project_root, strict=True)
 
     config: Dict[str, Any] = {}
     config_dir = os.path.join(project_root, "config")
@@ -169,41 +339,50 @@ def load_config(project_root: str) -> Dict[str, Any]:
                     _deep_merge(config, json.loads(stripped))   # local overrides per nested key
             except (json.JSONDecodeError, IOError):
                 pass
-    return config
+    return with_server_settings(config, project_root)
 
 
 class LlmConfigError(ValueError):
-    """Raised when llm config has missing or invalid required fields.
+    """Raised when the LLM settings have missing or invalid fields.
 
     Strict validation: rather than falling back to silent defaults, the
     analyzer surfaces the exact field that is wrong so the user can fix
-    the config (config.defaults.json / config.local.json) or the matching env var and re-run.
+    the config (``llmServer`` in config.local.json, ``llm`` in config.defaults.json) or
+    the matching env var and re-run.
     """
 
 
-def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Resolve and STRICTLY validate the llm config block.
+#: What a run uses for the `llmServer` keys that may be left out (config.local.json.example).
+LLM_SERVER_DEFAULTS = {"timeoutSeconds": 300, "numCtx": 8192, "retries": 1}
 
-    Required fields (no silent defaults — raises LlmConfigError if missing
-    or invalid):
+NO_LLM_SERVER = ("no LLM server is set. Add an `llmServer` block (provider, baseUrl, "
+                 "defaultModel) to engine/config/config.local.json -- config.local.json.example "
+                 "shows it -- or run without the LLM (--no-llm)")
+
+
+def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Resolve and STRICTLY validate the LLM settings: which server answers (``llmServer``,
+    this server's own, from config.local.json) and what it is asked to write (``llm``).
+
+    ``llmServer`` — required (raises LlmConfigError if missing or invalid):
         provider          - "ollama" | "openai"
         baseUrl           - non-empty endpoint base URL
         defaultModel      - non-empty model name
-        timeoutSeconds    - positive int
-        numCtx            - positive int (Ollama context window; informational
-                            on OpenAI but still required for plumbing)
-        retries           - int >= 0
-
-    Optional fields (with documented defaults):
-        descriptions      - bool, default True
-        behaviourNames    - bool, default True
-        abbreviationsPath - str, default ""
+    ``llmServer`` — may be left out:
+        timeoutSeconds    - positive int, default 300
+        numCtx            - positive int, default 8192 (Ollama context window;
+                            informational on OpenAI)
+        retries           - int >= 0, default 1
         customHeaders     - dict, default {}
         apiKey            - str | None (env LLM_API_KEY wins)
         maxContextTokens  - int | None (null → auto-derived from numCtx/provider)
         rateLimitSeconds  - float >= 0, default 3.0 (pause after every OpenAI
                             call to satisfy the gateway throttle; 0 disables
                             it; ignored on Ollama)
+    ``llm`` — all optional:
+        descriptions      - bool, default True
+        behaviourNames    - bool, default True
+        abbreviationsPath - str, default ""
         enrichment        - dict of feature toggles (each must be a bool):
             twoPassDescriptions (default True)
             selfReview          (default False)
@@ -211,10 +390,11 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
             cfgSimplification   (default False)
             variableEnrichment  (default True)
         cacheVersion      - int >= 1 (bump to invalidate entity cache)
-        rateLimitSeconds  - float >= 0, pause after each OpenAI call (0 = none)
         fewShotExamplesDir - str (default "few_shot_examples")
 
-    Environment variables (override the matching config field if set):
+    The result is one flat dict of both, as before the two were told apart.
+
+    Environment variables (override the matching ``llmServer`` field if set):
         LLM_PROVIDER, LLM_BASE_URL, LLM_DEFAULT_MODEL,
         LLM_TIMEOUT_SECONDS, LLM_NUM_CTX, LLM_RETRIES, LLM_API_KEY,
         LLM_RATE_LIMIT_SECONDS
@@ -222,80 +402,81 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
     Raises
     ------
     LlmConfigError
-        If a required field is missing, empty, or not parseable.
+        If no LLM server is set, or a field is missing, empty, or not parseable.
     """
     if not config or not isinstance(config, dict):
         raise LlmConfigError("config is empty or not a JSON object")
 
     llm = config.get("llm")
-    if not isinstance(llm, dict) or not llm:
-        raise LlmConfigError("config has no 'llm' block")
+    llm = llm if isinstance(llm, dict) else {}
+    server = llm_server(config)
+    if not has_llm_server(config):
+        moved = [m for m in moved_settings(config) if m.startswith("llm.")]
+        raise LlmConfigError(NO_LLM_SERVER + (
+            f". (This config names one the old way, which is not read: {'; '.join(moved)}.)"
+            if moved else ""))
 
     def _env_or(key: str, fallback):
         v = os.environ.get(key)
         return v if v is not None and v != "" else fallback
 
     def _require_str(field: str, env_var: str) -> str:
-        raw = _env_or(env_var, llm.get(field))
+        raw = _env_or(env_var, server.get(field))
         if raw is None or str(raw).strip() == "":
             raise LlmConfigError(
-                f"Missing required llm.{field} (or env {env_var}) in the llm config"
+                f"Missing required llmServer.{field} (or env {env_var}) in "
+                f"engine/config/config.local.json"
             )
         return str(raw).strip()
 
-    def _require_pos_int(field: str, env_var: str) -> int:
-        raw = _env_or(env_var, llm.get(field))
+    def _pos_int(field: str, env_var: str) -> int:
+        raw = _env_or(env_var, server.get(field))
         if raw is None or raw == "":
-            raise LlmConfigError(
-                f"Missing required llm.{field} (or env {env_var}) in the llm config"
-            )
+            raw = LLM_SERVER_DEFAULTS[field]
         try:
             val = int(raw)
         except (TypeError, ValueError):
             raise LlmConfigError(
-                f"llm.{field} must be an integer (got {raw!r})"
+                f"llmServer.{field} must be an integer (got {raw!r})"
             )
         if val <= 0:
             raise LlmConfigError(
-                f"llm.{field} must be a positive integer (got {val})"
+                f"llmServer.{field} must be a positive integer (got {val})"
             )
         return val
 
-    # ── Required fields ──
+    # ── The server: three required fields, the rest with a default ──
     provider = _require_str("provider", "LLM_PROVIDER").lower()
     if provider not in ("ollama", "openai"):
         raise LlmConfigError(
-            f"llm.provider must be 'ollama' or 'openai' (got {provider!r})"
+            f"llmServer.provider must be 'ollama' or 'openai' (got {provider!r})"
         )
 
     base_url = _require_str("baseUrl", "LLM_BASE_URL").rstrip("/")
     model = _require_str("defaultModel", "LLM_DEFAULT_MODEL")
-    timeout = _require_pos_int("timeoutSeconds", "LLM_TIMEOUT_SECONDS")
-    num_ctx = _require_pos_int("numCtx", "LLM_NUM_CTX")
+    timeout = _pos_int("timeoutSeconds", "LLM_TIMEOUT_SECONDS")
+    num_ctx = _pos_int("numCtx", "LLM_NUM_CTX")
 
-    # retries is required but allowed to be 0
-    retries_raw = _env_or("LLM_RETRIES", llm.get("retries"))
+    # retries may be 0
+    retries_raw = _env_or("LLM_RETRIES", server.get("retries"))
     if retries_raw is None or retries_raw == "":
-        raise LlmConfigError(
-            "Missing required llm.retries (or env LLM_RETRIES) in the llm config"
-        )
+        retries_raw = LLM_SERVER_DEFAULTS["retries"]
     try:
         retries = int(retries_raw)
     except (TypeError, ValueError):
         raise LlmConfigError(
-            f"llm.retries must be an integer (got {retries_raw!r})"
+            f"llmServer.retries must be an integer (got {retries_raw!r})"
         )
     if retries < 0:
         raise LlmConfigError(
-            f"llm.retries must be >= 0 (got {retries})"
+            f"llmServer.retries must be >= 0 (got {retries})"
         )
 
-    # ── Optional fields with strict-typed validation ──
-    api_key = _env_or("LLM_API_KEY", llm.get("apiKey"))
+    api_key = _env_or("LLM_API_KEY", server.get("apiKey"))
     api_key = str(api_key) if api_key else None
 
     # maxContextTokens: null → auto-derived later via budget.resolve_max_tokens
-    max_ctx_raw = llm.get("maxContextTokens", None)
+    max_ctx_raw = server.get("maxContextTokens", None)
     if max_ctx_raw is None:
         max_ctx = None
     else:
@@ -303,12 +484,12 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
             max_ctx = int(max_ctx_raw)
         except (TypeError, ValueError):
             raise LlmConfigError(
-                f"llm.maxContextTokens must be null or an integer "
+                f"llmServer.maxContextTokens must be null or an integer "
                 f"(got {max_ctx_raw!r})"
             )
         if max_ctx <= 0:
             raise LlmConfigError(
-                f"llm.maxContextTokens must be positive (got {max_ctx})"
+                f"llmServer.maxContextTokens must be positive (got {max_ctx})"
             )
 
     # rateLimitSeconds: pause after every OpenAI call, including failed ones, because the
@@ -319,21 +500,21 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
     # enforces that global limit, while an on-prem **hosted model** has none and 3s per call
     # would dominate the run. Default 3.0 keeps the gateway safe for anyone who does not set it.
     rate_limit_raw = _env_or("LLM_RATE_LIMIT_SECONDS",
-                             llm.get("rateLimitSeconds", 3.0))
+                             server.get("rateLimitSeconds", 3.0))
     if rate_limit_raw is None or rate_limit_raw == "":
         raise LlmConfigError(
-            "llm.rateLimitSeconds must be a number — "
+            "llmServer.rateLimitSeconds must be a number — "
             "use 0 to disable the throttle"
         )
     try:
         rate_limit = float(rate_limit_raw)
     except (TypeError, ValueError):
         raise LlmConfigError(
-            f"llm.rateLimitSeconds must be a number (got {rate_limit_raw!r})"
+            f"llmServer.rateLimitSeconds must be a number (got {rate_limit_raw!r})"
         )
     if rate_limit < 0:
         raise LlmConfigError(
-            f"llm.rateLimitSeconds must be >= 0 (got {rate_limit})"
+            f"llmServer.rateLimitSeconds must be >= 0 (got {rate_limit})"
         )
 
     # enrichment: every flag must be a bool
@@ -389,10 +570,10 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
             f"llm.behaviourNames must be true or false (got {behaviour_names!r})"
         )
 
-    custom_headers = llm.get("customHeaders", {}) or {}
+    custom_headers = server.get("customHeaders", {}) or {}
     if not isinstance(custom_headers, dict):
         raise LlmConfigError(
-            f"llm.customHeaders must be an object (got {type(custom_headers).__name__})"
+            f"llmServer.customHeaders must be an object (got {type(custom_headers).__name__})"
         )
 
     return {
