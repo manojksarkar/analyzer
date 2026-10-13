@@ -260,7 +260,7 @@ export function AdminDocsCard({ documents, go, projectId }: { documents: Documen
             <th className="text-left px-5 py-2.5 text-on-surface-variant uppercase font-mono text-caption font-medium tracking-[.07em]">Process</th>
             <th className={cn(DOC_TH, 'w-[250px]')}>Approval</th>
             <th className={cn(DOC_TH, 'w-40')}>Reviewers</th>
-            <th className="w-11" />
+            <th className="w-11"><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody>
@@ -282,7 +282,7 @@ export function AdminDocsCard({ documents, go, projectId }: { documents: Documen
                     </div>
                   </td>
                   <td className="px-4 py-3" colSpan={2}>
-                    <span className="text-caption text-outline-variant italic">Not generated yet</span>
+                    <span className="text-caption text-outline italic">Not generated yet</span>
                   </td>
                   <td className="px-3 py-2" />
                 </tr>
@@ -298,7 +298,8 @@ export function AdminDocsCard({ documents, go, projectId }: { documents: Documen
                   <div className="flex items-center gap-2.5">
                     <span className="font-mono text-caption font-bold text-secondary bg-surface-container px-2 py-0.5 rounded-[5px] flex-shrink-0">{p.key}</span>
                     <div>
-                      <div className="text-body font-medium text-on-surface leading-[1.3]">{p.label}</div>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); go(`/projects/${projectId}/documents`) }}
+                        className="block text-left text-body font-medium text-on-surface leading-[1.3] hover:text-secondary transition-colors">{p.label}</button>
                       <div className="text-caption text-outline">{total} doc{total !== 1 ? 's' : ''}</div>
                     </div>
                   </div>
@@ -317,7 +318,7 @@ export function AdminDocsCard({ documents, go, projectId }: { documents: Documen
                 </td>
                 <td className="px-4 py-3">
                   {shown.length === 0
-                    ? (c.needsReviewer ? <span className="text-caption text-warn italic">Needs a reviewer</span> : <span className="text-caption text-outline-variant">—</span>)
+                    ? (c.needsReviewer ? <span className="text-caption text-warn italic">Needs a reviewer</span> : <span className="text-caption text-outline">—</span>)
                     : (
                       <div className="flex items-center">
                         {shown.map((r, i) => <Avatar key={r.userId} person={r} size={24} className={cn('border-2 border-surface-container-lowest', i > 0 && '-ml-1.5')} />)}
@@ -367,7 +368,7 @@ export function MyReviewsCard({ documents, meId, go, projectId }: { documents: D
               <th className={cn(DOC_TH, 'w-[90px]')}>Process</th>
               <th className={cn(DOC_TH, 'w-[165px]')}>Status</th>
               <th className={cn(DOC_TH, 'w-[230px]')}>Next step</th>
-              <th className="w-[72px]" />
+              <th className="w-[72px]"><span className="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody>
@@ -426,7 +427,7 @@ export function ClaimPoolCard({ documents, onClaim, claiming }: { documents: Doc
       <div>
         {pool.map((doc) => (
           <div key={doc.id} className="flex items-center gap-3 px-5 py-3 border-b border-hairline last:border-0">
-            <Icon name="description" size={18} className="text-outline-variant flex-shrink-0" />
+            <Icon name="description" size={18} className="text-field flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="text-body font-medium text-on-surface truncate">{doc.name}</div>
               <div className="flex items-center gap-1.5 mt-[3px]">
@@ -461,7 +462,7 @@ export function ReviewQueueCard({ documents, go, projectId, onAssign }: {
         row={(d) => (
           <QueueRow key={d.id} doc={d} onOpen={() => go(docPath(projectId, d, true))}
             sub={<><span className="text-on-surface-variant font-medium">{d.reviewer?.name ?? 'Its reviewer'}:</span> “{d.review.comment || 'Submitted for approval'}”</>}
-            action={<button onClick={(e) => { e.stopPropagation(); go(docPath(projectId, d, true)) }} className="flex-shrink-0 px-[11px] py-1 rounded-md border border-secondary bg-secondary text-white text-caption font-semibold hover:bg-secondary-container">Review</button>} />
+            action={<button onClick={(e) => { e.stopPropagation(); go(docPath(projectId, d, true)) }} className="flex-shrink-0 px-[11px] py-1 rounded-md border border-secondary bg-action text-white text-caption font-semibold hover:bg-secondary-container">Review</button>} />
         )} />
       <QueueSection title="Needs a reviewer" status="in_review" icon="person_add" docs={q.needsReviewer}
         row={(d) => (
@@ -508,7 +509,7 @@ function QueueRow({ doc, sub, action, onOpen }: { doc: Document; sub: ReactNode;
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="font-mono text-micro font-bold text-secondary bg-surface-container px-[5px] py-px rounded flex-shrink-0">{doc.process}</span>
-          <p className="text-xs text-on-surface font-medium truncate">{doc.name}</p>
+          <button type="button" onClick={(e) => { e.stopPropagation(); onOpen() }} className="text-xs text-on-surface font-medium truncate text-left hover:text-secondary transition-colors">{doc.name}</button>
         </div>
         <p className="text-caption text-outline leading-[1.35] mt-[3px] line-clamp-2">{sub}</p>
       </div>

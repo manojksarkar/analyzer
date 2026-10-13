@@ -206,7 +206,7 @@ function Expected({ spec, onHover }: { spec: TestSpecData; onHover: (step: strin
             key={n}
             onMouseEnter={() => onHover(n)}
             onMouseLeave={() => onHover(null)}
-            className="inline-flex ml-[3px] px-[5px] rounded-[3px] bg-surface-container text-secondary font-mono text-[10.5px] font-semibold leading-[17px] cursor-default hover:bg-secondary hover:text-white"
+            className="inline-flex ml-[3px] px-[5px] rounded-[3px] bg-surface-container text-secondary font-mono text-caption font-semibold leading-[17px] cursor-default hover:bg-action hover:text-white"
           >
             {n}
           </span>

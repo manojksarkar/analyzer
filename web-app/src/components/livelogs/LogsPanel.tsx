@@ -127,12 +127,12 @@ function OpenPanel({ projectId }: { projectId?: string }) {
           <Icon name="search" size={16} className="absolute left-2 top-[7px] text-outline" />
           <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search the lines"
             aria-label="Search the lines"
-            className="h-[30px] w-44 pl-7 pr-2 border border-outline-variant rounded-lg bg-surface-container-lowest text-xs text-on-surface placeholder:text-outline focus:outline-2 focus:outline-secondary" />
+            className="h-[30px] w-44 pl-7 pr-2 border border-field rounded-lg bg-surface-container-lowest text-xs text-on-surface placeholder:text-outline" />
         </label>
         <span className="flex-1" />
         <button type="button" role="switch" aria-checked={follow} onClick={() => (follow ? pause() : setFollow(true))}
           title="Stay at the newest line" className="inline-flex items-center gap-1.5 text-xs text-on-surface-variant">
-          <span className={cn('relative w-[26px] h-4 rounded-full transition-colors', follow ? 'bg-secondary' : 'bg-outline-variant')}>
+          <span className={cn('relative w-[26px] h-4 rounded-full transition-colors', follow ? 'bg-action' : 'bg-field')}>
             <span className={cn('absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform', follow && 'translate-x-2.5')} />
           </span>
           Follow
@@ -163,7 +163,7 @@ function OpenPanel({ projectId }: { projectId?: string }) {
       </div>
       {unseen > 0 && (
         <button type="button" onClick={() => setFollow(true)}
-          className="absolute left-1/2 -translate-x-1/2 bottom-3.5 inline-flex items-center gap-1.5 h-7 px-3 rounded-full bg-secondary text-on-secondary text-xs font-semibold shadow-[0_8px_24px_rgba(0,0,0,.25)]">
+          className="absolute left-1/2 -translate-x-1/2 bottom-3.5 inline-flex items-center gap-1.5 h-7 px-3 rounded-full bg-action text-on-secondary text-xs font-semibold shadow-[0_8px_24px_rgba(0,0,0,.25)]">
           <Icon name="arrow_downward" size={15} />{unseen} new line{unseen === 1 ? '' : 's'}
         </button>
       )}

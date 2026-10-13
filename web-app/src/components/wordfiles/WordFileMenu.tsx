@@ -39,7 +39,7 @@ export function WordFileMenu({ trigger, items, label }: {
               disabled={item.disabled}
               onSelect={item.onSelect}
               className={cn(
-                'flex items-start gap-2 px-2.5 py-2 rounded-lg outline-none select-none text-xs leading-4',
+                'flex items-start gap-2 px-2.5 py-2 rounded-lg select-none text-xs leading-4',
                 item.disabled ? 'text-outline cursor-not-allowed' : 'text-on-surface cursor-pointer data-[highlighted]:bg-surface-container-low',
               )}
             >

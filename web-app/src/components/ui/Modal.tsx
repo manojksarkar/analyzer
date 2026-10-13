@@ -30,7 +30,6 @@ export function Modal({
             'w-full max-w-md bg-surface-container-lowest rounded-2xl p-6',
             'shadow-[0_8px_40px_rgba(4,22,39,.18)]',
             'animate-in fade-in-0 zoom-in-95',
-            'focus:outline-none',
             className,
           )}
         >

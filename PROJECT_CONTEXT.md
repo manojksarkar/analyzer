@@ -86,6 +86,10 @@ newer entry and the code win.
   one (`engine/review/rewrite.py`; charts through its own Phase 3, `run.py --views --rewrite-labels`). A label
   update 237 s → 13–22 s. Fresh and incremental generation make the same Word files as on develop (checked
   side by side, 2026-10-07g). [FAST_WORD_FILE_UPDATES.md](docs/design/FAST_WORD_FILE_UPDATES.md); HANDOVER §4.35–4.40.
+- **Accessibility** (2026-10-13, branch `feat/ui-accessibility`, not pushed): the mockups and the web app
+  meet WCAG 2.2 AA in light and dark -- contrast, one focus ring, 11px minimum text, names, keyboard
+  reach, landmarks. Rules: `ui-dev` skill §8; guard: `web-app/src/__tests__/accessibility.test.ts`.
+  [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Accessibility".
 - **Live logs for superusers** (backend; 2026-10-06, branch `feat/live-logs`): one stream of API and
   engine log lines, tail + SSE, read from per-process files under `logs/live/`. Built; the web page
   is next. [LIVE_LOGS_SPEC](docs/spec/LIVE_LOGS_SPEC.md), [LIVE_LOGS_DESIGN](docs/design/LIVE_LOGS_DESIGN.md),

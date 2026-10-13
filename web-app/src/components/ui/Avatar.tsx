@@ -32,7 +32,7 @@ export function Avatar({
       title={title ?? person.name}
       className={cn('inline-flex items-center justify-center rounded-full flex-shrink-0 font-sans font-bold', className)}
       // eslint-disable-next-line no-restricted-syntax -- avatar size and colours are data-driven
-      style={{ width: size, height: size, background: pal.bg, color: pal.text, fontSize: Math.round(size * 0.38) }}
+      style={{ width: size, height: size, background: pal.bg, color: pal.text, fontSize: Math.max(11, Math.round(size * 0.38)) }}
     >
       {person.initials}
     </span>

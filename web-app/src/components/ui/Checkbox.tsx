@@ -20,17 +20,17 @@ export function Checkbox({ checked, onCheckedChange, label, disabled, className 
         onCheckedChange={onCheckedChange}
         disabled={disabled}
         className={cn(
-          'h-4 w-4 rounded border border-outline-variant bg-surface-container-lowest flex-shrink-0',
-          'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary focus-visible:ring-offset-1',
-          'data-[state=checked]:bg-secondary data-[state=checked]:border-secondary',
-          'data-[state=indeterminate]:bg-secondary data-[state=indeterminate]:border-secondary',
+          'h-4 w-4 rounded border border-field bg-surface-container-lowest flex-shrink-0',
+          'transition-colors',
+          'data-[state=checked]:bg-action data-[state=checked]:border-action',
+          'data-[state=indeterminate]:bg-action data-[state=indeterminate]:border-action',
           'disabled:cursor-not-allowed disabled:opacity-50',
         )}
       >
         <CheckboxPrimitive.Indicator className="flex items-center justify-center text-white">
           {checked === 'indeterminate'
-            ? <span className="material-symbols-outlined" style={{ fontSize: 12 }}>remove</span>
-            : <span className="material-symbols-outlined" style={{ fontSize: 12 }}>check</span>
+            ? <span className="material-symbols-outlined" style={{ fontSize: 12 }} aria-hidden>remove</span>
+            : <span className="material-symbols-outlined" style={{ fontSize: 12 }} aria-hidden>check</span>
           }
         </CheckboxPrimitive.Indicator>
       </CheckboxPrimitive.Root>

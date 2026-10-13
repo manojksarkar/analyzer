@@ -1,5 +1,5 @@
 import { memo, useState } from 'react'
-import { Icon, Text } from '../../../components/ui'
+import { Icon, ScrollX, Text } from '../../../components/ui'
 import { cn } from '../../../lib/cn'
 import type { BehaviorTableData, FlowchartTableData, RichSection, RichTable } from '../../../types'
 import { useEdit } from '../editContext'
@@ -12,7 +12,7 @@ import { SlotText } from './SlotText'
 /* ── Rendered table section ── */
 function TableView({ table }: { table: RichTable }) {
   return (
-    <div className="overflow-x-auto border border-outline-variant rounded-lg">
+    <ScrollX className="border border-outline-variant rounded-lg">
       <table className="w-full text-left text-body">
         <thead className="bg-surface-container text-on-surface-variant">
           <tr>
@@ -36,7 +36,7 @@ function TableView({ table }: { table: RichTable }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollX>
   )
 }
 
@@ -50,7 +50,7 @@ function DiagramImage({ src, title }: { src: string; title: string }) {
         onClick={() => setOpen(true)}
         title="Open full size"
         aria-label={`Open ${title} full size`}
-        className="group relative block w-full bg-picture focus-visible:outline-2 focus-visible:outline-secondary"
+        className="group relative block w-full bg-picture"
       >
         <img src={src} alt={title} loading="lazy" className="doc-picture block w-full max-h-[440px] object-contain bg-white" />
         <span className="absolute top-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container-lowest border border-outline-variant text-on-surface-variant opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity">
@@ -72,7 +72,7 @@ function DiagramView({ section }: { section: RichSection }) {
         <DiagramImage src={section.imageUrl} title={section.title} />
       ) : (
         <div className="flex flex-col items-center justify-center text-center py-12 gap-3">
-          <Icon name="account_tree" size={40} className="text-outline-variant" />
+          <Icon name="account_tree" size={40} className="text-field" />
           <Text variant="caption" className="font-mono max-w-sm">{section.content ?? 'Diagram generated from the Clang AST'}</Text>
         </div>
       )}
@@ -105,7 +105,7 @@ function KeyCell({ children, top }: { children: string; top?: boolean }) {
 function FlowchartTableView({ data }: { data: FlowchartTableData }) {
   const edit = useEdit()
   return (
-    <div className="overflow-x-auto border border-outline-variant rounded-lg">
+    <ScrollX className="border border-outline-variant rounded-lg">
       <table className="w-full text-left text-body">
         <tbody>
           <tr className="border-b border-outline-variant/60">
@@ -157,7 +157,7 @@ function FlowchartTableView({ data }: { data: FlowchartTableData }) {
           </tr>
         </tbody>
       </table>
-    </div>
+    </ScrollX>
   )
 }
 
@@ -165,7 +165,7 @@ function FlowchartTableView({ data }: { data: FlowchartTableData }) {
 function BehaviorTableView({ data }: { data: BehaviorTableData }) {
   return (
     <div className="space-y-3">
-      <div className="overflow-x-auto border border-outline-variant rounded-lg">
+      <ScrollX className="border border-outline-variant rounded-lg">
         <table className="w-full text-left text-body">
           <tbody>
             <tr className="border-b border-outline-variant/60">
@@ -198,7 +198,7 @@ function BehaviorTableView({ data }: { data: BehaviorTableData }) {
             </tr>
           </tbody>
         </table>
-      </div>
+      </ScrollX>
       {data.diagramUrl && (
         <figure className="bg-surface-container-low border border-outline-variant rounded-lg overflow-hidden">
           <DiagramImage src={data.diagramUrl} title="Behaviour diagram" />

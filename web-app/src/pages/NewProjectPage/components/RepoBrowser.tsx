@@ -114,7 +114,7 @@ export function RepoBrowser({ start, onUse, onClose }: {
         role="dialog"
         aria-modal="true"
         aria-label="Choose a git repository on the server"
-        className="fixed top-0 right-0 h-screen bg-surface-container-lowest border-l border-outline-variant z-[100] flex flex-col w-[380px] shadow-[-4px_0_24px_rgba(4,22,39,.12)] outline-none"
+        className="fixed top-0 right-0 h-screen bg-surface-container-lowest border-l border-outline-variant z-[100] flex flex-col w-[380px] shadow-[-4px_0_24px_rgba(4,22,39,.12)]"
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant flex-shrink-0">
           <div>
@@ -193,7 +193,7 @@ export function RepoBrowser({ start, onUse, onClose }: {
           <div className="flex gap-3">
             <button type="button" onClick={onClose} className="px-4 py-2 border border-outline-variant text-on-surface-variant rounded-lg hover:bg-surface-container transition-colors font-mono text-xs font-medium">Cancel</button>
             <button type="button" onClick={() => { if (picked) onUse(picked) }} disabled={!picked}
-              className="flex-1 py-2 bg-secondary text-on-secondary rounded-lg hover:bg-secondary-container transition-colors font-mono text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-secondary">
+              className="flex-1 py-2 bg-action text-on-secondary rounded-lg hover:bg-secondary-container transition-colors font-mono text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-action">
               Use this repository
             </button>
           </div>

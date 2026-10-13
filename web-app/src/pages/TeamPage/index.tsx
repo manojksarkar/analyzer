@@ -84,7 +84,7 @@ export function TeamPage() {
             <SubbarCta>
               <button
                 onClick={() => setInviteOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors font-mono text-caption font-bold tracking-[0.04em]"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-action hover:bg-secondary-container text-on-secondary rounded-lg transition-colors font-mono text-caption font-bold tracking-[0.04em]"
               >
                 <Icon name="person_add" size={14} />
                 ADD MEMBER
@@ -137,7 +137,7 @@ export function TeamPage() {
                             )}
                             <div className="min-w-0">
                               <p className={cn('truncate font-mono text-body font-medium', m.pending ? 'text-outline' : 'text-on-surface')}>{m.name}</p>
-                              {m.pending && <p className="font-mono text-label text-amber">Pending</p>}
+                              {m.pending && <p className="font-mono text-label text-warn">Pending</p>}
                             </div>
                           </div>
                         </td>

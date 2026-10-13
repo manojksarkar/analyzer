@@ -268,14 +268,14 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
           {tab === 'commits' && (
             <div>
               <div className="px-3 py-2 border-b border-outline-variant">
-                <div className="flex items-center gap-2 px-2 py-1.5 bg-surface-container-low border border-outline-variant rounded-lg">
+                <div className="flex items-center gap-2 px-2 py-1.5 bg-surface-container-low border border-field rounded-lg">
                   <Icon name="search" size={15} className="text-on-surface-variant" />
                   <input
                     type="text"
-                    placeholder="Search commits…"
+                    placeholder="Search commits…" aria-label="Search commits"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    className="flex-1 bg-transparent outline-none text-on-surface placeholder-outline font-mono text-caption"
+                    className="flex-1 bg-transparent outline-none text-on-surface placeholder:text-outline font-mono text-caption"
                   />
                 </div>
               </div>
@@ -389,7 +389,7 @@ interface SubbarProps {
 
 export function Subbar({ projectName, selectedVersion, selectedCommit, statusBadge, cta, ctaSlotRef }: SubbarProps) {
   return (
-    <div className="h-12 flex-shrink-0 flex items-center justify-between px-4 bg-surface-container-lowest border-b border-outline-variant z-20">
+    <section aria-label="Project and version" className="h-12 flex-shrink-0 flex items-center justify-between px-4 bg-surface-container-lowest border-b border-outline-variant z-20">
       <div className="flex items-center gap-2">
         <ProjectSwitcher projectName={projectName} />
 
@@ -412,6 +412,6 @@ export function Subbar({ projectName, selectedVersion, selectedCommit, statusBad
       </div>
 
       <div ref={ctaSlotRef} className="flex items-center gap-1.5">{cta}</div>
-    </div>
+    </section>
   )
 }

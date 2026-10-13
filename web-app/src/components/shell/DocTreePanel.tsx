@@ -95,7 +95,7 @@ export function DocTreePanel({
   }
 
   return (
-    <aside className="w-60 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex flex-col">
+    <aside aria-label="Documents" className="w-60 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex flex-col">
       {/* Panel header */}
       <div className="px-3 py-2.5 border-b border-outline-variant flex-shrink-0 flex items-center justify-between">
         <Text variant="label" className="block text-on-surface-variant tracking-[0.1em]">Documents</Text>

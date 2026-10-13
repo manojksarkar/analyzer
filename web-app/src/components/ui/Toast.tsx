@@ -100,7 +100,7 @@ export function ToastProvider() {
           </ToastPrimitive.Root>
         )
       })}
-      <ToastPrimitive.Viewport className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 w-80 outline-none" />
+      <ToastPrimitive.Viewport className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 w-80" />
     </ToastPrimitive.Provider>
   )
 }

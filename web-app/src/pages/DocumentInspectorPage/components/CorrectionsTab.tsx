@@ -92,7 +92,7 @@ export function CorrectionsTab({
             )}
           </div>
           {orphans.map((s) => (
-            <div key={`${s.kind}:${s.key}`} className="border border-dashed border-outline-variant rounded-xl px-2.5 py-2 mb-2 bg-surface-container-low opacity-80">
+            <div key={`${s.kind}:${s.key}`} className="border border-dashed border-outline-variant rounded-xl px-2.5 py-2 mb-2 bg-surface-container-low">
               <Card slot={s} userName={userName} orphan />
               {orphanActions && (
                 <button

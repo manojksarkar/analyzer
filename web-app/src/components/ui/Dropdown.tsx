@@ -36,7 +36,7 @@ export function DropdownContent({ items, align = 'end' }: DropdownContentProps) 
             onSelect={item.onClick}
             className={cn(
               'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm cursor-pointer',
-              'select-none outline-none transition-colors',
+              'select-none transition-colors',
               item.variant === 'danger'
                 ? 'text-error data-[highlighted]:bg-error/10'
                 : 'text-on-surface data-[highlighted]:bg-surface-container',

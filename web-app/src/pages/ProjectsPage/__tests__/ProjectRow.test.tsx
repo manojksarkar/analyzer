@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
 import { ProjectRow } from '../components/ProjectRow'
 import type { Project } from '../../../types'
 
@@ -16,9 +17,11 @@ function setup(role: 'admin' | 'developer') {
   const onNavigate = vi.fn()
   const onTeam = vi.fn()
   render(
-    <QueryClientProvider client={new QueryClient()}>
-      <table><tbody><ProjectRow project={project} onNavigate={onNavigate} onTeam={onTeam} /></tbody></table>
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>
+        <table><tbody><ProjectRow project={project} onNavigate={onNavigate} onTeam={onTeam} /></tbody></table>
+      </QueryClientProvider>
+    </MemoryRouter>,
   )
   return { project, onNavigate, onTeam }
 }
@@ -44,11 +47,24 @@ describe('ProjectRow: no standard', () => {
       progress: 0, lastRun: null, pageState: 'complete', team: [], userRole: 'admin',
     } as unknown as Project
     render(
-      <QueryClientProvider client={new QueryClient()}>
-        <table><tbody><ProjectRow project={project} onNavigate={() => {}} onTeam={() => {}} /></tbody></table>
-      </QueryClientProvider>,
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient()}>
+          <table><tbody><ProjectRow project={project} onNavigate={() => {}} onTeam={() => {}} /></tbody></table>
+        </QueryClientProvider>
+      </MemoryRouter>,
     )
     const cells = screen.getAllByRole('cell')
     expect(cells[1]).toHaveTextContent('—')
+  })
+})
+
+/* Accessibility: the row's click is for the mouse. The keyboard opens a project from its name,
+   which is a real link -- an admin's row menu has no "View project". */
+describe('ProjectRow: keyboard', () => {
+  it('opens the project from its name, a link to its Overview', () => {
+    const { project, onNavigate } = setup('admin')
+    const link = screen.getByRole('link', { name: project.name })
+    expect(link).toHaveAttribute('href', `/projects/${project.id}/overview`)
+    expect(onNavigate).not.toHaveBeenCalled()
   })
 })

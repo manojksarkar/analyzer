@@ -52,7 +52,7 @@ export function Drawer({ open, onClose, title, description, header, footer, chil
           {...(description ? {} : { 'aria-describedby': undefined })}
           className={cn(
             'fixed z-50 inset-y-0 right-0 w-[min(640px,100%)] bg-surface-container-lowest flex flex-col',
-            'shadow-[-8px_0_24px_rgba(4,22,39,.14)] focus:outline-none',
+            'shadow-[-8px_0_24px_rgba(4,22,39,.14)]',
             className,
           )}
         >

@@ -16,7 +16,7 @@
   --color-secondary-container: #2170e4;
   --color-on-secondary: #ffffff;
   --color-on-secondary-container: #fefcff;
-  --color-on-tertiary-container: #00a572;
+  --color-on-tertiary-container: #00754f;
   --color-tertiary-container: #00311f;
   --color-tertiary-fixed: #6ffbbe;
   --color-error: #ba1a1a;
@@ -31,8 +31,25 @@
   --color-surface-container-highest: #d3e4fe;
   --color-on-surface: #0b1c30;
   --color-on-surface-variant: #44474c;
-  --color-outline: #74777d;
+  --color-outline: #65686e;
   --color-outline-variant: #c4c6cd;
+  /* Accessibility (WCAG 2.2 AA; the rules are in web-app/PROJECT_CONTEXT.md). `outline` is the
+     quietest colour TEXT may have: 4.5:1 on the surfaces. `outline-variant` is for hairlines and
+     dividers only -- never text, an icon or a field's border. A field's boundary and an icon need
+     3:1: `field`. `focus` is the keyboard focus ring. `action` is a blue fill that carries white
+     text or a white icon (a primary button, a checked box); `secondary` is blue as text, border
+     and small marks. The two are one colour in light and two in dark. */
+  --color-field: #85888f;
+  --color-focus: #0058be;
+  --color-action: #0058be;
+  /* Text or an icon ON a status fill (`bg-error`, `bg-on-tertiary-container`, `bg-outline`): white
+     in light, near-black in dark, where those fills are light. */
+  --color-on-status: #ffffff;
+  /* A quiet button on the blue selection bar (`bg-action`), and its hover: a lighter chip in light,
+     a darker one in dark -- white text on a lightened dark-theme blue falls under 4.5:1. Hex with
+     alpha, not color-mix(): the office's browser is Chrome 99. */
+  --color-bar-button: #ffffff1f;
+  --color-bar-button-hover: #ffffff33;
   --color-amber: #f59e0b;
   /* Staged generation: a component's state (the Components drawer's chips and legend, the
      Generation banner). Text, background, border. */
@@ -53,18 +70,22 @@
   --color-inverse: #041627;
   --color-selected: #041627;
   --color-hero: #041627;
+  /* On the hero: quiet text, the small blue heading, the ticks. */
+  --color-on-hero: #8192a7;
+  --color-hero-accent: #6ea8ff;
+  --color-hero-ok: #00a572;
   /* Status families: text and icons, background, border. Changes requested is violet. */
-  --color-success: #00a572;
+  --color-success: #00754f;
   --color-success-line: #86efac;
   --color-warn: #b45309;
   --color-warn-bg: #fffbeb;
-  --color-caution: #d97706;
+  --color-caution: #a8500a;
   --color-violet: #7c3aed;
   --color-violet-bg: #faf5ff;
   --color-violet-line: #ddd6fe;
   /* Neutrals: a chip's or a sha's background, a quiet text, a bar's empty track. */
   --color-muted: #f3f4f6;
-  --color-faint: #9aa0a6;
+  --color-faint: #65686e;
   --color-track: #e8eaed;
   /* Blue information: a box's border; a selected or unread row. */
   --color-info-line: #b9cdf5;
@@ -85,9 +106,11 @@
   /* Typography scale — the px sizes the designs use, as font-size utilities.
      12px=text-xs, 14px=text-sm, 16px=text-base, 18px=text-lg, 20px=text-xl
      are Tailwind defaults; these fill the gaps the designs need. */
-  --text-micro: 0.5625rem;      /* 9px  */
+  /* 11px is the smallest text (accessibility): `micro` was 9px and `label` 10px until 2026-10-13.
+     The three names stay so no class had to change; new code uses `caption`. */
+  --text-micro: 0.6875rem;      /* 11px */
   --text-micro--line-height: 0.875rem;
-  --text-label: 0.625rem;       /* 10px */
+  --text-label: 0.6875rem;      /* 11px */
   --text-label--line-height: 1rem;
   --text-caption: 0.6875rem;    /* 11px */
   --text-caption--line-height: 1rem;
@@ -132,11 +155,11 @@
   --color-primary-container: #26282e;
   --color-on-primary: #ffffff;
   --color-on-primary-container: #8a8f9c;
-  --color-secondary: #1d7bff;
-  --color-secondary-container: #3d8fff;
+  --color-secondary: #6aa9ff;
+  --color-secondary-container: #1662d6;
   --color-on-secondary: #ffffff;
   --color-on-secondary-container: #ffffff;
-  --color-on-tertiary-container: #1fae63;
+  --color-on-tertiary-container: #2fc878;
   --color-tertiary-container: #10301f;
   --color-tertiary-fixed: #6ff0b0;
   --color-error: #ff7b72;
@@ -151,8 +174,14 @@
   --color-surface-container-highest: #363a44;
   --color-on-surface: #f2f3f5;
   --color-on-surface-variant: #a3a7b1;
-  --color-outline: #7c818c;
+  --color-outline: #979ca7;
   --color-outline-variant: #2c2f37;
+  --color-field: #737885;
+  --color-focus: #8ab8ff;
+  --color-action: #1a6ce6;
+  --color-on-status: #0b0c0f;
+  --color-bar-button: #00000029;
+  --color-bar-button-hover: #0000004d;
   --color-amber: #f5a524;
   --color-state-done: #3ddc84;
   --color-state-done-bg: #132a1f;
@@ -167,6 +196,9 @@
   --color-inverse: #0b0c0f;
   --color-selected: #1b2a45;
   --color-hero: #122594;
+  --color-on-hero: #d6e0ff;
+  --color-hero-accent: #b9d2ff;
+  --color-hero-ok: #6ff0b0;
   --color-success: #3ddc84;
   --color-success-line: #1f5a3a;
   --color-warn: #f5a524;
@@ -176,7 +208,7 @@
   --color-violet-bg: #2a1f45;
   --color-violet-line: #4b3a80;
   --color-muted: #26282e;
-  --color-faint: #8a8f9c;
+  --color-faint: #979ca7;
   --color-track: #2a2d35;
   --color-info-line: #2d4a80;
   --color-tint: #1b2638;
@@ -246,6 +278,9 @@
   :root[data-theme="dark"] :where(input:not([type=checkbox]):not([type=radio]):not([type=range]), textarea, select) {
     background-color: transparent;
   }
+  /* The hint inside an empty field is text too: the quietest text colour, not the half-strength one
+     a browser (and Tailwind's reset) gives it, which is about 3.3:1. A `placeholder:` class still wins. */
+  ::placeholder { color: var(--color-outline); opacity: 1; }
 }
 
 body {
@@ -293,12 +328,12 @@ body {
   transition: all .2s;
 }
 .step-dot.pending { background: var(--color-surface-container-lowest); border: 1.5px solid var(--color-outline-variant); color: var(--color-outline); }
-.step-dot.active  { background: var(--color-secondary); border: 2px solid var(--color-secondary); color: #fff; box-shadow: 0 0 0 4px rgba(0,88,190,.15); }
-.step-dot.done    { background: var(--color-on-tertiary-container); border: 2px solid var(--color-on-tertiary-container); color: #fff; }
+.step-dot.active  { background: var(--color-action); border: 2px solid var(--color-action); color: #fff; box-shadow: 0 0 0 4px rgba(0,88,190,.15); }
+.step-dot.done    { background: var(--color-on-tertiary-container); border: 2px solid var(--color-on-tertiary-container); color: var(--color-on-status); }
 
 /* New-project wizard — form primitives (copied from the design) */
-.inp { width: 100%; padding: 9px 12px; background: var(--color-surface-container-lowest); border: 1px solid var(--color-outline-variant); border-radius: 0.5rem; font-family: "Inter", sans-serif; font-size: 14px; line-height: 20px; color: var(--color-on-surface); outline: none; transition: border-color .15s, box-shadow .15s; }
-.inp:focus { border-color: var(--color-secondary); box-shadow: 0 0 0 3px rgba(0,88,190,.10); }
+.inp { width: 100%; padding: 9px 12px; background: var(--color-surface-container-lowest); border: 1px solid var(--color-field); border-radius: 0.5rem; font-family: "Inter", sans-serif; font-size: 14px; line-height: 20px; color: var(--color-on-surface); transition: border-color .15s; }
+.inp:focus { border-color: var(--color-secondary); }
 .inp::placeholder { color: var(--color-outline); }
 .inp.mono { font-family: "JetBrains Mono", monospace; font-size: 12px; }
 .inp.with-icon { padding-left: 32px; }   /* room for a leading icon (pl-8 loses to .inp) */
@@ -307,7 +342,7 @@ body {
    Not type="password": a browser takes a text box followed by a password box for a sign-in form,
    saves the pair as a login, offers the saved ones, and fills the first again when the page changes. */
 .inp.secret { -webkit-text-security: disc; }
-.inp.err { border-color: var(--color-error) !important; box-shadow: 0 0 0 3px rgba(186,26,26,.10) !important; }
+.inp.err { border-color: var(--color-error) !important; }
 textarea.inp { resize: none; }
 select.inp { appearance: auto; }
 
@@ -320,7 +355,7 @@ select.inp { appearance: auto; }
 .card-icon { width: 32px; height: 32px; border-radius: 0.5rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 
 .tab-btn { padding: 7px 14px; border-radius: 0.5rem; font-family: "JetBrains Mono", monospace; font-size: 12px; font-weight: 500; letter-spacing: .02em; border: 1px solid var(--color-outline-variant); background: var(--color-surface-container-lowest); color: var(--color-on-surface-variant); cursor: pointer; transition: all .15s; }
-.tab-btn.on { background: var(--color-secondary); border-color: var(--color-secondary); color: #fff; }
+.tab-btn.on { background: var(--color-action); border-color: var(--color-action); color: #fff; }
 
 .drop-zone { border: 2px dashed var(--color-outline-variant); border-radius: 0.75rem; padding: 24px 16px; text-align: center; background: var(--color-surface); cursor: pointer; transition: all .2s; }
 .drop-zone:hover, .drop-zone.dragover { border-color: var(--color-secondary); background: var(--color-surface-container-low); }
@@ -330,18 +365,18 @@ select.inp { appearance: auto; }
 .core-card { background: var(--color-surface-container-lowest); border: 1px solid var(--color-outline-variant); border-radius: 0.75rem; overflow: hidden; }
 .core-card-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--color-surface); border-bottom: 1px solid var(--color-surface-container); }
 .core-chip-icon { width: 32px; height: 32px; border-radius: 0.5rem; background: var(--color-primary-container); color: var(--color-on-primary-container); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.core-name { width: 100%; max-width: 240px; padding: 0 6px; margin-left: -6px; font: 600 14px/22px "Inter", sans-serif; color: var(--color-on-surface); background: transparent; border: 1px solid transparent; border-radius: 0.25rem; }
-.core-name:hover { border-color: var(--color-outline-variant); background: var(--color-surface-container-lowest); }
-.core-name:focus { outline: none; border-color: var(--color-secondary); background: var(--color-surface-container-lowest); box-shadow: 0 0 0 3px rgba(0,88,190,.10); }
+.core-name { width: 100%; max-width: 240px; padding: 0 6px; margin-left: -6px; font: 600 14px/22px "Inter", sans-serif; color: var(--color-on-surface); background: transparent; border: 1px solid var(--color-field); border-radius: 0.25rem; }
+.core-name:hover { background: var(--color-surface-container-lowest); }
+.core-name:focus { border-color: var(--color-secondary); background: var(--color-surface-container-lowest); }
 .core-name.err { border-color: var(--color-error); background: var(--color-surface-container-lowest); }
-.core-uses { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 3px; font: 500 10px/16px "JetBrains Mono", monospace; color: var(--color-outline); }
+.core-uses { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 3px; font: 500 11px/16px "JetBrains Mono", monospace; color: var(--color-outline); }
 .core-uses .layer-tag { padding: 0 6px; border-radius: 3px; background: var(--color-surface-container); color: var(--color-secondary); font-weight: 600; }
 .core-uses.none { color: var(--color-warn); }
 .core-row { display: grid; grid-template-columns: 172px minmax(0, 1fr); gap: 16px; align-items: start; padding: 14px 16px; }
 .core-row + .core-row { border-top: 1px solid var(--color-surface-container-low); }
 .core-row-label { font: 600 12px/18px "JetBrains Mono", monospace; color: var(--color-on-surface); }
 .core-row-help { margin-top: 2px; font: 400 11px/15px "Inter", sans-serif; color: var(--color-outline); }
-.core-row-help code { font-family: "JetBrains Mono", monospace; font-size: 10.5px; }
+.core-row-help code { font-family: "JetBrains Mono", monospace; font-size: 11px; }
 .core-row-help .opt { font-weight: 600; color: var(--color-on-surface-variant); }
 .wanted-note { margin-top: 6px; font: 400 11px/15px "Inter", sans-serif; color: var(--color-state-warn); }
 .upload-btn { width: 100%; min-height: 40px; display: flex; align-items: center; gap: 10px; padding: 8px 12px; text-align: left; color: var(--color-outline); background: var(--color-surface); border: 1.5px dashed var(--color-outline-variant); border-radius: 0.5rem; cursor: pointer; transition: border-color .15s, background .15s; }
@@ -361,8 +396,8 @@ select.inp { appearance: auto; }
 .switch-link:hover { text-decoration: underline; }
 textarea.macro-text { min-height: 76px; resize: vertical; }
 /* A layer's core (step 3) */
-.layer-core { display: flex; align-items: center; gap: 6px; flex-shrink: 0; font-family: "JetBrains Mono", monospace; font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--color-outline); }
-.layer-core-select { font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--color-secondary); background-color: var(--color-surface-container-lowest); border: 1px solid var(--color-outline-variant); border-radius: 0.25rem; padding: 3px 6px; cursor: pointer; }
+.layer-core { display: flex; align-items: center; gap: 6px; flex-shrink: 0; font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--color-outline); }
+.layer-core-select { font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--color-secondary); background-color: var(--color-surface-container-lowest); border: 1px solid var(--color-field); border-radius: 0.25rem; padding: 3px 6px; cursor: pointer; }
 
 .rev-card { background: var(--color-surface-container-lowest); border: 1px solid var(--color-outline-variant); border-radius: 0.75rem; overflow: hidden; }
 .rev-card-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--color-surface); border-bottom: 1px solid var(--color-surface-container-low); }
@@ -380,14 +415,15 @@ textarea.macro-text { min-height: 76px; resize: vertical; }
 .layer-body { padding: 4px 0 8px; }
 .tree-group-row { display: flex; align-items: center; gap: 3px; padding: 3px 12px; border-radius: 3px; }
 .tree-group-row:hover { background: var(--color-surface-container); }
-.tree-toggle { display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex-shrink: 0; color: var(--color-outline); background: none; border: none; cursor: pointer; border-radius: 2px; }
+.tree-toggle { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin: -4px; flex-shrink: 0; color: var(--color-outline); background: none; border: none; cursor: pointer; border-radius: 2px; }
+/* ^ a 24px target (WCAG 2.5.8) that takes the room of the 16px one: the rows keep their height. */
 .tree-toggle:hover { background: var(--color-surface-container-high); color: var(--color-secondary); }
 .tree-children { margin-left: 18px; padding-left: 8px; border-left: 1px solid var(--color-hairline); }
 .add-group-btn { display: flex; align-items: center; gap: 3px; padding: 4px 12px; font-family: "JetBrains Mono", monospace; font-size: 12px; font-weight: 600; color: var(--color-secondary); background: none; border: none; cursor: pointer; }
 .add-group-btn:hover { color: var(--color-secondary-container); }
 .inline-add-row { display: flex; align-items: center; gap: 4px; padding: 4px 12px; }
-.inline-add-input { font-family: "JetBrains Mono", monospace; font-size: 11px; flex: 1; padding: 3px 8px; border: 1px solid var(--color-secondary); border-radius: 4px; outline: none; color: var(--color-on-surface); background: var(--color-surface-container-lowest); }
-.inline-add-confirm { font-family: "JetBrains Mono", monospace; font-size: 10px; font-weight: 600; padding: 3px 10px; background: var(--color-secondary); color: #fff; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+.inline-add-input { font-family: "JetBrains Mono", monospace; font-size: 11px; flex: 1; padding: 3px 8px; border: 1px solid var(--color-secondary); border-radius: 4px; color: var(--color-on-surface); background: var(--color-surface-container-lowest); }
+.inline-add-confirm { font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 600; padding: 3px 10px; background: var(--color-action); color: #fff; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
 .inline-add-confirm:hover { background: var(--color-secondary-container); }
 .inline-add-cancel { display: flex; align-items: center; background: none; border: none; cursor: pointer; color: var(--color-outline); padding: 2px; }
 .inline-add-cancel:hover { color: var(--color-error); }
@@ -399,16 +435,16 @@ textarea.macro-text { min-height: 76px; resize: vertical; }
 .inc-add-btn:hover { color: var(--color-secondary); }
 .ext-path-row { display: flex; align-items: center; gap: 5px; border-bottom: 1px solid rgba(0,165,114,.2); padding: 2px 0; margin-bottom: 1px; }
 .ext-path-row:last-of-type { border-bottom: none; margin-bottom: 0; }
-.ext-path-input { font-family: "JetBrains Mono", monospace; font-size: 11px; line-height: 1.3; color: var(--color-state-done); background: none; border: none; outline: none; flex: 1; min-width: 0; padding: 0; height: 18px; }
-.ext-path-input::placeholder { color: #a0c4b8; }
+.ext-path-input { font-family: "JetBrains Mono", monospace; font-size: 11px; line-height: 1.3; color: var(--color-state-done); background: none; border: none; flex: 1; min-width: 0; padding: 0; height: 18px; }
+.ext-path-input::placeholder { color: var(--color-outline); }
 /* A path the selected branch does not have (NewProjectPage's path check). */
 .ext-path-input.err, .file-row.err, .layer-path-display.err { color: var(--color-error); }
-.ext-browse-btn { flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px; padding: 1px 5px; border: 1px solid rgba(0,165,114,.35); border-radius: 3px; background: transparent; cursor: pointer; font-family: "JetBrains Mono", monospace; font-size: 9px; font-weight: 700; letter-spacing: .04em; color: var(--color-state-done); }
+.ext-browse-btn { flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px; padding: 1px 5px; border: 1px solid rgba(0,165,114,.35); border-radius: 3px; background: transparent; cursor: pointer; font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--color-state-done); }
 .ext-browse-btn:hover { background: var(--color-state-done-line); }
 .tree-comp-row { display: flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 3px; }
 .tree-comp-row:hover { background: var(--color-surface-container); }
 .comp-files { margin-left: 16px; padding-left: 8px; border-left: 1px solid var(--color-hairline); }
-.file-row { display: flex; align-items: center; gap: 4px; font-family: "JetBrains Mono", monospace; font-size: 10px; color: var(--color-outline); padding: 1px 6px; }
+.file-row { display: flex; align-items: center; gap: 4px; font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--color-outline); padding: 1px 6px; }
 
 /* Member search dropdown */
 .ms-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; cursor: pointer; transition: background .1s; }
@@ -416,14 +452,14 @@ textarea.macro-text { min-height: 76px; resize: vertical; }
 .ms-item.ms-invite:hover, .ms-item.ms-invite.focused { background: var(--color-state-done-bg); }
 
 /* Add-component right panel — file tree */
-.sect-label { font-family: "JetBrains Mono", monospace; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--color-outline); }
+.sect-label { font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--color-outline); }
 .sidebar-folder-row { display: flex; align-items: center; gap: 4px; padding: 3px 4px; border-radius: 4px; cursor: pointer; }
 .sidebar-folder-row:hover { background: var(--color-surface-container-low); }
 .sidebar-file-row { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 4px; cursor: pointer; }
 .sidebar-file-row:hover { background: var(--color-surface-container-low); }
 .sidebar-file-row.assigned { cursor: default; opacity: .55; }
 .sidebar-file-row.assigned:hover { background: transparent; }
-.file-owner-tag { font-family: "JetBrains Mono", monospace; font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 1px 5px; background: var(--color-surface-container); color: var(--color-secondary); border-radius: 3px; white-space: nowrap; flex-shrink: 0; }
+.file-owner-tag { font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 1px 5px; background: var(--color-surface-container); color: var(--color-secondary); border-radius: 3px; white-space: nowrap; flex-shrink: 0; }
 
 /* Folder picker panel */
 .fp-folder-row { display: flex; align-items: center; gap: 5px; padding: 4px 6px; border-radius: 4px; cursor: pointer; user-select: none; }
@@ -438,3 +474,20 @@ textarea.macro-text { min-height: 76px; resize: vertical; }
 
 /* Project row — hover tints all cells */
 .project-row:hover td { background: var(--color-surface); }
+
+/* ── Accessibility ─────────────────────────────────────────────────────────────────────────────
+   Keyboard focus: one ring, on everything, 3:1 or better on every surface of its theme. It shows
+   for the keyboard only (:focus-visible). This rule is outside every @layer, so a utility such as
+   `outline-none` cannot remove it: a component styles its focus by NOT styling it. */
+:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+/* Inside a navy or blue surface the ring is white: the blue one would vanish there. Set on what
+   the surface holds, not on the surface -- a blue button's own ring is drawn outside it. */
+:where(.bg-action, .bg-inverse, .bg-selected, .bg-hero) :focus-visible { outline-color: #ffffff; }
+/* A field with no border of its own, inside a bordered box (a search bar): the box shows the ring.
+   A browser without :has() (the office's Chrome 99) drops both rules, and the field keeps its own. */
+:where(div, label):has(> input.outline-none:focus-visible) { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+:where(div, label):has(> input.outline-none:focus-visible) > input.outline-none:focus-visible { outline: none; }
+/* People who ask their system for less motion: no slides, spins or sweeps. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}

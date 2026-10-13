@@ -153,9 +153,9 @@ function SlotEditor({ slot, display, list, edit, className }: {
           className={cn(
             'peer block w-full resize-none overflow-hidden rounded-[3px] px-1.5 py-0.5 -mx-1.5',
             !edit.locked && 'pr-6',
-            'bg-surface-container-lowest outline-dashed outline-1 outline-secondary/50 outline-offset-0',
+            'bg-surface-container-lowest outline-dashed outline-1 outline-secondary outline-offset-0',
             'hover:outline-solid hover:outline-secondary hover:bg-surface-container-low',
-            'focus:outline-2 focus:outline-solid focus:outline-secondary focus:bg-surface-container-lowest',
+            'focus:bg-surface-container-lowest',
             'placeholder:text-outline placeholder:italic',
             edit.locked && 'outline-outline-variant cursor-not-allowed bg-transparent',
           )}

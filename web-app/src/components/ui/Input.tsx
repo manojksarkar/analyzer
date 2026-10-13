@@ -40,9 +40,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             aria-invalid={!!error}
             aria-describedby={error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined}
             className={cn(
-              'w-full h-10 rounded-xl border bg-surface-container-lowest text-sm text-on-surface placeholder:text-on-surface-variant/60',
-              'transition-colors focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary',
-              error ? 'border-error focus:ring-error' : 'border-outline-variant',
+              'w-full h-10 rounded-xl border bg-surface-container-lowest text-sm text-on-surface placeholder:text-outline',
+              'transition-colors focus:border-secondary',
+              error ? 'border-error' : 'border-field',
               leadingIcon ? 'pl-9' : 'pl-3',
               trailingIcon ? 'pr-9' : 'pr-3',
               'disabled:bg-surface-container disabled:cursor-not-allowed disabled:opacity-60',
@@ -54,7 +54,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             <button
               type="button"
               onClick={onTrailingClick}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-lg text-on-surface-variant hover:text-on-surface transition-colors"
               tabIndex={onTrailingClick ? 0 : -1}
               aria-label={onTrailingClick ? 'Toggle' : undefined}
             >

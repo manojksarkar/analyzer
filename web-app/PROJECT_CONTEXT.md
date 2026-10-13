@@ -35,6 +35,11 @@ The goal: point it at a repo, configure your architecture layers, and get the fu
 ## Design files
 
 8 HTML mockups live in `docs/ui-mockups/`. Read these before implementing any page in React.
+They and the web app meet WCAG 2.2 AA in both themes (2026-10-13). The rules are the `ui-dev` skill's §8
+(`.claude/skills/ui-dev/SKILL.md`); where each thing lives and the changed colours:
+`project-context/API_AND_FRONTEND.md` "Accessibility". `src/__tests__/accessibility.test.ts` (in `npm test`)
+checks the tokens' contrast and the source's patterns; a new screen still gets a Tab walk and an axe run in both
+themes. `a11y.css` and `a11y.js` beside the mockup pages hold what a mockup page shares.
 
 | File | Sidebar | Subbar | What it shows |
 |---|---|---|---|

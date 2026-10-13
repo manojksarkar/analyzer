@@ -71,7 +71,7 @@ export function ComponentsDrawer({ projectId, versionId, versionTag, data, isAdm
   const header = (
     <>
       <div className="flex items-center gap-2.5 mt-3">
-        <label className="flex-1 min-w-0 flex items-center gap-1.5 px-2.5 py-1.5 border border-outline-variant rounded-[6px] focus-within:border-secondary">
+        <label className="flex-1 min-w-0 flex items-center gap-1.5 px-2.5 py-1.5 border border-field rounded-[6px] focus-within:border-secondary">
           <Icon name="search" size={16} className="text-outline" />
           <input
             type="text"

@@ -65,21 +65,31 @@ sizes, or spacing inline — use the token utilities or a `ui/` primitive.
 | `Row` / `Stack` | flex row / column | `flex items-center` / `flex flex-col` |
 | `Button`, `Badge`, `Input`, `Modal`, `Select`, `Checkbox`, … | their obvious roles | bespoke markup |
 
-`Text` variants: `label` (mono 10px caps), `caption` (11px muted), `mono` (12px), `body` (13px),
+`Text` variants: `label` (mono 11px caps), `caption` (11px muted), `mono` (12px), `body` (13px),
 `title` (15px semibold), `heading` (18px semibold). Compose, don't fork — mono-11px is
 `<Text variant="caption" className="font-mono">`.
 
 ### Token cheatsheet (inline value → utility)
 
-- **Font size:** 9→`text-micro`, 10→`text-label`, 11→`text-caption`, 12→`text-xs`, 13→`text-body`,
-  14→`text-sm`, 15→`text-title`, 18→`text-lg`. A new `--text-*` token goes into `lib/cn.ts` too, or
-  `cn()` takes it for a colour and drops it beside `text-<colour>`.
+- **Font size:** 11→`text-caption`, 12→`text-xs`, 13→`text-body`, 14→`text-sm`, 15→`text-title`,
+  18→`text-lg`. **11px is the smallest text** (§8): `text-micro` and `text-label` were 9 and 10px and
+  are 11px too since 2026-10-13 — the names stay so no class had to change; new code uses
+  `text-caption`. A new `--text-*` token goes into `lib/cn.ts` too, or `cn()` takes it for a colour and
+  drops it beside `text-<colour>`.
 - **Colour:** use the semantic `@theme` colours — `text-on-surface`, `text-on-surface-variant`,
   `text-outline`, `text-secondary`, `bg-surface`, `bg-surface-container*`, `border-outline-variant`,
   `bg-amber`, and the status ones: `success`, `warn`, `caution`, `violet`, `muted`, `faint`, `track`,
   `tint`, `info-line`, `highlight`, `page`, `inverse`, `selected`, `hero`. A recurring colour with no
   token should *become* a token (add to `@theme` **and** to the dark block); a one-off may use an
   arbitrary utility — but **arbitrary ≠ inline style** (it's still a class).
+- **Colours with one job each (accessibility, §8):** `text-outline` is the quietest colour text may
+  have; `outline-variant` is for hairlines and dividers only — never text, an icon or a field's
+  border. `border-field` (also `text-field` for a quiet icon) is a field's boundary. `bg-action` is a
+  blue fill under white text or a white icon (a primary button, a checked box, a selection bar);
+  `secondary` is blue as text, border and small marks — in dark they are two colours, so
+  `bg-secondary text-white` fails there. `text-on-status` is text or an icon on `bg-error`,
+  `bg-on-tertiary-container` or `bg-outline` (white in light, near-black in dark). The sign-in brand
+  panel has its own: `text-on-hero`, `text-hero-accent`, `text-hero-ok`.
 - **Two themes (2026-10-06):** light is `@theme`, dark redefines the same variables under
   `:root[data-theme="dark"]` in `index.css` (dark mockups' palette, `docs/ui-mockups/dark/`). So **no
   hex in a component, and no `bg-white`** (use `bg-surface-container-lowest`): a hard-coded colour does
@@ -201,3 +211,41 @@ decides them:
   on the client from a partial list.
 - **Tests**: `npm test`. A bare `npx vitest run` also runs the live API suite, which WRITES to whatever
   `localhost:8000` is; run `npm run test:api` only with `API_TEST_URL` at a throwaway API.
+
+## 8. Accessibility (WCAG 2.2 AA, both themes)
+
+The web app and the mockups meet it (2026-10-13). What keeps it that way — most of it is in the tokens
+and the `ui/` primitives, so the rule is usually "use them":
+
+- **Contrast.** Text 4.5:1 on the surface it sits on (3:1 from 24px, or 18.66px bold); icons, field
+  borders and a switch's off state 3:1. Use the tokens of §2 for their one job. **No text fades**: not
+  `opacity-50` on a label, not `text-…/60` — quiet text is `text-outline`. A faded look is for a control
+  that is off, and then it says so (`disabled`, or `aria-disabled="true"` on a non-button). A
+  placeholder is text too: the base layer gives every `::placeholder` the `outline` colour.
+- **Size.** Nothing a person reads is under 11px: no `text-[10px]`, and a size computed from another
+  (an avatar's initials) has a floor — `Math.max(11, …)`.
+- **Focus.** One ring for everything, in `index.css` (`:focus-visible`, 2px, `--color-focus`, white
+  inside `bg-action` / `bg-inverse` / `bg-selected` / `bg-hero`). **A component does not style its
+  focus**: no `outline-none`, no `focus:ring-*`. The one exception is a borderless input inside a
+  bordered box (a search bar): it keeps `bg-transparent outline-none`, and the box shows the ring.
+- **Names.** `Icon` is decorative by default (`aria-hidden`), so an icon-only button or link needs
+  `aria-label` (`title` alone is not enough for every screen reader). A field needs a name: `<label
+  htmlFor>`, or `aria-label` when the visible label is not a `<label>`. A state shown by an icon
+  alone: `role="img" aria-label`. A column with no heading: `<span className="sr-only">Actions</span>`.
+- **Keyboard.** What the mouse can click, Tab reaches. A row or card with `onClick` is a larger mouse
+  target for a real control inside it that does the same — the name as a `<Link>` or a `<button>`
+  (`ProjectRow`, the Overview's queue rows). Dialogs and drawers go through `Modal` / `Drawer` (Radix:
+  focus moves in, stays in, returns; Esc closes); menus through `Dropdown`.
+- **Targets.** 24px by 24px at least. A small arrow keeps its room with a negative margin
+  (`w-6 h-6 -m-[3px]`, `.tree-toggle`), so the row does not grow.
+- **Structure.** One `<main>` per page (`ProjectLayout` has it; a page outside the layout brings its
+  own). Two landmarks of a kind get different `aria-label`s. A box that scrolls sideways is
+  `ui/ScrollX` (a Tab stop only when it scrolls).
+- **Motion.** `prefers-reduced-motion` is honoured globally in `index.css`.
+
+`src/__tests__/accessibility.test.ts` (in `npm test`) checks the token pairs' contrast in both themes
+and scans the source for the patterns above. It cannot see a rendered page: for a new screen, Tab
+through it in both themes and run axe (the browser extension, or axe-core) on it and on its dialogs.
+One known axe report is not a fault: with a Radix menu open, the page behind it is hidden from
+assistive technology on purpose, and axe then reports no `main`, no heading and focusable content
+inside `aria-hidden`.

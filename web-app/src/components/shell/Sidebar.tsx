@@ -40,16 +40,18 @@ export function Sidebar() {
       >
         <button
           onClick={() => navigate('/projects')}
+          aria-label={collapsed ? 'All projects' : undefined}
           className={cn('flex items-center gap-3 min-w-0', collapsed ? 'flex-col' : 'flex-1')}
         >
           <BrandMark size={32} className="flex-shrink-0 text-secondary" />
+          {collapsed && <h1 className="sr-only">{APP_NAME}</h1>}
           {!collapsed && (
             <div className="min-w-0 overflow-hidden text-left">
               <h1 className="text-primary font-bold tracking-tight whitespace-nowrap font-sans text-xl leading-[1.2]">
                 {APP_NAME}
               </h1>
-              {/* 10px / 0.04em fits the rail: at 11px / 0.08em it was cut to "CRAFTED FROM COI". */}
-              <p className="text-on-surface-variant uppercase whitespace-nowrap mt-0.5 font-mono text-label font-medium tracking-[0.04em]">
+              {/* 11px with no extra letter spacing fits the rail: at 0.04em it was cut to "CRAFTED FROM CODI". */}
+              <p className="text-on-surface-variant uppercase whitespace-nowrap mt-0.5 font-mono text-caption font-medium tracking-normal">
                 {APP_TAGLINE}
               </p>
             </div>
@@ -83,7 +85,7 @@ export function Sidebar() {
 
         {/* Project section label */}
         {!collapsed && project && (
-          <p className="px-3 pb-1.5 text-on-surface-variant uppercase truncate text-label font-mono font-semibold tracking-[0.09em]">
+          <p className="px-3 pb-1.5 text-on-surface-variant uppercase truncate text-caption font-mono font-semibold tracking-[0.02em]">
             {project.name}
           </p>
         )}

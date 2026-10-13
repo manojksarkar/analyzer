@@ -36,7 +36,7 @@ export function CommentBox({
         autoFocus={autoFocus}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full resize-y min-h-16 rounded-lg border border-outline-variant px-2 py-1.5 text-xs leading-[1.45] text-on-surface outline-none focus:border-secondary focus:ring-2 focus:ring-secondary/30"
+        className="w-full resize-y min-h-16 rounded-lg border border-field px-2 py-1.5 text-xs leading-[1.45] text-on-surface focus:border-secondary"
       />
     </div>
   )

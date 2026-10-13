@@ -21,7 +21,7 @@ export function RightPanel({
 }) {
   if (collapsed) {
     return (
-      <aside className="w-9 flex-shrink-0 bg-surface-container-lowest border-l border-outline-variant flex flex-col items-center py-3">
+      <aside aria-label="Outline and review, folded" className="w-9 flex-shrink-0 bg-surface-container-lowest border-l border-outline-variant flex flex-col items-center py-3">
         <button
           onClick={onToggle}
           title="Show the panel"
@@ -35,7 +35,7 @@ export function RightPanel({
     )
   }
   return (
-    <aside className="w-64 flex-shrink-0 bg-surface-container-lowest border-l border-outline-variant flex flex-col overflow-hidden">
+    <aside aria-label="Outline and review" className="w-64 flex-shrink-0 bg-surface-container-lowest border-l border-outline-variant flex flex-col overflow-hidden">
       <div className="flex items-center border-b border-outline-variant flex-shrink-0 pl-1 pr-0.5">
         <div role="tablist" aria-label="Panel" className="flex flex-1 min-w-0" onKeyDown={(e) => {
           const i = tabs.findIndex((t) => t.id === active)

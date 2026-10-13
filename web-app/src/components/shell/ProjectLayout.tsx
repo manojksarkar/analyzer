@@ -80,7 +80,7 @@ export function ProjectLayout({ breadcrumbLabel, breadcrumbParentLabel, breadcru
           }
           ctaSlotRef={setCtaSlot}
         />
-        <div className={logsFull ? 'hidden' : 'flex-1 flex flex-col overflow-hidden min-h-0'}>
+        <main className={logsFull ? 'hidden' : 'flex-1 flex flex-col overflow-hidden min-h-0'}>
           {/* The layout outlives navigation between a project's pages: without the reset, one
               crash kept the error screen on every page after it. */}
           <ErrorBoundary resetKey={pathname}>
@@ -90,7 +90,7 @@ export function ProjectLayout({ breadcrumbLabel, breadcrumbParentLabel, breadcru
               </SubbarCtaProvider>
             </Suspense>
           </ErrorBoundary>
-        </div>
+        </main>
         <LogsPanel projectId={projectId} />
       </div>
     </div>

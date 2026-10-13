@@ -92,7 +92,7 @@ export function FailedRunBanner({ projectId, job, isAdmin, onRerun }: {
         {isAdmin && (
           <button
             onClick={onRerun}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors flex-shrink-0 font-mono text-caption font-bold tracking-[0.04em]"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-action hover:bg-secondary-container text-on-secondary rounded-lg transition-colors flex-shrink-0 font-mono text-caption font-bold tracking-[0.04em]"
           >
             <Icon name="replay" size={14} />
             Re-run
