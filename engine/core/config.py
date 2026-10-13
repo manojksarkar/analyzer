@@ -136,9 +136,10 @@ def _deep_merge(base: Dict[str, Any], over: Dict[str, Any]) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Two files, two jobs (config.local.json.example has the long form):
 #
-#   config.local.json     THIS SERVER: its database, sign-in, repository folders, LLM server and
-#                         LLVM install. Read from that file only, by every process, when it
-#                         loads its config: not from the defaults, a project or a version.
+#   config.local.json     THIS SERVER: its database, sign-in, repository folders, LLM server,
+#                         LLVM install and how many files it parses at once. Read from that
+#                         file only, by every process, when it loads its config: not from the
+#                         defaults, a project or a version.
 #   config.defaults.json  HOW DOCUMENTS ARE MADE: the parse flags, the views, what the LLM writes
 #                         and how it is prompted, the document texts. A project's own win.
 #
@@ -146,14 +147,17 @@ def _deep_merge(base: Dict[str, Any], over: Dict[str, Any]) -> Dict[str, Any]:
 
 #: This server's blocks. Not in config.defaults.json, and never written into a project's or a
 #: version's config (`without_server_settings`).
-SERVER_BLOCKS = ("db", "auth", "repositories", "llmServer", "llvm")
+SERVER_BLOCKS = ("db", "auth", "repositories", "llmServer", "llvm", "parse")
 #: The server blocks a run reads through its config: laid over it when it is loaded
 #: (`with_server_settings`). The others have readers of their own, on the same file:
 #: `core.db._db_section`, `api.middleware.auth`, `api.services.local_repos`.
-RUN_SERVER_BLOCKS = ("llmServer", "llvm")
+RUN_SERVER_BLOCKS = ("llmServer", "llvm", "parse")
 #: The keys of `llmServer`. Until 2026-10-13 they were in `llm`, where they are not read any more.
+#: `lanes` and `pacing` (llm_core/pool.py): how many tickets a server gives, and how it counts
+#: its gap, are the server's.
 LLM_SERVER_KEYS = ("provider", "baseUrl", "defaultModel", "customHeaders", "apiKey",
-                   "rateLimitSeconds", "timeoutSeconds", "retries", "numCtx", "maxContextTokens")
+                   "rateLimitSeconds", "timeoutSeconds", "retries", "numCtx", "maxContextTokens",
+                   "lanes", "pacing")
 #: `llvm`'s keys, by the name each had in `clang` until then.
 LLVM_KEYS_BEFORE = {"llvmLibPath": "libPath", "clangIncludePath": "includePath"}
 
@@ -597,14 +601,15 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
         # many calls a stage may have in flight. Absent: one lane, pause after each call, one
         # call at a time -- today's behaviour. `workers` is not a setting: it is what the lanes
         # allow (`llm_calls_at_once`).
-        "lanes": _lanes(llm.get("lanes")),
-        "pacing": _choice(llm.get("pacing"), ("after", "start"), "after", "llm.pacing"),
-        "workers": llm_calls_at_once(llm),
+        "lanes": _lanes(server.get("lanes")),
+        "pacing": _choice(server.get("pacing"), ("after", "start"), "after", "llmServer.pacing"),
+        "workers": llm_calls_at_once(server),
     }
 
 
 def llm_calls_at_once(llm: Dict[str, Any]) -> int:
-    """How many LLM calls a stage keeps in flight. Not a setting: it follows the lanes.
+    """How many LLM calls a stage keeps in flight, from the `llmServer` block. Not a setting: it
+    follows the lanes.
 
     No lanes and pacing "after": 1 -- one call at a time, as always. Otherwise twice what the
     lanes take at once (each lane's `maxConcurrent`, default 1). The lanes alone decide what
@@ -629,7 +634,7 @@ def _lanes(raw: Any) -> List[Dict[str, Any]]:
     if raw in (None, ""):
         return []
     if not isinstance(raw, list) or not all(isinstance(x, dict) for x in raw):
-        raise LlmConfigError("llm.lanes must be a list of objects")
+        raise LlmConfigError("llmServer.lanes must be a list of objects")
     return [dict(x) for x in raw]
 
 
@@ -656,16 +661,17 @@ class ParseConfigError(ValueError):
 
 
 def load_parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Phase 1's one speed setting: the config's `parse.workers`, overridden by the environment's
-    ANALYZER_PARSE_WORKERS -- as `llm`'s settings are (LLM_API_KEY, ...).
+    """Phase 1's one speed setting: `parse.workers`, overridden by the environment's
+    ANALYZER_PARSE_WORKERS -- as `llmServer`'s settings are (LLM_API_KEY, ...).
     docs/design/PIPELINE_SPEED_PLAN.md.
 
         workers   files parsed ahead on threads while this one is walked; 1 = today's sequential
                   parse; "auto" = half the CPUs, at most 8
 
-    It never changes the output: a machine setting (cores, memory), for config.local.json. Kept
-    as a setting until the office code has had a clean run with it; "auto" is meant to become
-    the default then."""
+    It never changes the output: a machine setting (cores, memory), so `parse` is one of this
+    server's blocks (`SERVER_BLOCKS`): read from config.local.json only, whatever config a run is
+    given. Kept as a setting until the office code has had a clean run with it; "auto" is meant
+    to become the default then."""
     p = (config or {}).get("parse") or {}
     if not isinstance(p, dict):
         raise ParseConfigError("parse must be an object")

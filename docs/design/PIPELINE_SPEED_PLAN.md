@@ -264,37 +264,43 @@ JSON would close that.
 without it):
 
 ```json
-"llm": {
+"llmServer": {
   "pacing": "start",
   "lanes": [ { "customHeaders": { "x-dep-ticket": "credential:TOKEN_A" } },
              { "customHeaders": { "x-dep-ticket": "credential:TOKEN_B" } } ]
 }
 ```
 
+(beside the block's `provider`, `baseUrl`, `defaultModel` and headers).
+
 `pacing: "start"` alone (one ticket) is the safest first step: same ticket, same rate of starts, no
 pause after a call. A lane is a credential — `customHeaders` (they replace the block's headers of the
 same name) or `apiKey`; it may also name a `baseUrl`, a `name` for the log and `maxConcurrent`
 (default 1). Keys can also come from `LLM_API_KEYS=key1,key2`.
 
-**The options, cut down (2026-10-12: "we want to make config simple").** What is left to set:
+**The options, cut down (2026-10-12: "we want to make config simple").** What is left to set —
+all three in `engine/config/config.local.json`, and only there (2026-10-13e): they are this
+server's settings, read from that file by every run when it loads its config, never from
+`config.defaults.json`, a project or a version (CLI_AND_CONFIG §6, "Where each setting lives"):
 
 | Setting | Until | Then |
 |---|---|---|
-| `llm.lanes` | — | stays: the tickets, which only the office knows. Without it nothing changes |
-| `llm.pacing` | one office run decides (below) | removed: the behaviour that run picks is fixed |
+| `llmServer.lanes` | — | stays: the tickets, which only the office knows. Without it nothing changes |
+| `llmServer.pacing` | one office run decides (below) | removed: the behaviour that run picks is fixed |
 | `parse.workers` | the office code has had one clean run with it | `"auto"` by default, the setting dropped |
 
 | No longer an option | Now |
 |---|---|
 | `llm.workers` (and env `LLM_WORKERS`) | follows the lanes: 1 without lanes or start pacing — today's one call at a time — else twice what the lanes take at once (`core.config.llm_calls_at_once`). The lanes alone decide what goes out; the spare half only has the next question ready |
-| a lane's own `pacing` and `rateLimitSeconds`, env `LLM_PACING` | the `llm` block's, the same on every lane |
+| a lane's own `pacing` and `rateLimitSeconds`, env `LLM_PACING` | the `llmServer` block's, the same on every lane |
 | the fast null check (`parse.fastNullCheck`, env `ANALYZER_FAST_NULLCHECK`) | always on. At start it is checked against the bindings' own answer on the null cursor and on real cursors; any disagreement (another libclang, renamed fields, older bindings) and the bindings' check stays, with one log line. Phase 1 15.0 s → 12.0 s on the sample with no setting |
 | skipping covered headers (`parse.skipCoveredHeaders`, env `ANALYZER_SKIP_COVERED_HEADERS`) | removed, code and all: the one lever that could change the output |
 | picture batch switches (`ANALYZER_MMD_BATCH`, `ANALYZER_DOT_BATCH`, `MMD_BATCH_PAGES`, the job timeouts) | none: always on, a failing batch falls back per picture by itself |
 
-- **Keys go in `config.local.json` or `LLM_API_KEYS` only** — never in a project's config file: a
-  project's settings are stored with every version (`versions.resolved_config`), `config.local.json`
-  is not. The run's LLM banner counts the lanes and prints no key (`lanes : 2 configured`,
+- **Keys go in `config.local.json` or `LLM_API_KEYS` only.** Since 2026-10-13d that is the rule
+  of the whole `llmServer` block: a project's or a version's config holds no server setting
+  (`versions.resolved_config` and the workspace files are written without them), and a lane
+  written in one would not be read. The run's LLM banner counts the lanes and prints no key (`lanes : 2 configured`,
   `pacing : start`, `calls at once : 4  (follows the lanes)`); the flowchart child reads the config itself, so no key is on a
   command line.
 - **Ollama:** without lanes it stays one call at a time. To send several at once, give its lane
@@ -312,7 +318,7 @@ same name) or `apiKey`; it may also name a `baseUrl`, a `name` for the log and `
 | The test | One office run with `"pacing": "start"` (one ticket is enough). Read the `LLM lanes:` line at the end of Phase 2 |
 | Make it the default | few `busy`, and no learnt pause (no `+X.XXs after each call`) — the gateway counts from the start |
 | Keep `"after"` | many `busy`, and a learnt pause near the gap (`+2.7s after each call` on 3 s) — it counts from the end |
-| To flip the default | One line: `"pacing": "start"` in `config.defaults.json`'s `llm` block (the code's own default stays `"after"`, so a machine can still set `"after"` in `config.local.json`). The client tests that pin `sleep(3.0)` after each call cover `"after"` and stay |
+| To flip the default | One line: the default of `llmServer.pacing` in `core.config.load_llm_config` becomes `"start"` (a machine can still set `"after"` in its `config.local.json`; `pacing` is not in `config.defaults.json`, which holds no server setting). The client tests that pin `sleep(3.0)` after each call cover `"after"` and stay |
 
 **A — safe, same output (review and merge what is built; days):**
 1. Picture batches (R1, R2) — on by default, byte-identical, per-picture fallback; wire the behaviour

@@ -596,11 +596,13 @@ def test_calls_at_once_follow_the_lanes_and_are_not_a_setting(monkeypatch):
     from llm_core.parallel import llm_workers
     monkeypatch.delenv("LLM_API_KEYS", raising=False)
     assert llm_workers({}) == 1, "no lanes, pause after each call: one at a time, as always"
-    assert llm_workers({"llm": {"workers": 9}}) == 1, "llm.workers is not read any more"
-    assert llm_workers({"llm": {"pacing": "start"}}) == 2, "one lane, start pacing"
-    assert llm_workers({"llm": {"lanes": [{"apiKey": "a"}, {"apiKey": "b"}]}}) == 4
-    assert llm_workers({"llm": {"lanes": [{"apiKey": "a", "maxConcurrent": 3}]}}) == 6
-    assert llm_workers({"llm": {"lanes": [{"apiKey": "a", "maxConcurrent": "x"}]}}) == 2
+    assert llm_workers({"llmServer": {"workers": 9}}) == 1, "workers is not read any more"
+    assert llm_workers({"llmServer": {"pacing": "start"}}) == 2, "one lane, start pacing"
+    assert llm_workers({"llmServer": {"lanes": [{"apiKey": "a"}, {"apiKey": "b"}]}}) == 4
+    assert llm_workers({"llmServer": {"lanes": [{"apiKey": "a", "maxConcurrent": 3}]}}) == 6
+    assert llm_workers({"llmServer": {"lanes": [{"apiKey": "a", "maxConcurrent": "x"}]}}) == 2
+    assert llm_workers({"llm": {"pacing": "start", "lanes": [{"apiKey": "a"}]}}) == 1, \
+        "the old place: lanes and pacing are the server's (llmServer), not read from llm"
     monkeypatch.setenv("LLM_API_KEYS", "a,b,c")
     assert llm_workers({}) == 6
 

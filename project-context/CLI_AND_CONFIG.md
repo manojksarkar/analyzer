@@ -138,14 +138,14 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
 
 | Source | Holds | Tracked |
 |---|---|---|
-| `engine/config/config.local.json` | **THIS SERVER.** `db`, `auth`, `repositories`, `llmServer` (which LLM answers: `provider`, `baseUrl`, `defaultModel`, `customHeaders`, `apiKey`, `rateLimitSeconds`, `timeoutSeconds`, `retries`, `numCtx`, `maxContextTokens`), `llvm` (`libPath`, `includePath`) | **gitignored** |
+| `engine/config/config.local.json` | **THIS SERVER.** `db`, `auth`, `repositories`, `llmServer` (which LLM answers: `provider`, `baseUrl`, `defaultModel`, `customHeaders`, `apiKey`, `rateLimitSeconds`, `timeoutSeconds`, `retries`, `numCtx`, `maxContextTokens`, and the speed study's `lanes`, `pacing`), `llvm` (`libPath`, `includePath`), `parse` (`workers`: files parsed at once — the speed study's) | **gitignored** |
 | `engine/config/config.defaults.json` | **HOW DOCUMENTS ARE MADE.** `clang` (`clangArgs`, `includePathsFromProjectWalk`), `views`, `llm` (`descriptions`, `behaviourNames`, `summarize`, `enrichment`, `cacheVersion`, the prompt inputs), `docx`, the sample's `cores` / `layers`, `logs`, `ui` | yes |
 | a project — `projects.build_config`, or a CLI project's `workspaces/<pid>/config.json` | its own `clang`, `llm`, `views`, `docx`, `layers`, `cores`: they win over the defaults, and over what config.local.json says of the same | DB / workspace |
 | a version — `versions.resolved_config`, `versions/<vid>/config.json` | the config its run started with, so a resume runs as it began | DB / workspace |
 
 **No block name is in both files, and no server setting is in a project's or a version's
-config.** The names are written once, in `core/config.py`: `SERVER_BLOCKS` (the five),
-`RUN_SERVER_BLOCKS` (`llmServer`, `llvm` — the two a run reads through its config),
+config.** The names are written once, in `core/config.py`: `SERVER_BLOCKS` (the six),
+`RUN_SERVER_BLOCKS` (`llmServer`, `llvm`, `parse` — the three a run reads through its config),
 `LLM_SERVER_KEYS`, `LLVM_KEYS_BEFORE`. Guard: `tests/unit/test_core_config.py`
 `TestWhichFileASettingIsIn` (the shipped defaults hold no server key; the local example holds
 the five blocks and nothing else).
@@ -159,8 +159,8 @@ Resolution:
 - **`load_config(engine_dir)`** deep-merges `config.defaults.json` then `config.local.json`
   (`core.config._deep_merge` — nested dicts merge per key, scalars/lists replace; a machine may
   still override a default there, e.g. `views.flowcharts`), then **`with_server_settings`**:
-  `llmServer` and `llvm` are config.local.json's as they are now, and whatever else held those
-  names is dropped (so a block put in the defaults is not read).
+  `llmServer`, `llvm` and `parse` are config.local.json's as they are now, and whatever else
+  held those names is dropped (so a block put in the defaults is not read).
 - **`ANALYZER_CONFIG=<file>`** (set by `run.py --config`) loads that file's analysis settings as
   they are — no merge of config.local.json over them — and then the same `with_server_settings`.
   This is how a per-project/per-version config reaches the analyzer and every phase subprocess
@@ -229,12 +229,15 @@ Copy `config.local.json.example` → `config.local.json` and fill in `db`, `llmS
     "timeoutSeconds":    300,             // default 300, positive int
     "retries":           1,               // default 1, >=0; up to (1+retries) total tries
     "numCtx":            8192,            // default 8192, Ollama context window (positive int)
-    "maxContextTokens":  127488           // default null → auto: numCtx-512 for Ollama, 127488 for OpenAI
+    "maxContextTokens":  127488,          // default null → auto: numCtx-512 for Ollama, 127488 for OpenAI
+    "pacing":            "after",         // "after" | "start": the gap counted from a call's end or start (llm_core/pool.py)
+    "lanes":             []               // several tickets or keys side by side; [] = one call at a time
   },
   "llvm": {
     "libPath":     "C:\\Program Files\\LLVM\\bin\\libclang.dll",
     "includePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include"
-  }
+  },
+  "parse": { "workers": 1 }               // files parsed ahead on threads; 1 = as always, or "auto"; env ANALYZER_PARSE_WORKERS wins
 }
 ```
 

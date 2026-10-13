@@ -37,10 +37,10 @@ There are two config files, one per kind of setting:
 
 | File | Holds |
 |---|---|
-| `engine/config/config.local.json` (gitignored) | **this server**: its database (`db`), sign-in (`auth`), repository folders (`repositories`), LLM server (`llmServer`) and LLVM install (`llvm`) |
+| `engine/config/config.local.json` (gitignored) | **this server**: its database (`db`), sign-in (`auth`), repository folders (`repositories`), LLM server (`llmServer`), LLVM install (`llvm`) and how many files it parses at once (`parse`) |
 | `engine/config/config.defaults.json` (tracked) | **how documents are made**: parse flags, views, what the LLM writes, document texts |
 
-The server's five blocks are read from `config.local.json` only, by every run, when it starts: a
+The server's six blocks are read from `config.local.json` only, by every run, when it starts: a
 change there applies to the next run of every project. Start from the template:
 
 ```

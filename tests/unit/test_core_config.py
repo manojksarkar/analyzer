@@ -295,9 +295,9 @@ class TestWhichFileASettingIsIn:
 
     def test_what_is_written_for_a_project_holds_no_server_setting(self):
         cfg = {"db": {"password": "p"}, "auth": {}, "repositories": {}, "llmServer": _SERVER,
-               "llvm": _LLVM, "views": {"flowcharts": True},
+               "llvm": _LLVM, "parse": {"workers": 6}, "views": {"flowcharts": True},
                "llm": {"descriptions": False, "baseUrl": "x", "customHeaders": {"k": "SECRET"},
-                       "rateLimitSeconds": 0},
+                       "rateLimitSeconds": 0, "lanes": [{"apiKey": "SECRET"}], "pacing": "start"},
                "clang": {"clangArgs": ["-DX"], "llvmLibPath": "a", "clangIncludePath": "b"}}
         assert without_server_settings(cfg) == {
             "views": {"flowcharts": True}, "llm": {"descriptions": False},
@@ -307,7 +307,31 @@ class TestWhichFileASettingIsIn:
         root = _config_root(tmp_path, local={"llvm": _LLVM})
         cfg = with_server_settings({"llmServer": {"baseUrl": "stale"}, "views": {}}, root)
         assert cfg == {"views": {}, "llvm": _LLVM}
-        assert set(RUN_SERVER_BLOCKS) == {"llmServer", "llvm"}
+        assert set(RUN_SERVER_BLOCKS) == {"llmServer", "llvm", "parse"}
+
+    def test_how_many_files_are_parsed_at_once_is_this_machines(self, tmp_path, monkeypatch):
+        """`parse.workers` follows the cores and memory of the machine that parses, not the
+        project: a project's or a version's config does not set it."""
+        root = _config_root(tmp_path, local={"parse": {"workers": 6}})
+        run_cfg = tmp_path / "workspace.json"
+        run_cfg.write_text(json.dumps({"parse": {"workers": 2}, "layers": {}}))
+        monkeypatch.setenv("ANALYZER_CONFIG", str(run_cfg))
+        monkeypatch.delenv("ANALYZER_PARSE_WORKERS", raising=False)
+        assert load_parse_config(load_config(root)) == {"workers": 6}
+        _config_root(tmp_path, local={})
+        assert load_parse_config(load_config(root)) == {"workers": 1}
+
+    def test_lanes_and_pacing_are_the_servers(self):
+        """How many tickets a gateway gives and how it counts its gap are the server's: they are
+        `llmServer` keys, and are not read from `llm`."""
+        assert {"lanes", "pacing"} <= set(LLM_SERVER_KEYS)
+        r = load_llm_config(_cfg(lanes=[{"apiKey": "a"}, {"apiKey": "b"}], pacing="start"))
+        assert (len(r["lanes"]), r["pacing"], r["workers"]) == (2, "start", 4)
+        old = _cfg()
+        old["llm"].update(lanes=[{"apiKey": "a"}], pacing="start")
+        r = load_llm_config(old)
+        assert (r["lanes"], r["pacing"], r["workers"]) == ([], "after", 1)
+        assert "llm.lanes -> llmServer.lanes" in moved_settings(old)
 
     def test_settings_under_their_old_names_are_named_with_their_place_now(self, tmp_path):
         old = {"llm": {"baseUrl": "https://gw", "customHeaders": {}, "descriptions": True},
