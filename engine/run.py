@@ -878,16 +878,9 @@ for _note in local_config_notes(os.path.join(SCRIPT_DIR, "engine")):
 if not llvm_paths(cfg)[0]:
     log("LLVM: llvm.libPath is not set in engine/config/config.local.json - the parser uses the "
         "libclang Python finds by itself", component="run")
-from core.config import speedups_on, unused_speed_settings, SpeedupsConfigError
+from core.config import speed_summary, SpeedupsConfigError
 try:
-    if not speedups_on(cfg):
-        log("Speed-ups: off (speedups.enabled in engine/config/config.local.json) - this run takes "
-            "develop's path: one LLM call at a time, one file parsed at a time, every picture drawn "
-            "alone", component="run")
-        _unused = unused_speed_settings(cfg)
-        if _unused:
-            log("  WARNING: the speed-ups are off, so this run does not use: " + "; ".join(_unused)
-                + ". Set speedups.enabled to true to use them, or remove them.", component="run")
+    log(f"Speed-ups: {speed_summary(cfg)}", component="run")
 except SpeedupsConfigError as e:
     log(f"Invalid config: {e}", component="run", err=True)
     sys.exit(2)
@@ -1219,7 +1212,8 @@ with finished_status_kept(from_phase >= 2):
             total_time += runner.run(plan.phases, from_phase=plan.runner_from_phase)
 
 print(flush=True)
-log(f"Done. Total: {total_time:.2f}s", component="run")
+from core.durations import human as _human
+log(f"Done. Total: {_human(total_time)}", component="run")
 
 # LLM report for the whole run. Each phase subprocess wrote its own stats file
 # on exit (core.logging_setup._emit_token_report); merge them into one table
@@ -1239,7 +1233,7 @@ try:
         print(_tokens.format_merged(_merged), flush=True)
         _llm_total = _merged["totals"]["totalSeconds"]
         _share = (100.0 * _llm_total / total_time) if total_time else 0.0
-        log(f"LLM was {_llm_total:.1f}s of {total_time:.1f}s ({_share:.0f}% of the run). "
+        log(f"LLM was {_human(_llm_total)} of {_human(total_time)} ({_share:.0f}% of the run). "
             f"Details: {_out}", component="run")
 except Exception as _exc:  # pragma: no cover — reporting must never fail a run
     log(f"LLM report unavailable: {_exc}", component="run")

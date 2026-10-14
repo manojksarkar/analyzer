@@ -88,7 +88,7 @@ This server's own settings are not in that file but in `config.local.json` besid
 |-----|---------|-------------|
 | `llvm.libPath` | — | Path to libclang.dll / libclang.so |
 | `llvm.includePath` | — | Path to clang system headers |
-| `llmServer.provider` | — (required) | `ollama` or `openai` (any OpenAI-shaped gateway) |
+| `llmServer.provider` | — (required) | `ollama`, `openai` (any OpenAI-shaped gateway) or `anthropic` (the Claude Messages API) |
 | `llmServer.baseUrl` | — (required) | The LLM server's base URL |
 | `llmServer.defaultModel` | — (required) | LLM model for all calls |
 | `llmServer.numCtx` | `8192` | Ollama context window tokens |

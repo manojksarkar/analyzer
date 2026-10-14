@@ -127,8 +127,9 @@ from utils import (
 )
 
 _config = _app_config()
-# Phase 1's one speed setting, parse-ahead threads: the config's `parse.workers`, overridden by
-# the environment's ANALYZER_PARSE_WORKERS (core.config).
+# Phase 1's speed settings (`speedups` in config.local.json, core.config.speedup_settings):
+# parse-ahead threads, `parseWorkers` (the environment's ANALYZER_PARSE_WORKERS wins), and
+# `fastNullCheck` below. Not set: develop's way.
 from core.config import load_parse_config as _load_parse_config
 _PARSE = _load_parse_config(_config)
 _clang = _config.get("clang") or {}
@@ -540,20 +541,27 @@ def _fast_is_null(cur):
             and not cur.data[0] and not cur.data[1] and not cur.data[2])
 
 
-def _install_fast_null_check() -> bool:
+_NULL_CHECK_ON, _NULL_CHECK_NO_GUARD = "on", "no guard"
+
+
+def _install_fast_null_check() -> str:
     """The clang >= 19 bindings guard nearly every Cursor method with `is_null()`, which is
     `self == conf.null_cursor` -- a second ctypes call (clang_equalCursors) per property read:
     2.5M of them on the sample, a quarter of Phase 1. libclang's equalCursors compares kind, xdata
     and data[0..2], and the null cursor is kind CXCursor_InvalidFile (70) with every field zero
     -- so the field check gives the same answer without leaving Python.
 
-    Always on, and checked first against the bindings' own answer -- on the null cursor and on
-    real cursors of a one-line file. Anything else than full agreement (a libclang that builds
-    its null cursor another way, bindings that renamed a field, older bindings with no such
-    guard) and the bindings' own check stays. True when the fast one is in."""
+    Used when `speedups.fastNullCheck` is true, and checked first against the bindings' own
+    answer -- on the null cursor and on real cursors of a one-line file. Anything else than full agreement (a libclang that builds
+    its null cursor another way, bindings that renamed a field) and the bindings' own check stays.
+
+    Returns "on" when the fast one is in; "no guard" for bindings older than clang 19, which ask
+    no is_null() before a read -- no second call to save, so nothing is slower; otherwise why the
+    bindings' own check stays, for the log (until 2026-10-14 every case but "on" was logged as
+    "did not agree", the no-guard one too, where nothing is lost)."""
     own = getattr(cindex.Cursor, "is_null", None)
     if own is None:
-        return False
+        return _NULL_CHECK_NO_GUARD
     try:
         null = cindex.conf.null_cursor
         tu = index.parse("analyzer_null_check.c",
@@ -561,18 +569,19 @@ def _install_fast_null_check() -> bool:
         real = [tu.cursor] + list(tu.cursor.get_children())
         agree = (len(real) > 1 and bool(own(null)) and bool(_fast_is_null(null))
                  and not any(bool(own(c)) or bool(_fast_is_null(c)) for c in real))
-    except Exception:                               # noqa: BLE001 - the bindings' own check stays
-        agree = False
-    if agree:
-        cindex.Cursor.is_null = _fast_is_null
-    return agree
+    except Exception as exc:                        # noqa: BLE001 - the bindings' own check stays
+        return f"it could not be checked here ({type(exc).__name__}: {exc})"
+    if not agree:
+        return "it gave another answer than these libclang bindings"
+    cindex.Cursor.is_null = _fast_is_null
+    return _NULL_CHECK_ON
 
 
-# The speed-ups off (`speedups.enabled`, core.config.speedups_on): the bindings' own check, as on
-# develop -- and no probe parse to decide it.
-from core.config import speedups_on as _speedups_on
-_SPEEDUPS = _speedups_on(_config)
-_FAST_NULL_CHECK = _install_fast_null_check() if _SPEEDUPS else False
+# `speedups.fastNullCheck` not set: the bindings' own check, as on develop -- and no probe parse.
+from core.config import speedup_settings as _speedup_settings
+_FAST_NULL_ASKED = _speedup_settings(_config)["fastNullCheck"]
+_NULL_CHECK = _install_fast_null_check() if _FAST_NULL_ASKED else "not asked"
+_FAST_NULL_CHECK = _NULL_CHECK == _NULL_CHECK_ON
 
 # The options of BOTH parses of every TU (parse_file, parse_calls_and_globals): one value, so
 # the two passes see the same AST and the parse fingerprint hashes what was actually used.
@@ -3211,33 +3220,37 @@ def main():
                              f"({type(_exc).__name__}: {_exc}) — cross-TU edges may be missing")
     total = len(source_files)
 
-    p1 = ProgressReporter("parser:parse", total=total, logger=plog)
+    # The notes come BEFORE the progress starts. The web app's line under a running stage is the
+    # run's last printed line, and with a note after "parsing N files" the note stood there until
+    # the first progress line -- minutes, on thousands of files.
+    if _PARSE["workers"] > 1:
+        plog.info("speedups.parseWorkers: %d file(s) parsed ahead on threads", _PARSE["workers"])
+    # Said only when it costs time: bindings with no null guard ("no guard") have nothing to save.
+    if _FAST_NULL_ASKED and _NULL_CHECK not in (_NULL_CHECK_ON, _NULL_CHECK_NO_GUARD):
+        plog.info("the fast null check is off: %s (slower parse, same output)", _NULL_CHECK)
+    # A progress line every 1% of the files, with the file's name (every 10%, bare, before): the
+    # line under the stage then moves on a parse of thousands of files.
+    every = max(1, total // 100)
+    p1 = ProgressReporter("parser:parse", total=total, logger=plog, log_every=every)
     p1.start(f"parsing {total} files")
-    if not _SPEEDUPS:
-        plog.info("speed-ups off (speedups.enabled): one file at a time, the bindings' own null "
-                  "check -- as develop")
-    elif _PARSE["workers"] > 1:
-        plog.info("parse.workers: %d file(s) parsed ahead on threads", _PARSE["workers"])
-    if _SPEEDUPS and not _FAST_NULL_CHECK:
-        plog.info("the fast null check is off: it did not agree with these libclang bindings "
-                  "(slower parse, same output)")
     for path, tu, err in _parse_ahead(source_files, "parse"):
-        p1.step()
+        p1.step(label=_rel_path(path))
         parse_file(path, tu, err)
         del tu
     p1.done()
 
     # One parse serves both call edges and global access (see parse_calls_and_globals).
-    p2 = ProgressReporter("parser:calls+globals", total=total, logger=plog)
+    p2 = ProgressReporter("parser:calls+globals", total=total, logger=plog, log_every=every)
     p2.start(f"collecting calls + global access ({total} files)")
     for path, tu, err in _parse_ahead(source_files, "calls+globals"):
-        p2.step()
+        p2.step(label=_rel_path(path))
         parse_calls_and_globals(path, tu, err)
         del tu
     p2.done()
 
-    plog.info("time: waiting for libclang's parses %.2fs, AST walks: definitions %.2fs, calls+globals %.2fs",
-              _PHASE_T["wait"], _PHASE_T["walk1"], _PHASE_T["walk2"])
+    from core.durations import human as _human
+    plog.info("time: waiting for libclang's parses %s, AST walks: definitions %s, calls+globals %s",
+              _human(_PHASE_T["wait"]), _human(_PHASE_T["walk1"]), _human(_PHASE_T["walk2"]))
     metadata = build_metadata()
     # ensure_model_dir() resolves via paths(), so it follows --model-root. The old
     # PROJECT_ROOT hardcode created an empty <repo>/model on every run even when the real

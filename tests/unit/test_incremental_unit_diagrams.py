@@ -130,7 +130,8 @@ class TestApplyIncrementalUnitPlan:
         assert "A.mmd" in files and "B.png" in files        # carried forward
         assert "Old.mmd" not in files and "Old.png" not in files  # orphan pruned
 
-    def test_a_carried_diagram_whose_text_moved_is_rendered(self, tmp_path, monkeypatch):
+    @pytest.mark.parametrize("batches", [False, True])
+    def test_a_carried_diagram_whose_text_moved_is_rendered(self, tmp_path, monkeypatch, batches):
         # The plan's impact set is functions only. A global added to unit A changes A's
         # diagram with no impacted function, so A must be rendered from its TEXT differing
         # from the carried .mmd; B's text is unchanged, so B stays carried.
@@ -154,12 +155,16 @@ class TestApplyIncrementalUnitPlan:
         model_dir, _ = self._setup(tmp_path, plan)
 
         rendered = []
-        # the view draws its pictures in one browser (render_mermaid_many); what it is handed
-        # is what would be drawn
+        # `speedups.pictureBatches`: the view hands its pictures to one browser
+        # (render_mermaid_many); not set, it draws each itself (render_mermaid_cached), as on
+        # develop. Either way, what it hands over is what would be drawn.
         monkeypatch.setattr(_mod, "render_mermaid_many",
                             lambda root, items, **kw: rendered.extend(os.path.basename(png) for _t, png in items))
+        monkeypatch.setattr(_mod, "render_mermaid_cached",
+                            lambda root, text, png, **kw: rendered.append(os.path.basename(png)) or True)
         model = {"units": units, "functions": funcs, "globalVariables": glbs}
-        _mod.run(model, str(tmp_path / "output"), model_dir, {"views": {"unitDiagrams": True}})
+        _mod.run(model, str(tmp_path / "output"), model_dir,
+                 {"views": {"unitDiagrams": True}, "speedups": {"pictureBatches": batches}})
 
         assert rendered == ["M_A.png"]
         out = tmp_path / "output" / "unit_diagrams"

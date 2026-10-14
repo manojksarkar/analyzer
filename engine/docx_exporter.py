@@ -1064,10 +1064,10 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
             )
             if msd_render_png:
                 # Both of the component's diagrams in one browser (utils.render_mermaid_many); the
-                # calls below then find them in the picture cache. The speed-ups off: each drawn
-                # alone by its own call, as on develop.
-                from core.config import speedups_on
-                if speedups_on():
+                # calls below then find them in the picture cache. `speedups.pictureBatches` not
+                # set: each drawn alone by its own call, as on develop.
+                from core.config import speedup_settings
+                if speedup_settings()["pictureBatches"]:
                     from utils import render_mermaid_many
                     render_mermaid_many(PROJECT_ROOT, [(container_mmd, container_png), (dep_mmd, dep_png)],
                                         scale=2, timeout=90)

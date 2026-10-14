@@ -37,7 +37,7 @@ class TestBuildReport:
         assert "regenerated 3" in text and "reused 9 (75%)" in text            # globals
         assert "carried 13 (72%)" in text                                       # flowcharts
         assert "software_detailed_design_Support.docx" in text
-        assert "123.4s" in text
+        assert "2m 03s" in text                  # 123.4 s, as core.durations.human writes it
 
     def test_classification_rendered(self):
         text = "\n".join(build_report(_incremental_stats()))

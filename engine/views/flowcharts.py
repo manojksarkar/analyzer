@@ -1946,8 +1946,9 @@ def run(model, output_dir, model_dir, config):
     # progress moving on a document of hundreds. What the batch misses is drawn alone below.
     CHUNK = 50
     drawn = {}
-    from core.config import speedups_on
-    batches = speedups_on(config)          # off: each chart drawn alone in the loop, as on develop
+    from core.config import speedup_settings
+    # `speedups.pictureBatches` not set: each chart drawn alone in the loop, as on develop
+    batches = speedup_settings(config)["pictureBatches"]
 
     def _png(unit_name, func_name):
         return os.path.abspath(os.path.join(out_dir, f"{unit_name}_{safe_filename(func_name)}.png"))

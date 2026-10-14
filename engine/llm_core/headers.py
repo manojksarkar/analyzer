@@ -68,6 +68,30 @@ def build_openai_headers(
     return headers
 
 
+#: The Claude Messages API's version header (`anthropic-version`).
+ANTHROPIC_VERSION = "2023-06-01"
+
+
+def build_anthropic_headers(
+    api_key: Optional[str] = None,
+    config_headers: Optional[Dict[str, str]] = None,
+) -> Dict[str, str]:
+    """The headers of one Claude Messages API request: the key as `x-api-key`, the API's version,
+    and `customHeaders` as they are -- a proxy in front of the API may want its own. None of the
+    corporate gateway's defaults (x-dep-ticket, User-Id, ...): that gateway is the openai
+    provider's."""
+    headers: Dict[str, str] = {
+        "content-type": "application/json",
+        "accept": "application/json",
+        "anthropic-version": ANTHROPIC_VERSION,
+    }
+    if api_key:
+        headers["x-api-key"] = api_key
+    for k, v in (config_headers or {}).items():
+        headers[str(k)] = str(v)
+    return headers
+
+
 def resolve_api_key(config_llm: Dict) -> Optional[str]:
     """Resolve API key. Env var LLM_API_KEY takes precedence over config."""
     env = os.environ.get("LLM_API_KEY")

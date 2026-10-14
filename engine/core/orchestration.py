@@ -143,7 +143,8 @@ class PhaseRunner:
             elapsed = time.perf_counter() - t0
             total += elapsed
             rss_note = f", peak RSS {peak_rss_mb:.0f} MB" if peak_rss_mb else ""
-            _log.info(f"[{idx}/{len(phases)}] {phase.name} — {elapsed:.2f}s{rss_note}")
+            from core.durations import human
+            _log.info(f"[{idx}/{len(phases)}] {phase.name} — {human(elapsed)}{rss_note}")
             run_metrics.record_phase(
                 phase.name,
                 elapsed_sec=elapsed,

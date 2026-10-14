@@ -138,14 +138,14 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
 
 | Source | Holds | Tracked |
 |---|---|---|
-| `engine/config/config.local.json` | **THIS SERVER.** `db`, `auth`, `repositories`, `llmServer` (which LLM answers: `provider`, `baseUrl`, `defaultModel`, `customHeaders`, `apiKey`, `rateLimitSeconds`, `timeoutSeconds`, `retries`, `numCtx`, `maxContextTokens`, and the speed study's `lanes`, `pacing`), `llvm` (`libPath`, `includePath`), `parse` (`workers`: files parsed at once — the speed study's), `speedups` (`enabled`: false = every speed-up on develop's path) | **gitignored** |
+| `engine/config/config.local.json` | **THIS SERVER.** `db`, `auth`, `repositories`, `llmServer` (which LLM answers: `provider`, `baseUrl`, `defaultModel`, `customHeaders`, `apiKey`, `rateLimitSeconds`, `timeoutSeconds`, `retries`, `numCtx`, `maxContextTokens`), `llvm` (`libPath`, `includePath`), `speedups` (the speed study's, each key not set = develop's way: `llms`, `pacing`, `parseWorkers`, `pictureBatches`, `fastNullCheck`) | **gitignored** |
 | `engine/config/config.defaults.json` | **HOW DOCUMENTS ARE MADE.** `clang` (`clangArgs`, `includePathsFromProjectWalk`), `views`, `llm` (`descriptions`, `behaviourNames`, `summarize`, `enrichment`, `cacheVersion`, the prompt inputs), `docx`, the sample's `cores` / `layers`, `logs`, `ui` | yes |
 | a project — `projects.build_config`, or a CLI project's `workspaces/<pid>/config.json` | its own `clang`, `llm`, `views`, `docx`, `layers`, `cores`: they win over the defaults, and over what config.local.json says of the same | DB / workspace |
 | a version — `versions.resolved_config`, `versions/<vid>/config.json` | the config its run started with, so a resume runs as it began | DB / workspace |
 
 **No block name is in both files, and no server setting is in a project's or a version's
 config.** The names are written once, in `core/config.py`: `SERVER_BLOCKS` (the six),
-`RUN_SERVER_BLOCKS` (`llmServer`, `llvm`, `parse` — the three a run reads through its config),
+`RUN_SERVER_BLOCKS` (`llmServer`, `llvm`, `speedups` — the three a run reads through its config),
 `LLM_SERVER_KEYS`, `LLVM_KEYS_BEFORE`. Guard: `tests/unit/test_core_config.py`
 `TestWhichFileASettingIsIn` (the shipped defaults hold no server key; the local example holds
 the five blocks and nothing else).
@@ -219,7 +219,7 @@ Copy `config.local.json.example` → `config.local.json` and fill in `db`, `llmS
   "repositories": { "localRoots": ["D:/src"] },
   "llmServer": {
     // ── required by every run that writes LLM text — load_llm_config raises LlmConfigError ──
-    "provider":          "openai",        // "ollama" | "openai"  (strictly validated)
+    "provider":          "openai",        // "ollama" | "openai" | "anthropic"  (strictly validated)
     "baseUrl":           "https://your-llm-gateway/v1",
     "defaultModel":      "your-model-name",
     // ── may be left out ──
@@ -229,15 +229,19 @@ Copy `config.local.json.example` → `config.local.json` and fill in `db`, `llmS
     "timeoutSeconds":    300,             // default 300, positive int
     "retries":           1,               // default 1, >=0; up to (1+retries) total tries
     "numCtx":            8192,            // default 8192, Ollama context window (positive int)
-    "maxContextTokens":  127488,          // default null → auto: numCtx-512 for Ollama, 127488 for OpenAI
-    "pacing":            "after",         // "after" | "start": the gap counted from a call's end or start (llm_core/pool.py)
-    "lanes":             []               // several tickets or keys side by side; [] = one call at a time
+    "maxContextTokens":  127488           // default null → auto: numCtx-512 for Ollama, 127488 for OpenAI
   },
   "llvm": {
     "libPath":     "C:\\Program Files\\LLVM\\bin\\libclang.dll",
     "includePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include"
   },
-  "parse": { "workers": 1 }               // files parsed ahead on threads; 1 = as always, or "auto"; env ANALYZER_PARSE_WORKERS wins
+  "speedups": {                          // the speed study's; each key not set = develop's way
+    "llms":           [],                 // more tickets or keys side by side; [] = llmServer's one ticket
+    "pacing":         "after",            // "after" | "start": the gap counted from a call's end or start
+    "parseWorkers":   1,                  // files parsed ahead; a number or "auto"; env ANALYZER_PARSE_WORKERS wins
+    "pictureBatches": false,              // a view's pictures by one browser
+    "fastNullCheck":  false               // the parser's own check for libclang's empty cursor
+  }
 }
 ```
 

@@ -69,7 +69,7 @@ checked as described in §3.
 |---|---|---|
 | Lanes, start pacing, failover, adaptive concurrency, busy retries, refused keys, the learnt pause | `engine/llm_core/pool.py`, `client.py` (`_post`, `_attempt_numbers`) | unit tests; L-runs below. **Off unless configured** — with no `lanes`/`pacing`, the client runs today's code path untouched (its tests pin `sleep(3.0)` after each call) |
 | Calls at once per stage (follows the lanes) | `engine/llm_core/parallel.py`; descriptions (`_run_in_rounds`), names, globals, units, structs; flowchart labels (`_process_all_parallel`) | results applied in today's order; descriptions run a call-graph *round* at once (a round's functions call none of each other) and the last round of a cycle in today's order |
-| Parse ahead | `engine/core/tu_prefetch.py`, `parser.py` (`_parse_ahead`); `parse.workers` | `tools/perf/compare_models.py`: identical model, parse snapshots identical but a timestamp |
+| Parse ahead | `engine/core/tu_prefetch.py`, `parser.py` (`_parse_ahead`); `speedups.parseWorkers` | `tools/perf/compare_models.py`: identical model, parse snapshots identical but a timestamp |
 | Skip covered headers | removed 2026-10-12 (was `parse.skipCoveredHeaders`) | had given an identical model on the sample, `tu_includes` 114 rows instead of 218 |
 | Mermaid batch | `engine/config/render_mmd_batch.mjs` | 8/8 PNGs byte-identical to `mmdc`; 1.8–2.7 s per diagram vs 9.5 s; browser killed mid-batch → relaunched, 11/11 drawn (§4.3) |
 | Flowchart PNG batch | `engine/config/render_dot_batch.mjs` | 8/8 byte-identical to `render_dot.mjs`; 1.8 s per chart vs 9.8 s; browser killed mid-batch → relaunched, 14/14 byte-identical |
@@ -142,7 +142,7 @@ JSON would close that.
 | Kind | Pieces | Default |
 |---|---|---|
 | Ready to review for develop | lanes + start pacing + failover + adaptive concurrency + busy retries + refused keys + the learnt pause + the `LLM lanes:` log line (`pool.py`, `client.py`); `llm.workers` stages (`parallel.py` — its `executor` cancels queued work on an error or a Ctrl+C — descriptions, names, globals, units, structs, flowchart labels; one cache key, one question at a time); the LLM banner's lanes/pacing/workers lines; picture batches (`render_mmd_batch.mjs`, `render_dot_batch.mjs` — a dead browser relaunched — `utils.render_*_many`, unit diagrams, flowchart PNGs, the export's component diagrams) | LLM changes **off** unless configured; picture batches **always on** (byte-identical; a failing batch falls back per picture by itself, so there is no switch) |
-| Parsing | the field null check — **always on**, self-checked at start; parse ahead — `parse.workers` (env `ANALYZER_PARSE_WORKERS` over it), off until the office code has had a clean run, then `"auto"` by default. `core.config.load_parse_config` | null check on; parse ahead off |
+| Parsing | the field null check — `speedups.fastNullCheck`, self-checked at start; parse ahead — `speedups.parseWorkers` (env `ANALYZER_PARSE_WORKERS` over it). `core.config.speedup_settings` | both off (develop's) |
 | Kept as a measurement | one `time:` line at Phase 1's end — waiting for libclang vs walking the AST (a large wait is what parse ahead wins back) | logging only |
 | Study scaffolding | none left: the per-walk timers and the `ANALYZER_PROFILE_PARSER` profiling hook are removed (2026-10-12) | — |
 | Tools | `tools/perf/*` | — |
@@ -169,7 +169,7 @@ JSON would close that.
   for −30 % of a phase that is a small part of the run. If it is ever wanted again: commit `ffe2689`
   has it, with the fingerprint marker.
 - Memory: each parsed-ahead TU holds its AST; at most `workers + 2` alive (office TUs with big headers:
-  hundreds of MB each — size `parse.workers` to the machine: 2–4 on 8 GB, 6–8 on 16 GB and up).
+  hundreds of MB each — size `speedups.parseWorkers` to the machine: 2–4 on 8 GB, 6–8 on 16 GB and up).
 
 ### 4.2 The LLM
 - **The office's 503 says "invalid response from the upstream server"** — the model behind the gateway,
@@ -265,51 +265,49 @@ JSON would close that.
 
 ## 5. Plan
 
-**Back to develop's path, by configuration** (2026-10-14): `"speedups": { "enabled": false }` in
-`engine/config/config.local.json`, or `ANALYZER_SPEEDUPS=0` for one run. Every speed-up then takes
-develop's path: one LLM call at a time with the pause after it (`lanes`, `pacing` and `LLM_API_KEYS`
-not read; no lane pool is built), one file parsed at a time on the parser's own index
-(`parse.workers` not read), the bindings' own null check (no probe parse), every picture drawn alone
-(no batch). The run's log says so at its start. For a run to set beside develop's, or to tell whether
-an office problem is the speed-ups' at all. Default `true`. Off with lanes, start pacing,
-`parse.workers` above 1 or `LLM_API_KEYS` set, the run warns at its start that it does not use them.
+**Every speed-up is one key of ONE block, `speedups` in `engine/config/config.local.json`
+(2026-10-14d). A key not set is develop's way, so an empty or absent block runs exactly as develop
+does** — checked: develop's code against an empty block gives the same LLM calls in the same order,
+the same model and the same files. `core.config.speedup_settings` reads it; a run's start says which
+it uses (`Speed-ups: 2 llms, pacing start` or `Speed-ups: none -- this run works as develop does`).
 
-**How the office would switch the LLM changes on** (`engine/config/config.local.json`; nothing changes
-without it):
+| Key | Not set (develop's) | Set |
+|---|---|---|
+| `llms` | `[]`: llmServer's own ticket, one call at a time | more tickets or keys side by side (lanes, `llm_core/pool.py`); a lane takes what it does not set from `llmServer`; when listed, only they send calls |
+| `pacing` | `"after"`: the ticket's pause counts from a call's END | `"start"`: from its start (§ below: one office run decides) |
+| `parseWorkers` | `1`: one file at a time, parsed in `parse_file` on the parser's own index | a number or `"auto"` (half the CPUs, at most 8); env `ANALYZER_PARSE_WORKERS` wins |
+| `pictureBatches` | `false`: each picture drawn alone | `true`: a view's pictures drawn by one browser; a miss is drawn alone |
+| `fastNullCheck` | `false`: the bindings' own check, no probe parse | `true`: the field check, self-checked at start (off by itself where it disagrees) |
+
+Until 2026-10-14 they were spread: `llmServer.lanes`, `llmServer.pacing`, `parse.workers`, a
+`speedups.enabled` switch, and the batches and the null check always on. Those places are not read
+any more; a run's start names each with its new place (`core.config.moved_settings`), and the run
+goes on, the develop way. `LLM_API_KEYS=key1,key2` (env) still makes one lane per key when `llms`
+is empty.
+
+**How the office would switch the LLM changes on:**
 
 ```json
-"llmServer": {
-  "pacing": "start",
-  "lanes": [ { "customHeaders": { "x-dep-ticket": "credential:TOKEN_A" } },
-             { "customHeaders": { "x-dep-ticket": "credential:TOKEN_B" } } ]
+"speedups": {
+  "llms": [ { "name": "ticket-a", "customHeaders": { "x-dep-ticket": "credential:TOKEN_A" } },
+            { "name": "ticket-b", "customHeaders": { "x-dep-ticket": "credential:TOKEN_B" } } ],
+  "pacing": "after"
 }
 ```
 
-(beside the block's `provider`, `baseUrl`, `defaultModel` and headers).
-
-`pacing: "start"` alone (one ticket) is the safest first step: same ticket, same rate of starts, no
-pause after a call. A lane is a credential — `customHeaders` (they replace the block's headers of the
-same name) or `apiKey`; it may also name a `baseUrl`, a `name` for the log and `maxConcurrent`
-(default 1). Keys can also come from `LLM_API_KEYS=key1,key2`.
-
-**The options, cut down (2026-10-12: "we want to make config simple").** What is left to set —
-all three in `engine/config/config.local.json`, and only there (2026-10-13e): they are this
-server's settings, read from that file by every run when it loads its config, never from
-`config.defaults.json`, a project or a version (CLI_AND_CONFIG §6, "Where each setting lives"):
-
-| Setting | Until | Then |
-|---|---|---|
-| `llmServer.lanes` | — | stays: the tickets, which only the office knows. Without it nothing changes |
-| `llmServer.pacing` | one office run decides (below) | removed: the behaviour that run picks is fixed |
-| `parse.workers` | the office code has had one clean run with it | `"auto"` by default, the setting dropped |
+`pacing: "start"` alone (one ticket) is the safest first step for pacing. A lane is a credential —
+`customHeaders` (they replace llmServer's headers of the same name) or `apiKey`; it may also name a
+`baseUrl`, a `name` for the log and `maxConcurrent` (default 1). A second person's ticket needs
+their `User-Id` in its lane. The environment's `X_DEP_TICKET` / `USER_ID` / ... replace that header
+on every lane.
 
 | No longer an option | Now |
 |---|---|
-| `llm.workers` (and env `LLM_WORKERS`) | follows the lanes: 1 without lanes or start pacing — today's one call at a time — else twice what the lanes take at once (`core.config.llm_calls_at_once`). The lanes alone decide what goes out; the spare half only has the next question ready |
-| a lane's own `pacing` and `rateLimitSeconds`, env `LLM_PACING` | the `llmServer` block's, the same on every lane |
-| the fast null check (`parse.fastNullCheck`, env `ANALYZER_FAST_NULLCHECK`) | always on. At start it is checked against the bindings' own answer on the null cursor and on real cursors; any disagreement (another libclang, renamed fields, older bindings) and the bindings' check stays, with one log line. Phase 1 15.0 s → 12.0 s on the sample with no setting |
-| skipping covered headers (`parse.skipCoveredHeaders`, env `ANALYZER_SKIP_COVERED_HEADERS`) | removed, code and all: the one lever that could change the output |
-| picture batch switches (`ANALYZER_MMD_BATCH`, `ANALYZER_DOT_BATCH`, `MMD_BATCH_PAGES`, the job timeouts) | none: always on, a failing batch falls back per picture by itself |
+| `llm.workers` (and env `LLM_WORKERS`) | follows the lanes: 1 without `llms` or start pacing — develop's one call at a time — else twice what the lanes take at once (`core.config.llm_calls_at_once`) |
+| a lane's own `pacing` and `rateLimitSeconds`, env `LLM_PACING` | `speedups.pacing` and `llmServer.rateLimitSeconds`, the same on every lane |
+| skipping covered headers (`parse.skipCoveredHeaders`) | removed, code and all: the one lever that could change the output |
+| picture batch switches (`ANALYZER_MMD_BATCH`, `ANALYZER_DOT_BATCH`, ...) | `speedups.pictureBatches` only |
+| `speedups.enabled`, env `ANALYZER_SPEEDUPS` (2026-10-14 → 14d) | each key on its own; an empty block is develop |
 
 - **Keys go in `config.local.json` or `LLM_API_KEYS` only.** Since 2026-10-13d that is the rule
   of the whole `llmServer` block: a project's or a version's config holds no server setting
@@ -332,14 +330,14 @@ server's settings, read from that file by every run when it loads its config, ne
 | The test | One office run with `"pacing": "start"` (one ticket is enough). Read the `LLM lanes:` line at the end of Phase 2 |
 | Make it the default | few `busy`, and no learnt pause (no `+X.XXs after each call`) — the gateway counts from the start |
 | Keep `"after"` | many `busy`, and a learnt pause near the gap (`+2.7s after each call` on 3 s) — it counts from the end |
-| To flip the default | One line: the default of `llmServer.pacing` in `core.config.load_llm_config` becomes `"start"` (a machine can still set `"after"` in its `config.local.json`; `pacing` is not in `config.defaults.json`, which holds no server setting). The client tests that pin `sleep(3.0)` after each call cover `"after"` and stay |
+| To flip the default | One line: the default of `pacing` in `core.config.SPEEDUP_DEFAULTS` becomes `"start"` (a machine can still set `"after"` in its `config.local.json`; `pacing` is not in `config.defaults.json`, which holds no server setting). The client tests that pin `sleep(3.0)` after each call cover `"after"` and stay |
 
 **A — safe, same output (review and merge what is built; days):**
 1. Picture batches (R1, R2) — on by default, byte-identical, per-picture fallback; wire the behaviour
    diagrams the same way.
 2. Lanes + start pacing (L1–L3) — off until configured; switch on at the office with
    `pacing: "start"` first, then a second ticket once §6's question 1 is answered.
-3. The field null check (P4) — always on. Parse ahead (P1) — `parse.workers`, off; its gate passed
+3. The field null check (P4) — `speedups.fastNullCheck`. Parse ahead (P1) — `speedups.parseWorkers`, off; its gate passed
    here (30 clean runs); switch on at the office after one clean run, then make `"auto"` the default.
 
 **B — same output, needs a check on the office code:** model loaded once

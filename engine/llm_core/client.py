@@ -1,8 +1,11 @@
 """Unified LLM HTTP client.
 
-Supports two providers:
-  - "ollama"  : POST {baseUrl}/api/generate  (local Ollama)
-  - "openai"  : POST {baseUrl}/chat/completions  (OpenAI-compatible gateway)
+Supports three providers:
+  - "ollama"    : POST {baseUrl}/api/generate  (local Ollama)
+  - "openai"    : POST {baseUrl}/chat/completions  (OpenAI-compatible gateway)
+  - "anthropic" : POST {baseUrl}/v1/messages  (the Claude Messages API, e.g. https://api.anthropic.com;
+                  key in `x-api-key`; follows the openai provider's rules: one call at a time with
+                  the pause after it, or the lanes)
 
 Selected via config['llmServer']['provider'] or the explicit `provider=` ctor arg.
 Both providers go through the same `generate(system, user)` interface and the
@@ -42,7 +45,7 @@ from typing import Dict, Iterator, List, Optional
 
 import requests
 
-from .headers import build_openai_headers, resolve_api_key
+from .headers import build_anthropic_headers, build_openai_headers, resolve_api_key
 from . import callstats
 from .think import strip_think_section
 from . import tokens as token_counter
@@ -207,8 +210,26 @@ _OPENAI_LOCK = threading.Lock()
 _OPENAI_RATE_LIMIT_SEC = 3.0
 
 
+#: The providers `llmServer.provider` may name.
+PROVIDERS = ("ollama", "openai", "anthropic")
+
+
+def provider_endpoint(provider: str, base_url: str) -> str:
+    """Where a provider's calls go, from its base URL: ollama {base}/api/generate, openai
+    {base}/chat/completions, anthropic {base}/v1/messages -- a base that already ends in /v1
+    (or /v1/messages) is not given a second one."""
+    base = (base_url or "").rstrip("/")
+    if provider == "openai":
+        return f"{base}/chat/completions"
+    if provider == "anthropic":
+        if base.endswith("/v1/messages"):
+            return base
+        return f"{base}/messages" if base.endswith("/v1") else f"{base}/v1/messages"
+    return f"{base}/api/generate"
+
+
 class LlmClient:
-    """One client, two providers, one interface."""
+    """One client, three providers, one interface."""
 
     def __init__(
         self,
@@ -226,7 +247,6 @@ class LlmClient:
         rate_limit_seconds: Optional[float] = _OPENAI_RATE_LIMIT_SEC,
         lanes: Optional[List[Dict]] = None,
         pacing: Optional[str] = None,
-        use_lanes: bool = True,
         # Legacy-compat args
         url: Optional[str] = None,
         use_openai_format: bool = False,
@@ -235,7 +255,7 @@ class LlmClient:
         if provider is None:
             provider = "openai" if use_openai_format else "ollama"
         provider = provider.lower()
-        if provider not in ("ollama", "openai"):
+        if provider not in PROVIDERS:
             raise ValueError(f"Unknown LLM provider: {provider!r}")
         self._provider = provider
         self._model = model or ""
@@ -258,22 +278,16 @@ class LlmClient:
         if url:
             self._endpoint = url.rstrip("/")
         elif base_url:
-            base = base_url.rstrip("/")
-            if provider == "openai":
-                self._endpoint = f"{base}/chat/completions"
-            else:
-                self._endpoint = f"{base}/api/generate"
+            self._endpoint = provider_endpoint(provider, base_url)
         else:
             raise ValueError("LlmClient: either url= or base_url= is required")
 
         # LLM lanes (llm_core/pool.py): only when the config asks for them -- several endpoints or
         # keys, or start pacing. Otherwise None, and every call takes today's path (one lock,
         # a pause after each call), exactly as before.
-        # `use_lanes` False -- the speed-ups are off (core.config.speedups_on): none of them, and
-        # not LLM_API_KEYS either.
         self._pool = None
-        if use_lanes and (lanes or (pacing or "after").lower() == "start"
-                          or os.environ.get("LLM_API_KEYS")):
+        env_keys = os.environ.get("LLM_API_KEYS") if provider != "anthropic" else ""   # Claude: the file's keys only
+        if lanes or (pacing or "after").lower() == "start" or env_keys:
             from .pool import lanes_from_config, shared_pool
             self._pool = shared_pool(lanes_from_config(
                 {"lanes": lanes, "pacing": pacing}, provider=self._provider, endpoint=self._endpoint,
@@ -400,6 +414,9 @@ class LlmClient:
             if self._provider == "openai":
                 headers = build_openai_headers(api_key=lane.api_key, config_headers=lane.headers)
                 resp = requests.post(lane.endpoint, headers=headers, json=payload, timeout=self._timeout)
+            elif self._provider == "anthropic":
+                headers = build_anthropic_headers(api_key=lane.api_key, config_headers=lane.headers)
+                resp = requests.post(lane.endpoint, headers=headers, json=payload, timeout=self._timeout)
             else:
                 ep = lane.endpoint.replace("/api/generate", "/api/chat") if chat else lane.endpoint
                 resp = requests.post(ep, json=payload, timeout=self._timeout)
@@ -479,6 +496,8 @@ class LlmClient:
             try:
                 if self._provider == "openai":
                     raw = self._call_openai(system_prompt, user_prompt)
+                elif self._provider == "anthropic":
+                    raw = self._call_anthropic(system_prompt, user_prompt)
                 else:
                     raw = self._call_ollama(system_prompt, user_prompt)
                 if raw:
@@ -580,6 +599,8 @@ class LlmClient:
             try:
                 if self._provider == "openai":
                     raw = self._call_openai_messages(messages, temp)
+                elif self._provider == "anthropic":
+                    raw = self._call_anthropic_messages(messages, temp)
                 else:
                     raw = self._call_ollama_messages(messages, temp)
                 if raw:
@@ -807,6 +828,60 @@ class LlmClient:
             return text or None
 
 
+    # ------------------------------------------------------------------
+    # Anthropic -- the Claude Messages API
+    # ------------------------------------------------------------------
+
+    def _anthropic_send(self, m: Dict, payload: Dict) -> Dict:
+        """POST one Messages request: through the lanes when there are any, else serialised
+        process-wide with the pause after it -- the openai provider's rules (`_call_openai`)."""
+        if self._pool is not None:
+            return self._post(m, payload)
+        with _OPENAI_LOCK:
+            headers = build_anthropic_headers(api_key=self._api_key,
+                                              config_headers=self._custom_headers)
+            try:
+                resp = requests.post(self._endpoint, headers=headers, json=payload,
+                                     timeout=self._timeout)
+                resp.raise_for_status()
+                return resp.json()
+            finally:
+                self._throttle(m)                  # on every attempt, failed ones too
+
+    @staticmethod
+    def _anthropic_read(data: Dict, m: Dict) -> Optional[str]:
+        """The answer's text blocks, joined; the tokens from `usage`."""
+        text = "".join(b.get("text") or "" for b in (data.get("content") or [])
+                       if isinstance(b, dict) and b.get("type") == "text").strip()
+        usage = data.get("usage") or {}
+        m["prompt"] = int(usage.get("input_tokens") or 0)
+        m["completion"] = int(usage.get("output_tokens") or 0)
+        m["outcome"] = "ok" if text else "empty"
+        return text or None
+
+    def _call_anthropic(self, system: str, user: str) -> Optional[str]:
+        payload = {"model": self._model, "max_tokens": 2048, "temperature": self._temperature,
+                   "messages": [{"role": "user", "content": user}]}
+        if system:
+            payload["system"] = system             # its own field, not a message
+        with self._attempt("anthropic") as m:
+            return self._anthropic_read(self._anthropic_send(m, payload), m)
+
+    def _call_anthropic_messages(self, messages: list, temperature: float) -> Optional[str]:
+        """A pre-formed conversation. The Messages API takes the system prompt as its own field:
+        the system messages are joined into it, and the others go in order."""
+        system = "\n\n".join(str(x.get("content") or "") for x in messages
+                              if x.get("role") == "system" and x.get("content"))
+        rest = [{"role": x.get("role"), "content": x.get("content") or ""}
+                for x in messages if x.get("role") != "system"]
+        payload = {"model": self._model, "max_tokens": 2048, "temperature": temperature,
+                   "messages": rest}
+        if system:
+            payload["system"] = system
+        with self._attempt("anthropic") as m:
+            return self._anthropic_read(self._anthropic_send(m, payload), m)
+
+
 # ---------------------------------------------------------------------------
 # Convenience constructor: build an LlmClient from a config dict.
 # ---------------------------------------------------------------------------
@@ -824,12 +899,12 @@ def from_config(llm_cfg: Dict) -> LlmClient:
     retries = int(llm_cfg.get("retries", 1))
     rate_limit = float(llm_cfg.get("rateLimitSeconds", _OPENAI_RATE_LIMIT_SEC))
     custom_headers = llm_cfg.get("customHeaders") or {}
-    api_key = resolve_api_key(llm_cfg)
+    # the Claude API's key: config.local.json's only (core.config.load_llm_config), no env variable
+    api_key = llm_cfg.get("apiKey") if provider == "anthropic" else resolve_api_key(llm_cfg)
     rate_limit = llm_cfg.get("rateLimitSeconds")
     return LlmClient(
         lanes=llm_cfg.get("lanes"),
         pacing=llm_cfg.get("pacing"),
-        use_lanes=llm_cfg.get("speedups", True),
         provider=provider,
         base_url=base_url,
         model=model,

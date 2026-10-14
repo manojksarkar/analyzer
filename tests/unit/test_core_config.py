@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 
 from core.config import (
     load_config, load_llm_config, LlmConfigError, format_llm_config_banner,
-    load_parse_config, ParseConfigError,
+    load_parse_config, ParseConfigError, SPEEDUP_DEFAULTS,
     layer_source, layer_sources, layer_source_origin, core_config_warnings,
     missing_layer_inputs,
     ConfigFileError, LLM_SERVER_KEYS, LLVM_KEYS_BEFORE, RUN_SERVER_BLOCKS, SERVER_BLOCKS,
@@ -34,12 +34,15 @@ def _no_server_in_the_environment(monkeypatch):
 
 def _cfg(**overrides):
     """A config that names an LLM server. An override goes where its key lives: the server's
-    own (`llmServer`), or what the LLM writes (`llm`)."""
+    own (`llmServer`), its speed-ups (`speedups`), or what the LLM writes (`llm`)."""
     base = {"llm": {}, "llmServer": {"provider": "ollama", "baseUrl": "http://localhost:11434",
                                      "defaultModel": "llama3.2", "timeoutSeconds": 120,
                                      "numCtx": 8192, "retries": 1}}
     for key, value in overrides.items():
-        base["llmServer" if key in LLM_SERVER_KEYS else "llm"][key] = value
+        if key in SPEEDUP_DEFAULTS:
+            base.setdefault("speedups", {})[key] = value
+        else:
+            base["llmServer" if key in LLM_SERVER_KEYS else "llm"][key] = value
     return base
 
 
@@ -307,31 +310,39 @@ class TestWhichFileASettingIsIn:
         root = _config_root(tmp_path, local={"llvm": _LLVM})
         cfg = with_server_settings({"llmServer": {"baseUrl": "stale"}, "views": {}}, root)
         assert cfg == {"views": {}, "llvm": _LLVM}
-        assert set(RUN_SERVER_BLOCKS) == {"llmServer", "llvm", "parse", "speedups"}
+        assert set(RUN_SERVER_BLOCKS) == {"llmServer", "llvm", "speedups"}
 
     def test_how_many_files_are_parsed_at_once_is_this_machines(self, tmp_path, monkeypatch):
-        """`parse.workers` follows the cores and memory of the machine that parses, not the
-        project: a project's or a version's config does not set it."""
-        root = _config_root(tmp_path, local={"parse": {"workers": 6}})
+        """`speedups.parseWorkers` follows the cores and memory of the machine that parses, not
+        the project: a project's or a version's config does not set it."""
+        root = _config_root(tmp_path, local={"speedups": {"parseWorkers": 6}})
         run_cfg = tmp_path / "workspace.json"
-        run_cfg.write_text(json.dumps({"parse": {"workers": 2}, "layers": {}}))
+        run_cfg.write_text(json.dumps({"speedups": {"parseWorkers": 2}, "layers": {}}))
         monkeypatch.setenv("ANALYZER_CONFIG", str(run_cfg))
         monkeypatch.delenv("ANALYZER_PARSE_WORKERS", raising=False)
         assert load_parse_config(load_config(root)) == {"workers": 6}
         _config_root(tmp_path, local={})
         assert load_parse_config(load_config(root)) == {"workers": 1}
 
-    def test_lanes_and_pacing_are_the_servers(self):
-        """How many tickets a gateway gives and how it counts its gap are the server's: they are
-        `llmServer` keys, and are not read from `llm`."""
-        assert {"lanes", "pacing"} <= set(LLM_SERVER_KEYS)
-        r = load_llm_config(_cfg(lanes=[{"apiKey": "a"}, {"apiKey": "b"}], pacing="start"))
+    def test_the_speed_settings_are_in_one_block(self):
+        """More tickets and how a gateway counts its gap are speed-ups: `speedups` keys, with
+        the others. llmServer holds develop's keys only; the old places are not read, and a
+        run's start names where each goes."""
+        assert not {"lanes", "pacing"} & set(LLM_SERVER_KEYS)
+        r = load_llm_config(_cfg(llms=[{"apiKey": "a"}, {"apiKey": "b"}], pacing="start"))
         assert (len(r["lanes"]), r["pacing"], r["workers"]) == (2, "start", 4)
         old = _cfg()
-        old["llm"].update(lanes=[{"apiKey": "a"}], pacing="start")
+        old["llmServer"].update(lanes=[{"apiKey": "a"}], pacing="start")
+        old["llm"].update(lanes=[{"apiKey": "a"}])
+        old.update(parse={"workers": 4}, speedups={"enabled": True})
         r = load_llm_config(old)
         assert (r["lanes"], r["pacing"], r["workers"]) == ([], "after", 1)
-        assert "llm.lanes -> llmServer.lanes" in moved_settings(old)
+        assert load_parse_config(old) == {"workers": 1}
+        named = moved_settings(old)
+        for line in ("llmServer.lanes -> speedups.llms", "llmServer.pacing -> speedups.pacing",
+                     "llm.lanes -> speedups.llms", "parse.workers -> speedups.parseWorkers"):
+            assert line in named
+        assert any(n.startswith("speedups.enabled -> none") for n in named)
 
     def test_settings_under_their_old_names_are_named_with_their_place_now(self, tmp_path):
         old = {"llm": {"baseUrl": "https://gw", "customHeaders": {}, "descriptions": True},
@@ -374,23 +385,23 @@ class TestFormatLlmConfigBanner:
         assert "set" in banner
 
     def test_lanes_are_counted_and_their_keys_never_printed(self):
-        cfg = load_llm_config(_cfg(lanes=[{"apiKey": "sk-lane-1"}, {"apiKey": "sk-lane-2"}],
+        cfg = load_llm_config(_cfg(llms=[{"apiKey": "sk-lane-1"}, {"apiKey": "sk-lane-2"}],
                                    pacing="start"))
         banner = format_llm_config_banner(cfg)
-        assert "2 configured" in banner and "pacing            : start" in banner
+        assert "2 (speedups.llms)" in banner and "pacing            : start" in banner
         assert "calls at once     : 4" in banner, "twice what two lanes take at once"
         assert "sk-lane" not in banner
 
     def test_no_lanes_says_one_call_at_a_time(self, monkeypatch):
         monkeypatch.delenv("LLM_API_KEYS", raising=False)
         banner = format_llm_config_banner(load_llm_config(_cfg()))
-        assert "none (one lane" in banner and "pacing            : after" in banner
+        assert "none (llmServer's own ticket" in banner and "pacing            : after" in banner
         assert "calls at once     : 1" in banner
 
 
 class TestParseConfig:
-    """Phase 1's one speed setting: the config's `parse.workers`, overridden by the environment,
-    as `llm`'s settings are."""
+    """Phase 1's speed setting: `speedups.parseWorkers`, overridden by the environment, as
+    `llmServer`'s settings are."""
 
     @pytest.fixture(autouse=True)
     def _no_env(self, monkeypatch):
@@ -399,34 +410,36 @@ class TestParseConfig:
     def test_nothing_set_is_todays_parse(self):
         assert load_parse_config({}) == {"workers": 1}
 
-    def test_the_config_block_is_read(self):
-        assert load_parse_config({"parse": {"workers": 6}}) == {"workers": 6}
+    def test_the_block_is_read(self):
+        assert load_parse_config({"speedups": {"parseWorkers": 6}}) == {"workers": 6}
+
+    def test_the_old_place_is_not(self):
+        assert load_parse_config({"parse": {"workers": 6}}) == {"workers": 1}
 
     def test_the_environment_overrides_the_config(self, monkeypatch):
         monkeypatch.setenv("ANALYZER_PARSE_WORKERS", "3")
-        assert load_parse_config({"parse": {"workers": 6}})["workers"] == 3
+        assert load_parse_config({"speedups": {"parseWorkers": 6}})["workers"] == 3
 
-    def test_options_that_were_removed_are_ignored_not_an_error(self):
-        # fastNullCheck is always on (self-checked); skipCoveredHeaders is gone
-        assert load_parse_config({"parse": {"workers": 2, "fastNullCheck": False,
-                                            "skipCoveredHeaders": True}}) == {"workers": 2}
+    def test_a_key_it_does_not_know_is_left_alone(self):
+        assert load_parse_config({"speedups": {"parseWorkers": 2,
+                                               "skipCoveredHeaders": True}}) == {"workers": 2}
 
     def test_auto_is_half_the_cpus_at_most_eight(self, monkeypatch):
         monkeypatch.setattr(os, "cpu_count", lambda: 32)
-        assert load_parse_config({"parse": {"workers": "auto"}})["workers"] == 8
+        assert load_parse_config({"speedups": {"parseWorkers": "auto"}})["workers"] == 8
         monkeypatch.setattr(os, "cpu_count", lambda: 6)
-        assert load_parse_config({"parse": {"workers": "auto"}})["workers"] == 3
+        assert load_parse_config({"speedups": {"parseWorkers": "auto"}})["workers"] == 3
 
-    @pytest.mark.parametrize("block", [{"workers": 0}, {"workers": "many"}])
-    def test_a_bad_value_is_an_error_not_a_guess(self, block):
+    @pytest.mark.parametrize("value", [0, "many"])
+    def test_a_bad_value_is_an_error_not_a_guess(self, value):
         with pytest.raises(ParseConfigError):
-            load_parse_config({"parse": block})
+            load_parse_config({"speedups": {"parseWorkers": value}})
 
     def test_llm_calls_at_once_are_not_a_setting(self, monkeypatch):
         monkeypatch.delenv("LLM_API_KEYS", raising=False)
         monkeypatch.setenv("LLM_WORKERS", "5")          # no such override
         assert load_llm_config(_cfg(workers=7))["workers"] == 1
-        assert load_llm_config(_cfg(lanes=[{"apiKey": "a"}, {"apiKey": "b"}]))["workers"] == 4
+        assert load_llm_config(_cfg(llms=[{"apiKey": "a"}, {"apiKey": "b"}]))["workers"] == 4
 
 
 class TestLayerSources:

@@ -2,8 +2,8 @@
 """Is the LLM actually answering? Reads the real config and sends a few prompts.
 
 The pipeline reports "returned empty response" and retries, which tells you nothing about WHY.
-This sends the requests the phases send — to the OpenAI-compatible gateway or to Ollama,
-whichever `llmServer.provider` names — and prints what came back: status, the stop reason, token
+This sends the requests the phases send — to the OpenAI-compatible gateway, to Ollama or to the
+Claude Messages API, whichever `llmServer.provider` names — and prints what came back: status, the stop reason, token
 counts, and the raw body when the answer is empty. Those are the fields the client discards.
 
 Three prompts, deliberately different sizes, because an empty reply that depends on size is a
@@ -18,7 +18,7 @@ token-budget problem and one that does not is a gateway/model problem:
     python tools/check_llm.py --raw               # print full response bodies
     python tools/check_llm.py --max-tokens N      # try a different output budget
 
-With `llmServer.lanes` (several tickets or keys, llm_core/pool.py) the tiny prompt goes to EVERY
+With `speedups.llms` (several tickets or keys, llm_core/pool.py) the tiny prompt goes to EVERY
 lane -- it is the one that proves a ticket -- and the result names each lane that did not answer.
 The other two go once, on a lane that answered: what they show is the model's, not a ticket's.
 
@@ -74,6 +74,37 @@ def _only(value: str) -> int:
         return int(v)
     raise argparse.ArgumentTypeError(
         f"no prompt {value!r}; use 1-{len(_PROMPT_NAMES)} or {', '.join(_PROMPT_NAMES)}")
+
+
+def _anthropic_payload(model: str, system: str, user: str, max_tokens: int) -> dict:
+    """The body `LlmClient._call_anthropic` sends, field for field."""
+    payload = {"model": model, "max_tokens": max_tokens, "temperature": 0.1,
+               "messages": [{"role": "user", "content": user}]}
+    if system:
+        payload["system"] = system
+    return payload
+
+
+def _read_anthropic(data: dict, max_tokens: int) -> bool:
+    """Print what a Claude Messages reply holds. True when it carries an answer."""
+    usage = data.get("usage") or {}
+    print(f"  usage       : input={usage.get('input_tokens')} output={usage.get('output_tokens')}")
+    print(f"  stop_reason : {data.get('stop_reason')}")
+    blocks = [b for b in (data.get("content") or []) if isinstance(b, dict)]
+    text = "".join(b.get("text") or "" for b in blocks if b.get("type") == "text").strip()
+    other = sorted({b.get("type") for b in blocks if b.get("type") != "text"})
+    if other:
+        print(f"  other content blocks: {other}   <- the pipeline reads only text blocks")
+    print(f"  content     : {len(text)} chars")
+    if text:
+        print(f"  -> {text[:300]}")
+        return True
+    print("  EMPTY CONTENT — this is the pipeline's 'returned empty response'.")
+    if data.get("stop_reason") == "max_tokens":
+        print(f"     stop_reason=max_tokens: all {max_tokens} output tokens were spent first. "
+              "Retry with --max-tokens 8192 to confirm.")
+    print(f"  BODY: {json.dumps(data)[:1200]}")
+    return False
 
 
 def _openai_payload(model: str, system: str, user: str, max_tokens: int) -> dict:
@@ -173,21 +204,22 @@ def _read_ollama(data: dict, approx: int, max_tokens: int) -> bool:
 _PER_REQUEST = ("Prompt-Msg-Id", "Completion-Msg-Id")    # a fresh id on every call
 
 
-def _lane_headers(lane, ollama: bool) -> dict:
+def _lane_headers(lane, provider: str) -> dict:
     """What a run sends on this lane: the client's own rule (`LlmClient._post`), so a header the
     environment or a default supplies is sent here too. Nothing on Ollama, as there."""
-    if ollama:
+    if provider == "ollama":
         return {}
-    from llm_core.headers import build_openai_headers
-    return build_openai_headers(api_key=lane.api_key, config_headers=lane.headers)
+    from llm_core.headers import build_anthropic_headers, build_openai_headers
+    build = build_anthropic_headers if provider == "anthropic" else build_openai_headers
+    return build(api_key=lane.api_key, config_headers=lane.headers)
 
 
-def _same_ticket(lanes, ollama: bool) -> list:
+def _same_ticket(lanes, provider: str) -> list:
     """Pairs of lane names that send the same thing to the same server: one ticket listed twice,
     or a header the environment replaced on every lane."""
     seen, pairs = {}, []
     for lane in lanes:
-        sent = _lane_headers(lane, ollama)
+        sent = _lane_headers(lane, provider)
         what = (lane.endpoint, tuple(sorted((k, v) for k, v in sent.items() if k not in _PER_REQUEST)))
         if what in seen:
             pairs.append((seen[what], lane.name))
@@ -224,6 +256,7 @@ def main(argv=None) -> int:
 
     provider = llm.get("provider")
     ollama = provider == "ollama"
+    anthropic = provider == "anthropic"
     base_url = (llm.get("baseUrl") or "").rstrip("/")
     model = llm.get("defaultModel")
     api_key = llm.get("apiKey") or ""
@@ -236,6 +269,9 @@ def main(argv=None) -> int:
     if ollama:
         # As LlmClient._call_ollama: no auth, no custom headers, and never a gateway pause.
         url = f"{base_url}/api/generate"
+    elif anthropic:
+        from llm_core.client import provider_endpoint
+        url = provider_endpoint("anthropic", base_url)
     else:
         url = f"{base_url}/chat/completions" if not base_url.endswith("/chat/completions") else base_url
     ignored = "   (ignored on ollama)" if ollama else ""
@@ -259,7 +295,9 @@ def main(argv=None) -> int:
     # With lanes these two are only what a lane that sets none falls back on.
     default = "   (the default of a lane that sets none)" if several else ""
     print(f"  apiKey            : "
-          + (f"set ({len(api_key)} chars)" if api_key else 'not set (no "Authorization: Bearer" is sent)')
+          + (f"set ({len(api_key)} chars)" if api_key
+             else 'not set (no "x-api-key" is sent)' if anthropic
+             else 'not set (no "Authorization: Bearer" is sent)')
           + (ignored or default))
     print(f"  customHeaders     : {sorted(headers) if headers else 'none'}{ignored or default}")
     if several:
@@ -268,7 +306,7 @@ def main(argv=None) -> int:
         print(f"  lanes             : {len(lanes)} -- {', '.join(l.name for l in lanes)}   ({every})")
     print(f"  {'num_predict sent' if ollama else 'max_tokens sent':<18}: {max_tokens}"
           + ("" if args.max_tokens else "   <- hardcoded in client.py, not configurable"))
-    for first, second in _same_ticket(lanes, ollama):
+    for first, second in _same_ticket(lanes, provider):
         print(f"  WARNING: lanes {first} and {second} send the same thing to the same server -- one "
               "ticket, used twice.")
         print("           Check their customHeaders; a header set in the environment "
@@ -290,12 +328,13 @@ def main(argv=None) -> int:
         if several:
             print(f"  lane        : {lane.name}")
         payload = (_ollama_payload(model, num_ctx, system, user, max_tokens) if ollama
+                   else _anthropic_payload(model, system, user, max_tokens) if anthropic
                    else _openai_payload(model, system, user, max_tokens))
         approx = (len(system) + len(user)) // 4
         print(f"  prompt size : {len(system) + len(user)} chars (~{approx} tokens)")
         t0 = time.perf_counter()
         try:
-            resp = requests.post(lane.endpoint, headers=_lane_headers(lane, ollama), json=payload,
+            resp = requests.post(lane.endpoint, headers=_lane_headers(lane, provider), json=payload,
                                  timeout=timeout)
         except Exception as exc:
             print(f"  TRANSPORT FAILURE: {type(exc).__name__}: {exc}")
@@ -317,7 +356,8 @@ def main(argv=None) -> int:
             data.pop("context", None)      # the prompt's token ids echoed back — noise here
             answered = _read_ollama(data, approx, max_tokens)
         else:
-            answered = _read_openai(data, max_tokens)
+            answered = (_read_anthropic(data, max_tokens) if anthropic
+                        else _read_openai(data, max_tokens))
         if args.raw:
             print(f"  RAW: {json.dumps(data, indent=2)[:4000]}")
         if rate > 0 and not ollama:

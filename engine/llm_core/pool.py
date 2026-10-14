@@ -51,7 +51,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-BUSY_STATUSES = (429, 502, 503, 504)
+BUSY_STATUSES = (429, 502, 503, 504, 529)      # 529: the Claude API's "overloaded"
 AUTH_STATUSES = (401, 403)
 # A Retry-After longer than this is not believed: a lane resting an hour holds the whole run.
 RETRY_AFTER_CAP = 120.0
@@ -213,11 +213,12 @@ class LanePool:
             return sum(1 for lane in self.lanes if not lane.dead and lane is not besides)
 
     def summary(self) -> str:
-        """One line per lane for the log: calls, busy answers, seconds waited."""
+        """One line per lane for the log: calls, busy answers, time waited."""
+        from core.durations import human
         with self._cond:
             return "; ".join(
                 f"{l.name}: {int(l.stats['calls'])} calls, {int(l.stats['busy'])} busy, "
-                f"{l.stats['waited']:.0f}s waited, pacing {l.pacing}"
+                f"{human(l.stats['waited'])} waited, pacing {l.pacing}"
                 f"{f' (+{l.after_gap:.2f}s after each call)' if l.after_gap else ''}"
                 f"{', key refused' if l.dead else ''}"
                 for l in self.lanes)
@@ -261,9 +262,10 @@ def lanes_from_config(llm_cfg: Dict, *, provider: str, endpoint: str, api_key: O
     if pacing not in ("after", "start"):
         pacing = "after"
     # Ollama never had a pause; keep it that way.
-    base_interval = rate_limit if provider == "openai" else 0.0
+    base_interval = rate_limit if provider in ("openai", "anthropic") else 0.0
     specs = list(llm_cfg.get("lanes") or [])
-    env_keys = [k.strip() for k in os.environ.get("LLM_API_KEYS", "").split(",") if k.strip()]
+    env_keys = ([k.strip() for k in os.environ.get("LLM_API_KEYS", "").split(",") if k.strip()]
+                if provider != "anthropic" else [])         # Claude: config.local.json's keys only
     if not specs and env_keys:
         specs = [{"apiKey": k} for k in env_keys]
     if not specs:
@@ -273,7 +275,8 @@ def lanes_from_config(llm_cfg: Dict, *, provider: str, endpoint: str, api_key: O
         ep = endpoint
         if spec.get("baseUrl"):
             base = str(spec["baseUrl"]).rstrip("/")
-            ep = f"{base}/chat/completions" if provider == "openai" else f"{base}/api/generate"
+            from .client import provider_endpoint
+            ep = provider_endpoint(provider, base)
         h = dict(headers)
         h.update(spec.get("customHeaders") or {})
         # The gap and the pacing are the llm block's, the same on every lane: one less thing to
