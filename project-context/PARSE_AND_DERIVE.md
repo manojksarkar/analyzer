@@ -539,7 +539,12 @@ When `config.llm.behaviourNames: true` and the static result is poor: calls
 `llm_enrichment.get_behaviour_names(...)` with source, params, globals
 read/written, return type, return expression, draft input/output names, and
 abbreviations. The unified `LlmClient` runs the request through the
-appropriate provider.
+appropriate provider. The prompt fits the token window since 2026-10-14j
+(`_fit_behaviour_prompt`, the budget table's `behaviour_names` profile): one that fits is sent
+as built -- every prompt of the sample; one that does not loses, in turn, the globals'
+descriptions, the globals past their section ("... and N more"), the source past its section,
+the abbreviations. The globals are the TRANSITIVE ones: on a top-level firmware function,
+thousands.
 
 ### `_enrich_from_llm` (version3 — rich path)
 

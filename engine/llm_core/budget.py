@@ -70,6 +70,8 @@ TASK_RATIOS: Dict[str, Dict[str, float]] = {
     },
 
     # Phase 2 — input/output names
+    # Read by llm_enrichment._fit_behaviour_prompt since 2026-10-14j: until then the profile was
+    # here and the prompt was built without it.
     "behaviour_names": {
         "system_prompt":    0.05,
         "few_shot":         0.10,

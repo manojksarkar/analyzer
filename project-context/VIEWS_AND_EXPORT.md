@@ -557,7 +557,9 @@ Still lost, by nature: a `#if` / `#ifdef` branch on a macro of the missing heade
 host macro (`_WIN32`) in `clang.clangArgs` does not make a header reachable; it switches the
 code's own `#ifdef _WIN32` branches on and its target branches off. The fix for a missing header
 is its include directory (`-isystem <toolchain>/include` in `clang.clangArgs`, or the core's
-`compileCommands`). Tests: `tests/unit/test_cfg_missing_header.py`; fixture
+`compileCommands`). Phase 1's summary names every header not found, with how many TUs asked for
+it (`parser._diag_missing_headers`, 2026-10-14k): `N header(s) not found -- add their folders ...:
+stdio.h (12 files), ...`. Tests: `tests/unit/test_cfg_missing_header.py`; fixture
 `SampleCppProject/Layer1/Diag/MissingHeaderSwitch*.cpp`.
 
 ### `LIBCLANG_PATH` env var (feat/test-framework)

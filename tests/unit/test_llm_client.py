@@ -552,3 +552,16 @@ class TestAnthropicConfig:
         monkeypatch.setattr(llm_enrichment.requests, "get",
                             lambda *a, **kw: pytest.fail("no ping for a hosted API"))
         assert llm_enrichment.llm_provider_reachable(self._cfg()) is True
+
+
+def test_a_failed_attempt_says_how_big_its_prompt_was(caplog):
+    """A server that cannot take a prompt refuses it every time: the log says whether the
+    failing calls are the big ones."""
+    import logging
+    import requests
+    c = LlmClient(provider="openai", base_url="http://gw", model="m", timeout=5, max_retries=0,
+                  rate_limit_seconds=0)
+    with patch("llm_core.client.requests.post", side_effect=requests.ConnectionError("down")), \
+         caplog.at_level(logging.WARNING, logger="llm_core.client"):
+        assert c.generate("sys", "user prompt") is None
+    assert any("prompt 14 chars" in r.getMessage() for r in caplog.records)

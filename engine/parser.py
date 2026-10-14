@@ -781,6 +781,11 @@ _diag_counts: dict = defaultdict(int)          # stage totals + drop-reason tall
 _diag_drop_samples: dict = defaultdict(list)   # reason -> ["rel/path.cpp:12 name", ...]
 _diag_tu_failures: list = []                   # (rel_path, clang message)
 _diag_tu_errors: list = []                     # (rel_path, n_errors, first message)
+# Every header clang could not find, and how many TUs asked for it: the include folders a run is
+# missing. A firmware built with another compiler (armclang) often has toolchain headers
+# (stdio.h, ...) libclang cannot see; their names are what to add to clang.clangArgs.
+_diag_missing_headers: dict = defaultdict(int)
+_MISSING_HEADER_RE = re.compile(r"^'([^']+)' file not found")
 _diag_tu_defs: dict = {}                       # rel_path -> definitions contributed
 _diag_unrecorded: list = []                    # (rel_path, line, name) text-scan misses
 _diag_decl_only: dict = {}                     # func_key -> "rel:line name", resolved at summary
@@ -922,6 +927,13 @@ def _log_parse_summary(n_funcs: int) -> None:
             _log.warning("  %s: %d error(s), first: %s", rel, n_err, first)
         if any("file not found" in (f or "").lower() for _, _, f in _diag_tu_errors):
             _log.warning("  Hint: missing include - check --include-path-layer / clang_include_paths.json")
+    if _diag_missing_headers:
+        # Every one, not a sample: the list is what to add an include folder for. A `case` on a
+        # constant of such a header is kept (CFGBuilder); an `#ifdef` on its macro is not.
+        named = sorted(_diag_missing_headers.items(), key=lambda kv: (-kv[1], kv[0]))
+        _log.warning("%d header(s) not found -- add their folders (clang.clangArgs \"-isystem <dir>\", or "
+                     "the core's compile_commands.json): %s", len(named),
+                     ", ".join(f"{h} ({n} file{'s' if n != 1 else ''})" for h, n in named))
         if any("unknown type name" in (f or "").lower() for _, _, f in _diag_tu_errors):
             _log.warning("  Hint: undefined macro/typedef - check --macros / clang.clangArgs")
 
@@ -2342,7 +2354,16 @@ def _record_tu_diagnostics(tu, rel: str) -> int:
     except Exception:
         first = "(unavailable)"
     _diag_tu_errors.append((rel, len(errors), first))
+    for header in {m.group(1) for m in (_MISSING_HEADER_RE.match(_spelling(d)) for d in errors) if m}:
+        _diag_missing_headers[header] += 1
     return len(errors)
+
+
+def _spelling(diagnostic) -> str:
+    try:
+        return diagnostic.spelling or ""
+    except Exception:
+        return ""
 
 
 # Where Phase 1's time goes, one log line at its end: waiting for libclang's parse vs the AST walks

@@ -361,9 +361,10 @@ class LlmClient:
             b["completion_tokens"] += int(m["completion"] or 0)
 
     # With lanes: whether this thread's last request was refused in a way another try can get
-    # past -- 429/502/503, a refused connection, a key refused while another lane is left. Such
-    # an attempt is retried without using one up. A timeout or a 504 cools the lane but counts:
-    # it already cost a full wait, and a prompt too slow for the model stays too slow.
+    # past -- 429/503/529, a refused connection, a key refused while another lane is left. Such
+    # an attempt is retried without using one up. A timeout, a 502 or a 504 cools the lane but
+    # counts: a timeout already cost a full wait, and a prompt the model cannot take (a 502 from
+    # the gateway) or answers too slowly fails the same way every time.
     _BUSY = threading.local()
     # ...at most this many times per call, within this long; then the attempts count again, and
     # a gateway that is down -- or one that refuses this one prompt every time -- ends in "failed
@@ -394,10 +395,17 @@ class LlmClient:
                 return
 
     def _lane_note(self) -> str:
-        """`, lane <name>` for an attempt's log line when the call went through the lanes: whether
-        the failures are one lane's (its ticket) or every lane's (the gateway) shows in the log."""
+        """`, lane <name>, prompt <n> chars` for an attempt's log line: whether the failures are
+        one lane's (its ticket) or every lane's (the gateway), and whether they are the big
+        prompts (a server that cannot take a prompt refuses it every time)."""
+        parts = []
         name = getattr(LlmClient._BUSY, "lane", "") if self._pool is not None else ""
-        return f", lane {name}" if name else ""
+        if name:
+            parts.append(f"lane {name}")
+        chars = getattr(LlmClient._BUSY, "chars", 0)
+        if chars:
+            parts.append(f"prompt {chars:,} chars")
+        return "".join(", " + p for p in parts)
 
     def _post(self, m: Dict, payload: Dict, *, chat: bool = False) -> Dict:
         """One request through the lanes: wait for the lane that can start soonest, send, and
@@ -421,7 +429,10 @@ class LlmClient:
                 ep = lane.endpoint.replace("/api/generate", "/api/chat") if chat else lane.endpoint
                 resp = requests.post(ep, json=payload, timeout=self._timeout)
             if resp.status_code in BUSY_STATUSES:
-                busy, free = True, resp.status_code != 504
+                # 502: the gateway's model server answered badly -- for a prompt it cannot take,
+                # every time. It counts as an attempt (as on develop), like a 504; a 429/503/529
+                # is the gateway being busy, tried again without using one up.
+                busy, free = True, resp.status_code not in (502, 504)
                 try:
                     retry_after = float(resp.headers.get("Retry-After") or "") or None
                 except ValueError:
@@ -481,6 +492,7 @@ class LlmClient:
         nothing, which is the number that distinguishes "the LLM is expensive" from "the LLM is
         not answering".
         """
+        LlmClient._BUSY.chars = len(system_prompt or "") + len(user_prompt or "")
         trace_ord = _trace_request(self._provider, self._model, system_prompt, user_prompt) \
             if _trace_enabled() else 0
         _dump_prompt(self._provider, self._model,
@@ -555,8 +567,8 @@ class LlmClient:
             # Fall through to next attempt
         if last_exc is not None:
             logger.error(
-                "LLM (%s/%s) failed after %d attempt(s): %s",
-                self._provider, self._model, total_attempts, last_exc,
+                "LLM (%s/%s) failed after %d attempt(s): %s%s",
+                self._provider, self._model, total_attempts, last_exc, self._lane_note(),
             )
         callstats.record(kind, callstats.ERROR if last_exc is not None else callstats.EMPTY,
                          **self._drain_cost())
@@ -587,6 +599,7 @@ class LlmClient:
             The (think-stripped) response text, or None on persistent failure.
         """
         temp = temperature if temperature is not None else self._temperature
+        LlmClient._BUSY.chars = sum(len(str(m.get("content") or "")) for m in messages)
         trace_ord = _trace_messages(self._provider, self._model, messages) \
             if _trace_enabled() else 0
         _dump_prompt(self._provider, self._model, list(messages),
@@ -652,8 +665,8 @@ class LlmClient:
                 )
         if last_exc is not None:
             logger.error(
-                "LLM (%s/%s) call() failed after %d attempt(s): %s",
-                self._provider, self._model, total_attempts, last_exc,
+                "LLM (%s/%s) call() failed after %d attempt(s): %s%s",
+                self._provider, self._model, total_attempts, last_exc, self._lane_note(),
             )
         callstats.record(kind, callstats.ERROR if last_exc is not None else callstats.EMPTY,
                          **self._drain_cost())

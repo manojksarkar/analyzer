@@ -174,11 +174,14 @@ JSON would close that.
 ### 4.2 The LLM
 - **The review gateway's 503 says "invalid response from the upstream server"** — the model behind the gateway,
   not a rate limit. Every key shares that upstream, so failover only spreads the failure. With lanes, a
-  429/502/503 or a refused connection is retried without using up an attempt — **at most 6 times per
-  call, within 10 minutes** — then the attempts count as today. The cap matters when one *prompt*
-  makes the upstream fail every time (too long for the model): it costs six quick retries, not ten
-  minutes. **A timeout or a 504 cools the lane but counts as an attempt**: it already waited the full
-  timeout, and a prompt too slow for the model stays too slow.
+  429/503/529 or a refused connection is retried without using up an attempt — **at most 6 times per
+  call, within 10 minutes** — then the attempts count as today. **A timeout, a 502 or a 504 cools the
+  lane but counts as an attempt**: a timeout already waited its full length, and a 502 — the gateway
+  saying its model server answered badly — is what a prompt the model cannot take gets every time.
+  Seen in review (2026-10-14j): every call of the Input / Output Names stage answered 502, with
+  lanes and without, and each was retried six times, minutes each. That prompt had no budget — the
+  whole source and every global the function reaches — and now has the descriptions' one
+  (`llm_enrichment._fit_behaviour_prompt`); a failed attempt's log line names its prompt's size.
 - **A revoked or mistyped key** on one lane (401/403): the lane is left out for the rest of the run,
   with one warning, and the call goes to another lane without using up an attempt. Every key refused:
   the calls fail after their attempts, as today, not in a loop.
