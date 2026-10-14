@@ -102,6 +102,8 @@
     //   an API key, not a header  { "name": "key-a", "apiKey": "KEY_A" }   (or env LLM_API_KEYS=KEY_A,KEY_B and no lanes)
     //   another gateway           { "name": "backup", "baseUrl": "https://other-gateway/v1", "apiKey": "KEY_C" }
     //   two calls at once on it   add "maxConcurrent": 2 to the lane
+    // Before a long run:  python analyzer.py check-llm --only tiny   asks every lane once and
+    // names the ones that did not answer.
   },
 
   // A local Ollama instead of a gateway:

@@ -18,6 +18,10 @@ token-budget problem and one that does not is a gateway/model problem:
     python tools/check_llm.py --raw               # print full response bodies
     python tools/check_llm.py --max-tokens N      # try a different output budget
 
+With `llmServer.lanes` (several tickets or keys, llm_core/pool.py) the tiny prompt goes to EVERY
+lane -- it is the one that proves a ticket -- and the result names each lane that did not answer.
+The other two go once, on a lane that answered: what they show is the model's, not a ticket's.
+
 On Ollama it also says when the model saw only part of a prompt (Ollama cuts what does not fit
 `numCtx`, without an error) and how long loading the model took (it counts against the timeout).
 
@@ -166,6 +170,32 @@ def _read_ollama(data: dict, approx: int, max_tokens: int) -> bool:
     return False
 
 
+_PER_REQUEST = ("Prompt-Msg-Id", "Completion-Msg-Id")    # a fresh id on every call
+
+
+def _lane_headers(lane, ollama: bool) -> dict:
+    """What a run sends on this lane: the client's own rule (`LlmClient._post`), so a header the
+    environment or a default supplies is sent here too. Nothing on Ollama, as there."""
+    if ollama:
+        return {}
+    from llm_core.headers import build_openai_headers
+    return build_openai_headers(api_key=lane.api_key, config_headers=lane.headers)
+
+
+def _same_ticket(lanes, ollama: bool) -> list:
+    """Pairs of lane names that send the same thing to the same server: one ticket listed twice,
+    or a header the environment replaced on every lane."""
+    seen, pairs = {}, []
+    for lane in lanes:
+        sent = _lane_headers(lane, ollama)
+        what = (lane.endpoint, tuple(sorted((k, v) for k, v in sent.items() if k not in _PER_REQUEST)))
+        if what in seen:
+            pairs.append((seen[what], lane.name))
+        else:
+            seen[what] = lane.name
+    return pairs
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -183,6 +213,7 @@ def main(argv=None) -> int:
 
     import requests
     from core.config import load_config, load_llm_config
+    from llm_core.pool import lanes_from_config
 
     cfg = load_config(os.path.join(_ROOT, "engine"))
     try:
@@ -204,13 +235,15 @@ def main(argv=None) -> int:
 
     if ollama:
         # As LlmClient._call_ollama: no auth, no custom headers, and never a gateway pause.
-        url, hdrs = f"{base_url}/api/generate", {}
+        url = f"{base_url}/api/generate"
     else:
         url = f"{base_url}/chat/completions" if not base_url.endswith("/chat/completions") else base_url
-        hdrs = {"Content-Type": "application/json", **headers}
-        if api_key:
-            hdrs["Authorization"] = f"Bearer {api_key}"
     ignored = "   (ignored on ollama)" if ollama else ""
+    # The lanes a run would use, by the pool's own rule: one, the block's ticket, when none is
+    # listed. A lane's missing fields are the block's.
+    lanes = lanes_from_config(llm, provider=provider, endpoint=url, api_key=api_key or None,
+                              headers=headers, rate_limit=rate)
+    several = len(lanes) > 1
 
     print(_SEP)
     print("LLM CONFIGURATION (as the pipeline resolves it)")
@@ -223,11 +256,23 @@ def main(argv=None) -> int:
     print(f"  rateLimitSeconds  : {rate}{ignored}")
     print(f"  numCtx            : {num_ctx}" + ("   (sent as num_ctx)" if ollama else ""))
     print(f"  maxContextTokens  : {llm.get('maxContextTokens')}")
-    print(f"  apiKey            : {'set (' + str(len(api_key)) + ' chars)' if api_key else 'NOT SET'}"
-          + ignored)
-    print(f"  customHeaders     : {sorted(headers) if headers else 'none'}{ignored}")
+    # With lanes these two are only what a lane that sets none falls back on.
+    default = "   (the default of a lane that sets none)" if several else ""
+    print(f"  apiKey            : "
+          + (f"set ({len(api_key)} chars)" if api_key else 'not set (no "Authorization: Bearer" is sent)')
+          + (ignored or default))
+    print(f"  customHeaders     : {sorted(headers) if headers else 'none'}{ignored or default}")
+    if several:
+        every = ("each gets the tiny prompt" if args.only in (None, 1)
+                 else "not checked: only the tiny prompt goes to every lane")
+        print(f"  lanes             : {len(lanes)} -- {', '.join(l.name for l in lanes)}   ({every})")
     print(f"  {'num_predict sent' if ollama else 'max_tokens sent':<18}: {max_tokens}"
           + ("" if args.max_tokens else "   <- hardcoded in client.py, not configurable"))
+    for first, second in _same_ticket(lanes, ollama):
+        print(f"  WARNING: lanes {first} and {second} send the same thing to the same server -- one "
+              "ticket, used twice.")
+        print("           Check their customHeaders; a header set in the environment "
+              "(X_DEP_TICKET, USER_ID) replaces every lane's.")
     print()
 
     prompts = [
@@ -236,56 +281,79 @@ def main(argv=None) -> int:
         ("3. large (~2.5k tokens, flowchart-labeller size)", _big_prompt(),
          "You label control-flow graphs."),
     ]
+    tiny = prompts[0]
     if args.only:
         prompts = [prompts[args.only - 1]]
 
-    failures = 0
-    for label, user, system in prompts:
-        print(_SEP)
-        print(label)
-        print(_SEP)
+    def ask(lane, user: str, system: str):
+        """One request on one lane. None when it was answered, else what went wrong, in a word."""
+        if several:
+            print(f"  lane        : {lane.name}")
         payload = (_ollama_payload(model, num_ctx, system, user, max_tokens) if ollama
                    else _openai_payload(model, system, user, max_tokens))
         approx = (len(system) + len(user)) // 4
         print(f"  prompt size : {len(system) + len(user)} chars (~{approx} tokens)")
         t0 = time.perf_counter()
         try:
-            resp = requests.post(url, headers=hdrs, json=payload, timeout=timeout)
+            resp = requests.post(lane.endpoint, headers=_lane_headers(lane, ollama), json=payload,
+                                 timeout=timeout)
         except Exception as exc:
             print(f"  TRANSPORT FAILURE: {type(exc).__name__}: {exc}")
-            failures += 1
-            continue
+            return "no connection"
         dt = time.perf_counter() - t0
         print(f"  http status : {resp.status_code}   ({dt:.1f}s)")
 
         if resp.status_code != 200:
             print(f"  BODY: {resp.text[:1500]}")
-            failures += 1
-            continue
+            return f"http {resp.status_code}"
 
         try:
             data = resp.json()
         except Exception:
             print(f"  response was not JSON: {resp.text[:500]}")
-            failures += 1
-            continue
+            return "not JSON"
 
         if ollama:
             data.pop("context", None)      # the prompt's token ids echoed back — noise here
             answered = _read_ollama(data, approx, max_tokens)
         else:
             answered = _read_openai(data, max_tokens)
-        if not answered:
-            failures += 1
         if args.raw:
             print(f"  RAW: {json.dumps(data, indent=2)[:4000]}")
         if rate > 0 and not ollama:
             time.sleep(rate)
-        print()
+        return None if answered else "no answer"
+
+    failures = sent = 0
+    lane_results = {}                       # lane name -> what went wrong on the tiny prompt, or None
+    for label, user, system in prompts:
+        print(_SEP)
+        print(label)
+        print(_SEP)
+        proves_a_ticket = label == tiny[0]
+        if proves_a_ticket:
+            on = lanes
+        else:
+            # Once, on a lane that answered -- or these two would only repeat a dead ticket's refusal.
+            on = [next((l for l in lanes if lane_results.get(l.name, "") is None), lanes[0])]
+        for lane in on:
+            wrong = ask(lane, user, system)
+            sent += 1
+            failures += wrong is not None
+            if proves_a_ticket:
+                lane_results[lane.name] = wrong
+            print()
 
     print(_SEP)
+    what = "request(s)" if several else "prompt(s)"
+    refused = [f"{name} ({wrong})" for name, wrong in lane_results.items() if wrong]
+    if several and lane_results:
+        print("LANES: " + (f"{len(refused)} of {len(lanes)} did not answer -- {', '.join(refused)}"
+                           if refused else f"all {len(lanes)} answered"))
+        if refused and len(refused) < len(lanes):
+            print("A lane that failed while another answered: that lane's ticket or key (or its baseUrl).")
     if failures:
-        print(f"RESULT: {failures} of {len(prompts)} prompt(s) failed.")
+        print(f"RESULT: {failures} of {sent} {what} failed.")
         print("If only the LARGE prompt failed, it is a size/budget problem.")
         if ollama:
             print("If a prompt was CUT, raise llmServer.numCtx.")
@@ -297,7 +365,7 @@ def main(argv=None) -> int:
             print("If ALL failed with finish_reason=length, raise max_tokens.")
             print("If ALL failed with no choices or a non-200, it is the gateway/model/auth.")
     else:
-        print(f"RESULT: all {len(prompts)} prompt(s) answered. The "
+        print(f"RESULT: all {sent} {what} answered. The "
               f"{'Ollama server' if ollama else 'gateway'} is working; "
               "the pipeline's empty responses come from somewhere else.")
     print(_SEP)
