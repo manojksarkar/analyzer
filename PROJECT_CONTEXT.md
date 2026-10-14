@@ -95,6 +95,8 @@ newer entry and the code win.
 - **Review issues** (2026-10-14g … i, branch `fix/review-issues-on-speed`, on `perf/pipeline-speed`): one
   publication rule (use from another unit), overloads print and draw apart (`engine/core/function_names.py`),
   a `case` from a missing header keeps its branch. Interface ids after a newly published function move.
+- **UT export** (2026-10-15, branch `feat/ut-export-on-speed`, on `fix/review-issues-on-speed`): the target
+  format (a test-case file per unit, `hierarchy.json`) and solved values — [VIEWS_AND_EXPORT.md](project-context/VIEWS_AND_EXPORT.md) "View 5".
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
 - The status boards that used to head this file (2026-07-20, 2026-08-14) are kept, unchanged, in
@@ -234,7 +236,8 @@ so neighbouring files can overlap by a few days — search the date tag.
 | File | Entries |
 |---|---|
 | [TIMELINE.md](project-context/history/TIMELINE.md) | **every dated change in one line, newest first — start here** |
-| [15-2026-10-07h.md](project-context/history/15-2026-10-07h.md) | from 2026-10-07h — **the newest: new entries go at the top** |
+| [16-2026-10-14g.md](project-context/history/16-2026-10-14g.md) | from 2026-10-14g — **the newest: new entries go at the top** |
+| [15-2026-10-07h.md](project-context/history/15-2026-10-07h.md) | 2026-10-07h … 2026-10-14f |
 | [14-2026-10-05r.md](project-context/history/14-2026-10-05r.md) | 2026-10-05r … 2026-10-07g |
 | [13-2026-10-05c.md](project-context/history/13-2026-10-05c.md) | 2026-10-05c … 2026-10-05q; at its end, `review_update_v4`'s 2026-10-03 … 2026-10-03b |
 | [11-2026-09-29e.md](project-context/history/11-2026-09-29e.md) | 2026-09-29e … 2026-10-05b |

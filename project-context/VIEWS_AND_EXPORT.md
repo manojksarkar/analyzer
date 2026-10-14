@@ -372,6 +372,20 @@ A self-contained C++ → Graphviz **DOT** CFG generator (switched from Mermaid
 compat but carries DOT). Invoked as a subprocess by the `flowcharts` view but
 can also run standalone.
 
+### View 5: `utExport` — [engine/views/ut_export.py](../engine/views/ut_export.py) (SWE.4)
+
+From `test_specs.json`, two outputs (2026-10-15, branch `feat/ut-export-on-speed`). `ut_export.json` —
+ours, one case per return path, each with `solve {status, inputs, expected, notes}`. And, with
+`views.utExport.targetFormat` (default true), the target format in ONE project-level folder `output/ut/`:
+one `<LAYER>_<COMPONENT>_<UNIT>_TS.json` per unit (`views/ut_target.py`) and one `hierarchy.json`
+(layers, cores, environments), rebuilt whole from every group folder's specs. Input values are solved
+from the control-flow graphs and each layer's macros (`views/ut_paths.py`). `build(test_specs, dd,
+config, cfgs, macros_by_layer)` is the one builder: a review save re-derives through it with the
+stored flowcharts' graphs and the macros Phase 3 recorded (`clangMacros` in the derivation context),
+so a save writes what a run writes. An overload's cases are named by its `headingName`. Contract
+[UT_EXPORT_SPEC](../docs/spec/UT_EXPORT_SPEC.md), status [UT_EXPORT_READINESS](../docs/spec/UT_EXPORT_READINESS.md),
+templates `docs/spec/ut_templates/`, checker `tools/check_ut_json.py`.
+
 ### Label policy (2026-08-10)
 
 **A label is descriptive prose that names every function the node calls, each

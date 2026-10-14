@@ -415,3 +415,11 @@ def test_infer_base_path_from_include_dirs():
     files = ["Layer1/Sample/Core/Core.cpp", "Layer1/Lib/Lib.cpp"]
     assert ut_export.infer_base_path(inc, files) == "C:/w/p"
     assert ut_export.infer_base_path({}, ["a/b.cpp"]) == ""
+
+
+def test_an_overloads_cases_are_named_by_its_heading():
+    """Overloads share a name: their cases read like their SWE.4 headings (`headingName`),
+    and a function that shares its name with nobody is named as before."""
+    cases = _cases(name="scale", qualifiedName="scale", headingName="scale(int, int)")
+    assert cases and all(c["name"].startswith("scale(int, int) ") for c in cases)
+    assert all(c["name"].startswith("f ") for c in _cases())
