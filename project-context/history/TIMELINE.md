@@ -10,14 +10,15 @@
 
 | Date | Change | File |
 |---|---|---|
-| 2026-10-29 | The web app shows how a version was made: Versions → View runs | [15](15-2026-10-07h.md) |
-| 2026-10-28b | A version records, run by run, the server settings it was made with -- no secret | [15](15-2026-10-07h.md) |
-| 2026-10-28 | The log says which LLM lane answered each call, and what `parseWorkers: "auto"` became | [15](15-2026-10-07h.md) |
-| 2026-10-14k | Phase 1's summary names every header libclang could not find, with how many files asked for it | [15](15-2026-10-07h.md) |
-| 2026-10-14j | The 502 in review after the descriptions: the Input / Output Names prompt fits the token window, a failed attempt names its prompt's size, and with lanes a 502 counts | [15](15-2026-10-07h.md) |
-| 2026-10-14i | A `case` whose constant comes from a header libclang cannot find keeps its branch in the flowchart and in the test steps | [15](15-2026-10-07h.md) |
-| 2026-10-14h | Two functions of one unit never print alike: overloads carry their parameter types, one name in two namespaces its scope -- and each overload has a flowchart of its own | [15](15-2026-10-07h.md) |
-| 2026-10-14g | What is published is one rule: something in another unit uses it. No PUBLIC / PRIVATE / PROTECTED marking and no C++ access is consulted any more | [15](15-2026-10-07h.md) |
+| 2026-10-29 | The web app shows how a version was made: Versions → View runs | [16](16-2026-10-14g.md) |
+| 2026-10-28b | A version records, run by run, the server settings it was made with -- no secret | [16](16-2026-10-14g.md) |
+| 2026-10-28 | The log says which LLM lane answered each call, and what `parseWorkers: "auto"` became | [16](16-2026-10-14g.md) |
+| 2026-10-15 | UT export onto the speed branch: the target format (one test-case file per unit, one hierarchy.json) and solved input values | [16](16-2026-10-14g.md) |
+| 2026-10-14k | Phase 1's summary names every header libclang could not find, with how many files asked for it | [16](16-2026-10-14g.md) |
+| 2026-10-14j | The 502 in review after the descriptions: the Input / Output Names prompt fits the token window, a failed attempt names its prompt's size, and with lanes a 502 counts | [16](16-2026-10-14g.md) |
+| 2026-10-14i | A `case` whose constant comes from a header libclang cannot find keeps its branch in the flowchart and in the test steps | [16](16-2026-10-14g.md) |
+| 2026-10-14h | Two functions of one unit never print alike: overloads carry their parameter types, one name in two namespaces its scope -- and each overload has a flowchart of its own | [16](16-2026-10-14g.md) |
+| 2026-10-14g | What is published is one rule: something in another unit uses it. No PUBLIC / PRIVATE / PROTECTED marking and no C++ access is consulted any more | [16](16-2026-10-14g.md) |
 | 2026-10-14f | A third LLM provider, `anthropic`: the Claude Messages API, native | [15](15-2026-10-07h.md) |
 | 2026-10-14e | Log lines say how long something took in minutes, hours and days | [15](15-2026-10-07h.md) |
 | 2026-10-14d | Every speed-up is one key of ONE block, `speedups`; a key not set is develop's way, so an empty block runs exactly as develop does | [15](15-2026-10-07h.md) |

@@ -108,6 +108,12 @@ def _stubs(spec):
     return [dict(m) for m in (spec.get("precondition") or {}).get("mocks") or ()]
 
 
+def _spec_label(spec):
+    """What a case is named after: the spec's `headingName` for an overload -- `scale(int, int)`,
+    as its SWE.4 heading -- else its name, as before."""
+    return spec.get("headingName") or spec.get("name", "")
+
+
 def _case_name(func_name, ret, step):
     """A sentence a reviewer can check against the code."""
     if ret is None:
@@ -166,7 +172,7 @@ def _cases_for(spec, dd, review, solutions=None):
         # bare id here would be indistinguishable from a path index -- and every
         # id then answers "which path?" the same way.
         solution = (solutions or {}).get("")
-        case = shell(f"{base_id}_01", _case_name(spec.get("name", ""), None, ""), solution)
+        case = shell(f"{base_id}_01", _case_name(_spec_label(spec), None, ""), solution)
         case["expected"] = {"return": None}
         return [case]
 
@@ -175,7 +181,7 @@ def _cases_for(spec, dd, review, solutions=None):
         step = ret.get("step", "")
         solution = (solutions or {}).get(step)
         # The suffix scheme is provisional -- see UT_EXPORT_SPEC.md Open items.
-        case = shell(f"{base_id}_{index:02d}", _case_name(spec.get("name", ""), ret, step),
+        case = shell(f"{base_id}_{index:02d}", _case_name(_spec_label(spec), ret, step),
                      solution)
         case["expected"] = {
             # `expression` is the source expression, so a return of `libAdd()` or
