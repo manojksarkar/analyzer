@@ -217,3 +217,26 @@ int f(char *p)
 ''', "f")
     code = [" ".join(n.raw_code.split()) for n in cfg.nodes.values()]
     assert "p == NULL" in code and 'printf("none\\n")' in code and "g = 1" in code
+
+
+def test_the_parse_summary_names_every_header_not_found(monkeypatch):
+    """The headers to give include folders for, all of them, with how many files asked."""
+    from collections import defaultdict
+    import parser as P
+
+    class _Diag:
+        def __init__(self, text):
+            self.severity, self.spelling = 4, text
+    monkeypatch.setattr(P, "_diag_missing_headers", defaultdict(int))
+    monkeypatch.setattr(P, "_diag_tu_errors", [])
+    monkeypatch.setattr(P, "_diag_counts", defaultdict(int))
+    for rel, texts in (("a.c", ["'stdio.h' file not found", "use of undeclared identifier 'X'"]),
+                       ("b.c", ["'stdio.h' file not found", "'board_cfg.h' file not found"]),
+                       ("c.c", ["unknown type name 'u32'"])):
+        P._record_tu_diagnostics(type("TU", (), {"diagnostics": [_Diag(t) for t in texts]})(), rel)
+    assert dict(P._diag_missing_headers) == {"stdio.h": 2, "board_cfg.h": 1}
+    said = []
+    monkeypatch.setattr(P._log, "warning", lambda msg, *a: said.append(msg % a if a else msg))
+    P._log_parse_summary(0)
+    line = next(s for s in said if "header(s) not found" in s)
+    assert "2 header(s) not found" in line and "stdio.h (2 files), board_cfg.h (1 file)" in line

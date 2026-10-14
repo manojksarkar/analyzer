@@ -149,3 +149,98 @@ def test_behaviour_call_descriptions_cached(tmp_path, monkeypatch):
     functions["B|V|compute|"]["description"] = "Sums two integers."   # a reviewer's correction
     describe()
     assert len(calls) == 2                                       # its rows are asked again
+
+
+# ── the Input / Output Names prompt within the LLM's window (2026-10-14j) ───────────────────
+
+_SERVER_CFG = {"llm": {"defaultModel": "m", "cacheVersion": 1, "descriptions": True},
+               "llmServer": {"provider": "openai", "baseUrl": "http://gw", "defaultModel": "m",
+                             "maxContextTokens": 4000}}
+
+
+def _sent_prompt(tmp_path, monkeypatch, args, cfg, abbreviations=None):
+    _fresh_cache(tmp_path, monkeypatch)
+    sent = []
+    monkeypatch.setattr(le, "_call_llm", lambda prompt, config, **kw: sent.append(prompt)
+                        or "Input Name: i\nOutput Name: o")
+    le.get_behaviour_names(*args, cfg, abbreviations)
+    return sent[0]
+
+
+def _prompt_before(source, params, globals_read, globals_written, return_type, return_expr,
+                   draft_input, draft_output, abbreviations):
+    """The prompt as get_behaviour_names built it until 2026-10-14j, verbatim."""
+    params_part = ", ".join(f"{p.get('name', '')} ({p.get('type', '')})" for p in (params or [])
+                            if p.get("name") or p.get("type"))
+
+    def block(label, glist):
+        if not glist:
+            return ""
+        lines = []
+        for g in glist:
+            name = g.get("name") or (g.get("qualifiedName") or "").split("::")[-1]
+            desc = (g.get("description") or "").strip()
+            lines.append(f"  - {name} ({g.get('type', '')})" + (f": {desc}" if desc else ""))
+        return "\n" + label + "\n" + "\n".join(lines)
+    abbrev_block = ""
+    if abbreviations:
+        formatted = le._format_abbreviations(abbreviations)
+        if formatted:
+            abbrev_block = "\n\nUse these abbreviations when naming (expand to full phrase where relevant):\n\n" + formatted
+    return f"""Given this C++ function, suggest two short human-readable labels for documentation:
+1) Input Name: what this behaviour takes as input (parameters + globals it reads).
+2) Output Name: what it produces (return value or globals it writes).
+
+{abbrev_block}
+Function:
+```cpp
+{source}
+```
+Parameters: {params_part or 'none'}
+Return type: {return_type or 'void'}
+Return expression: {return_expr or 'none'}{block("Globals read (inputs):", globals_read)}{block("Globals written (outputs):", globals_written)}
+
+Current draft labels (improve if they are generic or code-like): Input="{draft_input or ''}", Output="{draft_output or ''}"
+
+Reply with exactly two lines in this format (no other text):
+Input Name: <short phrase>
+Output Name: <short phrase>"""
+
+
+def test_a_prompt_that_fits_is_sent_as_it_was_built(tmp_path, monkeypatch):
+    """Every prompt of the sample fits: not one character of it may move."""
+    g = [{"name": "g_a", "qualifiedName": "g_a", "type": "int", "description": "The counter."}]
+    args = ("int f(int x) {\n  return x + g_a;\n}", [{"name": "x", "type": "int"}], g, g, "int",
+            "x + g_a", "f input", "f output")
+    abbrev = {"FTL": "flash translation layer"}
+    for cfg in (_CFG, _SERVER_CFG):                     # no LLM server known, and a small window
+        assert _sent_prompt(tmp_path, monkeypatch, args, cfg, abbrev) == _prompt_before(*args, abbrev)
+
+
+def test_a_prompt_too_big_for_the_window_is_cut_to_fit(tmp_path, monkeypatch):
+    """A top-level function of the reviewed firmware reaches thousands of globals: its prompt was
+    larger than the model takes. Now the descriptions go first, then the globals past their
+    section, then the source past its section -- the instructions never."""
+    from llm_core.budget import ContextBudget
+    from llm_core.token_counter import get_counter
+    many = [{"name": f"g_{i:04d}", "qualifiedName": f"g_{i:04d}", "type": "uint32_t",
+             "description": f"A counter the flash translation layer keeps for block {i}."}
+            for i in range(3000)]
+    source = "int top(void) {\n" + "".join(f"  step{i}();\n" for i in range(800)) + "  return 0;\n}"
+    args = (source, [], many, many[:1500], "int", "0", "", "")
+    sent = _sent_prompt(tmp_path, monkeypatch, args, _SERVER_CFG)
+    counter = get_counter("m")
+    budget = ContextBudget(max_tokens=4000, task="behaviour_names", counter=counter)
+    assert counter.count(sent) <= budget.effective_input() - budget.allocate("output_reserve")
+    assert "A counter the flash" not in sent, "the descriptions go first"
+    assert "  - g_0000 (uint32_t)" in sent and "more" in sent, "the first globals stay, the rest counted"
+    assert "[truncated]" in sent, "the source past its section"
+    assert sent.rstrip().endswith("Output Name: <short phrase>"), "the instructions are never cut"
+
+
+def test_only_the_descriptions_go_when_that_is_enough(tmp_path, monkeypatch):
+    many = [{"name": f"g_{i:03d}", "qualifiedName": f"g_{i:03d}", "type": "int",
+             "description": "x" * 1200} for i in range(20)]
+    args = ("int f(void) { return 0; }", [], many, [], "int", "0", "", "")
+    sent = _sent_prompt(tmp_path, monkeypatch, args, _SERVER_CFG)
+    assert "xxxx" not in sent and "  - g_019 (int)" in sent and "more" not in sent

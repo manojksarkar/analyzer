@@ -353,9 +353,11 @@ def test_busy_refusals_are_free_only_so_many_times_per_call():
     assert len(keys) == LlmClient.BUSY_FREE_RETRIES + 3, "a prompt refused every time ends, as before"
 
 
-def test_a_timeout_or_a_504_cools_the_lane_but_counts():
+def test_a_timeout_a_502_or_a_504_cools_the_lane_but_counts():
+    """A 502 -- the gateway's model server answered badly -- is what a prompt the server cannot
+    take gets every time: it counts, as on develop, instead of six free tries in ten minutes."""
     import requests
-    for reply in (504, requests.Timeout("slow")):
+    for reply in (502, 504, requests.Timeout("slow")):
         answer, keys = _posts(_lane_client(), [reply] * 10)
         assert answer is None and len(keys) == 3, reply
 

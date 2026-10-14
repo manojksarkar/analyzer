@@ -604,21 +604,25 @@ def get_behaviour_names(
             return ""
         lines = []
         for g in glist:
+            if g.get("more"):                     # what `_fit_behaviour_prompt` left out
+                lines.append(f"  - ... and {g['more']} more")
+                continue
             name = g.get("name") or (g.get("qualifiedName") or "").split("::")[-1]
             typ = g.get("type", "")
             desc = (g.get("description") or "").strip()
             lines.append(f"  - {name} ({typ})" + (f": {desc}" if desc else ""))
         return "\n" + label + "\n" + "\n".join(lines)
 
-    globals_read_part = _globals_block("Globals read (inputs):", globals_read or [])
-    globals_written_part = _globals_block("Globals written (outputs):", globals_written or [])
-
     abbrev_block = ""
     if abbreviations:
         formatted = _format_abbreviations(abbreviations)
         if formatted:
             abbrev_block = "\n\nUse these abbreviations when naming (expand to full phrase where relevant):\n\n" + formatted
-    prompt = f"""Given this C++ function, suggest two short human-readable labels for documentation:
+
+    def _build(source, globals_read, globals_written, abbrev_block):
+        globals_read_part = _globals_block("Globals read (inputs):", globals_read or [])
+        globals_written_part = _globals_block("Globals written (outputs):", globals_written or [])
+        return f"""Given this C++ function, suggest two short human-readable labels for documentation:
 1) Input Name: what this behaviour takes as input (parameters + globals it reads).
 2) Output Name: what it produces (return value or globals it writes).
 
@@ -636,6 +640,9 @@ Current draft labels (improve if they are generic or code-like): Input="{draft_i
 Reply with exactly two lines in this format (no other text):
 Input Name: <short phrase>
 Output Name: <short phrase>"""
+
+    prompt = _fit_behaviour_prompt(_build, source, list(globals_read or []), list(globals_written or []),
+                                   abbrev_block, config)
     # M-C: cache behaviour names content-addressed (the prompt fully determines the output),
     # so impacted functions reuse them across runs / versions instead of re-calling the LLM.
     raw = _cached_desc(config, "behaviour|" + prompt,
@@ -650,6 +657,64 @@ Output Name: <short phrase>"""
         elif line.lower().startswith("output name:"):
             result["outputName"] = line[12:].strip()
     return result
+
+
+def _fit_behaviour_prompt(build, source: str, globals_read: list, globals_written: list,
+                          abbrev_block: str, config: dict) -> str:
+    """The Input / Output Names prompt within the LLM's token window -- the descriptions stage's
+    rule (`ContextBudget`, the table's "behaviour_names" profile, which no code read until now). A
+    prompt that fits is sent as it was built;
+    every prompt of the sample does. One that does not is cut, in this order, until it fits: the
+    globals' descriptions, then the globals themselves past their section (each list keeping its
+    order, the rest counted: "... and N more"), then the source to its section, then the
+    abbreviations. Until 2026-10-14j it went out whole: on a top-level function of the reviewed
+    firmware, which reaches thousands of globals, a prompt larger than the model takes -- the
+    gateway answered every such call with a 502."""
+    prompt = build(source, globals_read, globals_written, abbrev_block)
+    try:
+        from llm_core.budget import ContextBudget, resolve_max_tokens
+        from llm_core.token_counter import get_counter
+        llm_cfg = load_llm_config(config)
+        counter = get_counter(llm_cfg.get("defaultModel", ""))
+        budget = ContextBudget(max_tokens=resolve_max_tokens(llm_cfg), task="behaviour_names",
+                               counter=counter)
+    except Exception:                                 # noqa: BLE001 - no budget known: as built
+        return prompt
+    limit = budget.effective_input() - budget.allocate("output_reserve")
+    before = counter.count(prompt)
+    if before <= limit:
+        return prompt
+    reads = [dict(g, description="") for g in globals_read]
+    writes = [dict(g, description="") for g in globals_written]
+    src, abbrev = source, abbrev_block
+    prompt = build(src, reads, writes, abbrev)
+    if counter.count(prompt) > limit:
+        share = budget.allocate("params_globals") // 2
+        reads, writes = _globals_within(reads, share, counter), _globals_within(writes, share, counter)
+        prompt = build(src, reads, writes, abbrev)
+    if counter.count(prompt) > limit:
+        src = counter.truncate_to_budget(source, budget.allocate("function_source"))
+        prompt = build(src, reads, writes, abbrev)
+    if counter.count(prompt) > limit:
+        abbrev = ""
+        prompt = build(src, reads, writes, abbrev)
+    _log.info("Input/Output Names: a prompt of %d tokens was cut to %d to fit the LLM's window "
+              "(%d globals read, %d written)", before, counter.count(prompt),
+              len(globals_read), len(globals_written))
+    return prompt
+
+
+def _globals_within(glist: list, budget: int, counter) -> list:
+    """The first globals of `glist` whose lines fit `budget` tokens, and a count of the rest."""
+    kept, used = [], 0
+    for i, g in enumerate(glist):
+        name = g.get("name") or (g.get("qualifiedName") or "").split("::")[-1]
+        cost = counter.count(f"  - {name} ({g.get('type', '')})") + 1
+        if used + cost > budget:
+            return kept + [{"more": len(glist) - i}]
+        kept.append(g)
+        used += cost
+    return kept
 
 
 def _make_canonical_key(f: dict) -> str:

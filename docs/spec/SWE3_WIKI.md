@@ -681,7 +681,8 @@ The shape comes from the code; only the wording comes from the LLM.
    its names — `printf(...)`, `p == NULL` — stays in the graph as written. A `case X:` whose `X` is an
    enum value or a macro of the missing header is read back from the source text, with the statements
    that follow it. What is still lost: a `#if` / `#ifdef` branch that depends on a macro of the missing
-   header, because the preprocessor never sees it defined. The run's log names every header not found.
+   header, because the preprocessor never sees it defined. Phase 1's summary in the run's log names every
+   header not found, with how many files asked for it — the folders to add.
 2. Each node is given extra context: the calls it makes, the comments in it, and what the enums, macros
    and typedefs it uses actually mean.
 3. A local LLM writes a short label for each node, with context about callers and callees. A second pass
