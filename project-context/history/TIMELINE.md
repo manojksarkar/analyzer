@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-15b | UT export: a return inside a spliced callee is reached by running the function, and its case expects the function's own return | [16](16-2026-10-14g.md) |
 | 2026-10-15 | UT export onto the speed branch: the target format (one test-case file per unit, one hierarchy.json) and solved input values | [16](16-2026-10-14g.md) |
 | 2026-10-14k | Phase 1's summary names every header libclang could not find, with how many files asked for it | [16](16-2026-10-14g.md) |
 | 2026-10-14j | The 502 in review after the descriptions: the Input / Output Names prompt fits the token window, a failed attempt names its prompt's size, and with lanes a 502 counts | [16](16-2026-10-14g.md) |

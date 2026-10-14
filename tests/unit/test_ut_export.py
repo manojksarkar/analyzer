@@ -417,6 +417,30 @@ def test_infer_base_path_from_include_dirs():
     assert ut_export.infer_base_path({}, ["a/b.cpp"]) == ""
 
 
+def test_a_case_on_a_spliced_callees_return_expects_the_functions_own_return():
+    """A dynamic-behaviour spec asserts its callees' returns too; such a case says whose
+    return it is, and expects the function under test's own return -- what a harness
+    can check -- with the callee's return beside it."""
+    spec = _spec(
+        testSteps=[{"number": "2", "nodeId": "C1", "type": "ACTION"},
+                   {"number": "2.a", "nodeId": "D1", "type": "DECISION"},
+                   {"number": "2.a.1", "nodeId": "R1", "type": "RETURN"},
+                   {"number": "3", "nodeId": "R9", "type": "RETURN"}],
+        expected={"returns": [{"step": "2.a.1", "expression": "LIMIT"},
+                              {"step": "3", "expression": "w + a"}],
+                  "crossUnitCalls": [{"name": "clip", "qualifiedName": "clip", "steps": ["2"]}]})
+    solutions = {"2.a.1": {"status": "solved", "inputs": "solved", "expected": "known",
+                           "values": {}, "return": "12", "notes": [], "exitNode": "R9"},
+                 "3": {"status": "solved", "inputs": "solved", "expected": "known",
+                       "values": {}, "return": "3", "notes": []}}
+    callee_case, own_case = _cases_for(spec, {}, {"author": "", "reviewer": ""}, solutions)
+    assert callee_case["name"] == "f with clip returning LIMIT at step 2.a.1"
+    assert callee_case["expected"] == {"return": "w + a", "atStep": "2.a.1", "value": "12",
+                                       "callee": {"function": "clip", "returns": "LIMIT"}}
+    assert own_case["name"] == "f returns w + a at step 3"
+    assert "callee" not in own_case["expected"]
+
+
 def test_an_overloads_cases_are_named_by_its_heading():
     """Overloads share a name: their cases read like their SWE.4 headings (`headingName`),
     and a function that shares its name with nobody is named as before."""

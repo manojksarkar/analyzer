@@ -29,7 +29,7 @@ import json
 import os
 
 from .registry import register
-from .ut_paths import Context, constants_from_macros, display, solve
+from .ut_paths import Context, constants_from_macros, display, solve, spliced_callee
 from utils import get_range, log
 
 FORMAT_VERSION = "1.0"
@@ -114,13 +114,28 @@ def _spec_label(spec):
     return spec.get("headingName") or spec.get("name", "")
 
 
-def _case_name(func_name, ret, step):
-    """A sentence a reviewer can check against the code."""
+def _case_name(func_name, ret, step, callee=None):
+    """A sentence a reviewer can check against the code. `callee`: the spliced
+    callee whose return the step is (a dynamic-behaviour spec), "" when unknown."""
     if ret is None:
         return f"{func_name} completes"
     expr = ret.get("expression") or ret.get("source") or ""
     where = f" at step {step}" if step else ""
+    if callee is not None:
+        return f"{func_name} with {callee or 'a callee'} returning {expr}{where}".replace("  ", " ")
     return f"{func_name} returns {expr}{where}".replace("  ", " ")
+
+
+def _own_return(spec, exit_node):
+    """The function's own return expression at `exit_node` (where a solved run
+    left it), or "" -- what a case on a callee's return expects."""
+    steps = {s.get("number"): s for s in spec.get("testSteps") or []}
+    for r in (spec.get("expected") or {}).get("returns") or []:
+        st = r.get("step", "")
+        if exit_node and (steps.get(st) or {}).get("nodeId") == exit_node \
+                and spliced_callee(spec, st) is None:
+            return r.get("expression") or r.get("source") or ""
+    return ""
 
 
 def _solve_block(solution):
@@ -180,8 +195,9 @@ def _cases_for(spec, dd, review, solutions=None):
     for index, ret in enumerate(returns, start=1):
         step = ret.get("step", "")
         solution = (solutions or {}).get(step)
+        callee = spliced_callee(spec, step)
         # The suffix scheme is provisional -- see UT_EXPORT_SPEC.md Open items.
-        case = shell(f"{base_id}_{index:02d}", _case_name(_spec_label(spec), ret, step),
+        case = shell(f"{base_id}_{index:02d}", _case_name(_spec_label(spec), ret, step, callee),
                      solution)
         case["expected"] = {
             # `expression` is the source expression, so a return of `libAdd()` or
@@ -190,6 +206,12 @@ def _cases_for(spec, dd, review, solutions=None):
             "return": ret.get("expression", ""),
             "atStep": step,
         }
+        if callee is not None:
+            # A return inside a spliced callee (REQ-UE-11): the function under test
+            # goes on after it, so the case expects the function's own return.
+            case["expected"]["return"] = _own_return(spec, (solution or {}).get("exitNode"))
+            case["expected"]["callee"] = {"function": callee,
+                                          "returns": ret.get("expression", "")}
         if solutions is not None:
             case["expected"]["value"] = (solution or {}).get("return")
         cases.append(case)
