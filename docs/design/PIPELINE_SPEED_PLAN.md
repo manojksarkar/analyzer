@@ -203,6 +203,11 @@ JSON would close that.
 - A `Retry-After` longer than 120 s is not believed (an hour's rest on one lane would hold the run).
 - **What each lane did** is one log line when the phase ends: `LLM lanes: lane1: 412 calls, 3 busy,
   51s waited, pacing start; …` — the first thing to read after a run with lanes.
+- **Check the lanes before a run:** `analyzer.py check-llm --only tiny` sends one small prompt on every
+  lane, with the headers a run sends on it, and names each lane that did not answer.
+- **A header set in the environment replaces every lane's** (`X_DEP_TICKET`, `USER_ID`, `USER_TYPE`,
+  `SEND_SYSTEM_NAME`; `llm_core/headers._resolve`): with `X_DEP_TICKET` set, two ticket lanes send one
+  ticket. `check-llm` warns when two lanes send the same thing to the same server.
 - **All lanes must use the same model.** The description cache key does not include the model, so mixed
   models would mix wording per lane and per run.
 - **The gateway's limit may be per user, not per key** (headers `User-Id`, `x-dep-ticket`): several

@@ -110,6 +110,123 @@ def test_a_model_that_spends_the_budget_thinking_is_named(monkeypatch, capsys):
     assert "all 16 output tokens were spent thinking" in out
 
 
+GATEWAY = dict(LLM, provider="openai", baseUrl="http://gw.test/v1", rateLimitSeconds=0,
+               customHeaders={"x-dep-ticket": "credential:A", "User-Id": "u1",
+                              "Send-System-Name": "svc"})
+LANES = [{"name": "ticket-a", "customHeaders": {"x-dep-ticket": "credential:A"}},
+         {"customHeaders": {"x-dep-ticket": "credential:B"}},                    # no name: lane2
+         {"name": "other", "baseUrl": "http://gw2.test/v1", "apiKey": "K3"}]
+OK = {"choices": [{"message": {"content": "OK"}, "finish_reason": "stop"}]}
+
+
+def _sent(kw):
+    """A request's headers without the two ids that are new on every call."""
+    return {k: v for k, v in kw["headers"].items() if k not in T._PER_REQUEST}
+
+
+def _gateway(monkeypatch, replies, *argv, llm):
+    """Run the tool against a gateway that answers each ticket as `replies` says (200 otherwise)."""
+    posted = []
+
+    def post(url, **kw):
+        posted.append((url, kw))
+        ticket = kw["headers"].get("x-dep-ticket")
+        reply = _Reply(OK)
+        reply.status_code = replies.get(ticket, 200)
+        return reply
+    monkeypatch.setattr(core_config, "load_config", lambda *_a, **_k: {"llm": dict(llm)})
+    monkeypatch.setattr(core_config, "load_llm_config", lambda _cfg: dict(llm))
+    monkeypatch.setattr(requests, "post", post)
+    return T.main(list(argv)), posted
+
+
+@pytest.fixture
+def no_gateway_env(monkeypatch):
+    for name in ("X_DEP_TICKET", "USER_TYPE", "USER_ID", "SEND_SYSTEM_NAME", "LLM_API_KEY",
+                 "LLM_API_KEYS", "LLM_FAKE_RESPONSES"):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_every_lane_gets_the_tiny_prompt_with_the_headers_a_run_sends_on_it(monkeypatch, no_gateway_env):
+    from llm_core import pool
+    llm = dict(GATEWAY, lanes=LANES)
+    rc, probe = _gateway(monkeypatch, {}, "--only", "tiny", llm=llm)
+    assert rc == 0 and len(probe) == len(LANES)
+    for spec, (url, kw) in zip(LANES, probe):
+        # the engine, given this lane alone, sends its one call on it
+        monkeypatch.setattr(pool, "_POOLS", {})
+        engine = _capture(monkeypatch, OK)
+        from_config(dict(GATEWAY, lanes=[spec])).generate("s", "u")
+        (e_url, e_kw), = engine
+        assert url == e_url
+        assert _sent(kw) == _sent(e_kw)
+    # a lane's missing header is the block's
+    tickets = [kw["headers"]["x-dep-ticket"] for _url, kw in probe]
+    assert tickets == ["credential:A", "credential:B", "credential:A"]
+    assert probe[2][0] == "http://gw2.test/v1/chat/completions"
+    assert probe[2][1]["headers"]["Authorization"] == "Bearer K3"
+
+
+def test_one_ticket_sends_what_the_engine_sends_too(monkeypatch, no_gateway_env):
+    # no lanes: the block's ticket, with the headers the client adds (defaults, the two ids)
+    rc, probe = _gateway(monkeypatch, {}, "--only", "tiny", llm=GATEWAY)
+    engine = _capture(monkeypatch, OK)
+    monkeypatch.setattr(time, "sleep", lambda _s: None)
+    from_config(dict(GATEWAY)).generate("s", "u")
+    assert rc == 0 and len(probe) == 1
+    assert probe[0][0] == engine[0][0]
+    assert _sent(probe[0][1]) == _sent(engine[0][1])
+    assert set(T._PER_REQUEST) <= set(probe[0][1]["headers"])
+
+
+def test_a_lane_whose_ticket_is_refused_is_named(monkeypatch, capsys, no_gateway_env):
+    llm = dict(GATEWAY, lanes=LANES)
+    rc, probe = _gateway(monkeypatch, {"credential:B": 401}, llm=llm)
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "lanes             : 3 -- ticket-a, lane2, other" in out
+    assert "LANES: 1 of 3 did not answer -- lane2 (http 401)" in out
+    assert "RESULT: 1 of 5 request(s) failed." in out
+    # the tiny prompt on each lane, the other two once
+    assert [kw["json"]["messages"][0]["content"] for _u, kw in probe].count(T._DESC_SYSTEM) == 1
+    assert len(probe) == 5
+
+
+def test_the_other_prompts_go_on_a_lane_that_answered(monkeypatch, capsys, no_gateway_env):
+    llm = dict(GATEWAY, lanes=LANES[:2])
+    rc, probe = _gateway(monkeypatch, {"credential:A": 403}, llm=llm)
+    assert rc == 1
+    assert [kw["headers"]["x-dep-ticket"] for _u, kw in probe] == [
+        "credential:A", "credential:B", "credential:B", "credential:B"]
+    assert "all 2 answered" not in capsys.readouterr().out
+
+
+def test_only_another_prompt_asks_one_lane_and_says_the_lanes_are_not_checked(monkeypatch, capsys,
+                                                                                no_gateway_env):
+    rc, probe = _gateway(monkeypatch, {}, "--only", "description", llm=dict(GATEWAY, lanes=LANES))
+    out = capsys.readouterr().out
+    assert rc == 0 and len(probe) == 1
+    assert "not checked: only the tiny prompt goes to every lane" in out
+    assert "LANES:" not in out
+
+
+def test_one_ticket_reads_as_before(monkeypatch, capsys, no_gateway_env):
+    rc, probe = _gateway(monkeypatch, {}, llm=GATEWAY)
+    out = capsys.readouterr().out
+    assert rc == 0 and len(probe) == 3
+    assert "RESULT: all 3 prompt(s) answered." in out
+    assert "lane" not in out.lower()
+
+
+def test_two_lanes_that_send_the_same_ticket_are_named(monkeypatch, capsys, no_gateway_env):
+    # the environment's ticket replaces every lane's (llm_core/headers._resolve): two lanes, one ticket
+    monkeypatch.setenv("X_DEP_TICKET", "credential:ENV")
+    rc, probe = _gateway(monkeypatch, {}, "--only", "tiny", llm=dict(GATEWAY, lanes=LANES[:2]))
+    out = capsys.readouterr().out
+    assert [kw["headers"]["x-dep-ticket"] for _u, kw in probe] == ["credential:ENV"] * 2
+    assert "WARNING: lanes ticket-a and lane2 send the same thing to the same server" in out
+
+
 def test_the_openai_path_still_names_an_empty_reply(monkeypatch, capsys):
     llm = dict(LLM, provider="openai", baseUrl="http://gw.test/v1", rateLimitSeconds=0)
     rc, posted = _run(monkeypatch, {"choices": [{"message": {"content": ""},
