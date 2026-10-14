@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-14 | The speed-ups have one switch back to develop's path: `speedups.enabled: false` in config.local.json, or `ANALYZER_SPEEDUPS=0` | [15](15-2026-10-07h.md) |
 | 2026-10-13f | `check-llm` asks every lane: the tiny prompt goes on each ticket, with the headers a run sends on it, and the result names each lane that did not answer | [15](15-2026-10-07h.md) |
 | 2026-10-13e | The speed study's three settings are this server's, like the LLM server they belong to: `lanes` and `pacing` are `llmServer` keys, and `parse` is a block of config.local.json -- none of them is in config.defaults.json | [15](15-2026-10-07h.md) |
 | 2026-10-13d | One file per kind of setting: this server's settings -- the LLM server and where LLVM is -- are in config.local.json only, and every run reads them from it when it loads its config; config.defaults.json holds how documents are made | [15](15-2026-10-07h.md) |

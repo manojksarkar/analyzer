@@ -23,7 +23,7 @@ pytestmark = pytest.mark.unit
 
 _SERVER = {"provider": "openai", "baseUrl": "https://gw/v1", "defaultModel": "m",
            "customHeaders": {"x-tok": "CRED"}}
-_SERVER_BLOCKS = {"db", "auth", "repositories", "llmServer", "llvm"}
+_SERVER_BLOCKS = {"db", "auth", "repositories", "llmServer", "llvm", "parse", "speedups"}
 
 
 @pytest.fixture(autouse=True)

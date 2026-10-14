@@ -102,8 +102,8 @@ newer entry and the code win.
 - **Pipeline speed** (2026-10-08b, branch `perf/pipeline-speed`, rebased onto
   `refactor/config-separation` 2026-10-13e, not merged): measured where a run's time goes and
   prototyped the speed-ups — LLM lanes (several keys, start pacing, failover), parse ahead, picture
-  batches — each checked to give develop's output; three settings left, all this server's, in
-  config.local.json (`llmServer.lanes`, `llmServer.pacing`, `parse.workers`).
+  batches — each checked to give develop's output; this server's, in config.local.json: `llmServer.lanes`,
+  `llmServer.pacing`, `parse.workers`, and `speedups.enabled: false` = develop's path (2026-10-14).
   [PIPELINE_SPEED_PLAN.md](docs/design/PIPELINE_SPEED_PLAN.md) (plan, edge cases, office questions).
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
