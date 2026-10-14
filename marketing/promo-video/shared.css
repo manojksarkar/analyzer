@@ -1,0 +1,49 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Roboto:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=block");
+
+:root {
+  --bg: #0b0d12;
+  --panel: #161a22;
+  --line: #262c38;
+  --text: #eef1f6;
+  --muted: #8b93a3;
+  --blue: #1d7bff;
+  --blue-hi: #3d8fff;
+  --navy: #1428a0;
+  --amber: #f5a524;
+  --green: #22c55e;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Roboto", "Segoe UI", sans-serif;
+  position: relative;
+}
+body.alpha { background: transparent; }
+.glow {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(900px 600px at 85% 10%, rgba(20, 40, 160, 0.35), transparent 70%),
+    radial-gradient(700px 500px at 10% 100%, rgba(29, 123, 255, 0.12), transparent 70%);
+}
+h1, h2, h3, .display { font-family: "Poppins", sans-serif; font-weight: 700; letter-spacing: -0.01em; }
+.mono { font-family: "JetBrains Mono", monospace; }
+
+/* Every animation keeps its start and end state, so a frame can be sought to any time. */
+[class*="a-"] { animation-fill-mode: both; animation-timing-function: cubic-bezier(.2, .7, .2, 1); }
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes popIn { 0% { opacity: 0; transform: scale(.6); } 70% { opacity: 1; transform: scale(1.06); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes type { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+.logo {
+  width: 1em; height: 1em; border-radius: .24em; display: inline-grid; place-items: center;
+  background: linear-gradient(145deg, var(--blue-hi), var(--blue) 60%, #1660d8);
+  box-shadow: 0 .12em .5em rgba(29, 123, 255, .45);
+}
+.logo svg { width: 56%; height: 56%; }

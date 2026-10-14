@@ -1,0 +1,94 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Scene 1 — The problem</title>
+<link rel="stylesheet" href="../shared.css">
+<script src="../config.js"></script><script src="../shared.js"></script>
+<style>
+  @property --n { syntax: "<integer>"; inherits: false; initial-value: 0; }
+  @keyframes count { from { --n: 0; } to { --n: 4; } }
+  @keyframes weeks { from { transform: translateY(0); } to { transform: translateY(-480px); } }
+  @keyframes dim { from { opacity: 0; } to { opacity: .86; } }
+  @keyframes blurOut { from { filter: none; } to { filter: blur(6px); } }
+
+  .stage { position: absolute; inset: 0; animation: blurOut .8s 9.6s both; }
+  .paper {
+    position: absolute; left: 130px; top: 110px; width: 1040px; height: 860px;
+    background: #f6f7f9; color: #1d2330; border-radius: 6px; padding: 64px 70px;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, .55); animation: fadeUp .9s .1s both;
+  }
+  .paper .doc { font-size: 17px; color: #6b7384; margin-bottom: 26px; }
+  .paper h2 { font-size: 30px; color: #1428a0; margin-bottom: 30px; }
+  .paper p { font-size: 18px; line-height: 1.6; color: #444c5c; margin-bottom: 30px; }
+  table { width: 100%; border-collapse: collapse; font-size: 17px; }
+  th { background: #1428a0; color: #fff; text-align: left; padding: 12px 12px; font-weight: 500; }
+  td { border-bottom: 1px solid #d8dce4; padding: 14px 12px; height: 54px; white-space: nowrap; }
+  td span { display: inline-block; animation: type .5s steps(14, end) both; }
+  .caret { display: inline-block; width: 2px; height: 22px; background: #1d7bff; vertical-align: middle;
+           animation: fadeIn .1s steps(1) infinite alternate; }
+
+  .side { position: absolute; left: 1250px; top: 110px; width: 540px; display: grid; gap: 26px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 30px 34px; }
+  .label { font-size: 18px; color: var(--muted); text-transform: uppercase; letter-spacing: .12em; margin-bottom: 14px; }
+  .weekwin { height: 96px; overflow: hidden; }
+  .weeks { animation: weeks 7.5s 1.5s steps(5, end) both; }
+  .weeks div { height: 96px; font: 700 76px/96px "Poppins"; color: var(--amber); }
+  .big { font: 700 76px/1 "Poppins"; }
+  .big .n { counter-reset: n var(--n); animation: count 8.5s .5s linear both; }
+  .big .n::after { content: counter(n); }
+  .big small { font: 500 30px "Poppins"; color: var(--muted); margin-left: 10px; }
+  .bar { height: 12px; border-radius: 6px; background: var(--line); margin-top: 22px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0.6%; min-width: 4px; background: var(--amber);
+           transform-origin: left; animation: grow 8s .5s linear both; }
+  .todo { display: grid; gap: 14px; font-size: 24px; }
+  .todo div { display: flex; justify-content: space-between; color: #c9cfda; }
+  .todo b { color: var(--amber); font-weight: 500; }
+
+  .shade { position: absolute; inset: 0; background: #07080c; animation: dim .8s 9.6s both; }
+  .headline { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 18px; }
+  .headline h1 { font-size: 104px; line-height: 1.05; }
+  .headline .l1 { animation: fadeUp .8s 10.0s both; }
+  .headline .l2 { animation: fadeUp .8s 11.0s both; color: var(--blue-hi); }
+</style></head>
+<body>
+<div class="glow"></div>
+<div class="stage">
+  <div class="paper">
+    <div class="doc">Software Detailed Design — draft v0.3 — written by hand</div>
+    <h2>2.1.1.2&nbsp;&nbsp;Unit interface — MotorCtrl</h2>
+    <p>The following table lists every interface of the unit, its data type, direction and the unit on the other side.</p>
+    <table>
+      <tr><th>Interface ID</th><th>Interface Name</th><th>Data Type</th><th>Dir.</th><th>Source / Destination</th></tr>
+      <tr><td><span style="animation-delay:1.0s">IF_MotorCtrl_001</span></td><td><span style="animation-delay:1.5s">MotorCtrl_Init</span></td><td><span style="animation-delay:2.0s">void</span></td><td><span style="animation-delay:2.3s">IN</span></td><td><span style="animation-delay:2.6s">Startup</span></td></tr>
+      <tr><td><span style="animation-delay:3.2s">IF_MotorCtrl_002</span></td><td><span style="animation-delay:3.7s">MotorCtrl_SetSpeed</span></td><td><span style="animation-delay:4.2s">uint16_t</span></td><td><span style="animation-delay:4.5s">IN</span></td><td><span style="animation-delay:4.8s">CruiseCtrl</span></td></tr>
+      <tr><td><span style="animation-delay:5.4s">IF_MotorCtrl_003</span></td><td><span style="animation-delay:5.9s">g_motorState</span></td><td><span style="animation-delay:6.4s">MotorState_t</span></td><td><span style="animation-delay:6.7s">OUT</span></td><td><span style="animation-delay:7.0s">Diagnostics</span></td></tr>
+      <tr><td><span style="animation-delay:7.6s">IF_MotorCtrl_004</span></td><td><span style="animation-delay:8.1s">MotorCtrl_GetTorque</span></td><td><span style="animation-delay:8.6s">float32</span></td><td><span style="animation-delay:8.9s">OUT</span></td><td><span style="animation-delay:9.2s">Gearbox</span><i class="caret"></i></td></tr>
+      <tr><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><td></td><td></td><td></td><td></td><td></td></tr>
+    </table>
+  </div>
+
+  <div class="side">
+    <div class="card a-in" style="animation: fadeUp .8s .4s both">
+      <div class="label">Time spent</div>
+      <div class="weekwin"><div class="weeks"><div>Week 1</div><div>Week 2</div><div>Week 3</div><div>Week 4</div><div>Week 5</div><div>Week 6</div></div></div>
+    </div>
+    <div class="card" style="animation: fadeUp .8s .6s both">
+      <div class="label">Interfaces documented</div>
+      <div class="big"><span class="n"></span><small>of 1,284</small></div>
+      <div class="bar"><i></i></div>
+    </div>
+    <div class="card" style="animation: fadeUp .8s .8s both">
+      <div class="label">Still to write</div>
+      <div class="todo">
+        <div>SWE.3 Detailed Design <b>× 42</b></div>
+        <div>SWE.4 Unit Test Spec <b>× 42</b></div>
+        <div>Flowcharts <b>× 900+</b></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="shade"></div>
+<div class="headline">
+  <h1 class="l1">Weeks of documents.</h1>
+  <h1 class="l2">Every release.</h1>
+</div>
+</body></html>

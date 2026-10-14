@@ -1,0 +1,39 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Scene 2 — Title</title>
+<link rel="stylesheet" href="../shared.css">
+<script src="../config.js"></script><script src="../shared.js"></script>
+<style>
+  @keyframes upAway { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-60px); } }
+  @keyframes ring { from { opacity: .7; transform: scale(.6); } to { opacity: 0; transform: scale(2.4); } }
+
+  .q { position: absolute; inset: 0; display: grid; place-content: center; text-align: center;
+       animation: upAway .7s 5.4s both; }
+  .q h1 { font-size: 92px; line-height: 1.12; }
+  .q h1 span { display: inline-block; animation: fadeUp .6s both; }
+  .q .blue { color: var(--blue-hi); }
+
+  .brand { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 34px; }
+  .mark { position: relative; font-size: 168px; animation: popIn .8s 6.0s both; }
+  .mark .r { position: absolute; inset: 0; border-radius: 40px; border: 3px solid var(--blue-hi);
+             animation: ring 1.6s 6.3s both; }
+  .name { font: 700 120px/1 "Poppins"; animation: fadeUp .8s 6.4s both; }
+  .sub { font-size: 36px; color: #b9c1cf; animation: fadeUp .8s 7.0s both; }
+  .sub b { color: var(--text); font-weight: 500; }
+</style></head>
+<body>
+<div class="glow"></div>
+<div class="q">
+  <h1>
+    <span style="animation-delay:.4s">What</span> <span style="animation-delay:.6s">if</span>
+    <span style="animation-delay:.8s">your</span> <span style="animation-delay:1.0s">code</span>
+    <span style="animation-delay:1.2s">could</span><br>
+    <span style="animation-delay:1.5s">document</span> <span style="animation-delay:1.7s">itself</span>
+    <span class="blue" style="animation-delay:2.6s">— to ASPICE?</span>
+  </h1>
+</div>
+<div class="brand">
+  <div class="mark"><span class="logo"></span><i class="r"></i></div>
+  <div class="name" data-p="product"></div>
+  <div class="sub"><b>SWE.3</b> Detailed Design &nbsp;·&nbsp; <b>SWE.4</b> Unit Test Specification &nbsp;—&nbsp; generated from your C++ code</div>
+</div>
+</body></html>

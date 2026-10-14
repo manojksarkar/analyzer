@@ -1,0 +1,12 @@
+{
+  "s01": "Every release, your engineers stop writing software, and start writing about it. Detailed designs. Interface tables. Flowcharts. Unit test specifications. By hand.",
+  "s02": "What if the code could document itself, to the ASPICE standard your assessors expect?",
+  "s03": "Point ArtiFex at your repository, Bitbucket or a local folder. Choose the branch, the cores, the layers. It checks everything is ready before it starts.",
+  "s04": "One click. ArtiFex parses every function, global and type with a real C++ compiler front end, builds one model of the whole code base, and writes the documents from it.",
+  "s05": "SWE.3 Software Detailed Design, per component. Component and unit diagrams. Header and interface tables. A flowchart for every published function. Dynamic behaviour diagrams. All the structure comes from the code. Nothing invented.",
+  "s06": "And from that design, the SWE.4 Unit Test Specification, a spec for every function. Delivered as Word files your process already uses.",
+  "s07": "AI writes only the wording: descriptions and labels. Your reviewers stay in control. Correct a sentence in place, and the diagram and the Word file update in seconds.",
+  "s08": "Assign reviewers, request changes, approve. A version is approved when every document is, with a record of who approved what, ready for your assessment.",
+  "s09": "Next release? ArtiFex compares with the last approved version, regenerates only what changed, and shows you exactly what moved.",
+  "s10": "ArtiFex. Your code, documented to ASPICE, so your engineers can get back to engineering."
+}

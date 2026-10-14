@@ -1,0 +1,20 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Lower third</title>
+<link rel="stylesheet" href="../shared.css">
+<script src="../config.js"></script><script src="../shared.js"></script>
+<style>
+  @keyframes slideIn { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: none; } }
+  @keyframes bar { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+  .lt { position: absolute; left: 96px; bottom: 110px; display: flex; align-items: stretch;
+        animation: slideIn .5s .1s both, fadeOut .4s 3.5s both; }
+  .lt i { width: 10px; border-radius: 5px; background: var(--blue); transform-origin: bottom; animation: bar .4s .1s both; }
+  .lt span { margin-left: 18px; padding: 20px 36px; border-radius: 14px; font: 600 50px/1.1 "Poppins";
+             color: #fff; background: rgba(11, 13, 18, .82); box-shadow: 0 16px 50px rgba(0,0,0,.45); }
+</style></head>
+<body class="alpha">
+<div class="lt"><i></i><span id="t"></span></div>
+<script>
+  const i = +new URLSearchParams(location.search).get("i") || 0;
+  document.getElementById("t").textContent = window.PROMO.captions[i];
+</script>
+</body></html>

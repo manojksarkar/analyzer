@@ -1,0 +1,103 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Scene 4 — Pipeline</title>
+<link rel="stylesheet" href="../shared.css">
+<script src="../config.js"></script><script src="../shared.js"></script>
+<style>
+  @keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+  @keyframes travel { from { offset-distance: 0%; opacity: 1; } 90% { opacity: 1; } to { offset-distance: 100%; opacity: 0; } }
+  @keyframes lit { from { background: var(--panel); color: var(--muted); border-color: var(--line); }
+                   to { background: rgba(29,123,255,.16); color: #fff; border-color: var(--blue); } }
+
+  .title { position: absolute; top: 70px; width: 100%; text-align: center; font-size: 60px;
+           animation: fadeUp .8s 6.6s both; }
+  .title em { font-style: normal; color: var(--blue-hi); }
+
+  .col { position: absolute; top: 200px; height: 560px; }
+  .cap { position: absolute; top: 790px; width: 100%; text-align: center; font: 600 34px "Poppins"; }
+
+  .code { left: 110px; width: 520px; background: #0f1218; border: 1px solid var(--line); border-radius: 18px;
+          padding: 34px 34px; font-family: "JetBrains Mono", monospace; font-size: 20px; line-height: 1.75; animation: fadeUp .7s .2s both; }
+  .code div { white-space: pre; animation: type .35s steps(20, end) both; }
+  .k { color: #c792ea; } .t { color: #82aaff; } .f { color: #ffcb6b; } .c { color: #5c6577; }
+
+  .model { left: 760px; width: 400px; animation: fadeUp .7s 3.0s both; }
+  .model svg { width: 400px; height: 560px; overflow: visible; }
+  .model line { stroke: #3a4a6b; stroke-width: 3; stroke-dasharray: 1; animation: draw .6s both; }
+  .model .node { animation: popIn .5s both; transform-box: fill-box; transform-origin: center; }
+  .model circle { fill: #1a2a4a; stroke: var(--blue-hi); stroke-width: 3; }
+  .model text { fill: #dfe6f3; font: 500 18px "JetBrains Mono"; text-anchor: middle; }
+
+  .docs { left: 1290px; width: 520px; display: grid; gap: 40px; align-content: center; }
+  .doc { display: flex; gap: 26px; align-items: center; background: #f6f7f9; color: #1d2330; border-radius: 14px;
+         padding: 30px 32px; box-shadow: 0 24px 60px rgba(0,0,0,.5); animation: popIn .7s both; }
+  .doc .ic { width: 70px; height: 86px; border-radius: 8px; background: #2b5bd7; color: #fff; display: grid;
+             place-items: center; font: 600 17px "Poppins"; flex: none; }
+  .doc h3 { font-size: 30px; color: #1428a0; }
+  .doc p { font-size: 20px; color: #5b6475; margin-top: 4px; }
+
+  .arrow { position: absolute; top: 470px; }
+  .arrow svg { overflow: visible; }
+  .arrow path { stroke: var(--blue); stroke-width: 4; fill: none; stroke-dasharray: 1; animation: draw .6s both; }
+  .dot { position: absolute; width: 18px; height: 18px; border-radius: 50%; background: #fff;
+         box-shadow: 0 0 20px 6px rgba(61,143,255,.8); offset-rotate: 0deg; animation: travel .8s ease-in-out both; }
+
+  .phases { position: absolute; bottom: 90px; left: 50%; transform: translateX(-50%); display: flex; gap: 20px;
+            align-items: center; animation: fadeIn .6s .4s both; }
+  .phases span { font: 600 30px "Poppins"; padding: 14px 34px; border-radius: 40px; border: 2px solid;
+                 animation: lit .4s both; }
+  .phases i { color: var(--muted); font-style: normal; font-size: 30px; }
+</style></head>
+<body>
+<div class="glow"></div>
+<h1 class="title">One run: from source code to <em>ASPICE documents</em></h1>
+
+<div class="col code">
+  <div class="c" style="animation-delay:.5s">// MotorCtrl.cpp</div>
+  <div style="animation-delay:.8s"><span class="k">static</span> <span class="t">MotorState_t</span> g_state;</div>
+  <div style="animation-delay:1.1s"> </div>
+  <div style="animation-delay:1.3s"><span class="t">void</span> <span class="f">MotorCtrl_Init</span>() {</div>
+  <div style="animation-delay:1.6s">  g_state = MOTOR_IDLE;</div>
+  <div style="animation-delay:1.8s">}</div>
+  <div style="animation-delay:2.0s"><span class="t">float32</span> <span class="f">MotorCtrl_GetTorque</span>() {</div>
+  <div style="animation-delay:2.2s">  <span class="k">if</span> (g_state == MOTOR_RUN)</div>
+  <div style="animation-delay:2.4s">    <span class="k">return</span> <span class="f">Calc</span>(speed);</div>
+  <div style="animation-delay:2.6s">  <span class="k">return</span> 0.0f;</div>
+  <div style="animation-delay:2.7s">}</div>
+  <p class="cap" style="top:590px; left:0">Your C++ code</p>
+</div>
+
+<div class="arrow" style="left:650px"><svg width="90" height="20"><path pathLength="1" d="M0 10 H80 M70 2 L82 10 L70 18" style="animation-delay:2.6s"/></svg>
+  <i class="dot" style="offset-path: path('M0 1 H80'); animation-delay:2.6s"></i></div>
+
+<div class="col model">
+  <svg viewBox="0 0 400 560">
+    <line pathLength="1" x1="200" y1="90" x2="90" y2="250" style="animation-delay:3.6s"/>
+    <line pathLength="1" x1="200" y1="90" x2="310" y2="250" style="animation-delay:3.7s"/>
+    <line pathLength="1" x1="90" y1="250" x2="200" y2="420" style="animation-delay:3.9s"/>
+    <line pathLength="1" x1="310" y1="250" x2="200" y2="420" style="animation-delay:4.0s"/>
+    <line pathLength="1" x1="310" y1="250" x2="330" y2="500" style="animation-delay:4.2s"/>
+    <g class="node" style="animation-delay:3.3s"><circle cx="200" cy="90" r="26"/><text x="200" y="40">Component</text></g>
+    <g class="node" style="animation-delay:3.6s"><circle cx="90" cy="250" r="22"/><text x="90" y="205">Init()</text></g>
+    <g class="node" style="animation-delay:3.8s"><circle cx="310" cy="250" r="22"/><text x="310" y="205">GetTorque()</text></g>
+    <g class="node" style="animation-delay:4.1s"><circle cx="200" cy="420" r="22"/><text x="200" y="470">g_state</text></g>
+    <g class="node" style="animation-delay:4.3s"><circle cx="330" cy="500" r="18"/><text x="330" y="545">Calc()</text></g>
+  </svg>
+  <p class="cap" style="top:590px; left:0">One model</p>
+</div>
+
+<div class="arrow" style="left:1180px"><svg width="90" height="20"><path pathLength="1" d="M0 10 H80 M70 2 L82 10 L70 18" style="animation-delay:5.0s"/></svg>
+  <i class="dot" style="offset-path: path('M0 1 H80'); animation-delay:5.0s"></i></div>
+
+<div class="col docs">
+  <div class="doc" style="animation-delay:5.6s"><div class="ic">.docx</div><div><h3>SWE.3</h3><p>Software Detailed Design</p></div></div>
+  <div class="doc" style="animation-delay:6.0s"><div class="ic">.docx</div><div><h3>SWE.4</h3><p>Unit Test Specification</p></div></div>
+  <p class="cap" style="top:590px; left:0">ASPICE documents</p>
+</div>
+
+<div class="phases">
+  <span style="animation-delay:.8s">Parse</span><i>→</i>
+  <span style="animation-delay:3.2s">Derive</span><i>→</i>
+  <span style="animation-delay:4.8s">Views</span><i>→</i>
+  <span style="animation-delay:5.8s">Export</span>
+</div>
+</body></html>

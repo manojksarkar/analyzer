@@ -1,0 +1,21 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Slate</title>
+<link rel="stylesheet" href="../shared.css">
+<script src="../config.js"></script><script src="../shared.js"></script>
+<style>
+  body { background: repeating-linear-gradient(135deg, #10131a 0 40px, #0d1016 40px 80px); }
+  .s { position: absolute; inset: 160px 220px; border: 3px dashed #34405a; border-radius: 28px;
+       display: grid; place-content: center; text-align: center; gap: 26px; background: rgba(11,13,18,.7); }
+  .k { font: 600 30px "Poppins"; letter-spacing: .2em; color: var(--amber); }
+  h1 { font-size: 84px; }
+  p { font-size: 34px; color: #b9c1cf; max-width: 1200px; line-height: 1.4; }
+</style></head>
+<body>
+<div class="s"><div class="k" id="k"></div><h1 id="h"></h1><p id="p"></p></div>
+<script>
+  const s = window.PROMO.slates[+new URLSearchParams(location.search).get("i") || 0];
+  document.getElementById("k").textContent = `SCENE ${s.n} · SCREEN RECORDING · ${s.secs} S`;
+  document.getElementById("h").textContent = s.title;
+  document.getElementById("p").textContent = s.text;
+</script>
+</body></html>

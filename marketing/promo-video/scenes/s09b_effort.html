@@ -1,0 +1,40 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Scene 9b — Effort</title>
+<link rel="stylesheet" href="../shared.css">
+<script src="../config.js"></script><script src="../shared.js"></script>
+<style>
+  .wrap { position: absolute; left: 200px; right: 200px; top: 170px; }
+  .kicker { font-size: 28px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+            animation: fadeIn .6s .2s both; }
+  h1 { font-size: 76px; margin: 14px 0 90px; animation: fadeUp .7s .3s both; }
+  .row { display: grid; grid-template-columns: 300px 1fr 340px; align-items: center; gap: 40px; margin-bottom: 70px; }
+  .who { font: 600 38px "Poppins"; color: #c9cfda; }
+  .who .logo { font-size: 44px; vertical-align: -10px; margin-right: 14px; }
+  .track { height: 44px; border-radius: 22px; background: #1a1f29; overflow: hidden; }
+  .track i { display: block; height: 100%; border-radius: 22px; transform-origin: left; animation: grow both; }
+  .val { font: 700 64px/1 "Poppins"; animation: fadeUp .6s both; }
+  .val small { display: block; font: 500 26px "Roboto"; color: var(--muted); margin-top: 8px; }
+  .foot { font-size: 40px; color: #dfe6f3; animation: fadeUp .7s 5.2s both; }
+  .foot b { color: var(--blue-hi); font-weight: 500; }
+</style></head>
+<body>
+<div class="glow"></div>
+<div class="wrap">
+  <div class="kicker">Human effort, per component</div>
+  <h1 data-p="effortTask"></h1>
+
+  <div class="row" style="animation: fadeUp .6s .8s both">
+    <div class="who" data-p="manualLabel"></div>
+    <div class="track"><i style="width:100%; background: linear-gradient(90deg,#b8751a,var(--amber)); animation-duration:2.6s; animation-delay:1.0s; animation-timing-function:linear"></i></div>
+    <div class="val" style="color:var(--amber); animation-delay:3.4s"><span data-p="manualValue"></span><small>writing, tables, diagrams</small></div>
+  </div>
+
+  <div class="row" style="animation: fadeUp .6s 3.4s both">
+    <div class="who"><span class="logo"></span><span data-p="product"></span></div>
+    <div class="track"><i style="width:7%; background: linear-gradient(90deg,var(--blue),var(--blue-hi)); animation-duration:.4s; animation-delay:3.9s"></i></div>
+    <div class="val" style="color:var(--blue-hi); animation-delay:4.3s"><span data-p="autoValue"></span><small>+ a review</small></div>
+  </div>
+
+  <div class="foot">Your engineers <b>review</b> the documents. They no longer write them.</div>
+</div>
+</body></html>
