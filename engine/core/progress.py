@@ -80,7 +80,8 @@ class ProgressReporter:
             self._clear_live_line()
             elapsed = time.perf_counter() - self._t0 if self._t0 else 0.0
             tail = f" — {summary}" if summary else ""
-            self.logger.info(f"done in {elapsed:.2f}s{tail}")
+            from core.durations import human
+            self.logger.info(f"done in {human(elapsed)}{tail}")
             self._publish(force=True)
 
     def _publish(self, force: bool = False) -> None:

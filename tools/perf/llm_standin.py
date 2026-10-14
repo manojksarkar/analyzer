@@ -59,7 +59,7 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(length) or b"{}")
         auth = self.headers.get("Authorization", "")
-        key = auth.split(" ", 1)[1] if auth.startswith("Bearer ") else "-"
+        key = auth.split(" ", 1)[1] if auth.startswith("Bearer ") else (self.headers.get("x-api-key") or "-")
         if ARGS.keys and key not in ARGS.keys:
             return self._send(401, {"error": "unknown key"})
         lane = key if ARGS.keys else "-"
@@ -79,7 +79,18 @@ class Handler(BaseHTTPRequestHandler):
                  "inflight": busy, "why": "busy" if busy >= ARGS.max_concurrent else "rate"})
             return self._send(503, {"error": "An invalid response was received from the upstream server"})
         try:
-            if self.path.rstrip("/").endswith("/chat/completions"):
+            if self.path.rstrip("/").endswith("/v1/messages"):
+                # The Claude Messages API: the system prompt is its own field. Joined in the
+                # chat order, so the same prompt gets the same answer as on /chat/completions.
+                prompt = "\x00".join([str(body.get("system", ""))]
+                                      + [str(m.get("content", "")) for m in body.get("messages", [])])
+                time.sleep(ARGS.latency)
+                text = answer_for(prompt)
+                out = {"id": f"msg_{seq}", "type": "message", "role": "assistant",
+                       "content": [{"type": "text", "text": text}],
+                       "model": body.get("model", ARGS.model), "stop_reason": "end_turn",
+                       "usage": {"input_tokens": len(prompt) // 4, "output_tokens": 8}}
+            elif self.path.rstrip("/").endswith("/chat/completions"):
                 prompt = "\x00".join(str(m.get("content", "")) for m in body.get("messages", []))
                 time.sleep(ARGS.latency)
                 text = answer_for(prompt)

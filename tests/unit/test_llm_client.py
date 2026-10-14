@@ -366,3 +366,189 @@ class TestConfigurableRateLimit:
             cfg = copy.deepcopy(base); cfg["llmServer"]["rateLimitSeconds"] = bad
             with pytest.raises(LlmConfigError):
                 load_llm_config(cfg)
+
+
+# ---------------------------------------------------------------------------
+# Anthropic -- the Claude Messages API (provider "anthropic")
+# ---------------------------------------------------------------------------
+
+def _mock_anthropic_response(text="", *, blocks=None, status=200):
+    import requests
+    r = MagicMock()
+    r.status_code = status
+    r.text = "overloaded" if status != 200 else ""
+    r.headers = {}
+    if status != 200:
+        r.raise_for_status = MagicMock(side_effect=requests.HTTPError(response=r))
+    else:
+        r.raise_for_status = MagicMock()
+    r.json.return_value = {
+        "type": "message", "role": "assistant", "stop_reason": "end_turn",
+        "content": blocks if blocks is not None else [{"type": "text", "text": text}],
+        "usage": {"input_tokens": 12, "output_tokens": 3},
+    }
+    return r
+
+
+class TestGenerateAnthropic:
+    def _client(self, **kw):
+        d = dict(provider="anthropic", base_url="https://api.anthropic.com",
+                 model="claude-sonnet-5-5", api_key="sk-ant-test", timeout=5,
+                 rate_limit_seconds=0)
+        d.update(kw)
+        return LlmClient(**d)
+
+    @pytest.mark.parametrize("base, endpoint", [
+        ("https://api.anthropic.com", "https://api.anthropic.com/v1/messages"),
+        ("https://api.anthropic.com/", "https://api.anthropic.com/v1/messages"),
+        ("https://proxy.test/v1", "https://proxy.test/v1/messages"),
+        ("https://proxy.test/v1/messages", "https://proxy.test/v1/messages"),
+    ])
+    def test_the_endpoint_is_the_messages_api(self, base, endpoint):
+        assert self._client(base_url=base)._endpoint == endpoint
+
+    def test_sends_a_messages_api_request(self):
+        with patch("llm_core.client.requests.post",
+                   return_value=_mock_anthropic_response("answer")) as post:
+            assert self._client().generate("system text", "user text") == "answer"
+        args, kw = post.call_args
+        assert args[0] == "https://api.anthropic.com/v1/messages"
+        h = kw["headers"]
+        assert h["x-api-key"] == "sk-ant-test" and h["anthropic-version"] == "2023-06-01"
+        assert "Authorization" not in h and "x-dep-ticket" not in h, "none of the gateway's defaults"
+        body = kw["json"]
+        assert body["system"] == "system text", "the system prompt is its own field"
+        assert body["messages"] == [{"role": "user", "content": "user text"}]
+        assert (body["model"], body["max_tokens"], body["temperature"]) == ("claude-sonnet-5-5", 2048, 0.1)
+
+    def test_no_system_prompt_sends_no_system_field(self):
+        with patch("llm_core.client.requests.post",
+                   return_value=_mock_anthropic_response("ok")) as post:
+            self._client().generate("", "user text")
+        assert "system" not in post.call_args[1]["json"]
+
+    def test_the_text_blocks_are_the_answer(self):
+        blocks = [{"type": "thinking", "thinking": "..."},
+                  {"type": "text", "text": "Part one. "}, {"type": "text", "text": "Part two."}]
+        with patch("llm_core.client.requests.post",
+                   return_value=_mock_anthropic_response(blocks=blocks)):
+            assert self._client().generate("s", "u") == "Part one. Part two."
+
+    def test_an_empty_answer_is_retried_then_none(self):
+        with patch("llm_core.client.requests.post",
+                   return_value=_mock_anthropic_response("")) as post:
+            assert self._client(max_retries=1).generate("s", "u") is None
+        assert post.call_count == 2
+
+    def test_overloaded_is_retried_and_then_answered(self):
+        replies = [_mock_anthropic_response(status=529), _mock_anthropic_response("late")]
+        with patch("llm_core.client.requests.post", side_effect=replies) as post:
+            assert self._client(max_retries=1).generate("s", "u") == "late"
+        assert post.call_count == 2
+
+    def test_call_puts_the_system_messages_in_the_system_field(self):
+        msgs = [{"role": "system", "content": "S1"}, {"role": "user", "content": "U1"},
+                {"role": "assistant", "content": "A1"}, {"role": "user", "content": "U2"}]
+        with patch("llm_core.client.requests.post",
+                   return_value=_mock_anthropic_response("ok")) as post:
+            assert self._client().call(msgs, temperature=0.7) == "ok"
+        body = post.call_args[1]["json"]
+        assert body["system"] == "S1" and body["temperature"] == 0.7
+        assert [m["role"] for m in body["messages"]] == ["user", "assistant", "user"]
+
+    def test_custom_headers_are_sent_as_they_are(self):
+        with patch("llm_core.client.requests.post",
+                   return_value=_mock_anthropic_response("ok")) as post:
+            self._client(custom_headers={"x-proxy-ticket": "T"}).generate("s", "u")
+        assert post.call_args[1]["headers"]["x-proxy-ticket"] == "T"
+
+    def test_it_pauses_after_each_call_as_the_gateway_path_does(self):
+        with patch("llm_core.client.requests.post",
+                   return_value=_mock_anthropic_response("ok")), \
+             patch("llm_core.client.time.sleep") as sleep:
+            self._client(rate_limit_seconds=2).generate("s", "u")
+        sleep.assert_called_with(2.0)
+
+    def test_tokens_are_counted_from_usage(self):
+        m = {"prompt": 0, "completion": 0}
+        assert LlmClient._anthropic_read(
+            {"content": [{"type": "text", "text": "x"}], "usage": {"input_tokens": 7, "output_tokens": 2}},
+            m) == "x"
+        assert (m["prompt"], m["completion"], m["outcome"]) == (7, 2, "ok")
+
+    def test_lanes_send_each_key_as_x_api_key(self):
+        """`speedups.llms` with Claude keys: each lane's key is sent as x-api-key."""
+        from llm_core.pool import BUSY_STATUSES
+        assert 529 in BUSY_STATUSES, "the API's overloaded answer cools a lane, as a 429 does"
+        # a pause between calls on one key, so the next call takes the other (with none, the
+        # first key is free again at once and takes every call -- the pool's own rule)
+        c = self._client(api_key=None, lanes=[{"name": "a", "apiKey": "K-ANT-1"},
+                                              {"name": "b", "apiKey": "K-ANT-2"}],
+                         base_url="https://lanes.anthropic.test", rate_limit_seconds=0.05)
+        assert c._pool is not None and all(l.endpoint == "https://lanes.anthropic.test/v1/messages"
+                                           for l in c._pool.lanes)
+        with patch("llm_core.client.requests.post",
+                   return_value=_mock_anthropic_response("ok")) as post:
+            for _ in range(4):
+                assert c.generate("s", "u") == "ok"
+        keys = {kw["headers"]["x-api-key"] for _a, kw in post.call_args_list}
+        assert keys == {"K-ANT-1", "K-ANT-2"}
+
+
+class TestAnthropicConfig:
+    CFG = {"llmServer": {"provider": "anthropic", "baseUrl": "https://api.anthropic.com",
+                         "defaultModel": "claude-sonnet-5-5"}}
+
+    def _cfg(self, **server):
+        import copy
+        cfg = copy.deepcopy(self.CFG)
+        cfg["llmServer"].update(server)
+        return cfg
+
+    def test_the_key_comes_from_config_local_json_only(self, monkeypatch):
+        """No environment variable is read for a Claude key: a gateway key set in LLM_API_KEY
+        (or LLM_API_KEYS) must never be sent to Anthropic."""
+        from core.config import env_api_keys, llm_calls_at_once, load_llm_config
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-env")
+        monkeypatch.setenv("LLM_API_KEY", "gateway-key")
+        monkeypatch.setenv("LLM_API_KEYS", "gw-1,gw-2")
+        assert load_llm_config(self._cfg())["apiKey"] is None
+        assert load_llm_config(self._cfg(apiKey="sk-file"))["apiKey"] == "sk-file"
+        assert env_api_keys("anthropic") == [] and env_api_keys("openai") == ["gw-1", "gw-2"]
+        assert llm_calls_at_once({}, "anthropic") == 1, "the env keys make no lanes for Claude"
+        c = from_config(load_llm_config(self._cfg(apiKey="sk-file")))
+        assert c._pool is None and c._api_key == "sk-file"
+        # the other providers keep develop's rule: the environment wins
+        gw = {"llmServer": {"provider": "openai", "baseUrl": "http://gw", "defaultModel": "m",
+                            "apiKey": "file-key"}}
+        assert load_llm_config(gw)["apiKey"] == "gateway-key"
+
+    def test_from_config_builds_the_claude_client(self, monkeypatch):
+        from core.config import load_llm_config
+        monkeypatch.delenv("LLM_API_KEY", raising=False)
+        c = from_config(load_llm_config(self._cfg(apiKey="sk-file")))
+        assert (c.provider, c._endpoint, c._api_key) == (
+            "anthropic", "https://api.anthropic.com/v1/messages", "sk-file")
+
+    def test_a_provider_it_does_not_know_is_refused(self):
+        from core.config import LlmConfigError, load_llm_config
+        with pytest.raises(LlmConfigError, match="'ollama', 'openai' or 'anthropic'"):
+            load_llm_config(self._cfg(provider="claude"))
+
+    def test_the_prompt_budget_is_the_gateway_s(self):
+        from llm_core.budget import resolve_max_tokens
+        assert resolve_max_tokens({"provider": "anthropic", "numCtx": 8192,
+                                   "maxContextTokens": None}) == 127488
+        assert resolve_max_tokens({"provider": "anthropic", "numCtx": 8192,
+                                   "maxContextTokens": 190000}) == 190000
+
+    def test_the_banner_says_what_it_ignores(self):
+        from core.config import format_llm_config_banner, load_llm_config
+        banner = format_llm_config_banner(load_llm_config(self._cfg()))
+        assert "ignored on anthropic" in banner and "(ignored on ollama)" not in banner
+
+    def test_a_hosted_api_is_not_pinged(self, monkeypatch):
+        import llm_enrichment
+        monkeypatch.setattr(llm_enrichment.requests, "get",
+                            lambda *a, **kw: pytest.fail("no ping for a hosted API"))
+        assert llm_enrichment.llm_provider_reachable(self._cfg()) is True

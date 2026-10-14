@@ -17,10 +17,11 @@ from llm_core.pool import Lane, LanePool, lanes_from_config  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def _speedups_on(monkeypatch):
-    """These tests are of the speed-ups: on, whatever this machine's config.local.json says.
-    TestTheSpeedupsSwitch sets its own."""
-    monkeypatch.setenv("ANALYZER_SPEEDUPS", "1")
+def _picture_batches_asked(monkeypatch):
+    """The picture tests are of the batch: asked for, whatever this machine's config.local.json
+    says (`speedups.pictureBatches`). TestTheSpeedupsBlock sets its own."""
+    import utils
+    monkeypatch.setattr(utils, "_picture_batches", lambda: True)
 
 
 # ── prefetch ─────────────────────────────────────────────────────────────────────────────────
@@ -558,7 +559,7 @@ def test_without_the_puppeteer_config_it_is_todays_path(monkeypatch, tmp_path):
 
 def test_the_batch_has_no_switch_of_its_own(monkeypatch, tmp_path):
     # Fewer options: a failing batch falls back by itself, so there is nothing to switch off --
-    # but `speedups.enabled` (every speed-up at once, TestTheSpeedupsSwitch).
+    # but `speedups.pictureBatches` (TestTheSpeedupsBlock).
     import utils
     calls = _fake_batch(monkeypatch, tmp_path)
     monkeypatch.setenv("ANALYZER_MMD_BATCH", "0")
@@ -604,13 +605,13 @@ def test_calls_at_once_follow_the_lanes_and_are_not_a_setting(monkeypatch):
     from llm_core.parallel import llm_workers
     monkeypatch.delenv("LLM_API_KEYS", raising=False)
     assert llm_workers({}) == 1, "no lanes, pause after each call: one at a time, as always"
-    assert llm_workers({"llmServer": {"workers": 9}}) == 1, "workers is not read any more"
-    assert llm_workers({"llmServer": {"pacing": "start"}}) == 2, "one lane, start pacing"
-    assert llm_workers({"llmServer": {"lanes": [{"apiKey": "a"}, {"apiKey": "b"}]}}) == 4
-    assert llm_workers({"llmServer": {"lanes": [{"apiKey": "a", "maxConcurrent": 3}]}}) == 6
-    assert llm_workers({"llmServer": {"lanes": [{"apiKey": "a", "maxConcurrent": "x"}]}}) == 2
-    assert llm_workers({"llm": {"pacing": "start", "lanes": [{"apiKey": "a"}]}}) == 1, \
-        "the old place: lanes and pacing are the server's (llmServer), not read from llm"
+    assert llm_workers({"speedups": {"workers": 9}}) == 1, "workers is not a setting"
+    assert llm_workers({"speedups": {"pacing": "start"}}) == 2, "one lane, start pacing"
+    assert llm_workers({"speedups": {"llms": [{"apiKey": "a"}, {"apiKey": "b"}]}}) == 4
+    assert llm_workers({"speedups": {"llms": [{"apiKey": "a", "maxConcurrent": 3}]}}) == 6
+    assert llm_workers({"speedups": {"llms": [{"apiKey": "a", "maxConcurrent": "x"}]}}) == 2
+    assert llm_workers({"llmServer": {"pacing": "start", "lanes": [{"apiKey": "a"}]}}) == 1, \
+        "the old place: lanes and pacing are speedups keys, not read from llmServer"
     monkeypatch.setenv("LLM_API_KEYS", "a,b,c")
     assert llm_workers({}) == 6
 
@@ -714,93 +715,96 @@ def test_an_error_cancels_the_queued_work_instead_of_waiting_for_it():
     assert time.monotonic() - t0 < 1.5
 
 
-# ── speedups.enabled: false -- develop's path ─────────────────────────────────────────────────
+# ── speedups: every speed-up in one block, each not set = develop's way ─────────────────────
 
-class TestTheSpeedupsSwitch:
-    """`"speedups": {"enabled": false}` in config.local.json, or ANALYZER_SPEEDUPS=0: every
-    speed-up takes develop's path, whatever the lanes, the pacing and parse.workers say."""
+class TestTheSpeedupsBlock:
+    """`speedups` in config.local.json holds every speed-up of this branch; a key not set is
+    develop's way, so an empty or absent block runs as develop does."""
 
-    LANES = [{"name": "a", "customHeaders": {"x-dep-ticket": "credential:A"}},
-             {"name": "b", "customHeaders": {"x-dep-ticket": "credential:B"}}]
+    LLMS = [{"name": "a", "customHeaders": {"x-dep-ticket": "credential:A"}},
+            {"name": "b", "customHeaders": {"x-dep-ticket": "credential:B"}}]
+    FULL = {"llms": LLMS, "pacing": "start", "parseWorkers": 6, "pictureBatches": True,
+            "fastNullCheck": True}
 
-    def _cfg(self, enabled=None):
-        cfg = {"llmServer": {"provider": "openai", "baseUrl": "http://gw/v1", "defaultModel": "m",
-                             "lanes": self.LANES, "pacing": "start"},
-               "parse": {"workers": 6}}
-        if enabled is not None:
-            cfg["speedups"] = {"enabled": enabled}
+    def _cfg(self, block=None):
+        cfg = {"llmServer": {"provider": "openai", "baseUrl": "http://gw/v1", "defaultModel": "m"}}
+        if block is not None:
+            cfg["speedups"] = block
         return cfg
 
     @pytest.fixture(autouse=True)
-    def _no_override(self, monkeypatch):
-        monkeypatch.delenv("ANALYZER_SPEEDUPS", raising=False)
+    def _clean_env(self, monkeypatch):
+        for name in ("LLM_API_KEYS", "ANALYZER_PARSE_WORKERS"):
+            monkeypatch.delenv(name, raising=False)
 
-    def test_on_unless_switched_off(self):
-        from core.config import speedups_on
-        assert speedups_on(self._cfg()) and speedups_on(self._cfg(True))
-        assert not speedups_on(self._cfg(False))
+    def test_empty_or_absent_is_develops_way(self):
+        from core.config import SPEEDUP_DEFAULTS, speedup_settings
+        assert SPEEDUP_DEFAULTS == {"llms": [], "pacing": "after", "parseWorkers": 1,
+                                    "pictureBatches": False, "fastNullCheck": False}
+        assert speedup_settings(self._cfg()) == SPEEDUP_DEFAULTS
+        assert speedup_settings(self._cfg({})) == SPEEDUP_DEFAULTS
 
-    def test_the_environment_wins_both_ways(self, monkeypatch):
-        from core.config import speedups_on
-        monkeypatch.setenv("ANALYZER_SPEEDUPS", "0")
-        assert not speedups_on(self._cfg(True))
-        monkeypatch.setenv("ANALYZER_SPEEDUPS", "on")
-        assert speedups_on(self._cfg(False))
+    def test_every_key_is_read(self):
+        from core.config import speedup_settings
+        assert speedup_settings(self._cfg(self.FULL)) == dict(self.FULL)
 
-    def test_a_value_that_is_not_one_is_refused(self, monkeypatch):
-        from core.config import SpeedupsConfigError, speedups_on
-        for cfg in ({"speedups": {"enabled": "maybe"}}, {"speedups": False}):
-            with pytest.raises(SpeedupsConfigError):
-                speedups_on(cfg)
-        monkeypatch.setenv("ANALYZER_SPEEDUPS", "2")
+    @pytest.mark.parametrize("block", [
+        {"pacing": "fast"}, {"llms": {"name": "a"}}, {"llms": ["a"]}, {"parseWorkers": 0},
+        {"pictureBatches": "yes"}, {"fastNullCheck": 1}])
+    def test_a_value_that_cannot_be_used_is_refused(self, block):
+        from core.config import SpeedupsConfigError, speedup_settings
         with pytest.raises(SpeedupsConfigError):
-            speedups_on({})
+            speedup_settings(self._cfg(block))
+
+    def test_a_block_that_is_not_one_is_refused(self):
+        from core.config import SpeedupsConfigError, speedup_settings
+        with pytest.raises(SpeedupsConfigError):
+            speedup_settings({"speedups": False})
 
     def test_it_is_this_servers_and_never_written_into_a_config(self):
         from core.config import RUN_SERVER_BLOCKS, SERVER_BLOCKS, without_server_settings
         assert "speedups" in SERVER_BLOCKS and "speedups" in RUN_SERVER_BLOCKS
-        assert without_server_settings(self._cfg(False)) == {}
+        assert "parse" not in SERVER_BLOCKS
+        assert without_server_settings(dict(self._cfg(self.FULL), parse={"workers": 4})) == {}
 
-    def test_off_reads_no_lanes_no_pacing_and_asks_one_call_at_a_time(self, monkeypatch):
+    def test_the_old_places_are_not_read_and_are_named(self):
+        from core.config import load_llm_config, load_parse_config, moved_settings, speedup_settings
+        old = self._cfg({"enabled": True})
+        old["llmServer"].update(lanes=self.LLMS, pacing="start")
+        old["parse"] = {"workers": 6}
+        assert speedup_settings(old) == speedup_settings({})
+        r = load_llm_config(old)
+        assert (r["lanes"], r["pacing"], r["workers"]) == ([], "after", 1)
+        assert load_parse_config(old) == {"workers": 1}
+        named = " | ".join(moved_settings(old))
+        for line in ("llmServer.lanes -> speedups.llms", "llmServer.pacing -> speedups.pacing",
+                     "parse.workers -> speedups.parseWorkers", "speedups.enabled -> none"):
+            assert line in named
+
+    def test_the_llm_side_follows_the_block(self):
         from core.config import load_llm_config
         from llm_core.parallel import llm_workers
-        monkeypatch.setenv("LLM_API_KEYS", "k1,k2")
-        on, off = load_llm_config(self._cfg()), load_llm_config(self._cfg(False))
-        assert (len(on["lanes"]), on["pacing"], on["workers"], on["speedups"]) == (2, "start", 4, True)
-        assert (off["lanes"], off["pacing"], off["workers"], off["speedups"]) == ([], "after", 1, False)
-        assert llm_workers(self._cfg(False)) == 1 and llm_workers(self._cfg()) == 4
+        on, off = load_llm_config(self._cfg(self.FULL)), load_llm_config(self._cfg({}))
+        assert (len(on["lanes"]), on["pacing"], on["workers"]) == (2, "start", 4)
+        assert (off["lanes"], off["pacing"], off["workers"]) == ([], "after", 1)
+        assert llm_workers(self._cfg(self.FULL)) == 4 and llm_workers(self._cfg({})) == 1
 
-    def test_off_names_the_settings_it_does_not_use(self, monkeypatch):
-        """For the warning at a run's start: a lane or a worker count nobody reads is said so."""
-        from core.config import unused_speed_settings
-        monkeypatch.setenv("LLM_API_KEYS", "k1,k2")
-        monkeypatch.delenv("ANALYZER_PARSE_WORKERS", raising=False)
-        assert unused_speed_settings(self._cfg(False)) == [
-            "llmServer.lanes (2 lanes)", 'llmServer.pacing "start"', "parse.workers 6",
-            "LLM_API_KEYS (2 keys)"]
-        assert unused_speed_settings(self._cfg()) == [], "on: every one of them is used"
-        monkeypatch.delenv("LLM_API_KEYS")
-        bare = {"llmServer": {"provider": "openai"}, "parse": {"workers": 1},
-                "speedups": {"enabled": False}}
-        assert unused_speed_settings(bare) == [], "off with nothing set: nothing to warn about"
-        monkeypatch.setenv("ANALYZER_PARSE_WORKERS", "auto")
-        assert unused_speed_settings(bare) == ["ANALYZER_PARSE_WORKERS=auto"]
-
-    def test_off_builds_no_lane_pool_even_with_keys_in_the_environment(self, monkeypatch):
-        """No pool: every call takes the client's own path -- one lock, the pause after it."""
+    def test_no_llms_builds_no_lane_pool(self, monkeypatch):
+        """No pool: every call takes the client's own path -- one lock, the pause after it --
+        as on develop. LLM_API_KEYS, set in the environment, is a choice of its own."""
         from core.config import load_llm_config
         from llm_core.client import from_config
+        assert from_config(load_llm_config(self._cfg({})))._pool is None
+        assert from_config(load_llm_config(self._cfg({"llms": self.LLMS})))._pool is not None
         monkeypatch.setenv("LLM_API_KEYS", "k1,k2")
-        assert from_config(load_llm_config(self._cfg(False)))._pool is None
-        assert from_config(load_llm_config(self._cfg()))._pool is not None
-        monkeypatch.setenv("ANALYZER_SPEEDUPS", "0")
-        assert from_config(load_llm_config(self._cfg()))._pool is None
+        assert from_config(load_llm_config(self._cfg({})))._pool is not None
 
-    def test_off_parses_one_file_at_a_time(self, monkeypatch):
+    def test_the_parse_follows_the_block(self, monkeypatch):
         from core.config import load_parse_config
-        monkeypatch.setenv("ANALYZER_PARSE_WORKERS", "6")
-        assert load_parse_config(self._cfg(False)) == {"workers": 1}
-        assert load_parse_config(self._cfg()) == {"workers": 6}
+        assert load_parse_config(self._cfg({})) == {"workers": 1}
+        assert load_parse_config(self._cfg({"parseWorkers": 6})) == {"workers": 6}
+        monkeypatch.setenv("ANALYZER_PARSE_WORKERS", "3")
+        assert load_parse_config(self._cfg({})) == {"workers": 3}
 
     def test_one_worker_parses_in_parse_file_as_develop_does(self, monkeypatch):
         """No TU handed over: parse_file parses each file itself, on the parser's own index, with
@@ -811,22 +815,59 @@ class TestTheSpeedupsSwitch:
         assert list(P._parse_ahead(["a.cpp", "b.cpp"], "parse")) == [("a.cpp", None, None),
                                                                      ("b.cpp", None, None)]
 
-    def test_off_draws_every_picture_alone(self, monkeypatch, tmp_path):
+    def test_the_null_check_says_why_it_stays_off(self, monkeypatch):
+        """When asked for (`fastNullCheck`), the log says "off" only where it costs time, and
+        why. Bindings with no null guard (older than clang 19) have no second call to save."""
+        import parser as P
+        from clang import cindex
+        monkeypatch.setattr(cindex.Cursor, "is_null", cindex.Cursor.is_null)   # restored after
+        assert P._install_fast_null_check() == "on"
+        monkeypatch.delattr(cindex.Cursor, "is_null")
+        assert P._install_fast_null_check() == "no guard"
+        monkeypatch.setattr(cindex.Cursor, "is_null", lambda c: c == cindex.conf.null_cursor,
+                            raising=False)
+        monkeypatch.setattr(P, "_fast_is_null", lambda c: True)            # says null for real cursors
+        assert P._install_fast_null_check() == "it gave another answer than these libclang bindings"
+
+        def no_parse(*a, **kw):
+            raise OSError("no index")
+        monkeypatch.setattr(P.index, "parse", no_parse)
+        assert P._install_fast_null_check().startswith("it could not be checked here (OSError: no index)")
+
+    def test_pictures_are_drawn_alone_unless_asked(self, monkeypatch, tmp_path):
         import utils
         calls = _fake_batch(monkeypatch, tmp_path)
-        monkeypatch.setenv("ANALYZER_SPEEDUPS", "0")
         alone = []
         monkeypatch.setattr(utils, "render_mermaid_cached", lambda root, m, p, **kw: alone.append(p) or True)
         monkeypatch.setattr(utils, "render_dot_cached", lambda root, d, p, **kw: alone.append(p) or True)
         mmd = [("graph A", str(tmp_path / "a.png")), ("graph B", str(tmp_path / "b.png"))]
         dot = [("digraph {}", str(tmp_path / "c.png"))]
+        monkeypatch.setattr(utils, "_picture_batches", lambda: False)
         assert all(utils.render_mermaid_many(ROOT, mmd, scale=2).values())
         assert all(utils.render_dot_many(ROOT, dot, scale=2).values())
         assert alone == [p for _, p in mmd + dot] and calls["batch"] == 0
 
-    def test_on_the_example_file_leaves_them_on(self):
-        """config.local.json.example ships them on: false is the way back, not the default."""
-        from core.config import _read_jsonc
-        example = _read_jsonc(os.path.join(ROOT, "engine", "config", "config.local.json.example"))
-        assert example["speedups"] == {"enabled": True}
+    def test_the_picture_switch_reads_this_servers_block(self, monkeypatch):
+        import utils
+        import core.config as C
+        monkeypatch.undo()               # the module's fixture stands in for it: the real one here
+        for cfg, want in (({"speedups": {"pictureBatches": True}}, True), ({}, False),
+                          ({"speedups": {"pictureBatches": "maybe"}}, False)):
+            monkeypatch.setattr(C, "app_config", lambda cfg=cfg: cfg)
+            assert utils._picture_batches() is want, cfg
 
+    def test_a_run_says_which_it_uses(self, monkeypatch):
+        from core.config import speed_summary
+        assert speed_summary(self._cfg({})).startswith("none -- this run works as develop does")
+        assert speed_summary(self._cfg(self.FULL)) == \
+            "2 llms, pacing start, parseWorkers 6, pictureBatches, fastNullCheck"
+        monkeypatch.setenv("LLM_API_KEYS", "k1,k2")
+        assert speed_summary(self._cfg({})) == "2 keys from LLM_API_KEYS"
+
+    def test_the_example_file_ships_develops_way(self):
+        """config.local.json.example lists every key at its develop value: a server that copies
+        it runs as develop until a key is changed."""
+        from core.config import SPEEDUP_DEFAULTS, _read_jsonc, speedup_settings
+        example = _read_jsonc(os.path.join(ROOT, "engine", "config", "config.local.json.example"))
+        assert set(example["speedups"]) == set(SPEEDUP_DEFAULTS)
+        assert speedup_settings({"speedups": example["speedups"]}) == SPEEDUP_DEFAULTS

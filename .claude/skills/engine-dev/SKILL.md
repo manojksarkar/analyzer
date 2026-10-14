@@ -94,7 +94,7 @@ Four phases. **Each is a separate Python subprocess**; they communicate through 
   `layers.<Layer>.groups.<Group>.<Component>`, `llm`, `docx.*`. Read via `app_config()` in
   [core/config.py](engine/core/config.py); `ANALYZER_CONFIG=<path>` overrides the file.
 - **One file per kind of setting.** How documents are made → `config.defaults.json`. This server
-  (`db`, `auth`, `repositories`, `llmServer`, `llvm`, `parse`) → `config.local.json`, read from there only,
+  (`db`, `auth`, `repositories`, `llmServer`, `llvm`, `speedups`) → `config.local.json`, read from there only,
   at load (`with_server_settings`). A new setting goes in ONE of the two: a server one gets its
   key in `LLM_SERVER_KEYS` (or its block in `SERVER_BLOCKS`), is read through `llm_server` /
   `load_llm_config` / `llvm_paths`, and is never written into a project's or a version's config

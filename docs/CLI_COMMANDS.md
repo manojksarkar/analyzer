@@ -987,7 +987,7 @@ python analyzer.py check-datadict dd_layer1.csv --layer Layer1 --quiet
 `doctor` checks clang, node, graphviz and the browser before a long run stops on a missing one.
 `check-llm` asks the model directly — the gateway or Ollama, whichever `llmServer.provider` names — so
 "no descriptions in the document" can be attributed to the model rather than the pipeline.
-`--only` takes `tiny`, `description` or `large` (or 1-3). With `llmServer.lanes` the tiny prompt
+`--only` takes `tiny`, `description` or `large` (or 1-3). With `speedups.llms` the tiny prompt
 goes to every lane, with the headers a run sends on it, and the result names each lane that did
 not answer — check the tickets before a long run with `check-llm --only tiny`. On Ollama it also
 flags a prompt cut to fit `numCtx` (Ollama reports no error) and the model's load time, which

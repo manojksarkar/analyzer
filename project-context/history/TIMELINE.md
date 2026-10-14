@@ -10,6 +10,10 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-14f | A third LLM provider, `anthropic`: the Claude Messages API, native | [15](15-2026-10-07h.md) |
+| 2026-10-14e | Log lines say how long something took in minutes, hours and days | [15](15-2026-10-07h.md) |
+| 2026-10-14d | Every speed-up is one key of ONE block, `speedups`; a key not set is develop's way, so an empty block runs exactly as develop does | [15](15-2026-10-07h.md) |
+| 2026-10-14c | "The fast null check is off" is said only where it costs time, with the reason; the parse prints a progress line every 1% with the file's name | [15](15-2026-10-07h.md) |
 | 2026-10-14b | With the speed-ups off, a run warns at its start about the speed settings it does not use | [15](15-2026-10-07h.md) |
 | 2026-10-14 | The speed-ups have one switch back to develop's path: `speedups.enabled: false` in config.local.json, or `ANALYZER_SPEEDUPS=0` | [15](15-2026-10-07h.md) |
 | 2026-10-13f | `check-llm` asks every lane: the tiny prompt goes on each ticket, with the headers a run sends on it, and the result names each lane that did not answer | [15](15-2026-10-07h.md) |

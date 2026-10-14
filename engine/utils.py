@@ -58,7 +58,8 @@ def timed(component: str):
     t0 = time.perf_counter()
     yield
     elapsed = time.perf_counter() - t0
-    log(f"{elapsed:.2f}s", component=component)
+    from core.durations import human
+    log(human(elapsed), component=component)
 
 
 def mmdc_path(project_root: str) -> str:
@@ -288,11 +289,14 @@ def render_mermaid_cached(project_root: str, mermaid: str, png_path: str, *,
     return ok
 
 
-def _speedups() -> bool:
-    """core.config.speedups_on for this process's config. Off: every picture is drawn alone,
-    as on develop."""
-    from core.config import speedups_on
-    return speedups_on()
+def _picture_batches() -> bool:
+    """`speedups.pictureBatches` for this process's config. Not set: every picture is drawn
+    alone, as on develop -- and so it is for a setting that cannot be read."""
+    from core.config import SpeedupsConfigError, speedup_settings
+    try:
+        return speedup_settings()["pictureBatches"]
+    except SpeedupsConfigError:
+        return False
 
 
 def render_mermaid_many(project_root: str, items, *, scale=None, puppeteer: bool = True,
@@ -312,7 +316,7 @@ def render_mermaid_many(project_root: str, items, *, scale=None, puppeteer: bool
     items = [(m, p) for m, p in items if m]
     if not items:
         return results
-    if not puppeteer or mermaid_in_docker(project_root) or not _speedups():
+    if not puppeteer or mermaid_in_docker(project_root) or not _picture_batches():
         for m, p in items:
             results[p] = render_mermaid_cached(project_root, m, p, scale=scale, puppeteer=puppeteer,
                                                timeout=timeout)
@@ -464,7 +468,7 @@ def render_dot_many(project_root: str, items, *, scale=2, timeout: int = 180) ->
     items = [(d, p) for d, p in items if d]
     if not items:
         return results
-    if not _speedups():                                   # one by one, as on develop
+    if not _picture_batches():                            # one by one, as on develop
         for d, p in items:
             results[p] = render_dot_cached(project_root, d, p, scale=scale, timeout=timeout)
         return results

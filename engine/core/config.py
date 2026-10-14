@@ -137,9 +137,9 @@ def _deep_merge(base: Dict[str, Any], over: Dict[str, Any]) -> Dict[str, Any]:
 # Two files, two jobs (config.local.json.example has the long form):
 #
 #   config.local.json     THIS SERVER: its database, sign-in, repository folders, LLM server,
-#                         LLVM install and how many files it parses at once. Read from that
-#                         file only, by every process, when it loads its config: not from the
-#                         defaults, a project or a version.
+#                         LLVM install and its speed-ups. Read from that file only, by every
+#                         process, when it loads its config: not from the defaults, a project
+#                         or a version.
 #   config.defaults.json  HOW DOCUMENTS ARE MADE: the parse flags, the views, what the LLM writes
 #                         and how it is prompted, the document texts. A project's own win.
 #
@@ -147,17 +147,20 @@ def _deep_merge(base: Dict[str, Any], over: Dict[str, Any]) -> Dict[str, Any]:
 
 #: This server's blocks. Not in config.defaults.json, and never written into a project's or a
 #: version's config (`without_server_settings`).
-SERVER_BLOCKS = ("db", "auth", "repositories", "llmServer", "llvm", "parse", "speedups")
+SERVER_BLOCKS = ("db", "auth", "repositories", "llmServer", "llvm", "speedups")
 #: The server blocks a run reads through its config: laid over it when it is loaded
 #: (`with_server_settings`). The others have readers of their own, on the same file:
 #: `core.db._db_section`, `api.middleware.auth`, `api.services.local_repos`.
-RUN_SERVER_BLOCKS = ("llmServer", "llvm", "parse", "speedups")
-#: The keys of `llmServer`. Until 2026-10-13 they were in `llm`, where they are not read any more.
-#: `lanes` and `pacing` (llm_core/pool.py): how many tickets a server gives, and how it counts
-#: its gap, are the server's.
+RUN_SERVER_BLOCKS = ("llmServer", "llvm", "speedups")
+#: The keys of `llmServer` -- develop's. Until 2026-10-13 they were in `llm`, where they are not
+#: read any more.
 LLM_SERVER_KEYS = ("provider", "baseUrl", "defaultModel", "customHeaders", "apiKey",
-                   "rateLimitSeconds", "timeoutSeconds", "retries", "numCtx", "maxContextTokens",
-                   "lanes", "pacing")
+                   "rateLimitSeconds", "timeoutSeconds", "retries", "numCtx", "maxContextTokens")
+#: The speed settings' places before they all went into `speedups` (2026-10-14): (block, key) ->
+#: its key in `speedups`. Not read there any more; a run's start says where they go.
+SPEED_KEYS_BEFORE = {("llmServer", "lanes"): "llms", ("llmServer", "pacing"): "pacing",
+                     ("llm", "lanes"): "llms", ("llm", "pacing"): "pacing",
+                     ("parse", "workers"): "parseWorkers"}
 #: `llvm`'s keys, by the name each had in `clang` until then.
 LLVM_KEYS_BEFORE = {"llvmLibPath": "libPath", "clangIncludePath": "includePath"}
 
@@ -226,9 +229,9 @@ def without_server_settings(config: Dict[str, Any]) -> Dict[str, Any]:
     """`config`, in place, without this server's settings: its blocks, and the names their keys
     had in `llm` and `clang` before. What a project's or a version's config may keep, and what
     is written to a workspace file -- which so holds no credential."""
-    for block in SERVER_BLOCKS:
+    for block in SERVER_BLOCKS + ("parse",):          # `parse`: a server block until 2026-10-14
         config.pop(block, None)
-    for section, keys in (("llm", LLM_SERVER_KEYS), ("clang", LLVM_KEYS_BEFORE)):
+    for section, keys in (("llm", LLM_SERVER_KEYS + ("lanes", "pacing")), ("clang", LLVM_KEYS_BEFORE)):
         if isinstance(config.get(section), dict):
             for key in keys:
                 config[section].pop(key, None)
@@ -245,6 +248,13 @@ def moved_settings(config: Dict[str, Any]) -> List[str]:
     clang = config.get("clang") if isinstance(config, dict) else None
     if isinstance(clang, dict):
         out.extend(f"clang.{k} -> llvm.{new}" for k, new in LLVM_KEYS_BEFORE.items() if k in clang)
+    for (block, key), new in SPEED_KEYS_BEFORE.items():
+        section = config.get(block) if isinstance(config, dict) else None
+        if isinstance(section, dict) and key in section:
+            out.append(f"{block}.{key} -> speedups.{new}")
+    speedups = config.get("speedups") if isinstance(config, dict) else None
+    if isinstance(speedups, dict) and "enabled" in speedups:
+        out.append("speedups.enabled -> none: each speed-up has its own key, and none set is develop's way")
     return out
 
 
@@ -263,7 +273,7 @@ def local_config_notes(config_root: Optional[str] = None) -> List[str]:
     if not moved:
         return []
     return [f"{path} has settings under their old names, where they are not read any more: "
-            f"{'; '.join(moved)}. Move them (config.local.json.example shows the two blocks)."]
+            f"{'; '.join(moved)}. Move them (config.local.json.example shows where each goes)."]
 
 
 def llvm_paths(config: Dict[str, Any]) -> Tuple[str, str]:
@@ -369,7 +379,7 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
     this server's own, from config.local.json) and what it is asked to write (``llm``).
 
     ``llmServer`` — required (raises LlmConfigError if missing or invalid):
-        provider          - "ollama" | "openai"
+        provider          - "ollama" | "openai" | "anthropic" (the Claude Messages API)
         baseUrl           - non-empty endpoint base URL
         defaultModel      - non-empty model name
     ``llmServer`` — may be left out:
@@ -451,9 +461,9 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
 
     # ── The server: three required fields, the rest with a default ──
     provider = _require_str("provider", "LLM_PROVIDER").lower()
-    if provider not in ("ollama", "openai"):
+    if provider not in ("ollama", "openai", "anthropic"):
         raise LlmConfigError(
-            f"llmServer.provider must be 'ollama' or 'openai' (got {provider!r})"
+            f"llmServer.provider must be 'ollama', 'openai' or 'anthropic' (got {provider!r})"
         )
 
     base_url = _require_str("baseUrl", "LLM_BASE_URL").rstrip("/")
@@ -476,7 +486,10 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
             f"llmServer.retries must be >= 0 (got {retries})"
         )
 
-    api_key = _env_or("LLM_API_KEY", server.get("apiKey"))
+    # The Claude API's key is read from config.local.json and nowhere else: no environment
+    # variable -- LLM_API_KEY, set for a gateway, would otherwise be sent to Anthropic.
+    api_key = (server.get("apiKey") if provider == "anthropic"
+               else _env_or("LLM_API_KEY", server.get("apiKey")))
     api_key = str(api_key) if api_key else None
 
     # maxContextTokens: null → auto-derived later via budget.resolve_max_tokens
@@ -580,7 +593,7 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
             f"llmServer.customHeaders must be an object (got {type(custom_headers).__name__})"
         )
 
-    speedups = speedups_on(config)
+    speedups = speedup_settings(config)
     return {
         "provider": provider,
         "baseUrl": base_url,
@@ -598,33 +611,36 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "enrichment": enrichment,
         "cacheVersion": cache_version,
         "fewShotExamplesDir": few_shot_dir.strip(),
-        # perf/pipeline-speed (llm_core/pool.py): several endpoints/keys, start pacing, and how
-        # many calls a stage may have in flight. Absent: one lane, pause after each call, one
-        # call at a time -- today's behaviour. `workers` is not a setting: it is what the lanes
-        # allow (`llm_calls_at_once`).
-        # `speedups.enabled` false: none of the three is read -- one lane, the pause after each
-        # call, one call at a time, as on develop (and LLM_API_KEYS is not read: the client is
-        # told by `speedups`).
-        "lanes": _lanes(server.get("lanes")) if speedups else [],
-        "pacing": (_choice(server.get("pacing"), ("after", "start"), "after", "llmServer.pacing")
-                   if speedups else "after"),
-        "workers": llm_calls_at_once(server) if speedups else 1,
-        "speedups": speedups,
+        # The speed-ups' (`speedups` block, llm_core/pool.py): more tickets or keys for this
+        # server, start pacing, and how many calls a stage keeps in flight. Not set: one lane --
+        # llmServer's own ticket -- the pause after each call, one call at a time, as on develop.
+        # `workers` is not a setting: it is what the lanes allow (`llm_calls_at_once`).
+        "lanes": [dict(x) for x in speedups["llms"]],
+        "pacing": speedups["pacing"],
+        "workers": llm_calls_at_once(speedups, provider),
     }
 
 
-def llm_calls_at_once(llm: Dict[str, Any]) -> int:
-    """How many LLM calls a stage keeps in flight, from the `llmServer` block. Not a setting: it
+def env_api_keys(provider: Optional[str]) -> List[str]:
+    """LLM_API_KEYS (env), one lane per key -- never for the Claude API, whose keys are
+    config.local.json's only."""
+    if str(provider or "").lower() == "anthropic":
+        return []
+    return [k.strip() for k in os.environ.get("LLM_API_KEYS", "").split(",") if k.strip()]
+
+
+def llm_calls_at_once(speedups: Dict[str, Any], provider: Optional[str] = None) -> int:
+    """How many LLM calls a stage keeps in flight, from `speedup_settings`. Not a setting: it
     follows the lanes.
 
-    No lanes and pacing "after": 1 -- one call at a time, as always. Otherwise twice what the
-    lanes take at once (each lane's `maxConcurrent`, default 1). The lanes alone decide what
-    really goes out (llm_core/pool.py); the spare half only has the next question ready the
-    moment a lane frees up."""
-    llm = llm or {}
-    lanes = llm.get("lanes") if isinstance(llm.get("lanes"), list) else []
-    env_keys = [k for k in os.environ.get("LLM_API_KEYS", "").split(",") if k.strip()]
-    if not lanes and not env_keys and str(llm.get("pacing") or "after").lower() != "start":
+    No `llms` (and no LLM_API_KEYS) and pacing "after": 1 -- one call at a time, as on develop.
+    Otherwise twice what the lanes take at once (each lane's `maxConcurrent`, default 1). The
+    lanes alone decide what really goes out (llm_core/pool.py); the spare half only has the next
+    question ready the moment a lane frees up."""
+    speedups = speedups or {}
+    lanes = speedups.get("llms") if isinstance(speedups.get("llms"), list) else []
+    env_keys = env_api_keys(provider)
+    if not lanes and not env_keys and str(speedups.get("pacing") or "after").lower() != "start":
         return 1
 
     def _at_once(lane) -> int:
@@ -634,21 +650,6 @@ def llm_calls_at_once(llm: Dict[str, Any]) -> int:
             return 1
     capacity = sum(_at_once(l) for l in lanes) if lanes else (len(env_keys) or 1)
     return 2 * capacity
-
-
-def _lanes(raw: Any) -> List[Dict[str, Any]]:
-    if raw in (None, ""):
-        return []
-    if not isinstance(raw, list) or not all(isinstance(x, dict) for x in raw):
-        raise LlmConfigError("llmServer.lanes must be a list of objects")
-    return [dict(x) for x in raw]
-
-
-def _choice(raw: Any, allowed, default: str, name: str) -> str:
-    v = str(raw or default).lower()
-    if v not in allowed:
-        raise LlmConfigError(f"{name} must be one of {', '.join(allowed)} (got {raw!r})")
-    return v
 
 
 def _positive_int(raw: Any, name: str, error=None) -> int:
@@ -662,96 +663,85 @@ def _positive_int(raw: Any, name: str, error=None) -> int:
     return v
 
 
-class ParseConfigError(ValueError):
-    """A `parse` setting that cannot be used."""
-
-
-def load_parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Phase 1's one speed setting: `parse.workers`, overridden by the environment's
-    ANALYZER_PARSE_WORKERS -- as `llmServer`'s settings are (LLM_API_KEY, ...).
-    docs/design/PIPELINE_SPEED_PLAN.md.
-
-        workers   files parsed ahead on threads while this one is walked; 1 = today's sequential
-                  parse; "auto" = half the CPUs, at most 8
-
-    It never changes the output: a machine setting (cores, memory), so `parse` is one of this
-    server's blocks (`SERVER_BLOCKS`): read from config.local.json only, whatever config a run is
-    given. Kept as a setting until the office code has had a clean run with it; "auto" is meant
-    to become the default then."""
-    if not speedups_on(config):
-        return {"workers": 1}                   # one file at a time, as on develop
-    p = (config or {}).get("parse") or {}
-    if not isinstance(p, dict):
-        raise ParseConfigError("parse must be an object")
-
-    def env_or(key: str, fallback):
-        v = os.environ.get(key)
-        return v if v is not None and v.strip() != "" else fallback
-
-    raw = env_or("ANALYZER_PARSE_WORKERS", p.get("workers", 1))
-    if str(raw).strip().lower() == "auto":
-        workers = max(1, min(8, (os.cpu_count() or 2) // 2))
-    else:
-        workers = _positive_int(raw, "parse.workers", ParseConfigError)
-    return {"workers": workers}
-
-
 class SpeedupsConfigError(ValueError):
     """A `speedups` setting that cannot be used."""
 
 
-_YES, _NO = ("1", "true", "on", "yes"), ("0", "false", "off", "no")
+#: Phase 1's setting until 2026-10-14 had its own error; it is a `speedups` key now.
+ParseConfigError = SpeedupsConfigError
+
+#: `speedups` with nothing set: develop's way, every one of them.
+SPEEDUP_DEFAULTS = {"llms": [], "pacing": "after", "parseWorkers": 1,
+                    "pictureBatches": False, "fastNullCheck": False}
 
 
-def speedups_on(config: Optional[Dict[str, Any]] = None) -> bool:
-    """Whether this branch's speed-ups are used: `speedups.enabled` in config.local.json, true when
-    it is not set; the environment's ANALYZER_SPEEDUPS (1/0, on/off, true/false) wins over it.
+def speedup_settings(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """This server's speed-ups: the `speedups` block of config.local.json, checked, every key
+    filled in. A key not set is develop's way, so an empty or absent block runs as develop does.
 
-    Off, every run takes develop's path: one LLM call at a time with the pause after it (the
-    lanes, start pacing and LLM_API_KEYS are not read), one file parsed at a time on the parser's
-    own index (`parse.workers` is not read), the libclang bindings' own null check, and every
-    picture drawn alone. For a run to set beside develop's, or to rule this branch out.
+        llms            more tickets or keys for the LLM server, side by side (llm_core/pool.py);
+                        [] = llmServer's own ticket, one call at a time
+        pacing          "after": a ticket's pause counts from the END of a call (develop's);
+                        "start": from its start
+        parseWorkers    files parsed ahead on threads: 1 (develop's), a number, or "auto" (half
+                        the CPUs, at most 8); the environment's ANALYZER_PARSE_WORKERS wins
+        pictureBatches  true: the pictures of a view drawn by one browser; false: each alone
+        fastNullCheck   true: the parser's field check for libclang's null cursor (parser.py)
 
-    A machine setting like `parse` -- one of this server's blocks (`SERVER_BLOCKS`). `config`
-    None: this process's own (`app_config`)."""
-    raw, name = os.environ.get("ANALYZER_SPEEDUPS", "").strip(), "ANALYZER_SPEEDUPS"
-    if not raw:
-        block = (app_config() if config is None else config or {}).get("speedups")
-        if block is None:
-            return True
-        if not isinstance(block, dict):
-            raise SpeedupsConfigError('speedups must be an object: "speedups": {"enabled": false}')
-        raw, name = block.get("enabled", True), "speedups.enabled"
-    if isinstance(raw, bool):
-        return raw
-    if str(raw).strip().lower() in _YES:
-        return True
-    if str(raw).strip().lower() in _NO:
-        return False
-    raise SpeedupsConfigError(f"{name} must be true or false (got {raw!r})")
-
-
-def unused_speed_settings(config: Dict[str, Any]) -> List[str]:
-    """The speed settings this server has set that a run with the speed-ups off does not use --
-    for the warning at a run's start (run.py), so a lane or a worker count nobody reads is not
-    taken for one in use. Empty when the speed-ups are on, or nothing is set."""
-    if speedups_on(config):
-        return []
-    out = []
-    server = llm_server(config)
-    lanes = server.get("lanes")
-    if isinstance(lanes, list) and lanes:
-        out.append(f"llmServer.lanes ({len(lanes)} lane{'' if len(lanes) == 1 else 's'})")
-    if str(server.get("pacing") or "after").strip().lower() == "start":
-        out.append('llmServer.pacing "start"')
+    None changes a document (docs/design/PIPELINE_SPEED_PLAN.md). A machine setting -- one of
+    this server's blocks (`SERVER_BLOCKS`). A key this does not know is left alone; a moved one
+    is named at a run's start (`moved_settings`). `config` None: this process's own."""
+    block = (app_config() if config is None else config or {}).get("speedups")
+    if block is None:
+        block = {}
+    if not isinstance(block, dict):
+        raise SpeedupsConfigError("speedups must be an object, e.g. \"speedups\": {}")
+    llms = block.get("llms")
+    if llms in (None, ""):
+        llms = []
+    if not isinstance(llms, list) or not all(isinstance(x, dict) for x in llms):
+        raise SpeedupsConfigError("speedups.llms must be a list of objects")
+    pacing = str(block.get("pacing") or "after").strip().lower()
+    if pacing not in ("after", "start"):
+        raise SpeedupsConfigError(f"speedups.pacing must be \"after\" or \"start\" (got {block.get('pacing')!r})")
     env_workers = os.environ.get("ANALYZER_PARSE_WORKERS", "").strip()
-    workers = env_workers or str(((config or {}).get("parse") or {}).get("workers", 1)).strip()
-    if workers.lower() not in ("1", ""):
-        out.append(f"ANALYZER_PARSE_WORKERS={workers}" if env_workers else f"parse.workers {workers}")
-    keys = [k for k in os.environ.get("LLM_API_KEYS", "").split(",") if k.strip()]
-    if keys:
-        out.append(f"LLM_API_KEYS ({len(keys)} key{'' if len(keys) == 1 else 's'})")
-    return out
+    raw = env_workers or block.get("parseWorkers", 1)
+    name = "ANALYZER_PARSE_WORKERS" if env_workers else "speedups.parseWorkers"
+    if str(raw).strip().lower() == "auto":
+        workers = max(1, min(8, (os.cpu_count() or 2) // 2))
+    else:
+        workers = _positive_int(raw, name, SpeedupsConfigError)
+    flags = {}
+    for key in ("pictureBatches", "fastNullCheck"):
+        value = block.get(key, False)
+        if not isinstance(value, bool):
+            raise SpeedupsConfigError(f"speedups.{key} must be true or false (got {value!r})")
+        flags[key] = value
+    return {"llms": [dict(x) for x in llms], "pacing": pacing, "parseWorkers": workers, **flags}
+
+
+def load_parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Phase 1's speed setting: `speedups.parseWorkers` (`speedup_settings`), as `workers`."""
+    return {"workers": speedup_settings(config)["parseWorkers"]}
+
+
+def speed_summary(config: Dict[str, Any]) -> str:
+    """One line for a run's start: the speed-ups this run uses, or that it runs as develop."""
+    s = speedup_settings(config)
+    keys = env_api_keys(llm_server(config).get("provider"))
+    used = []
+    if s["llms"]:
+        used.append(f"{len(s['llms'])} llms")
+    elif keys:
+        used.append(f"{len(keys)} keys from LLM_API_KEYS")
+    if s["pacing"] != "after":
+        used.append(f"pacing {s['pacing']}")
+    if s["parseWorkers"] > 1:
+        used.append(f"parseWorkers {s['parseWorkers']}")
+    used += [k for k in ("pictureBatches", "fastNullCheck") if s[k]]
+    if not used:
+        return "none -- this run works as develop does (speedups in engine/config/config.local.json)"
+    return ", ".join(used)
 
 
 # ---------------------------------------------------------------------------
@@ -759,15 +749,13 @@ def unused_speed_settings(config: Dict[str, Any]) -> List[str]:
 # ---------------------------------------------------------------------------
 
 def _lanes_display(llm_cfg: Dict[str, Any]) -> str:
-    if not llm_cfg.get("speedups", True):
-        return "not read (speed-ups off): one call at a time, as develop"
     lanes = llm_cfg.get("lanes") or []
-    env = [k for k in os.environ.get("LLM_API_KEYS", "").split(",") if k.strip()]
+    env = env_api_keys(llm_cfg.get("provider"))
     if lanes:
-        return f"{len(lanes)} configured"
+        return f"{len(lanes)} (speedups.llms)"
     if env:
         return f"{len(env)} from LLM_API_KEYS"
-    return "none (one lane: one call at a time, as before)"
+    return "none (llmServer's own ticket: one call at a time, as develop)"
 
 
 def format_llm_config_banner(llm_cfg: Dict[str, Any]) -> str:
@@ -803,7 +791,7 @@ def format_llm_config_banner(llm_cfg: Dict[str, Any]) -> str:
         f"  baseUrl           : {llm_cfg.get('baseUrl')}",
         f"  defaultModel      : {llm_cfg.get('defaultModel')}",
         f"  numCtx            : {llm_cfg.get('numCtx')}  "
-        f"({'used' if llm_cfg.get('provider') == 'ollama' else 'ignored on openai'})",
+        f"({'used' if llm_cfg.get('provider') == 'ollama' else 'ignored on ' + str(llm_cfg.get('provider'))})",
         f"  maxContextTokens  : {max_ctx_display}",
         f"  timeoutSeconds    : {llm_cfg.get('timeoutSeconds')}",
         f"  retries           : {llm_cfg.get('retries')}",
@@ -812,14 +800,12 @@ def format_llm_config_banner(llm_cfg: Dict[str, Any]) -> str:
         # does nothing at all on ollama.
         f"  rateLimitSeconds  : {llm_cfg.get('rateLimitSeconds')}"
         f"{'  (no throttle)' if not llm_cfg.get('rateLimitSeconds') else '  (per process)'}"
-        f"{'' if llm_cfg.get('provider') == 'openai' else '  (ignored on ollama)'}",
+        f"{'  (ignored on ollama)' if llm_cfg.get('provider') == 'ollama' else ''}",
         f"  apiKey            : {api_key_display}",
         # LLM lanes (llm_core/pool.py) -- counted, never printed: a lane's key is a secret too
         f"  lanes             : {_lanes_display(llm_cfg)}",
         f"  pacing            : {llm_cfg.get('pacing') or 'after'}",
         f"  calls at once     : {llm_cfg.get('workers') or 1}  (follows the lanes)",
-        f"  speed-ups         : "
-        f"{'on' if llm_cfg.get('speedups', True) else 'off -- one call at a time, as develop'}",
         f"  cacheVersion      : {llm_cfg.get('cacheVersion')}",
         f"  fewShotExamplesDir: {llm_cfg.get('fewShotExamplesDir')}",
         f"  descriptions      : {llm_cfg.get('descriptions')}",

@@ -236,3 +236,31 @@ def test_the_openai_path_still_names_an_empty_reply(monkeypatch, capsys):
     assert rc == 1
     assert posted[0][0] == "http://gw.test/v1/chat/completions"
     assert "EMPTY CONTENT" in out and "finish_reason=length" in out
+
+
+def test_the_claude_api_is_asked_in_its_own_shape(monkeypatch, capsys):
+    """provider "anthropic": the Messages API -- its URL, x-api-key, the system prompt as a field,
+    and the answer read from its text blocks."""
+    monkeypatch.delenv("X_DEP_TICKET", raising=False)
+    llm = dict(LLM, provider="anthropic", baseUrl="https://api.anthropic.test", apiKey="sk-ant-x",
+               rateLimitSeconds=0, customHeaders={})
+    reply = {"type": "message", "content": [{"type": "text", "text": "OK"}], "stop_reason": "end_turn",
+             "usage": {"input_tokens": 9, "output_tokens": 1}}
+    rc, posted = _run(monkeypatch, reply, "--only", "tiny", llm=llm)
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    url, kw = posted[0]
+    assert url == "https://api.anthropic.test/v1/messages"
+    assert kw["headers"]["x-api-key"] == "sk-ant-x" and kw["headers"]["anthropic-version"] == "2023-06-01"
+    assert kw["json"]["system"] == "You are a test endpoint."
+    assert kw["json"]["messages"] == [{"role": "user", "content": "Reply with exactly: OK"}]
+    assert "-> OK" in out and "stop_reason : end_turn" in out
+
+
+def test_an_empty_claude_answer_is_named(monkeypatch, capsys):
+    llm = dict(LLM, provider="anthropic", baseUrl="https://api.anthropic.test", apiKey="k",
+               rateLimitSeconds=0, customHeaders={})
+    rc, _posted = _run(monkeypatch, {"content": [], "stop_reason": "max_tokens", "usage": {}},
+                       "--only", "tiny", llm=llm)
+    out = capsys.readouterr().out
+    assert rc == 1 and "EMPTY CONTENT" in out and "stop_reason=max_tokens" in out

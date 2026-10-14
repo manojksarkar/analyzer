@@ -86,8 +86,9 @@ def _llm_lines(counts: Dict[str, Any]) -> List[str]:
         _lat, _thr = timing.get("latency_seconds", 0.0), timing.get("throttle_seconds", 0.0)
         _wall = _lat + _thr
         if _wall > 0:
-            L.append(f"    Time      : {_wall:.0f}s total  "
-                     f"({_lat:.0f}s waiting on the model, {_thr:.0f}s in the rate-limit pause)")
+            from core.durations import human
+            L.append(f"    Time      : {human(_wall)} total  "
+                     f"({human(_lat)} waiting on the model, {human(_thr)} in the rate-limit pause)")
             if _thr > _lat:
                 L.append("                Most of it was the THROTTLE, not the model — "
                          "llmServer.rateLimitSeconds")
@@ -124,7 +125,8 @@ def build_report(stats: Dict[str, Any]) -> List[str]:
     L.append(_line("LLM model", stats.get("llmModel")))
     L.append(_line("Status", stats.get("status")))
     if stats.get("elapsedSeconds") is not None:
-        L.append(_line("Wall clock", f"{stats['elapsedSeconds']:.1f}s"))
+        from core.durations import human
+        L.append(_line("Wall clock", human(stats["elapsedSeconds"])))
 
     if decision == "incremental":
         cls = stats.get("classification") or {}

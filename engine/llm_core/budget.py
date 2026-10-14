@@ -291,6 +291,6 @@ def resolve_max_tokens(llm_cfg: Dict) -> int:
                 return hard_cap
         return explicit_i
 
-    if provider == "openai":
+    if provider in ("openai", "anthropic"):      # the gateway's budget; Claude takes it too
         return 127488
     return max(1024, int(llm_cfg["numCtx"]) - 512)

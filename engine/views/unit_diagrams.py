@@ -472,8 +472,8 @@ def run(model, output_dir, model_dir, config):
     progress = ProgressReporter("unitDiagrams", total=total, logger=get_logger("unitDiagrams"))
     progress.start()
     pictures = []
-    from core.config import speedups_on
-    batches = speedups_on(config)
+    from core.config import speedup_settings
+    batches = speedup_settings(config)["pictureBatches"]
     for i, unit_key in enumerate(units_to_render, 1):
         progress.step(label=unit_key)
         mermaid = built[unit_key] if unit_key in built else _mermaid_for(unit_key)
@@ -484,7 +484,7 @@ def run(model, output_dir, model_dir, config):
         with open(mmd_path, "w", encoding="utf-8") as f:
             f.write(mermaid)
         if render_png and not batches:
-            # the speed-ups off: drawn here, one at a time, as on develop
+            # `speedups.pictureBatches` not set: drawn here, one at a time, as on develop
             render_mermaid_cached(project_root, mermaid, os.path.join(out_dir, f"{safe}.png"),
                                   scale=2, timeout=60)
         elif render_png:

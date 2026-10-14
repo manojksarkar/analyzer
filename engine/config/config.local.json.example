@@ -1,16 +1,14 @@
 {
   // THIS SERVER's settings: its database, its sign-in, its repository folders, its LLM server,
-  // its LLVM install, how many files it parses at once and whether the speed-ups are on. Copy this
-  // file to `config.local.json` (same folder) and fill in real values. `config.local.json` is
-  // gitignored, so credentials never get committed.
+  // its LLVM install and its speed-ups. Copy this file to `config.local.json` (same folder) and
+  // fill in real values. `config.local.json` is gitignored, so credentials never get committed.
   //
   // One file per kind of setting:
   //
-  //   config.local.json     THIS SERVER              db, auth, repositories, llmServer, llvm, parse,
-  //                                                  speedups
+  //   config.local.json     THIS SERVER              db, auth, repositories, llmServer, llvm, speedups
   //   config.defaults.json  HOW DOCUMENTS ARE MADE   clang, views, llm, docx, cores, layers, ...
   //
-  // The seven blocks below are read from THIS file only. They are not in config.defaults.json, a
+  // The six blocks below are read from THIS file only. They are not in config.defaults.json, a
   // project's own config cannot set them, and a version does not store them. Change one here and
   // the next run uses it: every project, from the web app and from `analyzer.py` alike.
 
@@ -51,7 +49,7 @@
   // WHAT the LLM writes (descriptions, names, the prompt inputs) is not a server setting: that is
   // `llm` in config.defaults.json, and each project's own switches.
   "llmServer": {
-    "provider": "openai",                      // "openai" (any OpenAI-shaped gateway) or "ollama"
+    "provider": "openai",                      // "openai" (any OpenAI-shaped gateway), "ollama" or "anthropic"
     "baseUrl": "https://your-llm-gateway/v1",
     "defaultModel": "your-model-name",
 
@@ -72,43 +70,20 @@
     "numCtx": 8192,                            // context window in tokens (sent to Ollama only)
     "maxContextTokens": 127488,                // prompt budget in tokens; null = worked out from provider and numCtx
 
-    // ---- How fast calls go out: three keys, read together ----
-    //
-    //   rateLimitSeconds   the pause between two calls on ONE ticket.
-    //                      3 = a gateway that allows about one call per 3 s; 0 = no pause.
-    //   pacing             where that pause is counted from:
-    //                        "after"  the END of a call    (as always)
-    //                        "start"  the START of a call  (faster: with a 5 s answer, a call every
-    //                                 5 s instead of every 8 -- right only if the gateway counts so)
-    //   lanes              how many tickets are used side by side:
-    //                        []          one ticket, the one above (customHeaders / apiKey):
-    //                                    one call at a time
-    //                        two lanes   two calls at a time, each lane with its own pause
-    //
-    // As written here: one ticket, one call at a time, a 3 s pause after each. Nothing is faster
-    // until you change `pacing` or list lanes. (Why and how much: docs/design/PIPELINE_SPEED_PLAN.md.)
-    "rateLimitSeconds": 3,
-    "pacing": "after",
-    "lanes": []
-
-    // Two tickets. A lane is ONE ticket or key for this same server and model; it has a `name`
-    // for the log (never a secret) and its own credential. When lanes are listed, only they
-    // send calls: the ticket above is then just the default for a lane that names none.
-    //   "lanes": [
-    //     { "name": "ticket-a", "customHeaders": { "x-dep-ticket": "credential:TOKEN_A" } },
-    //     { "name": "ticket-b", "customHeaders": { "x-dep-ticket": "credential:TOKEN_B" } }
-    //   ]
-    // Other lanes:
-    //   a second user's ticket    { "name": "user2", "customHeaders": { "User-Id": "user-id-2", "x-dep-ticket": "credential:TOKEN_2" } }
-    //   an API key, not a header  { "name": "key-a", "apiKey": "KEY_A" }   (or env LLM_API_KEYS=KEY_A,KEY_B and no lanes)
-    //   another gateway           { "name": "backup", "baseUrl": "https://other-gateway/v1", "apiKey": "KEY_C" }
-    //   two calls at once on it   add "maxConcurrent": 2 to the lane
-    // Before a long run:  python analyzer.py check-llm --only tiny   asks every lane once and
-    // names the ones that did not answer.
+    "rateLimitSeconds": 3                      // the pause after each call (on ONE ticket); 0 = no pause
   },
 
   // A local Ollama instead of a gateway:
   //   "llmServer": { "provider": "ollama", "baseUrl": "http://localhost:11434", "defaultModel": "llama3.2" }
+  //
+  // The Claude API (Anthropic's Messages API) instead of a gateway:
+  //   "llmServer": { "provider": "anthropic", "baseUrl": "https://api.anthropic.com",
+  //                  "defaultModel": "claude-sonnet-5-5", "apiKey": "sk-ant-...", "rateLimitSeconds": 0 }
+  // The key is read from THIS file only -- no environment variable (not even LLM_API_KEY or
+  // LLM_API_KEYS), so a gateway key set there never goes to the Claude API. customHeaders are sent
+  // as they are (for a proxy in front of the API); none of the gateway's defaults. More keys side
+  // by side: speedups.llms, { "name": ..., "apiKey": ... } each. Check it with
+  //   python analyzer.py check-llm --only tiny     -- the source code in the prompts goes to the API.
   //
   // One run on other values, without editing this file -- environment variables:
   //   LLM_PROVIDER, LLM_BASE_URL, LLM_DEFAULT_MODEL, LLM_API_KEY, LLM_RATE_LIMIT_SECONDS,
@@ -127,24 +102,45 @@
     "includePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include"
   },
 
-  // How many files this machine parses at once (Phase 1): files parsed ahead on threads while
-  // one is walked. 1 = one at a time, as always; a number; or "auto" = half the CPUs, at most 8.
-  // Each file parsed ahead holds its whole AST in memory: 2-4 on an 8 GB machine, 6-8 on 16 GB
-  // and up. Same output whatever the value. The environment's ANALYZER_PARSE_WORKERS wins.
-  // To become "auto" by default once the office code has had a clean run with it.
-  "parse": {
-    "workers": 1
-  },
-
-  // This branch's speed-ups, all at once (docs/design/PIPELINE_SPEED_PLAN.md). false: every run
-  // takes develop's path -- one LLM call at a time with the pause after it (lanes, pacing and
-  // LLM_API_KEYS are not read), one file parsed at a time (parse.workers is not read), the
-  // libclang bindings' own null check, every picture drawn alone. The documents are the same
-  // either way: false is for a run to set beside develop's, or to rule the speed-ups out of a
-  // problem. The environment's ANALYZER_SPEEDUPS (1 / 0) wins for one run. Off, with lanes,
-  // pacing "start", parse.workers above 1 or LLM_API_KEYS set: a run's log warns at its start
-  // that it does not use them.
+  // This branch's speed-ups (docs/design/PIPELINE_SPEED_PLAN.md), all of them here. Each one as
+  // written is develop's way: copied as it is, a server runs exactly as develop does. Change a key
+  // to use that speed-up. None of them changes a document. A run's log says at its start which it
+  // uses ("Speed-ups: ...").
   "speedups": {
-    "enabled": true
+    // More tickets or keys for the LLM server above, side by side. [] = llmServer's own ticket,
+    // one call at a time (develop's). A lane takes the fields it does not set from llmServer, has
+    // a `name` for the log (never a secret) and its own credential. When llms are listed, only
+    // they send calls: llmServer's ticket is then the default of a lane that names none.
+    //   "llms": [
+    //     { "name": "ticket-a", "customHeaders": { "x-dep-ticket": "credential:TOKEN_A" } },
+    //     { "name": "ticket-b", "customHeaders": { "x-dep-ticket": "credential:TOKEN_B" } }
+    //   ]
+    // Other lanes:
+    //   a second user's ticket    { "name": "user2", "customHeaders": { "User-Id": "user-id-2", "x-dep-ticket": "credential:TOKEN_2" } }
+    //   an API key, not a header  { "name": "key-a", "apiKey": "KEY_A" }   (or env LLM_API_KEYS=KEY_A,KEY_B and no llms)
+    //   another gateway           { "name": "backup", "baseUrl": "https://other-gateway/v1", "apiKey": "KEY_C" }
+    //   two calls at once on it   add "maxConcurrent": 2 to the lane
+    // The environment's X_DEP_TICKET, USER_ID, USER_TYPE and SEND_SYSTEM_NAME replace that header
+    // on EVERY lane. Before a long run:  python analyzer.py check-llm --only tiny  asks every lane.
+    "llms": [],
+
+    // Where llmServer.rateLimitSeconds is counted from: "after" the END of a call (develop's), or
+    // "start" -- faster (with a 5 s answer, a call every 5 s instead of every 8), but right only
+    // if the gateway counts so.
+    "pacing": "after",
+
+    // Files parsed at once (Phase 1): 1 (develop's), a number, or "auto" = half the CPUs, at most
+    // 8. Each file parsed ahead holds its whole AST in memory: 2-4 on an 8 GB machine, 6-8 on 16 GB
+    // and up. The environment's ANALYZER_PARSE_WORKERS wins.
+    "parseWorkers": 1,
+
+    // true: a view's pictures drawn by one browser instead of one each -- about 5 times faster; a
+    // picture the batch misses is drawn alone. false: each alone (develop's).
+    "pictureBatches": false,
+
+    // true: the parser checks for libclang's empty cursor itself instead of with a second libclang
+    // call -- Phase 1 about a quarter faster; it stays off by itself where the bindings disagree.
+    // false: the bindings' own check (develop's).
+    "fastNullCheck": false
   }
 }

@@ -8,7 +8,7 @@ unit description) and we want one consolidated picture per process.
 What is recorded per attempt
 ----------------------------
     stage       who asked for it — see `stage()` below
-    provider    "ollama" | "openai"
+    provider    "ollama" | "openai" | "anthropic"
     model       model name
     latency     seconds spent in the HTTP request itself
     throttle    seconds slept afterwards for the gateway rate limit
@@ -229,6 +229,7 @@ class _TokenCounter:
         Empty output suppresses the at-exit report entirely, so subprocesses
         that never made an LLM call (run.py orchestrator, parser.py) stay quiet.
         """
+        from core.durations import human
         rows = self.stages()
         if not rows:
             return ""
@@ -236,23 +237,23 @@ class _TokenCounter:
 
         lines = ["LLM calls by stage:"]
         head = (f"  {'stage':32s} {'calls':>6s} {'fail':>5s} {'avg':>7s} "
-                f"{'max':>7s} {'http':>9s} {'throttle':>9s} {'tok/s':>7s}")
+                f"{'max':>7s} {'http':>11s} {'throttle':>11s} {'tok/s':>7s}")
         lines.append(head)
         lines.append("  " + "-" * (len(head) - 2))
         for r in rows:
             fails = r["empty"] + r["error"]
             lines.append(
                 f"  {r['stage'][:32]:32s} {r['calls']:6d} {fails:5d} "
-                f"{r['avgSeconds']:6.1f}s {r['maxSeconds']:6.1f}s "
-                f"{r['httpSeconds']:8.1f}s {r['throttleSeconds']:8.1f}s "
+                f"{human(r['avgSeconds']):>7s} {human(r['maxSeconds']):>7s} "
+                f"{human(r['httpSeconds']):>11s} {human(r['throttleSeconds']):>11s} "
                 f"{r['tokensPerSecond']:7.1f}"
             )
         lines.append("  " + "-" * (len(head) - 2))
         fails = agg["empty"] + agg["error"]
         lines.append(
             f"  {'TOTAL':32s} {agg['calls']:6d} {fails:5d} "
-            f"{agg['avgSeconds']:6.1f}s {agg['maxSeconds']:6.1f}s "
-            f"{agg['httpSeconds']:8.1f}s {agg['throttleSeconds']:8.1f}s"
+            f"{human(agg['avgSeconds']):>7s} {human(agg['maxSeconds']):>7s} "
+            f"{human(agg['httpSeconds']):>11s} {human(agg['throttleSeconds']):>11s}"
         )
         lines.append(
             f"  tokens: prompt={agg['promptTokens']:,} "
@@ -419,6 +420,7 @@ def merge_dir(dir_path: str) -> Dict[str, Any]:
 
 def format_merged(report: Dict[str, Any]) -> str:
     """Format a merged report (from `merge_dir`) for the end-of-run summary."""
+    from core.durations import human
     rows = report.get("stages") or []
     if not rows:
         return ""
@@ -433,22 +435,22 @@ def format_merged(report: Dict[str, Any]) -> str:
         caption += f"  rateLimit={rate}s"
 
     head = (f"  {'stage':32s} {'calls':>6s} {'fail':>5s} {'avg':>7s} "
-            f"{'max':>7s} {'http':>9s} {'throttle':>9s} {'tok/s':>7s}")
+            f"{'max':>7s} {'http':>11s} {'throttle':>11s} {'tok/s':>7s}")
     lines = ["LLM report - whole run" + (f"  ({caption})" if caption else ""), head,
              "  " + "-" * (len(head) - 2)]
     for r in rows:
         fails = r["empty"] + r["error"]
         lines.append(
             f"  {r['stage'][:32]:32s} {r['calls']:6d} {fails:5d} "
-            f"{r['avgSeconds']:6.1f}s {r['maxSeconds']:6.1f}s "
-            f"{r['httpSeconds']:8.1f}s {r['throttleSeconds']:8.1f}s "
+            f"{human(r['avgSeconds']):>7s} {human(r['maxSeconds']):>7s} "
+            f"{human(r['httpSeconds']):>11s} {human(r['throttleSeconds']):>11s} "
             f"{r['tokensPerSecond']:7.1f}"
         )
     lines.append("  " + "-" * (len(head) - 2))
     fails = agg.get("empty", 0) + agg.get("error", 0)
     lines.append(
         f"  {'TOTAL':32s} {agg.get('calls', 0):6d} {fails:5d} "
-        f"{agg.get('avgSeconds', 0):6.1f}s {agg.get('maxSeconds', 0):6.1f}s "
-        f"{agg.get('httpSeconds', 0):8.1f}s {agg.get('throttleSeconds', 0):8.1f}s"
+        f"{human(agg.get('avgSeconds', 0)):>7s} {human(agg.get('maxSeconds', 0)):>7s} "
+        f"{human(agg.get('httpSeconds', 0)):>11s} {human(agg.get('throttleSeconds', 0)):>11s}"
     )
     return "\n".join(lines)
