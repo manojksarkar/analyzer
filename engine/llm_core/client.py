@@ -226,6 +226,7 @@ class LlmClient:
         rate_limit_seconds: Optional[float] = _OPENAI_RATE_LIMIT_SEC,
         lanes: Optional[List[Dict]] = None,
         pacing: Optional[str] = None,
+        use_lanes: bool = True,
         # Legacy-compat args
         url: Optional[str] = None,
         use_openai_format: bool = False,
@@ -268,8 +269,11 @@ class LlmClient:
         # LLM lanes (llm_core/pool.py): only when the config asks for them -- several endpoints or
         # keys, or start pacing. Otherwise None, and every call takes today's path (one lock,
         # a pause after each call), exactly as before.
+        # `use_lanes` False -- the speed-ups are off (core.config.speedups_on): none of them, and
+        # not LLM_API_KEYS either.
         self._pool = None
-        if lanes or (pacing or "after").lower() == "start" or os.environ.get("LLM_API_KEYS"):
+        if use_lanes and (lanes or (pacing or "after").lower() == "start"
+                          or os.environ.get("LLM_API_KEYS")):
             from .pool import lanes_from_config, shared_pool
             self._pool = shared_pool(lanes_from_config(
                 {"lanes": lanes, "pacing": pacing}, provider=self._provider, endpoint=self._endpoint,
@@ -375,12 +379,20 @@ class LlmClient:
             if n >= total:
                 return
 
+    def _lane_note(self) -> str:
+        """`, lane <name>` for an attempt's log line when the call went through the lanes: whether
+        the failures are one lane's (its ticket) or every lane's (the gateway) shows in the log."""
+        name = getattr(LlmClient._BUSY, "lane", "") if self._pool is not None else ""
+        return f", lane {name}" if name else ""
+
     def _post(self, m: Dict, payload: Dict, *, chat: bool = False) -> Dict:
         """One request through the lanes: wait for the lane that can start soonest, send, and
         release it -- cooling it down when the gateway was busy (429/502/503/504, a timeout, a
         refused connection), so the next attempt takes another lane at once."""
         from .pool import AUTH_STATUSES, BUSY_STATUSES
+        LlmClient._BUSY.lane = ""
         lane, waited = self._pool.acquire(timeout=max(self._timeout, 60) * 4)
+        LlmClient._BUSY.lane = lane.name
         m["throttle"] += waited
         busy = free = dead = False
         retry_after = None
@@ -479,8 +491,8 @@ class LlmClient:
                 # Empty response: log and (maybe) retry
                 if attempt < total_attempts:
                     logger.warning(
-                        "LLM (%s/%s) returned empty response on attempt %d/%d — retrying",
-                        self._provider, self._model, attempt, total_attempts,
+                        "LLM (%s/%s) returned empty response on attempt %d/%d%s — retrying",
+                        self._provider, self._model, attempt, total_attempts, self._lane_note(),
                     )
                     continue
                 logger.warning(
@@ -498,28 +510,28 @@ class LlmClient:
             except requests.Timeout as exc:
                 last_exc = exc
                 logger.warning(
-                    "LLM (%s/%s) timed out after %ds (attempt %d/%d)",
-                    self._provider, self._model, self._timeout, attempt, total_attempts,
+                    "LLM (%s/%s) timed out after %ds (attempt %d/%d%s)",
+                    self._provider, self._model, self._timeout, attempt, total_attempts, self._lane_note(),
                 )
             except requests.ConnectionError as exc:
                 last_exc = exc
                 logger.warning(
-                    "LLM (%s/%s) connection error: %s (attempt %d/%d)",
-                    self._provider, self._model, exc, attempt, total_attempts,
+                    "LLM (%s/%s) connection error: %s (attempt %d/%d%s)",
+                    self._provider, self._model, exc, attempt, total_attempts, self._lane_note(),
                 )
             except requests.HTTPError as exc:
                 last_exc = exc
                 status = getattr(exc.response, "status_code", "?")
                 body = getattr(exc.response, "text", "") or ""
                 logger.warning(
-                    "LLM (%s/%s) HTTP %s: %s (attempt %d/%d)",
-                    self._provider, self._model, status, body[:200], attempt, total_attempts,
+                    "LLM (%s/%s) HTTP %s: %s (attempt %d/%d%s)",
+                    self._provider, self._model, status, body[:200], attempt, total_attempts, self._lane_note(),
                 )
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
                 logger.warning(
-                    "LLM (%s/%s) unexpected error: %s (attempt %d/%d)",
-                    self._provider, self._model, exc, attempt, total_attempts,
+                    "LLM (%s/%s) unexpected error: %s (attempt %d/%d%s)",
+                    self._provider, self._model, exc, attempt, total_attempts, self._lane_note(),
                 )
             # Fall through to next attempt
         if last_exc is not None:
@@ -579,8 +591,8 @@ class LlmClient:
                         return cleaned
                 if attempt < total_attempts:
                     logger.warning(
-                        "LLM (%s/%s) call() empty response on attempt %d/%d — retrying",
-                        self._provider, self._model, attempt, total_attempts,
+                        "LLM (%s/%s) call() empty response on attempt %d/%d%s — retrying",
+                        self._provider, self._model, attempt, total_attempts, self._lane_note(),
                     )
                     continue
                 logger.warning(
@@ -594,28 +606,28 @@ class LlmClient:
             except requests.Timeout as exc:
                 last_exc = exc
                 logger.warning(
-                    "LLM (%s/%s) call() timed out (attempt %d/%d)",
-                    self._provider, self._model, attempt, total_attempts,
+                    "LLM (%s/%s) call() timed out (attempt %d/%d%s)",
+                    self._provider, self._model, attempt, total_attempts, self._lane_note(),
                 )
             except requests.ConnectionError as exc:
                 last_exc = exc
                 logger.warning(
-                    "LLM (%s/%s) call() connection error: %s (attempt %d/%d)",
-                    self._provider, self._model, exc, attempt, total_attempts,
+                    "LLM (%s/%s) call() connection error: %s (attempt %d/%d%s)",
+                    self._provider, self._model, exc, attempt, total_attempts, self._lane_note(),
                 )
             except requests.HTTPError as exc:
                 last_exc = exc
                 status = getattr(exc.response, "status_code", "?")
                 body = getattr(exc.response, "text", "") or ""
                 logger.warning(
-                    "LLM (%s/%s) call() HTTP %s: %s (attempt %d/%d)",
-                    self._provider, self._model, status, body[:200], attempt, total_attempts,
+                    "LLM (%s/%s) call() HTTP %s: %s (attempt %d/%d%s)",
+                    self._provider, self._model, status, body[:200], attempt, total_attempts, self._lane_note(),
                 )
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
                 logger.warning(
-                    "LLM (%s/%s) call() unexpected error: %s (attempt %d/%d)",
-                    self._provider, self._model, exc, attempt, total_attempts,
+                    "LLM (%s/%s) call() unexpected error: %s (attempt %d/%d%s)",
+                    self._provider, self._model, exc, attempt, total_attempts, self._lane_note(),
                 )
         if last_exc is not None:
             logger.error(
@@ -817,6 +829,7 @@ def from_config(llm_cfg: Dict) -> LlmClient:
     return LlmClient(
         lanes=llm_cfg.get("lanes"),
         pacing=llm_cfg.get("pacing"),
+        use_lanes=llm_cfg.get("speedups", True),
         provider=provider,
         base_url=base_url,
         model=model,

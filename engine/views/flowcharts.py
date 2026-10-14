@@ -1946,13 +1946,15 @@ def run(model, output_dir, model_dir, config):
     # progress moving on a document of hundreds. What the batch misses is drawn alone below.
     CHUNK = 50
     drawn = {}
+    from core.config import speedups_on
+    batches = speedups_on(config)          # off: each chart drawn alone in the loop, as on develop
 
     def _png(unit_name, func_name):
         return os.path.abspath(os.path.join(out_dir, f"{unit_name}_{safe_filename(func_name)}.png"))
 
     for i, (unit_name, func_name, flowchart, _key, _carried) in enumerate(items, 1):
         progress.step(label=f"{unit_name}/{func_name}")
-        if (i - 1) % CHUNK == 0:
+        if batches and (i - 1) % CHUNK == 0:
             chunk = items[i - 1:i - 1 + CHUNK]
             try:
                 drawn.update(render_dot_many(project_root, [(fl, _png(u, f)) for u, f, fl, _k, _c in chunk],

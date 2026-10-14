@@ -307,7 +307,7 @@ class TestWhichFileASettingIsIn:
         root = _config_root(tmp_path, local={"llvm": _LLVM})
         cfg = with_server_settings({"llmServer": {"baseUrl": "stale"}, "views": {}}, root)
         assert cfg == {"views": {}, "llvm": _LLVM}
-        assert set(RUN_SERVER_BLOCKS) == {"llmServer", "llvm", "parse"}
+        assert set(RUN_SERVER_BLOCKS) == {"llmServer", "llvm", "parse", "speedups"}
 
     def test_how_many_files_are_parsed_at_once_is_this_machines(self, tmp_path, monkeypatch):
         """`parse.workers` follows the cores and memory of the machine that parses, not the

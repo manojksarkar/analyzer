@@ -568,7 +568,11 @@ def _install_fast_null_check() -> bool:
     return agree
 
 
-_FAST_NULL_CHECK = _install_fast_null_check()
+# The speed-ups off (`speedups.enabled`, core.config.speedups_on): the bindings' own check, as on
+# develop -- and no probe parse to decide it.
+from core.config import speedups_on as _speedups_on
+_SPEEDUPS = _speedups_on(_config)
+_FAST_NULL_CHECK = _install_fast_null_check() if _SPEEDUPS else False
 
 # The options of BOTH parses of every TU (parse_file, parse_calls_and_globals): one value, so
 # the two passes see the same AST and the parse fingerprint hashes what was actually used.
@@ -2348,17 +2352,20 @@ def _parse_ahead(source_files, stage):
     """`(path, tu, err)` for each file in order, parsed ahead on worker threads, each parse with
     an index lent to it alone (one libclang index must not be used by two threads at once). The arguments are
     worked out here, on this thread, before any worker starts."""
-    args = {p: clang_args_for(p) for p in source_files}
     workers = _PARSE["workers"]
-    if workers > 1:
-        # a native crash in libclang on a worker thread prints every thread's stack; best-effort
-        # (a stderr without a file descriptor cannot take it), and only when threads parse
-        import faulthandler
-        try:
-            if not faulthandler.is_enabled():
-                faulthandler.enable(all_threads=True)
-        except (RuntimeError, ValueError, OSError, AttributeError):
-            pass
+    if workers <= 1:
+        # One file at a time: parse_file parses it itself, on the parser's own index, with its
+        # arguments worked out then (`_parsed` with no TU) -- develop's way exactly.
+        return ((p, None, None) for p in source_files)
+    args = {p: clang_args_for(p) for p in source_files}
+    # a native crash in libclang on a worker thread prints every thread's stack; best-effort
+    # (a stderr without a file descriptor cannot take it), and only when threads parse
+    import faulthandler
+    try:
+        if not faulthandler.is_enabled():
+            faulthandler.enable(all_threads=True)
+    except (RuntimeError, ValueError, OSError, AttributeError):
+        pass
     return _prefetch(source_files,
                      lambda idx, p: idx.parse(p, args=args[p], options=_TU_PARSE_OPTIONS),
                      cindex.Index.create, workers=workers)
@@ -3206,9 +3213,12 @@ def main():
 
     p1 = ProgressReporter("parser:parse", total=total, logger=plog)
     p1.start(f"parsing {total} files")
-    if _PARSE["workers"] > 1:
+    if not _SPEEDUPS:
+        plog.info("speed-ups off (speedups.enabled): one file at a time, the bindings' own null "
+                  "check -- as develop")
+    elif _PARSE["workers"] > 1:
         plog.info("parse.workers: %d file(s) parsed ahead on threads", _PARSE["workers"])
-    if not _FAST_NULL_CHECK:
+    if _SPEEDUPS and not _FAST_NULL_CHECK:
         plog.info("the fast null check is off: it did not agree with these libclang bindings "
                   "(slower parse, same output)")
     for path, tu, err in _parse_ahead(source_files, "parse"):

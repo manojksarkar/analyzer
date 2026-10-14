@@ -22,8 +22,11 @@ R = TypeVar("R")
 
 def llm_workers(config: dict) -> int:
     """How many calls a stage keeps in flight: what the config's lanes allow
-    (core.config.llm_calls_at_once) -- 1 without lanes or start pacing. Not a setting."""
-    from core.config import llm_calls_at_once, llm_server
+    (core.config.llm_calls_at_once) -- 1 without lanes or start pacing, and 1 with the speed-ups
+    off (`speedups.enabled`). Not a setting."""
+    from core.config import llm_calls_at_once, llm_server, speedups_on
+    if not speedups_on(config):
+        return 1
     return llm_calls_at_once(llm_server(config or {}))
 
 

@@ -288,6 +288,13 @@ def render_mermaid_cached(project_root: str, mermaid: str, png_path: str, *,
     return ok
 
 
+def _speedups() -> bool:
+    """core.config.speedups_on for this process's config. Off: every picture is drawn alone,
+    as on develop."""
+    from core.config import speedups_on
+    return speedups_on()
+
+
 def render_mermaid_many(project_root: str, items, *, scale=None, puppeteer: bool = True,
                         timeout: int = 90) -> dict:
     """Render [(mermaid, png_path), ...]; returns {png_path: ok}.
@@ -305,7 +312,7 @@ def render_mermaid_many(project_root: str, items, *, scale=None, puppeteer: bool
     items = [(m, p) for m, p in items if m]
     if not items:
         return results
-    if not puppeteer or mermaid_in_docker(project_root):
+    if not puppeteer or mermaid_in_docker(project_root) or not _speedups():
         for m, p in items:
             results[p] = render_mermaid_cached(project_root, m, p, scale=scale, puppeteer=puppeteer,
                                                timeout=timeout)
@@ -456,6 +463,10 @@ def render_dot_many(project_root: str, items, *, scale=2, timeout: int = 180) ->
     results = {}
     items = [(d, p) for d, p in items if d]
     if not items:
+        return results
+    if not _speedups():                                   # one by one, as on develop
+        for d, p in items:
+            results[p] = render_dot_cached(project_root, d, p, scale=scale, timeout=timeout)
         return results
     cache_dir = picture_cache_dir(project_root, _DOT_CACHE_DIR)
     misses = []

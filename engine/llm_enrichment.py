@@ -205,6 +205,7 @@ def _client_cache_key(llm_cfg: dict) -> str:
         str(llm_cfg.get("rateLimitSeconds", "")),
         repr(llm_cfg.get("lanes") or []),
         str(llm_cfg.get("pacing", "")),
+        str(llm_cfg.get("speedups", True)),
     ])
 
 
@@ -249,6 +250,7 @@ def _get_client(config: dict) -> Optional["LlmClient"]:
         rate_limit_seconds=llm_cfg.get("rateLimitSeconds", 3.0),
         lanes=llm_cfg.get("lanes"),
         pacing=llm_cfg.get("pacing"),
+        use_lanes=llm_cfg.get("speedups", True),
     )
     # Config that isn't visible to LlmClient but changes what we compare
     # between runs (see tools/llm_stats.py).

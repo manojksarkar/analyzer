@@ -1,15 +1,16 @@
 {
   // THIS SERVER's settings: its database, its sign-in, its repository folders, its LLM server,
-  // its LLVM install and how many files it parses at once. Copy this file to `config.local.json`
-  // (same folder) and fill in real values. `config.local.json` is gitignored, so credentials
-  // never get committed.
+  // its LLVM install, how many files it parses at once and whether the speed-ups are on. Copy this
+  // file to `config.local.json` (same folder) and fill in real values. `config.local.json` is
+  // gitignored, so credentials never get committed.
   //
   // One file per kind of setting:
   //
-  //   config.local.json     THIS SERVER              db, auth, repositories, llmServer, llvm, parse
+  //   config.local.json     THIS SERVER              db, auth, repositories, llmServer, llvm, parse,
+  //                                                  speedups
   //   config.defaults.json  HOW DOCUMENTS ARE MADE   clang, views, llm, docx, cores, layers, ...
   //
-  // The six blocks below are read from THIS file only. They are not in config.defaults.json, a
+  // The seven blocks below are read from THIS file only. They are not in config.defaults.json, a
   // project's own config cannot set them, and a version does not store them. Change one here and
   // the next run uses it: every project, from the web app and from `analyzer.py` alike.
 
@@ -133,5 +134,15 @@
   // To become "auto" by default once the office code has had a clean run with it.
   "parse": {
     "workers": 1
+  },
+
+  // This branch's speed-ups, all at once (docs/design/PIPELINE_SPEED_PLAN.md). false: every run
+  // takes develop's path -- one LLM call at a time with the pause after it (lanes, pacing and
+  // LLM_API_KEYS are not read), one file parsed at a time (parse.workers is not read), the
+  // libclang bindings' own null check, every picture drawn alone. The documents are the same
+  // either way: false is for a run to set beside develop's, or to rule the speed-ups out of a
+  // problem. The environment's ANALYZER_SPEEDUPS (1 / 0) wins for one run.
+  "speedups": {
+    "enabled": true
   }
 }
