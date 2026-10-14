@@ -141,7 +141,9 @@
   // LLM_API_KEYS are not read), one file parsed at a time (parse.workers is not read), the
   // libclang bindings' own null check, every picture drawn alone. The documents are the same
   // either way: false is for a run to set beside develop's, or to rule the speed-ups out of a
-  // problem. The environment's ANALYZER_SPEEDUPS (1 / 0) wins for one run.
+  // problem. The environment's ANALYZER_SPEEDUPS (1 / 0) wins for one run. Off, with lanes,
+  // pacing "start", parse.workers above 1 or LLM_API_KEYS set: a run's log warns at its start
+  // that it does not use them.
   "speedups": {
     "enabled": true
   }
