@@ -104,6 +104,19 @@ def test_a_return_through_two_nested_helpers_is_computed(ut_outputs):
     assert c["expected"]["value"] == "201"
 
 
+def test_a_return_inside_a_spliced_callee_takes_that_branch(ut_outputs):
+    """gatewayMean's dynamic spec runs CoreStats for real: statsAccumulate(total,
+    lastSample) saturates when lastSample >= 0 and total > STATS_MAX_TOTAL (100000) -
+    lastSample, and gatewayMean then returns statsAverage(100000, count + 1). The case
+    on that return must take the branch, and expect gatewayMean's return."""
+    c = _case(ut_outputs, "gatewayMean", "2.a.2.a.1")
+    assert c["expected"]["callee"] == {"function": "statsAccumulate", "returns": "STATS_MAX_TOTAL"}
+    ins = {i["name"]: int(i["value"]) for i in c["inputs"]}
+    assert ins["lastSample"] >= 0 and ins["total"] > 100000 - ins["lastSample"]
+    assert ins["count"] + 1 > 0
+    assert c["expected"]["value"] == str(100000 // (ins["count"] + 1))
+
+
 def test_nested_branches_get_one_input_set_per_path(ut_outputs):
     got = {c["expected"]["atStep"]: {i["name"]: i["value"] for i in c["inputs"]
                                      if i["kind"] == "parameter"}

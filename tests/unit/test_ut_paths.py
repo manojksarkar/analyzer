@@ -214,6 +214,18 @@ def test_source_defines_from_the_data_dictionary_are_constants():
     assert _vals(res["R1"], ctx)["s"] == "11"
 
 
+def test_a_define_value_is_read_without_its_comment():
+    """Phase 1 stores a `#define`'s value with the rest of its line, comment included."""
+    dd = {"A@a.h:1": {"kind": "define", "name": "CAP", "value": "100000   // saturates here",
+                      "layer": "L1"},
+          "B@a.h:2": {"kind": "define", "name": "HALF", "value": "(CAP / 2) /* half */",
+                      "layer": "L1"},
+          "C@a.h:3": {"kind": "define", "name": "NOTE", "value": "// nothing", "layer": "L1"}}
+    ctx = Context(_spec(), dd, {}, layer="L1")
+    assert ctx.constants["CAP"] == 100000 and ctx.constants["HALF"] == 50000
+    assert "NOTE" not in ctx.constants
+
+
 def test_cxx_casts_are_their_operand():
     assert parse("static_cast<int>(x) > 3") == ("cmp", ">", ("name", "x"), ("num", 3))
     assert parse("reinterpret_cast<const Foo *>(p)") == ("name", "p")
@@ -588,6 +600,58 @@ def test_a_return_spliced_in_from_a_callee_says_so():
     res, _ = _solve(spec, _branch("a > 0"))
     assert res["R1"]["status"] == "unsolved"
     assert "spliced" in res["R1"]["notes"][0]
+
+
+def _gateway_spec():
+    """A dynamic-behaviour spec as test_steps writes it: g(t, s) { int w = clip(s, 0, 9);
+    return w + t; } with clip's body beneath step 2, numbered on from it -- and keeping
+    clip's own node ids, two of which (C1, CR1) are also ids of g's graph."""
+    cfg = _cfg([("S", "START", "g(int t, int s)"), ("C1", "ACTION", "int w = clip(s, 0, 9);"),
+                ("CR1", "RETURN", "return w + t"), ("E", "END", "")],
+               [("S", "C1", None), ("C1", "CR1", None), ("CR1", "E", None)])
+    spec = _spec(params=[("t", "int"), ("s", "int")])
+    spec["testSteps"] = [
+        {"number": "1", "nodeId": "S", "type": "START"},
+        {"number": "2", "nodeId": "C1", "type": "ACTION"},             # g calls clip
+        {"number": "2.a", "nodeId": "C1", "type": "DECISION"},         # clip: v < lo
+        {"number": "2.a.1", "nodeId": "CR1", "type": "RETURN"},        # clip: return lo
+        {"number": "2.a.2", "nodeId": "", "type": "LEG"},
+        {"number": "2.a.2.a", "nodeId": "C2", "type": "DECISION"},     # clip: v > hi
+        {"number": "2.a.2.a.1", "nodeId": "CR2", "type": "RETURN"},    # clip: return hi
+        {"number": "2.a.2.a.2", "nodeId": "CR3", "type": "RETURN"},    # clip: return v
+        {"number": "3", "nodeId": "CR1", "type": "RETURN"}]            # g: return w + t
+    spec["expected"]["returns"] = [{"step": s} for s in ("2.a.1", "2.a.2.a.1", "2.a.2.a.2", "3")]
+    spec["expected"]["crossUnitCalls"] = [{"name": "clip", "qualifiedName": "clip", "steps": ["2"]}]
+    ctx = Context(spec, {}, {})
+    ctx.helpers = _helper(*CLIP)
+    return spec, cfg, ctx
+
+
+def test_a_return_inside_a_spliced_callee_is_reached_by_running_the_function():
+    """Each of clip's returns gets inputs whose real run takes clip through it -- not
+    g's node that happens to share its id -- and expects what g then returns."""
+    from views.ut_paths import splice_of
+    spec, cfg, ctx = _gateway_spec()
+    assert splice_of(spec, "3") is None
+    assert splice_of(spec, "2.a.2.a.1") == ((("C1", "clip"),), "CR2")
+    res = solve(spec, cfg, ctx)
+    assert all(res[s]["status"] == "solved" for s in res), res
+    v = {s: {k: int(x) for k, x in _vals(res[s], ctx).items()} for s in res}
+    assert v["2.a.1"]["s"] < 0                                         # clip returns lo
+    assert v["2.a.2.a.1"]["s"] > 9                                     # clip returns hi
+    assert 0 <= v["2.a.2.a.2"]["s"] <= 9                               # clip returns v
+    assert res["2.a.2.a.1"]["return"] == str(9 + v["2.a.2.a.1"]["t"])  # g's return, not clip's
+    assert res["2.a.1"]["return"] == str(0 + v["2.a.1"]["t"])
+    assert res["2.a.2.a.1"]["exitNode"] == "CR1"                      # g left by its own return
+
+
+def test_a_callee_that_cannot_be_named_stays_unsolved_with_the_reason():
+    spec, cfg, ctx = _gateway_spec()
+    spec["expected"]["crossUnitCalls"] = []
+    res = solve(spec, cfg, ctx)
+    assert res["2.a.1"]["status"] == "unsolved"
+    assert "cannot be told" in res["2.a.1"]["notes"][0]
+    assert res["3"]["status"] == "solved"                              # g's own return
 
 
 def test_void_cast_statement_is_ignored():

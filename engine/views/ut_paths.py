@@ -301,6 +301,9 @@ def bare_type(type_str):
     return " ".join(t.split())
 
 
+_C_COMMENT = re.compile(r"/\*.*?\*/|//.*$", re.S)
+
+
 class Context:
     """Everything the solver needs to know about one spec.
 
@@ -337,7 +340,9 @@ class Context:
                 continue
             mine = [v for lay, v in entries if layer is not None and lay == layer]
             pool = mine or [v for _, v in entries]
-            uniq = sorted({str(v).strip() for v in pool if v not in (None, "")})
+            # the stored value keeps the line's comment (`100000   // saturates here`)
+            uniq = sorted({_C_COMMENT.sub("", str(v)).strip() for v in pool
+                           if v not in (None, "")} - {""})
             if len(uniq) == 1:
                 texts.append(f"{name}={uniq[0]}")
         for k, v in constants_from_macros(texts, base=self.constants).items():
@@ -379,6 +384,9 @@ class Context:
         # {short name: {"cfg", "params"}} of functions that run for real and can be
         # executed to learn their result -- see `helpers_from_cfgs` / `execute`.
         self.helpers = {}
+        # While a search follows a spliced callee: one (call chain, exit node id) per
+        # helper the run executed -- see `execute`. None the rest of the time.
+        self.trace = None
 
     def struct_field(self, path):
         """`cfg.x` for a struct / pointer-to-struct parameter `cfg`, else None."""
@@ -434,10 +442,13 @@ class _Env:
         self.ctx = ctx
         self.alias = {}
         self.visible = visible
+        self.at = None          # the node `_run` is at
+        self.chain = ()         # ((call node id, helper name), ...) that led to this run
 
     def copy(self):
         e = _Env(self.ctx, self.visible)
         e.alias = dict(self.alias)
+        e.at, e.chain = self.at, self.chain
         return e
 
     def sees(self, key):
@@ -1071,6 +1082,14 @@ def solve(spec, cfg, ctx):
         if not cfg or not node_id:
             out[number] = _unsolved("no control-flow graph for this return")
             continue
+        try:
+            splice = splice_of(spec, number)
+        except Unsupported as exc:
+            out[number] = _unsolved(str(exc))
+            continue
+        if splice is not None:
+            out[number] = _with_format_notes(_solve_in_callee(cfg, splice, ctx, written), ctx)
+            continue
         if node_id not in node_ids:
             out[number] = _unsolved("this return is in a callee spliced into the interaction, "
                                     "not in the function's own graph")
@@ -1082,6 +1101,85 @@ def solve(spec, cfg, ctx):
                 result = executed
         out[number] = _with_format_notes(result, ctx)
     return out
+
+
+_BRANCH_STEPS = ("DECISION", "LOOP_HEAD", "SWITCH_HEAD", "LEG")
+
+
+def splice_of(spec, step):
+    """Whose return a step of a dynamic-behaviour spec is. None: the function's own.
+    Else (chain, node id): the chain of calls that reach the callee, outermost first,
+    each (the calling step's node id, the callee's short name), and the node id of
+    the callee's return.
+
+    `test_steps` writes a cross-unit callee's body beneath the plain step that calls
+    it (a branch head never has one), numbered on from that step and keeping the
+    callee's own node ids -- which can equal ids of the caller's graph. So it is the
+    step's place, not its node id, that says whose return it is: a step beneath a
+    plain step is in that step's callee. Raises Unsupported when it cannot be told
+    which callee that is."""
+    steps = {s.get("number"): s for s in spec.get("testSteps") or []}
+    callees = {}
+    for c in (spec.get("expected") or {}).get("crossUnitCalls") or []:
+        short = (c.get("qualifiedName") or c.get("name") or "").rpartition("::")[2]
+        for n in c.get("steps") or []:
+            callees.setdefault(n, []).append(short)
+    parts = (step or "").split(".")
+    chain = []
+    for i in range(1, len(parts)):
+        at = steps.get(".".join(parts[:i])) or {}
+        if not at.get("nodeId") or not at.get("type") or at.get("type") in _BRANCH_STEPS:
+            continue
+        names = callees.get(at.get("number"), [])
+        if len(names) != 1:
+            raise Unsupported(f"this return is in a callee spliced under step {at.get('number')}, "
+                              "and which callee that is cannot be told"
+                              if not names else
+                              f"step {at.get('number')} calls {len(names)} callees whose bodies share "
+                              "its numbering")
+        chain.append((at["nodeId"], names[0]))
+    if not chain:
+        return None
+    return tuple(chain), (steps.get(step) or {}).get("nodeId")
+
+
+def spliced_callee(spec, step):
+    """The short name of the callee whose return `step` is ("" when that cannot be
+    told), or None for a return of the function's own graph -- `splice_of`, for
+    naming a case."""
+    try:
+        splice = splice_of(spec, step)
+    except Unsupported:
+        return ""
+    return splice[0][-1][1] if splice else None
+
+
+def _solve_in_callee(cfg, splice, ctx, written):
+    """A return inside a spliced callee: the callee runs for real in this spec, so
+    the case is the function's run that takes the callee through that return -- found
+    by executing the function. What the case expects is what the function under test
+    then returns and writes: the callee's return is a step on the way, not the value
+    a harness can check."""
+    chain, exit_id = splice
+    callee = chain[-1][1]
+    helper = ctx.helpers.get(callee)
+    if helper is None:
+        return _unsolved(f"`{callee}()` has no control-flow graph to execute (or shares its name), "
+                         "so the run cannot be followed into it")
+    # The callee's thresholds are the ones that steer this return: its literals and
+    # the constants its code names join the candidates.
+    extra = set(_literals({n["id"]: n for n in helper["cfg"].get("nodes", [])}))
+    for n in helper["cfg"].get("nodes", []):
+        for word in re.findall(r"[A-Za-z_]\w*", n.get("rawCode") or ""):
+            if isinstance(ctx.constants.get(word), int):
+                extra.add(ctx.constants[word])
+    found = _solve_by_execution(cfg, None, ctx, written, {}, extra=sorted(extra),
+                                reached=lambda trace: (chain, exit_id) in trace)
+    if found is None:
+        return _unsolved(f"no input set tried takes `{callee}()` through this return")
+    found["notes"] = [f"found by executing the function: `{callee}()` takes this return, "
+                      "and the expected values are what the function then returns and writes"]
+    return found
 
 
 def _with_format_notes(result, ctx):
@@ -1099,16 +1197,20 @@ def _with_format_notes(result, ctx):
 MAX_EXEC_SEARCH = 400     # whole-function executions tried per return
 
 
-def _solve_by_execution(cfg, node_id, ctx, written, symbolic):
+def _solve_by_execution(cfg, node_id, ctx, written, symbolic, extra=(), reached=None):
     """The fallback when path conditions could not be solved symbolically: EXECUTE
     the function with candidate inputs and keep the first set that really exits
     through `node_id`. The run is the proof -- its return value and the globals
     it leaves become the expected values. Candidates: the symbolic attempt's
     values first, then small values and the function's own literals, one input
-    at a time, then pairs. None when no candidate reaches the return."""
+    at a time, then pairs. None when no candidate reaches the return.
+
+    `reached`, when given, decides instead of `node_id`: called with the run's
+    trace of helper exits (`execute`), true when the run went where it must.
+    `extra`: more literals for the candidates."""
     nodes = {n["id"]: n for n in cfg.get("nodes", [])}
     seed = dict(symbolic.get("values") or {}) or _fill_defaults({}, ctx)
-    literals = _literals(nodes)
+    literals = sorted(set(_literals(nodes)) | set(extra)) if extra else _literals(nodes)
     keys = [k for k, info in sorted(ctx.variables.items())
             if info["kind"] in ("param", "global", "mock", "field", "pfield")
             and isinstance((seed.get(k) or (None,))[0], int)]
@@ -1125,11 +1227,16 @@ def _solve_by_execution(cfg, node_id, ctx, written, symbolic):
         return [(c, None) for c in sorted(pool, key=lambda c: (abs(c), c)) if lo <= c <= hi]
 
     def attempt(vals):
+        if reached is not None:
+            ctx.trace = []
         try:
             nid, value, env = run_function(cfg, ctx, vals)
         except (Unsupported, RecursionError, ValueError, OverflowError):
             return None
-        return (vals, value, env) if nid == node_id else None
+        finally:
+            trace, ctx.trace = ctx.trace, None
+        hit = nid == node_id if reached is None else reached(trace)
+        return (vals, value, env, nid) if hit else None
 
     found = attempt(seed)
     tried = 1
@@ -1154,8 +1261,8 @@ def _solve_by_execution(cfg, node_id, ctx, written, symbolic):
                         found = attempt(dict(seed, **{k1: c1, k2: c2}))
     if not found:
         return None
-    vals, value, env = found
-    node = nodes.get(node_id) or {}
+    vals, value, env, exit_id = found
+    node = nodes.get(exit_id) or {}
     has_expr = node.get("type") == "RETURN" and \
         (node.get("rawCode") or "").strip().rstrip(";").strip() not in ("return", "")
     ret = None
@@ -1182,7 +1289,7 @@ def _solve_by_execution(cfg, node_id, ctx, written, symbolic):
             "return": ret, "globals": globals_after, "stubCalls": stub_calls,
             "notes": ["found by executing the function: the conditions could not be "
                       "solved directly"],
-            "method": "execution"}
+            "method": "execution", "exitNode": exit_id}
 
 
 def _unsolved(note):
@@ -1409,7 +1516,7 @@ def _eval(node, env, values, ctx, depth=0, calls=0):
         if helper is None:
             raise Unsupported(f"`{node[1]}()` runs for real -- its result is not an input")
         args = [_eval(parse(a), env, values, ctx, depth + 1, calls) for a in _split_top(node[2])]
-        return execute(helper, args, ctx, values, calls + 1)
+        return execute(helper, args, ctx, values, calls + 1, caller=env, name=short)
     if tag == "neg":
         return -_eval(node[1], env, values, ctx, depth + 1, calls)
     if tag == "bnot":
@@ -1556,7 +1663,7 @@ def _take(out, truth):
     raise Unsupported("a branch the graph does not label")
 
 
-def execute(helper, args, ctx, values, calls=1):
+def execute(helper, args, ctx, values, calls=1, caller=None, name=None):
     """Run a helper's CFG with concrete arguments and return its int result.
 
     Real execution, on our side: conditions are evaluated, loops iterate, a
@@ -1565,14 +1672,22 @@ def execute(helper, args, ctx, values, calls=1):
     returns) -- never the caller's parameters. Anything it cannot follow -- a
     read through a pointer or of an array, a statement it cannot read, a helper
     it has no CFG for -- raises Unsupported, and the expected value stays open
-    rather than being guessed."""
+    rather than being guessed.
+
+    `caller` / `name`: the run that calls it and the helper's short name. When
+    `ctx.trace` is a list, the helper's exit is recorded there with the chain of
+    calls that led to it -- how a search knows which return a spliced callee took."""
     if calls > MAX_CALLS:
         raise Unsupported("helper calls nest too deep")
     if len(args) != len(helper["params"]):
         raise Unsupported("argument count does not match the helper")
     env = _Env(ctx, visible={"global", "mock"})
     env.alias = {p: ("num", v) for p, v in zip(helper["params"], args)}
-    _, value = _run(helper["cfg"], env, ctx, values, calls)
+    env.chain = (caller.chain if caller is not None else ()) + \
+        ((getattr(caller, "at", None), name),)
+    exit_id, value = _run(helper["cfg"], env, ctx, values, calls)
+    if ctx.trace is not None:
+        ctx.trace.append((env.chain, exit_id))
     if value is None:
         raise Unsupported("the helper returns no value")
     return value
@@ -1604,6 +1719,7 @@ def _run(cfg, env, ctx, values, calls):
         node = nodes.get(nid) or {}
         ntype, raw = node.get("type", ""), node.get("rawCode") or ""
         out = succ.get(nid, [])
+        env.at = nid
         if ntype == "RETURN":
             text = raw.strip().rstrip(";").strip()
             expr = text[len("return"):].strip() if text.startswith("return") else ""
@@ -1690,6 +1806,14 @@ def _exec_statement(stmt, env, values, ctx, calls):
         # A stub does nothing but is recorded; a helper's result is unused here
         # and its side effects are not followed. Either way the path goes on.
         _record_call(node, env, values, ctx, calls)
+        short = node[1].replace("::", ".").split(".")[-1]
+        if ctx.trace is not None and short not in ctx.mock_names and short in ctx.helpers:
+            # ... except that a search following a spliced callee needs its path
+            # (`execute` records it); what it returns is still not used.
+            try:
+                _eval(node, env, values, ctx, 0, calls)
+            except Unsupported:
+                pass
         return
     raise Unsupported(f"statement `{_short(s)}` not understood")
 

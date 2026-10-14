@@ -310,7 +310,8 @@ parameter — and solved.
 Then the path's return value, written globals and stub arguments are evaluated with the chosen values
 (`?:`, arithmetic, bit operators included). Value choice: the admissible value nearest 0 (a stub
 return nearest 1); an enum takes an enumerator. Constants: enumerators and `#define`s from the data
-dictionary (the layer's own first), and the layer's `-D` defines.
+dictionary (the layer's own first; the stored value is read without its line's comment), and the
+layer's `-D` defines.
 
 **Execution, where algebra stops.** Every function with a CFG can be *run*, concretely:
 
@@ -332,6 +333,28 @@ execution step and per "not solved" reason; rerun gives identical results.
 Config (`views.utExport`): `targetFormat` (default true), `libraryDirectories {<layer>: [...]}`,
 `environments {<env>: {testcase: {flags, probepoint, usercode}, hierarchy: {Probepoint, usercode}}}`
 — split by file because the two `usercode` shapes differ.
+
+### REQ-UE-11 — A return inside a spliced callee — **implemented**
+
+A dynamic-behaviour spec runs its cross-unit callees for real: `test_steps` writes each callee's body
+beneath the step that calls it, numbered on from that step and keeping the callee's own node ids. Its
+returns are cases like any other (REQ-UE-04), but the function under test goes on after them.
+
+| | A return of the function's own graph | A return inside a spliced callee |
+|---|---|---|
+| Told apart by | — | the step's place: beneath a plain (not branch) step listed in `crossUnitCalls[].steps`. Never by node id — a callee's ids can equal the caller's |
+| Solved by | REQ-UE-10 | running the function (REQ-UE-10 step 3) until the callee leaves through that return; the candidates add the callee's literals and the constants its code names |
+| `name` | `f returns <expr> at step N` | `f with <callee> returning <expr> at step N` |
+| `expected.return`, `value` | that return | the function's own return on that run — what a harness checks (A31) |
+| `expected.callee` (our format only) | — | `{function, returns}`: the callee and its return expression |
+
+Not solved, with the reason in `solve.notes`: a callee that cannot be named (no `crossUnitCalls` entry
+for the step, or two callees sharing it), a callee with no graph or whose short name two functions
+share, and no candidate that takes the return.
+
+**Verification:** `tests/unit/test_ut_paths.py` (a callee whose node ids clash with the caller's),
+`tests/unit/test_ut_export.py`, `tests/e2e/test_ut_export.py` (`gatewayMean`, `statsAccumulate`
+saturating).
 
 ---
 
@@ -577,6 +600,7 @@ Three things this makes concrete:
 | A28 | `SectionName` = the unit name; `<component>.<unit>` when two units of one layer share a name | a section key must be unique in its layer |
 | A29 | `stub_params` = each stub called on the path, with the arguments known there; out-parameter arguments left out | an out-parameter is a buffer the stub fills — nothing to assert |
 | A30 | A run of one group gives a hierarchy of that group only (web app) | the version holds only that group's output, the same as its documents |
+| A31 | A case on a spliced callee's return expects the function under test's return on that run; the callee's return is named beside it, in our format only | a harness calls the function under test and sees only what it returns and writes; the target format has no field for a callee's return |
 
 ## Open items
 

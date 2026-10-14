@@ -382,7 +382,10 @@ one `<LAYER>_<COMPONENT>_<UNIT>_TS.json` per unit (`views/ut_target.py`) and one
 from the control-flow graphs and each layer's macros (`views/ut_paths.py`). `build(test_specs, dd,
 config, cfgs, macros_by_layer)` is the one builder: a review save re-derives through it with the
 stored flowcharts' graphs and the macros Phase 3 recorded (`clangMacros` in the derivation context),
-so a save writes what a run writes. An overload's cases are named by its `headingName`. Contract
+so a save writes what a run writes. An overload's cases are named by its `headingName`. A return
+inside a spliced callee (dynamic-behaviour specs) is told apart by its step's place, never its node id
+(`ut_paths.splice_of`), and solved by running the function until the callee takes it; the case expects
+the function's own return (REQ-UE-11, 2026-10-15b). Contract
 [UT_EXPORT_SPEC](../docs/spec/UT_EXPORT_SPEC.md), status [UT_EXPORT_READINESS](../docs/spec/UT_EXPORT_READINESS.md),
 templates `docs/spec/ut_templates/`, checker `tools/check_ut_json.py`.
 
