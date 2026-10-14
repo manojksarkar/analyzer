@@ -271,7 +271,8 @@ develop's path: one LLM call at a time with the pause after it (`lanes`, `pacing
 not read; no lane pool is built), one file parsed at a time on the parser's own index
 (`parse.workers` not read), the bindings' own null check (no probe parse), every picture drawn alone
 (no batch). The run's log says so at its start. For a run to set beside develop's, or to tell whether
-an office problem is the speed-ups' at all. Default `true`.
+an office problem is the speed-ups' at all. Default `true`. Off with lanes, start pacing,
+`parse.workers` above 1 or `LLM_API_KEYS` set, the run warns at its start that it does not use them.
 
 **How the office would switch the LLM changes on** (`engine/config/config.local.json`; nothing changes
 without it):

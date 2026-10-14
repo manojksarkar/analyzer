@@ -731,6 +731,29 @@ def speedups_on(config: Optional[Dict[str, Any]] = None) -> bool:
     raise SpeedupsConfigError(f"{name} must be true or false (got {raw!r})")
 
 
+def unused_speed_settings(config: Dict[str, Any]) -> List[str]:
+    """The speed settings this server has set that a run with the speed-ups off does not use --
+    for the warning at a run's start (run.py), so a lane or a worker count nobody reads is not
+    taken for one in use. Empty when the speed-ups are on, or nothing is set."""
+    if speedups_on(config):
+        return []
+    out = []
+    server = llm_server(config)
+    lanes = server.get("lanes")
+    if isinstance(lanes, list) and lanes:
+        out.append(f"llmServer.lanes ({len(lanes)} lane{'' if len(lanes) == 1 else 's'})")
+    if str(server.get("pacing") or "after").strip().lower() == "start":
+        out.append('llmServer.pacing "start"')
+    env_workers = os.environ.get("ANALYZER_PARSE_WORKERS", "").strip()
+    workers = env_workers or str(((config or {}).get("parse") or {}).get("workers", 1)).strip()
+    if workers.lower() not in ("1", ""):
+        out.append(f"ANALYZER_PARSE_WORKERS={workers}" if env_workers else f"parse.workers {workers}")
+    keys = [k for k in os.environ.get("LLM_API_KEYS", "").split(",") if k.strip()]
+    if keys:
+        out.append(f"LLM_API_KEYS ({len(keys)} key{'' if len(keys) == 1 else 's'})")
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Startup banner
 # ---------------------------------------------------------------------------

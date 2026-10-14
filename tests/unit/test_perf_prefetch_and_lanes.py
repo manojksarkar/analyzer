@@ -770,6 +770,22 @@ class TestTheSpeedupsSwitch:
         assert (off["lanes"], off["pacing"], off["workers"], off["speedups"]) == ([], "after", 1, False)
         assert llm_workers(self._cfg(False)) == 1 and llm_workers(self._cfg()) == 4
 
+    def test_off_names_the_settings_it_does_not_use(self, monkeypatch):
+        """For the warning at a run's start: a lane or a worker count nobody reads is said so."""
+        from core.config import unused_speed_settings
+        monkeypatch.setenv("LLM_API_KEYS", "k1,k2")
+        monkeypatch.delenv("ANALYZER_PARSE_WORKERS", raising=False)
+        assert unused_speed_settings(self._cfg(False)) == [
+            "llmServer.lanes (2 lanes)", 'llmServer.pacing "start"', "parse.workers 6",
+            "LLM_API_KEYS (2 keys)"]
+        assert unused_speed_settings(self._cfg()) == [], "on: every one of them is used"
+        monkeypatch.delenv("LLM_API_KEYS")
+        bare = {"llmServer": {"provider": "openai"}, "parse": {"workers": 1},
+                "speedups": {"enabled": False}}
+        assert unused_speed_settings(bare) == [], "off with nothing set: nothing to warn about"
+        monkeypatch.setenv("ANALYZER_PARSE_WORKERS", "auto")
+        assert unused_speed_settings(bare) == ["ANALYZER_PARSE_WORKERS=auto"]
+
     def test_off_builds_no_lane_pool_even_with_keys_in_the_environment(self, monkeypatch):
         """No pool: every call takes the client's own path -- one lock, the pause after it."""
         from core.config import load_llm_config

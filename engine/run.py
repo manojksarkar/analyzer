@@ -878,12 +878,16 @@ for _note in local_config_notes(os.path.join(SCRIPT_DIR, "engine")):
 if not llvm_paths(cfg)[0]:
     log("LLVM: llvm.libPath is not set in engine/config/config.local.json - the parser uses the "
         "libclang Python finds by itself", component="run")
-from core.config import speedups_on, SpeedupsConfigError
+from core.config import speedups_on, unused_speed_settings, SpeedupsConfigError
 try:
     if not speedups_on(cfg):
         log("Speed-ups: off (speedups.enabled in engine/config/config.local.json) - this run takes "
             "develop's path: one LLM call at a time, one file parsed at a time, every picture drawn "
             "alone", component="run")
+        _unused = unused_speed_settings(cfg)
+        if _unused:
+            log("  WARNING: the speed-ups are off, so this run does not use: " + "; ".join(_unused)
+                + ". Set speedups.enabled to true to use them, or remove them.", component="run")
 except SpeedupsConfigError as e:
     log(f"Invalid config: {e}", component="run", err=True)
     sys.exit(2)
