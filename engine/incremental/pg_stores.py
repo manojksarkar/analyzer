@@ -3,7 +3,7 @@
 Drop-in replacements for the file-based `stores.ReuseIndex` and the JSON-file
 `project_db` reads, so the incremental engine can read/write its metadata in the DB.
 Additive groundwork: nothing here is wired into the pipeline yet (that flip needs the
-office Postgres); each piece is exercised against SQLite by tests/unit/test_pg_stores.py.
+review Postgres); each piece is exercised against SQLite by tests/unit/test_pg_stores.py.
 
 Engine-agnostic: given any SQLAlchemy engine (Postgres in production, SQLite in tests).
 """

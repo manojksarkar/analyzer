@@ -28,7 +28,7 @@ def _sqlite_engine():
                            poolclass=StaticPool)
 
     # SQLite leaves FK enforcement OFF by default; Postgres does not. Turn it ON so a
-    # seed/insert-ordering bug fails HERE instead of on the office Postgres box.
+    # seed/insert-ordering bug fails HERE instead of on the review Postgres box.
     @event.listens_for(engine, "connect")
     def _fk_on(dbapi_conn, _rec):
         dbapi_conn.execute("PRAGMA foreign_keys=ON")

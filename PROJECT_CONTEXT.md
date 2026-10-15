@@ -58,7 +58,7 @@ newer entry and the code win.
   "Review & update in the web app").
 - **Review and approval** (assign a reviewer, submit, approve, request changes, reopen; a version is
   approved when all its documents are) — built on branch `feat/review-approve` (committed `a55c9c5`, not pushed), 2026-10-01d.
-  Backend complete before the office's 4-day generation, so what remains is web work. Contract
+  Backend complete before the review site's 4-day generation, so what remains is web work. Contract
   [REVIEW_APPROVE_API_SPEC](docs/spec/REVIEW_APPROVE_API_SPEC.md), design
   [REVIEW_APPROVE_DESIGN](docs/design/REVIEW_APPROVE_DESIGN.md) (its open questions are still open), rules in
   `api/services/review_workflow.py`, recording in `api/services/document_registry.py` (every run, CLI too;
@@ -68,7 +68,7 @@ newer entry and the code win.
   writer per version (migration 0016); web runs go on in the background when the API restarts, and a
   run that dies keeps its version for `resume` (2026-10-02c); an `export` of a component from another
   layer adds that layer to the same version, the old layers' documents marked stale where it changes
-  them (2026-10-04e). For the office's multi-day run — guide
+  them (2026-10-04e). For the review site's multi-day run — guide
   [CLI_COMMANDS](docs/CLI_COMMANDS.md#a-run-that-lasts-days), detail
   [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Staged generation".
 - **Config: one file per kind of setting** (2026-10-13d, branch `refactor/config-separation`, not
@@ -79,7 +79,7 @@ newer entry and the code win.
 - **Bitbucket repositories** (2026-10-05r, branch `feat/cli-wordfiles-bitbucket-components`, not
   committed): one rule for how a token reaches git (`engine/incremental/clone.git_auth`: a header for
   Bitbucket), a page address turned into its clone URL, wizard step 1 Remote | Local. Waits on the
-  office check T0 — [BITBUCKET_SUPPORT.md](docs/design/BITBUCKET_SUPPORT.md);
+  review check T0 — [BITBUCKET_SUPPORT.md](docs/design/BITBUCKET_SUPPORT.md);
   [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) "Repositories".
 - **Word file updates** (2026-10-05u, same branch, not committed): "out of date" means the Word file —
   one rule (`engine/review/word_files.py`) for R9, A15, Approve and the update; runs by component store

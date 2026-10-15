@@ -14,7 +14,7 @@ import versions from '../../../test/fixtures/captured/versions.json'
 import commits from '../../../test/fixtures/captured/commits.json'
 import { AttentionChip } from '../AttentionChip'
 
-/* At the office the Overview stacked a banner per thing: a failed run, one box per other run, the
+/* In review the Overview stacked a banner per thing: a failed run, one box per other run, the
    warnings. Now one chip beside the version opens a drawer with each of them; a failed analysis
    that a later run of its version made good is not among them. */
 

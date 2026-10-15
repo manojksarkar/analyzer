@@ -535,7 +535,7 @@ A project's `repo_url` is a remote URL or a local folder on the server; the wiza
   `build_config.repo_access_token`, in plain text (study 03 wants it encrypted).
 - **The wizard's clone cache** (`workspaces/_wizard/<hash>`) is keyed by URL, branch, depth, blobless
   and the token: a clone made with a token is never served to a request without it.
-- **Open:** the office check T0 (BITBUCKET_SUPPORT.md); T7 replace a project's token, T8 a CA bundle, T9
+- **Open:** the review check T0 (BITBUCKET_SUPPORT.md); T7 replace a project's token, T8 a CA bundle, T9
   a CLI token.
 
 ---

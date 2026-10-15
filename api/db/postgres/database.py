@@ -268,7 +268,7 @@ class _DocRepo(_Base, IDocumentRepository):
         with self._engine.connect() as cx:
             total = cx.execute(select(func.count()).select_from(d).where(where)).scalar_one()
             # A fixed order, or pages could overlap or skip a document: the web app reads every
-            # page of a version's documents (240 for the office project) and stitches them.
+            # page of a version's documents (240 for the review project) and stitches them.
             stmt = (select(d).where(where).order_by(d.c.name, d.c.process, d.c.id)
                     .limit(per_page).offset((page - 1) * per_page))
             items = [from_row(Document, r) for r in cx.execute(stmt)]

@@ -20,7 +20,7 @@
 ## Incremental reuse
 | ID | Item | Type | Status | Ref |
 |---|---|---|---|---|
-| IN-1 | ~~Globals never reused~~ — **investigated: not a defect.** A global's LLM description embeds the *descriptions* of its readers/writers (`enrich_globals_rich` pulls `fk.description` for up to 5 of each), so regenerating a using function genuinely changes the global's input and it must be regenerated. Confirmed against the sample project: each global is touched by only 1–2 functions, so a small change invalidates all of them. Untouched globals *are* reused. The report now explains the figure | issue | **closed — by design** | office run 2026-08-15 |
+| IN-1 | ~~Globals never reused~~ — **investigated: not a defect.** A global's LLM description embeds the *descriptions* of its readers/writers (`enrich_globals_rich` pulls `fk.description` for up to 5 of each), so regenerating a using function genuinely changes the global's input and it must be regenerated. Confirmed against the sample project: each global is touched by only 1–2 functions, so a small change invalidates all of them. Untouched globals *are* reused. The report now explains the figure | issue | **closed — by design** | review run 2026-08-15 |
 | IN-4 | Globals with **>5** readers/writers are over-invalidated: the prompt only includes the top 5, so a change to the 6th cannot alter the description yet still triggers regeneration. Harmless today (max 2 users in the sample) and coupling the invalidation rule to a prompt's slice size would be fragile — revisit only if a real project shows widely-shared globals | perf | open | IN-1 analysis |
 | IN-2 | ~~Flowchart counts don't add up~~ — **not a defect.** `carried` is computed as `total - regenerated`, so the three can never disagree. The reported figures are consistent with a total of **15**, not 12: functions `3+12=15` (80%), flowcharts `2+13=15` (13/15 = 86% with floor division). The "12" was a transcription slip | issue | **closed — no defect** | `incremental/report.py` |
 | IN-6 | An incremental run misses a new function's callers in UNCHANGED files. Sample, project B: `3ee7fe0` → `9d4dd0f` adds `multiply` to Math/Utils.cpp; App/Main.cpp (unchanged) calls it. Incremental v1.1 publishes no Math function; a full run at the same commit publishes `multiply` (Math SWE.3 + SWE.4 differ). Suspect the narrowed parse: only changed TUs re-parsed, so Main.cpp's call is not re-resolved. Repro: web runs `v1.1` vs `v1.1-full` in `analyzer_ui` project `p9d1d0c4f` | issue | open | 2026-09-30, PROJECT_CONTEXT.md |
@@ -42,7 +42,7 @@
 | S3-6 | Flowchart Layer-2 test stale: `_count_mermaid_shapes` counts Mermaid syntax but output is DOT; dormant (opt-in `--out-dir`) → port to count DOT `shape=` | debt | open | tests/unit/test_cfg_topo.py |
 
 ## SWE.3 — firmware-team review, round 1 (received 2026-09-23)
-> Work branch `fix/swe3-review-v1`, not yet merged to `develop`. **Status** `done` = on the branch and checked on SampleCppProject, waiting for office verification · `fixed` = verified in the office; set only after that check, never by an agent · `partial` · `open` · `decide` = works to an agreed rule the review disputes.
+> Work branch `fix/swe3-review-v1`, not yet merged to `develop`. **Status** `done` = on the branch and checked on SampleCppProject, waiting for review verification · `fixed` = verified in review; set only after that check, never by an agent · `partial` · `open` · `decide` = works to an agreed rule the review disputes.
 
 | ID | Review item | Status | Where it stands | Ref |
 |---|---|---|---|---|

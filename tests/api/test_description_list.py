@@ -3,7 +3,7 @@
 `behaviorDescription` is one entry per call, but an entry can be a plain string. The old
 `value or []` passed a non-empty string through unchanged, so the UI ran `.map()` on a string
 and the whole document view died with "data.descriptionList.map is not a function"
-(<BehaviorTableView>). Reported from the office run on the Math component.
+(<BehaviorTableView>). Reported from the review run on the Math component.
 """
 import pytest
 

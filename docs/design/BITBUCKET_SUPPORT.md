@@ -1,6 +1,6 @@
 # Bitbucket repositories — design and plan
 
-> Status: **built, 2026-10-05 (T1–T6)**; T0, the office check, is still to run. The office's code is on
+> Status: **built, 2026-10-05 (T1–T6)**; T0, the review check, is still to run. The review site's code is on
 > **Bitbucket**; Data Center (self-hosted) is assumed, from the on-prem rule — T0 confirms it.
 > Built as planned, plus: for a Bitbucket URL, with or without a token, git asks neither the machine's
 > credential helper nor an askpass program (Git Credential Manager made a refused sign-in wait about
@@ -25,8 +25,8 @@
 | # | Decision | Why |
 |---|---|---|
 | D1 | **How the token is sent is read from the URL, never asked.** See the table below. | The URL says the host; one rule, no provider picker, no Username box. |
-| D2 | **A Bitbucket token goes in an HTTP header, through the environment**: `GIT_CONFIG_COUNT=1`, `GIT_CONFIG_KEY_0=http.<scheme>://<host>[:port]/.extraHeader`, `GIT_CONFIG_VALUE_0=Authorization: …`. Scoped to the repository's host, so a redirect elsewhere never carries it. Never in argv, the URL, `.git/config`, a log line or an error message. Needs git ≥ 2.31 (T0 checks the office's). | argv is visible in the process list; a URL leaks into git's messages. |
-| D3 | **No Username box.** Data Center always gets Bearer. | Bearer is the only way a project or repository token works. A personal token with Bearer is not confirmed by Atlassian's page — T0 checks it. If it fails, the office uses a project or repository token (Repository read), or a username field comes back as a separate change. |
+| D2 | **A Bitbucket token goes in an HTTP header, through the environment**: `GIT_CONFIG_COUNT=1`, `GIT_CONFIG_KEY_0=http.<scheme>://<host>[:port]/.extraHeader`, `GIT_CONFIG_VALUE_0=Authorization: …`. Scoped to the repository's host, so a redirect elsewhere never carries it. Never in argv, the URL, `.git/config`, a log line or an error message. Needs git ≥ 2.31 (T0 checks the review site's). | argv is visible in the process list; a URL leaks into git's messages. |
+| D3 | **No Username box.** Data Center always gets Bearer. | Bearer is the only way a project or repository token works. A personal token with Bearer is not confirmed by Atlassian's page — T0 checks it. If it fails, the review site uses a project or repository token (Repository read), or a username field comes back as a separate change. |
 | D4 | **A Bitbucket page address becomes its clone URL on the server**, and Test Connection returns the URL it used (`repo_url`); the wizard puts it in the box. | The server is the one place every path (wizard, API, config preview, create) goes through. |
 | D5 | **Storage unchanged**: the token stays in `build_config.repo_access_token`; no migration. `projects.repo_provider` is set from the URL on create (`bitbucket` for Bitbucket URLs, `local` as today, otherwise as today). Display only: D1 never reads it. | The rule needs only the URL and the token, which every caller already has. |
 | D6 | **GitHub, GitLab, SSH and local folders behave exactly as today**: same URL, same git arguments. | Nothing that works may move. |
@@ -70,7 +70,7 @@ and asks for it again; the `tokenOpen` state goes, since the field is always the
 
 | # | Task | Where | Notes |
 |---|---|---|---|
-| **T0** | **Office check** (no code; the office runs it, before T1 merges). Commands below. | the office machine | Decides D2's git version, D3, and whether T8 is needed. |
+| **T0** | **Review check** (no code; the review site runs it, before T1 merges). Commands below. | the review machine | Decides D2's git version, D3, and whether T8 is needed. |
 | **T1** | **One credential function** per D1/D2 — e.g. `git_auth(url, token) -> (git_url, extra_env)` in `engine/incremental/clone.py` (the platform's one clone primitive; the API already imports it). `git_ops._run` and `api/services/git_cli._run` take extra env. Every remote git call uses it: `clone.shallow_clone`, `clone._do_checkout`, `clone._fetch_commit`, `git_cli.ls_remote`, `git_cli.fetch`, `pipeline_runner._checkout`. Pass the token once (`token=`); drop the `username=token, password=""` convention (`repo_git._creds`, `pipeline_runner._checkout`, `_do_checkout`). `git_cli`'s copies of `_auth_url` / `_clean_url` go. | `engine/incremental/clone.py`, `git_ops.py`; `api/services/git_cli.py`, `repo_git.py`, `pipeline_runner.py` | `resolve_project_repo` and its callers (`generate.py`, `engine.py`, `source_checkout.py`) stay as they are: they already pass URL + token. |
 | **T2** | **Page address → clone URL** per D4: one function in `repo_git`, applied in test-connection, both browse routes, `POST /projects/config/preview` and `POST /projects`. `TestConnectionResponse` gains `repo_url` (the URL used). | `api/services/repo_git.py`, `api/routes/repositories.py`, `api/routes/projects.py`, `api/schemas.py`, `api/swagger.json` | |
 | **T3** | **Messages.** `_friendly` checks sign-in failures first: "authentication failed", "could not read username", "could not read password", "returned error: 401", "returned error: 403". Two answers, by whether a token was sent (see the screen table). | `api/services/repo_git.py` | |
@@ -78,7 +78,7 @@ and asks for it again; the `tokenOpen` state goes, since the field is always the
 | **T5** | **Wizard step 1** as the screen table: toggle labels, placeholders, the local hint, the "Switch to Local" link, the always-there token field (`tokenOpen` goes), hide the token for an SSH URL (`^ssh://` or `^[\w.-]+@[\w.-]+:`), put `res.repo_url` in the box after Test Connection, focus the token on a sign-in failure, stop sending `repo_provider: 'github'` on create, the config card's line. | `web-app/src/pages/NewProjectPage/index.tsx` (~940–995, 261, 361, 448–470, 843), `components/ConfigImport.tsx:81`, `draft.ts`, `services/api/repositories.ts` (`repoUrl` in the result), tests in `NewProjectPage/__tests__/` | |
 | **T6** | **Tests and docs** — below. | | |
 
-**T0 — the office check** (PowerShell; a token with Repository read; `<url>` = the `/scm/…` clone URL):
+**T0 — the review check** (PowerShell; a token with Repository read; `<url>` = the `/scm/…` clone URL):
 
 ```powershell
 git --version                                     # 2.31 or later for D2
@@ -102,7 +102,7 @@ git -C probe -c "http.extraHeader=$h" fetch --depth 1 <url> <an older commit sha
 - **Unit** (`tests/unit`): `git_auth` for every row of D1. GitHub and GitLab are byte-for-byte as today. The
   Bitbucket token is never in a `_run` argument list, never in `.git/config` after a clone or fetch, never in a
   `GitError` message. The header is scoped to the repository's host. D4's table.
-- **End to end without the office** (recommended): a small HTTP server in the test that answers 401 without
+- **End to end without the review site** (recommended): a small HTTP server in the test that answers 401 without
   `Authorization: Bearer <t>` and hands the rest to `git http-backend` (CGI) over a bare repository at a
   `/scm/…` path. Run test-connection, browse, the commit list and `ensure_commit_checkout` through it.
 - **API** (`tests/api`): a page address returns its clone URL in `repo_url`; create stores `repo_provider`
@@ -119,7 +119,7 @@ git -C probe -c "http.extraHeader=$h" fetch --depth 1 <url> <an older commit sha
 |---|---|---|
 | T7 | Replace a project's access token after it is created (Data Center tokens expire; there is no route for it today). | Needs a mockup first. |
 | T8 | A CA bundle machine setting (`repositories.caBundle` → `GIT_SSL_CAINFO`). | Only if T0 shows a certificate error; git on Windows trusts the Windows store. |
-| T9 | `analyzer.py onboard --source <url>` with a token, read from an environment variable (never an argument). | Only if the office clones from the CLI. |
+| T9 | `analyzer.py onboard --source <url>` with a token, read from an environment variable (never an argument). | Only if the review site clones from the CLI. |
 | — | The token is stored in plain text in `build_config`, for every host; [study 03](../production-redesign/03-incremental-changes-design.md) says it should be stored encrypted. | Separate item. |
 
 ## Open questions

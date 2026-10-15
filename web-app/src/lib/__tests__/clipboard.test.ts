@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { copyText } from '../clipboard'
 
-/* The office opens the app over plain http, where navigator.clipboard is undefined: a copy button
+/* The review site opens the app over plain http, where navigator.clipboard is undefined: a copy button
    did nothing there. The fallback copies through a hidden textarea. */
 
 describe('copyText', () => {

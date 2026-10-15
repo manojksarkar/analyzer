@@ -5,7 +5,7 @@ missing `#include` -- makes clang stop instantiating templates for the rest of t
 on a class-template member (`g_ring.push(p)`) then comes back as a CALL_EXPR with an empty
 spelling and no referenced cursor, so Phase 1 records no call edge and no global read through
 it, and `auto ftl_auto() { return g_ring.last(); }` keeps the return type `auto`. The sample's
-includes all resolve, so no e2e test can see this; the office project's do not.
+includes all resolve, so no e2e test can see this; the review project's do not.
 
 The fixture is two files written to tmp_path: a.cpp includes a header that does not exist, then
 one that defines `template<class T,int N> class Ring`. The parser tests go through the parser's

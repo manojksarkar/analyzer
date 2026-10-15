@@ -109,7 +109,7 @@ untouched until step 3.
 reader-facing manifest/output/config stay commit-keyed. Gate green under real ids
 (`decision=incremental`, `reused=1`, `regenerated=1`); full unit+api suite green. **The
 LLM-regen + flowchart-reuse + reader paths are NOT covered by the gate (flowcharts off, --no-llm)
-— validate with a real two-version run on the office box.**
+— validate with a real two-version run on the review box.**
 
 Also fixed here: `generate_*` computed `model/output` from the *code* root; routed through
 `paths().model_dir/output_dir` so the `ANALYZER_DATA_ROOT` split (step 1) actually reaches them.
@@ -121,7 +121,7 @@ the store (`store.capture_output` → `versions/<ver…>/output`). `doc_render.c
 snapshots; their callers (`documents.py`, `pipeline_runner`, `compare.py`) pass `version.id`, and
 compare asset URLs key by the real id. API suite + gate green. *(Fallback keeps old commit-keyed
 snapshots renderable; a re-run writes version-keyed. Full validation of compare/doc rendering is
-the office box, LLM+flowcharts on.)*
+the review box, LLM+flowcharts on.)*
 
 **4 — `PgStore`. ✅ done.** `make_store` (2b) returns `PgStore` when `DATABASE_URL` is set, else
 `FileStore`, so the engine writes structured artifacts straight to Postgres keyed by `ver…`.
@@ -131,7 +131,7 @@ status `draft`) so the engine's `PgStore.write_model` inserts `entity_versions`/
 completion, and `_mark_failed` **deletes** the still-draft row so the name is free to retry.
 `make_store` backend-selection unit-tested. Gate (FileStore) + full suite green. *(The
 `_sync_model_to_db` post-hoc API sync is now redundant with the engine's `PgStore` — removed in
-step 5. End-to-end `PgStore`-in-engine is office-box validation against remote Postgres.)*
+step 5. End-to-end `PgStore`-in-engine is review-box validation against remote Postgres.)*
 
 **5 — Cutover.** Drop the commit-dir artifact layout; `FileStore` becomes dev/test only, Postgres the
 prod source of truth. Folds into 07's PG-7.

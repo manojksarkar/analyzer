@@ -7,7 +7,7 @@
 > as unverified.
 
 > **⭐ WORK STATUS — 2026-08-14 · branch `db-with-increment-changes` (READ THIS FIRST in a new chat).**
-> - **The PostgreSQL migration is COMPLETE and validated on the office box.** Postgres holds the model,
+> - **The PostgreSQL migration is COMPLETE and validated on the review box.** Postgres holds the model,
 >   view outputs, reuse index, run metadata, resolved config and all app data. `JsonDatabase` is deleted;
 >   the API is Postgres-only. The commit dir now holds ONLY the git checkout + `manifest.json` + `report.txt`
 >   + `parse/`. Full detail: the dated entry below (2026-08-13) and §6.

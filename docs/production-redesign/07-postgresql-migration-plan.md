@@ -23,7 +23,7 @@
 | D-1 | Scope | API domain DB + incremental metadata + **rich model & dependency graph** → Postgres. Postgres = system of record for the model. |
 | D-2 | Artifacts | DOCX/PNG/mermaid + git checkouts stay on the filesystem (object storage later). |
 | D-3 | **Version identity** (finalised rev-8) | The **UI-supplied version, unique within a project** (`UNIQUE(project_id, version)`), used end-to-end. No auto `v0.N.0`, no silent `-1` rename, no `commit[:16]` namespace, no `ver…`↔commit translation. Duplicate ⇒ **409**. <br>**API contract (agreed):** the field is **MANDATORY** — missing ⇒ **400**. The **wire name stays `version_tag`** (DB column is `version`) so the UI's strict zod response mappers keep validating. UI-side mandatory enforcement is owned by the UI engineer. **Both** creation paths (`POST /jobs` and `VersionsPage`/`useVersionMutations`) enforce the same rule. |
-| D-4 | Hosting | Docker Postgres 16 (compose for dev; container on the office box). |
+| D-4 | Hosting | Docker Postgres 16 (compose for dev; container on the review box). |
 | D-5 | Existing data | **Start fresh** — no importer. |
 | D-7 | Tooling | SQLAlchemy 2.0 + Alembic + psycopg 3. Keep `InMemoryDatabase` for tests; drop `JsonDatabase`. |
 | **D-8** | **Keep RBAC exactly as-is; build no new RBAC** ⭐final rev-8 | **Migrate the existing RBAC unchanged** — `project_members` (incl. `role`/`status`), `access_requests`, and every members/team/access-request endpoint and guard are ported as-is. The UI actively calls `/members`, `/members/invite`, `/members/{id}/role`, `/members/pending`, `/team`, `/access-requests`, so nothing here may change (C-1). **No new RBAC work** is in scope: no new roles, permissions, policies or enforcement rules. Only `organizations` is dropped — it is genuinely vestigial (no repository, no route, hardcoded `"org1"`). |
@@ -248,7 +248,7 @@ The blocker isn't `subprocess`, it's that `engine/flowchart/llm/` **shadows** `l
 | **PG-5a** ✅ | View outputs → PG: `version_output_files` table + `model_store.persist_output_files` + `PgStore.capture_output` (disk write kept) |
 | **PG-5b** ✅ | `OutputReader` (PG-first, disk fallback); **compare** reads interface tables from PG |
 | **PG-7a** ✅ | `ModelReader` (PG-first via `model_store` loaders, disk fallback); **document render + compare render** read the model from PG, version-scoped |
-| **PG-6** ✅ | Incremental on Postgres — validated on the office box: 2 different commits, non-zero changed files, `regenerated ≥ 1`, compare shows the change; `tools/verify_pg_readers.py` confirms each version is served from PG |
+| **PG-6** ✅ | Incremental on Postgres — validated on the review box: 2 different commits, non-zero changed files, `regenerated ≥ 1`, compare shows the change; `tools/verify_pg_readers.py` confirms each version is served from PG |
 | **PG-7b** ✅ | Cutover (destructive): dropped `_sync_model_to_db`, the commit-dir model/output dual-write, the file reuse index, `JsonDatabase`; run metadata + parse fingerprint moved onto the `versions` row; the importer and the API are Postgres-only |
 
 **Cutover result.** The commit dir is now only the git checkout + manifest/report; artifacts live in
@@ -268,7 +268,7 @@ Code is **complete** (M1–M4 + PERF caches, no TODOs). Remaining is storage + i
 1. Baseline reads from Postgres: `classify` (entity_hashes), `impact` (model_functions + model_edges), `parse_merge` (the per-version rows **are** the parser snapshot — `versions/<id>/parse/` disappears), `select_baseline` (versions+commits).
 2. `incremental_plan.json` → a `job_plan` row keyed by version.
 3. Version identity per D-3.
-4. **Validation/graduation:** LLM-on timing on the office box; `--verify-parse` across a diff matrix on a **large** repo → then flip `--narrowed-parse` to default.
+4. **Validation/graduation:** LLM-on timing on the review box; `--verify-parse` across a diff matrix on a **large** repo → then flip `--narrowed-parse` to default.
 5. *Optional later:* impact via `WITH RECURSIVE` over `model_edges` (keep the tested Python BFS as reference + parity test).
 
 ### F — Context service + cache consolidation (D-12)
@@ -354,7 +354,7 @@ Found by inspection during planning; each would have shipped as a silent bug:
 23. `model_units`/`model_components` jsonb arrays were a **mechanical carry-over** of file shape — derived, not stored (D-13).
 24. **Flowchart Mermaid JSONs are read ACROSS versions** ([flowcharts.py:39](engine/views/flowcharts.py#L39)) — they are storage, not artifacts. Moving them to rows **deletes** the splice/carry/prune machinery and fixes the `qualifiedName` **overload collision**.
 25. **`versions/<id>/config.json`, datadict/macros CSVs, view outputs and `report.txt`** were all still file-resident in rev-6 — now in Postgres (D-14).
-26. ⚠ **LATENT BUG — concurrent jobs corrupt each other.** `job_max_concurrency` defaults to **2** ([settings.py:47](api/services/settings.py#L47)) and jobs are rejected only **per project** ([jobs.py:110](api/routes/jobs.py#L110)) — but the pipeline writes a **single shared `model/` + `output/` at the repo root** (`cwd=repo_root`; `generate.py` does `_rmtree_force(project_root/output)`). Two jobs from different projects would clobber each other. Masked today because you run one at a time; it would surface on the shared office deployment. **The migration fixes it** — model becomes per-version rows and artifacts move to per-version dirs (D-3), after which `JOB_MAX_CONCURRENCY>1` is finally safe.
+26. ⚠ **LATENT BUG — concurrent jobs corrupt each other.** `job_max_concurrency` defaults to **2** ([settings.py:47](api/services/settings.py#L47)) and jobs are rejected only **per project** ([jobs.py:110](api/routes/jobs.py#L110)) — but the pipeline writes a **single shared `model/` + `output/` at the repo root** (`cwd=repo_root`; `generate.py` does `_rmtree_force(project_root/output)`). Two jobs from different projects would clobber each other. Masked today because you run one at a time; it would surface on the shared review deployment. **The migration fixes it** — model becomes per-version rows and artifacts move to per-version dirs (D-3), after which `JOB_MAX_CONCURRENCY>1` is finally safe.
 27. **Storage contradicted the incremental feature** — a full copy of every unchanged entity per version is the opposite of "don't redo unchanged work".
 28. ⭐rev-8 — **rev-7's dedup was still a half-measure**: it shared heavy text but still wrote a *full row set* per version, repeating `Component|Unit|qname|params` strings everywhere. Fixed by the three-layer **manifest-of-pointers** model (D-9): stable `entities` + thin `entity_versions` + shared `content_blobs`. Carry-forward becomes pointer reuse (zero copying); "what changed" becomes a hash comparison — i.e. `classify` and storage are now the *same* idea. Doc 04's D3 "reuse index" had this instinct already; rev-8 promotes it from a side index over files to **the** storage model.
 30. ⭐rev-8 — **UI/API audit found two breakages** (C-1 violations that would have shipped):

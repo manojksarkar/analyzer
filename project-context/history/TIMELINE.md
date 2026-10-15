@@ -25,7 +25,7 @@
 | 2026-10-12 | Pipeline speed, fewer options: the fast null check and the picture batches always on, LLM calls at once follow the lanes, skipping covered headers removed; left to set: `llm.lanes`, `llm.pacing`, `parse.workers` | [15](15-2026-10-07h.md) |
 | 2026-10-08b | Pipeline speed, measured and prototyped on `perf/pipeline-speed`: LLM lanes (several keys, start pacing, failover), calls in parallel per stage, parse ahead, pictures in one browser -- each checked to give develop's output | [15](15-2026-10-07h.md) |
 | 2026-10-08 | The web page shows a corrected flowchart after its Word-file update again: an export-only run draws the web pictures its restore put back stale | [15](15-2026-10-07h.md) |
-| 2026-10-07h | The web app before the office demo: one chip for what needs attention instead of stacked banners, a failure a later run made good no longer shown, the approval gauge in both themes, an incremental run that starts from its baseline's components, ids for superusers, white icons on blue tiles, sign-in to Projects | [15](15-2026-10-07h.md) |
+| 2026-10-07h | The web app before the review demo: one chip for what needs attention instead of stacked banners, a failure a later run made good no longer shown, the approval gauge in both themes, an incremental run that starts from its baseline's components, ids for superusers, white icons on blue tiles, sign-in to Projects | [15](15-2026-10-07h.md) |
 | 2026-10-07g | Checked: fresh and incremental generation make the same Word files on this branch as on develop; an incremental run now keeps the names and chart entries it used to drop | [14](14-2026-10-05r.md) |
 | 2026-10-07f | Phase 3 draws a Word picture only for the flowcharts the SWE.3 document prints, by the exporter's own rule | [14](14-2026-10-05r.md) |
 | 2026-10-07e | Built: fast Word-file updates -- a correction's Word-file update exports from the stored data, and rewrites with the LLM only the texts in its components whose prompt holds the corrected one | [14](14-2026-10-05r.md) |
@@ -90,7 +90,7 @@
 | 2026-09-30g | `integrate/ui-v5` merged develop — PR #70's review & update is on the web app's branch; the branch's 13 dated entries moved whole into file 12 | [11](11-2026-09-29e.md) |
 | 2026-09-30f | Config import: core files are user inputs, filled from ONE folder pick in step 2; Import config moved to the top of step 1 | [12](12-2026-09-29-web-app.md) |
 | 2026-09-30e | Web app CSS lowered for old browsers | [12](12-2026-09-29-web-app.md) |
-| 2026-09-30d | `tools/copy_changes.py` — copy this repo's changes into the office project, deletions included | [12](12-2026-09-29-web-app.md) |
+| 2026-09-30d | `tools/copy_changes.py` — copy this repo's changes into the review project, deletions included | [12](12-2026-09-29-web-app.md) |
 | 2026-09-30c | `start-app` — one command that starts the API + web app cleanly | [12](12-2026-09-29-web-app.md) |
 | 2026-09-30b | Flowcharts in the web app are server-drawn SVGs | [12](12-2026-09-29-web-app.md) |
 | 2026-09-30 | The PR #70 review: the seven must-fix items fixed, the whole review feature passes on PostgreSQL, and fifteen follow-ups are BACKLOG RF-1…RF-15 | [11](11-2026-09-29e.md) |
@@ -237,7 +237,7 @@
 | 2026-07-21 | 3.23 conditional `#define` shows both branches (DONE) (status-board note) | [status boards](STATUS_BOARDS.md) |
 | 2026-07-21 | e2e test suite resurrected + snapshots regenerated (DONE, test-only) (status-board note) | [status boards](STATUS_BOARDS.md) |
 | 2026-07-20 | unit-header value-column batch (3.20–3.22) (status-board note) | [status boards](STATUS_BOARDS.md) |
-| 2026-07-19 | second V1 correctness batch logged (3.11–3.19) from client/office review — all ADDITIONS, nothing reversed | [02](02-2026-07-01.md) |
+| 2026-07-19 | second V1 correctness batch logged (3.11–3.19) from client review — all ADDITIONS, nothing reversed | [02](02-2026-07-01.md) |
 | 2026-07-18 | V1-fixes status reconciled + flowchart-in-DOCX verified resolved | [02](02-2026-07-01.md) |
 | 2026-07-17 | multi-line `#define` value no longer truncated in the unit-header table | [02](02-2026-07-01.md) |
 | 2026-07-17 | orphan-header symbols surface in the using unit's header table | [02](02-2026-07-01.md) |

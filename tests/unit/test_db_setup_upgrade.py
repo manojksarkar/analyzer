@@ -10,7 +10,7 @@ worked, and the missing column surfaces much later, mid-run, as
 from a SELECT that names every column the schema declares.
 
 A fresh database hides this completely -- which is why it survived a full SQLite end-to-end run
-and reached an office machine on the first real Postgres install.
+and reached a review machine on the first real Postgres install.
 """
 import datetime
 import os

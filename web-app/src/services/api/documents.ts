@@ -50,7 +50,7 @@ export const documentsApi = {
   },
   /**
    * EVERY document that matches, page after page (`page` / `perPage` in `filters` are ignored).
-   * A page holds at most 100, and a version of the office project has about 240 (3 layers ×
+   * A page holds at most 100, and a version of the review project has about 240 (3 layers ×
    * 40 components × SWE.3 and SWE.4): one page undercounted the lists, the KPIs, the version's
    * approval bar and bulk approve. The first page says the total; the rest are read together.
    */
