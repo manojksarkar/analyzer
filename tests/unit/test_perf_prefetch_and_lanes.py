@@ -121,7 +121,7 @@ def test_lanes_take_their_missing_fields_from_the_llm_block(monkeypatch):
 
 
 def test_a_lanes_headers_replace_the_blocks_of_the_same_name():
-    # the office: the credential is a header, one ticket (and maybe one user) per lane
+    # in review: the credential is a header, one ticket (and maybe one user) per lane
     lanes = lanes_from_config(
         {"lanes": [{"customHeaders": {"x-dep-ticket": "A"}},
                    {"customHeaders": {"x-dep-ticket": "B", "User-Id": "u2"}}]},

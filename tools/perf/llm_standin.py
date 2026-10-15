@@ -1,6 +1,6 @@
 """A stand-in LLM server for timing the pipeline: answers like Ollama (`/api/generate`) and like an
 OpenAI-compatible gateway (`/chat/completions`), after a set delay, and refuses with 503 beyond a
-set number of calls at once -- or faster than a set rate -- as the office gateway does.
+set number of calls at once -- or faster than a set rate -- as the review gateway does.
 
 Every answer is a hash of the prompt (the same prompt, the same answer), so two runs that send the
 same prompts store the same text: a speed-up that changes no prompt changes no document.

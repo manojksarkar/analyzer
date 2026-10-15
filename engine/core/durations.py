@@ -1,6 +1,6 @@
 """A duration as a reader takes it in: `2.43s`, `4m 12s`, `1h 16m 07s`, `2d 03h 10m`.
 
-A run at the office lasts hours, some days, and `done in 16384.27s` has to be worked out. Every
+A run in review lasts hours, some days, and `done in 16384.27s` has to be worked out. Every
 log line that says how long something took goes through `human`. Seconds stay where they are a
 setting or a pause (`rateLimitSeconds`, `+2.70s after each call`): those are short by nature.
 """

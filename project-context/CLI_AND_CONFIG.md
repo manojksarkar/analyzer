@@ -150,7 +150,7 @@ config.** The names are written once, in `core/config.py`: `SERVER_BLOCKS` (the 
 `TestWhichFileASettingIsIn` (the shipped defaults hold no server key; the local example holds
 the five blocks and nothing else).
 
-Why (office, 2026-10-13: "there are config files in the workspace, the project, the version —
+Why (review, 2026-10-13: "there are config files in the workspace, the project, the version —
 which one do I update?"): until then `llm` held both kinds, the defaults carried a server
 (a local Ollama) and LLVM paths, and every written config froze a copy — a CLI project's at
 onboarding, a version's on its first day. A key changed in config.local.json reached neither.
