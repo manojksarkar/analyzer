@@ -1,17 +1,15 @@
-"""Tests for the flowcharts view (output/flowcharts/).
+"""Tests for the flowcharts view (output/<component>/flowcharts/).
 
-The flowchart generator writes one JSON file per unit (named by unit name only).
-For the Sample group (Core, Lib, Util units), it produces:
-  output/flowcharts/Core.json
-  output/flowcharts/Lib.json
-  output/flowcharts/Util.json
+The flowchart generator writes one JSON file per unit, in the folder of the unit's component.
+For the Sample units Core, Lib and Util:
+  output/Layer1.Sample-Core/flowcharts/Core.json
+  output/Layer1.Lib/flowcharts/Lib.json
+  output/Layer1.Util/flowcharts/Util.json
 
-Each file is a JSON array of { "name": <funcName>, "flowchart": <mermaid> } items.
-The view passes only functions within the selected group, so only Sample functions appear.
+Each file is a JSON array of { "name", "functionKey", "flowchart": <Graphviz DOT>, "cfg" } items.
 
-These tests are intentionally generator-agnostic: they check structure and function
-coverage, not diagram content. Real LLM output is non-deterministic; the only
-structural contract is that the content is a non-empty, valid Mermaid diagram.
+These tests check structure and function coverage, not diagram content: the node labels come
+from the LLM. The structural contract is that each chart is a non-empty Graphviz digraph.
 """
 import json
 import os
@@ -22,23 +20,12 @@ import pytest
 
 pytestmark = pytest.mark.e2e
 
-# Valid Mermaid diagram opening keywords (LLM may produce any of these)
-_MERMAID_HEADERS = re.compile(
-    r"^(%%\{|flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|gitGraph)",
-    re.MULTILINE,
-)
+_DOT_HEADER = re.compile(r"^\s*(strict\s+)?digraph\b")
 
 
-def _strip_fences(text: str) -> str:
-    """Strip ```mermaid ... ``` or ``` ... ``` code fences if present."""
-    text = text.strip()
-    m = re.match(r"^```(?:mermaid)?\s*\n?(.*?)```\s*$", text, re.DOTALL)
-    return m.group(1).strip() if m else text
-
-
-def is_valid_mermaid(text: str) -> bool:
-    """True if text (after stripping code fences) starts with a Mermaid keyword."""
-    return bool(_MERMAID_HEADERS.search(_strip_fences(text)))
+def is_valid_dot(text: str) -> bool:
+    """True if text is a Graphviz digraph (flowcharts are DOT since 2026-07-27, not Mermaid)."""
+    return bool(_DOT_HEADER.match(text or ""))
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import sys as _sys, os as _os
@@ -46,7 +33,15 @@ _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.
 from tests.e2e_paths import COMPONENTS, output_for   # noqa: E402
 # One flowcharts directory per component, where a group-scoped run once had one.
 FC_DIRS = [_os.path.join(output_for(c), "flowcharts") for c in COMPONENTS]
-FC_DIR = next((d for d in FC_DIRS if _os.path.isdir(d)), FC_DIRS[0])
+
+
+def _unit_file(unit):
+    """`<unit>.json` in whichever component's flowcharts folder holds it, else None."""
+    for d in FC_DIRS:
+        path = os.path.join(d, f"{unit}.json")
+        if os.path.isfile(path):
+            return path
+    return None
 
 # Skip entire module when flowcharts are disabled in config
 _cfg_path = os.path.join(PROJECT_ROOT, "engine", "config", "config.defaults.json")
@@ -82,8 +77,8 @@ def fc_data(run_pipeline):
     result = {}
     missing = []
     for unit in UNITS:
-        path = os.path.join(FC_DIR, f"{unit}.json")
-        if os.path.isfile(path):
+        path = _unit_file(unit)
+        if path:
             with open(path, encoding="utf-8") as f:
                 result[unit] = json.load(f)
         else:
@@ -98,13 +93,12 @@ def fc_data(run_pipeline):
 # ---------------------------------------------------------------------------
 
 def test_flowcharts_dir_exists(run_pipeline):
-    assert os.path.isdir(FC_DIR), f"Missing directory: {FC_DIR}"
+    assert any(os.path.isdir(d) for d in FC_DIRS), f"No flowcharts directory in: {FC_DIRS}"
 
 
 @pytest.mark.parametrize("unit", UNITS)
 def test_flowchart_file_exists(run_pipeline, unit):
-    path = os.path.join(FC_DIR, f"{unit}.json")
-    assert os.path.isfile(path), f"Missing flowchart file: {unit}.json"
+    assert _unit_file(unit), f"Missing flowchart file: {unit}.json"
 
 
 # ---------------------------------------------------------------------------
@@ -129,15 +123,12 @@ def test_entries_have_name_and_flowchart(fc_data, unit):
 
 
 @pytest.mark.parametrize("unit", UNITS)
-def test_flowchart_strings_are_valid_mermaid(fc_data, unit):
-    """Diagram content must be a valid Mermaid diagram regardless of diagram type.
-    Code fences (```mermaid ... ```) are accepted — the generator or post-processing
-    is expected to strip them, but we validate the inner content here.
-    """
+def test_flowchart_strings_are_dot(fc_data, unit):
+    """Every chart is a Graphviz digraph -- what the DOCX renders and the web reader's SVG is drawn from."""
     for entry in fc_data[unit]:
         fc = entry.get("flowchart") or ""
-        assert is_valid_mermaid(fc), (
-            f"{unit}.json entry '{entry.get('name')}' has invalid or empty Mermaid diagram: {fc[:60]!r}"
+        assert is_valid_dot(fc), (
+            f"{unit}.json entry '{entry.get('name')}' has an invalid or empty DOT chart: {fc[:60]!r}"
         )
 
 
