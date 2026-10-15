@@ -250,7 +250,7 @@ class TestWhichFileASettingIsIn:
     def test_a_run_config_gets_the_servers_blocks_as_they_are_now(self, tmp_path, monkeypatch):
         """A project's config is written at onboarding, a version's on its first day. Each held
         the LLM settings of that day, so a key changed in config.local.json never reached the
-        next run -- the office asked which of the files to edit."""
+        next run -- review asked which of the files to edit."""
         root = _config_root(tmp_path, local={"llmServer": _SERVER, "llvm": _LLVM})
         run_cfg = tmp_path / "workspace.json"
         run_cfg.write_text(json.dumps({

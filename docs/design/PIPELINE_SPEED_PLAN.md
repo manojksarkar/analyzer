@@ -3,22 +3,22 @@
 > Branch `perf/pipeline-speed` (from develop `369a2a1`, 2026-10-08; rebased onto develop `8d438de`,
 > 2026-10-12), not merged. Every number here was
 > measured on `SampleCppProject` (218 translation units, 385 functions, 25 components) against a stand-in
-> LLM (`tools/perf/llm_standin.py`) that behaves like the office gateway, scaled down: 0.3 s per answer,
-> one call per key at a time, calls on a key at least ~0.3 s apart (the office: 3–6 s, 3 s). How to
-> reproduce: §7. What only the office can tell us: §6.
+> LLM (`tools/perf/llm_standin.py`) that behaves like the review gateway, scaled down: 0.3 s per answer,
+> one call per key at a time, calls on a key at least ~0.3 s apart (in review: 3–6 s, 3 s). How to
+> reproduce: §7. What only a review run can tell us: §6.
 
 [1 Where the time goes](#1-where-the-time-goes) · [2 The levers](#2-the-levers) ·
 [3 What was built, and how it was checked](#3-what-was-built-on-the-branch-and-how-it-was-checked) ·
-[4 Edge cases](#4-edge-cases) · [5 Plan](#5-plan) · [6 Questions for the office](#6-questions-only-the-office-can-answer) ·
+[4 Edge cases](#4-edge-cases) · [5 Plan](#5-plan) · [6 Questions for a review run](#6-questions-only-a-review-run-can-answer) ·
 [7 Reproduce](#7-reproduce)
 
 ## 1. Where the time goes
 
-**The LLM is the office's bottleneck.** The sample makes **762 LLM calls in Phase 2** (≈2 per function)
+**The LLM is a review run's bottleneck.** The sample makes **762 LLM calls in Phase 2** (≈2 per function)
 and **≈6 per function in Phase 3** (flowchart labels). Today every call is followed by a 3 s pause, one
 call at a time, so each costs *its answer time + 3 s*:
 
-| | Calls per function | Office cost per call today | ~1,500 functions |
+| | Calls per function | Review-run cost per call today | ~1,500 functions |
 |---|---|---|---|
 | Phase 2 (descriptions, names, globals, structs, units) | ≈2 | 6–9 s | **5–8 h** (matches the reported 10 h with Phase 1) |
 | Phase 3 flowchart labels (one call per 4 nodes + coherence) | ≈6 | 6–9 s | **15–22 h** — why staged runs take days |
@@ -42,7 +42,7 @@ call at a time, so each costs *its answer time + 3 s*:
 
 ## 2. The levers
 
-Ranked by what they save at the office. **Same output** = byte-identical model / views / pictures,
+Ranked by what they save in a review run. **Same output** = byte-identical model / views / pictures,
 checked as described in §3.
 
 | # | Lever | Saves | Same output | Risk | State |
@@ -53,15 +53,15 @@ checked as described in §3.
 | R1 | **One browser for many pictures** (Mermaid batch) | ≈4–5× a diagram; with R2, Phase 3 **3.5×** and the SWE.3 export **1.6×** on a component, cold caches (§3) | **yes, byte-identical PNGs** | low | built; wired for unit diagrams and the export's two component diagrams (behaviour diagrams next) |
 | R2 | Same for flowchart PNGs (`render_dot.mjs` starts a browser per chart) | **5.4×**: 1.8 s a chart vs 9.8 s — hours on a 500-chart document | **yes, byte-identical PNGs** | low | built and wired (chunks of 50) |
 | P1 | **Parse ahead on threads** | Phase 1 **−24 %** (16.2 → 12.3 s, best of 3; only the parse overlaps, the Python walk stays) | **yes** (model compared field by field, list order included) | **one native crash in 5 runs** with the first design — redesigned: **30 runs clean** since (§4.1) | built, opt-in (`parse` block) |
-| P2 | **Skip headers a `.cpp` already covered** | Phase 1 **−30 %** (16.2 → 11.3 s, best of 3; 104 of 218 files not parsed alone) | **yes on the sample** | needs a one-time compare on the office code (§4.1) | **removed 2026-10-12**: the only lever that could change the output, for a small part of the run |
+| P2 | **Skip headers a `.cpp` already covered** | Phase 1 **−30 %** (16.2 → 11.3 s, best of 3; 104 of 218 files not parsed alone) | **yes on the sample** | needs a one-time compare on the code under review (§4.1) | **removed 2026-10-12**: the only lever that could change the output, for a small part of the run |
 | P5 | **One parse per file instead of two**: pass 1 records each file's call and global-access candidates, resolved once every definition is known (pass 2 exists only for that) | Phase 1 ≈ −25–35 % (pass 2: 4.7 s of 15.9 s here) | must be proven (model compare) | medium: pass 2's visitors become a resolve step | research |
-| P6 | **The walks in several processes**: each process parses and walks its share of the files and records what each file contributed; the main process folds the records in today's file order, so "first file wins" holds | Phase 1 up to ×processes (the walk is ⅔ of it and threads cannot share it: the GIL) | must be proven | high: the visitors write shared state directly; they would have to record per file first | research — worth it only if the office's `run.log` shows Phase 1 matters (§6) |
+| P6 | **The walks in several processes**: each process parses and walks its share of the files and records what each file contributed; the main process folds the records in today's file order, so "first file wins" holds | Phase 1 up to ×processes (the walk is ⅔ of it and threads cannot share it: the GIL) | must be proven | high: the visitors write shared state directly; they would have to record per file first | research — worth it only if a review run's `run.log` shows Phase 1 matters (§6) |
 | P3 | One AST walk instead of six | Phase 1 maybe −40 % | must be proven | medium: six visitors, one traversal | research |
 | P4 | **A field check for the bindings' null guard**: clang ≥ 19 bindings call `is_null()` (a second libclang call) before nearly every cursor read — 2.5M calls, ≈20 % of Phase 1 | Phase 1 **−25 %** (16.2 → 12.1 s, best of 3) | **yes** (parse snapshots and include lists identical) | low: libclang's `clang_equalCursors` for the null cursor is exactly kind 70 + zero fields; or pin the bindings to the libclang version | built, **always on** — checked at start against the bindings' own answer, which stays if they disagree |
 | C1 | Fewer LLM calls: description + names in one call; bigger flowchart label batches (4 → 8–12 nodes); templated text for trivial accessors | Phase 2 −40 %, labels −50–66 % | **no — wording changes** | quality to review | decision for the user |
 | X1 | Parse/derive only a component's closure | depends: high-level component small, a low-level one ≈ its whole layer | only with every caller/ancestor/descendant/global user parsed | high: a missed file silently changes publication, ids, directions | research (needs a baseline version) |
 | X2 | Components of a run in parallel processes | ×processes on Phase 3–4 | yes | needs a limiter shared **across processes** first (B6) | planned |
-| X3 | Load the model once per run, not 3–4× per component; restore/persist only what changed | minutes per component at office scale | yes | low | planned |
+| X3 | Load the model once per run, not 3–4× per component; restore/persist only what changed | minutes per component at review scale | yes | low | planned |
 
 ## 3. What was built on the branch, and how it was checked
 
@@ -155,7 +155,7 @@ JSON would close that.
   resumable). The first design let each worker thread create and free its own libclang index. Now every
   index is made on the main thread and lent to one parse at a time; `faulthandler` prints every
   thread's stack if it happens again. **Gate: 30 runs of Phase 1+2 with six parse threads, all clean**
-  (10, then 20 on the final code). Still opt-in: the office's translation units are far larger than
+  (10, then 20 on the final code). Still opt-in: the translation units under review are far larger than
   the sample's — switch it on there after one clean run.
 - Python bindings `clang 21.1.7` with `libclang 18.1.1`: a version mismatch to settle regardless.
 - **Order is part of the output.** "First file wins" for functions, the data dictionary, type hashes;
@@ -168,11 +168,11 @@ JSON would close that.
   would need the baseline's full include lists and a `parseFingerprint` that carries the mode. All that
   for −30 % of a phase that is a small part of the run. If it is ever wanted again: commit `ffe2689`
   has it, with the fingerprint marker.
-- Memory: each parsed-ahead TU holds its AST; at most `workers + 2` alive (office TUs with big headers:
+- Memory: each parsed-ahead TU holds its AST; at most `workers + 2` alive (TUs under review with big headers:
   hundreds of MB each — size `speedups.parseWorkers` to the machine: 2–4 on 8 GB, 6–8 on 16 GB and up).
 
 ### 4.2 The LLM
-- **The office's 503 says "invalid response from the upstream server"** — the model behind the gateway,
+- **The review gateway's 503 says "invalid response from the upstream server"** — the model behind the gateway,
   not a rate limit. Every key shares that upstream, so failover only spreads the failure. With lanes, a
   429/502/503 or a refused connection is retried without using up an attempt — **at most 6 times per
   call, within 10 minutes** — then the attempts count as today. The cap matters when one *prompt*
@@ -199,7 +199,7 @@ JSON would close that.
   refusals with one call in flight still misread the race (L4d: 269 s); a step of pause per such
   refusal, a step off per 50 answers, crept up to the whole gap on the race alone (L4e: 238 s).
   (The stand-in's scale exaggerates a refusal's cost: its cool-down is at least 1 s against a 0.3 s
-  gap; at the office it is about one gap.)
+  gap; in review it is about one gap.)
 - A `Retry-After` longer than 120 s is not believed (an hour's rest on one lane would hold the run).
 - **What each lane did** is one log line when the phase ends: `LLM lanes: lane1: 412 calls, 3 busy,
   51s waited, pacing start; …` — the first thing to read after a run with lanes.
@@ -239,7 +239,7 @@ JSON would close that.
   `PYTHONHASHSEED`; to make runs reproducible for good, sort the callees in the prompt (changes those
   prompts once).
 - On the sample the description rounds are 309, 42, 18, 11, 2, 2, 1 functions, with no cycle round, so
-  309 can be asked at once. `tools/perf/llm_rounds.py <version>` measures it on office code.
+  309 can be asked at once. `tools/perf/llm_rounds.py <version>` measures it on the code under review.
 - Thread safety: the shared caches (`aux_descriptions`, flowchart labels, the description entity cache),
   progress and context builders take a lock; only the HTTP wait overlaps. The LLM stage name follows
   each thread (`contextvars`), so the report still counts calls per stage.
@@ -274,7 +274,7 @@ it uses (`Speed-ups: 2 llms, pacing start` or `Speed-ups: none -- this run works
 | Key | Not set (develop's) | Set |
 |---|---|---|
 | `llms` | `[]`: llmServer's own ticket, one call at a time | more tickets or keys side by side (lanes, `llm_core/pool.py`); a lane takes what it does not set from `llmServer`; when listed, only they send calls |
-| `pacing` | `"after"`: the ticket's pause counts from a call's END | `"start"`: from its start (§ below: one office run decides) |
+| `pacing` | `"after"`: the ticket's pause counts from a call's END | `"start"`: from its start (§ below: one review run decides) |
 | `parseWorkers` | `1`: one file at a time, parsed in `parse_file` on the parser's own index | a number or `"auto"` (half the CPUs, at most 8); env `ANALYZER_PARSE_WORKERS` wins |
 | `pictureBatches` | `false`: each picture drawn alone | `true`: a view's pictures drawn by one browser; a miss is drawn alone |
 | `fastNullCheck` | `false`: the bindings' own check, no probe parse | `true`: the field check, self-checked at start (off by itself where it disagrees) |
@@ -285,7 +285,7 @@ any more; a run's start names each with its new place (`core.config.moved_settin
 goes on, the develop way. `LLM_API_KEYS=key1,key2` (env) still makes one lane per key when `llms`
 is empty.
 
-**How the office would switch the LLM changes on:**
+**How a review setup would switch the LLM changes on:**
 
 ```json
 "speedups": {
@@ -322,12 +322,12 @@ on every lane.
   seconds waited, a refused key, the pause start pacing learnt (`+2.70s after each call` on a 3 s
   gateway means it counts from a call's end: start pacing gains little there).
 
-**Should `pacing` default to `"start"`? Decided (2026-10-12): not yet — after one office run.**
+**Should `pacing` default to `"start"`? Decided (2026-10-12): not yet — after one review run.**
 
 | | |
 |---|---|
 | Why not now | `"start"` wins only when the gateway counts its gap from a call's START. If it counts from the END, start pacing is refused about every other call: each refusal is a retry and a cool-down, twice the requests on the gateway, and a ticket refused again and again might be flagged by the gateway's owners. The lane does learn the right pause by itself (L6e: back to today's speed, nothing lost), but pays refusals while it learns (46 in L6e). On an unknown gateway, `"after"` is what is known to work |
-| The test | One office run with `"pacing": "start"` (one ticket is enough). Read the `LLM lanes:` line at the end of Phase 2 |
+| The test | One review run with `"pacing": "start"` (one ticket is enough). Read the `LLM lanes:` line at the end of Phase 2 |
 | Make it the default | few `busy`, and no learnt pause (no `+X.XXs after each call`) — the gateway counts from the start |
 | Keep `"after"` | many `busy`, and a learnt pause near the gap (`+2.7s after each call` on 3 s) — it counts from the end |
 | To flip the default | One line: the default of `pacing` in `core.config.SPEEDUP_DEFAULTS` becomes `"start"` (a machine can still set `"after"` in its `config.local.json`; `pacing` is not in `config.defaults.json`, which holds no server setting). The client tests that pin `sleep(3.0)` after each call cover `"after"` and stay |
@@ -335,16 +335,16 @@ on every lane.
 **A — safe, same output (review and merge what is built; days):**
 1. Picture batches (R1, R2) — on by default, byte-identical, per-picture fallback; wire the behaviour
    diagrams the same way.
-2. Lanes + start pacing (L1–L3) — off until configured; switch on at the office with
+2. Lanes + start pacing (L1–L3) — off until configured; switch on in review with
    `pacing: "start"` first, then a second ticket once §6's question 1 is answered.
 3. The field null check (P4) — `speedups.fastNullCheck`. Parse ahead (P1) — `speedups.parseWorkers`, off; its gate passed
-   here (30 clean runs); switch on at the office after one clean run, then make `"auto"` the default.
+   here (30 clean runs); switch on in review after one clean run, then make `"auto"` the default.
 
-**B — same output, needs a check on the office code:** model loaded once
+**B — same output, needs a check on the code under review:** model loaded once
 per run (X3); then a cross-process limiter and components in parallel (X2, B6).
 
 The cross-process limiter (B6), as it should be built:
-- **Where:** one server at the office, so a small state file in the data root under an OS file lock
+- **Where:** one server in review, so a small state file in the data root under an OS file lock
   (no database round trip per call); a row per lane with `SELECT … FOR UPDATE` when there is more than
   one server.
 - **Leases, not counters:** a slot is a lease that expires after twice the call timeout, so a process
@@ -366,15 +366,15 @@ requested prompt then sees its callees described, for a bounded number of extra 
 the requested functions, not their whole layers). The flowchart prompts reach callees up to four levels
 deep; one level covers the nearest, which matter most.
 
-## 6. Questions only the office can answer
+## 6. Questions only a review run can answer
 1. Gateway: is the limit per key, per user, per IP or global? Requests per second, or calls in flight?
    Is the 3 s counted from a request's start or from its end (start pacing helps only in the first
    case; in the second the lanes learn the pause after each call on their own)? Does it send `Retry-After`? What
    does it answer when it is over its limit — 429, or the 503 we saw? How many keys may we use, and may
    they belong to one user?
 2. A `run.log` of the 10-hour run: the `Phase` lines and the "LLM calls by stage" table (answer time
-   per call, prompt tokens, throttle) — to replace this page's estimates with the office's numbers.
-3. The office machine: cores, memory (sizes parse-ahead and picture pages).
+   per call, prompt tokens, throttle) — to replace this page's estimates with a review run's numbers.
+3. The review machine: cores, memory (sizes parse-ahead and picture pages).
 4. One layer's size: translation units, functions — and whether `views.flowcharts` is on there.
 
 ## 7. Reproduce

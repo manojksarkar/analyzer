@@ -104,7 +104,7 @@ newer entry and the code win.
   prototyped the speed-ups — LLM lanes (several keys, start pacing, failover), parse ahead, picture
   batches — each checked to give develop's output; all in ONE config.local.json block, `speedups`
   (`llms`, `pacing`, `parseWorkers`, `pictureBatches`, `fastNullCheck`): empty = develop (2026-10-14d).
-  [PIPELINE_SPEED_PLAN.md](docs/design/PIPELINE_SPEED_PLAN.md) (plan, edge cases, office questions).
+  [PIPELINE_SPEED_PLAN.md](docs/design/PIPELINE_SPEED_PLAN.md) (plan, edge cases, questions for a review run).
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
 - The status boards that used to head this file (2026-07-20, 2026-08-14) are kept, unchanged, in

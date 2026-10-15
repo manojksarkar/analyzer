@@ -86,7 +86,7 @@ def test_no_server_setting_is_stored_or_written_and_a_run_still_gets_them(tmp_pa
 
 
 def test_a_key_changed_in_the_local_file_reaches_the_next_run_of_a_written_config(tmp_path, monkeypatch):
-    """The office asked which of the config files to edit: the workspace file held the LLM
+    """Review asked which of the config files to edit: the workspace file held the LLM
     settings of the day it was written, so a change in config.local.json reached only what was
     written after it."""
     cfg_dir = tmp_path / "engine" / "config"
