@@ -72,10 +72,10 @@
     // document content, not optional extras.
     "unitHeaders": true,
     "unitDiagrams": true,
-    // Flowcharts and behaviour diagrams are OFF: both need external tooling
+    // Flowcharts and behaviour diagrams are ON: both need external tooling
     // (Graphviz / mmdc + a browser) that tools/doctor.py preflights.
-    "flowcharts": false,
-    "behaviourDiagram": false,
+    "flowcharts": true,
+    "behaviourDiagram": true,
     "componentStaticDiagram": true,
     // SWE.4 views - unit test specs and the dynamic (CFG-walk) specs.
     "functionTestSpecs": true,
@@ -267,7 +267,7 @@
     "descriptions": true,
     "behaviourNames": true,
     // Separate from descriptions - also switchable with --no-llm-summarize.
-    "summarize": false,
+    "summarize": true,
 
     // Grounding inputs. domainContextPath is what keeps descriptions in the
     // project's real vocabulary instead of inventing a domain. A relative file
