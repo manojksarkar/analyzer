@@ -17,7 +17,7 @@ import { useUIStore } from '../../../store/ui'
 import type { FlowchartEntry } from '../../../types'
 import { DocumentInspectorPage } from '..'
 
-/* The reader with a document of many sections (an office SWE.3 has 500+ flowcharts and hundreds
+/* The reader with a document of many sections (a SWE.3 in review has 500+ flowcharts and hundreds
    of tables). #28: typing in one correction box, saving it, or opening a panel must not render
    every section again. Each flowchart figure counts its renders here: one renders again only
    when its own section does. And the smoke test's deep link: a document opened by its address

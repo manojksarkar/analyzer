@@ -15,7 +15,7 @@ PROTECTED DB_TYPE _MTM_SB_GETDbType();
 PRIVATE int _MTM_SB_GETDbVersion();
 PUBLIC void _MTM_SB_SETDbType(DB_TYPE t);
 
-// Test: C++ ACCESS LABELS on methods -- the shape the office review reported. There is
+// Test: C++ ACCESS LABELS on methods -- the shape the review reported. There is
 // deliberately NO PRIVATE/PROTECTED/PUBLIC macro on any of these, so visibility has to
 // come from the written label. Every one of them has a caller in a DIFFERENT FILE, so
 // the call-graph rule on its own publishes all five: only the label can keep the

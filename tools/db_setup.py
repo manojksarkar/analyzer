@@ -193,7 +193,7 @@ def main() -> int:
     #
     # That is exactly what happened with `0009_model_units_description`: the three new TABLES on
     # that branch appeared, so the setup looked like it had worked, and the one new COLUMN did
-    # not. A fresh database hides it completely, which is why it reached an office machine.
+    # not. A fresh database hides it completely, which is why it reached a review machine.
     #
     # This is not a replacement for Alembic -- `alembic upgrade head` remains the migration
     # path. It is what makes `analyzer.py setup` honest about the word "upgrade" on a database

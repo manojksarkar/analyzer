@@ -23,7 +23,7 @@ typedef unsigned char UINT8;
 // not use). In Core the definition `int g_sharedTick = 0;` wins over this `extern`.
 extern int g_sharedTick;
 
-// Enum with explicit underlying type (mirrors the "enum : UINT8" office case).
+// Enum with explicit underlying type (mirrors the "enum : UINT8" review case).
 enum SharedLevel : UINT8 {
     LEVEL_LOW  = 0,
     LEVEL_MID  = 1,

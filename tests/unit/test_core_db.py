@@ -94,7 +94,7 @@ class TestFailFast:
     def test_operator_advice_is_ascii_only(self, monkeypatch):
         """PROJECT_CONTEXT §18: this text prints to a Windows cp1252 console, where a single
         non-ASCII character renders as a replacement glyph (and can raise). Caught in review
-        when an em-dash came out as garbage on the office machine."""
+        when an em-dash came out as garbage on the review machine."""
         from core.db import _unreachable_help
         for host in ("localhost", "203.0.113.9"):
             for exc in (TimeoutError("connection timeout expired"),

@@ -1682,7 +1682,7 @@ def _function_visibility(cursor) -> str:
     A method's access is a real reachability fact the text scan cannot see -- it matches the
     project's macros, not the `private:` label. Without this a `protected:` method with a
     caller in another file (a derived class, legally) was published as an interface row,
-    which is what the office review reported. C++ access is taken as clang reports it,
+    which is what the review reported. C++ access is taken as clang reports it,
     including the implicit access of an unlabelled member, because private-by-default is
     just as binding on another unit as a written label.
 

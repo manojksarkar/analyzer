@@ -3,7 +3,7 @@ rem start-app - start the ArtiFex API and web app from this folder, cleanly.
 rem   start-app               check, stop old servers, start both (Ctrl+C stops them)
 rem   start-app --status      what runs now      start-app --stop     stop them
 rem   start-app --help        every option (the script is tools\start_app.py)
-rem A .cmd, not a .ps1: office machines often block PowerShell scripts.
+rem A .cmd, not a .ps1: review machines often block PowerShell scripts.
 setlocal
 set "HERE=%~dp0"
 set "PYEXE="

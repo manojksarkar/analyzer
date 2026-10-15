@@ -253,7 +253,7 @@ def test_synthetic_from_var_decl_round_trips(tmp_path):
     generation. Drop the field and, once the model is read from the database, the engine tries
     to build a flowchart for something that is not a function.
 
-    Found by tools/verify_model_parity.py on the first SQLite run. The office Postgres run
+    Found by tools/verify_model_parity.py on the first SQLite run. The review Postgres run
     reported "OK for all" only because that project contains no such entry — which is exactly
     why the check has to run against a fixture that does.
     """

@@ -47,7 +47,7 @@
   --color-on-status: #ffffff;
   /* A quiet button on the blue selection bar (`bg-action`), and its hover: a lighter chip in light,
      a darker one in dark -- white text on a lightened dark-theme blue falls under 4.5:1. Hex with
-     alpha, not color-mix(): the office's browser is Chrome 99. */
+     alpha, not color-mix(): the review site's browser is Chrome 99. */
   --color-bar-button: #ffffff1f;
   --color-bar-button-hover: #ffffff33;
   --color-amber: #f59e0b;
@@ -138,7 +138,7 @@
   --hue-teal-bg: #e0f5f1; --hue-teal-ink: #00796b;
   --hue-indigo-bg: #eef2ff; --hue-indigo-ink: #4f46e5;
   /* The Overview's approval gauge (ReviewCards.tsx): each state's arc runs lo -> hi -> lo, its
-     legend dot has a faint ring. Hex with alpha, not color-mix(): the office's browser is Chrome 99. */
+     legend dot has a faint ring. Hex with alpha, not color-mix(): the review site's browser is Chrome 99. */
   --gauge-approved-hi: #3fcf98;  --gauge-approved-lo: #008a5f;  --gauge-approved-ring: #00a57224;
   --gauge-submitted-hi: #5b96f0; --gauge-submitted-lo: #1a5bc4; --gauge-submitted-ring: #2170e424;
   --gauge-changes-hi: #a477f5;   --gauge-changes-lo: #6629d0;   --gauge-changes-ring: #7c3aed24;
@@ -231,7 +231,7 @@
   --gauge-bar: #262930; --gauge-glow: rgba(29, 123, 255, .06); --gauge-halo-opacity: .14;
 }
 
-/* A browser without color-mix() (the office's, Chrome 99–110) paints a translucent token
+/* A browser without color-mix() (the review site's, Chrome 99–110) paints a translucent token
    (`border-outline-variant/60`) from its light value. In dark that would be a light patch: these
    are the ones the app uses on a dark-sensitive token. */
 /* A document picture (flowchart, unit or behaviour diagram) is drawn once by the server, on white
@@ -484,7 +484,7 @@ textarea.macro-text { min-height: 76px; resize: vertical; }
    the surface holds, not on the surface -- a blue button's own ring is drawn outside it. */
 :where(.bg-action, .bg-inverse, .bg-selected, .bg-hero) :focus-visible { outline-color: #ffffff; }
 /* A field with no border of its own, inside a bordered box (a search bar): the box shows the ring.
-   A browser without :has() (the office's Chrome 99) drops both rules, and the field keeps its own. */
+   A browser without :has() (the review site's Chrome 99) drops both rules, and the field keeps its own. */
 :where(div, label):has(> input.outline-none:focus-visible) { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 :where(div, label):has(> input.outline-none:focus-visible) > input.outline-none:focus-visible { outline: none; }
 /* People who ask their system for less motion: no slides, spins or sweeps. */

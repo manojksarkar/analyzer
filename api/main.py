@@ -215,7 +215,7 @@ async def _live_log_startup() -> None:
 
 # ---------------------------------------------------------------------------
 # Self-hosted API docs — Swagger UI / ReDoc assets are served from api/static/
-# instead of a public CDN, so /docs and /redoc work on networks (e.g. office
+# instead of a public CDN, so /docs and /redoc work on networks (e.g. review
 # firewalls) that block cdn.jsdelivr.net. Assets are vendored in the repo.
 # ---------------------------------------------------------------------------
 

@@ -1028,7 +1028,7 @@ class TestAfterTheSecondReview:
         assert os.listdir(vcfg.parent) == ["config.json"], "no config.runtime.json beside it"
 
     def test_a_resume_keeps_the_version_s_own_clang_views_and_docx(self, tmp_path, monkeypatch):
-        """Office, 2026-10-05: a `clang` block in this machine's config.local.json (the walk off)
+        """Review, 2026-10-05: a `clang` block in this machine's config.local.json (the walk off)
         turned a version's `includePathsFromProjectWalk: true` off. The version runs as it began;
         this machine still brings where ITS LLVM is."""
         import json

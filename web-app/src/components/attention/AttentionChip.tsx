@@ -10,7 +10,7 @@ import { FailedRunBanner, RunWarningsBanner } from './RunBanners'
 import { OtherRuns } from './OtherRuns'
 
 /* Needs attention: one chip beside the version, on every project page, instead of the banners
-   that stacked on the Overview (at the office: a failed run, one box per other run, the warnings,
+   that stacked on the Overview (in review: a failed run, one box per other run, the warnings,
    the generation). Its drawer holds each of them, with the same buttons. The version's own
    generation keeps its row on the Overview -- Generate, Stop, Resume, Word files -- and is listed
    here with a way there. A toast says when something new needs attention. */

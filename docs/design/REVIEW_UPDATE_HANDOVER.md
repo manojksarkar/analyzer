@@ -94,7 +94,7 @@ UndefinedColumn: column model_units.description does not exist
 ```
 
 A fresh database hides this completely, which is how it survived a full end-to-end run and
-reached an office machine. `setup` now adds missing columns after `create_all` and prints each
+reached a review machine. `setup` now adds missing columns after `create_all` and prints each
 one; a NOT NULL column with no default is refused and sent here instead, because guessing a
 backfill value is how a schema repair becomes data corruption.
 

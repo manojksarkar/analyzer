@@ -21,7 +21,7 @@
 
 ## 0. Where we are
 
-Doc 09's storage work is complete and validated on the office box: the model, parse skeleton, view
+Doc 09's storage work is complete and validated on the review box: the model, parse skeleton, view
 outputs, run accounting and report are all in Postgres, `verify_model_parity` reports **OK for
 all**, and an incremental run produces a document identical to a full run of the same commit.
 
@@ -327,7 +327,7 @@ SQLite with all gates green. In database mode the model dir is down from 14 file
 | ✅ 5 | convert the 25 raw path sites | done |
 | ✅ 6 | `knowledge_base`, `incremental_plans`, `tu_includes` tables + writers | done |
 | ✅ 7 | flowchart engine → DB inputs (D10-4, D10-5); `clang_include_paths` derived; config → temp file | done |
-| ✅ 8 | H3–H6: `--use-model`, re-export, `--clean`, test fixtures, parity replacement · **then both modes run on the office project and the documents are diffed** | done |
+| ✅ 8 | H3–H6: `--use-model`, re-export, `--clean`, test fixtures, parity replacement · **then both modes run on the review project and the documents are diffed** | done |
 | ✅ 9 | flip the default to the database | done — `--model-store files` reverts |
 | ✅ 10 | **C12** — the disk LLM cache moves to `llm_description_cache` (0005); `pkb_*.json` dropped. After the model is in the database (04 §13.4): every cache key derives from model content | **no** |
 | ✅ 11a | `metadata` / `entity_files` / `func_keys` / `override_pairs` → `parse_snapshots`; model dir down to 1 file | done |
@@ -510,7 +510,7 @@ unverified — the same lesson as the diagram regressions, in a corner nobody ru
 
 ## 11. Open items
 
-- [ ] H7 — measure peak RSS in DB mode on the office project; decide whether C7 becomes a
+- [ ] H7 — measure peak RSS in DB mode on the review project; decide whether C7 becomes a
       prerequisite rather than a follow-on
 - [ ] `JOB_MAX_CONCURRENCY` raise is **independent of this work** and still pending its
       measurement (doc 09, D2b) — H1 is a prerequisite for it either way

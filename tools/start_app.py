@@ -67,7 +67,7 @@ DEFAULT_NODE_RANGE = "^20.19.0 || >=22.12.0"      # Vite 8's engines.node, if it
 ACTIVE_JOB_STATES = ("queued", "running")
 
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
-_NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))   # office proxies
+_NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))   # review proxies
 
 
 # ---------------------------------------------------------------------------

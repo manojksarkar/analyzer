@@ -1,5 +1,5 @@
 /** Copy text to the clipboard. `navigator.clipboard` exists only in a secure context (https, or
- *  localhost): the office opens the app over plain http by the server's address, where it is
+ *  localhost): the review site opens the app over plain http by the server's address, where it is
  *  undefined and a copy button did nothing. There a hidden textarea and `execCommand('copy')` do it.
  *  True when the text was copied. */
 export async function copyText(text: string): Promise<boolean> {

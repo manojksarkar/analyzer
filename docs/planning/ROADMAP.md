@@ -26,7 +26,7 @@ and SWE.1 are roadmap. The 6-process target above is the destination, not the cu
 
 | Milestone | Focus | Done when |
 |---|---|---|
-| **V1** | SWE.3 detailed-design generation, deployed in the office | Client uses ArtiFex in-office to generate and review SWE.3 documents; known review fixes cleared |
+| **V1** | SWE.3 detailed-design generation, deployed for review | Client uses ArtiFex in review to generate and review SWE.3 documents; known review fixes cleared |
 | **V1.1** | **SWE.4** — Software Unit Verification (test specifications) | SWE.4 documents generated from the SWE.3 design |
 | **V1.2** | **SWE.2** — Software Architectural Design | SWE.2 architecture document generated |
 | **V1.x** | Platform hardening | Automated testing/CI, database, progress bar, in-app settings + re-run, performance/LLM optimisation |
@@ -38,7 +38,7 @@ and SWE.1 are roadmap. The 6-process target above is the destination, not the cu
 - **Document order:** SWE.3 first, then **SWE.4**, then **SWE.2**. SWE.4 comes before SWE.2 because it is
   smaller, faster, and reuses the SWE.3 machinery almost directly.
 - **Scope:** the 6 ASPICE processes above. Others are out of scope for now.
-- **V1 is deployed in the office** and shared across the team.
+- **V1 is deployed for review** and shared across the team.
 - **Database:** moves to a real database (PostgreSQL) after V1; V1 runs on the current file-based store.
 - **How the documents are generated:** see [DOC_GENERATION_PLAYBOOK.md](DOC_GENERATION_PLAYBOOK.md).
 
@@ -47,7 +47,7 @@ and SWE.1 are roadmap. The 6-process target above is the destination, not the cu
 > Item-level known issues and deferred fixes: [../BACKLOG.md](../BACKLOG.md).
 
 **V1**
-- [ ] Deploy in the office (server, runtime, web app + API, user accounts, end-to-end smoke test)
+- [ ] Deploy for review (server, runtime, web app + API, user accounts, end-to-end smoke test)
 - [x] Complete macro ingestion — toolchain JSON dumps, per-layer scoping, wired through the web app
 - [ ] Complete data-dictionary ingestion
 - [ ] Remaining flowchart-rendering polish

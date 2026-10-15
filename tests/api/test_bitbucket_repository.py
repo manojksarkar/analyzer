@@ -1,4 +1,4 @@
-"""A Bitbucket repository, end to end, without the office's server.
+"""A Bitbucket repository, end to end, without the review site's server.
 
 A small HTTP server in the test stands in for Bitbucket: it answers 401 to any request that does
 not carry the expected `Authorization` header -- `Bearer <token>`, as Data Center wants, or

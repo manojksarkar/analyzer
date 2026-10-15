@@ -128,7 +128,7 @@ def test_overlay_does_not_mutate_stored_config(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # What the project says wins over this machine's config.local.json
 # ---------------------------------------------------------------------------
-# Office, 2026-10-05: a project imported with `clang.includePathsFromProjectWalk: true` ran with it
+# Review, 2026-10-05: a project imported with `clang.includePathsFromProjectWalk: true` ran with it
 # off -- set true in the workspace file, the next generate wrote it false again. config.local.json
 # is laid over every run's config, and a `clang` block in it (the walk off) beat the project's
 # own setting, while the version's record said on.

@@ -55,7 +55,7 @@ _FN_PAYLOAD_FIELDS = (
     #     processable = [e for e in target_entries if not e.synthetic_from_var_decl]
     # so dropping it makes the engine try to build a flowchart for a non-function once the model
     # is read from the database. Found by verify_model_parity on the first SQLite run; the
-    # office Postgres run reported OK only because that project has no such entry.
+    # review Postgres run reported OK only because that project has no such entry.
     "syntheticFromVarDecl",
     # Two SWE.4 parser facts, neither with a column. They arrived with the SWE.4 port
     # (3355930, 2026-09-01), which carried the views, the exporter and these parser facts

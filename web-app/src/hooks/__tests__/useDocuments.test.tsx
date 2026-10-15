@@ -7,7 +7,7 @@ import { server } from '../../test/server'
 import { API_BASE_URL } from '../../lib/http'
 import { useDocuments } from '../useProjects'
 
-/* The documents route answers at most 100 a page; a version of the office project has about 240
+/* The documents route answers at most 100 a page; a version of the review project has about 240
    (3 layers × 40 components × SWE.3 and SWE.4). The lists, KPIs, approval bar and bulk approve
    count what useDocuments returns, so it must return every page. */
 

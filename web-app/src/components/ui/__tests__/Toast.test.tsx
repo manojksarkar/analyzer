@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { toast, useToastStore } from '../Toast'
 
-/* Over plain http (the office server) the page is not a secure context: `crypto.randomUUID` is
+/* Over plain http (the review server) the page is not a secure context: `crypto.randomUUID` is
    undefined there, and a toast must still show. */
 
 describe('toast', () => {
