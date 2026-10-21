@@ -9,6 +9,7 @@ import pytest
 import sqlalchemy as sa
 
 from api.db.postgres import schema as s
+from api.models.domain import JOB_STATUSES
 
 
 @pytest.fixture
@@ -699,7 +700,7 @@ class TestFollowingABackgroundRun:
             time.sleep(0.5)
             j = sql_db.jobs.get(job.id)
             j.status = "cancelled"
-            sql_db.jobs.update(j)
+            sql_db.jobs.transition(j.id, JOB_STATUSES, "cancelled")
         threading.Thread(target=cancel, daemon=True).start()
         try:
             assert not pr._follow_detached(sql_db, job.id, run, phase_start=1)

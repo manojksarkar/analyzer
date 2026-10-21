@@ -556,3 +556,70 @@ class TestStopOnlyTheRun:
         monkeypatch.setattr(subprocess, "run", lambda *a, **k: pytest.fail("killed something"))
         frozen_run.stop(4242)
         frozen_run.stop(4242, create_time=None)
+
+
+class TestAComponentIsStoredWhenItIsMade:
+    """An export, update or resume stored its output once, at its end, while run.py had already
+    called each finished component `generated`: a run cancelled or killed in between left them
+    saying so with nothing stored (docs/design/JOB_SCHEDULING_DESIGN.md §9). Now each plan's
+    components are stored, and their documents recorded, before they are called generated
+    (`incremental.store.store_finished`, `--store-each-plan`)."""
+
+    @pytest.fixture
+    def stored(self, monkeypatch):
+        from incremental import store
+        calls = []
+
+        class _Store:
+            def capture_output(self, version_id, output_dir, components=None, since=None):
+                calls.append(("capture", version_id, output_dir, list(components)))
+                if "Bad" in components:
+                    raise RuntimeError("the database went away")
+                return []
+
+        monkeypatch.setattr(store, "make_store", lambda project_id: _Store())
+        from api.services import document_registry
+        monkeypatch.setattr(document_registry, "register_documents",
+                            lambda db, project, version: calls.append(("register", version.id)))
+
+        class _Rows:
+            def get(self, key):
+                return type("Row", (), {"id": key})()
+
+        class _Db:
+            projects = versions = _Rows()
+
+        import api.db.postgres.database as database
+        monkeypatch.setattr(database, "SqlDatabase", lambda: _Db())
+        return store, calls
+
+    def test_the_plan_s_components_are_stored_then_recorded(self, stored):
+        store, calls = stored
+        assert store.store_finished("p", "v", "/out", ["L1.Math", "L1.Math", "L1.Util"])
+        assert calls == [("capture", "v", "/out", ["L1.Math", "L1.Util"]), ("register", "v")]
+
+    def test_a_store_that_fails_never_fails_the_run(self, stored):
+        store, calls = stored
+        said = []
+        assert store.store_finished("p", "v", "/out", ["Bad"], log=said.append) is False
+        assert calls == [("capture", "v", "/out", ["Bad"])], "nothing recorded for review"
+        assert said and "stored at the run's end" in said[0]
+
+    def test_nothing_to_store_stores_nothing(self, stored):
+        store, calls = stored
+        assert store.store_finished("p", "v", "/out", []) is False
+        assert store.store_finished("p", "v", None, ["L1.Math"]) is False
+        assert calls == []
+
+    def test_run_py_stores_before_it_marks_them_generated(self):
+        src = open(os.path.join(ROOT, "engine", "run.py"), encoding="utf-8").read()
+        body = src[src.index("def _component_states("):]
+        body = body[:body.index("\n\n\n")] if "\n\n\n" in body else body
+        assert "_store_finished(" in body
+        assert body.index("_store_finished(") < body.rindex('"generated")')
+
+    def test_the_runs_into_a_version_ask_for_it(self):
+        src = open(os.path.join(ROOT, "analyzer.py"), encoding="utf-8").read()
+        render = src[src.index("def _render_version("):]
+        render = render[:render.index("\ndef ")]
+        assert 'argv.append("--store-each-plan")' in render

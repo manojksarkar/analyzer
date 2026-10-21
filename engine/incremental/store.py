@@ -46,6 +46,42 @@ def make_store(project_id: str, workspaces_root: Optional[str] = None) -> "Artif
     from core.db import get_engine
     return PgStore(project_id, get_engine(), workspaces_root=workspaces_root)
 
+
+def store_finished(project_id: str, version_id: str, output_dir: str, components,
+                   *, log=None) -> bool:
+    """Store components the moment their documents are made -- their output rows, derivation
+    stamps and Word files' time (`capture_output` by component), then their documents recorded
+    for review -- before run.py marks them `generated` (`--store-each-plan`: an export, update or
+    resume into a version that has documents).
+
+    Stored only at the run's end, a run cancelled or killed before it left its finished components
+    saying `generated` with nothing stored for them (docs/design/JOB_SCHEDULING_DESIGN.md §9). Now
+    a cancel keeps them whole, and the next run makes only the rest.
+
+    Never fails the run: on an error they are stored at the run's end, as before. True when they
+    were stored now."""
+    comps = [c for c in dict.fromkeys(components or ()) if c]
+    if not (project_id and version_id and output_dir and comps):
+        return False
+    say = log or (lambda m: print(m))
+    try:
+        make_store(project_id).capture_output(version_id, output_dir, components=comps)
+    except Exception as exc:                                  # noqa: BLE001 - see docstring
+        say("storing %s now failed (%s: %s); it is stored at the run's end"
+            % (", ".join(comps), type(exc).__name__, exc))
+        return False
+    try:
+        from api.db.postgres.database import SqlDatabase
+        from api.services.document_registry import register_documents
+        db = SqlDatabase()
+        project, version = db.projects.get(project_id), db.versions.get(version_id)
+        if project is not None and version is not None:
+            register_documents(db, project, version)
+    except Exception as exc:                                  # noqa: BLE001 - see docstring
+        say("the documents of %s are stored; recording them for review failed (%s: %s) and is "
+            "done at the run's end" % (", ".join(comps), type(exc).__name__, exc))
+    return True
+
 # model dict key -> the file name the pipeline produces / reads
 _MODEL_FILES = {
     "functions": "functions.json", "globals": "globalVariables.json",

@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Any, List, Optional, Set, Tuple
 
 from ..models.domain import (Version, Document, AnalysisJob, AnalysisPhase, REEXPORT_MODE,
-                             EXPORT_MODE, RENDER_MODES)
+                             EXPORT_MODE, RENDER_MODES, ACTIVE_JOB_STATUSES)
 from . import git_cli
 from . import doc_render
 from .model_reader import ModelReader
@@ -615,11 +615,8 @@ def _mark_failed(db: Any, job_id: str, message: str) -> None:
     # itself is what failed, and an operator tailing the API sees nothing at all.
     _log.error("job %s failed: %s", job_id, message)
     job = db.jobs.get(job_id)
-    if job and job.status not in ("cancelled", "complete", "failed"):
-        job.status = "failed"
-        job.error_message = message[:4000]
-        job.completed_at = _now()
-        db.jobs.update(job)
+    if job and db.jobs.transition(job_id, ACTIVE_JOB_STATUSES, "failed",
+                                  error_message=message[:4000], completed_at=_now()):
         # drop the reserved (still-draft) version so its name is free for a retry
         _release_draft_version(db, job)
 
@@ -655,16 +652,17 @@ def delete_version(db: Any, version_id: str, *, only_draft: bool = False) -> boo
     In two, a reader between them saw the job detached while the version was still there (the web
     app took a cancelled run's draft for gone, and showed it again); and a job created between
     them made the delete fail on its foreign key. `only_draft`: only while it is still a draft.
-    True when it was deleted."""
+    True when it was deleted. Its folder goes too, once its rows have (`_remove_version_folder`)."""
     eng = getattr(db, "_engine", None)
     if eng is None:                       # the in-memory backend: one process, no transactions
         v = db.versions.get(version_id)
         if v is None or (only_draft and getattr(v, "status", None) != "draft"):
             return False
         for j in db.jobs.list_for_version(version_id):
-            j.version_id = None
-            db.jobs.update(j)
+            # Its status unchanged: `update()` writes nothing to a cancelled job.
+            db.jobs.transition(j.id, (j.status,), j.status, version_id=None)
         db.versions.delete(version_id)
+        _remove_version_folder(v.project_id, version_id)
         return True
     import sqlalchemy as sa
     from ..db.postgres import schema as s
@@ -672,7 +670,9 @@ def delete_version(db: Any, version_id: str, *, only_draft: bool = False) -> boo
     if only_draft:
         cond = cond & (s.versions.c.status == "draft")
     with eng.begin() as cx:
-        if cx.execute(sa.select(s.versions.c.id).where(cond).with_for_update()).first() is None:
+        row = cx.execute(sa.select(s.versions.c.id, s.versions.c.project_id)
+                         .where(cond).with_for_update()).first()
+        if row is None:
             return False
         cx.execute(sa.update(s.analysis_jobs).where(s.analysis_jobs.c.version_id == version_id)
                    .values(version_id=None))
@@ -680,7 +680,45 @@ def delete_version(db: Any, version_id: str, *, only_draft: bool = False) -> boo
             s.compare_results.c.current_version_id == version_id,
             s.compare_results.c.baseline_version_id == version_id)))
         cx.execute(sa.delete(s.versions).where(cond))
+    _remove_version_folder(row.project_id, version_id)
     return True
+
+
+def _remove_version_folder(project_id: str, version_id: str) -> None:
+    """Delete a deleted version's folder -- `<workspaces>/<project>/versions/<version>`: its Word
+    files, pictures and view output, which no row names any more. Left, a cancelled run's half-made
+    files stayed on disk for ever, and a CLI version made again under the same name
+    (`<project>.<name>`) found them in its folder (docs/design/JOB_SCHEDULING_DESIGN.md §9).
+
+    Only a folder directly in `versions/`: never one a strange id would resolve elsewhere. Never
+    fails the delete: a file held open (a download being served) is tried again for a moment, then
+    said and left -- nothing reads it."""
+    try:
+        root = (doc_render.workspaces_root() / project_id / "versions").resolve()
+        target = (root / version_id).resolve()
+    except (OSError, ValueError, TypeError):
+        return
+    if target.parent != root or target.name != version_id or not target.is_dir():
+        return
+
+    def writable(func, p, _exc):                  # read-only files (Windows) are made writable
+        os.chmod(p, 0o600)
+        func(p)
+    last: Optional[BaseException] = None
+    for attempt in range(3):
+        try:
+            if sys.version_info >= (3, 12):
+                shutil.rmtree(target, onexc=writable)
+            else:                                 # pragma: no cover - older Pythons
+                shutil.rmtree(target, onerror=writable)
+            return
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            last = exc
+            time.sleep(0.5 * (attempt + 1))
+    _log.warning("version %s is deleted, but its folder %s could not be removed (%s: %s); nothing "
+                 "reads it", version_id, target, type(last).__name__, last)
 
 
 SCOPE_TYPES = ("project", "layer", "group", "component")
@@ -871,10 +909,9 @@ def fail_interrupted_jobs(db: Any, *, before: Optional[datetime] = None,
             # The periodic pass: only background runs nobody follows. A job with no run.json
             # may be queued, checking out or starting -- the start-up check decides those.
             continue
-        job.status = "failed"
-        job.error_message = INTERRUPTED_MESSAGE
-        job.completed_at = _now()
-        db.jobs.update(job)
+        if not db.jobs.transition(job.id, ACTIVE_JOB_STATUSES, "failed",
+                                  error_message=INTERRUPTED_MESSAGE, completed_at=_now()):
+            continue                                   # it ended meanwhile, on its own
         _release_draft_version(db, job)
         failed += 1
     return failed
@@ -1027,9 +1064,10 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
     if not job:
         return
 
-    job.status = "running"
-    job.current_activity = "Preparing workspace…"
-    db.jobs.update(job)
+    if not db.jobs.transition(job_id, ("queued", "running"), "running",
+                              current_activity="Preparing workspace…"):
+        return                                 # cancelled before it started
+    job.status, job.current_activity = "running", "Preparing workspace…"
     _reserve_version(db, job, project)     # version row must exist before the engine (PgStore FK)
     _append_log(job_id, "Starting analysis pipeline…")
 
@@ -2394,11 +2432,9 @@ def _fail_keeping_work(db: Any, job_id: str, message: str) -> None:
         _mark_failed(db, job_id, message)
         return
     _log.error("job %s stopped: %s", job_id, message)
-    if job.status not in ("cancelled", "complete", "failed"):
-        job.status = "failed"
-        job.error_message = f"{message}\n\n{_resume_hint(job)}"[:4000]
-        job.completed_at = _now()
-        db.jobs.update(job)
+    db.jobs.transition(job_id, ACTIVE_JOB_STATUSES, "failed",
+                       error_message=f"{message}\n\n{_resume_hint(job)}"[:4000],
+                       completed_at=_now())
 
 
 def _reattach_detached(db: Any, job: Any) -> bool:
@@ -2733,18 +2769,18 @@ def _complete(db: Any, job_id: str, *, force: bool = False) -> None:
     # this reads it straight back (falling back to the run's model/ dir when there is no DB).
     _load_and_register_functions(db, job, version.id)
 
-    job.status = "complete"
-    job.phase = 4
-    job.phase_pct = 100
-    job.current_activity = "Done"
-    job.activity_detail = f"{version.docs_count} document(s) generated"
-    job.eta_seconds = 0
-    job.completed_at = now
-    job.version_id = version.id
-    job.elapsed_seconds = _elapsed_since(job.started_at, now)
     for p in job.phases:
         p.status = "done"
-    db.jobs.update(job)
+    # Complete only if it is still the run's -- or, `force`, ended meanwhile as cancelled or
+    # failed although the run finished. A cancel made since is not overwritten.
+    if not db.jobs.transition(
+            job_id, ACTIVE_JOB_STATUSES + (("cancelled", "failed") if force else ()), "complete",
+            phase=4, phase_pct=100, current_activity="Done",
+            activity_detail=f"{version.docs_count} document(s) generated", eta_seconds=0,
+            completed_at=now, error_message=None, version_id=version.id,
+            elapsed_seconds=_elapsed_since(job.started_at, now), phases=job.phases):
+        _append_log(job_id, "The job ended meanwhile; it is left as it is.")
+        return
 
     if project:
         project.status = "in_review"
@@ -3534,12 +3570,10 @@ def _run_export(db: Any, job_id: str) -> None:
     try:
         _init_state(job_id)
         job = db.jobs.get(job_id)
-        if not job or job.status == "cancelled":
-            return
-        job.status = "running"
-        added = (job.scope or {}).get("added_layers") or []
-        job.current_activity = _export_activity(added)
-        db.jobs.update(job)
+        added = ((job.scope or {}).get("added_layers") or []) if job else []
+        if not job or not db.jobs.transition(job_id, ("queued", "running"), "running",
+                                             current_activity=_export_activity(added)):
+            return                             # cancelled before it started
         names = (job.scope or {}).get("names") or []
         cmd = [sys.executable, str(get_settings().repo_root / "analyzer.py"), "export",
                "--project-id", job.project_id, "--version-id", job.version_id,
@@ -3631,17 +3665,18 @@ def start_resume(db: Any, version: Any, *, started_by: Optional[str] = None) -> 
         first = {"regenerate": 1, "derive": 2}.get(action, 3)
         if generation is not None and generation.status != "complete":
             job, render = generation, False
-            job.status = "queued"
-            job.error_message = None
-            job.completed_at = None
-            # Started again: the checks for unfollowed jobs leave a job alone for its first
-            # minutes, and they read this (and "the project's run" is the newest).
-            job.started_at = _now()
-            job.current_activity = "Resuming…"
             for p in job.phases:
                 if p.number >= first and p.status != "done":
                     p.status = "pending"
-            db.jobs.update(job)
+            # Started again: the checks for unfollowed jobs leave a job alone for its first
+            # minutes, and they read `started_at` (and "the project's run" is the newest).
+            if not db.jobs.transition(job.id, (generation.status,), "queued",
+                                      error_message=None, completed_at=None, started_at=_now(),
+                                      current_activity="Resuming…", phases=job.phases):
+                raise ResumeRefused(409, "RUN_ACTIVE",
+                                    f"Job {job.id} of version '{version.id}' changed meanwhile. "
+                                    f"Look at it again, then resume.", job.id)
+            job = db.jobs.get(job.id)
         else:
             render = True
             job = AnalysisJob(
@@ -3676,10 +3711,8 @@ def _run_resume(db: Any, job_id: str, render: bool, first_phase: int) -> None:
     try:
         _init_state(job_id)
         job = db.jobs.get(job_id)
-        if not job or job.status == "cancelled":
-            return
-        job.status = "running"
-        db.jobs.update(job)
+        if not job or not db.jobs.transition(job_id, ("queued", "running"), "running"):
+            return                             # cancelled before it started
         cmd = [sys.executable, str(get_settings().repo_root / "analyzer.py"), "resume",
                "--project-id", job.project_id, "--version-id", job.version_id]
         if (_execute_detached(db, job_id, cmd, phase_start=first_phase,
@@ -3709,11 +3742,9 @@ def _run_reexport(db: Any, job_id: str) -> None:
     try:
         _init_state(job_id)                  # the log buffer the live stream reads
         job = db.jobs.get(job_id)
-        if not job or job.status == "cancelled":
-            return
-        job.status = "running"
-        job.current_activity = "Preparing re-export…"
-        db.jobs.update(job)
+        if not job or not db.jobs.transition(job_id, ("queued", "running"), "running",
+                                             current_activity="Preparing re-export…"):
+            return                             # cancelled before it started
         # In the background the re-export's own process takes the version's writer lock, as a web
         # run's generate does: holding it here as well would refuse that process.
         import contextlib
@@ -3796,23 +3827,18 @@ def _complete_reexport(db: Any, job_id: str) -> None:
         # Every component of the update failed (exit 3 made it a "partial success"): nothing was
         # written, and the job says so -- R9's `reexport.status`, the starter's notification.
         names = sorted(failed[0])
-        job.status = "failed"
-        job.error_message = ("Update failed: %s -- %s" % (", ".join(names),
-                             next(iter(failed[0].values()))))[:4000]
-        job.completed_at = now
-        job.elapsed_seconds = _elapsed_since(job.started_at, now)
-        db.jobs.update(job)
+        db.jobs.transition(job_id, ACTIVE_JOB_STATUSES, "failed",
+                           error_message=("Update failed: %s -- %s" % (
+                               ", ".join(names), next(iter(failed[0].values()))))[:4000],
+                           completed_at=now, elapsed_seconds=_elapsed_since(job.started_at, now))
         return
-    job.status = "complete"
-    job.phase = 4
-    job.phase_pct = 100
-    job.current_activity = "Done"
-    job.activity_detail = ("Re-exported; failed: %s" % ", ".join(sorted(failed[0]))
-                           if failed is not None and failed[0] else "Re-exported")
-    job.eta_seconds = 0
-    job.completed_at = now
-    job.elapsed_seconds = _elapsed_since(job.started_at, now)
     for p in job.phases:
         if p.status in ("pending", "running"):
             p.status = "done"
-    db.jobs.update(job)
+    # A cancel made since stays: only a job still at work completes.
+    db.jobs.transition(job_id, ACTIVE_JOB_STATUSES, "complete",
+                       phase=4, phase_pct=100, current_activity="Done",
+                       activity_detail=("Re-exported; failed: %s" % ", ".join(sorted(failed[0]))
+                                        if failed is not None and failed[0] else "Re-exported"),
+                       eta_seconds=0, completed_at=now,
+                       elapsed_seconds=_elapsed_since(job.started_at, now), phases=job.phases)

@@ -735,6 +735,9 @@ def _render_version(a, *, scope, command: str, after=None, before=None):
     argv += ["--doc-type", doc_type]
     for u in getattr(a, "unit", None) or []:
         argv += ["--selected-unit", u]
+    # Each component stored as soon as it is made, before it is called generated: a run cut short
+    # keeps what it finished whole (incremental.store.store_finished). Stored again at the end.
+    argv.append("--store-each-plan")
     argv.append(checkout)
 
     os.environ["ANALYZER_VERSION_ID"] = a.version_id      # the phases' progress marks (as generate)
@@ -1233,9 +1236,8 @@ def _finish_web_job(project_id: str, version_id: str, db=None) -> None:
             return
         from api.services import pipeline_runner
         # Straight from failed to complete: never "running", which an API's check for jobs
-        # nobody follows would take up and follow again.
-        job.error_message = None
-        db.jobs.update(job)
+        # nobody follows would take up and follow again. Its "stopped" message goes first.
+        db.jobs.transition(job.id, ("failed",), "failed", error_message=None)
         pipeline_runner._complete(db, job.id, force=True)
         print(f"web app: job {job.id} complete -- version {version.tag or version_id} is out of draft")
     except Exception as exc:                        # noqa: BLE001 -- see docstring

@@ -10,7 +10,7 @@ Usage:
 """
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Any, Iterable, Optional
 from ..models.domain import (
     User, Project, ProjectMember, Version, Commit, AnalysisJob,
     Document, DocumentSection, DocumentAssignment, Function,
@@ -152,7 +152,18 @@ class IAnalysisJobRepository(ABC):
         """Every job, of every project, still marked queued, running or paused."""
 
     @abstractmethod
-    def update(self, job: AnalysisJob) -> AnalysisJob: ...
+    def update(self, job: AnalysisJob) -> AnalysisJob:
+        """Write the job's progress and description -- never its state (`JOB_STATE_FIELDS`), and
+        nothing at all once it is cancelled, removed or interrupted (`JOB_CLOSED_STATUSES`). The
+        job may be a copy read a moment earlier: what changed since in its state stays."""
+
+    @abstractmethod
+    def transition(self, job_id: str, from_status: Iterable[str], to_status: str,
+                   **values: Any) -> bool:
+        """Change the job's status to `to_status`, and its fields to `values`, only if its status
+        is one of `from_status` now -- one statement, so nothing can change it in between. False
+        when it was not: someone else changed it first (a cancel, the run's end), and the caller
+        acts on what it is now."""
 
 
 class IDocumentRepository(ABC):

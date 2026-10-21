@@ -11,6 +11,7 @@ both **upsert-by-PK**, matching the in-memory "set by key" behaviour.
 """
 from __future__ import annotations
 
+import dataclasses
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -21,7 +22,7 @@ from ...models.domain import (
     User, Project, ProjectMember, AccessRequest, Version, Commit, AnalysisJob,
     Document, DocumentSection, DocumentAssignment, Function, CompareResult,
     DocumentDiff, Notification, RENDER_MODES, ACTIVE_JOB_STATUSES,
-    ReviewEvent, DOC_STATUSES,
+    ReviewEvent, DOC_STATUSES, JOB_STATE_FIELDS, JOB_CLOSED_STATUSES,
 )
 from ...repositories.interfaces import (
     IUserRepository, IProjectRepository, IProjectMemberRepository,
@@ -243,7 +244,25 @@ class _JobRepo(_Base, IAnalysisJobRepository):
                          .order_by(j.c.started_at), AnalysisJob)
 
     def update(self, job):
-        self._put(s.analysis_jobs, ["id"], to_row(job)); return job
+        j = s.analysis_jobs
+        row = {k: v for k, v in to_row(job).items() if k not in JOB_STATE_FIELDS and k != "id"}
+        with self._engine.begin() as cx:
+            n = cx.execute(update(j).where((j.c.id == job.id)
+                                           & j.c.status.notin_(JOB_CLOSED_STATUSES))
+                           .values(**row)).rowcount
+            if n == 0 and cx.execute(select(j.c.id).where(j.c.id == job.id)).first() is None:
+                cx.execute(insert(j).values(**to_row(job)))        # never created: as before
+        return job
+
+    def transition(self, job_id, from_status, to_status, **values):
+        j = s.analysis_jobs
+        if "phases" in values and values["phases"] is not None:
+            values["phases"] = [p if isinstance(p, dict) else dataclasses.asdict(p)
+                                for p in values["phases"]]
+        with self._engine.begin() as cx:
+            return cx.execute(update(j).where((j.c.id == job_id)
+                                              & j.c.status.in_(tuple(from_status)))
+                              .values(status=to_status, **values)).rowcount == 1
 
 
 class _DocRepo(_Base, IDocumentRepository):

@@ -14,7 +14,8 @@ from sse_starlette.sse import EventSourceResponse
 from ..db.session import get_db
 from ..db.in_memory import InMemoryDatabase
 from ..middleware.auth import get_current_user, require_project_admin, require_project_member
-from ..models.domain import User, AnalysisJob, AnalysisPhase, REEXPORT_MODE, EXPORT_MODE, RENDER_MODES
+from ..models.domain import (User, AnalysisJob, AnalysisPhase, REEXPORT_MODE, EXPORT_MODE,
+                             RENDER_MODES, ACTIVE_JOB_STATUSES)
 from ..services.errors import not_found, conflict, bad_request
 from ..services import pipeline_runner
 from ..schemas import (
@@ -315,12 +316,13 @@ def cancel_job(
         # A page's view of the job can be seconds old: cancelling a run that has just stopped
         # -- its work kept for `resume` -- would have deleted that work.
         raise conflict("JOB_FINISHED", f"Job {job_id} has already ended ({job.status}).")
-    job = db.jobs.get(job_id)                 # as it is now: its run may have ended meanwhile
-    if job.status in ("complete", "failed", "cancelled"):
-        raise conflict("JOB_FINISHED", f"Job {job_id} has already ended ({job.status}).")
-    job.status = "cancelled"
-    job.completed_at = datetime.now(UTC)
-    db.jobs.update(job)
+    # In one statement, only while it is still going: its run may have ended a moment ago.
+    if not db.jobs.transition(job_id, ACTIVE_JOB_STATUSES, "cancelled",
+                              completed_at=datetime.now(UTC)):
+        now_is = db.jobs.get(job_id)
+        raise conflict("JOB_FINISHED", f"Job {job_id} has already ended "
+                                       f"({getattr(now_is, 'status', 'gone')}).")
+    job = db.jobs.get(job_id) or job
     pipeline_runner.cancel_subprocess(job_id)
     if not (pipeline_runner.job_alive(job_id) or pipeline_runner._reexport_alive(job_id)):
         # Nothing here follows it -- a job a stopped server left, not followed again yet -- so
@@ -348,11 +350,10 @@ def resume_job(
     job = db.jobs.get(job_id)
     if not job or job.project_id != project_id:
         raise not_found("AnalysisJob", job_id)
-    if job.status != "paused":
+    if not db.jobs.transition(job_id, ("paused",), "running"):
         raise HTTPException(400, detail={"code": "VALIDATION_ERROR",
                                          "message": "Job is not paused.", "status": 400})
-    job.status = "running"
-    db.jobs.update(job)
+    job = db.jobs.get(job_id) or job
     pipeline_runner.signal_resume(job_id)
     return {"job": _job_dict(job, db)}
 

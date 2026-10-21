@@ -40,7 +40,7 @@ import datetime
 import json
 import os
 import sys
-from typing import Any, Dict, List, NamedTuple, Optional, Sequence
+from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 from sqlalchemy import insert, select, update
 
@@ -418,9 +418,31 @@ def clear_rewritten(conn, version_id: str, entries, model) -> "Retired":
     What comes back is the superseded wording, which is precisely why the entry stays queued: the
     debt is still owed, and the next run with a working LLM pays it.
     """
+    settled = settle_rewritten(entries, model)
+    for kind, key in settled.paid:
+        clear(conn, version_id, kind, key)
+    return Retired(len(settled.paid), settled.restored)
+
+
+class Settled(NamedTuple):
+    """What `settle_rewritten` decided: the entries paid, to retire, and how many slots got their
+    previous text back (those stay queued)."""
+    paid: List[Tuple[str, str]]
+    restored: int
+
+
+def settle_rewritten(entries, model) -> "Settled":
+    """`clear_rewritten` without the clearing: which entries came back with text, to retire, and
+    the others' previous text put back into `model`.
+
+    For a caller that retires them once what was rewritten is STORED: Phase 2, whose model is
+    saved at the phase's end (`model_deriver._retire_regeneration_queue`). Retired before that, a
+    run stopped in between -- a cancel, a crash -- left the old text in the stored model and no
+    entry saying it is owed; the next run's enrichment then skipped it as already written."""
     from review import resolver
 
-    cleared = restored = 0
+    paid: List[Tuple[str, str]] = []
+    restored = 0
     for item in entries or ():
         row, previous = item if isinstance(item, Blanked) else Blanked(item, "")
         try:
@@ -428,16 +450,14 @@ def clear_rewritten(conn, version_id: str, entries, model) -> "Retired":
         except (resolver.SlotError, slot.SlotKeyError):
             # Gone from this version: retire it, see blank_queued_text. There is nowhere to put
             # the old text back into, and nothing that would read it if there were.
-            clear(conn, version_id, row.slot_kind, row.slot_key)
-            cleared += 1
+            paid.append((row.slot_kind, row.slot_key))
             continue
         if text:
-            clear(conn, version_id, row.slot_kind, row.slot_key)
-            cleared += 1
+            paid.append((row.slot_kind, row.slot_key))
         elif previous:
             resolver.write_text(model, row.slot_kind, row.slot_key, previous)
             restored += 1
-    return Retired(cleared, restored)
+    return Settled(paid, restored)
 
 
 def clear_behaviour_entries(conn, version_id: str, rebuilt, components) -> int:

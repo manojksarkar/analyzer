@@ -200,7 +200,21 @@ class DbRepository(ModelRepository):
         self._stored: Optional[Dict[str, Any]] = None      # whole-model read, cached
         self._exists: Optional[bool] = None                # "a model was persisted", cached
         self._aux: Dict[str, Any] = {}                     # parse/standalone reads, cached
+        self._after: List[Any] = []                         # `after_flush`, in order
         self._lock = threading.Lock()
+
+    def after_flush(self, fn) -> None:
+        """Run `fn(conn)` once this phase's model is STORED: after `flush()` commits, in a
+        transaction of its own -- never when the flush fails or is never reached (the phase died,
+        was stopped or cancelled first).
+
+        For bookkeeping that must not say "done" before what it describes is saved: the
+        regeneration-queue entries Phase 2 paid. Retired before the model was stored, a run stopped
+        in between left the old text and nothing saying it is owed. Retired after, a stop in
+        between leaves an entry for text already stored, and the next run writes it again: the
+        harmless way round."""
+        with self._lock:
+            self._after = list(getattr(self, "_after", ())) + [fn]
 
     # -- reads -------------------------------------------------------------
     # One loader per artifact. Reading any single artifact used to call `load_model`, which
@@ -428,7 +442,9 @@ class DbRepository(ModelRepository):
             # Only the COUPLED set: standalone artifacts already landed on write.
             pending = {k: v for k, v in self._pending.items() if k in DB_BACKED_MODEL}
             self._pending = {}
+            after, self._after = list(getattr(self, "_after", ())), []
         if not pending:
+            self._run_after(after, conn)
             return
         from core.db import get_engine
         from core import model_store
@@ -474,6 +490,25 @@ class DbRepository(ModelRepository):
                 "PostgreSQL cannot represent one in text or jsonb. Usually a doc comment "
                 "or an expression sliced out of a source file with a stray NUL byte.",
                 scrub_stats["strings"])
+        self._run_after(after, conn)
+
+    def _run_after(self, after: List[Any], conn=None) -> None:
+        """The `after_flush` work, now that the model is stored: each in a transaction of its own
+        -- or in the caller's, which commits it with the model. Never fails the phase: what is not
+        done here is still owed, and the next run does it."""
+        if not after:
+            return
+        import contextlib
+        from core.db import get_engine
+        for fn in after:
+            try:
+                with (get_engine().begin() if conn is None else contextlib.nullcontext(conn)) as cx:
+                    fn(cx)
+            except Exception as exc:                      # noqa: BLE001 - see docstring
+                from core.logging_setup import get_logger
+                get_logger("model_repo").warning(
+                    "after the model was stored, %s failed (%s: %s); the next run does it again",
+                    getattr(fn, "__name__", "a step"), type(exc).__name__, exc)
 
 
 # ---------------------------------------------------------------------------

@@ -12,6 +12,7 @@ To swap to a real DB:
 from __future__ import annotations
 
 import copy
+import threading
 from datetime import datetime, date, timedelta, timezone
 from typing import Optional
 import uuid
@@ -20,7 +21,7 @@ from ..models.domain import (
     User, Project, ProjectMember, Version, Commit, AnalysisJob,
     AnalysisPhase, Document, DocumentSection, DocumentAssignment,
     Function, CompareResult, DocumentDiff, Notification, AccessRequest, RENDER_MODES, ACTIVE_JOB_STATUSES,
-    ReviewEvent, DOC_STATUSES,
+    ReviewEvent, DOC_STATUSES, JOB_STATE_FIELDS, JOB_CLOSED_STATUSES,
 )
 from ..repositories.interfaces import (
     IUserRepository, IProjectRepository, IProjectMemberRepository,
@@ -525,9 +526,13 @@ class _InMemCommitRepo(ICommitRepository):
 class _InMemJobRepo(IAnalysisJobRepository):
     def __init__(self, store: dict[str, AnalysisJob]):
         self._store = store
+        self._lock = threading.Lock()
 
     def create(self, job):
-        self._store[job.id] = job
+        # A copy, as every read hands out: the caller's object is not the stored one, so changing
+        # it after (`job.status = ...`) does not change the job without `update`/`transition`.
+        with self._lock:
+            self._store[job.id] = copy.deepcopy(job)
         return copy.deepcopy(job)
 
     def get(self, job_id):
@@ -554,8 +559,30 @@ class _InMemJobRepo(IAnalysisJobRepository):
         return [copy.deepcopy(j) for j in sorted(jobs, key=lambda j: j.started_at)]
 
     def update(self, job):
-        self._store[job.id] = job
-        return copy.deepcopy(job)
+        with self._lock:
+            stored = self._store.get(job.id)
+            if stored is None:                                   # never created: as before
+                self._store[job.id] = copy.deepcopy(job)
+                return copy.deepcopy(job)
+            if stored.status in JOB_CLOSED_STATUSES:
+                return copy.deepcopy(stored)
+            new = copy.deepcopy(job)
+            for f in JOB_STATE_FIELDS:                          # the state stays as it is now
+                setattr(new, f, getattr(stored, f))
+            self._store[job.id] = new
+            return copy.deepcopy(new)
+
+    def transition(self, job_id, from_status, to_status, **values):
+        with self._lock:
+            stored = self._store.get(job_id)
+            if stored is None or stored.status not in tuple(from_status):
+                return False
+            for k, v in values.items():
+                if k == "phases" and v is not None:
+                    v = [p if isinstance(p, AnalysisPhase) else AnalysisPhase(**p) for p in v]
+                setattr(stored, k, copy.deepcopy(v))
+            stored.status = to_status
+            return True
 
 
 class _InMemDocRepo(IDocumentRepository):

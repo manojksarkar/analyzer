@@ -12,7 +12,8 @@ import uuid
 import pytest
 from unittest.mock import patch
 
-from api.models.domain import AnalysisJob, AnalysisPhase, Project, ProjectMember, Version
+from api.models.domain import (AnalysisJob, AnalysisPhase, JOB_STATUSES, Project,
+                               ProjectMember, Version)
 from api.services import pipeline_runner as pr
 
 LAYERS = [{"name": "Layer1", "path": "Layer1", "groups": [{"name": "My Sample", "components": [
@@ -68,7 +69,7 @@ class TestAnUnfinishedRunFreesItsVersion:
         job = _job(db, project, "v2.0.0")
         vid = job.version_id
         job.status = "cancelled"          # what the cancel route writes
-        db.jobs.update(job)
+        db.jobs.transition(job.id, JOB_STATUSES, "cancelled")
 
         with patch.object(pr, "_inner_run"):
             pr._run(db, job.id)
@@ -94,7 +95,7 @@ class TestAnUnfinishedRunFreesItsVersion:
         job = _job(db, project, "v4.0.0")
         vid = job.version_id
         job.status = "complete"
-        db.jobs.update(job)
+        db.jobs.transition(job.id, JOB_STATUSES, "complete")
 
         with patch.object(pr, "_inner_run"):
             pr._run(db, job.id)
@@ -265,7 +266,7 @@ class TestCancelAfterTheReview:
         self._admin(db, project)
         job = _job(db, project, "v9.4.0")
         job.status = "failed"                     # stopped, its work kept for `resume`
-        db.jobs.update(job)
+        db.jobs.transition(job.id, JOB_STATUSES, "failed")
         r = client.post(f"/api/v1/projects/{project.id}/jobs/{job.id}/cancel", headers=auth_header)
         assert r.status_code == 409 and r.json()["detail"]["code"] == "JOB_FINISHED"
         assert db.versions.get(job.version_id) is not None
@@ -324,7 +325,7 @@ class TestDiscardingAStoppedRun:
         self._admin(db, project)
         job = _job(db, project, "v9.6.0")
         job.status = "failed"                          # stopped, its work kept
-        db.jobs.update(job)
+        db.jobs.transition(job.id, JOB_STATUSES, "failed")
         vid = job.version_id
         r = client.delete(f"/api/v1/projects/{project.id}/versions/{vid}", headers=auth_header)
         assert r.status_code == 204, r.text
@@ -345,10 +346,10 @@ class TestDiscardingAStoppedRun:
         self._admin(db, project)
         base = _job(db, project, "v9.8.0")
         base.status = "complete"
-        db.jobs.update(base)
+        db.jobs.transition(base.id, JOB_STATUSES, "complete")
         later = _job(db, project, "v9.9.0")
         later.status = "complete"
-        db.jobs.update(later)
+        db.jobs.transition(later.id, JOB_STATUSES, "complete")
         v = db.versions.get(later.version_id)
         v.baseline_version_id = base.version_id
         db.versions.update(v)
@@ -372,7 +373,7 @@ class TestAfterTheThirdReview:
         self._admin(db, project)
         old = _job(db, project, "v8.0.0")
         old.status = "complete"
-        db.jobs.update(old)
+        db.jobs.transition(old.id, JOB_STATUSES, "complete")
         _job(db, project, "v8.1.0")                          # running, perhaps on v8.0.0
         r = client.delete(f"/api/v1/projects/{project.id}/versions/{old.version_id}",
                           headers=auth_header)
@@ -389,7 +390,7 @@ class TestAfterTheThirdReview:
         v.status = "in_review"                               # its documents were recorded
         db.versions.update(v)
         job.status = "cancelled"
-        db.jobs.update(job)
+        db.jobs.transition(job.id, JOB_STATUSES, "cancelled")
         done = []
         monkeypatch.setattr(pr, "_complete", lambda d, jid, force=False: done.append((jid, force)))
         with patch.object(pr, "_inner_run"):
@@ -435,7 +436,7 @@ class TestAfterTheFourthReview:
         def follow(d, jid, run, **kw):
             j = d.jobs.get(jid)
             j.status = "cancelled"
-            d.jobs.update(j)
+            d.jobs.transition(j.id, JOB_STATUSES, "cancelled")
             return True
         monkeypatch.setattr(pr, "_follow_detached", follow)
         pr._refollow(db, job.id, {"pid": 1}, render=False)
@@ -451,7 +452,7 @@ class TestAfterTheFourthReview:
         def execute(d, jid, cmd, **kw):
             j = d.jobs.get(jid)
             j.status = "cancelled"
-            d.jobs.update(j)
+            d.jobs.transition(j.id, JOB_STATUSES, "cancelled")
             return False
         monkeypatch.setattr(pr, "_execute_detached", execute)
         monkeypatch.setattr(pr, "_engine_db_env", lambda d: {})
@@ -468,7 +469,7 @@ class TestAfterTheFourthReview:
         def execute(d, jid, cmd, **kw):
             j = d.jobs.get(jid)
             j.status = "cancelled"
-            d.jobs.update(j)
+            d.jobs.transition(j.id, JOB_STATUSES, "cancelled")
             return True
         monkeypatch.setattr(pr, "_execute_detached", execute)
         monkeypatch.setattr(pr, "_engine_db_env", lambda d: {})
@@ -485,7 +486,7 @@ class TestAfterTheFourthReview:
         def complete(d, jid, force=False):
             j = d.jobs.get(jid)
             j.status = "complete"
-            d.jobs.update(j)
+            d.jobs.transition(j.id, JOB_STATUSES, "complete")
         monkeypatch.setattr(pr, "_complete", complete)
         r = client.post(f"/api/v1/projects/{project.id}/jobs/{job.id}/cancel", headers=auth_header)
         assert r.status_code == 200 and r.json()["job"]["status"] == "complete"
@@ -498,3 +499,57 @@ class TestAfterTheFourthReview:
         assert "analyzer.py resume" in pr._resume_hint(job)
         job.mode = "reexport"
         assert "resume" not in pr._resume_hint(job)
+
+
+class TestADeletedVersionTakesItsFolder:
+    """`delete_version` deleted the rows only: a cancelled run's half-made Word files and pictures
+    stayed on disk for ever, and a CLI version made again under the same name found them in its
+    folder (docs/design/JOB_SCHEDULING_DESIGN.md §9)."""
+
+    @pytest.fixture
+    def workspaces(self, tmp_path, monkeypatch):
+        from api.services import doc_render
+        monkeypatch.setattr(doc_render, "workspaces_root", lambda: tmp_path)
+        return tmp_path
+
+    def _folder(self, workspaces, project, vid):
+        folder = workspaces / project.id / "versions" / vid
+        (folder / "output" / "Comp").mkdir(parents=True)
+        (folder / "output" / "Comp" / "software_detailed_design_Comp.docx").write_bytes(b"half")
+        return folder
+
+    def test_its_folder_goes_with_it(self, db, workspaces):
+        project = _project(db)
+        job = _job(db, project, "v7.0.0")
+        folder = self._folder(workspaces, project, job.version_id)
+        assert pr.delete_version(db, job.version_id)
+        assert not folder.exists()
+
+    def test_a_cancelled_run_leaves_no_files(self, db, workspaces):
+        project = _project(db)
+        job = _job(db, project, "v7.1.0")
+        folder = self._folder(workspaces, project, job.version_id)
+        assert db.jobs.transition(job.id, ("running",), "cancelled")
+        pr._release_draft_version(db, job)
+        assert db.versions.get(job.version_id) is None and not folder.exists()
+
+    def test_nothing_beside_its_folder_is_touched(self, db, workspaces):
+        project = _project(db)
+        other = workspaces / project.id / "versions" / "ver-kept"
+        other.mkdir(parents=True)
+        beside = workspaces / project.id / "config.json"
+        beside.write_text("{}")
+        job = _job(db, project, "v7.2.0")
+        assert pr.delete_version(db, job.version_id)
+        assert other.is_dir() and beside.is_file()
+
+    def test_an_id_that_would_lead_out_of_versions_removes_nothing(self, db, workspaces):
+        project = _project(db)
+        outside = workspaces / project.id / "escape"
+        outside.mkdir(parents=True)
+        db.versions.create(Version(
+            id="../escape", project_id=project.id, tag="v7.3.0", commit_sha="0" * 40,
+            branch="main", description="", status="draft", docs_count=0, created_by="u1",
+            created_at=datetime.datetime.now(datetime.timezone.utc)))
+        assert pr.delete_version(db, "../escape")
+        assert outside.is_dir()

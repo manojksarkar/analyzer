@@ -687,6 +687,11 @@ def _retire_regeneration_queue(queued, model: dict) -> None:
     only to ask for a rewrite; if the rewrite did not happen the model must go back to what it
     was, or this phase publishes an empty description where there was a readable one. `model` is
     the one `_take_regeneration_queue` was handed.
+
+    The clearing waits until the model is stored (`DbRepository.after_flush`, at the phase's end).
+    Cleared here, a run stopped before that -- a cancel, a crash -- left the old text in the stored
+    model and no entry saying it is owed, and the next run's enrichment skipped it as already
+    written (docs/design/JOB_SCHEDULING_DESIGN.md §8).
     """
     if not queued:
         return
@@ -694,14 +699,27 @@ def _retire_regeneration_queue(queued, model: dict) -> None:
     if not eng:
         return
     try:
-        from review.cascade import clear_rewritten
-        with eng.begin() as cx:
-            out = clear_rewritten(cx, vid, queued, model)
+        from review.cascade import clear, settle_rewritten
+        out = settle_rewritten(queued, model)
         if out.restored:
             from core.logging_setup import get_logger
             get_logger("model_deriver").warning(
                 "review: %d description(s) were not rewritten (no LLM answer) — the previous "
                 "wording was restored and they stay queued for the next run", out.restored)
+        paid = list(out.paid)
+        if not paid:
+            return
+
+        def retire_rewritten_entries(cx):
+            for kind, key in paid:
+                clear(cx, vid, kind, key)
+        from core.model_repo import repository
+        repo = repository()
+        if hasattr(repo, "after_flush"):
+            repo.after_flush(retire_rewritten_entries)
+        else:                                      # a repository that stores on write
+            with eng.begin() as cx:
+                retire_rewritten_entries(cx)
     except Exception as exc:                       # noqa: BLE001
         from core.logging_setup import get_logger
         get_logger("model_deriver").warning("review: could not retire queue entries: %s", exc)

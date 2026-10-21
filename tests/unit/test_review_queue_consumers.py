@@ -424,3 +424,55 @@ class TestAFailedRewriteLeavesTheModelAsItFoundIt:
         before = model["functions"][FN]["description"]
         blanked = cascade.blank_queued_text(conn, "v1", model)
         assert blanked[0].previous_text == before
+
+
+class TestPhase2RetiresOnlyOnceItsModelIsStored:
+    """Phase 2 rewrites a queued text in memory; the model is stored at the phase's end
+    (`flush_model`). Its entries were retired before that, in a transaction of their own: a run
+    stopped in between -- a cancel, a crash -- left the old text in the stored model and no entry
+    saying it is owed, and the next run skipped it as already written. Now they are retired once
+    the model is stored (`DbRepository.after_flush`)."""
+
+    @pytest.fixture
+    def phase2(self, conn, monkeypatch):
+        import contextlib
+        import model_deriver
+        from core import db as coredb, model_repo, model_store
+
+        class _Engine:                              # every transaction is the fixture's
+            def begin(self):
+                return contextlib.nullcontext(conn)
+
+            def connect(self):
+                return contextlib.nullcontext(conn)
+
+        monkeypatch.setattr(coredb, "get_engine", lambda dsn=None: _Engine())
+        monkeypatch.setattr(model_deriver, "_review_conn_and_version", lambda: (_Engine(), "v1"))
+        repo = model_repo.DbRepository("v1", "p")
+        monkeypatch.setattr(model_repo, "_ACTIVE", repo)
+        key = slot.for_entity(slot.DESCRIPTION, FN)
+        _queue(conn, slot.DESCRIPTION, key)
+        model = _model()
+        queued = cascade.blank_queued_text(conn, "v1", model)
+        model["functions"][FN]["description"] = "Freshly written."
+        model_deriver._retire_regeneration_queue(queued, model)
+        return repo, model_store
+
+    def test_the_entry_stays_queued_until_the_model_is_stored(self, phase2, conn):
+        assert len(cascade.pending(conn, "v1")) == 1, "the run may still be stopped before its store"
+
+    def test_it_is_retired_once_the_model_is_stored(self, phase2, conn):
+        repo, _ = phase2
+        repo.flush()
+        assert cascade.pending(conn, "v1") == []
+
+    def test_a_store_that_fails_retires_nothing(self, phase2, conn, monkeypatch):
+        repo, model_store = phase2
+
+        def persist_model(*a, **k):
+            raise RuntimeError("the database went away")
+        monkeypatch.setattr(model_store, "persist_model", persist_model)
+        repo.write("functions", {FN: {"description": "Freshly written."}})
+        with pytest.raises(RuntimeError):
+            repo.flush()
+        assert len(cascade.pending(conn, "v1")) == 1

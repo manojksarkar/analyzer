@@ -46,6 +46,11 @@ Options:
                        last time the views were derived. Only matters for
                        --from-phase 4, which skips the step that would apply it.
                        Without this the run refuses and says how to re-derive.
+  --store-each-plan    Store each plan's components (output, Word files' time,
+                       documents for review) as soon as its documents are made,
+                       before marking them generated -- an export, update or
+                       resume into a version that has documents, so a run cut
+                       short keeps what it finished (incremental.store.store_finished).
   --views <a,b,...>    Phase 3 makes only these of the views the doc type needs and
                        keeps the stored rest -- a Word-file update's Phase 3
                        (FAST_WORD_FILE_UPDATES P5). With --rewrite-labels, the
@@ -203,6 +208,7 @@ _KNOWN_FLAGS = (
     "--help", "-h",
     "--clean", "--config",
     "--use-model", "--skip-model", "--force-export", "--views", "--rewrite-labels",
+    "--store-each-plan",
     "--no-llm-summarize", "--llm-summarize",
     "--selected-group", "--selected-layer", "--selected-component", "--selected-unit",
     "--component-per-docx", "--filter-mode",
@@ -225,6 +231,7 @@ _KNOWN_FLAGS = (
 clean_all               = False
 use_model               = False
 force_export            = False  # export even when a correction is newer than the last derivation
+store_each_plan         = False  # store each plan's components when made (export, update, resume)
 views_arg               = None   # Phase 3 makes only these views (an update's, P5)
 rewrite_labels_arg      = None   # the charts whose labels are written again (an update's, P5)
 no_llm_summarize        = False
@@ -275,6 +282,8 @@ while i < len(sys.argv):
         use_model = True
     elif a == "--force-export":
         force_export = True
+    elif a == "--store-each-plan":
+        store_each_plan = True
     elif a == "--views":
         i += 1
         if i >= len(sys.argv):
@@ -1037,6 +1046,11 @@ def _component_states(_plan):
         _FAILED_PLANS.append(_why)
         log(f"{_why}. Going on with the other components.", component="run", err=True)
         return
+    if store_each_plan and _docs and output_root_arg:
+        # Stored before they are called generated: a run cut short after this keeps them whole.
+        from incremental.store import store_finished as _store_finished
+        _store_finished(project_id_arg, _STATES_VID, output_root_arg, _docs,
+                        log=lambda _m: log(_m, component="run", err=True))
     _mark_components(_STATES_VID, _docs, "generated")
 
 # An export-only run restores only its components' directories -- all the exporters read -- and so

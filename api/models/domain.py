@@ -165,6 +165,17 @@ RENDER_MODES = (REEXPORT_MODE, EXPORT_MODE)
 #: A job in one of these is still going -- or was, when a server stopped under it.
 ACTIVE_JOB_STATUSES = ("queued", "running", "paused")
 
+#: What a job's `update()` never writes: its state, which only `transition()` changes -- one
+#: statement that checks the status it changes from. `update()` writes a copy of the job read a
+#: moment earlier (the runner does, for almost every line a run prints), so writing these from it
+#: put back "running" over a cancel made in between (docs/design/JOB_SCHEDULING_DESIGN.md §1).
+JOB_STATE_FIELDS = ("status", "started_at", "completed_at", "error_message")
+#: A job in one of these takes no `update()` at all: what was cut short stays as it was cut.
+JOB_CLOSED_STATUSES = ("cancelled", "removed", "interrupted")
+#: Every status a job can have.
+JOB_STATUSES = ("held", "queued", "running", "paused", "complete", "failed", "interrupted",
+                "cancelled", "removed")
+
 
 @dataclass
 class AnalysisJob:
