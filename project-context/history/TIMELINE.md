@@ -10,6 +10,10 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-21 | Job scheduling: the design agreed; the web screens are Manoj's; messages go in the fields the web app already shows | [15](15-2026-10-07h.md) |
+| 2026-10-19c | Job scheduling: resume redoes the step it stopped in (the user's decision), and a cancel undoes nothing call by call | [15](15-2026-10-07h.md) |
+| 2026-10-19b | Job scheduling designed: the database is the queue, one atomic claim starts a job, and the run reports itself -- alive signal, pause, exit code 75 | [15](15-2026-10-07h.md) |
+| 2026-10-19 | Job scheduling, requirements agreed: two lanes per project, per-project limits, a server cap for generations, a queue in the database, pause and resume | [15](15-2026-10-07h.md) |
 | 2026-10-14f | A third LLM provider, `anthropic`: the Claude Messages API, native | [15](15-2026-10-07h.md) |
 | 2026-10-14e | Log lines say how long something took in minutes, hours and days | [15](15-2026-10-07h.md) |
 | 2026-10-14d | Every speed-up is one key of ONE block, `speedups`; a key not set is develop's way, so an empty block runs exactly as develop does | [15](15-2026-10-07h.md) |
