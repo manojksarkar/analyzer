@@ -12,7 +12,8 @@ read-then-insert:
 
 `content_blobs` makes that near-certain rather than rare: every entity with an empty payload
 hashes to the SAME `content_hash`, so two concurrent jobs on ANY projects collide. That is why
-this is a prerequisite for raising JOB_MAX_CONCURRENCY, independent of the rest of doc 10.
+this is a prerequisite for running jobs side by side (`jobs.maxGenerations`, once
+JOB_MAX_CONCURRENCY), independent of the rest of doc 10.
 
 **Chunking.** A single `executemany` of 20k rows is one enormous statement. Both helpers chunk,
 so behaviour does not change shape between a 100-function fixture and a 20k-function project.

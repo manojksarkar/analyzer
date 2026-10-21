@@ -233,7 +233,8 @@ class JobView(BaseModel):
     branch: str
     version_id: Optional[str] = None
     version_tag: Optional[str] = None
-    started_at: str
+    # When it started RUNNING -- null while it waits (docs/design/JOB_SCHEDULING_DESIGN.md §2).
+    started_at: Optional[str] = None
     completed_at: Optional[str] = None
     error_message: Optional[str] = None
     # "auto" | "full" for a generation; "reexport" for a re-export, a job of its own whose
@@ -243,11 +244,31 @@ class JobView(BaseModel):
     # (docs/design/WORD_FILE_UPDATES.md §4.1).
     started_by: Optional[JobStarterView] = None
     reason: Optional[str] = None
+    # The queue (docs/spec/JOB_SCHEDULING_SPEC.md REQ-JS-30). `status` adds held | interrupted |
+    # removed to queued | running | paused | complete | failed | cancelled.
+    lane: Optional[str] = None                  # generation | update
+    priority: Optional[str] = None              # high | normal | low
+    submitted_at: Optional[str] = None          # its place in its lane
+    position: Optional[int] = None              # waiting: its place, 1 = next
+    estimated_start: Optional[str] = None       # waiting: when it should start, when known
+    origin: Optional[str] = None                # web | cli
+    runner: Optional[str] = None                # who runs it: "api <host> pid N" | "cli ..."
+    heartbeat_at: Optional[str] = None          # its last alive signal
+    pause_requested: bool = False               # pausing at the next safe point
+    resume_requested: bool = False              # resuming once a server slot is free
+    paused_at: Optional[str] = None
+    flags: List[str] = []                       # long_wait | stuck (REQ-JS-34)
 
 
 class StartJobResponse(BaseModel):
+    """A submit's answer (REQ-JS-06, 35)."""
     job_id: str
-    status: str
+    status: str                                 # running | queued | held
+    position: Optional[int] = None
+    estimated_start: Optional[str] = None
+    ahead: List[dict] = []                      # the jobs before it in its lane
+    message: str = ""                           # "Starts now" | "Waits as #2 — about 3 h" | ...
+    job: Optional[JobView] = None
 
 
 class ReexportVersionResponse(BaseModel):

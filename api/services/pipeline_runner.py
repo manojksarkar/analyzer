@@ -37,7 +37,7 @@ import time
 import uuid
 from types import SimpleNamespace
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, List, Optional, Set, Tuple
 
@@ -63,17 +63,9 @@ _job_resume_events: dict[str, threading.Event] = {}
 _job_threads: dict[str, threading.Thread] = {}   # see job_alive
 _LOG_MAX = 500
 
-# Concurrency semaphore — lazily initialised from JOB_MAX_CONCURRENCY setting.
-_SEMAPHORE: Optional[threading.BoundedSemaphore] = None
-_SEM_LOCK = threading.Lock()
-
-
-def _get_semaphore() -> threading.BoundedSemaphore:
-    global _SEMAPHORE
-    with _SEM_LOCK:
-        if _SEMAPHORE is None:
-            _SEMAPHORE = threading.BoundedSemaphore(get_settings().job_max_concurrency)
-        return _SEMAPHORE
+# How many run at once is the scheduler's (`job_scheduler`: `jobs.maxGenerations` in
+# config.local.json, counted in the database across processes). The per-process semaphore that
+# `JOB_MAX_CONCURRENCY` sized is gone: a job's thread starts only once the scheduler claimed it.
 
 
 _PHASES = [(1, "Parse C++"), (2, "Derive Model"), (3, "Run Views"), (4, "Export DOCX")]
@@ -145,25 +137,124 @@ def _tag_job_lines(db: Any, job_id: str) -> Any:
 def _job_thread(fn):
     """A job's body (`_run`, `_refollow`, `_run_export`, `_run_resume`, `_run_reexport`): its lines
     name the job while it runs, and the caller's context is as it was after -- a job run in the
-    caller's own thread (the tests do) left its ids on every later line of that thread."""
+    caller's own thread (the tests do) left its ids on every later line of that thread. While it
+    runs this server sends the job's alive signal (`_Heartbeat`); when it ends, the queue records
+    the end, tells the people, and starts the next job (`job_queue.after_end`)."""
     @functools.wraps(fn)
     def run(db: Any, job_id: str, *args: Any, **kwargs: Any) -> Any:
         token = _tag_job_lines(db, job_id)
+        beat = _Heartbeat(db, job_id).start()
         try:
             return fn(db, job_id, *args, **kwargs)
         finally:
+            beat.stop()
             if token is not None:
                 from core.logging_setup import REQUEST_CONTEXT
                 REQUEST_CONTEXT.reset(token)
+            _after_job(db, job_id)
+            _leave_thread_lists(job_id)
     return run
 
 
+def _leave_thread_lists(job_id: str) -> None:
+    """The job's thread leaves the lists of job threads -- last, after the queue's bookkeeping:
+    whoever waits on the thread (a test's join, a shutdown) then finds everything done, not about
+    to be. Only this thread's own entry: a job reopened by `start_resume` has a new thread, which
+    the old one ending must not unregister (the job would look unfollowed)."""
+    me = threading.current_thread()
+    with _LOCK:
+        if _job_threads.get(job_id) is me:
+            _job_threads.pop(job_id, None)
+    with _REEXPORT_LOCK:
+        if _reexport_threads.get(job_id) is me:
+            _reexport_threads.pop(job_id, None)
+
+
+def _Heartbeat(db: Any, job_id: str):
+    """A running job's alive signal while a thread of this server works on it -- preparing, a child
+    run, or following a background one (`job_queue.Heartbeat`). The background run sends its own
+    as well, so it is not called silent while this server restarts."""
+    from .job_queue import Heartbeat
+    return Heartbeat(db, job_id)
+
+
+def _after_job(db: Any, job_id: str) -> None:
+    """A job's thread has ended: the queue's bookkeeping (`job_queue.after_end`) and the next job.
+    Never raises."""
+    try:
+        from . import job_queue
+        job_queue.after_end(db, job_id)
+        job_queue.kick()
+    except Exception as exc:                            # noqa: BLE001 - the scheduler sweeps
+        _log.warning("job %s: its end was not booked: %s", job_id, exc)
+
+
 def start(db: Any, job_id: str) -> None:
-    """Kick off the real pipeline on a daemon thread (returns immediately)."""
+    """The generation's thread (`_run`), on a daemon thread (returns immediately). Started by the
+    scheduler once it has claimed the job (`launch_job`)."""
     t = threading.Thread(target=_run, args=(db, job_id), daemon=True, name=f"job-{job_id}")
     with _LOCK:
         _job_threads[job_id] = t
     t.start()
+
+
+def launch_job(db: Any, job: Any, resumed: bool = False) -> None:
+    """Start the thread of a job the scheduler has just claimed -- it is `running`
+    (docs/design/JOB_SCHEDULING_DESIGN.md §6). `resumed`: a paused job resumed."""
+    mode = getattr(job, "mode", None)
+    if mode == REEXPORT_MODE:
+        t = threading.Thread(target=_run_reexport, args=(db, job.id), daemon=True,
+                             name=f"reexport-{job.id}")
+        with _REEXPORT_LOCK:
+            _reexport_threads[job.id] = t
+        t.start()
+        return
+    if resumed or getattr(job, "reason", None) == "resume":
+        render = mode in RENDER_MODES
+        first = _resume_first_phase(db, job)
+        if first is None:
+            # Checked again at its start (REQ-JS-07): the version has nothing left to make.
+            _append_log(job.id, "Nothing is left to make: the version is complete.")
+            (_complete_render if render else _complete)(db, job.id)
+            _after_job(db, job.id)
+            return
+        t = threading.Thread(target=_run_resume, args=(db, job.id, render, first), daemon=True,
+                             name=f"resume-{job.id}")
+        if render:
+            with _REEXPORT_LOCK:
+                _reexport_threads[job.id] = t
+        else:
+            with _LOCK:
+                _job_threads[job.id] = t
+        t.start()
+        return
+    if mode == EXPORT_MODE:
+        t = threading.Thread(target=_run_export, args=(db, job.id), daemon=True,
+                             name=f"export-{job.id}")
+        with _REEXPORT_LOCK:
+            _reexport_threads[job.id] = t
+        t.start()
+        return
+    start(db, job.id)
+
+
+def _resume_first_phase(db: Any, job: Any) -> Optional[int]:
+    """Where a resume starts, as `analyzer.py resume` will decide it (`resume_action`): 1 the
+    parse again, 2 Phase 2 from the stored parse, 3 the unfinished components -- None when
+    nothing is left."""
+    from .version_components import resume_action
+    version = db.versions.get(job.version_id) if job.version_id else None
+    if version is None:
+        raise RuntimeError("its version %s is gone" % job.version_id)
+    action = resume_action(db, version)
+    if action == "nothing":
+        return None
+    return {"regenerate": 1, "derive": 2}.get(action, 3)
+
+
+def job_followed(job_id: str) -> bool:
+    """Whether a thread of this server works on the job."""
+    return job_alive(job_id) or _reexport_alive(job_id)
 
 
 def job_alive(job_id: str) -> bool:
@@ -282,16 +373,18 @@ def _covers(running_names: list, wanted: list) -> bool:
 
 def start_update(db: Any, version: Any, components: Optional[list] = None, *,
                  started_by: Optional[str] = None, reason: Optional[str] = None,
-                 document_id: Optional[str] = None) -> tuple:
-    """Update (re-export) `version`'s Word files as a job of its own: `(job, joined,
-    components)` -- `components`, the ones it writes, worked out BEFORE its thread starts: on a
-    database shared by threads (SQLite in the tests) a read after that could end the thread's
-    first write.
+                 document_id: Optional[str] = None, request_key: Optional[str] = None) -> tuple:
+    """Update (re-export) `version`'s Word files as a job of its own, in the project's update lane
+    (docs/design/JOB_SCHEDULING_DESIGN.md §4): `(job, joined, components)` -- `components`, the
+    ones it writes, worked out before it is queued.
 
-    `joined` is True when an update already running for the version covers every component asked
-    for -- that job is returned, and nothing new starts (WORD_FILE_UPDATES D6: no queue).
+    `joined` is True when an update of the version already running or waiting writes every
+    component asked for -- that job is returned, and nothing new is queued (WORD_FILE_UPDATES D6,
+    REQ-JS-08). Otherwise the job waits its turn: another update of the project running, or its
+    version written by another job, is a wait, no longer a refusal (REQ-JS-03, 06).
     `started_by` (a user id) and `reason` (`update` | `rebuild` | `submit`) are recorded on the job;
     `document_id`, the document the request named, goes in its scope -- its end tells the starter.
+    `request_key`: a retried request answers its first job (REQ-JS-09).
 
     Re-export `version` as a job of its own, and return that job.
 
@@ -303,8 +396,8 @@ def start_update(db: Any, version: Any, components: Optional[list] = None, *,
     Now it has its own row -- `mode: "reexport"`, phases 3 and 4 -- whose status goes
     queued -> running -> complete | failed like any job's, so `GET /jobs/{id}` and
     `GET /jobs/{id}/events` follow it unchanged. It is addressed by VERSION, so any version with
-    a finished generation can be re-exported. One at a time per version: a second request while
-    one runs is refused with the running job's id.
+    a finished generation can be re-exported. One at a time per project: a second request waits
+    its turn in the update lane, or is answered by the update that already covers it.
 
     A version made from the command line has no generation job: its documents are re-exported
     the same way (the job is `analyzer.py reexport`, which reads the version's own record), so it
@@ -317,107 +410,93 @@ def start_update(db: Any, version: Any, components: Optional[list] = None, *,
 
     Raises ReexportRefused. The version must belong to the project; the caller checks that.
     """
-    with _REEXPORT_LOCK:
-        jobs = db.jobs.list_for_version(version.id)
-        generation = next((j for j in jobs if getattr(j, "mode", None) not in RENDER_MODES), None)
-        scope = _reexport_scope(db, version, generation.scope if generation else None)
-        if generation is None and (getattr(version, "status", None) == "draft"
-                                   or not (scope or {}).get("names")):
+    jobs = db.jobs.list_for_version(version.id)
+    generation = next((j for j in jobs if getattr(j, "mode", None) not in RENDER_MODES), None)
+    scope = _reexport_scope(db, version, generation.scope if generation else None)
+    if generation is None and (getattr(version, "status", None) == "draft"
+                               or not (scope or {}).get("names")):
+        raise ReexportRefused(
+            409, "NO_DOCUMENTS",
+            f"Version '{version.id}' has no documents recorded to re-export. A version made "
+            f"from the command line before its documents were recorded: `python analyzer.py "
+            f"register --project-id {version.project_id} --version-id {version.id}`, or "
+            f"`python analyzer.py reexport` for it.")
+    if generation is not None and generation.status != "complete":
+        raise ReexportRefused(
+            409, "VERSION_NOT_READY",
+            f"Version '{version.id}' has no finished generation to re-export: its job "
+            f"{generation.id} is '{generation.status}'.", generation.id)
+    if components:
+        # Any component with documents -- its model entry is not asked for (`analyzer.py
+        # reexport`'s rule, `staged.reexport_targets`).
+        try:
+            from .version_components import _staged, components_view
+            has_documents = _staged().has_documents
+            have = {c["component"] for c in components_view(db, version) if has_documents(c)}
+        except Exception:                             # noqa: BLE001 - the default scope's view
+            have = set((scope or {}).get("names") or [])
+        missing = [c for c in components if c not in have]
+        if missing:
             raise ReexportRefused(
-                409, "NO_DOCUMENTS",
-                f"Version '{version.id}' has no documents recorded to re-export. A version made "
-                f"from the command line before its documents were recorded: `python analyzer.py "
-                f"register --project-id {version.project_id} --version-id {version.id}`, or "
-                f"`python analyzer.py reexport` for it.")
-        if generation is not None and generation.status != "complete":
-            raise ReexportRefused(
-                409, "VERSION_NOT_READY",
-                f"Version '{version.id}' has no finished generation to re-export: its job "
-                f"{generation.id} is '{generation.status}'.", generation.id)
-        if components:
-            # Any component with documents -- its model entry is not asked for (`analyzer.py
-            # reexport`'s rule, `staged.reexport_targets`).
-            try:
-                from .version_components import _staged, components_view
-                has_documents = _staged().has_documents
-                have = {c["component"] for c in components_view(db, version) if has_documents(c)}
-            except Exception:                         # noqa: BLE001 - the default scope's view
-                have = set((scope or {}).get("names") or [])
-            missing = [c for c in components if c not in have]
-            if missing:
-                raise ReexportRefused(
-                    422, "INVALID_COMPONENTS",
-                    f"Not re-exportable -- no documents in version '{version.id}': "
-                    f"{', '.join(missing)}. `Generate` makes them.")
-            scope = {"type": "component", "names": list(dict.fromkeys(components))}
-        # The running update or export FIRST, then the writer: an update holds the version's
-        # writer lock as well, and only this answer says which job it is (WORD_FILE_UPDATES S5b).
-        # An export renders the version too: whichever of the two took the lock second would fail
-        # on it, so one waits for the other here.
-        running = next((j for j in jobs if getattr(j, "mode", None) in RENDER_MODES
-                        and j.status in _REEXPORT_ACTIVE), None)
-        if running is not None:
-            alive = None if _reexport_alive(running.id) else version_writer_alive(db, version.id)
-            if _render_job_running(db, running, alive):
-                from .word_files import (all_components, job_components, job_kind,
-                                         job_scope_name)
-                theirs = job_components(db, version, running)
-                wanted = ((scope or {}).get("names") if (scope or {}).get("type") == "component"
-                          else None) or all_components(db, version)
-                if getattr(running, "mode", None) == REEXPORT_MODE and _covers(theirs, wanted):
-                    return running, True, theirs
-                kind = job_kind(running)
-                raise ReexportRefused(
-                    409, "REEXPORT_RUNNING",
-                    f"Version '{version.id}' is already being "
-                    f"{_DOING.get(kind, 'updated')} by job {running.id}"
-                    f"{' (' + ', '.join(theirs) + ')' if theirs else ''}. Follow that job, and "
-                    f"update again when it ends.", running.id,
-                    extra={"scope": job_scope_name(running), "kind": kind,
-                           "components": theirs})
-            _mark_failed(db, running.id, "Interrupted: the API server stopped while this "
-                                         "re-export was running. Start it again.")
-        busy = version_writer_busy(db, version.id)
-        if busy:
-            from .word_files import writer as _writer
-            raise ReexportRefused(
-                409, "VERSION_BUSY",
-                f"Version '{version.id}' is being written by {busy}. Wait for it to finish, "
-                f"then update.", extra={"writer": _writer(db, version, snake=True)})
-        # How the version was generated is how it is re-rendered: same LLM switch, same data
-        # dictionary, same document title. A command-line version has no job to say so: the
-        # re-export (`analyzer.py reexport`) reads all of that from the version's own record.
-        gen = generation or SimpleNamespace(
-            commit_sha=version.commit_sha, layer_filter=None, branch=version.branch or "main",
-            version_tag=getattr(version, "tag", None) or version.id, no_llm=False,
-            data_dict_id=None, narrowed_parse=False)
-        job = AnalysisJob(
-            id=f"job{uuid.uuid4().hex[:8]}", project_id=version.project_id,
-            commit_sha=gen.commit_sha, version_id=version.id,
-            reference_version_id=None, status="queued", pause_after_phase1=False,
-            layer_filter=gen.layer_filter, phase=3, phase_pct=0,
-            current_activity="Queued — waiting for worker…", activity_detail="",
-            elapsed_seconds=0, eta_seconds=None,
-            phases=[AnalysisPhase(3, "Run Views", "pending", None),
-                    AnalysisPhase(4, "Export DOCX", "pending", None)],
-            started_at=_now(), completed_at=None, error_message=None,
-            branch=gen.branch, version_tag=gen.version_tag,
-            # Every document it HAS, which since `export` can be more than its generation's
-            # scope (`_reexport_scope`) -- or the components asked for.
-            mode=REEXPORT_MODE,
-            scope=(dict(scope, document_id=document_id) if (scope and document_id) else scope),
-            no_llm=gen.no_llm,
-            data_dict_id=gen.data_dict_id, narrowed_parse=gen.narrowed_parse,
-            started_by=started_by, reason=reason)
-        from .word_files import job_components
-        writes = job_components(db, version, job)
-        db.jobs.create(job)
-        t = threading.Thread(target=_run_reexport, args=(db, job.id), daemon=True,
-                             name=f"reexport-{job.id}")
-        _reexport_threads[job.id] = t
-        t.start()
-    note_request_job(job)
-    return job, False, writes
+                422, "INVALID_COMPONENTS",
+                f"Not re-exportable -- no documents in version '{version.id}': "
+                f"{', '.join(missing)}. `Generate` makes them.")
+        scope = {"type": "component", "names": list(dict.fromkeys(components))}
+    # How the version was generated is how it is re-rendered: same LLM switch, same data
+    # dictionary, same document title. A command-line version has no job to say so: the
+    # re-export (`analyzer.py reexport`) reads all of that from the version's own record.
+    gen = generation or SimpleNamespace(
+        commit_sha=version.commit_sha, layer_filter=None, branch=version.branch or "main",
+        version_tag=getattr(version, "tag", None) or version.id, no_llm=False,
+        data_dict_id=None, narrowed_parse=False)
+    job = AnalysisJob(
+        id=f"job{uuid.uuid4().hex[:8]}", project_id=version.project_id,
+        commit_sha=gen.commit_sha, version_id=version.id,
+        reference_version_id=None, status="queued", pause_after_phase1=False,
+        layer_filter=gen.layer_filter, phase=3, phase_pct=0,
+        current_activity="Waiting…", activity_detail="",
+        elapsed_seconds=0, eta_seconds=None,
+        phases=[AnalysisPhase(3, "Run Views", "pending", None),
+                AnalysisPhase(4, "Export DOCX", "pending", None)],
+        started_at=None, completed_at=None, error_message=None,
+        branch=gen.branch, version_tag=gen.version_tag,
+        # Every document it HAS, which since `export` can be more than its generation's
+        # scope (`_reexport_scope`) -- or the components asked for.
+        mode=REEXPORT_MODE,
+        scope=(dict(scope, document_id=document_id) if (scope and document_id) else scope),
+        no_llm=gen.no_llm,
+        data_dict_id=gen.data_dict_id, narrowed_parse=gen.narrowed_parse,
+        started_by=started_by, reason=reason)
+    from .word_files import job_components
+    writes = job_components(db, version, job)
+    wanted = set(writes)
+
+    def covers(mine: list) -> Optional[tuple]:
+        # An update of this version running or waiting that writes every component asked for
+        # answers the request. Only what the jobs say: `enqueue` holds a transaction.
+        for j in mine:
+            if j.version_id != version.id or getattr(j, "mode", None) != REEXPORT_MODE:
+                continue
+            if j.status == "running" and not _reexport_alive(j.id):
+                # A row a stopped server left running: nothing here will finish it, and the
+                # sweep interrupts it (REQ-JS-20). Joined, the request would end with it.
+                continue
+            sc = j.scope or {}
+            theirs = set(sc.get("names") or []) if sc.get("type") == "component" else None
+            if theirs is None or wanted <= theirs:
+                return ("joined" if j.status in ("running", "paused") else "already_queued", j)
+        return None
+
+    from . import job_queue
+    try:
+        answer = job_queue.enqueue(db, job, actor_id=started_by, request_key=request_key,
+                                   covers=covers)
+    except job_queue.JobRefused as exc:
+        raise ReexportRefused(exc.status, exc.code, exc.message, extra=exc.extra)
+    if answer.job.id != job.id:
+        return answer.job, True, job_components(db, version, answer.job)
+    note_request_job(answer.job)
+    return answer.job, False, writes
 
 
 def get_log_lines(job_id: str, after_idx: int) -> tuple[list[str], int]:
@@ -459,10 +538,7 @@ def _cleanup_state(job_id: str) -> None:
         _job_resume_events.pop(job_id, None)
         _progress_warned.difference_update({k for k in _progress_warned if k[0] == job_id})
         _step_clocks.pop(job_id, None)
-        # Only this thread's own entry: a job reopened by `start_resume` has a new thread, which
-        # the old one ending must not unregister (the job would look unfollowed).
-        if _job_threads.get(job_id) is threading.current_thread():
-            _job_threads.pop(job_id, None)
+        # The thread lists are left by the job's thread itself, last (`_leave_thread_lists`).
         # Keep logs so SSE can drain remaining lines after completion
 
 
@@ -875,27 +951,27 @@ PROCESS_STARTED = datetime.now(UTC)
 
 def fail_interrupted_jobs(db: Any, *, before: Optional[datetime] = None,
                           reattach_only: bool = False) -> int:
-    """At start-up: fail every job a stopped server left queued, running or paused.
+    """At start-up: the web jobs a stopped server left RUNNING (REQ-JS-19, 20).
 
-    A job runs on a thread of the API process that started it (`job_alive`), and a process that
-    has just started runs none -- so, when no other server runs on the database
-    (`claim_job_runner`, which the caller asks first), a job the database still calls active
-    belongs to a server that stopped mid-run, and no thread will ever finish it. Left alone it
-    said "running" for ever: the Overview showed it, and every new run of its project was refused
-    as JOB_ALREADY_RUNNING until someone pressed Cancel Job (2026-09-30: two such jobs, one from
-    June). Each is marked failed with what happened, and its unfinished draft version is freed,
-    as a cancel of a dead job does. Returns how many.
+    A job's thread runs in the API process that claimed it (`job_alive`), and a process that has
+    just started runs none -- so, when no other server runs on the database (`claim_job_runner`,
+    which the caller asks first), a running web job is either followed again, its run going on in
+    the BACKGROUND (`_reattach_detached`), or it died with the server: it is INTERRUPTED -- its
+    place freed, its version kept when it holds work, else its draft deleted
+    (`job_queue.interrupt`). Left alone it said "running" for ever, and its lane stayed taken.
+    Returns how many were interrupted.
 
-    Except a job whose run is in the BACKGROUND (`_execute_detached`): that run did not stop with
-    the server, so it is followed again (`_reattach_detached`) and its job ends when it does.
+    Waiting jobs are the queue's (held at start-up, `job_queue.hold_waiting`); a paused one stays
+    paused; a CLI run is the developer's, and its alive signal decides (the scheduler's sweep).
 
     `before` (the API passes `PROCESS_STARTED`): only jobs started before then. The check may run
     late -- tried again while the database does not answer -- and a job started meanwhile is this
-    process's own, between its row being written and its thread being registered.
+    process's own, between its claim and its thread being registered.
     """
-    failed = 0
-    for job in db.jobs.list_active():
-        if job_alive(job.id) or _reexport_alive(job.id):
+    from .job_queue import interrupt
+    interrupted = 0
+    for job in db.jobs.in_status(("running",)):
+        if getattr(job, "origin", "web") == "cli" or job_followed(job.id):
             continue
         started = job.started_at
         if before is not None and started is not None:
@@ -906,15 +982,12 @@ def fail_interrupted_jobs(db: Any, *, before: Optional[datetime] = None,
         if _reattach_detached(db, job):
             continue
         if reattach_only:
-            # The periodic pass: only background runs nobody follows. A job with no run.json
-            # may be queued, checking out or starting -- the start-up check decides those.
+            # The periodic pass: only background runs nobody follows. A job with no run.json may
+            # be checking out or starting -- the start-up check, and the alive signal, decide.
             continue
-        if not db.jobs.transition(job.id, ACTIVE_JOB_STATUSES, "failed",
-                                  error_message=INTERRUPTED_MESSAGE, completed_at=_now()):
-            continue                                   # it ended meanwhile, on its own
-        _release_draft_version(db, job)
-        failed += 1
-    return failed
+        if interrupt(db, job, INTERRUPTED_MESSAGE):
+            interrupted += 1
+    return interrupted
 
 
 # ---------------------------------------------------------------------------
@@ -928,8 +1001,8 @@ def _run(db: Any, job_id: str) -> None:
         _inner_run(db, job_id)
     except Exception as exc:
         # Kept when there is work in it: a database error at the end of a long run must not
-        # delete the version it made. If even this fails, the job stays active with nothing
-        # following it, and the periodic check follows its run again (main._watch_jobs).
+        # delete the version it made. If even this fails, the job stays running with nothing
+        # following it, and the scheduler's sweep follows its run again or interrupts it.
         try:
             _fail_keeping_work(db, job_id, f"Runner error: {exc}")
         except Exception as exc2:                             # noqa: BLE001 - see above
@@ -975,21 +1048,12 @@ def _inner_run(db: Any, job_id: str) -> None:
     if not project:
         _mark_failed(db, job_id, "Project not found.")
         return
-
-    # Respect JOB_MAX_CONCURRENCY — block until a slot is free (or job cancelled).
-    sem = _get_semaphore()
-    while not sem.acquire(timeout=2.0):
-        if _is_cancelled(db, job_id):
-            return
-
-    try:
-        # NOT under the version's writer lock: the run is `analyzer.py generate`, which takes it
-        # itself, in its own process -- holding it here as well refused that process, and every
-        # run started from the web app failed at once. (A re-export, which runs the engine
-        # directly, does hold it here: `_run_reexport`.)
-        _inner_run_locked(db, job_id, project)
-    finally:
-        sem.release()
+    # NOT under the version's writer lock: the run is `analyzer.py generate`, which takes it
+    # itself, in its own process -- holding it here as well refused that process, and every run
+    # started from the web app failed at once. (A re-export, which runs the engine directly, does
+    # hold it here: `_run_reexport`.) How many run at once was decided by the claim that started
+    # this thread (job_scheduler).
+    _inner_run_locked(db, job_id, project)
 
 
 def _version_run_module():
@@ -1255,7 +1319,9 @@ def _generate_cmd(job: Any, root: Path, config_path: Path) -> list[str]:
         cmd += ["--data-dict", job.data_dict_id]
     if getattr(job, "no_llm", False):
         cmd.append("--no-llm")
-    return cmd
+    # Last, as on every command a job runs: the run is this job's -- it sends the job's alive
+    # signal and is not a command-line run of its own (JOB_SCHEDULING_DESIGN §11).
+    return cmd + ["--job-id", job.id]
 
 
 # ---------------------------------------------------------------------------
@@ -1423,6 +1489,47 @@ def _project_settings_win(cfg: dict, bc: dict, no_llm: bool) -> None:
         cfg.setdefault(key, {}).update(own)
     if no_llm:
         cfg.setdefault("llm", {}).update(descriptions=False, behaviourNames=False)
+
+
+def commit_known(db: Any, project: Any, sha: str) -> bool:
+    """Whether `sha` is one of the project's commits (REQ-JS-07): its `commits` row -- what the web
+    app's commit list shows, synced from the repository -- else the repository itself, when it is a
+    folder on this machine, else a clone of it a run made under workspaces/<project>/. Asked at
+    submit, so a mistyped commit is refused then rather than failing the job hours later."""
+    sha = (sha or "").strip()
+    if not sha:
+        return False
+    if db.commits.get(project.id, sha) is not None:
+        return True
+    from incremental.git_ops import commit_exists
+    places = []
+    url = (getattr(project, "repo_url", None) or "").strip()
+    if url and os.path.isdir(url):
+        places.append(url)
+    ws = get_settings().repo_root / "workspaces" / project.id
+    if ws.is_dir():
+        clones = [d for d in ws.iterdir() if (d / ".git").exists()]
+        clones.sort(key=lambda d: d.stat().st_mtime, reverse=True)
+        places += [str(d) for d in clones[:3]]
+    for place in places:
+        try:
+            if commit_exists(place, sha):
+                return True
+        except Exception:                                # noqa: BLE001 - not this place
+            continue
+    return False
+
+
+def config_problem(project: Any, *, no_llm: bool = False) -> Optional[str]:
+    """Why the project's run config would not build -- ambiguous layer names, say -- or None
+    (REQ-JS-07): built at submit in a scratch folder, as the job's start builds it."""
+    import tempfile
+    try:
+        with tempfile.TemporaryDirectory(prefix="config-check-") as tmp:
+            _write_project_config(project, Path(tmp), no_llm=no_llm)
+    except Exception as exc:                             # noqa: BLE001 - said, not raised
+        return f"{type(exc).__name__}: {exc}"
+    return None
 
 
 def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = False) -> tuple[Path, dict]:
@@ -2360,9 +2467,16 @@ def _follow_detached(db: Any, job_id: str, run: dict, *, phase_start: int,
                                     "panel.")
             tracker.finish()
             return True
-        if code is None:
+        if code == EXIT_PAUSED:
+            _append_log(job_id, "Paused at a safe point; resume carries it on.")
+            _record_paused(db, job_id)
+        elif code is None:
+            # Its process is gone, with no exit code and the version's lock free: it died. Said at
+            # once, not after the alive signal's minutes (JOB_SCHEDULING_DESIGN §7).
             _append_log(job_id, "The run's process ended before it finished.")
-            _fail_keeping_work(db, job_id, STOPPED_MESSAGE)
+            from .job_queue import ended_message, interrupt
+            if not interrupt(db, job, ended_message(STOPPED_MESSAGE, _resume_hint(job))):
+                _fail_keeping_work(db, job_id, STOPPED_MESSAGE)
         else:
             tail = "\n".join(tracker.recent_lines[-20:])
             _append_log(job_id, f"Job failed with code {code}")
@@ -2421,6 +2535,28 @@ def _version_has_work(db: Any, version_id: Optional[str]) -> bool:
         return True
 
 
+#: A run's exit code when it stopped at a safe point because its job was paused
+#: (engine/core/pause.py `EXIT_PAUSED`; JOB_SCHEDULING_DESIGN §8).
+EXIT_PAUSED = 75
+
+
+def _record_paused(db: Any, job_id: str) -> None:
+    """The run stopped paused: the job is `paused` -- its lane kept, its server slot freed -- and
+    says until when (REQ-JS-22, 24)."""
+    from . import job_queue
+    days = float(job_queue.settings().get("pausedDays", 7))
+    at = _now()
+    until = (at + timedelta(days=days)).astimezone().strftime("%a %d %b %H:%M")
+    if db.jobs.transition(job_id, ("running",), "paused", paused_at=at,
+                          current_activity="Paused — cancelled on %s unless resumed" % until,
+                          activity_detail=""):
+        job = db.jobs.get(job_id)
+        job_queue.record(db, job.project_id, "paused", job_id=job_id)
+        job_queue.tell(db, job, "job_paused",
+                       "Paused: %s. It is cancelled on %s unless resumed." % (
+                           job_queue.describe(job), until))
+
+
 def _fail_keeping_work(db: Any, job_id: str, message: str) -> None:
     """Fail the job; keep its version when there is work in it to resume (`_version_has_work`),
     else free it as `_mark_failed` does. Days of LLM work are not thrown away because the
@@ -2466,8 +2602,6 @@ def _reattach_detached(db: Any, job: Any) -> bool:
 @_job_thread
 def _refollow(db: Any, job_id: str, run: dict, render: bool) -> None:
     """The thread of a job followed again after a restart: to the run's end, then the job's."""
-    sem = _get_semaphore()
-    slot = sem.acquire(blocking=False)      # the run goes on whether or not a slot is free
     try:
         _init_state(job_id)
         _append_log(job_id, "The API server restarted while this ran; following the "
@@ -2481,8 +2615,6 @@ def _refollow(db: Any, job_id: str, run: dict, render: bool) -> None:
     except Exception as exc:                             # noqa: BLE001 - recorded on the job
         _fail_keeping_work(db, job_id, f"Runner error: {exc}")
     finally:
-        if slot:
-            sem.release()
         try:
             job = db.jobs.get(job_id)
             if job is not None and job.status == "cancelled" and not render:
@@ -2492,8 +2624,6 @@ def _refollow(db: Any, job_id: str, run: dict, render: bool) -> None:
             _log.warning("job %s: draft cleanup after cancel failed: %s", job_id, exc)
         _cleanup_state(job_id)
         if render:
-            with _REEXPORT_LOCK:
-                _reexport_threads.pop(job_id, None)
             _tell_end(db, job_id)
 
 
@@ -2740,7 +2870,8 @@ def _read_engine_manifest(project_id: str, commit_sha: str,
 
 
 def _complete(db: Any, job_id: str, *, force: bool = False) -> None:
-    """Finalise a finished run's job and version. `force`: a failed job too -- a version a
+    """Finalise a finished run's job and version -- an `interrupted` job too: taken for dead while
+    silent, its run finished after all. `force`: a failed or cancelled job too -- a version a
     `resume` from the command line finished (analyzer._finish_web_job)."""
     job = db.jobs.get(job_id)
     if not job or (job.status in ("cancelled", "failed") and not force):
@@ -2771,10 +2902,11 @@ def _complete(db: Any, job_id: str, *, force: bool = False) -> None:
 
     for p in job.phases:
         p.status = "done"
-    # Complete only if it is still the run's -- or, `force`, ended meanwhile as cancelled or
-    # failed although the run finished. A cancel made since is not overwritten.
+    # Complete only if it is still the run's -- or interrupted, or, `force`, ended meanwhile as
+    # cancelled or failed although the run finished. A cancel made since is not overwritten.
     if not db.jobs.transition(
-            job_id, ACTIVE_JOB_STATUSES + (("cancelled", "failed") if force else ()), "complete",
+            job_id, ACTIVE_JOB_STATUSES + ("interrupted",)
+            + (("cancelled", "failed") if force else ()), "complete",
             phase=4, phase_pct=100, current_activity="Done",
             activity_detail=f"{version.docs_count} document(s) generated", eta_seconds=0,
             completed_at=now, error_message=None, version_id=version.id,
@@ -3442,6 +3574,7 @@ def _reexport_detached(db: Any, job_id: str, first_phase: int, doc_type: str) ->
         cmd += ["--components", ",".join(names)]
     elif scope.get("type") not in (None, "project"):
         cmd += ["--scope", _scope_to_cli(scope)]
+    cmd += ["--job-id", job.id]
     # What the job shows: an update with texts to rewrite in its components does that, and draws
     # their charts again, before it exports (`review.rewrite`) -- Phase 3's work, shown as Phase 3.
     # The command still says `auto`: the process decides what it runs.
@@ -3491,7 +3624,8 @@ def _reexport_scope(db: Any, version: Any, generation_scope: Optional[dict]) -> 
 
 def start_export(db: Any, version: Any, components: list, *,
                  added_layers: Optional[list] = None,
-                 started_by: Optional[str] = None) -> AnalysisJob:
+                 started_by: Optional[str] = None,
+                 request_key: Optional[str] = None) -> AnalysisJob:
     """Make the documents of `components` -- not generated yet -- into `version`, as a job of its
     own (`mode: "export"`, phases 3 and 4), and return it.
 
@@ -3500,68 +3634,40 @@ def start_export(db: Any, version: Any, components: list, *,
     the model lacks that some of `components` are of -- the same command adds them first (the
     parse again with them, the model derived again keeping its descriptions), so the job's
     phases are 1-4 and it says so in its activity. That process takes the
-    version's writer lock itself, so this thread does not. One at a time per version, like a
-    re-export; refused while any other process writes the version. The caller has checked the
-    components (`version_components`): each is of the version's model and has no documents yet.
+    version's writer lock itself, so this thread does not. It waits in the project's generation
+    lane (docs/design/JOB_SCHEDULING_DESIGN.md §4): another generation of the project running, or
+    its version written by another job, is a wait, no longer a refusal (REQ-JS-03, 06). The
+    caller has checked the components (`version_components`): each is of the version's model and
+    has no documents yet.
 
     Raises ReexportRefused.
     """
-    with _REEXPORT_LOCK:
-        # The running render job first, then the writer (WORD_FILE_UPDATES S5b): it holds the
-        # writer lock too, and only this answer names it.
-        jobs = db.jobs.list_for_version(version.id)
-        running = next((j for j in jobs if getattr(j, "mode", None) in RENDER_MODES
-                        and j.status in _REEXPORT_ACTIVE), None)
-        if running is not None and _reexport_alive(running.id):
-            from .word_files import job_components, job_kind
-            raise ReexportRefused(
-                409, "EXPORT_RUNNING",
-                f"Version '{version.id}' is already being rendered by job {running.id}. Follow "
-                f"that job, then add these.", running.id,
-                extra={"kind": job_kind(running),
-                       "components": job_components(db, version, running)})
-        busy = version_writer_busy(db, version.id)
-        if busy:
-            from .word_files import writer as _writer
-            raise ReexportRefused(
-                409, "VERSION_BUSY",
-                f"Version '{version.id}' is being written by {busy}. Wait for it to finish.",
-                extra={"writer": _writer(db, version, snake=True)})
-        # The version's own run, alive in this server: on SQLite there is no lock to say so, and
-        # a resumed run holds none for the moment before it starts. Whichever stored last would
-        # replace the other's documents.
-        own = next((j for j in jobs if j.status in ("queued", "running", "paused")
-                    and job_alive(j.id)), None)
-        if own is not None:
-            raise ReexportRefused(
-                409, "RUN_ACTIVE",
-                f"Job {own.id} is at work on version '{version.id}'. Follow that job, then add "
-                f"these.", own.id)
-        generation = next((j for j in jobs if getattr(j, "mode", None) not in RENDER_MODES), None)
-        added = list(added_layers or [])
-        first = 1 if added else 3
-        scope: dict = {"type": "component", "names": list(components)}
-        if added:
-            scope["added_layers"] = added
-        job = AnalysisJob(
-            id=f"job{uuid.uuid4().hex[:8]}", project_id=version.project_id,
-            commit_sha=version.commit_sha or (generation.commit_sha if generation else ""),
-            version_id=version.id, reference_version_id=None, status="queued",
-            pause_after_phase1=False, layer_filter=None, phase=first, phase_pct=0,
-            current_activity="Queued — waiting for worker…", activity_detail="",
-            elapsed_seconds=0, eta_seconds=None,
-            phases=[AnalysisPhase(n, name, "pending", None) for n, name in _PHASES if n >= first],
-            started_at=_now(), completed_at=None, error_message=None,
-            branch=(generation.branch if generation else None) or version.branch or "main",
-            version_tag=version.tag, mode=EXPORT_MODE, scope=scope,
-            started_by=started_by, reason="export")
-        db.jobs.create(job)
-        t = threading.Thread(target=_run_export, args=(db, job.id), daemon=True,
-                             name=f"export-{job.id}")
-        _reexport_threads[job.id] = t
-        t.start()
-    note_request_job(job)
-    return job
+    jobs = db.jobs.list_for_version(version.id)
+    generation = next((j for j in jobs if getattr(j, "mode", None) not in RENDER_MODES), None)
+    added = list(added_layers or [])
+    first = 1 if added else 3
+    scope: dict = {"type": "component", "names": list(components)}
+    if added:
+        scope["added_layers"] = added
+    job = AnalysisJob(
+        id=f"job{uuid.uuid4().hex[:8]}", project_id=version.project_id,
+        commit_sha=version.commit_sha or (generation.commit_sha if generation else ""),
+        version_id=version.id, reference_version_id=None, status="queued",
+        pause_after_phase1=False, layer_filter=None, phase=first, phase_pct=0,
+        current_activity="Waiting…", activity_detail="",
+        elapsed_seconds=0, eta_seconds=None,
+        phases=[AnalysisPhase(n, name, "pending", None) for n, name in _PHASES if n >= first],
+        started_at=None, completed_at=None, error_message=None,
+        branch=(generation.branch if generation else None) or version.branch or "main",
+        version_tag=version.tag, mode=EXPORT_MODE, scope=scope,
+        started_by=started_by, reason="export")
+    from . import job_queue
+    try:
+        answer = job_queue.enqueue(db, job, actor_id=started_by, request_key=request_key)
+    except job_queue.JobRefused as exc:
+        raise ReexportRefused(exc.status, exc.code, exc.message, extra=exc.extra)
+    note_request_job(answer.job)
+    return answer.job
 
 
 @_job_thread
@@ -3577,7 +3683,7 @@ def _run_export(db: Any, job_id: str) -> None:
         names = (job.scope or {}).get("names") or []
         cmd = [sys.executable, str(get_settings().repo_root / "analyzer.py"), "export",
                "--project-id", job.project_id, "--version-id", job.version_id,
-               "--components", ",".join(names)]
+               "--components", ",".join(names), "--job-id", job.id]
         # In the background when it can be: making 33 components' documents takes a day too.
         # A layer to add: `export` parses and derives it first (Phases 1-2), then the documents.
         if (_run_engine_command(db, job_id, cmd, phase_start=1 if added else 3,
@@ -3588,8 +3694,6 @@ def _run_export(db: Any, job_id: str) -> None:
         _fail_keeping_work(db, job_id, f"Export error: {exc}")
     finally:
         _cleanup_state(job_id)
-        with _REEXPORT_LOCK:
-            _reexport_threads.pop(job_id, None)
 
 
 def _export_activity(added_layers: list) -> str:
@@ -3621,86 +3725,75 @@ class ResumeRefused(ReexportRefused):
     """Why a version cannot be resumed now (HTTP status, code, message)."""
 
 
-def start_resume(db: Any, version: Any, *, started_by: Optional[str] = None) -> AnalysisJob:
+def start_resume(db: Any, version: Any, *, started_by: Optional[str] = None,
+                 request_key: Optional[str] = None) -> AnalysisJob:
     """Carry on a version whose run stopped before it finished, from the web app: `analyzer.py
-    resume`, in the background, followed as a job (staged generation, C4).
+    resume`, in the background, followed as a job (staged generation, C4) -- once its turn comes
+    in the project's generation lane (docs/design/JOB_SCHEDULING_DESIGN.md §4).
 
     The version's own generation job is reopened when it did not finish -- a web run that
-    stopped -- so its end finalises the version as a run's end does (`_complete`). Otherwise
-    (a version made from the command line, or one complete apart from some components) the
-    resume is a job of its own, like an export. What it does is `resume`'s to decide: the parse
-    again, Phase 2 from the stored parse, the unfinished components, or only the closing steps.
+    stopped -- so its end finalises the version as a run's end does (`_complete`): it is submitted
+    again, at the back of the lane (`job_queue.requeue`). Otherwise (a version made from the
+    command line, or one complete apart from some components) the resume is a job of its own, like
+    an export. What it does is `resume`'s to decide when it starts: the parse again, Phase 2 from
+    the stored parse, the unfinished components, or only the closing steps.
 
-    Raises ResumeRefused: VERSION_BUSY (a writer holds the version), RUN_ACTIVE (a job of this
-    server is at work on it), NOTHING_TO_RESUME, NO_BACKGROUND_RUNS (no database behind the API).
+    Raises ResumeRefused: VERSION_BUSY (a writer holds the version), RUN_ACTIVE (a job of the
+    version is waiting, running or paused), NOTHING_TO_RESUME, NO_BACKGROUND_RUNS (no database
+    behind the API), LANE_FULL.
     """
     if not _detach_enabled(db):
         raise ResumeRefused(409, "NO_BACKGROUND_RUNS",
                             "Resuming needs the API on a database. Resume on the server: "
                             f"python analyzer.py resume --project-id {version.project_id} "
                             f"--version-id {version.id} --detach")
-    with _REEXPORT_LOCK:
-        busy = version_writer_busy(db, version.id)
-        if busy:
-            raise ResumeRefused(409, "VERSION_BUSY",
-                                f"Version '{version.id}' is being written by {busy}: it has not "
-                                f"stopped. Follow it on the Components panel.")
-        jobs = db.jobs.list_for_version(version.id)
-        active = next((j for j in jobs if j.status in ("queued", "running", "paused")
-                       and (job_alive(j.id) or _reexport_alive(j.id))), None)
-        if active is not None:
-            raise ResumeRefused(409, "RUN_ACTIVE",
-                                f"Job {active.id} is at work on version '{version.id}'. Follow "
-                                f"that job.", active.id)
-        from .version_components import resume_action
-        action = resume_action(db, version)
-        if action == "busy":
-            raise ResumeRefused(409, "VERSION_BUSY",
-                                f"Version '{version.id}' is being written: it has not stopped.")
-        if action == "nothing":
-            raise ResumeRefused(409, "NOTHING_TO_RESUME",
-                                f"Version '{version.id}' is complete: nothing was cut short. "
-                                f"Components it has not generated are added with Generate.")
-        generation = next((j for j in jobs if getattr(j, "mode", None) not in RENDER_MODES), None)
-        first = {"regenerate": 1, "derive": 2}.get(action, 3)
+    busy = version_writer_busy(db, version.id)
+    if busy:
+        raise ResumeRefused(409, "VERSION_BUSY",
+                            f"Version '{version.id}' is being written by {busy}: it has not "
+                            f"stopped. Follow it on the Components panel.")
+    jobs = db.jobs.list_for_version(version.id)
+    from .job_queue import IN_LANE, JobRefused, enqueue, requeue
+    active = next((j for j in jobs if j.status in IN_LANE), None)
+    if active is not None:
+        doing = {"paused": "is paused — resume that job", "held": "is held",
+                 "queued": "is waiting"}.get(active.status, "is at work on it")
+        raise ResumeRefused(409, "RUN_ACTIVE",
+                            f"Job {active.id} of version '{version.id}' {doing}.", active.id)
+    from .version_components import resume_action
+    action = resume_action(db, version)
+    if action == "busy":
+        raise ResumeRefused(409, "VERSION_BUSY",
+                            f"Version '{version.id}' is being written: it has not stopped.")
+    if action == "nothing":
+        raise ResumeRefused(409, "NOTHING_TO_RESUME",
+                            f"Version '{version.id}' is complete: nothing was cut short. "
+                            f"Components it has not generated are added with Generate.")
+    generation = next((j for j in jobs if getattr(j, "mode", None) not in RENDER_MODES), None)
+    first = {"regenerate": 1, "derive": 2}.get(action, 3)
+    try:
         if generation is not None and generation.status != "complete":
-            job, render = generation, False
-            for p in job.phases:
+            for p in generation.phases:
                 if p.number >= first and p.status != "done":
                     p.status = "pending"
-            # Started again: the checks for unfollowed jobs leave a job alone for its first
-            # minutes, and they read `started_at` (and "the project's run" is the newest).
-            if not db.jobs.transition(job.id, (generation.status,), "queued",
-                                      error_message=None, completed_at=None, started_at=_now(),
-                                      current_activity="Resuming…", phases=job.phases):
-                raise ResumeRefused(409, "RUN_ACTIVE",
-                                    f"Job {job.id} of version '{version.id}' changed meanwhile. "
-                                    f"Look at it again, then resume.", job.id)
-            job = db.jobs.get(job.id)
+            job = requeue(db, generation, actor_id=started_by, phases=generation.phases).job
         else:
-            render = True
             job = AnalysisJob(
                 id=f"job{uuid.uuid4().hex[:8]}", project_id=version.project_id,
                 commit_sha=version.commit_sha or (generation.commit_sha if generation else ""),
                 version_id=version.id, reference_version_id=None, status="queued",
                 pause_after_phase1=False, layer_filter=None, phase=first, phase_pct=0,
-                current_activity="Resuming…", activity_detail="",
+                current_activity="Waiting…", activity_detail="",
                 elapsed_seconds=0, eta_seconds=None,
                 phases=[AnalysisPhase(n, name, "pending", None) for n, name in _PHASES
                         if n >= first],
-                started_at=_now(), completed_at=None, error_message=None,
+                started_at=None, completed_at=None, error_message=None,
                 branch=(generation.branch if generation else None) or version.branch or "main",
                 version_tag=version.tag, mode=EXPORT_MODE, scope=None,
                 started_by=started_by, reason="resume")
-            db.jobs.create(job)
-        t = threading.Thread(target=_run_resume, args=(db, job.id, render, first), daemon=True,
-                             name=f"resume-{job.id}")
-        if render:
-            _reexport_threads[job.id] = t
-        else:
-            with _LOCK:
-                _job_threads[job.id] = t
-        t.start()
+            job = enqueue(db, job, actor_id=started_by, request_key=request_key).job
+    except JobRefused as exc:
+        raise ResumeRefused(exc.status, exc.code, exc.message, extra=exc.extra)
     note_request_job(job)
     return job
 
@@ -3714,7 +3807,8 @@ def _run_resume(db: Any, job_id: str, render: bool, first_phase: int) -> None:
         if not job or not db.jobs.transition(job_id, ("queued", "running"), "running"):
             return                             # cancelled before it started
         cmd = [sys.executable, str(get_settings().repo_root / "analyzer.py"), "resume",
-               "--project-id", job.project_id, "--version-id", job.version_id]
+               "--project-id", job.project_id, "--version-id", job.version_id,
+               "--job-id", job.id]
         if (_execute_detached(db, job_id, cmd, phase_start=first_phase,
                               extra_env=_engine_db_env(db))
                 and not _is_cancelled(db, job_id)):
@@ -3731,9 +3825,6 @@ def _run_resume(db: Any, job_id: str, render: bool, first_phase: int) -> None:
         except Exception as exc:              # noqa: BLE001 - cleanup only
             _log.warning("job %s: draft cleanup after cancel failed: %s", job_id, exc)
         _cleanup_state(job_id)
-        if render:
-            with _REEXPORT_LOCK:
-                _reexport_threads.pop(job_id, None)
 
 
 @_job_thread
@@ -3758,11 +3849,9 @@ def _run_reexport(db: Any, job_id: str) -> None:
         _mark_failed(db, job_id, f"Re-export error: {exc}")
     finally:
         _cleanup_state(job_id)
-        # Told before the thread leaves the list: whoever waits on the thread (a test's join, a
-        # shutdown) then finds the notifications written, not about to be.
+        # Told before the thread leaves the list (`_leave_thread_lists`): whoever waits on the
+        # thread (a test's join, a shutdown) then finds the notifications written.
         _tell_end(db, job_id)
-        with _REEXPORT_LOCK:
-            _reexport_threads.pop(job_id, None)
 
 
 def _tell_end(db: Any, job_id: str) -> None:
@@ -3827,7 +3916,7 @@ def _complete_reexport(db: Any, job_id: str) -> None:
         # Every component of the update failed (exit 3 made it a "partial success"): nothing was
         # written, and the job says so -- R9's `reexport.status`, the starter's notification.
         names = sorted(failed[0])
-        db.jobs.transition(job_id, ACTIVE_JOB_STATUSES, "failed",
+        db.jobs.transition(job_id, ACTIVE_JOB_STATUSES + ("interrupted",), "failed",
                            error_message=("Update failed: %s -- %s" % (
                                ", ".join(names), next(iter(failed[0].values()))))[:4000],
                            completed_at=now, elapsed_seconds=_elapsed_since(job.started_at, now))
@@ -3835,8 +3924,9 @@ def _complete_reexport(db: Any, job_id: str) -> None:
     for p in job.phases:
         if p.status in ("pending", "running"):
             p.status = "done"
-    # A cancel made since stays: only a job still at work completes.
-    db.jobs.transition(job_id, ACTIVE_JOB_STATUSES, "complete",
+    # A cancel made since stays: only a job still at work completes -- or one interrupted while
+    # silent whose run finished after all.
+    db.jobs.transition(job_id, ACTIVE_JOB_STATUSES + ("interrupted",), "complete",
                        phase=4, phase_pct=100, current_activity="Done",
                        activity_detail=("Re-exported; failed: %s" % ", ".join(sorted(failed[0]))
                                         if failed is not None and failed[0] else "Re-exported"),

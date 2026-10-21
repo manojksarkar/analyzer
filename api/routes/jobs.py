@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import AsyncIterator, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
@@ -17,7 +17,7 @@ from ..middleware.auth import get_current_user, require_project_admin, require_p
 from ..models.domain import (User, AnalysisJob, AnalysisPhase, REEXPORT_MODE, EXPORT_MODE,
                              RENDER_MODES, ACTIVE_JOB_STATUSES)
 from ..services.errors import not_found, conflict, bad_request
-from ..services import pipeline_runner
+from ..services import job_queue, pipeline_runner
 from ..schemas import (
     StartJobResponse, JobResponse, CurrentJobResponse,
     FunctionListResponse, ReexportResponse, ReexportVersionResponse,
@@ -56,6 +56,9 @@ class StartJobRequest(BaseModel):
     # M4.4 opt-in: in an incremental run, re-parse only the affected TUs and merge into the
     # baseline parser snapshot instead of a full Phase-1 parse (pays off on large repos).
     narrowed_parse: bool = True         # opt-OUT: send false to force a full re-parse
+    # Its order in the project's generation lane: high | normal | low. A super admin's to set
+    # (docs/spec/JOB_SCHEDULING_SPEC.md REQ-JS-11); anyone else sends normal or nothing.
+    priority: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -100,14 +103,25 @@ def _job_dict(job: AnalysisJob, db=None) -> dict:
         "no_llm": getattr(job, "no_llm", False),
         "data_dict_id": getattr(job, "data_dict_id", None),
         "narrowed_parse": getattr(job, "narrowed_parse", True),
-        "started_at": job.started_at.isoformat(),
+        # When it started RUNNING -- null while it waits in its lane.
+        "started_at": job.started_at.isoformat() if job.started_at else None,
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
         "error_message": job.error_message,
         # Who started it and why (docs/design/WORD_FILE_UPDATES.md §4.1): an update's
         # `update` | `rebuild` | `submit`, an export's `export` | `resume`; null for a generation.
         "started_by": _started_by(job, db),
         "reason": getattr(job, "reason", None),
+        # The queue (docs/spec/JOB_SCHEDULING_SPEC.md REQ-JS-30): lane, priority, place,
+        # position and estimated start while it waits, where it runs, its alive signal, flags.
+        **_queue_fields(job, db),
     }
+
+
+def _queue_fields(job: AnalysisJob, db) -> dict:
+    try:
+        return job_queue.job_queue_fields(db, job) if db is not None else {}
+    except Exception:                                   # noqa: BLE001 - the job still shows
+        return {"lane": job_queue.lane_of(job)}
 
 
 # ---------------------------------------------------------------------------
@@ -121,11 +135,23 @@ def start_job(
     body: StartJobRequest,
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
+    request_key: Optional[str] = Header(None, alias="Idempotency-Key"),
 ):
+    """Submit a generation. 202 with the answer (docs/spec/JOB_SCHEDULING_SPEC.md REQ-JS-06,
+    REQ-JS-35): `status` running | queued | held, `position`, `estimated_start`, `ahead`, and a
+    `message` -- or 409 `LANE_FULL` / `DUPLICATE_JOB` naming the jobs in the way. A request sent
+    again with the same `Idempotency-Key` answers the job it made the first time (REQ-JS-09)."""
     project = db.projects.get(project_id)
     if not project:
         raise not_found("Project", project_id)
     require_project_admin(project_id, current_user, db)
+    request_key = (request_key or "").strip()[:200] or None
+    if request_key:
+        first = db.jobs.find_by_request_key(project_id, request_key)
+        if first is not None:
+            answer = job_queue.answer_for(db, first)
+            return {"job_id": first.id, "status": first.status, **answer.as_dict(),
+                    "job": _job_dict(first, db)}
     # A project onboarded with `analyzer.py onboard` has no architecture in the database: its
     # layers are in workspaces/<pid>/config.json, which onboarding wrote. A run from here builds
     # that file from the database instead, so it would REPLACE the project's config with the
@@ -191,10 +217,26 @@ def start_job(
     # dictionaries reach the run through its cores - each layer takes its core's - so a job that
     # names none adds none (services/project_cores.py; a project from before cores is one core).
     data_dict_id = (body.data_dict_id or "").strip() or None
-    # Prevent duplicate active jobs
-    existing = db.jobs.get_current(project_id)
-    if existing and existing.status in ("queued", "running", "paused"):
-        raise conflict("JOB_ALREADY_RUNNING", "An analysis job is already active for this project.")
+    # Another generation of the project running or waiting is no refusal any more: this one waits
+    # its turn in the project's generation lane (docs/spec/JOB_SCHEDULING_SPEC.md REQ-JS-06).
+    priority = (body.priority or "normal").strip().lower()
+    if priority not in job_queue.PRIORITY:
+        raise bad_request("priority is high, normal or low.")
+    if priority != "normal" and not getattr(current_user, "is_superuser", False):
+        raise HTTPException(status_code=403, detail={
+            "code": "FORBIDDEN", "status": 403,
+            "message": "Only a super admin sets a job's priority (REQ-JS-11)."})
+    # Checked now, and again when the job starts (REQ-JS-07): a job that waits hours must not fail
+    # on a mistyped commit, or on a configuration that does not build.
+    if not pipeline_runner.commit_known(db, project, body.commit_sha):
+        raise HTTPException(status_code=422, detail={
+            "code": "UNKNOWN_COMMIT", "status": 422,
+            "message": f"Commit '{body.commit_sha}' is not one of project '{project_id}''s "
+                       f"commits. Pick it from the project's commit list — synced from its "
+                       f"repository — or check the SHA."})
+    problem = pipeline_runner.config_problem(project, no_llm=bool(body.no_llm))
+    if problem:
+        raise conflict("CONFIG_INVALID", f"The project's configuration does not build: {problem}")
     # Version identity (D-3 / PG-3): claim the real `ver…` id NOW so it is the engine's version
     # identity (`--version`) for the whole run.
     version_id = f"ver{uuid.uuid4().hex[:8]}"
@@ -227,26 +269,30 @@ def start_job(
         scope=body.scope, no_llm=bool(body.no_llm), data_dict_id=data_dict_id,
         narrowed_parse=bool(body.narrowed_parse),
     )
+    job.started_by = current_user.id
     # Reserve the version row (status 'draft') BEFORE inserting the job: analysis_jobs.version_id
     # is a FK to versions.id, so the job may only reference a version that already exists. The
-    # engine writes its per-version rows under this same id, _make_version finalizes it at
-    # completion, and a failed or cancelled run deletes its draft (_release_draft_version) — so it
-    # leaves no orphan.
+    # name is taken while the job waits (REQ-JS-08). The engine writes its per-version rows under
+    # this same id, _make_version finalizes it at completion, and a removed, failed or cancelled
+    # job deletes its draft (_release_draft_version) — so it leaves no orphan.
     pipeline_runner._reserve_version(db, job, project)
     try:
-        db.jobs.create(job)
-    except Exception:
-        # Roll back the just-reserved draft so a failed job insert doesn't strand the version name.
+        answer = job_queue.enqueue(db, job, actor_id=current_user.id, request_key=request_key,
+                                   priority=priority)
+    except BaseException as exc:
+        # Refused, or the insert failed: the just-reserved draft goes, so its name is free.
         _v = db.versions.get(version_id)
         if _v is not None and getattr(_v, "status", None) == "draft":
             try:
-                db.versions.delete(version_id)
+                pipeline_runner.delete_version(db, version_id, only_draft=True)
             except Exception:                              # best-effort cleanup
                 pass
+        if isinstance(exc, job_queue.JobRefused):
+            raise HTTPException(status_code=exc.status, detail=exc.detail())
         raise
-    pipeline_runner.note_request_job(job)
-    pipeline_runner.start(db, job.id)
-    return {"job_id": job.id, "status": job.status}
+    pipeline_runner.note_request_job(answer.job)
+    return {"job_id": answer.job.id, "status": answer.job.status, **answer.as_dict(),
+            "job": _job_dict(answer.job, db)}
 
 
 @router.get("/projects/{project_id}/baseline-preview")
@@ -300,6 +346,17 @@ def get_job(
     return {"job": _job_dict(job, db)}
 
 
+def _project_job(db, project_id: str, job_id: str) -> AnalysisJob:
+    job = db.jobs.get(job_id)
+    if not job or job.project_id != project_id:
+        raise not_found("AnalysisJob", job_id)
+    return job
+
+
+def _refused(exc: "job_queue.JobRefused") -> HTTPException:
+    return HTTPException(status_code=exc.status, detail=exc.detail())
+
+
 @router.post("/projects/{project_id}/jobs/{job_id}/cancel",
              responses={200: {"model": JobResponse}})
 def cancel_job(
@@ -308,33 +365,42 @@ def cancel_job(
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
-    require_project_admin(project_id, current_user, db)
-    job = db.jobs.get(job_id)
-    if not job or job.project_id != project_id:
-        raise not_found("AnalysisJob", job_id)
-    if job.status in ("complete", "failed", "cancelled"):
+    """Cancel a running or paused job, or remove a waiting one (REQ-JS-25, 26): the submitter
+    their own, a project admin any of the project's, a super admin any. A CLI run is the
+    developer's to stop (409 `CLI_RUN`)."""
+    require_project_member(project_id, current_user, db)
+    job = _project_job(db, project_id, job_id)
+    if not job_queue.may_act(db, current_user, job):
+        raise HTTPException(status_code=403, detail={
+            "code": "FORBIDDEN", "status": 403,
+            "message": "You cancel or remove the jobs you submitted; a project admin any of "
+                       "the project's."})
+    if job.status in job_queue.ENDED:
         # A page's view of the job can be seconds old: cancelling a run that has just stopped
         # -- its work kept for `resume` -- would have deleted that work.
         raise conflict("JOB_FINISHED", f"Job {job_id} has already ended ({job.status}).")
-    # In one statement, only while it is still going: its run may have ended a moment ago.
-    if not db.jobs.transition(job_id, ACTIVE_JOB_STATUSES, "cancelled",
-                              completed_at=datetime.now(UTC)):
-        now_is = db.jobs.get(job_id)
-        raise conflict("JOB_FINISHED", f"Job {job_id} has already ended "
-                                       f"({getattr(now_is, 'status', 'gone')}).")
-    job = db.jobs.get(job_id) or job
-    pipeline_runner.cancel_subprocess(job_id)
-    if not (pipeline_runner.job_alive(job_id) or pipeline_runner._reexport_alive(job_id)):
-        # Nothing here follows it -- a job a stopped server left, not followed again yet -- so
-        # its background run is stopped here, before anything else, or it would go on writing
-        # into a version being removed. Then the unfinished draft goes, as a runner thread does
-        # after a cancel; a re-export's or an export's version is never a draft of its own.
-        pipeline_runner.stop_background_run(job)
-        if getattr(job, "mode", None) not in RENDER_MODES:
-            pipeline_runner._release_draft_version(db, job)
-            # It may have finished unfollowed: then its version is whole and the job says so.
-            pipeline_runner._finish_if_it_finished(db, job)
-            job = db.jobs.get(job_id) or job
+    try:
+        job = job_queue.cancel(db, job, current_user)
+    except job_queue.JobRefused as exc:
+        raise _refused(exc)
+    return {"job": _job_dict(job, db)}
+
+
+@router.post("/projects/{project_id}/jobs/{job_id}/pause",
+             responses={200: {"model": JobResponse}})
+def pause_job(
+    project_id: str,
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """Pause a running generation at its next safe point (REQ-JS-22). 409 `NOT_PAUSABLE` for an
+    update or a waiting job, `CLI_RUN` for a command-line run."""
+    require_project_admin(project_id, current_user, db)
+    try:
+        job = job_queue.request_pause(db, _project_job(db, project_id, job_id), current_user.id)
+    except job_queue.JobRefused as exc:
+        raise _refused(exc)
     return {"job": _job_dict(job, db)}
 
 
@@ -346,15 +412,38 @@ def resume_job(
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
+    """Resume a paused job: it takes the next free server slot, before waiting generations
+    (REQ-JS-24). 409 `NOT_PAUSED`."""
     require_project_admin(project_id, current_user, db)
-    job = db.jobs.get(job_id)
-    if not job or job.project_id != project_id:
-        raise not_found("AnalysisJob", job_id)
-    if not db.jobs.transition(job_id, ("paused",), "running"):
-        raise HTTPException(400, detail={"code": "VALIDATION_ERROR",
-                                         "message": "Job is not paused.", "status": 400})
-    job = db.jobs.get(job_id) or job
-    pipeline_runner.signal_resume(job_id)
+    try:
+        job = job_queue.request_resume(db, _project_job(db, project_id, job_id), current_user.id)
+    except job_queue.JobRefused as exc:
+        raise _refused(exc)
+    return {"job": _job_dict(job, db)}
+
+
+class JobChangeRequest(BaseModel):
+    priority: str = Field(..., description="high | normal | low")
+
+
+@router.patch("/projects/{project_id}/jobs/{job_id}", responses={200: {"model": JobResponse}})
+def change_job(
+    project_id: str,
+    job_id: str,
+    body: JobChangeRequest,
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """A waiting generation's priority (REQ-JS-11) -- a super admin's."""
+    if not getattr(current_user, "is_superuser", False):
+        raise HTTPException(status_code=403, detail={
+            "code": "FORBIDDEN", "status": 403,
+            "message": "Only a super admin sets a job's priority."})
+    try:
+        job = job_queue.set_priority(db, _project_job(db, project_id, job_id),
+                                     (body.priority or "").strip().lower(), current_user.id)
+    except job_queue.JobRefused as exc:
+        raise _refused(exc)
     return {"job": _job_dict(job, db)}
 
 
@@ -493,6 +582,7 @@ def reexport_version(
     body: Optional[ReexportComponentsRequest] = None,
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
+    request_key: Optional[str] = Header(None, alias="Idempotency-Key"),
 ):
     """Update ONE version's Word files -- any version with documents, not only the newest,
     whether the web app or the command line made it (docs/design/WORD_FILE_UPDATES.md §4.1).
@@ -518,7 +608,8 @@ def reexport_version(
     status, out = word_files.start_update(
         db, version, current_user, scope=(body.scope if body else None),
         components=(body.components if body else None) or None,
-        document_id=(body.document_id if body else None) or None)
+        document_id=(body.document_id if body else None) or None,
+        request_key=(request_key or "").strip()[:200] or None)
     return JSONResponse(status_code=status, content=out)
 
 

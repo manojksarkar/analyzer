@@ -13,6 +13,7 @@ from unittest.mock import patch
 import pytest
 
 from api.models.domain import Project, ProjectMember
+from tests.api.conftest import record_commit
 from api.routes import repositories
 from api.services import pipeline_runner as pr
 
@@ -40,6 +41,7 @@ def _project(db, build_config):
     db.members.add_member(ProjectMember(
         id="m" + uuid.uuid4().hex[:8], project_id=pid, user_id="u1", role="admin",
         status="active", invited_by="u1", invited_at=now, joined_at=now))
+    record_commit(db, pid, "0" * 40)
     return pid
 
 

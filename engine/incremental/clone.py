@@ -212,7 +212,8 @@ def _dir_lock(target_dir: str):
     share it. Without the lock they race in two ways: both find no `.git` and clone into the
     same directory on top of each other, or both run `git checkout` and one dies on
     `index.lock`. Neither can corrupt a version's data, but both fail a job for no reason —
-    and that becomes likely the moment JOB_MAX_CONCURRENCY is raised above 1.
+    and that becomes likely the moment two jobs run side by side (`jobs.maxGenerations`, once
+    JOB_MAX_CONCURRENCY, above 1).
 
     A stale lock (owner killed) is reclaimed after `_LOCK_STALE_S`, so a crash cannot wedge a
     project permanently.

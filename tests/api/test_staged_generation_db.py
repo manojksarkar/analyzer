@@ -1,9 +1,10 @@
 """Staged generation on the SQL backend: component states, the run record, the component view
-(engine/core/version_run.py, api/services/version_components.py) and the runner's refusal of a
-re-export while another process writes the version. SQLite: the writer LOCK is Postgres-only and
-is checked by tests/unit/test_version_lock_pg.py."""
+(engine/core/version_run.py, api/services/version_components.py) and a re-export waiting while
+another process writes the version. SQLite: the writer LOCK is Postgres-only and is checked by
+tests/unit/test_version_lock_pg.py."""
 import datetime
 import uuid
+from types import SimpleNamespace
 
 import pytest
 import sqlalchemy as sa
@@ -17,6 +18,29 @@ def sql_db(db):
     if not hasattr(db, "_engine"):
         pytest.skip("rows of the SQL backend")
     return db
+
+
+@pytest.fixture(autouse=True)
+def _seeded_lanes_free(request):
+    """These tests make jobs of the seeded projects p1 and p2, and the session's database keeps the
+    jobs of every earlier test: p1's seeded `job1` runs for ever, and jobs other tests left wait
+    behind it. A project lane runs one job at a time (`ux_jobs_lane_active`,
+    docs/design/JOB_SCHEDULING_DESIGN.md §2), so each test starts with their lanes free -- those
+    jobs set aside as ended -- and they are put back after it, the test's own jobs ended first."""
+    if "db" not in request.fixturenames:
+        yield
+        return
+    from api.services.job_queue import IN_LANE
+    db = request.getfixturevalue("db")
+    parked = [(j.id, j.status) for pid in ("p1", "p2") for j in db.jobs.lane_jobs(pid, IN_LANE)]
+    for job_id, status in parked:
+        db.jobs.transition(job_id, (status,), "complete")
+    yield
+    for pid in ("p1", "p2"):
+        for j in db.jobs.lane_jobs(pid, IN_LANE):
+            db.jobs.transition(j.id, (j.status,), "complete")
+    for job_id, status in parked:
+        db.jobs.transition(job_id, ("complete",), status)
 
 
 @pytest.fixture
@@ -157,14 +181,17 @@ class TestComponentView:
 
 
 class TestReexportWhileWritten:
-    def test_a_web_reexport_is_refused_while_another_process_writes(self, sql_db, monkeypatch):
+    def test_a_web_update_waits_while_another_process_writes(self, sql_db, monkeypatch):
+        """No longer refused (REQ-JS-06): it waits, saying who writes the version, and the
+        scheduler starts it once that process has let go (`job_scheduler._claims`)."""
         from api.services import pipeline_runner as pr
         monkeypatch.setattr(pr, "version_writer_busy",
                             lambda db, vid: "analyzer export pid 9 on box (since 2026-10-02 09:00)")
-        with pytest.raises(pr.ReexportRefused) as exc:
-            pr.start_reexport(sql_db, sql_db.versions.get("ver4"))
-        assert exc.value.code == "VERSION_BUSY" and exc.value.status == 409
-        assert "analyzer export pid 9" in str(exc.value)
+        job = pr.start_reexport(sql_db, sql_db.versions.get("ver4"))
+        got = sql_db.jobs.get(job.id)
+        assert got.status == "queued" and got.current_activity.startswith("Waiting for ")
+        assert got.activity_detail == ("analyzer export pid 9 on box (since 2026-10-02 09:00) is "
+                                       "writing it")
 
     def test_the_api_records_its_jobs_on_its_own_database(self, sql_db, version):
         from api.services import pipeline_runner as pr
@@ -231,7 +258,8 @@ class TestRoutes:
 
         def fake_start(db, v, comps, added_layers=None, **kw):
             started.update(version=v.id, components=comps, added_layers=added_layers)
-            return type("J", (), {"id": "jobexport1", "status": "queued"})()
+            return SimpleNamespace(id="jobexport1", status="queued", project_id="p1",
+                                   version_id=v.id, mode="export", version_tag=None)
 
         monkeypatch.setattr(pr, "start_export", fake_start)
         r = client.post(self._url(version, "documents/generate"), headers=_hdr(client, "alice"),
@@ -281,7 +309,8 @@ class TestRoutes:
 
         def fake_start(db, v, comps, added_layers=None, **kw):
             started.update(components=comps, added_layers=added_layers)
-            return type("J", (), {"id": "jobexport2", "status": "queued"})()
+            return SimpleNamespace(id="jobexport2", status="queued", project_id="p1",
+                                   version_id=v.id, mode="export", version_tag=None)
 
         monkeypatch.setattr(pr, "start_export", fake_start)
         r = client.post(self._url(layer3, "documents/generate"), headers=_hdr(client, "alice"),
@@ -346,7 +375,7 @@ class TestExportAddingALayer:
         assert job.phase == 1 and job.scope["added_layers"] == ["Layer3"]
         assert seen["kw"]["phase_start"] == 1
         assert seen["cmd"][2:] == ["export", "--project-id", "p1", "--version-id", version.id,
-                                   "--components", "Layer3.Can"]
+                                   "--components", "Layer3.Can", "--job-id", job.id]
         assert seen["activity"] == ("Adding layer Layer3 (parse + model), then making the "
                                     "documents…")
 
@@ -434,7 +463,7 @@ class TestWebRunLocking:
         assert locks == []
         assert seen["cmd"][2:] == ["reexport", "--project-id", "p1", "--version-id", version.id,
                                    "--from-phase", "auto", "--doc-type", "all",
-                                   "--components", "Layer1.Math,Layer2.Gpio"]
+                                   "--components", "Layer1.Math,Layer2.Gpio", "--job-id", job.id]
         assert seen["kw"]["phase_start"] == 4
 
     def test_texts_to_rewrite_show_as_phase_3(self, sql_db, version, monkeypatch):
@@ -469,6 +498,8 @@ class TestWebRunLocking:
                                       scope={"type": "component", "names": ["Layer1.Math"]})
             sql_db.jobs.create(job)
             pr._run_reexport(sql_db, job.id)
+            # Its process is not run here: ended, so the next one has the project's update lane.
+            sql_db.jobs.transition(job.id, JOB_STATUSES, "complete")
             return seen["kw"]["phase_start"], seen["cmd"][seen["cmd"].index("--from-phase") + 1]
 
         assert run("Layer1.Math") == (3, "auto")
@@ -617,6 +648,15 @@ def _bg_job(sql_db, version, **over):
     return job
 
 
+def _only_running(sql_db, job, monkeypatch):
+    """The start-up check sees `job` as the only running one: the session's database keeps every
+    earlier test's jobs, and none of them is this test's to end."""
+    real = sql_db.jobs.in_status
+    monkeypatch.setattr(sql_db.jobs, "in_status", lambda statuses: (
+        [j for j in [sql_db.jobs.get(job.id)] if j.status in tuple(statuses)]
+        if "running" in tuple(statuses) else real(statuses)))
+
+
 @pytest.fixture
 def draft(sql_db):
     """A version a run has just reserved: nothing stored in it yet."""
@@ -652,17 +692,18 @@ class TestFollowingABackgroundRun:
         assert pr._follow_detached(sql_db, job.id, run, phase_start=1)
         assert any("others were made" in line for line in pr.get_log_lines(job.id, 0)[0])
 
-    def test_a_run_that_died_fails_the_job_and_keeps_its_work(self, sql_db, version, tmp_path,
-                                                              fast_follow):
-        """Its process gone with no exit code: the machine restarted, someone killed it. The
-        version holds work (`pipeline_status` past the parse), so it stays, for `resume`."""
+    def test_a_run_that_died_is_interrupted_and_keeps_its_work(self, sql_db, version, tmp_path,
+                                                               fast_follow):
+        """Its process gone with no exit code: the machine restarted, someone killed it --
+        interrupted at once (JOB_SCHEDULING_DESIGN §7). The version holds work (`pipeline_status`
+        past the parse), so it stays, for `resume`."""
         pr = fast_follow
         job = _bg_job(sql_db, version)
         pr._init_state(job.id)
         _, run = _fake_run(tmp_path, "die", "Phase 2: describing 41200 / 96000")
         assert not pr._follow_detached(sql_db, job.id, run, phase_start=1)
         got = sql_db.jobs.get(job.id)
-        assert got.status == "failed" and got.error_message.startswith("Stopped:")
+        assert got.status == "interrupted" and got.error_message.startswith("Stopped:")
         assert "analyzer.py resume" in got.error_message
         assert sql_db.versions.get(version.id) is not None
 
@@ -673,7 +714,7 @@ class TestFollowingABackgroundRun:
         pr._init_state(job.id)
         _, run = _fake_run(tmp_path, "die")
         assert not pr._follow_detached(sql_db, job.id, run, phase_start=1)
-        assert sql_db.jobs.get(job.id).status == "failed"
+        assert sql_db.jobs.get(job.id).status == "interrupted"
         assert sql_db.versions.get(draft.id) is None                 # as a failed run always did
 
     def test_a_failed_run_says_why_and_keeps_its_work(self, sql_db, version, tmp_path,
@@ -763,7 +804,7 @@ class TestAfterAnApiRestart:
         monkeypatch.setattr(pr, "_data_root", lambda: str(tmp_path))
         done = []
         monkeypatch.setattr(pr, "_complete", lambda db, job_id: done.append(job_id))
-        monkeypatch.setattr(sql_db.jobs, "list_active", lambda: [sql_db.jobs.get(job.id)])
+        _only_running(sql_db, job, monkeypatch)
         assert pr.fail_interrupted_jobs(sql_db) == 0
         t = pr._job_threads.get(job.id)
         if t is not None:
@@ -772,14 +813,15 @@ class TestAfterAnApiRestart:
         got = sql_db.jobs.get(job.id)
         assert got.status == "running" and got.phase == 2           # caught up from the log
 
-    def test_a_job_with_no_background_run_is_failed_as_before(self, sql_db, draft, tmp_path,
-                                                              monkeypatch):
+    def test_a_job_with_no_background_run_is_interrupted(self, sql_db, draft, tmp_path,
+                                                         monkeypatch):
+        """It ran inside the server that stopped (REQ-JS-19): interrupted, its draft freed."""
         from api.services import pipeline_runner as pr
         job = _bg_job(sql_db, draft)
         monkeypatch.setattr(pr, "_data_root", lambda: str(tmp_path))
-        monkeypatch.setattr(sql_db.jobs, "list_active", lambda: [sql_db.jobs.get(job.id)])
+        _only_running(sql_db, job, monkeypatch)
         assert pr.fail_interrupted_jobs(sql_db) == 1
-        assert sql_db.jobs.get(job.id).status == "failed"
+        assert sql_db.jobs.get(job.id).status == "interrupted"
         assert sql_db.versions.get(draft.id) is None
 
 
@@ -819,7 +861,8 @@ class TestResume:
         t = pr._job_threads.get(job.id)
         if t is not None:
             t.join(timeout=30)
-        assert seen["cmd"][2:] == ["resume", "--project-id", "p1", "--version-id", version.id]
+        assert seen["cmd"][2:] == ["resume", "--project-id", "p1", "--version-id", version.id,
+                                   "--job-id", gen.id]
         assert seen["kw"]["phase_start"] == 3                         # the documents are left
         assert done == [gen.id]
         assert sql_db.jobs.get(gen.id).error_message is None
@@ -946,7 +989,7 @@ class TestAfterTheReview:
         pr._init_state(job.id)
         _, run = _fake_run(tmp_path, "die")
         assert not pr._follow_detached(sql_db, job.id, run, phase_start=3)
-        assert sql_db.jobs.get(job.id).status == "failed"
+        assert sql_db.jobs.get(job.id).status == "interrupted"
 
     def test_a_resume_that_cannot_start_keeps_the_work(self, sql_db, version, monkeypatch):
         from api.services import pipeline_runner as pr
@@ -961,12 +1004,14 @@ class TestAfterTheReview:
         assert sql_db.versions.get(version.id) is not None
 
     def test_an_export_waits_for_the_versions_own_run(self, sql_db, version, monkeypatch):
+        """Behind it in the project's generation lane -- no longer refused (REQ-JS-06)."""
+        from api.services import job_queue as q
         from api.services import pipeline_runner as pr
         job = _bg_job(sql_db, version, status="running")
         monkeypatch.setattr(pr, "job_alive", lambda job_id: job_id == job.id)
-        with pytest.raises(pr.ReexportRefused) as exc:
-            pr.start_export(sql_db, version, ["Layer1.App"])
-        assert exc.value.code == "RUN_ACTIVE" and exc.value.job_id == job.id
+        export = sql_db.jobs.get(pr.start_export(sql_db, version, ["Layer1.App"]).id)
+        assert export.status == "queued" and export.current_activity.startswith("Waiting as #1")
+        assert [a["job_id"] for a in q.answer_for(sql_db, export).ahead] == [job.id]
 
     def test_the_version_gets_its_own_copy_of_the_config(self, tmp_path, monkeypatch):
         from types import SimpleNamespace
@@ -1060,7 +1105,7 @@ class TestAfterTheSecondReview:
         from api.services import pipeline_runner as pr
         job = _bg_job(sql_db, draft)
         monkeypatch.setattr(pr, "_data_root", lambda: str(tmp_path))
-        monkeypatch.setattr(sql_db.jobs, "list_active", lambda: [sql_db.jobs.get(job.id)])
+        _only_running(sql_db, job, monkeypatch)
         assert pr.fail_interrupted_jobs(sql_db, reattach_only=True) == 0
         assert sql_db.jobs.get(job.id).status == "running"
         assert sql_db.versions.get(draft.id) is not None

@@ -22,13 +22,14 @@ from ..models.domain import (
     AnalysisPhase, Document, DocumentSection, DocumentAssignment,
     Function, CompareResult, DocumentDiff, Notification, AccessRequest, RENDER_MODES, ACTIVE_JOB_STATUSES,
     ReviewEvent, DOC_STATUSES, JOB_STATE_FIELDS, JOB_CLOSED_STATUSES,
+    JOB_LANE_STATUSES, JOB_HOLDING_STATUSES, JOB_ENDED_STATUSES, JobEvent,
 )
 from ..repositories.interfaces import (
     IUserRepository, IProjectRepository, IProjectMemberRepository,
     IAccessRequestRepository, IVersionRepository, ICommitRepository,
     IAnalysisJobRepository, IDocumentRepository,
     IDocumentAssignmentRepository, IFunctionRepository,
-    ICompareRepository, INotificationRepository, IReviewEventRepository,
+    ICompareRepository, INotificationRepository, IReviewEventRepository, IJobEventRepository,
 )
 
 # ---------------------------------------------------------------------------
@@ -523,10 +524,23 @@ class _InMemCommitRepo(ICommitRepository):
         return copy.deepcopy(commit)
 
 
+def _job_place(job) -> tuple:
+    """A job's place -- when it was submitted, its start for a job from before 0019 -- as a key
+    that sorts: naive and aware times alike (as UTC), and no time first."""
+    t = getattr(job, "submitted_at", None) or getattr(job, "started_at", None)
+    if t is not None and t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return (t is not None, t or datetime.min.replace(tzinfo=timezone.utc), job.id)
+
+
 class _InMemJobRepo(IAnalysisJobRepository):
-    def __init__(self, store: dict[str, AnalysisJob]):
+    def __init__(self, store: dict[str, AnalysisJob],
+                 projects: Optional[dict[str, Project]] = None):
         self._store = store
-        self._lock = threading.Lock()
+        # The projects' rows, for what a foreign key checks on SQL (`record_run`).
+        self._projects = projects if projects is not None else {}
+        # Re-entrant: `add_to_lane`'s `decide` may read the repository while it holds the lock.
+        self._lock = threading.RLock()
 
     def create(self, job):
         # A copy, as every read hands out: the caller's object is not the stored one, so changing
@@ -538,25 +552,123 @@ class _InMemJobRepo(IAnalysisJobRepository):
     def get(self, job_id):
         return copy.deepcopy(self._store.get(job_id))
 
+    def _where(self, keep) -> list:
+        with self._lock:
+            return [copy.deepcopy(j) for j in sorted((j for j in self._store.values() if keep(j)),
+                                                     key=_job_place)]
+
     def get_current(self, project_id):
-        # Latest non-cancelled GENERATION job for the project. A re-export is a job of its own,
-        # followed by its id; it is not "the project's run".
-        candidates = [
-            j for j in self._store.values()
-            if j.project_id == project_id and j.status not in ("cancelled",)
-            and getattr(j, "mode", None) not in RENDER_MODES
-        ]
-        if not candidates:
-            return None
-        return copy.deepcopy(max(candidates, key=lambda j: j.started_at))
+        # The project's running or paused GENERATION job, else its latest that ran -- never a
+        # waiting one, a cancelled or a removed one. A re-export is a job of its own.
+        mine = self._where(lambda j: j.project_id == project_id
+                           and getattr(j, "mode", None) not in RENDER_MODES)
+        active = [j for j in mine if j.status in JOB_HOLDING_STATUSES]
+        if active:
+            return active[-1]
+        ran = [j for j in mine if j.status not in ("cancelled", "removed", "held", "queued")]
+        return ran[-1] if ran else None
 
     def list_for_version(self, version_id):
-        jobs = [j for j in self._store.values() if j.version_id == version_id]
-        return [copy.deepcopy(j) for j in sorted(jobs, key=lambda j: j.started_at, reverse=True)]
+        return list(reversed(self._where(lambda j: j.version_id == version_id)))
 
     def list_active(self):
-        jobs = [j for j in self._store.values() if j.status in ACTIVE_JOB_STATUSES]
-        return [copy.deepcopy(j) for j in sorted(jobs, key=lambda j: j.started_at)]
+        return self._where(lambda j: j.status in ACTIVE_JOB_STATUSES)
+
+    # -- the queue --------------------------------------------------------------
+    def add_to_lane(self, job, decide):
+        with self._lock:
+            verdict = decide(self._where(lambda j: j.project_id == job.project_id
+                                         and j.status in JOB_LANE_STATUSES))
+            if verdict is None:
+                self._store[job.id] = copy.deepcopy(job)
+            return verdict
+
+    def lane_jobs(self, project_id, statuses):
+        wanted = tuple(statuses)
+        return self._where(lambda j: j.project_id == project_id and j.status in wanted)
+
+    def in_status(self, statuses):
+        wanted = tuple(statuses)
+        return self._where(lambda j: j.status in wanted)
+
+    def find_by_request_key(self, project_id, key):
+        found = self._where(lambda j: j.project_id == project_id
+                            and getattr(j, "request_key", None) == key)
+        return found[0] if found else None
+
+    def recent_ended(self, project_id, limit=50):
+        ended = self._where(lambda j: j.project_id == project_id
+                            and j.status in JOB_ENDED_STATUSES and j.completed_at is not None)
+        ended.sort(key=lambda j: (j.completed_at.replace(tzinfo=timezone.utc)
+                                  if j.completed_at.tzinfo is None else j.completed_at),
+                   reverse=True)
+        return ended[:limit]
+
+    def claim(self, job_id, from_status, *, cap, runner, now, **values):
+        with self._lock:
+            stored = self._store.get(job_id)
+            if stored is None or stored.status != from_status:
+                return False
+            others = [j for j in self._store.values()
+                      if j.id != job_id and j.status in JOB_HOLDING_STATUSES]
+            if any(j.project_id == stored.project_id and j.lane == stored.lane for j in others):
+                return False
+            if stored.version_id and any(j.version_id == stored.version_id for j in others):
+                return False
+            if cap is not None and sum(1 for j in others if j.status == "running"
+                                       and j.lane == "generation") >= cap:
+                return False
+            for k, v in values.items():
+                if k == "phases" and v is not None:
+                    v = [p if isinstance(p, AnalysisPhase) else AnalysisPhase(**p) for p in v]
+                setattr(stored, k, copy.deepcopy(v))
+            stored.status, stored.heartbeat_at, stored.runner = "running", now, runner
+            stored.started_at = stored.started_at or now
+            return True
+
+    def record_run(self, job, decide):
+        with self._lock:
+            if job.project_id not in self._projects:
+                return ("no_project", [])
+            lane_jobs = sorted((j for j in self._store.values()
+                                if j.project_id == job.project_id and j.lane == job.lane
+                                and j.status in JOB_LANE_STATUSES),
+                               key=lambda j: (_job_place(j), j.id))
+            running = sum(1 for j in self._store.values()
+                          if j.status == "running" and j.lane == "generation")
+            verdict = decide([copy.deepcopy(j) for j in lane_jobs], running)
+            if verdict is not None:
+                return verdict
+            if not job.forced and any(o.project_id == job.project_id and o.lane == job.lane
+                                      and o.status in JOB_HOLDING_STATUSES
+                                      and not getattr(o, "forced", False)
+                                      for o in self._store.values()):
+                return ("busy", [])                # the SQL backend's `ux_jobs_lane_active`
+            self._store[job.id] = copy.deepcopy(job)
+            return None
+
+    def prune_ended(self, before):
+        with self._lock:
+            newest = {}
+            for j in self._store.values():
+                if j.version_id and getattr(j, "mode", None) not in RENDER_MODES:
+                    best = newest.get(j.version_id)
+                    if best is None or _job_place(j) > _job_place(best):
+                        newest[j.version_id] = j
+            keep = {j.id for j in newest.values()}
+            if before.tzinfo is None:
+                before = before.replace(tzinfo=timezone.utc)
+
+            def done_before(j) -> bool:
+                t = j.completed_at
+                if t is None:
+                    return False
+                return (t if t.tzinfo else t.replace(tzinfo=timezone.utc)) < before
+            gone = [j.id for j in self._store.values() if j.status in JOB_ENDED_STATUSES
+                    and done_before(j) and j.id not in keep]
+            for jid in gone:
+                del self._store[jid]
+            return len(gone)
 
     def update(self, job):
         with self._lock:
@@ -577,12 +689,27 @@ class _InMemJobRepo(IAnalysisJobRepository):
             stored = self._store.get(job_id)
             if stored is None or stored.status not in tuple(from_status):
                 return False
+            if self._lane_taken(stored, to_status, values):
+                return False
             for k, v in values.items():
                 if k == "phases" and v is not None:
                     v = [p if isinstance(p, AnalysisPhase) else AnalysisPhase(**p) for p in v]
                 setattr(stored, k, copy.deepcopy(v))
             stored.status = to_status
             return True
+
+    def _lane_taken(self, job, to_status, values) -> bool:
+        """The SQL backend's unique index `ux_jobs_lane_active`: one running or paused job per
+        project lane, a command-line run started past the queue (`forced`) aside. Asked as a job
+        ENTERS running or paused; one already there keeps its place (its progress, a pause)."""
+        forced = values.get("forced", getattr(job, "forced", False))
+        if (to_status not in JOB_HOLDING_STATUSES or job.status in JOB_HOLDING_STATUSES
+                or forced):
+            return False
+        return any(o.id != job.id and o.project_id == job.project_id
+                   and getattr(o, "lane", None) == getattr(job, "lane", None)
+                   and o.status in JOB_HOLDING_STATUSES and not getattr(o, "forced", False)
+                   for o in self._store.values())
 
 
 class _InMemDocRepo(IDocumentRepository):
@@ -814,6 +941,26 @@ class _InMemNotifRepo(INotificationRepository):
         return copy.deepcopy(notification)
 
 
+class _InMemJobEventRepo(IJobEventRepository):
+    def __init__(self):
+        self._events: list[JobEvent] = []           # in the order they happened
+        self._lock = threading.Lock()
+
+    def add(self, event):
+        with self._lock:
+            self._events.append(copy.deepcopy(event))
+        return event
+
+    def list_for_job(self, job_id):
+        with self._lock:
+            return [copy.deepcopy(e) for e in self._events if e.job_id == job_id]
+
+    def list_for_project(self, project_id, limit=100):
+        with self._lock:
+            mine = [copy.deepcopy(e) for e in self._events if e.project_id == project_id]
+        return list(reversed(mine))[:limit]
+
+
 class _InMemReviewEventRepo(IReviewEventRepository):
     def __init__(self):
         self._events: list[ReviewEvent] = []     # in the order they happened
@@ -883,10 +1030,11 @@ class InMemoryDatabase:
         self.access_reqs:  IAccessRequestRepository      = _InMemAccessReqRepo()
         self.versions:     IVersionRepository            = _InMemVersionRepo(versions)
         self.commits:      ICommitRepository             = _InMemCommitRepo(commits)
-        self.jobs:         IAnalysisJobRepository        = _InMemJobRepo(jobs)
+        self.jobs:         IAnalysisJobRepository        = _InMemJobRepo(jobs, projects)
         self.documents:    IDocumentRepository           = _InMemDocRepo(docs, sections, assigns)
         self.assignments:  IDocumentAssignmentRepository = _InMemAssignRepo(assigns)
         self.functions:    IFunctionRepository           = _InMemFunctionRepo(functions)
         self.compare:      ICompareRepository            = _InMemCompareRepo(cmp_results, cmp_diffs)
         self.notifications: INotificationRepository      = _InMemNotifRepo(notifs)
         self.review_events: IReviewEventRepository       = _InMemReviewEventRepo()
+        self.job_events:    IJobEventRepository          = _InMemJobEventRepo()

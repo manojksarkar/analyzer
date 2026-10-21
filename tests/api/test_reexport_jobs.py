@@ -125,7 +125,9 @@ class TestItIsAJobOfItsOwn:
         r = _start(client, auth_header, pid, vid)
         assert r.status_code == 202, r.text
         body = r.json()
-        assert body["version_id"] == vid and body["status"] == "queued"
+        # The project's update lane is free: it starts at once (REQ-JS-06).
+        assert body["version_id"] == vid and body["status"] == "running"
+        assert body["message"] == "Starts now"
         generation = [j for j in db.jobs.list_for_version(vid) if j.mode != REEXPORT_MODE][0]
         assert body["job_id"] != generation.id
         job = _job(client, auth_header, pid, body["job_id"])
@@ -219,8 +221,10 @@ class TestOneAtATime:
         assert len([j for j in db.jobs.list_for_version(vid) if j.mode == REEXPORT_MODE]) == 1
         engine.finish(first)
 
-    def test_one_it_does_not_cover_is_refused_naming_the_running_job(self, client, db,
-                                                                      auth_header, monkeypatch):
+    def test_one_it_does_not_cover_waits_its_turn_behind_the_running_one(self, client, db,
+                                                                         auth_header, monkeypatch):
+        """No longer refused (REQ-JS-06): it waits in the project's update lane, naming the job
+        ahead, and starts when that one ends."""
         pid = _project(db)
         vid = _version(db, pid)
         _documents(db, pid, vid, ["L1.A", "L1.B"])
@@ -230,11 +234,15 @@ class TestOneAtATime:
         assert engine.entered.wait(10)
         r = client.post(f"/api/v1/projects/{pid}/versions/{vid}/reexport", headers=auth_header,
                         json={"scope": "all", "components": ["L1.B"]})
-        assert r.status_code == 409, r.text
-        d = r.json()["detail"]
-        assert (d["code"], d["job_id"], d["components"], d["scope"]) == \
-            ("REEXPORT_RUNNING", first, ["L1.A"], "all")
-        engine.finish(first)
+        assert r.status_code == 202, r.text
+        body = r.json()
+        assert (body["status"], body["position"], body["joined"], body["components"]) == \
+            ("queued", 1, False, ["L1.B"])
+        assert [a["job_id"] for a in body["ahead"]] == [first]
+        assert body["message"].startswith("Waits as #1")
+        engine.finish(first)                    # its end starts the next (job_queue.after_end)
+        engine.finish(body["job_id"])
+        assert _job(client, auth_header, pid, body["job_id"])["status"] == "complete"
 
     def test_once_it_has_finished_another_may_start(self, client, db, auth_header, monkeypatch):
         pid = _project(db)
@@ -247,12 +255,17 @@ class TestOneAtATime:
         assert r.status_code == 202, r.text
         engine.finish(r.json()["job_id"])
 
-    def test_a_row_left_running_by_a_stopped_server_does_not_block(self, client, db,
-                                                                   auth_header, monkeypatch):
-        """Nothing in this process is running it, so nothing will ever finish it."""
+    def test_a_row_left_running_by_a_stopped_server_is_interrupted_and_the_next_starts(
+            self, client, db, auth_header, monkeypatch):
+        """Nothing in this process is running it, so nothing will ever finish it: a request does
+        not join it, and the scheduler's sweep interrupts it once it has been silent for
+        `jobs.interruptedAfterMinutes` (REQ-JS-20). The update waiting behind it then starts."""
+        import time
+        from api.services import job_scheduler
         pid = _project(db)
         vid = _version(db, pid)
         stale = _uid("jobstale")
+        an_hour_ago = datetime.datetime.now(UTC) - datetime.timedelta(hours=1)
         db.jobs.create(AnalysisJob(
             id=stale, project_id=pid, commit_sha="a" * 40, version_id=vid,
             reference_version_id=None, status="running", pause_after_phase1=False,
@@ -260,13 +273,18 @@ class TestOneAtATime:
             elapsed_seconds=0, eta_seconds=None,
             phases=[AnalysisPhase(3, "Run Views", "running", None),
                     AnalysisPhase(4, "Export DOCX", "pending", None)],
-            started_at=datetime.datetime.now(UTC), completed_at=None, error_message=None,
+            started_at=an_hour_ago, completed_at=None, error_message=None,
             branch="main", version_tag="v1", mode=REEXPORT_MODE))
         engine = _Engine(monkeypatch)
         r = _start(client, auth_header, pid, vid)
         assert r.status_code == 202, r.text
+        assert (r.json()["status"], r.json()["joined"]) == ("queued", False)
+        sched = job_scheduler._SCHEDULER
+        sched._db_up_since = time.monotonic() - job_scheduler.DB_STEADY_SECONDS   # no outage
+        sched.sweep()
         old = db.jobs.get(stale)
-        assert old.status == "failed" and "Interrupted" in old.error_message
+        assert old.status == "interrupted" and "Interrupted" in old.error_message
+        assert engine.entered.wait(10), "the waiting update started"
         engine.finish(r.json()["job_id"])
 
 
@@ -530,19 +548,19 @@ class TestTheUpdateScope:
         assert r.status_code == 404
 
     def test_a_writer_holding_the_version_is_named(self, client, db, auth_header, monkeypatch):
-        """S5b: VERSION_BUSY says what holds the version."""
-        from api.services import word_files
+        """S5b: what holds the version is said -- now while the update waits for it to let go
+        (REQ-JS-03, 35), no longer in a VERSION_BUSY refusal."""
         pid = _project(db)
         vid = _version(db, pid)
         _documents(db, pid, vid, ["L1.A"])
         _out_of_date(monkeypatch, {"L1.A"})
         _Engine(monkeypatch)
-        monkeypatch.setattr(pr, "version_writer_busy", lambda db, v: "analyzer generate")
-        held = {"kind": "generation", "job_id": None, "command": "generate"}
-        monkeypatch.setattr(word_files, "writer", lambda db, v, snake=False: held)
+        monkeypatch.setattr(pr, "version_writer_busy", lambda db, v: "analyzer generate pid 7")
         r = _update(client, auth_header, pid, vid, scope="out_of_date")
-        assert r.status_code == 409 and r.json()["detail"]["code"] == "VERSION_BUSY"
-        assert r.json()["detail"]["writer"] == held
+        assert r.status_code == 202, r.text
+        assert (r.json()["status"], r.json()["message"]) == ("queued", "Waits for v1")
+        job = db.jobs.get(r.json()["job_id"])
+        assert job.activity_detail == "analyzer generate pid 7 is writing it"
 
 
 class TestTheStarterIsTold:
@@ -671,7 +689,8 @@ class TestARunningExportOrResumeIsNamedAsSuch:
     """Finding 8: a running export or resume was refused as an update, `scope: out_of_date`."""
 
     def test_an_export_at_work(self, client, db, auth_header, monkeypatch):
-        import threading
+        """The update waits for the export writing its version, and its message says it is an
+        export, of which components -- not an update (REQ-JS-03, 12, 35)."""
         pid = _project(db)
         vid = _version(db, pid)
         _documents(db, pid, vid, ["L1.A"])
@@ -684,21 +703,11 @@ class TestARunningExportOrResumeIsNamedAsSuch:
             elapsed_seconds=0, eta_seconds=None, phases=[], started_at=datetime.datetime.now(UTC),
             completed_at=None, error_message=None, branch="main", version_tag="v1",
             mode="export", scope={"type": "component", "names": ["L1.New"]}, reason="export"))
-        export = [j for j in db.jobs.list_for_version(vid) if j.mode == "export"][0]
-        hold = threading.Event()
-        t = threading.Thread(target=hold.wait, args=(20,), daemon=True)
-        t.start()
-        pr._reexport_threads[export.id] = t
-        try:
-            r = _update(client, auth_header, pid, vid, scope="out_of_date")
-            assert r.status_code == 409, r.text
-            d = r.json()["detail"]
-            assert (d["code"], d["scope"], d["kind"], d["job_id"], d["components"]) == \
-                ("REEXPORT_RUNNING", "export", "export", export.id, ["L1.New"])
-            assert "rendered by an export" in d["message"]
-        finally:
-            hold.set()
-            pr._reexport_threads.pop(export.id, None)
+        r = _update(client, auth_header, pid, vid, scope="out_of_date")
+        assert r.status_code == 202, r.text
+        assert (r.json()["status"], r.json()["message"]) == ("queued", "Waits for v1")
+        job = db.jobs.get(r.json()["job_id"])
+        assert job.activity_detail == "Export into v1 (L1.New) is writing it"
 
 
 class TestUnreadableStatesFailClosed:

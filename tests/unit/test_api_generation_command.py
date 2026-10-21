@@ -26,7 +26,7 @@ CONFIG = Path("workspaces") / "p1" / "config.json"
 
 
 def _job(**over):
-    base = dict(project_id="p1", version_id="ver1a2b3c4d", branch="br_trunk",
+    base = dict(id="job1a2b3c4d", project_id="p1", version_id="ver1a2b3c4d", branch="br_trunk",
                 commit_sha="8b3e313f892f2b3baea252d98f0b083015622e98", mode="auto",
                 scope={"type": "group", "names": ["Garbage Collection Manager"]},
                 reference_version_id=None, data_dict_id=None, no_llm=False,
@@ -46,6 +46,12 @@ class TestTheCommandIsTheCli:
         cmd = pr._generate_cmd(_job(), Path(ROOT), CONFIG)
         assert os.path.basename(cmd[1]) == "analyzer.py"
         assert cmd[2] == "generate"
+
+    def test_the_run_is_its_job_s(self):
+        """Last on the command: the run sends this job's alive signal and records no job of its
+        own (docs/design/JOB_SCHEDULING_DESIGN.md §11)."""
+        cmd, a = _parsed(_job())
+        assert cmd[-2:] == ["--job-id", "job1a2b3c4d"] and a.job_id == "job1a2b3c4d"
 
     def test_it_runs_no_retired_script(self):
         cmd = pr._generate_cmd(_job(), Path(ROOT), CONFIG)
@@ -129,9 +135,12 @@ class TestTheRunnerUsesIt:
 
         db = InMemoryDatabase()
         project = db.projects.get("p1")
+        # The job as the scheduler hands it over: claimed, so running -- p1's lane freed of the
+        # seeded job1 first, as a claim would have waited for it.
+        assert db.jobs.transition("job1", ("running",), "complete")
         fields = dict(id="jobwire01", project_id="p1",
                       commit_sha="8b3e313f892f2b3baea252d98f0b083015622e98",
-                      version_id="ver1a2b3c4d", reference_version_id=None, status="queued",
+                      version_id="ver1a2b3c4d", reference_version_id=None, status="running",
                       pause_after_phase1=False, layer_filter=None, phase=1, phase_pct=0,
                       current_activity="", activity_detail="", elapsed_seconds=0,
                       eta_seconds=None,

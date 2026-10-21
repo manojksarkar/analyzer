@@ -424,8 +424,14 @@ def _refused(exc: Any) -> HTTPException:
 
 def start_update(db: Any, version: Any, user: Any, *, scope: Optional[str],
                  components: Optional[List[str]] = None, document_id: Optional[str] = None,
-                 reason: Optional[str] = None) -> Tuple[int, dict]:
+                 reason: Optional[str] = None,
+                 request_key: Optional[str] = None) -> Tuple[int, dict]:
     """`POST V/reexport` (WORD_FILE_UPDATES §4.1): `(HTTP status, body)`, or raises HTTPException.
+
+    The update waits its turn in the project's update lane (docs/spec/JOB_SCHEDULING_SPEC.md):
+    the body says where -- `status` queued | running | held, `position`, `estimated_start`,
+    `message` -- or, `joined`, that an update running or waiting already writes these components
+    (`already_queued` when it waits). `request_key`: a retried request answers its first job.
 
     The caller has checked membership and that the version is the project's."""
     from . import pipeline_runner as pr
@@ -485,13 +491,20 @@ def start_update(db: Any, version: Any, user: Any, *, scope: Optional[str],
     reason = reason or ("rebuild" if scope == "all" else "update")
     try:
         job, joined, writes = pr.start_update(db, version, targets, started_by=user.id,
-                                              reason=reason, document_id=document_id)
+                                              reason=reason, document_id=document_id,
+                                              request_key=request_key)
     except pr.ReexportRefused as exc:
         raise _refused(exc)
-    # Nothing read from the database here: the job's thread has started (see start_update).
+    from . import job_queue
+    waits = joined and job.status in job_queue.WAITING
+    answer = job_queue.answer_for(db, job, status=(
+        ("already_queued" if waits else "joined") if joined else None))
     return (200 if joined else 202), {
         "job_id": job.id, "status": job.status, "version_id": version.id,
-        "scope": job_scope_name(job) or scope, "components": writes, "joined": joined}
+        "scope": job_scope_name(job) or scope, "components": writes, "joined": joined,
+        "already_queued": waits, "position": answer.position,
+        "estimated_start": answer.as_dict()["estimated_start"], "ahead": answer.ahead,
+        "message": ("Already queued: %s" % answer.message) if waits else answer.message}
 
 
 # ---------------------------------------------------------------------------

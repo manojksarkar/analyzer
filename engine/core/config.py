@@ -22,6 +22,7 @@ from __future__ import annotations
 import difflib
 import json
 import os
+import sys
 import threading
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -147,10 +148,10 @@ def _deep_merge(base: Dict[str, Any], over: Dict[str, Any]) -> Dict[str, Any]:
 
 #: This server's blocks. Not in config.defaults.json, and never written into a project's or a
 #: version's config (`without_server_settings`).
-SERVER_BLOCKS = ("db", "auth", "repositories", "llmServer", "llvm", "speedups")
+SERVER_BLOCKS = ("db", "auth", "repositories", "llmServer", "llvm", "speedups", "jobs")
 #: The server blocks a run reads through its config: laid over it when it is loaded
 #: (`with_server_settings`). The others have readers of their own, on the same file:
-#: `core.db._db_section`, `api.middleware.auth`, `api.services.local_repos`.
+#: `core.db._db_section`, `api.middleware.auth`, `api.services.local_repos`, `jobs_settings`.
 RUN_SERVER_BLOCKS = ("llmServer", "llvm", "speedups")
 #: The keys of `llmServer` -- develop's. Until 2026-10-13 they were in `llm`, where they are not
 #: read any more.
@@ -211,6 +212,52 @@ def server_settings(config_root: Optional[str] = None, *, strict: bool = False) 
         return {}
     return {block: json.loads(json.dumps(local[block]))
             for block in RUN_SERVER_BLOCKS if isinstance(local.get(block), dict)}
+
+
+#: The `jobs` block's keys and what each is when config.local.json does not say
+#: (docs/design/JOB_SCHEDULING_DESIGN.md §12): generations running at once on this server, all
+#: projects together; whether waiting jobs start by themselves after a restart instead of being
+#: held; days a paused job waits before it is cancelled; minutes a running job may be silent
+#: before it is interrupted; days an ended job's record is kept.
+JOBS_DEFAULTS = {"maxGenerations": 2, "startQueuedAfterRestart": False, "pausedDays": 7,
+                 "interruptedAfterMinutes": 10, "keepFinishedDays": 90}
+
+
+def jobs_settings(config_root: Optional[str] = None) -> Dict[str, Any]:
+    """This server's job-scheduling settings: config.local.json's `jobs` block over
+    `JOBS_DEFAULTS`. From that file only -- the `JOB_MAX_CONCURRENCY` environment variable is not
+    read (REQ-JS-05). A missing file, block or key gives the default; a value of the wrong kind,
+    or not above zero, is said and the default used: a typo must not stop the server's jobs."""
+    out = dict(JOBS_DEFAULTS)
+    path = local_config_path(config_root)
+    block: Any = None
+    if os.path.isfile(path):
+        try:
+            block = _read_jsonc(path).get("jobs")
+        except (ValueError, OSError) as exc:
+            print(f"note: {path} could not be read ({exc}); job scheduling uses its defaults",
+                  file=sys.stderr)
+    if not isinstance(block, dict):
+        return out
+    for key, default in JOBS_DEFAULTS.items():
+        if key not in block:
+            continue
+        value = block[key]
+        if isinstance(default, bool):
+            ok = isinstance(value, bool)
+        else:
+            ok = (isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0)
+        if ok:
+            out[key] = value
+        else:
+            print(f"note: jobs.{key} in {path} is {value!r}, not "
+                  f"{'true or false' if isinstance(default, bool) else 'a number above zero'}; "
+                  f"{default!r} is used", file=sys.stderr)
+    unknown = sorted(set(block) - set(JOBS_DEFAULTS))
+    if unknown:
+        print(f"note: jobs.{', jobs.'.join(unknown)} in {path} is not a setting; ignored "
+              f"(the settings: {', '.join(JOBS_DEFAULTS)})", file=sys.stderr)
+    return out
 
 
 def with_server_settings(config: Dict[str, Any], config_root: Optional[str] = None, *,

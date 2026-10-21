@@ -17,14 +17,14 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from ..db.in_memory import InMemoryDatabase
 from ..db.session import get_db
 from ..middleware.auth import get_current_user, require_project_admin, require_project_member
 from ..models.domain import User
-from ..services import pipeline_runner
+from ..services import job_queue, pipeline_runner
 from ..services.errors import conflict, not_found
 from ..services.review_workflow import unprocessable
 from ..services import version_components as vc
@@ -141,26 +141,39 @@ def version_run_facts(project_id: str, version_id: str,
     return run_facts(db, version.id)
 
 
+def _queued(db, job) -> Dict[str, Any]:
+    """Where the job stands in its lane (docs/spec/JOB_SCHEDULING_SPEC.md REQ-JS-06, 35)."""
+    out = job_queue.answer_for(db, job).as_dict()
+    out.pop("status", None)
+    return out
+
+
 @router.post("/projects/{project_id}/versions/{version_id}/resume", status_code=202)
 def resume_version(project_id: str, version_id: str,
                    current_user: User = Depends(get_current_user),
-                   db: InMemoryDatabase = Depends(get_db)) -> Dict[str, Any]:
+                   db: InMemoryDatabase = Depends(get_db),
+                   request_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+                   ) -> Dict[str, Any]:
     """Carry on a version whose run stopped before it finished (the machine restarted, the
     process was killed, some components failed): `analyzer.py resume` in the background, as a
-    job -- the version's own generation job when that one did not finish, else a job of its own.
-    Follow it with `GET /jobs/{job_id}`. 409: VERSION_BUSY (a run is at work on it), RUN_ACTIVE
-    (one of this server's jobs is), NOTHING_TO_RESUME, NO_BACKGROUND_RUNS (no database).
+    job -- the version's own generation job when that one did not finish, else a job of its own
+    -- once its turn comes in the project's generation lane. Follow it with `GET /jobs/{job_id}`.
+    202 with its place (`position`, `estimated_start`, `message`). 409: VERSION_BUSY (a run is at
+    work on it), RUN_ACTIVE (a job of the version waits, runs or is paused), NOTHING_TO_RESUME,
+    NO_BACKGROUND_RUNS (no database), LANE_FULL.
     """
     require_project_admin(project_id, current_user, db)
     version = _version(db, project_id, version_id)
     try:
-        job = pipeline_runner.start_resume(db, version, started_by=current_user.id)
+        job = pipeline_runner.start_resume(db, version, started_by=current_user.id,
+                                           request_key=(request_key or "").strip()[:200] or None)
     except pipeline_runner.ReexportRefused as exc:
         detail = {"code": exc.code, "message": str(exc), "status": exc.status, **exc.extra}
         if exc.job_id:
             detail["job_id"] = exc.job_id
         raise HTTPException(status_code=exc.status, detail=detail)
-    return {"job_id": job.id, "status": job.status, "version_id": version.id}
+    return {"job_id": job.id, "status": job.status, "version_id": version.id,
+            **_queued(db, job)}
 
 
 class GenerateComponentsRequest(BaseModel):
@@ -171,7 +184,9 @@ class GenerateComponentsRequest(BaseModel):
              status_code=202)
 def generate_components(project_id: str, version_id: str, body: GenerateComponentsRequest,
                         current_user: User = Depends(get_current_user),
-                        db: InMemoryDatabase = Depends(get_db)) -> Dict[str, Any]:
+                        db: InMemoryDatabase = Depends(get_db),
+                        request_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+                        ) -> Dict[str, Any]:
     """Make the documents of components the version has not generated yet, into this version,
     as a job (`mode: "export"`; follow it with `GET /jobs/{job_id}`) running `analyzer.py
     export`: Phases 3-4 from its stored model. Any component the GET lists can be asked for --
@@ -181,9 +196,11 @@ def generate_components(project_id: str, version_id: str, body: GenerateComponen
     `stale`), so its phases are 1-4.
 
     202 {job_id, status, version_id, components (to make), skipped (generated already),
-    added_layers (the layers the job adds to the model; empty when none)}. 422
-    INVALID_COMPONENTS: a name that is no component of the version (nor of its config); 409
-    NO_MODEL / NOTHING_TO_GENERATE, and the runner's VERSION_BUSY / EXPORT_RUNNING / RUN_ACTIVE.
+    added_layers (the layers the job adds to the model; empty when none)} and its place in the
+    project's generation lane (`position`, `estimated_start`, `ahead`, `message`): another job
+    of the project, or of the version, is a wait (docs/spec/JOB_SCHEDULING_SPEC.md REQ-JS-06).
+    422 INVALID_COMPONENTS: a name that is no component of the version (nor of its config); 409
+    NO_MODEL / NOTHING_TO_GENERATE, and LANE_FULL.
     """
     require_project_admin(project_id, current_user, db)
     version = _version(db, project_id, version_id)
@@ -203,11 +220,13 @@ def generate_components(project_id: str, version_id: str, body: GenerateComponen
     added = list(vc._staged().layers_to_add(view, todo))
     try:
         job = pipeline_runner.start_export(db, version, todo, added_layers=added,
-                                           started_by=current_user.id)
+                                           started_by=current_user.id,
+                                           request_key=(request_key or "").strip()[:200] or None)
     except pipeline_runner.ReexportRefused as exc:
         detail = {"code": exc.code, "message": str(exc), "status": exc.status, **exc.extra}
         if exc.job_id:
             detail["job_id"] = exc.job_id
         raise HTTPException(status_code=exc.status, detail=detail)
     return {"job_id": job.id, "status": job.status, "version_id": version.id,
-            "components": todo, "skipped": skipped, "added_layers": added}
+            "components": todo, "skipped": skipped, "added_layers": added,
+            **_queued(db, job)}

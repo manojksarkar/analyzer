@@ -10,15 +10,32 @@ changes in one statement that checks the status it changes from
 import datetime
 import uuid
 
-from api.models.domain import AnalysisJob, AnalysisPhase, JOB_STATUSES
+from api.models.domain import AnalysisJob, AnalysisPhase, JOB_STATUSES, Project, ProjectMember
 from api.services import pipeline_runner as pr
 
 UTC = datetime.timezone.utc
 
 
-def _job(db, *, status="running", project_id="p1"):
-    """A job of the seeded project p1 (alice is its admin), with no version: what is checked here
-    is the job row alone."""
+def _project(db) -> str:
+    """A project of its own, alice its admin: a project lane runs one job at a time
+    (`ux_jobs_lane_active`), and the seeded p1 has one running."""
+    pid = "psw" + uuid.uuid4().hex[:6]
+    now = datetime.datetime.now(UTC)
+    db.projects.create(Project(
+        id=pid, org_id="org1", name=pid, client="c", compliance_standard="ASPICE_L2",
+        repo_url="https://example.invalid/r.git", repo_provider="github", default_branch="main",
+        build_config={}, architecture_layers=[], status="not_run", created_by="u1",
+        created_at=now, updated_at=now))
+    db.members.add_member(ProjectMember(
+        id="m" + uuid.uuid4().hex[:8], project_id=pid, user_id="u1", role="admin",
+        status="active", invited_by="u1", invited_at=now, joined_at=now))
+    return pid
+
+
+def _job(db, *, status="running", project_id=None):
+    """A job of a project of its own (alice its admin), with no version: what is checked here is
+    the job row alone."""
+    project_id = project_id or _project(db)
     job = AnalysisJob(
         id="job" + uuid.uuid4().hex[:8], project_id=project_id, commit_sha="0" * 40,
         version_id=None, reference_version_id=None, status=status, pause_after_phase1=False,
@@ -114,7 +131,7 @@ class TestTheRunnerKeepsACancel:
         def checkout(*a, **k):
             raise AssertionError("a cancelled job was started")
         monkeypatch.setattr(pr, "_checkout", checkout)
-        pr._inner_run_locked(db, job.id, db.projects.get("p1"))
+        pr._inner_run_locked(db, job.id, db.projects.get(job.project_id))
         assert db.jobs.get(job.id).status == "cancelled"
 
 
@@ -122,7 +139,8 @@ class TestTheCancelRoute:
     def test_a_run_that_ended_first_answers_job_finished(self, client, auth_header, db):
         job = _job(db)
         assert db.jobs.transition(job.id, ("running",), "complete")
-        r = client.post(f"/api/v1/projects/p1/jobs/{job.id}/cancel", headers=auth_header)
+        r = client.post(f"/api/v1/projects/{job.project_id}/jobs/{job.id}/cancel",
+                        headers=auth_header)
         assert r.status_code == 409, r.text
         assert r.json()["detail"]["code"] == "JOB_FINISHED"
         assert db.jobs.get(job.id).status == "complete"
@@ -131,7 +149,8 @@ class TestTheCancelRoute:
         monkeypatch.setattr(pr, "cancel_subprocess", lambda job_id: None)
         monkeypatch.setattr(pr, "stop_background_run", lambda job: False)
         job = _job(db)
-        r = client.post(f"/api/v1/projects/p1/jobs/{job.id}/cancel", headers=auth_header)
+        r = client.post(f"/api/v1/projects/{job.project_id}/jobs/{job.id}/cancel",
+                        headers=auth_header)
         assert r.status_code == 200, r.text
         got = db.jobs.get(job.id)
         assert got.status == "cancelled" and got.completed_at is not None

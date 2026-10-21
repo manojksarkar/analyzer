@@ -11,6 +11,7 @@ import uuid
 from unittest.mock import patch
 
 from api.models.domain import Project, ProjectMember, Version
+from tests.api.conftest import record_commit
 
 LAYERS = [{"name": "L1", "groups": [{"name": "G1", "components": [{"name": "C1"}]}]}]
 
@@ -26,6 +27,7 @@ def _project(db, name):
     db.members.add_member(ProjectMember(
         id="m" + uuid.uuid4().hex[:8], project_id=pid, user_id="u1", role="admin",
         status="active", invited_by="u1", invited_at=now, joined_at=now))
+    record_commit(db, pid, "b" * 40)
     vid = "ver" + uuid.uuid4().hex[:8]
     db.versions.create(Version(
         id=vid, project_id=pid, tag="v1", commit_sha="a" * 40, branch="main", description="",

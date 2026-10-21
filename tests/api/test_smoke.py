@@ -283,15 +283,16 @@ def test_start_job_mocked(client, auth_header, db):
             json={"commit_sha": sha, "version_tag": "pg3-smoke-unique"},
             headers=auth_header,
         )
-        # Either 202 (new job) or 409 (job already active)
-        assert r2.status_code in (202, 409)
-        if r2.status_code == 202:
-            assert mock_start.called
-            assert "job_id" in r2.json()
-            # PG-3: the real `ver…` id is reserved at job start (so the engine runs under it),
-            # not deferred to completion.
-            job = db.jobs.get(r2.json()["job_id"])
-            assert (job.version_id or "").startswith("ver"), job.version_id
+        # 202: it starts, or -- p1's seeded job1 holds its generation lane -- it waits its turn
+        # (REQ-JS-06). A busy project is no longer a 409.
+        assert r2.status_code == 202, r2.text
+        body = r2.json()
+        assert body["status"] in ("running", "queued") and "job_id" in body
+        assert mock_start.called == (body["status"] == "running")
+        # PG-3: the real `ver…` id is reserved at submit (so the engine runs under it), not
+        # deferred to completion.
+        job = db.jobs.get(body["job_id"])
+        assert (job.version_id or "").startswith("ver"), job.version_id
 
 
 def test_start_job_requires_version(client, auth_header):

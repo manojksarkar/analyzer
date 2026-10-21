@@ -321,6 +321,20 @@ def main() -> int:
         print(f"renamed the stored slot kinds behaviourInputName -> inputName, "
               f"behaviourOutputName -> outputName ({renamed} row(s))")
 
+    # 8. job scheduling (0019; idempotent): each job's lane and place, one running job per project
+    # lane (the older ones interrupted), and the queue's indexes -- `create_all` adds no index to
+    # `analysis_jobs`, which is already there. Migration 0019's own functions, as in step 6.
+    m0019 = _migration("0019_job_scheduling")
+    with eng.begin() as cx:
+        got = m0019.backfill(cx)
+        m0019.create_indexes(cx)
+    if got["lanes"] or got["placed"]:
+        print(f"job scheduling: {got['lanes']} update job(s) put in the update lane, "
+              f"{got['placed']} job(s) given their place")
+    if got["interrupted"]:
+        print(f"job scheduling: {got['interrupted']} older job(s) found running in a lane beside a "
+              f"newer one were marked interrupted (a lane runs one job at a time)")
+
     # 7. stamp the migration head (RF-4). `create_all` builds every table without Alembic, so a
     # database made or upgraded here had no `alembic_version` -- and the next `alembic upgrade
     # head` started from the first migration and failed on a table that already exists. Stamped

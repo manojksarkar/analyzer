@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from ..db.session import get_db
@@ -222,17 +222,14 @@ def delete_version(
     if busy:
         raise conflict("VERSION_BUSY", f"Version '{version.tag or version_id}' is being written by "
                                        f"{busy}. Stop that run first.")
-    # Any run of the project, not only this version's: a run being generated reads its baseline
-    # -- named by its job, or picked by the engine -- and records it only at its end, so the
-    # version may be that baseline without anything saying so yet. Deleting it would take the
-    # model and reuse rows the run reads, and fail the run at its very end.
+    # Any run of the project at work or paused, not only this version's: a run being generated
+    # reads its baseline -- named by its job, or picked by the engine -- and records it only at
+    # its end. And a waiting job that needs this version (job_queue.delete_refusal).
+    from ..services import job_queue
+    refused = job_queue.delete_refusal(db, project_id, version)
+    if refused is not None:
+        raise HTTPException(status_code=refused.status, detail=refused.detail())
     project_versions = db.versions.list_for_project(project_id)
-    if any(j.status in ("queued", "running", "paused")
-           for v in project_versions for j in db.jobs.list_for_version(v.id)) \
-            or (db.jobs.get_current(project_id) is not None
-                and db.jobs.get_current(project_id).status in ("queued", "running", "paused")):
-        raise conflict("RUN_ACTIVE", "A run of this project is at work and may build on this "
-                                     "version. Delete it once the run has ended.")
     busy = [v for v in project_versions if v.id != version_id
             and pipeline_runner.version_writer_busy(db, v.id)]
     if busy:

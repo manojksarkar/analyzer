@@ -70,6 +70,10 @@ class Project:
     # throttle clock for the page-1 sync and the "last synced" value shown in
     # the commit picker. None until the first sync runs.
     last_commit_sync_at: Optional[datetime] = None
+    # How many jobs the project may hold in each lane: the running (or paused) one and those
+    # waiting (0019; REQ-JS-04).
+    generation_limit: int = 3
+    update_limit: int = 10
 
 
 @dataclass
@@ -175,6 +179,11 @@ JOB_CLOSED_STATUSES = ("cancelled", "removed", "interrupted")
 #: Every status a job can have.
 JOB_STATUSES = ("held", "queued", "running", "paused", "complete", "failed", "interrupted",
                 "cancelled", "removed")
+#: A job in its lane -- what a lane's limit counts -- and the two that hold the lane's one place.
+JOB_LANE_STATUSES = ("held", "queued", "running", "paused")
+JOB_HOLDING_STATUSES = ("running", "paused")
+#: A job that has ended, however.
+JOB_ENDED_STATUSES = ("complete", "failed", "interrupted", "cancelled", "removed")
 
 
 @dataclass
@@ -216,6 +225,41 @@ class AnalysisJob:
     # None for a generation (docs/design/WORD_FILE_UPDATES.md). An update's end is told to them.
     started_by: Optional[str] = None
     reason: Optional[str] = None
+    # Job scheduling (0019; docs/design/JOB_SCHEDULING_DESIGN.md §2). `started_at` is when it
+    # started RUNNING -- None while it waits; `submitted_at` is its place in its lane.
+    lane: str = "generation"                     # generation | update
+    priority: int = 1                            # 0 High, 1 Normal, 2 Low -- generation lane only
+    submitted_at: Optional[datetime] = None
+    heartbeat_at: Optional[datetime] = None      # the alive signal (REQ-JS-20)
+    pause_requested_at: Optional[datetime] = None
+    paused_at: Optional[datetime] = None
+    resume_requested_at: Optional[datetime] = None
+    paused_seconds: int = 0                      # left out of its run time and estimates
+    origin: str = "web"                          # web | cli
+    runner: Optional[str] = None                 # "api <host> pid N" | "cli <user>@<host> pid N"
+    forced: bool = False                         # a CLI run started with --ignore-queue
+    request_key: Optional[str] = None            # the submit's idempotency key (REQ-JS-09)
+
+    def __post_init__(self) -> None:
+        # Its lane follows from what it does, whoever made it: an update -- a re-export -- waits
+        # in the update lane, everything else in the generation lane (REQ-JS-01).
+        if self.mode == REEXPORT_MODE and self.lane == "generation":
+            self.lane = "update"
+
+
+@dataclass
+class JobEvent:
+    """One step of a job's queue, or of a project's (no job): who did what, when (REQ-JS-33).
+    submitted | started | pause_requested | paused | resume_requested | resumed | completed |
+    failed | interrupted | cancelled | removed | priority_changed | limits_changed | held |
+    released."""
+    id: str
+    job_id: Optional[str]
+    project_id: str
+    kind: str
+    actor_id: Optional[str]     # None: the system did it
+    at: datetime
+    detail: dict = field(default_factory=dict)
 
 
 @dataclass

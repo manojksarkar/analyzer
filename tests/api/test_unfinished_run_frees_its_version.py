@@ -122,11 +122,12 @@ class TestAnUnfinishedRunFreesItsVersion:
 
 
 class TestAJobAStoppedServerLeftRunning:
-    """At start-up every job still marked queued, running or paused belongs to a server that
-    stopped mid-run: no thread of the new process runs it (`fail_interrupted_jobs`). It used to say
-    "running" for ever, and every new run of its project was refused as JOB_ALREADY_RUNNING."""
+    """At start-up every web job still marked running belongs to a server that stopped mid-run: no
+    thread of the new process runs it (`fail_interrupted_jobs`). It used to say "running" for ever,
+    and its project's lane stayed taken. Now it is INTERRUPTED (REQ-JS-20): its place freed, its
+    draft deleted when it holds no work."""
 
-    def test_it_is_failed_with_the_reason_and_frees_its_draft(self, db, monkeypatch):
+    def test_it_is_interrupted_with_the_reason_and_frees_its_draft(self, db, monkeypatch):
         project = _project(db)
         job = _job(db, project, "v9.0.0")
         vid = job.version_id
@@ -136,11 +137,21 @@ class TestAJobAStoppedServerLeftRunning:
 
         assert pr.fail_interrupted_jobs(db) == 1
 
-        failed = db.jobs.get(job.id)
-        assert failed.status == "failed" and failed.error_message == pr.INTERRUPTED_MESSAGE
-        assert failed.completed_at is not None
+        ended = db.jobs.get(job.id)
+        assert ended.status == "interrupted" and ended.error_message == pr.INTERRUPTED_MESSAGE
+        assert ended.completed_at is not None
         assert db.versions.get(vid) is None, "the draft is freed, as a cancel of a dead job does"
         assert job.id not in [j.id for j in db.jobs.list_active()]
+
+    def test_a_cli_run_is_left_to_its_alive_signal(self, db, monkeypatch):
+        """A CLI run is the developer's process, not this server's: the scheduler's sweep decides
+        by its alive signal."""
+        project = _project(db)
+        job = _job(db, project, "v9.0.1")
+        assert db.jobs.transition(job.id, ("running",), "running", origin="cli")
+        monkeypatch.setattr(pr, "job_alive", lambda job_id: job_id != job.id)
+        assert pr.fail_interrupted_jobs(db) == 0
+        assert db.jobs.get(job.id).status == "running"
 
     def test_a_job_this_process_runs_is_left_alone(self, db, monkeypatch):
         project = _project(db)
@@ -150,7 +161,7 @@ class TestAJobAStoppedServerLeftRunning:
         assert db.jobs.get(job.id).status == "running"
 
     def test_a_reexport_left_running_keeps_its_version(self, db, monkeypatch):
-        """A re-export runs on a finished version; failing it must not delete the version."""
+        """A re-export runs on a finished version; ending it must not delete the version."""
         project = _project(db)
         job = _job(db, project, "v9.2.0")
         version = db.versions.get(job.version_id)
@@ -160,7 +171,7 @@ class TestAJobAStoppedServerLeftRunning:
 
         pr.fail_interrupted_jobs(db)
 
-        assert db.jobs.get(job.id).status == "failed"
+        assert db.jobs.get(job.id).status == "interrupted"
         assert db.versions.get(job.version_id) is not None
 
     def test_the_api_does_it_at_start_up(self):
@@ -286,26 +297,20 @@ class TestCancelAfterTheReview:
 
 
 class TestTheJobWatch:
-    def test_it_looks_again_every_few_minutes_at_jobs_older_than_two(self, monkeypatch):
-        """A follower thread that died left its job "running" until the next restart."""
-        import datetime
-        import threading
-        from api import main
-        seen, done = [], threading.Event()
-
-        stop = threading.Event()
+    def test_the_scheduler_s_sweep_follows_runs_again_older_than_two_minutes(self, monkeypatch):
+        """A follower thread that died left its job "running" until the next restart. The
+        scheduler's sweep, once a minute, follows such a run again (it was `main._watch_jobs`)."""
+        from api.db.in_memory import InMemoryDatabase
+        from api.services import job_scheduler
+        seen = []
 
         def sweep(db, before=None, reattach_only=False):
             seen.append((before, reattach_only))
-            stop.set()                   # ends the watch thread: nothing outlives this test
-            done.set()
             return 0
         monkeypatch.setattr(pr, "fail_interrupted_jobs", sweep)
-        monkeypatch.setattr(main, "JOB_WATCH_SECONDS", 0.05)
-        main._watch_jobs(type("Db", (), {"_engine": None})(), stop=stop)
-        assert done.wait(10)
+        job_scheduler.Scheduler(InMemoryDatabase(), lambda *a: None).round()
         before, reattach_only = seen[0]
-        assert reattach_only, "the periodic pass only follows runs again; start-up decides the rest"
+        assert reattach_only, "the sweep only follows runs again; start-up decides the rest"
         age = datetime.datetime.now(datetime.timezone.utc) - before
         assert datetime.timedelta(seconds=110) < age < datetime.timedelta(seconds=180)
 

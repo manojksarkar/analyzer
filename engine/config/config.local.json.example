@@ -1,14 +1,15 @@
 {
   // THIS SERVER's settings: its database, its sign-in, its repository folders, its LLM server,
-  // its LLVM install and its speed-ups. Copy this file to `config.local.json` (same folder) and
-  // fill in real values. `config.local.json` is gitignored, so credentials never get committed.
+  // its LLVM install, its speed-ups and its job scheduling. Copy this file to `config.local.json`
+  // (same folder) and fill in real values. `config.local.json` is gitignored, so credentials never
+  // get committed.
   //
   // One file per kind of setting:
   //
-  //   config.local.json     THIS SERVER              db, auth, repositories, llmServer, llvm, speedups
+  //   config.local.json     THIS SERVER              db, auth, repositories, llmServer, llvm, speedups, jobs
   //   config.defaults.json  HOW DOCUMENTS ARE MADE   clang, views, llm, docx, cores, layers, ...
   //
-  // The six blocks below are read from THIS file only. They are not in config.defaults.json, a
+  // The seven blocks below are read from THIS file only. They are not in config.defaults.json, a
   // project's own config cannot set them, and a version does not store them. Change one here and
   // the next run uses it: every project, from the web app and from `analyzer.py` alike.
 
@@ -142,5 +143,22 @@
     // call -- Phase 1 about a quarter faster; it stays off by itself where the bindings disagree.
     // false: the bindings' own check (develop's).
     "fastNullCheck": false
+  },
+
+  // Job scheduling (docs/spec/JOB_SCHEDULING_SPEC.md): read by the API at start-up -- restart it
+  // after a change -- and by `analyzer.py` at each run. Each key left out keeps the value shown.
+  "jobs": {
+    // Generations (generate, export, resume) running at once on this server, all projects
+    // together. A paused one does not count; Word-file updates have no cap.
+    "maxGenerations": 2,
+    // false: after a restart, waiting jobs are held until a super admin starts or clears them.
+    // true: they start by themselves.
+    "startQueuedAfterRestart": false,
+    // A job paused this many days is cancelled -- a version that never finished is deleted.
+    "pausedDays": 7,
+    // A running job silent this many minutes is interrupted, and the next one starts.
+    "interruptedAfterMinutes": 10,
+    // Ended jobs' records are kept this many days -- each version's own generation job longer.
+    "keepFinishedDays": 90
   }
 }

@@ -290,6 +290,7 @@ def cmd_generate(a) -> int:
             from core.run_context import effective_model_store
             effective_model_store(a.version_id, project_id=a.project_id, commit=commit,
                                   create_version=True)
+            _job_takes_version(a.version_id)
         except Exception:                           # noqa: BLE001
             pass
     # The phases mark how far they got on the version row (`set_pipeline_status`), which is
@@ -1216,9 +1217,9 @@ def _finish_web_job(project_id: str, version_id: str, db=None) -> None:
     """A version a web run started, and that run stopped, finished here by `resume`: finish the web
     run's job as the API does at a run's end (`pipeline_runner._complete`) -- the version leaves
     "draft", its documents and functions are recorded, the job says complete. Without this a web
-    version resumed from the command line stayed a draft, its job "Stopped", for ever. A job an API
-    is still following (queued, running) is left to that API; a version with no web job is left
-    alone. Never fails the resume."""
+    version resumed from the command line stayed a draft, its job "Stopped", for ever. A job that
+    ended failed or interrupted is finished; one still waiting, running or paused is left to the
+    API; a version with no web job is left alone. Never fails the resume."""
     try:
         if db is None:
             from core.db import is_database_configured
@@ -1232,12 +1233,12 @@ def _finish_web_job(project_id: str, version_id: str, db=None) -> None:
             return
         job = next((j for j in db.jobs.list_for_version(version_id)
                     if getattr(j, "mode", None) not in RENDER_MODES), None)
-        if job is None or job.status != "failed":
+        if job is None or job.status not in ("failed", "interrupted"):
             return
         from api.services import pipeline_runner
-        # Straight from failed to complete: never "running", which an API's check for jobs
-        # nobody follows would take up and follow again. Its "stopped" message goes first.
-        db.jobs.transition(job.id, ("failed",), "failed", error_message=None)
+        # Straight to complete: never "running", which an API's check for jobs nobody follows
+        # would take up and follow again. Its "stopped" message goes first.
+        db.jobs.transition(job.id, (job.status,), job.status, error_message=None)
         pipeline_runner._complete(db, job.id, force=True)
         print(f"web app: job {job.id} complete -- version {version.tag or version_id} is out of draft")
     except Exception as exc:                        # noqa: BLE001 -- see docstring
@@ -1297,11 +1298,13 @@ def _resume(a) -> int:
                   "recorded. Run the same `generate` again: the LLM work already done comes "
                   "back from the cache.", file=sys.stderr)
             return 2
-        argv = list(plan["argv"])
+        # The recorded command line, without the job it ran as: it runs again as THIS run's job
+        # (`queue=False`), never as a second job of the lane, which the first would refuse.
+        argv = _without_job_id(plan["argv"])
         print("the parse (Phase 1) did not finish: running the same generate again -- the parse "
               "starts over, the LLM work already done comes back from the cache.\n  "
               + " ".join(argv), flush=True)
-        return main(argv)
+        return main(argv, queue=False)
 
     from incremental.engine import finish_version
 
@@ -1748,6 +1751,19 @@ _DETACH_HELP = ("run in the background on a frozen copy of the code: API restart
                 "follow it (`progress`).")
 
 
+def _queue_args(s) -> None:
+    """The job-scheduling options of a command that writes a version (`generate`, `export`,
+    `resume`, `reexport`; docs/design/JOB_SCHEDULING_DESIGN.md §11)."""
+    s.add_argument("--ignore-queue", action="store_true",
+                   help="start even though the project's lane is busy, jobs wait in it, or the "
+                        "server's generations are at their cap -- the super admin's choice. "
+                        "Without it such a run is refused, naming the jobs in the way.")
+    s.add_argument("--job-id", metavar="JOB",
+                   help="the job this run is -- passed by the API, and by a --detach launcher "
+                        "to its background run: no check, nothing new recorded; the run sends "
+                        "that job's alive signal. Not for typing.")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="analyzer", description=__doc__.split("\n\n")[0],
@@ -1857,6 +1873,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="stop after Phase 2: the model of the scope's layers, no documents. "
                         "`export` makes them later, per component, into this version.")
     s.add_argument("--detach", action="store_true", help=_DETACH_HELP)
+    _queue_args(s)
     s.set_defaults(fn=cmd_generate)
 
     # -- register ------------------------------------------------------------
@@ -1896,6 +1913,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="which document(s) to rebuild. Default: whatever this version "
                         "was generated with (from its manifest).")
     s.add_argument("--detach", action="store_true", help=_DETACH_HELP)
+    _queue_args(s)
     s.set_defaults(fn=cmd_reexport)
 
     # -- export --------------------------------------------------------------
@@ -1911,6 +1929,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="every component of the parsed layers that has no documents yet")
     s.add_argument("--commit", help="as for reexport: only when the version never recorded it")
     s.add_argument("--detach", action="store_true", help=_DETACH_HELP)
+    _queue_args(s)
     s.set_defaults(fn=cmd_export, doc_type=None, force=False, unit=None, from_phase=3)
 
     # -- resume --------------------------------------------------------------
@@ -1923,6 +1942,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--commit", help="as for reexport: only when the version never recorded it")
     s.add_argument("--detach", action="store_true",
                    help="resume in the background, on the frozen code the run started with")
+    _queue_args(s)
     s.set_defaults(fn=cmd_resume, doc_type=None, force=False, unit=None, from_phase=3)
 
     # -- progress / components -----------------------------------------------
@@ -2021,7 +2041,9 @@ def _absolute_paths(argv: list) -> list:
     return out
 
 
-def main(argv=None) -> int:
+def main(argv=None, *, queue: bool = True) -> int:
+    """`queue=False`: a command run inside the job of the run that calls it (`resume` running
+    the recorded `generate` again) -- not checked against the lane, nor recorded again."""
     p = build_parser()
     raw = _absolute_paths(list(sys.argv[1:] if argv is None else argv))
     a = p.parse_args(raw)
@@ -2029,9 +2051,172 @@ def main(argv=None) -> int:
         p.print_help()
         return 0
     a._argv = raw                       # recorded with the run, so `resume` can repeat it
+    if queue and a.command in _COMMAND_LANES:
+        return _as_job(a)
     if getattr(a, "detach", False):
         return _detach(a)
     return int(a.fn(a) or 0)
+
+
+# ---------------------------------------------------------------------------
+# The run as a job (docs/design/JOB_SCHEDULING_DESIGN.md §11; JOB_SCHEDULING_SPEC REQ-JS-27..29)
+# ---------------------------------------------------------------------------
+_COMMAND_LANES = ("generate", "export", "resume", "reexport")
+
+
+def _without_job_id(argv) -> list:
+    """A recorded command line without the job it ran as (`--job-id J`)."""
+    out, skip = [], False
+    for x in argv or []:
+        if skip:
+            skip = False
+            continue
+        if x == "--job-id":
+            skip = True
+            continue
+        if not x.startswith("--job-id="):
+            out.append(x)
+    return out
+
+
+def _job_db():
+    """The API's database layer on this run's database -- None when none is configured: then
+    there is no queue, and the run says itself what it lacks."""
+    from core.db import is_database_configured
+    if not is_database_configured():
+        return None
+    from api.db.postgres.database import SqlDatabase
+    return SqlDatabase()
+
+
+def _job_scope(a):
+    """What the run makes, for its job's line in a queue: `--scope`, or `--components`."""
+    if getattr(a, "scope", None):
+        try:
+            return _parse_scope(a.scope)
+        except Exception:                           # noqa: BLE001 - the run says what is wrong
+            return None
+    names = _names(getattr(a, "components", None))
+    return {"type": "component", "names": names} if names else None
+
+
+def _job_takes_version(version_id: str) -> None:
+    """A `generate --create-version` job, its version reserved now: the job names it. Never
+    fails the run."""
+    job_id = os.environ.get("ANALYZER_JOB_ID")
+    if not job_id:
+        return
+    try:
+        db = _job_db()
+        if db is not None and db.versions.get(version_id) is not None:
+            db.jobs.transition(job_id, ("running",), "running", version_id=version_id)
+    except Exception:                               # noqa: BLE001 - a label, not the run
+        pass
+
+
+def _as_job(a) -> int:
+    """`generate`, `export`, `resume`, `reexport`: the run as a job of its project's lane.
+
+    `--job-id J` -- the API's run, or the background half of a command-line run started with
+    `--detach`: the run is job J's -- no checks, nothing new recorded. Otherwise it is checked
+    against the project's lane and recorded as a running job of its own, or refused, exit 2,
+    naming the jobs in the way (REQ-JS-28, 29); `--ignore-queue` skips the checks. While it runs,
+    this process sends the job's alive signal; the phases it starts know the job by
+    ANALYZER_JOB_ID. A command-line job is ended by its run (`_run_as_job`); a web job's end is
+    the API's."""
+    try:
+        db = _job_db()
+    except Exception as exc:                        # noqa: BLE001 - the run reports the database
+        print(f"note: the job queue could not be reached ({type(exc).__name__}: {exc}); "
+              f"running without it.", file=sys.stderr)
+        db = None
+    if db is None:
+        return _detach(a) if getattr(a, "detach", False) else int(a.fn(a) or 0)
+    from api.services import job_queue as q
+    if a.job_id:
+        job = db.jobs.get(a.job_id)
+        if job is None:
+            # The job of a launcher on another database -- an API on its in-memory one: the run is
+            # still its run, and the job is the launcher's to follow and end.
+            print(f"note: job {a.job_id} is not in this run's database; running without it.",
+                  file=sys.stderr)
+            os.environ["ANALYZER_JOB_ID"] = a.job_id
+            return _detach(a) if getattr(a, "detach", False) else int(a.fn(a) or 0)
+        os.environ["ANALYZER_JOB_ID"] = job.id
+        if getattr(a, "detach", False):
+            return _detach(a)                       # its command line carries --job-id on
+        return _run_as_job(db, job.id, a, ends_it=getattr(job, "origin", "web") == "cli")
+    vid = _version_id_for(a.project_id, a.version_id)
+    branch, commit = _project_defaults(a.project_id, vid)
+    try:
+        job = q.record_cli_run(
+            db, a.command, project_id=a.project_id,
+            version_id=vid if db.versions.get(vid) is not None else None,
+            version_tag=a.version_id, commit_sha=getattr(a, "commit", None) or commit,
+            branch=getattr(a, "branch", None) or branch, scope=_job_scope(a),
+            full=bool(getattr(a, "full", False)), ignore_queue=bool(a.ignore_queue))
+    except q.JobRefused as exc:
+        print(exc.message, file=sys.stderr)
+        return 2
+    except Exception as exc:                        # noqa: BLE001 - a database not set up for it
+        print(f"the run could not be recorded as a job of project {a.project_id}: "
+              f"{type(exc).__name__}: {exc}\n  A database from before job scheduling: upgrade "
+              f"it first -- python analyzer.py setup", file=sys.stderr)
+        return 2
+    os.environ["ANALYZER_JOB_ID"] = job.id
+    if a.ignore_queue:
+        print(f"job {job.id}: started past the queue (--ignore-queue)", file=sys.stderr)
+    if getattr(a, "detach", False):
+        a._argv = list(a._argv) + ["--job-id", job.id]
+        rc = 1
+        try:
+            rc = _detach(a)
+        finally:
+            if rc != 0:
+                q.end_cli_run(db, job.id, "failed", q.ended_message(
+                    "Failed: the background run did not start (exit %d)." % rc))
+        return rc
+    return _run_as_job(db, job.id, a, ends_it=True)
+
+
+def _run_as_job(db, job_id: str, a, *, ends_it: bool) -> int:
+    """Run the command as job `job_id`, sending its alive signal. `ends_it`: a command-line job,
+    ended here by how the run ended -- complete (exit 0, or 3: some components failed, the others
+    made), failed, or cancelled (Ctrl+C)."""
+    from api.services import job_queue as q
+    beat = q.Heartbeat(db, job_id).start()
+    outcome, message = "failed", None
+    try:
+        rc = int(a.fn(a) or 0)
+        outcome, message = _job_outcome(q, a, rc)
+        return rc
+    except KeyboardInterrupt:
+        outcome, message = "cancelled", q.ended_message("Cancelled: stopped with Ctrl+C.")
+        raise
+    except SystemExit as exc:
+        code = exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 1)
+        outcome, message = _job_outcome(q, a, code)
+        raise
+    except BaseException as exc:
+        message = q.ended_message("Failed: %s: %s" % (type(exc).__name__, exc))
+        raise
+    finally:
+        beat.stop()
+        if ends_it:
+            try:
+                q.end_cli_run(db, job_id, outcome, message)
+            except Exception as exc:                # noqa: BLE001 - the run has ended anyway
+                print(f"note: job {job_id}'s end could not be recorded "
+                      f"({type(exc).__name__}: {exc}); the scheduler ends it when it is silent.",
+                      file=sys.stderr)
+
+
+def _job_outcome(q, a, rc: int):
+    if rc in (0, 3):
+        return "complete", None
+    return "failed", q.ended_message(
+        "Failed: analyzer.py %s ended with exit code %d." % (a.command, rc),
+        "What went wrong is in its output, on the machine that ran it.")
 
 
 def _main_recording_exit() -> int:

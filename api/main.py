@@ -37,7 +37,7 @@ from .routes import (  # noqa: E402
     jobs_router, documents_router, team_router,
     compare_router, functions_router, notifications_router,
     repositories_router, users_router, text_overrides_router,
-    version_components_router, admin_logs_router,
+    version_components_router, admin_logs_router, queues_router,
 )
 
 # ---------------------------------------------------------------------------
@@ -110,35 +110,18 @@ def _fail_interrupted_jobs(db) -> bool:
         return False
 
 
-#: Seconds between two looks for active jobs that nothing follows any more.
-JOB_WATCH_SECONDS = 300.0
-
-
-def _watch_jobs(db, stop=None) -> None:
-    """After start-up, every five minutes: a job left active with nothing following it -- its
-    thread died on an error it could not record (the database down at the end of a run) -- is
-    followed again (a background run) or failed, as at start-up. Only by the server that runs
-    jobs on this database, and never a job started in the last two minutes: it may be between
-    its row and its thread."""
-    import datetime as _dt
+def _start_scheduler(db) -> None:
+    """The job scheduler's thread (`job_scheduler.start_up`): on the server that runs jobs on this
+    database, a round every few seconds -- the next jobs started, silent ones interrupted, paused
+    ones cancelled after `jobs.pausedDays`, and a background run nobody follows any more followed
+    again (what a five-minute watch did before). Never stops the start-up."""
     import sys
-    import threading
-
-    stop = stop or threading.Event()          # set by a test to end the thread
-
-    def loop() -> None:
-        from .services import pipeline_runner
-        while not stop.wait(JOB_WATCH_SECONDS):
-            try:
-                engine = getattr(db, "_engine", None)
-                if engine is not None and not pipeline_runner.runner_still_held(engine):
-                    continue
-                pipeline_runner.fail_interrupted_jobs(
-                    db, before=pipeline_runner._now() - _dt.timedelta(seconds=120),
-                    reattach_only=True)
-            except Exception as exc:                          # noqa: BLE001 - next round
-                print(f"[api] job watch: {type(exc).__name__}: {exc}", file=sys.stderr)
-    threading.Thread(target=loop, daemon=True, name="job-watch").start()
+    try:
+        from .services import job_scheduler
+        job_scheduler.start_up(db)
+    except Exception as exc:                                  # noqa: BLE001
+        print(f"[api] the job scheduler did not start: {type(exc).__name__}: {exc}",
+              file=sys.stderr)
 
 
 def _sweep_until_done(db) -> None:
@@ -193,11 +176,13 @@ async def _db_startup_check() -> None:
               f"      The API is bound to {_redact(dsn)} (source: {src}). If that is 'localhost'\n"
               f"      but you meant a remote server, set DATABASE_URL before starting uvicorn, or\n"
               f"      add a `db` section to engine/config/config.local.json.", file=sys.stderr)
-    # No job says "running" with nothing running or following it -- tried again until it runs,
-    # then looked for again every few minutes.
+    # No job says "running" with nothing running or following it -- tried again until it runs.
     if not _fail_interrupted_jobs(_db):
         _sweep_until_done(_db)
-    _watch_jobs(_db)
+    # The job scheduler (docs/design/JOB_SCHEDULING_DESIGN.md §5, §10): its first round holds the
+    # jobs left waiting -- unless `jobs.startQueuedAfterRestart` -- then it starts what may run;
+    # each minute it also follows again a background run nobody follows (what `_watch_jobs` did).
+    _start_scheduler(_db)
 
 @app.on_event("startup")
 async def _live_log_startup() -> None:
@@ -323,6 +308,8 @@ app.include_router(text_overrides_router,    prefix=PREFIX)
 app.include_router(version_components_router, prefix=PREFIX)
 # The live log for superusers (docs/spec/LIVE_LOGS_SPEC.md)
 app.include_router(admin_logs_router,        prefix=PREFIX)
+# The job queues -- lanes, limits, held jobs (docs/spec/JOB_SCHEDULING_SPEC.md)
+app.include_router(queues_router,            prefix=PREFIX)
 
 # ---------------------------------------------------------------------------
 # Health check

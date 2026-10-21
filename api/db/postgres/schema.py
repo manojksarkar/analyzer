@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from sqlalchemy import (
     JSON, BigInteger, Boolean, Column, Date, DateTime, Float, ForeignKey, Index,
-    Integer, MetaData, String, Table, Text, UniqueConstraint, text,
+    Integer, MetaData, SmallInteger, String, Table, Text, UniqueConstraint, false, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -43,6 +43,11 @@ _BIGID = BigInteger().with_variant(Integer, "sqlite")
 def _ts(name: str, **kw) -> Column:
     """A timezone-aware timestamp column."""
     return Column(name, DateTime(timezone=True), **kw)
+
+
+#: The jobs a project lane holds at once (`ux_jobs_lane_active`; migration 0019 says it the same
+#: way): the running one, or the paused one -- but for a CLI run started past the queue.
+JOB_LANE_ACTIVE_WHERE = "status IN ('running', 'paused') AND NOT forced"
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +92,10 @@ projects = Table(
     _ts("created_at", nullable=False),
     _ts("updated_at"),
     _ts("last_commit_sync_at"),
+    # How many jobs the project may hold in each lane -- the running (or paused) one and those
+    # waiting (0019; docs/spec/JOB_SCHEDULING_SPEC.md REQ-JS-04). A project or super admin sets them.
+    Column("generation_limit", Integer, nullable=False, server_default=text("3")),
+    Column("update_limit", Integer, nullable=False, server_default=text("10")),
 )
 
 project_members = Table(
@@ -214,7 +223,45 @@ analysis_jobs = Table(
     # generation). No foreign key: a job outlives the account that started it.
     Column("started_by", String),
     Column("reason", String),
+    # Job scheduling (0019; docs/design/JOB_SCHEDULING_DESIGN.md §2). Each has a server default or
+    # is nullable, so `analyzer.py setup` can add it to a table that has rows.
+    Column("lane", String, nullable=False, server_default="generation"),   # generation | update
+    Column("priority", SmallInteger, nullable=False, server_default=text("1")),  # 0 High 1 Normal 2 Low
+    _ts("submitted_at"),                # when it took its place in its lane: the order
+    _ts("heartbeat_at"),                # its alive signal (REQ-JS-20)
+    _ts("pause_requested_at"),
+    _ts("paused_at"),
+    _ts("resume_requested_at"),
+    Column("paused_seconds", Integer, nullable=False, server_default=text("0")),
+    Column("origin", String, nullable=False, server_default="web"),         # web | cli
+    Column("runner", String),           # "api <host> pid N" | "cli <user>@<host> pid N"
+    Column("forced", Boolean, nullable=False, server_default=false()),      # cli --ignore-queue
+    Column("request_key", String),      # the submit's idempotency key (REQ-JS-09)
     Index("ix_jobs_project", "project_id"),
+    Index("ix_jobs_waiting", "status", "lane", "submitted_at"),
+    # One running or paused job per project lane, unless a CLI run was started past the queue --
+    # the database's own guard behind the scheduler's claim (REQ-JS-15).
+    Index("ux_jobs_lane_active", "project_id", "lane", unique=True,
+          postgresql_where=text(JOB_LANE_ACTIVE_WHERE), sqlite_where=text(JOB_LANE_ACTIVE_WHERE)),
+    Index("ux_jobs_request", "project_id", "request_key", unique=True,
+          postgresql_where=text("request_key IS NOT NULL"),
+          sqlite_where=text("request_key IS NOT NULL")),
+)
+
+job_events = Table(
+    "job_events", metadata,
+    # The record of the queue (REQ-JS-33) and what its measures are read from (REQ-JS-34): who
+    # submitted, started, paused, resumed, cancelled or removed a job, changed its priority -- and,
+    # with no job, a project's limits and its held-queue actions. Removed with its job by retention.
+    Column("id", String, primary_key=True),
+    Column("job_id", String),
+    Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+    Column("kind", String, nullable=False),
+    Column("actor_id", String),             # NULL: the system did it
+    _ts("at", nullable=False),
+    Column("detail", _JSONB),
+    Index("ix_job_events_project_at", "project_id", "at"),
+    Index("ix_job_events_job", "job_id"),
 )
 
 notifications = Table(

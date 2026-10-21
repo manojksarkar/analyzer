@@ -14,7 +14,7 @@ from typing import Any, Iterable, Optional
 from ..models.domain import (
     User, Project, ProjectMember, Version, Commit, AnalysisJob,
     Document, DocumentSection, DocumentAssignment, Function,
-    CompareResult, DocumentDiff, Notification, AccessRequest, ReviewEvent,
+    CompareResult, DocumentDiff, Notification, AccessRequest, ReviewEvent, JobEvent,
 )
 
 
@@ -165,6 +165,53 @@ class IAnalysisJobRepository(ABC):
         when it was not: someone else changed it first (a cancel, the run's end), and the caller
         acts on what it is now."""
 
+    # -- the queue (docs/design/JOB_SCHEDULING_DESIGN.md §4, §5) --------------------------------
+    @abstractmethod
+    def add_to_lane(self, job: AnalysisJob, decide: Any) -> Any:
+        """Insert `job` unless `decide(jobs)` says otherwise -- `jobs`, the project's jobs held,
+        queued, running or paused, read under the project's lock, so two submits at once count
+        each other. `decide` raises to refuse, returns a value to answer instead (nothing
+        inserted), or None: the job is inserted, in the same transaction. Returns that value."""
+
+    @abstractmethod
+    def lane_jobs(self, project_id: str, statuses: Iterable[str]) -> list[AnalysisJob]:
+        """The project's jobs in `statuses`, oldest place first."""
+
+    @abstractmethod
+    def in_status(self, statuses: Iterable[str]) -> list[AnalysisJob]:
+        """Every project's jobs in `statuses`, oldest place first."""
+
+    @abstractmethod
+    def find_by_request_key(self, project_id: str, key: str) -> Optional[AnalysisJob]: ...
+
+    @abstractmethod
+    def recent_ended(self, project_id: str, limit: int = 50) -> list[AnalysisJob]:
+        """The project's ended jobs, the last ended first."""
+
+    @abstractmethod
+    def claim(self, job_id: str, from_status: str, *, cap: Optional[int], runner: str,
+              now: Any, **values: Any) -> bool:
+        """Start the job -- `running`, its alive signal and `runner` set, `started_at` kept when it
+        has one -- only if, read in one transaction under the queue's lock: it is `from_status`;
+        no other job is running or paused in its project lane, or on its version; and, `cap`
+        given, fewer than `cap` generations run. False otherwise (REQ-JS-15)."""
+
+    @abstractmethod
+    def record_run(self, job: AnalysisJob, decide: Any) -> Any:
+        """Insert `job` -- a command-line run, `running` already -- unless `decide(lane_jobs,
+        generations_running)` answers otherwise. Read in one transaction under the queue's lock
+        and the project's: `lane_jobs`, the project's jobs of the job's lane held, queued, running
+        or paused; `generations_running`, every project's running generations. `decide` returns
+        None (the job is inserted) or a refusal, returned with nothing written. A run that loses
+        to a claim on the lane's unique index is refused as `("busy", [])`; a project with no row
+        as `("no_project", [])` (REQ-JS-28, 29)."""
+
+    @abstractmethod
+    def prune_ended(self, before: Any) -> int:
+        """Remove the jobs that ended before `before`, with their events and registered functions
+        -- but each existing version's newest generation job, which an update reads how the
+        version was made from (REQ-JS-34). Returns how many."""
+
 
 class IDocumentRepository(ABC):
     @abstractmethod
@@ -231,6 +278,21 @@ class IDocumentAssignmentRepository(ABC):
 
     @abstractmethod
     def batch_assign(self, assignments: list[DocumentAssignment]) -> None: ...
+
+
+class IJobEventRepository(ABC):
+    """The queue's record: one event per step of a job, or of a project's queue (REQ-JS-33)."""
+
+    @abstractmethod
+    def add(self, event: JobEvent) -> JobEvent: ...
+
+    @abstractmethod
+    def list_for_job(self, job_id: str) -> list[JobEvent]:
+        """Oldest first."""
+
+    @abstractmethod
+    def list_for_project(self, project_id: str, limit: int = 100) -> list[JobEvent]:
+        """Newest first."""
 
 
 class IReviewEventRepository(ABC):

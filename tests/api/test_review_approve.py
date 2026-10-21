@@ -8,6 +8,7 @@ from __future__ import annotations
 import dataclasses
 import uuid
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -335,13 +336,14 @@ class TestSubmitUpdatesTheWordFile:
 
         def start(db, version, comps, **kw):
             asked.update(comps=comps, **kw)
-            return type("J", (), {"id": "jobsub1", "status": "queued", "mode": "reexport",
-                                  "reason": "submit"})(), False, comps
+            return SimpleNamespace(id="jobsub1", status="queued", mode="reexport",
+                                   reason="submit", project_id=version.project_id,
+                                   version_id=version.id, version_tag=None), False, comps
         monkeypatch.setattr(pr, "start_update", start)
         assert self._submit(client, h, proj, d) == {"state": "updating", "job_id": "jobsub1",
                                                     "blocked_by": None}
         assert asked == {"comps": ["L1.Brake"], "started_by": "u2", "reason": "submit",
-                         "document_id": d.id}
+                         "document_id": d.id, "request_key": None}
 
     def test_a_refusal_never_fails_the_submit(self, client, h, proj, monkeypatch):
         """D8: another update (that does not cover it) holds the version -- the submit stands,

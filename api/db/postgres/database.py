@@ -17,19 +17,21 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from sqlalchemy import and_, delete, func, insert, select, update
+from sqlalchemy.exc import IntegrityError
 
 from ...models.domain import (
     User, Project, ProjectMember, AccessRequest, Version, Commit, AnalysisJob,
     Document, DocumentSection, DocumentAssignment, Function, CompareResult,
     DocumentDiff, Notification, RENDER_MODES, ACTIVE_JOB_STATUSES,
     ReviewEvent, DOC_STATUSES, JOB_STATE_FIELDS, JOB_CLOSED_STATUSES,
+    JOB_LANE_STATUSES, JOB_HOLDING_STATUSES, JOB_ENDED_STATUSES, JobEvent,
 )
 from ...repositories.interfaces import (
     IUserRepository, IProjectRepository, IProjectMemberRepository,
     IAccessRequestRepository, IVersionRepository, ICommitRepository,
     IAnalysisJobRepository, IDocumentRepository, IDocumentAssignmentRepository,
     IFunctionRepository, ICompareRepository, INotificationRepository,
-    IReviewEventRepository,
+    IReviewEventRepository, IJobEventRepository,
 )
 from . import schema as s
 from .mappers import to_row, from_row
@@ -225,23 +227,145 @@ class _JobRepo(_Base, IAnalysisJobRepository):
     def get(self, job_id):
         return self._first(select(s.analysis_jobs).where(s.analysis_jobs.c.id == job_id), AnalysisJob)
 
-    def get_current(self, project_id):
-        # The latest GENERATION job: a re-export is a job of its own, followed by its id.
+    @staticmethod
+    def _place():
+        """A job's place: when it was submitted -- its start for a job from before 0019."""
         j = s.analysis_jobs
-        stmt = (select(j).where((j.c.project_id == project_id) & (j.c.status != "cancelled")
-                                & (j.c.mode.is_(None) | j.c.mode.notin_(RENDER_MODES)))
-                .order_by(j.c.started_at.desc()).limit(1))
-        return self._first(stmt, AnalysisJob)
+        return func.coalesce(j.c.submitted_at, j.c.started_at)
+
+    def get_current(self, project_id):
+        # The project's running or paused GENERATION job, else its latest that ran -- never a
+        # waiting one (the queue shows those), a cancelled or a removed one. A re-export is a job
+        # of its own, followed by its id.
+        j = s.analysis_jobs
+        gen = (j.c.project_id == project_id) & (j.c.mode.is_(None) | j.c.mode.notin_(RENDER_MODES))
+        active = self._first(select(j).where(gen & j.c.status.in_(JOB_HOLDING_STATUSES))
+                             .order_by(self._place().desc()).limit(1), AnalysisJob)
+        if active is not None:
+            return active
+        ran = j.c.status.notin_(("cancelled", "removed", "held", "queued"))
+        return self._first(select(j).where(gen & ran).order_by(self._place().desc()).limit(1),
+                           AnalysisJob)
 
     def list_for_version(self, version_id):
         j = s.analysis_jobs
         return self._all(select(j).where(j.c.version_id == version_id)
-                         .order_by(j.c.started_at.desc()), AnalysisJob)
+                         .order_by(self._place().desc()), AnalysisJob)
 
     def list_active(self):
         j = s.analysis_jobs
         return self._all(select(j).where(j.c.status.in_(ACTIVE_JOB_STATUSES))
-                         .order_by(j.c.started_at), AnalysisJob)
+                         .order_by(self._place()), AnalysisJob)
+
+    # -- the queue: the lane rule and its SQL are engine/core/job_lanes.py, which the command
+    #    line's record of its run shares --------------------------------------------------
+    def _ordered(self, stmt):
+        return stmt.order_by(self._place(), s.analysis_jobs.c.id)
+
+    def add_to_lane(self, job, decide):
+        j = s.analysis_jobs
+        with self._engine.begin() as cx:
+            # The project's row lock: two submits to one project take turns (SQLite has no row
+            # lock; its writers take turns anyway).
+            cx.execute(select(s.projects.c.id).where(s.projects.c.id == job.project_id)
+                       .with_for_update())
+            jobs = [from_row(AnalysisJob, r) for r in cx.execute(self._ordered(
+                select(j).where((j.c.project_id == job.project_id)
+                                & j.c.status.in_(JOB_LANE_STATUSES))))]
+            verdict = decide(jobs)
+            if verdict is None:
+                cx.execute(insert(j).values(**to_row(job)))
+            return verdict
+
+    def lane_jobs(self, project_id, statuses):
+        j = s.analysis_jobs
+        return self._all(self._ordered(select(j).where(
+            (j.c.project_id == project_id) & j.c.status.in_(tuple(statuses)))), AnalysisJob)
+
+    def in_status(self, statuses):
+        j = s.analysis_jobs
+        return self._all(self._ordered(select(j).where(j.c.status.in_(tuple(statuses)))),
+                         AnalysisJob)
+
+    def find_by_request_key(self, project_id, key):
+        j = s.analysis_jobs
+        return self._first(select(j).where((j.c.project_id == project_id)
+                                           & (j.c.request_key == key)), AnalysisJob)
+
+    def recent_ended(self, project_id, limit=50):
+        j = s.analysis_jobs
+        return self._all(select(j).where((j.c.project_id == project_id)
+                                         & j.c.status.in_(JOB_ENDED_STATUSES)
+                                         & j.c.completed_at.isnot(None))
+                         .order_by(j.c.completed_at.desc()).limit(limit), AnalysisJob)
+
+    def claim(self, job_id, from_status, *, cap, runner, now, **values):
+        j = s.analysis_jobs
+        if values.get("phases") is not None:
+            values["phases"] = [p if isinstance(p, dict) else dataclasses.asdict(p)
+                                for p in values["phases"]]
+        from core.job_lanes import holding, lock_queue, running_generations
+        try:
+            with self._engine.begin() as cx:
+                lock_queue(cx)
+                row = cx.execute(select(j).where(j.c.id == job_id)).first()
+                if row is None or row.status != from_status:
+                    return False
+                if holding(cx, j, project_id=row.project_id, lane=row.lane, but=job_id):
+                    return False
+                if row.version_id and holding(cx, j, version_id=row.version_id, but=job_id):
+                    return False
+                if cap is not None and running_generations(cx, j, but=job_id) >= cap:
+                    return False
+                values.update(status="running", heartbeat_at=now, runner=runner,
+                              started_at=row.started_at or now)
+                return cx.execute(update(j).where((j.c.id == job_id)
+                                                  & (j.c.status == from_status))
+                                  .values(**values)).rowcount == 1
+        except IntegrityError:                  # the lane's unique index: another got there first
+            return False
+
+    def record_run(self, job, decide):
+        j = s.analysis_jobs
+        from core.job_lanes import lock_queue, running_generations
+        try:
+            with self._engine.begin() as cx:
+                lock_queue(cx)
+                if cx.execute(select(s.projects.c.id).where(s.projects.c.id == job.project_id)
+                              .with_for_update()).first() is None:
+                    return ("no_project", [])
+                lane_jobs = [from_row(AnalysisJob, r) for r in cx.execute(self._ordered(
+                    select(j).where((j.c.project_id == job.project_id) & (j.c.lane == job.lane)
+                                    & j.c.status.in_(JOB_LANE_STATUSES))))]
+                verdict = decide(lane_jobs, running_generations(cx, j))
+                if verdict is None:
+                    cx.execute(insert(j).values(**to_row(job)))
+                return verdict
+        except IntegrityError:                  # the lane's unique index: a claim got there first
+            return ("busy", [])
+
+    def prune_ended(self, before):
+        j = s.analysis_jobs
+        with self._engine.begin() as cx:
+            ended = [r.id for r in cx.execute(select(j.c.id).where(
+                j.c.status.in_(JOB_ENDED_STATUSES) & (j.c.completed_at < before)))]
+            if not ended:
+                return 0
+            newest = {}
+            for r in cx.execute(select(j.c.id, j.c.version_id, self._place().label("place"))
+                                .where(j.c.version_id.isnot(None)
+                                       & (j.c.mode.is_(None) | j.c.mode.notin_(RENDER_MODES)))):
+                mark = (str(r.place or ""), r.id)
+                if r.version_id not in newest or mark > newest[r.version_id]:
+                    newest[r.version_id] = mark
+            keep = {mark[1] for mark in newest.values()}
+            ids = [i for i in ended if i not in keep]
+            for at in range(0, len(ids), 500):
+                chunk = ids[at:at + 500]
+                cx.execute(delete(s.job_events).where(s.job_events.c.job_id.in_(chunk)))
+                cx.execute(delete(s.job_functions).where(s.job_functions.c.job_id.in_(chunk)))
+                cx.execute(delete(j).where(j.c.id.in_(chunk)))
+            return len(ids)
 
     def update(self, job):
         j = s.analysis_jobs
@@ -259,10 +383,15 @@ class _JobRepo(_Base, IAnalysisJobRepository):
         if "phases" in values and values["phases"] is not None:
             values["phases"] = [p if isinstance(p, dict) else dataclasses.asdict(p)
                                 for p in values["phases"]]
-        with self._engine.begin() as cx:
-            return cx.execute(update(j).where((j.c.id == job_id)
-                                              & j.c.status.in_(tuple(from_status)))
-                              .values(status=to_status, **values)).rowcount == 1
+        try:
+            with self._engine.begin() as cx:
+                return cx.execute(update(j).where((j.c.id == job_id)
+                                                  & j.c.status.in_(tuple(from_status)))
+                                  .values(status=to_status, **values)).rowcount == 1
+        except IntegrityError:
+            # `ux_jobs_lane_active`: another job runs or is paused in the project's lane -- not
+            # changed, as a claim that lost.
+            return False
 
 
 class _DocRepo(_Base, IDocumentRepository):
@@ -465,6 +594,21 @@ class _NotifRepo(_Base, INotificationRepository):
         return notification
 
 
+class _JobEventRepo(_Base, IJobEventRepository):
+    def add(self, event):
+        self._exec(insert(s.job_events).values(**to_row(event)))
+        return event
+
+    def list_for_job(self, job_id):
+        e = s.job_events
+        return self._all(select(e).where(e.c.job_id == job_id).order_by(e.c.at, e.c.id), JobEvent)
+
+    def list_for_project(self, project_id, limit=100):
+        e = s.job_events
+        return self._all(select(e).where(e.c.project_id == project_id)
+                         .order_by(e.c.at.desc(), e.c.id.desc()).limit(limit), JobEvent)
+
+
 class _ReviewEventRepo(_Base, IReviewEventRepository):
     # Newest first. The workflow stamps each event strictly later than the one before it
     # (review_workflow._stamp), so `at` alone orders them; `id` only makes a tie deterministic.
@@ -528,6 +672,7 @@ class SqlDatabase:
         self.compare = _CompareRepo(engine)
         self.notifications = _NotifRepo(engine)
         self.review_events = _ReviewEventRepo(engine)
+        self.job_events = _JobEventRepo(engine)
 
     def seed(self) -> "SqlDatabase":
         """Load the same seed data InMemoryDatabase ships with (parity tests / demos)."""
