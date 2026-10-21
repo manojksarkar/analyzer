@@ -1,9 +1,10 @@
 # JOB_SCHEDULING Spec — queues, limits, pause and resume
 
 Update this doc first when changing how jobs wait, start, pause or stop; then code + tests. Status
-2026-10-21: requirements and design ([JOB_SCHEDULING_DESIGN](../design/JOB_SCHEDULING_DESIGN.md)) agreed
-with the user; being built on `feat/job-scheduling`; the web screens are Manoj's. Scope: **one server
-now**, built so a second server can join later ([Later](#later)).
+2026-10-22: agreed with the user and built on `feat/job-scheduling` -- the queue, the scheduler, the API,
+the command line and pause ([JOB_SCHEDULING_DESIGN](../design/JOB_SCHEDULING_DESIGN.md)); the web screens
+are Manoj's, on the HTTP contract [JOB_SCHEDULING_API_SPEC](JOB_SCHEDULING_API_SPEC.md). Scope: **one
+server now**, built so a second server can join later ([Later](#later)).
 
 **Outline:** [Terms](#terms) · [Lanes](#lanes) · [Limits and cap](#limits-and-cap) ·
 [Submitting](#submitting) · [Order](#order) · [The queue](#the-queue) ·

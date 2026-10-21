@@ -235,7 +235,7 @@ erDiagram
         jsonb argv "repeated by resume"
         int pid
         string code_dir "frozen code of a --detach run"
-        string outcome "running|complete|failed"
+        string outcome "running|complete|failed|paused"
         string stage "progress: stage, done, total"
     }
 ```

@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-22 | Job scheduling: pause built and shown with a real run; the cancel shown in each phase; checked on PostgreSQL | [15](15-2026-10-07h.md) |
 | 2026-10-21b | Job scheduling built: the queue, the scheduler, the API and the command line's checks; pause in the engine next | [15](15-2026-10-07h.md) |
 | 2026-10-21 | Job scheduling: the design agreed; the web screens are Manoj's; messages go in the fields the web app already shows | [15](15-2026-10-07h.md) |
 | 2026-10-19c | Job scheduling: resume redoes the step it stopped in (the user's decision), and a cancel undoes nothing call by call | [15](15-2026-10-07h.md) |

@@ -1,18 +1,16 @@
-# Job scheduling — the queue, the scheduler, the command line's checks
+# Job scheduling — the queue, the scheduler, the command line's checks, a run's pause
 
 > **Project context — topic file.** Start at [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md), the index.
 > Requirements [JOB_SCHEDULING_SPEC](../docs/spec/JOB_SCHEDULING_SPEC.md) (`REQ-JS-`) · design
 > [JOB_SCHEDULING_DESIGN](../docs/design/JOB_SCHEDULING_DESIGN.md) · HTTP contract
 > [JOB_SCHEDULING_API_SPEC](../docs/spec/JOB_SCHEDULING_API_SPEC.md) · CLI guide
 > [Runs and the job queue](../docs/CLI_COMMANDS.md#runs-and-the-job-queue). History: 2026-10-19 →
-> 2026-10-21b in [history 15](history/15-2026-10-07h.md).
+> 2026-10-22 in [history 15](history/15-2026-10-07h.md).
 
-**State (2026-10-21b, branch `feat/job-scheduling`):** built — the queue, the scheduler, the API, the
-command line's checks and record, the commit and config checks at submit, the version delete guard.
-Not built — pause in the engine (design §8: `engine/core/pause.py`, pause points, exit 75 through
-`run.py`, every `EntityCache` flushed at exit, `staged.resume_plan` reading `paused`); the PostgreSQL
-claim test (`tests/live/test_job_claims_pg.py`); `tests/e2e/test_pause_resume.py`;
-`tests/unit/test_cancel_leaves.py`. The web screens are Manoj's (design §14) — nothing in `web-app/`.
+**State (2026-10-22, branch `feat/job-scheduling`):** built — the queue, the scheduler, the API, the
+command line's checks and record, the commit and config checks at submit, the version delete guard, and
+pause (exit 75 through the whole chain); checked on PostgreSQL 16 (claims at once, the unique index,
+`setup` fresh and from 0018 rows). The web screens are Manoj's (design §14) — nothing in `web-app/`.
 
 ## What it is
 
@@ -39,6 +37,9 @@ Statuses: `held`, `queued`, `running`, `paused` (the lane's), `complete`, `faile
 | `api/main.py` | start-up: `_fail_interrupted_jobs`, then `_start_scheduler` (the scheduler replaced `_watch_jobs`) |
 | `analyzer.py` | `main()` → `_as_job` (the gate: `--job-id` attaches, else checks + record, `--ignore-queue`); `_run_as_job` (alive signal, the CLI job's end: exit 0/3 complete, else failed, Ctrl+C cancelled); `resume` runs a recorded `generate` with `main(argv, queue=False)` |
 | `engine/core/config.py` | `jobs_settings()`; `jobs` is a `SERVER_BLOCKS` block — config.local.json only |
+| `engine/core/pause.py` | `requested()` (the run's `ANALYZER_JOB_ID`, read at most every 15 s), `check()` (a pause point: `PauseRequested`, a BaseException, main thread only), `exits_paused` (a step's entry exits 75), `EXIT_PAUSED` |
+| pause points | `PhaseRunner` before each phase; `run.py` between plans; both parse passes per TU; `llm_core.parallel.map_in_order`; `llm_enrichment._run_in_rounds`; the behaviour names and diagrams loops; the flowchart label loops. The flowchart engine's exit 75 pauses the views phase (`views/flowcharts.py`) |
+| exit 75 up the chain | `run.py` `_component_states` (components back to `waiting`), `incremental/generate.py` and `engine.py` (`AnalyzerRunFailed(75)`, no failed manifest), `analyzer.py` (says so, returns 75), `version_run` (outcome `paused`), the API (`conclude`, `_execute_subprocess` → `_record_paused`), `progress` (PAUSED) |
 | `alembic/versions/0019_job_scheduling.py`, `tools/db_setup.py` | columns, `job_events`, indexes; `setup` step 8 calls `backfill` and `create_indexes` (`create_all` adds no index to an existing table) |
 
 ## Invariants — each broke, or would break, silently
@@ -60,14 +61,30 @@ Statuses: `held`, `queued`, `running`, `paused` (the lane's), `complete`, `faile
 7. **The commit is checked at submit** (`UNKNOWN_COMMIT`): known if in `commits`, else in the repository
    folder, else in a clone under `workspaces/<project>/`. API tests submitting a full SHA record it first
    (`tests/api/conftest.py` `record_commit`).
+8. **A phase cut short saves nothing**: a pause exits 75 from inside `main()`, before the `__main__`
+   block lands the model (`flush_model`); a cancel kills the tree before it. Every database-backed
+   `EntityCache` saves its buffer at exit (`_flush_at_exit`), so the LLM answers received are kept.
+9. **A pause is not a failure**: no `failed` manifest (which would set `pipeline_status = failed`), no
+   component `failed`; the version stays where it stopped and `resume` picks the step from it.
+10. **The SQLite foreign-key hook touches SQLite connections alone** (`core.db`): it is global, and on a
+   PostgreSQL connection its PRAGMA left the transaction aborted in any process that had made a SQLite
+   engine first.
 
 ## Tests
 
 `tests/api/test_job_queue.py` (both backends, a fresh database per test, a scheduler whose launch only
 records), `test_queue_routes.py`, `test_job_state_writes.py`; `tests/unit/test_job_lanes.py`,
-`test_cli_job_gate.py`, `test_job_state_writers.py`. The API suite's conftest gives every test a
-scheduler without its thread (`_job_scheduler`; a submit starts its job at once when it may), removes
-jobs an earlier test left waiting (a later round would start them — a real `git clone`), joins the job
-threads a test started, and makes the threads take turns with the SQLite test database's one
-connection (`_Turn`, on `checkout` / `reset`; `pool_reset_on_return=None`: StaticPool sends one
-`checkin` for two connections out at once, and the pool's rollback could undo another thread's work).
+`test_cli_job_gate.py`, `test_job_state_writers.py`, `test_pause.py`; `tests/e2e/test_pause_resume.py`
+(a real run paused once Phase 2 began, resumed as the same job: the views of a run never paused; it
+deletes its version, rows and folder, before and after — a database kept between sessions) and
+`test_cancel_leaves.py` (a new version's run stopped in Phases 1–3, then cancelled: no row, no folder);
+`tests/unit/test_job_claims_pg.py` on a scratch PostgreSQL (`ANALYZER_TEST_PG_DSN`, skipped without).
+
+The API suite's conftest gives every test a scheduler without its thread (`_job_scheduler`; a submit
+starts its job at once when it may), removes jobs an earlier test left waiting (a later round would
+start them — a real `git clone`), joins the job threads a test started, and makes the threads take
+turns with the SQLite test database's one connection (`_Turn`, on `checkout` / `reset`;
+`pool_reset_on_return=None`: StaticPool sends one `checkin` for two connections out at once, and the
+pool's rollback could undo another thread's work). The root conftest puts `ANALYZER_JOB_ID` back after
+every test (`_run_job_stays_in_its_test`): `analyzer.main()` called in-process sets it, as its own
+process would, and the next tests' pause points and run records named a job of a database long gone.

@@ -1192,6 +1192,10 @@ anyway, beside the lane's job — both run; the next waiting job starts when bot
   marked interrupted once it has been silent for `jobs.interruptedAfterMinutes` (10).
 - **`--detach`** records the job first; the background run is that job.
 - **`--job-id`** is how the API hands a run its web job; it is not for typing.
+- **A web job's run can be paused** from the web app: it stops at its next safe point and exits 75,
+  `progress` says PAUSED, and the job's Resume carries it on -- the step it stopped in runs again, the
+  LLM answers already received come from the cache. A command-line run is not paused: stop it with
+  Ctrl+C and `resume` it.
 - A database from before job scheduling refuses the run until `python analyzer.py setup` has upgraded
   it. With no database configured there is no queue, and the run says what it lacks.
 
@@ -1217,6 +1221,7 @@ anyway, beside the lane's job — both run; the next waiting job starts when bot
 | `the run could not be recorded as a job of project P` | A database from before job scheduling: `python analyzer.py setup`, then run it again. |
 | `Refused: there is no project P in the database.` | `python analyzer.py onboard` it first. |
 | `progress` says `STOPPED -- the process is gone` | The run was cut short: `python analyzer.py resume ... --detach` (the line under it). |
+| exit code 75, `Paused at a safe point, as its job asked` | Its web job was paused: its Resume in the web app carries it on. Nothing is wrong. |
 | exit code 3, `N document plan(s) failed; the other components' documents were made` | Fix what the named component's log says, then `resume` — it makes only the failed ones. |
 | `has no model to re-export from` (from `reexport`) | Its Phase 2 did not finish: `resume` it first. |
 | `has no model yet: its Phase 2 did not finish` (from `export`) | `resume` the version first. |

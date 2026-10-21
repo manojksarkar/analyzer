@@ -1,10 +1,10 @@
 # Job scheduling — design
 
 How [JOB_SCHEDULING_SPEC](../spec/JOB_SCHEDULING_SPEC.md) is built; the HTTP contract is
-[JOB_SCHEDULING_API_SPEC](../spec/JOB_SCHEDULING_API_SPEC.md). Status 2026-10-21: agreed with the user
-([§20](#20-decisions-beyond-the-spec) confirmed); being built on `feat/job-scheduling` — the queue, the
-scheduler, the API and the command line built, pause next ([§8](#8-pause-and-resume)); the web screens
-are Manoj's ([§14](#14-web-app)). One server now; [§18](#18-two-servers-later) says what is left for two.
+[JOB_SCHEDULING_API_SPEC](../spec/JOB_SCHEDULING_API_SPEC.md). Status 2026-10-22: agreed with the user
+([§20](#20-decisions-beyond-the-spec) confirmed) and built on `feat/job-scheduling` — the queue, the
+scheduler, the API, the command line and pause; the web screens are Manoj's ([§14](#14-web-app)). One
+server now; [§18](#18-two-servers-later) says what is left for two.
 
 **Outline:** [1 Principles](#1-principles) · [2 Data](#2-data--migration-0019) ·
 [3 States](#3-a-jobs-states) · [4 Submitting](#4-submitting) · [5 Scheduler](#5-the-scheduler) ·
@@ -266,26 +266,34 @@ changes nothing). An update, a waiting job (remove it instead) or a CLI run is r
 
 **The run notices** — `engine/core/pause.py`:
 
-- `requested()` — the run's job's `pause_requested_at`, read at most every 15 s per process; False
-  without a job id or a database. The job id comes from `--job-id`, or from the CLI's own record
-  ([§11](#11-the-cli)), through `core.run_context` to every process the run starts.
+- `requested()` — the run's job's `pause_requested_at` while it runs, read at most every 15 s per
+  process (`ASK_EVERY`), and once asked, asked for the rest of the process; False without a job id or a
+  database, and when the database cannot answer. The job id is `ANALYZER_JOB_ID`, which every process
+  of the run inherits: `analyzer.py` sets it from `--job-id` or its own record ([§11](#11-the-cli)), as
+  the API already set it for a run's metrics.
 - `check(where)` — a **pause point**, on the main thread only (a `SystemExit` raised in a worker thread
   does not stop the process): when requested, raise `PauseRequested`, a `BaseException`, so the
   pipeline's `except Exception` blocks let it through.
-- `exits_paused` — on each step script's entry: catches `PauseRequested` and exits **75**
-  (`EXIT_PAUSED`). The LLM pool cancels the calls not started (`llm_core.parallel.executor`, as today);
-  the process's exit waits for the calls already in flight, then runs its exit hooks — checked on
-  Python 3.12: 3 calls in flight and 7 queued, the 7 cancelled, the 3 finished, all 3 answers saved.
-- **Every cache saves its buffer when the process exits** — `EntityCache` registers its `flush` with
-  `atexit` when it is made, as the aux-descriptions cache already does; one change for the three caches
-  (descriptions, aux descriptions, flowchart labels). A pause or a Ctrl+C then keeps every answer
-  received; a crash or a kill loses what came since the last save (writes are buffered up to 60 s or
-  1,000 rows), which resume asks again. No write per answer: resume redoes work anyway (below).
+- `exits_paused` — on each step script's entry (`parser.py`, `model_deriver.py`, `run_views.py`,
+  `docx_exporter.py`, `swe4_exporter.py`, the flowchart engine): catches `PauseRequested` and exits
+  **75** (`EXIT_PAUSED`) — before the phase lands its model, so a phase cut short saves nothing of its
+  own. The LLM pool cancels the calls not started (`llm_core.parallel.executor`, as today); the
+  process's exit waits for the calls already in flight, then runs its exit hooks — checked on Python
+  3.12: 3 calls in flight and 7 queued, the 7 cancelled, the 3 finished, all 3 answers saved.
+- **Every cache saves its buffer when the process exits** — an `EntityCache` backed by the database
+  registers its `flush` with `atexit` (`_flush_at_exit`, by weak reference); one change for the three
+  caches (descriptions, aux descriptions — whose own hook went — flowchart labels). A pause or a Ctrl+C
+  then keeps every answer received; a crash or a kill loses what came since the last save (writes are
+  buffered up to 60 s or 1,000 rows), which resume asks again. No write per answer: resume redoes work
+  anyway (below).
 
-**Pause points**: between phases (`PhaseRunner`); between components (`run.py`'s plan loop); between the
-incremental engine's steps; per translation unit in the parse; before each item or round in
-`map_in_order`, `_run_in_rounds`, the behaviour-names loop, the flowchart label loop — and every other loop
-that asks the LLM about many items. A missed one only makes the pause wait for the next.
+**Pause points**: between phases (`PhaseRunner`); between components (`run.py`'s plan loop); per
+translation unit in both passes of the parse; before each item or round in `map_in_order` (the unit and
+struct descriptions, the global descriptions), `_run_in_rounds` (the function descriptions), the
+behaviour-names loop, the behaviour diagrams' loop, and the flowchart label loop — sequential or
+parallel, checked on the main thread before each result. The flowchart engine is a child of the views
+phase: its exit 75 pauses that phase too (`views/flowcharts.py`). The incremental engine's steps are
+`run.py` runs, so they pause at those points. A missed one only makes the pause wait for the next.
 
 **Exit 75 travels up** — each place that reads a run's exit code learns it:
 
@@ -294,12 +302,13 @@ that asks the LLM about many items. A missed one only makes the pause wait for t
 | step script | — | flushes, exits 75 |
 | `PhaseRunner.run` | `SystemExit(rc)` | unchanged |
 | `run.py` `_component_states` | non-zero → components `failed`, the run goes on with the others | the components back to `waiting`; re-raised: the run stops |
-| `incremental/engine.py`, `generate.py` | `rc not in (0, 3)` → `AnalyzerRunFailed(rc)` | unchanged |
+| flowchart engine, under `views/flowcharts.py` | non-zero → the view logs it, the phase goes on | 75 → `PauseRequested`: the views phase exits 75 |
+| `incremental/engine.py`, `generate.py` | `rc not in (0, 3)` → a `failed` manifest, `AnalyzerRunFailed(rc)` | 75 → `AnalyzerRunFailed(75)`, no manifest: the version stays where it stopped, not `failed` |
 | `analyzer.py` `_generate`, `_render_version`, `_resume` | 2, 3 handled, others raise | 75 → "Paused at a safe point", return 75 |
 | `version_run.writing()` | outcome `complete` \| `failed` | 75 → `paused` |
 | `_main_recording_exit` | writes the code to exit.json | unchanged |
-| API `_follow_detached` | `rc in (0, 3)` ok, else failed | 75 → `paused`, `paused_at = now`, version kept |
-| `incremental/staged.py` `resume_plan` | `outcome == "running"` is busy | `paused` is not running |
+| API `_follow_detached`, `_execute_subprocess` | `rc in (0, 3)` ok, else failed | 75 → `paused`, `paused_at = now`, version kept (`_record_paused`) |
+| `incremental/staged.py` | `resume_plan`'s "busy" is the writer lock, not the outcome | unchanged; `progress` says PAUSED |
 
 **Resume redoes the step it stopped in, not the exact item** (the user, 2026-10-19) — `resume_plan`
 already decides which: paused in the parse → the parse again; in Phase 2 → Phase 2 again from the
@@ -320,8 +329,12 @@ and goes on to 500. Nothing is left out, for two reasons:
   The fast Word-file update already writes each text and retires its entry together (`rewrite._Writer`).
 
 **Resume** — `POST …/jobs/{j}/resume` (today's route, new meaning): `resume_requested_at`; the scheduler
-claims it first when the cap has room ([§5](#5-the-scheduler)) and runs `_run_resume` with this job;
-`paused_seconds` grows by the pause. **Paused too long** — `jobs.pausedDays` (7) after `paused_at`:
+claims it first when the cap has room ([§5](#5-the-scheduler)), clearing the request, and runs
+`_run_resume` with this job — `analyzer.py resume --job-id J`, which runs a recorded `generate` again
+inside the same job; `paused_seconds` grows by the pause. A `--no-llm` version resumed (or re-exported)
+from Phase 3 keeps the LLM off (`--no-llm-summarize`): before, a machine with no LLM server refused it.
+`tests/e2e/test_pause_resume.py` pauses a real run once Phase 2 has begun, resumes it, and finds its
+views those of a run never paused. **Paused too long** — `jobs.pausedDays` (7) after `paused_at`:
 cancelled ([§9](#9-cancel-and-remove)), told; the pause notice names that date. A server that wants
 longer sets `jobs.pausedDays` (15, say).
 
@@ -350,6 +363,9 @@ table deletes its rows with the version (`ON DELETE CASCADE`; `PER_VERSION_TABLE
 | Phase 2 (model), at 80% | the parse | the version is deleted, its parse with it |
 | Phase 3 (views), at 80% | the parse, the model, the finished components' views | the version is deleted, all of it with it |
 | Phase 4 (Word files), at 80% | the same, and Word files on disk | the version is deleted, and its folder |
+
+Shown end to end by `tests/e2e/test_cancel_leaves.py`: a real run stopped in each of Phases 1–3, then
+cancelled, leaves no row of its version in any table and no folder.
 
 An export or an update of an existing version is not deleted: Word files are swapped in whole
 (`docx_common.save_docx`), and what the job had not finished stays out of date or not generated, so the
@@ -541,7 +557,7 @@ screens need, for him — from the routes of [§13](#13-api), whose contract is
 | `api/services/job_queue.py` (new) | `enqueue`, `requeue`, positions, estimates, messages, held actions, limits, cancel and remove, interrupt, the alive signal (`Heartbeat`), a CLI run's record and end, the views, the version delete guard |
 | `api/services/job_scheduler.py` (new) | the loop, claims, sweeps, retention, `kick` |
 | `engine/core/job_lanes.py` (new) | the lanes, the CLI's rule, the queue lock and the counts a claim and a CLI record share |
-| `engine/core/pause.py` (new) | `requested`, `check`, `on_stop`, `exits_paused`, `EXIT_PAUSED` |
+| `engine/core/pause.py` (new) | `requested`, `check`, `exits_paused`, `EXIT_PAUSED`, `PauseRequested` |
 | `api/services/pipeline_runner.py` | starts → `enqueue`; `launch_job` from the scheduler; no semaphore; `--job-id`; states via `transition`; exit 75; interrupted; start-up; the commit and config checks at submit; a deleted version's folder deleted |
 | `api/main.py` | start-up order of [§10](#10-restart-and-held-jobs); the scheduler instead of `_watch_jobs` |
 | `api/routes/jobs.py`, `api/routes/version_components.py`, `api/routes/queues.py` (new) | [§13](#13-api) |
@@ -552,7 +568,9 @@ screens need, for him — from the routes of [§13](#13-api), whose contract is
 | `api/services/word_files.py` | the update's answer: its place and message |
 | `engine/core/config.py`, `engine/config/config.local.json.example` | `jobs` block, `jobs_settings()` |
 | `engine/core/version_run.py` | outcome `paused` |
+| `engine/core/db.py` | the SQLite foreign-key hook runs on SQLite connections alone: on a PostgreSQL one its failed `PRAGMA` left the transaction aborted |
 | `tests/api/conftest.py` | every API test has a scheduler without its thread, no job left waiting by an earlier test, its job threads ended with it; the SQLite test database's one connection taken in turns |
+| `tests/conftest.py` | `ANALYZER_JOB_ID` put back after every test: `analyzer.main()` called in-process sets it, and the next tests' pause points read it |
 | `engine/llm_core/cache.py` | every cache saves its buffer at process exit (`atexit`) |
 | `engine/model_deriver.py`, `engine/core/model_repo.py` | regeneration-queue entries retired in the model's transaction ([§8](#8-pause-and-resume)) |
 | `engine/run.py`, `engine/incremental/store.py` | each component stored when it is finished ([§9](#9-cancel-and-remove)) |
@@ -578,14 +596,13 @@ comes then.
 | `tests/api/test_job_state_writes.py` | compare-and-set: a progress write after a cancel leaves it cancelled; `update()` never writes the state ([§1](#1-principles)) |
 | `tests/unit/test_job_state_writers.py` | no code outside the job repository sets a job's status; the check would notice a new one ([§1](#1-principles)) |
 | `tests/unit/test_job_lanes.py` | the CLI's rule, the counts on the schema's table, the API's statuses the same as the lanes' |
-| `tests/unit/test_llm_description_cache.py`, `test_aux_desc_cache.py`, `test_flowchart_label_cache.py` | every cache saves its buffer when the process exits on a pause or a Ctrl+C |
+| `tests/unit/test_pause.py` (the cache's exit hook too) | the request, read and cached; `PauseRequested` past `except Exception`, not raised on a worker thread; the step entry exits 75; the LLM loops drop the items not started; 75 through `PhaseRunner`, the run record (`paused`) and the CLI; every cache saves its buffer at exit — REQ-JS-22, 23 |
 | `tests/unit/test_review_queue_consumers.py` | a stop between Phase 2's rewrite and its model save leaves the queue entries in place |
-| `tests/unit/test_cancel_leaves.py` (new) | a new version cancelled in each phase: no row of it in any per-version table, its folder gone, the LLM cache kept; an export cancelled half way: the finished components stored whole, the rest not generated — REQ-JS-25 |
-| `tests/unit/test_pause.py` | `PauseRequested` past `except Exception`; the executor waits for calls in flight; hooks flush; 75 through `run.py` puts components back to waiting; outcome `paused` — REQ-JS-22, 23 |
+| `tests/e2e/test_cancel_leaves.py` | a new version's real run stopped in Phase 1, 2 or 3 — its whole process tree, as a cancel stops it — then cancelled: no row of it in any table, no folder, though the parse, the model and some views had been saved — REQ-JS-25. An export cancelled half way keeps its finished components whole (`tests/unit/test_staged_generation.py`, `store_finished`) |
 | `tests/unit/test_cli_job_gate.py` | the three refusals, `--ignore-queue`, the record, `--job-id` attaches, `resume` drops a recorded one — REQ-JS-27–29 |
 | `tests/api/test_queue_routes.py` | every route of [§13](#13-api), the permissions table, cancel vs remove, the commit and config checks at submit, the version delete guard — REQ-JS-07, 25, 26, 30, 31, 33 |
-| `tests/e2e/test_pause_resume.py` | pause during descriptions (fake LLM), resume: the same Word files as a run not paused; the only extra LLM calls are for answers not saved — REQ-JS-22, 23 |
-| `tests/live/test_job_claims_pg.py` (throwaway PostgreSQL) | two claimers at once start one job; the unique index; the queue lock; heartbeat and interrupted; restart holds — REQ-JS-14, 15, 18, 19 |
+| `tests/e2e/test_pause_resume.py` | a real run (`--no-llm`) paused once Phase 2 has begun exits 75, recorded `paused`, its version not failed, its web job left to the API; resumed as the same job, it completes, its views those of a run never paused; it deletes its version, rows and folder, before and after — REQ-JS-22, 23 |
+| `tests/unit/test_job_claims_pg.py` (a scratch PostgreSQL, `ANALYZER_TEST_PG_DSN`) | claims at once start one job; a lane's waiting jobs claimed at once start one; the cap under claims at once; CLI records at once in a free lane start one; the unique index; a silent job whose version is being written is not interrupted — REQ-JS-05, 14, 15, 20, 28 |
 
 Tests that expected the old 409s (`JOB_ALREADY_RUNNING`, `REEXPORT_RUNNING`, `VERSION_BUSY`,
 `EXPORT_RUNNING`, `RUN_ACTIVE`) now expect the new answers; tests that expected a dead run to end
