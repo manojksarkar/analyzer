@@ -54,6 +54,22 @@ _FLUSH_CHUNK = 1000
 _FLUSH_SECONDS = 60.0
 
 
+def _flush_at_exit(cache: "EntityCache") -> None:
+    """Save `cache`'s buffer when the process exits -- the end of a phase, a pause, a Ctrl+C
+    (JOB_SCHEDULING_DESIGN §8): every answer received is kept, and the resume finds it. The
+    calls still in flight finish first (the thread pools are joined before exit hooks run). By
+    weak reference: a cache dropped before the exit is not kept alive for it."""
+    import atexit
+    import weakref
+    ref = weakref.ref(cache)
+
+    def flush() -> None:
+        c = ref()
+        if c is not None:
+            c.flush()
+    atexit.register(flush)
+
+
 class EntityCache:
     """Per-entity LLM cache with composite hash keys, stored in the database."""
 
@@ -225,6 +241,7 @@ class EntityCache:
                                 t.c.cache_version == self._version))).fetchall()
             self._loaded = {(r.entity_id, r.content_hash): r.value for r in rows}
             self._enabled = True
+            _flush_at_exit(self)
             logger.info("LLM cache: %d entr(y/ies) loaded for %s/%s v%d",
                         len(self._loaded), self._project, self._namespace, self._version)
         except Exception as exc:                            # unreachable DB, table not migrated

@@ -26,7 +26,7 @@ import time
 from dataclasses import dataclass, field
 from typing import List, Sequence
 
-from . import run_metrics
+from . import pause, run_metrics
 from .db import set_pipeline_status
 from .logging_setup import get_logger
 from .paths import paths
@@ -126,6 +126,10 @@ class PhaseRunner:
             if idx < from_phase:
                 _log.info(f"[{idx}/{len(phases)}] {phase.name} — skipped (--from-phase {from_phase})")
                 continue
+            # A pause point (JOB_SCHEDULING_DESIGN §8): the run's job asked to pause.
+            if pause.requested():
+                _log.info(f"[{idx}/{len(phases)}] paused at a safe point, before {phase.name}")
+                raise SystemExit(pause.EXIT_PAUSED)
             _log.info(f"[{idx}/{len(phases)}] === {phase.name} ===")
             # Live progress on the version row (doc 09, C1). No-op without a version id
             # or a database, so CLI runs and the DB-less gate are unaffected.
@@ -152,6 +156,11 @@ class PhaseRunner:
                 peak_rss_mb=peak_rss_mb,
                 script=phase.script,
             )
+            if returncode == pause.EXIT_PAUSED:
+                # Stopped at a safe point inside the phase, which saved nothing of its own:
+                # `analyzer.py resume` runs it again.
+                _log.info(f"[{idx}/{len(phases)}] {phase.name} paused at a safe point")
+                raise SystemExit(pause.EXIT_PAUSED)
             if returncode != 0:
                 log_stderr_tail(phase.name, stderr_tail, logger=_log)
                 _log.error(

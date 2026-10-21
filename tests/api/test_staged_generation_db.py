@@ -717,6 +717,25 @@ class TestFollowingABackgroundRun:
         assert sql_db.jobs.get(job.id).status == "interrupted"
         assert sql_db.versions.get(draft.id) is None                 # as a failed run always did
 
+    def test_a_run_that_paused_pauses_its_job_which_keeps_its_place_and_version(
+            self, sql_db, version, tmp_path, fast_follow):
+        """Exit 75: stopped at a safe point as its job asked (JOB_SCHEDULING_DESIGN §8) -- not
+        a failure. The job holds its lane, says when it is cancelled unless resumed, and is
+        told."""
+        pr = fast_follow
+        job = _bg_job(sql_db, version, completed_at=None, error_message=None)
+        assert sql_db.jobs.transition(job.id, ("running",), "running",
+                                      pause_requested_at=datetime.datetime.now(
+                                          datetime.timezone.utc))
+        pr._init_state(job.id)
+        _, run = _fake_run(tmp_path, "75", "paused at a safe point: descriptions")
+        assert not pr._follow_detached(sql_db, job.id, run, phase_start=1)
+        got = sql_db.jobs.get(job.id)
+        assert (got.status, got.completed_at, got.error_message) == ("paused", None, None)
+        assert got.paused_at is not None and got.current_activity.startswith("Paused")
+        assert "unless resumed" in got.current_activity
+        assert sql_db.versions.get(version.id) is not None
+
     def test_a_failed_run_says_why_and_keeps_its_work(self, sql_db, version, tmp_path,
                                                       fast_follow):
         pr = fast_follow

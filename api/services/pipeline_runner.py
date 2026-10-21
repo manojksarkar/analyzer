@@ -2077,6 +2077,10 @@ def _execute_subprocess(
     if rc == 3 and partial_ok:
         _append_log(job_id, "Some components' documents failed (see above); the others were "
                             "made. Their state is on the Documents page's Components panel.")
+    elif rc == EXIT_PAUSED:
+        _append_log(job_id, "Paused at a safe point; resume carries it on.")
+        _record_paused(db, job_id)
+        return False
     elif rc != 0:
         tail = "\n".join(recent_lines[-20:])
         _append_log(job_id, f"Job failed with code {rc}")

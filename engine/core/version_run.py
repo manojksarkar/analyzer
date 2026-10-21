@@ -134,7 +134,8 @@ class _Run:
         self.outcome: Optional[str] = None
 
     def ok(self, rc: int = 0) -> int:
-        self.outcome = "complete" if not rc else "failed"
+        from .pause import EXIT_PAUSED
+        self.outcome = "complete" if not rc else ("paused" if rc == EXIT_PAUSED else "failed")
         return rc
 
 
@@ -162,7 +163,9 @@ def writing(version_id: str, *, command: str, argv: Optional[list] = None,
         if run.outcome is None:
             run.outcome = "complete"
     except SystemExit as exc:
-        run.outcome = "complete" if exc.code in (None, 0) else "failed"
+        from .pause import EXIT_PAUSED
+        run.outcome = ("complete" if exc.code in (None, 0) else
+                       "paused" if exc.code == EXIT_PAUSED else "failed")
         raise
     except BaseException:
         run.outcome = "failed"

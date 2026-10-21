@@ -247,6 +247,9 @@ def progress_lines(*, version: Any, pipeline_status: Optional[str], run: Optiona
         elif run.get("outcome") == "running":
             out.append("state     running, as last recorded (this database cannot tell whether "
                        "the process is alive)")
+        elif run.get("outcome") == "paused":
+            out.append(f"state     PAUSED at a safe point, {ago(run.get('finished_at'), now)} -- "
+                       f"its job's Resume in the web app carries it on")
         else:
             out.append(f"state     {run.get('outcome') or '?'}, {ago(run.get('finished_at'), now)}")
         if run.get("log_path"):

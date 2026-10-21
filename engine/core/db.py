@@ -300,17 +300,24 @@ def _enforce_sqlite_foreign_keys() -> None:
     global _FK_PRAGMA_INSTALLED
     if _FK_PRAGMA_INSTALLED:
         return
+    import sqlite3
     from sqlalchemy import event
     from sqlalchemy.engine import Engine
 
     @event.listens_for(Engine, "connect")
     def _fk_on(dbapi_conn, _rec):
+        # SQLite's connections alone. Every engine of the process hears this, and on a
+        # PostgreSQL connection the PRAGMA failed -- swallowed here, but its transaction stayed
+        # aborted, so the connection's next statement, the dialect's own first query, failed
+        # ("current transaction is aborted") in any process that had made a SQLite engine first.
+        if not isinstance(dbapi_conn, sqlite3.Connection):
+            return
         try:
             cur = dbapi_conn.cursor()
             cur.execute("PRAGMA foreign_keys=ON")
             cur.close()
         except Exception:
-            pass                      # not SQLite, or a driver that has no cursor() here
+            pass                      # a driver that has no cursor() here
     _FK_PRAGMA_INSTALLED = True
 
 

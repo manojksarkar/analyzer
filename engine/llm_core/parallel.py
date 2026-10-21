@@ -44,10 +44,21 @@ def executor(workers: int, name: str) -> Iterator[ThreadPoolExecutor]:
 
 def map_in_order(fn: Callable[[T], R], items: Iterable[T], workers: int, name: str = "llm") -> List[R]:
     """`[fn(x) for x in items]` with up to `workers` running at once. An exception is raised when
-    its item's turn comes, as the sequential loop would have raised it."""
+    its item's turn comes, as the sequential loop would have raised it. A pause point before each
+    item (core.pause, JOB_SCHEDULING_DESIGN §8): asked to pause, the items not started are dropped
+    and the calls in flight finish -- their answers are in the cache."""
+    from core.pause import check
     items = list(items)
     if workers <= 1 or len(items) <= 1:
-        return [fn(x) for x in items]
+        out = []
+        for x in items:
+            check(name)
+            out.append(fn(x))
+        return out
     with executor(workers, name) as pool:
         futures = [pool.submit(contextvars.copy_context().run, fn, x) for x in items]
-        return [f.result() for f in futures]
+        out = []
+        for f in futures:
+            check(name)
+            out.append(f.result())
+        return out

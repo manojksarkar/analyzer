@@ -551,7 +551,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # A pause that reaches it exits 75, before the model is landed below: a phase cut short saves
+    # nothing of its own (JOB_SCHEDULING_DESIGN §8).
+    from core.pause import exits_paused
+    exits_paused(main)()
     # DB mode: land this phase's buffered model writes (doc 10, step 3). Database writes are
     # buffered so the pieces persist together in one transaction, so without this the phase
     # exits and the buffer is lost — the next phase then finds no model at all. Deliberately

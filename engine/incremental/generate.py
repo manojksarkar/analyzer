@@ -47,6 +47,7 @@ from incremental.clone import ensure_commit_checkout
 from incremental.project_db import get_project, resolve_project_repo
 from incremental.fingerprint import compute_fingerprints
 from incremental.edges import build_edges  # noqa: F401  (kept for symmetry / future use)
+from core.pause import EXIT_PAUSED
 
 
 class AnalyzerRunFailed(RuntimeError):
@@ -401,6 +402,10 @@ def generate_full(
     model_dir = _paths().model_dir
 
     def _fail_full(rc):
+        if rc == EXIT_PAUSED:
+            # Paused at a safe point: the version stays where it stopped, for the resume -- not
+            # closed as failed (JOB_SCHEDULING_DESIGN §8).
+            raise AnalyzerRunFailed("paused at a safe point", rc)
         m = _manifest(
             version_id, branch, actual_commit, scope, data_dict_id,
             decision="full", regenerated=0, reused=0, status="failed",

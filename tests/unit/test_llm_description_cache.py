@@ -222,11 +222,15 @@ class TestTheDiskCacheIsGone:
 
     def test_buffered_writes_are_flushed(self):
         """put() buffers; without a flush at the end of enrichment the run finishes having
-        paid for descriptions it never stored — the bill arrives again next run."""
+        paid for descriptions it never stored — the bill arrives again next run. The aux cache
+        has no end to flush at: every cache saves its buffer as the process exits, a pause's
+        exit too (`_flush_at_exit`; its behaviour in tests/unit/test_pause.py)."""
         with open(os.path.join(ROOT, "engine", "llm_enrichment.py"), encoding="utf-8") as fh:
             src = fh.read()
         assert src.count("entity_cache.flush()") >= 2, "pass 1 and pass 2 must both flush"
-        assert "atexit.register(_AUX_DESC_CACHE.flush)" in src
+        assert "_AUX_DESC_CACHE = EntityCache(" in src
+        with open(os.path.join(ROOT, "engine", "llm_core", "cache.py"), encoding="utf-8") as fh:
+            assert "_flush_at_exit(self)" in fh.read()
 
 
 class TestPkbDiskCacheIsGone:

@@ -1056,7 +1056,8 @@ def job_queue_fields(db: Any, job: Any, lane: Optional[Lane] = None,
            "submitted_at": _iso(place_of(job)), "origin": getattr(job, "origin", "web"),
            "runner": getattr(job, "runner", None),
            "heartbeat_at": _iso(getattr(job, "heartbeat_at", None)),
-           "pause_requested": bool(getattr(job, "pause_requested_at", None)),
+           "pause_requested": bool(getattr(job, "pause_requested_at", None))
+           and job.status == "running",
            "resume_requested": bool(getattr(job, "resume_requested_at", None)),
            "paused_at": _iso(getattr(job, "paused_at", None)),
            "position": None, "estimated_start": None, "flags": []}

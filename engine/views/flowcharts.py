@@ -1809,6 +1809,12 @@ def run(model, output_dir, model_dir, config):
             _end_rewrite(rewrite_dir, out_dir, stored_charts)
             return
 
+    from core.pause import EXIT_PAUSED, PauseRequested
+    if returncode == EXIT_PAUSED:
+        # The flowchart engine paused at a safe point: so does this phase (JOB_SCHEDULING_DESIGN
+        # §8). Its labels received are in the cache; the resume draws the charts again.
+        _end_rewrite(rewrite_dir, out_dir, stored_charts)
+        raise PauseRequested("flowcharts")
     if returncode != 0:
         log_stderr_tail("flowchart engine", stderr_tail)
         log(

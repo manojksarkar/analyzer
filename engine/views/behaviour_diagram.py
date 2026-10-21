@@ -144,7 +144,9 @@ def run(model, output_dir, model_dir, config):
 
     progress = ProgressReporter("behaviourDiagram", total=total, logger=get_logger("behaviourDiagram"))
     progress.start()
+    from core.pause import check
     for i, fid in enumerate(functions, 1):
+        check("behaviour diagrams")              # a pause point (JOB_SCHEDULING_DESIGN §8)
         progress.step()
 
         try:

@@ -852,8 +852,10 @@ def _process_all_parallel(by_file, workers, total_funcs, started, pkb, source_ex
     def run_chain(indexes):
         for i in indexes:
             errors[i] = label(jobs[i])
+    from core.pause import check
     with executor(workers, "labels") as pool:
         for fut in [pool.submit(contextvars.copy_context().run, run_chain, ix) for ix in chains.values()]:
+            check("flowchart labels")            # a pause point (JOB_SCHEDULING_DESIGN §8)
             fut.result()
 
     file_results, ok, err = [], 0, 0
@@ -1033,6 +1035,11 @@ def _configure_libclang() -> None:
 # ---------------------------------------------------------------------------
 # Main orchestration
 # ---------------------------------------------------------------------------
+
+def _pause_check(where: str) -> None:
+    from core.pause import check
+    check(where)
+
 
 def run(config: EngineConfig) -> None:
     _configure_libclang()
@@ -1234,6 +1241,7 @@ def run(config: EngineConfig) -> None:
         fr = FileResult(source_file=source_file)
 
         for entry in entries:
+            _pause_check("flowchart labels")     # a pause point (JOB_SCHEDULING_DESIGN §8)
             processed += 1
             logger.info("[%d/%d] Processing: %s",
                         processed, total_funcs, entry.qualified_name)
@@ -1280,4 +1288,6 @@ def run(config: EngineConfig) -> None:
 
 if __name__ == "__main__":
     config = _parse_args()
-    run(config)
+    # A pause exits 75; every label received is in the cache, saved as the process exits.
+    from core.pause import exits_paused
+    exits_paused(run)(config)

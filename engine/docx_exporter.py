@@ -1364,4 +1364,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    from core.pause import exits_paused
+    exits_paused(main)()

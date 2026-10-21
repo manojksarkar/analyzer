@@ -136,5 +136,10 @@ class TestRunPyWrapsThePhases:
         src = open(os.path.join(PROJECT_ROOT, "engine", "run.py"), encoding="utf-8").read()
         guard = src.index("with finished_status_kept(from_phase >= 2):")
         loop = src.index("runner.run(plan.phases", guard)
-        between = src[guard:loop]
-        assert "for plan in plans:" in between and between.count("\n") <= 4
+        between = src[guard:loop].split("\n")
+        # The guard's first statement is the loop over the plans, and the call is still inside
+        # the guard's block: the loop's body may grow (a pause point between plans), the guard
+        # may not end before the call.
+        assert between[1].strip() == "for plan in plans:"
+        col = guard - (src.rfind("\n", 0, guard) + 1)
+        assert all(len(ln) - len(ln.lstrip()) > col for ln in between[1:] if ln.strip())

@@ -327,6 +327,11 @@ def _generate(a, name, branch, commit, scope, common, generate_full, generate_in
         if getattr(exc, "returncode", 1) == 2:
             print("\nStopped: see the error above.", file=sys.stderr)
             return 2
+        if getattr(exc, "returncode", 1) == _EXIT_PAUSED:
+            print("\nPaused at a safe point, as its job asked. The job's Resume in the web app "
+                  "carries it on: the step it stopped in runs again, the LLM answers already "
+                  "received come from the cache.", file=sys.stderr)
+            return _EXIT_PAUSED
         # 3: some components' documents failed; the others were made (run.py goes on).
         if getattr(exc, "returncode", 1) == 3:
             print(f"\nSome components failed (above); the others were made. Once the cause is "
@@ -718,9 +723,11 @@ def _render_version(a, *, scope, command: str, after=None, before=None):
     # would be skipped and --from-phase 2 would quietly do nothing but re-render.
     if a.from_phase >= 3:
         argv.append("--use-model")
-    # A re-derive of a `--no-llm` version stays without the LLM, as its generate did
-    # (`generate_full` passes the same flag): its own config.json has the LLM turned off.
-    elif own_cfg and _llm_off(cfg):
+    # A `--no-llm` version stays without the LLM, as its generate did (`generate_full` passes the
+    # same flag): its own config.json has the LLM turned off. From Phase 3 too -- without it run.py
+    # asked this machine for an LLM server such a version never uses, and refused to resume or
+    # re-export it where none is set.
+    if own_cfg and _llm_off(cfg):
         argv.append("--no-llm-summarize")
     if getattr(a, "to_phase", None):
         argv += ["--to-phase", str(a.to_phase)]      # resume of a `--model-only` run
@@ -775,6 +782,9 @@ def _render_version(a, *, scope, command: str, after=None, before=None):
             rc = _script(os.path.join(_ROOT, "engine", "run.py"), argv)
             # 3: some components failed and run.py went on with the others -- store and record
             # what they made, and report the failure.
+            if rc == _EXIT_PAUSED:
+                print("paused at a safe point, as its job asked: the components not made wait "
+                      "for its Resume", file=sys.stderr)
             if rc not in (0, 3):
                 return run.ok(rc), None
             if rebuilt is None:
@@ -2062,6 +2072,8 @@ def main(argv=None, *, queue: bool = True) -> int:
 # The run as a job (docs/design/JOB_SCHEDULING_DESIGN.md §11; JOB_SCHEDULING_SPEC REQ-JS-27..29)
 # ---------------------------------------------------------------------------
 _COMMAND_LANES = ("generate", "export", "resume", "reexport")
+#: A run that paused at a safe point (engine/core/pause.py).
+_EXIT_PAUSED = 75
 
 
 def _without_job_id(argv) -> list:

@@ -3233,7 +3233,9 @@ def main():
     every = max(1, total // 100)
     p1 = ProgressReporter("parser:parse", total=total, logger=plog, log_every=every)
     p1.start(f"parsing {total} files")
+    from core.pause import check as _pause_check
     for path, tu, err in _parse_ahead(source_files, "parse"):
+        _pause_check("parse")                    # a pause point (JOB_SCHEDULING_DESIGN §8)
         p1.step(label=_rel_path(path))
         parse_file(path, tu, err)
         del tu
@@ -3243,6 +3245,7 @@ def main():
     p2 = ProgressReporter("parser:calls+globals", total=total, logger=plog, log_every=every)
     p2.start(f"collecting calls + global access ({total} files)")
     for path, tu, err in _parse_ahead(source_files, "calls+globals"):
+        _pause_check("parse")
         p2.step(label=_rel_path(path))
         parse_calls_and_globals(path, tu, err)
         del tu
@@ -3421,7 +3424,9 @@ def main():
 
 if __name__ == "__main__":
     try:
-        main()
+        # A pause exits 75, before the model is landed below (JOB_SCHEDULING_DESIGN §8).
+        from core.pause import exits_paused
+        exits_paused(main)()
     except SystemExit:
         # Deliberate exits (the CRITICAL paths above) already logged their reason.
         raise

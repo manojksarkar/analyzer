@@ -48,6 +48,7 @@ from incremental.affected import affected_tus, full_reparse_reason
 from incremental.parse_merge import merge_model, diff_models
 from incremental.report import build_report, emit_report, emit_run_summary
 from core.config import layer_sources
+from core.pause import EXIT_PAUSED
 from incremental.generate import (AnalyzerRunFailed, _manifest, scope_to_args,
                                   per_component_docx_args,
                                   resolve_run_config, generate_full, _now_iso,
@@ -801,6 +802,10 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     _rmtree_force(_paths().output_dir)
 
     def _fail(stage: str, rc: int):
+        if rc == EXIT_PAUSED:
+            # Paused at a safe point: the version stays where it stopped, for the resume -- not
+            # closed as failed (JOB_SCHEDULING_DESIGN §8).
+            raise AnalyzerRunFailed(f"{stage} paused at a safe point", rc)
         m = _manifest(
             version_id, branch, target, scope, data_dict_id,
             decision="incremental", regenerated=0, reused=0, status="failed",

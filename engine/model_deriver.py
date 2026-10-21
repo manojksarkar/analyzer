@@ -1079,8 +1079,10 @@ def _enrich_behaviour_names_llm(
 
     from llm_core.parallel import llm_workers
     workers = llm_workers(config)
+    from core.pause import check
     if workers <= 1:
         for fid in order:
+            check("behaviour names")            # a pause point (JOB_SCHEDULING_DESIGN §8)
             _one(fid)
     else:
         # Each function's names come from its own source and the static model: the functions
@@ -1089,6 +1091,7 @@ def _enrich_behaviour_names_llm(
         from llm_core.parallel import executor
         with executor(workers, "llm-names") as pool:
             for fut in [pool.submit(contextvars.copy_context().run, _one, fid) for fid in order]:
+                check("behaviour names")
                 fut.result()
     progress.done()
     return answered
@@ -1695,7 +1698,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # A pause that reaches it exits 75, before the model is landed below: a phase cut short saves
+    # nothing of its own (JOB_SCHEDULING_DESIGN §8).
+    from core.pause import exits_paused
+    exits_paused(main)()
     # DB mode: land this phase's buffered model writes (doc 10, step 3). Database writes are
     # buffered so the pieces persist together in one transaction, so without this the phase
     # exits and the buffer is lost — the next phase then finds no model at all. Deliberately

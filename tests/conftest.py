@@ -28,6 +28,20 @@ from core import logging_setup as _logging_setup                  # noqa: E402
 
 _logging_setup.LIVE_LOG_ENABLED = False
 
+
+@pytest.fixture(autouse=True)
+def _run_job_stays_in_its_test():
+    """`analyzer.main()` names its run's job in os.environ (ANALYZER_JOB_ID) for the phases it
+    starts (docs/design/JOB_SCHEDULING_DESIGN.md §11). Called in-process by a test, the name
+    would outlive it: the next tests' pause points and run records would name a job of a
+    database long gone. Put back what was there."""
+    before = os.environ.get("ANALYZER_JOB_ID")
+    yield
+    if before is None:
+        os.environ.pop("ANALYZER_JOB_ID", None)
+    else:
+        os.environ["ANALYZER_JOB_ID"] = before
+
 # Stores pipeline failure message if it failed; None means success or skipped.
 _pipeline_failure = None
 

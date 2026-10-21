@@ -390,7 +390,7 @@ version_runs = Table(
     Column("log_path", String),
     _ts("started_at"),
     _ts("finished_at"),
-    Column("outcome", String),            # running | complete | failed
+    Column("outcome", String),            # running | complete | failed | paused
     Column("stage", String),              # the progress reporter's stage, e.g. LLM-description-pass1
     Column("done", Integer),
     Column("total", Integer),

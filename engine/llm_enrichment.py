@@ -509,15 +509,14 @@ def _aux_desc_cache(config: dict):
 def _aux_desc_cache_locked(config: dict):
     global _AUX_DESC_CACHE
     if _AUX_DESC_CACHE is None:
-        import atexit
         from core.run_context import project_id
         from llm_core.cache import EntityCache
         ver = int((config.get("llm") or {}).get("cacheVersion", 1))
-        _AUX_DESC_CACHE = EntityCache(project_id() or "", "aux_descriptions", cache_version=ver)
         # Writes are buffered, and export-time descriptions are generated from a dozen scattered
-        # call sites with no single "done" point to flush at. atexit is the honest boundary: the
-        # worst case is a lost cache entry, never lost output.
-        atexit.register(_AUX_DESC_CACHE.flush)
+        # call sites with no single "done" point to flush at: every EntityCache saves its buffer
+        # when the process exits (`llm_core.cache._flush_at_exit`). The worst case is a lost
+        # cache entry, never lost output.
+        _AUX_DESC_CACHE = EntityCache(project_id() or "", "aux_descriptions", cache_version=ver)
     return _AUX_DESC_CACHE
 
 
@@ -1154,6 +1153,7 @@ def _run_in_rounds(rounds, wanted, work, workers, chain=None):
     everything runs in order. Each thread carries this thread's context (the LLM stage the report
     counts its calls under)."""
     import contextvars
+    from core.pause import check
     from llm_core.parallel import executor
 
     def run_chain(ks):
@@ -1164,6 +1164,7 @@ def _run_in_rounds(rounds, wanted, work, workers, chain=None):
             keys = [k for k in keys if k in wanted]
             if cycle or len(keys) <= 1:
                 for k in keys:
+                    check("descriptions")        # a pause point (JOB_SCHEDULING_DESIGN §8)
                     work(k)
                 continue
             chains: Dict[str, list] = {}
@@ -1171,6 +1172,7 @@ def _run_in_rounds(rounds, wanted, work, workers, chain=None):
                 chains.setdefault(chain(k) if chain else k, []).append(k)
             futures = [pool.submit(contextvars.copy_context().run, run_chain, ks) for ks in chains.values()]
             for fut in futures:
+                check("descriptions")
                 fut.result()                     # an error stops the run, as it does today
 
 

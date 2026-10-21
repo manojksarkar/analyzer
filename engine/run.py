@@ -1027,6 +1027,7 @@ from contextlib import contextmanager as _contextmanager
 # EXIT_COMPONENTS_FAILED at the end, so the caller stores what succeeded and says what did not.
 EXIT_COMPONENTS_FAILED = 3
 _FAILED_PLANS: list = []
+from core.pause import EXIT_PAUSED as _EXIT_PAUSED, requested as _pause_requested
 
 
 @_contextmanager
@@ -1039,6 +1040,11 @@ def _component_states(_plan):
     try:
         yield
     except SystemExit as _exc:
+        if _exc.code == _EXIT_PAUSED:
+            # Paused at a safe point (JOB_SCHEDULING_DESIGN §8): not made, and not failed --
+            # the resume makes them. The run stops here.
+            _mark_components(_STATES_VID, _docs, "waiting")
+            raise
         _why = f"{_plan.label}: stopped with exit code {_exc.code} - see the run's log"
         _mark_components(_STATES_VID, _docs, "failed", error=_why)
         if not _docs or not _exc.code:
@@ -1221,6 +1227,11 @@ total_time = 0.0
 from core.db import finished_status_kept
 with finished_status_kept(from_phase >= 2):
     for plan in plans:
+        if _pause_requested():
+            # A pause point between plans: the next components are not started.
+            log(f"paused at a safe point, before {plan.label} -- `analyzer.py resume` carries "
+                f"it on", component="run")
+            sys.exit(_EXIT_PAUSED)
         log(plan.label, component="run")
         with _component_states(plan):
             total_time += runner.run(plan.phases, from_phase=plan.runner_from_phase)
