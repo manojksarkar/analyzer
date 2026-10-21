@@ -89,8 +89,7 @@ newer entry and the code win.
 - **Fast Word-file updates** (2026-10-07e, on develop): an update exports from the stored data and rewrites
   with the LLM only its components' texts whose prompt holds a corrected one (`engine/review/rewrite.py`); a
   label update 237 s → 13–22 s. [FAST_WORD_FILE_UPDATES.md](docs/design/FAST_WORD_FILE_UPDATES.md); HANDOVER §4.35–4.41.
-- **Job scheduling** (2026-10-21, branch `feat/job-scheduling`): design agreed, being built; web screens are Manoj's --
-  two lanes per project, limits, a server cap, pause and resume. [Spec](docs/spec/JOB_SCHEDULING_SPEC.md), [design](docs/design/JOB_SCHEDULING_DESIGN.md).
+- **Job scheduling** (2026-10-21b, branch `feat/job-scheduling`): queue, scheduler, API, CLI built; pause next; screens Manoj's -- [JOB_SCHEDULING.md](project-context/JOB_SCHEDULING.md).
 - **Accessibility** (2026-10-13, branch `feat/ui-accessibility`, not pushed): the mockups and the web app
   meet WCAG 2.2 AA in light and dark -- contrast, one focus ring, 11px minimum text, names, keyboard
   reach, landmarks. Rules: `ui-dev` skill §8; guard: `web-app/src/__tests__/accessibility.test.ts`.
@@ -208,7 +207,7 @@ The big shifts since most of §1–§24 were written. Each names its dated entry
 | change a CLI flag or the config | [CLI_AND_CONFIG.md](project-context/CLI_AND_CONFIG.md), [docs/CLI_COMMANDS.md](docs/CLI_COMMANDS.md) |
 | work on incremental runs, baselines, reuse, the narrowed parse | [INCREMENTAL.md](project-context/INCREMENTAL.md); skill `engine-flowchart` |
 | work on the database or storage | [docs/design/DB_SCHEMA.md](docs/design/DB_SCHEMA.md), [PRODUCTION_REDESIGN.md](project-context/PRODUCTION_REDESIGN.md), [docs/production-redesign/](docs/production-redesign/) 07–10 |
-| work on the API or the web app | [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md), [api/PROJECT_CONTEXT.md](api/PROJECT_CONTEXT.md), [web-app/PROJECT_CONTEXT.md](web-app/PROJECT_CONTEXT.md); skill `ui-dev` |
+| work on the API or the web app | [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md), [api/PROJECT_CONTEXT.md](api/PROJECT_CONTEXT.md), [web-app/PROJECT_CONTEXT.md](web-app/PROJECT_CONTEXT.md); skill `ui-dev`; jobs, their queue and the CLI's checks: [JOB_SCHEDULING.md](project-context/JOB_SCHEDULING.md) |
 | work on review & update | [docs/design/REVIEW_UPDATE_HANDOVER.md](docs/design/REVIEW_UPDATE_HANDOVER.md); skill `engine-dev` §8; the history 2026-09-16 → 2026-09-29 |
 | debug a failure that "cannot happen" | [RISKS_DECISIONS_LESSONS.md](project-context/RISKS_DECISIONS_LESSONS.md) — known risks, decisions, past mistakes |
 | find out why something is the way it is | the [history](#history) — search the date or a keyword |
@@ -225,6 +224,7 @@ The big shifts since most of §1–§24 were written. Each names its dated entry
 | [INCREMENTAL.md](project-context/INCREMENTAL.md) | §23 version4 — Incremental Changes feature (this session, 2026-06-18) |
 | [PRODUCTION_REDESIGN.md](project-context/PRODUCTION_REDESIGN.md) | §22 Production Redesign (POC → Production) — design decisions |
 | [API_AND_FRONTEND.md](project-context/API_AND_FRONTEND.md) | §19 API Server (`api/`) · §21 Companion: the older FastAPI backend (SUPERSEDED) · §24 Frontend — `frontend/designs/` |
+| [JOB_SCHEDULING.md](project-context/JOB_SCHEDULING.md) | Job scheduling — the two lanes, the queue, the scheduler, the command line's checks: where each part lives, its invariants, its tests |
 | [RISKS_DECISIONS_LESSONS.md](project-context/RISKS_DECISIONS_LESSONS.md) | §16 Known risks / technical debt · §17 Key design decisions · §18 Past mistakes / lessons learned |
 | [BRANCH_HISTORY.md](project-context/BRANCH_HISTORY.md) | §4 Refactor history (`version2` branch) · §4b LLM layer upgrade (`version3` branch) · §4c Test-framework branch (`feat/test-framework`) · §4d feat/from-main changes · §4e feat/auto-clang-includes changes · §4f Component-level DOCX export + space normalization |
 

@@ -109,6 +109,12 @@ The running update is looked for **before** the writer: an update holds the vers
 `REEXPORT_RUNNING` says which one it is where `VERSION_BUSY` could not. The older
 `POST /projects/{project_id}/jobs/{job_id}/reexport` stays: admin, `scope: "all"`.
 
+**Since job scheduling (2026-10-21b)** neither 409 above is an answer any more: an update another update
+covers joins it (`already_queued` when that one waits); any other waits its turn in the project's update
+lane, behind another update or until a job writing its version lets go, and its answer says where
+(`position`, `estimated_start`, `message`) — [JOB_SCHEDULING_API_SPEC](../spec/JOB_SCHEDULING_API_SPEC.md)
+Q4. A submit's `blocked_by` is then only for a refusal such as `LANE_FULL`.
+
 **The job** (`GET …/jobs/{job_id}`, snake_case) gains `started_by` (`{"user_id", "name", "initials"}` or
 `null`) and `reason`: `update` (scope `out_of_date`), `rebuild` (scope `all`), `submit` (started by A5),
 `export`, `resume`, or `null` (a generation). `mode` is `reexport` for an update, as before.

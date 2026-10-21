@@ -1,7 +1,9 @@
 # Job scheduling — design
 
-How [JOB_SCHEDULING_SPEC](../spec/JOB_SCHEDULING_SPEC.md) is built. Status 2026-10-21: agreed with the
-user ([§20](#20-decisions-beyond-the-spec) confirmed); being built on `feat/job-scheduling`; the web screens
+How [JOB_SCHEDULING_SPEC](../spec/JOB_SCHEDULING_SPEC.md) is built; the HTTP contract is
+[JOB_SCHEDULING_API_SPEC](../spec/JOB_SCHEDULING_API_SPEC.md). Status 2026-10-21: agreed with the user
+([§20](#20-decisions-beyond-the-spec) confirmed); being built on `feat/job-scheduling` — the queue, the
+scheduler, the API and the command line built, pause next ([§8](#8-pause-and-resume)); the web screens
 are Manoj's ([§14](#14-web-app)). One server now; [§18](#18-two-servers-later) says what is left for two.
 
 **Outline:** [1 Principles](#1-principles) · [2 Data](#2-data--migration-0019) ·
@@ -31,12 +33,13 @@ are Manoj's ([§14](#14-web-app)). One server now; [§18](#18-two-servers-later)
   and the version, then moves the job to `running`; a partial unique index refuses a second running job
   in a lane even if the code is wrong (REQ-JS-15).
 - **A state changes only by compare-and-set; progress never touches it.** A status change is
-  `UPDATE … SET status = :to WHERE id = :j AND status IN (:from)`, through `job_queue.transition()`,
-  which says whether it applied. A progress write sets only its own columns, and only while the job
-  runs: `… WHERE id = :j AND status = 'running'`. Today the job's thread rewrites the whole row for almost
-  every log line (`_update_activity`), from a copy read a moment before, so a cancel made in between is
-  undone — and with scheduling, a pause request or a priority would be too. A test fails when code
-  outside the job repository sets a job's status, as `test_output_row_writers.py` guards its table.
+  `UPDATE … SET status = :to WHERE id = :j AND status IN (:from)`, through `db.jobs.transition()`,
+  which says whether it applied — and answers "not changed" when the change would put a second job in
+  a lane (the unique index). `db.jobs.update()` writes a job's progress, never its state
+  (`JOB_STATE_FIELDS`), and nothing to a job that has closed. Before, the job's thread rewrote the
+  whole row for almost every log line (`_update_activity`), from a copy read a moment before, so a
+  cancel made in between was undone. `tests/unit/test_job_state_writers.py` fails when code outside
+  the job repository sets a job's status, as `test_output_row_writers.py` guards its table.
 - **The run speaks for itself.** It sends its alive signal, notices a pause request, and says how it
   ended by its exit code — so it does not depend on the API being up (REQ-JS-19).
 - **Reuse what is there.** The version writer lock (`core/version_run.py`), background runs
@@ -65,24 +68,28 @@ are Manoj's ([§14](#14-web-app)). One server now; [§18](#18-two-servers-later)
 | `request_key` | text | the submit's idempotency key (REQ-JS-09) |
 
 - `started_at` now means when it **started running** (NULL while waiting). Readers that mean "newest"
-  (`get_current`, `list_for_version`) order by `submitted_at`.
+  (`get_current`, `list_for_version`) order by `submitted_at`, else `started_at`.
 - Statuses: `held`, `queued` (waiting), `running`, `paused`, `complete`, `failed`, `interrupted`,
-  `cancelled`, `removed`. The first four are the lane's; `ACTIVE_JOB_STATUSES` gains `held`.
-- Dropped: `pause_after_phase1` (the spec's [What changes](../spec/JOB_SCHEDULING_SPEC.md#what-changes-from-today);
-  the request field is ignored).
+  `cancelled`, `removed`. The first four are the lane's — written once, in `engine/core/job_lanes.py`,
+  and the same tuples in `api/models/domain.py` (`tests/unit/test_job_lanes.py` checks they agree).
+- `pause_after_phase1` stays, unused: the request field is ignored (the spec's
+  [What changes](../spec/JOB_SCHEDULING_SPEC.md#what-changes-from-today)).
 - Indexes: `ux_jobs_lane_active` UNIQUE (`project_id`, `lane`) WHERE `status IN ('running','paused')
   AND NOT forced`; `ix_jobs_waiting` (`status`, `lane`, `submitted_at`); `ux_jobs_request` UNIQUE
   (`project_id`, `request_key`) WHERE `request_key IS NOT NULL`.
+- The migration's `backfill` sets `lane` and `submitted_at` on existing rows and, before the unique
+  index is made, interrupts all but the newest of any lane's two running jobs; `analyzer.py setup`
+  calls it and `create_indexes` too, as `create_all` adds no index to an existing table.
 
 **`projects` — new columns:** `generation_limit` integer not null default 3, `update_limit` integer not
 null default 10 (REQ-JS-04).
 
-**`job_events` — new table** (REQ-JS-33, the measures of REQ-JS-34): `id` bigserial, `job_id` (NULL for
-a limit change or a held-queue action), `project_id` → projects ON DELETE CASCADE, `kind`, `actor_id`
-(NULL: the system), `at`, `detail` JSONB. Kinds: `submitted`, `started`, `pause_requested`, `paused`,
-`resume_requested`, `resumed`, `cancelled`, `removed`, `interrupted`, `failed`, `completed`,
-`priority_changed`, `limits_changed`, `held`, `released`, `auto_cancelled`. Indexes (`project_id`,
-`at`), (`job_id`).
+**`job_events` — new table** (REQ-JS-33, the measures of REQ-JS-34): `id` text (`jev…`), `job_id` (NULL
+for a limit change or a held-queue action), `project_id` → projects ON DELETE CASCADE, `kind`,
+`actor_id` (NULL: the system), `at`, `detail` JSONB. Kinds: `submitted`, `started`, `pause_requested`,
+`paused`, `resume_requested`, `resumed`, `cancelled`, `removed`, `interrupted`, `failed`, `completed`,
+`priority_changed`, `limits_changed`, `held`, `released` — a cancel after `jobs.pausedDays` is a
+`cancelled`, its message says why. Indexes (`project_id`, `at`), (`job_id`).
 
 `version_runs.outcome` gains `paused`.
 
@@ -117,20 +124,26 @@ a limit change or a held-queue action), `project_id` → projects ON DELETE CASC
 | `running` → `interrupted` | silent too long, or its process gone ([§7](#7-alive-signal-and-interrupted)) | the scheduler; the job's thread |
 
 "Pausing…" and "Resuming — waits for a server slot" are `running` + `pause_requested_at` and `paused`
-+ `resume_requested_at`, not states of their own. Every change goes through `job_queue.transition()`
-and writes a `job_events` row.
++ `resume_requested_at`, not states of their own. Every change goes through `db.jobs.transition()`
+and writes a `job_events` row. A run that ends after all, its job taken for dead while it was silent,
+moves it from `interrupted` to how it really ended (`_complete`, `_complete_reexport`,
+`job_queue.end_cli_run`).
 
 ## 4. Submitting
 
-`api/services/job_queue.py` `submit()` — one path for the four starts: `POST …/jobs` (generation),
+`api/services/job_queue.py` `enqueue()` — one path for the four starts: `POST …/jobs` (generation),
 `…/versions/{v}/documents/generate` (export), `…/versions/{v}/resume`, `…/versions/{v}/reexport`
-(update). Today's `start()`, `start_export()`, `start_resume()` and `start_update()` become this.
+(update). `pipeline_runner.start_export()`, `start_resume()` and `start_update()` make their job and
+hand it to `enqueue()`; a reopened web generation goes back through `requeue()`. The HTTP contract:
+[JOB_SCHEDULING_API_SPEC](../spec/JOB_SCHEDULING_API_SPEC.md).
 
 1. **Checks that do not need the lock** — today's (architecture, version name, scope, baseline,
    `NO_DOCUMENTS`, `VERSION_NOT_READY`, `INVALID_COMPONENTS`, `NOTHING_TO_RESUME`) plus, so a waiting
-   job does not fail hours later on a typo (REQ-JS-07): the commit is one the project knows (its
-   `commits` row, else `git cat-file` on its mirror); the data dictionary exists; the project's config
-   builds (`_write_project_config` into a scratch folder). An error is answered as today (400/404/409/422).
+   job does not fail hours later on a typo (REQ-JS-07): the commit is one the project knows — its
+   `commits` row, else the repository when it is a folder here, else a clone a run made under
+   `workspaces/<project>/` (`pipeline_runner.commit_known`, 422 `UNKNOWN_COMMIT`); the project's config
+   builds — `_write_project_config` into a scratch folder (`config_problem`, 409 `CONFIG_INVALID`).
+   An error is answered as today (400/404/409/422).
 2. **Idempotency** — an `Idempotency-Key` header the web app sends with every submit; a job with that
    key in the project is answered again, nothing new (REQ-JS-09).
 3. **Under the project's lock** (`SELECT … FROM projects WHERE id = :p FOR UPDATE`):
@@ -143,9 +156,13 @@ and writes a `job_events` row.
      the name check (REQ-JS-08);
    - insert the job, `held` if the project has held jobs, else `queued`; priority other than Normal
      only from a super admin; `started_by` always.
-4. **Start at once if it can** — on the server that runs jobs, the same claim the scheduler makes
-   ([§5](#5-the-scheduler)), for this lane, in the request. The answer is exact:
-   `202 {job, status: running | queued | held, position, ahead, estimated_start}`.
+4. **Start at once if it can** — on the server that runs jobs, a scheduler round in the request
+   (`try_start`, [§5](#5-the-scheduler)). The answer is exact:
+   `202 {job, status: running | queued | held, position, ahead, estimated_start, message}`.
+
+A job's place is its `submitted_at`, which `next_place()` gives strictly after the last one this process
+gave: Windows' clock moves in steps of about 15 ms, and two submits in a row had the same time — a tie
+the job id, which is random, then ordered.
 
 **Position and estimate.** Position counts the waiting jobs ahead of it, plus one ("waits as #2").
 Estimated start = the running job's remaining time (its `eta_seconds`, else the median run time of the
@@ -162,11 +179,12 @@ drops a lost claim, but nothing would schedule then.
 
 **A round** — every 10 s, and at once when kicked (a submit, a job's end, a release, a resume):
 
-1. **Sweeps**, at most once a minute: interrupted jobs ([§7](#7-alive-signal-and-interrupted)); paused
-   past `jobs.pausedDays` → cancelled ([§9](#9-cancel-and-remove)); once a day, retention
-   ([§15](#15-notices-record-measures)).
-2. **Claims**, each in its own short transaction under the queue lock
-   (`pg_advisory_xact_lock(0x41524658, 2)`, beside the runner lock's key 1):
+1. **Sweeps**, in the first round and then at most once a minute: background runs nobody follows,
+   followed again; interrupted jobs ([§7](#7-alive-signal-and-interrupted)); paused past
+   `jobs.pausedDays` → cancelled ([§9](#9-cancel-and-remove)); in the first sweep and then once a day,
+   retention ([§15](#15-notices-record-measures)).
+2. **Claims**, each in its own short transaction under the queue lock (`core.job_lanes.lock_queue`:
+   `pg_advisory_xact_lock(0x41524658, 2)`, beside the runner lock's key 1):
    1. **resume requests** first — paused jobs with `resume_requested_at`, oldest request first — while
       the cap has room. A paused job holds its project's slot, so nothing in its project can be ahead of it;
    2. **generations** — each project whose generation lane has no running or paused job and no held job
@@ -176,18 +194,22 @@ drops a lost claim, but nothing would schedule then.
    3. **updates** — each project whose update lane is free starts its oldest waiting update whose
       version is free (REQ-JS-12). An update whose version is busy is passed, and keeps its place:
       what holds it is an export or a paused job, which can take a day.
-3. **Launch** each job claimed ([§6](#6-running-a-job)).
+3. **Launch** each job claimed ([§6](#6-running-a-job)) — inside the round, before another round may
+   begin: a round that came meanwhile (a submit's own) finds the job's thread there, not a job claimed
+   and not yet started.
 
 **The claim** re-reads, under the lock: the lane is free, the cap has room (generation; a paused job
 does not count, a CLI run does, `forced` or not), and the version is free — no other job running or
 paused on it, and (PostgreSQL) nobody holds its writer lock (`version_run.holder`: a CLI run of older
-code that recorded no job). Then `UPDATE … SET status = 'running', started_at (kept on a resume),
-heartbeat_at = now(), runner WHERE id = :j AND status = 'queued'` (or `paused` for a resume). SQLite has no advisory lock:
-there the unique index guards the lane and the cap is checked without a lock across processes (local use).
+code that recorded no job). The counts are `core.job_lanes.holding` and `running_generations`, which
+the command line's record of its run uses too. Then `UPDATE … SET status = 'running', started_at
+(kept on a resume), heartbeat_at = now(), runner WHERE id = :j AND status = 'queued'` (or `paused` for
+a resume). SQLite has no advisory lock: there the unique index guards the lane and the cap is checked
+without a lock across processes (local use).
 
 ## 6. Running a job
 
-`job_runner.launch(job)` starts the job's thread — today's bodies, picked by kind:
+`pipeline_runner.launch_job(db, job, resumed)` starts the job's thread — today's bodies, picked by kind:
 
 | Job | Lane | Thread (pipeline_runner) | Command |
 |---|---|---|---|
@@ -196,24 +218,30 @@ there the unique index guards the lane and the cap is checked without a lock acr
 | resume, and a paused job resumed | generation | `_run_resume` | `analyzer.py resume` |
 | Word-file update | update | `_run_reexport` | `analyzer.py reexport` |
 
-Each command gets `--job-id J`, and `--detach` when the API has a database (`_detach_enabled`, today).
+Each command gets `--job-id J`, last, and `--detach` when the API has a database (`_detach_enabled`,
+today).
 
 What changes in them: no `status = "running"` at their start (the claim did it); no semaphore
-(`_inner_run`, `_refollow`); the checks of step 1 of
-[§4](#4-submitting) run again at the start, and a failure fails the job (REQ-JS-07); each end goes
-through `transition()`, writes its event, tells ([§15](#15-notices-record-measures)) and kicks the
-scheduler. `JOB_ALREADY_RUNNING`, `REEXPORT_RUNNING`, `EXPORT_RUNNING`, `RUN_ACTIVE` and `VERSION_BUSY`
-are no longer answers to a submit: those jobs wait.
+(`_inner_run`, `_refollow`); the commit is checked again at the start by the checkout itself — one gone
+since the submit fails the job, and the next starts (REQ-JS-07); each end goes through `transition()`.
+The thread wrapper (`_job_thread`) sends the job's alive signal while it works, and at its end books it
+(`job_queue.after_end`: the event, the notices of [§15](#15-notices-record-measures), the waiting jobs'
+messages) and kicks the scheduler — then, last, leaves the lists of job threads, so whoever waits on
+the thread finds all of that done. `JOB_ALREADY_RUNNING`, `REEXPORT_RUNNING`, `EXPORT_RUNNING`,
+`RUN_ACTIVE` and `VERSION_BUSY` are no longer answers to a submit: those jobs wait. An update joins a
+running update that covers it only when this server is at work on it: a row a stopped server left
+running is interrupted by the sweep, and a request that joined it would end with it.
 
 A version reopened for resume — a web generation that failed or was interrupted — is submitted again:
 back of the lane, Normal priority, a new `submitted_at` (REQ-JS-20), as `start_resume` reopens it today.
 
 ## 7. Alive signal and interrupted
 
-**Who beats** (`heartbeat_at = now()`, every 60 s): the job's thread in the API from the claim until the
-run is in the background — checkout, config, launch; the whole run when it is a child of the API (the
-in-memory database, `JOB_DETACH` off) — and from then on the run itself: `writing(…, job_id=J)` starts a
-`JobHeartbeat` thread beside the lock session, whose code stays as it is.
+**Who beats** (`heartbeat_at = now()`, every 60 s, `job_queue.Heartbeat`; the claim, or the command
+line's record, writes the first): the job's thread in the API while it works on the job — checkout,
+config, launch, a child run, following a background one — and the run's own `analyzer.py` process, for
+its whole life (`analyzer._run_as_job`): a web run's (`--job-id J`) and a command-line run's. So a run
+in the background is not called silent while the API restarts.
 
 **Interrupted** (REQ-JS-20), by the scheduler, when all hold:
 
@@ -348,8 +376,9 @@ next run makes it.
 2. Follow again every running web job (`origin = web`) with a background run (`_reattach_detached`,
    today); one with none ran inside the server that stopped → `interrupted`. CLI runs are left to their
    alive signal: the API neither follows nor ends them.
-3. `jobs.startQueuedAfterRestart` false → every `queued` job → `held`, and the super admins are told
-   "N jobs held after a restart". True → they stay `queued`.
+3. `jobs.startQueuedAfterRestart` false → every `queued` job → `held`, in the scheduler's first round,
+   and each project's admins — super admins are admins of every project — are told "N jobs held after a
+   server restart". True → they stay `queued`.
 4. Paused jobs stay paused; a resume already asked for stays asked for (an admin's decision).
 5. Start the scheduler.
 
@@ -362,24 +391,31 @@ removed; the rest go back to `queued` with their `submitted_at`, so in their ord
 ## 11. The CLI
 
 `generate`, `export`, `resume` (generation lane) and `reexport` (update lane), first thing — before
-`--detach` hands over:
+`--detach` hands over (`analyzer.py` `main()` → `_as_job`):
 
 1. **`--job-id J`** — the run is job J's (the API's run, or a CLI run's background half): no checks,
-   nothing new recorded; the run beats for J. `resume` repeats a run's recorded command line without its
-   `--job-id`.
-2. **Checks** (REQ-JS-28), in one transaction under the queue lock: refused, exit 2, naming the jobs, when
-   the project's lane has a running or paused job, or a waiting or held one; for the generation lane, also
-   when running generations ≥ `jobs.maxGenerations`. `--ignore-queue` skips them — the CLI is the
-   super admin's.
-3. **Record** (REQ-JS-29), in the same transaction: a job `origin = cli`, `running`, `runner = cli
-   <user>@<host> pid N`, `forced` with `--ignore-queue`; events `submitted` and `started`. With `--detach`
-   the launcher records it and hands `--job-id` to the background run.
-4. **End** — a CLI job (`origin = cli`) is ended by its own run, from `writing()`'s outcome: `complete`,
-   `failed`, or `cancelled` on Ctrl+C; the scheduler sees the lane free on its next round. Killed →
-   interrupted ([§7](#7-alive-signal-and-interrupted)). A web job's end is the API's, as today.
+   nothing new recorded; the process beats for J. `resume` runs a recorded `generate` again inside its
+   own job (`main(argv, queue=False)`), the recorded command line without its `--job-id`.
+2. **Checks** (REQ-JS-28), in one transaction under the queue lock and the project's row lock: refused,
+   exit 2, naming the jobs, `LANE_BUSY` when the project's lane has a running or paused job (listed with
+   any waiting behind it), `JOBS_WAITING` when it has a waiting or held one, and for the generation lane
+   `SERVER_FULL` when running generations ≥ `jobs.maxGenerations`. `--ignore-queue` skips them — the
+   CLI is the super admin's. A project with no database row: `NO_PROJECT`, onboard it.
+3. **Record** (REQ-JS-29), in the same transaction (`job_queue.record_cli_run` → `db.jobs.record_run`):
+   a job `origin = cli`, `running`, `runner = cli <user>@<host> pid N`, `forced` with `--ignore-queue`;
+   events `submitted` and `started`; the project's admins told. With `--detach` the launcher records it
+   and adds `--job-id J` to the background run's command line; a launch that fails ends the job failed.
+4. **End** — a CLI job is ended by its own run (`_run_as_job` → `job_queue.end_cli_run`): `complete`
+   (exit 0, or 3: some components failed, the others made), `failed`, or `cancelled` on Ctrl+C; the
+   scheduler sees the lane free on its next round. Killed → interrupted when silent
+   ([§7](#7-alive-signal-and-interrupted)); interrupted while it slept, it takes its real end when it
+   ends after all. A web job's end is the API's, as today.
 
-The rule "lane busy, jobs waiting, cap full" is written once, in `engine/core/job_lanes.py`, which the
-CLI and `api/services/job_queue.py` both use. No queue commands (REQ-JS-27).
+No database configured: no queue — the run says itself what it lacks. A database from before 0019:
+refused, `analyzer.py setup` upgrades it. The phases a run starts know its job by `ANALYZER_JOB_ID`,
+which the API already set for a web run's metrics. The rule "lane busy, jobs waiting, cap full" and
+the SQL that counts it are written once, in `engine/core/job_lanes.py`, which the CLI's record and the
+API's claim both use. No queue commands (REQ-JS-27).
 
 ## 12. Config
 
@@ -405,9 +441,11 @@ CLI and `api/services/job_queue.py` both use. No queue commands (REQ-JS-27).
 
 ## 13. API
 
+The contract, with every field and refusal: [JOB_SCHEDULING_API_SPEC](../spec/JOB_SCHEDULING_API_SPEC.md).
+
 | Route | Who | Answer |
 |---|---|---|
-| `POST /projects/{p}/jobs` | project admin | 202 `{job, status, position, ahead, estimated_start}`; 409 `LANE_FULL`, `DUPLICATE_JOB`, `VERSION_EXISTS` |
+| `POST /projects/{p}/jobs` | project admin | 202 `{job, status, position, ahead, estimated_start, message}`; 409 `LANE_FULL`, `DUPLICATE_JOB`, `VERSION_EXISTS`, `CONFIG_INVALID`; 422 `UNKNOWN_COMMIT` |
 | `POST /projects/{p}/versions/{v}/documents/generate` | project admin | as above (export) |
 | `POST /projects/{p}/versions/{v}/resume` | project admin | as above (resume) |
 | `POST /projects/{p}/versions/{v}/reexport` | member | as above, or 200 with `joined` / `already_queued` |
@@ -420,6 +458,7 @@ CLI and `api/services/job_queue.py` both use. No queue commands (REQ-JS-27).
 | `PATCH /projects/{p}/job-limits` `{generation_limit, update_limit}` | project admin | 200; 422 outside 1–50 |
 | `GET /queues` | super admin | every project's queues, cap use, held count, flags |
 | `POST /queues/held` `{project_id?, remove}` | super admin | 200 what was removed and released |
+| `DELETE /projects/{p}/versions/{v}` | project admin | 409 `RUN_ACTIVE` while a job of the project runs or is paused; `VERSION_NEEDED` while a waiting job needs the version ([§16](#16-cases)) |
 
 **Messages, one field per place (REQ-JS-35)** — the fields the web app already reads, never a new one:
 
@@ -439,9 +478,9 @@ today). Job lists carry the new fields: `lane`, `priority`, `position`, `estimat
 ## 14. Web app
 
 **Manoj builds the screens** (the user, 2026-10-21); this branch changes nothing in `web-app/`. What the
-screens need, for him — from the routes of [§13](#13-api), whose contract goes into
-`docs/spec/JOB_SCHEDULING_API_SPEC.md` with them. Mockups first (`docs/ui-mockups/`); WCAG 2.2 AA as the
-rest (`ui-dev` skill §8, `web-app/src/__tests__/accessibility.test.ts`).
+screens need, for him — from the routes of [§13](#13-api), whose contract is
+[JOB_SCHEDULING_API_SPEC](../spec/JOB_SCHEDULING_API_SPEC.md). Mockups first (`docs/ui-mockups/`); WCAG
+2.2 AA as the rest (`ui-dev` skill §8, `web-app/src/__tests__/accessibility.test.ts`).
 
 - **Run dialog**, and the Generate, Resume and Update buttons: the preview line under the action — "Starts
   now", "Waits as #2 — about 3 h", or "Refused: 3 of 3 places taken — J1 running, J2 and J3 waiting",
@@ -464,9 +503,9 @@ rest (`ui-dev` skill §8, `web-app/src/__tests__/accessibility.test.ts`).
 
 - **Notices** (REQ-JS-32): a `notifications` row per person — the submitter (a web job's) and the
   project's admins — when a job starts, completes, fails, is paused, cancelled, interrupted or cancelled
-  after its paused days; super admins for a restart's held jobs. Types `job_started`, `job_completed`,
-  `job_failed`, `job_paused`, `job_cancelled`, `job_interrupted`, `job_auto_cancelled`, `jobs_held`.
-  An update's end keeps today's text to its starter (`tell_update_end`).
+  after its paused days (`job_cancelled`, its message says why); the project's admins for a restart's
+  held jobs. Types `job_started`, `job_completed`, `job_failed`, `job_paused`, `job_cancelled`,
+  `job_interrupted`, `jobs_held`. An update's end keeps today's text to its starter (`tell_update_end`).
 - **Record** (REQ-JS-33): a `job_events` row for every change of [§3](#3-a-jobs-states), and for
   priority, limits and held-queue actions, with the person and the time.
 - **Measures** (REQ-JS-34), from the rows: queue length per lane; waiting time (`started_at −
@@ -499,25 +538,26 @@ rest (`ui-dev` skill §8, `web-app/src/__tests__/accessibility.test.ts`).
 | File | Change |
 |---|---|
 | `alembic/versions/0019_job_scheduling.py`, `api/db/postgres/schema.py`, `analyzer.py setup` | [§2](#2-data--migration-0019) |
-| `api/services/job_queue.py` (new) | submit, `transition`, positions, estimates, held actions, limits |
+| `api/services/job_queue.py` (new) | `enqueue`, `requeue`, positions, estimates, messages, held actions, limits, cancel and remove, interrupt, the alive signal (`Heartbeat`), a CLI run's record and end, the views, the version delete guard |
 | `api/services/job_scheduler.py` (new) | the loop, claims, sweeps, retention, `kick` |
-| `engine/core/job_lanes.py` (new) | the lane / waiting / cap rule and the claim SQL, for the API and the CLI |
+| `engine/core/job_lanes.py` (new) | the lanes, the CLI's rule, the queue lock and the counts a claim and a CLI record share |
 | `engine/core/pause.py` (new) | `requested`, `check`, `on_stop`, `exits_paused`, `EXIT_PAUSED` |
-| `api/services/pipeline_runner.py` | starts → `submit`; launch from the scheduler; no semaphore; `--job-id`; states via `transition`; exit 75; interrupted; start-up; a deleted version's folder deleted |
+| `api/services/pipeline_runner.py` | starts → `enqueue`; `launch_job` from the scheduler; no semaphore; `--job-id`; states via `transition`; exit 75; interrupted; start-up; the commit and config checks at submit; a deleted version's folder deleted |
 | `api/main.py` | start-up order of [§10](#10-restart-and-held-jobs); the scheduler instead of `_watch_jobs` |
 | `api/routes/jobs.py`, `api/routes/version_components.py`, `api/routes/queues.py` (new) | [§13](#13-api) |
 | `api/routes/commits_versions.py` | the version delete guard of [§16](#16-cases) |
-| `api/db/postgres/database.py`, `api/db/in_memory.py` | `transition`; `update_progress` (its own columns, while running); queue queries; `update()` no longer writes `status`; `get_current` |
+| `api/db/postgres/database.py`, `api/db/in_memory.py` | `transition` (a lane's second job is "not changed"); `update()` never writes the state; queue queries — `add_to_lane`, `claim`, `record_run`, `lane_jobs`, `in_status`, `prune_ended`; `get_current` |
 | `api/models/domain.py` | job fields, statuses, project limits |
 | `api/services/settings.py` | `job_max_concurrency` gone |
-| `api/services/word_files.py` | notices to admins too |
+| `api/services/word_files.py` | the update's answer: its place and message |
 | `engine/core/config.py`, `engine/config/config.local.json.example` | `jobs` block, `jobs_settings()` |
-| `engine/core/version_run.py` | `writing(job_id=)`, `JobHeartbeat`, outcome `paused` |
+| `engine/core/version_run.py` | outcome `paused` |
+| `tests/api/conftest.py` | every API test has a scheduler without its thread, no job left waiting by an earlier test, its job threads ended with it; the SQLite test database's one connection taken in turns |
 | `engine/llm_core/cache.py` | every cache saves its buffer at process exit (`atexit`) |
 | `engine/model_deriver.py`, `engine/core/model_repo.py` | regeneration-queue entries retired in the model's transaction ([§8](#8-pause-and-resume)) |
 | `engine/run.py`, `engine/incremental/store.py` | each component stored when it is finished ([§9](#9-cancel-and-remove)) |
 | `engine/parser.py`, `engine/model_deriver.py`, `engine/llm_enrichment.py`, `engine/flowchart/flowchart_engine.py`, `engine/core/orchestration.py`, `engine/run.py`, `engine/incremental/engine.py`, `engine/incremental/generate.py`, `engine/incremental/staged.py` | pause points, exit 75 ([§8](#8-pause-and-resume)) |
-| `analyzer.py` | `--job-id`, `--ignore-queue`, checks and record, 75, Ctrl+C → cancelled |
+| `analyzer.py` | `--job-id`, `--ignore-queue`, checks and record, the run's alive signal, its end — Ctrl+C → cancelled; 75 |
 | `web-app/` | Manoj, from [§13](#13-api) and [§14](#14-web-app) — not this branch |
 | docs | this design, the spec, `docs/spec/JOB_SCHEDULING_API_SPEC.md` (new: the HTTP contract for the screens), `docs/CLI_COMMANDS.md`, `DB_SCHEMA.md` + `schema-atlas.html`, the project context |
 
@@ -534,20 +574,22 @@ comes then.
 
 | Test | Covers |
 |---|---|
-| `tests/unit/test_job_queue.py` | the three answers, limits, duplicates, idempotency, held submits, position and estimate, compare-and-set (a progress write after a cancel leaves it cancelled) — REQ-JS-04, 06–09, 18 |
-| `tests/unit/test_job_scheduler.py` | priority, first come first served, fairness across projects, the cap, a paused job not counted, resume first, a busy version (head waits; an update is passed), interrupted with the outage guard, `pausedDays`, retention keeps each version's generation job — REQ-JS-02, 03, 05, 10–13, 16, 20, 21, 24, 34 |
+| `tests/api/test_job_queue.py` — both backends, a fresh database per test | the queue: the three answers, limits, duplicates, idempotency, held submits, position and estimate; the scheduler: priority, first come first served, fairness across projects, the cap, a paused job not counted, resume first, a busy version (head waits; an update is passed), the claim, interrupted with the outage guard, `pausedDays`, retention keeps each version's generation job; a CLI run's record and end — REQ-JS-02–13, 16, 18, 20, 21, 24, 28, 29, 34 |
+| `tests/api/test_job_state_writes.py` | compare-and-set: a progress write after a cancel leaves it cancelled; `update()` never writes the state ([§1](#1-principles)) |
 | `tests/unit/test_job_state_writers.py` | no code outside the job repository sets a job's status; the check would notice a new one ([§1](#1-principles)) |
+| `tests/unit/test_job_lanes.py` | the CLI's rule, the counts on the schema's table, the API's statuses the same as the lanes' |
 | `tests/unit/test_llm_description_cache.py`, `test_aux_desc_cache.py`, `test_flowchart_label_cache.py` | every cache saves its buffer when the process exits on a pause or a Ctrl+C |
 | `tests/unit/test_review_queue_consumers.py` | a stop between Phase 2's rewrite and its model save leaves the queue entries in place |
 | `tests/unit/test_cancel_leaves.py` (new) | a new version cancelled in each phase: no row of it in any per-version table, its folder gone, the LLM cache kept; an export cancelled half way: the finished components stored whole, the rest not generated — REQ-JS-25 |
 | `tests/unit/test_pause.py` | `PauseRequested` past `except Exception`; the executor waits for calls in flight; hooks flush; 75 through `run.py` puts components back to waiting; outcome `paused` — REQ-JS-22, 23 |
 | `tests/unit/test_cli_job_gate.py` | the three refusals, `--ignore-queue`, the record, `--job-id` attaches, `resume` drops a recorded one — REQ-JS-27–29 |
-| `tests/api/test_queue_routes.py` | every route of [§13](#13-api), the permissions table, cancel vs remove — REQ-JS-25, 26, 30, 31, 33 |
+| `tests/api/test_queue_routes.py` | every route of [§13](#13-api), the permissions table, cancel vs remove, the commit and config checks at submit, the version delete guard — REQ-JS-07, 25, 26, 30, 31, 33 |
 | `tests/e2e/test_pause_resume.py` | pause during descriptions (fake LLM), resume: the same Word files as a run not paused; the only extra LLM calls are for answers not saved — REQ-JS-22, 23 |
 | `tests/live/test_job_claims_pg.py` (throwaway PostgreSQL) | two claimers at once start one job; the unique index; the queue lock; heartbeat and interrupted; restart holds — REQ-JS-14, 15, 18, 19 |
 
-Tests that expect today's 409s (`JOB_ALREADY_RUNNING`, `REEXPORT_RUNNING`, `VERSION_BUSY`, `EXPORT_RUNNING`,
-`RUN_ACTIVE`) are changed to the new answers.
+Tests that expected the old 409s (`JOB_ALREADY_RUNNING`, `REEXPORT_RUNNING`, `VERSION_BUSY`,
+`EXPORT_RUNNING`, `RUN_ACTIVE`) now expect the new answers; tests that expected a dead run to end
+`failed` expect `interrupted`.
 
 ## 20. Decisions beyond the spec
 

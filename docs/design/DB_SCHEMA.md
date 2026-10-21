@@ -48,7 +48,7 @@ PGPASSWORD=analyzer "C:/Users/User/pgsql/bin/psql.exe" -h 127.0.0.1 -U analyzer 
 | Group | Tables | What it holds |
 |---|---|---|
 | **Model** | `entities` · `entity_versions` · `content_blobs` · `model_units` · `model_components` · `model_edges` · `model_summaries` | The parsed + derived C++ model |
-| **Runs** | `projects` · `versions` · `analysis_jobs` · `commits` · `version_output_files` · `parse_snapshots` · `knowledge_base` · `incremental_plans` · `tu_includes` · `version_components` · `version_runs` | One analysis run and its artifacts; each component's documents and the version's latest run |
+| **Runs** | `projects` · `versions` · `analysis_jobs` · `job_events` · `commits` · `version_output_files` · `parse_snapshots` · `knowledge_base` · `incremental_plans` · `tu_includes` · `version_components` · `version_runs` | One analysis run and its artifacts; the job queue and its record; each component's documents and the version's latest run |
 | **Reuse / LLM** | `reuse_index` · `llm_description_cache` · `llm_call_stats` | Incremental reuse + LLM accounting |
 | **Documents** | `documents` · `document_sections` · `document_assignments` · `document_review_events` · `compare_results` · `document_diffs` · `job_functions` | The web app's document layer, and each document's review and approval |
 | **Access** | `users` · `project_members` · `access_requests` · `notifications` · `data_dictionaries` · `data_dictionary_entries` | RBAC and project inputs |
@@ -124,7 +124,8 @@ rebuilt on load.
 erDiagram
     projects ||--o{ versions             : ""
     projects ||--o{ commits              : ""
-    projects ||--o{ analysis_jobs        : ""
+    projects ||--o{ analysis_jobs        : "two lanes: generation, update"
+    projects ||--o{ job_events           : "the queue's record"
     projects ||--o{ reuse_index          : "first-writer-wins per fingerprint"
     projects ||--o{ llm_description_cache : "per PROJECT, not per version"
     versions ||--o{ analysis_jobs        : ""
@@ -162,10 +163,33 @@ erDiagram
     analysis_jobs {
         string id PK
         string version_id FK
+        string status "held|queued|running|paused|complete|failed|interrupted|cancelled|removed"
         string mode "auto|full (a generation)|reexport|export"
         jsonb  scope "type component: its names, else the whole version"
         string started_by "user id - NULL: a generation"
         string reason "update|rebuild|submit|export|resume - NULL: a generation"
+        string lane "generation|update"
+        smallint priority "0 high, 1 normal, 2 low"
+        timestamptz submitted_at "its place in its lane: the order"
+        timestamptz started_at "when it started RUNNING - NULL while it waits"
+        timestamptz heartbeat_at "its alive signal"
+        timestamptz pause_requested_at
+        timestamptz paused_at
+        timestamptz resume_requested_at
+        int paused_seconds
+        string origin "web|cli"
+        string runner "api host pid N | cli user@host pid N"
+        bool forced "a CLI run started past the queue"
+        string request_key "the submit's Idempotency-Key"
+    }
+    job_events {
+        string id PK
+        string job_id "NULL: a limit change, a held-queue action"
+        string project_id FK
+        string kind "submitted|started|paused|resumed|completed|failed|interrupted|cancelled|removed|..."
+        string actor_id "NULL: the system did it"
+        timestamptz at
+        jsonb detail
     }
     version_output_files {
         string version_id PK
@@ -234,6 +258,16 @@ it as its output is stored, for the .docx files it wrote; a newly recorded docum
 time; NULL (recorded before 0018) falls back to the file's time on disk. `version_components.stale_layers`
 names the layers whose addition made a `stale` component stale. `analysis_jobs.started_by` and `.reason`
 say who started a job and why — an update's end is told to its starter. All three are nullable.
+
+Job scheduling (migration 0019, [JOB_SCHEDULING_DESIGN](JOB_SCHEDULING_DESIGN.md) §2). The queue is
+`analysis_jobs`: a job's `lane`, `status` and place (`submitted_at`, then `priority` in the generation
+lane) say where it is. One running or paused job per project lane — the unique index
+`ux_jobs_lane_active` (`project_id`, `lane`) WHERE `status IN ('running','paused') AND NOT forced` —
+and a status changes only by compare-and-set (`db.jobs.transition`). `projects.generation_limit` (3)
+and `.update_limit` (10) cap each lane's jobs, waiting ones included; `jobs.maxGenerations` in
+config.local.json caps the server's running generations. `job_events` is who did what to which job,
+and when — removed with the job by retention (`jobs.keepFinishedDays`), which keeps each version's
+newest generation job.
 
 ## ER — access & inputs
 
@@ -578,6 +612,24 @@ ORDER BY started_at DESC;
 -- Its latest run and how far it got (alive or not is the advisory lock, not this row)
 SELECT command, pid, host, outcome, stage, done, total, progress_at, log_path
 FROM version_runs WHERE version_id = 'f1';
+```
+
+### Job queue — what waits, what runs
+
+```sql
+-- Each project's lanes: the job holding each, then the waiting ones in their order
+SELECT project_id, lane, status, priority, id, version_tag, mode, reason, origin, runner,
+       submitted_at, started_at, heartbeat_at
+FROM analysis_jobs
+WHERE status IN ('running', 'paused', 'queued', 'held')
+ORDER BY project_id, lane, status IN ('queued', 'held'), priority, submitted_at;
+
+-- Running jobs gone silent (the sweep interrupts them after jobs.interruptedAfterMinutes)
+SELECT id, project_id, runner, heartbeat_at, now() - heartbeat_at AS silent_for
+FROM analysis_jobs WHERE status = 'running' ORDER BY heartbeat_at;
+
+-- One job's record
+SELECT at, kind, actor_id, detail FROM job_events WHERE job_id = 'job3f2a9c1e' ORDER BY at;
 ```
 
 ### Integrity spot-checks

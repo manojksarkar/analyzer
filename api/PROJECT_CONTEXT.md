@@ -128,7 +128,6 @@ See `api/services/settings.py` for the canonical list.
 | `API_DB_BACKEND` | `memory` | `memory` or `json` |
 | `ANALYZER_REPO_ROOT` | auto-detected | Path to repo root (contains `engine/run.py`) |
 | `ANALYZER_WORKSPACES_DIR` | `<repo_root>/workspaces/` | Per-project checkout + output root |
-| `JOB_MAX_CONCURRENCY` | `2` | Max simultaneous pipeline subprocesses |
 | `SUBPROCESS_TIMEOUT` | `0` | Kill subprocess after N seconds (0 = unlimited) |
 | `LIBCLANG_PATH` | _(auto)_ | Forwarded to `run.py` subprocesses |
 
@@ -220,8 +219,10 @@ The thread:
    future compare calls.
 6. On cancel: terminates the subprocess immediately.
 
-`JOB_MAX_CONCURRENCY` is enforced by a `threading.BoundedSemaphore` — threads
-that exceed the limit block until a slot frees.
+Jobs wait their turn in their project's lane, and the scheduler starts them
+(`api/services/job_scheduler.py`); the server runs at most `jobs.maxGenerations`
+generations at once (config.local.json). `JOB_MAX_CONCURRENCY` and its semaphore
+are gone (2026-10-21b) — [project-context/JOB_SCHEDULING.md](../project-context/JOB_SCHEDULING.md).
 
 ### Incremental generation (version4 engine)
 

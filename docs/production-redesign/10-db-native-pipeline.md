@@ -513,6 +513,7 @@ unverified — the same lesson as the diagram regressions, in a corner nobody ru
 - [ ] H7 — measure peak RSS in DB mode on the review project; decide whether C7 becomes a
       prerequisite rather than a follow-on
 - [ ] `JOB_MAX_CONCURRENCY` raise is **independent of this work** and still pending its
-      measurement (doc 09, D2b) — H1 is a prerequisite for it either way
+      measurement (doc 09, D2b) — H1 is a prerequisite for it either way. Since 2026-10-21b the
+      setting is `jobs.maxGenerations` in config.local.json (JOB_SCHEDULING_DESIGN §12)
 - [ ] Whether `output/` conversion (deferred here) also moves the flowchart engine's *writes*, or
       keeps them as files under a temp dir

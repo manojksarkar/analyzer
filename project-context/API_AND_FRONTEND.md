@@ -376,12 +376,13 @@ generated yet), `reexport` (again), `resume` (after a crash). Human guide:
   (`version_components.resume_action` = `staged.resume_plan`'s action, "busy" while a job or a process
   of this machine is at work). **No web button yet** — the user deferred it; the panel prints the command.
 - **Hardened 2026-10-04** (a review): unknown work = keep (`_version_has_work`); DB errors at a run's end
-  are waited out (`_when_db_answers`, 30 s, up to 6 h); `main._watch_jobs` re-checks every 5 min for
-  active jobs nothing follows; cancel refuses ended jobs (`JOB_FINISHED`), stops an unfollowed run first
+  are waited out (`_when_db_answers`, 30 s, up to 6 h); `main._watch_jobs` re-checked every 5 min for
+  active jobs nothing follows (since 2026-10-21b the scheduler's sweep does, each minute:
+  [JOB_SCHEDULING.md](JOB_SCHEDULING.md)); cancel refuses ended jobs (`JOB_FINISHED`), stops an unfollowed run first
   (`stop_background_run`), never releases for exports; a generation job whose dead run left a complete
   version is done; the web generate runs on the version's own config (`_freeze_version_config`);
   run.json `create_time` identifies the process; an export waits for the version's own run
-  (`RUN_ACTIVE`); `start_app.kill_tree` skips `runs/.../code/` processes. Round 2: only connection
+  (`RUN_ACTIVE` then; since 2026-10-21b it waits behind it in the lane); `start_app.kill_tree` skips `runs/.../code/` processes. Round 2: only connection
   errors are waited out (`_db_unavailable`); the frozen config keeps its typed macros, and `export` /
   `resume` overlay this machine's current local settings (`analyzer._with_current_secrets`, the run's
   LLM switches kept -- until 2026-10-13d: since then no written config holds a server setting, a
@@ -474,8 +475,10 @@ all Word files…* (admin).
   not scoped by component still store the whole version.
 - **Update** — `POST …/versions/{vid}/reexport {scope: "out_of_date" | "all", components?, document_id?}`
   (`api/services/word_files.start_update`): a developer reaches the documents they review plus the one
-  named; `all` (and no `scope`) is admin-only. A running update is found before the writer lock: covered →
-  200 `joined`; else 409 `REEXPORT_RUNNING` (job, scope, components); `VERSION_BUSY` carries `writer`.
+  named; `all` (and no `scope`) is admin-only. An update running or waiting that covers it → 200
+  `joined` (`already_queued` when it waits); else it waits its turn in the project's update lane, its
+  answer saying where (2026-10-21b, [JOB_SCHEDULING.md](JOB_SCHEDULING.md)) -- `REEXPORT_RUNNING` and
+  `VERSION_BUSY` answered it until then.
   While a component is being written, its corrections answer 409 `WORD_FILE_UPDATING` (R3/R4/R6/R8; web
   jobs and a CLI run holding the version). Submit (A5) starts its component's update and answers
   `word_file {state, job_id, blocked_by}`; a refusal never fails the submit.

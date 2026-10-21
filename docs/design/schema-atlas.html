@@ -391,6 +391,7 @@
       <a href="#review">Review corrections</a>
       <a href="#approval">Review and approval</a>
       <a href="#staged">Staged generation</a>
+      <a href="#jobqueue">Job queue</a>
       <a href="#integrity">Integrity checks</a>
       <div class="group">Traps</div>
       <a href="#empty">Tables nothing writes</a>
@@ -416,8 +417,8 @@
               </tr>
               <tr>
                 <td><b>Runs</b></td>
-                <td><code>projects</code> <code>versions</code> <code>analysis_jobs</code> <code>commits</code> <code>version_output_files</code> <code>parse_snapshots</code> <code>knowledge_base</code> <code>incremental_plans</code> <code>tu_includes</code> <code>version_components</code> <code>version_runs</code></td>
-                <td>One analysis run and its artifacts</td>
+                <td><code>projects</code> <code>versions</code> <code>analysis_jobs</code> <code>commits</code> <code>version_output_files</code> <code>parse_snapshots</code> <code>knowledge_base</code> <code>incremental_plans</code> <code>tu_includes</code> <code>version_components</code> <code>version_runs</code> <code>job_events</code></td>
+                <td>One analysis run and its artifacts; the job queue and its record</td>
               </tr>
               <tr>
                 <td><b>Reuse / LLM</b></td>
@@ -549,7 +550,8 @@ erDiagram
 erDiagram
     projects ||--o{ versions             : ""
     projects ||--o{ commits              : ""
-    projects ||--o{ analysis_jobs        : ""
+    projects ||--o{ analysis_jobs        : "two lanes: generation, update"
+    projects ||--o{ job_events           : "the queue's record"
     projects ||--o{ reuse_index          : "first-writer-wins per fingerprint"
     projects ||--o{ llm_description_cache : "per PROJECT, not per version"
     versions ||--o{ analysis_jobs        : ""
@@ -587,10 +589,33 @@ erDiagram
     analysis_jobs {
         string id PK
         string version_id FK
+        string status "held|queued|running|paused|complete|failed|interrupted|cancelled|removed"
         string mode "auto|full (a generation)|reexport|export"
         jsonb  scope "type component: its names, else the whole version"
         string started_by "user id - NULL: a generation"
         string reason "update|rebuild|submit|export|resume - NULL: a generation"
+        string lane "generation|update"
+        smallint priority "0 high, 1 normal, 2 low"
+        timestamptz submitted_at "its place in its lane: the order"
+        timestamptz started_at "when it started RUNNING - NULL while it waits"
+        timestamptz heartbeat_at "its alive signal"
+        timestamptz pause_requested_at
+        timestamptz paused_at
+        timestamptz resume_requested_at
+        int paused_seconds
+        string origin "web|cli"
+        string runner "api host pid N | cli user@host pid N"
+        bool forced "a CLI run started past the queue"
+        string request_key "the submit's Idempotency-Key"
+    }
+    job_events {
+        string id PK
+        string job_id "NULL: a limit change, a held-queue action"
+        string project_id FK
+        string kind "submitted|started|paused|resumed|completed|failed|interrupted|cancelled|removed|..."
+        string actor_id "NULL: the system did it"
+        timestamptz at
+        jsonb detail
     }
     version_output_files {
         string version_id PK
@@ -656,6 +681,19 @@ erDiagram
           <code>stale</code> component stale. <code>analysis_jobs.started_by</code> and
           <code>.reason</code> say who started a job and why &mdash; an update's end is told to its
           starter. All three are nullable.
+          <br><br>
+          Job scheduling (migration 0019, <a href="JOB_SCHEDULING_DESIGN.md">JOB_SCHEDULING_DESIGN</a>
+          &sect;2). The queue is <code>analysis_jobs</code>: a job's <code>lane</code>,
+          <code>status</code> and place (<code>submitted_at</code>, then <code>priority</code> in the
+          generation lane) say where it is. One running or paused job per project lane &mdash; the
+          unique index <code>ux_jobs_lane_active</code> (<code>project_id</code>, <code>lane</code>)
+          WHERE <code>status IN ('running','paused') AND NOT forced</code> &mdash; and a status changes
+          only by compare-and-set (<code>db.jobs.transition</code>). <code>projects.generation_limit</code>
+          (3) and <code>.update_limit</code> (10) cap each lane's jobs, waiting ones included;
+          <code>jobs.maxGenerations</code> in config.local.json caps the server's running generations.
+          <code>job_events</code> is who did what to which job, and when &mdash; removed with the job by
+          retention (<code>jobs.keepFinishedDays</code>), which keeps each version's newest generation
+          job.
         </div>
       </section>
 
@@ -1150,6 +1188,26 @@ ORDER BY started_at DESC;
 -- Its latest run and how far it got (alive or not is the advisory lock, not this row)
 SELECT command, pid, host, outcome, stage, done, total, progress_at, log_path
 FROM version_runs WHERE version_id = 'f1';</pre>
+        </div>
+      </section>
+
+      <section id="jobqueue">
+        <h3>Job queue — what waits, what runs</h3>
+        <div class="sqlblock">
+          <div class="sqlhead"><span class="cap">each project's lanes, the silent runs, one job's record</span><button class="copy">copy</button></div>
+<pre class="sql">-- Each project's lanes: the job holding each, then the waiting ones in their order
+SELECT project_id, lane, status, priority, id, version_tag, mode, reason, origin, runner,
+       submitted_at, started_at, heartbeat_at
+FROM analysis_jobs
+WHERE status IN ('running', 'paused', 'queued', 'held')
+ORDER BY project_id, lane, status IN ('queued', 'held'), priority, submitted_at;
+
+-- Running jobs gone silent (the sweep interrupts them after jobs.interruptedAfterMinutes)
+SELECT id, project_id, runner, heartbeat_at, now() - heartbeat_at AS silent_for
+FROM analysis_jobs WHERE status = 'running' ORDER BY heartbeat_at;
+
+-- One job's record
+SELECT at, kind, actor_id, detail FROM job_events WHERE job_id = 'job3f2a9c1e' ORDER BY at;</pre>
         </div>
       </section>
 

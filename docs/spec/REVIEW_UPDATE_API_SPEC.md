@@ -233,7 +233,7 @@ The UI never says "re-export": the thing is the Word file, the action is **Updat
 | step | call | why |
 |---|---|---|
 | 1 | R9 (`?document_id=` in the reader) | `outOfDate[]`: the Word files that are out of date, each with `why` (`corrections`, `layerAdded`, `pictures`) and its counts. `writer` set: a run holds the version — no update can start, say what holds it. `reexport.status` `queued`/`running`: one is under way (`components`, `componentsDone`); `failed` with `startedBy` the caller: *Update failed* with *Try again* |
-| 2 | `POST /versions/{versionId}/reexport` with `{"scope": "out_of_date", "components": [...], "document_id": "..."}` | **any member** for `out_of_date`: an admin every component; a developer the components of the documents they review plus `document_id`'s (403 `NOT_YOUR_DOCUMENTS` beyond). `{"scope": "all"}` = *Rebuild all*, admins only. **202** `{"job_id", "status": "queued", "version_id", "scope", "components", "joined": false}`; **200** `joined: true` when a running update covers the request (follow its `job_id`); **200** `{"job_id": null, "status": "up_to_date", …}` when nothing asked for is out of date. **409 `REEXPORT_RUNNING`** (`job_id`, `scope`, `components`) when another update runs that does not cover it; **409 `VERSION_BUSY`** (`writer`) when a generation or a CLI run holds the version. The server re-derives first when it must |
+| 2 | `POST /versions/{versionId}/reexport` with `{"scope": "out_of_date", "components": [...], "document_id": "..."}` | **any member** for `out_of_date`: an admin every component; a developer the components of the documents they review plus `document_id`'s (403 `NOT_YOUR_DOCUMENTS` beyond). `{"scope": "all"}` = *Rebuild all*, admins only. **202** `{"job_id", "status", "version_id", "scope", "components", "joined": false, "already_queued": false, "position", "estimated_start", "ahead", "message"}`: it starts at once, or waits its turn in the project's update lane; **200** `joined: true` when an update running or waiting covers the request (`already_queued: true` when it waits; follow its `job_id`); **200** `{"job_id": null, "status": "up_to_date", …}` when nothing asked for is out of date. Another update running, or a job writing the version, is a wait since job scheduling ([JOB_SCHEDULING_API_SPEC](JOB_SCHEDULING_API_SPEC.md) Q4), no longer `REEXPORT_RUNNING` or `VERSION_BUSY`; **409 `LANE_FULL`** at the lane's limit. The server re-derives first when it must |
 | 3 | `GET /jobs/{job_id}` every few seconds, or `GET /jobs/{job_id}/events` | `queued` → `running` → `complete`, or `failed` with `error_message`. The job has `mode: "reexport"`, `reason`, `started_by`, phases 3 and 4. Jobs answer in snake_case (§4). A save in a component being updated answers 409 `WORD_FILE_UPDATING` until it ends; every other component stays editable |
 | 4 | R9 again | the components it wrote are gone from `outOfDate` |
 | 5 | `GET /documents/{docId}/download` | the new Word file. Until step 3 says `complete`, the previous one |
@@ -1016,10 +1016,12 @@ field optional. **Who may start it**:
 | `all` (*Rebuild all*; the default when `scope` is absent) | every component with documents, or exactly `components` | **403** |
 
 An update is **a job of its own** (`mode: "reexport"`, `reason`, `started_by`): follow it by the
-`job_id` it answers with. One per version: a request a running update covers **joins** it (200,
-`joined: true`); any other is refused, **409 `REEXPORT_RUNNING`** with the running one's `job_id`,
-`scope` and `components`. While a generation or a CLI run holds the version: **409 `VERSION_BUSY`** with
-`writer`. Nothing out of date in what was asked: **200** `{"job_id": null, "status": "up_to_date"}`.
+`job_id` it answers with. A request an update running or waiting covers **joins** it (200, `joined:
+true`; `already_queued: true` when it waits). Any other waits its turn in the project's update lane —
+behind another update, or until a job writing its version lets go — and its answer says where
+(`position`, `estimated_start`, `message`; [JOB_SCHEDULING_API_SPEC](JOB_SCHEDULING_API_SPEC.md) Q4):
+`REEXPORT_RUNNING` and `VERSION_BUSY` are no longer answers to it; **409 `LANE_FULL`** at the lane's
+limit. Nothing out of date in what was asked: **200** `{"job_id": null, "status": "up_to_date"}`.
 The older `POST /projects/{projectId}/jobs/{jobId}/reexport` is `scope: "all"`, admins only. The full
 answer and error table: [WORD_FILE_UPDATES §4.1](../design/WORD_FILE_UPDATES.md#41-update-the-word-files--post-vreexport).
 

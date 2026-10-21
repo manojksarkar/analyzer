@@ -61,7 +61,6 @@ Demo users — `python analyzer.py setup --demo`, or the in-memory backend (all 
 | `JWT_SECRET` | a development value | Signs sign-in tokens — **set it in any shared deployment** |
 | `ANALYZER_REPO_ROOT` | auto-detected | Absolute path to the repo root (contains `analyzer.py`) |
 | `ANALYZER_WORKSPACES_DIR` | `<repo_root>/workspaces/` | Where per-project checkouts and output dirs live |
-| `JOB_MAX_CONCURRENCY` | `2` | Max pipeline subprocesses running simultaneously |
 | `SUBPROCESS_TIMEOUT` | `0` | Seconds before a pipeline subprocess is killed (0 = no limit) |
 | `LIBCLANG_PATH` | _(auto)_ | Path to the libclang library, passed to the pipeline subprocesses |
 

@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-21b | Job scheduling built: the queue, the scheduler, the API and the command line's checks; pause in the engine next | [15](15-2026-10-07h.md) |
 | 2026-10-21 | Job scheduling: the design agreed; the web screens are Manoj's; messages go in the fields the web app already shows | [15](15-2026-10-07h.md) |
 | 2026-10-19c | Job scheduling: resume redoes the step it stopped in (the user's decision), and a cancel undoes nothing call by call | [15](15-2026-10-07h.md) |
 | 2026-10-19b | Job scheduling designed: the database is the queue, one atomic claim starts a job, and the run reports itself -- alive signal, pause, exit code 75 | [15](15-2026-10-07h.md) |

@@ -445,6 +445,7 @@ python analyzer.py generate --project-id myproj --commit <sha> --version-id v2 -
 | `--no-register` | do not record the documents for review at the end (see `register`) |
 | `--model-only` | stop after Phase 2: the model of the scope's layers, no documents. `export` makes them later, per component, into this version. |
 | `--detach` | run in the background on a frozen copy of the code — see [A run that lasts days](#a-run-that-lasts-days) |
+| `--ignore-queue` | start even though the project's generation lane is taken, jobs wait in it, or the server runs its most generations — the super admin's call. See [Runs and the job queue](#runs-and-the-job-queue). `export`, `resume` and `reexport` take it too. |
 
 `--full`, `--no-narrowed-parse` and `--verify-parse` are all "do it the slow way on purpose".
 None belongs in a routine run.
@@ -1144,8 +1145,9 @@ in the copy's own `logs/`, next to `run.log`; its exit code goes into `exit.json
 **From the web app.** A Generate (and Components → Generate) runs exactly that: `analyzer.py generate`
 (or `export`) with `--detach`, and the job follows the run through its log, its process and its exit
 code. Restarting the API does not stop it: the next start finds the run and follows it again. If the
-run's process itself dies -- the machine restarts, someone kills it -- the job says **Stopped**, and the
-version keeps everything made so far (once the parse is stored; before that it is removed as always).
+run's process itself dies -- the machine restarts, someone kills it -- the job is **interrupted**, its
+message starting `Stopped:`, and the version keeps everything made so far (once the parse is stored;
+before that it is removed as always).
 Carry it on with `python analyzer.py resume --project-id P --version-id <version> --detach` (the job's
 message prints it); that also finishes the web job, so the version leaves draft. Cancel stops the run and
 removes the version. Not covered: an API run under systemd with the default `KillMode=control-group`, or
@@ -1162,6 +1164,36 @@ stores what they made and exits 3; `resume` makes the failed one again once the 
 detached run uses the database its starter resolved (`DATABASE_URL`), and records path arguments
 (`--config`, `--source`) as absolute paths, so `resume` can repeat them from anywhere. Other versions are not held up — but two runs that both use the LLM gateway share its
 ~1 call / 3 s limit, so run one at a time.
+
+## Runs and the job queue
+
+Each project has two lanes, one job at a time in each: **generation** (`generate`, `export`, `resume`)
+and **update** (`reexport`). The web app's jobs wait their turn in them; the server runs at most
+`jobs.maxGenerations` generations at once, every project's together (`config.local.json`, the `jobs`
+block). The full rules: [JOB_SCHEDULING_SPEC](spec/JOB_SCHEDULING_SPEC.md).
+
+A run from the command line does not wait. It starts when its lane is free, and shows in the web app's
+queue as a job of its own — "from the command line, cli dev@host pid 7". Otherwise it is refused, exit 2,
+naming the jobs in the way:
+
+```
+Refused: the generation lane of project myproj is taken.
+- job3f2a9c1e: generate v4, running in the web app
+- job8d1e07aa: export into v4 (Layer1.Can), queued in the web app
+- Run it when they have ended — or now, past the queue: --ignore-queue (the super admin's choice).
+```
+
+The three refusals: a job runs or is paused in the lane; jobs wait in it (a run now would go before
+them); for a generation, the server already runs its most generations. **`--ignore-queue`** starts it
+anyway, beside the lane's job — both run; the next waiting job starts when both have ended.
+
+- **Its end is its own.** The run ends its job as it ends: complete (exit 0, or 3), failed, or cancelled
+  on Ctrl+C. The web app cannot pause or cancel it — stop it where it runs. A run killed outright is
+  marked interrupted once it has been silent for `jobs.interruptedAfterMinutes` (10).
+- **`--detach`** records the job first; the background run is that job.
+- **`--job-id`** is how the API hands a run its web job; it is not for typing.
+- A database from before job scheduling refuses the run until `python analyzer.py setup` has upgraded
+  it. With no database configured there is no queue, and the run says what it lacks.
 
 ## When a run stops
 
@@ -1181,6 +1213,9 @@ detached run uses the database its starter resolved (`DATABASE_URL`), and record
 | `--config not found: <path>` | The path does not resolve. Nothing was created; fix it and re-run. |
 | `<path> is not valid JSON` | The message prints the offending line and its neighbours. Comments and trailing commas are accepted, so it is usually a missing comma between entries or an unclosed brace. |
 | `version <id> is being written by analyzer <command> pid N on <host>` | Another run holds that version. `progress` shows how far it is; wait, or stop that process. |
+| `Refused: the generation lane of project P is taken.` (or `jobs wait in the … lane`, or `… generations run on this server`) | The jobs under it are in the way: run it when they have ended, or now with `--ignore-queue` — see [Runs and the job queue](#runs-and-the-job-queue). |
+| `the run could not be recorded as a job of project P` | A database from before job scheduling: `python analyzer.py setup`, then run it again. |
+| `Refused: there is no project P in the database.` | `python analyzer.py onboard` it first. |
 | `progress` says `STOPPED -- the process is gone` | The run was cut short: `python analyzer.py resume ... --detach` (the line under it). |
 | exit code 3, `N document plan(s) failed; the other components' documents were made` | Fix what the named component's log says, then `resume` — it makes only the failed ones. |
 | `has no model to re-export from` (from `reexport`) | Its Phase 2 did not finish: `resume` it first. |
