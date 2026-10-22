@@ -900,6 +900,26 @@ class TestResume:
         got = sql_db.jobs.get(job.id)
         assert got.status == "complete" and got.activity_detail.startswith("Resumed")
 
+    def test_a_command_line_run_stopped_is_resumed_by_a_job_of_its_own(self, sql_db, version,
+                                                                       monkeypatch):
+        """A command-line run's job is ended by that run (`analyzer._as_job`). Reopened from the
+        web app, the resume would end it itself, beside the API, and the web app could neither
+        pause nor cancel it (CLI_RUN)."""
+        from api.services import pipeline_runner as pr
+        from core.version_run import mark_components
+        mark_components(version.id, ["Layer2.Gpio"], "failed", error="exit 1")
+        cli = _bg_job(sql_db, version, status="interrupted", origin="cli",
+                      runner="cli dev@host pid 7", error_message="Interrupted: ...")
+        monkeypatch.setattr(pr, "_execute_detached", lambda db, job_id, cmd, **kw: True)
+        job = pr.start_resume(sql_db, version)
+        assert job.id != cli.id and job.origin == "web"
+        t = pr._reexport_threads.get(job.id)
+        if t is not None:
+            t.join(timeout=30)
+        assert sql_db.jobs.get(cli.id).status == "interrupted", \
+            "the developer's run stays as it ended"
+        assert sql_db.jobs.get(job.id).status == "complete"
+
     def test_a_cli_resume_finishes_the_web_job_it_carried_on(self, sql_db, version, monkeypatch):
         """Until the web app has a Resume button, a stopped web run is resumed on the server. Its
         job is then finished as the API would have: the version leaves draft."""

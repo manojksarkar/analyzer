@@ -23,7 +23,7 @@ from ...models.domain import (
     User, Project, ProjectMember, AccessRequest, Version, Commit, AnalysisJob,
     Document, DocumentSection, DocumentAssignment, Function, CompareResult,
     DocumentDiff, Notification, RENDER_MODES, ACTIVE_JOB_STATUSES,
-    ReviewEvent, DOC_STATUSES, JOB_STATE_FIELDS, JOB_CLOSED_STATUSES,
+    ReviewEvent, DOC_STATUSES, JOB_STATE_FIELDS, JOB_QUEUE_FIELDS, JOB_CLOSED_STATUSES,
     JOB_LANE_STATUSES, JOB_HOLDING_STATUSES, JOB_ENDED_STATUSES, JobEvent,
 )
 from ...repositories.interfaces import (
@@ -369,7 +369,8 @@ class _JobRepo(_Base, IAnalysisJobRepository):
 
     def update(self, job):
         j = s.analysis_jobs
-        row = {k: v for k, v in to_row(job).items() if k not in JOB_STATE_FIELDS and k != "id"}
+        row = {k: v for k, v in to_row(job).items()
+               if k not in JOB_STATE_FIELDS and k not in JOB_QUEUE_FIELDS and k != "id"}
         with self._engine.begin() as cx:
             n = cx.execute(update(j).where((j.c.id == job.id)
                                            & j.c.status.notin_(JOB_CLOSED_STATUSES))

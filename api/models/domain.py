@@ -174,6 +174,14 @@ ACTIVE_JOB_STATUSES = ("queued", "running", "paused")
 #: moment earlier (the runner does, for almost every line a run prints), so writing these from it
 #: put back "running" over a cancel made in between (docs/design/JOB_SCHEDULING_DESIGN.md §1).
 JOB_STATE_FIELDS = ("status", "started_at", "completed_at", "error_message")
+#: What `update()` never writes either: the queue's own fields -- the lane, the place and the
+#: priority, a pause or a resume asked, the alive signal, who runs it. Only the queue changes them,
+#: by `transition()` or a claim, or the job's first insert. Written from a copy read a moment
+#: earlier, a progress line erased a pause request made in between, and a waiting message put
+#: back the runner and the alive signal of a job claimed meanwhile.
+JOB_QUEUE_FIELDS = ("lane", "priority", "submitted_at", "heartbeat_at", "runner",
+                    "pause_requested_at", "resume_requested_at", "paused_at", "paused_seconds",
+                    "origin", "forced", "request_key")
 #: A job in one of these takes no `update()` at all: what was cut short stays as it was cut.
 JOB_CLOSED_STATUSES = ("cancelled", "removed", "interrupted")
 #: Every status a job can have.

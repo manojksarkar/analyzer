@@ -202,8 +202,12 @@ def _startup_meets_no_database():
     into -- the database `api/db/session.py` chose at import: the configured one. The routes get
     the test's database through `get_db`; the hook gets an in-memory one, and says so."""
     import api.db.session as session
+    import api.main as main
     mp = pytest.MonkeyPatch()
     mp.setattr(session, "_db", InMemoryDatabase())
+    # Nor does it start the app's own job scheduler: its launch is the real one, a pipeline run.
+    # Each test that submits has a scheduler of its own (`_job_scheduler`).
+    mp.setattr(main, "_start_scheduler", lambda *a, **k: None)
     yield
     mp.undo()
 

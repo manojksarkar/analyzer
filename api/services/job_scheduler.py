@@ -20,7 +20,7 @@ import os
 import socket
 import threading
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Callable, List, Optional
 
 from . import job_queue as q
@@ -50,8 +50,12 @@ class Scheduler:
         self._last_sweep: Optional[float] = None
         self._last_retention: Optional[float] = None
         self._thread: Optional[threading.Thread] = None
-        #: Hold the waiting jobs in the first round (a restart, `start_up`).
+        #: Hold the waiting jobs in the first round (a restart, `start_up`): the queues of the
+        #: projects a job was left waiting in before `hold_before` -- not a submit made since.
         self.hold_first = False
+        self.hold_before: Optional[datetime] = None
+        #: Whether rounds sweep: not on the in-memory backend, where nothing outlives the process.
+        self.sweeps = True
 
     # -- the thread -------------------------------------------------------
     def start(self) -> "Scheduler":
@@ -95,25 +99,31 @@ class Scheduler:
         """One round: sweeps when due, then every claim that may be made now; the jobs started."""
         if not self.runs_jobs():
             return []
+        started: List[tuple] = []
         with self._lock:
             self._db_answers()
             if self.hold_first:
                 self.hold_first = False
-                held = q.hold_waiting(self.db)
+                held = q.hold_waiting(self.db, before=self.hold_before)
                 if held:
                     _log.warning("%d waiting job(s) held after the restart, in %d project(s): a "
                                  "super admin starts or clears them", sum(held.values()),
                                  len(held))
             t = time.monotonic()
-            if sweep and (self._last_sweep is None or t - self._last_sweep >= SWEEP_SECONDS):
+            if (sweep and self.sweeps
+                    and (self._last_sweep is None or t - self._last_sweep >= SWEEP_SECONDS)):
                 self._last_sweep = t
                 self.sweep()
-            started = self._claims()
-            # Launched before another round may begin: a job claimed here is running, and a
-            # round that came meanwhile -- a submit's own, say -- must find its thread there,
-            # not claimed and not yet started. A launch only starts a thread.
-            for job, resumed in started:
-                self._launch(job, resumed)
+            try:
+                self._claims(started)
+            finally:
+                # Launched before another round may begin: a job claimed here is running, and a
+                # round that came meanwhile -- a submit's own, say -- must find its thread there,
+                # not claimed and not yet started. A launch only starts a thread. Launched too
+                # when the round stopped part way: a job claimed is running, and with no thread
+                # it would be interrupted as silent, its turn lost.
+                for job, resumed in started:
+                    self._launch(job, resumed)
         for pid in {j.project_id for j, _ in started}:
             q.refresh_messages(self.db, pid)
         return [j for j, _ in started]
@@ -132,7 +142,9 @@ class Scheduler:
             self._db_up_since = time.monotonic()
 
     # -- claims (§5) ---------------------------------------------------------
-    def _claims(self) -> List[tuple]:
+    def _claims(self, started: List[tuple]) -> None:
+        """Every claim that may be made now, each added to `started` as it is made -- (job,
+        resumed) -- so the round launches the jobs claimed before anything that raises."""
         db = self.db
         cap = int(q.settings().get("maxGenerations", 2))
         at = q.now()
@@ -141,7 +153,6 @@ class Scheduler:
         busy_lanes = {(h.project_id, q.lane_of(h)) for h in holding}
         running_gen = sum(1 for h in holding
                           if h.status == "running" and q.lane_of(h) == q.GENERATION)
-        started: List[tuple] = []
 
         def version_busy(job: Any) -> bool:
             if q.version_writer(db, job, holding) is not None:
@@ -194,7 +205,6 @@ class Scheduler:
                 if self._claim(job, "queued", None, at):
                     started.append((job, False))
                     break
-        return started
 
     def _claim(self, job: Any, from_status: str, cap: Optional[int], at) -> bool:
         values = {"current_activity": "Starting…", "activity_detail": ""}
@@ -306,13 +316,18 @@ def install(db: Any, launch: Optional[Callable[[Any, Any, bool], None]] = None) 
     return _SCHEDULER
 
 
-def start_up(db: Any) -> Scheduler:
+def start_up(db: Any, *, persists: bool = True) -> Scheduler:
     """At start-up (§10), after the start-up check has followed again or interrupted the running
     web jobs (`api.main._fail_interrupted_jobs`): the thread, whose first round -- once the
     database answers, on the server that runs jobs -- holds the jobs left waiting, unless
-    `jobs.startQueuedAfterRestart` (REQ-JS-18)."""
+    `jobs.startQueuedAfterRestart` (REQ-JS-18); a job submitted after the start-up is not one of
+    them. `persists`: False for the in-memory backend -- nothing outlives the process there, so
+    nothing was left waiting and nothing runs unfollowed: it neither holds nor sweeps, and starts
+    what is submitted."""
     sched = install(db)
-    sched.hold_first = not q.settings().get("startQueuedAfterRestart", False)
+    sched.hold_first = persists and not q.settings().get("startQueuedAfterRestart", False)
+    sched.hold_before = q.next_place()
+    sched.sweeps = persists
     return sched.start()
 
 

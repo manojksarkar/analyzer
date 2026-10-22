@@ -286,6 +286,24 @@ class TestClaim:
         assert not db.jobs.claim(job.id, "queued", cap=running, runner="r", now=_now())
         assert db.jobs.claim(job.id, "queued", cap=running + 1, runner="r", now=_now())
 
+    def test_a_round_that_stops_part_way_launches_what_it_claimed(self, db, sched, monkeypatch):
+        """A job claimed is running: a round that raises after the claim -- the database gone a
+        moment -- still starts it, or it would be interrupted as silent and its turn lost."""
+        project = _project(db)
+        job = q.enqueue(db, _generation(db, project, "v1"), actor_id="u1").job
+        _set(db, job, "paused", paused_at=_now(), resume_requested_at=_now())
+        real = db.jobs.in_status
+
+        def in_status(statuses):
+            if tuple(statuses) == ("queued",):                    # after the resume's claim
+                raise RuntimeError("the database went away")
+            return real(statuses)
+        monkeypatch.setattr(db.jobs, "in_status", in_status)
+        with pytest.raises(RuntimeError):
+            sched.round(sweep=False)
+        assert db.jobs.get(job.id).status == "running"
+        assert sched.launched[-1] == (job.id, True)
+
 
 # ---------------------------------------------------------------------------
 # held after a restart (REQ-JS-18)
@@ -323,6 +341,20 @@ class TestHeld:
         q.hold_waiting(db)
         q.release_held(db, "su", project_id=project.id, remove="all")
         assert db.jobs.get(a.id).status == "removed"
+
+    def test_only_the_projects_a_restart_left_waiting_are_held(self, db, sched):
+        """The first round after a start-up holds -- and a submit's own round can be that first
+        one. A project that had nothing left waiting runs its submit; one that had is held, and
+        what is submitted to it goes after what was left."""
+        left, other = _project(db), _project(db)
+        q.enqueue(db, _generation(db, left, "v1"), actor_id="u1")
+        waiting = q.enqueue(db, _generation(db, left, "v2"), actor_id="u1").job
+        sched.hold_first, sched.hold_before = True, q.next_place()       # the restart
+        fresh = q.enqueue(db, _generation(db, other, "w1"), actor_id="u1")
+        assert fresh.status == "running", "nothing was left waiting in its project"
+        assert db.jobs.get(waiting.id).status == "held"
+        later = q.enqueue(db, _generation(db, left, "v3"), actor_id="u1")
+        assert later.status == "held"
 
 
 # ---------------------------------------------------------------------------
@@ -385,6 +417,58 @@ class TestActions:
             q.cancel(db, db.jobs.get(job.id), user)
         assert refused.value.code == "CLI_RUN" and "dev@host" in refused.value.message
 
+    def test_a_resume_removed_before_its_turn_can_be_asked_again(self, db, sched):
+        project = _project(db)
+        q.enqueue(db, _generation(db, project, "v1"), actor_id="u1")             # holds the lane
+        job = q.enqueue(db, _generation(db, project, "v2"), actor_id="u1").job
+        _set(db, job, "failed", completed_at=_now())
+        assert q.requeue(db, db.jobs.get(job.id), actor_id="u1").status == "queued"
+        user = type("U", (), {"id": "u1", "name": "Una", "is_superuser": True})()
+        q.cancel(db, db.jobs.get(job.id), user)                                   # removed
+        assert db.jobs.get(job.id).status == "removed"
+        assert db.versions.get(job.version_id) is not None, "a resume's version stays"
+        assert q.requeue(db, db.jobs.get(job.id), actor_id="u1").status == "queued"
+
+    def test_a_priority_change_keeps_a_release_made_meanwhile(self, db, sched):
+        project = _project(db)
+        q.enqueue(db, _generation(db, project, "v1"), actor_id="u1")
+        job = q.enqueue(db, _generation(db, project, "v2"), actor_id="u1").job
+        q.hold_waiting(db)
+        read = db.jobs.get(job.id)                                  # the page shows it held
+        q.release_held(db, "su", project_id=project.id)             # released meanwhile
+        q.set_priority(db, read, "high", "su")
+        now_is = db.jobs.get(job.id)
+        assert now_is.status == "queued", "the release stays made"
+        assert now_is.priority == q.PRIORITY["high"]
+
+    def test_a_progress_line_keeps_a_pause_asked_meanwhile(self, db, sched):
+        """The runner writes a copy of the job for its progress lines, read a moment before."""
+        project = _project(db)
+        job = q.enqueue(db, _generation(db, project, "v1"), actor_id="u1").job
+        line = db.jobs.get(job.id)
+        q.request_pause(db, db.jobs.get(job.id), "u2")
+        line.current_activity = "Parsing 3 of 9 files"
+        db.jobs.update(line)
+        now_is = db.jobs.get(job.id)
+        assert now_is.pause_requested_at is not None, "the pause request stays"
+        assert now_is.current_activity == "Parsing 3 of 9 files"
+
+    def test_a_waiting_message_never_lands_on_a_job_that_started(self, db, sched, monkeypatch):
+        project = _project(db)
+        first = q.enqueue(db, _generation(db, project, "v1"), actor_id="u1").job
+        job = q.enqueue(db, _generation(db, project, "v2"), actor_id="u1").job
+        stale = q.lanes_of(db, project.id)                          # read while it waits
+        stale["generation"].waiting[0].current_activity = ""        # so its words differ
+        _set(db, first, "complete", completed_at=_now())
+        sched.round(sweep=False)                                    # claimed meanwhile
+        started = db.jobs.get(job.id)
+        assert started.status == "running"
+        monkeypatch.setattr(q, "lanes_of", lambda d, pid: stale)
+        q.refresh_messages(db, project.id)
+        now_is = db.jobs.get(job.id)
+        assert not now_is.current_activity.startswith("Waiting")
+        assert (now_is.runner, now_is.heartbeat_at) == (started.runner, started.heartbeat_at)
+
 
 # ---------------------------------------------------------------------------
 # sweeps: silent, paused too long, records (REQ-JS-20, 24, 34)
@@ -419,6 +503,29 @@ class TestSweeps:
         assert db.jobs.get(job.id).status == "cancelled"
         assert "paused for 7 days" in db.jobs.get(job.id).error_message
 
+    def test_on_the_in_memory_backend_it_neither_holds_nor_sweeps(self, db, settings,
+                                                                 monkeypatch):
+        """Nothing outlives that process: its seeded "running" job has no process and must not be
+        interrupted, and nothing was left waiting to hold -- but what is submitted starts."""
+        monkeypatch.setattr(q, "_kick", q._kick)
+        monkeypatch.setattr(q, "_try_start", q._try_start)
+        monkeypatch.setattr(job_scheduler, "_SCHEDULER", job_scheduler._SCHEDULER)
+        monkeypatch.setattr(job_scheduler.Scheduler, "start", lambda self: self)   # no thread
+        launched = []
+        monkeypatch.setattr(pr, "launch_job", lambda d, job, resumed: launched.append(job.id))
+        project = _project(db)
+        seeded = _generation(db, project, "v1")
+        db.jobs.create(seeded)
+        _set(db, seeded, "running", started_at=_now() - datetime.timedelta(hours=2))
+        s = job_scheduler.start_up(db, persists=False)
+        assert (s.hold_first, s.sweeps) == (False, False)
+        s._db_up_since = 0.0                              # the database has answered long since
+        s.round()
+        assert db.jobs.get(seeded.id).status == "running", "not interrupted"
+        other = _project(db)
+        fresh = q.enqueue(db, _generation(db, other, "w1"), actor_id="u1")
+        assert fresh.status == "running" and launched == [fresh.job.id]
+
     def test_old_records_go_but_a_versions_generation_job_stays(self, db, settings):
         project = _project(db)
         gen = _generation(db, project, "v1")
@@ -429,6 +536,19 @@ class TestSweeps:
         _set(db, update, "complete", completed_at=_now() - datetime.timedelta(days=200))
         db.jobs.prune_ended(_now() - datetime.timedelta(days=90))
         assert db.jobs.get(gen.id) is not None and db.jobs.get(update.id) is None
+
+
+def test_the_api_on_the_in_memory_backend_starts_its_scheduler(monkeypatch):
+    """Before job scheduling a submit started its run itself; with no scheduler, a submit on the
+    in-memory backend waited for ever."""
+    import asyncio
+    import api.db.session as session
+    from api import main
+    monkeypatch.setattr(session, "_db", InMemoryDatabase())
+    calls = []
+    monkeypatch.setattr(main, "_start_scheduler", lambda d, **kw: calls.append(kw))
+    asyncio.run(main._db_startup_check())
+    assert calls == [{"persists": False}]
 
 
 # ---------------------------------------------------------------------------
@@ -536,3 +656,42 @@ class TestRecord:
         q.after_end(db, job.id)
         q.after_end(db, job.id)
         assert [e.kind for e in db.job_events.list_for_job(job.id)].count("completed") == 1
+
+    def test_a_cancel_is_recorded_with_its_person_and_told(self, db, sched, monkeypatch):
+        told = []
+        monkeypatch.setattr(q, "tell", lambda d, job, kind, message, **k: told.append(kind))
+        project = _project(db)
+        job = q.enqueue(db, _generation(db, project, "v1"), actor_id="u1").job
+        user = type("U", (), {"id": "u2", "name": "Ann", "is_superuser": True})()
+        q.cancel(db, db.jobs.get(job.id), user)
+        q.after_end(db, job.id)                           # its thread, ending after the cancel
+        ends = [e.actor_id for e in db.job_events.list_for_job(job.id) if e.kind == "cancelled"]
+        assert ends == ["u2"]
+        assert told.count("job_cancelled") == 1
+
+    def test_a_job_submitted_again_is_told_its_end_again(self, db, sched, monkeypatch):
+        told = []
+        monkeypatch.setattr(q, "tell", lambda d, job, kind, message, **k: told.append(kind))
+        project = _project(db)
+        job = q.enqueue(db, _generation(db, project, "v1"), actor_id="u1").job
+        _set(db, job, "failed", completed_at=_now(), error_message="Failed: boom")
+        q.after_end(db, job.id)
+        assert q.requeue(db, db.jobs.get(job.id), actor_id="u1").status == "running"
+        _set(db, job, "failed", completed_at=_now(), error_message="Failed: boom")
+        q.after_end(db, job.id)
+        q.after_end(db, job.id)                           # its thread's, once more
+        kinds = [e.kind for e in db.job_events.list_for_job(job.id)]
+        assert kinds.count("failed") == 2 and told.count("job_failed") == 2
+
+    def test_a_lanes_messages_read_each_typical_time_once(self, db, sched, monkeypatch):
+        """Each waiting job's estimate adds the typical time of every job ahead: read once per
+        call, not once per job ahead of each job."""
+        project = _project(db, generation_limit=8)
+        for n in range(8):
+            q.enqueue(db, _generation(db, project, "v%d" % n), actor_id="u1")
+        reads = []
+        real = db.jobs.recent_ended
+        monkeypatch.setattr(db.jobs, "recent_ended",
+                            lambda *a, **k: reads.append(a) or real(*a, **k))
+        q.refresh_messages(db, project.id)
+        assert len(reads) == 1

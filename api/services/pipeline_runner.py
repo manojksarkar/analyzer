@@ -3776,7 +3776,11 @@ def start_resume(db: Any, version: Any, *, started_by: Optional[str] = None,
     generation = next((j for j in jobs if getattr(j, "mode", None) not in RENDER_MODES), None)
     first = {"regenerate": 1, "derive": 2}.get(action, 3)
     try:
-        if generation is not None and generation.status != "complete":
+        # A web run's job, reopened. A command-line run's job is the developer's, ended by its own
+        # run (`analyzer._as_job`): reopened here, the resume would end it beside the API, and the
+        # web app could neither pause nor cancel it (CLI_RUN) -- its resume is a job of its own.
+        if (generation is not None and generation.status != "complete"
+                and getattr(generation, "origin", "web") == "web"):
             for p in generation.phases:
                 if p.number >= first and p.status != "done":
                     p.status = "pending"

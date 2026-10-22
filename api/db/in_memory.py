@@ -21,7 +21,7 @@ from ..models.domain import (
     User, Project, ProjectMember, Version, Commit, AnalysisJob,
     AnalysisPhase, Document, DocumentSection, DocumentAssignment,
     Function, CompareResult, DocumentDiff, Notification, AccessRequest, RENDER_MODES, ACTIVE_JOB_STATUSES,
-    ReviewEvent, DOC_STATUSES, JOB_STATE_FIELDS, JOB_CLOSED_STATUSES,
+    ReviewEvent, DOC_STATUSES, JOB_STATE_FIELDS, JOB_QUEUE_FIELDS, JOB_CLOSED_STATUSES,
     JOB_LANE_STATUSES, JOB_HOLDING_STATUSES, JOB_ENDED_STATUSES, JobEvent,
 )
 from ..repositories.interfaces import (
@@ -679,7 +679,7 @@ class _InMemJobRepo(IAnalysisJobRepository):
             if stored.status in JOB_CLOSED_STATUSES:
                 return copy.deepcopy(stored)
             new = copy.deepcopy(job)
-            for f in JOB_STATE_FIELDS:                          # the state stays as it is now
+            for f in JOB_STATE_FIELDS + JOB_QUEUE_FIELDS:       # as they are now: the queue's
                 setattr(new, f, getattr(stored, f))
             self._store[job.id] = new
             return copy.deepcopy(new)

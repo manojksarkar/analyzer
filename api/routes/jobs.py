@@ -9,6 +9,7 @@ from typing import AsyncIterator, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sse_starlette.sse import EventSourceResponse
 
 from ..db.session import get_db
@@ -275,7 +276,19 @@ def start_job(
     # name is taken while the job waits (REQ-JS-08). The engine writes its per-version rows under
     # this same id, _make_version finalizes it at completion, and a removed, failed or cancelled
     # job deletes its draft (_release_draft_version) — so it leaves no orphan.
-    pipeline_runner._reserve_version(db, job, project)
+    try:
+        pipeline_runner._reserve_version(db, job, project)
+    except IntegrityError:
+        # The name was taken since it was checked: the same request sent twice at once (a double
+        # click). The first one's answer when it carries the same key (REQ-JS-09), else the name's
+        # refusal -- not a server error.
+        first = db.jobs.find_by_request_key(project_id, request_key) if request_key else None
+        if first is not None:
+            answer = job_queue.answer_for(db, first)
+            return {"job_id": first.id, "status": first.status, **answer.as_dict(),
+                    "job": _job_dict(first, db)}
+        raise conflict("VERSION_EXISTS",
+                       f"Version '{version_name}' already exists in this project.")
     try:
         answer = job_queue.enqueue(db, job, actor_id=current_user.id, request_key=request_key,
                                    priority=priority)

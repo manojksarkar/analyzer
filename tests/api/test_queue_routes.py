@@ -90,6 +90,12 @@ def _url(project, rest=""):
     return f"/api/v1/projects/{project.id}{rest}"
 
 
+def _name_taken(*_a, **_k):
+    """`_reserve_version` meeting a draft of the same name, made a moment before."""
+    from sqlalchemy.exc import IntegrityError
+    raise IntegrityError("INSERT INTO versions", {}, Exception("uq_version_project_version"))
+
+
 class TestSubmit:
     def test_a_generation_waits_with_its_place_and_a_message(self, client, auth_header, db,
                                                             project):
@@ -121,6 +127,33 @@ class TestSubmit:
         again = client.post(_url(project, "/jobs"), headers={**auth_header, **key},
                             json={"commit_sha": "d" * 40, "version_tag": "v-once"})
         assert first.status_code == 202 and again.status_code == 202, again.text
+        assert again.json()["job_id"] == first.json()["job_id"]
+
+    def test_a_name_taken_since_its_check_is_refused_not_a_server_error(
+            self, client, auth_header, db, project, monkeypatch):
+        """Two submits of one name at once (a double click): the second's draft meets the first's
+        name -- `uq_version_project_version` -- and is refused as any taken name is."""
+        monkeypatch.setattr(pr, "_reserve_version", _name_taken)
+        r = client.post(_url(project, "/jobs"), headers=auth_header,
+                        json={"commit_sha": "c" * 40, "version_tag": "v-twice"})
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "VERSION_EXISTS", r.text
+
+    def test_the_same_request_twice_at_once_answers_its_first_job(
+            self, client, auth_header, db, project, monkeypatch):
+        """REQ-JS-09 when both come at once: the second checked the key and the name before the
+        first had either, and met the first's name as it reserved its own."""
+        _job(db, project, status="running")
+        key = {"Idempotency-Key": uuid.uuid4().hex}
+        body = {"commit_sha": "d" * 40, "version_tag": "v-dbl"}
+        first = client.post(_url(project, "/jobs"), headers={**auth_header, **key}, json=body)
+        assert first.status_code == 202, first.text
+        for repo, name in ((db.jobs, "find_by_request_key"), (db.versions, "get_by_tag")):
+            real, seen = getattr(repo, name), []
+            monkeypatch.setattr(repo, name, lambda *a, _r=real, _s=seen: (
+                _s.append(a) or (None if len(_s) == 1 else _r(*a))))
+        monkeypatch.setattr(pr, "_reserve_version", _name_taken)
+        again = client.post(_url(project, "/jobs"), headers={**auth_header, **key}, json=body)
+        assert again.status_code == 202, again.text
         assert again.json()["job_id"] == first.json()["job_id"]
 
     def test_an_unknown_commit_is_refused_and_its_name_stays_free(self, client, auth_header, db,

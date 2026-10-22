@@ -235,23 +235,32 @@ def run_seconds(job: Any) -> Optional[float]:
     return max(0.0, (e - s).total_seconds() - float(getattr(job, "paused_seconds", 0) or 0))
 
 
-def typical_seconds(db: Any, project_id: str, kind: str) -> Optional[float]:
-    """The median run time of the project's last five completed jobs of `kind`."""
+def typical_seconds(db: Any, project_id: str, kind: str,
+                    memo: Optional[dict] = None) -> Optional[float]:
+    """The median run time of the project's last five completed jobs of `kind`. `memo`: what one
+    call has read already -- an estimate asks it of every job ahead, and a lane's messages ask
+    for every job of the lane, so each read once."""
+    if memo is not None and (project_id, kind) in memo:
+        return memo[(project_id, kind)]
     try:
         done = [j for j in db.jobs.recent_ended(project_id, limit=60)
                 if j.status == "complete" and kind_of(j) == kind]
     except Exception:                                   # noqa: BLE001 - no estimate then
         return None
     times = [t for t in (run_seconds(j) for j in done[:5]) if t]
-    return statistics.median(times) if times else None
+    typical = statistics.median(times) if times else None
+    if memo is not None:
+        memo[(project_id, kind)] = typical
+    return typical
 
 
-def remaining_seconds(db: Any, job: Any, at: datetime) -> Optional[float]:
+def remaining_seconds(db: Any, job: Any, at: datetime,
+                      memo: Optional[dict] = None) -> Optional[float]:
     """What is left of a running job: its own estimate, else its kind's typical time less what it
     has run."""
     if getattr(job, "eta_seconds", None):
         return float(job.eta_seconds)
-    typical = typical_seconds(db, job.project_id, kind_of(job))
+    typical = typical_seconds(db, job.project_id, kind_of(job), memo)
     started = aware(getattr(job, "started_at", None))
     if typical is None or started is None:
         return None
@@ -292,24 +301,26 @@ def lanes_of(db: Any, project_id: str) -> Dict[str, Lane]:
     return out
 
 
-def estimated_start(db: Any, lane: Lane, job: Any, at: datetime) -> Optional[datetime]:
+def estimated_start(db: Any, lane: Lane, job: Any, at: datetime,
+                    memo: Optional[dict] = None) -> Optional[datetime]:
     """When `job` should start: what is left of the job holding its lane, plus the typical time of
     each job ahead of it. None when it cannot be told -- a paused job ahead, a held queue, or a
     kind never run before."""
     if lane.held:
         return None
+    memo = {} if memo is None else memo
     total = 0.0
     for h in lane.holding:
         if h.status == "paused":
             return None
-        left = remaining_seconds(db, h, at)
+        left = remaining_seconds(db, h, at, memo)
         if left is None:
             return None
         total += left
     for w in lane.waiting:
         if w.id == job.id:
             return at + timedelta(seconds=total)
-        typical = typical_seconds(db, w.project_id, kind_of(w))
+        typical = typical_seconds(db, w.project_id, kind_of(w), memo)
         if typical is None:
             return None
         total += typical
@@ -328,7 +339,8 @@ def version_writer(db: Any, job: Any, holding: Iterable[Any]) -> Optional[Any]:
 
 
 def waiting_message(db: Any, lane: Lane, job: Any, *, at: Optional[datetime] = None,
-                    running_generations: Optional[int] = None) -> tuple:
+                    running_generations: Optional[int] = None,
+                    memo: Optional[dict] = None) -> tuple:
     """(`current_activity`, `activity_detail`) of a waiting job: where it is and why it waits."""
     at = at or now()
     if job.status == "held":
@@ -336,7 +348,7 @@ def waiting_message(db: Any, lane: Lane, job: Any, *, at: Optional[datetime] = N
                 "A super admin starts the held jobs, or clears them.")
     pos = lane.position(job.id) or 1
     ahead = lane.waiting[:pos - 1]
-    when = estimated_start(db, lane, job, at)
+    when = estimated_start(db, lane, job, at, memo)
     about = " — about %s" % _duration((when - at).total_seconds()) if when and when > at else ""
     if pos > 1:
         return ("Waiting as #%d%s" % (pos, about),
@@ -379,15 +391,16 @@ def waiting_message(db: Any, lane: Lane, job: Any, *, at: Optional[datetime] = N
 
 def refresh_messages(db: Any, project_id: str) -> None:
     """Say again, on each waiting job of the project, where it is and why it waits -- after anything
-    that moves the queue. Writes only what changed. Never fails."""
+    that moves the queue. Writes only what changed, and only while the job still waits as it was
+    read: one claimed meanwhile keeps the words of its start. Never fails."""
     try:
-        at = now()
+        at, memo = now(), {}
         for lane in lanes_of(db, project_id).values():
             for job in lane.waiting:
-                head, detail = waiting_message(db, lane, job, at=at)
+                head, detail = waiting_message(db, lane, job, at=at, memo=memo)
                 if (job.current_activity, job.activity_detail) != (head, detail):
-                    job.current_activity, job.activity_detail = head, detail
-                    db.jobs.update(job)
+                    db.jobs.transition(job.id, (job.status,), job.status,
+                                       current_activity=head, activity_detail=detail)
     except Exception as exc:                            # noqa: BLE001 - words, not the queue
         _log.warning("project %s: waiting messages not refreshed: %s", project_id, exc)
 
@@ -447,8 +460,10 @@ def answer_for(db: Any, job: Any, status: Optional[str] = None) -> Answer:
         return Answer(job, status, message="Starts now" if job.status == "running" else "Paused")
     lane = lanes_of(db, job.project_id)[lane_of(job)]
     pos = lane.position(job.id)
-    when = estimated_start(db, lane, job, at) if job.status == "queued" else None
-    head, _detail = waiting_message(db, lane, job, at=at) if job.status in WAITING else ("", "")
+    memo: dict = {}
+    when = estimated_start(db, lane, job, at, memo) if job.status == "queued" else None
+    head, _detail = (waiting_message(db, lane, job, at=at, memo=memo) if job.status in WAITING
+                     else ("", ""))
     ahead = [brief(j) for j in lane.holding] + [brief(j) for j in lane.waiting[:(pos or 1) - 1]]
     if job.status == "held":
         message = "Held: the queue is held after a restart; a super admin starts it"
@@ -530,7 +545,8 @@ def enqueue(db: Any, job: AnalysisJob, *, actor_id: Optional[str],
 
 
 def requeue(db: Any, job: Any, *, actor_id: Optional[str], phases: Optional[list] = None) -> Answer:
-    """A job that ended without finishing -- a web generation that failed or was interrupted --
+    """A job that ended without finishing -- a web generation that failed, was interrupted or
+    cancelled, or was resumed and then removed before its turn came (its version kept) --
     submitted again to be resumed: the back of its lane, Normal priority, a new place
     (REQ-JS-20). The lane's limit counts it as a new job. Raises JobRefused."""
     project = db.projects.get(job.project_id)
@@ -545,7 +561,8 @@ def requeue(db: Any, job: Any, *, actor_id: Optional[str], phases: Optional[list
                   current_activity="Waiting…", activity_detail="")
     if phases is not None:
         values["phases"] = phases
-    if not db.jobs.transition(job.id, ("failed", "interrupted", "cancelled"), status, **values):
+    if not db.jobs.transition(job.id, ("failed", "interrupted", "cancelled", "removed"), status,
+                              **values):
         raise JobRefused(409, "RUN_ACTIVE", "Job %s changed meanwhile; look at it again, then "
                                             "resume." % job.id, job_id=job.id)
     fresh = db.jobs.get(job.id) or job
@@ -778,9 +795,17 @@ def set_priority(db: Any, job: Any, priority: str, actor_id: Optional[str]) -> A
         raise JobRefused(409, "NOT_WAITING",
                          "Refused: only a waiting generation has a priority to change.")
     before = PRIORITY_NAME.get(job.priority, "normal")
-    if db.jobs.transition(job.id, WAITING, job.status, priority=PRIORITY[priority]):
-        record(db, job.project_id, "priority_changed", job_id=job.id, actor_id=actor_id,
-               before=before, after=priority)
+    # From the status the job has, never back to one it had: a hold or a release made since it was
+    # read stays made. Read again when it moved; refused once it no longer waits.
+    for _ in range(3):
+        if db.jobs.transition(job.id, (job.status,), job.status, priority=PRIORITY[priority]):
+            record(db, job.project_id, "priority_changed", job_id=job.id, actor_id=actor_id,
+                   before=before, after=priority)
+            break
+        job = db.jobs.get(job.id)
+        if job is None or job.status not in WAITING:
+            raise JobRefused(409, "NOT_WAITING",
+                             "Refused: only a waiting generation has a priority to change.")
     refresh_messages(db, job.project_id)
     kick()
     return db.jobs.get(job.id) or job
@@ -808,11 +833,18 @@ def set_limits(db: Any, project: Any, actor_id: Optional[str], *,
 # ---------------------------------------------------------------------------
 # held queues -- a restart (REQ-JS-18)
 # ---------------------------------------------------------------------------
-def hold_waiting(db: Any) -> Dict[str, int]:
-    """At start-up: every waiting job is held until a super admin starts or clears it -- unless
-    `jobs.startQueuedAfterRestart`. Returns {project_id: how many}."""
+def hold_waiting(db: Any, *, before: Optional[datetime] = None) -> Dict[str, int]:
+    """At start-up: the waiting jobs are held until a super admin starts or clears them -- unless
+    `jobs.startQueuedAfterRestart`. `before`: the start-up -- only the queues of the projects a
+    job was left waiting in are held, that job and any submitted to them since, which go after it;
+    a project that had none left waiting runs what is submitted to it as ever. Returns
+    {project_id: how many}."""
     held: Dict[str, int] = {}
-    for job in db.jobs.in_status(("queued",)):
+    waiting = db.jobs.in_status(("queued",))
+    left = {j.project_id for j in waiting if before is None or place_of(j) < before}
+    for job in waiting:
+        if job.project_id not in left:
+            continue
         if db.jobs.transition(job.id, ("queued",), "held",
                               current_activity="Held after a restart",
                               activity_detail="A super admin starts the held jobs, or clears them."):
@@ -878,28 +910,39 @@ def ended_message(headline: str, *reasons: str) -> str:
     return "\n".join([headline] + ["- " + r for r in reasons if r])[:4000]
 
 
-def after_end(db: Any, job_id: str) -> None:
+#: The record's kinds that begin a job's run: an end is recorded, and told, once after each.
+_RUN_BEGINS = ("submitted", "started", "resumed")
+_END_LOCK = threading.Lock()
+
+
+def after_end(db: Any, job_id: str, *, actor_id: Optional[str] = None) -> None:
     """Once a job has ended, however it ended: its record, its notices, the next job. Called by
-    the job's thread as it finishes and by whatever ended it from outside; idempotent per end."""
+    the job's thread as it finishes and by whatever ended it from outside -- a cancel, with who
+    did it (`actor_id`); idempotent per end. An end counts once since the job last began: a job
+    submitted again (`requeue`) that fails again is recorded, and told, again."""
     job = db.jobs.get(job_id)
     if job is None or job.status not in ENDED:
         return
     kind = {"complete": "completed"}.get(job.status, job.status)
-    try:
-        seen = any(e.kind == kind for e in db.job_events.list_for_job(job_id))
-    except Exception:                                   # noqa: BLE001
-        seen = False
-    if not seen:
-        record(db, job.project_id, kind, job_id=job.id, what=describe(job),
-               ran_seconds=run_seconds(job))
-        if job.status != "removed":
-            first = (job.error_message or "").split("\n", 1)[0]
-            text = {"complete": "Finished: %s." % describe(job),
-                    "failed": "Failed: %s. %s" % (describe(job), first),
-                    "interrupted": "Interrupted: %s. %s" % (describe(job), first),
-                    "cancelled": "Cancelled: %s. %s" % (describe(job), first)}.get(job.status, "")
-            # An update's starter is told by `word_files.tell_update_end`, in its own words.
-            tell(db, job, "job_%s" % kind, text.strip(), submitter=lane_of(job) != UPDATE)
+    with _END_LOCK:                                     # the cancel's and the thread's, at once
+        try:
+            kinds = [e.kind for e in sorted(db.job_events.list_for_job(job_id),
+                                            key=lambda e: aware(e.at) or _EPOCH)]
+            begun = max((i for i, k in enumerate(kinds) if k in _RUN_BEGINS), default=-1)
+            seen = kind in kinds[begun + 1:]
+        except Exception:                               # noqa: BLE001
+            seen = False
+        if not seen:
+            record(db, job.project_id, kind, job_id=job.id, actor_id=actor_id,
+                   what=describe(job), ran_seconds=run_seconds(job))
+    if not seen and job.status != "removed":
+        first = (job.error_message or "").split("\n", 1)[0]
+        text = {"complete": "Finished: %s." % describe(job),
+                "failed": "Failed: %s. %s" % (describe(job), first),
+                "interrupted": "Interrupted: %s. %s" % (describe(job), first),
+                "cancelled": "Cancelled: %s. %s" % (describe(job), first)}.get(job.status, "")
+        # An update's starter is told by `word_files.tell_update_end`, in its own words.
+        tell(db, job, "job_%s" % kind, text.strip(), submitter=lane_of(job) != UPDATE)
     refresh_messages(db, job.project_id)
     kick()
 
@@ -977,8 +1020,9 @@ def cancel(db: Any, job: Any, actor: Any) -> Any:
             if getattr(job, "mode", None) not in RENDER_MODES and not _keeps_its_version(job):
                 pr._release_draft_version(db, job)
                 pr._finish_if_it_finished(db, job)
-    record(db, job.project_id, "cancelled", job_id=job.id, actor_id=actor_id)
-    after_end(db, job.id)
+    # Recorded with who cancelled it, and told (REQ-JS-32, 33) -- once: the job's thread, ending
+    # after this, finds the end recorded.
+    after_end(db, job.id, actor_id=actor_id)
     return db.jobs.get(job.id) or job
 
 
@@ -1048,8 +1092,9 @@ def flags(db: Any, job: Any, at: datetime) -> List[str]:
 
 
 def job_queue_fields(db: Any, job: Any, lane: Optional[Lane] = None,
-                     at: Optional[datetime] = None) -> dict:
-    """The fields a job's view carries for the queue (design §13)."""
+                     at: Optional[datetime] = None, memo: Optional[dict] = None) -> dict:
+    """The fields a job's view carries for the queue (design §13). `memo` as `typical_seconds`
+    takes it: one for all the jobs of one view."""
     at = at or now()
     out = {"lane": lane_of(job),
            "priority": PRIORITY_NAME.get(getattr(job, "priority", NORMAL), "normal"),
@@ -1065,7 +1110,7 @@ def job_queue_fields(db: Any, job: Any, lane: Optional[Lane] = None,
         lane = lane or lanes_of(db, job.project_id)[lane_of(job)]
         out["position"] = lane.position(job.id)
         if job.status == "queued":
-            out["estimated_start"] = _iso(estimated_start(db, lane, job, at))
+            out["estimated_start"] = _iso(estimated_start(db, lane, job, at, memo))
     if job.status in IN_LANE:
         out["flags"] = flags(db, job, at)
     return out
@@ -1074,7 +1119,7 @@ def job_queue_fields(db: Any, job: Any, lane: Optional[Lane] = None,
 def queues(db: Any, project_id: str) -> dict:
     """A project's two lanes: the job holding each, the waiting ones in order, the limits."""
     project = db.projects.get(project_id)
-    at = now()
+    at, memo = now(), {}
     lanes = lanes_of(db, project_id)
     s = settings()
     holding_all = db.jobs.in_status(HOLDING)
@@ -1087,10 +1132,10 @@ def queues(db: Any, project_id: str) -> dict:
         out["lanes"][name] = {
             "limit": limit_of(project, name) if project else DEFAULT_LIMITS[name],
             "active": [dict(brief(j), current_activity=j.current_activity,
-                            **job_queue_fields(db, j, lane, at)) for j in lane.holding],
+                            **job_queue_fields(db, j, lane, at, memo)) for j in lane.holding],
             "waiting": [dict(brief(j), current_activity=j.current_activity,
                              activity_detail=j.activity_detail,
-                             **job_queue_fields(db, j, lane, at)) for j in lane.waiting]}
+                             **job_queue_fields(db, j, lane, at, memo)) for j in lane.waiting]}
     return out
 
 
@@ -1133,11 +1178,12 @@ def preview(db: Any, project_id: str, lane: str) -> dict:
                 "message": "Starts now"}
     pos = len(here.waiting) + 1
     total: Optional[float] = 0.0
+    memo: dict = {}
     for h in here.holding:
-        left = None if h.status == "paused" else remaining_seconds(db, h, at)
+        left = None if h.status == "paused" else remaining_seconds(db, h, at, memo)
         total = None if (total is None or left is None) else total + left
     for w in here.waiting:
-        typical = typical_seconds(db, w.project_id, kind_of(w))
+        typical = typical_seconds(db, w.project_id, kind_of(w), memo)
         total = None if (total is None or typical is None) else total + typical
     about = (" — about %s" % _duration(total)) if total else ""
     when = at + timedelta(seconds=total) if total else None

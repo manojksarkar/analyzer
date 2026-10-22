@@ -110,15 +110,16 @@ def _fail_interrupted_jobs(db) -> bool:
         return False
 
 
-def _start_scheduler(db) -> None:
+def _start_scheduler(db, *, persists: bool = True) -> None:
     """The job scheduler's thread (`job_scheduler.start_up`): on the server that runs jobs on this
     database, a round every few seconds -- the next jobs started, silent ones interrupted, paused
     ones cancelled after `jobs.pausedDays`, and a background run nobody follows any more followed
-    again (what a five-minute watch did before). Never stops the start-up."""
+    again (what a five-minute watch did before). On the in-memory backend (`persists` False) it
+    only starts the jobs submitted. Never stops the start-up."""
     import sys
     try:
         from .services import job_scheduler
-        job_scheduler.start_up(db)
+        job_scheduler.start_up(db, persists=persists)
     except Exception as exc:                                  # noqa: BLE001
         print(f"[api] the job scheduler did not start: {type(exc).__name__}: {exc}",
               file=sys.stderr)
@@ -159,6 +160,8 @@ async def _db_startup_check() -> None:
               "      Seed data only; every project, version and document is lost on restart.\n"
               "      Set DATABASE_URL, or add a `db` section to engine/config/config.local.json,\n"
               "      then run `python analyzer.py setup`.", file=sys.stderr)
+        # Its jobs still start when their turn comes -- with no scheduler they waited for ever.
+        _start_scheduler(_db, persists=False)
         return
     sys.path.insert(0, str(Path(__file__).parent.parent / "engine"))
     from core.db import _redact
