@@ -115,7 +115,9 @@ Every message is a sentence for the person, in a field the web app already reads
 
 A super admin is a project admin of every project. Every submit (Q1–Q4) takes an **`Idempotency-Key`**
 header: the same key again answers the job the first request made, with its answer as it is now
-(REQ-JS-09).
+(REQ-JS-09) — also when both requests come at once (a double click), once the first has made its job;
+a moment earlier, and without a key, the second of two submits of one version name gets
+`VERSION_EXISTS`, never a server error.
 
 ### Q1 `POST P/jobs` — 202
 

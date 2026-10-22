@@ -70,6 +70,12 @@ the wizard, and a project downloads as one; download → import → download rou
       reads it) — move it onto corrections; orphaned corrections are listed but cannot be deleted (no
       endpoint); R9 answers per version, not per document; SWE.4 is read-only (its test steps follow
       the flowchart labels).
+- [ ] **Job scheduling** (backend built on `feat/job-scheduling`, 2026-10-22; the screens are Manoj's):
+      each project's two lanes with places and "about 3 h", pause / resume / cancel / remove, a super
+      admin's priority, limits and held queue, a command-line run shown in its lane. Contract
+      [JOB_SCHEDULING_API_SPEC.md](../docs/spec/JOB_SCHEDULING_API_SPEC.md); what each screen shows: design
+      [§14](../docs/design/JOB_SCHEDULING_DESIGN.md#14-web-app). Every message is in a field the app shows
+      already — `current_activity`, `activity_detail`, `error_message` (REQ-JS-35).
 
 ## Remaining — frontend-only work
 

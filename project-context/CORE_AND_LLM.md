@@ -126,7 +126,26 @@ class PhaseRunner:
 
 Single subprocess authority. Phases with `idx < from_phase` are skipped with a
 log line. On a non-zero exit code the runner emits
-`resume with: --from-phase {idx}` and raises `SystemExit(returncode)`.
+`resume with: --from-phase {idx}` and raises `SystemExit(returncode)`. Before each phase it
+asks `core.pause.requested()`, and a phase that exits 75 paused: both are `SystemExit(75)`,
+a pause, not a failure (2026-10-22, [JOB_SCHEDULING.md](JOB_SCHEDULING.md)).
+
+### `core.pause` — [engine/core/pause.py](../engine/core/pause.py)
+
+A run's pause (2026-10-22). `requested()` reads the run's job (`ANALYZER_JOB_ID`) at most every
+15 s — running with `pause_requested_at` set — and stays true once true; false with no job or
+no database. `check(where)` is a pause point: on the main thread only, it raises
+`PauseRequested`, a BaseException that the stages' `except Exception` let through.
+`exits_paused(main)` is each step script's entry: the pause exits 75 (`EXIT_PAUSED`) before the
+phase lands its model. The pause points and the way 75 travels up to the API:
+[JOB_SCHEDULING.md](JOB_SCHEDULING.md).
+
+### `core.job_lanes` — [engine/core/job_lanes.py](../engine/core/job_lanes.py)
+
+The two lanes (`generation`, `update`) and the job statuses, written once for the API and the
+command line; `lock_queue` (the advisory lock every claim and CLI record takes),
+`holding` / `running_generations` (the counts they share), `cli_refusal` (the CLI's rule —
+LANE_BUSY, JOBS_WAITING, SERVER_FULL). [JOB_SCHEDULING.md](JOB_SCHEDULING.md).
 
 ### `core.group_planner` — [engine/core/group_planner.py](../engine/core/group_planner.py)
 
@@ -341,7 +360,9 @@ invalidates by construction and leaves old rows unreferenced.
 
 With no database it degrades to an **in-process memo** — still dedupes within a
 run (several call sites ask for the same struct during one export), just does not
-survive it. `put()` never raises; a cache failure costs LLM calls, never output.
+survive it. `put()` never raises; a cache failure costs LLM calls, never output. A
+database-backed cache also saves its buffer as the process exits (`_flush_at_exit`, by weak
+reference; 2026-10-22): a pause (exit 75), a Ctrl+C or a step's end keeps every answer received.
 
 Cache key = `sha256(entity_source + sorted_callee_hashes + str(cache_version))[:16]`.
 

@@ -89,7 +89,7 @@ newer entry and the code win.
 - **Fast Word-file updates** (2026-10-07e, on develop): an update exports from the stored data and rewrites
   with the LLM only its components' texts whose prompt holds a corrected one (`engine/review/rewrite.py`); a
   label update 237 s → 13–22 s. [FAST_WORD_FILE_UPDATES.md](docs/design/FAST_WORD_FILE_UPDATES.md); HANDOVER §4.35–4.41.
-- **Job scheduling** (2026-10-22, branch `feat/job-scheduling`): built -- queue, scheduler, API, CLI, pause; screens Manoj's -- [JOB_SCHEDULING.md](project-context/JOB_SCHEDULING.md).
+- **Job scheduling** (2026-10-22b, branch `feat/job-scheduling`): built and reviewed -- queue, scheduler, API, CLI, pause; screens Manoj's; [JOB_SCHEDULING.md](project-context/JOB_SCHEDULING.md), test steps [JOB_SCHEDULING_TESTING.md](docs/JOB_SCHEDULING_TESTING.md).
 - **Accessibility** (2026-10-13, branch `feat/ui-accessibility`, not pushed): the mockups and the web app
   meet WCAG 2.2 AA in light and dark -- contrast, one focus ring, 11px minimum text, names, keyboard
   reach, landmarks. Rules: `ui-dev` skill §8; guard: `web-app/src/__tests__/accessibility.test.ts`.
@@ -153,11 +153,10 @@ The big shifts since most of §1–§24 were written. Each names its dated entry
 - **One CLI.** `analyzer.py` replaced four front doors (2026-08-24); `engine/run.py` still runs the
   phases beneath it. Re-derive without re-parsing (2026-08-25); a run says what it will do before it
   parses (2026-09-24g).
-- **Config** is one file per kind of setting (2026-10-13d, §6): `config.local.json` is THIS SERVER
-  (`db`, `auth`, `repositories`, `llmServer`, `llvm`), read from that file only by every process
-  when it loads its config; `config.defaults.json` is how documents are made (`clang`, `views`,
-  `llm`, `docx`), which a project's own settings win over. No written config (workspace, version,
-  `versions.resolved_config`) holds a server setting. Before: three sources (2026-08-09).
+- **Config** is one file per kind of setting (2026-10-13d, §6): `config.local.json` is THIS SERVER (`db`, `auth`,
+  `repositories`, `llmServer`, `llvm`, `speedups`, `jobs`), read from that file only by every process when it loads
+  its config; `config.defaults.json` is how documents are made (`clang`, `views`, `llm`, `docx`), which a project's
+  own settings win over. No written config (workspace, version, `versions.resolved_config`) holds a server setting. Before: three sources (2026-08-09).
 - **Per-layer inputs.** Macros as JSON, per layer (2026-08-07); the data dictionary per layer
   (2026-08-18); include paths from each core's `compile_commands.json` (2026-09-02), the project-folder
   walk only on request (2026-09-10); `clang.clangArgs` for cross-target parsing (2026-08-13).
@@ -239,7 +238,8 @@ so neighbouring files can overlap by a few days — search the date tag.
 | File | Entries |
 |---|---|
 | [TIMELINE.md](project-context/history/TIMELINE.md) | **every dated change in one line, newest first — start here** |
-| [15-2026-10-07h.md](project-context/history/15-2026-10-07h.md) | from 2026-10-07h — **the newest: new entries go at the top** |
+| [16-2026-10-22b.md](project-context/history/16-2026-10-22b.md) | from 2026-10-22b — **the newest: new entries go at the top** |
+| [15-2026-10-07h.md](project-context/history/15-2026-10-07h.md) | 2026-10-07h … 2026-10-22 |
 | [14-2026-10-05r.md](project-context/history/14-2026-10-05r.md) | 2026-10-05r … 2026-10-07g |
 | [13-2026-10-05c.md](project-context/history/13-2026-10-05c.md) | 2026-10-05c … 2026-10-05q; at its end, `review_update_v4`'s 2026-10-03 … 2026-10-03b |
 | [11-2026-09-29e.md](project-context/history/11-2026-09-29e.md) | 2026-09-29e … 2026-10-05b |

@@ -223,6 +223,10 @@ Jobs wait their turn in their project's lane, and the scheduler starts them
 (`api/services/job_scheduler.py`); the server runs at most `jobs.maxGenerations`
 generations at once (config.local.json). `JOB_MAX_CONCURRENCY` and its semaphore
 are gone (2026-10-21b) — [project-context/JOB_SCHEDULING.md](../project-context/JOB_SCHEDULING.md).
+A running web generation pauses at its next safe point when asked (`POST …/jobs/{j}/pause`):
+its run exits 75 and the job is `paused`, keeping its lane; `…/resume` carries it on
+(2026-10-22). The HTTP contract for the queue screens:
+[docs/spec/JOB_SCHEDULING_API_SPEC.md](../docs/spec/JOB_SCHEDULING_API_SPEC.md).
 
 ### Incremental generation (version4 engine)
 

@@ -4,7 +4,8 @@ How [JOB_SCHEDULING_SPEC](../spec/JOB_SCHEDULING_SPEC.md) is built; the HTTP con
 [JOB_SCHEDULING_API_SPEC](../spec/JOB_SCHEDULING_API_SPEC.md). Status 2026-10-22: agreed with the user
 ([§20](#20-decisions-beyond-the-spec) confirmed) and built on `feat/job-scheduling` — the queue, the
 scheduler, the API, the command line and pause; the web screens are Manoj's ([§14](#14-web-app)). One
-server now; [§18](#18-two-servers-later) says what is left for two.
+server now; [§18](#18-two-servers-later) says what is left for two. Testing it on a server:
+[JOB_SCHEDULING_TESTING](../JOB_SCHEDULING_TESTING.md).
 
 **Outline:** [1 Principles](#1-principles) · [2 Data](#2-data--migration-0019) ·
 [3 States](#3-a-jobs-states) · [4 Submitting](#4-submitting) · [5 Scheduler](#5-the-scheduler) ·
@@ -36,9 +37,12 @@ server now; [§18](#18-two-servers-later) says what is left for two.
   `UPDATE … SET status = :to WHERE id = :j AND status IN (:from)`, through `db.jobs.transition()`,
   which says whether it applied — and answers "not changed" when the change would put a second job in
   a lane (the unique index). `db.jobs.update()` writes a job's progress, never its state
-  (`JOB_STATE_FIELDS`), and nothing to a job that has closed. Before, the job's thread rewrote the
-  whole row for almost every log line (`_update_activity`), from a copy read a moment before, so a
-  cancel made in between was undone. `tests/unit/test_job_state_writers.py` fails when code outside
+  (`JOB_STATE_FIELDS`) nor the queue's own fields (`JOB_QUEUE_FIELDS`: the lane, the place and the
+  priority, a pause or a resume asked, the alive signal, who runs it), and nothing to a job that has
+  closed. Before, the job's thread rewrote the whole row for almost every log line
+  (`_update_activity`), from a copy read a moment before, so a cancel made in between was undone — and
+  a pause asked in between was erased. A waiting job's message is written the same way, only while it
+  still waits as it was read. `tests/unit/test_job_state_writers.py` fails when code outside
   the job repository sets a job's status, as `test_output_row_writers.py` guards its table.
 - **The run speaks for itself.** It sends its alive signal, notices a pause request, and says how it
   ended by its exit code — so it does not depend on the API being up (REQ-JS-19).
@@ -134,7 +138,10 @@ moves it from `interrupted` to how it really ended (`_complete`, `_complete_reex
 `api/services/job_queue.py` `enqueue()` — one path for the four starts: `POST …/jobs` (generation),
 `…/versions/{v}/documents/generate` (export), `…/versions/{v}/resume`, `…/versions/{v}/reexport`
 (update). `pipeline_runner.start_export()`, `start_resume()` and `start_update()` make their job and
-hand it to `enqueue()`; a reopened web generation goes back through `requeue()`. The HTTP contract:
+hand it to `enqueue()`; a reopened web generation goes back through `requeue()` — one that failed,
+was interrupted or cancelled, or was resumed and then removed before its turn. A command-line run's job
+is never reopened (its run ends it, [§11](#11-the-cli)): a version made from the command line resumes as
+a job of its own. The HTTP contract:
 [JOB_SCHEDULING_API_SPEC](../spec/JOB_SCHEDULING_API_SPEC.md).
 
 1. **Checks that do not need the lock** — today's (architecture, version name, scope, baseline,
@@ -196,7 +203,8 @@ drops a lost claim, but nothing would schedule then.
       what holds it is an export or a paused job, which can take a day.
 3. **Launch** each job claimed ([§6](#6-running-a-job)) — inside the round, before another round may
    begin: a round that came meanwhile (a submit's own) finds the job's thread there, not a job claimed
-   and not yet started.
+   and not yet started. A round that stops part way (the database gone a moment) still launches what
+   it claimed before: a job claimed is running, and with no thread it would be interrupted as silent.
 
 **The claim** re-reads, under the lock: the lane is free, the cap has room (generation; a paused job
 does not count, a CLI run does, `forced` or not), and the version is free — no other job running or
@@ -392,11 +400,15 @@ next run makes it.
 2. Follow again every running web job (`origin = web`) with a background run (`_reattach_detached`,
    today); one with none ran inside the server that stopped → `interrupted`. CLI runs are left to their
    alive signal: the API neither follows nor ends them.
-3. `jobs.startQueuedAfterRestart` false → every `queued` job → `held`, in the scheduler's first round,
-   and each project's admins — super admins are admins of every project — are told "N jobs held after a
-   server restart". True → they stay `queued`.
+3. `jobs.startQueuedAfterRestart` false → in the scheduler's first round, the queue of each project a
+   job was left waiting in is held: those jobs → `held`, and so does any submitted to the project since
+   the start-up, which goes after them. A project that had none left waiting is not held — the first
+   round can be a submit's own, and before, it held that submit too. Each held project's admins — super
+   admins are admins of every project — are told "N jobs held after a server restart". True → they stay
+   `queued`.
 4. Paused jobs stay paused; a resume already asked for stays asked for (an admin's decision).
-5. Start the scheduler.
+5. Start the scheduler. On the in-memory backend (no database) too, but it neither holds nor sweeps:
+   nothing outlives that process, and its seeded "running" job has no process to interrupt.
 
 **A project's queue is held while it has a held job**; a job submitted meanwhile is held too (REQ-JS-18).
 `POST /queues/held {project_id?, remove: [job ids] | "all"}` (super admin): the listed jobs, or all, are
@@ -468,7 +480,7 @@ The contract, with every field and refusal: [JOB_SCHEDULING_API_SPEC](../spec/JO
 | `POST /projects/{p}/jobs/{j}/pause` | project admin | 200 the job; 409 `NOT_PAUSABLE` |
 | `POST /projects/{p}/jobs/{j}/resume` | project admin | 200 the job; 409 `NOT_PAUSED` |
 | `POST /projects/{p}/jobs/{j}/cancel` | own, project admin | 200 the job (`cancelled` or `removed`); 409 `JOB_FINISHED`, `CLI_RUN` |
-| `PATCH /projects/{p}/jobs/{j}` `{priority}` | super admin | 200; 409 when not a waiting generation |
+| `PATCH /projects/{p}/jobs/{j}` `{priority}` | super admin | 200; 409 when not a waiting generation. Set from the status the job has — a hold or a release made since the page was read stays made |
 | `GET /projects/{p}/queues` | member | both lanes: active job, waiting and held jobs (position, estimate, submitter, what), limits, cap use, flags |
 | `GET /projects/{p}/queues/preview?lane=` | member | the Run dialog's answer: `start` \| `wait` (position, estimate) \| `refuse` (the jobs) |
 | `PATCH /projects/{p}/job-limits` `{generation_limit, update_limit}` | project admin | 200; 422 outside 1–50 |
@@ -522,8 +534,12 @@ screens need, for him — from the routes of [§13](#13-api), whose contract is
   after its paused days (`job_cancelled`, its message says why); the project's admins for a restart's
   held jobs. Types `job_started`, `job_completed`, `job_failed`, `job_paused`, `job_cancelled`,
   `job_interrupted`, `jobs_held`. An update's end keeps today's text to its starter (`tell_update_end`).
+  An end is recorded and told once — by whichever of the job's thread and the act that ended it (a
+  cancel) comes first — and once per run: a job submitted again (`requeue`) that fails again is told
+  again (`after_end` counts the ends since the job last began).
 - **Record** (REQ-JS-33): a `job_events` row for every change of [§3](#3-a-jobs-states), and for
-  priority, limits and held-queue actions, with the person and the time.
+  priority, limits and held-queue actions, with the person and the time — a cancel's with who
+  cancelled.
 - **Measures** (REQ-JS-34), from the rows: queue length per lane; waiting time (`started_at −
   submitted_at`); run time (`completed_at − started_at − paused_seconds`) and per phase (`phases[].
   duration_seconds`). Flags: waiting more than a day; running with no progress for 30 minutes

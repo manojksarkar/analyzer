@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-22b | Job scheduling reviewed: nine fixes -- a cancel told, a pause no longer erased by a progress line, the restart's hold per project -- and how to test it on a server | [16](16-2026-10-22b.md) |
 | 2026-10-22 | Job scheduling: pause built and shown with a real run; the cancel shown in each phase; checked on PostgreSQL | [15](15-2026-10-07h.md) |
 | 2026-10-21b | Job scheduling built: the queue, the scheduler, the API and the command line's checks; pause in the engine next | [15](15-2026-10-07h.md) |
 | 2026-10-21 | Job scheduling: the design agreed; the web screens are Manoj's; messages go in the fields the web app already shows | [15](15-2026-10-07h.md) |

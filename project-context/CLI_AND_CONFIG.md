@@ -47,6 +47,11 @@ python engine/run.py [options] <project_path>
 `--quiet` and `--verbose` set `LOG_LEVEL` in the environment so child phases
 inherit the same verbosity.
 
+**Exit codes** besides 0 and a failure's: **3** — some components failed and the others were
+made (`EXIT_COMPONENTS_FAILED`); **75** — paused at a safe point, as the run's job asked
+(`core.pause.EXIT_PAUSED`, 2026-10-22): the components not made are back to `waiting`, nothing is
+marked failed, and `analyzer.py resume` carries the run on ([JOB_SCHEDULING.md](JOB_SCHEDULING.md)).
+
 ### Argument parsing
 
 Hand-rolled token-scanning loop in [run.py](../engine/run.py) (no `argparse`).
@@ -138,13 +143,13 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
 
 | Source | Holds | Tracked |
 |---|---|---|
-| `engine/config/config.local.json` | **THIS SERVER.** `db`, `auth`, `repositories`, `llmServer` (which LLM answers: `provider`, `baseUrl`, `defaultModel`, `customHeaders`, `apiKey`, `rateLimitSeconds`, `timeoutSeconds`, `retries`, `numCtx`, `maxContextTokens`), `llvm` (`libPath`, `includePath`), `speedups` (the speed study's, each key not set = develop's way: `llms`, `pacing`, `parseWorkers`, `pictureBatches`, `fastNullCheck`) | **gitignored** |
+| `engine/config/config.local.json` | **THIS SERVER.** `db`, `auth`, `repositories`, `llmServer` (which LLM answers: `provider`, `baseUrl`, `defaultModel`, `customHeaders`, `apiKey`, `rateLimitSeconds`, `timeoutSeconds`, `retries`, `numCtx`, `maxContextTokens`), `llvm` (`libPath`, `includePath`), `speedups` (the speed study's, each key not set = develop's way: `llms`, `pacing`, `parseWorkers`, `pictureBatches`, `fastNullCheck`), `jobs` (the job queue's, 2026-10-21b: `maxGenerations` 2, `startQueuedAfterRestart` false, `pausedDays` 7, `interruptedAfterMinutes` 10, `keepFinishedDays` 90 — read by the API and the CLI's checks, [JOB_SCHEDULING.md](JOB_SCHEDULING.md)) | **gitignored** |
 | `engine/config/config.defaults.json` | **HOW DOCUMENTS ARE MADE.** `clang` (`clangArgs`, `includePathsFromProjectWalk`), `views`, `llm` (`descriptions`, `behaviourNames`, `summarize`, `enrichment`, `cacheVersion`, the prompt inputs), `docx`, the sample's `cores` / `layers`, `logs`, `ui` | yes |
 | a project — `projects.build_config`, or a CLI project's `workspaces/<pid>/config.json` | its own `clang`, `llm`, `views`, `docx`, `layers`, `cores`: they win over the defaults, and over what config.local.json says of the same | DB / workspace |
 | a version — `versions.resolved_config`, `versions/<vid>/config.json` | the config its run started with, so a resume runs as it began | DB / workspace |
 
 **No block name is in both files, and no server setting is in a project's or a version's
-config.** The names are written once, in `core/config.py`: `SERVER_BLOCKS` (the six),
+config.** The names are written once, in `core/config.py`: `SERVER_BLOCKS` (the seven),
 `RUN_SERVER_BLOCKS` (`llmServer`, `llvm`, `speedups` — the three a run reads through its config),
 `LLM_SERVER_KEYS`, `LLVM_KEYS_BEFORE`. Guard: `tests/unit/test_core_config.py`
 `TestWhichFileASettingIsIn` (the shipped defaults hold no server key; the local example holds
