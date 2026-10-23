@@ -1,0 +1,87 @@
+{
+  "_readme": "Copy to config.json (git-ignored: it holds passwords) and fill in server and, if you have one, developer. Everything else works as it is. Keys starting with _ are comments. README.md explains each one.",
+
+  "server": {
+    "_base_url": "The API to test. Use a test server and database -- never the review site's.",
+    "base_url": "http://localhost:8000",
+    "_email": "A super admin (python tools/grant_access.py --set-superuser --email ...). Without it the priority, held-queue and cap scenarios are skipped.",
+    "email": "admin@aspice.dev",
+    "password": "admin",
+    "request_timeout_seconds": 120,
+    "verify_tls": true,
+    "_same_machine": "true: this script runs on the API's machine. Then it also runs analyzer.py (the command-line scenarios), stops a run's process (interrupted), and looks for folders a cancel must remove.",
+    "same_machine": true
+  },
+
+  "developer": {
+    "_": "A second user, NOT a super admin -- the script makes them a developer of its projects to test who may do what. Make one: python analyzer.py user add --email dev@example.com --name Dev (it prints the password). Leave email empty to skip those checks.",
+    "email": "",
+    "password": ""
+  },
+
+  "sample": {
+    "_repo_dir": "The folder for the git copy of SampleCppProject the server clones: each run makes a new jst-sample-<time> folder in it. Empty: the first repositories.localRoots of config.local.json, else the temp folder. Keep it short on Windows.",
+    "repo_dir": ""
+  },
+
+  "projects": {
+    "name_prefix": "JST",
+    "_count": "How many projects. 0: enough to fill the server's cap and one more (at least 3; 4 in complex mode).",
+    "count": 0,
+    "max_count": 6,
+    "_build_config": "The projects' own settings -- empty: the server's config.defaults.json, as for any new project.",
+    "build_config": {},
+    "_architecture_layers": "SampleCppProject's components. The first group is the short run; the last group's first folder is the one a failing commit removes.",
+    "architecture_layers": [
+      {
+        "name": "Layer1", "path": "Layer1",
+        "groups": [
+          { "name": "My Sample", "components": [
+              { "name": "Sample Core", "files": ["Layer1/Sample/Core"] },
+              { "name": "Lib",         "files": ["Layer1/Sample/Lib"] },
+              { "name": "Util",        "files": ["Layer1/Sample/Util"] } ] },
+          { "name": "Support", "components": [
+              { "name": "Math",  "files": ["Layer1/Math"] },
+              { "name": "App",   "files": ["Layer1/App"] },
+              { "name": "Outer", "files": ["Layer1/Outer/Inner"] } ] },
+          { "name": "Full", "components": [
+              { "name": "Iface", "files": ["Layer1/Direction", "Layer1/Types", "Layer1/Flow"] },
+              { "name": "Cross", "files": ["Layer1/Hub", "Layer1/Poly"] } ] },
+          { "name": "Signal", "components": [ { "name": "Signal", "files": ["Layer1/Signal"] } ] },
+          { "name": "Access", "components": [ { "name": "Access", "files": ["Layer1/Access"] } ] },
+          { "name": "Diag",   "components": [ { "name": "Diag",   "files": ["Layer1/Diag"] } ] }
+        ]
+      }
+    ]
+  },
+
+  "runs": {
+    "poll_seconds": 3,
+    "job_timeout_minutes": 30,
+    "llm_job_timeout_minutes": 180
+  },
+
+  "cli": {
+    "_enabled": "The command-line scenarios run analyzer.py here: it must use the API's database (the same config.local.json db, or the same DATABASE_URL).",
+    "enabled": true
+  },
+
+  "complex": {
+    "_manage_api": "true: the script starts the API itself (python -m uvicorn api.main:app, on the port of server.base_url) and restarts it for the restart scenario. Stop your own API on this database first -- one API per database.",
+    "manage_api": false,
+    "_use_llm": "The LLM scenario runs only when config.local.json has an llmServer and this is true.",
+    "use_llm": true,
+    "_max_wait_minutes": "The longest it waits for the server's own clocks (jobs.interruptedAfterMinutes, jobs.pausedDays). Longer settings: those checks are skipped, saying how to shorten them.",
+    "max_wait_minutes": 20
+  },
+
+  "cleanup": {
+    "_delete_projects": "true: the test projects (their versions and documents with them) are deleted at the end. --keep overrides it.",
+    "delete_projects": false
+  },
+
+  "report": {
+    "json": "job_scheduling_test_report.json",
+    "markdown": "job_scheduling_test_report.md"
+  }
+}
