@@ -587,6 +587,7 @@ screens need, for him — from the routes of [§13](#13-api), whose contract is
 | `engine/core/db.py` | the SQLite foreign-key hook runs on SQLite connections alone: on a PostgreSQL one its failed `PRAGMA` left the transaction aborted |
 | `tests/api/conftest.py` | every API test has a scheduler without its thread, no job left waiting by an earlier test, its job threads ended with it; the SQLite test database's one connection taken in turns |
 | `tests/conftest.py` | `ANALYZER_JOB_ID` put back after every test: `analyzer.main()` called in-process sets it, and the next tests' pause points read it |
+| `tools/job_scheduling_test/` (new) | the whole feature against a running API, through REST and the command line: `--mode normal` and `--mode complex`, a report per requirement ([its README](../../tools/job_scheduling_test/README.md)) |
 | `engine/llm_core/cache.py` | every cache saves its buffer at process exit (`atexit`) |
 | `engine/model_deriver.py`, `engine/core/model_repo.py` | regeneration-queue entries retired in the model's transaction ([§8](#8-pause-and-resume)) |
 | `engine/run.py`, `engine/incremental/store.py` | each component stored when it is finished ([§9](#9-cancel-and-remove)) |

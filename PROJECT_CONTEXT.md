@@ -89,7 +89,7 @@ newer entry and the code win.
 - **Fast Word-file updates** (2026-10-07e, on develop): an update exports from the stored data and rewrites
   with the LLM only its components' texts whose prompt holds a corrected one (`engine/review/rewrite.py`); a
   label update 237 s → 13–22 s. [FAST_WORD_FILE_UPDATES.md](docs/design/FAST_WORD_FILE_UPDATES.md); HANDOVER §4.35–4.41.
-- **Job scheduling** (2026-10-22b, branch `feat/job-scheduling`): built and reviewed -- queue, scheduler, API, CLI, pause; screens Manoj's; [JOB_SCHEDULING.md](project-context/JOB_SCHEDULING.md), test steps [JOB_SCHEDULING_TESTING.md](docs/JOB_SCHEDULING_TESTING.md).
+- **Job scheduling** (2026-10-22b, branch `feat/job-scheduling`): built and reviewed -- queue, scheduler, API, CLI, pause; screens Manoj's; [JOB_SCHEDULING.md](project-context/JOB_SCHEDULING.md), test steps [JOB_SCHEDULING_TESTING.md](docs/JOB_SCHEDULING_TESTING.md); end to end against a running API, every REQ-JS with a result: [tools/job_scheduling_test/](tools/job_scheduling_test/README.md) (2026-10-23).
 - **Accessibility** (2026-10-13, branch `feat/ui-accessibility`, not pushed): the mockups and the web app
   meet WCAG 2.2 AA in light and dark -- contrast, one focus ring, 11px minimum text, names, keyboard
   reach, landmarks. Rules: `ui-dev` skill §8; guard: `web-app/src/__tests__/accessibility.test.ts`.

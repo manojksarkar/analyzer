@@ -108,6 +108,14 @@ submitted again is told its end again; a lane's messages read each typical time 
 once answers its first job. In `test_staged_generation_db.py` — a command-line run stopped is resumed by
 a job of its own.
 
+Against a running API: `tools/job_scheduling_test/` (2026-10-23) — projects of its own on a git copy of
+SampleCppProject, the whole feature through the REST API and the command line, `--mode normal`
+(N01–N14: every requirement once, short runs without the LLM, review & update and incremental runs
+through the queue) and `--mode complex` (C01–C11: the LLM, a restart of an API it runs itself, killed
+processes, many requests at once, the server's clocks); each check names its requirements, and the
+report gives every REQ-JS a result. It reads config.local.json and config.defaults.json, never writes
+them. Its README says what each scenario needs.
+
 The API suite's conftest gives every test a scheduler without its thread (`_job_scheduler`; a submit
 starts its job at once when it may), removes jobs an earlier test left waiting (a later round would
 start them — a real `git clone`), joins the job threads a test started, and makes the threads take
