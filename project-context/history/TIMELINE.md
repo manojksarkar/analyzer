@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-24b | The job scheduling test puts its sample copies where the server may clone them | [16](16-2026-10-22b.md) |
 | 2026-10-24 | The job scheduling test takes its sample code from the config, and runs on four components | [16](16-2026-10-22b.md) |
 | 2026-10-23 | Job scheduling tested end to end against a running API: `tools/job_scheduling_test/`, a normal and a complex mode, a report per requirement | [16](16-2026-10-22b.md) |
 | 2026-10-22b | Job scheduling reviewed: nine fixes -- a cancel told, a pause no longer erased by a progress line, the restart's hold per project -- and how to test it on a server | [16](16-2026-10-22b.md) |
