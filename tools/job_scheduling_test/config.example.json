@@ -22,7 +22,7 @@
   "sample": {
     "_source_dir": "The SampleCppProject code to test with: a folder on this machine -- a copy with fewer components makes every run shorter. It is copied, never changed; a .git in it is left out. Empty: the repository's own SampleCppProject. Every folder projects.architecture_layers names must be in it.",
     "source_dir": "",
-    "_repo_dir": "The folder for the git copy of SampleCppProject the server clones: each run makes a new jst-sample-<time> folder in it. Empty: the first repositories.localRoots of config.local.json, else the temp folder. Keep it short on Windows.",
+    "_repo_dir": "The folder for the git copy of SampleCppProject the server clones: each run makes a new jst-sample-<time> folder in it. Empty: the first repositories.localRoots of config.local.json that does not hold the sample code, else the temp folder. When the server lists repositories.localRoots, this folder must be inside one of them (add it to the list -- the script says so before it creates anything). Keep it short on Windows.",
     "repo_dir": ""
   },
 

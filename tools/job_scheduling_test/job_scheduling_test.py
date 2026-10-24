@@ -32,8 +32,8 @@ if HERE not in sys.path:
 import jst_complex  # noqa: E402,F401 -- registers its scenarios
 import jst_normal  # noqa: E402,F401 -- registers its scenarios
 import jst_report  # noqa: E402
-from jst_core import (SCENARIOS, Api, Checks, Ctx, OwnApi, SampleRepo, ServerConfig,  # noqa: E402
-                      StopScenario, StopTest, short)
+from jst_core import (REPO_ROOT, SCENARIOS, Api, Checks, Ctx, OwnApi, SampleRepo,  # noqa: E402
+                      ServerConfig, StopScenario, StopTest, inside, short)
 
 MODES = {"normal": ("normal",), "complex": ("complex",), "all": ("normal", "complex")}
 
@@ -94,13 +94,41 @@ def architecture_problem(cfg):
     return None
 
 
-def sample_dir(cfg, server, stamp) -> str:
-    """A new folder for this run's git copy of SampleCppProject, so every run has its own: in
-    `sample.repo_dir` when it is set, else under the first repositories.localRoots, else the
-    temp folder."""
+def sample_root(cfg, server) -> str:
+    """The folder each run's git copy of SampleCppProject goes in, as a new jst-sample-<time>
+    folder: `sample.repo_dir` when it is set, else the first repositories.localRoots that does
+    not hold the sample code itself -- a copy there would be inside its source -- else the temp
+    folder."""
     chosen = ((cfg.get("sample") or {}).get("repo_dir") or "").strip()
-    root = chosen or (server.local_roots[0] if server.local_roots else tempfile.gettempdir())
-    return os.path.abspath(os.path.join(root, "jst-sample-" + stamp))
+    if not chosen:
+        source = sample_source(cfg) or os.path.join(REPO_ROOT, "SampleCppProject")
+        chosen = next((r for r in server.local_roots if not inside(r, source)),
+                      tempfile.gettempdir())
+    return os.path.abspath(chosen)
+
+
+def outside_problem(cfg, root, server):
+    """Why the server will refuse a sample copy in `root`, or None. A server whose
+    config.local.json lists repositories.localRoots clones a local repository only from inside
+    one of them: POST /projects refuses any other (api/services/local_repos.py)."""
+    if not server.local_roots or any(inside(root, r) for r in server.local_roots):
+        return None
+    listed = [r.replace("\\", "/") for r in server.local_roots]
+    chosen = ((cfg.get("sample") or {}).get("repo_dir") or "").strip()
+    folder = root.replace("\\", "/") if chosen else "C:/jst"
+    first = ("The sample copies go in %s" % folder if chosen else
+             "sample.repo_dir is empty, and no folder in that list can hold the sample copies "
+             "(a copy may not go inside the SampleCppProject code itself), so they would go in "
+             "the temp folder")
+    return ("%s -- but the server takes a local repository only from the folders in "
+            "repositories.localRoots of %s: %s.\n"
+            "%s -- the server reads it on every request, no restart:\n"
+            '    "repositories": {"localRoots": [%s]}' % (
+                first, server.local_path, ", ".join(listed),
+                "Add the copies' folder to that list" if chosen else
+                "Set sample.repo_dir to a short folder of your own, e.g. %s, and add it to that "
+                "list" % folder,
+                ", ".join(json.dumps(r) for r in listed + [folder])))
 
 
 def project_count(cfg, mode, cap) -> int:
@@ -198,6 +226,13 @@ def main(argv=None) -> int:
     if not picked:
         print("no scenario chosen")
         return 2
+    # This machine's config.local.json is the server's when the test runs on its machine: a
+    # sample copy the server would refuse stops the test here, before anything is created.
+    why = (outside_problem(cfg, sample_root(cfg, server), server)
+           if s.get("same_machine", True) else None)
+    if why:
+        print("\n" + why, file=sys.stderr)
+        return 2
     if not args.yes:
         print("\nIt creates test projects on the server (and runs analyses in them). Use a test "
               "server and database, never the review site's.")
@@ -242,7 +277,7 @@ def main(argv=None) -> int:
                 print("note: %d generation(s) of other projects run on this server -- scenarios "
                       "that need a free slot are skipped while it lasts" %
                       cap["running_generations"])
-        dest = sample_dir(cfg, server, ctx.stamp)
+        dest = os.path.join(sample_root(cfg, server), "jst-sample-" + ctx.stamp)
         source = sample_source(cfg)
         print("sample repository: %s, from %s" % (
             dest, source or "the repository's SampleCppProject"))

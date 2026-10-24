@@ -9,7 +9,10 @@ requirement of [JOB_SCHEDULING_SPEC](../../docs/spec/JOB_SCHEDULING_SPEC.md) wit
 showed it.
 
 It reads this machine's `engine/config/config.local.json` and `config.defaults.json` (never writes
-them) for the `jobs` settings, the LLM server, and where a local repository may be.
+them) for the `jobs` settings, the LLM server, and where a local repository may be. The projects it
+creates are made with the server's `config.defaults.json`, as any new project is: no config file is
+uploaded, because an upload in the web wizard only fills in the form, and the script sends those
+fields itself.
 
 > **Never against the review site's database or API.** It creates projects and runs analyses in
 > them. Use a test API on a test database — [docs/JOB_SCHEDULING_TESTING.md](../../docs/JOB_SCHEDULING_TESTING.md)
@@ -46,6 +49,20 @@ here, and it must reach the database the API reads. Needs `requests`, `psutil` a
 (all in `requirements.txt`) and `git`. On Windows keep the API's folder and `sample.repo_dir` on
 short paths: the server clones the sample under `workspaces/`, and git cannot write a path past 260
 characters unless `git config --global core.longpaths true`.
+
+**A server with `repositories.localRoots`** in its `config.local.json` clones a local repository only
+from inside those folders, and the test projects' repository is the sample copy, not your
+SampleCppProject. So the copies' folder, `sample.repo_dir`, must be one of them or inside one —
+for example, with SampleCppProject at `C:/work/SampleCppProject` and `sample.repo_dir` `C:/jst`:
+
+```json
+"repositories": {"localRoots": ["C:/work/SampleCppProject", "C:/jst"]}
+```
+
+The server reads that list on every request: no restart. The script checks it before it creates
+anything and, when the copies' folder is not allowed, stops and prints the line to add. Uploading a
+config file in the wizard does not lift this limit: the server ignores a `repositories` block in an
+uploaded file.
 
 | `--mode` | What | Time |
 |---|---|---|
@@ -94,7 +111,7 @@ API per database.
 | `server.same_machine` | true: this machine is the API's — the command line, killing a run, folders |
 | `developer.email`, `password` | a user who is not an admin; added to the test projects as a developer |
 | `sample.source_dir` | the SampleCppProject code to test with, a folder on this machine — a copy with fewer components makes every run shorter. Copied, never changed (a `.git` in it is left out); empty: the repository's own SampleCppProject |
-| `sample.repo_dir` | the folder each run's git copy of that code goes in, as a new `jst-sample-<time>` folder; empty: the first `repositories.localRoots`, else the temp folder |
+| `sample.repo_dir` | the folder each run's git copy of that code goes in, as a new `jst-sample-<time>` folder; empty: the first `repositories.localRoots` that does not hold the sample code, else the temp folder. On a server with `repositories.localRoots` it must be inside one of them — see above |
 | `projects.count`, `max_count` | how many projects; 0: the server's cap plus one (at least 3, 4 in complex) |
 | `projects.build_config`, `architecture_layers` | the projects' settings (empty: the server's defaults) and the sample's components — as shipped, App, Math, Outer and Sample of Layer1. A short run is one component; the first group (two or more components) is a project's first version and gets the incremental changes; the last group's first folder is the one N10's commit removes. At least 3 groups, and every folder named must be in the sample — the script stops at once, naming any that is not |
 | `runs.poll_seconds`, `job_timeout_minutes`, `llm_job_timeout_minutes` | how jobs are followed |

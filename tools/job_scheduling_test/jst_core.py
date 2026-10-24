@@ -82,6 +82,19 @@ def is_sentence(text) -> bool:
     return len(text) >= 12 and " " in text and "Traceback" not in text
 
 
+def _folder_key(path) -> str:
+    """A folder as the server compares one (api/services/local_repos.py): no quotes, links
+    followed, case folded where the file system folds it, forward slashes."""
+    p = str(path).strip().strip('"').strip("'")
+    return os.path.normcase(os.path.realpath(p)).replace("\\", "/").rstrip("/")
+
+
+def inside(path, folder) -> bool:
+    """Whether `path` is `folder` or in it."""
+    p, f = _folder_key(path), _folder_key(folder)
+    return p == f or p.startswith(f + "/")
+
+
 # ---------------------------------------------------------------------------
 # results
 # ---------------------------------------------------------------------------
@@ -310,7 +323,10 @@ class ServerConfig:
                                if isinstance(views.get("flowcharts"), dict)
                                else views.get("flowcharts", True))
         roots = (local.get("repositories") or {}).get("localRoots") or []
-        self.local_roots = [str(r) for r in roots if str(r).strip()]
+        if isinstance(roots, str):                  # the server takes one folder as a string too
+            roots = [roots]
+        self.local_roots = ([str(r).strip() for r in roots if str(r).strip()]
+                            if isinstance(roots, list) else [])
         env = os.environ.get("DATABASE_URL", "").strip()
         db = local.get("db") or {}
         source = env or str(db.get("url") or db.get("driver") or "")
@@ -975,8 +991,15 @@ class Ctx:
                     "architecture_layers": pcfg.get("architecture_layers") or [], "team": team}
             r = self.admin.call("POST", "/projects", json=body)
             if r.status_code not in (200, 201):
-                raise StopTest("POST /projects for %s: %s %s" % (key, r.status_code,
-                                                                 short(r.text, 800)))
+                hint = ""
+                if "outside the folders this server allows" in r.text:
+                    hint = ("\nThe server takes a local repository only from the folders in "
+                            "repositories.localRoots of ITS config.local.json: add the folder "
+                            "the sample copies go in (sample.repo_dir, %s) to that list. The "
+                            "server reads it on every request -- no restart."
+                            % os.path.dirname(self.sample.path).replace("\\", "/"))
+                raise StopTest("POST /projects for %s: %s %s%s" % (
+                    key, r.status_code, short(r.text, 800), hint))
             project = r.json()["project"]
             self.projects[key] = {"id": project["id"], "name": body["name"]}
             commits = body_of(self.admin.call("GET", self.P(key, "/commits"),
