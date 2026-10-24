@@ -43,8 +43,8 @@ python tools/job_scheduling_test/job_scheduling_test.py --mode complex
 Run it from the repository, on the API's machine, in a shell that uses the API's database (the same
 `config.local.json` `db`, or the same `DATABASE_URL`): the command-line scenarios run `analyzer.py`
 here, and it must reach the database the API reads. Needs `requests`, `psutil` and `python-docx`
-(all in `requirements.txt`) and `git`. On Windows keep the API's folder on a short
-path: the server clones the sample under `workspaces/`, and git cannot write a path past 260
+(all in `requirements.txt`) and `git`. On Windows keep the API's folder and `sample.repo_dir` on
+short paths: the server clones the sample under `workspaces/`, and git cannot write a path past 260
 characters unless `git config --global core.longpaths true`.
 
 | `--mode` | What | Time |
@@ -93,7 +93,8 @@ API per database.
 | `server.base_url`, `email`, `password` | the API and a super admin; `request_timeout_seconds`, `verify_tls` |
 | `server.same_machine` | true: this machine is the API's — the command line, killing a run, folders |
 | `developer.email`, `password` | a user who is not an admin; added to the test projects as a developer |
-| `sample.source_dir` | the SampleCppProject code to test with, a folder on this machine — a copy with fewer components makes every run shorter. Each run copies it into a new git repository of its own, `jst-sample-<time>` under the first `repositories.localRoots` or else in the temp folder, and adds its test commits there: the folder itself is never changed (a `.git` in it is left out). Empty: the repository's own SampleCppProject |
+| `sample.source_dir` | the SampleCppProject code to test with, a folder on this machine — a copy with fewer components makes every run shorter. Copied, never changed (a `.git` in it is left out); empty: the repository's own SampleCppProject |
+| `sample.repo_dir` | the folder each run's git copy of that code goes in, as a new `jst-sample-<time>` folder; empty: the first `repositories.localRoots`, else the temp folder |
 | `projects.count`, `max_count` | how many projects; 0: the server's cap plus one (at least 3, 4 in complex) |
 | `projects.build_config`, `architecture_layers` | the projects' settings (empty: the server's defaults) and the sample's components — as shipped, App, Math, Outer and Sample of Layer1. A short run is one component; the first group (two or more components) is a project's first version and gets the incremental changes; the last group's first folder is the one N10's commit removes. At least 3 groups, and every folder named must be in the sample — the script stops at once, naming any that is not |
 | `runs.poll_seconds`, `job_timeout_minutes`, `llm_job_timeout_minutes` | how jobs are followed |

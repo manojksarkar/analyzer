@@ -94,11 +94,12 @@ def architecture_problem(cfg):
     return None
 
 
-def sample_dir(server, stamp) -> str:
-    """A new folder for this run's git copy of SampleCppProject, so every run has its own: under
-    the first repositories.localRoots -- where the server takes a local repository from -- else
-    in the temp folder."""
-    root = server.local_roots[0] if server.local_roots else tempfile.gettempdir()
+def sample_dir(cfg, server, stamp) -> str:
+    """A new folder for this run's git copy of SampleCppProject, so every run has its own: in
+    `sample.repo_dir` when it is set, else under the first repositories.localRoots, else the
+    temp folder."""
+    chosen = ((cfg.get("sample") or {}).get("repo_dir") or "").strip()
+    root = chosen or (server.local_roots[0] if server.local_roots else tempfile.gettempdir())
     return os.path.abspath(os.path.join(root, "jst-sample-" + stamp))
 
 
@@ -241,7 +242,7 @@ def main(argv=None) -> int:
                 print("note: %d generation(s) of other projects run on this server -- scenarios "
                       "that need a free slot are skipped while it lasts" %
                       cap["running_generations"])
-        dest = sample_dir(server, ctx.stamp)
+        dest = sample_dir(cfg, server, ctx.stamp)
         source = sample_source(cfg)
         print("sample repository: %s, from %s" % (
             dest, source or "the repository's SampleCppProject"))

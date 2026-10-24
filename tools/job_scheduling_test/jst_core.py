@@ -355,8 +355,8 @@ class SampleRepo:
             raise StopTest("the sample code %s is not a folder (sample.source_dir)" % src)
         dest = os.path.abspath(dest)
         if os.path.normcase(dest + os.sep).startswith(os.path.normcase(src + os.sep)):
-            raise StopTest("the sample copy %s would be inside its source %s: point "
-                           "sample.source_dir at the SampleCppProject folder itself" % (dest, src))
+            raise StopTest("the sample copy %s would be inside its source %s: set "
+                           "sample.repo_dir to a folder outside it" % (dest, src))
         if os.path.isdir(dest) and os.listdir(dest):
             raise StopTest("%s exists and is not empty" % dest)
         shutil.copytree(src, dest, dirs_exist_ok=True,
@@ -984,8 +984,8 @@ class Ctx:
             if self.sha not in [c.get("sha") for c in commits]:
                 raise StopTest("project %s lists no commit %s of %s (it lists %d): the server "
                                "could not read the sample repository. On Windows a long path is "
-                               "the usual cause -- keep the API's folder short, "
-                               "or git config --global core.longpaths true" % (
+                               "the usual cause -- keep the API's folder and sample.repo_dir "
+                               "short, or git config --global core.longpaths true" % (
                                    key, self.sha, self.sample.path, len(commits)))
             print("   project %s: %s  (%s)" % (key, project["id"], body["name"]), flush=True)
 
