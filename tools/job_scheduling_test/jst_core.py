@@ -343,13 +343,24 @@ class SampleRepo:
 
     def __init__(self, path):
         self.path = os.path.abspath(path)
+        self.change_file = None         # where add_function writes, relative (Ctx.use_sample)
 
     @classmethod
-    def make(cls, dest):
-        src = os.path.join(REPO_ROOT, "SampleCppProject")
+    def make(cls, dest, source=None):
+        """Copy `source` -- the SampleCppProject code, the repository's own when None -- into a
+        new git repository at `dest`. A `.git` in the source is left out: the copy is this run's,
+        and the source is never changed."""
+        src = os.path.abspath(source or os.path.join(REPO_ROOT, "SampleCppProject"))
+        if not os.path.isdir(src):
+            raise StopTest("the sample code %s is not a folder (sample.source_dir)" % src)
+        dest = os.path.abspath(dest)
+        if os.path.normcase(dest + os.sep).startswith(os.path.normcase(src + os.sep)):
+            raise StopTest("the sample copy %s would be inside its source %s: set "
+                           "sample.repo_dir to a folder outside it" % (dest, src))
         if os.path.isdir(dest) and os.listdir(dest):
             raise StopTest("%s exists and is not empty" % dest)
-        shutil.copytree(src, dest, dirs_exist_ok=True)
+        shutil.copytree(src, dest, dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns(".git", ".flowchart_cache"))
         repo = cls(dest)
         repo.git("init", "-q")
         repo.git("symbolic-ref", "HEAD", "refs/heads/main")
@@ -372,9 +383,21 @@ class SampleRepo:
     def head(self) -> str:
         return self.git("rev-parse", "HEAD")
 
+    def first_source(self, folders):
+        """The first C++ source file in `folders` (relative paths), in name order; None when
+        they have none."""
+        for rel in folders:
+            for dirpath, dirnames, files in os.walk(os.path.join(self.path, rel)):
+                dirnames.sort()
+                for name in sorted(files):
+                    if name.endswith((".cpp", ".cc", ".cxx")):
+                        return os.path.relpath(os.path.join(dirpath, name), self.path)
+        return None
+
     def add_function(self, label) -> str:
-        """A commit on main that adds a function to Util -- what an incremental run picks up."""
-        path = os.path.join(self.path, "Layer1", "Sample", "Util", "Util.cpp")
+        """A commit on main that adds a function to the first group's first C++ file -- what an
+        incremental run of that group picks up."""
+        path = os.path.join(self.path, self.change_file)
         name = "jst_" + "".join(ch if ch.isalnum() else "_" for ch in label)
         with open(path, "a", encoding="utf-8") as fh:
             fh.write("\nint %s(int x)\n{\n    return x + %d;\n}\n" % (name, len(label)))
@@ -568,9 +591,18 @@ class Ctx:
         self.same_machine = bool((cfg.get("server") or {}).get("same_machine", True))
         self.log_dir = os.path.abspath(args.log_dir or os.path.join(
             tempfile.gettempdir(), "job-scheduling-test-" + self.stamp))
-        layers = (cfg.get("projects") or {}).get("architecture_layers") or []
-        self.groups = ["%s.%s" % (layer["name"], g["name"])
-                       for layer in layers for g in layer.get("groups", [])]
+        self.groups, self.component_ids, self.folders = [], [], {}   # folders: group -> dirs
+        for layer in (cfg.get("projects") or {}).get("architecture_layers") or []:
+            for g in layer.get("groups") or []:
+                gid = "%s.%s" % (layer["name"], g["name"])
+                self.groups.append(gid)
+                for comp in g.get("components") or []:
+                    self.component_ids.append("%s.%s" % (layer["name"], comp["name"]))
+                    self.folders.setdefault(gid, []).extend(comp.get("files") or [])
+        # The short runs: one component each -- the shortest there are -- then each group. All
+        # different, so jobs waiting side by side never have the same settings (REQ-JS-08).
+        self.short_scopes = ([{"type": "component", "names": [c]} for c in self.component_ids]
+                             + [{"type": "group", "names": [g]} for g in self.groups])
         self.projects = {}          # "A" -> {"id", "name"}
         self.done = {}              # "A" -> [{"id", "tag", "scope"}]: versions with documents
         self.sample = None
@@ -620,18 +652,34 @@ class Ctx:
         return "%s-%s-%d" % (self.prefix, label, self._tags)
 
     def scope(self, which="short"):
-        """`short`: one group, a different one each time -- two waiting jobs of a project never
-        have the same settings, which would be a duplicate (REQ-JS-08). `long`: the whole
-        project. A dict: as it is."""
+        """`short`: one component, or one group, a different one each time -- two waiting jobs
+        of a project never have the same settings, which would be a duplicate (REQ-JS-08).
+        `first`: the first group. `long`: the whole project. A dict: as it is."""
         if isinstance(which, dict) or which is None:
             return which
         if which == "long":
             return None
         if which == "first":
             return {"type": "group", "names": [self.groups[0]]}
-        group = self.groups[self._scope_turn % len(self.groups)]
+        scope = self.short_scopes[self._scope_turn % len(self.short_scopes)]
         self._scope_turn += 1
-        return {"type": "group", "names": [group]}
+        return dict(scope)
+
+    def use_sample(self, repo):
+        """This run's sample repository. Every folder the config's components name must be in
+        it -- a folder missing is a run that fails for nothing -- and a new function goes into
+        the first group's first C++ file, what an incremental run of that group picks up."""
+        missing = [f for g in self.groups for f in self.folders.get(g, [])
+                   if not os.path.isdir(os.path.join(repo.path, f))]
+        if missing:
+            raise StopTest("the sample code has no %s, which projects.architecture_layers names: "
+                           "list only the components your SampleCppProject has" %
+                           ", ".join(missing))
+        repo.change_file = repo.first_source(self.folders.get(self.groups[0], []))
+        if repo.change_file is None:
+            raise StopTest("the first group, %s, has no C++ file for an incremental change" %
+                           self.groups[0])
+        self.sample, self.sha = repo, repo.head()
 
     def pid(self, key):
         return self.projects[key]["id"]

@@ -391,13 +391,16 @@ def c07(ctx):
     times at once makes one job."""
     c = ctx.c
     key = "D" if "D" in ctx.projects else "C"
+    if len(ctx.short_scopes) < 6:
+        raise StopScenario("six different short runs are needed: the config has %d components "
+                           "and groups" % len(ctx.short_scopes), skip=True)
     _free(ctx, key)
     tags = [ctx.tag("burst") for _ in range(6)]
-    scopes = [{"type": "group", "names": [ctx.groups[i % len(ctx.groups)]]} for i in range(6)]
+    scopes = [ctx.scope("short") for _ in range(6)]
     with concurrent.futures.ThreadPoolExecutor(6) as pool:
         answers = list(pool.map(lambda i: ctx.submit(key, tag=tags[i], scope=scopes[i]),
                                 range(6)))
-    codes = [a.code for a in answers]
+    codes = [(a.code, a.status if a.code == 202 else a.error) for a in answers]
     running = [a for a in answers if a.code == 202 and a.status == "running"]
     waiting = [a for a in answers if a.code == 202 and a.status == "queued"]
     full = [a for a in answers if a.code == 409 and a.error == "LANE_FULL"]
@@ -407,6 +410,10 @@ def c07(ctx):
     lane = ctx.lane(key)
     c.check("the lane runs one job", len(lane.get("active") or []) == 1, lane,
             reqs=("REQ-JS-15",))
+    inside = (lane.get("active") or []) + (lane.get("waiting") or [])
+    c.check("the lane holds no more jobs than its limit (%d of %s)" % (
+        len(inside), lane.get("limit")), len(inside) <= int(lane.get("limit") or 3),
+        [(j.get("what"), j.get("status")) for j in inside], reqs=("REQ-JS-04", "REQ-JS-15"))
     ctx.drain(key)
     _free(ctx, key)
     rkey, tag = uuid.uuid4().hex, ctx.tag("same")

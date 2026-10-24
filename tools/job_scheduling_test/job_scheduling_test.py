@@ -77,6 +77,23 @@ def list_scenarios():
         print("              %s\n" % sc.doc)
 
 
+def sample_source(cfg):
+    """The SampleCppProject code to copy: `sample.source_dir`, else None -- the repository's."""
+    return ((cfg.get("sample") or {}).get("source_dir") or "").strip() or None
+
+
+def architecture_problem(cfg):
+    """Why projects.architecture_layers cannot carry the scenarios, or None."""
+    layers = (cfg.get("projects") or {}).get("architecture_layers") or []
+    groups = [g for layer in layers for g in layer.get("groups") or []]
+    if len(groups) < 3:
+        return ("projects.architecture_layers has %d group(s); the scenarios need 3 or more -- "
+                "a first group of two or more components, and a last one of its own" % len(groups))
+    if any(not g.get("components") for g in groups):
+        return "a group in projects.architecture_layers has no components"
+    return None
+
+
 def sample_dir(cfg, server, stamp) -> str:
     """A new folder for this run's git copy of SampleCppProject, so every run has its own: in
     `sample.repo_dir` when it is set, else under the first repositories.localRoots, else the
@@ -153,7 +170,11 @@ def main(argv=None) -> int:
         list_scenarios()
         return 0
     if args.make_sample_repo:
-        repo = SampleRepo.make(os.path.abspath(args.make_sample_repo))
+        try:
+            source = sample_source(load_config(args.config))
+        except (OSError, ValueError):
+            source = None
+        repo = SampleRepo.make(os.path.abspath(args.make_sample_repo), source)
         print("sample repository: %s\ncommit: %s" % (repo.path, repo.head()))
         return 0
     try:
@@ -161,6 +182,10 @@ def main(argv=None) -> int:
     except (OSError, ValueError) as exc:
         print("cannot read the config %s: %s\nCopy config.example.json to config.json and fill it "
               "in -- README.md says how." % (args.config, exc), file=sys.stderr)
+        return 2
+    problem = architecture_problem(cfg)
+    if problem:
+        print(problem, file=sys.stderr)
         return 2
     server = ServerConfig()
     picked = choose(args)
@@ -218,9 +243,11 @@ def main(argv=None) -> int:
                       "that need a free slot are skipped while it lasts" %
                       cap["running_generations"])
         dest = sample_dir(cfg, server, ctx.stamp)
-        print("sample repository: %s" % dest)
-        ctx.sample = SampleRepo.make(dest)
-        ctx.sha = ctx.sample.head()
+        source = sample_source(cfg)
+        print("sample repository: %s, from %s" % (
+            dest, source or "the repository's SampleCppProject"))
+        ctx.use_sample(SampleRepo.make(dest, source))
+        print("an incremental change goes into %s" % ctx.sample.change_file)
         keys = [chr(ord("A") + i) for i in range(project_count(cfg, args.mode, ctx.cap))]
         print("creating %d projects (the server's cap is %d)" % (len(keys), ctx.cap))
         ctx.create_projects(keys)

@@ -20,7 +20,8 @@ them) for the `jobs` settings, the LLM server, and where a local repository may 
 ```bash
 # 1. your config -- config.json is git-ignored: it holds passwords
 cp tools/job_scheduling_test/config.example.json tools/job_scheduling_test/config.json
-#    fill in: server.base_url, email, password; developer.email, password (or leave empty)
+#    fill in: server.base_url, email, password; developer.email, password (or leave empty);
+#    sample.source_dir: your SampleCppProject copy (or leave empty for the repository's)
 
 # 2. once: a super admin, and a developer user (on the TEST database)
 python tools/grant_access.py --set-superuser --email admin@aspice.dev
@@ -92,9 +93,10 @@ API per database.
 | `server.base_url`, `email`, `password` | the API and a super admin; `request_timeout_seconds`, `verify_tls` |
 | `server.same_machine` | true: this machine is the API's — the command line, killing a run, folders |
 | `developer.email`, `password` | a user who is not an admin; added to the test projects as a developer |
-| `sample.repo_dir` | the folder each run's git copy of SampleCppProject goes in, as a new `jst-sample-<time>` folder; empty: the first `repositories.localRoots`, else the temp folder |
+| `sample.source_dir` | the SampleCppProject code to test with, a folder on this machine — a copy with fewer components makes every run shorter. Copied, never changed (a `.git` in it is left out); empty: the repository's own SampleCppProject |
+| `sample.repo_dir` | the folder each run's git copy of that code goes in, as a new `jst-sample-<time>` folder; empty: the first `repositories.localRoots`, else the temp folder |
 | `projects.count`, `max_count` | how many projects; 0: the server's cap plus one (at least 3, 4 in complex) |
-| `projects.build_config`, `architecture_layers` | the projects' settings (empty: the server's defaults) and SampleCppProject's components. The first group is the short run; the last group's first folder is the one N10's commit removes |
+| `projects.build_config`, `architecture_layers` | the projects' settings (empty: the server's defaults) and the sample's components — as shipped, App, Math, Outer and Sample of Layer1. A short run is one component; the first group (two or more components) is a project's first version and gets the incremental changes; the last group's first folder is the one N10's commit removes. At least 3 groups, and every folder named must be in the sample — the script stops at once, naming any that is not |
 | `runs.poll_seconds`, `job_timeout_minutes`, `llm_job_timeout_minutes` | how jobs are followed |
 | `cli.enabled` | the command-line scenarios |
 | `complex.manage_api`, `use_llm`, `max_wait_minutes` | see above |

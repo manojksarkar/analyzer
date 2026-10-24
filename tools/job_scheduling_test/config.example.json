@@ -20,6 +20,8 @@
   },
 
   "sample": {
+    "_source_dir": "The SampleCppProject code to test with: a folder on this machine -- a copy with fewer components makes every run shorter. It is copied, never changed; a .git in it is left out. Empty: the repository's own SampleCppProject. Every folder projects.architecture_layers names must be in it.",
+    "source_dir": "",
     "_repo_dir": "The folder for the git copy of SampleCppProject the server clones: each run makes a new jst-sample-<time> folder in it. Empty: the first repositories.localRoots of config.local.json, else the temp folder. Keep it short on Windows.",
     "repo_dir": ""
   },
@@ -31,7 +33,7 @@
     "max_count": 6,
     "_build_config": "The projects' own settings -- empty: the server's config.defaults.json, as for any new project.",
     "build_config": {},
-    "_architecture_layers": "SampleCppProject's components. The first group is the short run; the last group's first folder is the one a failing commit removes.",
+    "_architecture_layers": "The sample's components: App, Math, Outer and Sample of Layer1. A short run is one component; the first group, of two or more components, is the first version of a project and where an incremental change goes; the last group's first folder is the one a failing commit removes. At least 3 groups.",
     "architecture_layers": [
       {
         "name": "Layer1", "path": "Layer1",
@@ -40,16 +42,9 @@
               { "name": "Sample Core", "files": ["Layer1/Sample/Core"] },
               { "name": "Lib",         "files": ["Layer1/Sample/Lib"] },
               { "name": "Util",        "files": ["Layer1/Sample/Util"] } ] },
-          { "name": "Support", "components": [
-              { "name": "Math",  "files": ["Layer1/Math"] },
-              { "name": "App",   "files": ["Layer1/App"] },
-              { "name": "Outer", "files": ["Layer1/Outer/Inner"] } ] },
-          { "name": "Full", "components": [
-              { "name": "Iface", "files": ["Layer1/Direction", "Layer1/Types", "Layer1/Flow"] },
-              { "name": "Cross", "files": ["Layer1/Hub", "Layer1/Poly"] } ] },
-          { "name": "Signal", "components": [ { "name": "Signal", "files": ["Layer1/Signal"] } ] },
-          { "name": "Access", "components": [ { "name": "Access", "files": ["Layer1/Access"] } ] },
-          { "name": "Diag",   "components": [ { "name": "Diag",   "files": ["Layer1/Diag"] } ] }
+          { "name": "Math",  "components": [ { "name": "Math",  "files": ["Layer1/Math"] } ] },
+          { "name": "App",   "components": [ { "name": "App",   "files": ["Layer1/App"] } ] },
+          { "name": "Outer", "components": [ { "name": "Outer", "files": ["Layer1/Outer/Inner"] } ] }
         ]
       }
     ]
