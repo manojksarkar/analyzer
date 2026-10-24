@@ -117,6 +117,11 @@
 | SG-4 | A web re-export still runs as the API's child and dies with it | issue | open | api/services/pipeline_runner.py `_run_reexport` |
 | SG-5 | `--detach` not proved on Linux; an API under systemd (default `KillMode=control-group`) or in a restarted container takes its background runs down | risk | open | docs/CLI_COMMANDS.md "A run that lasts days" |
 
+## Job scheduling (2026-10-24)
+| ID | Item | Type | Status | Ref |
+|---|---|---|---|---|
+| JS-1 | On **SQLite**, submits at the same moment can overfill a lane: `add_to_lane` reads the lane before its transaction holds the write lock (Python's `sqlite3` begins it at the first write), so two submits both see room — 4 jobs in a lane of 3, once in 3 tries of `tools/job_scheduling_test` C07. PostgreSQL is not affected (`FOR UPDATE` on the project row). Fix: take SQLite's write lock before the read, e.g. a no-op `UPDATE` of the project row | issue | open | api/db/postgres/database.py `add_to_lane` |
+
 ## SWE.2 — architecture
 | ID | Item | Type | Status | Ref |
 |---|---|---|---|---|

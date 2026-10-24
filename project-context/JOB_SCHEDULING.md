@@ -109,7 +109,7 @@ once answers its first job. In `test_staged_generation_db.py` — a command-line
 a job of its own.
 
 Against a running API: `tools/job_scheduling_test/` (2026-10-23) — projects of its own on a git copy of
-SampleCppProject, the whole feature through the REST API and the command line, `--mode normal`
+SampleCppProject (or the copy its `sample.source_dir` names; four components of Layer1 since 2026-10-24), the whole feature through the REST API and the command line, `--mode normal`
 (N01–N14: every requirement once, short runs without the LLM, review & update and incremental runs
 through the queue) and `--mode complex` (C01–C11: the LLM, a restart of an API it runs itself, killed
 processes, many requests at once, the server's clocks); each check names its requirements, and the
