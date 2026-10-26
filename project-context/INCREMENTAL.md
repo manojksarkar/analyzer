@@ -476,6 +476,23 @@ workspaces/<projectId>/
   byte-identity (set-equal is the correctness bar today). After that: **M5** Postgres, **M6** object storage/dedup.
 - **Testing convention:** `_probe_*.py` (run once, delete) + end-to-end on `SampleCppProject`; run **LLM off**
   to validate the logic (hashing / diff / impact / reuse counts), LLM on only for the time-savings payoff.
+- **End to end against a running API: `tools/incremental_test/`** (2026-10-26). The correctness invariant
+  as a test: each scenario changes the sample's C++ on a branch of its own from a base version's commit,
+  generates the commit incrementally (mode auto) and in full, and compares the two versions' Word files
+  -- doccheck (no P1/P2) and word for word -- plus the decision, the baseline, regenerated/reused.
+  `--mode normal` I01-I10 (no real change, body, new function, deleted function, signature, globals,
+  shared header type and macro, another group's callers, a chain); `--mode complex` X01-X13 (narrowed
+  parse on/off, header added/deleted, file deleted/renamed, function moved, revert, non-ancestor
+  baseline, no ancestor, review corrections carried/orphaned, the LLM, many changes, smaller scope).
+  Requirements INC-01..INC-18 in `inc_scenarios.REQS`; machinery shared with
+  `tools/job_scheduling_test/` (`jst_core`, `jst_run`, `jst_docs`, `jst_report`). Its first runs found three
+  defects, all open in BACKLOG: **IN-7** the narrowed parse keeps a changed macro's OLD value
+  (`parse_merge._file_of` reads `name@file:line` as file `…:line`, never in the drop set); **IN-8** a renamed
+  source file loses its unit's function sections and its SWE.4 unit (reused functions, output keyed by the old
+  file); **IN-9** with the LLM, a function description's cache key holds only the callees described in the same
+  run, so incremental and full runs key one function differently and word it differently. Expected, not a
+  defect: a change an earlier version of the project already made is found by content in the reuse index
+  (regenerated 0) -- the test checks reuse, not regeneration.
 
 ### 23.5b Staged generation (2026-10-02)
 

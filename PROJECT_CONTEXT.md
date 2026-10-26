@@ -194,7 +194,7 @@ The big shifts since most of §1–§24 were written. Each names its dated entry
   `behaviourOutputName`, and stored data is renamed by migration `0017` or `analyzer.py setup`.
 - **Tools.** `tools/doccheck/` compares two generated documents by content (2026-09-22), on five levels
   with P1–P4 priorities, SWE.3 against SWE.4 as a pair (2026-09-26);
-  `tools/audit_project.py` audits what a project stored (2026-09-05c).
+  `tools/audit_project.py` audits what a project stored (2026-09-05c); through the REST API, `tools/job_scheduling_test/` (2026-10-23) and `tools/incremental_test/` -- an incremental version's Word files against a full one's (2026-10-26).
 
 ## Which file for which task
 

@@ -560,7 +560,9 @@ When `config.llm.descriptions: true`:
    rich evidence: declaration + write-site 2–3-line snippets + read-site
    snippets + containing-file summary + related functions. Falls back to
    `enrich_globals_with_descriptions` (the old version2 path) when
-   `variableEnrichment=false`.
+   `variableEnrichment=false` -- what config.defaults.json sets. Both paths cache each answer by
+   its whole prompt (2026-10-26; CORE_AND_LLM "Every LLM text is cached"); the queued globals
+   are asked past the cache (`regenerate=`).
 4. A `ProgressReporter` reports `[idx/total]` progress for every pass.
 
 ### Domain anchoring + description blocklist (task 3.14)

@@ -114,7 +114,11 @@ SampleCppProject (or the copy its `sample.source_dir` names; four components of 
 through the queue) and `--mode complex` (C01–C11: the LLM, a restart of an API it runs itself, killed
 processes, many requests at once, the server's clocks); each check names its requirements, and the
 report gives every REQ-JS a result. It reads config.local.json and config.defaults.json, never writes
-them. Its README says what each scenario needs.
+them. Its README says what each scenario needs. Since 2026-10-26: N09, C01 and C05 compare the paused
+or killed run's Word files with a run never stopped -- doccheck (no P1/P2) and word for word
+(`jst_docs.check_same_documents`); each run writes its own reports
+(`job_scheduling_test_report_<mode>_<start>.md`/`.json`) with what the terminal showed under each
+scenario; `jst_run.py` holds what `tools/incremental_test/` runs with too.
 
 The API suite's conftest gives every test a scheduler without its thread (`_job_scheduler`; a submit
 starts its job at once when it may), removes jobs an earlier test left waiting (a later round would

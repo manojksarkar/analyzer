@@ -371,6 +371,18 @@ changes, so its cache misses. When A's callee B changes, B's hash changes,
 so A's composite hash (which includes B's hash) also changes, causing A to
 miss too. Bumping `llm.cacheVersion` invalidates everything.
 
+**Every LLM text is cached** (2026-10-26): function descriptions in `llm_descriptions` (the
+key above); unit, struct and global descriptions, input/output names and behaviour rows in
+`aux_descriptions` through `llm_enrichment._cached_desc`, keyed by the whole prompt plus the
+model; flowchart labels in the flowchart engine's own cache. Global descriptions -- both
+`get_global_description` and `get_rich_global_description` -- were the one text asked on every
+run, so two runs of one commit gave different Word files and a resumed run asked again for
+answers it had (found by `tools/job_scheduling_test` C01, REQ-JS-23). A text review & update
+asks to be written again is answered past the cache and its answer REPLACES the cached one:
+`regenerate=` for functions, `_cached_desc(fresh=True)` for the prompt-keyed texts -- Phase 2
+passes the queued globals (`model_deriver._enrich_from_llm`), and `review/rewrite.py` its
+rewrites. A new LLM text needs a cache too, or two generations of one commit differ.
+
 ### `llm_core.structured_output.extract_and_validate` (version3)
 
 ```python
