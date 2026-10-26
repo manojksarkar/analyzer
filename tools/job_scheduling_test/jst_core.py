@@ -13,7 +13,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -104,7 +103,11 @@ class Checks:
 
     def __init__(self):
         self.items = []
+        self.log = []               # what happened, line by line as printed: {scenario, text}
         self.scenario = None
+
+    def _log(self, text):
+        self.log.append({"scenario": self.scenario.sid if self.scenario else "", "text": text})
 
     def begin(self, sc):
         self.scenario = sc
@@ -116,15 +119,19 @@ class Checks:
 
     def step(self, text):
         print("   -> %s" % text, flush=True)
+        self._log("-> " + text)
 
     def note(self, text):
         print("         %s" % text, flush=True)
+        self._log("   " + text)
 
     def _add(self, result, name, detail, reqs):
         sc = self.scenario
         self.items.append({"scenario": sc.sid if sc else "", "check": name, "result": result,
                            "detail": None if detail is None else short(detail, 3000),
                            "reqs": list(reqs if reqs is not None else (sc.reqs if sc else ()))})
+        self._log("%s  %s%s" % (result, name, "" if result == "PASS" or detail in (None, "", [], {})
+                                else " -- " + short(detail, 600)))
 
     def check(self, name, ok, detail=None, *, reqs=None, warn=False) -> bool:
         result = "PASS" if ok else ("WARN" if warn else "FAIL")
@@ -445,6 +452,66 @@ class SampleRepo:
         self.git("reflog", "expire", "--expire=now", "--all")
         self.git("gc", "-q", "--prune=now")
 
+    # ---- changes a scenario makes, as one commit on a branch of its own ------------------------
+    def change(self, branch, start, edits, message) -> str:
+        """A commit on a new branch from `start`: `edits(self)` changes the files, every change is
+        committed, and main is checked out again; the commit's sha."""
+        self.git("checkout", "-q", "-b", branch, start)
+        try:
+            edits(self)
+            self.git("add", "-A")
+            return self.commit(message)
+        finally:
+            self.git("checkout", "-q", "-f", "main")
+
+    def _file(self, rel):
+        path = os.path.join(self.path, rel)
+        if not os.path.isfile(path):
+            raise StopScenario("the sample has no %s: this scenario is written for the shipped "
+                               "SampleCppProject" % rel, skip=True)
+        return path
+
+    @staticmethod
+    def _lines_like(text, sample):
+        """`text`'s line ends made `sample`'s: a copy made on Windows may end its lines CRLF."""
+        nl = "\r\n" if "\r\n" in sample else "\n"
+        return text.replace("\r\n", "\n").replace("\n", nl)
+
+    def edit(self, rel, old, new):
+        """`old` replaced by `new` in file `rel`; `old` must be there exactly once."""
+        path = self._file(rel)
+        with open(path, encoding="utf-8", newline="") as fh:
+            text = fh.read()
+        old, new = self._lines_like(old, text), self._lines_like(new, text)
+        if text.count(old) != 1:
+            raise StopScenario("the sample's %s has %s `%s`: this scenario is written for the "
+                               "shipped SampleCppProject" % (
+                                   rel, "no" if not text.count(old) else "more than one",
+                                   short(old, 60)), skip=True)
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(text.replace(old, new))
+
+    def append(self, rel, text):
+        path = self._file(rel)
+        with open(path, encoding="utf-8", newline="") as fh:
+            sample = fh.read()
+        with open(path, "a", encoding="utf-8", newline="") as fh:
+            fh.write(self._lines_like(text, sample))
+
+    def create(self, rel, text):
+        path = os.path.join(self.path, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+
+    def remove(self, rel):
+        self._file(rel)
+        self.git("rm", "-q", rel)
+
+    def move(self, rel, new_rel):
+        self._file(rel)
+        self.git("mv", rel, new_rel)
+
 
 # ---------------------------------------------------------------------------
 # processes on this machine: the command line, the API this run may own
@@ -708,10 +775,15 @@ class Ctx:
 
     # ---- submitting ---------------------------------------------------------------------------
     def submit(self, key, label=None, *, api=None, tag=None, scope="short", no_llm=True,
-               mode="full", priority=None, commit=None, reference=None, idem=None) -> Answer:
-        """POST /projects/{id}/jobs -- a generation. Short and without the LLM unless asked."""
+               mode="full", priority=None, commit=None, reference=None, idem=None,
+               narrowed=None) -> Answer:
+        """POST /projects/{id}/jobs -- a generation. Short and without the LLM unless asked.
+        `narrowed`: the incremental parse of only the files a change reaches (`narrowed_parse`,
+        the server's default when not given)."""
         body = {"commit_sha": commit or self.sha, "version_tag": tag or self.tag(label or "gen"),
                 "mode": mode, "no_llm": bool(no_llm)}
+        if narrowed is not None:
+            body["narrowed_parse"] = bool(narrowed)
         sc = self.scope(scope)
         if sc is not None:
             body["scope"] = sc

@@ -7,15 +7,13 @@ short `jobs` settings -- is skipped, and says what would let it run.
 from __future__ import annotations
 
 import concurrent.futures
-import io
 import os
-import re
 import time
 import uuid
-import zipfile
 
 from jst_core import (ENDED, REPO_ROOT, StopScenario, body_of, ids, is_sentence, kill_tree,
-                      scenario, seconds_between, short)
+                      scenario, short)
+from jst_docs import check_same_documents
 
 
 def _free(ctx, key):
@@ -42,32 +40,6 @@ def _paused(ctx, key, label, *, no_llm=True, scope="long"):
     ctx.act(key, a.job_id, "pause")
     j = ctx.wait_job(key, a.job_id, ("paused",) + ENDED, timeout=900, what="pausing")
     return a, (j if j.get("status") == "paused" else None)
-
-
-def _word_text(ctx, key, vid) -> dict:
-    """{document name: its Word file's text}, version ids and tags, dates and times taken out."""
-    import docx
-    marks = set()
-    _, v = ctx.version(key, vid)
-    for value in (vid, v.get("tag")):
-        if value:
-            marks.add(value)
-    out = {}
-    for d in ctx.documents(key, vid):
-        r = ctx.admin.call("GET", ctx.P(key, "/documents/%s/download" % d["id"]))
-        if r.status_code != 200 or not zipfile.is_zipfile(io.BytesIO(r.content)):
-            continue
-        document = docx.Document(io.BytesIO(r.content))
-        words = [p.text for p in document.paragraphs]
-        for table in document.tables:
-            for row in table.rows:
-                words.extend(cell.text for cell in row.cells)
-        text = " ".join(" ".join(words).split())
-        for m in marks:
-            text = text.replace(m, "<version>")
-        text = re.sub(r"\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?", "<date>", text)
-        out["%s %s" % (d.get("process"), d.get("name"))] = text
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -101,10 +73,8 @@ def c01(ctx):
     k = ctx.wait_done("A", b.job_id, what="never paused", timeout=ctx.llm_timeout)
     if k.get("status") != "complete":
         raise StopScenario("the run never paused did not complete: %s" % k.get("error_message"))
-    paused, straight = _word_text(ctx, "A", a.version_id), _word_text(ctx, "A", b.version_id)
-    differ = sorted(n for n in set(paused) | set(straight) if paused.get(n) != straight.get(n))
-    c.check("its Word files have the text of a run never paused (%d documents)" % len(paused),
-            bool(paused) and not differ, differ[:5], reqs=("REQ-JS-23",))
+    check_same_documents(ctx, "A", a.version_id, b.version_id, what_a="paused and resumed",
+                         what_b="never paused", reqs=("REQ-JS-23",))
 
 
 # ---------------------------------------------------------------------------
@@ -312,7 +282,8 @@ def c04(ctx):
           reqs=("REQ-JS-21", "REQ-JS-23"), needs=("same_machine",), uses=("B",))
 def c05(ctx):
     """A web generation killed once its parse is stored keeps its version (it holds work); a
-    resume reopens the version's own job, at the back of the lane, and completes the version."""
+    resume reopens the version's own job, at the back of the lane, and completes the version --
+    with the Word files of a run never stopped, what they say and word for word."""
     c = ctx.c
     _free(ctx, "B")
     g = ctx.submit("B", "stop-and-resume", scope="long")
@@ -336,6 +307,16 @@ def c05(ctx):
     jr = ctx.wait_done("B", g.job_id, what="resumed")
     c.check("the version completes", jr.get("status") == "complete", jr.get("error_message"),
             reqs=("REQ-JS-23",))
+    if jr.get("status") != "complete":
+        return
+    c.step("generate the same once more, never stopped, and compare the Word files")
+    s = ctx.submit("B", "never-stopped", scope="long")
+    js = ctx.wait_done("B", s.job_id, what="never stopped") if s.code == 202 else {}
+    if js.get("status") != "complete":
+        raise StopScenario("the run never stopped did not complete: %s" % (
+            js.get("error_message") or s.brief(),))
+    check_same_documents(ctx, "B", g.version_id, s.version_id, what_a="killed and resumed",
+                         what_b="never stopped", reqs=("REQ-JS-21", "REQ-JS-23"))
 
 
 # ---------------------------------------------------------------------------

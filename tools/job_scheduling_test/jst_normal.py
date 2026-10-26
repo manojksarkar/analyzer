@@ -12,6 +12,7 @@ import zipfile
 
 from jst_core import (ENDED, HOLDING, WAITING, StopScenario, body_of, ids, is_sentence,
                       scenario, seconds_between, short, when)
+from jst_docs import check_same_documents
 
 
 def _need_free_slot(ctx, key):
@@ -465,7 +466,8 @@ def n08(ctx):
 def n09(ctx):
     """A running generation asked to pause stops at its next safe point; paused, it keeps its
     project's lane (the next job of the project waits) but not its server slot (another
-    project's job starts); a waiting job is not paused; resumed, it finishes its version."""
+    project's job starts); a waiting job is not paused; resumed, it finishes its version -- with
+    the Word files of a run never paused, what they say and word for word."""
     c = ctx.c
     _need_free_slot(ctx, "A")
     p = ctx.submit("A", "pause", scope="long")
@@ -525,6 +527,14 @@ def n09(ctx):
     c.check("the project's next generation starts once the resumed one ends",
             jn.get("status") in ("running", "complete"), jn.get("status"),
             reqs=("REQ-JS-24", "REQ-JS-16"))
+    c.step("generate the same once more, never paused, and compare the Word files")
+    s = ctx.submit("A", "never-paused", scope="long")
+    js = ctx.wait_done("A", s.job_id, what="never paused") if s.code == 202 else {}
+    if js.get("status") != "complete":
+        raise StopScenario("the run never paused did not complete: %s" % (
+            js.get("error_message") or s.brief(),))
+    check_same_documents(ctx, "A", p.version_id, s.version_id, what_a="paused and resumed",
+                         what_b="never paused", reqs=("REQ-JS-23",))
 
 
 # ---------------------------------------------------------------------------

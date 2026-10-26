@@ -118,7 +118,7 @@ API per database.
 | `cli.enabled` | the command-line scenarios |
 | `complex.manage_api`, `use_llm`, `max_wait_minutes` | see above |
 | `cleanup.delete_projects` | delete the test projects at the end |
-| `report.json`, `report.markdown` | where the reports go |
+| `report.json`, `report.markdown` | the reports' names and folder; each run adds `_<mode>_<start>` before the extension |
 
 ## The scenarios
 
@@ -165,8 +165,16 @@ On the terminal, as each scenario runs: its title, what it tests, its steps (`->
 `PASS`, `FAIL`, `WARN` (shown, but not as well as it should be: a pause that took two minutes, not one)
 or `SKIP` (and why). At the end: each scenario's result and time, each requirement's result and the
 scenarios that showed it — `NOT RUN` when they were not chosen this time, `NOT HERE` when the API cannot
-show it — and the failed checks. The same is written to `report.markdown` and, with every detail, to
-`report.json`.
+show it — and the failed checks. Each run also writes its own pair of files, named for its mode and
+start, so one run never overwrites another: `job_scheduling_test_report_normal_20261026-101500.md`
+and `.json` (`report.markdown` and `report.json` give the name's start and folder). Under each
+scenario they hold what the terminal showed — its steps, the jobs' states as they were followed,
+and its checks — so the report alone is enough to see what went wrong; the JSON has every detail.
+
+N09, C01 and C05 also compare Word files: the paused or killed run's against a run of the same commit
+never stopped — what they say ([doccheck](../doccheck/README.md): no difference at P1 or P2) and word
+for word. A difference is shown per document, with the first words that differ; both versions' Word
+files are kept in the log folder (`documents/<version id>/`) to open side by side.
 
 ## What it leaves
 

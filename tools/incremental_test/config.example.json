@@ -1,0 +1,107 @@
+{
+  "_readme": "Copy to config.json (git-ignored: it holds a password) and fill in server. Everything else works as it is. Keys starting with _ are comments. README.md explains each one.",
+  "server": {
+    "_base_url": "The API to test. Use a test server and database -- never the review site's.",
+    "base_url": "http://localhost:8000",
+    "_email": "An admin of the server: the test creates its own project and generates in it. No super admin needed.",
+    "email": "admin@aspice.dev",
+    "password": "admin",
+    "request_timeout_seconds": 120,
+    "verify_tls": true,
+    "_same_machine": "true: this script runs on the API's machine. Then it also runs analyzer.py (the command-line scenarios), stops a run's process (interrupted), and looks for folders a cancel must remove.",
+    "same_machine": true
+  },
+  "sample": {
+    "_source_dir": "The SampleCppProject code to test with: a folder on this machine -- a copy with fewer components makes every run shorter. It is copied, never changed; a .git in it is left out. Empty: the repository's own SampleCppProject. Every folder projects.architecture_layers names must be in it.",
+    "source_dir": "",
+    "_repo_dir": "The folder for the git copy of SampleCppProject the server clones: each run makes a new jst-sample-<time> folder in it. Empty: the first repositories.localRoots of config.local.json that does not hold the sample code, else the temp folder. When the server lists repositories.localRoots, this folder must be inside one of them (add it to the list -- the script says so before it creates anything). Keep it short on Windows.",
+    "repo_dir": ""
+  },
+  "projects": {
+    "name_prefix": "INC",
+    "_build_config": "The projects' own settings -- empty: the server's config.defaults.json, as for any new project.",
+    "build_config": {},
+    "_architecture_layers": "The sample's components: App, Math, Outer and Sample of Layer1. The scenarios change files in all four; one whose file is not in your sample is skipped, saying so. The first group is X13's smaller scope.",
+    "architecture_layers": [
+      {
+        "name": "Layer1",
+        "path": "Layer1",
+        "groups": [
+          {
+            "name": "My Sample",
+            "components": [
+              {
+                "name": "Sample Core",
+                "files": [
+                  "Layer1/Sample/Core"
+                ]
+              },
+              {
+                "name": "Lib",
+                "files": [
+                  "Layer1/Sample/Lib"
+                ]
+              },
+              {
+                "name": "Util",
+                "files": [
+                  "Layer1/Sample/Util"
+                ]
+              }
+            ]
+          },
+          {
+            "name": "Math",
+            "components": [
+              {
+                "name": "Math",
+                "files": [
+                  "Layer1/Math"
+                ]
+              }
+            ]
+          },
+          {
+            "name": "App",
+            "components": [
+              {
+                "name": "App",
+                "files": [
+                  "Layer1/App"
+                ]
+              }
+            ]
+          },
+          {
+            "name": "Outer",
+            "components": [
+              {
+                "name": "Outer",
+                "files": [
+                  "Layer1/Outer/Inner"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "runs": {
+    "poll_seconds": 3,
+    "job_timeout_minutes": 30,
+    "llm_job_timeout_minutes": 180
+  },
+  "complex": {
+    "_use_llm": "X11 runs only when config.local.json has an llmServer and this is true.",
+    "use_llm": true
+  },
+  "cleanup": {
+    "_delete_projects": "true: the test project (its versions and documents with them) is deleted at the end. --keep overrides it.",
+    "delete_projects": false
+  },
+  "report": {
+    "json": "incremental_test_report.json",
+    "markdown": "incremental_test_report.md"
+  }
+}

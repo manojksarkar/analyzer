@@ -76,5 +76,10 @@ review_api_test_report.json
 
 # tools/job_scheduling_test -- your own config holds passwords; the reports are per run
 tools/job_scheduling_test/config.json
-job_scheduling_test_report.json
-job_scheduling_test_report.md
+job_scheduling_test_report*.json
+job_scheduling_test_report*.md
+
+# tools/incremental_test -- your own config holds a password; the reports are per run
+tools/incremental_test/config.json
+incremental_test_report*.json
+incremental_test_report*.md

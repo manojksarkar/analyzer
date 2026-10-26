@@ -43,14 +43,17 @@ def scenario_result(sc, items) -> str:
                default="SKIP")
 
 
-def coverage(scenarios, items, ran) -> list:
-    """[(req, title, result, scenarios that showed it, why not)] for every requirement."""
+def coverage(scenarios, items, ran, reqs=None, not_here=None) -> list:
+    """[(req, title, result, scenarios that showed it, why not)] for every requirement of
+    `reqs` ({id: title}; job scheduling's by default -- another tool passes its own)."""
+    reqs = REQS if reqs is None else reqs
+    not_here = NOT_HERE if not_here is None else not_here
     rows = []
-    for req, title in REQS.items():
+    for req, title in reqs.items():
         mine = [i for i in items if req in i["reqs"]]
         shown = sorted({i["scenario"] for i in mine})
-        if req in NOT_HERE and not mine:
-            rows.append((req, title, "NOT HERE", shown, NOT_HERE[req]))
+        if req in not_here and not mine:
+            rows.append((req, title, "NOT HERE", shown, not_here[req]))
             continue
         results = [i["result"] for i in mine if i["result"] != "SKIP"]
         if results:
@@ -68,8 +71,8 @@ def coverage(scenarios, items, ran) -> list:
 def terminal(test, scenarios, checks, rows, seconds):
     counts = checks.counts()
     print("\n" + "=" * 78)
-    print("JOB SCHEDULING TEST -- %s mode, %d min %d s" % (test["mode"], seconds // 60,
-                                                         seconds % 60))
+    print("%s -- %s mode, %d min %d s" % (test.get("title", "Job scheduling test").upper(),
+                                          test["mode"], seconds // 60, seconds % 60))
     print("=" * 78)
     print("\nScenarios")
     for sc in scenarios:
@@ -77,7 +80,7 @@ def terminal(test, scenarios, checks, rows, seconds):
                                         sc.title))
         if sc.why:
             print("               %s" % sc.why)
-    print("\nRequirements (docs/spec/JOB_SCHEDULING_SPEC.md)")
+    print("\nRequirements (%s)" % test.get("reqs_source", "docs/spec/JOB_SCHEDULING_SPEC.md"))
     for req, title, result, shown, why in rows:
         print("  %-9s %-8s %-46s %s" % (req, result, title[:46], ", ".join(shown)))
         if why and result in ("SKIP", "NOT RUN", "NOT HERE"):
@@ -94,7 +97,7 @@ def terminal(test, scenarios, checks, rows, seconds):
 
 def markdown(test, scenarios, checks, rows, seconds) -> str:
     counts = checks.counts()
-    out = ["# Job scheduling test report", "",
+    out = ["# %s report" % test.get("title", "Job scheduling test"), "",
            "| | |", "|---|---|",
            "| Mode | %s |" % test["mode"],
            "| Server | %s |" % test["server"],
@@ -125,12 +128,19 @@ def markdown(test, scenarios, checks, rows, seconds) -> str:
                     detail = ""
                 out.append("| %s | %s | %s |" % (i["result"], i["check"].replace("|", "/"),
                                                  detail[:400]))
+        happened = [line["text"] for line in getattr(checks, "log", [])
+                    if line["scenario"] == sc.sid]
+        if happened:
+            # The steps, the jobs' states as they were followed, and the checks, in their order:
+            # what the terminal showed, so the report alone shows what went wrong.
+            out += ["", "What happened:", "", "```"] + [t[:700] for t in happened[:400]] + ["```"]
         out.append("")
     return "\n".join(out)
 
 
 def write(test, scenarios, checks, rows, seconds, json_path, md_path):
     data = dict(test, seconds=seconds, counts=checks.counts(), checks=checks.items,
+                log=getattr(checks, "log", []),
                 scenarios=[{"id": sc.sid, "title": sc.title, "mode": sc.mode,
                             "requirements": list(sc.reqs),
                             "result": scenario_result(sc, checks.items),
