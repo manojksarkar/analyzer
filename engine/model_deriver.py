@@ -822,18 +822,23 @@ def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data
             f["description"] = desc[key]["description"]
 
     # Rich global enrichment — incremental: restrict to impacted globals (the rest
-    # keep their carried-forward descriptions).
+    # keep their carried-forward descriptions). A global's description is cached by its prompt;
+    # the queued ones are asked past the cache, as `_regenerate` is for functions.
     globals_to_enrich = global_variables_data if only_globals is None else {
         k: v for k, v in global_variables_data.items() if k in only_globals}
+    from llm_enrichment import _make_canonical_key
+    _regenerate_globals = {_make_canonical_key(global_variables_data[q.row.slot_key])
+                           for q in _queued if q.row.slot_key in global_variables_data}
     enrichment_cfg = llm.get("enrichment") or {}
     if enrichment_cfg.get("variableEnrichment", True):
         g_desc = enrich_globals_rich(
             globals_to_enrich, functions_data, base_path, config,
-            knowledge=knowledge,
+            knowledge=knowledge, regenerate=_regenerate_globals,
         )
     else:
         globals_list = list(globals_to_enrich.values())
-        g_desc = enrich_globals_with_descriptions(globals_list, base_path, config)
+        g_desc = enrich_globals_with_descriptions(globals_list, base_path, config,
+                                                  regenerate=_regenerate_globals)
     for g in global_variables_data.values():
         key = f"{g.get('location', {}).get('file', '')}:{g.get('location', {}).get('line', '')}"
         if g_desc.get(key, {}).get("description"):

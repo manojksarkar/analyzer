@@ -399,7 +399,12 @@ One-line description:"""
                       stage="enrich.function_description")
 
 
-def get_global_description(source: str, config: dict, abbreviations: dict = None) -> str:
+def get_global_description(source: str, config: dict, abbreviations: dict = None, *,
+                           fresh: bool = False) -> str:
+    """One sentence on a global from its declaration. Cached by the whole prompt, as unit and
+    struct descriptions are: asked on every run, a global's words changed from one generation to
+    the next -- two runs of one commit gave different Word files, and a resumed run asked again
+    for answers it already had (REQ-JS-23). `fresh`: see `_cached_desc`."""
     if not source:
         return ""
     abbrev_block = ""
@@ -414,8 +419,10 @@ def get_global_description(source: str, config: dict, abbreviations: dict = None
 ```
 
 One-line description:"""
-    return _call_llm(prompt, config, kind="description",
-                      stage="enrich.global_description")
+    return _cached_desc(config, "global|" + prompt,
+                        lambda: _call_llm(prompt, config, kind="description",
+                                          stage="enrich.global_description"),
+                        fresh=fresh)
 
 
 def get_unit_description(
@@ -520,9 +527,13 @@ def _aux_desc_cache_locked(config: dict):
     return _AUX_DESC_CACHE
 
 
-def _cached_desc(config: dict, key_material: str, generate) -> str:
+def _cached_desc(config: dict, key_material: str, generate, *, fresh: bool = False) -> str:
     """Return the cached description for `key_material` (which must fully determine the
-    output), else `generate()` it and cache. All cache errors are non-fatal."""
+    output), else `generate()` it and cache. `fresh`: a text the regeneration queue or a
+    Word-file update asks to be written again (REQ-CS-01) -- past the cache, its answer REPLACING
+    the cached one: a hit would hand back the wording the request exists to replace, and a `put`
+    (first writer wins) would let the next generation bring it back. All cache errors are
+    non-fatal."""
     from llm_core.cache import EntityCache
     cache = h = None
     try:
@@ -536,18 +547,22 @@ def _cached_desc(config: dict, key_material: str, generate) -> str:
     with _AUX_LOCK:
         key_lock = _AUX_INFLIGHT.setdefault(h, threading.Lock())
     with key_lock:
-        try:
-            with _AUX_LOCK:
-                hit = cache.get(h, h)
-            if hit is not None:
-                return hit
-        except Exception:
-            pass
+        if not fresh:
+            try:
+                with _AUX_LOCK:
+                    hit = cache.get(h, h)
+                if hit is not None:
+                    return hit
+            except Exception:
+                pass
         result = generate()
         if result:
             try:
                 with _AUX_LOCK:
-                    cache.put(h, h, result)
+                    if fresh:
+                        cache.replace(h, h, result)
+                    else:
+                        cache.put(h, h, result)
             except Exception:
                 pass
         return result
@@ -721,8 +736,12 @@ def enrich_functions_with_descriptions(functions_data: list, base_path: str, con
     return _enrich_functions_loop(functions_data, base_path, config, processor, "description", "LLM-description")
 
 
-def _enrich_globals_loop(globals_list: list, base_path: str, config: dict, processor_fn, result_key: str, label: str) -> dict:
+def _enrich_globals_loop(globals_list: list, base_path: str, config: dict, processor_fn, result_key: str, label: str,
+                         regenerate=None) -> dict:
+    """`processor_fn(source, config, fresh)`; `fresh` for the globals `regenerate` names, by
+    `_make_canonical_key`: asked past the cache (`_cached_desc`)."""
     from llm_core.parallel import llm_workers, map_in_order
+    regenerate = set(regenerate or ())
     result = {}
     progress = ProgressReporter(label, total=len(globals_list), logger=_log)
     progress.start()
@@ -735,8 +754,8 @@ def _enrich_globals_loop(globals_list: list, base_path: str, config: dict, proce
         todo.append((g, _make_canonical_key(g), extract_source_line(base_path, loc)))
 
     def ask(item):
-        g, _key, source = item
-        val = processor_fn(source, config)
+        g, key, source = item
+        val = processor_fn(source, config, key in regenerate)
         with mu:
             progress.step(label=short_name(g.get("qualifiedName", "")) or "?")
         return val
@@ -748,12 +767,17 @@ def _enrich_globals_loop(globals_list: list, base_path: str, config: dict, proce
     return result
 
 
-def enrich_globals_with_descriptions(globals_data: list, base_path: str, config: dict) -> dict:
+def enrich_globals_with_descriptions(globals_data: list, base_path: str, config: dict,
+                                     regenerate=None) -> dict:
+    """`regenerate`: the globals, by `_make_canonical_key`, whose description must not come from
+    the cache -- the regeneration queue asks for them again."""
     if not llm_provider_reachable(config):
         return {}
     abbreviations = load_abbreviations(analyzer_root(), config)
-    processor = lambda source, cfg: get_global_description(source, cfg, abbreviations)
-    return _enrich_globals_loop(globals_data, base_path, config, processor, "description", "LLM-global")
+    processor = lambda source, cfg, fresh: get_global_description(source, cfg, abbreviations,
+                                                                  fresh=fresh)
+    return _enrich_globals_loop(globals_data, base_path, config, processor, "description",
+                                "LLM-global", regenerate=regenerate)
 
 
 # ---------------------------------------------------------------------------
@@ -934,11 +958,14 @@ def get_rich_global_description(
     containing_file_context: str = "",
     related_functions: str = "",
     abbreviations: dict = None,
+    fresh: bool = False,
 ) -> str:
     """Generate a global variable description using rich context.
 
     Upgraded version of get_global_description() that includes read/write
-    sites rather than just the declaration line.
+    sites rather than just the declaration line. Cached by the whole prompt, as
+    get_global_description() is: a reader's or writer's description is IN it, so a corrected one
+    asks again. `fresh`: see `_cached_desc`.
     """
     if not source:
         return ""
@@ -974,8 +1001,11 @@ def get_rich_global_description(
         "short sentence: what it stores, what purpose it serves. Use the "
         "write/read site context to understand how it is used."
     )
-    return _call_llm("\n".join(parts), config, system=system, kind="description",
-                      stage="enrich.global_description.rich")
+    prompt = "\n".join(parts)
+    return _cached_desc(config, "global|rich|" + system + "\n" + prompt,
+                        lambda: _call_llm(prompt, config, system=system, kind="description",
+                                          stage="enrich.global_description.rich"),
+                        fresh=fresh)
 
 
 def _build_function_context(
@@ -1457,8 +1487,13 @@ def enrich_globals_rich(
     base_path: str,
     config: dict,
     knowledge=None,
+    regenerate=None,
 ) -> dict:
     """Budget-aware global variable description enrichment.
+
+    Each description is cached by its whole prompt (`get_rich_global_description`); the globals
+    `regenerate` names, by canonical key, are asked again past the cache -- the regeneration
+    queue's and a Word-file update's rewrites (REQ-CS-01).
 
     Uses write/read site context to produce richer descriptions.
 
@@ -1494,6 +1529,7 @@ def enrich_globals_rich(
     builder = ContextBuilder(counter)
 
     globals_list = list(globals_data.values()) if isinstance(globals_data, dict) else globals_data
+    regenerate = set(regenerate or ())
     result = {}
     progress = ProgressReporter("LLM-rich-global", total=len(globals_list), logger=_log)
     progress.start()
@@ -1543,6 +1579,7 @@ def enrich_globals_rich(
             write_sites=write_sites,
             read_sites=read_sites,
             abbreviations=abbreviations,
+            fresh=key in regenerate,
         )
         result[key] = {"description": desc}
         progress.step(label=short_name(qn) or "?")

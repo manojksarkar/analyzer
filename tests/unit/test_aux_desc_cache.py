@@ -149,3 +149,107 @@ def test_behaviour_call_descriptions_cached(tmp_path, monkeypatch):
     functions["B|V|compute|"]["description"] = "Sums two integers."   # a reviewer's correction
     describe()
     assert len(calls) == 2                                       # its rows are asked again
+
+
+def test_global_description_cached(tmp_path, monkeypatch):
+    """REQ-JS-23. A global's description was asked on every run: two runs of one commit gave
+    different Word files (tools/job_scheduling_test C01), and a resumed run asked again for
+    answers it already had. Cached by the prompt, as a unit's: the same declaration gives the same
+    words with no call; another declaration asks again."""
+    _fresh_cache(tmp_path, monkeypatch)
+    calls = []
+    monkeypatch.setattr(le, "_call_llm", lambda prompt, config, **k: calls.append(prompt)
+                        or "Counts the shared ticks.")
+    assert le.get_global_description("int g_tick = 0;", _CFG) == "Counts the shared ticks."
+    assert le.get_global_description("int g_tick = 0;", _CFG) == "Counts the shared ticks."
+    assert len(calls) == 1                                       # the second run reused it
+    le.get_global_description("long g_tick = 0;", _CFG)
+    assert len(calls) == 2                                       # another declaration -> asked
+
+
+def test_rich_global_description_cached(tmp_path, monkeypatch):
+    """The rich path, the same way: its readers' and writers' descriptions are in the prompt, so
+    a corrected one asks again -- and only then."""
+    _fresh_cache(tmp_path, monkeypatch)
+    calls = []
+    monkeypatch.setattr(le, "_call_llm", lambda prompt, config, **k: calls.append(prompt)
+                        or "The tick shared by the units.")
+
+    def describe(readers):
+        return le.get_rich_global_description("int g_tick = 0;", _CFG, qualified_name="g_tick",
+                                              read_sites=readers)
+
+    assert describe("  scale: Scales by the tick.") == describe("  scale: Scales by the tick.")
+    assert len(calls) == 1
+    describe("  scale: Multiplies a value by the tick.")         # a reviewer's correction
+    assert len(calls) == 2
+
+
+def test_global_fresh_replaces_the_cached_text(tmp_path, monkeypatch):
+    """A rewrite asked for (the regeneration queue, a Word-file update) is answered past the
+    cache, and its words REPLACE the cached ones: the next run keeps them instead of bringing the
+    rejected wording back."""
+    _fresh_cache(tmp_path, monkeypatch)
+    answers = iter(["Old words.", "New words."])
+    monkeypatch.setattr(le, "_call_llm", lambda *a, **k: next(answers))
+    assert le.get_global_description("int g_tick = 0;", _CFG) == "Old words."
+    assert le.get_global_description("int g_tick = 0;", _CFG, fresh=True) == "New words."
+    assert le.get_global_description("int g_tick = 0;", _CFG) == "New words."   # no third call
+
+
+def test_enrich_globals_regenerate_does_not_answer_from_the_cache(tmp_path, monkeypatch):
+    """Both enrichment paths: a global `regenerate` names (by canonical key) is asked again; the
+    others come from the cache."""
+    _fresh_cache(tmp_path, monkeypatch)
+    monkeypatch.setattr(le, "llm_provider_reachable", lambda config: True)
+    monkeypatch.setattr(le, "load_abbreviations", lambda root, config: {})
+    monkeypatch.setattr(le, "load_llm_config", lambda config: {
+        "provider": "openai", "defaultModel": "m", "cacheVersion": 1})
+    monkeypatch.setattr(le, "extract_source_line", lambda base, loc: "int g_%s = 0;" % loc["line"])
+    count = {"n": 0}
+
+    def fake_call(*a, **k):
+        count["n"] += 1
+        return "Words %d." % count["n"]
+    monkeypatch.setattr(le, "_call_llm", fake_call)
+    gl = {"G1": {"qualifiedName": "g_1", "location": {"file": "a.cpp", "line": 1}},
+          "G2": {"qualifiedName": "g_2", "location": {"file": "a.cpp", "line": 2}}}
+    plain = le.enrich_globals_with_descriptions(list(gl.values()), "/src", _CFG)
+    rich = le.enrich_globals_rich(gl, {}, "/src", _CFG)
+    assert count["n"] == 4                                       # the two paths, two prompts each
+    again = le.enrich_globals_with_descriptions(list(gl.values()), "/src", _CFG,
+                                                regenerate={"a.cpp:1"})
+    assert again["a.cpp:2"] == plain["a.cpp:2"]                  # from the cache
+    assert again["a.cpp:1"]["description"] == "Words 5."         # asked again
+    again = le.enrich_globals_rich(gl, {}, "/src", _CFG, regenerate={"a.cpp:2"})
+    assert again["a.cpp:1"] == rich["a.cpp:1"]
+    assert again["a.cpp:2"]["description"] == "Words 6."
+    assert count["n"] == 6
+
+
+def test_phase_two_asks_queued_globals_past_the_cache(monkeypatch):
+    """`_enrich_from_llm` hands the queued globals to the enrichment as `regenerate` -- only the
+    functions' were, so with a cache a queued global would have been answered with the wording the
+    queue exists to replace."""
+    import types
+    import model_deriver
+    queued = [types.SimpleNamespace(row=types.SimpleNamespace(slot_key="G1")),
+              types.SimpleNamespace(row=types.SimpleNamespace(slot_key="F1"))]
+    monkeypatch.setattr(model_deriver, "_take_regeneration_queue", lambda model, kinds: queued)
+    monkeypatch.setattr(model_deriver, "_retire_regeneration_queue", lambda q, model: None)
+    monkeypatch.setattr(le, "enrich_functions_rich", lambda *a, **k: {})
+    seen = {}
+    monkeypatch.setattr(le, "enrich_globals_with_descriptions",
+                        lambda gl, base, cfg, regenerate=None: seen.setdefault("plain", regenerate)
+                        and {})
+    monkeypatch.setattr(le, "enrich_globals_rich",
+                        lambda gl, fns, base, cfg, knowledge=None, regenerate=None:
+                        seen.setdefault("rich", regenerate) and {})
+    functions = {"F1": {"qualifiedName": "f", "location": {"file": "a.cpp", "line": 9}}}
+    gl = {"G1": {"location": {"file": "a.cpp", "line": 1}},
+          "G2": {"location": {"file": "a.cpp", "line": 2}}}
+    for variable_enrichment, path in ((False, "plain"), (True, "rich")):
+        cfg = {"llm": {"descriptions": True,
+                       "enrichment": {"variableEnrichment": variable_enrichment}}}
+        model_deriver._enrich_from_llm("/src", functions, gl, cfg)
+        assert seen[path] == {"a.cpp:1"}

@@ -136,8 +136,11 @@ def llm(monkeypatch):
         assert set(regenerate or ()) == set(only or ())        # past the cache, every one
         return {} if answers["fail"] else {k: {"description": "NEW " + k} for k in only}
 
-    def globals_(globals_data, functions_data, base_path, config, knowledge=None):
+    def globals_(globals_data, functions_data, base_path, config, knowledge=None,
+                 regenerate=None):
         asked["globals"].append(sorted(globals_data))
+        assert set(regenerate or ()) == {le._make_canonical_key(g)       # past the cache, every one
+                                         for g in globals_data.values()}
         return {le._make_canonical_key(g): {"description": "NEW global"}
                 for g in globals_data.values()}
 

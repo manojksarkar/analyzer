@@ -453,8 +453,10 @@ def _rewrite_descriptions(world: _World, writer: "_Writer", keys: List[str]):
                 n += 1
     for k in gkeys:
         g = world.live_globals[k]
+        # Past the cache, its answer replacing the cached one, as `regenerate` does for functions.
         out = enrich_globals_rich({k: g}, world.live_functions, world.base_path, world.config,
-                                  knowledge=world.now.knowledge)
+                                  knowledge=world.now.knowledge,
+                                  regenerate={_make_canonical_key(g)})
         text = ((out.get(_make_canonical_key(g)) or {}).get("description") or "").strip()
         if not text:
             failed.append("description %s: no answer from the LLM" % k)
