@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-28 | The log says which LLM lane answered each call, and what `parseWorkers: "auto"` became | [15](15-2026-10-07h.md) |
 | 2026-10-14f | A third LLM provider, `anthropic`: the Claude Messages API, native | [15](15-2026-10-07h.md) |
 | 2026-10-14e | Log lines say how long something took in minutes, hours and days | [15](15-2026-10-07h.md) |
 | 2026-10-14d | Every speed-up is one key of ONE block, `speedups`; a key not set is develop's way, so an empty block runs exactly as develop does | [15](15-2026-10-07h.md) |

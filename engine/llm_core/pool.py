@@ -88,6 +88,7 @@ class Lane:
     just_eased: bool = False            # the last window took a step off
     gap_warned: bool = False
     stats: Dict[str, float] = field(default_factory=lambda: {"calls": 0, "busy": 0, "busy_alone": 0, "waited": 0.0})
+    answered: Dict[str, int] = field(default_factory=dict)   # answers by pipeline stage, for the log
 
 
 # Adaptive concurrency: a lane that is refused as busy while it has several calls in flight takes
@@ -212,8 +213,14 @@ class LanePool:
         with self._cond:
             return sum(1 for lane in self.lanes if not lane.dead and lane is not besides)
 
+    def note_answer(self, lane: Lane, stage: str) -> None:
+        """`lane` answered a call of pipeline stage `stage` (llm_core.tokens.stage)."""
+        with self._cond:
+            lane.answered[stage] = lane.answered.get(stage, 0) + 1
+
     def summary(self) -> str:
-        """One line per lane for the log: calls, busy answers, time waited."""
+        """One line per lane for the log: calls, busy answers, time waited, and the answers by
+        pipeline stage -- which lane did which work."""
         from core.durations import human
         with self._cond:
             return "; ".join(
@@ -221,6 +228,7 @@ class LanePool:
                 f"{human(l.stats['waited'])} waited, pacing {l.pacing}"
                 f"{f' (+{l.after_gap:.2f}s after each call)' if l.after_gap else ''}"
                 f"{', key refused' if l.dead else ''}"
+                f"{' -- answered: ' + ', '.join(f'{s} {n}' for s, n in sorted(l.answered.items())) if l.answered else ''}"
                 for l in self.lanes)
 
 

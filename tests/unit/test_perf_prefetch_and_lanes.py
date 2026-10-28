@@ -299,6 +299,22 @@ def test_with_lanes_busy_refusals_do_not_use_up_the_attempts(monkeypatch):
         assert client.generate("sys", "user") == "ok text"
 
 
+def test_the_lane_that_answered_is_logged_with_its_stage(caplog):
+    """Which lane did which work: one DEBUG line per answered call, and the answers by stage in
+    the run's `LLM lanes:` summary."""
+    import logging
+    from llm_core import tokens
+    client = _lane_client()
+    with caplog.at_level(logging.DEBUG, logger="llm_core.client"), tokens.stage("phase2.descriptions"):
+        answer, keys = _posts(client, [200])
+    assert answer == "ok text"
+    lane = next(l for l in client._pool.lanes if l.api_key == keys[0])
+    assert lane.answered == {"phase2.descriptions": 1}
+    assert f"LLM call answered: lane {lane.name}, stage phase2.descriptions" in caplog.text
+    assert f"{lane.name}: 1 calls" in client._pool.summary()
+    assert "answered: phase2.descriptions 1" in client._pool.summary()
+
+
 def _release_no_cool(pool, lane):
     with pool._cond:
         lane.inflight -= 1
@@ -863,6 +879,21 @@ class TestTheSpeedupsBlock:
             "2 llms, pacing start, parseWorkers 6, pictureBatches, fastNullCheck"
         monkeypatch.setenv("LLM_API_KEYS", "k1,k2")
         assert speed_summary(self._cfg({})) == "2 keys from LLM_API_KEYS"
+
+    def test_auto_parse_workers_says_what_it_became(self, monkeypatch):
+        """"auto" is named with the number it chose on this machine -- 1 included, which said
+        nothing before; a number above 1 is named as it is."""
+        from core.config import parse_workers_note, speed_summary
+        monkeypatch.setattr("os.cpu_count", lambda: 2)
+        assert parse_workers_note(self._cfg({"parseWorkers": "auto"})) == "auto -> 1"
+        assert speed_summary(self._cfg({"parseWorkers": "auto"})) == "parseWorkers auto -> 1"
+        monkeypatch.setattr("os.cpu_count", lambda: 8)
+        assert speed_summary(self._cfg({"parseWorkers": "auto"})) == "parseWorkers auto -> 4"
+        monkeypatch.setenv("ANALYZER_PARSE_WORKERS", "auto")
+        assert parse_workers_note(self._cfg({})) == "auto -> 4"
+        monkeypatch.delenv("ANALYZER_PARSE_WORKERS")
+        assert parse_workers_note(self._cfg({"parseWorkers": 6})) == "6"
+        assert parse_workers_note(self._cfg({})) is None
 
     def test_the_example_file_ships_develops_way(self):
         """config.local.json.example lists every key at its develop value: a server that copies

@@ -3223,8 +3223,10 @@ def main():
     # The notes come BEFORE the progress starts. The web app's line under a running stage is the
     # run's last printed line, and with a note after "parsing N files" the note stood there until
     # the first progress line -- minutes, on thousands of files.
-    if _PARSE["workers"] > 1:
-        plog.info("speedups.parseWorkers: %d file(s) parsed ahead on threads", _PARSE["workers"])
+    from core.config import parse_workers_note
+    _workers_note = parse_workers_note(_config)
+    if _workers_note:
+        plog.info("Parsing %d file(s) at once (speedups.parseWorkers: %s)", _PARSE["workers"], _workers_note)
     # Said only when it costs time: bindings with no null guard ("no guard") have nothing to save.
     if _FAST_NULL_ASKED and _NULL_CHECK not in (_NULL_CHECK_ON, _NULL_CHECK_NO_GUARD):
         plog.info("the fast null check is off: %s (slower parse, same output)", _NULL_CHECK)

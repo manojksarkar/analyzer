@@ -202,7 +202,12 @@ JSON would close that.
   gap; in review it is about one gap.)
 - A `Retry-After` longer than 120 s is not believed (an hour's rest on one lane would hold the run).
 - **What each lane did** is one log line when the phase ends: `LLM lanes: lane1: 412 calls, 3 busy,
-  51s waited, pacing start; …` — the first thing to read after a run with lanes.
+  51s waited, pacing start -- answered: phase2.descriptions 300, phase2.behaviour_names 112; …` — the
+  first thing to read after a run with lanes. Each answered call is also one DEBUG line: `LLM call
+  answered: lane lane1, stage phase2.descriptions, 4.12s`.
+- **How many files Phase 1 parses at once** is in the run's first lines (`Speed-ups: parseWorkers
+  auto -> 4`) and Phase 1's (`Parsing 4 file(s) at once (speedups.parseWorkers: auto -> 4)`) -- "auto"
+  with what it became on that machine, 1 included.
 - **Check the lanes before a run:** `analyzer.py check-llm --only tiny` sends one small prompt on every
   lane, with the headers a run sends on it, and names each lane that did not answer.
 - **A header set in the environment replaces every lane's** (`X_DEP_TICKET`, `USER_ID`, `USER_TYPE`,

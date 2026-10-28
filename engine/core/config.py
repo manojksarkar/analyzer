@@ -725,6 +725,19 @@ def load_parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
     return {"workers": speedup_settings(config)["parseWorkers"]}
 
 
+def parse_workers_note(config: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    """How many files Phase 1 parses at once, for the log: `auto -> 4` when "auto" chose it --
+    always, 1 included, so a log says what auto became on that machine -- the number when one
+    above 1 is set, else None (one at a time, develop's)."""
+    env = os.environ.get("ANALYZER_PARSE_WORKERS", "").strip()
+    block = (app_config() if config is None else config or {}).get("speedups")
+    raw = env or (block.get("parseWorkers", 1) if isinstance(block, dict) else 1)
+    workers = speedup_settings(config)["parseWorkers"]
+    if str(raw).strip().lower() == "auto":
+        return f"auto -> {workers}"
+    return str(workers) if workers > 1 else None
+
+
 def speed_summary(config: Dict[str, Any]) -> str:
     """One line for a run's start: the speed-ups this run uses, or that it runs as develop."""
     s = speedup_settings(config)
@@ -736,8 +749,9 @@ def speed_summary(config: Dict[str, Any]) -> str:
         used.append(f"{len(keys)} keys from LLM_API_KEYS")
     if s["pacing"] != "after":
         used.append(f"pacing {s['pacing']}")
-    if s["parseWorkers"] > 1:
-        used.append(f"parseWorkers {s['parseWorkers']}")
+    workers = parse_workers_note(config)
+    if workers:
+        used.append(f"parseWorkers {workers}")
     used += [k for k in ("pictureBatches", "fastNullCheck") if s[k]]
     if not used:
         return "none -- this run works as develop does (speedups in engine/config/config.local.json)"

@@ -410,6 +410,7 @@ class LlmClient:
         m["throttle"] += waited
         busy = free = dead = False
         retry_after = None
+        t0 = time.perf_counter()
         try:
             if self._provider == "openai":
                 headers = build_openai_headers(api_key=lane.api_key, config_headers=lane.headers)
@@ -430,7 +431,14 @@ class LlmClient:
                 dead = True
                 free = self._pool.live_lanes(besides=lane) > 0
             resp.raise_for_status()
-            return resp.json()
+            data = resp.json()
+            # Which lane answered which call: one DEBUG line per call, and the count by stage in
+            # the run's `LLM lanes:` summary.
+            stage = token_counter.current_stage()
+            self._pool.note_answer(lane, stage)
+            logger.debug("LLM call answered: lane %s, stage %s, %.2fs", lane.name, stage,
+                         time.perf_counter() - t0)
+            return data
         except requests.Timeout:                # ConnectTimeout too: it waited the full timeout
             busy = True
             raise
