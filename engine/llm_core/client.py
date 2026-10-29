@@ -395,13 +395,17 @@ class LlmClient:
                 return
 
     def _lane_note(self) -> str:
-        """`, lane <name>, prompt <n> chars` for an attempt's log line: whether the failures are
-        one lane's (its ticket) or every lane's (the gateway), and whether they are the big
-        prompts (a server that cannot take a prompt refuses it every time)."""
+        """`, lane <name>, stage <stage>, prompt <n> chars` for an attempt's log line: whether the
+        failures are one lane's (its ticket) or every lane's (the gateway), which step of the run
+        asks (a review run's 502s were placed by elimination), and whether they are the big prompts
+        (a server that cannot take a prompt refuses it every time)."""
         parts = []
         name = getattr(LlmClient._BUSY, "lane", "") if self._pool is not None else ""
         if name:
             parts.append(f"lane {name}")
+        stage = token_counter.current_stage()
+        if stage and stage != token_counter._UNSPECIFIED:
+            parts.append(f"stage {stage}")
         chars = getattr(LlmClient._BUSY, "chars", 0)
         if chars:
             parts.append(f"prompt {chars:,} chars")

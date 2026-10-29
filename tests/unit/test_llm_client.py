@@ -576,3 +576,17 @@ def test_a_failed_attempt_says_how_big_its_prompt_was(caplog):
          caplog.at_level(logging.WARNING, logger="llm_core.client"):
         assert c.generate("sys", "user prompt") is None
     assert any("prompt 14 chars" in r.getMessage() for r in caplog.records)
+    assert not any("stage " in r.getMessage() for r in caplog.records), "no stage: none named"
+
+
+def test_a_failed_attempt_names_its_stage(caplog):
+    """A review run's 502s were placed in the unit descriptions by elimination: the line says it."""
+    import logging
+    import requests
+    from llm_core import tokens
+    c = LlmClient(provider="openai", base_url="http://gw", model="m", timeout=5, max_retries=0,
+                  rate_limit_seconds=0)
+    with patch("llm_core.client.requests.post", side_effect=requests.ConnectionError("down")), \
+         caplog.at_level(logging.WARNING, logger="llm_core.client"), tokens.stage("enrich.unit_description"):
+        c.generate("sys", "user prompt")
+    assert any("stage enrich.unit_description, prompt 14 chars" in r.getMessage() for r in caplog.records)
