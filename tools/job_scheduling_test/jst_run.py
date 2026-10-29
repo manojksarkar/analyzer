@@ -13,6 +13,8 @@ import traceback
 from jst_core import REPO_ROOT, SCENARIOS, StopScenario, StopTest, inside
 
 MODES = {"normal": ("normal",), "complex": ("complex",), "all": ("normal", "complex")}
+#: The order the scenarios of the modes run in.
+MODE_ORDER = ("normal", "complex", "cli")
 
 
 def load_config(path) -> dict:
@@ -30,12 +32,14 @@ def _no_comments(obj):
 
 
 def ordered() -> list:
-    """Normal scenarios first, then complex ones, each in its id's order."""
-    return sorted(SCENARIOS, key=lambda sc: (sc.mode != "normal", sc.sid))
+    """Normal scenarios first, then complex ones, then the command line's, each in its id's
+    order."""
+    rank = {m: i for i, m in enumerate(MODE_ORDER)}
+    return sorted(SCENARIOS, key=lambda sc: (rank.get(sc.mode, len(rank)), sc.sid))
 
 
-def choose(args) -> list:
-    picked = [sc for sc in ordered() if sc.mode in MODES[args.mode]]
+def choose(args, modes=MODES) -> list:
+    picked = [sc for sc in ordered() if sc.mode in modes[args.mode]]
     if args.only:
         wanted = {x.strip().upper() for x in args.only.split(",") if x.strip()}
         picked = [sc for sc in ordered() if sc.sid in wanted]
@@ -51,6 +55,8 @@ def list_scenarios():
         print("              requirements: %s" % (", ".join(sc.reqs) or "-"))
         if sc.needs:
             print("              needs: %s" % ", ".join(sc.needs))
+        if sc.jobs:
+            print("              jobs: %s" % json.dumps(sc.jobs))
         print("              %s\n" % sc.doc)
 
 
@@ -70,6 +76,16 @@ def sample_root(cfg, server) -> str:
         chosen = next((r for r in server.local_roots if not inside(r, source)),
                       tempfile.gettempdir())
     return os.path.abspath(chosen)
+
+
+def new_folder(root, name) -> str:
+    """`root/name`, or `name-2`, `name-3` ... when it is taken -- two runs started in the same
+    second (one per database, side by side) once picked the same sample folder."""
+    path, n = os.path.join(root, name), 1
+    while os.path.exists(path):
+        n += 1
+        path = os.path.join(root, "%s-%d" % (name, n))
+    return path
 
 
 def outside_problem(cfg, root, server):
@@ -105,7 +121,7 @@ def report_path(path, mode, stamp) -> str:
 
 def run_one(ctx, checks, sc):
     for need in sc.needs:
-        why = ctx.lacks(need)
+        why = ctx.lacks_jobs(sc.jobs) if need == "jobs" else ctx.lacks(need)
         if why:
             checks.begin(sc)
             checks.skip("the scenario", why)
@@ -114,6 +130,7 @@ def run_one(ctx, checks, sc):
     checks.begin(sc)
     started = time.time()
     try:
+        ctx.use_jobs(sc.jobs)               # the API this test runs: the scenario's settings
         ctx.drain(*sc.uses)
         sc.fn(ctx)
     except StopScenario as exc:

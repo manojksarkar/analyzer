@@ -1,6 +1,7 @@
 """The job scheduling test's machinery: the API client, the checks, and the run's context --
 the projects, the sample repository, waiting for jobs, the command line, the API it may run
-itself. The scenarios (jst_normal.py, jst_complex.py) use only this module; the entry point is
+itself -- with the `jobs` settings each scenario asks for. The scenarios (jst_normal.py,
+jst_complex.py, jst_settings.py, jst_cli.py) use only this module; the entry point is
 job_scheduling_test.py, and README.md explains the whole tool.
 """
 from __future__ import annotations
@@ -64,6 +65,12 @@ def when(text):
     except ValueError:
         return None
     return t if t.tzinfo else t.replace(tzinfo=UTC)
+
+
+def epoch(text):
+    """An ISO time from the API, in seconds as time.time() counts them; None when there is none."""
+    t = when(text)
+    return t.timestamp() if t is not None else None
 
 
 def seconds_between(a, b):
@@ -160,22 +167,25 @@ class Checks:
 # scenarios
 # ---------------------------------------------------------------------------
 class Scenario:
-    def __init__(self, sid, title, mode, reqs, needs, uses, fn):
+    def __init__(self, sid, title, mode, reqs, needs, uses, fn, jobs=None):
         self.sid, self.title, self.mode = sid, title, mode
         self.reqs, self.needs, self.uses, self.fn = tuple(reqs), tuple(needs), tuple(uses), fn
+        self.jobs = dict(jobs or {})
         self.doc = " ".join((fn.__doc__ or "").split())
         self.result, self.seconds, self.why = None, 0, ""
 
 
-#: Every scenario, in the order they run: jst_normal's, then jst_complex's.
+#: Every scenario: jst_normal's, jst_complex's, jst_settings', jst_cli's.
 SCENARIOS = []
 
 
-def scenario(sid, title, *, mode, reqs=(), needs=(), uses=()):
+def scenario(sid, title, *, mode, reqs=(), needs=(), uses=(), jobs=None):
     """Register a scenario. `needs`: what it cannot run without (see Ctx.lacks); `uses`: the
-    projects it works in -- each is made idle before it and after it."""
+    projects it works in -- each is made idle before it and after it. `jobs`: the server's `jobs`
+    settings it runs under, over the defaults -- the API this test runs is restarted with them
+    (`Ctx.use_jobs`); against an API it does not run, the scenario reads what the server has."""
     def wrap(fn):
-        SCENARIOS.append(Scenario(sid, title, mode, reqs, needs, uses, fn))
+        SCENARIOS.append(Scenario(sid, title, mode, reqs, needs, uses, fn, jobs))
         return fn
     return wrap
 
@@ -320,8 +330,10 @@ class ServerConfig:
         self.local_path = c.local_config_path()
         self.found = os.path.isfile(self.local_path)
         local = c._read_jsonc(self.local_path) if self.found else {}
+        self.local = local            # copied for the API this test runs -- never printed
         merged = c.app_config()
         self.jobs = c.jobs_settings()
+        self.jobs_defaults = dict(c.JOBS_DEFAULTS)
         self.llm = c.has_llm_server(merged)
         self.llm_model = str((c.llm_server(merged) or {}).get("defaultModel") or "")
         self.llm_text = c.llm_text_wanted(merged)
@@ -549,20 +561,93 @@ def pid_alive(pid) -> bool:
         return True
 
 
-class CliRun:
-    """`python analyzer.py ...` on this machine, in the background; its output in a log file."""
+def is_link(path) -> bool:
+    """A symbolic link, or a Windows junction (a reparse point)."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    return os.path.islink(path) or bool(getattr(st, "st_file_attributes", 0) & 0x400)
 
-    def __init__(self, args, log_dir):
+
+def remove_tree(path):
+    """`path` and everything in it -- a link in it (a frozen run's junction to node_modules)
+    removed as a link, never what it points to. What cannot go (a run still at work) stays."""
+    def unlink(p):
+        try:
+            os.rmdir(p)
+        except OSError:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+    if is_link(path):
+        unlink(path)
+        return
+    if not os.path.isdir(path):
+        return
+    for root, dirs, _files in os.walk(path, topdown=True):
+        for d in list(dirs):
+            if is_link(os.path.join(root, d)):
+                unlink(os.path.join(root, d))
+                dirs.remove(d)
+    shutil.rmtree(path, ignore_errors=True)
+
+
+class CliRun:
+    """`python analyzer.py ...` on this machine, in the background; its output in a log file.
+    `env`: the API this test runs has its own (`OwnApi.env`), and a command-line run must read
+    the `jobs` settings it reads. `ctrl_c`: run through jst_ctrl_c.py, so `ctrl_c()` stops it as
+    Ctrl+C in its window would."""
+
+    def __init__(self, args, log_dir, env=None, ctrl_c=True):
         os.makedirs(log_dir, exist_ok=True)
         self.args = list(args)
         self.log_path = os.path.join(log_dir, "cli-%s-%s.log" % (
             args[0], dt.datetime.now().strftime("%H%M%S-%f")))
-        env = dict(os.environ)
+        env = dict(env or os.environ)
         env.pop("ANALYZER_JOB_ID", None)
         self.log = open(self.log_path, "w", encoding="utf-8", errors="replace")
-        self.proc = subprocess.Popen([sys.executable, os.path.join(REPO_ROOT, "analyzer.py"),
-                                      *self.args], cwd=REPO_ROOT, stdout=self.log,
-                                     stderr=subprocess.STDOUT, env=env, shell=(os.name == "nt"))
+        script = os.path.join(HERE, "jst_ctrl_c.py") if ctrl_c else os.path.join(
+            REPO_ROOT, "analyzer.py")
+        flags = (subprocess.CREATE_NEW_PROCESS_GROUP
+                 if ctrl_c and os.name == "nt" else 0)
+        self.started, self.can_ctrl_c, self._pid = time.time(), ctrl_c, None
+        self.proc = subprocess.Popen([sys.executable, script, *self.args], cwd=REPO_ROOT,
+                                     stdout=self.log, stderr=subprocess.STDOUT, env=env,
+                                     shell=(os.name == "nt"), creationflags=flags,
+                                     start_new_session=(ctrl_c and os.name != "nt"))
+        deadline = time.time() + 10                 # its pid, while it is sure to be there
+        while self.pid() is None and self.proc.poll() is None and time.time() < deadline:
+            time.sleep(0.05)
+
+    def ctrl_c(self):
+        """What Ctrl+C in the run's window does. On Windows a process started apart cannot be
+        sent Ctrl+C: it gets Ctrl+Break, which jst_ctrl_c.py turns into the same
+        KeyboardInterrupt."""
+        import signal
+        if not self.can_ctrl_c:
+            raise RuntimeError("started without a group of its own: no Ctrl+C")
+        if os.name == "nt":
+            os.kill(self.proc.pid, signal.CTRL_BREAK_EVENT)
+        else:
+            os.killpg(self.proc.pid, signal.SIGINT)
+
+    def pid(self):
+        """The analyzer.py process itself -- through a shell on Windows, the shell's child: the
+        pid its job's runner names. None while it is not there yet."""
+        if self._pid is None:
+            if os.name != "nt":
+                self._pid = self.proc.pid
+            else:
+                try:
+                    import psutil
+                    for child in psutil.Process(self.proc.pid).children():
+                        if "python" in (child.name() or "").lower():
+                            self._pid = child.pid
+                except Exception:                   # noqa: BLE001 -- ended, or not yet
+                    pass
+        return self._pid
 
     def done(self) -> bool:
         return self.proc.poll() is not None
@@ -580,25 +665,121 @@ class CliRun:
             return fh.read()
 
     def kill(self):
+        """Gone at once, as a crash ends it: its job learns nothing and goes on 'running' until
+        it is silent for jobs.interruptedAfterMinutes."""
         kill_tree(self.proc.pid)
         self.proc.wait(timeout=30)
         self.log.close()
 
+    def sleep(self):
+        """The run stopped where it is, every process of it -- a laptop's lid closed: nothing
+        runs, nothing says it is alive."""
+        self._each("suspend")
+
+    def wake(self):
+        self._each("resume")
+
+    def _each(self, what):
+        try:
+            import psutil
+            top = psutil.Process(self.proc.pid)
+            for p in [top] + top.children(recursive=True):
+                try:
+                    getattr(p, what)()
+                except Exception:                   # noqa: BLE001 -- ended meanwhile
+                    pass
+        except Exception:                           # noqa: BLE001
+            pass
+
+    def stop(self, timeout=90):
+        """Stopped as Ctrl+C stops it -- its job ends, cancelled -- and killed only when that
+        does not end it."""
+        if self.done():
+            return
+        self.wake()
+        try:
+            self.ctrl_c()
+            self.wait(timeout)
+        except Exception:                           # noqa: BLE001 -- no Ctrl+C here, or no end
+            if not self.done():
+                self.kill()
+
 
 class OwnApi:
-    """The API, run by this test so it can be restarted (complex mode, `complex.manage_api`):
-    `python -m uvicorn api.main:app` from the repository, with this shell's environment, on the
-    host and port of `server.base_url` -- the address the test sends its requests to. Stopping it
-    stops that process only -- the runs it started in the background go on, as they do when a
+    """The API, run by this test so it can be restarted, and given the `jobs` settings a
+    scenario asks for (`complex.manage_api`): `python -m uvicorn api.main:app` from the
+    repository, on the host and port of `server.base_url` -- the address the test sends its
+    requests to.
+
+    Its data folder is the test's own (`ANALYZER_DATA_ROOT`, `data_root`): there it reads a copy
+    of this machine's config.local.json -- the same database, LLM server and repository folders --
+    whose `jobs` block the test writes (`write_config`), and keeps its logs and its runs' frozen
+    copies. The command-line runs the test starts get the same folder (`env`), so they read the
+    same settings. This machine's config.local.json is read, never written. Stopping the API
+    stops its own process only -- the runs it started in the background go on, as they do when a
     server restarts."""
 
-    def __init__(self, root, log_dir):
+    def __init__(self, root, log_dir, *, data_root, local=None):
         from urllib.parse import urlsplit
         parts = urlsplit(root)
         self.port = parts.port or (443 if parts.scheme == "https" else 80)
         self.host = parts.hostname if parts.hostname not in (None, "localhost",
                                                               "127.0.0.1") else None
         self.log_dir, self.proc, self.log = log_dir, None, None
+        self.data_root = os.path.abspath(data_root)
+        self.local = dict(local or {})
+        self.written = None         # the `jobs` block of the copy, as written
+
+    @property
+    def config_path(self):
+        return os.path.join(self.data_root, "engine", "config", "config.local.json")
+
+    def env(self) -> dict:
+        """The API's environment, and its command-line runs': the data folder moved, the
+        workspaces where the API always clones them -- `ANALYZER_WORKSPACES_DIR`, else
+        <repository>/workspaces -- named, so the runs look for their checkouts there too."""
+        env = dict(os.environ)
+        env.pop("ANALYZER_JOB_ID", None)
+        env["ANALYZER_DATA_ROOT"] = self.data_root
+        env["ANALYZER_WORKSPACES_DIR"] = (env.get("ANALYZER_WORKSPACES_DIR", "").strip()
+                                          or os.path.join(REPO_ROOT, "workspaces"))
+        return env
+
+    def write_config(self, jobs: dict):
+        """The copy of config.local.json this API and the test's command-line runs read: this
+        machine's, its `jobs` block `jobs`. Read when the API starts -- restart it after."""
+        os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
+        with open(self.config_path, "w", encoding="utf-8") as fh:
+            json.dump(dict(self.local, jobs=jobs), fh, indent=2)
+        self.written = dict(jobs)
+
+    def settings(self) -> dict:
+        """The `jobs` settings as the server reads that copy -- a bad value replaced by its
+        default -- and the notes the reader says about it."""
+        import contextlib
+        import io
+        from core import config as c
+        said = io.StringIO()
+        with contextlib.redirect_stderr(said):
+            got = c.jobs_settings(os.path.join(self.data_root, "engine"))
+        return got, [line for line in said.getvalue().splitlines() if line.strip()]
+
+    def forget(self):
+        """At the end: the copy goes -- it holds what this machine's file holds, the database's
+        password and the LLM's key -- and so do the runs' frozen copies; the logs stay."""
+        try:
+            os.remove(self.config_path)
+        except OSError:
+            pass
+        remove_tree(os.path.join(self.data_root, "runs"))
+
+    def log_text(self) -> str:
+        """What the API wrote since it last started."""
+        if self.log is None:
+            return ""
+        self.log.flush()
+        with open(self.log.name, encoding="utf-8", errors="replace") as fh:
+            return fh.read()
 
     def _pid(self):
         """The uvicorn process itself: through a shell on Windows, the shell's child."""
@@ -629,7 +810,7 @@ class OwnApi:
         where = ["--port", str(self.port)] + (["--host", self.host] if self.host else [])
         self.proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "api.main:app", *where],
                                      cwd=REPO_ROOT, stdout=self.log, stderr=subprocess.STDOUT,
-                                     shell=(os.name == "nt"))
+                                     env=self.env(), shell=(os.name == "nt"))
         deadline = time.time() + timeout
         while time.time() < deadline:
             try:
@@ -728,6 +909,20 @@ class Ctx:
             if len(self.projects) < want:
                 return "needs %d projects, this run has %d" % (want, len(self.projects))
         return None
+
+    def lacks_jobs(self, wanted):
+        """Why the server cannot run a scenario under the `jobs` settings `wanted`, or None: the
+        API this test runs takes any; another API, only the ones it has."""
+        if self.own_api is not None:
+            return None
+        other = {k: self.server.jobs.get(k) for k, v in (wanted or {}).items()
+                 if self.server.jobs.get(k) != v}
+        if not other:
+            return None
+        return ("it runs under jobs %s; this server has %s -- set complex.manage_api true: the "
+                "test then runs the API itself, with the settings each scenario needs" % (
+                    ", ".join("%s %s" % (k, json.dumps(wanted[k])) for k in sorted(other)),
+                    ", ".join("%s %s" % (k, json.dumps(v)) for k, v in sorted(other.items()))))
 
     # ---- names --------------------------------------------------------------------------------
     def tag(self, label):
@@ -872,10 +1067,15 @@ class Ctx:
         r = self.admin.call("GET", "/queues")
         return body_of(r) if r.status_code == 200 else {}
 
-    def notices(self, api=None) -> list:
-        return body_of((api or self.admin).call("GET", "/notifications",
-                                                params={"all": "true", "limit": 200})
-                       ).get("notifications") or []
+    def notices(self, api=None, since=None) -> list:
+        """The signed-in user's notices; with `since` (time.time()), only those sent since --
+        an earlier scenario's, in the same project, must not answer for this one's."""
+        got = body_of((api or self.admin).call("GET", "/notifications",
+                                               params={"all": "true", "limit": 200})
+                      ).get("notifications") or []
+        if since is not None:
+            got = [n for n in got if (epoch(n.get("created_at")) or 0) >= since - 5]
+        return got
 
     def version(self, key, vid):
         r = self.admin.call("GET", self.V(key, vid))
@@ -980,14 +1180,15 @@ class Ctx:
             kept = self.done.setdefault(key, [])
             if job["version_id"] not in [v["id"] for v in kept]:
                 kept.append({"id": job["version_id"], "tag": job.get("version_tag"),
-                             "scope": job.get("scope")})
+                             "scope": job.get("scope"), "job": job_id})
         return job
 
     # ---- keeping projects tidy between scenarios -------------------------------------------------
     def drain(self, *keys, timeout=300):
         """Every job of these projects ended: the waiting ones removed, the running and paused
-        ones cancelled -- a command-line run this test started is stopped. Then wait for both
-        lanes to be empty."""
+        ones cancelled -- a command-line run this test started is stopped as Ctrl+C stops it, so
+        its job ends at once (killed, it would wait out jobs.interruptedAfterMinutes). Then wait
+        for both lanes to be empty."""
         for key in keys:
             if key not in self.projects:
                 continue
@@ -998,8 +1199,7 @@ class Ctx:
                         continue
                     self.admin.call("POST", self.P(key, "/jobs/%s/cancel" % jid))
         for run in self.cli_runs:
-            if not run.done():
-                run.kill()
+            run.stop()
 
         def empty():
             for key in keys:
@@ -1029,16 +1229,32 @@ class Ctx:
         return [v["id"] for v in have]
 
     # ---- the command line ---------------------------------------------------------------------
-    def cli(self, *args) -> CliRun:
-        run = CliRun(args, os.path.join(self.log_dir, "cli"))
+    def cli(self, *args, ctrl_c=True) -> CliRun:
+        """`analyzer.py` with these arguments, on this machine -- reading the `jobs` settings the
+        API this test runs reads, when it runs one."""
+        run = CliRun(args, os.path.join(self.log_dir, "cli"),
+                     env=self.own_api.env() if self.own_api is not None else None, ctrl_c=ctrl_c)
         self.cli_runs.append(run)
         return run
 
-    def cli_generate(self, key, label, *, extra=(), scope="group:%s"):
+    def cli_generate(self, key, label, *, extra=(), scope="group:%s", commit=None, tag=None,
+                     ctrl_c=True):
+        """`analyzer.py generate` of a new version of project `key` -- the first group, or
+        `scope` (`project`: all of it), without the LLM -- recorded as a job of its own unless
+        `extra` has --job-id."""
         return self.cli("generate", "--project-id", self.pid(key), "--version-id",
-                        self.tag(label), "--branch", "main", "--commit", self.sha,
+                        tag or self.tag(label), "--branch", "main", "--commit", commit or self.sha,
                         "--create-version", "--no-llm", "--full",
-                        "--scope", scope % self.groups[0], *extra)
+                        "--scope", scope % self.groups[0] if "%s" in scope else scope, *extra,
+                        ctrl_c=ctrl_c)
+
+    def cli_job(self, key, lane="generation", *, not_ids=()):
+        """The command line's job in project `key`'s lane, or None."""
+        for j in self.lane(key, lane).get("active") or []:
+            if j.get("origin") == "cli" and j.get("job_id") not in not_ids:
+                self.jobs[j["job_id"]] = key
+                return j
+        return None
 
     # ---- the API this run owns ----------------------------------------------------------------
     def restart_api(self):
@@ -1049,6 +1265,27 @@ class Ctx:
         self.admin.signin()
         if self.dev is not None:
             self.dev.signin()
+
+    def use_jobs(self, wanted=None, *, raw=None):
+        """The API this test runs, under the `jobs` settings `wanted` over the defaults -- or, with
+        `raw`, that block as it is, bad values and all. Restarted only when it runs under other
+        ones; every test project's jobs end first (a restart would hold the waiting ones). Against
+        an API the test does not run: nothing -- a scenario reads `server.jobs`, what that server
+        has, and says what it lacks."""
+        if self.own_api is None:
+            return
+        block = dict(raw) if raw is not None else dict(self.server.jobs_defaults, **(wanted or {}))
+        if block == self.own_api.written:
+            return
+        changed = {k: v for k, v in block.items() if self.server.jobs_defaults.get(k) != v
+                   or k not in self.server.jobs_defaults}
+        self.c.step("the API's jobs settings: %s" % (", ".join(
+            "%s %s" % (k, json.dumps(v)) for k, v in sorted(changed.items())) or "the defaults"))
+        self.drain(*self.projects)
+        self.own_api.write_config(block)
+        self.restart_api()
+        self.server.jobs, _ = self.own_api.settings()
+        self.cap = int(self.server.jobs["maxGenerations"])
 
     # ---- the projects ---------------------------------------------------------------------------
     def create_projects(self, keys):

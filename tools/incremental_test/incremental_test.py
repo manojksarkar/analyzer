@@ -32,8 +32,8 @@ for _p in (HERE, SHARED):
 import inc_scenarios  # noqa: E402 -- registers its scenarios
 import jst_report  # noqa: E402
 from jst_core import SCENARIOS, Api, Checks, Ctx, SampleRepo, ServerConfig, StopTest, short  # noqa: E402
-from jst_run import (MODES, choose, list_scenarios, load_config, outside_problem,  # noqa: E402
-                     report_path, run_one, sample_root, sample_source)
+from jst_run import (MODES, choose, list_scenarios, load_config, new_folder,  # noqa: E402
+                     outside_problem, report_path, run_one, sample_root, sample_source)
 
 
 def main(argv=None) -> int:
@@ -103,7 +103,7 @@ def main(argv=None) -> int:
         admin = probe.signin()
         ctx = Ctx(cfg, args, checks, admin, None, server)
         print("signed in as %s" % admin.email)
-        dest = os.path.join(sample_root(cfg, server), "inc-sample-" + ctx.stamp)
+        dest = new_folder(sample_root(cfg, server), "inc-sample-" + ctx.stamp)
         source = sample_source(cfg)
         print("sample repository: %s, from %s" % (
             dest, source or "the repository's SampleCppProject"))

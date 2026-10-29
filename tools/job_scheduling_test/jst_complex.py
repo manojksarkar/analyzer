@@ -7,12 +7,14 @@ short `jobs` settings -- is skipped, and says what would let it run.
 from __future__ import annotations
 
 import concurrent.futures
+import datetime as dt
 import os
+import re
 import time
 import uuid
 
 from jst_core import (ENDED, REPO_ROOT, StopScenario, body_of, ids, is_sentence, kill_tree,
-                      scenario, short)
+                      scenario, short, when)
 from jst_docs import check_same_documents
 
 
@@ -173,7 +175,7 @@ def _restart(ctx, c):
 # ---------------------------------------------------------------------------
 @scenario("C03", "A run whose process dies is interrupted", mode="complex",
           reqs=("REQ-JS-20", "REQ-JS-16", "REQ-JS-32", "REQ-JS-35"), needs=("same_machine",),
-          uses=("B", "C"))
+          uses=("B", "C"), jobs={"interruptedAfterMinutes": 2})
 def c03(ctx):
     """A web run's process killed: the API following it interrupts the job at once and starts
     the next. A command-line run's process killed: nobody follows it, so it is interrupted once
@@ -250,11 +252,12 @@ def c03(ctx):
 
 
 # ---------------------------------------------------------------------------
-@scenario("C04", "A job paused too long is cancelled", mode="complex",
-          reqs=("REQ-JS-24", "REQ-JS-25", "REQ-JS-32", "REQ-JS-35"), uses=("A",))
+@scenario("C04", "A job paused too long is cancelled (pausedDays 0.003, about four minutes)",
+          mode="complex", reqs=("REQ-JS-24", "REQ-JS-25", "REQ-JS-32", "REQ-JS-35"), uses=("A",),
+          jobs={"pausedDays": 0.003})
 def c04(ctx):
-    """A job left paused for jobs.pausedDays is cancelled, saying why; its version, never
-    finished, is deleted."""
+    """A paused job says when it will be cancelled -- pausedDays after it paused -- and, left
+    paused that long, is cancelled, saying why; its version, never finished, is deleted."""
     c = ctx.c
     days = float(ctx.server.jobs.get("pausedDays") or 7)
     minutes = days * 24 * 60
@@ -266,6 +269,10 @@ def c04(ctx):
     a, j = _paused(ctx, "A", "left-paused")
     if j is None:
         raise StopScenario("the run ended before it could be paused", skip=True)
+    due = _cancel_due(j.get("current_activity"), j.get("paused_at"))
+    c.check("paused, it says when it will be cancelled: %g days after it paused" % days,
+            due is not None and abs(due - days * 24 * 3600) <= 90,
+            (j.get("current_activity"), j.get("paused_at"), due), reqs=("REQ-JS-24", "REQ-JS-35"))
     j = ctx.wait_job("A", a.job_id, ENDED, timeout=(minutes + 4) * 60, what="paused too long")
     c.check("cancelled after its paused days, saying why",
             j.get("status") == "cancelled" and "not resumed" in (j.get("error_message") or ""),
@@ -275,6 +282,22 @@ def c04(ctx):
     told = [n for n in ctx.notices() if n.get("type") == "job_cancelled"
             and "not resumed" in (n.get("message") or "")]
     c.check("the submitter is told", bool(told), len(told), reqs=("REQ-JS-32",))
+
+
+def _cancel_due(activity, paused_at):
+    """Seconds from `paused_at` to the time 'Paused -- cancelled on Mon 26 Oct 14:05 unless
+    resumed' names (the API's local time, to the minute); None when it names none."""
+    m = re.search(r"cancelled on \w+ (\d+ \w+ \d+:\d+)", activity or "")
+    start = when(paused_at)
+    if not m or start is None:
+        return None
+    local = start.astimezone()
+    try:
+        due = dt.datetime.strptime("%d %s" % (local.year, m.group(1)), "%Y %d %b %H:%M")
+    except ValueError:
+        return None
+    due = due.replace(tzinfo=local.tzinfo)
+    return (due - local).total_seconds()
 
 
 # ---------------------------------------------------------------------------

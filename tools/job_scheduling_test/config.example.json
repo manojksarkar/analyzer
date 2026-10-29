@@ -62,11 +62,11 @@
   },
 
   "complex": {
-    "_manage_api": "true: the script starts the API itself (python -m uvicorn api.main:app, on the port of server.base_url) and restarts it for the restart scenario. Stop your own API on this database first -- one API per database.",
+    "_manage_api": "complex and cli modes. true: the script starts the API itself (python -m uvicorn api.main:app, on the port of server.base_url), restarts it for the restart scenarios, and runs it under the jobs settings each scenario needs -- from a copy of config.local.json in its log folder, yours never written. Stop your own API on this database first -- one API per database.",
     "manage_api": false,
     "_use_llm": "The LLM scenario runs only when config.local.json has an llmServer and this is true.",
     "use_llm": true,
-    "_max_wait_minutes": "The longest it waits for the server's own clocks (jobs.interruptedAfterMinutes, jobs.pausedDays). Longer settings: those checks are skipped, saying how to shorten them.",
+    "_max_wait_minutes": "The longest it waits for the server's own clocks (jobs.interruptedAfterMinutes, jobs.pausedDays). With manage_api the script sets them short itself; against your own API, longer settings skip those checks, saying so.",
     "max_wait_minutes": 20
   },
 

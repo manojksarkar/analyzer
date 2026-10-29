@@ -4,12 +4,14 @@
 Creates its own projects on a git copy of SampleCppProject, then drives the queue the way the web
 app and the command line do: submits, waits, limits, the server cap, priority, pause and resume,
 cancel and remove, updates beside generations, a failed job, the command line in the lanes, and
--- in complex mode -- the LLM, a restart, a killed process, many requests at once and the server's
-own clocks. Every answer is checked through the API, and the report says which requirement of
+-- in complex mode -- the LLM, a restart, a killed process, many requests at once, and the server's
+`jobs` settings, each scenario under values of its own; in cli mode, the whole feature through
+`analyzer.py`. Every answer is checked through the API, and the report says which requirement of
 docs/spec/JOB_SCHEDULING_SPEC.md each check shows.
 
     python tools/job_scheduling_test/job_scheduling_test.py --mode normal
     python tools/job_scheduling_test/job_scheduling_test.py --mode complex
+    python tools/job_scheduling_test/job_scheduling_test.py --mode cli
 
 README.md in this folder explains the config and every scenario. Exit code: 0 every check passed
 (warnings allowed), 1 a check failed, 2 the test could not run.
@@ -27,13 +29,19 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
+import jst_cli  # noqa: E402,F401 -- registers its scenarios
 import jst_complex  # noqa: E402,F401 -- registers its scenarios
 import jst_normal  # noqa: E402,F401 -- registers its scenarios
 import jst_report  # noqa: E402
+import jst_settings  # noqa: E402,F401 -- registers its scenarios
 from jst_core import (SCENARIOS, Api, Checks, Ctx, OwnApi, SampleRepo,  # noqa: E402
                       ServerConfig, StopTest, short)
 from jst_run import (MODES, choose, list_scenarios, load_config,  # noqa: E402
-                     outside_problem, report_path, run_one, sample_root, sample_source)
+                     new_folder, outside_problem, report_path, run_one, sample_root,
+                     sample_source)
+
+#: This tool's modes: the shared ones, and the command line's.
+JST_MODES = dict(MODES, cli=("cli",), all=("normal", "complex", "cli"))
 
 def architecture_problem(cfg):
     """Why projects.architecture_layers cannot carry the scenarios, or None."""
@@ -51,7 +59,8 @@ def project_count(cfg, mode, cap) -> int:
     pcfg = cfg.get("projects") or {}
     wanted = int(pcfg.get("count") or 0)
     if not wanted:
-        wanted = max(3 if mode == "normal" else 4, cap + 1)
+        # cli: the cap's generations, one waiting for a slot, and one more refused.
+        wanted = max(3 if mode == "normal" else 4, cap + (2 if mode == "cli" else 1))
     return max(3, min(wanted, int(pcfg.get("max_count") or 6), 26))
 
 
@@ -60,9 +69,10 @@ def main(argv=None) -> int:
         sys.stdout.reconfigure(errors="replace")
     ap = argparse.ArgumentParser(description="Test job scheduling end to end through the REST "
                                              "API (see README.md).")
-    ap.add_argument("--mode", choices=sorted(MODES), default="normal",
+    ap.add_argument("--mode", choices=sorted(JST_MODES), default="normal",
                     help="normal: every requirement once, short runs (about half an hour); "
-                         "complex: the long, timed and stressful ones; all: both")
+                         "complex: the long, timed and stressful ones, and the server's jobs "
+                         "settings; cli: the feature through analyzer.py; all: the three")
     ap.add_argument("--config", default=os.path.join(HERE, "config.json"),
                     help="the test's JSON config (see config.example.json); default config.json "
                          "here")
@@ -99,7 +109,7 @@ def main(argv=None) -> int:
         print(problem, file=sys.stderr)
         return 2
     server = ServerConfig()
-    picked = choose(args)
+    picked = choose(args, JST_MODES)
     s = cfg.get("server") or {}
     print("Job scheduling test -- %s mode, %d scenarios, against %s" % (
         args.mode, len(picked), s.get("base_url")))
@@ -137,11 +147,16 @@ def main(argv=None) -> int:
     ctx = None
     code = 0
     try:
-        if args.mode in ("complex", "all") and complex_cfg.get("manage_api"):
+        if complex_cfg.get("manage_api") and any(sc.mode != "normal" for sc in picked):
             log_dir = args.log_dir or os.path.join(tempfile.gettempdir(), "job-scheduling-test")
-            own = OwnApi(probe.root, os.path.join(log_dir, "api"))
-            print("starting the API (port %d) -- this test restarts it" % own.port)
+            own = OwnApi(probe.root, os.path.join(log_dir, "api"),
+                         data_root=os.path.join(log_dir, "api-data"), local=server.local)
+            own.write_config(dict(server.jobs_defaults))
+            print("starting the API (port %d) -- this test restarts it, with the jobs settings "
+                  "each scenario needs, from a copy of config.local.json in %s" % (
+                      own.port, own.data_root))
             own.start(probe)
+            server.jobs, _ = own.settings()
         admin = probe.signin()
         dev_cfg = cfg.get("developer") or {}
         dev = None
@@ -160,7 +175,7 @@ def main(argv=None) -> int:
                 print("note: %d generation(s) of other projects run on this server -- scenarios "
                       "that need a free slot are skipped while it lasts" %
                       cap["running_generations"])
-        dest = os.path.join(sample_root(cfg, server), "jst-sample-" + ctx.stamp)
+        dest = new_folder(sample_root(cfg, server), "jst-sample-" + ctx.stamp)
         source = sample_source(cfg)
         print("sample repository: %s, from %s" % (
             dest, source or "the repository's SampleCppProject"))
@@ -188,6 +203,7 @@ def main(argv=None) -> int:
                 ctx.delete_projects()
         if own is not None:
             own.stop()
+            own.forget()
 
     seconds = int(time.time() - started)
     ran = {sc.sid for sc in picked}
