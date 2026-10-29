@@ -221,13 +221,22 @@ def server_settings(config_root: Optional[str] = None, *, strict: bool = False) 
 #: before it is interrupted; days an ended job's record is kept.
 JOBS_DEFAULTS = {"maxGenerations": 2, "startQueuedAfterRestart": False, "pausedDays": 7,
                  "interruptedAfterMinutes": 10, "keepFinishedDays": 90}
+#: Settings that count, so take a whole number: 1.5 generations is no cap at all -- the scheduler
+#: started one while the queue's messages and the Run dialog said a second could start.
+JOBS_WHOLE = ("maxGenerations",)
+#: The least a setting may be. A running job says it is alive every minute
+#: (`api/services/job_queue.py` HEARTBEAT_SECONDS): under two, a live run is taken for dead
+#: between two of its signals, and the next job starts beside it.
+JOBS_LEAST = {"interruptedAfterMinutes": 2}
 
 
 def jobs_settings(config_root: Optional[str] = None) -> Dict[str, Any]:
     """This server's job-scheduling settings: config.local.json's `jobs` block over
     `JOBS_DEFAULTS`. From that file only -- the `JOB_MAX_CONCURRENCY` environment variable is not
     read (REQ-JS-05). A missing file, block or key gives the default; a value of the wrong kind,
-    or not above zero, is said and the default used: a typo must not stop the server's jobs."""
+    or not above zero, is said and the default used: a typo must not stop the server's jobs.
+    `pausedDays` and `keepFinishedDays` take parts of a day (0.003: about four minutes), so a test
+    server can show them; `interruptedAfterMinutes` below `JOBS_LEAST` is said and raised to it."""
     out = dict(JOBS_DEFAULTS)
     path = local_config_path(config_root)
     block: Any = None
@@ -243,16 +252,24 @@ def jobs_settings(config_root: Optional[str] = None) -> Dict[str, Any]:
         if key not in block:
             continue
         value = block[key]
+        whole = key in JOBS_WHOLE
         if isinstance(default, bool):
-            ok = isinstance(value, bool)
+            ok, kind = isinstance(value, bool), "true or false"
         else:
-            ok = (isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0)
-        if ok:
-            out[key] = value
-        else:
-            print(f"note: jobs.{key} in {path} is {value!r}, not "
-                  f"{'true or false' if isinstance(default, bool) else 'a number above zero'}; "
-                  f"{default!r} is used", file=sys.stderr)
+            ok = (isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+                  and (not whole or float(value).is_integer()))
+            kind = "a whole number above zero" if whole else "a number above zero"
+        if not ok:
+            print(f"note: jobs.{key} in {path} is {value!r}, not {kind}; {default!r} is used",
+                  file=sys.stderr)
+            continue
+        least = JOBS_LEAST.get(key)
+        if least is not None and value < least:
+            print(f"note: jobs.{key} in {path} is {value!r}: a running job says it is alive "
+                  f"every minute, and with less than {least} a live run is taken for dead; "
+                  f"{least} is used", file=sys.stderr)
+            value = least
+        out[key] = int(value) if whole else value
     unknown = sorted(set(block) - set(JOBS_DEFAULTS))
     if unknown:
         print(f"note: jobs.{', jobs.'.join(unknown)} in {path} is not a setting; ignored "

@@ -399,6 +399,48 @@ class TestFormatLlmConfigBanner:
         assert "calls at once     : 1" in banner
 
 
+class TestJobsSettings:
+    """config.local.json's `jobs` block (docs/design/JOB_SCHEDULING_DESIGN.md §12)."""
+
+    def _read(self, tmp_path, block):
+        from core.config import jobs_settings
+        return jobs_settings(_config_root(tmp_path, local={"jobs": block}))
+
+    def test_parts_of_a_day_are_read_as_they_are(self, tmp_path):
+        """What a test server shows the paused and the records' days with."""
+        s = self._read(tmp_path, {"pausedDays": 0.003, "keepFinishedDays": 0.002,
+                                  "interruptedAfterMinutes": 2.5, "maxGenerations": 3,
+                                  "startQueuedAfterRestart": True})
+        assert s == {"pausedDays": 0.003, "keepFinishedDays": 0.002,
+                     "interruptedAfterMinutes": 2.5, "maxGenerations": 3,
+                     "startQueuedAfterRestart": True}
+
+    def test_a_cap_is_a_whole_number(self, tmp_path, capsys):
+        """1.5 passed: the scheduler started one generation, the queue's messages and the Run
+        dialog counted up to 1.5 -- "starts now" for a job that then waited."""
+        from core.config import JOBS_DEFAULTS
+        assert self._read(tmp_path, {"maxGenerations": 1.5})["maxGenerations"] == \
+            JOBS_DEFAULTS["maxGenerations"]
+        assert "not a whole number above zero" in capsys.readouterr().err
+        s = self._read(tmp_path, {"maxGenerations": 3.0})
+        assert s["maxGenerations"] == 3 and isinstance(s["maxGenerations"], int)
+
+    def test_a_live_run_is_never_called_silent_between_two_signals(self, tmp_path, capsys):
+        """A job says it is alive every minute: at 1, a sweep between two signals interrupted a
+        command-line run that was working, and the next job started beside it."""
+        assert self._read(tmp_path, {"interruptedAfterMinutes": 1})["interruptedAfterMinutes"] == 2
+        assert "2 is used" in capsys.readouterr().err
+
+    @pytest.mark.parametrize("key,value", [("maxGenerations", 0), ("pausedDays", -1),
+                                           ("keepFinishedDays", "90"),
+                                           ("interruptedAfterMinutes", None),
+                                           ("startQueuedAfterRestart", "yes")])
+    def test_a_bad_value_is_said_and_the_default_used(self, tmp_path, capsys, key, value):
+        from core.config import JOBS_DEFAULTS
+        assert self._read(tmp_path, {key: value})[key] == JOBS_DEFAULTS[key]
+        assert "note: jobs.%s" % key in capsys.readouterr().err
+
+
 class TestParseConfig:
     """Phase 1's speed setting: `speedups.parseWorkers`, overridden by the environment, as
     `llmServer`'s settings are."""

@@ -5,8 +5,8 @@ One thread, in the server that holds the job-runner lock (`pipeline_runner.claim
 round every 10 s, and at once when kicked -- a submit, a job's end, a release, a resume:
 
 1. sweeps, at most once a minute: running jobs nobody follows (followed again, or interrupted when
-   silent too long), paused jobs past `jobs.pausedDays` (cancelled), and once a day the records
-   past `jobs.keepFinishedDays`;
+   silent too long), paused jobs past `jobs.pausedDays` (cancelled), and once a day -- or every
+   `jobs.keepFinishedDays`, when shorter -- the records past `jobs.keepFinishedDays`;
 2. claims: resume requests first, then each project's generation head -- the longest waiting
    first, under `jobs.maxGenerations` -- then each project's oldest update whose version is free;
 3. each job claimed is launched (`pipeline_runner.launch_job`).
@@ -271,15 +271,16 @@ class Scheduler:
             paused = q.aware(getattr(job, "paused_at", None))
             if paused is not None and at - paused >= timedelta(days=days):
                 q.cancel_paused_too_long(db, job, days)
-        # The records (REQ-JS-34), once a day.
-        if (self._last_retention is None
-                or time.monotonic() - self._last_retention >= RETENTION_SECONDS):
+        # The records (REQ-JS-34): once a day -- or every `keepFinishedDays` when that is shorter,
+        # so a record is gone by twice its days (a test server's 0.002 days: about six minutes).
+        keep = float(s.get("keepFinishedDays", 90))
+        if (self._last_retention is None or time.monotonic() - self._last_retention
+                >= min(RETENTION_SECONDS, keep * 24 * 3600)):
             self._last_retention = time.monotonic()
             try:
-                n = db.jobs.prune_ended(at - timedelta(days=float(s.get("keepFinishedDays", 90))))
+                n = db.jobs.prune_ended(at - timedelta(days=keep))
                 if n:
-                    _log.info("job records: %d ended job(s) older than %s day(s) removed", n,
-                              s.get("keepFinishedDays", 90))
+                    _log.info("job records: %d ended job(s) older than %s day(s) removed", n, keep)
             except Exception as exc:                    # noqa: BLE001
                 _log.warning("job records not pruned: %s", exc)
 

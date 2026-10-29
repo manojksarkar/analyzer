@@ -45,7 +45,15 @@ def default_workspaces_root() -> str:
 
     Unchanged for production: data_root defaults to the project root, so this is the same
     path unless something has deliberately relocated the data.
+
+    `ANALYZER_WORKSPACES_DIR` first, when it is set: the API clones into it (`api/services/
+    settings.py`) and hands it to the runs it starts (`core.frozen_run.child_env`). Read here only
+    from the data root, a run of an API whose data root was moved looked for its checkout where
+    nothing had cloned it -- WorkspaceNotFound (2026-10-29).
     """
+    named = os.environ.get("ANALYZER_WORKSPACES_DIR", "").strip()
+    if named:
+        return os.path.abspath(named)
     return os.path.join(_paths().data_root, "workspaces")
 
 

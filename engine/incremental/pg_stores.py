@@ -184,12 +184,16 @@ def list_versions(engine, project_id: str) -> List[Dict[str, Any]]:
     start (so the job + entity FKs resolve during the run) and only flips it to 'in_review' on
     completion, while pipeline_status is never written — so without this filter a running job's
     OWN row is a baseline candidate at its own commit (the nearest possible match), producing a
-    0-changed-file diff that regenerates nothing."""
+    0-changed-file diff that regenerates nothing.
+
+    Newest first, as `baseline._version_at` reads it: of several versions at the nearest commit,
+    the one made last is the baseline. In the database's own order it was any of them (2026-10-29)."""
     v = s.versions
     out: List[Dict[str, Any]] = []
     with engine.connect() as cx:
         for r in cx.execute(select(v.c.id, v.c.commit_sha, v.c.branch, v.c.pipeline_status, v.c.status)
-                            .where(v.c.project_id == project_id)):
+                            .where(v.c.project_id == project_id)
+                            .order_by(v.c.created_at.desc(), v.c.id.desc())):
             if not r.commit_sha:
                 continue
             if r.status == "draft":                  # reserved at job start; not yet generated

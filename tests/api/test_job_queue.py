@@ -537,6 +537,28 @@ class TestSweeps:
         db.jobs.prune_ended(_now() - datetime.timedelta(days=90))
         assert db.jobs.get(gen.id) is not None and db.jobs.get(update.id) is None
 
+    def test_records_kept_less_than_a_day_go_without_waiting_a_day(self, db, sched, settings,
+                                                                   monkeypatch):
+        """Retention ran once a day: with keepFinishedDays 0.002 (about three minutes) a record
+        lived until the next day's run, or a restart -- a test server could not show the setting.
+        Now it runs every keepFinishedDays when that is shorter than a day."""
+        settings["keepFinishedDays"] = 0.002
+        clock = [1000.0]
+        monkeypatch.setattr(job_scheduler.time, "monotonic", lambda: clock[0])
+        project = _project(db)
+        sched.sweep()                                     # the first sweep's retention
+        update = _update(db, project, _generation(db, project, "v1").version_id)
+        db.jobs.create(update)
+        _set(db, update, "complete", completed_at=_now() - datetime.timedelta(minutes=5))
+        clock[0] += 60
+        sched.sweep()
+        assert db.jobs.get(update.id) is not None, "a minute on: not yet its turn"
+        clock[0] += 0.002 * 24 * 3600
+        sched.sweep()
+        assert db.jobs.get(update.id) is None
+        settings["keepFinishedDays"] = 90
+        assert job_scheduler.RETENTION_SECONDS == 24 * 3600.0, "a long keep: once a day"
+
 
 def test_the_api_on_the_in_memory_backend_starts_its_scheduler(monkeypatch):
     """Before job scheduling a submit started its run itself; with no scheduler, a submit on the

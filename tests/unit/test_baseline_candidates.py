@@ -33,7 +33,7 @@ def _engine_with(versions):
     with eng.begin() as cx:
         cx.execute(s.projects.insert().values(id="p1", name="P", created_at=_NOW))
         for v in versions:
-            cx.execute(s.versions.insert().values(project_id="p1", created_at=_NOW, **v))
+            cx.execute(s.versions.insert().values(**{"project_id": "p1", "created_at": _NOW, **v}))
     return eng
 
 
@@ -67,3 +67,24 @@ def test_in_progress_pipeline_status_still_excluded():
     ])
     ids = {v["versionId"] for v in pg_stores.list_versions(eng, "p1")}
     assert ids == {"ver1"}
+
+
+def test_of_several_versions_at_one_commit_the_newest_is_the_baseline():
+    """`baseline._version_at` takes the first complete version at the nearest commit, reading the
+    list as newest first -- but `list_versions` returned the database's own order, so of several
+    versions of one commit an arbitrary one became the baseline, not the one made last
+    (REQ-JS-10: the version made just before the job started). Found by
+    tools/job_scheduling_test N12, which passed or failed by the versions' random ids."""
+    from incremental import baseline
+    hour = datetime.timedelta(hours=1)
+    eng = _engine_with([      # inserted out of order; the ids' order is not their age either
+        {"id": "verc", "version": "v2", "commit_sha": "aaa111", "status": "in_review",
+         "created_at": _NOW + hour},
+        {"id": "vera", "version": "v3", "commit_sha": "aaa111", "status": "in_review",
+         "created_at": _NOW + 2 * hour},
+        {"id": "verb", "version": "v1", "commit_sha": "aaa111", "status": "in_review",
+         "created_at": _NOW},
+    ])
+    listed = pg_stores.list_versions(eng, "p1")
+    assert [v["versionId"] for v in listed] == ["vera", "verc", "verb"], "newest first"
+    assert baseline._version_at(listed, "aaa111")["versionId"] == "vera"

@@ -149,16 +149,19 @@
   // after a change -- and by `analyzer.py` at each run. Each key left out keeps the value shown.
   "jobs": {
     // Generations (generate, export, resume) running at once on this server, all projects
-    // together. A paused one does not count; Word-file updates have no cap.
+    // together -- a whole number. A paused one does not count; Word-file updates have no cap.
     "maxGenerations": 2,
     // false: after a restart, waiting jobs are held until a super admin starts or clears them.
     // true: they start by themselves.
     "startQueuedAfterRestart": false,
     // A job paused this many days is cancelled -- a version that never finished is deleted.
+    // Parts of a day too: 0.003 is about four minutes, for a test server.
     "pausedDays": 7,
-    // A running job silent this many minutes is interrupted, and the next one starts.
+    // A running job silent this many minutes is interrupted, and the next one starts. At least 2:
+    // a running job says it is alive every minute.
     "interruptedAfterMinutes": 10,
     // Ended jobs' records are kept this many days -- each version's own generation job longer.
+    // Looked at once a day, or every keepFinishedDays when shorter (0.002: about three minutes).
     "keepFinishedDays": 90
   }
 }

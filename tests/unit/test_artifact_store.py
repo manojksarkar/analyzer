@@ -388,11 +388,28 @@ def test_default_workspaces_root_follows_the_data_root(tmp_path, monkeypatch):
     import importlib
     cp = importlib.import_module("core.paths")
     from incremental.stores import default_workspaces_root
+    monkeypatch.delenv("ANALYZER_WORKSPACES_DIR", raising=False)
     before = cp._OVERRIDE_DATA_ROOT
     try:
         cp.set_data_root(str(tmp_path / "elsewhere"))
         assert default_workspaces_root() == os.path.join(
             str(tmp_path / "elsewhere"), "workspaces")
+    finally:
+        cp._OVERRIDE_DATA_ROOT = before
+        cp._CACHED = None
+
+
+def test_the_workspaces_the_api_names_are_the_ones_a_run_reads(tmp_path, monkeypatch):
+    """The API clones into ANALYZER_WORKSPACES_DIR and hands it to the runs it starts; the engine
+    read only the data root, so with the data root moved a run found no checkout."""
+    import importlib
+    cp = importlib.import_module("core.paths")
+    from incremental.stores import default_workspaces_root
+    monkeypatch.setenv("ANALYZER_WORKSPACES_DIR", str(tmp_path / "api-ws"))
+    before = cp._OVERRIDE_DATA_ROOT
+    try:
+        cp.set_data_root(str(tmp_path / "elsewhere"))
+        assert default_workspaces_root() == str(tmp_path / "api-ws")
     finally:
         cp._OVERRIDE_DATA_ROOT = before
         cp._CACHED = None
