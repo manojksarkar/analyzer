@@ -2538,7 +2538,10 @@ def _transition_phase(db: Any, job_id: str, old_phase: int, new_phase: int,
     job.phase_pct = 0
     job.current_activity = _ACTIVITY.get(new_phase, f"Phase {new_phase}…")
     job.elapsed_seconds = _elapsed_since(job.started_at)
-    job.eta_seconds = max(0, (4 - new_phase) * 120)
+    # Unknown until the new phase's first counted step says how fast it goes (`_count_progress`).
+    # A fixed guess here -- two minutes per phase left -- was what the run card showed through a
+    # whole LLM phase: "Est. ~4m remaining" for hours.
+    job.eta_seconds = None
     db.jobs.update(job)
     _append_log(job_id, f"→ Phase {new_phase}: {_ACTIVITY.get(new_phase, '')}")
 
@@ -2564,6 +2567,9 @@ def _update_activity(db: Any, job_id: str, detail: str) -> None:
 # few items. The phase runner's own "[2/4] === Derive Model ===" and "[2/4] Derive Model — 12.3s"
 # lines count phases, not items, and are skipped.
 _ITEM_COUNTER = re.compile(r"^\[(\d+)/(\d+)\](?:\s+(.*))?$")
+# "start (169 items)" -- the same reporter's first line, when its step begins: the clock starts
+# there at 0 done, so its first counter line already gives a rate.
+_ITEM_START = re.compile(r"^start \((\d+) items\)$")
 _step_clocks: dict = {}    # job_id -> (total, monotonic time first seen, done first seen)
 
 
@@ -2572,9 +2578,17 @@ def _count_progress(job: Any, detail: str) -> None:
 
     Nothing set `phase_pct`, so the web app's progress bar sat at 0% for a whole phase, and
     `eta_seconds` was only ever the transition guess of two minutes per remaining phase: "~4m
-    remaining" for an LLM phase that takes an hour. The estimate is the rate seen so far in this
-    counted step, plus that same guess for the phases still to come.
+    remaining" for an LLM phase that takes an hour. The estimate is the time left in this counted
+    step at the rate seen so far, timed from the step's own "start (N items)" line when there is
+    one; None until it can be worked out.
     """
+    s = _ITEM_START.match(detail or "")
+    if s:
+        with _LOCK:
+            _step_clocks[job.id] = (int(s.group(1)), time.monotonic(), 0)
+        job.phase_pct = 0
+        job.eta_seconds = None          # a new step: unknown until its first counter line
+        return
     m = _ITEM_COUNTER.match(detail or "")
     if not m:
         return
@@ -2590,11 +2604,14 @@ def _count_progress(job: Any, detail: str) -> None:
         if clock is None or clock[0] != total or done < clock[2]:     # a new counted step
             clock = (total, now, done)
             _step_clocks[job.id] = clock
+            job.eta_seconds = None      # the step before's estimate says nothing about this one
     job.phase_pct = done * 100 // total
     _, t0, done0 = clock
-    later = max(0, (4 - (job.phase or 4)) * 120)
+    # This step's time left, at the rate seen so far -- the run card says "left in this step".
+    # The rest of the run cannot be known (how many steps, how slow each); it used to get a
+    # fixed two minutes per phase left, which showed "~4m" at the end of every step.
     if done > done0:
-        job.eta_seconds = int((now - t0) / (done - done0) * (total - done)) + later
+        job.eta_seconds = int((now - t0) / (done - done0) * (total - done))
 
 
 _progress_warned: set = set()      # (job_id, function) pairs already logged -- see _progress

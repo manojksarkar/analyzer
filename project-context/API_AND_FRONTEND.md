@@ -609,7 +609,11 @@ its version is at work or complete (`failureSuperseded`). Re-run opens the Overv
 
 Under the running panel, `pages/ProjectDetailPage/components/RunCards.tsx`: **Documents** (the asked-for
 components, each opening its SWE.3 / SWE.4 once made), **This run** (version, commit, kind, scope, document
-types, started), **Found so far** (code counts, parse warnings, the step at work, the LLM's retries and
+types, started), the progress bar with **Est. ~X left in this step** (`pipeline_runner._count_progress`:
+the step's own counter lines, timed from its `start (N items)` line; blank until known -- the fixed
+"two minutes a phase" guess showed "~4m" through whole LLM phases; slow stages log their counter at
+least once a minute, `core.progress.LOG_EVERY_SECONDS`; 2026-10-29b), **Found so far** (code counts,
+parse warnings, the step at work, the LLM's retries and
 failed calls); a superuser also gets the version's three newest log lines and **Open logs**. Facts from
 `GET /projects/{pid}/versions/{vid}/run-facts` (`api/services/run_facts.py`): model counts from the
 database, LLM and parse counts from the live log buffer -- so they cover what the buffer holds and are

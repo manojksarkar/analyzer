@@ -286,7 +286,7 @@ export function ProjectDetailPage() {
                         <div className="flex items-center justify-between gap-4">
                           <p className="text-on-surface-variant font-mono text-caption truncate">{job.activityDetail}</p>
                           {job.etaSeconds != null && (
-                            <p className="text-outline font-mono text-caption flex-shrink-0">Est. ~{fmtEta(job.etaSeconds)} remaining</p>
+                            <p className="text-outline font-mono text-caption flex-shrink-0">Est. ~{fmtEta(job.etaSeconds)} left in this step</p>
                           )}
                         </div>
                       )}

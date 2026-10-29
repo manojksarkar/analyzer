@@ -2,7 +2,8 @@
 
 Nothing set `phase_pct`, so the web app showed 0% for a whole phase, and `eta_seconds` was only
 the two-minutes-per-phase guess made at each phase transition: "~4m remaining" for an LLM phase
-that took an hour.
+that took an hour. Since 2026-10-29 it is the step's own time left ("left in this step"), timed
+from its `start (N items)` line, and unknown -- None, shown as nothing -- until it can be told.
 """
 import types
 from unittest.mock import patch
@@ -37,9 +38,9 @@ class TestItemCounter:
     def test_the_time_left_is_the_rate_seen_so_far(self):
         job = _job(phase=2)
         _feed(job, "[10/110] a", 100.0)
-        assert job.eta_seconds == 240, "one sighting gives no rate; the old guess stands"
+        assert job.eta_seconds is None, "one sighting gives no rate: unknown, not a guess"
         _feed(job, "[20/110] b", 200.0)            # 10 items in 100 s -> 10 s an item
-        assert job.eta_seconds == 90 * 10 + 2 * 120  # this step, plus two phases to come
+        assert job.eta_seconds == 90 * 10          # this step's time left, no guess for the rest
 
     def test_a_new_step_restarts_the_clock(self):
         job = _job()
@@ -47,7 +48,21 @@ class TestItemCounter:
         _feed(job, "[5/20] next-step", 500.0)
         _feed(job, "[10/20] next-step", 510.0)     # 5 items in 10 s -> 2 s an item
         assert job.phase_pct == 50
-        assert job.eta_seconds == 10 * 2 + 2 * 120
+        assert job.eta_seconds == 10 * 2
+
+    def test_a_step_is_timed_from_its_start_line(self):
+        job = _job()
+        _feed(job, "start (100 items)", 0.0)
+        assert job.eta_seconds is None, "a new step: unknown, not the step before's"
+        _feed(job, "[10/100] fn", 50.0)            # 5 s an item, 90 to go
+        assert job.eta_seconds == 450 and job.phase_pct == 10
+
+    def test_a_new_phase_has_no_estimate_until_it_counts(self):
+        job = types.SimpleNamespace(id="jobcount", phases=[], phase=1, phase_pct=50, current_activity="",
+                                    elapsed_seconds=0, eta_seconds=600, started_at=None)
+        db = types.SimpleNamespace(jobs=types.SimpleNamespace(get=lambda _id: job, update=lambda j: None))
+        pr._transition_phase(db, "jobcount", 1, 2, pr._now())
+        assert job.phase == 2 and job.eta_seconds is None
 
     @pytest.mark.parametrize("line", [
         "[2/4] === Derive Model ===",

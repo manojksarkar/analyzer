@@ -620,7 +620,10 @@ file via `--knowledge-json`.
 ### Outputs
 
 Per source file: `out_dir/<source_file_name>.json` containing
-`[{name, flowchart}, …]`. Plus `_summary.json` with per-file counts.
+`[{name, flowchart}, …]`. Plus `_summary.json` with per-file counts -- the engine's LAST write, so the
+flowcharts view takes a non-zero exit with a `_summary.json` written since launch as a crash on the way
+out (libclang's at shutdown, 0xC0000005) and uses the output, with a warning
+(`views.flowcharts.engine_finished`, 2026-10-29b); before, it dropped the component's charts and SVGs.
 
 ---
 

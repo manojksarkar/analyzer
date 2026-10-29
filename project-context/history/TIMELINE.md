@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-29b | Run card's estimate is the step's own; a flowchart engine crashing on exit keeps its output | [15](15-2026-10-07h.md) |
 | 2026-10-29 | The web app shows how a version was made: Versions → View runs | [15](15-2026-10-07h.md) |
 | 2026-10-28b | A version records, run by run, the server settings it was made with -- no secret | [15](15-2026-10-07h.md) |
 | 2026-10-28 | The log says which LLM lane answered each call, and what `parseWorkers: "auto"` became | [15](15-2026-10-07h.md) |
