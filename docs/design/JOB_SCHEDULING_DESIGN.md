@@ -188,8 +188,8 @@ drops a lost claim, but nothing would schedule then.
 
 1. **Sweeps**, in the first round and then at most once a minute: background runs nobody follows,
    followed again; interrupted jobs ([§7](#7-alive-signal-and-interrupted)); paused past
-   `jobs.pausedDays` → cancelled ([§9](#9-cancel-and-remove)); in the first sweep and then once a day,
-   retention ([§15](#15-notices-record-measures)).
+   `jobs.pausedDays` → cancelled ([§9](#9-cancel-and-remove)); in the first sweep and then once a day —
+   or every `jobs.keepFinishedDays` when that is shorter — retention ([§15](#15-notices-record-measures)).
 2. **Claims**, each in its own short transaction under the queue lock (`core.job_lanes.lock_queue`:
    `pg_advisory_xact_lock(0x41524658, 2)`, beside the runner lock's key 1):
    1. **resume requests** first — paused jobs with `resume_requested_at`, oldest request first — while
@@ -463,6 +463,13 @@ API's claim both use. No queue commands (REQ-JS-27).
   version's config. Not in `RUN_SERVER_BLOCKS`: read by its own reader, `core.config.jobs_settings()`,
   as `auth` is — a missing file, block or key gives the default; a bad value is said and ignored. The API
   reads it at start-up (restart it after a change), the CLI at each run.
+- Each value a number above zero, `startQueuedAfterRestart` true or false. `maxGenerations` a whole
+  number (`JOBS_WHOLE`): 1.5 was taken, and the claim counted to 1 while the waiting messages and the
+  Run dialog counted to 1.5. `interruptedAfterMinutes` at least 2 (`JOBS_LEAST`) — a running job beats
+  every minute ([§7](#7-alive-signal-and-interrupted)), and at 1 a live run was interrupted between two
+  beats, the next job started beside it; a smaller value is said and raised to 2. `pausedDays` and
+  `keepFinishedDays` take parts of a day: a test server sets 0.003 (about four minutes) and 0.002 (about
+  three) — `tools/job_scheduling_test` complex mode does (2026-10-29).
 - `config.local.json.example` gets the block. **Removed:** `JOB_MAX_CONCURRENCY`
   (`settings.job_max_concurrency`), the semaphore `_SEMAPHORE`, and their mentions in docs.
   `JOB_DETACH` is not part of this and stays.
@@ -544,7 +551,8 @@ screens need, for him — from the routes of [§13](#13-api), whose contract is
   submitted_at`); run time (`completed_at − started_at − paused_seconds`) and per phase (`phases[].
   duration_seconds`). Flags: waiting more than a day; running with no progress for 30 minutes
   (`version_runs.progress_at`) — "stuck", shown, not stopped.
-- **Retention** (once a day): ended jobs older than `jobs.keepFinishedDays` go, with their events and
+- **Retention** (once a day, or every `jobs.keepFinishedDays` when that is shorter — so a record is gone
+  by twice its days): ended jobs older than `jobs.keepFinishedDays` go, with their events and
   `job_functions` — **except each existing version's newest generation job**: an update reads how the
   version was generated from it (`start_update`), and the version's functions hang off it.
 
@@ -587,7 +595,7 @@ screens need, for him — from the routes of [§13](#13-api), whose contract is
 | `engine/core/db.py` | the SQLite foreign-key hook runs on SQLite connections alone: on a PostgreSQL one its failed `PRAGMA` left the transaction aborted |
 | `tests/api/conftest.py` | every API test has a scheduler without its thread, no job left waiting by an earlier test, its job threads ended with it; the SQLite test database's one connection taken in turns |
 | `tests/conftest.py` | `ANALYZER_JOB_ID` put back after every test: `analyzer.main()` called in-process sets it, and the next tests' pause points read it |
-| `tools/job_scheduling_test/` (new) | the whole feature against a running API, through REST and the command line: `--mode normal` and `--mode complex`, a report per requirement ([its README](../../tools/job_scheduling_test/README.md)) |
+| `tools/job_scheduling_test/` (new) | the whole feature against a running API, through REST and the command line: `--mode normal`, `--mode complex` (the `jobs` settings too, each scenario under its own, on an API the test runs) and `--mode cli` (through `analyzer.py`), a report per requirement ([its README](../../tools/job_scheduling_test/README.md)) |
 | `engine/llm_core/cache.py` | every cache saves its buffer at process exit (`atexit`) |
 | `engine/model_deriver.py`, `engine/core/model_repo.py` | regeneration-queue entries retired in the model's transaction ([§8](#8-pause-and-resume)) |
 | `engine/run.py`, `engine/incremental/store.py` | each component stored when it is finished ([§9](#9-cancel-and-remove)) |
@@ -609,7 +617,8 @@ comes then.
 
 | Test | Covers |
 |---|---|
-| `tests/api/test_job_queue.py` — both backends, a fresh database per test | the queue: the three answers, limits, duplicates, idempotency, held submits, position and estimate; the scheduler: priority, first come first served, fairness across projects, the cap, a paused job not counted, resume first, a busy version (head waits; an update is passed), the claim, interrupted with the outage guard, `pausedDays`, retention keeps each version's generation job; a CLI run's record and end — REQ-JS-02–13, 16, 18, 20, 21, 24, 28, 29, 34 |
+| `tests/api/test_job_queue.py` — both backends, a fresh database per test | the queue: the three answers, limits, duplicates, idempotency, held submits, position and estimate; the scheduler: priority, first come first served, fairness across projects, the cap, a paused job not counted, resume first, a busy version (head waits; an update is passed), the claim, interrupted with the outage guard, `pausedDays`, retention keeps each version's generation job and runs every `keepFinishedDays` when shorter than a day; a CLI run's record and end — REQ-JS-02–13, 16, 18, 20, 21, 24, 28, 29, 34 |
+| `tests/unit/test_core_config.py` `TestJobsSettings` | the `jobs` block read as [§12](#12-config) says: parts of a day, a whole-number cap, `interruptedAfterMinutes` at least 2, a wrong value said and its default used |
 | `tests/api/test_job_state_writes.py` | compare-and-set: a progress write after a cancel leaves it cancelled; `update()` never writes the state ([§1](#1-principles)) |
 | `tests/unit/test_job_state_writers.py` | no code outside the job repository sets a job's status; the check would notice a new one ([§1](#1-principles)) |
 | `tests/unit/test_job_lanes.py` | the CLI's rule, the counts on the schema's table, the API's statuses the same as the lanes' |

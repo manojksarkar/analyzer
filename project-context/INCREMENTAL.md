@@ -45,6 +45,9 @@
 - **Baseline = auto nearest-ancestor** (`git merge-base --is-ancestor` over prior versions' commits; nearest by
   `rev-list --count`); **optional user override** (`baseVersionId`) with ancestor/nearest **warnings**; none →
   full gen. **Correctness is base-independent** — the base only affects *parse speed* (reuse is content-addressed).
+  Several complete versions at the nearest commit: the newest (`baseline._version_at` reads
+  `pg_stores.list_versions` newest first — `created_at` desc; before 2026-10-29 the database's own order, so an
+  arbitrary one; `test_baseline_candidates.py`).
 - **`edges.json` is SLIM** — only **type/macro usage**. Calls/globals come from `functions.json`
   (`calledByIds`/`callsIds`, `reads`/`writesGlobalIds`); the **recursive/transitive closure is computed by
   reverse-BFS**, not stored. (Don't re-store the call graph — it already exists in `functions.json`.)

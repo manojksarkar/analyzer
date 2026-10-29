@@ -34,13 +34,13 @@ Statuses: `held`, `queued`, `running`, `paused` (the lane's), `complete`, `faile
 |---|---|
 | `engine/core/job_lanes.py` | the lanes and statuses; `cli_refusal` (the CLI's rule); `lock_queue` (`pg_advisory_xact_lock(0x41524658, 2)`); `holding`, `running_generations` — the counts a claim and a CLI record share |
 | `api/services/job_queue.py` | `enqueue` / `requeue` (a submit; `decide` is pure — no repository read inside the transaction; `requeue` takes a failed, interrupted, cancelled or removed job); `answer_for` (position, estimate, `message`); `waiting_message`, `refresh_messages` (`current_activity` of waiting jobs, by `transition` from the status read); estimates read each typical time once per call (`memo`); pause, resume, priority (from the status the job has), limits; `hold_waiting(before=)`, `release_held`; `cancel`, `interrupt`, `cancel_paused_too_long`, `after_end` (record, notices, kick; once per end and per run — `actor_id` for a cancel); `Heartbeat`; `record_cli_run`, `end_cli_run`; `delete_refusal`; the views `queues`, `all_queues`, `preview`; `next_place` |
-| `api/services/job_scheduler.py` | `Scheduler.round` — first round holds the queues of the projects a job was left waiting in before the start-up (`hold_before`), sweeps (first round, then each minute: re-follow, silent → interrupted, paused too long → cancelled; retention first sweep, then daily), claims, launches **inside the round's lock** — and in a `finally`, so a round that raises launches what it claimed; `try_start` (a round in the request); `install`, `start_up(persists=)`, `kick` |
+| `api/services/job_scheduler.py` | `Scheduler.round` — first round holds the queues of the projects a job was left waiting in before the start-up (`hold_before`), sweeps (first round, then each minute: re-follow, silent → interrupted, paused too long → cancelled; retention first sweep, then daily — or every `keepFinishedDays` when shorter, 2026-10-29), claims, launches **inside the round's lock** — and in a `finally`, so a round that raises launches what it claimed; `try_start` (a round in the request); `install`, `start_up(persists=)`, `kick` |
 | `api/services/pipeline_runner.py` | `start_update` / `start_export` / `start_resume` → `enqueue`; `launch_job`; `_job_thread` (alive signal, `after_end`, kick, then leaves the thread lists); `fail_interrupted_jobs` (start-up: re-follow or interrupt running web jobs); `_follow_detached` → `conclude` (75 → paused, no exit code → interrupted at once); `commit_known`, `config_problem` (REQ-JS-07); `_complete` / `_complete_reexport` also finish an `interrupted` job |
 | `api/db/postgres/database.py`, `api/db/in_memory.py` | `transition` (compare-and-set; a lane's second running job → False), `update` (never the state nor the queue's fields — `JOB_STATE_FIELDS`, `JOB_QUEUE_FIELDS` in `api/models/domain.py` — nothing on a closed job), `add_to_lane`, `claim`, `record_run`, `lane_jobs`, `in_status`, `find_by_request_key`, `recent_ended`, `prune_ended`; `job_events`. The in-memory backend emulates `ux_jobs_lane_active` in `transition` and `record_run` |
 | `api/routes/jobs.py`, `queues.py`, `version_components.py`, `commits_versions.py` | the routes of the API spec; `DELETE V` asks `delete_refusal`; a submit whose draft meets its name taken since the check (a double click) answers the first job of its key, else `VERSION_EXISTS` |
 | `api/main.py` | start-up: `_fail_interrupted_jobs`, then `_start_scheduler` (the scheduler replaced `_watch_jobs`); the in-memory backend starts it too, `persists=False` — no hold, no sweeps |
 | `analyzer.py` | `main()` → `_as_job` (the gate: `--job-id` attaches, else checks + record, `--ignore-queue`); `_run_as_job` (alive signal, the CLI job's end: exit 0/3 complete, else failed, Ctrl+C cancelled); `resume` runs a recorded `generate` with `main(argv, queue=False)` |
-| `engine/core/config.py` | `jobs_settings()`; `jobs` is a `SERVER_BLOCKS` block — config.local.json only |
+| `engine/core/config.py` | `jobs_settings()`; `jobs` is a `SERVER_BLOCKS` block — config.local.json only; `JOBS_WHOLE` (`maxGenerations` a whole number), `JOBS_LEAST` (`interruptedAfterMinutes` at least 2) |
 | `engine/core/pause.py` | `requested()` (the run's `ANALYZER_JOB_ID`, read at most every 15 s), `check()` (a pause point: `PauseRequested`, a BaseException, main thread only), `exits_paused` (a step's entry exits 75), `EXIT_PAUSED` |
 | pause points | `PhaseRunner` before each phase; `run.py` between plans; both parse passes per TU; `llm_core.parallel.map_in_order`; `llm_enrichment._run_in_rounds`; the behaviour names and diagrams loops; the flowchart label loops. The flowchart engine's exit 75 pauses the views phase (`views/flowcharts.py`) |
 | exit 75 up the chain | `run.py` `_component_states` (components back to `waiting`), `incremental/generate.py` and `engine.py` (`AnalyzerRunFailed(75)`, no failed manifest), `analyzer.py` (says so, returns 75), `version_run` (outcome `paused`), the API (`conclude`, `_execute_subprocess` → `_record_paused`), `progress` (PAUSED) |
@@ -88,6 +88,13 @@ Statuses: `held`, `queued`, `running`, `paused` (the lane's), `complete`, `faile
    generation): a CLI job is ended by its own run (`_as_job`), so a reopened one was ended twice and
    could be neither paused nor cancelled from the web. A version made from the command line resumes as
    a job of its own — as before CLI runs had jobs.
+15. **`interruptedAfterMinutes` is at least 2** (`JOBS_LEAST`): a running job beats every minute
+   (`HEARTBEAT_SECONDS` 60), and at 1 a sweep between two beats interrupted a live command-line run —
+   its lane freed, the next job started beside it. A smaller value is said and raised to 2
+   (`TestJobsSettings`, 2026-10-29).
+16. **`maxGenerations` is a whole number** (`JOBS_WHOLE`): the claim does `int()`, the waiting messages
+   and the Run dialog compared with the value as written — at 1.5, "starts now" for a job that then
+   waited. A fractional value is said and the default used.
 
 ## Tests
 
@@ -118,7 +125,15 @@ them. Its README says what each scenario needs. Since 2026-10-26: N09, C01 and C
 or killed run's Word files with a run never stopped -- doccheck (no P1/P2) and word for word
 (`jst_docs.check_same_documents`); each run writes its own reports
 (`job_scheduling_test_report_<mode>_<start>.md`/`.json`) with what the terminal showed under each
-scenario; `jst_run.py` holds what `tools/incremental_test/` runs with too.
+scenario; `jst_run.py` holds what `tools/incremental_test/` runs with too. Since 2026-10-29: complex
+mode runs the server under the `jobs` settings each scenario names (`@scenario(jobs=...)`; C12–C16:
+a cap of 1 and 3, `startQueuedAfterRestart` true, `keepFinishedDays` 0.002, wrong values; C03, C04 their
+short clocks) — the API it runs (`complex.manage_api`, `jst_core.OwnApi`) has a data folder of its own
+(`ANALYZER_DATA_ROOT`) holding a copy of config.local.json whose `jobs` block the test writes, and is
+restarted when a scenario's settings differ (`Ctx.use_jobs`); and `--mode cli` (`jst_cli.py`, L01–L10)
+does the feature through `analyzer.py` — each command a job of its lane, every refusal, `--ignore-queue`,
+`--detach`, Ctrl+C (`jst_ctrl_c.py`: Ctrl+Break read as Ctrl+C), a run killed or asleep, runs at once,
+beside a paused job. The test stops its command-line runs as Ctrl+C does, so their jobs end at once.
 
 The API suite's conftest gives every test a scheduler without its thread (`_job_scheduler`; a submit
 starts its job at once when it may), removes jobs an earlier test left waiting (a later round would

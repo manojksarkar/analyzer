@@ -49,7 +49,7 @@ fail when an e2e run is rewriting them.
 | `python -m pytest tests/unit tests/api -q` | API 1,487 passed. Unit 3,855 passed — on the development machine 4 fail for its libclang and FastAPI versions (`test_perf_prefetch_and_lanes` … `null_check`, `test_review_api_contract` ×3); the same 4 here are that, any other failure is a finding |
 | e2e on a fresh SQLite file, below | 188 passed, 4 skipped, about 5 minutes — with a real run paused and resumed, and runs cancelled in Phases 1–3 |
 | the PostgreSQL tests, below | 14 passed (all skipped = the DSN was not seen) |
-| `python tools/job_scheduling_test/job_scheduling_test.py --mode normal`, then `--mode complex` -- against the test API of §4 (its [README](../tools/job_scheduling_test/README.md) says how to set it up) | most of §4's scenarios and more, through the REST API, each check tied to its requirement; the report lists every REQ-JS with its result |
+| `python tools/job_scheduling_test/job_scheduling_test.py --mode normal`, then `--mode complex` and `--mode cli` -- against the test API of §4 (its [README](../tools/job_scheduling_test/README.md) says how to set it up) | most of §4's scenarios and more, through the REST API and `analyzer.py`, each check tied to its requirement -- complex mode under each `jobs` setting it needs (the API run by the test, from a copy of `config.local.json`); the report lists every REQ-JS with its result |
 
 ```powershell
 New-Item -ItemType Directory -Force C:\tmp\js_e2e | Out-Null

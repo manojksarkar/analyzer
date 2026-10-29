@@ -346,7 +346,9 @@ generated yet), `reexport` (again), `resume` (after a crash). Human guide:
   Overview's card); the versions list carries `run: {made_by, scope, doc_type, model_only}`.
   `analyzer.py clean-runs` removes the code copies of runs that finished (exit 0) days ago.
 - **`--detach`** (CLI): `core/frozen_run.py` — a frozen copy of the code under `runs/<version>/<time>/`,
-  the same data via `ANALYZER_DATA_ROOT` / `ANALYZER_WORKSPACES_DIR`, output in `run.log`, `run.json`
+  the same data via `ANALYZER_DATA_ROOT` / `ANALYZER_WORKSPACES_DIR` — the engine reads the workspaces
+  from `ANALYZER_WORKSPACES_DIR` when it is set, as the API does (`incremental.stores.default_workspaces_root`;
+  before 2026-10-29 only from the data root, so a moved data root left a run with no checkout), output in `run.log`, `run.json`
   (pid, argv, `job_id` from `ANALYZER_JOB_ID`), and `exit.json` written by `analyzer.py` as it exits
   (`_main_recording_exit` → `frozen_run.record_exit`; it pops `ANALYZER_EXIT_FILE`, so the phases do not).
 - **Web runs in the background** (2026-10-02c, C4). With a database behind the API (`settings.job_detach`,
