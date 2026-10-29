@@ -20,6 +20,8 @@ export const projectKeys = {
   runs: (id: string) => ['projects', id, 'runs'] as const,
   /** What a version's run has found so far (the Overview while it runs). */
   runFacts: (id: string, vid: string) => ['projects', id, 'versions', vid, 'run-facts'] as const,
+  /** How a version was made, run by run: this server's settings at each run's start. */
+  runSettings: (id: string, vid: string) => ['projects', id, 'versions', vid, 'run-settings'] as const,
   /** Every documents read of the project: lists, details, stats, renders, events. */
   documentsAll: (id: string) => ['projects', id, 'documents'] as const,
   documents: (id: string, filters?: DocumentFilters) =>

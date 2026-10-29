@@ -141,6 +141,24 @@ def version_run_facts(project_id: str, version_id: str,
     return run_facts(db, version.id)
 
 
+@router.get("/projects/{project_id}/versions/{version_id}/run-settings")
+def version_run_settings(project_id: str, version_id: str,
+                         current_user: User = Depends(get_current_user),
+                         db: InMemoryDatabase = Depends(get_db)) -> Dict[str, Any]:
+    """How the version was made, run by run: `runs`, oldest first, each this server's settings when
+    it started -- the LLM (provider, model, endpoint; the API key only `set`/`none`, headers by
+    name), the lanes, `speedups`, the LLVM paths, plus time, host, code, phases, components. The
+    record `analyzer.py runs` prints (`output/_run_settings.json`). `running`: a run is at work on
+    the version now -- the last entry is that run's. Read only (api/services/run_facts.py)."""
+    require_project_member(project_id, current_user, db)
+    version = _version(db, project_id, version_id)
+    from ..services.run_facts import run_settings
+    _, alive = _run_view(db, version.id)
+    busy = any(j.status in ("queued", "running", "paused") for j in db.jobs.list_for_version(version.id))
+    return {"version_id": version.id, "running": bool(alive) or busy,
+            "runs": run_settings(db, version.id)}
+
+
 @router.post("/projects/{project_id}/versions/{version_id}/resume", status_code=202)
 def resume_version(project_id: str, version_id: str,
                    current_user: User = Depends(get_current_user),

@@ -238,6 +238,7 @@ All endpoints except `/auth/signin` and `/auth/refresh` require
 | POST | `/projects/:id/versions/:versionId/documents/generate` | Make components' documents into the version (admin); a component of a layer the model lacks adds the layer (`added_layers`) |
 | POST | `/projects/:id/versions/:versionId/resume` | Carry on a run that was cut short (admin) |
 | GET | `/projects/:id/versions/:versionId/run-facts` | What a run has found so far: model counts, the LLM's retries and failed calls, parse warnings (the Overview's run cards) |
+| GET | `/projects/:id/versions/:versionId/run-settings` | How the version was made, run by run: this server's settings at each run's start (LLM, lanes, `speedups`, LLVM; no secret) and whether a run is at work now (the Versions page's Runs drawer) |
 | POST | `/projects/:id/versions/:versionId/reexport` | Re-export (admin) -- any version with documents, web- or CLI-made; optional `{"components": [...]}` |
 | GET | `/projects/:id/runs` | Runs at work or cut short, from the web app or `analyzer.py` |
 

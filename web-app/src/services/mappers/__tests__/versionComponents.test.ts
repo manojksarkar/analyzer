@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ApiVersionComponentsSchema, mapVersionComponents } from '..'
+import { ApiRunSettingsSchema, ApiVersionComponentsSchema, mapRunSettings, mapVersionComponents } from '..'
 
 /* GET …/versions/{vid}/components → VersionComponents (staged generation). */
 
@@ -51,5 +51,40 @@ describe('mapVersionComponents', () => {
     expect(v.components[0].state).toBe('not_requested')
     expect(v.run).toBeNull()
     expect(v.counts).toEqual({ generated: 1, not_requested: 2 })
+  })
+})
+
+/* GET …/versions/{vid}/run-settings → RunSettings: how a version was made, run by run. */
+const RUN_BODY = {
+  version_id: 'ver1', running: true,
+  runs: [
+    { at: '2026-10-28T09:14:02Z', host: 'build-01', code: '782d749', phases: [1, 1], docType: 'all', components: null,
+      llmServer: { provider: 'anthropic', defaultModel: 'claude-sonnet-5-5', baseUrl: 'https://api.anthropic.com',
+                   apiKey: 'set', customHeaders: [], timeoutSeconds: 300 },
+      headersFromEnvironment: [],
+      speedups: { llms: [{ name: 'claude-a', maxConcurrent: 2 }], pacing: 'after', parseWorkers: 'auto -> 4',
+                  pictureBatches: false, fastNullCheck: false },
+      llvm: { libPath: 'C:/LLVM/bin/libclang.dll', includePath: 'C:/LLVM/include' } },
+    { at: '2026-10-28T09:20:45Z', phases: [4, null], docType: 'swe3',
+      components: ['Layer1.Math', 'Layer1.Util', 'Layer1.Lib', 'Layer1.App', 'Layer1.Core'],
+      llmServer: { provider: 'openai', defaultModel: 'gpt-oss', apiKey: 'none', customHeaders: ['x-dep-ticket'] },
+      headersFromEnvironment: ['USER_ID'], speedups: { llms: [], parseWorkers: '1' }, futureField: 1 },
+  ],
+}
+
+describe('mapRunSettings', () => {
+  it('lists the newest run first, in the drawer’s words', () => {
+    const r = mapRunSettings(ApiRunSettingsSchema.parse(RUN_BODY))
+    expect(r.running).toBe(true)
+    expect(r.runs.map((x) => x.what)).toEqual(['Documents (SWE.3)', 'Parse'])
+    expect(r.runs[1]).toMatchObject({
+      components: 'all components', llm: 'anthropic / claude-sonnet-5-5', endpoint: 'https://api.anthropic.com',
+      lanes: [{ name: 'claude-a', atOnce: '2' }], credentials: 'API key set', pacing: 'after',
+      parsing: 'auto → 4 files at once', llvm: 'C:/LLVM/bin/libclang.dll', host: 'build-01', code: '782d749',
+    })
+    expect(r.runs[0]).toMatchObject({
+      components: 'Layer1.Math, Layer1.Util, Layer1.Lib and 2 more', endpoint: null, lanes: [],
+      credentials: 'API key none · headers x-dep-ticket, USER_ID', parsing: '1 file at once', llvm: null, host: null,
+    })
   })
 })

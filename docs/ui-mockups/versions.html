@@ -368,6 +368,33 @@
   </div>
 </main><!-- /app-main -->
 
+<!-- ══════════════ RUNS DRAWER (proposal, 2026-10-29) ══════════════
+     How a version was made, run by run: this server's settings when each run started (they change in
+     config.local.json; a version keeps them). From the version's output/_run_settings.json -- the same
+     record `analyzer.py runs --version-id <id>` prints. No secret in it: an API key is "set" or "none",
+     a header is named, never its value. Read-only. -->
+<div id="runs-drawer" style="display:none;position:fixed;inset:0;z-index:300;">
+  <div onclick="closeRuns()" style="position:absolute;inset:0;background:rgba(4,22,39,.32);"></div>
+  <div role="dialog" aria-modal="true" aria-labelledby="rd-title" style="position:absolute;top:0;right:0;bottom:0;width:min(560px,100%);background:#fff;box-shadow:-8px 0 24px rgba(4,22,39,.14);display:flex;flex-direction:column;">
+    <header style="padding:18px 24px 14px;border-bottom:1px solid #e2e3e8;">
+      <div style="display:flex;align-items:flex-start;gap:12px;">
+        <div style="flex:1;min-width:0;">
+          <h2 id="rd-title" style="font-family:Inter,sans-serif;font-size:18px;font-weight:600;color:#0b1c30;">Runs</h2>
+          <p id="rd-sub" style="font-family:Inter,sans-serif;font-size:12px;color:#65686e;margin-top:2px;"></p>
+        </div>
+        <button type="button" onclick="closeRuns()" aria-label="Close" style="width:32px;height:32px;border-radius:6px;border:none;background:none;display:flex;align-items:center;justify-content:center;color:#44474c;cursor:pointer;">
+          <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">close</span>
+        </button>
+      </div>
+    </header>
+    <div id="rd-list" style="flex:1;overflow-y:auto;"></div>
+    <footer style="padding:12px 24px;border-top:1px solid #e2e3e8;font-family:Inter,sans-serif;font-size:11px;color:#65686e;display:flex;align-items:center;gap:6px;">
+      <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">lock</span>
+      Keys and header values are never recorded.
+    </footer>
+  </div>
+</div>
+
 <!-- ══════════════ SCRIPTS ══════════════ -->
 <script>
 let currentRole = 'admin';
@@ -396,6 +423,66 @@ const VERSIONS = [
   { tag: 'v1.1.0', sha: 'b2c841f', desc: 'Engine + Brake subsystems added',         date: 'Jun 10, 2026', docs: 24, approved: 24, approvedBy: 'Sarah Chen', approvedAt: 'Jun 13, 2026' },
   { tag: 'v1.0.0', sha: '3ef70a9', desc: 'Initial ADAS SWE.3 baseline',             date: 'Jun 1, 2026',  docs: 20, approved: 20, approvedBy: 'Zara Patel', approvedAt: 'Jun 4, 2026' },
 ];
+
+// Runs drawer (proposal): each run's entry in the version's output/_run_settings.json.
+// `llm` = provider / model; `lanes` = [name, calls at once]; `parse` = parseWorkers as logged.
+const RUNS = {
+  'v1.2.0': [
+    { at: 'Jun 15, 2026 09:14', what: 'Generate — parse', components: 'all components', host: 'build-01', code: '782d749',
+      llm: 'anthropic / claude-sonnet-5-5', endpoint: 'https://api.anthropic.com', apiKey: 'set',
+      lanes: [['claude-a', 2]], pacing: 'after', parse: 'auto → 4 files at once', llvm: 'C:\\Program Files\\LLVM (17)' },
+    { at: 'Jun 15, 2026 09:20', what: 'Generate — views and documents', components: '54 components', host: 'build-01', code: '782d749',
+      llm: 'anthropic / claude-sonnet-5-5', endpoint: 'https://api.anthropic.com', apiKey: 'set',
+      lanes: [['claude-a', 2]], pacing: 'after', parse: 'auto → 4 files at once', llvm: 'C:\\Program Files\\LLVM (17)' },
+    { at: 'Jun 16, 2026 07:40', what: 'Re-export — SWE.3', components: 'Layer1.Math', host: 'build-01', code: '782d749',
+      llm: 'anthropic / claude-sonnet-5-5', endpoint: 'https://api.anthropic.com', apiKey: 'set',
+      lanes: [['claude-a', 2], ['claude-b', 2]], pacing: 'after', parse: '1 file at once', llvm: 'C:\\Program Files\\LLVM (17)' },
+  ],
+  'v1.1.0': [
+    { at: 'Jun 10, 2026 18:02', what: 'Generate — parse', components: 'all components', host: 'build-01', code: '1f451ed',
+      llm: 'openai / gpt-oss-120b', endpoint: 'https://llm-gateway.example/v1', apiKey: 'none', headers: 'x-dep-ticket, User-Id',
+      lanes: [['ticket-a', 1], ['ticket-b', 1]], pacing: 'start', parse: '1 file at once', llvm: 'C:\\Program Files\\LLVM (17)' },
+    { at: 'Jun 10, 2026 18:09', what: 'Generate — views and documents', components: '48 components', host: 'build-01', code: '1f451ed',
+      llm: 'openai / gpt-oss-120b', endpoint: 'https://llm-gateway.example/v1', apiKey: 'none', headers: 'x-dep-ticket, User-Id',
+      lanes: [['ticket-a', 1], ['ticket-b', 1]], pacing: 'start', parse: '1 file at once', llvm: 'C:\\Program Files\\LLVM (17)' },
+  ],
+  'v1.0.0': [],
+};
+
+function runRow(label, value) {
+  return `<div style="display:flex;gap:12px;padding:3px 0;">
+      <dt style="width:92px;flex-shrink:0;font-family:Inter,sans-serif;font-size:12px;color:#65686e;">${label}</dt>
+      <dd style="flex:1;min-width:0;font-family:Inter,sans-serif;font-size:12px;color:#0b1c30;overflow-wrap:anywhere;">${value}</dd>
+    </div>`;
+}
+
+function openRuns(tag) {
+  const runs = RUNS[tag] || [];
+  document.getElementById('rd-sub').innerHTML =
+    `<span style="font-family:'JetBrains Mono';">${tag}</span> · ${runs.length ? runs.length + ' run' + (runs.length > 1 ? 's' : '') : 'no runs recorded'}`;
+  document.getElementById('rd-list').innerHTML = !runs.length
+    ? `<p style="padding:20px 24px;font-family:Inter,sans-serif;font-size:13px;color:#44474c;">Made before runs were recorded (28 Oct 2026).</p>`
+    : runs.slice().reverse().map(r => `
+      <section style="padding:14px 24px;border-bottom:1px solid #eef0f3;">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:6px;">
+          <h3 style="font-family:Inter,sans-serif;font-size:13px;font-weight:600;color:#0b1c30;">${r.what}</h3>
+          <span style="font-family:Inter,sans-serif;font-size:12px;color:#65686e;white-space:nowrap;">${r.at}</span>
+        </div>
+        <dl>
+          ${runRow('Components', r.components)}
+          ${runRow('LLM', r.llm)}
+          ${runRow('Endpoint', `<span style="font-family:'JetBrains Mono';font-size:11px;">${r.endpoint}</span>`)}
+          ${runRow('Lanes', r.lanes.map(([n, c]) => `${n} (${c} at once)`).join(', '))}
+          ${runRow('Credentials', `API key ${r.apiKey}${r.headers ? ` · headers ${r.headers}` : ''}`)}
+          ${runRow('Pacing', r.pacing)}
+          ${runRow('Parsing', r.parse)}
+          ${runRow('LLVM', r.llvm)}
+          ${runRow('Machine', `${r.host} · code <span style="font-family:'JetBrains Mono';font-size:11px;">${r.code}</span>`)}
+        </dl>
+      </section>`).join('');
+  document.getElementById('runs-drawer').style.display = '';
+}
+function closeRuns() { document.getElementById('runs-drawer').style.display = 'none'; }
 
 // Derived — never stored, never set by hand
 function versionStatus(v) { return v.approved === v.docs ? 'approved' : 'in_review'; }
@@ -496,6 +583,10 @@ function renderVersionList() {
               <span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">compare_arrows</span>
               Compare
             </a>
+            <button type="button" class="ver-action-btn" onclick="event.stopPropagation();openRuns('${v.tag}')" title="Which LLM, lanes and settings made this version">
+              <span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">history</span>
+              View runs
+            </button>
           </div>
         </div>
       </div>

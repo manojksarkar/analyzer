@@ -4,6 +4,7 @@ import { useProject, useVersions, useCommits } from '../hooks/useProjects'
 import { useCreateVersion } from '../hooks/useVersionMutations'
 import { useCurrentJob } from '../hooks/useJobs'
 import { Card, Icon, Skeleton, StatusBadge, Text, toast } from '../components/ui'
+import { RunsDrawer } from '../components/run/RunsDrawer'
 import { cn } from '../lib/cn'
 import { formatDate } from '../lib/format'
 import { STATUS_META, versionStatusKey } from '../lib/reviewStatus'
@@ -19,6 +20,8 @@ export function VersionsPage() {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
   const [filter, setFilter] = useState<Filter>('all')
+  // The version whose Runs drawer is open: how it was made, run by run.
+  const [runsOf, setRunsOf] = useState<Version | null>(null)
 
   const { data: project } = useProject(projectId ?? '')
   const { data: versions, isLoading: versionsLoading } = useVersions(projectId ?? '')
@@ -116,7 +119,8 @@ export function VersionsPage() {
                 <VersionRow key={v.tag} v={v} isCurrent={i === 0 && filter === 'all'} last={i === arr.length - 1}
                   running={!!v.id && v.id === runningVersionId}
                   onView={() => openVersion(v, 'documents')}
-                  onCompare={() => openVersion(v, 'compare')} />
+                  onCompare={() => openVersion(v, 'compare')}
+                  onRuns={v.id ? () => setRunsOf(v) : undefined} />
               ))
             )}
           </div>
@@ -157,6 +161,9 @@ export function VersionsPage() {
           </div>
         </Card>
       </div>
+      {runsOf?.id && (
+        <RunsDrawer projectId={projectId ?? ''} versionId={runsOf.id} versionTag={runsOf.tag} onClose={() => setRunsOf(null)} />
+      )}
     </div>
   )
 }
@@ -172,7 +179,7 @@ function MetaItem({ children }: { children: ReactNode }) {
 }
 
 /* ── Single version row ── */
-function VersionRow({ v, isCurrent, last, running, onView, onCompare }: { v: Version; isCurrent: boolean; last: boolean; running: boolean; onView: () => void; onCompare: () => void }) {
+function VersionRow({ v, isCurrent, last, running, onView, onCompare, onRuns }: { v: Version; isCurrent: boolean; last: boolean; running: boolean; onView: () => void; onCompare: () => void; onRuns?: () => void }) {
   const status = versionStatusKey(v.status, running)
   // How it was made: web or command line, its scope, which documents (or the model only).
   const made = describeVersionRun(v.run)
@@ -215,6 +222,12 @@ function VersionRow({ v, isCurrent, last, running, onView, onCompare }: { v: Ver
               <Icon name="compare_arrows" size={13} aria-hidden />
               Compare
             </button>
+            {onRuns && (
+              <button onClick={onRuns} title="Which LLM, lanes and settings made this version" className="inline-flex items-center gap-1 transition-colors hover:border-secondary hover:text-secondary px-2.5 py-[5px] border border-outline-variant rounded-md font-mono text-label font-semibold text-on-surface-variant bg-surface-container-lowest whitespace-nowrap">
+                <Icon name="history" size={13} aria-hidden />
+                View runs
+              </button>
+            )}
           </div>
         </div>
       </div>

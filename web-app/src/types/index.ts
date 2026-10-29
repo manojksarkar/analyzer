@@ -146,6 +146,34 @@ export interface RunFacts {
   parseWarnings: number
 }
 
+/** One run of a version and this server's settings it used (GET .../run-settings: the version's
+ *  `output/_run_settings.json`). No secret: an API key is "set"/"none", headers are names. */
+export interface RunSetting {
+  at: string
+  /** What the run did, from its phases: "Parse", "Derive · Views · Documents", "Documents (SWE.3)". */
+  what: string
+  /** "all components", or the ones it made ("Layer1.Math, Layer1.Util and 3 more"). */
+  components: string
+  /** "anthropic / claude-sonnet-5-5". */
+  llm: string
+  endpoint: string | null
+  lanes: { name: string; atOnce: string }[]
+  /** "API key set", "API key none · headers x-dep-ticket, User-Id". */
+  credentials: string
+  pacing: string | null
+  /** "auto → 4 files at once", "1 file at once". */
+  parsing: string
+  llvm: string | null
+  host: string | null
+  code: string | null
+}
+
+/** A version's runs, newest first; `running`: a run is at work on it now (the first is that one). */
+export interface RunSettings {
+  running: boolean
+  runs: RunSetting[]
+}
+
 /** A person as the review routes name them. */
 export interface UserRef {
   userId: string

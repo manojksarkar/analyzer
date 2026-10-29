@@ -1,5 +1,7 @@
 import { z } from 'zod'
-import type { ComponentState, ProjectRun, ReviewStatus, RunFacts, VersionComponents, VersionRun } from '../../types'
+import type {
+  ComponentState, ProjectRun, ReviewStatus, RunFacts, RunSetting, RunSettings, VersionComponents, VersionRun,
+} from '../../types'
 
 /* Staged generation (GET /projects/{pid}/versions/{vid}/components): every component of the layers
    the version parsed — and those its config names in layers the model lacks yet (`in_model` and
@@ -66,6 +68,82 @@ export const mapRunFacts = (r: ApiRunFacts): RunFacts => ({
     lastFailure: r.llm.last_failure ? { ts: r.llm.last_failure.ts ?? null, message: r.llm.last_failure.message } : null,
   },
   parseWarnings: r.parse.warnings,
+})
+
+/* GET /projects/{pid}/versions/{vid}/run-settings: each run of the version, this server's settings
+   when it started (`output/_run_settings.json`, written by run.py; engine/core/config.py
+   `run_settings_snapshot`). Lenient: a field added to the record later is passed over, one
+   missing reads as unknown. */
+const flexNum = z.union([z.number(), z.string()])
+const ApiRunSettingSchema = z.object({
+  at: z.string(),
+  host: z.string().nullish(),
+  code: z.string().nullish(),
+  phases: z.array(z.number().nullable()).nullish(),
+  docType: z.string().nullish(),
+  components: z.array(z.string()).nullish(),
+  llmServer: z.object({
+    provider: z.string().nullish(), defaultModel: z.string().nullish(), baseUrl: z.string().nullish(),
+    apiKey: z.string().nullish(), customHeaders: z.array(z.string()).nullish(),
+  }).passthrough().nullish(),
+  headersFromEnvironment: z.array(z.string()).nullish(),
+  speedups: z.object({
+    llms: z.array(z.object({ name: z.string(), maxConcurrent: flexNum.nullish() }).passthrough()).nullish(),
+    pacing: z.string().nullish(),
+    parseWorkers: flexNum.nullish(),
+  }).passthrough().nullish(),
+  llvm: z.object({ libPath: z.string().nullish(), includePath: z.string().nullish() }).passthrough().nullish(),
+}).passthrough()
+export const ApiRunSettingsSchema = z.object({
+  version_id: z.string(),
+  running: z.boolean(),
+  runs: z.array(ApiRunSettingSchema),
+})
+export type ApiRunSettings = z.infer<typeof ApiRunSettingsSchema>
+
+const PHASES = ['Parse', 'Derive', 'Views', 'Documents']
+const DOC_TYPES: Record<string, string> = { swe3: 'SWE.3', swe4: 'SWE.4' }
+
+/** "Parse", "Derive · Views · Documents", "Documents (SWE.3)" -- from the run's phases. */
+function runWhat(phases: (number | null)[] | null | undefined, docType: string | null | undefined): string {
+  const [from, to] = phases ?? []
+  const first = Math.min(Math.max(from ?? 1, 1), 4)
+  const last = Math.min(Math.max(to ?? 4, first), 4)
+  const steps = PHASES.slice(first - 1, last).join(' · ')
+  const doc = docType ? DOC_TYPES[docType] : undefined
+  return doc ? `${steps} (${doc})` : steps
+}
+
+function listShort(names: string[], keep = 3): string {
+  if (names.length <= keep) return names.join(', ')
+  return `${names.slice(0, keep).join(', ')} and ${names.length - keep} more`
+}
+
+const mapRunSetting = (r: z.infer<typeof ApiRunSettingSchema>): RunSetting => {
+  const server = r.llmServer ?? {}
+  const headers = [...(server.customHeaders ?? []), ...(r.headersFromEnvironment ?? [])]
+  const workers = String(r.speedups?.parseWorkers ?? '1')
+  const n = workers.split('->').pop()?.trim() ?? workers
+  return {
+    at: r.at,
+    what: runWhat(r.phases, r.docType),
+    components: r.components?.length ? listShort(r.components) : 'all components',
+    llm: `${server.provider ?? '?'} / ${server.defaultModel ?? '?'}`,
+    endpoint: server.baseUrl ?? null,
+    lanes: (r.speedups?.llms ?? []).map((l) => ({ name: l.name, atOnce: String(l.maxConcurrent ?? 1) })),
+    credentials: `API key ${server.apiKey ?? 'none'}${headers.length ? ` · headers ${headers.join(', ')}` : ''}`,
+    pacing: r.speedups?.pacing ?? null,
+    parsing: `${workers.includes('auto') ? 'auto → ' : ''}${n} file${n === '1' ? '' : 's'} at once`,
+    llvm: r.llvm?.libPath || null,
+    host: r.host ?? null,
+    code: r.code ?? null,
+  }
+}
+
+/** Newest first: the drawer reads down from the run you are most likely asking about. */
+export const mapRunSettings = (r: ApiRunSettings): RunSettings => ({
+  running: r.running,
+  runs: r.runs.map(mapRunSetting).reverse(),
 })
 
 /** GET /projects/{pid}/runs: the runs at work now, or cut short, whichever front door started them. */

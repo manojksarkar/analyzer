@@ -84,6 +84,17 @@ export function useRunFacts(projectId: string, versionId: string | null | undefi
   })
 }
 
+/** How a version was made, run by run (the Versions page's Runs drawer). Read when `open`; while a
+ *  run is at work on the version, every 10 s -- its entry is there from the run's start. */
+export function useRunSettings(projectId: string, versionId: string | null | undefined, open: boolean) {
+  return useQuery({
+    queryKey: projectKeys.runSettings(projectId, versionId ?? ''),
+    queryFn: () => versionComponentsApi.runSettings(projectId, versionId as string),
+    enabled: open && !!projectId && !!versionId,
+    refetchInterval: (q) => (open && q.state.data?.running ? 10_000 : false),
+  })
+}
+
 /** Resume a version whose run stopped before it finished: the job takes the banner's running row. */
 export function useResumeVersion(projectId: string, versionId: string) {
   const qc = useQueryClient()

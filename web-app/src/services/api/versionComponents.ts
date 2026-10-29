@@ -1,7 +1,8 @@
 import { http } from '../../lib/http'
-import type { ProjectRun, RunFacts, VersionComponents } from '../../types'
+import type { ProjectRun, RunFacts, RunSettings, VersionComponents } from '../../types'
 import {
-  ApiProjectRunsSchema, ApiRunFactsSchema, ApiVersionComponentsSchema, mapProjectRuns, mapRunFacts, mapVersionComponents,
+  ApiProjectRunsSchema, ApiRunFactsSchema, ApiRunSettingsSchema, ApiVersionComponentsSchema, mapProjectRuns, mapRunFacts,
+  mapRunSettings, mapVersionComponents,
 } from '../mappers'
 
 /* Staged generation: a version's components and the documents still to make
@@ -27,6 +28,9 @@ export const versionComponentsApi = {
   /** What the version's run has found so far: model counts, the LLM's trouble, parse warnings. */
   runFacts: async (pid: string, vid: string): Promise<RunFacts> =>
     mapRunFacts(ApiRunFactsSchema.parse(await http.get(`/projects/${pid}/versions/${vid}/run-facts`))),
+  /** Each run of the version and this server's settings it used, newest first (no secret in them). */
+  runSettings: async (pid: string, vid: string): Promise<RunSettings> =>
+    mapRunSettings(ApiRunSettingsSchema.parse(await http.get(`/projects/${pid}/versions/${vid}/run-settings`))),
   /** Carry on a version whose run stopped before it finished (`analyzer.py resume`, as a job).
    *  409: VERSION_BUSY / RUN_ACTIVE (a run is at work on it), NOTHING_TO_RESUME. */
   resume: async (pid: string, vid: string): Promise<{ jobId: string }> => {

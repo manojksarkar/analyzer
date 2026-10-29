@@ -616,6 +616,14 @@ database, LLM and parse counts from the live log buffer -- so they cover what th
 zeros without a live log. A stopped run's banner names the cut-short components and resumes from the web
 (admins; 2026-10-07c). Mockup: `project-detail.html` `#run-cards`.
 
+**Runs drawer** (2026-10-29): the Versions page's **View runs** opens `components/run/RunsDrawer.tsx`
+-- how the version was made, run by run, newest first: what the run did (its phases), the LLM, lanes,
+credentials (`set`/`none`, header names), pacing, parsing, LLVM, machine and code. From
+`GET /projects/{pid}/versions/{vid}/run-settings` (`run_facts.run_settings`: the version's
+`output/_run_settings.json`, which run.py writes at a run's start -- so a run at work is listed; while
+`running`, the first entry is marked "Running now" and the drawer reads again every 10 s). Mockup:
+`versions.html` `#runs-drawer`.
+
 ### Accessibility: WCAG 2.2 AA in both themes (2026-10-13)
 
 The mockups (`docs/ui-mockups/`, 8 pages x light, dark) and the web app meet it, checked by machine

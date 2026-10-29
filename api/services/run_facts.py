@@ -75,3 +75,19 @@ def log_facts(version_id: str) -> Dict[str, Any]:
 
 def run_facts(db: Any, version_id: str) -> Dict[str, Any]:
     return {"version_id": version_id, "model": model_counts(db, version_id), **log_facts(version_id)}
+
+
+def run_settings(db: Any, version_id: str) -> list:
+    """Each run of the version and this server's settings it used, oldest first: the version's
+    `output/_run_settings.json` (`core.config.RUN_SETTINGS_FILE`, written by run.py at a run's
+    start -- so a run at work is listed already). No secret in it. [] when none is recorded (a
+    version made before 2026-10-28, or a database that keeps no output)."""
+    import json
+    from core.config import RUN_SETTINGS_FILE
+    from .output_reader import OutputReader
+    text = OutputReader(db, version_id, None).read_text(RUN_SETTINGS_FILE)
+    try:
+        runs = json.loads(text) if text else []
+    except ValueError:
+        return []
+    return [r for r in runs if isinstance(r, dict)] if isinstance(runs, list) else []

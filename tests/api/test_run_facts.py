@@ -72,3 +72,30 @@ def test_members_only_and_a_version_of_the_project(client, auth_header, reader):
 
 def test_model_counts_need_a_database():
     assert rf.model_counts(object(), "ver1") is None
+
+
+RUNS = [{"at": "2026-10-28T09:14:02Z", "phases": [1, 1], "llmServer": {"provider": "anthropic", "apiKey": "set"},
+         "speedups": {"llms": [{"name": "claude-a", "maxConcurrent": 2}], "parseWorkers": "auto -> 4"}}]
+
+
+def test_run_settings_are_the_versions_record(client, auth_header, monkeypatch):
+    """GET .../run-settings: the version's `output/_run_settings.json`, as `analyzer.py runs` reads it."""
+    monkeypatch.setattr(rf, "run_settings", lambda db, vid: RUNS if vid == "ver1" else [])
+    body = client.get("/api/v1/projects/p1/versions/ver1/run-settings", headers=auth_header).json()
+    assert body == {"version_id": "ver1", "running": False, "runs": RUNS}
+
+
+def test_run_settings_none_recorded_and_access(client, auth_header):
+    body = client.get("/api/v1/projects/p1/versions/ver1/run-settings", headers=auth_header).json()
+    assert body["runs"] == [], "the in-memory database keeps no output"
+    assert client.get("/api/v1/projects/p1/versions/ver1/run-settings").status_code == 401
+    assert client.get("/api/v1/projects/p1/versions/nope/run-settings", headers=auth_header).status_code == 404
+
+
+def test_run_settings_reads_the_stored_file(monkeypatch):
+    from api.services import output_reader
+    monkeypatch.setattr(output_reader.OutputReader, "read_text",
+                        lambda self, rel: json.dumps(RUNS) if rel == "_run_settings.json" else None)
+    assert rf.run_settings(object(), "ver1") == RUNS
+    monkeypatch.setattr(output_reader.OutputReader, "read_text", lambda self, rel: "not json")
+    assert rf.run_settings(object(), "ver1") == []
