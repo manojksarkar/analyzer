@@ -97,6 +97,17 @@ class TestGenerateOllama:
             result = client.generate("sys", "user")
         assert result == "hello"
 
+    def test_each_answer_is_one_debug_line_without_lanes_too(self, caplog):
+        """A review run sat hours in a stage that logged nothing between its first and last call:
+        the debug log (Live logs -> Debug) now shows every answered call, lanes or not."""
+        import logging
+        from llm_core import tokens
+        client = _ollama_client()
+        with caplog.at_level(logging.DEBUG, logger="llm_core.client"), tokens.stage("enrich.unit_description"), \
+                patch("llm_core.client.requests.post", return_value=_mock_ollama_response("hello")):
+            client.generate("sys", "user")
+        assert "LLM call answered: stage enrich.unit_description" in caplog.text
+
     def test_strips_whitespace(self):
         client = _ollama_client()
         with patch("llm_core.client.requests.post",

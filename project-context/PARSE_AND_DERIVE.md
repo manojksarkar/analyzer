@@ -584,6 +584,9 @@ When `config.llm.descriptions: true`:
 4. A `ProgressReporter` reports `[idx/total]` progress for every pass -- and, since 2026-10-29b, for
    the unit and struct descriptions after them (`LLM-unit-description`, `LLM-struct-description`,
    `_enrich_unit_and_struct_descriptions`), which had none: a review run's Phase 2 sat hours without a line.
+   The unit prompt is fitted to the window like Input/Output Names (`_fit_unit_prompt`, profile
+   `unit_description`: first sentences, then "... and N more"; one that fits is unchanged); every answered
+   LLM call is a DEBUG line, lanes or not.
 
 ### Domain anchoring + description blocklist (task 3.14)
 

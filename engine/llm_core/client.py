@@ -524,6 +524,8 @@ class LlmClient:
                     cleaned = strip_think_section(raw)
                     if cleaned:
                         callstats.record(kind, callstats.OK, **self._drain_cost())
+                        if self._pool is None:   # through lanes, `_post` says it with the lane
+                            logger.debug("LLM call answered: stage %s", token_counter.current_stage())
                         if trace_ord:
                             _trace_response(trace_ord, cleaned)
                         return cleaned
@@ -628,6 +630,8 @@ class LlmClient:
                     cleaned = strip_think_section(raw)
                     if cleaned:
                         callstats.record(kind, callstats.OK, **self._drain_cost())
+                        if self._pool is None:   # through lanes, `_post` says it with the lane
+                            logger.debug("LLM call answered: stage %s", token_counter.current_stage())
                         if trace_ord:
                             _trace_response(trace_ord, cleaned)
                         return cleaned
