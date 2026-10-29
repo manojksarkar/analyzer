@@ -1194,6 +1194,61 @@ _restore_output_from_db(from_phase)
 # rather than ship a document whose words and diagrams disagree. Exits 2 when it refuses.
 _refuse_stale_export(from_phase, force_export)
 
+
+def _record_run_settings() -> None:
+    """One entry for this run in the version's `output/_run_settings.json`: this server's settings
+    as the run uses them, with no secret (`core.config.run_settings_snapshot`) -- which LLM, which
+    lanes, how many files parsed at once -- so a version says how it was made, run by run, after
+    config.local.json has changed. The database row is the list (`rerender.write_output_row`, the
+    one single-row writer): a new version starts its own, whatever its disk holds; the file beside
+    it is what a whole-version capture stores. Never fatal."""
+    try:
+        import json as _json
+        import socket
+        import subprocess
+        from datetime import datetime, timezone
+        from core.config import RUN_SETTINGS_FILE, run_settings_line, run_settings_snapshot
+        from core.run_context import version_id as _vid
+        from core.db import get_engine, is_database_configured
+        from core.paths import paths
+        vid = _vid()
+        if not (vid and is_database_configured()):
+            return
+        from sqlalchemy import select
+        from review.rerender import s as _schema, write_output_row
+        try:
+            commit = subprocess.run(["git", "-C", SCRIPT_DIR, "rev-parse", "--short", "HEAD"],
+                                    capture_output=True, text=True, timeout=10).stdout.strip() or None
+        except (OSError, subprocess.SubprocessError):
+            commit = None                   # a frozen copy of the code is no git checkout
+        entry = {"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                 "host": socket.gethostname(), "code": commit,
+                 "phases": [from_phase, to_phase], "docType": doc_type_arg,
+                 "components": sorted(_doc_components(plans)) or None,
+                 **run_settings_snapshot(cfg)}
+        with get_engine().begin() as cx:
+            vof = _schema.version_output_files
+            stored = cx.execute(select(vof.c.content).where(
+                vof.c.version_id == vid, vof.c.rel_path == RUN_SETTINGS_FILE)).scalar()
+            try:
+                entries = _json.loads(stored) if stored else []
+            except ValueError:
+                entries = []
+            entries = (entries if isinstance(entries, list) else []) + [entry]
+            text = _json.dumps(entries, indent=2)
+            write_output_row(cx, vid, RUN_SETTINGS_FILE, text)
+        os.makedirs(paths().output_dir, exist_ok=True)
+        with open(os.path.join(paths().output_dir, RUN_SETTINGS_FILE), "w", encoding="utf-8") as fh:
+            fh.write(text)
+        log(f"Run settings recorded ({len(entries)} run(s) in {RUN_SETTINGS_FILE}): "
+            f"{run_settings_line(entry)}", component="run")
+    except Exception as exc:                       # noqa: BLE001 - see docstring
+        log(f"WARNING: this run's settings were not recorded with the version ({exc})",
+            component="run", err=True)
+
+
+_record_run_settings()
+
 runner = PhaseRunner(project_root=SCRIPT_DIR)
 total_time = 0.0
 # From Phase 2 on, this run rebuilds a version that already has its parse -- a re-derive or a

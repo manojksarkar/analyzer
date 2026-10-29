@@ -120,7 +120,7 @@ newer entry and the code win.
   flowchart labels ([SWE3_WIKI](docs/spec/SWE3_WIKI.md#descriptions-the-only-llm-written-content)); ids,
   rows, arrows and every flowchart's shape come from the code.
 - **Front door.** `python analyzer.py <command>`: `setup`, `onboard`, `grant`, `generate`, `export`, `reexport`, `resume`, `progress`, `components`, `register`, `user`,
-  `status`, `check`, `report`, `doctor`, `check-llm`, `check-datadict`, `llm-stats`, `verify`. Human
+  `status`, `check`, `report`, `runs`, `doctor`, `check-llm`, `check-datadict`, `llm-stats`, `verify`. Human
   guide: [docs/CLI_COMMANDS.md](docs/CLI_COMMANDS.md).
 - **Pipeline.** Four phases, each its own Python process, run by `engine/run.py` through
   `engine/core/orchestration.py`: **1 parse** `engine/parser.py` → **2 derive** `engine/model_deriver.py`

@@ -93,6 +93,7 @@ python analyzer.py register --project-id myproj --version-id v1   # put an older
 ```
 python analyzer.py status                    # what the database holds
 python analyzer.py check --quiet             # only what is wrong
+python analyzer.py runs --version-id myproj.v2   # each run of a version: which LLM, lanes, parse workers
 python analyzer.py clean-runs --dry-run      # finished background runs' code copies that can go
 python analyzer.py clean-runs                # remove them (a week old by default: --keep-days)
 python analyzer.py llm-stats logs\llm_stats_A.json logs\llm_stats_B.json   # the LLM cost of two runs
@@ -965,6 +966,25 @@ fix it; this is the one to reach for first. `report` prints a version's generati
 newest by default.
 
 All three print to stdout; `--out` also writes a file.
+
+```
+python analyzer.py runs --version-id myproj.v2
+```
+```
+version myproj.v2: 3 run(s)
+  2026-10-28T09:14:02Z  build-01  code 277ea74  phases 1  all  all components
+      anthropic / claude-sonnet-5-5 at https://api.anthropic.com; claude-a x2; pacing after; parseWorkers auto -> 4
+  2026-10-28T09:20:45Z  build-01  code 277ea74  phases 2-4  all  Layer1.Math, Layer1.Util
+      anthropic / claude-sonnet-5-5 at https://api.anthropic.com; claude-a x2; pacing after; parseWorkers auto -> 4
+  2026-10-29T07:40:11Z  build-01  code 277ea74  phases 4  swe3  Layer1.Math
+      anthropic / claude-sonnet-5-5 at https://api.anthropic.com; claude-a x2; pacing after; parseWorkers auto -> 4
+```
+
+`runs` says how each run of a version was made: this server's settings when it ran (config.local.json
+changes, a version keeps them), from the version's `output/_run_settings.json`. No secret is in it --
+an API key is `set` or `none`, a header is named, never its value. A generation is two runs: the
+parse, then everything after it. `--json` prints every field (timeouts, the LLVM paths, each lane).
+Versions made before 2026-10-28 have none.
 
 ### `doctor`, `check-llm`, `check-datadict`
 

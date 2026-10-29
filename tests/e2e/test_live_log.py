@@ -38,3 +38,23 @@ def test_every_step_of_the_run_writes_live_records(run_pipeline):
     # The project where the process is told it: the flowchart engine, which the flowcharts view
     # starts, gets the version only (a web run's lines then take the project from their job).
     assert all(r.get("project", E2E_PID) == E2E_PID and r["source"] == "engine" for r in records)
+
+
+def test_the_run_records_its_server_settings_with_the_version(run_pipeline):
+    """`output/_run_settings.json` (run.py `_record_run_settings`): one entry per run with this
+    server's settings -- on disk, and in the database, where `analyzer.py runs` reads it."""
+    from tests.e2e_paths import OUTPUT_DIR
+    from core.config import RUN_SETTINGS_FILE
+    from core.db import get_engine
+    from sqlalchemy import select
+    from api.db.postgres import schema as s
+    with open(os.path.join(OUTPUT_DIR, RUN_SETTINGS_FILE), encoding="utf-8") as fh:
+        on_disk = json.load(fh)
+    assert on_disk and all({"at", "phases", "llmServer", "speedups", "llvm"} <= set(e) for e in on_disk)
+    assert all(e["llmServer"]["apiKey"] in ("set", "none") for e in on_disk)
+    vof = s.version_output_files
+    with get_engine().connect() as cx:
+        stored = cx.execute(select(vof.c.content, vof.c.group_name).where(
+            vof.c.version_id == E2E_VERSION_ID, vof.c.rel_path == RUN_SETTINGS_FILE)).first()
+    assert stored is not None and json.loads(stored.content) == on_disk
+    assert stored.group_name is None          # no component's: listings and component saves skip it

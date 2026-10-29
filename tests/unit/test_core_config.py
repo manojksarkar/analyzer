@@ -763,3 +763,50 @@ class TestComponentPathsTheParseWouldMiss:
             src = f.read()
         assert "from core.component_files import" in src
         assert "def _build_file_component_map" not in src, "a second copy would drift"
+
+
+class TestRunSettingsSnapshot:
+    """What a version records per run (`run_settings_snapshot`, run.py): this server's settings as
+    the run used them -- and never a secret, whatever config.local.json holds."""
+
+    SECRETS = ("sk-ant-SECRET", "credential:TICKET", "s3cr3t-pw", "querykey", "LANEKEY", "lane-ticket")
+
+    def _cfg(self):
+        return {
+            "llmServer": {"provider": "anthropic", "defaultModel": "claude-sonnet-5-5",
+                          "baseUrl": "https://user:s3cr3t-pw@api.example.com/v1?key=querykey",
+                          "apiKey": "sk-ant-SECRET", "timeoutSeconds": 300, "rateLimitSeconds": 0,
+                          "customHeaders": {"x-dep-ticket": "credential:TICKET", "User-Id": "u1"}},
+            "speedups": {"llms": [{"name": "a", "maxConcurrent": 2, "apiKey": "LANEKEY"},
+                                  {"customHeaders": {"x-dep-ticket": "lane-ticket"}}],
+                         "parseWorkers": 6},
+            "llvm": {"libPath": "C:/LLVM/bin/libclang.dll", "includePath": "C:/LLVM/include"},
+        }
+
+    def test_no_key_header_value_or_url_credential_is_recorded(self):
+        from core.config import run_settings_snapshot
+        text = json.dumps(run_settings_snapshot(self._cfg()))
+        for secret in self.SECRETS:
+            assert secret not in text, secret
+
+    def test_it_says_which_llm_lanes_and_parse_workers(self):
+        from core.config import run_settings_line, run_settings_snapshot
+        snap = run_settings_snapshot(self._cfg())
+        server = snap["llmServer"]
+        assert (server["provider"], server["defaultModel"]) == ("anthropic", "claude-sonnet-5-5")
+        assert server["baseUrl"] == "https://api.example.com/v1"
+        assert server["apiKey"] == "set" and server["customHeaders"] == ["User-Id", "x-dep-ticket"]
+        assert snap["speedups"]["llms"] == [
+            {"name": "a", "maxConcurrent": 2, "apiKey": "set"},
+            {"name": "lane2", "maxConcurrent": 1, "customHeaders": ["x-dep-ticket"]}]
+        assert snap["speedups"]["parseWorkers"] == "6"
+        assert snap["llvm"]["libPath"] == "C:/LLVM/bin/libclang.dll"
+        assert run_settings_line(snap) == ("anthropic / claude-sonnet-5-5 at https://api.example.com/v1; "
+                                           "a x2, lane2 x1; pacing after; parseWorkers 6")
+
+    def test_no_llm_server_and_no_speedups_still_records(self):
+        from core.config import run_settings_snapshot
+        snap = run_settings_snapshot({})
+        assert snap["llmServer"]["apiKey"] == "none"
+        assert snap["speedups"] == {"llms": [], "pacing": "after", "parseWorkers": "1",
+                                    "pictureBatches": False, "fastNullCheck": False}

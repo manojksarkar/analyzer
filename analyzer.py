@@ -1623,6 +1623,49 @@ def cmd_report(a) -> int:
     return 0
 
 
+def cmd_runs(a) -> int:
+    """Each run of a version and this server's settings it used -- which LLM, which lanes, how many
+    files parsed at once -- from the version's `output/_run_settings.json` (no secret in it)."""
+    from core.db import get_engine, is_database_configured
+    if not is_database_configured():
+        print("no database is configured.", file=sys.stderr)
+        return 2
+    import json
+    import sqlalchemy as sa
+    from api.db.postgres import schema as s
+    from core.config import RUN_SETTINGS_FILE, run_settings_line
+    vof = s.version_output_files
+    with get_engine().connect() as cx:
+        vid = a.version_id or cx.execute(sa.select(s.versions.c.id)
+                                         .order_by(s.versions.c.created_at.desc()).limit(1)).scalar()
+        text = cx.execute(sa.select(vof.c.content).where(
+            vof.c.version_id == vid, vof.c.rel_path == RUN_SETTINGS_FILE)).scalar() if vid else None
+    if not vid:
+        print("no versions yet.", file=sys.stderr)
+        return 2
+    try:
+        entries = json.loads(text) if text else []
+    except ValueError:
+        entries = []
+    if not entries:
+        print(f"version {vid}: no run settings recorded (made before they were, 2026-10-28).",
+              file=sys.stderr)
+        return 1
+    if a.json:
+        print(json.dumps(entries, indent=2))
+        return 0
+    print(f"version {vid}: {len(entries)} run(s)")
+    for e in entries:
+        first, last = ((e.get("phases") or []) + [None, None])[:2]
+        last = last or 4                               # no --to-phase: through the export
+        phases = "all" if first is None else (str(first) if first == last else f"{first}-{last}")
+        comps = ", ".join(e.get("components") or []) or "all components"
+        print(f"  {e.get('at')}  {e.get('host')}  code {e.get('code') or '?'}  phases {phases}  "
+              f"{e.get('docType') or ''}  {comps}")
+        print(f"      {run_settings_line(e)}")
+    return 0
+
+
 def cmd_doctor(a) -> int:
     return _tool("doctor", ["--quiet"] if a.quiet else [])
 
@@ -1964,6 +2007,12 @@ def build_parser() -> argparse.ArgumentParser:
                        description=cmd_report.__doc__)
     s.add_argument("--version", help="default: the newest version")
     s.set_defaults(fn=cmd_report)
+
+    s = sub.add_parser("runs", help="each run of a version and the server settings it used",
+                       description=cmd_runs.__doc__)
+    s.add_argument("--version-id", help="default: the newest version")
+    s.add_argument("--json", action="store_true", help="every recorded field, as JSON")
+    s.set_defaults(fn=cmd_runs)
 
     # -- diagnose ------------------------------------------------------------
     s = sub.add_parser("doctor", help="check prerequisites (clang, node, graphviz, browser)")

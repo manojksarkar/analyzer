@@ -738,6 +738,80 @@ def parse_workers_note(config: Optional[Dict[str, Any]] = None) -> Optional[str]
     return str(workers) if workers > 1 else None
 
 
+#: Where a version keeps one entry per run of the server settings it used (`run_settings_snapshot`):
+#: at the top of its output, so it is stored with the version and is no component's.
+RUN_SETTINGS_FILE = "_run_settings.json"
+_SNAPSHOT_LLM_KEYS = ("provider", "baseUrl", "defaultModel", "timeoutSeconds", "retries", "numCtx",
+                      "maxContextTokens", "rateLimitSeconds")
+_HEADER_ENV_VARS = ("X_DEP_TICKET", "USER_TYPE", "USER_ID", "SEND_SYSTEM_NAME")
+
+
+def _safe_url(url: Any) -> Any:
+    """A URL without what could be a credential: its user:password and its query."""
+    if not isinstance(url, str) or "://" not in url:
+        return url
+    from urllib.parse import urlsplit, urlunsplit
+    try:
+        p = urlsplit(url)
+        host = p.hostname or ""
+        netloc = host + (f":{p.port}" if p.port else "")
+        return urlunsplit((p.scheme, netloc, p.path, "", ""))
+    except ValueError:
+        return "(unreadable)"
+
+
+def run_settings_snapshot(config: Dict[str, Any]) -> Dict[str, Any]:
+    """This server's settings as a run uses them, with NO secret: what a version records per run
+    (`RUN_SETTINGS_FILE`). Built from allowed keys only -- a key added to llmServer later is left
+    out until it is listed here. A key or a header value is never copied: an API key is "set" or
+    "none", a header by its name; a URL loses its user:password and query."""
+    try:
+        llm = load_llm_config(config)                 # the resolved form: env overrides included
+    except Exception:                                 # noqa: BLE001 - no LLM server: as written
+        llm = llm_server(config)
+    s = speedup_settings(config)
+
+    def names(headers: Any) -> List[str]:
+        return sorted(headers) if isinstance(headers, dict) else []
+
+    server = {k: (_safe_url(llm[k]) if k == "baseUrl" else llm[k]) for k in _SNAPSHOT_LLM_KEYS if k in llm}
+    server["apiKey"] = "set" if llm.get("apiKey") else "none"
+    server["customHeaders"] = names(llm.get("customHeaders"))
+    lanes = []
+    for i, lane in enumerate(s["llms"], start=1):
+        entry = {"name": str(lane.get("name") or f"lane{i}"),
+                 "maxConcurrent": lane.get("maxConcurrent", 1)}
+        for key in ("baseUrl", "defaultModel"):
+            if lane.get(key):
+                entry[key] = _safe_url(lane[key]) if key == "baseUrl" else lane[key]
+        if lane.get("apiKey"):
+            entry["apiKey"] = "set"
+        if lane.get("customHeaders"):
+            entry["customHeaders"] = names(lane["customHeaders"])
+        lanes.append(entry)
+    lib, inc = llvm_paths(config)
+    return {
+        "llmServer": server,
+        "headersFromEnvironment": [v for v in _HEADER_ENV_VARS if os.environ.get(v, "").strip()],
+        "speedups": {"llms": lanes, "pacing": s["pacing"],
+                     "parseWorkers": parse_workers_note(config) or "1",
+                     "pictureBatches": s["pictureBatches"], "fastNullCheck": s["fastNullCheck"]},
+        "llvm": {"libPath": lib, "includePath": inc},
+    }
+
+
+def run_settings_line(entry: Dict[str, Any]) -> str:
+    """One entry of `RUN_SETTINGS_FILE` as one line: `anthropic / claude-sonnet-5-5, 1 lane x 2, ...`."""
+    server = entry.get("llmServer") or {}
+    sp = entry.get("speedups") or {}
+    lanes = sp.get("llms") or []
+    lane_text = (", ".join(f"{l.get('name')} x{l.get('maxConcurrent', 1)}" for l in lanes)
+                 if lanes else "no lanes")
+    return (f"{server.get('provider', '?')} / {server.get('defaultModel', '?')} at "
+            f"{server.get('baseUrl', '?')}; {lane_text}; pacing {sp.get('pacing', '?')}; "
+            f"parseWorkers {sp.get('parseWorkers', '?')}")
+
+
 def speed_summary(config: Dict[str, Any]) -> str:
     """One line for a run's start: the speed-ups this run uses, or that it runs as develop."""
     s = speedup_settings(config)

@@ -170,6 +170,13 @@ Resolution:
 - **Which local file** — `local_config_path`: `$ANALYZER_DATA_ROOT/engine/config/config.local.json`
   when it exists (a `--detach` run's code is a frozen copy, and the copy's file is the one of
   the day the run started), else the engine's own.
+- **What a version used** (2026-10-28b) — config.local.json is read fresh by every run and never
+  stored, so each run appends its settings, with no secret, to the version's
+  `output/_run_settings.json` (`core.config.run_settings_snapshot`, run.py `_record_run_settings`):
+  the LLM server (API key `set`/`none`, header names only, URLs without user:password or query),
+  the lanes, `speedups`, the LLVM paths, plus time, host, code commit, phases, components. The
+  database row is the list (`rerender.write_output_row`); no group, so no component's.
+  `analyzer.py runs --version-id <id>` prints it.
 - **Written configs hold no server setting** — `without_server_settings` drops every
   `SERVER_BLOCKS` block and the old names (`llm.<server key>`, `clang.llvmLibPath`,
   `clang.clangIncludePath`) in `pipeline_runner._write_project_config`,
