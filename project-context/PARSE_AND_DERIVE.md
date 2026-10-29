@@ -581,7 +581,9 @@ When `config.llm.descriptions: true`:
    snippets + containing-file summary + related functions. Falls back to
    `enrich_globals_with_descriptions` (the old version2 path) when
    `variableEnrichment=false`.
-4. A `ProgressReporter` reports `[idx/total]` progress for every pass.
+4. A `ProgressReporter` reports `[idx/total]` progress for every pass -- and, since 2026-10-29b, for
+   the unit and struct descriptions after them (`LLM-unit-description`, `LLM-struct-description`,
+   `_enrich_unit_and_struct_descriptions`), which had none: a review run's Phase 2 sat hours without a line.
 
 ### Domain anchoring + description blocklist (task 3.14)
 
