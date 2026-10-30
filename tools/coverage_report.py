@@ -53,6 +53,23 @@ def has_module(name: str) -> bool:
     return importlib.util.find_spec(name) is not None
 
 
+def ensure_tools(web: bool) -> None:
+    """Install what coverage needs when it is missing (an online machine): pytest-cov, and the
+    @vitest/coverage-v8 that matches the web app's vitest (npm --no-save: package.json unchanged)."""
+    if not (has_module("pytest_cov") and has_module("coverage")):
+        say("installing coverage + pytest-cov")
+        subprocess.run([PY, "-m", "pip", "install", "-q", "coverage", "pytest-cov"])
+        import importlib
+        importlib.invalidate_caches()
+    wa = ROOT / "web-app"
+    if web and (wa / "node_modules" / "vitest").exists() and not (wa / "node_modules" / "@vitest" / "coverage-v8").exists():
+        n = shutil.which("npm.cmd" if platform.system() == "Windows" else "npm") or shutil.which("npm")
+        if n:
+            ver = json.loads((wa / "node_modules" / "vitest" / "package.json").read_text(encoding="utf-8"))["version"]
+            say(f"installing @vitest/coverage-v8@{ver}")
+            subprocess.run([n, "install", "--no-save", f"@vitest/coverage-v8@{ver}"], cwd=wa)
+
+
 def npx() -> str | None:
     return shutil.which("npx.cmd" if platform.system() == "Windows" else "npx") or shutil.which("npx")
 
@@ -302,6 +319,7 @@ def main() -> int:
         say("listing backend tests")
         be, cov = backend_list(), None
     else:
+        ensure_tools(not a.no_web)
         say("backend: running tests with coverage (about 20 min)")
         be, cov = backend_run(a.workers)
         if not be:
