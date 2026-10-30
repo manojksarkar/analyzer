@@ -49,7 +49,7 @@ from ast_engine.resolver import find_function_cursor, get_function_body
 from config import EngineConfig
 from enrichment.enricher import NodeEnricher
 from llm_core.client import LlmClient
-from llm.generator import LabelGenerator
+from llm.generator import LabelGenerator, label_ends
 from dot_builder import build_dot
 from mermaid.validator import validate_cfg
 from models import FileResult, FlowchartResult, FunctionEntry, NodeType, ProjectMeta, serialize_cfg
@@ -462,6 +462,7 @@ def _label_chart(cfg, func_entry: FunctionEntry, source_code: str, base_path: st
     rewrite = func_entry.key in config.rewrite_keys
     with guard:
         if not rewrite and _apply_cached_labels(cfg, key, config):
+            label_ends(cfg, func_entry)          # as `label_cfg` sets them: one picture either way
             return
         _with_current_descriptions(project_knowledge, config)
     # The LLM call, outside the lock: with llm.workers > 1 other charts are asked meanwhile.

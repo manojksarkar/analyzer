@@ -262,6 +262,24 @@ class TestWritingAChartAgain:
         fe._label_chart(cfg, other, "src", "", gen, config, None)
         assert gen.calls == 0 and cfg.nodes["n1"].label == "old a"
 
+    def test_a_chart_from_the_cache_has_the_start_and_end_of_one_the_llm_labelled(
+            self, monkeypatch, tmp_path):
+        """The cache holds the labels between START and END. A chart taken from it kept the
+        builder's START -- the whole signature -- where the run that asked the LLM drew "Start:
+        <name>": a wider box, so the same chart came out in another number of parts, and a paused
+        run's Word file differed from a straight one's (job_scheduling_test C01, 2026-10-30)."""
+        config, _cache, _entry = self._setup(monkeypatch, tmp_path, {"n1": "a", "n2": "b"})
+        other = type("E", (), {"key": "OTHER", "qualified_name": "ns::doWork"})()
+        cfg = _cfg()
+        cfg.nodes["s"].label = "doWork(int a, int b)"         # the builder's START
+        fe._label_chart(cfg, other, "src", "", self._Gen({}), config, None)
+        assert (cfg.nodes["s"].label, cfg.nodes["e"].label) == ("Start: doWork", "End")
+
+    def test_the_llm_path_sets_the_ends_the_same_way(self):
+        import inspect
+        from llm.generator import LabelGenerator
+        assert "label_ends(cfg, func_entry)" in inspect.getsource(LabelGenerator.label_cfg)
+
     def test_the_knowledge_base_is_brought_up_to_date_only_when_the_llm_writes(self,
                                                                                monkeypatch,
                                                                                tmp_path):

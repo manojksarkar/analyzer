@@ -218,12 +218,7 @@ class LabelGenerator:
             logger.info("'%s': appended missing call names on %d node(s)",
                         func_entry.qualified_name, appended)
 
-        # START / END get simple fixed labels
-        for node in cfg.nodes.values():
-            if node.node_type == NodeType.START:
-                node.label = f"Start: {func_entry.qualified_name.split('::')[-1]}"
-            elif node.node_type == NodeType.END:
-                node.label = "End"
+        label_ends(cfg, func_entry)
 
         # Report fallback usage
         fallback_count = len(self._fallback_ids)
@@ -774,6 +769,18 @@ class LabelGenerator:
 # Longest label a repair may grow to. Beyond this the DOT node is unreadable
 # anyway and the missing names are better chased in the prompt.
 _MAX_REPAIRED_LABEL_LEN = 400
+
+
+def label_ends(cfg: ControlFlowGraph, func_entry: FunctionEntry) -> None:
+    """START and END's fixed labels: "Start: <name>" and "End". Set after the LLM's labels, and
+    after labels taken from the cache, which holds only the nodes between them -- a cached chart
+    kept the builder's START, the whole signature: a wider box, a picture of another shape and
+    another number of parts than the run that asked the LLM for the same labels."""
+    for node in cfg.nodes.values():
+        if node.node_type == NodeType.START:
+            node.label = f"Start: {func_entry.qualified_name.split('::')[-1]}"
+        elif node.node_type == NodeType.END:
+            node.label = "End"
 
 
 def _is_identifier_shaped(token: str) -> bool:
