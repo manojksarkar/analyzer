@@ -278,6 +278,7 @@ approval: `docs/spec/REVIEW_APPROVE_API_SPEC.md`.
 |---|---|---|
 | PATCH | `/projects/:id/functions/:fnId` | Set visibility (admin) |
 | PATCH | `/projects/:id/functions` | Bulk update visibility (admin) |
+| GET | `/projects/:id/versions/:vid/functions/source?function_id=` | The function's lines of code in that version, from its checkout (member); `409 SOURCE_NOT_HERE` when the code is not on this server (never cloned in the request) |
 
 ### Compare
 

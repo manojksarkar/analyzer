@@ -99,6 +99,7 @@ const ApiFlowchartTableSchema = z.object({
   description_slot: ApiSlotRefSchema,
   input_name_slot: ApiSlotRefSchema,
   output_name_slot: ApiSlotRefSchema,
+  function_id: z.string().nullable().optional(),
 })
 type ApiFlowchartTable = z.infer<typeof ApiFlowchartTableSchema>
 
@@ -241,6 +242,7 @@ function mapRichSection(s: ApiRichSection): RichSection {
       descriptionSlot: mapSlotOrNull(ft.description_slot),
       inputNameSlot: mapSlotOrNull(ft.input_name_slot),
       outputNameSlot: mapSlotOrNull(ft.output_name_slot),
+      functionId: ft.function_id ?? null,
     }
   }
 

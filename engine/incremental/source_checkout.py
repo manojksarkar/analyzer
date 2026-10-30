@@ -86,7 +86,8 @@ def _version_row(project_id: str, version_id: str, *, need_commit: bool = True):
 
 def locate_or_restore(project_id: str, version_id: str, *,
                       workspaces_root: Optional[str] = None,
-                      commit: Optional[str] = None) -> SourceCheckout:
+                      commit: Optional[str] = None,
+                      restore: bool = True) -> SourceCheckout:
     """The checkout `version_id` was generated from, restoring it if nothing usable is on disk.
 
     `commit` names the commit to find when the caller knows better than the `versions` column --
@@ -110,7 +111,7 @@ def locate_or_restore(project_id: str, version_id: str, *,
     # 2. where THIS version was actually generated from -- covers a short-SHA folder name and
     #    another working copy on the same machine in one step
     from core.paths import rebase_stored_path              # the workspaces may have moved (NW-5)
-    stored = rebase_stored_path(row.base_path)
+    stored = rebase_stored_path(row.base_path, os.path.join(ws_root, os.pardir))
     if _at(stored, commit):
         return SourceCheckout(stored, "base_path")
 
@@ -123,7 +124,11 @@ def locate_or_restore(project_id: str, version_id: str, *,
     except OSError:
         pass
 
-    # 4. put it back: one commit from the project's repository, no LLM
+    # 4. put it back: one commit from the project's repository, no LLM -- unless the caller
+    #    cannot wait for a clone (`restore=False`: a web page showing a function's source)
+    if not restore:
+        raise SourceUnavailable("the source of %r (commit %s) is not on this machine"
+                                % (version_id, commit[:12]))
     from incremental.clone import ensure_commit_checkout
     from incremental.project_db import resolve_project_repo
     repo_url, default_branch, token = resolve_project_repo(project_id)

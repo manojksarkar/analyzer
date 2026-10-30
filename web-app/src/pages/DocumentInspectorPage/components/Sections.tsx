@@ -4,6 +4,7 @@ import { cn } from '../../../lib/cn'
 import type { BehaviorTableData, FlowchartTableData, RichSection, RichTable } from '../../../types'
 import { useEdit } from '../editContext'
 import { FlowchartFigure, ImageViewer } from './FlowchartFigure'
+import { FunctionCode } from './FunctionCode'
 import { SlotText } from './SlotText'
 
 /* The SWE.3 document, section by section as its DOCX. Texts the LLM wrote carry their slot and
@@ -137,6 +138,11 @@ function FlowchartTableView({ data }: { data: FlowchartTableData }) {
                   <FlowchartFigure chart={fc} />
                 </div>
               ))}
+              {/* The function's code under its charts (NW-7): the page's project and version
+                  come with the edit context, which the reader always provides. */}
+              {data.functionId && edit?.projectId && edit.versionId && (
+                <FunctionCode projectId={edit.projectId} versionId={edit.versionId} functionId={data.functionId} />
+              )}
             </td>
           </tr>
           <tr className="border-b border-outline-variant/60">

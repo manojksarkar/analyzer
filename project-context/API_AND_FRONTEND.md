@@ -252,6 +252,12 @@ chart's box labels together; a banner says when the Word files lack the latest c
   render again; the flowchart `<img>` URL carries `?v=<source_hash>` (added in the mapper, after
   `resolveAssetUrl`) so a redrawn SVG reloads.
 - **Rules** — the `ui-dev` skill §6; the contract's page section is REVIEW_UPDATE_API_SPEC §3a.
+- **A function's code beside its flowcharts** (2026-10-31, NW-7): `flowchart_table.function_id` in the
+  render payload (the model's function id, sent back as it is -- never taken out of a slot key);
+  `GET …/versions/{vid}/functions/source?function_id=` (`api/services/function_source.py`) reads its
+  `entity_versions` file and lines and returns them from the version's checkout
+  (`source_checkout.locate_or_restore(restore=False)`: no clone in a request; `409 SOURCE_NOT_HERE`),
+  at most 400 lines. Web: `FunctionCode.tsx`, **Show code** under the charts, read only when opened.
 - **The compare page too** (2026-10-31, NW-6): `compare_render` puts the render's slots back on the
   Current side's diffed blocks (`_carry_edit_handles`: `slot`, `bullets`, `cell_slots`; a behaviour
   row's bullets are one block now), never on the Reference side; **Edit** on the Current pane (SWE.3,

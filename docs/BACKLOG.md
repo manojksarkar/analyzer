@@ -12,7 +12,7 @@
 
 ## Next work (listed 2026-10-29, priorities 2026-10-30)
 
-Order: NW-2 → NW-5 → NW-8 → NW-7 → NW-1 → NW-3 (priority, then dependency, then the smaller one). Done 2026-10-31: NW-4, NW-6.
+Order: NW-2 → NW-5 → NW-8 → NW-1 → NW-3 (priority, then dependency, then the smaller one). Done 2026-10-31: NW-4, NW-6, NW-7.
 
 | Id | Item | Type | Pri | Effort | Waits on | Status | Where |
 |---|---|---|---|---|---|---|---|
@@ -20,7 +20,6 @@ Order: NW-2 → NW-5 → NW-8 → NW-7 → NW-1 → NW-3 (priority, then depende
 | NW-2 | Approve a document only when its base document is reviewed | enhance | P1 | S–M | what "base" means | decide | `review_workflow.py` `approve()` |
 | NW-3 | Fresh run (no baseline) for any commit, from the web | enhance | P3 | S | — | open | `RunAnalysisModal.tsx`, `routes/jobs.py` `mode` |
 | NW-5 | Movable installation: the workspaces are done (2026-10-31); the data root (model, output, logs, caches) is left | enhance | P1 | M | a decision: where a background run then finds config.local.json | decide | `core/paths.py`, `core/frozen_run.py` |
-| NW-7 | The function's source beside its flowchart, for review | enhance | P2 | M | — | open | `pages/DocumentInspectorPage/`, a new API route |
 | NW-8 | Parse workers and several LLM calls at once as the default | enhance | P2 | S | a review-site run with them on; LG-2 | open | `core/config.py` `speedup_settings` |
 
 ## Logs and LLM
@@ -217,11 +216,6 @@ the data root -- `model/`, `output/`, `logs/`, the caches -- moves only with `AN
 key for it needs a decision: a background run finds config.local.json THROUGH the data root
 (`core.config.local_config_path`), so the data root and the installation would have to come apart.
 Same server or another, Windows to Linux: both work for the workspaces.
-
-**NW-7** Each function stores its file and `startLine` / `endLine`; the workspace is a git clone; the web
-view reads the model only. Doubts: old commits in a shallow clone? who may see the source? a line per box
-(the stored graph has none)? Approach: an API route answering `git show <commit>:<file>`'s lines,
-size-capped; a Source panel on the flowchart card.
 
 **NW-8** Each speed-up is proved to give the same output (PIPELINE_SPEED_PLAN). Doubts: lanes stable at
 the review site now the prompts are capped? `parseWorkers` against memory? several calls on one lane

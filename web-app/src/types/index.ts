@@ -655,6 +655,19 @@ export interface FlowchartTableData {
   descriptionSlot: Slot | null
   inputNameSlot: Slot | null
   outputNameSlot: Slot | null
+  /** The function the charts are of: what its source is asked by (NW-7); null without one. */
+  functionId: string | null
+}
+
+/** A function's own lines of code in a version (NW-7), as its checkout has them. */
+export interface FunctionSource {
+  functionId: string
+  file: string
+  startLine: number
+  endLine: number
+  lines: string[]
+  /** The function is longer than the lines sent. */
+  truncated: boolean
 }
 
 export interface BehaviorTableData {

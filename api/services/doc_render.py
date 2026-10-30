@@ -1043,6 +1043,9 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                         type="flowchart_table", content=requirement,
                         flowchart_table={
                             "description": requirement,
+                            # Which function, for its source beside the chart (NW-7): an id the
+                            # page sends back as it is, never taken out of a slot key.
+                            "function_id": fid,
                             "flowcharts": flowchart_entries,
                             "risk": "Medium",
                             "capacity": "Common",
