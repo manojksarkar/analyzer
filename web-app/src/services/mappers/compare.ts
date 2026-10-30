@@ -3,6 +3,7 @@ import type {
   CompareRichSection, DiffType, DiffMark,
 } from '../../types'
 import { resolveAssetUrl } from './document'
+import { mapSlotOrNull, type ApiSlot } from './review'
 
 export function mapCompare(r: {
   current: CompareResult['current']
@@ -52,6 +53,9 @@ interface ApiCompareBlock {
   mermaid?: string | null
   caption?: string | null
   changed?: boolean
+  slot?: ApiSlot | null
+  bullets?: string[] | null
+  cell_slots?: (ApiSlot | null)[][] | null
 }
 
 interface ApiRichDiffSection {
@@ -83,6 +87,7 @@ function mapBlock(b: ApiCompareBlock): CompareBlock {
         rows: b.rows ?? [],
         rowMarks: (b.row_marks ?? []) as DiffMark[],
         cellMarks: (b.cell_marks ?? []) as DiffMark[][],
+        cellSlots: b.cell_slots ? b.cell_slots.map((row) => row.map((c) => mapSlotOrNull(c))) : null,
       }
     case 'diagram':
       return {
@@ -97,12 +102,15 @@ function mapBlock(b: ApiCompareBlock): CompareBlock {
         kind: 'keyvalue',
         label: b.label ?? '',
         segments: (b.segments ?? []).map((s) => ({ text: s.text, mark: (s.mark ?? 'none') as DiffMark })),
+        slot: mapSlotOrNull(b.slot),
       }
     case 'text':
     default:
       return {
         kind: 'text',
         segments: (b.segments ?? []).map((s) => ({ text: s.text, mark: (s.mark ?? 'none') as DiffMark })),
+        slot: mapSlotOrNull(b.slot),
+        bullets: b.bullets ?? null,
       }
   }
 }

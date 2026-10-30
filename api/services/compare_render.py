@@ -120,7 +120,8 @@ def _section_blocks(sec: dict) -> list[dict]:
         tbl = sec["table"]
         blocks.append({"kind": "table",
                        "headers": list(tbl.get("headers") or []),
-                       "rows": [list(r) for r in (tbl.get("rows") or [])]})
+                       "rows": [list(r) for r in (tbl.get("rows") or [])],
+                       "cell_slots": tbl.get("cell_slots")})
 
     elif t == "diagram":
         blocks.append({"kind": "diagram",
@@ -131,7 +132,8 @@ def _section_blocks(sec: dict) -> list[dict]:
     elif t == "flowchart_table" and sec.get("flowchart_table"):
         ft = sec["flowchart_table"]
         if ft.get("description"):
-            blocks.append({"kind": "text", "text": str(ft["description"])})
+            blocks.append({"kind": "text", "text": str(ft["description"]),
+                           "slot": ft.get("description_slot")})
         for fc in ft.get("flowcharts") or []:
             # The render carries a flowchart's picture, not its DOT (a document can hold 500+),
             # so the DOT's hash is what tells a changed flowchart from an unchanged one.
@@ -142,12 +144,15 @@ def _section_blocks(sec: dict) -> list[dict]:
                            "caption": fc.get("label")})
         for label, key in _KV_FIELDS:
             blocks.append({"kind": "keyvalue", "label": label,
-                           "text": str(ft.get(key, "") or "")})
+                           "text": str(ft.get(key, "") or ""), "slot": ft.get(key + "_slot")})
 
     elif t == "behavior_table" and sec.get("behavior_table"):
         bt = sec["behavior_table"]
-        for item in bt.get("description_list") or []:
-            blocks.append({"kind": "text", "text": "• " + str(item)})
+        items = [str(i) for i in bt.get("description_list") or []]
+        if items:
+            # One block for the bullets: they are one correctable text (R6).
+            blocks.append({"kind": "text", "text": "\n".join("• " + i for i in items),
+                           "slot": bt.get("description_slot"), "bullets": items})
         if bt.get("diagram_url"):
             blocks.append({"kind": "diagram",
                            "image_url": bt.get("diagram_url"),
@@ -155,11 +160,12 @@ def _section_blocks(sec: dict) -> list[dict]:
                            "caption": "Behaviour diagram"})
         for label, key in _KV_FIELDS:
             blocks.append({"kind": "keyvalue", "label": label,
-                           "text": str(bt.get(key, "") or "")})
+                           "text": str(bt.get(key, "") or ""), "slot": bt.get(key + "_slot")})
 
     else:  # richtext / container
         if sec.get("content"):
-            blocks.append({"kind": "text", "text": str(sec["content"])})
+            blocks.append({"kind": "text", "text": str(sec["content"]),
+                           "slot": sec.get("content_slot")})
 
     return blocks
 
@@ -424,6 +430,22 @@ def _artifact_label(sec: dict) -> str:
     return "Description"
 
 
+_EDIT_HANDLES = ("slot", "bullets", "cell_slots")
+
+
+def _carry_edit_handles(out: list[dict], source: list[dict]) -> None:
+    """Put the render's slots back on the Current side's diffed blocks, so the compare view can
+    correct a text as the reader does (NW-6). `out[i]` is `source[i]` diffed: both the diff and the
+    added side keep the current blocks in their order. The Reference side never gets one -- a
+    correction is made in the newer version."""
+    for o, src in zip(out, source):
+        if o.get("kind") != src.get("kind"):
+            continue
+        for k in _EDIT_HANDLES:
+            if src.get(k) is not None:
+                o[k] = src[k]
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -476,6 +498,7 @@ def compute_document_render_diff(
             cur_out, base_out = _diff_blocks(c_blocks, b_blocks)
 
         counts[diff_type] += 1
+        _carry_edit_handles(cur_out, c_blocks)
 
         present = ("both" if (c_sec and b_sec)
                    else "current" if c_sec else "baseline")

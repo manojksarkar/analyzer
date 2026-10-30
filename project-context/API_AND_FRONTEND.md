@@ -252,6 +252,13 @@ chart's box labels together; a banner says when the Word files lack the latest c
   render again; the flowchart `<img>` URL carries `?v=<source_hash>` (added in the mapper, after
   `resolveAssetUrl`) so a redrawn SVG reloads.
 - **Rules** — the `ui-dev` skill §6; the contract's page section is REVIEW_UPDATE_API_SPEC §3a.
+- **The compare page too** (2026-10-31, NW-6): `compare_render` puts the render's slots back on the
+  Current side's diffed blocks (`_carry_edit_handles`: `slot`, `bullets`, `cell_slots`; a behaviour
+  row's bullets are one block now), never on the Reference side; **Edit** on the Current pane (SWE.3,
+  the Current version's document, not approved) gives `DiffBlocks` an `EditContext`, so a text with a
+  slot is the reader's `SlotText`. A save also reads every comparison again (`projectKeys.compareAll`).
+  Flowchart labels stay in the reader. Tests: `tests/unit/test_compare_edit_handles.py`,
+  `ComparePage/__tests__/DiffBlocks.test.tsx`. API spec §3a Flow 8.
 - **Mockup** — `docs/ui-mockups/documents.html` (open with `#edit`).
 - **Since 2026-10-05** (history 11 2026-10-05 … and 13): a save met by a run that replaced the model
   answers 409 `{code: VERSION_REGENERATING}` (the other refusals stay strings); a save's queued texts

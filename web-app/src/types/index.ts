@@ -868,12 +868,18 @@ export interface DiffSegment {
 export interface CompareTextBlock {
   kind: 'text'
   segments: DiffSegment[]
+  /** Current side only: the text a reviewer can correct here (NW-6). */
+  slot?: Slot | null
+  /** A behaviour row's bullets (one correctable text, R6). */
+  bullets?: string[] | null
 }
 
 export interface CompareKeyValueBlock {
   kind: 'keyvalue'
   label: string
   segments: DiffSegment[]
+  /** Current side only: an input / output name a reviewer can correct here. */
+  slot?: Slot | null
 }
 
 export interface CompareTableBlock {
@@ -884,6 +890,8 @@ export interface CompareTableBlock {
   rowMarks: DiffMark[]
   /** Per-cell mark, parallel to `rows[i]`. */
   cellMarks: DiffMark[][]
+  /** Current side only: which cell is a correctable text, parallel to `rows`. */
+  cellSlots?: (Slot | null)[][] | null
 }
 
 export interface CompareDiagramBlock {

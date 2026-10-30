@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import { BlocksPane } from '../components/DiffBlocks'
 import { signColumns } from '../helpers'
-import type { CompareBlock, DiffMark } from '../../../types'
+import type { CompareBlock, DiffMark, Slot } from '../../../types'
+import { EditContext, type EditApi } from '../../DocumentInspectorPage/editContext'
 
 /* #45: a diff told its added, removed and changed words and rows by colour alone. Each now says
    what it is: <ins>/<del> with a line under or through it, and its kind in words for a screen
@@ -80,5 +81,41 @@ describe('BlocksPane change marks', () => {
     expect(screen.getAllByRole('columnheader')).toHaveLength(3)
     // Alone, the reference side would have had no sign column.
     expect(signColumns(baseline)).toEqual([false])
+  })
+})
+
+/* NW-6: the compare view corrects a text as the reader does. A block of the Current side carries
+   its slot; in edit mode that text is the reader's box, everything else reads as before. */
+describe('BlocksPane in edit mode', () => {
+  const slot = (key: string, text: string): Slot => ({
+    kind: 'description', key, text, llmText: text, humanText: null, isOverridden: false,
+    isOrphaned: false, canUndo: false, updatedBy: null, updatedAt: null,
+  })
+  const edit = (editing: boolean): EditApi => ({
+    editing, locked: false, projectId: 'p', versionId: 'v', save: async () => undefined,
+    undo: () => undefined, openFlowchart: () => undefined, labelsLocked: null, userName: () => '',
+  })
+  const blocks: CompareBlock[] = [
+    { kind: 'text', segments: [{ text: 'Reads the ', mark: 'none' }, { text: 'speed', mark: 'add' }],
+      slot: slot('fn|desc', 'Reads the speed') },
+    { kind: 'keyvalue', label: 'Input Name', segments: [{ text: 'rpm', mark: 'none' }], slot: slot('fn|in', 'rpm') },
+    { kind: 'keyvalue', label: 'Risk', segments: [{ text: 'Low', mark: 'none' }] },
+    { kind: 'table', headers: ['Id', 'Description'], rows: [['IF_1', 'Starts it']],
+      rowMarks: ['none'], cellMarks: [['none', 'none']], cellSlots: [[null, slot('if|1', 'Starts it')]] },
+  ]
+
+  it('turns each text with a slot into a box, and nothing else', () => {
+    render(<EditContext.Provider value={edit(true)}><BlocksPane blocks={blocks} emptyLabel="-" /></EditContext.Provider>)
+    const boxes = screen.getAllByRole('textbox', { name: 'Correct this text' })
+    expect(boxes.map((b) => (b as HTMLTextAreaElement).value)).toEqual(['Reads the speed', 'rpm', 'Starts it'])
+    expect(screen.getByText('Low')).toBeInTheDocument()
+    expect(screen.getByText('IF_1')).toBeInTheDocument()
+  })
+
+  it('keeps the change marks when not editing', () => {
+    const { container } = render(
+      <EditContext.Provider value={edit(false)}><BlocksPane blocks={blocks} emptyLabel="-" /></EditContext.Provider>)
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(container.querySelector('ins')).toHaveTextContent('speed')
   })
 })

@@ -99,6 +99,7 @@ function useAfterSave(projectId: string, versionId: string) {
       predicate: (q) => q.queryKey[4] !== 'overrides',
     })
     qc.invalidateQueries({ queryKey: projectKeys.documentRenders(projectId) })
+    qc.invalidateQueries({ queryKey: projectKeys.compareAll(projectId) })
   }
 }
 

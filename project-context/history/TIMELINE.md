@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-31b | A text can be corrected from the compare page (NW-6) | [16](16-2026-10-30.md) |
 | 2026-10-31 | Deleting a project leaves nothing behind (NW-4); migration 0019 delete rules | [16](16-2026-10-30.md) |
 | 2026-10-30b | Adding a layer to a version no longer stops on the `unknown` component | [16](16-2026-10-30.md) |
 | 2026-10-30 | One list of open work: docs/BACKLOG.md | [16](16-2026-10-30.md) |

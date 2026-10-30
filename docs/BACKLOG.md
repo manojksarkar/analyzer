@@ -12,7 +12,7 @@
 
 ## Next work (listed 2026-10-29, priorities 2026-10-30)
 
-Order: NW-2 → NW-6 → NW-5 → NW-8 → NW-7 → NW-1 → NW-3 (priority, then dependency, then the smaller one). NW-4 done 2026-10-31.
+Order: NW-2 → NW-5 → NW-8 → NW-7 → NW-1 → NW-3 (priority, then dependency, then the smaller one). Done 2026-10-31: NW-4, NW-6.
 
 | Id | Item | Type | Pri | Effort | Waits on | Status | Where |
 |---|---|---|---|---|---|---|---|
@@ -20,7 +20,6 @@ Order: NW-2 → NW-6 → NW-5 → NW-8 → NW-7 → NW-1 → NW-3 (priority, the
 | NW-2 | Approve a document only when its base document is reviewed | enhance | P1 | S–M | what "base" means | decide | `review_workflow.py` `approve()` |
 | NW-3 | Fresh run (no baseline) for any commit, from the web | enhance | P3 | S | — | open | `RunAnalysisModal.tsx`, `routes/jobs.py` `mode` |
 | NW-5 | Configurable output path and workspace root (a movable installation) | enhance | P1 | M–L | — | open | `core/paths.py`, `api/services/settings.py` |
-| NW-6 | Edit a document's text from the compare view | enhance | P1 | M | — | open | `pages/ComparePage/`, `routes/compare.py` |
 | NW-7 | The function's source beside its flowchart, for review | enhance | P2 | M | — | open | `pages/DocumentInspectorPage/`, a new API route |
 | NW-8 | Parse workers and several LLM calls at once as the default | enhance | P2 | S | a review-site run with them on; LG-2 | open | `core/config.py` `speedup_settings` |
 
@@ -213,11 +212,6 @@ carry corrections? Approach: a "Fresh run" switch that sends `mode: "full"` and 
 database stores absolute paths (`versions.base_path`, read in about 20 places; `approved_docx_path`).
 Doubts: same server or another one? Windows to Linux? Approach: two keys in `config.local.json`; paths
 stored relative to their root, with a migration; `doctor` checks every stored path.
-
-**NW-6** The compare page carries texts, not slots. Its section Edit still writes `document_sections`,
-which only the fallback page reads — move it onto corrections. Doubts: the newer side only? flowchart
-labels too? recompute the diff after a save? Approach: the newer side's slots in each compare row, from
-the reader's payload builder; reuse `SlotText` behind Edit.
 
 **NW-7** Each function stores its file and `startLine` / `endLine`; the workspace is a git clone; the web
 view reads the model only. Doubts: old commits in a shallow clone? who may see the source? a line per box
