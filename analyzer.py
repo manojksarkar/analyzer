@@ -1156,8 +1156,8 @@ def cmd_export(a) -> int:
     pending = extend.load_pending(a.version_id)
     if added or pending:
         # A layer joins the model first (or an add cut short is finished first).
-        from incremental.staged import has_documents, layers_to_add
-        model_layers = sorted({c.split(".", 1)[0] for c in in_model})
+        from incremental.staged import has_documents, layers_to_add, model_layers as _model_layers
+        model_layers = _model_layers(view)
         new_layers = layers_to_add(view, added)
         documented = [c["component"] for c in view if c["in_model"] and has_documents(c)]
         before = _layers_adder(a, parse_layers=sorted(set(model_layers) | set(new_layers)),

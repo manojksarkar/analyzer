@@ -73,6 +73,13 @@ class TestAddALayer:
         assert staged.layers_to_add(self.VIEW, ["L1.App", "L1.Math"]) == []
         assert staged.layers_to_add(self.VIEW, ["Nope"]) == []
 
+    def test_the_model_layers_leave_out_a_component_without_one(self):
+        """Sources outside every configured component are filed as `unknown`: it is not a layer
+        (it was, and the parse of the add stopped on `--selected-layer unknown`)."""
+        view = self.VIEW + [comp("unknown", "not_requested")]
+        assert staged.model_layers(view) == ["L1"]
+        assert staged.model_layers(self.VIEW) == ["L1"]
+
     def test_a_component_outside_the_model_in_a_parsed_layer_adds_no_layer(self):
         """A configured component the parse found no source for: parsing its layer again would
         not put it in the model."""
