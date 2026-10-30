@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-30 | A flowchart drawn from the label cache has the Start box the LLM's run drew (job_scheduling_test C01); the LLM stand-in answers label prompts, so it reaches the label cache | [16](16-2026-10-22b.md) |
 | 2026-10-29 | The job scheduling test runs the server under each `jobs` setting and does the whole feature through the command line (`--mode cli`); a whole-number cap, a 2-minute floor on the silence, retention as often as its days, the engine's workspaces where the API puts them, the newest version of a commit as the baseline | [16](16-2026-10-22b.md) |
 | 2026-10-26 | Global descriptions cached like every other LLM text; the REST test tools compare Word files and write a report per run; tools/incremental_test, which found IN-7..IN-9 | [16](16-2026-10-22b.md) |
 | 2026-10-24b | The job scheduling test puts its sample copies where the server may clone them | [16](16-2026-10-22b.md) |

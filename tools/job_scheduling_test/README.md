@@ -221,7 +221,10 @@ and its checks — so the report alone is enough to see what went wrong; the JSO
 N09, C01 and C05 also compare Word files: the paused or killed run's against a run of the same commit
 never stopped — what they say ([doccheck](../doccheck/README.md): no difference at P1 or P2) and word
 for word. A difference is shown per document, with the first words that differ; both versions' Word
-files are kept in the log folder (`documents/<version id>/`) to open side by side.
+files are kept in the log folder (`documents/<version id>/`) to open side by side. With a difference,
+the report also has each run's own line on its description cache, from the API's logs on this machine
+-- `never paused: 74 described (pass 1) — cache: 72 hits, 2 misses`: a miss in the second run is a
+description the LLM wrote again.
 
 ## What it leaves
 

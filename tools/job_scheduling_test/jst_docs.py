@@ -16,7 +16,9 @@ The documents are kept under the run's log folder, `documents/<version id>/`, to
 """
 from __future__ import annotations
 
+import glob
 import io
+import json
 import os
 import re
 import sys
@@ -131,6 +133,37 @@ def compare_versions(ctx, key, vid_a, vid_b, *, marks=()) -> dict:
     return {"a": a, "b": b, "says": says, "words": words}
 
 
+_CACHE_LINE = re.compile(r"\d+ (?:described|refined) \(pass \d\).*")
+
+
+def cache_lines(ctx, names: dict) -> list:
+    """What the engine said of its description cache in each version's run -- "74 described
+    (pass 1) -- cache: 72 hits, 2 misses ..." -- read from the API's live logs on this machine
+    (the API this test runs, else the repository's). `names`: {version id: what to call it}. A
+    miss in the second run is a description written again. Empty when the logs are elsewhere."""
+    roots = [os.path.join(REPO_ROOT, "logs", "live")]
+    if getattr(ctx, "own_api", None) is not None:
+        roots.insert(0, os.path.join(ctx.own_api.data_root, "logs", "live"))
+    out = []
+    for root in roots:
+        for day in sorted(glob.glob(os.path.join(root, "*")))[-3:]:
+            for path in sorted(glob.glob(os.path.join(day, "engine-*.jsonl"))):
+                try:
+                    with open(path, encoding="utf-8", errors="replace") as fh:
+                        lines = [line for line in fh if "cache:" in line]
+                except OSError:
+                    continue
+                for line in lines:
+                    try:
+                        rec = json.loads(line)
+                    except ValueError:
+                        continue
+                    found = _CACHE_LINE.search(str(rec.get("message") or ""))
+                    if found and rec.get("version") in names:
+                        out.append("%s: %s" % (names[rec["version"]], found.group(0)))
+    return out
+
+
 def check_same_documents(ctx, key, vid_a, vid_b, *, what_a, what_b, reqs, words=True,
                          marks=()) -> dict:
     """Three checks: the two versions made the same Word files; they say the same (doccheck: no
@@ -154,5 +187,8 @@ def check_same_documents(ctx, key, vid_a, vid_b, *, what_a, what_b, reqs, words=
         c.check("word for word the same", not res["words"],
                 {n: {what_a: short(x, 300), what_b: short(y, 300)}
                  for n, (x, y) in list(res["words"].items())[:3]}, reqs=reqs)
+    if res["says"] or (words and res["words"]):
+        for line in cache_lines(ctx, {vid_a: what_a, vid_b: what_b}):
+            c.note("the LLM's description cache, %s" % line)
     c.note("the documents: %s" % os.path.join(ctx.log_dir, "documents"))
     return res

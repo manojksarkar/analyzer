@@ -490,7 +490,11 @@ ones (`_replace_labels`) and each is appended to the request's report — unless
 the chart keeps its earlier labels. `--only-rewrite` charts those functions alone; the flowcharts view
 then splices them into the stored unit files (`_splice_rewritten`) and puts every other file back.
 `_flush_labels` lands the label cache's buffered writes once every chart is labelled: without it a run's
-last minute of labels was lost at exit.
+last minute of labels was lost at exit. The cache holds the nodes between START and END; both ends get
+their fixed labels from `generator.label_ends` -- "Start: <name>", "End" -- after the LLM's labels and
+after cached ones alike. Until 2026-10-30 a chart from the cache kept the builder's START, the whole
+signature: a wider box, another shape, another number of `_part_K_of_N` slices -- the same chart drawn
+differently by the run that wrote its labels and every run that read them.
 
 ### `LIBCLANG_PATH` env var (feat/test-framework)
 

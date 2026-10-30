@@ -837,8 +837,8 @@ enforce_call_names(cfg)
     INFO: "'func': appended missing call names on N node(s)"
           (high N ⇒ fix the prompt, not this pass)
 
-START node → "Start: <function_short_name>"
-END node   → "End"
+START node → "Start: <function_short_name>"     (generator.label_ends -- also after labels
+END node   → "End"                               taken from the label cache, which holds neither)
 
 Report fallback usage:
     self._fallback_ids — recorded where _fallback_label() is applied,

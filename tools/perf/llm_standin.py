@@ -5,7 +5,8 @@ set number of calls at once -- or faster than a set rate -- as the review gatewa
 Every answer is a hash of the prompt (the same prompt, the same answer), so two runs that send the
 same prompts store the same text: a speed-up that changes no prompt changes no document. `--vary`
 adds the call's number, as a real LLM words one prompt differently each time: then two runs give
-the same text only where a cache answers the second (tools/job_scheduling_test C01).
+the same text only where a cache answers the second (tools/job_scheduling_test C01). A flowchart's
+label prompt gets a JSON label for each of its nodes, as the label generator reads it.
 
     python tools/perf/llm_standin.py --port 18080 --latency 3 --max-concurrent 4 --min-interval 0 \
         --log C:/tmp/standin.jsonl
@@ -28,11 +29,30 @@ STATE = {"inflight": {}, "last_start": {}, "last_end": {}, "seq": 0}
 ARGS = None
 
 
+_NODES = "--- Nodes to Label ---\n"
+
+
 def answer_for(prompt: str, seq: int = 0) -> str:
     """A hash of the prompt -- or, with --vary, of the prompt and the call's number: a real LLM
-    words the same prompt differently from one call to the next, which a cache must hide."""
+    words the same prompt differently from one call to the next, which a cache must hide.
+
+    A flowchart's label prompt is answered as the label generator reads it, a JSON object with a
+    label for every node it lists; its coherence pass, with no change. In plain text every chart
+    fell back to mechanical labels, which are never cached -- so a run with the stand-in never
+    used the label cache, and could not show a label written again."""
     digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:10]
-    return f"Stand-in text {digest} (call {seq})." if ARGS.vary else f"Stand-in text {digest}."
+    said = f" (call {seq})" if ARGS.vary else ""
+    if "Return {} if nothing needs changing" in prompt:
+        return "{}"
+    at = prompt.find(_NODES)
+    if at >= 0:
+        try:
+            nodes, _ = json.JSONDecoder().raw_decode(prompt, at + len(_NODES))
+            return json.dumps({n["node_id"]: f"Step {digest} {n['node_id']}{said}"
+                               for n in nodes if isinstance(n, dict) and n.get("node_id")})
+        except ValueError:
+            pass
+    return f"Stand-in text {digest}{said}."
 
 
 def log(rec: dict) -> None:
