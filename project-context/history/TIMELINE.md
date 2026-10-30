@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-10-31 | Deleting a project leaves nothing behind (NW-4); migration 0019 delete rules | [16](16-2026-10-30.md) |
 | 2026-10-30b | Adding a layer to a version no longer stops on the `unknown` component | [16](16-2026-10-30.md) |
 | 2026-10-30 | One list of open work: docs/BACKLOG.md | [16](16-2026-10-30.md) |
 | 2026-10-29b | Run card's estimate is the step's own; a flowchart engine crashing on exit keeps its output | [15](15-2026-10-07h.md) |

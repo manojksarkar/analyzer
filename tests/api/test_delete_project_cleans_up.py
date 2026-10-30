@@ -69,6 +69,152 @@ def test_its_job_functions_rows_go_too(db, client, auth_header, tmp_path):
     assert left == 0
 
 
+def _value(col, now):
+    """A value of the column's type, for a NOT NULL column with no default."""
+    try:
+        t = col.type.python_type
+    except NotImplementedError:
+        return "x"
+    return {str: "x", int: 0, bool: False, float: 0.0, dict: {}, list: [], bytes: b"x",
+            datetime.datetime: now, datetime.date: now.date()}.get(t, "x")
+
+
+def _fill_every_table(engine, pid):
+    """One row in every table that hangs off the project -- through a foreign key, or a
+    `project_id` / `version_id` column without one -- taken from the schema, so a table added later
+    is filled (and checked) without editing this test. Returns ({table: primary key of its row},
+    [tables no row could be made for], the project's version ids)."""
+    from sqlalchemy import UniqueConstraint, insert, select
+    from api.db.postgres import schema as s
+    now = datetime.datetime.now(datetime.timezone.utc)
+    owned, made, unfilled = {"projects"}, {}, []
+    for t in s.metadata.sorted_tables:                       # parents before children
+        cols = {c.name for c in t.columns}
+        if t.name != "projects" and ({fk.column.table.name for fk in t.foreign_keys} & owned
+                                     or cols & {"project_id", "version_id"}):
+            owned.add(t.name)
+    made["projects"] = {"id": pid}
+    versions = []
+    for t in s.metadata.sorted_tables:
+        if t.name not in owned or t.name == "projects":
+            continue
+        # Columns of a unique rule (one name per project, ...): a fresh value each row.
+        uniq = {c.name for k in t.constraints if isinstance(k, UniqueConstraint) for c in k.columns}
+        uniq |= {c.name for i in t.indexes if i.unique for c in i.columns}
+        for _ in range(2 if t.name == "versions" else 1):    # two versions: one the other's baseline
+            row, ok = {}, True
+            for c in t.columns:
+                fk = next(iter(c.foreign_keys), None)
+                if fk is not None:
+                    ref = fk.column.table.name
+                    if ref == t.name:                            # versions.baseline_version_id
+                        row[c.name] = versions[0] if versions else None
+                    elif ref in made:
+                        row[c.name] = made[ref].get(fk.column.name)
+                    else:
+                        with engine.connect() as cx:
+                            row[c.name] = cx.execute(select(fk.column).limit(1)).scalar()
+                    if row[c.name] is None and not c.nullable:
+                        ok = False
+                elif c.name == "project_id":
+                    row[c.name] = pid
+                elif c.name == "version_id":
+                    row[c.name] = versions[0] if versions else None
+                elif c.primary_key or c.unique or (c.name in uniq and _value(c, now) == "x"):
+                    if c.autoincrement is True or (c.primary_key and _value(c, now) == 0):
+                        continue
+                    row[c.name] = "t" + uuid.uuid4().hex[:12]
+                elif not c.nullable and c.default is None and c.server_default is None:
+                    row[c.name] = _value(c, now)
+            if not ok:
+                unfilled.append(t.name)
+                break
+            try:
+                with engine.begin() as cx:
+                    res = cx.execute(insert(t).values(**row))
+                    pk = {c.name: (row.get(c.name) if c.name in row else res.inserted_primary_key[i])
+                          for i, c in enumerate(t.primary_key.columns)}
+            except Exception as exc:                       # noqa: BLE001 - reported below
+                # The project already has its row here (its creator's membership): use that one.
+                have = None
+                if "project_id" in t.c:
+                    with engine.connect() as cx:
+                        have = cx.execute(select(t).where(t.c.project_id == pid).limit(1)).first()
+                if have is None:
+                    unfilled.append(f"{t.name}: {type(exc).__name__}: {str(exc).splitlines()[0][:120]}")
+                    break
+                row, pk = dict(have._mapping), {}
+            made[t.name] = {**row, **pk}
+            if t.name == "versions":
+                versions.append(row["id"])
+    return made, unfilled, versions
+
+
+def test_every_row_of_the_project_goes(db, client, auth_header, tmp_path):
+    """NW-4: a row in EVERY table that hangs off the project -- versions, the model, view output,
+    documents, corrections, reviews, jobs, notifications ... -- and none is left after the delete."""
+    if not hasattr(db, "_engine"):
+        pytest.skip("the tables are the SQL backend's")
+    from sqlalchemy import select, func
+    from api.db.postgres import schema as s
+    pid = _project(db)
+    made, unfilled, versions = _fill_every_table(db._engine, pid)
+    assert not unfilled, f"no row could be made for: {unfilled}"
+    assert len(made) > 30, sorted(made)
+
+    with patch("api.services.settings.get_settings", return_value=_settings(tmp_path)), \
+            patch("api.routes.projects._runs_root", return_value=tmp_path / "runs"):
+        r = client.delete(f"/api/v1/projects/{pid}", headers=auth_header)
+    assert r.status_code == 204, r.text
+
+    left = []
+    with db._engine.connect() as cx:
+        for name, row in made.items():
+            t = s.metadata.tables[name]
+            where = [t.c[k] == v for k, v in row.items() if k in {c.name for c in t.primary_key.columns}]
+            if where and cx.execute(select(func.count()).select_from(t).where(*where)).scalar():
+                left.append(name)
+        for t in s.metadata.sorted_tables:                 # and nothing else names the project
+            for col, ids in (("project_id", [pid]), ("version_id", versions)):
+                if col in t.c and ids and cx.execute(select(func.count()).select_from(t)
+                                                     .where(t.c[col].in_(ids))).scalar():
+                    left.append(f"{t.name}.{col}")
+    assert not left, f"left behind: {sorted(set(left))}"
+
+
+def test_the_versions_run_folders_go_and_never_what_they_link_to(db, client, auth_header, tmp_path):
+    """`runs/<version id>/<stamp>/code` is a frozen copy of the code; its `node_modules` is a
+    link to the installation's own. The folder goes with the project; the link's target stays."""
+    if not hasattr(db, "_engine"):
+        pytest.skip("versions are listed from the SQL backend here")
+    pid = _project(db)
+    _made, _unfilled, versions = _fill_every_table(db._engine, pid)
+    real = tmp_path / "installation" / "node_modules"
+    (real / "pkg").mkdir(parents=True)
+    (real / "pkg" / "index.js").write_text("x")
+    runs = tmp_path / "runs"
+    for vid in versions:
+        code = runs / vid / "20261031-090000" / "code"
+        code.mkdir(parents=True)
+        (code / "run.py").write_text("x")
+        link = code / "node_modules"
+        try:
+            import _winapi
+            _winapi.CreateJunction(str(real), str(link))
+        except ImportError:
+            link.symlink_to(real, target_is_directory=True)
+    (runs / "another-version").mkdir()
+
+    with patch("api.services.settings.get_settings", return_value=_settings(tmp_path / "ws")), \
+            patch("api.routes.projects._runs_root", return_value=runs):
+        r = client.delete(f"/api/v1/projects/{pid}", headers=auth_header)
+
+    assert r.status_code == 204, r.text
+    assert versions and not any((runs / v).exists() for v in versions)
+    assert (real / "pkg" / "index.js").read_text() == "x", "the link's target is untouched"
+    assert (runs / "another-version").is_dir(), "only the project's versions' folders go"
+
+
 def test_a_project_with_a_live_run_is_not_deleted(db, client, auth_header, tmp_path):
     pid = _project(db)
     now = datetime.datetime.now(datetime.timezone.utc)

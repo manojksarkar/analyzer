@@ -12,15 +12,14 @@
 
 ## Next work (listed 2026-10-29, priorities 2026-10-30)
 
-Order: NW-4 → NW-2 → NW-6 → NW-5 → NW-8 → NW-7 → NW-1 → NW-3 (priority, then dependency, then the smaller one).
+Order: NW-2 → NW-6 → NW-5 → NW-8 → NW-7 → NW-1 → NW-3 (priority, then dependency, then the smaller one). NW-4 done 2026-10-31.
 
 | Id | Item | Type | Pri | Effort | Waits on | Status | Where |
 |---|---|---|---|---|---|---|---|
 | NW-1 | Pause and resume a run within a phase; then pause by itself after N LLM failures in a row | enhance | P2 | L | — | open | `pipeline_runner.py`, `core/progress.py`, `llm_core/client.py` |
 | NW-2 | Approve a document only when its base document is reviewed | enhance | P1 | S–M | what "base" means | decide | `review_workflow.py` `approve()` |
 | NW-3 | Fresh run (no baseline) for any commit, from the web | enhance | P3 | S | — | open | `RunAnalysisModal.tsx`, `routes/jobs.py` `mode` |
-| NW-4 | Delete-project test: every row and every folder goes | debt | P1 | S–M | — | open | `routes/projects.py` `delete_project` |
-| NW-5 | Configurable output path and workspace root (a movable installation) | enhance | P1 | M–L | NW-4 | open | `core/paths.py`, `api/services/settings.py` |
+| NW-5 | Configurable output path and workspace root (a movable installation) | enhance | P1 | M–L | — | open | `core/paths.py`, `api/services/settings.py` |
 | NW-6 | Edit a document's text from the compare view | enhance | P1 | M | — | open | `pages/ComparePage/`, `routes/compare.py` |
 | NW-7 | The function's source beside its flowchart, for review | enhance | P2 | M | — | open | `pages/DocumentInspectorPage/`, a new API route |
 | NW-8 | Parse workers and several LLM calls at once as the default | enhance | P2 | S | a review-site run with them on; LG-2 | open | `core/config.py` `speedup_settings` |
@@ -146,7 +145,7 @@ Order: NW-4 → NW-2 → NW-6 → NW-5 → NW-8 → NW-7 → NW-1 → NW-3 (prio
 |---|---|---|---|---|---|---|---|
 | SG-1 | Web Resume button on the Components panel | enhance | — | S | — | deferred | `ComponentsPanel`, `routes/version_components.py` |
 | SG-2 | The requested components' documents wait for Phase 2 on every layer | enhance | — | — | — | parked | `model_deriver.py` |
-| SG-3 | Frozen code copies under `runs/` are never deleted | debt | — | S | — | open | `core/frozen_run.py` |
+| SG-3 | Frozen code copies under `runs/` stay while their project lives (deleted with it since NW-4) | debt | — | S | — | open | `core/frozen_run.py` |
 | SG-4 | A web re-export runs as the API's child and dies with it | issue | — | — | — | open | `pipeline_runner.py` `_run_reexport` |
 | SG-5 | `--detach` not proved on Linux (systemd, containers) | risk | — | — | — | open | CLI_COMMANDS "A run that lasts days" |
 | SG-6 | Adding a layer re-parses every layer; `--llm-summarize` re-summarises the old ones | perf | — | — | — | open | `parser.py`, `tu_includes` |
@@ -209,13 +208,6 @@ admin override? bulk: skip or refuse? a run with no baseline? Approach: one chec
 "Compare against: None" means auto — the server picks the nearest earlier version as the baseline. So the
 web cannot force a fresh run. Doubts: a typed SHA beyond the list? a commit that already has a version?
 carry corrections? Approach: a "Fresh run" switch that sends `mode: "full"` and ticks every component.
-
-**NW-4** `delete_project` refuses while a run is alive and removes the project's rows and workspace.
-Not checked: engine tables keyed by version (14 foreign keys reach `projects`, 44 `ON DELETE CASCADE`),
-frozen code copies, approved Word copies, output folders, live-log lines (mixed per process: cleanup by
-age), memberships and grants. Doubts: hard delete or archive (approved documents are audit records)? keep
-the shared caches? Approach: one test that builds a project, deletes it, and asserts no row in any table
-(listed from the schema) and no folder is left; fix what it finds; once on PostgreSQL.
 
 **NW-5** `ANALYZER_DATA_ROOT` and `ANALYZER_WORKSPACES_DIR` move the folders (environment only), but the
 database stores absolute paths (`versions.base_path`, read in about 20 places; `approved_docx_path`).

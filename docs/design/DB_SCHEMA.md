@@ -347,7 +347,11 @@ byte-identical to one already stored? (drives blob dedup). All hex strings, so t
 
 **Everything per-version cascades.** `PER_VERSION_TABLES` at the bottom of `schema.py` lists the 14
 tables a version owns; deleting the `versions` row removes them all. `entities` and `content_blobs`
-are **shared** and deliberately survive.
+are **shared** and deliberately survive. Every foreign key into a project's rows has a delete rule
+(migration 0019): a comparison of a deleted version and a diff of a deleted document go with it
+(`CASCADE`); a version whose baseline is deleted, and a job whose version is, keep their row with the
+link emptied (`SET NULL`). So deleting the `projects` row empties every table of the project, on
+PostgreSQL too (`tests/api/test_delete_project_cleans_up.py` fills one row in each and checks).
 
 **JSONB access:** `->` returns jsonb, `->>` returns text. `payload->>'description'` for a value,
 `jsonb_pretty(payload)` to read a whole blob.

@@ -321,6 +321,16 @@ def main() -> int:
         print(f"renamed the stored slot kinds behaviourInputName -> inputName, "
               f"behaviourOutputName -> outputName ({renamed} row(s))")
 
+    # 6b. the delete rules (0019; idempotent, PostgreSQL only). `create_all` gives a NEW table its
+    # foreign keys, never an existing one: without this a database made before 0019 is stamped at
+    # the head and still cannot delete a project whose documents were compared (NW-4).
+    if eng.dialect.name == "postgresql":
+        m0019 = _migration("0019_delete_rules")
+        with eng.begin() as cx:
+            for sql in m0019.statements():
+                cx.execute(text(sql))
+        print(f"delete rules: {len(m0019.RULES)} foreign key(s) checked")
+
     # 7. stamp the migration head (RF-4). `create_all` builds every table without Alembic, so a
     # database made or upgraded here had no `alembic_version` -- and the next `alembic upgrade
     # head` started from the first migration and failed on a table that already exists. Stamped
