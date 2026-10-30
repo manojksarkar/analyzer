@@ -234,7 +234,8 @@ so neighbouring files can overlap by a few days — search the date tag.
 | File | Entries |
 |---|---|
 | [TIMELINE.md](project-context/history/TIMELINE.md) | **every dated change in one line, newest first — start here** |
-| [15-2026-10-07h.md](project-context/history/15-2026-10-07h.md) | from 2026-10-07h — **the newest: new entries go at the top** |
+| [16-2026-10-30.md](project-context/history/16-2026-10-30.md) | from 2026-10-30 — **the newest: new entries go at the top** |
+| [15-2026-10-07h.md](project-context/history/15-2026-10-07h.md) | 2026-10-07h … 2026-10-29b |
 | [14-2026-10-05r.md](project-context/history/14-2026-10-05r.md) | 2026-10-05r … 2026-10-07g |
 | [13-2026-10-05c.md](project-context/history/13-2026-10-05c.md) | 2026-10-05c … 2026-10-05q; at its end, `review_update_v4`'s 2026-10-03 … 2026-10-03b |
 | [11-2026-09-29e.md](project-context/history/11-2026-09-29e.md) | 2026-09-29e … 2026-10-05b |
@@ -253,18 +254,16 @@ so neighbouring files can overlap by a few days — search the date tag.
 
 ## Other context and docs
 
-- **Subsystem context:** [api/PROJECT_CONTEXT.md](api/PROJECT_CONTEXT.md) — partly stale by its own
-  header, which points to [api/README.md](api/README.md) and [api/PLAN.md](api/PLAN.md);
-  [web-app/PROJECT_CONTEXT.md](web-app/PROJECT_CONTEXT.md), with
+- **Subsystem context:** [api/README.md](api/README.md) (`api/PROJECT_CONTEXT.md` is only a pointer
+  since 2026-10-30); [web-app/PROJECT_CONTEXT.md](web-app/PROJECT_CONTEXT.md), with
   [INTEGRATION_NOTES](web-app/INTEGRATION_NOTES.md) and [TESTING](web-app/TESTING.md).
 - **Role skills:** `.claude/skills/` — each role's coding rules and definition of done.
 - **Human docs**, all linked from [README.md](README.md): [DESIGN.md](docs/design/DESIGN.md);
   [DB_SCHEMA.md](docs/design/DB_SCHEMA.md) and its viewer [schema-atlas.html](docs/design/schema-atlas.html);
   the rules each document section follows, [SWE3_WIKI](docs/spec/SWE3_WIKI.md) and
   [SWE4_WIKI](docs/spec/SWE4_WIKI.md); the contracts in [docs/spec/](docs/spec/); the CLI in
-  [docs/CLI_COMMANDS.md](docs/CLI_COMMANDS.md); open work in [docs/BACKLOG.md](docs/BACKLOG.md),
-  [docs/planning/ROADMAP.md](docs/planning/ROADMAP.md) and the forward plans
-  [engine/PLAN.md](engine/PLAN.md), [api/PLAN.md](api/PLAN.md), [web-app/PLAN.md](web-app/PLAN.md); the
+  [docs/CLI_COMMANDS.md](docs/CLI_COMMANDS.md); **every open item in [docs/BACKLOG.md](docs/BACKLOG.md)** (there are no
+  subsystem `PLAN.md` files), leadership's view in [docs/planning/ROADMAP.md](docs/planning/ROADMAP.md); the
   studies in [docs/production-redesign/](docs/production-redesign/).
 
 ## Keeping the context readable

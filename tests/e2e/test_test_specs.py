@@ -6,7 +6,7 @@ tests/unit/test_test_specs_view.py.
 The snapshot here is the acceptance test for the DB migration. SWE.4 derivation is
 deterministic and LLM-free, so a rerun on unchanged input must be byte-identical —
 any field silently dropped on the way through the database shows up as a snapshot
-diff. Captured before the model backing changes; see engine/PLAN.md.
+diff. Captured before the model backing changes.
 """
 import copy
 

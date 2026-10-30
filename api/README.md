@@ -5,7 +5,7 @@ Built with **FastAPI** (Python 3.12+) over **PostgreSQL** (SQLite for local runs
 run the real pipeline (`analyzer.py generate`), and documents, render, download and compare read
 what it produced.
 
-> **Docs in this folder:** [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) (scoped context) · [PLAN.md](PLAN.md) (forward work + design record).
+> Open work: [docs/BACKLOG.md](../docs/BACKLOG.md). Agent context: [project-context/API_AND_FRONTEND.md](../project-context/API_AND_FRONTEND.md).
 > Full install (dependencies, database, config): [docs/SETUP.md](../docs/SETUP.md).
 
 ---
@@ -139,6 +139,10 @@ api/
      A failed or cancelled run deletes its draft, so the name is free for the retry.
   The model and views live in the database per version; the version's files (DOCX,
   diagrams) under `workspaces/<project_id>/versions/<version_id>/`.
+
+- **The pipeline runs on the API's host**: LLVM/libclang, git and the analyzer's Python live
+  there, so the runner starts `analyzer.py` itself (no broker); the `pipeline_runner` boundary keeps one
+  swappable.
 
 - **Role enforcement is server-side**.  `require_project_admin` /
   `require_project_member` are called at the start of every protected handler.

@@ -15,8 +15,8 @@ process documents as audit evidence at a defined capability level (`ASPICE_L2` /
 `compliance_standard`). ArtiFex generates those documents from the source instead of having engineers
 author them by hand.
 
-**Delivered scope is SWE.3 only.** SWE.4 is in flight on `feat/swe4-unit-test-spec`; SWE.2, SYS.1, SYS.2
-and SWE.1 are roadmap. The 6-process target above is the destination, not the current state.
+**SWE.3 is in review, and SWE.4 is generated beside it** ([SWE4_WIKI](../spec/SWE4_WIKI.md)); SWE.2, SYS.1,
+SYS.2 and SWE.1 are roadmap. The 6-process target above is the destination, not the current state.
 
 > **ISO 26262 is not in scope.** It appears in the API description string and in seeded demo fixtures
 > (`api/db/in_memory.py` — "BMW", "VCU Engine Firmware", "ADAS Sensor Fusion" are placeholder rows).
@@ -39,12 +39,12 @@ and SWE.1 are roadmap. The 6-process target above is the destination, not the cu
   smaller, faster, and reuses the SWE.3 machinery almost directly.
 - **Scope:** the 6 ASPICE processes above. Others are out of scope for now.
 - **V1 is deployed for review** and shared across the team.
-- **Database:** moves to a real database (PostgreSQL) after V1; V1 runs on the current file-based store.
+- **Database:** PostgreSQL (since 2026-08); SQLite for local runs and tests.
 - **How the documents are generated:** see [DOC_GENERATION_PLAYBOOK.md](DOC_GENERATION_PLAYBOOK.md).
 
 ## Remaining work
 
-> Item-level known issues and deferred fixes: [../BACKLOG.md](../BACKLOG.md).
+> Every open item, with priorities: [../BACKLOG.md](../BACKLOG.md).
 
 **V1**
 - [ ] Deploy for review (server, runtime, web app + API, user accounts, end-to-end smoke test)
@@ -54,12 +54,12 @@ and SWE.1 are roadmap. The 6-process target above is the destination, not the cu
 - [ ] Function show/hide in the generated document
 - [ ] Release + client review of SWE.3, with a buffer for review fixes
 
-**V1.1 — SWE.4** → see [SWE4_PLAN.md](SWE4_PLAN.md)
+**V1.1 — SWE.4** — built; contract [SWE4_WIKI](../spec/SWE4_WIKI.md); open: BACKLOG S4-1 … S4-4
 **V1.2 — SWE.2** → see [SWE2_PLAN.md](SWE2_PLAN.md)
 
 **V1.x**
 - [ ] Automated test suite + CI
-- [ ] Real database (PostgreSQL)
+- [x] Real database (PostgreSQL)
 - [ ] Real progress bar during generation
 - [ ] In-app settings + re-run after a configuration change
 - [ ] Performance and LLM-usage optimisation

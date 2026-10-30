@@ -1,124 +1,306 @@
 # Backlog
 
-> Deferred / known items — the Phase-2 improvement list (implement broad first, fix from here).
-> Leadership view: [planning/ROADMAP.md](planning/ROADMAP.md) "Remaining work". Detail: repo `PROJECT_CONTEXT.md`.
-> **Type** `issue` (wrong today) · `enhance` (better later) · `input` (needs client/Polarion) · `debt` — **Status** `open` · `blocked` · `deferred`.
+> **Every open item, one table per area** — the one list of open work (the forward plans that lived in
+> `engine/`, `api/` and `web-app/` `PLAN.md` are folded in here, 2026-10-30). A done item leaves its
+> table; the project-context history keeps it. Leadership view: [planning/ROADMAP.md](planning/ROADMAP.md).
+> Longer text: [Details](#details), by id.
+>
+> **Type** `issue` wrong today · `enhance` better later · `input` needs outside input · `debt` · `perf` ·
+> `risk` — **Pri** P1–P3, `—` not set — **Effort** S ≤ 1 day · M 2–4 days · L a week or more, `—` not
+> estimated — **Status** `open` · `blocked` · `decide` (waits on an answer) · `deferred` · `parked` ·
+> `to verify` (done; waits on the review's check — only the review marks an item fixed).
+
+## Next work (listed 2026-10-29, priorities 2026-10-30)
+
+Order: NW-4 → NW-2 → NW-6 → NW-5 → NW-8 → NW-7 → NW-1 → NW-3 (priority, then dependency, then the smaller one).
+
+| Id | Item | Type | Pri | Effort | Waits on | Status | Where |
+|---|---|---|---|---|---|---|---|
+| NW-1 | Pause and resume a run within a phase; then pause by itself after N LLM failures in a row | enhance | P2 | L | — | open | `pipeline_runner.py`, `core/progress.py`, `llm_core/client.py` |
+| NW-2 | Approve a document only when its base document is reviewed | enhance | P1 | S–M | what "base" means | decide | `review_workflow.py` `approve()` |
+| NW-3 | Fresh run (no baseline) for any commit, from the web | enhance | P3 | S | — | open | `RunAnalysisModal.tsx`, `routes/jobs.py` `mode` |
+| NW-4 | Delete-project test: every row and every folder goes | debt | P1 | S–M | — | open | `routes/projects.py` `delete_project` |
+| NW-5 | Configurable output path and workspace root (a movable installation) | enhance | P1 | M–L | NW-4 | open | `core/paths.py`, `api/services/settings.py` |
+| NW-6 | Edit a document's text from the compare view | enhance | P1 | M | — | open | `pages/ComparePage/`, `routes/compare.py` |
+| NW-7 | The function's source beside its flowchart, for review | enhance | P2 | M | — | open | `pages/DocumentInspectorPage/`, a new API route |
+| NW-8 | Parse workers and several LLM calls at once as the default | enhance | P2 | S | a review-site run with them on; LG-2 | open | `core/config.py` `speedup_settings` |
+
+## Logs and LLM
+
+| Id | Item | Type | Pri | Effort | Waits on | Status | Where |
+|---|---|---|---|---|---|---|---|
+| LG-1 | Full logs: every request, parsed file, LLM call and command in the log files, with thread, time and outcome; one run's log as text (`analyzer.py logs`); UI unchanged | enhance | — | S–M | — | open | `logging_setup.py`, `request_log.py`, `tu_prefetch.py`, `client.py` |
+| LG-2 | The struct-description prompt has no cap (name + whole field list) | issue | — | S | — | open | `llm_enrichment.py` `get_struct_description` |
 
 ## Shared
-| ID | Item | Type | Status | Ref |
-|---|---|---|---|---|
-| SH-1 | Requirements / Linked Work Items source (Polarion / SWE.1) | input | blocked | SWE2 + SWE4 |
-| SH-2 | Same group/component name reused across layers collides (needs layer-qualified identity) | issue | open | — |
-| SH-3 | Per-layer data dictionary: layer-scoped entries + layer-aware `get_range` | issue | done 2026-08-18 | §17 |
-| SH-4 | Array data range: an `int[6]` global reports `NA` (an array's range is not one interval — needs a rule, e.g. element range + length) | enhance | open | engine/utils.py |
-| SH-5 | `entity_hashes` / `_type_keys` stay bare-qn while the dictionary is layer-keyed: two layers defining one type share a hash (last definition wins), so a narrowed parse can miss a change in the loser. Needs `typeUsers` keyed by layer too — `impact_set` joins hash keys to it directly. | issue | open | engine/parser.py, incremental/impact.py |
 
-| SH-6 | ~~A full `pytest` run died at e2e setup~~ — **fixed 2026-09-21.** `_scratch_repo()` rebuilds the sample's git repo from nothing every run, so its commit is new every time and no earlier version's commit still exists to be an ancestor; `select_baseline` threw on `merge-base --is-ancestor` and every e2e test errored on setup. conftest's `generate` now passes `--full`, which dispatches to `generate_full` and never selects a baseline. There is no incremental path to exercise on a brand-new repo anyway. The orphan `e2ev2` row (DB only, no directory) is now harmless and was left alone | issue | **done 2026-09-21** | tests/conftest.py |
-| SH-7 | Nothing writes `versions.commit_sha` after a successful generate (`--create-version` is the only writer), so it is NULL for most versions and stale for some. `generate` therefore demands `--commit` every run and `reexport` had to learn to resolve the checkout without it. Filling it in `persist_run_outcome` from the manifest would remove the workaround | issue | open | engine/core/model_store.py |
-| SH-8 | PIL **raises** above 179M px, and `_maybe_slice_tall_png` catches that as "cannot open" and skips slicing silently — a flowchart too big to slice is exactly the one that needs it. The real 165M case sat just under the threshold | issue | open | engine/views/flowcharts.py:661 |
+| Id | Item | Type | Pri | Effort | Waits on | Status | Where |
+|---|---|---|---|---|---|---|---|
+| SH-1 | Requirements / linked work items source (Polarion / SWE.1) | input | — | — | the source | blocked | SWE.2, SWE.4 |
+| SH-4 | An array global (`int[6]`) reports range `NA` | enhance | — | — | a rule | open | `utils.py` |
+| SH-5 | Type hashes are bare names while the dictionary is keyed by layer | issue | — | — | — | open | `parser.py`, `incremental/impact.py` |
+| SH-7 | Nothing writes `versions.commit_sha` after a generate | issue | — | — | — | open | `core/model_store.py` |
+| SH-8 | A flowchart over PIL's 179M px is left unsliced, silently | issue | — | — | — | open | `views/flowcharts.py` `_maybe_slice_tall_png` |
 
 ## Incremental reuse
-| ID | Item | Type | Status | Ref |
-|---|---|---|---|---|
-| IN-1 | ~~Globals never reused~~ — **investigated: not a defect.** A global's LLM description embeds the *descriptions* of its readers/writers (`enrich_globals_rich` pulls `fk.description` for up to 5 of each), so regenerating a using function genuinely changes the global's input and it must be regenerated. Confirmed against the sample project: each global is touched by only 1–2 functions, so a small change invalidates all of them. Untouched globals *are* reused. The report now explains the figure | issue | **closed — by design** | review run 2026-08-15 |
-| IN-4 | Globals with **>5** readers/writers are over-invalidated: the prompt only includes the top 5, so a change to the 6th cannot alter the description yet still triggers regeneration. Harmless today (max 2 users in the sample) and coupling the invalidation rule to a prompt's slice size would be fragile — revisit only if a real project shows widely-shared globals | perf | open | IN-1 analysis |
-| IN-2 | ~~Flowchart counts don't add up~~ — **not a defect.** `carried` is computed as `total - regenerated`, so the three can never disagree. The reported figures are consistent with a total of **15**, not 12: functions `3+12=15` (80%), flowcharts `2+13=15` (13/15 = 86% with floor division). The "12" was a transcription slip | issue | **closed — no defect** | `incremental/report.py` |
-| IN-6 | An incremental run misses a new function's callers in UNCHANGED files. Sample, project B: `3ee7fe0` → `9d4dd0f` adds `multiply` to Math/Utils.cpp; App/Main.cpp (unchanged) calls it. Incremental v1.1 publishes no Math function; a full run at the same commit publishes `multiply` (Math SWE.3 + SWE.4 differ). Suspect the narrowed parse: only changed TUs re-parsed, so Main.cpp's call is not re-resolved. Repro: web runs `v1.1` vs `v1.1-full` in `analyzer_ui` project `p9d1d0c4f` | issue | open | 2026-09-30, PROJECT_CONTEXT.md |
-| IN-5 | Resuming at **Phase 3** on a machine that did not run Phase 2 loses `knowledge_base.json` (Phase 2 -> Phase 3 hand-off, not restored by `hydrate_model`). The flowchart engine degrades to less context for its node labels rather than failing. Low priority — only affects a cross-machine `--from-phase 3` | issue | open | C4 analysis |
 
-## SWE.3 — detailed design
-| ID | Item | Type | Status | Ref |
-|---|---|---|---|---|
-| S3-1 | Per-layer macros + JSON macro input | issue | done 2026-08-07 | §16 |
-| S3-2 | Flowchart: if/else depiction | issue | open | 3.8 (repro) |
-| S3-3 | Flowchart: bending / overlapping edges | issue | open | 3.9 |
-| S3-4 | Dynamic-behaviour issue | issue | blocked | 3.10 (repro) |
-| S3-5 | Header inline fn (sibling `.cpp` exists) shows in interface table but gets no flowchart | issue | open | PROJECT_CONTEXT.md |
-| S3-7 | ~~A global earns its interface row by MARKING only~~ — **done 2026-09-24.** A global now needs a function in ANOTHER unit that reads or writes it, as a function needs a caller there (`_glb_used_outside`). A use through an `extern` declaration counts for the definition of that qualified name, since the model keys the read to the declaring unit. On the sample model 19 → 5 published globals; in My Sample `g_result` and `g_utilBuf` lose their rows, `g_sharedTick` (Lib reads it) and `g_utilBase` (Core reads it) keep theirs. The trap stays and is written down: "no user outside" and "no user this run could see" are one fact to the tool | issue | **done 2026-09-24** | engine/model_deriver.py, SWE3_WIKI Public vs. private |
-| S3-8 | ~~A file-scope `static` or `const` global publishes as an interface~~ — **done 2026-09-24, by S3-7.** Nothing outside its file can name it, so it never has a user in another unit and never earns a row. No storage-class clause needed (`s_fileLocal` in Access/NestedTypes is now private) | issue | **done 2026-09-24** | engine/model_deriver.py, Risk 8 |
-| S3-9 | ~~`union U {...};` and `using T = int;` reach the data dictionary NEVER~~ — **done 2026-09-23.** UNION_DECL joins the struct/class branch (a union’s members are FIELD_DECLs too, only `kind` differs); TYPE_ALIAS_DECL records as a typedef, since the two declare the same thing. The view’s snippet guard also had to accept `using` and `class`/`union`, or the row was dropped after being recorded | issue | **done 2026-09-23** | engine/parser.py, views/unit_headers.py |
-| S3-10 | Unit header rows: a symbol declared in a unit's own files is listed whether or not the unit uses it (the usage test applies only to symbols lent from an orphan header). Client said "of the unit AND used by the unit", which may mean both conditions | input | open | SWE3_WIKI N.1.4 |
-| S3-11 | Dynamic Behaviour row labelled with the wrong caller: `views/behaviour_diagram.py` pairs `generate_all_diagrams`' diagrams with the function's DIRECT external callers by position, but the selector (`selector.get_external_callers_with_component`) also counts callers of callers. Seen on the sample with `all_callers`: row `coreAdd <- Cross|Hub|hubCompute` carries runNestedFolderTests's diagram and bullets ("runNestedFolderTests calls coreAdd"), and the hubCompute diagram is left without a row. A reviewer's R6 correction lands on that mislabelled row. Fix: return the caller each diagram was drawn for, and key the row on it | issue | open | views/behaviour_diagram.py, behaviour_diagram/selector.py |
-| S3-6 | Flowchart Layer-2 test stale: `_count_mermaid_shapes` counts Mermaid syntax but output is DOT; dormant (opt-in `--out-dir`) → port to count DOT `shape=` | debt | open | tests/unit/test_cfg_topo.py |
+| Id | Item | Type | Pri | Effort | Waits on | Status | Where |
+|---|---|---|---|---|---|---|---|
+| IN-4 | A global with more than 5 readers / writers is regenerated more than needed | perf | — | — | a real project with such globals | open | `llm_enrichment.py` `enrich_globals_rich` |
+| IN-5 | A Phase 3 resume on another machine has no `knowledge_base.json` | issue | — | — | — | open | `hydrate_model` |
+| IN-6 | An incremental run misses a new function's callers in unchanged files | issue | — | — | — | open | narrowed parse |
 
-## SWE.3 — firmware-team review, round 1 (received 2026-09-23)
-> Work branch `fix/swe3-review-v1`, not yet merged to `develop`. **Status** `done` = on the branch and checked on SampleCppProject, waiting for review verification · `fixed` = verified in review; set only after that check, never by an agent · `partial` · `open` · `decide` = works to an agreed rule the review disputes.
+## SWE.3
 
-| ID | Review item | Status | Where it stands | Ref |
-|---|---|---|---|---|
-| RV-1 | Writes to a class static member not detected (direction wrong); static members missing from unit headers | done | Direction: a static data member is now a global (`a532cf6`), `x++` counts as a write (`17ae2dc`), a write through a field `s.f++` is covered (`cc1827b`) → a writing function reads `In`. Unit headers: the member is listed inside its class's row; the out-of-line definition gets no row of its own (`147c4cd`, answer Q9). `In` confirmed as expected (2026-09-23) | engine/parser.py, Diag/ClassStatics |
-| RV-2 | Class access specifier not captured | fixed | Methods read `cursor.access_specifier` (`7153617`), static members too (`a532cf6`); `protected` is recorded as private, and since 2026-10-13 no marking decides a row (used from another unit, or not). Class rows in the unit header keep the labels as written (Q5) | parser.py `_function_visibility`, Access/AccessMatrix |
-| RV-3 | Static design container diagram overscaled: it ran off the page, and the review asked for slicing | done | Fitted to the page instead (`3514698`): it scales to the text area, never above its natural size, and all unit boxes are the same width. Slicing was rejected because an edgeless diagram has no meaningful cut points. The header-dependency and unit diagrams keep a fixed 6 in width; they are not part of this item | docx_exporter.py `_fit_picture_width` |
-| RV-4 | An orphan-header enum appears in every unit that uses the header | done | Confirmed (2026-09-23): it was listed in every unit that really used it, and it should be listed once, in a unit header table. Now each orphan header has ONE owner unit: the first unit by name in the header's own component that uses it, or the first using unit anywhere if none does (the ★ answer, taken as agreed). The owner lists every symbol of the header that any unit uses; the others list none. Same rule for every kind: `#define`, enum, typedef, struct/class/union and globals. The owner is chosen over the whole model, so a shared enum can sit in another group's document. A unit left with no rows reads `NA` (Lib in the sample) | views/unit_headers.py, SWE3_SPEC REQ-UH-02, SWE3_WIKI "Orphan-header symbols" |
-| RV-5 | An orphan-header function counts as another unit's function in the visibility rule | done | Marked done by the user (2026-09-23). Background, from code reading: an orphan header gets a unit key of its own in `_unit_of`, so a call to or from it counts as external. `ed16832` made the same-name companion header part of its unit | model_deriver.py `_unit_of`, `_has_external_caller` |
-| RV-6 | Unit diagram: show the unit's In/Out globals inside the unit, no edges | done | Every global's direction is `In/Out`, so no arrow can be drawn; each one is now a box. Decided (2026-09-23): the unit's globals that have an interface-table row, one white/grey box each, labelled with the variable name (with its class for a class static member), inside the component box, stacked above the unit in interface-ID order, no edges (after the ExceptionManager photo). The globals share an untitled inner panel with the unit, because otherwise the layout engine puts them in the left column whenever the component has other units. Incremental runs re-render a reused diagram whose text changed. REQ-UD-09 | views/unit_diagrams.py, SWE3_SPEC REQ-UD-09, SWE3_WIKI N.1.3 |
-| RV-7 | Struct / class missing from unit headers | done | struct, class and union are listed (`147c4cd`), with methods as declarations and nested types inside their parent; `union` and `using` are now recorded (S3-9) | views/unit_headers.py, Access/NestedTypes |
+| Id | Item | Type | Pri | Effort | Waits on | Status | Where |
+|---|---|---|---|---|---|---|---|
+| S3-2 | Flowchart: if / else drawing | issue | — | — | a repro (3.8) | open | `engine/flowchart/` |
+| S3-3 | Flowchart: bending, overlapping edges (3.9) | issue | — | — | — | open | `engine/flowchart/` |
+| S3-4 | Dynamic-behaviour issue | issue | — | — | a repro (3.10) | blocked | `behaviour_diagram/` |
+| S3-5 | A header inline function with a sibling `.cpp` has a row but no flowchart | issue | — | — | — | open | — |
+| S3-6 | The flowchart Layer-2 test counts Mermaid shapes; the output is DOT | debt | — | S | — | open | `tests/unit/test_cfg_topo.py` |
+| S3-10 | Unit header rows: listed whether or not the unit uses the symbol | input | — | — | the review's answer | decide | SWE3_WIKI N.1.4 |
+| S3-11 | A Dynamic Behaviour row carries the wrong caller | issue | — | — | — | open | `views/behaviour_diagram.py`, `behaviour_diagram/selector.py` |
 
-## SWE.4 — unit test spec
-| ID | Item | Type | Status | Ref |
-|---|---|---|---|---|
-| S4-1 | Table B metadata (Alias Test ID · Risk · Test Method · Test Environment · Linked Work Items) | input | blocked | SWE4_PLAN |
-| S4-2 | §3 Code Metric / Coding Rule / Test Coverage | input | open | SWE4_PLAN |
+## SWE.3 — review round 1 (received 2026-09-23; in develop)
+
+| Id | Item | Type | Pri | Effort | Waits on | Status | Where |
+|---|---|---|---|---|---|---|---|
+| RV-1 | Writes to a class static member: direction, and the member in unit headers | issue | — | — | the review's check | to verify | `parser.py` |
+| RV-3 | Static design container diagram too big for the page | issue | — | — | the review's check | to verify | `docx_exporter.py` `_fit_picture_width` |
+| RV-4 | An orphan-header enum listed in every unit that uses the header | issue | — | — | the review's check | to verify | `views/unit_headers.py` |
+| RV-5 | An orphan-header function counted as another unit's | issue | — | — | the review's check | to verify | `model_deriver.py` `_unit_of` |
+| RV-6 | Unit diagram: the unit's In/Out globals inside the unit, no edges | issue | — | — | the review's check | to verify | `views/unit_diagrams.py` |
+| RV-7 | Struct / class missing from unit headers | issue | — | — | the review's check | to verify | `views/unit_headers.py` |
+
+## SWE.4 and UT export
+
+| Id | Item | Type | Pri | Effort | Waits on | Status | Where |
+|---|---|---|---|---|---|---|---|
+| S4-1 | Table B metadata: Alias Test ID · Risk · Test Method · Test Environment · Linked Work Items | input | — | — | SH-1 | blocked | SWE4_WIKI Table B |
+| S4-2 | §3 Code Metric / Coding Rule / Test Coverage | input | — | — | a metrics / coverage source | open | SWE4_WIKI |
+| S4-3 | Equivalence Class and Boundary Value analysis (today: Analysis of Requirements only) | enhance | — | — | — | deferred | `views/test_specs.py` |
+| S4-4 | `tools/swe4_audit.py` reads `model/*.json`, which no longer exists | debt | — | S | — | open | `tools/swe4_audit.py` |
+| UE-1 | Precise test cases: one case per path, input values, structural path conditions | enhance | — | — | `feat/ut-export` (partly there) | open | UT_EXPORT_SPEC REQ-UE-04 |
+| UE-2 | Format questions: `CoreType`, the `Macros` split, `format_version`, one file or two, the id scheme, a dynamic spec's steps | input | — | — | the target format's owner | decide | UT_EXPORT_SPEC |
+| UE-3 | Global linkage (`static` vs `extern`) for the UT export | enhance | — | — | — | open | `parser.py` |
 
 ## Views — each view belongs to one document (agreed 2026-09-25, parked)
-> Rules agreed: a run **ignores** the views of a document it is not writing (not checked, not generated, config left as it is; `all` = both). `flowcharts: true` = control flow + labels + images. A view that is on pulls in only the part it needs from a view that is off or ignored (`functionSteps` on + `flowcharts` off → control flow, no images). Switches stay in the config — the web app needs fast development runs too.
 
-| ID | Item | Type | Status | Ref |
-|---|---|---|---|---|
-| VW-1 | A view belongs to one document; a run ignores the other document's views. Replaces the doc-type forcing, which overrides the config for `flowcharts` / `testSpecs` / `utExport`. Open: group the config as `views.swe3` / `views.swe4`, or keep it flat | enhance | open | views/registry.py `DOC_TYPE_VIEWS` |
-| VW-2 | Views declare what they need; the runner builds only the needed part of an off or ignored view. Today the link is files on disk plus import order: unit specs read `flowcharts/*.json`, and a missing control flow prints "Not available" with no warning | debt | open | views/__init__.py, views/test_steps.py |
-| VW-3 | Split `testSpecs`: it keeps the instant columns (no switch); new `functionSteps` / `dynamicSteps` fill Test Steps + Expected Results — the only slow part of SWE.4 (control flow + LLM labels). Off → the cells say `Not generated (views.<x> is off)`. Open: the names | enhance | open | views/test_specs.py |
-| VW-4 | Remove `functionTestSpecs` / `dynamicBehaviourSpecs`: off drops the whole per-function spec (Table A + B), not one column — no use case | debt | open | config.defaults.json |
-| VW-5 | An SWE.4 switch narrows the SWE.3 flowcharts: `functionTestSpecs: false` → most functions lose their flowchart; both spec switches off → no flowcharts at all, with no warning. Found by reading the code, not confirmed by a run. Goes away with VW-4 | issue | open | views/flowcharts.py `_spec_scope_function_ids` |
-| VW-6 | `"utExport": false` is ignored under `--doc-type swe4` / `all`; make it a real off switch | issue | open | views/ut_export.py |
-| VW-7 | `generate` defaults to `--doc-type all`, in analyzer.py only. The web app stays `swe3` until it lists SWE.4 documents — the API registers only `software_detailed_design_<group>.docx` | enhance | open | analyzer.py `--doc-type` |
-| VW-8 | Pre-parse summary: the views on/off for the doc type, and what is built only because another view needs it | enhance | open | incremental/report.py |
-| VW-9 | `config.defaults.json` ships the development profile (`flowcharts`, `behaviourDiagram` off) and every project inherits it. Open: complete or fast as the shipped default | enhance | open | config.defaults.json |
+> A run ignores the views of a document it is not writing; a view that is on builds only the part it needs
+> of a view that is off; the switches stay in the config.
 
-## Review & update — waiting on the develop owner
-> Points the feature's work met in develop's area and did not settle alone. None blocked the merge (PR #70); where it had to pick, the pick is reversible. **Status** `decide` = waits on the develop owner's answer. Detail and what to do either way: [REVIEW_UPDATE_HANDOVER §8](design/REVIEW_UPDATE_HANDOVER.md#8-waiting-on-the-develop-owner).
+| Id | Item | Type | Pri | Effort | Waits on | Status | Where |
+|---|---|---|---|---|---|---|---|
+| VW-1 | A view belongs to one document; a run ignores the other document's views | enhance | — | — | config shape: `views.swe3` / `views.swe4` or flat | parked | `views/registry.py` `DOC_TYPE_VIEWS` |
+| VW-2 | Views declare what they need; the runner builds only that part | debt | — | — | — | parked | `views/__init__.py`, `views/test_steps.py` |
+| VW-3 | Split `testSpecs`: `functionSteps` / `dynamicSteps` fill the slow columns | enhance | — | — | the names | parked | `views/test_specs.py` |
+| VW-4 | Remove `functionTestSpecs` / `dynamicBehaviourSpecs` | debt | — | — | — | parked | `config.defaults.json` |
+| VW-5 | An SWE.4 switch narrows the SWE.3 flowcharts, without a warning | issue | — | — | VW-4 | parked | `views/flowcharts.py` `_spec_scope_function_ids` |
+| VW-6 | `"utExport": false` is ignored under `--doc-type swe4` / `all` | issue | — | S | — | parked | `views/ut_export.py` |
+| VW-7 | `generate` defaults to `--doc-type all` (CLI only) | enhance | — | — | — | parked | `analyzer.py` |
+| VW-8 | Pre-parse summary: the views on or off, and what is built only because another view needs it | enhance | — | — | — | parked | `incremental/report.py` |
+| VW-9 | `config.defaults.json` ships the development profile | enhance | — | — | complete or fast as the default | parked | `config.defaults.json` |
 
-| ID | Item | Type | Status | Ref |
-|---|---|---|---|---|
-| RU-1 | Units whose interface ids start the same (`Map`, `Map2` in one group) share one count so no id is printed twice (`15df7c5`) — SWE3_WIKI says `<NN>` counts within the unit, SWE3_SPEC REQ-IT-04 says the id is unique. Keep → add a `Map`/`Map2` fixture; revert → accept duplicate ids. No id changes on the sample (229/229) | issue | decide | model_deriver.py `_iface_scope_key`, SWE3_WIKI Interface ID |
-| RU-2 | In a group or layer run a function called only from another layer reads as private (470d15c; S3-7's trap), so most description corrections save and print nowhere — 25 of 229 printed on the sample. R11 `shownIn` says where each text is printed. Confirm the rule is meant | issue | decide | SWE3_WIKI Public vs. private, review/catalog.py |
-| RU-3 | With `views.behaviourDiagram` on, the default `views.sequenceDiagrams.filterMode` (`skip_within_unit`, absent from config.defaults.json) draws a row only for a function called from another component that calls into another unit of its own; on the sample that is the 2 `CoreGateway` rows in Sample Core (fixture added 2026-10-03), `all_callers` draws one per external caller. Related: VW-9 | enhance | decide | behaviour_diagram/generator.py, api_*.sample_behaviour.example.json |
-| RU-4 | mmdc hung once for 61 min on the unit diagram of `Layer1.Diag\|ArmIntrinsics`; drew normally next run. A timeout now stops the whole process tree (`3e52f41`; `5cfc286` on v2), so a hang costs 60 s and one picture. Cause unknown | issue | open | utils.py `_run_mmdc`, core/subprocess_util.py |
-| RU-5 | Unit and struct/class/union descriptions are generated in Phase 2 and stored (REQ-PRE-01), not in the exporter / unit header view; same prompts and fallbacks; one text per record (a typedef row reads its record's). Confirm | debt | decide | model_deriver.py `_enrich_unit_and_struct_descriptions`, views/unit_headers.py |
-| RU-6 | doccheck v2's pair check (`66f7f97`) finds a SWE.3 call by the words "A calls B" in a Behaviour Description bullet, which the LLM writes and R6 lets a reviewer rewrite freely — a reworded bullet gives a false P1 "the specification calls X, which the design draws no arrow for". Keep the call at the front (R6 checks it) / leave it / change doccheck | issue | decide | tools/doccheck/pairing.py `_ARROW_RE`, review/override_service.py `apply_behaviour_override` |
+## Review & update
 
-## Review & update — follow-ups from the PR #70 review
-> Found reviewing PR #70 at `9b1f3c9` and left out of it on purpose; each becomes its own ticket. `RF-n` is the review's `Fn`. Line numbers are at `9b1f3c9`: where the code has moved, find it by the symbol.
+| Id | Item | Type | Pri | Effort | Waits on | Status | Where |
+|---|---|---|---|---|---|---|---|
+| RU-1 | `Map` and `Map2` share one interface-id count | issue | — | — | the develop owner | decide | `model_deriver.py` `_iface_scope_key` |
+| RU-2 | A function called only from another layer reads as private in a group run | issue | — | — | the develop owner | decide | SWE3_WIKI, `review/catalog.py` |
+| RU-3 | The default `filterMode` draws few behaviour rows | enhance | — | — | the develop owner | decide | `behaviour_diagram/generator.py` |
+| RU-4 | mmdc hung once for 61 min on one unit diagram | issue | — | — | — | open | `utils.py` `_run_mmdc` |
+| RU-5 | Unit and struct descriptions generated in Phase 2 and stored | debt | — | — | the develop owner | decide | `model_deriver.py` |
+| RU-6 | doccheck's pair check reads calls from reviewer-editable bullets | issue | — | — | the develop owner | decide | `tools/doccheck/pairing.py` |
+| RU-7 | Edit mode gaps: an orphaned correction cannot be deleted, no bulk write, SWE.4 read-only | enhance | — | — | — | open | REVIEW_UPDATE_API_SPEC §17 |
+| RU-8 | Small web gaps: `shownIn` unused, R8 `dot` fallback unused, no history for label corrections, `outline.ts` splits keys by prefix | debt | — | — | — | open | `pages/DocumentInspectorPage/` |
+| RU-9 | A huge document's render payload carries every flowchart's DOT | perf | — | — | a measure on a review-site document | open | `api/services/doc_render.py` |
+| RF-2 | Flowchart pictures: 50 renders per capture, copied baseline PNGs, renders after the job is done, not carried | issue | — | — | — | open | `review/render_queue.py`, `views/flowcharts.py` |
+| RF-3 | Cross-version reuse copies human text as LLM text | issue | — | — | — | open | `incremental/engine.py` |
+| RF-5 | A save takes two pooled connections and loads the whole model | perf | — | — | — | open | `review/override_service.py` |
+| RF-7 | Unit and struct descriptions made when nothing prints them | perf | — | — | — | open | `model_deriver.py` |
+| RF-8 | Upgrade-order release note (0009, 0014) | debt | — | S | — | open | `core/model_store.py` |
+| RF-11 | Review docs volume and duplication | debt | — | — | — | open | `docs/` |
+| RF-12 | `with TestClient(app)` runs startup on the configured database; 401 passes | issue | — | — | — | open | `tests/unit/test_review_api_contract.py` |
+| RF-13 | Two racy or slow tests | issue | — | S | — | open | `tests/unit/` |
+| RF-14 | About 80 source-grep checks break on renames | debt | — | — | — | open | `tests/` |
+| RF-15 | Nits from the PR #70 review | debt | — | — | — | open | see details |
 
-| ID | Item | Type | Status | Ref |
-|---|---|---|---|---|
-| RF-1 | A failure to load the corrections is swallowed, but the derivation record is still written: the LLM text is exported while R9 says up to date | issue | done 2026-10-05 -- Phase 3 leaves the views unstamped (stale) when it cannot load the corrections (2026-10-04), or when the model lacks a correction in force -- a Phase 2 `_reapply_corrections` failure (`carry_forward.corrections_missing`) | engine/run_views.py:196-220, engine/model_deriver.py:708-741 |
-| RF-2 | Flowchart pictures with `views.flowcharts` on: at most 50 renders per capture; an incremental Phase 3 copies the baseline PNG for unchanged functions; `_draw_pending_pictures` runs after the DOCX is built and the job is marked done; `render_jobs` are not carried to the next version | issue | open | review/render_queue.py:115, incremental/store.py:107, views/flowcharts.py:1488-1531 |
-| RF-3 | Cross-version reuse copies human text as if it were LLM text (v1 corrected, v2 orphaned, v3 reverted) -- breaks HANDOVER §4.8 | issue | open | incremental/engine.py:77, 137-175 |
-| RF-4 | `setup` does not stamp `alembic_version`, so a later `alembic upgrade head` fails with DuplicateColumn; the "blocked" hint points at that same failing command | issue | done 2026-10-04 -- setup stamps the head (proved on PostgreSQL: `alembic upgrade head` then a no-op), only over no stamp or a known revision from 0006 on (2026-10-04b); alembic/env.py no longer prints the password | tools/db_setup.py:167-200 |
-| RF-5 | A save uses two pooled connections, so the lock holder can time out when the pool is full; it loads all four model artifacts for one field; `patch_interface_tables` parses every file | perf | open | review/override_service.py:236, 241, 349, review/rerender.py:165 |
-| RF-6 | Re-exporting a version made before the merge loses its LLM unit and struct descriptions: nothing backfills them | issue | done 2026-10-01 — `analyzer.py setup` stores them from the version's own earlier output (`review/backfill.py`) | docx_exporter.py:819, views/unit_headers.py:75-89 |
-| RF-7 | Phase 2 generates unit and struct descriptions for SWE.4-only runs, for `unitHeaders: false`, and for header-only units | perf | open | model_deriver.py:1223-1290 |
-| RF-8 | Upgrade-order release note: without 0009 every generate fails; an API started before 0014 answers 500 on sign-in | debt | open | core/model_store.py:507, 584, api/middleware/auth.py |
-| RF-9 | Internal error text leaks: R5, R7, R9 and R10 are not wrapped in `_as_http`; `_version()` / `_connection()` sit outside the `try`; `_connection()` puts `str(exc)` in its 503 | issue | done 2026-10-04; a connection refused at `.connect()` too, through the 500 handler (2026-10-04b) | api/routes/text_overrides.py:113, 440-452, 639-641, 663-667, 693-698; api/main.py |
-| RF-10 | No size limit on correction text: a 5 MB `text` was accepted | issue | done 2026-10-04; a behaviour row's bullets together (2026-10-04b) | api/routes/text_overrides.py:65-90 |
-| RF-11 | Docs volume and duplication: drop `docs/REVIEW_UPDATE_REQUIREMENTS.md`, fold HANDOVER into the PR description and BACKLOG, trim DESIGN and API_SPEC | debt | open | docs/ |
-| RF-12 | `with TestClient(app)` runs the app's startup on the configured database, and the test accepts 401 as a pass | issue | open | tests/unit/test_review_api_contract.py:436 |
-| RF-13 | `test_render_timeout_stops_the_tree.py` is racy under load; `test_runner_never_hangs.py` needs the `slow` marker | issue | open | tests/unit/test_render_timeout_stops_the_tree.py:48, tests/unit/test_runner_never_hangs.py |
-| RF-14 | About 80 source-text grep checks break on renames elsewhere -- AST or behaviour tests would hold up better; `test_project_context_fits.py` belongs in a docs-lint step, not the unit suite | debt | open | tests/ |
-| RF-15 | Nits: `render_queue` uses no `begin_nested()` per job on PG; `set_entity_field` has no `project_id` filter; `schema.py` server defaults differ from 0010 for `is_orphaned` and `group_name`; 2 redundant indexes; `DB_SCHEMA.md` ER diagram errors; `clone.py` lacks `--end-of-options` and a hex check on `commit_sha`; `grant_access --all` defaults to admin and has an undefined `reviewer` role; `cascade._drop_overridden` counts orphans; `rerender` patches only the first copy; `carry_forward` keeps a stale `llm_text`; wrong docstring in `incremental/engine.py`; `_stamp_derivation` shares the capture transaction; `onboard --owner <unknown>` exits 2; `--sqlite` setup skips the column repair | debt | open | review/render_queue.py, api/db/postgres/schema.py, clone.py:199, review/carry_forward.py:324, incremental/engine.py:550-557, tools/grant_access.py |
+## Review and approval, Word files
 
-## Staged generation — long runs (2026-10-02)
-| ID | Item | Type | Status | Ref |
-|---|---|---|---|---|
-| SG-1 | Web **Resume** button on the Components panel. The route (`POST …/versions/{vid}/resume`) and `resume_action` exist; until then `analyzer.py resume --detach` on the server, which also finishes the web job | enhance | deferred (user) | web-app ComponentsPanel, api/routes/version_components.py |
-| SG-2 | A run's 7 components get documents only after Phase 2 has described every function of its layers — order the descriptions by the requested components, or describe the rest at `export` | enhance | parked (user) | engine/model_deriver.py |
-| SG-3 | Frozen code copies under `runs/` are never deleted (~10 MB per web run); a cleanup must not follow the copy's `node_modules` junction | debt | open | engine/core/frozen_run.py |
-| SG-4 | A web re-export still runs as the API's child and dies with it | issue | open | api/services/pipeline_runner.py `_run_reexport` |
-| SG-5 | `--detach` not proved on Linux; an API under systemd (default `KillMode=control-group`) or in a restarted container takes its background runs down | risk | open | docs/CLI_COMMANDS.md "A run that lasts days" |
+| Id | Item | Type | Pri | Effort | Waits on | Status | Where |
+|---|---|---|---|---|---|---|---|
+| RA-1 | Empty documents in the review queue | enhance | — | — | what "empty" means; hide, label or auto-approve | decide | `api/services/review_workflow.py` |
+| RA-2 | Design open questions 1–4 | input | — | — | answers | decide | REVIEW_APPROVE_DESIGN |
+| RA-3 | "My reviews" shows only the version on screen (`GET /reviews/mine` unused) | issue | — | S | — | open | web app |
+| RA-4 | In-process re-export quirks; `/runs` answers 403 where its neighbours answer 404 | debt | — | — | — | open | `pipeline_runner.py` |
+| WF-1 | `GET /jobs/{id}` has no `componentsFailed` | issue | — | S | — | open | `routes/jobs.py` |
+| WF-2 | Some Word-file messages are not in the mockup | input | — | — | wording | decide | `web-app/` |
+| WF-3 | A generation, resume's close or an unscoped re-export still store the whole version | issue | — | — | — | open | `engine/review/word_files.py` |
+| WF-4 | While one update runs, the banner shows only that row | enhance | — | — | a design answer | decide | `ReviewBars.tsx` |
+| WF-5 | Update time after each correction kind at review-site scale | perf | — | — | a measure | open | `engine/review/rewrite.py` |
 
-## SWE.2 — architecture
-| ID | Item | Type | Status | Ref |
-|---|---|---|---|---|
-| S2-1 | Feature-list derivation (§2.2.1) | enhance | open | SWE2_PLAN |
-| S2-2 | Resource / Config / Calibration data | input | blocked | SWE2_PLAN |
+## Staged generation
+
+| Id | Item | Type | Pri | Effort | Waits on | Status | Where |
+|---|---|---|---|---|---|---|---|
+| SG-1 | Web Resume button on the Components panel | enhance | — | S | — | deferred | `ComponentsPanel`, `routes/version_components.py` |
+| SG-2 | The requested components' documents wait for Phase 2 on every layer | enhance | — | — | — | parked | `model_deriver.py` |
+| SG-3 | Frozen code copies under `runs/` are never deleted | debt | — | S | — | open | `core/frozen_run.py` |
+| SG-4 | A web re-export runs as the API's child and dies with it | issue | — | — | — | open | `pipeline_runner.py` `_run_reexport` |
+| SG-5 | `--detach` not proved on Linux (systemd, containers) | risk | — | — | — | open | CLI_COMMANDS "A run that lasts days" |
+| SG-6 | Adding a layer re-parses every layer; `--llm-summarize` re-summarises the old ones | perf | — | — | — | open | `parser.py`, `tu_includes` |
+
+## Repositories
+
+| Id | Item | Type | Pri | Effort | Waits on | Status | Where |
+|---|---|---|---|---|---|---|---|
+| BB-1 | Bitbucket check T0 at the review site | input | — | — | the review site | blocked | BITBUCKET_SUPPORT |
+| BB-2 | Bitbucket later: replace a token (T7), a CA bundle (T8), a CLI token from the environment (T9) | enhance | — | — | BB-1 | open | BITBUCKET_SUPPORT |
+| BB-3 | A GitHub / GitLab token sits on git's command line (seen in the process list); Bitbucket already uses a header | issue | — | S–M | a test on a real repository | open | `git_cli._auth_url`, `incremental/clone.py` |
+
+## Web app
+
+| Id | Item | Type | Pri | Effort | Waits on | Status | Where |
+|---|---|---|---|---|---|---|---|
+| WA-1 | Function visibility end to end: three stores, none feeding the next; "Manage" disabled | issue | — | — | where hiding lives | decide | `job_functions`, `entity_versions.is_visible`, exporter `hidden` |
+| WA-2 | No user creation in the web app (CLI `analyzer.py user` only); a pending invite never becomes active | enhance | — | — | — | open | `api/routes/users.py` |
+| WA-3 | Project discovery, Archive, Profile, Help, SSO, forgot password | enhance | — | — | — | open | shell |
+| WA-4 | A project Settings page: architecture, build config and data dictionary cannot change after creation | enhance | — | L | — | open | `pages/` |
+| WA-5 | Config import keeps the first core's files only; no `compileCommands` field | enhance | — | — | — | open | wizard |
+| WA-6 | Overview: no activity log | enhance | — | — | — | open | Overview |
+| WA-7 | A scoped run's version: Compare shows every other component as removed | enhance | — | — | carry the rest, or compare the scope only | decide | `routes/compare.py` |
+| WA-8 | Tagging a commit makes an empty draft version | issue | — | — | should a run adopt the tag | decide | versions |
+| WA-9 | Excel data dictionaries accepted, the engine reads CSV only | issue | — | S | convert on upload, or CSV only | decide | upload |
+| WA-10 | Run options: `no_llm` and a data dictionary in the run dialog (`mode`: NW-3) | enhance | — | S | — | open | `RunAnalysisModal.tsx` |
+| WA-11 | Duplicate project names allowed; a rename is not recorded | enhance | — | — | refuse duplicates? | decide | `routes/projects.py` |
+| WA-12 | `swagger.json` behind the code | debt | — | S | — | open | `api/` |
+| WA-13 | "Run analysis" banner on a model-first version; Phase 3 progress drops back per component | issue | — | — | — | open | Documents, run card |
+| WA-14 | The Subbar chip does not follow an older version's document | issue | — | S | — | open | `components/shell/Subbar` |
+| WA-15 | Lint debt (8 errors) | debt | — | S | — | open | `NewProjectPage`, `ProjectDetailPage`, `ui/` |
+| WA-16 | UI review 2026-09-30 leftovers: #6, #20, #22–24, #34–35, #42, #43, #48–50 | debt | — | — | a check against the review list | open | `web-app/` |
+| WA-17 | Mockups: only `projects-empty.html` carries the product name | debt | — | S | — | open | `docs/ui-mockups/` |
+| WA-18 | Feature folders (`src/features/<domain>/`) | debt | — | — | the global vs local split settles | deferred | `ui-dev` skill |
+
+## SWE.2
+
+| Id | Item | Type | Pri | Effort | Waits on | Status | Where |
+|---|---|---|---|---|---|---|---|
+| S2-1 | Feature-list derivation (§2.2.1) | enhance | — | — | — | open | SWE2_PLAN |
+| S2-2 | Resource / Config / Calibration data | input | — | — | the source | blocked | SWE2_PLAN |
+
+---
+
+## Details
+
+**NW-1** Today: Cancel only; the job's `paused` status serves only `pause_after_phase1` (the run
+dialog's "Pause after Phase 1" is disabled: the runner ignores it); `analyzer.py resume` carries on
+Phases 3–4; Phase 2's LLM answers are cached. Doubts: survive an API restart? who may pause? release the
+writer lock? auto-pause after N failures — what N? Approach: a flag checked at each item and LLM call →
+a clean stop that records where; resume = the same command, the cache answers the finished items; not an
+OS-level suspend.
+
+**NW-2** Today `approve()` checks the state and the Word file only; bulk approval goes through it.
+Doubts: base = the previous version's document, SWE.3 before its SWE.4, or both? "reviewed" = approved?
+admin override? bulk: skip or refuse? a run with no baseline? Approach: one check in `approve()`, 409
+`BASE_NOT_REVIEWED` naming the base; the web disables Approve with the reason.
+
+**NW-3** The API takes `mode: "full"` (CLI `generate --full`), but the run dialog never sends it, and
+"Compare against: None" means auto — the server picks the nearest earlier version as the baseline. So the
+web cannot force a fresh run. Doubts: a typed SHA beyond the list? a commit that already has a version?
+carry corrections? Approach: a "Fresh run" switch that sends `mode: "full"` and ticks every component.
+
+**NW-4** `delete_project` refuses while a run is alive and removes the project's rows and workspace.
+Not checked: engine tables keyed by version (14 foreign keys reach `projects`, 44 `ON DELETE CASCADE`),
+frozen code copies, approved Word copies, output folders, live-log lines (mixed per process: cleanup by
+age), memberships and grants. Doubts: hard delete or archive (approved documents are audit records)? keep
+the shared caches? Approach: one test that builds a project, deletes it, and asserts no row in any table
+(listed from the schema) and no folder is left; fix what it finds; once on PostgreSQL.
+
+**NW-5** `ANALYZER_DATA_ROOT` and `ANALYZER_WORKSPACES_DIR` move the folders (environment only), but the
+database stores absolute paths (`versions.base_path`, read in about 20 places; `approved_docx_path`).
+Doubts: same server or another one? Windows to Linux? Approach: two keys in `config.local.json`; paths
+stored relative to their root, with a migration; `doctor` checks every stored path.
+
+**NW-6** The compare page carries texts, not slots. Its section Edit still writes `document_sections`,
+which only the fallback page reads — move it onto corrections. Doubts: the newer side only? flowchart
+labels too? recompute the diff after a save? Approach: the newer side's slots in each compare row, from
+the reader's payload builder; reuse `SlotText` behind Edit.
+
+**NW-7** Each function stores its file and `startLine` / `endLine`; the workspace is a git clone; the web
+view reads the model only. Doubts: old commits in a shallow clone? who may see the source? a line per box
+(the stored graph has none)? Approach: an API route answering `git show <commit>:<file>`'s lines,
+size-capped; a Source panel on the flowchart card.
+
+**NW-8** Each speed-up is proved to give the same output (PIPELINE_SPEED_PLAN). Doubts: lanes stable at
+the review site now the prompts are capped? `parseWorkers` against memory? several calls on one lane
+against `rateLimitSeconds`? an off switch once they are the defaults (today an empty block is the old
+path). Approach: after one review-site run with them on and the same output, make them the defaults.
+
+**LG-1** Today the files take DEBUG already (`logs/run_<date>.log`, the live log), but a web run's text
+copy sits inside its frozen code copy, a successful GET leaves no line, the parse has no line per file and
+no line names its thread. Plan: thread, date and ms on every file line; `analyzer.py logs --version-id X
+[--job J] [--out file]` from the live log; a DEBUG line per request, parsed file, LLM call (stage, lane,
+thread, prompt chars, seconds, outcome) and command started (exit code). Never logged: keys, tokens,
+prompt text, source code. Doubts: log polling GETs? keep a run's log past `logs.keepDays`?
+
+**LG-2** Unit descriptions, input / output names and flowchart labels are fitted to
+`llmServer.maxContextTokens`; the struct prompt is not. Approach: the fields up to the limit, then "… and
+N more". Note: at 127,488 tokens (≈ 500k characters) no cap cuts anything; if the 502 lines show big
+prompts, lower it to about the smallest failing size ÷ 4 × 0.8.
+
+**SH-5** `entity_hashes` / `_type_keys` stay bare qualified names while the dictionary is layer-keyed: two
+layers defining one type share a hash (the last wins), so a narrowed parse can miss a change in the
+other. Needs `typeUsers` keyed by layer too — `impact_set` joins hash keys to it.
+
+**SH-7** `--create-version` is the only writer, so `commit_sha` is NULL for most versions; `generate`
+demands `--commit` and `reexport` resolves the checkout without it. Fill it in `persist_run_outcome`.
+
+**SH-8** PIL raises above 179M px; `_maybe_slice_tall_png` catches that as "cannot open" and skips — the
+picture too big to slice is the one that needs it.
+
+**IN-4** The prompt includes the top 5 users only, so a change to the 6th still regenerates. Harmless
+with 1–2 users per global; tying invalidation to the prompt's slice would be fragile.
+
+**IN-6** Sample, project B: `3ee7fe0` → `9d4dd0f` adds `multiply` (Math/Utils.cpp); the unchanged
+App/Main.cpp calls it. The incremental v1.1 publishes no Math function, a full run does. Suspect the
+narrowed parse: Main.cpp's call is not re-resolved. Repro: `v1.1` vs `v1.1-full`, `analyzer_ui` project
+`p9d1d0c4f`.
+
+**S3-10** A symbol declared in a unit's own files is listed whether or not the unit uses it; the usage
+test applies only to orphan-header symbols. The review said "of the unit AND used by the unit".
+
+**S3-11** `views/behaviour_diagram.py` pairs the diagrams with the DIRECT external callers by position,
+but the selector also counts callers of callers: row `coreAdd <- Cross|Hub|hubCompute` carries
+runNestedFolderTests's diagram. Fix: return the caller each diagram was drawn for and key the row on it.
+
+**RV-1 … RV-7** RV-1: a static data member is a global, `x++` and `s.f++` count as writes; the member is
+listed inside its class's row. RV-3: the container diagram fits the text area. RV-4: each orphan header
+has ONE owner unit that lists every used symbol. RV-5: the companion header belongs to its unit. RV-6:
+the unit's published globals as boxes inside the component, no edges (REQ-UD-09). RV-7: struct, class and
+union listed, nested types inside their parent.
+
+**S4-3** Table B's Generation Method today is `Analysis of Requirements` only; Equivalence Class and
+Boundary Value analysis, and input sizing for branch coverage, are the deferred pass.
+
+**UE-1** The target's `cases` array is one object per test case; v1 emits one per function. Needs the
+per-path split (`expected.returns[].step` is the bridge), input values rather than ranges, and
+structural path conditions.
+
+**RU-1 … RU-6** What to do either way: [REVIEW_UPDATE_HANDOVER §8](design/REVIEW_UPDATE_HANDOVER.md#8-waiting-on-the-develop-owner).
+
+**RF-n** The PR #70 review's `Fn`, at `9b1f3c9`. RF-2: at most 50 renders per capture; an incremental
+Phase 3 copies the baseline PNG; `_draw_pending_pictures` runs after the job is done; `render_jobs` are
+not carried. RF-3: v1 corrected, v2 orphaned, v3 reverted — breaks HANDOVER §4.8. RF-5: the lock holder
+can time out on a full pool; `patch_interface_tables` parses every file. RF-11: drop
+`REVIEW_UPDATE_REQUIREMENTS.md`, fold the HANDOVER, trim DESIGN and API_SPEC. RF-13:
+`test_render_timeout_stops_the_tree.py` racy, `test_runner_never_hangs.py` needs `slow`. RF-15:
+`render_queue` without `begin_nested()` on PG; `set_entity_field` without a `project_id` filter;
+`schema.py` defaults differ from 0010; 2 redundant indexes; `DB_SCHEMA.md` ER errors; `clone.py` without
+`--end-of-options` and a hex check; `grant_access --all` defaults to admin; `cascade._drop_overridden`
+counts orphans; `rerender` patches the first copy only; `carry_forward` keeps a stale `llm_text`;
+`onboard --owner <unknown>` exits 2; `--sqlite` setup skips the column repair.
+
+**WF-2** "Open <doc> to try again.", "Open X to update it.", "Can't tell if this Word file is up to
+date.", "Checking its Word file…", "2 pictures being drawn", "Update after the run on v1.2.0 ends.", the
+rename's "…keep their name until their Word files are rebuilt."

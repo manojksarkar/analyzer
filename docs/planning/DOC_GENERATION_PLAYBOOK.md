@@ -1,7 +1,7 @@
 # Document-Generation Playbook
 
 > How ArtiFex generates each ASPICE document. This is the shared approach behind every doc-type
-> ([SWE2_PLAN](SWE2_PLAN.md), [SWE4_PLAN](SWE4_PLAN.md), and later SYS.2 / SWE.1 / SYS.1). Each plan
+> ([SWE2_PLAN](SWE2_PLAN.md), [SYS2_PLAN](SYS2_PLAN.md), and later SWE.1 / SYS.1; SWE.4 is built — its contract is [SWE4_WIKI](../spec/SWE4_WIKI.md)). Each plan
 > describes only what is specific to it and points back here for the common method.
 
 ## One model, every document

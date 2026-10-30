@@ -50,12 +50,12 @@ see the last row.
 | `docs/planning/` | **Leadership-facing** (shared with the director) | **Pointed & slim.** One page where possible. Milestones / key decisions / remaining work. **No** person-day estimates, task numbers, or engineering detail. |
 | `PROJECT_CONTEXT.md` (repo root) + `project-context/` | **Agent-facing** source of truth (you/other agents) | **Descriptive & deep, no polish.** `PROJECT_CONTEXT.md` is the **index** — current state, reading guide, the file map — and CLAUDE.md imports it, so it stays short (≤ 300 lines). The detail lives once, in `project-context/`: topic files (the current truth per area) and `history/` (the dated `> Updated:` log). Keep it current after every meaningful change. |
 | `CLAUDE.md`, `AGENTS.md` (root) | **Agent operating instructions** | **Directive.** How agents work in this repo; edit deliberately, they steer every session. |
-| `docs/BACKLOG.md` | Engineering — known issues / burn-down | **Pointed.** Terse list of issues/tasks, not prose. |
-| `docs/spec/` (`SWE3_SPEC`, `SWE4_SPEC`, `TEST_INVENTORY`, …) | Engineering — precise contracts | **Structured & exact.** Derivation logic, tables, rules. Unambiguous over readable. |
+| `docs/BACKLOG.md` | Engineering — **the one list of open work** (issues, enhancements, forward plans) | **Tables.** One table per area, one short line per cell, open items only; longer text in its Details section, by id. A done item leaves the table. |
+| `docs/spec/` (`SWE3_SPEC`, `SWE4_WIKI`, `TEST_INVENTORY`, …) | Engineering — precise contracts | **Structured & exact.** Derivation logic, tables, rules. Unambiguous over readable. |
 | `docs/design/` (`DESIGN.md`) | Engineering — how/why | **Descriptive.** Prose + diagrams, explains rationale + the DOCX export walkthrough. |
-| `docs/planning/*_PLAN.md` (`SWE2_PLAN`, `SWE4_PLAN`, …) | Leadership + eng — per-doc-type plan | **Pointed.** Only what's specific to that doc type; point back to the playbook for the shared method. |
+| `docs/planning/*_PLAN.md` (`SWE2_PLAN`, `SYS2_PLAN`, …) | Leadership + eng — per-doc-type plan | **Pointed.** Only what's specific to that doc type; point back to the playbook for the shared method. |
 | `docs/production-redesign/NN-*.md` | Eng — ordered study/runbook series | **Descriptive**, numbered sequence. |
-| **Subsystem docs** — `api/`, `web-app/`, `engine/`, `tools/` (their `README.md`, `PROJECT_CONTEXT.md`, `TESTING.md`, `*_PLAN.md`, `FLOW.md`) | **Yours to maintain**, paired with that subsystem's role for accuracy | **Same conventions as above** (README = run/use that component; nested `PROJECT_CONTEXT.md` = scoped agent-facing context). Engineering *rules* for a subsystem live in that role's skill (e.g. `web-app/` → `ui-dev`), not a doc — but the doc upkeep is yours. |
+| **Subsystem docs** — `api/`, `web-app/`, `engine/`, `tools/` (their `README.md`, `PROJECT_CONTEXT.md`, `TESTING.md`, `FLOW.md`) | **Yours to maintain**, paired with that subsystem's role for accuracy | **Same conventions as above** (README = run/use that component; nested `PROJECT_CONTEXT.md` = scoped agent-facing context). Engineering *rules* for a subsystem live in that role's skill (e.g. `web-app/` → `ui-dev`), not a doc — but the doc upkeep is yours. |
 
 Rules that fall out of this:
 - **The README hub is the index — keep it correct.** Adding, moving, or renaming any doc means updating the
@@ -77,22 +77,20 @@ Rules that fall out of this:
   keep their shape. The review & update set is REQUIREMENTS (`docs/`) → SPEC + API_SPEC (`docs/spec/`) →
   DESIGN + HANDOVER (`docs/design/`); the HANDOVER is what a merger reads first. The project context's file
   sizes, the index's links and CLAUDE.md's import of it: `tests/unit/test_project_context_fits.py`.
-- **Two kinds of plan — keep them apart.** `docs/planning/*_PLAN.md` are *doc-type* plans (how we generate an
-  ASPICE output document; leadership-facing). A **subsystem `PLAN.md`** (`api/PLAN.md`, `web-app/PLAN.md`) is
-  that subsystem's *engineering* plan — forward build direction/status beside the code. It is **forward work
-  only**: not a `ROADMAP` (leadership milestones) or `BACKLOG` (defects) duplicate. Keep it current (mark done,
-  surface remaining); a subsystem with no forward work gets no plan, and a finished plan left as-is is rot.
+- **One list of open work.** Every open item — defect, enhancement, a subsystem's forward work — is a row
+  in `docs/BACKLOG.md`. There are no subsystem `PLAN.md` files (the ones in `engine/`, `api/` and `web-app/`
+  were folded into BACKLOG on 2026-10-30): a second list drifts. `docs/planning/*_PLAN.md` stay: they are
+  *doc-type* plans for documents not built yet (leadership-facing); once a document is built, its plan goes
+  and its contract (`docs/spec/`) is the reference.
 
 ## 3. File & folder naming
 
-- **`UPPER_SNAKE_CASE.md`** for specs, plans, and root/context docs: `SWE4_SPEC.md`, `SWE2_PLAN.md`,
+- **`UPPER_SNAKE_CASE.md`** for specs, plans, and root/context docs: `SWE3_SPEC.md`, `SWE2_PLAN.md`,
   `PROJECT_CONTEXT.md`, `BACKLOG.md`, `ROADMAP.md`.
 - **`NN-kebab-title.md`** (zero-padded numeric prefix) for an *ordered* series meant to be read in sequence:
   `01-technology-selection-study.md`, `02-database-design-study.md`.
 - **The project context:** topic files `project-context/UPPER_SNAKE.md`; the dated log
   `project-context/history/NN-<date of its first entry>.md`, numbered in time order.
-- **`<subsystem>/PLAN.md`** for a subsystem's engineering plan — same name across subsystems (`api/PLAN.md`,
-  `web-app/PLAN.md`), not verbose variants like `IMPLEMENTATION_PLAN.md`.
 - Put the doc in the folder that matches its audience (§1), not next to the code.
 - New doc-type work: `docs/spec/<PROC>_SPEC.md` for the contract, `docs/planning/<PROC>_PLAN.md` for the plan.
 

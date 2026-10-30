@@ -847,7 +847,7 @@ Open items, both pre-existing, are listed in
 reading the flowcharts view's output directory and silently emptying every Test Step if that view
 did not run. What the HTTP API does not do yet (no orphan clean-up, no bulk write, no slot keys in
 the page payload) is in [REVIEW_UPDATE_API_SPEC §17](../spec/REVIEW_UPDATE_API_SPEC.md#17-not-yet-implemented).
-The web app has no review screen yet (`web-app/PLAN.md`).
+The web app's screen is the document reader's edit mode (since 2026-10-01); what it does not do yet is BACKLOG RU-7.
 
 ---
 

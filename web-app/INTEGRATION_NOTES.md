@@ -20,7 +20,7 @@ In the real `api/` the upload is stored on disk (`workspaces/uploads/<id>/`), so
 each core's files reach the run as `cores.<name>` (its macros, dictionary and compile commands); a job's
 own `data_dict_id` is only what the Run modal names (none today). Until 2026-09-29 neither step reached a
 run: nothing passed the dictionary on, and the runner looked for its bytes in memory. The engine reads a
-data dictionary as CSV only, although the upload also accepts `.xlsx`/`.xls` (see [PLAN.md](PLAN.md)).
+data dictionary as CSV only, although the upload also accepts `.xlsx`/`.xls` (BACKLOG WA-9).
 
 **A config file in and out** ([api/services/project_config.py](../api/services/project_config.py)):
 **Import config** (top of step 1, above the fields it fills) posts the file's text to
@@ -131,7 +131,7 @@ Snake_case in/out; per-project role via `my_role`. Full shapes: the `api/` route
 Actions** is built from the latest job and the versions — there is no activity log, so reviews and
 assignments do not appear; **Function Visibility** shows the latest run's real counts, and **Manage** is
 disabled (no visibility editor). Several secondary actions are info-toasts/no-ops (Archive, Request
-Access, Forgot password, SSO, Profile, Help). See the per-page TODO column below and [PLAN.md](PLAN.md).
+Access, Forgot password, SSO, Profile, Help). See the per-page TODO column below and [docs/BACKLOG.md](../docs/BACKLOG.md) "Web app".
 
 ## Wire-format mismatches (handled in mappers)
 

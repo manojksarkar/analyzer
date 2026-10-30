@@ -1,7 +1,7 @@
 # UT Export Spec — unit-test JSON
 
 Update this doc first when changing UT-export logic, then code + tests.
-Companion: [SWE4_WIKI](SWE4_WIKI.md) (what the specs mean) · Plan: [engine/PLAN.md](../../engine/PLAN.md)
+Companion: [SWE4_WIKI](SWE4_WIKI.md) (what the specs mean) · Open items: [BACKLOG](../BACKLOG.md) UE-1 … UE-3
 
 **Current understanding** of the target format and how each field is derived from the ArtiFex model.
 Items marked **?** are not settled yet; see Open items.

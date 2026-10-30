@@ -1,7 +1,7 @@
 # SWE.3 Design Spec — Software Detailed Design
 
 Update this document first when changing any SWE.3 logic, then update the code and tests to match.
-Companion: the SWE.4 unit test spec — [SWE4_SPEC.md](SWE4_SPEC.md).
+Companion: the SWE.4 unit test spec — [SWE4_WIKI.md](SWE4_WIKI.md).
 
 Rules describe what must appear in the final output (DOCX and intermediate artifacts read by the exporter).
 They are independent of implementation — they say **what**, not **how**.
