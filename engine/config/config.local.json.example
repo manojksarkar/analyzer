@@ -102,6 +102,15 @@
     "includePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include"
   },
 
+  // Where this server keeps each project's workspace: its checkouts, every version's documents
+  // and diagrams, the approved copies. Absolute, or relative to the installation. Not set:
+  // <installation>/workspaces. The environment's ANALYZER_WORKSPACES_DIR wins. Moving the folder:
+  // stop the server, move it, set this, start again -- paths the database stored under the old
+  // folder are found under the new one (`analyzer.py doctor` lists any that are not).
+  "paths": {
+    "workspaces": null
+  },
+
   // This branch's speed-ups (docs/design/PIPELINE_SPEED_PLAN.md), all of them here. Each one as
   // written is develop's way: copied as it is, a server runs exactly as develop does. Change a key
   // to use that speed-up. None of them changes a document. A run's log says at its start which it

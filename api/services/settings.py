@@ -103,7 +103,17 @@ class Settings(BaseSettings):
     @property
     def workspaces(self) -> Path:
         """Absolute path to the per-project workspaces directory."""
-        return self.analyzer_workspaces_dir or (self.analyzer_repo_root / "workspaces")
+        if self.analyzer_workspaces_dir:
+            return self.analyzer_workspaces_dir
+        # `paths.workspaces` in config.local.json: where the engine looks too (core.paths).
+        try:
+            from ..db.session import _engine_on_path
+            _engine_on_path()
+            from core.paths import configured_workspaces
+            conf = configured_workspaces()
+        except Exception:                                   # noqa: BLE001 - the default, as before
+            conf = None
+        return Path(conf) if conf else (self.analyzer_repo_root / "workspaces")
 
 
 @lru_cache

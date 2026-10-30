@@ -1183,6 +1183,23 @@ detached run uses the database its starter resolved (`DATABASE_URL`), and record
 (`--config`, `--source`) as absolute paths, so `resume` can repeat them from anywhere. Other versions are not held up — but two runs that both use the LLM gateway share its
 ~1 call / 3 s limit, so run one at a time.
 
+## Moving the workspaces
+
+Every project's workspace -- its checkouts, each version's documents and diagrams, the copies kept
+at approval -- is under one folder: `<installation>/workspaces` unless set. To put it elsewhere
+(another disk, or another server with the database):
+
+1. Stop the API and any background run.
+2. Move the `workspaces` folder.
+3. In `engine/config/config.local.json`, set `"paths": {"workspaces": "D:/artifex/workspaces"}`
+   (absolute, or relative to the installation). `ANALYZER_WORKSPACES_DIR` still wins when set.
+4. Start again, then `python analyzer.py doctor`: its **stored paths** line counts the approved
+   copies and version checkouts it finds, and names any it cannot.
+
+The database is not rewritten. A path it stored under the old folder (Windows or Linux) is looked
+for under the new one when it is read. A checkout that is missing is cloned again when a run needs
+it. The model, output, logs and caches (the data root) move only with `ANALYZER_DATA_ROOT` for now.
+
 ## When a run stops
 
 | Message | What to do |

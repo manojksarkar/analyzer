@@ -632,7 +632,8 @@ def _load_inputs_from_db(config: EngineConfig):
                     "is re-rendered so no carried-forward flowchart goes stale")
     functions, comps, units = _apply_scope(
         functions, config.components, config.component, _units)
-    meta = ProjectMeta(base_path=(row.base_path if row else "") or "",
+    from core.paths import rebase_stored_path              # the workspaces may have moved (NW-5)
+    meta = ProjectMeta(base_path=(rebase_stored_path(row.base_path) if row else "") or "",
                        project_name=(row.project_name if row else "") or "")
     _scope = ""
     if comps:

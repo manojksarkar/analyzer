@@ -37,7 +37,7 @@ def workspaces_root() -> Path:
     """Per-project workspaces: `ANALYZER_WORKSPACES_DIR`, else <repo>/workspaces. A run started
     with `--detach` works from a frozen copy of the code, so its repo root is that copy -- the
     workspaces it writes, and these lookups read, are this installation's (core/frozen_run.py)."""
-    return _get_settings().analyzer_workspaces_dir or (_REPO_ROOT / "workspaces")
+    return _get_settings().workspaces
 _log = logging.getLogger(__name__)
 
 KEY_SEP = "|"

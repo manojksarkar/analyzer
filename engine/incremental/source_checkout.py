@@ -109,8 +109,10 @@ def locate_or_restore(project_id: str, version_id: str, *,
 
     # 2. where THIS version was actually generated from -- covers a short-SHA folder name and
     #    another working copy on the same machine in one step
-    if _at(row.base_path, commit):
-        return SourceCheckout(row.base_path, "base_path")
+    from core.paths import rebase_stored_path              # the workspaces may have moved (NW-5)
+    stored = rebase_stored_path(row.base_path)
+    if _at(stored, commit):
+        return SourceCheckout(stored, "base_path")
 
     # 3. a short-SHA folder in this workspace when base_path was never recorded
     try:

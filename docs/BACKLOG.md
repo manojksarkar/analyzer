@@ -19,7 +19,7 @@ Order: NW-2 → NW-5 → NW-8 → NW-7 → NW-1 → NW-3 (priority, then depende
 | NW-1 | Pause and resume a run within a phase; then pause by itself after N LLM failures in a row | enhance | P2 | L | — | open | `pipeline_runner.py`, `core/progress.py`, `llm_core/client.py` |
 | NW-2 | Approve a document only when its base document is reviewed | enhance | P1 | S–M | what "base" means | decide | `review_workflow.py` `approve()` |
 | NW-3 | Fresh run (no baseline) for any commit, from the web | enhance | P3 | S | — | open | `RunAnalysisModal.tsx`, `routes/jobs.py` `mode` |
-| NW-5 | Configurable output path and workspace root (a movable installation) | enhance | P1 | M–L | — | open | `core/paths.py`, `api/services/settings.py` |
+| NW-5 | Movable installation: the workspaces are done (2026-10-31); the data root (model, output, logs, caches) is left | enhance | P1 | M | a decision: where a background run then finds config.local.json | decide | `core/paths.py`, `core/frozen_run.py` |
 | NW-7 | The function's source beside its flowchart, for review | enhance | P2 | M | — | open | `pages/DocumentInspectorPage/`, a new API route |
 | NW-8 | Parse workers and several LLM calls at once as the default | enhance | P2 | S | a review-site run with them on; LG-2 | open | `core/config.py` `speedup_settings` |
 
@@ -208,10 +208,15 @@ admin override? bulk: skip or refuse? a run with no baseline? Approach: one chec
 web cannot force a fresh run. Doubts: a typed SHA beyond the list? a commit that already has a version?
 carry corrections? Approach: a "Fresh run" switch that sends `mode: "full"` and ticks every component.
 
-**NW-5** `ANALYZER_DATA_ROOT` and `ANALYZER_WORKSPACES_DIR` move the folders (environment only), but the
-database stores absolute paths (`versions.base_path`, read in about 20 places; `approved_docx_path`).
-Doubts: same server or another one? Windows to Linux? Approach: two keys in `config.local.json`; paths
-stored relative to their root, with a migration; `doctor` checks every stored path.
+**NW-5** Done 2026-10-31: `paths.workspaces` in config.local.json (the environment's
+`ANALYZER_WORKSPACES_DIR` still wins), read by the engine (`core.paths.workspaces_root`) and the API
+(`settings.workspaces`); a stored path (an approved copy, `versions.base_path`) is found under today's
+workspaces root when it was stored under another (`rebase_stored_path`, Windows or Linux separators);
+`analyzer.py doctor` counts what it finds; the move is in CLI_COMMANDS "Moving the workspaces". Left:
+the data root -- `model/`, `output/`, `logs/`, the caches -- moves only with `ANALYZER_DATA_ROOT`. A config
+key for it needs a decision: a background run finds config.local.json THROUGH the data root
+(`core.config.local_config_path`), so the data root and the installation would have to come apart.
+Same server or another, Windows to Linux: both work for the workspaces.
 
 **NW-7** Each function stores its file and `startLine` / `endLine`; the workspace is a git clone; the web
 view reads the model only. Doubts: old commits in a shallow clone? who may see the source? a line per box
