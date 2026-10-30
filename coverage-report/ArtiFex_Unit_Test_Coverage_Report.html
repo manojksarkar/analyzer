@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ArtiFex — Unit Test Coverage Report</title>
+<style>
+  @page { size: A4; margin: 18mm 18mm 16mm 18mm; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: #1f2933; font-size: 10.5pt; line-height: 1.45; margin: 0; }
+  h1 { font-size: 19pt; margin: 0 0 2pt; color: #0b3c5d; }
+  .date { color: #52606d; margin-bottom: 14pt; }
+  h2 { font-size: 12pt; color: #0b3c5d; margin: 16pt 0 6pt; border-bottom: 1px solid #d9e2ec; padding-bottom: 3pt; }
+  .kpis { display: flex; gap: 12pt; margin: 6pt 0 6pt; }
+  .kpi { flex: 1; border: 1px solid #d9e2ec; border-radius: 6pt; padding: 10pt 12pt; background: #f5f8fb; }
+  .kpi .v { font-size: 24pt; font-weight: 600; color: #0b3c5d; }
+  .kpi .l { color: #52606d; }
+  table { width: 100%; border-collapse: collapse; margin-top: 4pt; }
+  th, td { text-align: left; padding: 5pt 8pt; border-bottom: 1px solid #e4e7eb; }
+  th { background: #0b3c5d; color: #fff; font-weight: 600; }
+  td.num, th.num { text-align: right; width: 22%; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  .bar { display: inline-block; height: 7pt; background: #2f80c3; border-radius: 2pt; vertical-align: middle; margin-right: 6pt; }
+  .muted { color: #52606d; }
+  ul { margin: 4pt 0 0 14pt; padding: 0; }
+  li { margin-bottom: 3pt; }
+</style>
+</head>
+<body>
+  <h1>ArtiFex — Unit Test Coverage Report</h1>
+  <div class="date">30 October 2026</div>
+
+  <h2>Summary</h2>
+  <div class="kpis">
+    <div class="kpi"><div class="v">68%</div><div class="l">Backend (analysis engine and API server)</div></div>
+    <div class="kpi"><div class="v">77%</div><div class="l">Web application</div></div>
+  </div>
+  <div class="muted">Coverage is the share of the code that the automated unit tests exercise.</div>
+
+  <h2>Results by component</h2>
+  <table>
+    <tr><th>Component</th><th class="num">Coverage</th></tr>
+    <tr><td>Review and update of documents</td><td class="num"><span class="bar" style="width:90px"></span>90%</td></tr>
+    <tr><td>Core services</td><td class="num"><span class="bar" style="width:82px"></span>82%</td></tr>
+    <tr><td>API server</td><td class="num"><span class="bar" style="width:79px"></span>79%</td></tr>
+    <tr><td>Web application</td><td class="num"><span class="bar" style="width:77px"></span>77%</td></tr>
+    <tr><td>Code views</td><td class="num"><span class="bar" style="width:71px"></span>71%</td></tr>
+    <tr><td>Incremental generation</td><td class="num"><span class="bar" style="width:71px"></span>71%</td></tr>
+    <tr><td>C++ parsing</td><td class="num"><span class="bar" style="width:64px"></span>64%</td></tr>
+    <tr><td>Behaviour diagrams</td><td class="num"><span class="bar" style="width:63px"></span>63%</td></tr>
+    <tr><td>Model derivation and AI-written text</td><td class="num"><span class="bar" style="width:57px"></span>57%</td></tr>
+    <tr><td>Word document export</td><td class="num"><span class="bar" style="width:42px"></span>42%</td></tr>
+    <tr><td>Flowcharts</td><td class="num"><span class="bar" style="width:33px"></span>33%</td></tr>
+    <tr><td>Command-line interface</td><td class="num"><span class="bar" style="width:15px"></span>15%</td></tr>
+  </table>
+
+  <h2>Test results</h2>
+  <table>
+    <tr><th>Suite</th><th class="num">Tests</th><th>Result</th></tr>
+    <tr><td>Backend</td><td class="num">about 7,600</td><td>All passed except one timing check</td></tr>
+    <tr><td>Web application</td><td class="num">721</td><td>All passed</td></tr>
+  </table>
+
+  <h2>Notes</h2>
+  <ul>
+    <li>Word document export, flowcharts and the command-line interface are also exercised by end-to-end tests and by tests that start them as separate programs; these are not included in the figures, so their actual coverage is higher than shown.</li>
+    <li>Internal developer tools are excluded.</li>
+    <li>File-by-file detail is available on request.</li>
+  </ul>
+</body>
+</html>
