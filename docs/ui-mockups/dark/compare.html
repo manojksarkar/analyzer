@@ -215,6 +215,20 @@
   /* Rows */
   .doc-row:hover { background: rgba(255,255,255,.035); }
   .doc-row.row-selected { background: rgba(29,123,255,.10); }
+
+  /* Review & update from the compare page (BACKLOG NW-6, 2026-11-02): the Current side's
+     LLM-written texts are corrected as in documents.html's edit mode; the Reference side never. */
+  .ed { display:block; border-radius:3px; outline:1px solid transparent; outline-offset:2px; transition:outline-color .1s, background .1s; }
+  .ed.corrected::before { content:''; display:inline-block; width:6px; height:6px; border-radius:50%; background:#1a6ce6; margin-right:6px; vertical-align:2px; }
+  body.editing #canvas-current .ed { outline:1px dashed #2d4a80; cursor:text; background:#1c1e23; position:relative; padding-right:22px; }
+  body.editing #canvas-current .ed:hover { outline:1px solid #1d7bff; background:#1b2638; }
+  body.editing #canvas-current .ed:focus { outline:2px solid #1d7bff; background:#1c1e23; }
+  body.editing #canvas-current .ed::after { content:'edit'; position:absolute; top:1px; right:2px; font:normal 15px/1 'Material Symbols Outlined'; font-feature-settings:'liga'; color:#979ca7; pointer-events:none; }
+  body.editing #canvas-current .ed:hover::after { color:#6aa9ff; }
+  body.editing #canvas-current .ed:focus::after { display:none; }
+  #cmp-edit { display:flex; align-items:center; gap:4px; padding:2px 8px; border-radius:4px; border:1px solid #454953; background:transparent; color:#f2f3f5; font-family:'SamsungOne','Roboto',sans-serif; font-size:11px; font-weight:600; cursor:pointer; }
+  #cmp-edit:hover { background:#1b2638; }
+  body.editing #cmp-edit { background:#1d7bff; border-color:#1d7bff; color:#0b0c0f; }
 </style>
 <link rel="stylesheet" href="../a11y.css">
 <script src="../a11y.js" defer></script>
@@ -472,9 +486,16 @@
             <span class="font-label-md text-label-md text-on-surface">Current</span>
             <span class="px-2 py-0.5 rounded" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:700;text-transform:uppercase;background:#3ddc84;color:#0b0c0f;">Latest</span>
             <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-family:'SamsungOne','Roboto',sans-serif;" id="current-panel-ref">main @ b2e8d45</span>
-            <span id="current-commit-badge" class="ml-auto" title="The version's status — derived from its documents" style="display:flex;align-items:center;gap:2px;padding:2px 6px;border-radius:4px;font-size:11px;font-family:'SamsungOne','Roboto',sans-serif;background:#2c2414;color:#f5a524;border:1px solid #6b4a12;">
+            <button id="cmp-edit" type="button" class="ml-auto" onclick="toggleCompareEdit()" aria-pressed="false" title="Correct the texts of this version">
+              <span class="material-symbols-outlined" aria-hidden="true" id="cmp-edit-icon" style="font-size:12px;">edit</span><span id="cmp-edit-label">Edit</span>
+            </button>
+            <span id="current-commit-badge" class="" title="The version's status — derived from its documents" style="display:flex;align-items:center;gap:2px;padding:2px 6px;border-radius:4px;font-size:11px;font-family:'SamsungOne','Roboto',sans-serif;background:#2c2414;color:#f5a524;border:1px solid #6b4a12;">
               <span class="material-symbols-outlined" aria-hidden="true" style="font-size:11px;">rate_review</span>In review
             </span>
+          </div>
+          <div id="cmp-edit-bar" class="hidden flex-shrink-0 px-4 py-2 flex items-center gap-2" style="background:#1b2638;color:#f2f3f5;border-bottom:1px solid #2c2f37;font-size:12px;">
+            <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:#6aa9ff;">edit_note</span>
+            <span><b>Editing.</b> Click an outlined text to correct it; it saves when you leave the box. Flowchart labels: in the document.</span>
           </div>
           <div class="flex-1 overflow-y-auto bg-transparent" id="canvas-current">
             <div class="max-w-2xl mx-auto px-5 py-6">
@@ -489,7 +510,7 @@
                   <!-- 1. Introduction -->
                   <section id="c-intro" class="transition-all duration-200">
                     <h2 class="font-headline-sm text-headline-sm text-primary mb-3">1. Introduction</h2>
-                    <p class="text-body-md text-on-surface leading-relaxed">
+                    <p class="ed text-body-md text-on-surface leading-relaxed" data-slot="unit">
                       The <strong>Brake Controller</strong> unit implements the core logic for the Electronic Braking System (EBS).
                       It processes wheel speed sensor data and driver brake requests to modulate hydraulic valve actuators
                       via high-frequency PWM signals.
@@ -512,23 +533,23 @@
                           <tr class="border-b border-outline-variant/60">
                             <td class="px-3 py-2 font-label-md text-label-md text-secondary">IF_BrakeReq</td>
                             <td class="px-3 py-2 text-on-surface-variant">Input</td>
-                            <td class="px-3 py-2 text-on-surface-variant">Target deceleration from VCU</td>
+                            <td class="px-3 py-2 text-on-surface-variant"><span class="ed">Target deceleration from VCU</span></td>
                           </tr>
                           <tr class="border-b border-outline-variant/60">
                             <td class="px-3 py-2 font-label-md text-label-md text-secondary">IF_WheelSpeed[4]</td>
                             <td class="px-3 py-2 text-on-surface-variant">Input</td>
-                            <td class="px-3 py-2 text-on-surface-variant">Raw encoder pulse counts</td>
+                            <td class="px-3 py-2 text-on-surface-variant"><span class="ed">Raw encoder pulse counts</span></td>
                           </tr>
                           <tr class="border-b border-outline-variant/60">
                             <td class="px-3 py-2 font-label-md text-label-md text-secondary">IF_ValveCmd</td>
                             <td class="px-3 py-2 text-on-surface-variant">Output</td>
-                            <td class="px-3 py-2 text-on-surface-variant">PWM duty cycle for valves</td>
+                            <td class="px-3 py-2 text-on-surface-variant"><span class="ed">PWM duty cycle for valves</span></td>
                           </tr>
                           <tr class="diff-added">
                             <td class="px-3 py-2 font-label-md text-label-md text-secondary">IF_DiagStatus</td>
                             <td class="px-3 py-2 text-on-surface-variant">Output</td>
                             <td class="px-3 py-2 text-on-surface-variant">
-                              Diagnostic trouble code bitmask
+                              <span class="ed">Diagnostic trouble code bitmask</span>
                               <span class="ml-1.5 px-1.5 py-0.5 rounded text-on-tertiary-container bg-on-tertiary-container/10 font-label-sm text-label-sm">+ added</span>
                             </td>
                           </tr>
@@ -1113,6 +1134,35 @@ document.addEventListener('click', e => {
 renderTree();
 renderEmptyCards();
 setRole('admin');
+// ── Review & update from the compare page (NW-6) ─────────────────────────────────
+// Edit turns the Current side's correctable texts into boxes, as documents.html#edit does; a box
+// saves when you leave it, and the diff is read again (the text may now equal the Reference's).
+let cmpEditing = false;
+function toggleCompareEdit(on) {
+  cmpEditing = on === undefined ? !cmpEditing : on;
+  document.body.classList.toggle('editing', cmpEditing);
+  document.querySelectorAll('#canvas-current .ed').forEach(el => { el.contentEditable = cmpEditing ? 'true' : 'false'; });
+  document.getElementById('cmp-edit-bar').classList.toggle('hidden', !cmpEditing);
+  document.getElementById('cmp-edit-label').textContent = cmpEditing ? 'Done' : 'Edit';
+  document.getElementById('cmp-edit-icon').textContent = cmpEditing ? 'check' : 'edit';
+  document.getElementById('cmp-edit').setAttribute('aria-pressed', String(cmpEditing));
+}
+document.querySelectorAll('#canvas-current .ed').forEach(el => {
+  let before = '';
+  el.addEventListener('focus', () => { before = el.textContent; });
+  el.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { el.textContent = before; el.blur(); }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); el.blur(); }
+  });
+  el.addEventListener('blur', () => {
+    if (!cmpEditing || el.textContent === before) return;
+    el.classList.add('corrected');
+    showToast('Saved - the comparison is read again');
+  });
+});
+// compare.html#edit opens a document straight in edit mode.
+if (location.hash === '#edit') { selectItem('Brake Controller'); toggleCompareEdit(true); }
+
 </script>
 </body>
 </html>
