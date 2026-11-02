@@ -423,6 +423,14 @@
   .bell-row .material-symbols-outlined { font-size: 16px; margin-top: 1px; }
   .bell-count { position: absolute; top: 2px; right: 0; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #ba1a1a; color: #fff; font: 700 11px/16px Inter; text-align: center; border: 2px solid #fff; box-sizing: content-box; }
   #cta-edit:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* NW-7 (2026-11-02): the function's code under its flowcharts, read only when opened. */
+  .fn-code-btn { display:inline-flex; align-items:center; gap:4px; margin-top:10px; padding:4px 10px; border:1px solid #c4c6cd; border-radius:8px; background:#fff; color:#44474c; font:500 11px/16px 'JetBrains Mono',monospace; cursor:pointer; }
+  .fn-code-btn:hover { background:#eff4ff; color:#0058be; }
+  .fn-code { margin-top:8px; border:1px solid #c4c6cd; border-radius:8px; overflow:hidden; }
+  .fn-code-head { padding:6px 12px; background:#f2f3f7; color:#44474c; font:500 11px/16px 'JetBrains Mono',monospace; border-bottom:1px solid #c4c6cd; }
+  .fn-code pre { margin:0; padding:8px 0; background:#fbfbfd; color:#0b1c30; font:12px/1.6 'JetBrains Mono',monospace; overflow-x:auto; }
+  .fn-code .ln { display:inline-block; width:44px; padding-right:12px; text-align:right; color:#85888f; user-select:none; }
 </style>
 <link rel="stylesheet" href="a11y.css">
 <script src="a11y.js" defer></script>
@@ -1013,6 +1021,13 @@
                               </button>
                             </div>
                             <div class="fc-pic" id="doc-fc"></div>
+                            <button type="button" class="fn-code-btn" id="fn-code-btn" aria-expanded="false" onclick="toggleFnCode()">
+                              <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">code</span><span id="fn-code-label">Show code</span>
+                            </button>
+                            <div class="fn-code" id="fn-code" hidden>
+                              <p class="fn-code-head">src/brake/BrakeCtrl.c · lines 142–163</p>
+                              <pre><code><div><span class="ln" aria-hidden="true">142</span>void BrakeCtrl_Run(void)</div><div><span class="ln" aria-hidden="true">143</span>{</div><div><span class="ln" aria-hidden="true">144</span>    uint16_t speeds[4];</div><div><span class="ln" aria-hidden="true">145</span>    uint8_t  i;</div><div><span class="ln" aria-hidden="true">146</span></div><div><span class="ln" aria-hidden="true">147</span>    /* read the four wheel speeds { front left, front right, rear left, rear right } */</div><div><span class="ln" aria-hidden="true">148</span>    WheelSpeed_Read(speeds);</div><div><span class="ln" aria-hidden="true">149</span></div><div><span class="ln" aria-hidden="true">150</span>    for (i = 0U; i &lt; 4U; i++)</div><div><span class="ln" aria-hidden="true">151</span>    {</div><div><span class="ln" aria-hidden="true">152</span>        if (SlipEstimator_IsLocked(speeds[i]) != 0U)</div><div><span class="ln" aria-hidden="true">153</span>        {</div><div><span class="ln" aria-hidden="true">154</span>            g_valveCmd[i] = VALVE_RELEASE;</div><div><span class="ln" aria-hidden="true">155</span>        }</div><div><span class="ln" aria-hidden="true">156</span>        else</div><div><span class="ln" aria-hidden="true">157</span>        {</div><div><span class="ln" aria-hidden="true">158</span>            g_valveCmd[i] = PressureModel_Target(g_brakeReq, speeds[i]);</div><div><span class="ln" aria-hidden="true">159</span>        }</div><div><span class="ln" aria-hidden="true">160</span>    }</div><div><span class="ln" aria-hidden="true">161</span></div><div><span class="ln" aria-hidden="true">162</span>    ValveIf_Write(g_valveCmd);</div><div><span class="ln" aria-hidden="true">163</span>}</div></code></pre>
+                            </div>
                           </div>
                         </td></tr>
                     <tr><td class="k">Risk</td><td>Medium</td></tr>
@@ -3902,6 +3917,19 @@ document.addEventListener('click', e => {
 selectCommit((COMMITS.find(x => x.current) || COMMITS[0]).sha);
 setActiveOutline('s-intro');
 buildExtraUnits(); initSlots(); setEditable(); drawFlowchart('doc-fc', false); paintReady();
+// NW-7: the function's code under its flowcharts (read from the version's checkout when opened).
+function toggleFnCode(open) {
+  const box = document.getElementById('fn-code'), btn = document.getElementById('fn-code-btn');
+  const show = open === undefined ? box.hidden : open;
+  box.hidden = !show;
+  btn.setAttribute('aria-expanded', String(show));
+  document.getElementById('fn-code-label').textContent = show ? 'Hide code' : 'Show code';
+}
+// documents.html#code opens Brake Controller with BrakeCtrl_Run's code shown.
+if (location.hash === '#code') {
+  selectDoc('SWE.3', 'Brake Controller'); toggleFnCode(true);
+  setTimeout(() => document.getElementById('s-fn').scrollIntoView({ block: 'start' }), 50);
+}
 // documents.html#edit opens a SWE.3 document straight in edit mode (review & update mockup).
 if (location.hash === '#edit') { selectDoc('SWE.3', 'Brake Controller'); toggleEdit(true); }
 // documents.html#list-folded: the list with its document list folded to the rail.

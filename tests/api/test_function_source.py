@@ -96,5 +96,26 @@ def test_a_version_whose_code_is_not_here_says_so(client, auth_header, version):
     assert r.json()["detail"]["code"] == "SOURCE_NOT_HERE"
 
 
+def test_a_version_without_its_end_line_still_shows_the_body(client, auth_header, version, db):
+    """Versions made before the parser stored a function's end have end_line == line: the body is
+    found from the code, braces in comments and strings aside."""
+    from sqlalchemy import update
+    from api.db.postgres import schema as s
+    with db._engine.begin() as cx:
+        cx.execute(update(s.entity_versions).where(s.entity_versions.c.version_id == version.vid)
+                   .values(line=3, end_line=3))
+    body = _get(client, auth_header, version).json()
+    assert (body["start_line"], body["end_line"]) == (3, 8)
+    assert body["lines"][-1] == "}"
+
+
+def test_the_body_end_skips_braces_in_comments_and_strings():
+    from api.services.function_source import _body_end
+    code = ["int f(int a) {", "  // a { in a comment", "  const char* s = \"}\";", "  if (a) { a++; }",
+            "  return a;", "}", "int g();"]
+    assert _body_end(code, 1) == 6
+    assert _body_end(code, 7) == 7, "a declaration has no body"
+
+
 def test_an_unknown_function_is_404(client, auth_header, version):
     assert _get(client, auth_header, version, fid="Math|Utils|nope").status_code == 404

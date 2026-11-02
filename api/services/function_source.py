@@ -54,6 +54,32 @@ def function_source(db: Any, project_id: str, version_id: str, function_id: str)
     text = path.read_text(encoding="utf-8", errors="replace").splitlines()
     start = max(1, int(row.line))
     end = max(start, int(row.end_line or start))
+    if end == start:
+        # A version made before the parser stored where a function ends has its end line equal
+        # to its first: found here, from the code, so the body is shown and not the signature only.
+        end = _body_end(text, start)
     stop = min(end, start - 1 + MAX_LINES)
     return {"function_id": function_id, "file": row.file, "start_line": start, "end_line": end,
             "lines": text[start - 1:stop], "truncated": end > stop}
+
+
+def _body_end(lines: list, start: int) -> int:
+    """The line of the `}` that closes the function whose signature is on line `start` (1-based):
+    its braces counted in code only -- not in comments or string and char literals
+    (`views.unit_headers._code_only`). `start` when no body opens (a declaration, `= default;`)
+    or none closes within `MAX_LINES`."""
+    from views.unit_headers import _code_only
+    depth, opened, in_block = 0, False, False
+    for i in range(start - 1, min(len(lines), start - 1 + MAX_LINES)):
+        code, in_block = _code_only(lines[i], in_block)
+        if not opened and ";" in code and "{" not in code:
+            return start                                    # a declaration: no body
+        for ch in code:
+            if ch == "{":
+                depth, opened = depth + 1, True
+            elif ch == "}" and opened:
+                depth -= 1
+                if depth == 0:
+                    return i + 1
+    return start
+
