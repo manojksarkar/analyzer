@@ -425,10 +425,6 @@ def _remove_workspace(project_id: str) -> None:
     silent disk leak on every delete. Best effort -- a failure is logged, the deletion stands.
     """
     import logging
-    import os
-    import shutil
-    import stat
-    import sys
     from ..services.settings import get_settings
 
     root = get_settings().workspaces.resolve()
@@ -436,16 +432,28 @@ def _remove_workspace(project_id: str) -> None:
     if target.parent != root or not target.is_dir():       # never outside the workspaces root
         return
 
-    def _retry(func, path, _exc):                           # git pack files are read-only
+    try:
+        _rmtree_force(target)
+    except Exception as exc:                                # noqa: BLE001 - logged, not fatal
+        logging.getLogger(__name__).warning(
+            "project %s deleted, but its workspace %s was not: %s", project_id, target, exc)
+
+
+def _rmtree_force(target) -> None:
+    """`shutil.rmtree`, through read-only files: git keeps its packs read-only, and a frozen code
+    copy holds such files too (its tools' own checkouts). Without this, Windows refused the first one
+    ("Access is denied") and left the rest of the folder behind."""
+    import os
+    import shutil
+    import stat
+    import sys
+
+    def _retry(func, path, _exc):
         os.chmod(path, stat.S_IWRITE)
         func(path)
 
     kwargs = {"onexc": _retry} if sys.version_info >= (3, 12) else {"onerror": _retry}
-    try:
-        shutil.rmtree(target, **kwargs)
-    except Exception as exc:                                # noqa: BLE001 - logged, not fatal
-        logging.getLogger(__name__).warning(
-            "project %s deleted, but its workspace %s was not: %s", project_id, target, exc)
+    shutil.rmtree(target, **kwargs)
 
 
 def _runs_root():
@@ -482,7 +490,7 @@ def _remove_run_folders(version_ids) -> None:
                 link = stamp / "code" / "node_modules"
                 if os.path.islink(link) or _is_junction(link):
                     os.unlink(link) if os.path.islink(link) else os.rmdir(link)
-            shutil.rmtree(target, ignore_errors=False)
+            _rmtree_force(target)
         except Exception as exc:                            # noqa: BLE001 - logged, not fatal
             logging.getLogger(__name__).warning("version %s deleted, but its run folder %s was "
                                                 "not: %s", vid, target, exc)

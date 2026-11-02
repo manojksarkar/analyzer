@@ -197,6 +197,9 @@ def test_the_versions_run_folders_go_and_never_what_they_link_to(db, client, aut
         code = runs / vid / "20261031-090000" / "code"
         code.mkdir(parents=True)
         (code / "run.py").write_text("x")
+        # A read-only file, as git's packs in the copy's tools (Windows refused it: "Access is denied").
+        (code / "pack").write_bytes(b"x")
+        (code / "pack").chmod(0o444)
         link = code / "node_modules"
         try:
             import _winapi
