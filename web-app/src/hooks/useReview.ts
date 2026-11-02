@@ -197,7 +197,7 @@ export function saveFailedNote(e: unknown): string {
   return 'Not saved — your text is still here. Leave the box again to retry.'
 }
 
-function useSaveError(projectId: string, versionId: string, title: string) {
+function useSaveError(projectId: string, versionId: string, title: string, quiet = false) {
   const qc = useQueryClient()
   return (e: Error) => {
     // Approved meanwhile: read the documents again, so the page locks.
@@ -206,9 +206,13 @@ function useSaveError(projectId: string, versionId: string, title: string) {
     }
     // An update started meanwhile: read R9 again, so the edit bar holds and says why.
     if (isWordFileUpdating(e)) qc.invalidateQueries({ queryKey: projectKeys.exportReadiness(projectId, versionId) })
-    toast.error(title, saveErrorMessage(e))
+    if (!quiet) toast.error(title, saveErrorMessage(e))
   }
 }
+
+/** `quiet`: no toast of its own, success or failure — the caller says what a batch did (Cancel in
+ *  edit mode puts many texts back, and says so once). */
+interface SaveOptions { quiet?: boolean }
 
 /** Every correction save of a version (R3, R4, R6, R8): `useIsMutating` with it says whether one
  *  is still under way. Each stays pending until the reads it changes (R9 among them) are asked
@@ -217,9 +221,9 @@ export const correctionSaveKey = (projectId: string, versionId: string) =>
   ['review', 'save', projectId, versionId] as const
 
 /** R3, or R6 for a behaviour row's bullets. */
-export function useSaveSlot(projectId: string, versionId: string) {
+export function useSaveSlot(projectId: string, versionId: string, { quiet = false }: SaveOptions = {}) {
   const after = useAfterSave(projectId, versionId)
-  const onError = useSaveError(projectId, versionId, 'Not saved')
+  const onError = useSaveError(projectId, versionId, 'Not saved', quiet)
   return useMutation({
     mutationKey: correctionSaveKey(projectId, versionId),
     mutationFn: ({ slot, text }: { slot: Slot; text: string }) =>
@@ -228,20 +232,23 @@ export function useSaveSlot(projectId: string, versionId: string) {
           text.split('\n').map((l) => l.replace(/^\s*[•-]\s*/, '').trim()).filter(Boolean))
         : reviewApi.saveSlot(projectId, versionId, slot.kind, slot.key, text),
     // Pending until R9 and the others are read again (Done editing waits for that).
-    onSuccess: async (r) => { toast.success('Saved', describeSave(r)); await after([r]) },
+    onSuccess: async (r) => {
+      if (!quiet) toast.success('Saved', describeSave(r))
+      await after([r])
+    },
     onError,
   })
 }
 
 /** R4: back to the LLM's wording. */
-export function useUndoSlot(projectId: string, versionId: string) {
+export function useUndoSlot(projectId: string, versionId: string, { quiet = false }: SaveOptions = {}) {
   const after = useAfterSave(projectId, versionId)
-  const onError = useSaveError(projectId, versionId, 'Undo failed')
+  const onError = useSaveError(projectId, versionId, 'Undo failed', quiet)
   return useMutation({
     mutationKey: correctionSaveKey(projectId, versionId),
     mutationFn: (slot: Slot) => reviewApi.undo(projectId, versionId, slot.kind, slot.key),
     onSuccess: async (r) => {
-      toast.success('Back to the LLM’s text', 'The history keeps your correction.')
+      if (!quiet) toast.success('Back to the LLM’s text', 'The history keeps your correction.')
       await after([r])
     },
     onError,

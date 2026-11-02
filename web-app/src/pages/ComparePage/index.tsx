@@ -3,9 +3,10 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import {
   useVersions, useCommits, useDocuments, useDocument, useTeam,
 } from '../../hooks/useProjects'
-import { useSaveSlot, useUndoSlot } from '../../hooks/useReview'
 import { EditContext, type EditApi } from '../DocumentInspectorPage/editContext'
-import type { CompareBlock, Slot } from '../../types'
+import { useEditSession } from '../DocumentInspectorPage/editSession'
+import { CancelEdit } from '../DocumentInspectorPage/components/CancelEdit'
+import type { CompareBlock } from '../../types'
 import { useFollowDocumentVersion, useProjectViewState } from '../../hooks/useProjectViewState'
 import { useCompareDocuments, useCompareDocumentDetail } from '../../hooks/useCompare'
 import { Icon, Skeleton, CompareSectionSkeleton, StatusBadge, toast } from '../../components/ui'
@@ -103,8 +104,9 @@ export function ComparePage() {
   const versionId = currentVersion?.id ?? ''
   const [editPick, setEditing] = useState(false)
   const { data: team } = useTeam(pid)
-  const { mutateAsync: saveText } = useSaveSlot(pid, versionId)
-  const { mutate: undoText } = useUndoSlot(pid, versionId)
+  // Save and undo remember each text as it was before Edit, for Cancel.
+  const session = useEditSession(pid, versionId)
+  const { save: saveText, undo: undoText } = session
   const names = useMemo(() => new Map((team ?? []).map((m) => [m.userId ?? m.id, m.name])), [team])
   const userName = useCallback((id: string | null) => (id ? names.get(id) ?? '' : ''), [names])
   const hasSlots = useMemo(() => sections.some((s) => (s.current ?? []).some(hasSlot)), [sections])
@@ -115,8 +117,8 @@ export function ComparePage() {
     locked: false,
     projectId: pid,
     versionId,
-    save: (slot: Slot, text: string) => saveText({ slot, text }),
-    undo: (slot: Slot) => undoText(slot),
+    save: saveText,
+    undo: undoText,
     openFlowchart: () => toast.info('Correct flowchart labels in the document.'),
     labelsLocked: null,
     userName,
@@ -267,9 +269,10 @@ export function ComparePage() {
                   {isLatest && <span className="px-2 py-0.5 rounded uppercase font-mono text-micro font-bold bg-on-tertiary-container text-on-status">Latest</span>}
                   <span className="text-on-surface-variant font-mono text-caption">{currentTag ? currentTag : `${currentBranch} @ ${currentShort}`}</span>
                   <div className="ml-auto flex items-center gap-2">
+                    {editing && <CancelEdit session={session} onLeave={() => setEditing(false)} size="sm" />}
                     {canEdit && (
                       <button
-                        onClick={() => setEditing((v) => !v)}
+                        onClick={() => { if (!editing) session.start(); setEditing((v) => !v) }}
                         aria-pressed={editing}
                         className={cn('flex items-center gap-1 px-2 py-0.5 rounded border font-mono text-label transition-colors',
                           editing ? 'bg-selected text-white border-selected' : 'border-outline-variant text-on-surface-variant hover:bg-surface-container-low')}

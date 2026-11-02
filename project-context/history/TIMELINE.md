@@ -10,6 +10,8 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-11-03b | Cancel beside Done in edit mode: the texts corrected since Edit go back, after asking | [16](16-2026-10-30.md) |
+| 2026-11-03 | View code: a dialog, beside every flowchart, each with its own function's code (NW-7) | [16](16-2026-10-30.md) |
 | 2026-11-02b | One database, one API server: a second API refuses to start; NW-5 closed | [16](16-2026-10-30.md) |
 | 2026-11-02 | Delete project: a dialog with the name typed; Archive before real projects (WA-19) | [16](16-2026-10-30.md) |
 | 2026-10-31d | A function's code beside its flowcharts (NW-7) | [16](16-2026-10-30.md) |

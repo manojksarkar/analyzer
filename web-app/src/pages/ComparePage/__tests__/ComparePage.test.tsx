@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
@@ -256,5 +256,54 @@ describe('ComparePage: the document list folds', { timeout: 30_000 }, () => {
     await user.click(screen.getByRole('button', { name: 'Show the document list' }))
     expect(await screen.findByRole('complementary', { name: 'Documents' })).toBeInTheDocument()
     expect(useUIStore.getState().compareTreeFolded).toBe(false)
+  })
+})
+
+/* Cancel beside Done on the Current pane (docs/ui-mockups/compare.html#cancel), as in the reader:
+   the texts corrected since Edit go back, after asking. No flowchart labels are corrected here. */
+describe('ComparePage: Cancel in edit mode', { timeout: 30_000 }, () => {
+  it('puts back the texts corrected since Edit, after asking', async () => {
+    const { user } = setup({ path: '/projects/p1/compare?doc=doc8' })
+    const LLM = 'Brakes the car.'
+    let text = LLM
+    const undone: string[] = []
+    const apiSlot = () => ({
+      slotKind: 'description', slotKey: 'C|U|f|int', text, llmText: LLM, humanText: text === LLM ? null : text,
+      isOverridden: text !== LLM, isOrphaned: false, canUndo: text !== LLM, updatedBy: null, updatedAt: null,
+    })
+    server.use(
+      http.get(`${API_BASE_URL}/projects/p1/compare/documents/doc8`, () => HttpResponse.json({
+        mode: 'rich', document_name: 'Pedal', sections: [{
+          id: 's1', number: '1', title: 'Introduction', level: 1, diff_type: 'changed',
+          current_blocks: [{ kind: 'text', segments: [{ text }], slot: apiSlot() }],
+          baseline_blocks: [{ kind: 'text', segments: [{ text: 'Stops the car.' }] }],
+        }],
+      })),
+      http.put(`${API_BASE_URL}/projects/p1/versions/ver3/overrides/slot`, async ({ request }) => {
+        text = ((await request.json()) as { text: string }).text
+        return HttpResponse.json({ ...apiSlot(), previousText: LLM, firstEdit: true, queuedForRegeneration: [] })
+      }),
+      http.delete(`${API_BASE_URL}/projects/p1/versions/ver3/overrides/slot`, ({ request }) => {
+        undone.push(new URL(request.url).searchParams.get('slot_key') ?? '')
+        const previous = text
+        text = LLM
+        return HttpResponse.json({ ...apiSlot(), isOverridden: true, humanText: LLM, previousText: previous,
+          firstEdit: false, queuedForRegeneration: [] })
+      }),
+    )
+    await user.click(await screen.findByRole('button', { name: 'Edit' }))
+    const box = await screen.findByRole('textbox', { name: 'Correct this text' })
+    await user.clear(box)
+    await user.type(box, 'Slows the car.')
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Discard your corrections?' })
+    expect(text).toBe('Slows the car.')
+    expect(dialog).toHaveTextContent('Discard the 1 correction made since you pressed Edit? Each text goes back to what it was before.')
+    expect(dialog).not.toHaveTextContent('Flowchart')
+
+    await user.click(within(dialog).getByRole('button', { name: 'Discard' }))
+    await waitFor(() => expect(undone).toEqual(['C|U|f|int']))
+    expect(await screen.findByRole('button', { name: 'Edit' })).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Correct this text' })).not.toBeInTheDocument()
   })
 })

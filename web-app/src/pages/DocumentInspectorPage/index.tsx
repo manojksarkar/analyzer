@@ -8,7 +8,7 @@ import { useFollowDocumentVersion, useProjectViewState } from '../../hooks/usePr
 import { useDownloadDoc } from '../../hooks/useDocumentMutations'
 import { useDocumentEvents, useDocumentReadiness } from '../../hooks/useApproval'
 import {
-  correctionSaveKey, useDiscardOrphans, useExportReadiness, useSaveSlot, useUndoSlot, useVersionOverrides,
+  correctionSaveKey, useDiscardOrphans, useExportReadiness, useVersionOverrides,
 } from '../../hooks/useReview'
 import { useJustUpdated, useWordFilesWatcher } from '../../hooks/useWordFiles'
 import { useAuthStore } from '../../store/auth'
@@ -46,6 +46,8 @@ import { WordFileBanner } from './components/WordFileBanner'
 import { FlowchartLabelDialog } from './components/FlowchartLabelDialog'
 import { TreeRail } from './components/TreeRail'
 import { EditContext, type EditApi } from './editContext'
+import { useEditSession } from './editSession'
+import { CancelEdit } from './components/CancelEdit'
 import {
   buildOutline, docCorrections, docSlots, outlineIds, slotRef, undoneInWordFile, unitCorrectionCounts,
 } from './outline'
@@ -89,10 +91,11 @@ export function DocumentInspectorPage() {
   // Review and approval: R9 for this document alone (the Approve guard), and its record.
   const { data: docReadiness, isError: docReadinessFailed } = useDocumentReadiness(pid, versionId || undefined, doc?.id)
   const { data: events } = useDocumentEvents(pid, doc?.id)
-  // `mutateAsync`/`mutate` are stable across renders; the mutation objects are not, and the edit
-  // context below must not change on every job poll (it would re-render every correctable text).
-  const { mutateAsync: saveText } = useSaveSlot(pid, versionId)
-  const { mutate: undoText } = useUndoSlot(pid, versionId)
+  // Save and undo remember each text as it was before Edit, for Cancel. Their functions are stable
+  // across renders; the edit context below must not change on every job poll (it would re-render
+  // every correctable text).
+  const session = useEditSession(pid, versionId)
+  const { save: saveText, undo: undoText } = session
   const discardOrphans = useDiscardOrphans(pid, versionId)
 
   const isAdmin = project?.userRole === 'admin'
@@ -193,8 +196,8 @@ export function DocumentInspectorPage() {
     locked,
     projectId: pid,
     versionId,
-    save: (slot: Slot, text: string) => saveText({ slot, text }),
-    undo: (slot: Slot) => undoText(slot),
+    save: saveText,
+    undo: undoText,
     openFlowchart: (chart: FlowchartEntry) => {
       if (labelsLocked) toast.info('These labels are locked.', labelsLocked)
       else setOpenChart(chart)
@@ -319,10 +322,12 @@ export function DocumentInspectorPage() {
       {/* ── Edit / Done (review & update): SWE.3 only; SWE.4 follows its flowchart labels ── */}
       {canEdit && (
         <SubbarCta>
+          {isEditing && <CancelEdit session={session} onLeave={() => setEditing(false)} labelsNote />}
           <button
             onClick={() => {
               // Done: the suggestion waits for the box's save and R9's next read (the effect above).
               if (isEditing) suggestWanted.current = true
+              else session.start()
               setEditing((v) => !v)
             }}
             aria-pressed={isEditing}

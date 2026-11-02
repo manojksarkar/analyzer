@@ -14,6 +14,7 @@ import members from '../../../test/fixtures/captured/members.json'
 import documentFx from '../../../test/fixtures/captured/document.json'
 import { SubbarCtaProvider } from '../../../components/shell/SubbarCta'
 import { useUIStore } from '../../../store/ui'
+import { useToastStore } from '../../../components/ui/Toast'
 import type { FlowchartEntry } from '../../../types'
 import { DocumentInspectorPage } from '..'
 
@@ -189,6 +190,81 @@ describe('View code beside each flowchart', { timeout: 60_000 }, () => {
     const dialog = await screen.findByRole('dialog', { name: 'static int helper(int) — flowchart and code' })
     expect(await within(dialog).findByText('int helper(int a);')).toBeInTheDocument()
     expect(asked).toEqual(['C|U|helper|int'])
+  })
+})
+
+/* Cancel beside Done (docs/ui-mockups/documents.html#cancel): a correction saves as its box is
+   left, so Cancel puts back each text corrected since Edit -- after asking -- and leaves. */
+describe('Cancel in edit mode', { timeout: 60_000 }, () => {
+  const cta = () => within(screen.getByTestId('subbar-cta'))
+  async function startEditing(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByText('figure gamma')
+    await user.click(cta().getByRole('button', { name: /EDIT/ }))
+    return screen.findAllByRole('textbox', { name: 'Correct this text' })
+  }
+
+  it('leaves at once when nothing changed', async () => {
+    const { user } = setup()
+    await startEditing(user)
+    await user.click(cta().getByRole('button', { name: 'CANCEL' }))
+    expect(await cta().findByRole('button', { name: /EDIT/ })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Correct this text' })).not.toBeInTheDocument()
+  })
+
+  it("puts the LLM's text back, after asking, for a text first corrected since Edit", async () => {
+    const { state, user } = setup()
+    const undone: string[] = []
+    server.use(http.delete(`${API_BASE_URL}/projects/p1/versions/ver2/overrides/slot`, ({ request }) => {
+      const key = new URL(request.url).searchParams.get('slot_key') ?? ''
+      undone.push(key)
+      state.text = 'Adds.'
+      return HttpResponse.json({ ...slot(key, 'Adds.'), humanText: 'Adds.', isOverridden: true,
+        previousText: 'Adds two numbers.', firstEdit: false, queuedForRegeneration: [] })
+    }))
+    const boxes = await startEditing(user)
+    await user.clear(boxes[0])
+    await user.type(boxes[0], 'Adds two numbers.')
+    // The box is left for Cancel: its save is part of what Cancel puts back.
+    await user.click(cta().getByRole('button', { name: 'CANCEL' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Discard your corrections?' })
+    expect(state.text).toBe('Adds two numbers.')
+    expect(dialog).toHaveTextContent('Discard the 1 correction made since you pressed Edit?')
+
+    await user.click(within(dialog).getByRole('button', { name: 'Discard' }))
+    await waitFor(() => expect(undone).toEqual(['C|U|alpha|int']))
+    expect(await cta().findByRole('button', { name: /EDIT/ })).toBeInTheDocument()
+    expect(state.text).toBe('Adds.')
+    expect(useToastStore.getState().toasts.at(-1)?.title).toBe('1 correction discarded')
+  })
+
+  it('saves an earlier correction again, and Keep editing changes nothing', async () => {
+    const { state, user } = setup()
+    const sent: string[] = []
+    server.use(http.put(`${API_BASE_URL}/projects/p1/versions/ver2/overrides/slot`, async ({ request }) => {
+      const body = (await request.json()) as { slot_key: string; text: string }
+      sent.push(body.text)
+      const previous = state.text
+      state.text = body.text
+      return HttpResponse.json({ ...slot(body.slot_key, body.text), llmText: 'Adds.', humanText: body.text,
+        isOverridden: true, canUndo: true, previousText: previous, firstEdit: false, queuedForRegeneration: [] })
+    }))
+    state.text = 'Adds, as corrected before.'
+    const boxes = await startEditing(user)
+    await user.clear(boxes[0])
+    await user.type(boxes[0], 'Adds two numbers.')
+    await user.click(cta().getByRole('button', { name: 'CANCEL' }))
+    let dialog = await screen.findByRole('dialog', { name: 'Discard your corrections?' })
+    await user.click(within(dialog).getByRole('button', { name: 'Keep editing' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(cta().getByRole('button', { name: /DONE/ })).toBeInTheDocument()
+    expect(sent).toEqual(['Adds two numbers.'])
+
+    await user.click(cta().getByRole('button', { name: 'CANCEL' }))
+    dialog = await screen.findByRole('dialog', { name: 'Discard your corrections?' })
+    await user.click(within(dialog).getByRole('button', { name: 'Discard' }))
+    await waitFor(() => expect(sent).toEqual(['Adds two numbers.', 'Adds, as corrected before.']))
+    expect(await cta().findByRole('button', { name: /EDIT/ })).toBeInTheDocument()
   })
 })
 
