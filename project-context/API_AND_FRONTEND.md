@@ -257,7 +257,9 @@ chart's box labels together; a banner says when the Word files lack the latest c
   `GET …/versions/{vid}/functions/source?function_id=` (`api/services/function_source.py`) reads its
   `entity_versions` file and lines and returns them from the version's checkout
   (`source_checkout.locate_or_restore(restore=False)`: no clone in a request; `409 SOURCE_NOT_HERE`),
-  at most 400 lines. Web: `FunctionCode.tsx`, **Show code** under the charts, read only when opened.
+  at most 400 lines; a version that never stored a function's end line has it found from the code (braces counted
+  outside comments and strings). Web: `FunctionCode.tsx`, **View code** beside the first chart opens a dialog with
+  the flowcharts and the code side by side (2026-11-03, `docs/ui-mockups/documents.html#code`), read only then.
 - **The compare page too** (2026-10-31, NW-6): `compare_render` puts the render's slots back on the
   Current side's diffed blocks (`_carry_edit_handles`: `slot`, `bullets`, `cell_slots`; a behaviour
   row's bullets are one block now), never on the Reference side; **Edit** on the Current pane (SWE.3,

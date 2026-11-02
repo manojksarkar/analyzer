@@ -119,6 +119,15 @@ function FlowchartTableView({ data }: { data: FlowchartTableData }) {
                 <div key={i} data-flowchart-id={fc.flowchartId ?? undefined} className={i > 0 ? 'mt-4' : ''}>
                   <div className="flex items-center justify-between gap-2 mb-1">
                     {fc.label && <p className="font-mono text-caption text-on-surface-variant truncate">{fc.label}</p>}
+                    {/* The flowchart and the function's code side by side (NW-7), beside the first
+                        chart; the page's project and version come with the edit context, which the
+                        reader always provides. */}
+                    {i === 0 && data.functionId && edit?.projectId && edit.versionId && (
+                      <span className="ml-auto">
+                        <FunctionCode projectId={edit.projectId} versionId={edit.versionId} functionId={data.functionId}
+                                      title={fc.label || 'Function'} flowcharts={data.flowcharts} />
+                      </span>
+                    )}
                     {edit?.editing && fc.editable && (
                       <button
                         type="button"
@@ -138,11 +147,6 @@ function FlowchartTableView({ data }: { data: FlowchartTableData }) {
                   <FlowchartFigure chart={fc} />
                 </div>
               ))}
-              {/* The function's code under its charts (NW-7): the page's project and version
-                  come with the edit context, which the reader always provides. */}
-              {data.functionId && edit?.projectId && edit.versionId && (
-                <FunctionCode projectId={edit.projectId} versionId={edit.versionId} functionId={data.functionId} />
-              )}
             </td>
           </tr>
           <tr className="border-b border-outline-variant/60">
