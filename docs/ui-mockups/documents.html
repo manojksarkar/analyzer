@@ -1928,6 +1928,7 @@ function applyProjectStatus(status) {
 // ── Canvas state management ───────────────────────────────────────────────────
 function showListState() {
   canvasState = 'list';
+  setTimeout(() => foldDocTree(), 0);   // the list keeps its own fold
   activeProcess = null; activeDoc = null;
   document.getElementById('view-list').style.display    = '';
   document.getElementById('view-not-run').style.display = 'none';
@@ -3677,13 +3678,16 @@ function setPanelTab(tab) {
 }
 
 // ── The document list folds away while a document is open ────────────────────
-let treeFolded = true;
+// The document list folds to a rail in the reader (folded to start: it needs the width) and,
+// since 2026-11-02, on the list too (open to start). Each view keeps its own choice.
+let treeFolded = true, listTreeFolded = false;
 function foldDocTree(fold) {
-  if (fold !== undefined) treeFolded = fold;
   const inDoc = canvasState === 'doc';
-  if (inDoc) document.getElementById('doc-tree-panel').style.display = treeFolded ? 'none' : '';
-  document.getElementById('tree-rail').style.display = inDoc && treeFolded ? 'flex' : 'none';
-  document.getElementById('tree-fold').style.display = inDoc && !treeFolded ? '' : 'none';
+  if (fold !== undefined) { if (inDoc) treeFolded = fold; else listTreeFolded = fold; }
+  const folded = inDoc ? treeFolded : listTreeFolded;
+  document.getElementById('doc-tree-panel').style.display = folded ? 'none' : '';
+  document.getElementById('tree-rail').style.display = folded ? 'flex' : 'none';
+  document.getElementById('tree-fold').style.display = folded ? 'none' : '';
 }
 
 // ── Units: BrakeCtrl is drawn in full; the rest stand in for a large document ─
@@ -3900,6 +3904,8 @@ setActiveOutline('s-intro');
 buildExtraUnits(); initSlots(); setEditable(); drawFlowchart('doc-fc', false); paintReady();
 // documents.html#edit opens a SWE.3 document straight in edit mode (review & update mockup).
 if (location.hash === '#edit') { selectDoc('SWE.3', 'Brake Controller'); toggleEdit(true); }
+// documents.html#list-folded: the list with its document list folded to the rail.
+if (location.hash === '#list-folded') foldDocTree(true);
 paintBell(); paintDemo();
 // documents.html#review · #changes · #approve · #approved open a document in one review state, in the
 // role that acts on it (review and approval mockup).

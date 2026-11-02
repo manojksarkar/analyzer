@@ -11,6 +11,8 @@ import { Card, Icon, Skeleton, TableSkeleton, Text, toast } from '../../componen
 import { LoadError } from '../../components/LoadError'
 import { failedLoad } from '../../lib/failedLoad'
 import { DocTreePanel } from '../../components/shell/DocTreePanel'
+import { TreeRail } from '../DocumentInspectorPage/components/TreeRail'
+import { useUIStore } from '../../store/ui'
 import { AssignReviewerDialog } from '../../components/review/AssignReviewerDialog'
 import { DownloadAllDialog } from '../../components/wordfiles/DownloadAllDialog'
 import { UpdateWordFilesDialog } from '../../components/wordfiles/UpdateWordFilesDialog'
@@ -97,6 +99,9 @@ export function DocumentsPage() {
   })
   const reviewerOptions = buildReviewerOptions(all)
   const treeGroups = groupDocsByProcess(filtered)
+  // The document list folds to a rail, as in the reader and Compare; its own kept choice (open to start).
+  const treeFolded = useUIStore((st) => st.docListTreeFolded)
+  const setTreeFolded = useUIStore((st) => st.setDocListTreeFolded)
 
   // Bulk actions act on what you see: a selected row a filter hides is not acted on.
   const selectedDocs = filtered.filter((d) => selected.has(d.id))
@@ -295,16 +300,19 @@ export function DocumentsPage() {
           </button>
         </SubbarCta>
       )}
-      <DocTreePanel
-        groups={treeGroups}
-        assigneeOptions={reviewerOptions}
-        effectiveAssignee={effectiveAssignee}
-        meId={meId}
-        isDeveloper={!!isDeveloper}
-        onPickAssignee={setAssigneeFilter}
-        onOpenDoc={(d) => openDoc(d)}
-        loading={isLoading}
-      />
+      {treeFolded ? <TreeRail onOpen={() => setTreeFolded(false)} /> : (
+        <DocTreePanel
+          groups={treeGroups}
+          assigneeOptions={reviewerOptions}
+          effectiveAssignee={effectiveAssignee}
+          meId={meId}
+          isDeveloper={!!isDeveloper}
+          onPickAssignee={setAssigneeFilter}
+          onOpenDoc={(d) => openDoc(d)}
+          loading={isLoading}
+          onFold={() => setTreeFolded(true)}
+        />
+      )}
       <div className="flex-1 overflow-y-auto bg-page">
         <div className="p-6">
 

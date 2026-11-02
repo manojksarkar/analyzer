@@ -25,6 +25,9 @@ interface UIState {
    *  open to start: the list is how the changed documents are picked. */
   compareTreeFolded: boolean
   setCompareTreeFolded: (v: boolean) => void
+  /** Documents (the list): its document list folded to a rail. Its own choice, open to start. */
+  docListTreeFolded: boolean
+  setDocListTreeFolded: (v: boolean) => void
   /** Per-project picker selection (drives the detail view). In-memory only. */
   selectedRef: Record<string, Selection>
   setSelectedRef: (projectId: string, sel: Selection) => void
@@ -42,6 +45,8 @@ export const useUIStore = create<UIState>()(
       setDocTreeFolded: (v) => set({ docTreeFolded: v }),
       compareTreeFolded: false,
       setCompareTreeFolded: (v) => set({ compareTreeFolded: v }),
+      docListTreeFolded: false,
+      setDocListTreeFolded: (v) => set({ docListTreeFolded: v }),
       selectedRef: {},
       setSelectedRef: (projectId, sel) =>
         set((s) => ({ selectedRef: { ...s.selectedRef, [projectId]: sel } })),
@@ -54,6 +59,7 @@ export const useUIStore = create<UIState>()(
         inspectorPanelCollapsed: s.inspectorPanelCollapsed,
         docTreeFolded: s.docTreeFolded,
         compareTreeFolded: s.compareTreeFolded,
+        docListTreeFolded: s.docListTreeFolded,
       }),
     }
   )

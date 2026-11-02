@@ -9,6 +9,7 @@ import { API_BASE_URL } from '../../../lib/http'
 import { SubbarCtaProvider } from '../../../components/shell/SubbarCta'
 import { useAuthStore } from '../../../store/auth'
 import { useWordFilesStore } from '../../../store/wordFiles'
+import { useUIStore } from '../../../store/ui'
 import project from '../../../test/fixtures/captured/project.json'
 import commits from '../../../test/fixtures/captured/commits.json'
 import versions from '../../../test/fixtures/captured/versions.json'
@@ -121,5 +122,23 @@ describe('DocumentsPage: Word files out of date', { timeout: 60_000 }, () => {
     const { slot } = setup()
     expect(await screen.findAllByRole('button', { name: 'Download DOCX' })).toHaveLength(rows)
     expect(await within(slot).findByRole('button', { name: /DOWNLOAD ALL/ })).not.toHaveAttribute('title')
+  })
+})
+
+/* The document list folds to a rail, as in the reader and Compare (2026-11-02): open to start, and
+   the page keeps its own choice. */
+describe('DocumentsPage: the document list folds', { timeout: 60_000 }, () => {
+  afterEach(() => useUIStore.setState({ docListTreeFolded: false }))
+
+  it('folds to a rail and opens again; the choice is the list page\'s own', async () => {
+    useUIStore.setState({ docListTreeFolded: false, docTreeFolded: true, compareTreeFolded: false })
+    const { user } = setup()
+    await user.click(await screen.findByRole('button', { name: 'Hide the document list' }))
+    expect(screen.queryByRole('complementary', { name: 'Documents' })).not.toBeInTheDocument()
+    expect(useUIStore.getState().docListTreeFolded).toBe(true)
+    expect(useUIStore.getState().docTreeFolded).toBe(true)
+    expect(useUIStore.getState().compareTreeFolded).toBe(false)
+    await user.click(screen.getByRole('button', { name: 'Show the document list' }))
+    expect(await screen.findByRole('complementary', { name: 'Documents' })).toBeInTheDocument()
   })
 })
