@@ -18,6 +18,9 @@ export interface StartJobInput {
   scope?: JobScope
   /** Skip the LLM steps (the engine's `--no-llm`): faster, for checking structure, not wording. */
   no_llm?: boolean
+  /** `full`: a fresh run, nothing taken from an earlier version (`generate --full`). Not sent:
+   *  `auto`, the newest earlier version (or `reference_version_id`) is the baseline. */
+  mode?: 'auto' | 'full'
 }
 
 export const jobsApi = {
