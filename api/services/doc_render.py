@@ -415,7 +415,7 @@ def _find_flowchart(flowcharts_map: dict, unit_keys: tuple, func_keys: tuple):
 
 
 def _flowchart_entry(group_dir: Path, found: tuple, label: str, asset_base: str,
-                     ids: Optional[dict] = None) -> dict:
+                     ids: Optional[dict] = None, function_id: Optional[str] = None) -> dict:
     """One flowchart in a function's table: its SVG, drawn by views/flowcharts on every run.
 
     The DOT itself is not sent -- a document can hold 500+ of them, some huge. The reader gets
@@ -423,7 +423,9 @@ def _flowchart_entry(group_dir: Path, found: tuple, label: str, asset_base: str,
     picture, why not ("too_large" over the engine's limit, else "missing": not drawn for this
     run, or drawn from another DOT). ``source_hash`` lets Compare see a flowchart change.
     ``flowchart_id`` names the chart to the review routes (R7/R8), and ``editable`` says it
-    has a stored graph whose labels a reviewer can correct.
+    has a stored graph whose labels a reviewer can correct. ``function_id``: the function the
+    chart is of -- the section's own, or a private callee's drawn under it -- whose code View code
+    shows beside it (NW-7).
     """
     dot, unit_key, func_key = found
     fs = _flowchart_svg()
@@ -432,7 +434,8 @@ def _flowchart_entry(group_dir: Path, found: tuple, label: str, asset_base: str,
     entry = {"label": label, "boxes": boxes, "image_url": None, "width": None, "height": None,
              "source_hash": hashlib.sha256(dot.encode("utf-8")).hexdigest()[:16],
              "flowchart_id": ident.get("flowchart_id"),
-             "editable": bool(ident.get("flowchart_id") and ident.get("editable"))}
+             "editable": bool(ident.get("flowchart_id") and ident.get("editable")),
+             "function_id": function_id}
     if boxes > fs.FLOWCHART_SVG_MAX_BOXES:
         return {**entry, "status": "too_large"}
     name = fs.svg_file_name(unit_key, func_key)
@@ -976,7 +979,8 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                     sig_name = _names.without_signature(func_display, iface.get("functionId"), overloads)
                     signature = f"{ret} {sig_name}({params_str})".strip()
                     flowchart_entries.append(
-                        _flowchart_entry(group_dir, found, signature, asset_base, flowchart_ids))
+                        _flowchart_entry(group_dir, found, signature, asset_base, flowchart_ids,
+                                         function_id=iface.get("functionId")))
 
                 # Private callee flowcharts (mirrors docx_exporter)
                 fid = iface.get("functionId")
@@ -1013,7 +1017,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                         callee_sig = f"{callee.get('returnType', '')} {callee_sig_name}({cparams_str})".strip()
                         flowchart_entries.append(
                             _flowchart_entry(group_dir, callee_found, callee_sig, asset_base,
-                                             flowchart_ids))
+                                             flowchart_ids, function_id=callee_fid))
 
                 # Input / output names (mirrors docx_exporter)
                 fn_data = (functions_data.get(fid) or {}) if fid else {}

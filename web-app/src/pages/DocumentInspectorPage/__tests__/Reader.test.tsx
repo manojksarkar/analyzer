@@ -44,7 +44,13 @@ const fnSection = (name: string, n: number, text: string) => ({
   flowchart_table: {
     description: text, risk: 'Low', capacity: '-', input_name: 'x', output_name: 'y',
     description_slot: slot(`C|U|${name}|int`, text),
-    flowcharts: [{ label: name, status: 'drawn', image_url: `https://assets/${name}.svg`, width: 400, height: 900, boxes: 5 }],
+    flowcharts: [
+      { label: name, status: 'drawn', image_url: `https://assets/${name}.svg`, width: 400, height: 900, boxes: 5,
+        function_id: `C|U|${name}|int` },
+      // alpha calls a private helper: its chart is drawn under alpha's, as the Word file does (NW-7).
+      ...(name === 'alpha' ? [{ label: 'static int helper(int)', status: 'drawn', image_url: 'https://assets/helper.svg',
+        width: 200, height: 300, boxes: 3, function_id: 'C|U|helper|int' }] : []),
+    ],
   },
 })
 
@@ -164,3 +170,25 @@ describe('the reader with many sections', { timeout: 60_000 }, () => {
     await waitFor(() => expect(useUIStore.getState().selectedRef.p1).toEqual({ type: 'version', id: 'ver2' }))
   })
 })
+
+/* NW-7: a section can hold several charts -- the function's own, then a private callee's. View code
+   beside each shows that chart with its OWN function's code, never the section's for all of them. */
+describe('View code beside each flowchart', { timeout: 60_000 }, () => {
+  it("opens the chart with its own function's code", async () => {
+    setup()
+    const asked: string[] = []
+    server.use(http.get(`${API_BASE_URL}/projects/p1/versions/ver2/functions/source`, ({ request }) => {
+      asked.push(new URL(request.url).searchParams.get('function_id') ?? '')
+      return HttpResponse.json({ function_id: 'x', file: 'u.cpp', start_line: 1, end_line: 1, lines: ['int helper(int a);'],
+        truncated: false })
+    }))
+    const alpha = (await screen.findByText('figure alpha')).closest('td') as HTMLElement
+    const buttons = within(alpha).getAllByRole('button', { name: /view code/i })
+    expect(buttons).toHaveLength(2)
+    await userEvent.click(buttons[1])
+    const dialog = await screen.findByRole('dialog', { name: 'static int helper(int) — flowchart and code' })
+    expect(await within(dialog).findByText('int helper(int a);')).toBeInTheDocument()
+    expect(asked).toEqual(['C|U|helper|int'])
+  })
+})
+

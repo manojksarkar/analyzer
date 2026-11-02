@@ -119,13 +119,15 @@ function FlowchartTableView({ data }: { data: FlowchartTableData }) {
                 <div key={i} data-flowchart-id={fc.flowchartId ?? undefined} className={i > 0 ? 'mt-4' : ''}>
                   <div className="flex items-center justify-between gap-2 mb-1">
                     {fc.label && <p className="font-mono text-caption text-on-surface-variant truncate">{fc.label}</p>}
-                    {/* The flowchart and the function's code side by side (NW-7), beside the first
-                        chart; the page's project and version come with the edit context, which the
-                        reader always provides. */}
-                    {i === 0 && data.functionId && edit?.projectId && edit.versionId && (
+                    {/* Each chart and its own function's code side by side (NW-7): the section's
+                        function, or a private callee drawn under it. An older render names only the
+                        section's function, so only its first chart then. The page's project and
+                        version come with the edit context, which the reader always provides. */}
+                    {(fc.functionId ?? (i === 0 ? data.functionId : null)) && edit?.projectId && edit.versionId && (
                       <span className="ml-auto">
-                        <FunctionCode projectId={edit.projectId} versionId={edit.versionId} functionId={data.functionId}
-                                      title={fc.label || 'Function'} flowcharts={data.flowcharts} />
+                        <FunctionCode projectId={edit.projectId} versionId={edit.versionId}
+                                      functionId={(fc.functionId ?? data.functionId) as string}
+                                      title={fc.label || 'Function'} flowcharts={[fc]} />
                       </span>
                     )}
                     {edit?.editing && fc.editable && (

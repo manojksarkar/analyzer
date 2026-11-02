@@ -117,6 +117,7 @@ class TestAFunctionSection:
         (fc,) = ft["flowcharts"]
         assert fc["flowchart_id"] == FID
         assert fc["editable"] is True
+        assert fc["function_id"] == FID, "View code shows this chart's own function (NW-7)"
 
     def test_without_a_flowchart_the_content_carries_the_slot(self, tmp_path):
         sec = _section(_render(tmp_path, flowchart=False), lambda s: s["id"].startswith(f"{UNIT}-fn-"))

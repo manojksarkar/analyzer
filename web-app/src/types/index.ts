@@ -643,6 +643,9 @@ export interface FlowchartEntry {
   flowchartId: string | null
   /** It has a stored graph whose labels a reviewer can correct. */
   editable: boolean
+  /** The function the chart is of -- the section's own, or a private callee's drawn under it --
+   *  whose code View code shows beside it (NW-7); null for an older render. */
+  functionId?: string | null
 }
 
 export interface FlowchartTableData {

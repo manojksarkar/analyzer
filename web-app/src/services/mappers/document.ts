@@ -83,6 +83,8 @@ const ApiFlowchartSchema = z.object({
   // Review & update: the chart's id for the label editor, and whether it has labels to edit.
   flowchart_id: z.string().nullable().optional(),
   editable: z.boolean().optional(),
+  // NW-7: the function the chart is of (the section's own, or a private callee's under it).
+  function_id: z.string().nullable().optional(),
 })
 type ApiFlowchart = z.infer<typeof ApiFlowchartSchema>
 
@@ -217,6 +219,7 @@ export function mapFlowchart(fc: ApiFlowchart): FlowchartEntry {
     boxes: fc.boxes ?? 0,
     flowchartId: fc.flowchart_id ?? null,
     editable: !!(fc.flowchart_id && fc.editable),
+    functionId: fc.function_id ?? null,
   }
 }
 
