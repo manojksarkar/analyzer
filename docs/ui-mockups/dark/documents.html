@@ -768,6 +768,8 @@
     <!-- Right CTAs -->
     <div class="flex items-center gap-1.5">
       <!-- Edit: turns the SWE.3 document into edit mode (review & update) -->
+      <button id="cta-cancel" onclick="cancelEdit()" class="items-center gap-1.5 px-3 py-1.5 border border-outline-variant text-on-surface-variant hover:bg-surface-container-low rounded-lg transition-colors"
+              style="display:none;font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:500;letter-spacing:.02em;">Cancel</button>
       <button id="cta-edit" onclick="toggleEdit()" class="items-center gap-1.5 px-3 py-1.5 border border-secondary text-secondary hover:bg-surface-container-low rounded-lg transition-colors"
               style="display:none;font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:500;letter-spacing:.02em;">
         <span class="material-symbols-outlined" aria-hidden="true" id="cta-edit-icon" style="font-size:15px;">edit</span>
@@ -3222,6 +3224,7 @@ function commitEd(el) {
     return flash(id, 'error', `Keep it under ${MAX_LEN} characters. Nothing was saved.`);
   }
   const prev = s.text;
+  remember(id, prev, s.corrected);
   s.text = now; s.corrected = true; s.by = me(); s.at = stamp(); s.seq = ++saveSeq;
   s.history.push({ by: s.by, at: s.at, text: now });
   s.state = 'saving'; paintSlot(id);
@@ -3236,6 +3239,7 @@ function commitEd(el) {
 function undoSlot(id) {
   if (heldNow()) return toast('Corrections wait until the update is done.');
   const s = SLOTS[id];
+  remember(id, s.text, s.corrected);
   s.text = s.list ? [...s.llm] : s.llm;
   s.corrected = false;
   s.history.push({ by: me(), at: stamp(), text: s.text, undo: true });
@@ -3274,6 +3278,7 @@ function setEditable() {
 function toggleEdit(on) {
   const wasEditing = editing;
   editing = on === undefined ? !editing : on;
+  if (editing && !wasEditing) editSession = {};
   const cd = currentDoc();
   if (editing && cd && cd.status === 'approved') {   // approved = locked (review and approval)
     editing = false;
@@ -3283,9 +3288,10 @@ function toggleEdit(on) {
   if (!editing) {
     if (document.activeElement && document.activeElement.classList.contains('ed')) document.activeElement.blur();
     document.querySelectorAll('.ed-hist').forEach(h => h.remove());
-    if (wasEditing) suggestUpdateAfterEditing();
+    if (wasEditing && !discarding) suggestUpdateAfterEditing();
   }
   setEditable();
+  document.getElementById('cta-cancel').style.display = editing ? 'flex' : 'none';
   const b = document.getElementById('cta-edit');
   document.getElementById('cta-edit-label').textContent = editing ? 'Done' : 'Edit';
   document.getElementById('cta-edit-icon').textContent = editing ? 'check' : 'edit';
@@ -4039,6 +4045,37 @@ function closeFnView() { document.getElementById('fnv').classList.remove('open')
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFnView(); });
 // documents.html#code opens Brake Controller with BrakeCtrl_Run's flowchart and code.
 if (location.hash === '#code') { selectDoc('SWE.3', 'Brake Controller'); setTimeout(openFnView, 50); }
+// ── Cancel in edit mode (2026-11-03) ─────────────────────────────────────────
+// Each text corrected since Edit, as it was before its first change; Cancel puts them back.
+let editSession = {}, discarding = false;
+function remember(id, text, corrected) {
+  if (editing && !(id in editSession)) editSession[id] = { text: Array.isArray(text) ? [...text] : text, corrected };
+}
+function cancelEdit() {
+  const n = Object.keys(editSession).length;
+  if (!n) return toggleEdit(false);                     // nothing changed: just leave
+  document.getElementById('cancel-n').textContent = n === 1 ? '1 correction' : `${n} corrections`;
+  document.getElementById('cancel-dlg').classList.remove('hidden');
+}
+function discardSession() {
+  document.getElementById('cancel-dlg').classList.add('hidden');
+  const ids = Object.keys(editSession);
+  ids.forEach(id => {
+    const s = SLOTS[id], o = editSession[id];
+    s.text = o.text; s.corrected = o.corrected;
+    s.history.push({ by: me(), at: stamp(), text: o.text, undo: !o.corrected });
+    paintSlot(id);
+  });
+  editSession = {}; discarding = true; toggleEdit(false); discarding = false; paintReady();
+  toast(ids.length === 1 ? '1 correction discarded.' : `${ids.length} corrections discarded.`,
+        'Each text is back as it was before you pressed Edit.');
+}
+// documents.html#cancel: two texts corrected in edit mode, then Cancel.
+if (location.hash === '#cancel') {
+  selectDoc('SWE.3', 'Brake Controller'); toggleEdit(true);
+  ['d:run', 'i:run'].forEach(id => remember(id, SLOTS[id].text, SLOTS[id].corrected));
+  setTimeout(cancelEdit, 50);
+}
 // documents.html#edit opens a SWE.3 document straight in edit mode (review & update mockup).
 if (location.hash === '#edit') { selectDoc('SWE.3', 'Brake Controller'); toggleEdit(true); }
 // documents.html#list-folded: the list with its document list folded to the rail.
@@ -4075,6 +4112,28 @@ if (REVIEW_HASH[location.hash]) {
     <div class="panes">
       <div class="pane"><p class="lbl">Flowchart</p><div class="fc fc-pic" id="fnv-fc"></div></div>
       <div class="pane"><p class="lbl">Code</p><pre><code><div><span class="ln" aria-hidden="true">142</span>void BrakeCtrl_Run(void)</div><div><span class="ln" aria-hidden="true">143</span>{</div><div><span class="ln" aria-hidden="true">144</span>    uint16_t speeds[4];</div><div><span class="ln" aria-hidden="true">145</span>    uint8_t  i;</div><div><span class="ln" aria-hidden="true">146</span></div><div><span class="ln" aria-hidden="true">147</span>    /* read the four wheel speeds { front left, front right, rear left, rear right } */</div><div><span class="ln" aria-hidden="true">148</span>    WheelSpeed_Read(speeds);</div><div><span class="ln" aria-hidden="true">149</span></div><div><span class="ln" aria-hidden="true">150</span>    for (i = 0U; i &lt; 4U; i++)</div><div><span class="ln" aria-hidden="true">151</span>    {</div><div><span class="ln" aria-hidden="true">152</span>        if (SlipEstimator_IsLocked(speeds[i]) != 0U)</div><div><span class="ln" aria-hidden="true">153</span>        {</div><div><span class="ln" aria-hidden="true">154</span>            g_valveCmd[i] = VALVE_RELEASE;</div><div><span class="ln" aria-hidden="true">155</span>        }</div><div><span class="ln" aria-hidden="true">156</span>        else</div><div><span class="ln" aria-hidden="true">157</span>        {</div><div><span class="ln" aria-hidden="true">158</span>            g_valveCmd[i] = PressureModel_Target(g_brakeReq, speeds[i]);</div><div><span class="ln" aria-hidden="true">159</span>        }</div><div><span class="ln" aria-hidden="true">160</span>    }</div><div><span class="ln" aria-hidden="true">161</span></div><div><span class="ln" aria-hidden="true">162</span>    ValveIf_Write(g_valveCmd);</div><div><span class="ln" aria-hidden="true">163</span>}</div></code></pre></div>
+    </div>
+  </div>
+</div>
+
+<!-- Cancel in edit mode (2026-11-03): corrections save as each box is left, so Cancel puts back every
+     text corrected since Edit was pressed -- after asking. Flowchart labels are saved in their own
+     dialog, with its own Cancel, and stay. -->
+<div id="cancel-dlg" class="hidden fixed inset-0 z-[500] flex items-center justify-center" style="background:rgba(0,0,0,.8);"
+     onclick="if (event.target === this) this.classList.add('hidden')">
+  <div role="dialog" aria-modal="true" aria-labelledby="cancel-title" class="w-full p-6"
+       style="max-width:440px;margin:0 16px;border-radius:12px;background:#1c1e23;box-shadow:0 8px 40px rgba(0,0,0,.25);">
+    <h3 id="cancel-title" style="font:600 16px/24px Roboto,sans-serif;color:#f2f3f5;">Discard your corrections?</h3>
+    <p style="margin-top:8px;font:400 13px/1.55 Roboto,sans-serif;color:#a3a7b1;">
+      Discard the <b id="cancel-n" style="color:#f2f3f5;"></b> made since you pressed Edit? Each text goes back to
+      what it was before. Flowchart labels saved in their own dialog stay.
+    </p>
+    <div class="flex justify-end gap-2" style="margin:16px -24px 0;padding:16px 24px 0;border-top:1px solid #2c2f37;">
+      <button type="button" onclick="document.getElementById('cancel-dlg').classList.add('hidden')"
+              style="padding:6px 12px;border-radius:8px;border:1px solid #2c2f37;background:#1c1e23;color:#f2f3f5;font:500 12px/16px 'SamsungOne','Roboto',sans-serif;"
+              onmouseover="this.style.background='#1b2638'" onmouseout="this.style.background='#1c1e23'">Keep editing</button>
+      <button type="button" onclick="discardSession()"
+              style="padding:6px 12px;border-radius:8px;border:1px solid #ff6b76;background:#ff6b76;color:#1a0005;font:600 12px/16px 'SamsungOne','Roboto',sans-serif;">Discard</button>
     </div>
   </div>
 </div>

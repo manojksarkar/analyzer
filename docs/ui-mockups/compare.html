@@ -125,6 +125,8 @@
   body.editing #canvas-current .ed:hover::after { color:#0058be; }
   body.editing #canvas-current .ed:focus::after { display:none; }
   #cmp-edit { display:flex; align-items:center; gap:4px; padding:2px 8px; border-radius:4px; border:1px solid #c4c6cd; background:transparent; color:#0b1c30; font-family:'JetBrains Mono'; font-size:11px; font-weight:600; cursor:pointer; }
+  #cmp-cancel { display:flex; align-items:center; padding:2px 8px; border-radius:4px; border:1px solid #c4c6cd; background:transparent; color:#0b1c30; font-size:11px; font-weight:600; cursor:pointer; margin-right:6px; }
+  #cmp-cancel:hover { background:#eff4ff; }
   #cmp-edit:hover { background:#e5eeff; }
   body.editing #cmp-edit { background:#0058be; border-color:#0058be; color:#fff; }
 </style>
@@ -396,7 +398,8 @@
             <span class="font-label-md text-label-md text-on-surface">Current</span>
             <span class="px-2 py-0.5 rounded" style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;text-transform:uppercase;background:#00754f;color:#fff;">Latest</span>
             <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-family:'JetBrains Mono';" id="current-panel-ref">main @ b2e8d45</span>
-            <button id="cmp-edit" type="button" class="ml-auto" onclick="toggleCompareEdit()" aria-pressed="false" title="Correct the texts of this version">
+            <button id="cmp-cancel" type="button" class="ml-auto" onclick="cancelCompareEdit()" style="display:none;">Cancel</button>
+            <button id="cmp-edit" type="button" onclick="toggleCompareEdit()" aria-pressed="false" title="Correct the texts of this version">
               <span class="material-symbols-outlined" aria-hidden="true" id="cmp-edit-icon" style="font-size:12px;">edit</span><span id="cmp-edit-label">Edit</span>
             </button>
             <span id="current-commit-badge" class="" title="The version's status — derived from its documents" style="display:flex;align-items:center;gap:2px;padding:2px 6px;border-radius:4px;font-size:11px;font-family:'JetBrains Mono';background:#fff8e6;color:#b45309;border:1px solid #f59e0b;">
@@ -1059,7 +1062,10 @@ if (location.hash === '#folded') { selectItem('Brake Controller'); foldDocTree(t
 // saves when you leave it, and the diff is read again (the text may now equal the Reference's).
 let cmpEditing = false;
 function toggleCompareEdit(on) {
+  const was = cmpEditing;
   cmpEditing = on === undefined ? !cmpEditing : on;
+  if (cmpEditing && !was) cmpSession = new Map();
+  document.getElementById('cmp-cancel').style.display = cmpEditing ? 'flex' : 'none';
   document.body.classList.toggle('editing', cmpEditing);
   document.querySelectorAll('#canvas-current .ed').forEach(el => { el.contentEditable = cmpEditing ? 'true' : 'false'; });
   document.getElementById('cmp-edit-bar').classList.toggle('hidden', !cmpEditing);
@@ -1076,13 +1082,55 @@ document.querySelectorAll('#canvas-current .ed').forEach(el => {
   });
   el.addEventListener('blur', () => {
     if (!cmpEditing || el.textContent === before) return;
+    if (!cmpSession.has(el)) cmpSession.set(el, { text: before, corrected: el.classList.contains('corrected') });
     el.classList.add('corrected');
     showToast('Saved - the comparison is read again');
   });
 });
+// Cancel in edit mode (2026-11-03): put back every text corrected since Edit, after asking.
+let cmpSession = new Map();
+function cancelCompareEdit() {
+  if (!cmpSession.size) return toggleCompareEdit(false);
+  document.getElementById('cancel-n').textContent = cmpSession.size === 1 ? '1 correction' : `${cmpSession.size} corrections`;
+  document.getElementById('cancel-dlg').classList.remove('hidden');
+}
+function discardCompareSession() {
+  document.getElementById('cancel-dlg').classList.add('hidden');
+  const n = cmpSession.size;
+  cmpSession.forEach((o, el) => { el.textContent = o.text; el.classList.toggle('corrected', o.corrected); });
+  cmpSession = new Map(); toggleCompareEdit(false);
+  showToast(n === 1 ? '1 correction discarded' : `${n} corrections discarded`);
+}
+// compare.html#cancel: two texts corrected in edit mode, then Cancel.
+if (location.hash === '#cancel') {
+  selectItem('Brake Controller'); toggleCompareEdit(true);
+  [...document.querySelectorAll('#canvas-current .ed')].slice(0, 2).forEach(el => cmpSession.set(el, { text: el.textContent, corrected: false }));
+  setTimeout(cancelCompareEdit, 50);
+}
 // compare.html#edit opens a document straight in edit mode.
 if (location.hash === '#edit') { selectItem('Brake Controller'); toggleCompareEdit(true); }
 
 </script>
+
+<!-- Cancel in edit mode (2026-11-03): corrections save as each box is left, so Cancel puts back every
+     text corrected since Edit was pressed -- after asking. -->
+<div id="cancel-dlg" class="hidden fixed inset-0 z-[500] flex items-center justify-center" style="background:rgba(4,22,39,.4);"
+     onclick="if (event.target === this) this.classList.add('hidden')">
+  <div role="dialog" aria-modal="true" aria-labelledby="cancel-title" class="w-full p-6"
+       style="max-width:440px;margin:0 16px;border-radius:12px;background:#fff;box-shadow:0 8px 40px rgba(0,0,0,.25);">
+    <h3 id="cancel-title" style="font:600 16px/24px Inter,sans-serif;color:#0b1c30;">Discard your corrections?</h3>
+    <p style="margin-top:8px;font:400 13px/1.55 Inter,sans-serif;color:#44474c;">
+      Discard the <b id="cancel-n" style="color:#0b1c30;"></b> made since you pressed Edit? Each text goes back to
+      what it was before.
+    </p>
+    <div class="flex justify-end gap-2" style="margin:16px -24px 0;padding:16px 24px 0;border-top:1px solid #c4c6cd;">
+      <button type="button" onclick="document.getElementById('cancel-dlg').classList.add('hidden')"
+              style="padding:6px 12px;border-radius:8px;border:1px solid #c4c6cd;background:#fff;color:#0b1c30;font:500 12px/16px 'JetBrains Mono',monospace;"
+              onmouseover="this.style.background='#eff4ff'" onmouseout="this.style.background='#fff'">Keep editing</button>
+      <button type="button" onclick="discardCompareSession()"
+              style="padding:6px 12px;border-radius:8px;border:1px solid #ba1a1a;background:#ba1a1a;color:#fff;font:600 12px/16px 'JetBrains Mono',monospace;">Discard</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
