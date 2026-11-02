@@ -82,6 +82,37 @@ def _ensure_default_admin(db) -> None:
         print(f"[api] could not ensure default admin: {type(exc).__name__}: {exc}", file=sys.stderr)
 
 
+#: Set to 1 to let a second API server start on a database another one serves (warned, not
+#: stopped): a deliberate second instance. Otherwise one database has one API server.
+ALLOW_SECOND_API_ENV = "ANALYZER_ALLOW_SECOND_API"
+
+
+class SecondApiServer(RuntimeError):
+    """Another API server already runs on this database (it holds the job-runner lock)."""
+
+
+def _refuse_second_server(engine) -> None:
+    """At start-up, once the database answers: stop when another API server already serves it.
+
+    Each server keeps its files -- Word files, pictures, approved copies, uploads -- on its own
+    disk, and runs jobs of its own; two on one database drift apart (BACKLOG NW-5, 2026-11-02:
+    one active server at a time). The test is the job-runner lock (`claim_job_runner`): PostgreSQL
+    frees it when its server ends, however it ends, so a stopped server never blocks a new one.
+    SQLite (local runs, tests) serves one process by construction. `ANALYZER_ALLOW_SECOND_API=1`
+    lets it start anyway, as before: warned, sweeping nothing."""
+    import os
+    from .services import pipeline_runner
+    if engine is None or pipeline_runner.claim_job_runner(engine):
+        return
+    if os.environ.get(ALLOW_SECOND_API_ENV, "").strip() == "1":
+        return                      # _fail_interrupted_jobs says so, and leaves the jobs alone
+    from core.db import _redact
+    raise SecondApiServer(
+        f"Another API server is already running on this database ({_redact(str(engine.url))}). "
+        f"Stop it first: one database has one API server at a time, since each keeps its files "
+        f"on its own disk. (To start a second one anyway: {ALLOW_SECOND_API_ENV}=1.)")
+
+
 #: Seconds between two tries of the start-up check below while the database does not answer.
 JOB_SWEEP_RETRY_SECONDS = 30.0
 
@@ -96,8 +127,9 @@ def _fail_interrupted_jobs(db) -> bool:
         from .services import pipeline_runner
         engine = getattr(db, "_engine", None)
         if engine is not None and not pipeline_runner.claim_job_runner(engine):
-            print("[api] another API server runs jobs on this database: none of its jobs is "
-                  "touched, and none left by a stopped server is cleared", file=sys.stderr)
+            print("[api] *** another API server runs on this database *** -- one database should "
+                  "have one API server (each keeps its files on its own disk). None of its jobs is "
+                  "touched, and none left by a stopped server is cleared.", file=sys.stderr)
             return True
         n = pipeline_runner.fail_interrupted_jobs(db, before=pipeline_runner.PROCESS_STARTED)
         if n:
@@ -193,6 +225,14 @@ async def _db_startup_check() -> None:
               f"      The API is bound to {_redact(dsn)} (source: {src}). If that is 'localhost'\n"
               f"      but you meant a remote server, set DATABASE_URL before starting uvicorn, or\n"
               f"      add a `db` section to engine/config/config.local.json.", file=sys.stderr)
+    # One database, one API server: stop here when another already serves it (NW-5).
+    try:
+        _refuse_second_server(engine)
+    except SecondApiServer as exc:
+        print(f"[api] *** NOT STARTED *** {exc}", file=sys.stderr)
+        raise
+    except Exception:                                         # noqa: BLE001 - the DB is down:
+        pass                                                  # the sweep below tries again
     # No job says "running" with nothing running or following it -- tried again until it runs,
     # then looked for again every few minutes.
     if not _fail_interrupted_jobs(_db):

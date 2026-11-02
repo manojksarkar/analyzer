@@ -60,7 +60,8 @@ Demo users — `python analyzer.py setup --demo`, or the in-memory backend (all 
 | `API_DB_BACKEND` | `postgres` when a database is configured, else `memory` | `memory` = in-memory test backend (seed data, nothing persists) |
 | `JWT_SECRET` | a development value | Signs sign-in tokens — **set it in any shared deployment** |
 | `ANALYZER_REPO_ROOT` | auto-detected | Absolute path to the repo root (contains `analyzer.py`) |
-| `ANALYZER_WORKSPACES_DIR` | `<repo_root>/workspaces/` | Where per-project checkouts and output dirs live |
+| `ANALYZER_WORKSPACES_DIR` | `<repo_root>/workspaces/` | Where per-project checkouts and output dirs live (or `paths.workspaces` in `config.local.json`) |
+| `ANALYZER_ALLOW_SECOND_API` | _(unset)_ | `1` lets an API start on a database another API already serves (warned, sweeping nothing). Unset: it refuses to start — one database, one API server, since each keeps its files on its own disk |
 | `JOB_MAX_CONCURRENCY` | `2` | Max pipeline subprocesses running simultaneously |
 | `SUBPROCESS_TIMEOUT` | `0` | Seconds before a pipeline subprocess is killed (0 = no limit) |
 | `LIBCLANG_PATH` | _(auto)_ | Path to the libclang library, passed to the pipeline subprocesses |

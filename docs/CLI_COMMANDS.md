@@ -1198,7 +1198,12 @@ at approval -- is under one folder: `<installation>/workspaces` unless set. To p
 
 The database is not rewritten. A path it stored under the old folder (Windows or Linux) is looked
 for under the new one when it is read. A checkout that is missing is cloned again when a run needs
-it. The model, output, logs and caches (the data root) move only with `ANALYZER_DATA_ROOT` for now.
+it. The logs, caches and background-run code copies (the data root) are not needed after a move; they
+move with `ANALYZER_DATA_ROOT` if you want them.
+
+**One database, one API server.** Each server keeps its files on its own disk, so an API refuses to
+start on a database another API already serves ("Another API server is already running on this
+database"). Stop the old one first. A second one on purpose: `ANALYZER_ALLOW_SECOND_API=1`.
 
 ## When a run stops
 
