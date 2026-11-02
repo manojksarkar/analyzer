@@ -162,7 +162,8 @@ Order: NW-2 → NW-5 → NW-8 → NW-1 → NW-3 (priority, then dependency, then
 |---|---|---|---|---|---|---|---|
 | WA-1 | Function visibility end to end: three stores, none feeding the next; "Manage" disabled | issue | — | — | where hiding lives | decide | `job_functions`, `entity_versions.is_visible`, exporter `hidden` |
 | WA-2 | No user creation in the web app (CLI `analyzer.py user` only); a pending invite never becomes active | enhance | — | — | — | open | `api/routes/users.py` |
-| WA-3 | Project discovery, Archive, Profile, Help, SSO, forgot password | enhance | — | — | — | open | shell |
+| WA-3 | Project discovery, Profile, Help, SSO, forgot password | enhance | — | — | — | open | shell |
+| WA-19 | **Archive, then a soft delete** -- Archive is needed before the first deployment with real projects; today Delete removes everything at once | enhance | — | M | — | open | `api/routes/projects.py`, Projects page |
 | WA-4 | A project Settings page: architecture, build config and data dictionary cannot change after creation | enhance | — | L | — | open | `pages/` |
 | WA-5 | Config import keeps the first core's files only; no `compileCommands` field | enhance | — | — | — | open | wizard |
 | WA-6 | Overview: no activity log | enhance | — | — | — | open | Overview |
@@ -285,6 +286,16 @@ can time out on a full pool; `patch_interface_tables` parses every file. RF-11: 
 `--end-of-options` and a hex check; `grant_access --all` defaults to admin; `cascade._drop_overridden`
 counts orphans; `rerender` patches the first copy only; `carry_forward` keeps a stale `llm_text`;
 `onboard --owner <unknown>` exits 2; `--sqlite` setup skips the column repair.
+
+**WA-19** Agreed 2026-11-02. Today an admin's Delete (type the name) removes the project at once
+-- fine while every project is a test one. Before real projects: (1) **Archive** -- hidden, read-only,
+everything kept, Unarchive; a developer sees it under an Archived filter, an admin or superuser
+archives. (2) **Delete** only from Archived: the dialog lists what goes (approved documents counted,
+with a download of them), the name typed; the project is marked deleted and kept for a grace period
+(e.g. 30 days), Restore by its admin or a superuser. (3) **Purge** after the grace period (or a
+superuser's Purge now): what Delete does today. An audit record of who archived, deleted, restored,
+purged survives the purge. A running job blocks each step; the server checks each one. Must-have
+before deployment: (1); (2)-(3) can follow.
 
 **WF-2** "Open <doc> to try again.", "Open X to update it.", "Can't tell if this Word file is up to
 date.", "Checking its Word file…", "2 pictures being drawn", "Update after the run on v1.2.0 ends.", the

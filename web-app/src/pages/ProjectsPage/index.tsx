@@ -8,6 +8,7 @@ import { useLogsTakeThePage } from '../../components/livelogs/useLogRuns'
 import { ProjectRow } from './components/ProjectRow'
 import { ProjectsEmptyState } from './components/ProjectsEmptyState'
 import { RenameProjectDialog } from './components/RenameProjectDialog'
+import { DeleteProjectDialog } from './components/DeleteProjectDialog'
 
 /* Column headers — width baked into the class so no inline style is needed. */
 const COLUMNS = [
@@ -30,6 +31,7 @@ export function ProjectsPage() {
   // The project being renamed (a row's menu). The dialog is the page's, not the row's: a click in
   // it would reach the row and open the project.
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null)
+  const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null)
   // The Logs panel at full height takes the page's place (superusers only).
   const logsFull = useLogsTakeThePage()
 
@@ -115,6 +117,7 @@ export function ProjectsPage() {
                           onNavigate={(id) => navigate(`/projects/${id}/overview`)}
                           onTeam={(id) => navigate(`/projects/${id}/team`)}
                           onRename={(p) => setRenaming({ id: p.id, name: p.name })}
+                          onDelete={(p) => setDeleting({ id: p.id, name: p.name })}
                         />
                       ))}
                 </tbody>
@@ -129,6 +132,7 @@ export function ProjectsPage() {
               onClose={() => setRenaming(null)}
             />
           )}
+          {deleting && <DeleteProjectDialog project={deleting} onClose={() => setDeleting(null)} />}
         </div>
       </main>
       <LogsPanel />

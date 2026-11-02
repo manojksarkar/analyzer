@@ -10,6 +10,7 @@
 
 | Date | Change | File |
 |---|---|---|
+| 2026-11-02 | Delete project: a dialog with the name typed; Archive before real projects (WA-19) | [16](16-2026-10-30.md) |
 | 2026-10-31d | A function's code beside its flowcharts (NW-7) | [16](16-2026-10-30.md) |
 | 2026-10-31c | The workspaces can move (NW-5, first part): paths.workspaces, stored paths found after a move | [16](16-2026-10-30.md) |
 | 2026-10-31b | A text can be corrected from the compare page (NW-6) | [16](16-2026-10-30.md) |

@@ -215,7 +215,8 @@ export function useDeleteProject() {
       qc.invalidateQueries({ queryKey: projectKeys.all })
       toast.success('Project deleted')
     },
-    onError: (e: Error) => toast.error('Delete failed', e.message),
+    // 409 JOB_RUNNING: a run of the project is going (the web app's or a command-line one).
+    onError: (e: Error) => toast.error('Not deleted', e.message),
   })
 }
 

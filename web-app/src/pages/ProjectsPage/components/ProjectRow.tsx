@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { Dropdown, DropdownTrigger, DropdownContent, Icon } from '../../../components/ui'
-import { useDeleteProject, useDownloadProjectConfig } from '../../../hooks/useProjects'
+import { useDownloadProjectConfig } from '../../../hooks/useProjects'
 import { cn } from '../../../lib/cn'
 import type { Project, TeamMember } from '../../../types'
 
@@ -107,31 +107,26 @@ function VersionBadge({ version }: { version: string | null }) {
 }
 
 /* ─── Project row ───────────────────────────────────────────────────── */
-export function ProjectRow({ project, onNavigate, onTeam, onRename }: {
+export function ProjectRow({ project, onNavigate, onTeam, onRename, onDelete }: {
   project: Project; onNavigate: (id: string) => void
   /** Opens the project's Team page (an admin adds people there). */
   onTeam: (id: string) => void
   /** Opens the page's Rename dialog for this project (its admins). */
   onRename?: (project: Project) => void
+  /** Opens the page's Delete dialog for this project (its admins). */
+  onDelete?: (project: Project) => void
 }) {
   // Role is per-project now (project.userRole from the API's my_role).
   const isAdmin = project.userRole === 'admin'
   const isStale = project.pageState === 'never' || project.pageState === 'stale'
-  const deleteProject = useDeleteProject()
   const downloadConfig = useDownloadProjectConfig(project.id)
-
-  const onDelete = () => {
-    if (window.confirm(`Delete "${project.name}"? This cannot be undone.`)) {
-      deleteProject.mutate(project.id)
-    }
-  }
 
   const configItem = { label: 'Download config', icon: 'download', onClick: () => { void downloadConfig(project.name) } }
   const adminItems = [
     // A rename is rare: it lives here, not on the project's own pages.
     ...(onRename ? [{ label: 'Rename', icon: 'edit', onClick: () => onRename(project) }] : []),
     configItem,
-    { label: 'Delete',   icon: 'delete',       variant: 'danger' as const, onClick: onDelete },
+    ...(onDelete ? [{ label: 'Delete', icon: 'delete', variant: 'danger' as const, onClick: () => onDelete(project) }] : []),
   ]
   const devItems = [
     { label: 'View Project', icon: 'open_in_new', onClick: () => onNavigate(project.id) },
