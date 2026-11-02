@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useProjects } from '../../hooks/useProjects'
-import { Icon, TableSkeleton, toast } from '../../components/ui'
+import { Icon, ScrollX, TableSkeleton, toast } from '../../components/ui'
 import { HomeTopbar } from '../../components/shell/HomeTopbar'
 import { LogsPanel } from '../../components/livelogs/LogsPanel'
 import { useLogsTakeThePage } from '../../components/livelogs/useLogRuns'
@@ -19,7 +19,8 @@ const COLUMNS = [
   { label: 'Progress',  cls: 'px-4 py-3 w-40' },
   { label: 'Last Run',  cls: 'text-left px-4 py-3' },
   { label: 'Team',      cls: 'text-left px-4 py-3' },
-  { label: '',          cls: 'px-4 py-3 w-11' },
+  // The row menu stays in view when the table scrolls sideways (a narrow window): pinned right.
+  { label: '',          cls: 'px-4 py-3 w-11 sticky right-0 bg-surface-container-low shadow-[-6px_0_8px_-6px_rgba(4,22,39,.18)]' },
 ]
 
 export function ProjectsPage() {
@@ -94,7 +95,8 @@ export function ProjectsPage() {
                 onRequestAccess={requestAccess}
               />
             ) : (
-              <table className="w-full">
+              <ScrollX>
+              <table className="w-full min-w-[960px]">
                 <thead>
                   <tr className="bg-surface-container-low border-b border-outline-variant">
                     {COLUMNS.map(({ label, cls }) => (
@@ -122,6 +124,7 @@ export function ProjectsPage() {
                       ))}
                 </tbody>
               </table>
+              </ScrollX>
             )}
             {isLoading && <TableSkeleton rows={5} cols={8} />}
           </div>

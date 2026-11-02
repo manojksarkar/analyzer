@@ -212,11 +212,14 @@ export function ProjectRow({ project, onNavigate, onTeam, onRename, onDelete }: 
       </td>
 
       {/* Row menu */}
-      <td className="px-4 py-3.5 relative w-11" onClick={(e) => e.stopPropagation()}>
+      {/* Pinned right, so the menu is in view however the table scrolls; its background is solid
+          (scrolled cells pass under it), with the stale row's tint laid over it. */}
+      <td className="px-4 py-3.5 w-11 sticky right-0 bg-surface-container-lowest shadow-[-6px_0_8px_-6px_rgba(4,22,39,.18)]" onClick={(e) => e.stopPropagation()}>
+        {isStale && <span aria-hidden className="row-tint absolute inset-0 bg-warn-bg/50 pointer-events-none" />}
         <Dropdown>
           <DropdownTrigger asChild>
             <button
-              className="p-1 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant"
+              className="relative p-1 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant"
               aria-label={`Actions for ${project.name}`}
             >
               <Icon name="more_vert" size={18} />
