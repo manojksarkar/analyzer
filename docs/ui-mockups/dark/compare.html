@@ -436,15 +436,27 @@
   <div class="flex-1 flex overflow-hidden">
 
     <!-- DOCUMENT TREE -->
-    <aside class="w-60 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex flex-col overflow-hidden" aria-label="Documents">
+    <!-- The document list, folded (2026-11-02): a thin rail that opens it again - as documents.html. -->
+    <aside id="doc-tree-rail" class="hidden w-8 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex-col items-center pt-2" aria-label="Documents, folded">
+      <button type="button" onclick="foldDocTree(false)" title="Show the document list" aria-label="Show the document list"
+              class="w-full flex flex-col items-center gap-2 py-1.5 text-on-surface-variant hover:text-secondary">
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">left_panel_open</span>
+        <span style="writing-mode:vertical-rl;font-family:'SamsungOne','Roboto',sans-serif;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;">Documents</span>
+      </button>
+    </aside>
+    <aside id="doc-tree-panel" class="w-60 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex flex-col overflow-hidden" aria-label="Documents">
       <div class="px-3 py-2.5 border-b border-outline-variant flex-shrink-0 flex items-center justify-between">
-        <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em]">Documents</span>
+        <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em] mr-auto">Documents</span>
         <div class="flex items-center rounded-lg border border-outline-variant overflow-hidden" style="font-family:'SamsungOne','Roboto',sans-serif;font-size:11px;font-weight:600;">
           <button id="toggle-diff" onclick="setTreeMode('diff')"
                   class="px-2 py-1 bg-secondary text-white transition-colors">Diff</button>
           <button id="toggle-all"  onclick="setTreeMode('all')"
                   class="px-2 py-1 text-on-surface-variant hover:bg-surface-container transition-colors">All</button>
         </div>
+        <button type="button" onclick="foldDocTree(true)" title="Fold the document list" aria-label="Fold the document list"
+                class="ml-1 p-0.5 rounded text-on-surface-variant hover:text-secondary hover:bg-surface-container">
+          <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">left_panel_close</span>
+        </button>
       </div>
       <div class="flex-1 overflow-y-auto py-2" id="doc-tree"></div>
       <div class="px-3 py-2 border-t border-outline-variant flex-shrink-0">
@@ -1134,6 +1146,16 @@ document.addEventListener('click', e => {
 renderTree();
 renderEmptyCards();
 setRole('admin');
+// ── The document list folds to a rail (2026-11-02), as on the document page; the page keeps
+// the choice. compare.html#folded opens folded.
+function foldDocTree(fold) {
+  document.getElementById('doc-tree-panel').style.display = fold ? 'none' : '';
+  const rail = document.getElementById('doc-tree-rail');
+  rail.classList.toggle('hidden', !fold);
+  rail.style.display = fold ? 'flex' : '';
+}
+if (location.hash === '#folded') { selectItem('Brake Controller'); foldDocTree(true); }
+
 // ── Review & update from the compare page (NW-6) ─────────────────────────────────
 // Edit turns the Current side's correctable texts into boxes, as documents.html#edit does; a box
 // saves when you leave it, and the diff is read again (the text may now equal the Reference's).

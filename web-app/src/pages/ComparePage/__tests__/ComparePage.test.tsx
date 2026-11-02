@@ -239,3 +239,22 @@ describe('ComparePage: a removed document picked, then the page reloaded', { tim
     expect(useUIStore.getState().selectedRef.p1).toBeUndefined()
   })
 })
+
+/* The document list folds to a rail, as on the document page (2026-11-02): the two sides get the
+   width. Open to start; the choice is kept, apart from the document page's. */
+describe('ComparePage: the document list folds', { timeout: 30_000 }, () => {
+  afterEach(() => useUIStore.setState({ compareTreeFolded: false }))
+
+  it('folds to a rail and opens again, and the page keeps the choice', async () => {
+    useUIStore.setState({ compareTreeFolded: false, docTreeFolded: true })
+    setup()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Fold the document list' }))
+    expect(screen.queryByRole('complementary', { name: 'Documents' })).not.toBeInTheDocument()
+    expect(useUIStore.getState().compareTreeFolded).toBe(true)
+    expect(useUIStore.getState().docTreeFolded).toBe(true)
+    await user.click(screen.getByRole('button', { name: 'Show the document list' }))
+    expect(await screen.findByRole('complementary', { name: 'Documents' })).toBeInTheDocument()
+    expect(useUIStore.getState().compareTreeFolded).toBe(false)
+  })
+})

@@ -21,6 +21,10 @@ interface UIState {
   /** Document Inspector: the left document list folded to a rail (the reader needs the width). */
   docTreeFolded: boolean
   setDocTreeFolded: (v: boolean) => void
+  /** Compare: its document list folded to a rail (more width for the two sides). Its own choice,
+   *  open to start: the list is how the changed documents are picked. */
+  compareTreeFolded: boolean
+  setCompareTreeFolded: (v: boolean) => void
   /** Per-project picker selection (drives the detail view). In-memory only. */
   selectedRef: Record<string, Selection>
   setSelectedRef: (projectId: string, sel: Selection) => void
@@ -36,6 +40,8 @@ export const useUIStore = create<UIState>()(
       toggleInspectorPanel: () => set((s) => ({ inspectorPanelCollapsed: !s.inspectorPanelCollapsed })),
       docTreeFolded: true,
       setDocTreeFolded: (v) => set({ docTreeFolded: v }),
+      compareTreeFolded: false,
+      setCompareTreeFolded: (v) => set({ compareTreeFolded: v }),
       selectedRef: {},
       setSelectedRef: (projectId, sel) =>
         set((s) => ({ selectedRef: { ...s.selectedRef, [projectId]: sel } })),
@@ -47,6 +53,7 @@ export const useUIStore = create<UIState>()(
         sidebarCollapsed: s.sidebarCollapsed,
         inspectorPanelCollapsed: s.inspectorPanelCollapsed,
         docTreeFolded: s.docTreeFolded,
+        compareTreeFolded: s.compareTreeFolded,
       }),
     }
   )

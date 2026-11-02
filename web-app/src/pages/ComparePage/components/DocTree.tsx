@@ -8,21 +8,34 @@ import { DIFF_BADGE, type TreeMode } from '../helpers'
 // `process` tells a component's two documents apart: its SWE.3 and SWE.4 share its name.
 export interface TreeRow { id: string; name: string; process?: string; diffType: DiffType; changed: boolean }
 
-export function DocTree({ rows, mode, setMode, activeId, onSelect, changedCount, total, loading, failed }: {
+export function DocTree({ rows, mode, setMode, activeId, onSelect, changedCount, total, loading, failed, onFold }: {
   rows: TreeRow[]; mode: TreeMode; setMode: (m: TreeMode) => void
   activeId: string | null; onSelect: (id: string) => void
   changedCount: number; total: number; loading: boolean
   /** The list could not be read: say so, with Retry, not "No documents". */
   failed?: FailedLoad | null
+  /** Folds the list to a rail (`TreeRail`), as on the document page. */
+  onFold?: () => void
 }) {
   return (
     <aside aria-label="Documents" className="w-60 flex-shrink-0 bg-surface-container-lowest border-r border-outline-variant flex flex-col overflow-hidden">
       <div className="px-3 py-2.5 border-b border-outline-variant flex-shrink-0 flex items-center justify-between">
-        <span className="text-on-surface-variant uppercase font-mono text-caption font-medium tracking-[0.1em]">Documents</span>
+        <span className="mr-auto text-on-surface-variant uppercase font-mono text-caption font-medium tracking-[0.1em]">Documents</span>
         <div className="flex items-center rounded-lg border border-outline-variant overflow-hidden font-mono text-label font-semibold">
           <button onClick={() => setMode('diff')} className={cn('px-2 py-1 transition-colors', mode === 'diff' ? 'bg-selected text-white' : 'text-on-surface-variant')}>Diff</button>
           <button onClick={() => setMode('all')} className={cn('px-2 py-1 transition-colors', mode === 'all' ? 'bg-selected text-white' : 'text-on-surface-variant')}>All</button>
         </div>
+        {onFold && (
+          <button
+            type="button"
+            onClick={onFold}
+            title="Fold the document list"
+            aria-label="Fold the document list"
+            className="ml-1 p-0.5 rounded text-on-surface-variant hover:text-secondary hover:bg-surface-container"
+          >
+            <Icon name="left_panel_close" size={18} />
+          </button>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto py-2">
         {failed ? (

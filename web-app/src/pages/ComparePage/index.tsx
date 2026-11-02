@@ -16,6 +16,8 @@ import { failedLoad } from '../../lib/failedLoad'
 import { BlocksPane, SectionBody } from './components/DiffBlocks'
 import { DocTree, type TreeRow } from './components/DocTree'
 import { DocStateBar } from './components/DocStateBar'
+import { TreeRail } from '../DocumentInspectorPage/components/TreeRail'
+import { useUIStore } from '../../store/ui'
 import { ReferencePicker } from './components/ReferencePicker'
 import {
   DIFF_BADGE, compareVersions, olderVersions, paneSections, sectionAccent, signColumns, versionRef, type TreeMode,
@@ -60,6 +62,8 @@ export function ComparePage() {
   const baselineCommit = commits?.find((c) => c.sha === baselineVersion?.sha)
 
   const [treeModePick, setTreeMode] = useState<TreeMode | null>(null)
+  const treeFolded = useUIStore((s) => s.compareTreeFolded)
+  const setTreeFolded = useUIStore((s) => s.setCompareTreeFolded)
   const [changesOnly, setChangesOnly] = useState(false)
 
   const compareDocsQuery = useCompareDocuments(pid, readRef, baselineRef)
@@ -178,13 +182,16 @@ export function ComparePage() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      <DocTree
-        rows={treeRows} mode={treeMode} setMode={setTreeMode}
-        activeId={activeDocId} onSelect={selectDoc}
-        changedCount={changedCount} total={totalCount}
-        loading={holding || (treeMode === 'diff' ? docsLoading && !compareDocs : (allDocsLoading || versionsQuery.isLoading) && !allDocs)}
-        failed={treeFailed}
-      />
+      {treeFolded ? <TreeRail onOpen={() => setTreeFolded(false)} /> : (
+        <DocTree
+          rows={treeRows} mode={treeMode} setMode={setTreeMode}
+          activeId={activeDocId} onSelect={selectDoc}
+          changedCount={changedCount} total={totalCount}
+          loading={holding || (treeMode === 'diff' ? docsLoading && !compareDocs : (allDocsLoading || versionsQuery.isLoading) && !allDocs)}
+          failed={treeFailed}
+          onFold={() => setTreeFolded(true)}
+        />
+      )}
 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Loading until the versions say what is compared and the list (and a linked document)
