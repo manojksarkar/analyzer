@@ -424,13 +424,25 @@
   .bell-count { position: absolute; top: 2px; right: 0; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #ba1a1a; color: #fff; font: 700 11px/16px Inter; text-align: center; border: 2px solid #fff; box-sizing: content-box; }
   #cta-edit:disabled { opacity: .45; cursor: not-allowed; }
 
-  /* NW-7 (2026-11-02): the function's code under its flowcharts, read only when opened. */
-  .fn-code-btn { display:inline-flex; align-items:center; gap:4px; margin-top:10px; padding:4px 10px; border:1px solid #c4c6cd; border-radius:8px; background:#fff; color:#44474c; font:500 11px/16px 'JetBrains Mono',monospace; cursor:pointer; }
-  .fn-code-btn:hover { background:#eff4ff; color:#0058be; }
-  .fn-code { margin-top:8px; border:1px solid #c4c6cd; border-radius:8px; overflow:hidden; }
-  .fn-code-head { padding:6px 12px; background:#f2f3f7; color:#44474c; font:500 11px/16px 'JetBrains Mono',monospace; border-bottom:1px solid #c4c6cd; }
-  .fn-code pre { margin:0; padding:8px 0; background:#fbfbfd; color:#0b1c30; font:12px/1.6 'JetBrains Mono',monospace; overflow-x:auto; }
-  .fn-code .ln { display:inline-block; width:44px; padding-right:12px; text-align:right; color:#85888f; user-select:none; }
+
+  /* NW-7 (2026-11-02): the flowchart and its function's code side by side, in a dialog. */
+  .fc-code { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border:1px solid #c4c6cd; color:#44474c; border-radius:6px; font:600 11px 'JetBrains Mono',monospace; background:#fff; cursor:pointer; }
+  .fc-code:hover { background:#eff4ff; color:#0058be; border-color:#0058be; }
+  #fnv { position:fixed; inset:0; z-index:400; display:none; align-items:center; justify-content:center; background:rgba(4,22,39,.45); }
+  #fnv.open { display:flex; }
+  #fnv .box { width:min(1500px, calc(100vw - 48px)); height:calc(100vh - 48px); display:flex; flex-direction:column; background:#fff; border-radius:12px; box-shadow:0 12px 48px rgba(0,0,0,.3); overflow:hidden; }
+  #fnv .hd { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid #c4c6cd; }
+  #fnv .ttl { font:600 15px/20px Inter,sans-serif; color:#0b1c30; }
+  #fnv .sub { font:500 11px/16px 'JetBrains Mono',monospace; color:#44474c; }
+  #fnv .panes { flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+  #fnv .pane { min-height:0; overflow:auto; }
+  #fnv .pane + .pane { border-left:1px solid #c4c6cd; }
+  #fnv .lbl { position:sticky; top:0; z-index:1; padding:6px 12px; background:#f8f9ff; border-bottom:1px solid #c4c6cd; font:600 10px/16px 'JetBrains Mono',monospace; letter-spacing:.08em; text-transform:uppercase; color:#44474c; }
+  #fnv .fc { padding:16px; display:flex; justify-content:center; }
+  #fnv pre { margin:0; padding:8px 0; color:#0b1c30; font:12.5px/1.65 'JetBrains Mono',Consolas,'Courier New',monospace !important; }
+  #fnv pre * { font-family:inherit !important; }
+  #fnv pre, #fnv pre * { font-variant-ligatures: none !important; font-feature-settings: 'liga' 0, 'calt' 0 !important; }   /* `!=` stays `!=` */
+  #fnv .ln { display:inline-block; width:48px; padding-right:14px; text-align:right; color:#85888f; user-select:none; }
 </style>
 <link rel="stylesheet" href="a11y.css">
 <script src="a11y.js" defer></script>
@@ -1016,18 +1028,16 @@
                           <div class="fc-wrap">
                             <div class="fc-head">
                               <span class="fc-sig">void BrakeCtrl_Run(void)</span>
+                              <span class="flex items-center gap-1.5">
+                              <button type="button" class="fc-code" onclick="openFnView()" title="The flowchart and its code, side by side">
+                                <span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">code</span>View code
+                              </button>
                               <button class="fc-edit" onclick="openFlowchartEditor()">
                                 <span class="material-symbols-outlined" aria-hidden="true" style="font-size:13px;">account_tree</span>Edit flowchart
                               </button>
+                              </span>
                             </div>
                             <div class="fc-pic" id="doc-fc"></div>
-                            <button type="button" class="fn-code-btn" id="fn-code-btn" aria-expanded="false" onclick="toggleFnCode()">
-                              <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px;">code</span><span id="fn-code-label">Show code</span>
-                            </button>
-                            <div class="fn-code" id="fn-code" hidden>
-                              <p class="fn-code-head">src/brake/BrakeCtrl.c · lines 142–163</p>
-                              <pre><code><div><span class="ln" aria-hidden="true">142</span>void BrakeCtrl_Run(void)</div><div><span class="ln" aria-hidden="true">143</span>{</div><div><span class="ln" aria-hidden="true">144</span>    uint16_t speeds[4];</div><div><span class="ln" aria-hidden="true">145</span>    uint8_t  i;</div><div><span class="ln" aria-hidden="true">146</span></div><div><span class="ln" aria-hidden="true">147</span>    /* read the four wheel speeds { front left, front right, rear left, rear right } */</div><div><span class="ln" aria-hidden="true">148</span>    WheelSpeed_Read(speeds);</div><div><span class="ln" aria-hidden="true">149</span></div><div><span class="ln" aria-hidden="true">150</span>    for (i = 0U; i &lt; 4U; i++)</div><div><span class="ln" aria-hidden="true">151</span>    {</div><div><span class="ln" aria-hidden="true">152</span>        if (SlipEstimator_IsLocked(speeds[i]) != 0U)</div><div><span class="ln" aria-hidden="true">153</span>        {</div><div><span class="ln" aria-hidden="true">154</span>            g_valveCmd[i] = VALVE_RELEASE;</div><div><span class="ln" aria-hidden="true">155</span>        }</div><div><span class="ln" aria-hidden="true">156</span>        else</div><div><span class="ln" aria-hidden="true">157</span>        {</div><div><span class="ln" aria-hidden="true">158</span>            g_valveCmd[i] = PressureModel_Target(g_brakeReq, speeds[i]);</div><div><span class="ln" aria-hidden="true">159</span>        }</div><div><span class="ln" aria-hidden="true">160</span>    }</div><div><span class="ln" aria-hidden="true">161</span></div><div><span class="ln" aria-hidden="true">162</span>    ValveIf_Write(g_valveCmd);</div><div><span class="ln" aria-hidden="true">163</span>}</div></code></pre>
-                            </div>
                           </div>
                         </td></tr>
                     <tr><td class="k">Risk</td><td>Medium</td></tr>
@@ -3917,19 +3927,15 @@ document.addEventListener('click', e => {
 selectCommit((COMMITS.find(x => x.current) || COMMITS[0]).sha);
 setActiveOutline('s-intro');
 buildExtraUnits(); initSlots(); setEditable(); drawFlowchart('doc-fc', false); paintReady();
-// NW-7: the function's code under its flowcharts (read from the version's checkout when opened).
-function toggleFnCode(open) {
-  const box = document.getElementById('fn-code'), btn = document.getElementById('fn-code-btn');
-  const show = open === undefined ? box.hidden : open;
-  box.hidden = !show;
-  btn.setAttribute('aria-expanded', String(show));
-  document.getElementById('fn-code-label').textContent = show ? 'Hide code' : 'Show code';
+// NW-7: the flowchart and the function's code side by side (the code read when it opens).
+function openFnView() {
+  drawFlowchart('fnv-fc', false);
+  document.getElementById('fnv').classList.add('open');
 }
-// documents.html#code opens Brake Controller with BrakeCtrl_Run's code shown.
-if (location.hash === '#code') {
-  selectDoc('SWE.3', 'Brake Controller'); toggleFnCode(true);
-  setTimeout(() => document.getElementById('s-fn').scrollIntoView({ block: 'start' }), 50);
-}
+function closeFnView() { document.getElementById('fnv').classList.remove('open'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFnView(); });
+// documents.html#code opens Brake Controller with BrakeCtrl_Run's flowchart and code.
+if (location.hash === '#code') { selectDoc('SWE.3', 'Brake Controller'); setTimeout(openFnView, 50); }
 // documents.html#edit opens a SWE.3 document straight in edit mode (review & update mockup).
 if (location.hash === '#edit') { selectDoc('SWE.3', 'Brake Controller'); toggleEdit(true); }
 // documents.html#list-folded: the list with its document list folded to the rail.
@@ -3948,5 +3954,26 @@ if (REVIEW_HASH[location.hash]) {
   applyRole(role); selectDoc(proc, name); setPanelTab('review');
 }
 </script>
+
+<!-- NW-7 (2026-11-02): the flowchart and the function's code side by side; the code is read from the
+     version's checkout when the dialog opens. Esc or Close shuts it. -->
+<div id="fnv" onclick="if (event.target === this) closeFnView()">
+  <div class="box" role="dialog" aria-modal="true" aria-labelledby="fnv-title">
+    <div class="hd">
+      <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;color:#0058be;">code</span>
+      <div style="flex:1;min-width:0;">
+        <p class="ttl" id="fnv-title">BrakeCtrl_Run — flowchart and code</p>
+        <p class="sub">void BrakeCtrl_Run(void) · src/brake/BrakeCtrl.c · lines 142–163</p>
+      </div>
+      <button type="button" onclick="closeFnView()" aria-label="Close" style="padding:4px;border-radius:8px;color:#44474c;">
+        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:20px;">close</span>
+      </button>
+    </div>
+    <div class="panes">
+      <div class="pane"><p class="lbl">Flowchart</p><div class="fc fc-pic" id="fnv-fc"></div></div>
+      <div class="pane"><p class="lbl">Code</p><pre><code><div><span class="ln" aria-hidden="true">142</span>void BrakeCtrl_Run(void)</div><div><span class="ln" aria-hidden="true">143</span>{</div><div><span class="ln" aria-hidden="true">144</span>    uint16_t speeds[4];</div><div><span class="ln" aria-hidden="true">145</span>    uint8_t  i;</div><div><span class="ln" aria-hidden="true">146</span></div><div><span class="ln" aria-hidden="true">147</span>    /* read the four wheel speeds { front left, front right, rear left, rear right } */</div><div><span class="ln" aria-hidden="true">148</span>    WheelSpeed_Read(speeds);</div><div><span class="ln" aria-hidden="true">149</span></div><div><span class="ln" aria-hidden="true">150</span>    for (i = 0U; i &lt; 4U; i++)</div><div><span class="ln" aria-hidden="true">151</span>    {</div><div><span class="ln" aria-hidden="true">152</span>        if (SlipEstimator_IsLocked(speeds[i]) != 0U)</div><div><span class="ln" aria-hidden="true">153</span>        {</div><div><span class="ln" aria-hidden="true">154</span>            g_valveCmd[i] = VALVE_RELEASE;</div><div><span class="ln" aria-hidden="true">155</span>        }</div><div><span class="ln" aria-hidden="true">156</span>        else</div><div><span class="ln" aria-hidden="true">157</span>        {</div><div><span class="ln" aria-hidden="true">158</span>            g_valveCmd[i] = PressureModel_Target(g_brakeReq, speeds[i]);</div><div><span class="ln" aria-hidden="true">159</span>        }</div><div><span class="ln" aria-hidden="true">160</span>    }</div><div><span class="ln" aria-hidden="true">161</span></div><div><span class="ln" aria-hidden="true">162</span>    ValveIf_Write(g_valveCmd);</div><div><span class="ln" aria-hidden="true">163</span>}</div></code></pre></div>
+    </div>
+  </div>
+</div>
 </body>
 </html>
