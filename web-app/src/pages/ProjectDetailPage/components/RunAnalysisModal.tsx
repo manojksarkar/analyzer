@@ -4,6 +4,8 @@ import { cn } from '../../../lib/cn'
 import { ScopeTree } from '../../../components/run/ScopeTree'
 import { allKeys, keysWithDocuments, scopeOf } from '../../../lib/runScope'
 import { useVersionComponents } from '../../../hooks/useVersionComponents'
+import { useBaselinePreview } from '../../../hooks/useJobs'
+import { useExportReadiness } from '../../../hooks/useReview'
 import type { StartJobInput } from '../../../services/api'
 import type { Commit, Project, Version } from '../../../types'
 import { versionNameProblem } from '../helpers'
@@ -47,16 +49,21 @@ export function RunAnalysisModal({
   // arrives later never overwrites them. The modal mounts on each open: every run starts afresh.
   const layers = project.architectureLayers
   const [advOpen, setAdvOpen] = useState(false)
-  const [own, setOwn] = useState<{ ref: string; keys: Set<string> } | null>(null)
-  const { data: baseline } = useVersionComponents(project.id, referenceId || undefined)
-  const baselineKeys = referenceId && baseline ? keysWithDocuments(layers, baseline.components) : null
-  const ticked = own && own.ref === referenceId ? own.keys
-    : baselineKeys && baselineKeys.size > 0 ? baselineKeys : new Set(allKeys(layers))
-  const setTicked = (keys: Set<string>) => setOwn({ ref: referenceId, keys })
-  const [skipLlm, setSkipLlm] = useState(false)
   // A fresh run (NW-3): no baseline, so nothing is carried from an earlier version — no reused
-  // text, no reviewer corrections. "Compare against" then has nothing to pick.
+  // text, no reviewer corrections. "Compare against" then has nothing to pick, and the scope starts
+  // from every component, not the ones a version had documents for. For admins (every run is)
+  // after an analyzer update, or to check a run. Ticked, it says how many corrections stay behind
+  // in the version the run would have built on: the one picked, else the one the server would
+  // pick (baseline preview); R9's `overrideCount` counts those in force.
   const [fresh, setFresh] = useState(false)
+  const buildsOn = fresh ? '' : referenceId
+  const [own, setOwn] = useState<{ ref: string; keys: Set<string> } | null>(null)
+  const { data: baseline } = useVersionComponents(project.id, buildsOn || undefined)
+  const baselineKeys = buildsOn && baseline ? keysWithDocuments(layers, baseline.components) : null
+  const ticked = own && own.ref === buildsOn ? own.keys
+    : baselineKeys && baselineKeys.size > 0 ? baselineKeys : new Set(allKeys(layers))
+  const setTicked = (keys: Set<string>) => setOwn({ ref: buildsOn, keys })
+  const [skipLlm, setSkipLlm] = useState(false)
   const everyComp = allKeys(layers)
   const total = everyComp.length
   const tickedCount = everyComp.filter((k) => ticked.has(k)).length
@@ -71,6 +78,11 @@ export function RunAnalysisModal({
   ]
 
   const refVersions = (versions ?? []).filter((v): v is Version & { id: string } => !!v.id)
+  const { data: autoBase } = useBaselinePreview(project.id, commitSha, fresh && !referenceId)
+  const baseId = fresh ? referenceId || autoBase || undefined : undefined
+  const { data: baseReadiness } = useExportReadiness(project.id, baseId)
+  const baseTag = refVersions.find((v) => v.id === baseId)?.tag
+  const leftBehind = baseId && baseTag ? baseReadiness?.overrideCount ?? 0 : 0
   const nameProblem = versionNameProblem(versionName, versions)
   const nameHintId = useId()
   // Start says why it is off: the first thing still missing.
@@ -82,7 +94,7 @@ export function RunAnalysisModal({
     onStart({
       commit_sha: commitSha,
       version_tag: versionName.trim(),
-      reference_version_id: fresh ? undefined : referenceId || undefined,
+      reference_version_id: buildsOn || undefined,
       // Every component ticked is the whole project: no scope, as before.
       scope: scope && scope.type !== 'project' ? scope : undefined,
       no_llm: skipLlm || undefined,
@@ -148,7 +160,7 @@ export function RunAnalysisModal({
             <p className={cn('text-on-surface-variant mt-1.5', FIELD_LABEL)}>
               {fresh ? 'A fresh run builds on no earlier version.' : 'The version this run builds on. None: the newest earlier one.'}
             </p>
-            {baselineKeys && baselineKeys.size > 0 && own?.ref !== referenceId && (
+            {baselineKeys && baselineKeys.size > 0 && own?.ref !== buildsOn && (
               <p className={cn('text-secondary mt-1', FIELD_LABEL)}>
                 Starts with the {baselineKeys.size} component{baselineKeys.size === 1 ? '' : 's'} {refVersions.find((v) => v.id === referenceId)?.tag ?? 'it'} has documents for.
               </p>
@@ -206,18 +218,16 @@ export function RunAnalysisModal({
                 <input type="checkbox" checked={fresh} onChange={(e) => setFresh(e.target.checked)} className="mt-0.5 rounded border-field text-secondary flex-shrink-0 w-[15px] h-[15px]" />
                 <div>
                   <span className="text-on-surface text-xs group-hover:text-secondary transition-colors">Fresh run</span>
-                  <p className="text-on-surface-variant mt-0.5 text-caption">Builds on no earlier version, and carries no reviewer corrections over.</p>
+                  <p className="text-on-surface-variant mt-0.5 text-caption">Rebuilds everything with this analyzer version. Use after an analyzer update, or to check a run.</p>
+                  {leftBehind > 0 && (
+                    <p className="text-warn mt-1 text-caption font-semibold">
+                      Not carried over: {leftBehind} correction{leftBehind === 1 ? '' : 's'} in {baseTag}. They stay there.
+                    </p>
+                  )}
                 </div>
               </label>
-              {/* Pause after Phase 1 — the server does not act on it yet: a run goes through all
-                  four phases, and there is no function-visibility editor to pause for. */}
-              <label className="flex items-start gap-3 cursor-not-allowed opacity-60">
-                <input type="checkbox" checked={false} disabled readOnly className="mt-0.5 rounded border-field text-secondary flex-shrink-0 w-[15px] h-[15px]" />
-                <div>
-                  <span className="text-on-surface text-xs">Pause after Phase 1 to review function visibility</span>
-                  <p className="text-on-surface-variant mt-0.5 text-caption">Not available yet — a run goes through all four phases without stopping.</p>
-                </div>
-              </label>
+              {/* No "Pause after Phase 1" (2026-11-03): never used, and no function-visibility
+                  editor to pause for (BACKLOG WA-1). */}
             </div>
           </div>
         )}

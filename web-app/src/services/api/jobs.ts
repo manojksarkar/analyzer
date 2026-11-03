@@ -49,6 +49,13 @@ export const jobsApi = {
     }>(`/projects/${projectId}/jobs/${jobId}/functions`)
     return mapJobFunctions(r)
   },
+  /** The version a run of `commit` would build on, when none is picked (read-only: no checkout).
+   *  `null`: none — the run is a fresh one anyway. */
+  baselinePreview: async (projectId: string, commit: string): Promise<string | null> => {
+    const r = await http.get<{ chosenBaseVersionId?: string | null }>(
+      `/projects/${projectId}/baseline-preview`, { commit })
+    return r.chosenBaseVersionId ?? null
+  },
   /** SSE endpoint URL. The events route is unauthenticated, so no token needed. */
   eventsUrl: (projectId: string, jobId: string): string =>
     http.rawUrl(`/projects/${projectId}/jobs/${jobId}/events`),

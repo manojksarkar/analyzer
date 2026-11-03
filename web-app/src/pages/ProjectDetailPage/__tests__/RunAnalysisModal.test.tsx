@@ -131,6 +131,82 @@ describe('RunAnalysisModal, compared against a version', () => {
   })
 })
 
+/* Fresh run (NW-3, docs/ui-mockups/project-detail.html#fresh): builds on no version, so "Compare
+   against" is off, and every component is ticked. Ticked, it names the corrections that stay
+   behind in the version the run would have built on: the one picked, else the server's pick. No
+   "Pause after Phase 1": never used, never built. */
+describe('RunAnalysisModal, a fresh run', () => {
+  const r9 = (overrideCount: number) => ({
+    stale: false, reason: '', explanation: '', overrideCount, pendingRenders: 0, failedRenders: 0,
+    newestOverrideAt: null, oldestDerivationAt: null, reexport: null,
+  })
+  function corrections(counts: Record<string, number>, auto: string | null = 'ver2') {
+    const previews: string[] = []
+    server.use(
+      http.get(`${API_BASE_URL}/projects/p1/baseline-preview`, ({ request }) => {
+        previews.push(new URL(request.url).searchParams.get('commit') ?? '')
+        return HttpResponse.json({ targetCommit: 'b2e8d45aa', decision: auto ? 'incremental' : 'full', chosenBaseVersionId: auto })
+      }),
+      http.get(`${API_BASE_URL}/projects/p1/versions/:vid/export-readiness`, ({ params }) =>
+        HttpResponse.json(r9(counts[String(params.vid)] ?? 0))),
+    )
+    return previews
+  }
+  async function tickFresh(dialog: HTMLElement, user: ReturnType<typeof userEvent.setup>) {
+    await user.click(within(dialog).getByRole('button', { name: /Advanced options/ }))
+    await user.click(within(dialog).getByRole('checkbox', { name: /Fresh run/ }))
+  }
+
+  it("names the corrections left in the version the server would build on, and starts a full run", async () => {
+    const previews = corrections({ ver2: 37 })
+    const { dialog, start, onStart, user, compare } = setup()
+    await tickFresh(dialog, user)
+    expect(await within(dialog).findByText('Not carried over: 37 corrections in v1.2.0. They stay there.')).toBeInTheDocument()
+    expect(previews).toEqual(['b2e8d45aa'])
+    expect(compare()).toBeDisabled()
+    expect(within(dialog).getByText('A fresh run builds on no earlier version.')).toBeInTheDocument()
+    expect(within(dialog).queryByText(/Pause after Phase 1/)).not.toBeInTheDocument()
+    await user.click(start)
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ mode: 'full', reference_version_id: undefined }))
+  })
+
+  it('a version picked: its corrections, no preview, and every component', async () => {
+    const previews = corrections({ ver1: 1 })
+    const layered = { ...project, architectureLayers: [
+      { name: 'Layer1', groups: [{ name: 'G', components: [{ name: 'Math' }, { name: 'Util' }] }] },
+    ] } as unknown as Project
+    server.use(http.get(`${API_BASE_URL}/projects/p1/versions/ver1/components`, () => HttpResponse.json({
+      version_id: 'ver1', counts: {}, run: null, job: null, resume_action: 'nothing',
+      components: [
+        { component: 'Layer1.Math', layer: 'Layer1', name: 'Math', state: 'generated', in_model: true, layer_parsed: true,
+          group: null, error: null, documents: [{ id: 'd1', process: 'SWE.3', status: 'in_review' }] },
+        { component: 'Layer1.Util', layer: 'Layer1', name: 'Util', state: 'not_requested', in_model: true, layer_parsed: true,
+          group: null, error: null, documents: [] },
+      ],
+    })))
+    const { dialog, start, onStart, user, compare } = setup(layered)
+    await user.selectOptions(compare(), 'ver1')
+    await within(dialog).findByText('Starts with the 1 component v1.1.0 has documents for.')
+    await tickFresh(dialog, user)
+    // Built on nothing: every component again, and no word of the version's documents.
+    expect(within(dialog).queryByText(/Starts with/)).not.toBeInTheDocument()
+    expect(within(dialog).queryByText(/of 2 components/)).not.toBeInTheDocument()
+    expect(await within(dialog).findByText('Not carried over: 1 correction in v1.1.0. They stay there.')).toBeInTheDocument()
+    expect(previews).toEqual([])
+    await user.click(start)
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ mode: 'full', reference_version_id: undefined, scope: undefined }))
+  })
+
+  it('says nothing when no correction would stay behind, or there is no version to build on', async () => {
+    corrections({ ver2: 0 })
+    const { dialog, user } = setup()
+    await tickFresh(dialog, user)
+    await waitFor(() => expect(within(dialog).getByText(/Rebuilds everything with this analyzer version/)).toBeInTheDocument())
+    await new Promise((r) => setTimeout(r, 100))
+    expect(within(dialog).queryByText(/Not carried over/)).not.toBeInTheDocument()
+  })
+})
+
 describe('versionNameProblem', () => {
   it('needs a name, not taken in the project (exactly, after trimming)', () => {
     expect(versionNameProblem('  ', versions)).toBe('Name the version.')

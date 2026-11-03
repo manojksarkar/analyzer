@@ -61,6 +61,7 @@ export const projectKeys = {
   commits: (id: string) => ['projects', id, 'commits'] as const,
   job: (id: string) => ['projects', id, 'job'] as const,
   jobFunctions: (id: string, jobId: string) => ['projects', id, 'job', jobId, 'functions'] as const,
+  baselinePreview: (id: string, commit: string) => ['projects', id, 'baseline-preview', commit] as const,
   /** Every comparison of the project: a correction saved changes what they show. */
   compareAll: (id: string) => ['projects', id, 'compare'] as const,
   compare: (id: string, current: string, baseline: string) =>

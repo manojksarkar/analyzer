@@ -42,6 +42,16 @@ export function useCurrentJob(projectId: string) {
   })
 }
 
+/** The version a run of `commit` would build on when none is picked (`null`: none). Read only when
+ *  asked: the run dialog's Fresh run, to say which corrections it leaves behind. */
+export function useBaselinePreview(projectId: string, commit: string, enabled: boolean) {
+  return useQuery({
+    queryKey: projectKeys.baselinePreview(projectId, commit),
+    queryFn: () => jobsApi.baselinePreview(projectId, commit),
+    enabled: enabled && !!projectId && !!commit,
+  })
+}
+
 export function useJobFunctions(projectId: string, jobId: string | undefined) {
   return useQuery({
     queryKey: projectKeys.jobFunctions(projectId, jobId ?? ''),
