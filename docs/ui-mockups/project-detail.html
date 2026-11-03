@@ -1002,7 +1002,7 @@
 <!-- Opens small, with what every run needs: the commit, a version to compare against, the version
      name. "Advanced options" widens it to a second column: which components to analyze (a tree,
      every component ticked by default - a run makes one document per component whatever its
-     scope, so the scope only says WHICH), Skip LLM and Pause after Phase 1. Closed, the toggle
+     scope, so the scope only says WHICH), and two checks: Skip LLM and Fresh run. Closed, the toggle
      still names every option that is not its default, so a narrowed run is never hidden.
      Every open starts from the defaults. No taller than the window. -->
 <div id="run-modal" role="dialog" aria-modal="true" aria-label="Run analysis" class="hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(4,22,39,.55);">
@@ -1118,15 +1118,8 @@
             <input type="checkbox" id="fresh-run" onchange="freshRun(this.checked)" class="mt-0.5 rounded border-outline text-secondary flex-shrink-0" style="width:15px;height:15px;">
             <div>
               <span class="font-label-sm text-label-sm text-on-surface group-hover:text-secondary transition-colors" style="font-size:12px;">Fresh run</span>
-              <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" style="font-size:11px;">Builds on no earlier version, and carries no reviewer corrections over.</p>
-            </div>
-          </label>
-          <!-- Pause checkbox -->
-          <label class="flex items-start gap-3 cursor-pointer group">
-            <input type="checkbox" id="pause-phase1" onchange="showAdvSummary()" class="mt-0.5 rounded border-outline text-secondary flex-shrink-0" style="width:15px;height:15px;">
-            <div>
-              <span class="font-label-sm text-label-sm text-on-surface group-hover:text-secondary transition-colors" style="font-size:12px;">Pause after Phase 1 to review function visibility</span>
-              <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" style="font-size:11px;">Lets you hide functions before diagrams and DOCX are generated.</p>
+              <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" style="font-size:11px;">Rebuilds everything with this analyzer version. Use after an analyzer update, or to check a run.</p>
+              <p id="fresh-warn" style="display:none;margin-top:4px;font-size:11px;font-weight:600;color:#92400e;"></p>
             </div>
           </label>
         </div>
@@ -2747,17 +2740,15 @@ function showAdvSummary() {
   if (n < total) parts.push(n + ' of ' + total + ' components');
   if (document.getElementById('skip-llm').checked) parts.push('Skip LLM');
   if (document.getElementById('fresh-run').checked) parts.push('Fresh run');
-  if (document.getElementById('pause-phase1').checked) parts.push('Pause after Phase 1');
   const el = document.getElementById('adv-summary');
   el.textContent = parts.length ? parts.join(' · ') : 'Defaults';
   el.title = el.textContent;
   el.className = 'adv-summary' + (n === 0 ? ' err' : parts.length ? ' set' : '');
 }
-// Every open starts from the defaults: all components, LLM on, no pause, Advanced closed.
+// Every open starts from the defaults: all components, LLM on, not fresh, Advanced closed.
 function resetRunOptions() {
   allKeys().forEach((k) => scopeTicked.add(k));
   document.getElementById('skip-llm').checked = false;
-  document.getElementById('pause-phase1').checked = false;
   document.getElementById('fresh-run').checked = false;
   freshRun(false);
   toggleRunAdv(false);
@@ -2771,16 +2762,24 @@ showScope();
 // NW-3: a fresh run builds on no version, so Compare against is off and says why.
 function freshRun(on) {
   const sel = document.getElementById('run-modal-reference');
-  if (on) sel.value = '';
+  if (on) { sel.dataset.picked = sel.value; sel.value = ''; } else if (sel.dataset.picked) { sel.value = sel.dataset.picked; delete sel.dataset.picked; }
   sel.disabled = on;
   sel.style.opacity = on ? '.6' : '';
   sel.style.cursor = on ? 'not-allowed' : 'pointer';
   document.getElementById('run-ref-what').textContent = on
     ? 'A fresh run builds on no earlier version.'
     : 'The version this run builds on. None: the newest earlier one.';
+  // The version it would have built on: the one picked, else the newest earlier one.
+  const base = sel.dataset.picked || (VERSIONS[0] && VERSIONS[0].tag);
+  const n = FRESH_CORRECTIONS[base] || 0;
+  const w = document.getElementById('fresh-warn');
+  w.style.display = on && n ? '' : 'none';
+  w.textContent = `Not carried over: ${n} correction${n === 1 ? '' : 's'} in ${base}. They stay there.`;
   refHint(sel);
   showAdvSummary();
 }
+// Reviewer corrections per version (the mockup's numbers).
+const FRESH_CORRECTIONS = { 'v1.2.0': 37, 'v1.1.0': 12 };
 // project-detail.html#fresh opens the run dialog with Advanced open and Fresh run ticked.
 if (location.hash === '#fresh') window.addEventListener('load', () => {
   openRunConfig(); toggleRunAdv(true);
@@ -2957,6 +2956,8 @@ function startReexport() {
 // ── Post-Phase-1 review modal ──
 let _unitOpenReview = {};
 
+// Not opened since 2026-11-03: the run dialog's "Pause after Phase 1" went (never used). Kept for
+// function visibility, BACKLOG WA-1, still to decide.
 function showFnReviewModal() {
   _unitOpenReview = {};
   document.getElementById('review-search').value = '';
@@ -3187,29 +3188,14 @@ function startGeneration() {
   _phaseTimers.forEach(clearTimeout);
   _phaseTimers = [];
 
-  const pauseAfterPhase1 = document.getElementById('pause-phase1') && document.getElementById('pause-phase1').checked;
-
-  if (pauseAfterPhase1) {
-    setPhActive(1);
-    setPhPending(2); setPhPending(3); setPhPending(4);
-    setLine('line12', 'ph-pending'); setLine('line23', 'ph-pending'); setLine('line34', 'ph-pending');
-    setActivity(1);
-    _phaseTimers.push(setTimeout(() => {
-      const m = Math.floor(_elapsed / 60), s = _elapsed % 60;
-      setPhDone(1, 'Done · ' + m + 'm ' + s + 's');
-      setLine('line12', 'ph-done');
-      showFnReviewModal();
-    }, 5000));
-  } else {
-    resetPhasesVisual();
-    setActivity(1);
-    _phaseTimers = [
-      setTimeout(() => advanceToPhase(2),  9000),
-      setTimeout(() => advanceToPhase(3), 18000),
-      setTimeout(() => advanceToPhase(4), 27000),
-      setTimeout(() => finishGeneration(), 36000),
-    ];
-  }
+  resetPhasesVisual();
+  setActivity(1);
+  _phaseTimers = [
+    setTimeout(() => advanceToPhase(2),  9000),
+    setTimeout(() => advanceToPhase(3), 18000),
+    setTimeout(() => advanceToPhase(4), 27000),
+    setTimeout(() => finishGeneration(), 36000),
+  ];
 
   setState('running');
 }

@@ -12,13 +12,13 @@
 
 ## Next work (listed 2026-10-29, priorities 2026-10-30)
 
-Order: NW-2 → NW-8 → NW-1 → NW-3 (priority, then dependency, then the smaller one). Done 2026-10-31: NW-4, NW-6, NW-7; 2026-11-02: NW-5; 2026-11-03: NW-3.
+Order: NW-2 → NW-8 → NW-1 → NW-3 (priority, then dependency, then the smaller one). Done 2026-10-31: NW-4, NW-6, NW-7; 2026-11-02: NW-5.
 
 | Id | Item | Type | Pri | Effort | Waits on | Status | Where |
 |---|---|---|---|---|---|---|---|
 | NW-1 | Pause and resume a run within a phase; then pause by itself after N LLM failures in a row | enhance | P2 | L | — | open | `pipeline_runner.py`, `core/progress.py`, `llm_core/client.py` |
 | NW-2 | Approve a document only when its base document is reviewed | enhance | P1 | S–M | what "base" means | decide | `review_workflow.py` `approve()` |
-| NW-3 | Fresh run (no baseline) for any commit, from the web | enhance | P3 | S | — | done | `RunAnalysisModal.tsx`, `routes/jobs.py` `mode` |
+| NW-3 | Fresh run (no baseline) for any commit, from the web; says when it is for and which corrections stay behind; Pause after Phase 1 removed | enhance | P3 | S | — | open | `RunAnalysisModal.tsx`, `routes/jobs.py` `mode` |
 | NW-8 | Parse workers and several LLM calls at once as the default | enhance | P2 | S | a review-site run with them on; LG-2 | open | `core/config.py` `speedup_settings` |
 
 ## Logs and LLM
@@ -45,6 +45,7 @@ Order: NW-2 → NW-8 → NW-1 → NW-3 (priority, then dependency, then the smal
 | IN-4 | A global with more than 5 readers / writers is regenerated more than needed | perf | — | — | a real project with such globals | open | `llm_enrichment.py` `enrich_globals_rich` |
 | IN-5 | A Phase 3 resume on another machine has no `knowledge_base.json` | issue | — | — | — | open | `hydrate_model` |
 | IN-6 | An incremental run misses a new function's callers in unchanged files | issue | — | — | — | open | narrowed parse |
+| IN-7 | After an analyzer update, an incremental run keeps the old flowcharts of unchanged functions: reuse is keyed by the code, not by how charts are drawn. A drawing-rules version in the code, compared with the baseline's, would redraw them by itself — then Fresh run (NW-3) is rarely needed | issue | — | S–M | — | open | `views/flowcharts.py` carry-forward, `incremental/fingerprint.py` |
 
 ## SWE.3
 
@@ -159,7 +160,7 @@ Order: NW-2 → NW-8 → NW-1 → NW-3 (priority, then dependency, then the smal
 
 | Id | Item | Type | Pri | Effort | Waits on | Status | Where |
 |---|---|---|---|---|---|---|---|
-| WA-1 | Function visibility end to end: three stores, none feeding the next; "Manage" disabled | issue | — | — | where hiding lives | decide | `job_functions`, `entity_versions.is_visible`, exporter `hidden` |
+| WA-1 | Function visibility end to end: three stores, none feeding the next; "Manage" disabled; the run dialog's "Pause after Phase 1" removed 2026-11-03 (never used) — back only with this | issue | — | — | where hiding lives | decide | `job_functions`, `entity_versions.is_visible`, exporter `hidden` |
 | WA-2 | No user creation in the web app (CLI `analyzer.py user` only); a pending invite never becomes active | enhance | — | — | — | open | `api/routes/users.py` |
 | WA-3 | Project discovery, Profile, Help, SSO, forgot password | enhance | — | — | — | open | shell |
 | WA-19 | **Archive, then a soft delete** -- Archive is needed before the first deployment with real projects; today Delete removes everything at once | enhance | — | M | — | open | `api/routes/projects.py`, Projects page |
