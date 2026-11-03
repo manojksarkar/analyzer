@@ -1285,13 +1285,13 @@
             <label class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:11px;">Compare against</label>
             <span style="font-size:11px;color:#979ca7;font-family:'SamsungOne','Roboto',sans-serif;">OPTIONAL</span>
           </div>
-          <select id="run-modal-reference" onchange="refHint(this)"
+          <select id="run-modal-reference" onchange="refHint(this)" aria-label="Compare against"
             class="w-full border border-outline rounded-lg px-3 py-2 text-on-surface bg-surface-container-lowest cursor-pointer focus:outline-none"
             style="font-family:'SamsungOne','Roboto',sans-serif;font-size:12px;"
             onfocus="this.style.borderColor='#1d7bff'" onblur="this.style.borderColor='#2c2f37'">
             <option value="">— None —</option>
           </select>
-          <p class="font-label-sm text-label-sm text-on-surface-variant mt-1.5" style="font-size:11px;">Enables diff view between this run and the selected version.</p>
+          <p id="run-ref-what" class="font-label-sm text-label-sm text-on-surface-variant mt-1.5" style="font-size:11px;">The version this run builds on. None: the newest earlier one.</p>
           <p id="run-ref-hint" style="display:none;font-family:'JetBrains Mono';font-size:11px;color:#5aa2ff;margin-top:4px;"></p>
         </div>
 
@@ -1346,6 +1346,15 @@
             <div>
               <span class="font-label-sm text-label-sm text-on-surface group-hover:text-secondary transition-colors" style="font-size:12px;">Skip LLM</span>
               <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" style="font-size:11px;">Faster: the LLM steps are skipped. Use it to check structure, not wording.</p>
+            </div>
+          </label>
+          <!-- Fresh run (NW-3): the job's mode "full" -- no baseline, nothing reused,
+               no corrections carried; Compare against has nothing to pick -->
+          <label class="flex items-start gap-3 cursor-pointer group">
+            <input type="checkbox" id="fresh-run" onchange="freshRun(this.checked)" class="mt-0.5 rounded border-outline text-secondary flex-shrink-0" style="width:15px;height:15px;">
+            <div>
+              <span class="font-label-sm text-label-sm text-on-surface group-hover:text-secondary transition-colors" style="font-size:12px;">Fresh run</span>
+              <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" style="font-size:11px;">Builds on no earlier version, and carries no reviewer corrections over.</p>
             </div>
           </label>
           <!-- Pause checkbox -->
@@ -3005,6 +3014,7 @@ function showAdvSummary() {
   const parts = [];
   if (n < total) parts.push(n + ' of ' + total + ' components');
   if (document.getElementById('skip-llm').checked) parts.push('Skip LLM');
+  if (document.getElementById('fresh-run').checked) parts.push('Fresh run');
   if (document.getElementById('pause-phase1').checked) parts.push('Pause after Phase 1');
   const el = document.getElementById('adv-summary');
   el.textContent = parts.length ? parts.join(' · ') : 'Defaults';
@@ -3016,6 +3026,8 @@ function resetRunOptions() {
   allKeys().forEach((k) => scopeTicked.add(k));
   document.getElementById('skip-llm').checked = false;
   document.getElementById('pause-phase1').checked = false;
+  document.getElementById('fresh-run').checked = false;
+  freshRun(false);
   toggleRunAdv(false);
   renderScope();
   showScope();
@@ -3023,6 +3035,25 @@ function resetRunOptions() {
 allKeys().forEach((k) => scopeTicked.add(k));
 renderScope();
 showScope();
+
+// NW-3: a fresh run builds on no version, so Compare against is off and says why.
+function freshRun(on) {
+  const sel = document.getElementById('run-modal-reference');
+  if (on) sel.value = '';
+  sel.disabled = on;
+  sel.style.opacity = on ? '.6' : '';
+  sel.style.cursor = on ? 'not-allowed' : 'pointer';
+  document.getElementById('run-ref-what').textContent = on
+    ? 'A fresh run builds on no earlier version.'
+    : 'The version this run builds on. None: the newest earlier one.';
+  refHint(sel);
+  showAdvSummary();
+}
+// project-detail.html#fresh opens the run dialog with Advanced open and Fresh run ticked.
+if (location.hash === '#fresh') window.addEventListener('load', () => {
+  openRunConfig(); toggleRunAdv(true);
+  document.getElementById('fresh-run').checked = true; freshRun(true);
+});
 
 // ── Function Visibility ──
 const FUNCTION_TREE = [
