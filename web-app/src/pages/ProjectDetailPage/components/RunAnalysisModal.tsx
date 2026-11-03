@@ -8,15 +8,9 @@ import { useBaselinePreview } from '../../../hooks/useJobs'
 import { useExportReadiness } from '../../../hooks/useReview'
 import type { StartJobInput } from '../../../services/api'
 import type { Commit, Project, Version } from '../../../types'
-import { versionNameProblem } from '../helpers'
+import { suggestNextVersion, versionNameProblem } from '../helpers'
 
 /* ─── Run Analysis modal (matches project-detail.html) ─── */
-function suggestNextVersion(versions?: Version[]): string {
-  if (!versions || versions.length === 0) return 'v1.0.0'
-  const m = versions[0].tag.match(/^v?(\d+)\.(\d+)\.(\d+)$/)
-  return m ? `v${m[1]}.${parseInt(m[2], 10) + 1}.0` : ''
-}
-
 const SELECT_CLS = 'font-mono text-xs'
 const FIELD_LABEL = 'text-caption font-mono'
 

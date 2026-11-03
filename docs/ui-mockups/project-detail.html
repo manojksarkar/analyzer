@@ -3106,10 +3106,19 @@ function rerunVersion(tag) {
 }
 
 // ── Run modal ──
+// The newest numbered version (v3, v1.1, v1.2.0), its second number up, in the same shape; never a taken name.
 function suggestNextVersion() {
   if (!VERSIONS.length) return 'v1.0.0';
-  const m = VERSIONS[0].tag.match(/^v?(\d+)\.(\d+)\.(\d+)$/);
-  return m ? `v${m[1]}.${parseInt(m[2]) + 1}.0` : '';
+  const m = VERSIONS.map(v => v.tag.match(/^(v?)(\d+)(?:\.(\d+))?(?:\.(\d+))?$/i)).find(x => x);
+  if (!m) return '';
+  const nums = m.slice(2).filter(x => x !== undefined).map(Number);
+  const taken = new Set(VERSIONS.map(v => v.tag));
+  for (let i = 0; i < 100; i++) {
+    if (nums.length === 1) nums[0] += 1; else { nums[1] += 1; nums.fill(0, 2); }
+    const name = m[1] + nums.join('.');
+    if (!taken.has(name)) return name;
+  }
+  return '';
 }
 
 function openRunConfig() {

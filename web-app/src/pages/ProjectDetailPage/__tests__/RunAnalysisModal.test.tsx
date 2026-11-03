@@ -6,7 +6,7 @@ import { http, HttpResponse } from 'msw'
 import { server } from '../../../test/server'
 import { API_BASE_URL } from '../../../lib/http'
 import { RunAnalysisModal } from '../components/RunAnalysisModal'
-import { versionNameProblem } from '../helpers'
+import { suggestNextVersion, versionNameProblem } from '../helpers'
 import type { Commit, Project, Version } from '../../../types'
 
 /* Run Analysis: a version needs a name nobody in the project has (the API refuses an empty one,
@@ -213,5 +213,37 @@ describe('versionNameProblem', () => {
     expect(versionNameProblem(' v1.2.0 ', versions)).toMatch(/already exists/)
     expect(versionNameProblem('V1.2.0', versions)).toBeNull()
     expect(versionNameProblem('v2', undefined)).toBeNull()
+  })
+})
+
+describe('suggestNextVersion', () => {
+  const tags = (...t: string[]) => t.map((tag) => ({ tag })) as unknown as Version[]
+
+  it('keeps the shape of the newest name: one, two or three numbers', () => {
+    expect(suggestNextVersion(tags('v1.2.0', 'v1.1.0'))).toBe('v1.3.0')
+    expect(suggestNextVersion(tags('v1.2.5'))).toBe('v1.3.0')
+    expect(suggestNextVersion(tags('v1.1', 'v1.0'))).toBe('v1.2')
+    expect(suggestNextVersion(tags('v3'))).toBe('v4')
+    expect(suggestNextVersion(tags('2.4'))).toBe('2.5')
+  })
+
+  it('the first version, a newest one with no number, and a name already taken', () => {
+    expect(suggestNextVersion([])).toBe('v1.0.0')
+    expect(suggestNextVersion(undefined)).toBe('v1.0.0')
+    expect(suggestNextVersion(tags('v1.2.0-rc1', 'v1.1.0'))).toBe('v1.2.0')
+    expect(suggestNextVersion(tags('release-a'))).toBe('')
+    expect(suggestNextVersion(tags('v1.1', 'v1.2'))).toBe('v1.3')
+  })
+
+  it('the dialog opens with it', () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <RunAnalysisModal project={project} commits={commits} commitsLoading={false} versions={tags('v1.1', 'v1.0')}
+                          submitting={false} onClose={vi.fn()} onStart={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    expect(screen.getByRole('textbox', { name: 'Version name' })).toHaveValue('v1.2')
+    expect(screen.queryByText('Name the version.')).not.toBeInTheDocument()
   })
 })
