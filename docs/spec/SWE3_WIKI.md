@@ -21,9 +21,10 @@ One rule table per section of the document, in document order:
 | BD | Dynamic Behaviour (N.2) | [BD](#bd--dynamic-behaviour) |
 | FX | fixed values, Code Metrics, Appendix | [FX](#fx--fixed-values-code-metrics-appendix) |
 
-Each table has three columns: **Rule**, **Example**, and **Looks wrong, but is expected**, which is what
-a reader may take for a defect although the rule asks for it. ⚠ marks a rule not agreed yet; all of them
-are listed again in [Open questions](#open-questions).
+Each rule has its **ID**, the **Rule**, an **Example**, and **Looks wrong, but is expected**: what a
+reader may take for a defect although the rule asks for it. ⚠ marks a rule, or a case, not agreed yet;
+all of them are listed again in [Open questions](#open-questions). The short notes under some tables say
+why a rule is the way it is.
 
 A review comment is one of five things:
 
@@ -103,7 +104,7 @@ Appendix A  Design Guideline
 | Text | Without the LLM | With the LLM |
 |---|---|---|
 | Interface **Information** ([IT-18](#column-3--information)) | `-` | one line describing the function or global |
-| Component/Unit **Description** ([CO-09](#co--component-diagrams-and-table)) | the unit's own descriptions joined, cut at 120 characters | one line summarising the unit |
+| Component/Unit **Description** ([CO-09](#co--component-diagrams-and-table)) | its interface rows' descriptions joined, cut at 120 characters | one line summarising the unit |
 | Unit header **information** of a struct typedef ([UH-07](#uh--unit-header-table)) | a phrase built from the type name | one line from the type name **and** its fields |
 | Flowchart box labels ([FC-07](#fc--function-entry-and-flowcharts)) | the box's own source text | a short label per box |
 | Behaviour bullets ([BD-08](#bd--dynamic-behaviour)) | `A calls B` | `A calls B to …` (20 words at most) |
@@ -136,7 +137,7 @@ Sections N.1.1 (the two pictures) and N.1.2 (the Component/Unit table), at the t
 | CO-06 | The Component/Unit table has one row per unit with a source file, in four columns: Component, Unit, Description, Note | — | — |
 | CO-07 | Component: the name for reading — layer prefix removed, hyphens back to spaces (`Layer1.Sample-Core` → `Sample Core`) — written once, in the first row, and merged down the column | — | — |
 | CO-08 | Unit: the file name without its extension | `FtlMap` | — |
-| CO-09 | Description: one line from the LLM, summarising the descriptions of the unit's **own functions and globals** (kept as two lists, duplicates and blanks removed), never the raw source. LLM off or failing: those descriptions joined, cut at 120 characters. No description at all: `N/A` | — | a sentence cut short when the LLM is off |
+| CO-09 | Description: one line from the LLM, summarising the descriptions of the unit's **public** functions and globals — its interface rows — kept as two lists, duplicates and blanks removed; never the raw source. LLM off or failing: those descriptions joined with `; `, cut at 120 characters. No description at all: `N/A` | — | a sentence cut short when the LLM is off; `N/A` for a unit with no public item |
 | CO-10 | ⚠ Note: always `N/A` ([FX-03](#fx--fixed-values-code-metrics-appendix)) | — | — |
 
 ---
@@ -257,7 +258,7 @@ Section N.1.5. One row per interface of the unit:
 | IT-03 | A function is public when a function in **another unit** calls it, or its address sits in a file-level table (`static const fp_t table[] = { fn, … };`). A call from the unit's own header is a call from the same unit | — | "`PUBLIC` function `main` is missing" — no other unit calls it |
 | IT-04 | A global is public when a function in **another unit** reads or writes it. A use through an `extern` declaration counts for the global it declares; so does a class static member used through an object (`obj.s_x`, `p->s_x`). Calling a function that touches the global does not count | `Lib` reads `g_sharedTick` through `SharedDefs.h` → `Core`'s global has a row | "global `g_result` is missing" — only its own unit uses it |
 | IT-05 | **No marking decides.** `PUBLIC`, `PRIVATE`, `PROTECTED` and the C++ `public:`, `protected:`, `private:` are ignored | `coreGetCount` is `PROTECTED`, called by `App/Main` → it has a row | "a private function is in the table" |
-| IT-06 | A file-scope `static` variable never has a row: nothing outside its file can name it. An `extern` declaration has none either: the defining unit's row stands for it (the unit header lists the `extern` line) | — | "`extern` global missing" |
+| IT-06 | A file-scope `static` variable never has a row: nothing outside its file can name it. An `extern` declaration has none either: the defining unit's row stands for it (the unit header lists the `extern` line) | — | "the global this unit declares `extern` has no row here" |
 | IT-07 | A private item has no row, no arrow and no heading. Its internal id `PIF_…` is never printed; it exists only in the tool's data and logs | — | — |
 | IT-08 | ⚠ The answer depends on what was parsed: an entry point nothing calls by name (an ISR, a registered callback) is private unless a table holds its address, and a run of one layer cannot see the layer above calling in | — | "the ISR is missing" |
 | IT-09 | Types and macros are never rows: they are in the unit header table | — | — |
@@ -276,7 +277,7 @@ Section N.1.5. One row per interface of the unit:
 | IT-12 | No layer: the project name takes its place. No group: the group part is left out (`IF_<LAYER>_<UNIT>_<NN>`). The unit part is the file name, not the folder path | — | — |
 | IT-13 | `<NN>` is two digits counted **per unit**, `.h` and `.cpp` on one list: functions first, ordered by file name then line (`.cpp` before `.h`), then globals the same way. Private items are counted apart, so the printed numbers never skip | — | — |
 | IT-14 | ⚠ Units whose ids would read the same (`Map`, `Map2`) share one count, so no id is printed twice: `Map` takes `_01`, `_02`, `Map2` goes on at `_03` | — | `Map2` starting at `_03` |
-| IT-15 | An id is a position: when a function becomes public, the ids after it in its unit move up by one | — | "ids changed between versions" |
+| IT-15 | An id is a position: when a function becomes public, each later id of its unit grows by one | — | "ids changed between versions" |
 
 ### Column 2 — Interface Name
 
@@ -303,7 +304,7 @@ Section N.1.5. One row per interface of the unit:
 
 | ID | Rule | Example | Looks wrong, but is expected |
 |---|---|---|---|
-| IT-22 | One range per Data Type line, in the same order: `range; range; …`, then `return: range`. No parameters: `NA` | `0-0xFFFFFFFF; 0-0xFFFFFFFF` / `return: -0x80000000-0x7FFFFFFF` | — |
+| IT-22 | One range per Data Type line, in the same order: `range; range; …`, then `return: range` (`NA` for `void`). No parameters: `NA` | `0-0xFFFFFFFF; 0-0xFFFFFFFF` / `return: -0x80000000-0x7FFFFFFF` | — |
 | IT-23 | A range is looked up **by type name** in one data dictionary, never made up per function. Only this layer's entries and the shared ones answer; a type of the same name in another layer is never used | — | — |
 | IT-24 | The first that answers wins: a supplied CSV; what libclang measured for the build target; the built-in table of primitives; a lookup by name; `NA` | `uint8_t` → `0-0xFF`, `bool` → `0-1` | "`long` has a different range on another machine" — 4 bytes on Windows, 8 on Linux |
 | IT-25 | A typedef with no range of its own follows the type it stands for, up to 10 steps. The match is case-sensitive, as C++ is | `Lba_t` → `uint32_t` → `0-0xFFFFFFFF`; `Size_t` is not `size_t` | — |
@@ -358,7 +359,7 @@ Section N.1.6: one heading per public function, with a table and its flowchart(s
 | FC-01 | One heading `N.1.u.k <Unit>-<Function>` per public function ([IT-03](#which-rows--public-and-private)), named as in the interface table; each overload has its own. Globals get none | `FtlMap-FtlSetEntry` | "private function `isValidLba` has no heading" |
 | FC-02 | Under it, a table of five rows: Requirements, Risk, Capacity(Density), Input Name, Output Name | — | — |
 | FC-03 | Requirements: the function's description (its name if it has none), then its flowchart picture(s), each with its signature above it | — | — |
-| FC-04 | After the function's own flowchart comes one for each **private** function it calls directly. Each private function is drawn once per unit, under the first public function that calls it; hidden ones are skipped | `bool isValidLba(Lba_t lba)` + flowchart under `FtlSetEntry` | "`isValidLba`'s flowchart sits under another function" |
+| FC-04 | After the function's own flowchart comes one for each **private** function it calls directly. Each private function is drawn once per unit, under the first public function that calls it; hidden ones are skipped | `bool isValidLba(Lba_t lba)` + flowchart under `FtlSetEntry` | "`isValidLba`'s flowchart sits under another function"; ⚠ a private function called only by another private function has no flowchart |
 | FC-05 | Risk `Medium`, Capacity(Density) `Common`: fixed values ([FX-01](#fx--fixed-values-code-metrics-appendix)) | — | ⚠ the same value on every function |
 
 **The flowchart**
@@ -376,9 +377,9 @@ Section N.1.6: one heading per public function, with a table and its flowchart(s
 
 | ID | Rule | Example | Looks wrong, but is expected |
 |---|---|---|---|
-| FC-12 | Input Name, the first that gives a name: the first parameter's name; the first global it writes; the first global it reads; `<Function> input` | `lba` → `Lba` | — |
+| FC-12 | Input Name: the first parameter's name. A function with no named parameter: the first global it writes, else the first global it reads. Nothing found: `<Function> input` | `lba` → `Lba` | — |
 | FC-13 | Output Name, the first that gives a name: a plain name from the `return` line; the return type, unless `void`, `int`, `bool`, `float`, `double`, `char`, `short` or `long`; the first global it writes; the first global it reads; `<Function> result`. A function returning `TRUE` or `FALSE` gets `TRUE/FALSE` | — | — |
-| FC-14 | Tidying: a leading `g_`, `s_` or `t_` is removed, underscores become spaces, the first letter is a capital. A name of 2 characters or fewer is skipped for the next step. The globals include those reached through the functions it calls | `g_entry_count` → `Entry count` | — |
+| FC-14 | Tidying: a leading `g_`, `s_` or `t_` is removed, underscores become spaces, the first letter is a capital. A name of 2 characters or fewer is dropped: the Input Name becomes the placeholder, the Output Name goes on to the globals. The globals include those reached through the functions it calls | `g_entry_count` → `Entry count` | `Scale input` for `scale(int x)`, with the LLM off |
 | FC-15 | Only a placeholder (`<Function> input`, `<Function> result`) is sent to the LLM for a better name, with the source, parameters, globals, return type and return line | — | — |
 
 ---
@@ -515,6 +516,7 @@ Each ⚠ above, by rule:
 | IT-28 | A function that returns a value **and** writes a global is `Out` — keep, or let the write decide first (every status-returning writer would become `In`)? |
 | IT-31 | Source/Destination lists callers only — is that the intended reading? |
 | IT-33 | Source/Destination keeps hyphens (`Sample-Core/Core`) while headings show spaces (`Sample Core`) |
+| FC-04 | A private function reached only through another private function gets no flowchart anywhere — print it under its caller's caller too? |
 | FC-05, FX-01, FX-02 | Risk and Capacity — real values, or agreed constants? |
 | FX-04 | Requirements traceability: nothing to link to until SWE.1 / Polarion is available |
 | FX-06, FX-07 | Code Metrics and Appendix — produce them here, or take them from the project's own tools? |
