@@ -92,9 +92,13 @@ newer entry and the code win.
 - **Pipeline speed** (2026-10-08b, branch `perf/pipeline-speed`, on `refactor/config-separation`): LLM
   lanes, parse ahead, picture batches, each in ONE config.local.json block, `speedups` — empty = develop
   (2026-10-14d); a Claude API provider (2026-10-14f). [PIPELINE_SPEED_PLAN.md](docs/design/PIPELINE_SPEED_PLAN.md).
-- **Review issues** (2026-10-14g … i, branch `fix/review-issues-on-speed`, on `perf/pipeline-speed`): one
+- **Review issues** (2026-10-14g … 2026-10-30b, branch `fix/review-issues`, in develop 2026-11-04): one
   publication rule (use from another unit), overloads print and draw apart (`engine/core/function_names.py`),
   a `case` from a missing header keeps its branch. Interface ids after a newly published function move.
+- **Next work** (2026-10-31 … 2026-11-04c, branch `feat/next-work`, in develop 2026-11-04): delete a project
+  whole (migration **0019** -- each database runs `analyzer.py setup` once), movable workspaces and one API per
+  database, edit on the compare page, a function's code beside its flowchart, Cancel in edit mode, Fresh run,
+  Pause and Resume. Left: [BACKLOG](docs/BACKLOG.md) "Next work".
 - **The database-native pipeline (doc 10) has landed.** The model lives only in the database, keyed by
   version id; `model/*.json` is no longer a store, and a phase without `--version-id` refuses to run.
 - The status boards that used to head this file (2026-07-20, 2026-08-14) are kept, unchanged, in

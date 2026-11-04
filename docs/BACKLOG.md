@@ -12,13 +12,12 @@
 
 ## Next work (listed 2026-10-29, priorities 2026-10-30)
 
-Order: NW-2 → NW-8 → NW-1 → NW-3 (priority, then dependency, then the smaller one). Done 2026-10-31: NW-4, NW-6, NW-7; 2026-11-02: NW-5; 2026-11-03: NW-3; 2026-11-04: NW-1 at step boundaries.
+Order: NW-2 → NW-8 → NW-1 (priority, then dependency, then the smaller one). Done 2026-10-31: NW-4, NW-6, NW-7; 2026-11-02: NW-5; 2026-11-03: NW-3; 2026-11-04: NW-1 instant, checked on the dev server (history 2026-11-04c).
 
 | Id | Item | Type | Pri | Effort | Waits on | Status | Where |
 |---|---|---|---|---|---|---|---|
-| NW-1 | Pause and resume a run: instant, any phase, done 2026-11-04; left: pause by itself after N LLM failures in a row, a CLI `pause`, sub-phases | enhance | P2 | M | — | part done | `pipeline_runner.py`, `llm_core/client.py` |
+| NW-1 | Pause and resume a run: instant, any phase, done 2026-11-04; left: pause by itself after N LLM failures in a row, a CLI `pause`, sub-phases, a Pause in the run's first ~30 s | enhance | P2 | M | — | part done | `pipeline_runner.py`, `llm_core/client.py` |
 | NW-2 | Approve a document only when its base document is reviewed | enhance | P1 | S–M | what "base" means | decide | `review_workflow.py` `approve()` |
-| NW-3 | Fresh run (no baseline) for any commit, from the web; says when it is for and which corrections stay behind; Pause after Phase 1 removed | enhance | P3 | S | — | done | `RunAnalysisModal.tsx`, `routes/jobs.py` `mode` |
 | NW-8 | Parse workers and several LLM calls at once as the default | enhance | P2 | S | a review-site run with them on; LG-2 | open | `core/config.py` `speedup_settings` |
 
 ## Logs and LLM
@@ -112,6 +111,7 @@ Order: NW-2 → NW-8 → NW-1 → NW-3 (priority, then dependency, then the smal
 | RU-7 | Edit mode gaps: an orphaned correction cannot be deleted, no bulk write, SWE.4 read-only | enhance | — | — | — | open | REVIEW_UPDATE_API_SPEC §17 |
 | RU-8 | Small web gaps: `shownIn` unused, R8 `dot` fallback unused, no history for label corrections, `outline.ts` splits keys by prefix | debt | — | — | — | open | `pages/DocumentInspectorPage/` |
 | RU-9 | A huge document's render payload carries every flowchart's DOT | perf | — | — | a measure on a review-site document | open | `api/services/doc_render.py` |
+| RU-10 | Undo (and edit mode's Cancel) cannot put back a text that was empty before it was corrected: 409, REQ-ST-06 -- seen in a Skip LLM run, where descriptions are empty | issue | P3 | S | — | open | `review/override_service.py` undo, `editSession.ts` |
 | RF-2 | Flowchart pictures: 50 renders per capture, copied baseline PNGs, renders after the job is done, not carried | issue | — | — | — | open | `review/render_queue.py`, `views/flowcharts.py` |
 | RF-3 | Cross-version reuse copies human text as LLM text | issue | — | — | — | open | `incremental/engine.py` |
 | RF-5 | A save takes two pooled connections and loads the whole model | perf | — | — | — | open | `review/override_service.py` |
@@ -206,17 +206,13 @@ Resume runs `resume` as the same job -- that phase starts again, the LLM cache a
 the parse so far in Phase 1; the last minute's LLM answers in Phase 2; the component at work in Phases 3-4).
 Left: (1) pause by itself after N LLM failures in a row (proposed N = 5, "the LLM stopped answering") -- the API
 can count the run's LLM failure lines and pause as an admin would; (2) a CLI `pause --version-id`; (3) sub-phases,
-so a pause in a long phase keeps more. Open with the user: a paused run blocks a new one (as built), N.
+so a pause in a long phase keeps more; (4) Pause in a run's first ~30 s (its code copy) answers 409 "not in the
+background yet, try again in a moment" -- the API could keep the ask and pause the run once it has started. Open with the user: a paused run blocks a new one (as built), N.
 
 **NW-2** Today `approve()` checks the state and the Word file only; bulk approval goes through it.
 Doubts: base = the previous version's document, SWE.3 before its SWE.4, or both? "reviewed" = approved?
 admin override? bulk: skip or refuse? a run with no baseline? Approach: one check in `approve()`, 409
 `BASE_NOT_REVIEWED` naming the base; the web disables Approve with the reason.
-
-**NW-3** The API takes `mode: "full"` (CLI `generate --full`), but the run dialog never sends it, and
-"Compare against: None" means auto — the server picks the nearest earlier version as the baseline. So the
-web cannot force a fresh run. Doubts: a typed SHA beyond the list? a commit that already has a version?
-carry corrections? Approach: a "Fresh run" switch that sends `mode: "full"` and ticks every component.
 
 **NW-8** Each speed-up is proved to give the same output (PIPELINE_SPEED_PLAN). Doubts: lanes stable at
 the review site now the prompts are capped? `parseWorkers` against memory? several calls on one lane
