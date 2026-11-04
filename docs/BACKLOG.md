@@ -52,6 +52,7 @@ The NW-1 … NW-8 list of 2026-10-29 is closed: the done items are in the projec
 | S3-6 | The flowchart Layer-2 test counts Mermaid shapes; the output is DOT | debt | — | S | — | open | `tests/unit/test_cfg_topo.py` |
 | S3-10 | Unit header rows: listed whether or not the unit uses the symbol | input | — | — | the review's answer | decide | SWE3_WIKI N.1.4 |
 | S3-11 | A Dynamic Behaviour row carries the wrong caller | issue | — | — | — | open | `views/behaviour_diagram.py`, `behaviour_diagram/selector.py` |
+| S3-12 | Rules numbered per section (UH-01, IT-05, …); a review's comments judged against them, with a score per section | enhance | — | M | OK on the rule-table format | open | SWE3_WIKI, SWE3_SPEC |
 
 ## SWE.3 — review round 1 (received 2026-09-23; in develop)
 
@@ -247,6 +248,19 @@ test applies only to orphan-header symbols. The review said "of the unit AND use
 **S3-11** `views/behaviour_diagram.py` pairs the diagrams with the DIRECT external callers by position,
 but the selector also counts callers of callers: row `coreAdd <- Cross|Hub|hubCompute` carries
 runNestedFolderTests's diagram. Fix: return the caller each diagram was drawn for and key the row on it.
+
+**S3-12** (noted 2026-11-05) A review scores each section and counts every comment as an issue; many
+follow our rules. To answer with data:
+1. Each SWE3_WIKI section opens with a rule table, `ID | Rule (one sentence) | Example | Looks wrong but
+   is expected`. Ids per section: CO, UD, UH, IT, FC, BD. The prose below stays as the reasons.
+2. One rule list: SWE3_SPEC folds into the wiki, its ids kept (REQ-IT-05 → IT-05). Fix the drift on the
+   way (the wiki still says access decides the interface table).
+3. Each review comment gets a rule id and one verdict: **Defect** (breaks a rule: we fix it) · **As per
+   rule** (expected: reply with the id) · **Change request** (wants the rule changed: decide) · **Gap**
+   (no rule: write one) · **Wording** (LLM text: corrected in the app). Only Defect counts against us.
+4. Per section: items reviewed, comments, the review's score, the count per verdict, and the score by
+   rule, worked out the way the review works out its own.
+Steps 3–4 are done with the review's sheet, which stays with the team.
 
 **RV-1 … RV-7** RV-1: a static data member is a global, `x++` and `s.f++` count as writes; the member is
 listed inside its class's row. RV-3: the container diagram fits the text area. RV-4: each orphan header
