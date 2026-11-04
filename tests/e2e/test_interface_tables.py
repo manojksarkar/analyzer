@@ -1,7 +1,7 @@
 """Interface tables view tests.
 
-Covers every rule in docs/spec/SWE3_SPEC.md — Interface Tables section.
-Update the spec first, then update these tests.
+Covers the IT rules (unit interface table) in docs/spec/SWE3_WIKI.md.
+Update the wiki first, then update these tests.
 """
 import copy
 
@@ -182,7 +182,7 @@ def test_interface_id_segments_uppercase(all_entries):
 
 # ---------------------------------------------------------------------------
 # Caller / callee units (spec: callerUnits/calleesUnits include same-module;
-# sourceDest lists every interacting unit except the function's own unit — REQ-IT-12)
+# sourceDest lists every calling unit except the function's own unit — SWE3_WIKI IT-31)
 # ---------------------------------------------------------------------------
 
 def test_required_fields_present(all_entries):
@@ -213,7 +213,7 @@ def test_global_entries_have_empty_caller_callee(all_entries):
 
 def test_sourcedest_includes_cross_unit_callers(util_entries):
     # utilCompute and utilScale are called by the Core unit (a different unit, same group).
-    # Per REQ-IT-12 the sourceDest lists every interacting unit except the function's own
+    # Per SWE3_WIKI IT-31 the sourceDest lists every calling unit except the function's own
     # unit, so the Core caller appears even though it is inside the group. The component-name
     # prefix varies with config ("Core/Core" vs "Sample-Core/Core"), so match the ".../Core" tail.
     for name in ("utilCompute", "utilScale"):

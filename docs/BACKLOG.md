@@ -50,9 +50,9 @@ The NW-1 … NW-8 list of 2026-10-29 is closed: the done items are in the projec
 | S3-4 | Dynamic-behaviour issue | issue | — | — | a repro (3.10) | blocked | `behaviour_diagram/` |
 | S3-5 | A header inline function with a sibling `.cpp` has a row but no flowchart | issue | — | — | — | open | — |
 | S3-6 | The flowchart Layer-2 test counts Mermaid shapes; the output is DOT | debt | — | S | — | open | `tests/unit/test_cfg_topo.py` |
-| S3-10 | Unit header rows: listed whether or not the unit uses the symbol | input | — | — | the review's answer | decide | SWE3_WIKI N.1.4 |
+| S3-10 | Unit header rows: listed whether or not the unit uses the symbol | input | — | — | the review's answer | decide | SWE3_WIKI UH-03 |
 | S3-11 | A Dynamic Behaviour row carries the wrong caller | issue | — | — | — | open | `views/behaviour_diagram.py`, `behaviour_diagram/selector.py` |
-| S3-12 | Rules numbered per section (UH-01, IT-05, …); a review's comments judged against them, with a score per section | enhance | — | M | OK on the rule-table format | open | SWE3_WIKI, SWE3_SPEC |
+| S3-12 | A review's comments judged against the numbered rules (UH-01, IT-27, …), with a score per section; the rule tables are done (2026-11-05) | enhance | — | S | the review's sheet (stays with the team) | open | SWE3_WIKI |
 
 ## SWE.3 — review round 1 (received 2026-09-23; in develop)
 
@@ -251,10 +251,9 @@ runNestedFolderTests's diagram. Fix: return the caller each diagram was drawn fo
 
 **S3-12** (noted 2026-11-05) A review scores each section and counts every comment as an issue; many
 follow our rules. To answer with data:
-1. Each SWE3_WIKI section opens with a rule table, `ID | Rule (one sentence) | Example | Looks wrong but
-   is expected`. Ids per section: CO, UD, UH, IT, FC, BD. The prose below stays as the reasons.
-2. One rule list: SWE3_SPEC folds into the wiki, its ids kept (REQ-IT-05 → IT-05). Fix the drift on the
-   way (the wiki still says access decides the interface table).
+1. Done 2026-11-05: each SWE3_WIKI section has a rule table, `ID | Rule | Example | Looks wrong, but is
+   expected`, ids DOC, INT, CO, UD, UH, IT, FC, BD, FX; the drift fixed on the way.
+2. Done 2026-11-05: SWE3_SPEC folded into the wiki and removed; its old ids are mapped at the wiki's end.
 3. Each review comment gets a rule id and one verdict: **Defect** (breaks a rule: we fix it) · **As per
    rule** (expected: reply with the id) · **Change request** (wants the rule changed: decide) · **Gap**
    (no rule: write one) · **Wording** (LLM text: corrected in the app). Only Defect counts against us.
@@ -265,7 +264,7 @@ Steps 3–4 are done with the review's sheet, which stays with the team.
 **RV-1 … RV-7** RV-1: a static data member is a global, `x++` and `s.f++` count as writes; the member is
 listed inside its class's row. RV-3: the container diagram fits the text area. RV-4: each orphan header
 has ONE owner unit that lists every used symbol. RV-5: the companion header belongs to its unit. RV-6:
-the unit's published globals as boxes inside the component, no edges (REQ-UD-09). RV-7: struct, class and
+the unit's published globals as boxes inside the component, no edges (SWE3_WIKI UD-11). RV-7: struct, class and
 union listed, nested types inside their parent.
 
 **S4-3** Table B's Generation Method today is `Analysis of Requirements` only; Equivalence Class and

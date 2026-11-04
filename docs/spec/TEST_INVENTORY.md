@@ -64,6 +64,10 @@ Marked `@pytest.mark.xfail` — define the contract the real generators must sat
 
 ## Rule coverage (from SWE3_SPEC.md)
 
+> The `REQ-` ids below are those of the retired `SWE3_SPEC.md` (folded into
+> [SWE3_WIKI.md](SWE3_WIKI.md) 2026-11-05); its [Old spec ids](SWE3_WIKI.md#old-spec-ids) table gives
+> each one's rule ids now.
+
 ### Document Structure — `tests/e2e/test_docx.py`
 
 | Requirement | Rule | Test | Status |

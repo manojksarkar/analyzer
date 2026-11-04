@@ -51,7 +51,7 @@ see the last row.
 | `PROJECT_CONTEXT.md` (repo root) + `project-context/` | **Agent-facing** source of truth (you/other agents) | **Descriptive & deep, no polish.** `PROJECT_CONTEXT.md` is the **index** — current state, reading guide, the file map — and CLAUDE.md imports it, so it stays short (≤ 300 lines). The detail lives once, in `project-context/`: topic files (the current truth per area) and `history/` (the dated `> Updated:` log). Keep it current after every meaningful change. |
 | `CLAUDE.md`, `AGENTS.md` (root) | **Agent operating instructions** | **Directive.** How agents work in this repo; edit deliberately, they steer every session. |
 | `docs/BACKLOG.md` | Engineering — **the one list of open work** (issues, enhancements, forward plans) | **Tables.** One table per area, one short line per cell, open items only; longer text in its Details section, by id. A done item leaves the table. |
-| `docs/spec/` (`SWE3_SPEC`, `SWE4_WIKI`, `TEST_INVENTORY`, …) | Engineering — precise contracts | **Structured & exact.** Derivation logic, tables, rules. Unambiguous over readable. |
+| `docs/spec/` (`SWE3_WIKI`, `SWE4_WIKI`, `TEST_INVENTORY`, …) | Engineering — precise contracts | **Structured & exact.** Derivation logic, tables, rules. Unambiguous over readable. |
 | `docs/design/` (`DESIGN.md`) | Engineering — how/why | **Descriptive.** Prose + diagrams, explains rationale + the DOCX export walkthrough. |
 | `docs/planning/*_PLAN.md` (`SWE2_PLAN`, `SYS2_PLAN`, …) | Leadership + eng — per-doc-type plan | **Pointed.** Only what's specific to that doc type; point back to the playbook for the shared method. |
 | `docs/production-redesign/NN-*.md` | Eng — ordered study/runbook series | **Descriptive**, numbered sequence. |
@@ -85,7 +85,7 @@ Rules that fall out of this:
 
 ## 3. File & folder naming
 
-- **`UPPER_SNAKE_CASE.md`** for specs, plans, and root/context docs: `SWE3_SPEC.md`, `SWE2_PLAN.md`,
+- **`UPPER_SNAKE_CASE.md`** for specs, plans, and root/context docs: `SWE3_WIKI.md`, `SWE2_PLAN.md`,
   `PROJECT_CONTEXT.md`, `BACKLOG.md`, `ROADMAP.md`.
 - **`NN-kebab-title.md`** (zero-padded numeric prefix) for an *ordered* series meant to be read in sequence:
   `01-technology-selection-study.md`, `02-database-design-study.md`.

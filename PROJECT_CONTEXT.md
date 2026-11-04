@@ -204,7 +204,7 @@ The big shifts since most of §1–§24 were written. Each names its dated entry
 |---|---|
 | get the whole picture | [ARCHITECTURE.md](project-context/ARCHITECTURE.md), then [VIEWS_AND_EXPORT.md](project-context/VIEWS_AND_EXPORT.md); the [timeline](project-context/history/TIMELINE.md) for what changed since |
 | change parsing, the model or the LLM descriptions (Phases 1–2) | [PARSE_AND_DERIVE.md](project-context/PARSE_AND_DERIVE.md), [CORE_AND_LLM.md](project-context/CORE_AND_LLM.md); skill `engine-dev` |
-| change a view, a flowchart, a behaviour diagram or a document (Phases 3–4) | [VIEWS_AND_EXPORT.md](project-context/VIEWS_AND_EXPORT.md); skill `engine-dev`, `engine-flowchart` or `engine-behaviour`; the rules each document section follows: [SWE3_WIKI](docs/spec/SWE3_WIKI.md), [SWE3_SPEC](docs/spec/SWE3_SPEC.md), [SWE4_WIKI](docs/spec/SWE4_WIKI.md) |
+| change a view, a flowchart, a behaviour diagram or a document (Phases 3–4) | [VIEWS_AND_EXPORT.md](project-context/VIEWS_AND_EXPORT.md); skill `engine-dev`, `engine-flowchart` or `engine-behaviour`; the rules each document section follows: [SWE3_WIKI](docs/spec/SWE3_WIKI.md) (rule ids per section), [SWE4_WIKI](docs/spec/SWE4_WIKI.md) |
 | change a CLI flag or the config | [CLI_AND_CONFIG.md](project-context/CLI_AND_CONFIG.md), [docs/CLI_COMMANDS.md](docs/CLI_COMMANDS.md) |
 | work on incremental runs, baselines, reuse, the narrowed parse | [INCREMENTAL.md](project-context/INCREMENTAL.md); skill `engine-flowchart` |
 | work on the database or storage | [docs/design/DB_SCHEMA.md](docs/design/DB_SCHEMA.md), [PRODUCTION_REDESIGN.md](project-context/PRODUCTION_REDESIGN.md), [docs/production-redesign/](docs/production-redesign/) 07–10 |
